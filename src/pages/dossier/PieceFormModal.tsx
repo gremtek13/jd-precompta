@@ -24,12 +24,59 @@ export default function PieceFormModal({ dossierId, categories, tiersConnus, pie
   const [notes, setNotes] = useState(piece?.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [extracting, setExtracting] = useState(false)
+  const [extractionError, setExtractionError] = useState<string | null>(null)
+  const [confiance, setConfiance] = useState<'haute' | 'moyenne' | 'basse' | null>(null)
 
   function recalcFromHtTva(ht: string, tva: string) {
     const htN = parseFloat(ht)
     const tvaN = parseFloat(tva)
     if (!Number.isNaN(htN) && !Number.isNaN(tvaN)) {
       setMontantTtc((htN + tvaN).toFixed(2))
+    }
+  }
+
+  interface ExtractionResult {
+    tiers: string | null
+    date_piece: string | null
+    montant_ht: number | null
+    montant_tva: number | null
+    montant_ttc: number | null
+    confiance: 'haute' | 'moyenne' | 'basse'
+    error?: string
+  }
+
+  async function handleExtract() {
+    setExtracting(true)
+    setExtractionError(null)
+    setConfiance(null)
+    try {
+      // Octets du fichier fraîchement choisi, ou téléchargement du fichier déjà attaché en édition.
+      let bytes: ArrayBuffer
+      if (file) {
+        bytes = await file.arrayBuffer()
+      } else if (piece?.storage_path) {
+        const { data, error } = await supabase.storage.from('pieces').download(piece.storage_path)
+        if (error || !data) throw new Error("Impossible de récupérer le fichier existant.")
+        bytes = await data.arrayBuffer()
+      } else {
+        throw new Error('Dépose un fichier avant de lancer l\'extraction.')
+      }
+
+      const { data: result, error } = await supabase.functions.invoke<ExtractionResult>('extract-piece', { body: bytes })
+      if (error) throw error
+      if (!result || result.error) throw new Error(result?.error ?? "L'extraction a échoué.")
+
+      if (result.date_piece) setDatePiece(result.date_piece)
+      if (result.tiers) setTiers(result.tiers)
+      if (result.montant_ht != null) setMontantHt(result.montant_ht.toString())
+      if (result.montant_tva != null) setMontantTva(result.montant_tva.toString())
+      if (result.montant_ttc != null) setMontantTtc(result.montant_ttc.toString())
+      setConfiance(result.confiance)
+    } catch (err) {
+      setExtractionError(err instanceof Error ? err.message : "L'extraction automatique a échoué — remplis le formulaire à la main.")
+    } finally {
+      setExtracting(false)
     }
   }
 
@@ -98,9 +145,26 @@ export default function PieceFormModal({ dossierId, categories, tiersConnus, pie
         <form onSubmit={handleSubmit}>
           <div className="field">
             <label htmlFor="file">Fichier {piece && '(laisser vide pour garder l\'actuel)'}</label>
-            <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
             {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
           </div>
+
+          <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              disabled={extracting || (!file && !piece?.storage_path)}
+              onClick={handleExtract}
+            >
+              {extracting ? 'Extraction…' : '✨ Extraire automatiquement'}
+            </button>
+            {confiance && (
+              <span className={`badge ${confiance === 'haute' ? 'badge-ok' : confiance === 'moyenne' ? 'badge-warning' : 'badge-neutral'}`}>
+                Confiance {confiance} — vérifie les champs
+              </span>
+            )}
+          </div>
+          {extractionError && <p className="error-text" style={{ marginTop: -8 }}>{extractionError}</p>}
 
           <div className="field-row">
             <div className="field">
