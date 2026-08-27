@@ -89,7 +89,7 @@ export default function AccesTab({ dossierId }: { dossierId: string }) {
       </div>
 
       <h3>Accès actuels</h3>
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card table-scroll" style={{ padding: 0 }}>
         {rows.length === 0 ? (
           <div className="empty-state">Aucun accès client pour ce dossier.</div>
         ) : (

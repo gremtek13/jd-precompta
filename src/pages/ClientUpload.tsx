@@ -72,7 +72,7 @@ export default function ClientUpload() {
       </div>
 
       <h3>Mes dépôts</h3>
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card table-scroll" style={{ padding: 0 }}>
         {pieces.length === 0 ? (
           <div className="empty-state">Aucun dépôt pour l'instant.</div>
         ) : (

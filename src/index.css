@@ -134,3 +134,37 @@ tr.clickable:hover { background: var(--color-primary-light); }
 .login-card h1 { font-size: 1.2rem; margin: 0 0 4px; }
 
 .empty-state { text-align: center; padding: 40px 20px; color: var(--color-text-light); }
+
+.table-scroll { overflow-x: auto; }
+
+/* Mobile : sidebar en barre horizontale, formulaires en une colonne, marges réduites */
+@media (max-width: 720px) {
+  .app-shell { flex-direction: column; min-height: auto; }
+
+  .sidebar {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .sidebar .logo { margin: 0 14px 0 0; font-size: 0.95rem; white-space: nowrap; }
+  .sidebar nav { flex-direction: row; overflow-x: auto; gap: 4px; }
+  .sidebar nav a { white-space: nowrap; }
+  .sidebar .btn { flex-shrink: 0; margin-left: 10px; }
+
+  .main { padding: 16px; max-width: 100%; }
+
+  .topbar { flex-wrap: wrap; gap: 10px; }
+  .topbar h1 { font-size: 1.2rem; }
+
+  .field-row { flex-direction: column; gap: 0; }
+
+  table { font-size: 0.85rem; }
+  th, td { padding: 8px 6px; }
+}

@@ -53,10 +53,10 @@ export default function DossiersList() {
         placeholder="Rechercher un dossier…"
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        style={{ marginBottom: 16, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, width: 280 }}
+        style={{ marginBottom: 16, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, width: 280, maxWidth: '100%' }}
       />
 
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (
@@ -127,7 +127,7 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
 
   return (
     <div style={overlayStyle}>
-      <div className="card" style={{ width: 420 }}>
+      <div className="card" style={{ width: 'min(420px, 92vw)' }}>
         <h2 style={{ marginTop: 0 }}>Nouveau dossier</h2>
         <form onSubmit={handleSubmit}>
           <div className="field">

@@ -80,7 +80,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         </div>
       </div>
 
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (

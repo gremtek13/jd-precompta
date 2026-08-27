@@ -108,7 +108,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
       </div>
 
       <h3>Historique</h3>
-      <div className="card" style={{ padding: 0 }}>
+      <div className="card table-scroll" style={{ padding: 0 }}>
         {packs.length === 0 ? (
           <div className="empty-state">Aucun pack généré pour l'instant.</div>
         ) : (

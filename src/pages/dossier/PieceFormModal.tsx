@@ -140,7 +140,7 @@ export default function PieceFormModal({ dossierId, categories, tiersConnus, pie
 
   return (
     <div style={overlayStyle}>
-      <div className="card" style={{ width: 520, maxHeight: '90vh', overflowY: 'auto' }}>
+      <div className="card" style={{ width: 'min(520px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 style={{ marginTop: 0 }}>{piece ? 'Modifier la pièce' : 'Ajouter une pièce'}</h2>
         <form onSubmit={handleSubmit}>
           <div className="field">
