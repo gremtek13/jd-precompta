@@ -35,9 +35,31 @@ function parseAmount(raw?: string): number | null {
   return Number.isNaN(n) ? null : n
 }
 
+function toIsoDate(year: number, month: number, day: number): string | null {
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+}
+
 function parseDate(raw?: string): string | null {
   if (!raw) return null
-  const d = new Date(raw)
+  const trimmed = raw.trim()
+
+  // ISO ou proche : AAAA-MM-JJ, AAAA/MM/JJ
+  let m = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
+  if (m) return toIsoDate(+m[1], +m[2], +m[3])
+
+  // Format français/européen usuel sur les factures et reçus : JJ/MM/AAAA, JJ-MM-AAAA, JJ.MM.AAAA
+  // (année sur 2 ou 4 chiffres). `new Date()` interprète ça à l'américaine (MM/JJ) et échoue
+  // silencieusement dès que le jour dépasse 12 — d'où les dates manquantes malgré une extraction OK.
+  m = trimmed.match(/^(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})/)
+  if (m) {
+    let year = +m[3]
+    if (year < 100) year += year < 70 ? 2000 : 1900
+    return toIsoDate(year, +m[2], +m[1])
+  }
+
+  // Dernier recours pour les formats textuels (ex. "27 August 2026") que Date sait parfois lire.
+  const d = new Date(trimmed)
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
 }
 
