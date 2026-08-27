@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
+import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { LigneBancaire, Piece, StatutLigneBancaire } from '../../lib/types'
 
@@ -165,6 +166,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 }
 
 function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: () => void }) {
+  const [source, setSource] = useState<'csv' | 'pdf'>('csv')
   const [rows, setRows] = useState<string[][] | null>(null)
   const [colDate, setColDate] = useState(0)
   const [colLibelle, setColLibelle] = useState(1)
@@ -175,6 +177,9 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
   const [hasHeader, setHasHeader] = useState(true)
   const [importing, setImporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const [pdfRows, setPdfRows] = useState<LigneExtraite[] | null>(null)
+  const [pdfExtracting, setPdfExtracting] = useState(false)
 
   async function handleFile(file: File) {
     setError(null)
@@ -189,6 +194,50 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
 
   const dataRows = rows ? (hasHeader ? rows.slice(1) : rows) : []
   const nbColonnes = rows?.[0]?.length ?? 0
+
+  async function handlePdfFile(file: File) {
+    setError(null)
+    setPdfRows(null)
+    setPdfExtracting(true)
+    try {
+      const text = await extractPdfText(file)
+      const extraites = parseLignesFromPdfText(text)
+      if (extraites.length === 0) {
+        throw new Error("Aucune opération détectée dans ce PDF — la mise en page n'est peut-être pas reconnue. Essaie l'export CSV si la banque le propose.")
+      }
+      setPdfRows(extraites)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Lecture du PDF impossible.')
+    } finally {
+      setPdfExtracting(false)
+    }
+  }
+
+  function updatePdfRow(index: number, patch: Partial<LigneExtraite>) {
+    setPdfRows((prev) => prev && prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+  }
+
+  function removePdfRow(index: number) {
+    setPdfRows((prev) => prev && prev.filter((_, i) => i !== index))
+  }
+
+  async function handleImportPdfRows() {
+    if (!pdfRows || pdfRows.length === 0) return
+    setImporting(true)
+    setError(null)
+    try {
+      const { error } = await supabase.from('lignes_bancaires').insert(
+        pdfRows.map((r) => ({ dossier_id: dossierId, date: r.date, libelle: r.libelle, montant: r.montant })),
+      )
+      if (error) throw error
+      setPdfRows(null)
+      onImported()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "L'import a échoué.")
+    } finally {
+      setImporting(false)
+    }
+  }
 
   async function handleImport() {
     if (!rows) return
@@ -231,12 +280,20 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
 
   return (
     <div className="card" style={{ marginBottom: 20 }}>
-      <h3 style={{ marginTop: 0 }}>Importer un relevé bancaire (CSV)</h3>
+      <h3 style={{ marginTop: 0 }}>Importer un relevé bancaire</h3>
+
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
+        <button type="button" className={`btn btn-sm ${source === 'csv' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSource('csv')}>CSV</button>
+        <button type="button" className={`btn btn-sm ${source === 'pdf' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSource('pdf')}>PDF</button>
+      </div>
+
+      {source === 'csv' && (
       <div className="field">
         <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
       </div>
+      )}
 
-      {rows && (
+      {source === 'csv' && rows && (
         <>
           <div className="field">
             <label>
@@ -302,13 +359,49 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
             </div>
           )}
 
-          {error && <p className="error-text">{error}</p>}
-
           <button className="btn btn-primary" onClick={handleImport} disabled={importing}>
             {importing ? 'Import…' : `Importer ${dataRows.length} ligne(s)`}
           </button>
         </>
       )}
+
+      {source === 'pdf' && (
+        <>
+          <div className="field">
+            <input type="file" accept=".pdf,application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfFile(e.target.files[0])} />
+          </div>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Une ligne par opération détectée automatiquement (date + montant) — vérifie et corrige le tableau avant d'importer, l'extraction PDF est moins fiable qu'un CSV.
+          </p>
+
+          {pdfExtracting && <p className="muted">Lecture du PDF…</p>}
+
+          {pdfRows && (
+            <>
+              <div className="table-scroll" style={{ marginBottom: 14, border: '1px solid var(--color-border)', borderRadius: 8 }}>
+                <table>
+                  <thead><tr><th>Date</th><th>Libellé</th><th>Montant</th><th></th></tr></thead>
+                  <tbody>
+                    {pdfRows.map((r, i) => (
+                      <tr key={i}>
+                        <td><input type="date" value={r.date} onChange={(e) => updatePdfRow(i, { date: e.target.value })} style={{ width: 135 }} /></td>
+                        <td><input value={r.libelle} onChange={(e) => updatePdfRow(i, { libelle: e.target.value })} style={{ width: '100%', minWidth: 180 }} /></td>
+                        <td><input type="number" step="0.01" value={r.montant} onChange={(e) => updatePdfRow(i, { montant: parseFloat(e.target.value) || 0 })} style={{ width: 95 }} /></td>
+                        <td><button type="button" className="btn btn-outline btn-sm" onClick={() => removePdfRow(i)}>Retirer</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <button className="btn btn-primary" onClick={handleImportPdfRows} disabled={importing || pdfRows.length === 0}>
+                {importing ? 'Import…' : `Importer ${pdfRows.length} ligne(s)`}
+              </button>
+            </>
+          )}
+        </>
+      )}
+
+      {error && <p className="error-text" style={{ marginTop: 12 }}>{error}</p>}
     </div>
   )
 }
