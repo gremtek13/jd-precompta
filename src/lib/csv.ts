@@ -66,3 +66,63 @@ export function parseDateBancaire(raw: string): string | null {
   }
   return null
 }
+
+// Versions strictes (toute la cellule, pas juste le début) utilisées pour la détection automatique
+// des colonnes — une cellule "01/01/2026" ne doit pas aussi compter comme un montant valide, et une
+// longue référence numérique ne doit pas compter comme une date.
+function isFullDate(s: string): boolean {
+  const t = s.trim()
+  return /^\d{4}-\d{1,2}-\d{1,2}$/.test(t) || /^\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$/.test(t)
+}
+function isFullMontant(s: string): boolean {
+  return /^-?\d{1,9}([.,]\d{1,2})?\s*€?$/.test(s.trim())
+}
+
+export interface ColumnMapping {
+  colDate: number
+  colMontant: number
+  colLibelle: number
+  hasHeader: boolean
+}
+
+// Détecte automatiquement quelles colonnes contiennent la date, le montant et le libellé, en
+// analysant le contenu réel des lignes plutôt qu'en supposant un ordre de colonnes fixe — les
+// formats varient trop d'une banque à l'autre pour un ordre par défaut. Reste modifiable ensuite
+// dans l'interface si la détection se trompe sur un format inhabituel.
+export function detectColumnMapping(rows: string[][]): ColumnMapping {
+  const echantillon = rows.slice(0, 30)
+  // Certains exports ont des lignes de longueurs différentes (ex. une ligne de solde plus courte
+  // que les lignes d'opérations) — on prend le nombre de colonnes le plus large observé.
+  const nbColonnes = echantillon.reduce((max, r) => Math.max(max, r.length), 0)
+
+  const scores = Array.from({ length: nbColonnes }, (_, col) => {
+    let dateHits = 0
+    let montantHits = 0
+    let totalLen = 0
+    let nonVides = 0
+    for (const row of echantillon) {
+      const val = (row[col] ?? '').trim()
+      if (!val) continue
+      nonVides++
+      if (isFullDate(val)) dateHits++
+      if (isFullMontant(val)) montantHits++
+      totalLen += val.length
+    }
+    return { col, dateHits, montantHits, avgLen: nonVides ? totalLen / nonVides : 0 }
+  })
+
+  const colDate = scores.reduce((best, s) => (s.dateHits > (best?.dateHits ?? 0) ? s : best), null as (typeof scores)[number] | null)?.col ?? 0
+  const colMontant = scores
+    .filter((s) => s.col !== colDate)
+    .reduce((best, s) => (s.montantHits > (best?.montantHits ?? 0) ? s : best), null as (typeof scores)[number] | null)?.col ?? Math.min(1, nbColonnes - 1)
+  const colLibelle = scores
+    .filter((s) => s.col !== colDate && s.col !== colMontant)
+    .reduce((best, s) => (s.avgLen > (best?.avgLen ?? -1) ? s : best), null as (typeof scores)[number] | null)?.col ?? Math.min(2, nbColonnes - 1)
+
+  // En-tête : si la toute première ligne ne ressemble pas elle-même à une opération (date/montant
+  // valides sur les colonnes détectées), c'est probablement une ligne de titres de colonnes.
+  const first = rows[0]
+  const hasHeader = !(first && isFullDate((first[colDate] ?? '').trim()) && isFullMontant((first[colMontant] ?? '').trim()))
+
+  return { colDate, colMontant, colLibelle, hasHeader }
+}

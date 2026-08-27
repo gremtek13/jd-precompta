@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
+import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { LigneBancaire, Piece, StatutLigneBancaire } from '../../lib/types'
@@ -190,10 +190,21 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
       return
     }
     setRows(parsed)
+
+    // Détection automatique du mapping de colonnes à partir du contenu — reste modifiable ensuite
+    // si la banque a un format inhabituel que la détection n'aurait pas bien reconnu.
+    const detected = detectColumnMapping(parsed)
+    setColDate(detected.colDate)
+    setColMontant(detected.colMontant)
+    setColLibelle(detected.colLibelle)
+    setHasHeader(detected.hasHeader)
+    setMode('signe')
   }
 
   const dataRows = rows ? (hasHeader ? rows.slice(1) : rows) : []
-  const nbColonnes = rows?.[0]?.length ?? 0
+  // Les lignes peuvent avoir des longueurs différentes selon les banques (ex. ligne de solde plus
+  // courte que les lignes d'opérations) — on prend le plus grand nombre de colonnes observé.
+  const nbColonnes = rows ? rows.reduce((max, r) => Math.max(max, r.length), 0) : 0
 
   async function handlePdfFile(file: File) {
     setError(null)
@@ -298,6 +309,9 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
 
       {source === 'csv' && rows && (
         <>
+          <p className="muted" style={{ marginTop: -4 }}>
+            Mapping détecté automatiquement à partir du fichier — vérifie l'aperçu ci-dessous et corrige si besoin.
+          </p>
           <div className="field">
             <label>
               <input type="checkbox" checked={hasHeader} onChange={(e) => setHasHeader(e.target.checked)} style={{ marginRight: 6 }} />
