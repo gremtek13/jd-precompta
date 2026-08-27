@@ -7,6 +7,12 @@ export function slugify(input: string): string {
     .replace(/^_|_$/g, '')
 }
 
+// Clé de correspondance tiers → catégorie : insensible à la casse/aux espaces pour que
+// "EDF", "edf" ou " EDF " retrouvent la même catégorie apprise.
+export function normalizeTiers(input: string): string {
+  return input.trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
 export function formatMoney(value: number | null): string {
   if (value === null || Number.isNaN(value)) return '—'
   return value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })

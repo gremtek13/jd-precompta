@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { Categorie, Piece, SousDossier } from '../../lib/types'
+import type { Categorie, Piece, SousDossier, TiersCategorie } from '../../lib/types'
 import PieceFormModal from './PieceFormModal'
 
 export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [sousDossiers, setSousDossiers] = useState<SousDossier[]>([])
+  const [tiersCategories, setTiersCategories] = useState<TiersCategorie[]>([])
   const [loading, setLoading] = useState(true)
   const [statutFilter, setStatutFilter] = useState<'toutes' | 'a_valider' | 'validee'>('toutes')
   const [sousDossierFilter, setSousDossierFilter] = useState<'tous' | 'sans' | string>('tous')
@@ -35,9 +36,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
       .order('ordre')
       .order('nom')
 
+    const { data: tiersCategoriesData } = await supabase
+      .from('tiers_categories')
+      .select('*')
+      .eq('dossier_id', dossierId)
+
     setPieces(piecesData ?? [])
     setCategories(categoriesData ?? [])
     setSousDossiers(sousDossiersData ?? [])
+    setTiersCategories(tiersCategoriesData ?? [])
     setLoading(false)
   }
 
@@ -159,6 +166,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           dossierId={dossierId}
           categories={categories}
           sousDossiers={sousDossiers}
+          tiersCategories={tiersCategories}
           tiersConnus={tiersConnus}
           piece={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}

@@ -1,19 +1,20 @@
 import { useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { slugify } from '../../lib/format'
-import type { Categorie, Piece, SousDossier, TypePiece } from '../../lib/types'
+import { normalizeTiers, slugify } from '../../lib/format'
+import type { Categorie, Piece, SousDossier, TiersCategorie, TypePiece } from '../../lib/types'
 
 interface Props {
   dossierId: string
   categories: Categorie[]
   sousDossiers: SousDossier[]
+  tiersCategories: TiersCategorie[]
   tiersConnus: string[]
   piece: Piece | null // null = création
   onClose: () => void
   onSaved: () => void
 }
 
-export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersConnus, piece, onClose, onSaved }: Props) {
+export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersConnus, piece, onClose, onSaved }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [datePiece, setDatePiece] = useState(piece?.date_piece ?? '')
   const [tiers, setTiers] = useState(piece?.tiers ?? '')
@@ -29,6 +30,14 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [extracting, setExtracting] = useState(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
   const [confiance, setConfiance] = useState<'haute' | 'moyenne' | 'basse' | null>(null)
+
+  // Si ce tiers a déjà été catégorisé sur une pièce précédente de ce dossier, on reprend la même
+  // catégorie automatiquement — sans écraser un choix déjà fait manuellement.
+  function suggestCategorieFromTiers(value: string) {
+    if (categorieId || !value.trim()) return
+    const match = tiersCategories.find((tc) => tc.tiers_normalise === normalizeTiers(value))
+    if (match) setCategorieId(match.categorie_id)
+  }
 
   function recalcFromHtTva(ht: string, tva: string) {
     const htN = parseFloat(ht)
@@ -105,7 +114,10 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       if (!result || result.error) throw new Error(result?.error ?? "L'extraction a échoué.")
 
       if (result.date_piece) setDatePiece(result.date_piece)
-      if (result.tiers) setTiers(result.tiers)
+      if (result.tiers) {
+        setTiers(result.tiers)
+        suggestCategorieFromTiers(result.tiers)
+      }
       if (result.montant_ht != null) setMontantHt(result.montant_ht.toString())
       if (result.montant_tva != null) setMontantTva(result.montant_tva.toString())
       if (result.montant_ttc != null) setMontantTtc(result.montant_ttc.toString())
@@ -160,6 +172,15 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       } else {
         const { error } = await supabase.from('pieces').insert({ ...payload, uploaded_by: userData.user!.id })
         if (error) throw error
+      }
+
+      // Mémorise la correspondance tiers → catégorie pour la reproposer automatiquement la prochaine
+      // fois. Best-effort : un échec ici ne doit pas remettre en cause la sauvegarde de la pièce.
+      if (tiers.trim() && categorieId) {
+        await supabase.from('tiers_categories').upsert(
+          { dossier_id: dossierId, tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
+          { onConflict: 'dossier_id,tiers_normalise' },
+        )
       }
 
       onSaved()
@@ -222,7 +243,13 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
 
           <div className="field">
             <label htmlFor="tiers">Tiers (fournisseur / client)</label>
-            <input id="tiers" list="tiers-connus" value={tiers} onChange={(e) => setTiers(e.target.value)} />
+            <input
+              id="tiers"
+              list="tiers-connus"
+              value={tiers}
+              onChange={(e) => setTiers(e.target.value)}
+              onBlur={(e) => suggestCategorieFromTiers(e.target.value)}
+            />
             <datalist id="tiers-connus">
               {tiersConnus.map((t) => <option key={t} value={t} />)}
             </datalist>

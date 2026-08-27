@@ -21,6 +21,14 @@ export interface Categorie {
   ordre: number
 }
 
+export interface TiersCategorie {
+  id: string
+  dossier_id: string
+  tiers_normalise: string
+  categorie_id: string
+  updated_at: string
+}
+
 export interface SousDossier {
   id: string
   dossier_id: string
