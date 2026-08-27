@@ -248,7 +248,10 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
       let ignorees = 0
       for (const row of dataRows) {
         const date = parseDateBancaire(row[colDate] ?? '')
-        const libelle = (row[colLibelle] ?? '').trim()
+        // Le libellé n'est qu'informatif (pas utilisé pour le rapprochement) — certaines banques le
+        // laissent vide sur certaines lignes selon le type d'opération. On ne rejette la ligne que si
+        // la date ou le montant, les deux champs réellement nécessaires, sont illisibles.
+        const libelle = (row[colLibelle] ?? '').trim() || 'Mouvement bancaire'
         let montant: number | null = null
         if (mode === 'signe') {
           montant = parseMontantBancaire(row[colMontant] ?? '')
@@ -257,7 +260,7 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
           const credit = parseMontantBancaire(row[colCredit] ?? '') ?? 0
           montant = credit - Math.abs(debit)
         }
-        if (!date || montant == null || !libelle) {
+        if (!date || montant == null) {
           ignorees++
           continue
         }
