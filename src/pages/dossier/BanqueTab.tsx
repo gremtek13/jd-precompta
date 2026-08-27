@@ -3,13 +3,14 @@ import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { LigneBancaire, Piece, StatutLigneBancaire } from '../../lib/types'
+import type { LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 
 export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
+  const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
 
@@ -27,8 +28,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       .eq('dossier_id', dossierId)
       .eq('statut', 'validee')
 
+    const { data: reglesData } = await supabase
+      .from('regles_bancaires_ignorees')
+      .select('*')
+      .eq('dossier_id', dossierId)
+      .order('motif')
+
     setLignes(lignesData ?? [])
     setPieces(piecesData ?? [])
+    setRegles(reglesData ?? [])
     setLoading(false)
   }
 
@@ -69,12 +77,41 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
+  // Ignore cette ligne ET mémorise un mot-clé pour que toutes les lignes similaires (déjà importées
+  // ou futures) soient automatiquement classées "ignorées" — utile pour les prélèvements récurrents
+  // (assurance, cotisations) qui n'ont pas de pièce à fournir à chaque échéance.
+  async function toujoursIgnorer(ligne: LigneBancaire) {
+    const motif = window.prompt(
+      'Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — toute future ligne contenant ce mot sera automatiquement ignorée.',
+      ligne.libelle,
+    )
+    if (!motif || !motif.trim()) return
+    const motifNormalise = motif.trim().toLowerCase()
+
+    const { error } = await supabase.from('regles_bancaires_ignorees').insert({ dossier_id: dossierId, motif: motifNormalise })
+    if (error) {
+      window.alert(error.message)
+      return
+    }
+
+    const aMettreAJour = lignes.filter((l) => l.statut === 'non_rapprochee' && l.libelle.toLowerCase().includes(motifNormalise))
+    if (aMettreAJour.length > 0) {
+      await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).in('id', aMettreAJour.map((l) => l.id))
+    }
+    load()
+  }
+
+  async function retirerRegle(id: string) {
+    await supabase.from('regles_bancaires_ignorees').delete().eq('id', id)
+    load()
+  }
+
   const nonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
   const totalNonRapproche = nonRapprochees.reduce((s, l) => s + l.montant, 0)
 
   return (
     <>
-      <ImportCsv dossierId={dossierId} onImported={load} />
+      <ImportCsv dossierId={dossierId} onImported={load} regles={regles} />
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Écarts à vérifier</h3>
@@ -83,6 +120,24 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           {' · '}
           {piecesSansMouvement.length} pièce(s) validée(s) sans mouvement bancaire correspondant
         </p>
+        {regles.length > 0 && (
+          <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
+            Ignorés automatiquement :{' '}
+            {regles.map((r) => (
+              <span key={r.id} className="badge badge-neutral" style={{ marginRight: 6 }}>
+                {r.motif}
+                <button
+                  type="button"
+                  onClick={() => retirerRegle(r.id)}
+                  style={{ marginLeft: 6, border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }}
+                  title="Retirer cette règle"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </p>
+        )}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
@@ -148,6 +203,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                             ))}
                           </select>
                           <button className="btn btn-outline btn-sm" onClick={() => ignorer(l.id)}>Ignorer</button>
+                          <button className="btn btn-outline btn-sm" onClick={() => toujoursIgnorer(l)}>Toujours ignorer ce type…</button>
                         </>
                       )}
                       {l.statut !== 'non_rapprochee' && (
@@ -165,7 +221,12 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   )
 }
 
-function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: () => void }) {
+function statutPourLibelle(libelle: string, regles: RegleBancaireIgnoree[]): StatutLigneBancaire {
+  const l = libelle.toLowerCase()
+  return regles.some((r) => l.includes(r.motif)) ? 'ignoree' : 'non_rapprochee'
+}
+
+function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImported: () => void; regles: RegleBancaireIgnoree[] }) {
   const [source, setSource] = useState<'csv' | 'pdf'>('csv')
   const [rows, setRows] = useState<string[][] | null>(null)
   const [colDate, setColDate] = useState(0)
@@ -238,7 +299,10 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
     setError(null)
     try {
       const { error } = await supabase.from('lignes_bancaires').insert(
-        pdfRows.map((r) => ({ dossier_id: dossierId, date: r.date, libelle: r.libelle, montant: r.montant })),
+        pdfRows.map((r) => ({
+          dossier_id: dossierId, date: r.date, libelle: r.libelle, montant: r.montant,
+          statut: statutPourLibelle(r.libelle, regles),
+        })),
       )
       if (error) throw error
       setPdfRows(null)
@@ -255,7 +319,7 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
     setImporting(true)
     setError(null)
     try {
-      const toInsert: { dossier_id: string; date: string; libelle: string; montant: number }[] = []
+      const toInsert: { dossier_id: string; date: string; libelle: string; montant: number; statut: StatutLigneBancaire }[] = []
       let ignorees = 0
       for (const row of dataRows) {
         const date = parseDateBancaire(row[colDate] ?? '')
@@ -275,7 +339,7 @@ function ImportCsv({ dossierId, onImported }: { dossierId: string; onImported: (
           ignorees++
           continue
         }
-        toInsert.push({ dossier_id: dossierId, date, libelle, montant })
+        toInsert.push({ dossier_id: dossierId, date, libelle, montant, statut: statutPourLibelle(libelle, regles) })
       }
       if (toInsert.length === 0) throw new Error("Aucune ligne exploitable — vérifie le mapping des colonnes.")
 
