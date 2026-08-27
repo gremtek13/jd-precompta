@@ -1,23 +1,25 @@
 import { useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { slugify } from '../../lib/format'
-import type { Categorie, Piece, TypePiece } from '../../lib/types'
+import type { Categorie, Piece, SousDossier, TypePiece } from '../../lib/types'
 
 interface Props {
   dossierId: string
   categories: Categorie[]
+  sousDossiers: SousDossier[]
   tiersConnus: string[]
   piece: Piece | null // null = création
   onClose: () => void
   onSaved: () => void
 }
 
-export default function PieceFormModal({ dossierId, categories, tiersConnus, piece, onClose, onSaved }: Props) {
+export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersConnus, piece, onClose, onSaved }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [datePiece, setDatePiece] = useState(piece?.date_piece ?? '')
   const [tiers, setTiers] = useState(piece?.tiers ?? '')
   const [typePiece, setTypePiece] = useState<TypePiece>(piece?.type_piece ?? 'achat')
   const [categorieId, setCategorieId] = useState(piece?.categorie_id ?? '')
+  const [sousDossierId, setSousDossierId] = useState(piece?.sous_dossier_id ?? '')
   const [montantHt, setMontantHt] = useState(piece?.montant_ht?.toString() ?? '')
   const [montantTva, setMontantTva] = useState(piece?.montant_tva?.toString() ?? '')
   const [montantTtc, setMontantTtc] = useState(piece?.montant_ttc?.toString() ?? '')
@@ -109,6 +111,7 @@ export default function PieceFormModal({ dossierId, categories, tiersConnus, pie
         tiers: tiers || null,
         type_piece: typePiece,
         categorie_id: categorieId || null,
+        sous_dossier_id: sousDossierId || null,
         montant_ht: montantHt ? parseFloat(montantHt) : null,
         montant_tva: montantTva ? parseFloat(montantTva) : null,
         montant_ttc: montantTtc ? parseFloat(montantTtc) : null,
@@ -190,12 +193,21 @@ export default function PieceFormModal({ dossierId, categories, tiersConnus, pie
             </datalist>
           </div>
 
-          <div className="field">
-            <label htmlFor="categorie">Catégorie</label>
-            <select id="categorie" value={categorieId} onChange={(e) => setCategorieId(e.target.value)}>
-              <option value="">— Choisir —</option>
-              {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
-            </select>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="categorie">Catégorie</label>
+              <select id="categorie" value={categorieId} onChange={(e) => setCategorieId(e.target.value)}>
+                <option value="">— Choisir —</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="sousDossier">Sous-dossier</label>
+              <select id="sousDossier" value={sousDossierId} onChange={(e) => setSousDossierId(e.target.value)}>
+                <option value="">— Aucun —</option>
+                {sousDossiers.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+              </select>
+            </div>
           </div>
 
           <div className="field-row">

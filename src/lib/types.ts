@@ -21,6 +21,14 @@ export interface Categorie {
   ordre: number
 }
 
+export interface SousDossier {
+  id: string
+  dossier_id: string
+  nom: string
+  ordre: number
+  created_at: string
+}
+
 export interface Piece {
   id: string
   dossier_id: string
@@ -34,6 +42,7 @@ export interface Piece {
   montant_tva: number | null
   montant_ttc: number | null
   categorie_id: string | null
+  sous_dossier_id: string | null
   type_piece: TypePiece
   statut: Statut
   notes: string | null
