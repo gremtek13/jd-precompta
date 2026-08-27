@@ -4,9 +4,10 @@ import { supabase } from '../lib/supabase'
 import type { Dossier } from '../lib/types'
 import PiecesTab from './dossier/PiecesTab'
 import PacksTab from './dossier/PacksTab'
+import BanqueTab from './dossier/BanqueTab'
 import AccesTab from './dossier/AccesTab'
 
-type Tab = 'pieces' | 'packs' | 'acces'
+type Tab = 'pieces' | 'packs' | 'banque' | 'acces'
 
 export default function DossierDetail() {
   const { id } = useParams<{ id: string }>()
@@ -31,11 +32,13 @@ export default function DossierDetail() {
       <div className="tabs">
         <button className={tab === 'pieces' ? 'active' : ''} onClick={() => setTab('pieces')}>Pièces</button>
         <button className={tab === 'packs' ? 'active' : ''} onClick={() => setTab('packs')}>Packs</button>
+        <button className={tab === 'banque' ? 'active' : ''} onClick={() => setTab('banque')}>Banque</button>
         <button className={tab === 'acces' ? 'active' : ''} onClick={() => setTab('acces')}>Accès</button>
       </div>
 
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
+      {tab === 'banque' && <BanqueTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} />}
     </>
   )

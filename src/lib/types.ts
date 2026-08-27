@@ -21,6 +21,19 @@ export interface Categorie {
   ordre: number
 }
 
+export type StatutLigneBancaire = 'non_rapprochee' | 'rapprochee' | 'ignoree'
+
+export interface LigneBancaire {
+  id: string
+  dossier_id: string
+  date: string
+  libelle: string
+  montant: number
+  statut: StatutLigneBancaire
+  piece_id: string | null
+  created_at: string
+}
+
 export interface TiersCategorie {
   id: string
   dossier_id: string
