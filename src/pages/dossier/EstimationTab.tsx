@@ -2,7 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
-import type { CotisationDeclaree, Piece, ReferenceAnnuelle } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 
 const ANNEE_COURANTE = new Date().getFullYear()
 
@@ -14,11 +14,20 @@ const ANNEE_COURANTE = new Date().getFullYear()
 export default function EstimationTab({ dossierId }: { dossierId: string }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
+  const [piecesToutes, setPiecesToutes] = useState<Piece[]>([])
+  const [categories, setCategories] = useState<Categorie[]>([])
+  const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
+  const [referencesPostes, setReferencesPostes] = useState<ReferencePosteAnnuel[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [calculating, setCalculating] = useState(false)
+  const [calculatingPostes, setCalculatingPostes] = useState(false)
+  const [savingPoste, setSavingPoste] = useState(false)
+  const [anneePoste, setAnneePoste] = useState(String(ANNEE_COURANTE - 1))
+  const [libellePoste, setLibellePoste] = useState('')
+  const [montantPoste, setMontantPoste] = useState('')
   const [lecture2035Loading, setLecture2035Loading] = useState(false)
   const [lecture2035Error, setLecture2035Error] = useState<string | null>(null)
   const [lecture2035Diag, setLecture2035Diag] = useState<string[] | undefined>(undefined)
@@ -30,14 +39,30 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: cotisationsData }, { data: piecesData }, { data: referencesData }] = await Promise.all([
+    const [
+      { data: cotisationsData },
+      { data: piecesData },
+      { data: piecesToutesData },
+      { data: categoriesData },
+      { data: immobilisationsData },
+      { data: referencesData },
+      { data: referencesPostesData },
+    ] = await Promise.all([
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee').eq('type_piece', 'vente'),
+      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
+      supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
+      supabase.from('immobilisations').select('piece_id').eq('dossier_id', dossierId),
       supabase.from('references_annuelles').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }),
+      supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
     ])
     setCotisations(cotisationsData ?? [])
     setPieces(piecesData ?? [])
+    setPiecesToutes(piecesToutesData ?? [])
+    setCategories(categoriesData ?? [])
+    setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
     setReferences(referencesData ?? [])
+    setReferencesPostes(referencesPostesData ?? [])
     setLoading(false)
   }
 
@@ -153,6 +178,83 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
+  // Même regroupement par poste_2035 que l'onglet Clôture (catégorie → poste, pièces d'immobilisation
+  // exclues pour ne pas compter une dépense capitalisée comme une charge courante en plus) — mais sans
+  // les lignes synthétiques amortissements/cotisations de Clôture : ici on ne veut que les postes de
+  // charge issus des catégories, les cotisations ayant déjà leur propre repère à côté.
+  function totauxParPostePourAnnee(annee: number): Map<string, number> {
+    const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
+    const totaux = new Map<string, number>()
+    for (const p of piecesToutes) {
+      if (!p.date_piece?.startsWith(String(annee))) continue
+      if (immobilisationPieceIds.has(p.id)) continue
+      const cat = categorieById(p.categorie_id)
+      if (!cat?.poste_2035) continue
+      const montant = p.montant_ht ?? p.montant_ttc ?? 0
+      const signe = p.type_piece === 'vente' ? 1 : -1
+      totaux.set(cat.poste_2035, (totaux.get(cat.poste_2035) ?? 0) + signe * montant)
+    }
+    return totaux
+  }
+
+  async function calculerPostesDepuisAppli() {
+    const annee = parseInt(anneeACalculer, 10)
+    if (!annee) return
+    setCalculatingPostes(true)
+    setError(null)
+    try {
+      const totaux = totauxParPostePourAnnee(annee)
+      if (totaux.size === 0) {
+        setError("Aucune pièce avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
+        return
+      }
+      for (const [poste, montant] of totaux) {
+        const { error: upsertError } = await supabase.from('references_postes_annuels').upsert(
+          { dossier_id: dossierId, annee, poste, montant },
+          { onConflict: 'dossier_id,annee,poste' },
+        )
+        if (upsertError) throw upsertError
+      }
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+    } finally {
+      setCalculatingPostes(false)
+    }
+  }
+
+  async function enregistrerPoste(e: FormEvent) {
+    e.preventDefault()
+    if (!libellePoste.trim() || !montantPoste) return
+    setSavingPoste(true)
+    setError(null)
+    try {
+      const { error: upsertError } = await supabase.from('references_postes_annuels').upsert(
+        {
+          dossier_id: dossierId,
+          annee: parseInt(anneePoste, 10),
+          poste: libellePoste.trim(),
+          montant: parseFloat(montantPoste),
+        },
+        { onConflict: 'dossier_id,annee,poste' },
+      )
+      if (upsertError) throw upsertError
+      setLibellePoste('')
+      setMontantPoste('')
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+    } finally {
+      setSavingPoste(false)
+    }
+  }
+
+  async function supprimerPoste(id: string) {
+    if (!window.confirm('Retirer ce poste ?')) return
+    await supabase.from('references_postes_annuels').delete().eq('id', id)
+    load()
+  }
+
   if (loading) return <p className="muted">Chargement…</p>
 
   return (
@@ -210,7 +312,10 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
             <input id="anneeCalc" type="number" style={{ width: 100 }} value={anneeACalculer} onChange={(e) => setAnneeACalculer(e.target.value)} />
           </div>
           <button className="btn btn-outline btn-sm" disabled={calculating} onClick={calculerDepuisAppli}>
-            {calculating ? 'Calcul…' : 'Calculer depuis ce dossier'}
+            {calculating ? 'Calcul…' : 'Calculer CA + cotisations'}
+          </button>
+          <button className="btn btn-outline btn-sm" disabled={calculatingPostes} onClick={calculerPostesDepuisAppli}>
+            {calculatingPostes ? 'Calcul…' : 'Calculer le détail par poste'}
           </button>
         </div>
 
@@ -283,6 +388,65 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
                   </td>
                   <td onClick={(e) => e.stopPropagation()}>
                     <button className="btn btn-danger btn-sm" onClick={() => supprimerReference(r.id)}>Retirer</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 20, marginTop: 20 }}>
+        <h3 style={{ marginTop: 0 }}>Détail par poste (autres charges)</h3>
+        <p className="muted" style={{ marginTop: -8 }}>
+          Achats, loyer, assurance... — le bouton "Calculer le détail par poste" ci-dessus reprend le
+          regroupement par poste 2035 de l'onglet Clôture pour l'année choisie. Sans cette année dans le
+          dossier, ajoute les postes à la main depuis la 2035 réelle — pas de lecture automatique ligne
+          par ligne pour l'instant, trop de postes à vérifier un par un.
+        </p>
+
+        <form onSubmit={enregistrerPoste}>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="anneePoste">Année</label>
+              <input id="anneePoste" type="number" required style={{ width: 100 }} value={anneePoste} onChange={(e) => setAnneePoste(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="libellePoste">Poste</label>
+              <input id="libellePoste" placeholder="ex. Achats, Loyer, Assurance..." required value={libellePoste} onChange={(e) => setLibellePoste(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="montantPoste">Montant</label>
+              <input id="montantPoste" type="number" step="0.01" required value={montantPoste} onChange={(e) => setMontantPoste(e.target.value)} />
+            </div>
+          </div>
+          <button className="btn btn-primary btn-sm" type="submit" disabled={savingPoste}>
+            {savingPoste ? 'Enregistrement…' : 'Ajouter ce poste'}
+          </button>
+        </form>
+      </div>
+
+      <div className="card table-scroll" style={{ padding: 0 }}>
+        {referencesPostes.length === 0 ? (
+          <div className="empty-state">Aucun détail par poste enregistré pour l'instant.</div>
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Année</th>
+                <th>Poste</th>
+                <th>Montant</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {referencesPostes.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.annee}</td>
+                  <td>{r.poste}</td>
+                  <td>{formatMoney(r.montant)}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <button className="btn btn-danger btn-sm" onClick={() => supprimerPoste(r.id)}>Retirer</button>
                   </td>
                 </tr>
               ))}

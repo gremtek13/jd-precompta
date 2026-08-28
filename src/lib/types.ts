@@ -160,6 +160,21 @@ export interface CotisationDeclaree {
   created_at: string
 }
 
+// Détail par poste (Achats, Loyer, Assurance...) d'un repère annuel — complète le CA et les
+// cotisations sociales de ReferenceAnnuelle par les "autres charges", pour comparer une année sur
+// l'autre poste par poste plutôt qu'en un seul total. Indépendant de ReferenceAnnuelle (pas besoin
+// que celle-ci existe pour ce faire) : calculé automatiquement en réutilisant le regroupement par
+// poste_2035 déjà utilisé dans l'onglet Clôture si l'année est dans ce dossier, ou saisi à la main
+// (poste libre, pas de liste imposée) sinon.
+export interface ReferencePosteAnnuel {
+  id: string
+  dossier_id: string
+  annee: number
+  poste: string
+  montant: number
+  created_at: string
+}
+
 export type SourceReference = 'calculee' | 'saisie_manuelle'
 
 // Repère annuel (CA + total cotisations sociales) utilisé pour l'estimation des charges de l'année en
