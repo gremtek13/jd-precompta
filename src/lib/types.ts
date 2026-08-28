@@ -20,6 +20,7 @@ export interface Categorie {
   code: string
   libelle: string
   ordre: number
+  compte_comptable: string | null
 }
 
 export type StatutLigneBancaire = 'non_rapprochee' | 'rapprochee' | 'ignoree'
@@ -61,7 +62,7 @@ export interface SousDossier {
 export interface Piece {
   id: string
   dossier_id: string
-  uploaded_by: string
+  uploaded_by: string | null
   source: Source
   storage_path: string
   nom_fichier: string
@@ -90,6 +91,26 @@ export interface Pack {
   storage_path_excel: string
   nb_pieces: number
   total_ttc: number | null
+}
+
+export type SensEcriture = 'debit' | 'credit'
+export type StatutEcriture = 'proposee' | 'validee'
+
+// Palier 5 — brouillon comptable : une proposition d'écriture générée à partir d'une pièce validée
+// ou d'une ligne bancaire rapprochée. Reste toujours un brouillon (voir le bandeau de l'onglet
+// Écritures) — jamais présenté comme une comptabilité tenue, jamais exporté comme définitif.
+export interface EcritureBrouillon {
+  id: string
+  dossier_id: string
+  piece_id: string | null
+  ligne_bancaire_id: string | null
+  date: string
+  compte: string
+  libelle: string
+  montant: number
+  sens: SensEcriture
+  statut: StatutEcriture
+  created_at: string
 }
 
 export interface Membership {

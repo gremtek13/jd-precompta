@@ -6,8 +6,9 @@ import PiecesTab from './dossier/PiecesTab'
 import PacksTab from './dossier/PacksTab'
 import BanqueTab from './dossier/BanqueTab'
 import AccesTab from './dossier/AccesTab'
+import EcrituresTab from './dossier/EcrituresTab'
 
-type Tab = 'pieces' | 'packs' | 'banque' | 'acces'
+type Tab = 'pieces' | 'packs' | 'banque' | 'ecritures' | 'acces'
 
 export default function DossierDetail() {
   const { id } = useParams<{ id: string }>()
@@ -33,12 +34,14 @@ export default function DossierDetail() {
         <button className={tab === 'pieces' ? 'active' : ''} onClick={() => setTab('pieces')}>Pièces</button>
         <button className={tab === 'packs' ? 'active' : ''} onClick={() => setTab('packs')}>Packs</button>
         <button className={tab === 'banque' ? 'active' : ''} onClick={() => setTab('banque')}>Banque</button>
+        <button className={tab === 'ecritures' ? 'active' : ''} onClick={() => setTab('ecritures')}>Écritures</button>
         <button className={tab === 'acces' ? 'active' : ''} onClick={() => setTab('acces')}>Accès</button>
       </div>
 
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}
+      {tab === 'ecritures' && <EcrituresTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
     </>
   )
