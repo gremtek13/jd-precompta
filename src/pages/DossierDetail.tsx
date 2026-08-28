@@ -11,8 +11,9 @@ import ImmobilisationsTab from './dossier/ImmobilisationsTab'
 import CotisationsTab from './dossier/CotisationsTab'
 import ClotureTab from './dossier/ClotureTab'
 import DocumentsTab from './dossier/DocumentsTab'
+import EstimationTab from './dossier/EstimationTab'
 
-type Tab = 'pieces' | 'packs' | 'banque' | 'documents' | 'ecritures' | 'immobilisations' | 'cotisations' | 'cloture' | 'acces'
+type Tab = 'pieces' | 'packs' | 'banque' | 'documents' | 'ecritures' | 'immobilisations' | 'cotisations' | 'cloture' | 'estimation' | 'acces'
 
 export default function DossierDetail() {
   const { id } = useParams<{ id: string }>()
@@ -67,6 +68,7 @@ export default function DossierDetail() {
         <button className={tab === 'immobilisations' ? 'active' : ''} onClick={() => setTab('immobilisations')}>Immobilisations</button>
         <button className={tab === 'cotisations' ? 'active' : ''} onClick={() => setTab('cotisations')}>Cotisations</button>
         <button className={tab === 'cloture' ? 'active' : ''} onClick={() => setTab('cloture')}>Clôture</button>
+        <button className={tab === 'estimation' ? 'active' : ''} onClick={() => setTab('estimation')}>Estimation</button>
         <button className={tab === 'acces' ? 'active' : ''} onClick={() => setTab('acces')}>Accès</button>
       </div>
 
@@ -78,6 +80,7 @@ export default function DossierDetail() {
       {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
       {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
       {tab === 'cloture' && <ClotureTab dossierId={id} />}
+      {tab === 'estimation' && <EstimationTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
     </>
   )

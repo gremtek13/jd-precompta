@@ -118,6 +118,19 @@ export interface EcritureBrouillon {
   created_at: string
 }
 
+// Nature d'un bien immobilisé (téléphone, véhicule, mobilier...) — sert uniquement à suggérer une
+// durée d'amortissement usuelle à l'enregistrement d'une immobilisation ; les catégories de dépense
+// (Achats fournisseurs, Autre...) ne s'y prêtent pas, un téléphone et une voiture tombant souvent dans
+// la même catégorie de dépense alors qu'ils n'ont pas la même durée d'usage. dossier_id null = règle
+// partagée par tous les dossiers, sinon spécifique à un dossier.
+export interface NatureImmobilisation {
+  id: string
+  dossier_id: string | null
+  libelle: string
+  duree_annees_defaut: number
+  ordre: number
+}
+
 // Palier 5, brique 2 — registre des immobilisations. Une pièce validée dépassant le seuil peut être
 // enregistrée ici plutôt que traitée comme une charge courante ; la durée d'amortissement n'est
 // qu'une suggestion (linéaire, sans prorata temporis) — l'arbitrage réel reste à l'expert-comptable.
@@ -125,6 +138,7 @@ export interface Immobilisation {
   id: string
   dossier_id: string
   piece_id: string | null
+  nature_id: string | null
   libelle: string
   valeur: number
   date_acquisition: string
@@ -143,6 +157,23 @@ export interface CotisationDeclaree {
   montant_appele: number
   montant_verse: number | null
   montant_csg_crds: number | null
+  created_at: string
+}
+
+export type SourceReference = 'calculee' | 'saisie_manuelle'
+
+// Repère annuel (CA + total cotisations sociales) utilisé pour l'estimation des charges de l'année en
+// cours. "calculee" quand l'année est entièrement dans l'appli (sommée automatiquement depuis les
+// pièces/cotisations de ce dossier) ; "saisie_manuelle" quand le cabinet transcrit les chiffres de la
+// 2035 réellement déposée par le client, faute d'historique applicatif pour cette année-là.
+export interface ReferenceAnnuelle {
+  id: string
+  dossier_id: string
+  annee: number
+  chiffre_affaires: number | null
+  total_cotisations_sociales: number | null
+  source: SourceReference
+  notes: string | null
   created_at: string
 }
 
