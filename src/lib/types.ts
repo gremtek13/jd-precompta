@@ -68,6 +68,9 @@ export interface Piece {
   source: Source
   storage_path: string
   nom_fichier: string
+  // Empreinte SHA-256 du contenu du fichier — sert à détecter un doublon à l'import (voir
+  // ImportDossierModal). Nul pour les pièces créées avant l'introduction de ce champ.
+  storage_hash: string | null
   date_piece: string | null
   tiers: string | null
   montant_ht: number | null
@@ -154,6 +157,7 @@ export interface DocumentDivers {
   dossier_id: string
   sous_dossier_id: string | null
   storage_path: string
+  storage_hash: string | null
   nom_fichier: string
   categorie: CategorieDocument
   // Rattaché à une échéance de cotisations_declarees une fois pointé depuis l'onglet Cotisations —

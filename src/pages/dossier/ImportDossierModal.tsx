@@ -1,10 +1,10 @@
 import { useState, type ChangeEvent, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { slugify } from '../../lib/format'
-import { extractPiece } from '../../lib/extraction'
+import { extractPiece, hashFichier } from '../../lib/extraction'
 import type { CategorieDocument, SousDossier } from '../../lib/types'
 
-type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'erreur'
+type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'doublon' | 'erreur'
 
 interface FichierImport {
   file: File
@@ -108,16 +108,41 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
     setFichiers((prev) => prev.map((f, i) => (i === index ? { ...f, statut, message } : f)))
   }
 
+  // Empreintes déjà présentes dans ce dossier (Pièces + Documents) — sert à ignorer un fichier déjà
+  // importé plutôt que de le dupliquer, ex. si l'import est relancé sur un dossier déjà traité ou si
+  // deux sous-dossiers sélectionnés se recoupent. Comparaison par contenu, pas par nom de fichier :
+  // un nom peut se répéter sans être le même document (ou l'inverse, après un renommage).
+  async function chargerHashsExistants(): Promise<Set<string>> {
+    const [{ data: piecesHash }, { data: documentsHash }] = await Promise.all([
+      supabase.from('pieces').select('storage_hash').eq('dossier_id', dossierId).not('storage_hash', 'is', null),
+      supabase.from('documents_divers').select('storage_hash').eq('dossier_id', dossierId).not('storage_hash', 'is', null),
+    ])
+    const hashs = new Set<string>()
+    for (const p of piecesHash ?? []) if (p.storage_hash) hashs.add(p.storage_hash)
+    for (const d of documentsHash ?? []) if (d.storage_hash) hashs.add(d.storage_hash)
+    return hashs
+  }
+
   async function lancerImport() {
     setRunning(true)
     setDone(false)
     try {
       const sousDossierParChemin = await resoudreSousDossiers()
+      const hashsConnus = await chargerHashsExistants()
       const { data: userData } = await supabase.auth.getUser()
 
       for (let i = 0; i < fichiers.length; i++) {
         const { file, cheminDossier } = fichiers[i]
         try {
+          const hash = await hashFichier(file)
+          if (hashsConnus.has(hash)) {
+            setStatutFichier(i, 'doublon', 'Déjà importée — ignorée')
+            continue
+          }
+          // Ajouté tout de suite, pas seulement après l'insertion réussie : évite aussi un doublon
+          // entre deux fichiers identiques du même lot (même pièce présente dans deux sous-dossiers).
+          hashsConnus.add(hash)
+
           setStatutFichier(i, 'upload')
           const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
           const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
@@ -138,6 +163,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
               dossier_id: dossierId,
               sous_dossier_id: sousDossierId,
               storage_path: path,
+              storage_hash: hash,
               nom_fichier: file.name,
               categorie: extraction.classification as CategorieDocument,
             })
@@ -150,6 +176,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
             dossier_id: dossierId,
             uploaded_by: userData.user!.id,
             storage_path: path,
+            storage_hash: hash,
             nom_fichier: file.name,
             sous_dossier_id: sousDossierId,
             type_piece: 'achat',
@@ -175,6 +202,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
   }
 
   const nbOk = fichiers.filter((f) => f.statut === 'ok').length
+  const nbDoublons = fichiers.filter((f) => f.statut === 'doublon').length
   const nbErreur = fichiers.filter((f) => f.statut === 'erreur').length
 
   return (
@@ -186,7 +214,8 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
           devient un sous-dossier ici ; chaque PDF/JPG/PNG passe automatiquement par l'extraction, qui
           trie aussi le document : une facture atterrit dans Pièces (à vérifier avant validation, comme
           d'habitude), un relevé bancaire / appel de cotisation / attestation atterrit dans l'onglet
-          Documents — reclassable à la main si le tri automatique s'est trompé.
+          Documents — reclassable à la main si le tri automatique s'est trompé. Un fichier déjà importé
+          dans ce dossier (même contenu, même si le nom a changé) est repéré et ignoré, pas dupliqué.
         </p>
 
         {fichiers.length === 0 && (
@@ -207,7 +236,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
             <p className="muted" style={{ marginTop: -4 }}>
               {fichiers.length} fichier(s) à importer
               {ignores.length > 0 && ` — ${ignores.length} ignoré(s) (format non pris en charge)`}
-              {done && ` — ${nbOk} importé(s), ${nbErreur} en erreur`}
+              {done && ` — ${nbOk} importé(s), ${nbDoublons} déjà importé(s), ${nbErreur} en erreur`}
             </p>
 
             <div className="table-scroll" style={{ maxHeight: 320, border: '1px solid var(--color-border)', borderRadius: 8 }}>
@@ -225,6 +254,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
                         {f.statut === 'upload' && <span className="badge badge-neutral">Envoi…</span>}
                         {f.statut === 'extraction' && <span className="badge badge-neutral">Extraction…</span>}
                         {f.statut === 'ok' && <span className="badge badge-ok">{f.message ?? 'Importé'}</span>}
+                        {f.statut === 'doublon' && <span className="badge badge-neutral">{f.message}</span>}
                         {f.statut === 'erreur' && <span className="badge badge-danger">{f.message ?? 'Erreur'}</span>}
                       </td>
                     </tr>

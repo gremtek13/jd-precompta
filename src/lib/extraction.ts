@@ -59,3 +59,12 @@ export async function extractPiece(source: Blob, name: string): Promise<Extracti
   if (!result || result.error) throw new Error(result?.error ?? "L'extraction a échoué.")
   return result
 }
+
+// Empreinte du contenu exact du fichier (SHA-256) — sert à détecter un doublon (même fichier importé
+// deux fois, ex. import relancé sur un dossier déjà traité, ou deux sous-dossiers qui se recoupent)
+// sans dépendre du nom de fichier, qui peut varier ou se répéter sans que ce soit le même document.
+export async function hashFichier(source: Blob): Promise<string> {
+  const bytes = await source.arrayBuffer()
+  const digest = await crypto.subtle.digest('SHA-256', bytes)
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
+}
