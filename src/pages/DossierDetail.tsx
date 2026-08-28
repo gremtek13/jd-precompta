@@ -9,8 +9,9 @@ import AccesTab from './dossier/AccesTab'
 import EcrituresTab from './dossier/EcrituresTab'
 import ImmobilisationsTab from './dossier/ImmobilisationsTab'
 import CotisationsTab from './dossier/CotisationsTab'
+import ClotureTab from './dossier/ClotureTab'
 
-type Tab = 'pieces' | 'packs' | 'banque' | 'ecritures' | 'immobilisations' | 'cotisations' | 'acces'
+type Tab = 'pieces' | 'packs' | 'banque' | 'ecritures' | 'immobilisations' | 'cotisations' | 'cloture' | 'acces'
 
 export default function DossierDetail() {
   const { id } = useParams<{ id: string }>()
@@ -63,6 +64,7 @@ export default function DossierDetail() {
         <button className={tab === 'ecritures' ? 'active' : ''} onClick={() => setTab('ecritures')}>Écritures</button>
         <button className={tab === 'immobilisations' ? 'active' : ''} onClick={() => setTab('immobilisations')}>Immobilisations</button>
         <button className={tab === 'cotisations' ? 'active' : ''} onClick={() => setTab('cotisations')}>Cotisations</button>
+        <button className={tab === 'cloture' ? 'active' : ''} onClick={() => setTab('cloture')}>Clôture</button>
         <button className={tab === 'acces' ? 'active' : ''} onClick={() => setTab('acces')}>Accès</button>
       </div>
 
@@ -72,6 +74,7 @@ export default function DossierDetail() {
       {tab === 'ecritures' && <EcrituresTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
       {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
       {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
+      {tab === 'cloture' && <ClotureTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
     </>
   )

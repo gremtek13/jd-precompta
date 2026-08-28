@@ -22,6 +22,7 @@ export interface Categorie {
   libelle: string
   ordre: number
   compte_comptable: string | null
+  poste_2035: string | null
 }
 
 export type StatutLigneBancaire = 'non_rapprochee' | 'rapprochee' | 'ignoree'
