@@ -1,5 +1,10 @@
 import { supabase } from './supabase'
 
+// Classification automatique du document, déduite du texte OCR brut (voir extract-piece) — permet de
+// router un import en masse vers Pièces (facture) ou vers l'archive Documents (le reste), sans coût
+// Textract supplémentaire puisqu'elle réutilise le texte déjà extrait pour la ventilation TVA.
+export type ClassificationDocument = 'releve_bancaire' | 'cotisation' | 'attestation' | 'facture'
+
 export interface ExtractionResult {
   tiers: string | null
   date_piece: string | null
@@ -7,6 +12,7 @@ export interface ExtractionResult {
   montant_tva: number | null
   montant_ttc: number | null
   confiance: 'haute' | 'moyenne' | 'basse'
+  classification: ClassificationDocument
   error?: string
   // Diagnostic temporaire — uniquement présent quand la fonction n'a pas réussi à trouver la TVA
   // par aucune méthode, pour voir le texte OCR brut plutôt que deviner un nouveau motif à l'aveugle.

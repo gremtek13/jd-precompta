@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { CotisationDeclaree } from '../../lib/types'
+import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 
 // Taux CSG-CRDS en vigueur pour les indépendants/professions libérales : 9,70 % au total, dont
@@ -16,6 +16,7 @@ const TAUX_CSG_CRDS_TOTAL = 9.7
 // explicitement renseignée, jamais sur le montant appelé total qui cumule d'autres cotisations.
 export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  const [documentsCotisation, setDocumentsCotisation] = useState<DocumentDivers[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -26,12 +27,14 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('cotisations_declarees')
-      .select('*')
-      .eq('dossier_id', dossierId)
-      .order('echeance', { ascending: false })
+    const [{ data }, { data: documentsData }] = await Promise.all([
+      supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId).order('echeance', { ascending: false }),
+      // Uniquement les appels de cotisation classés dans l'archive Documents (voir DocumentsTab) — le
+      // rattachement se fait ici, pas là-bas, pour rester à côté du montant qu'ils justifient.
+      supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).eq('categorie', 'cotisation'),
+    ])
     setCotisations(data ?? [])
+    setDocumentsCotisation(documentsData ?? [])
     setLoading(false)
   }
 
@@ -66,6 +69,26 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     if (!window.confirm('Retirer cette échéance ?')) return
     await supabase.from('cotisations_declarees').delete().eq('id', id)
     load()
+  }
+
+  async function attacherDocument(cotisationId: string, documentId: string) {
+    if (!documentId) return
+    await supabase.from('documents_divers').update({ attached_to_cotisation_id: cotisationId }).eq('id', documentId)
+    load()
+  }
+
+  async function detacherDocument(documentId: string) {
+    await supabase.from('documents_divers').update({ attached_to_cotisation_id: null }).eq('id', documentId)
+    load()
+  }
+
+  async function voirDocument(storagePath: string) {
+    const { data, error: signError } = await supabase.storage.from('pieces').createSignedUrl(storagePath, 300)
+    if (signError || !data) {
+      window.alert('Aperçu indisponible.')
+      return
+    }
+    window.open(data.signedUrl, '_blank')
   }
 
   function csgDeductible(montantCsgCrds: number | null): number | null {
@@ -148,22 +171,48 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
                 <th>Versé</th>
                 <th>dont CSG-CRDS</th>
                 <th>CSG déductible</th>
+                <th>Pièce jointe</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {cotisations.map((c) => (
-                <tr key={c.id}>
-                  <td>{formatDate(c.echeance)}</td>
-                  <td>{formatMoney(c.montant_appele)}</td>
-                  <td>{c.montant_verse != null ? formatMoney(c.montant_verse) : '—'}</td>
-                  <td>{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
-                  <td>{csgDeductible(c.montant_csg_crds) != null ? formatMoney(csgDeductible(c.montant_csg_crds)) : '—'}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button className="btn btn-danger btn-sm" onClick={() => supprimer(c.id)}>Retirer</button>
-                  </td>
-                </tr>
-              ))}
+              {cotisations.map((c) => {
+                const documentAttache = documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)
+                const documentsDisponibles = documentsCotisation.filter((d) => !d.attached_to_cotisation_id)
+                return (
+                  <tr key={c.id}>
+                    <td>{formatDate(c.echeance)}</td>
+                    <td>{formatMoney(c.montant_appele)}</td>
+                    <td>{c.montant_verse != null ? formatMoney(c.montant_verse) : '—'}</td>
+                    <td>{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
+                    <td>{csgDeductible(c.montant_csg_crds) != null ? formatMoney(csgDeductible(c.montant_csg_crds)) : '—'}</td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      {documentAttache ? (
+                        <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <a href="#" onClick={(e) => { e.preventDefault(); voirDocument(documentAttache.storage_path) }}>
+                            {documentAttache.nom_fichier}
+                          </a>
+                          <button className="btn btn-outline btn-sm" onClick={() => detacherDocument(documentAttache.id)}>Détacher</button>
+                        </span>
+                      ) : documentsDisponibles.length > 0 ? (
+                        <select
+                          style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px' }}
+                          defaultValue=""
+                          onChange={(e) => attacherDocument(c.id, e.target.value)}
+                        >
+                          <option value="" disabled>Attacher…</option>
+                          {documentsDisponibles.map((d) => <option key={d.id} value={d.id}>{d.nom_fichier}</option>)}
+                        </select>
+                      ) : (
+                        <span className="muted">—</span>
+                      )}
+                    </td>
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <button className="btn btn-danger btn-sm" onClick={() => supprimer(c.id)}>Retirer</button>
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

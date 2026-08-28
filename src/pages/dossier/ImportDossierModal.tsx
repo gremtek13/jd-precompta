@@ -2,7 +2,7 @@ import { useState, type ChangeEvent, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { slugify } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
-import type { SousDossier } from '../../lib/types'
+import type { CategorieDocument, SousDossier } from '../../lib/types'
 
 type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'erreur'
 
@@ -47,6 +47,13 @@ async function estFichierSupporte(file: File): Promise<boolean> {
 function cheminSousDossier(relativePath: string): string {
   const segments = relativePath.split('/')
   return segments.slice(0, -1).join(' / ')
+}
+
+const LABEL_CLASSIFICATION: Record<CategorieDocument, string> = {
+  releve_bancaire: 'Relevé bancaire',
+  cotisation: 'Appel de cotisation',
+  attestation: 'Attestation',
+  autre: 'Autre',
 }
 
 interface Props {
@@ -118,15 +125,33 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
 
           setStatutFichier(i, 'extraction')
           // L'extraction peut échouer pièce par pièce (page illisible, format refusé...) sans faire
-          // échouer l'import : la pièce est quand même créée, à compléter à la main ensuite.
+          // échouer l'import : le fichier est quand même archivé, à compléter à la main ensuite. Sans
+          // extraction, on ne peut pas savoir si c'est une facture ou autre chose — on part du principe
+          // que c'en est une (voir classifieDocument côté extract-piece, même repli par défaut).
           const extraction = await extractPiece(file, file.name).catch(() => null)
+          const sousDossierId = sousDossierParChemin.get(cheminDossier) ?? null
+
+          if (extraction && extraction.classification !== 'facture') {
+            // Pas une facture : relevé bancaire, appel de cotisation ou attestation — archivé dans
+            // Documents plutôt que dans Pièces, faute de montant HT/TVA/TTC à faire vérifier.
+            const { error: insertError } = await supabase.from('documents_divers').insert({
+              dossier_id: dossierId,
+              sous_dossier_id: sousDossierId,
+              storage_path: path,
+              nom_fichier: file.name,
+              categorie: extraction.classification as CategorieDocument,
+            })
+            if (insertError) throw insertError
+            setStatutFichier(i, 'ok', `Classé « ${LABEL_CLASSIFICATION[extraction.classification]} » → Documents`)
+            continue
+          }
 
           const { error: insertError } = await supabase.from('pieces').insert({
             dossier_id: dossierId,
             uploaded_by: userData.user!.id,
             storage_path: path,
             nom_fichier: file.name,
-            sous_dossier_id: cheminDossier ? (sousDossierParChemin.get(cheminDossier) ?? null) : null,
+            sous_dossier_id: sousDossierId,
             type_piece: 'achat',
             statut: 'a_valider',
             date_piece: extraction?.date_piece ?? null,
@@ -158,9 +183,10 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
         <h2 style={{ marginTop: 0 }}>Importer un dossier complet</h2>
         <p className="muted" style={{ marginTop: -8 }}>
           Sélectionne le dossier de fichiers racine sur ton ordinateur. Chaque sous-dossier de fichiers
-          devient un sous-dossier de pièces ici ; chaque PDF/JPG/PNG est importé puis passé
-          automatiquement à l'extraction — vérifie ensuite chaque pièce avant de la valider, comme
-          d'habitude.
+          devient un sous-dossier ici ; chaque PDF/JPG/PNG passe automatiquement par l'extraction, qui
+          trie aussi le document : une facture atterrit dans Pièces (à vérifier avant validation, comme
+          d'habitude), un relevé bancaire / appel de cotisation / attestation atterrit dans l'onglet
+          Documents — reclassable à la main si le tri automatique s'est trompé.
         </p>
 
         {fichiers.length === 0 && (

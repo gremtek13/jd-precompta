@@ -39,6 +39,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [extracting, setExtracting] = useState(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
   const [confiance, setConfiance] = useState<'haute' | 'moyenne' | 'basse' | null>(null)
+  const [suggestionAutre, setSuggestionAutre] = useState<string | null>(null)
   const [lignesBrutes, setLignesBrutes] = useState<string[] | undefined>(undefined)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -91,6 +92,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     setExtractionError(null)
     setConfiance(null)
     setLignesBrutes(undefined)
+    setSuggestionAutre(null)
     try {
       // Fichier fraîchement choisi, ou téléchargement du fichier déjà attaché en édition.
       let source: Blob
@@ -119,6 +121,18 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       if (result.montant_ttc != null) setMontantTtc(result.montant_ttc.toString())
       setConfiance(result.confiance)
       if (result._lignes_brutes) setLignesBrutes(result._lignes_brutes)
+      // Signal doux, pas bloquant : la classification auto (utilisée pour trier l'import en masse)
+      // pense que ce n'est pas une facture — l'utilisateur reste libre de continuer ici, mais autant
+      // le prévenir plutôt que de laisser deviner pourquoi aucun montant ne ressort.
+      const classification = result.classification
+      if (classification !== 'facture') {
+        const labels: Record<Exclude<typeof classification, 'facture'>, string> = {
+          releve_bancaire: 'un relevé bancaire',
+          cotisation: 'un appel de cotisation',
+          attestation: 'une attestation/certificat',
+        }
+        setSuggestionAutre(`Ce document ressemble plutôt à ${labels[classification]} qu'à une facture — l'onglet Documents serait peut-être plus adapté.`)
+      }
     } catch (err) {
       setExtractionError(err instanceof Error ? err.message : "L'extraction automatique a échoué — remplis le formulaire à la main.")
     } finally {
@@ -282,6 +296,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
             )}
           </div>
           {extractionError && <p className="error-text" style={{ marginTop: -8 }}>{extractionError}</p>}
+          {suggestionAutre && <p className="muted" style={{ marginTop: -8 }}>💡 {suggestionAutre}</p>}
 
           {lignesBrutes && (
             <details className="field" style={{ marginTop: -8 }}>

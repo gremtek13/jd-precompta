@@ -143,6 +143,26 @@ export interface CotisationDeclaree {
   created_at: string
 }
 
+export type CategorieDocument = 'releve_bancaire' | 'cotisation' | 'attestation' | 'autre'
+
+// Archive des documents qui ne sont ni des pièces d'achat/vente (pas de HT/TVA/TTC à extraire) ni des
+// lignes bancaires : relevés de compte, attestations d'assurance/fiscales, appels de cotisation avant
+// rattachement à une échéance. Classés automatiquement à l'import en masse (voir la classification
+// côté extract-piece), reclassables à la main depuis l'onglet Documents.
+export interface DocumentDivers {
+  id: string
+  dossier_id: string
+  sous_dossier_id: string | null
+  storage_path: string
+  nom_fichier: string
+  categorie: CategorieDocument
+  // Rattaché à une échéance de cotisations_declarees une fois pointé depuis l'onglet Cotisations —
+  // reste dans cette table (pas déplacé) pour que le rattachement soit réversible.
+  attached_to_cotisation_id: string | null
+  notes: string | null
+  created_at: string
+}
+
 export interface Membership {
   id: string
   user_id: string

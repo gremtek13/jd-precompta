@@ -85,8 +85,11 @@ function parseDate(raw?: string): string | null {
 const TAUX_TVA_REGEX = /^(?:TVA\s*)?\d{1,2}(?:[.,]\d+)?\s*%$/i
 const MONTANT_LIGNE_REGEX = /^[\d\s]+[.,]\d{2}$/
 
-function tvaDepuisTexteBrut(blocks: TextractBlock[]): { montant: number | null; lignes: string[] } {
-  const lignes = blocks.filter((b) => b.BlockType === "LINE" && b.Text).map((b) => b.Text!.trim())
+function lignesOcr(blocks: TextractBlock[]): string[] {
+  return blocks.filter((b) => b.BlockType === "LINE" && b.Text).map((b) => b.Text!.trim())
+}
+
+function tvaDepuisTexteBrut(lignes: string[]): number | null {
   let montant: number | null = null
   for (let i = 0; i < lignes.length; i++) {
     if (!TAUX_TVA_REGEX.test(lignes[i])) continue
@@ -96,14 +99,41 @@ function tvaDepuisTexteBrut(blocks: TextractBlock[]): { montant: number | null; 
       if (montantTva != null) montant = (montant ?? 0) + montantTva
     }
   }
-  return { montant: montant != null ? Number(montant.toFixed(2)) : null, lignes }
+  return montant != null ? Number(montant.toFixed(2)) : null
+}
+
+type ClassificationDocument = "releve_bancaire" | "cotisation" | "attestation" | "facture"
+
+// Repère les documents qui ne sont pas des factures d'achat/vente avant même l'extraction HT/TVA/TTC —
+// sur mots-clés caractéristiques cherchés dans le texte OCR brut (ces documents n'ont justement pas de
+// champs de facture reconnus par Textract, donc pas de SummaryFields exploitables pour les distinguer).
+// Aucun appel Textract supplémentaire : réutilise le même texte que la ventilation TVA ci-dessus. Le
+// repli par défaut reste "facture" — en cas de doute, mieux vaut une pièce à vérifier qu'un document
+// classé à tort dans une archive où personne ne relit les montants.
+function classifieDocument(lignes: string[]): ClassificationDocument {
+  const texte = lignes.join(" ").toUpperCase()
+  if (/RELEV[EÉ]\s+DE\s+COMPTE/.test(texte) || /SOLDE\s+(CR[EÉ]DITEUR|D[EÉ]BITEUR)/.test(texte)) {
+    return "releve_bancaire"
+  }
+  if (/URSSAF|CARPIMKO|APPEL\s+DE\s+COTISATIONS?|COTISATIONS?\s+(SOCIALES?|PROVISIONNELLES?)/.test(texte)) {
+    return "cotisation"
+  }
+  if (/ATTESTATION|CERTIFICAT\s+DE|[EÉ]CH[EÉ]ANCIER\s+ANNUEL/.test(texte)) {
+    return "attestation"
+  }
+  return "facture"
 }
 
 function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[] }) {
   const doc = result.ExpenseDocuments?.[0]
   if (!doc) {
-    return { tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null, confiance: "basse" as const }
+    return {
+      tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
+      confiance: "basse" as const, classification: "facture" as const,
+    }
   }
+
+  const lignes = lignesOcr(doc.Blocks ?? [])
 
   const summary: Record<string, { text: string; confidence: number }> = {}
   // Une facture peut avoir plusieurs lignes de TVA (taux différents) — Textract renvoie alors
@@ -149,7 +179,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   // Diagnostic temporaire inclus tant que le motif n'est pas confirmé sur un cas réel.
   let lignesBrutesDiag: string[] | undefined
   if (montantTva == null) {
-    const { montant, lignes } = tvaDepuisTexteBrut(doc.Blocks ?? [])
+    const montant = tvaDepuisTexteBrut(lignes)
     if (montant != null) montantTva = montant
     else lignesBrutesDiag = lignes
   }
@@ -165,6 +195,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     montant_tva: montantTva,
     montant_ht: montantHtDeclare ?? (montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null),
     confiance: avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const,
+    classification: classifieDocument(lignes),
     // Diagnostic temporaire : uniquement présent si la TVA reste introuvable après toutes les
     // tentatives — permet de voir le texte OCR brut plutôt que de deviner encore un nouveau motif.
     ...(lignesBrutesDiag ? { _lignes_brutes: lignesBrutesDiag } : {}),

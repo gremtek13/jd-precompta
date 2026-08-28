@@ -10,8 +10,9 @@ import EcrituresTab from './dossier/EcrituresTab'
 import ImmobilisationsTab from './dossier/ImmobilisationsTab'
 import CotisationsTab from './dossier/CotisationsTab'
 import ClotureTab from './dossier/ClotureTab'
+import DocumentsTab from './dossier/DocumentsTab'
 
-type Tab = 'pieces' | 'packs' | 'banque' | 'ecritures' | 'immobilisations' | 'cotisations' | 'cloture' | 'acces'
+type Tab = 'pieces' | 'packs' | 'banque' | 'documents' | 'ecritures' | 'immobilisations' | 'cotisations' | 'cloture' | 'acces'
 
 export default function DossierDetail() {
   const { id } = useParams<{ id: string }>()
@@ -61,6 +62,7 @@ export default function DossierDetail() {
         <button className={tab === 'pieces' ? 'active' : ''} onClick={() => setTab('pieces')}>Pièces</button>
         <button className={tab === 'packs' ? 'active' : ''} onClick={() => setTab('packs')}>Packs</button>
         <button className={tab === 'banque' ? 'active' : ''} onClick={() => setTab('banque')}>Banque</button>
+        <button className={tab === 'documents' ? 'active' : ''} onClick={() => setTab('documents')}>Documents</button>
         <button className={tab === 'ecritures' ? 'active' : ''} onClick={() => setTab('ecritures')}>Écritures</button>
         <button className={tab === 'immobilisations' ? 'active' : ''} onClick={() => setTab('immobilisations')}>Immobilisations</button>
         <button className={tab === 'cotisations' ? 'active' : ''} onClick={() => setTab('cotisations')}>Cotisations</button>
@@ -71,6 +73,7 @@ export default function DossierDetail() {
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}
+      {tab === 'documents' && <DocumentsTab dossierId={id} />}
       {tab === 'ecritures' && <EcrituresTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
       {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
       {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
