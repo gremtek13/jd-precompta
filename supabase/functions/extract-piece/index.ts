@@ -32,8 +32,12 @@ function json(body: unknown, status = 200) {
 
 interface ExpenseField {
   Type?: { Text?: string }
-  LabelDetection?: { Text?: string }
   ValueDetection?: { Text?: string; Confidence?: number }
+}
+
+interface TextractBlock {
+  BlockType?: string
+  Text?: string
 }
 
 function parseAmount(raw?: string): number | null {
@@ -70,21 +74,32 @@ function parseDate(raw?: string): string | null {
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
 }
 
-function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseField[] }[] }) {
+// Certains tickets de caisse (restauration notamment) impriment un tableau de ventilation TVA par
+// taux — "TVA 10 %   40,91   4,09   45,00" (HT, TVA, TTC) — comme du texte simple plutôt que comme
+// un vrai tableau structuré. Textract ne le reconnaît alors pas comme un champ "TAX"/"SUBTOTAL" (rien
+// dans SummaryFields), mais le texte reste présent dans l'OCR brut (Blocks) — on y cherche ce motif
+// en dernier recours et on additionne la colonne TVA de chaque taux trouvé.
+const LIGNE_TVA_REGEX = /TVA\s*(\d{1,2}(?:[.,]\d+)?)\s*%\s+([\d\s]+[.,]\d{2})\s+([\d\s]+[.,]\d{2})\s+([\d\s]+[.,]\d{2})/gi
+
+function tvaDepuisTexteBrut(blocks: TextractBlock[]): { montant: number | null; lignes: string[] } {
+  const lignes = blocks.filter((b) => b.BlockType === "LINE" && b.Text).map((b) => b.Text!)
+  let montant: number | null = null
+  for (const ligne of lignes) {
+    LIGNE_TVA_REGEX.lastIndex = 0
+    const m = LIGNE_TVA_REGEX.exec(ligne)
+    if (m) {
+      const tva = parseAmount(m[3])
+      if (tva != null) montant = (montant ?? 0) + tva
+    }
+  }
+  return { montant: montant != null ? Number(montant.toFixed(2)) : null, lignes }
+}
+
+function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[] }) {
   const doc = result.ExpenseDocuments?.[0]
   if (!doc) {
     return { tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null, confiance: "basse" as const }
   }
-
-  // Diagnostic temporaire : la TVA n'est toujours pas détectée sur certaines pièces pourtant
-  // lisibles (ex. Astrid SARL) malgré le fallback SUBTOTAL — on ne devine plus, on regarde ce que
-  // Textract renvoie réellement pour ce document précis avant de corriger à nouveau à l'aveugle.
-  const champsBruts = (doc.SummaryFields ?? []).map((f) => ({
-    type: f.Type?.Text ?? null,
-    label: f.LabelDetection?.Text ?? null,
-    valeur: f.ValueDetection?.Text ?? null,
-    confiance: f.ValueDetection?.Confidence ?? null,
-  }))
 
   const summary: Record<string, { text: string; confidence: number }> = {}
   // Une facture peut avoir plusieurs lignes de TVA (taux différents) — Textract renvoie alors
@@ -126,6 +141,15 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     montantTva = Number((montantTtc - montantHtDeclare).toFixed(2))
   }
 
+  // Dernier recours : tableau de ventilation TVA imprimé comme texte simple (tickets de caisse).
+  // Diagnostic temporaire inclus tant que le motif n'est pas confirmé sur un cas réel.
+  let lignesBrutesDiag: string[] | undefined
+  if (montantTva == null) {
+    const { montant, lignes } = tvaDepuisTexteBrut(doc.Blocks ?? [])
+    if (montant != null) montantTva = montant
+    else lignesBrutesDiag = lignes
+  }
+
   const confidences = [total, vendor, date].filter((f): f is { text: string; confidence: number } => !!f).map((f) => f.confidence)
   if (taxConfidenceCount > 0) confidences.push(taxConfidenceSum / taxConfidenceCount)
   const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0
@@ -137,7 +161,9 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     montant_tva: montantTva,
     montant_ht: montantHtDeclare ?? (montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null),
     confiance: avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const,
-    _champs_bruts: champsBruts, // diagnostic temporaire, à retirer une fois la TVA fiable
+    // Diagnostic temporaire : uniquement présent si la TVA reste introuvable après toutes les
+    // tentatives — permet de voir le texte OCR brut plutôt que de deviner encore un nouveau motif.
+    ...(lignesBrutesDiag ? { _lignes_brutes: lignesBrutesDiag } : {}),
   }
 }
 
@@ -148,7 +174,7 @@ function isPdf(bytes: Uint8Array): boolean {
 }
 
 interface ExpenseAnalysisResult {
-  ExpenseDocuments?: { SummaryFields?: ExpenseField[] }[]
+  ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[]
 }
 
 // L'API synchrone AnalyzeExpense ne traite que les PDF d'une seule page (ou une image) — un PDF de

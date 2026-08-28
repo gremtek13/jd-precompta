@@ -38,7 +38,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [extracting, setExtracting] = useState(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
   const [confiance, setConfiance] = useState<'haute' | 'moyenne' | 'basse' | null>(null)
-  const [champsBruts, setChampsBruts] = useState<ExtractionResult['_champs_bruts']>(undefined)
+  const [lignesBrutes, setLignesBrutes] = useState<string[] | undefined>(undefined)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
 
@@ -93,9 +93,9 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     montant_ttc: number | null
     confiance: 'haute' | 'moyenne' | 'basse'
     error?: string
-    // Diagnostic temporaire côté fonction — champs bruts détectés par Textract, à retirer une fois
-    // l'extraction TVA fiable sur des cas réels comme celui-ci.
-    _champs_bruts?: { type: string | null; label: string | null; valeur: string | null; confiance: number | null }[]
+    // Diagnostic temporaire — uniquement présent quand la fonction n'a pas réussi à trouver la TVA
+    // par aucune méthode, pour voir le texte OCR brut plutôt que deviner un nouveau motif à l'aveugle.
+    _lignes_brutes?: string[]
   }
 
   // Textract n'accepte que JPEG/PNG/PDF(1 page)/TIFF. Une photo de téléphone peut être en HEIC en
@@ -131,7 +131,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     setExtracting(true)
     setExtractionError(null)
     setConfiance(null)
-    setChampsBruts(undefined)
+    setLignesBrutes(undefined)
     try {
       // Fichier fraîchement choisi, ou téléchargement du fichier déjà attaché en édition.
       let source: Blob
@@ -164,7 +164,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       if (result.montant_tva != null) setMontantTva(result.montant_tva.toString())
       if (result.montant_ttc != null) setMontantTtc(result.montant_ttc.toString())
       setConfiance(result.confiance)
-      if (result._champs_bruts) setChampsBruts(result._champs_bruts)
+      if (result._lignes_brutes) setLignesBrutes(result._lignes_brutes)
     } catch (err) {
       setExtractionError(err instanceof Error ? err.message : "L'extraction automatique a échoué — remplis le formulaire à la main.")
     } finally {
@@ -329,11 +329,11 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
           </div>
           {extractionError && <p className="error-text" style={{ marginTop: -8 }}>{extractionError}</p>}
 
-          {champsBruts && (
+          {lignesBrutes && (
             <details className="field" style={{ marginTop: -8 }}>
-              <summary className="muted" style={{ cursor: 'pointer' }}>Diagnostic extraction (temporaire) — clique pour copier</summary>
+              <summary className="muted" style={{ cursor: 'pointer' }}>TVA introuvable — diagnostic (temporaire), clique pour copier</summary>
               <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
-                {JSON.stringify(champsBruts, null, 2)}
+                {lignesBrutes.join('\n')}
               </pre>
             </details>
           )}
