@@ -171,16 +171,38 @@ function montantApresLibelle(lignes: string[], libelleRegex: RegExp): number | n
   return null
 }
 
+// Diagnostic temporaire : la ligne où un libellé a matché, plus les 4 suivantes — pour voir le vrai
+// découpage en lignes que Textract produit sur un cas réel (une 2035 est une grille dense où le
+// premier essai a remonté un numéro de ligne du formulaire au lieu d'un montant), plutôt que deviner
+// un nouveau motif à l'aveugle. À retirer une fois le motif confirmé sur un cas réel.
+function contexteAutourLibelle(lignes: string[], libelleRegex: RegExp): string[] {
+  const contexte: string[] = []
+  for (let i = 0; i < lignes.length; i++) {
+    if (!libelleRegex.test(lignes[i])) continue
+    contexte.push(`[${i}] ${lignes[i]}`, ...lignes.slice(i + 1, i + 5).map((l, j) => `[${i + 1 + j}] ${l}`))
+  }
+  return contexte
+}
+
 // Lecture best-effort d'une ancienne déclaration 2035 (revenus non commerciaux), pour préremplir le
 // repère annuel de l'onglet Estimation sans ressaisir les chiffres à la main. Toujours à vérifier
 // contre le document affiché : ce formulaire est une grille dense, moins linéaire qu'une facture ou
 // un relevé, donc moins fiable que le reste de l'extraction.
-function lectureDeclaration2035(lignes: string[]): { recettes: number | null; charges_sociales_personnelles: number | null } {
+function lectureDeclaration2035(lignes: string[]): {
+  recettes: number | null
+  charges_sociales_personnelles: number | null
+  _diag_2035?: string[]
+} {
   return {
     recettes:
       montantApresLibelle(lignes, /RECETTES\s+(BRUTES|ENCAISS[EÉ]ES)/i) ??
       montantApresLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i),
     charges_sociales_personnelles: montantApresLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i),
+    _diag_2035: [
+      ...contexteAutourLibelle(lignes, /RECETTES\s+(BRUTES|ENCAISS[EÉ]ES)/i),
+      ...contexteAutourLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i),
+      ...contexteAutourLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i),
+    ],
   }
 }
 
@@ -190,7 +212,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     return {
       tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
       confiance: "basse" as const, classification: "facture" as const,
-      lecture_2035: { recettes: null, charges_sociales_personnelles: null },
+      lecture_2035: { recettes: null, charges_sociales_personnelles: null, _diag_2035: undefined },
     }
   }
 
