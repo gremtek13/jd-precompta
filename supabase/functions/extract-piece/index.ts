@@ -76,22 +76,47 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   }
 
   const summary: Record<string, { text: string; confidence: number }> = {}
+  // Une facture peut avoir plusieurs lignes de TVA (taux différents) — Textract renvoie alors
+  // plusieurs champs de type "TAX" ; les garder tous dans un Record écraserait tout sauf le dernier,
+  // donc on les additionne à part plutôt que de les traiter comme les autres champs uniques.
+  let montantTva: number | null = null
+  let taxConfidenceSum = 0
+  let taxConfidenceCount = 0
   for (const field of doc.SummaryFields ?? []) {
     const type = field.Type?.Text
     const text = field.ValueDetection?.Text
     const confidence = field.ValueDetection?.Confidence ?? 0
-    if (type && text) summary[type] = { text, confidence }
+    if (!type || !text) continue
+
+    if (type === "TAX") {
+      const amount = parseAmount(text)
+      if (amount != null) {
+        montantTva = (montantTva ?? 0) + amount
+        taxConfidenceSum += confidence
+        taxConfidenceCount++
+      }
+      continue
+    }
+    summary[type] = { text, confidence }
   }
 
   const total = summary["TOTAL"]
   const vendor = summary["VENDOR_NAME"]
   const date = summary["INVOICE_RECEIPT_DATE"]
-  const tax = summary["TAX"]
+  const subtotal = summary["SUBTOTAL"]
 
   const montantTtc = parseAmount(total?.text)
-  const montantTva = parseAmount(tax?.text)
+  const montantHtDeclare = parseAmount(subtotal?.text)
+
+  // Certaines factures affichent clairement un montant HT et un montant TTC sans que Textract
+  // reconnaisse pour autant une ligne "TVA" dédiée (mention "TVA" absente ou mal isolée du reste du
+  // texte) — la TVA se déduit alors par différence plutôt que de rester vide à tort.
+  if (montantTva == null && montantTtc != null && montantHtDeclare != null) {
+    montantTva = Number((montantTtc - montantHtDeclare).toFixed(2))
+  }
 
   const confidences = [total, vendor, date].filter((f): f is { text: string; confidence: number } => !!f).map((f) => f.confidence)
+  if (taxConfidenceCount > 0) confidences.push(taxConfidenceSum / taxConfidenceCount)
   const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0
 
   return {
@@ -99,7 +124,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     date_piece: parseDate(date?.text),
     montant_ttc: montantTtc,
     montant_tva: montantTva,
-    montant_ht: montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null,
+    montant_ht: montantHtDeclare ?? (montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null),
     confiance: avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const,
   }
 }
