@@ -77,19 +77,23 @@ function parseDate(raw?: string): string | null {
 // Certains tickets de caisse (restauration notamment) impriment un tableau de ventilation TVA par
 // taux — "TVA 10 %   40,91   4,09   45,00" (HT, TVA, TTC) — comme du texte simple plutôt que comme
 // un vrai tableau structuré. Textract ne le reconnaît alors pas comme un champ "TAX"/"SUBTOTAL" (rien
-// dans SummaryFields), mais le texte reste présent dans l'OCR brut (Blocks) — on y cherche ce motif
-// en dernier recours et on additionne la colonne TVA de chaque taux trouvé.
-const LIGNE_TVA_REGEX = /TVA\s*(\d{1,2}(?:[.,]\d+)?)\s*%\s+([\d\s]+[.,]\d{2})\s+([\d\s]+[.,]\d{2})\s+([\d\s]+[.,]\d{2})/gi
+// dans SummaryFields), et pire : sur un ticket de caisse étroit, chaque colonne devient sa propre
+// ligne OCR (constaté sur un cas réel) plutôt qu'une seule ligne "taux HT TVA TTC" — la mise en page
+// horizontale ne survit pas à la reconnaissance. Le taux reste en revanche immédiatement suivi de
+// ses 3 montants (HT, TVA, TTC) dans l'ordre de lecture, donc on parcourt les lignes en cherchant un
+// taux isolé puis on prend les 3 lignes suivantes si elles ressemblent à des montants.
+const TAUX_TVA_REGEX = /^(?:TVA\s*)?\d{1,2}(?:[.,]\d+)?\s*%$/i
+const MONTANT_LIGNE_REGEX = /^[\d\s]+[.,]\d{2}$/
 
 function tvaDepuisTexteBrut(blocks: TextractBlock[]): { montant: number | null; lignes: string[] } {
-  const lignes = blocks.filter((b) => b.BlockType === "LINE" && b.Text).map((b) => b.Text!)
+  const lignes = blocks.filter((b) => b.BlockType === "LINE" && b.Text).map((b) => b.Text!.trim())
   let montant: number | null = null
-  for (const ligne of lignes) {
-    LIGNE_TVA_REGEX.lastIndex = 0
-    const m = LIGNE_TVA_REGEX.exec(ligne)
-    if (m) {
-      const tva = parseAmount(m[3])
-      if (tva != null) montant = (montant ?? 0) + tva
+  for (let i = 0; i < lignes.length; i++) {
+    if (!TAUX_TVA_REGEX.test(lignes[i])) continue
+    const [ht, tva, ttc] = lignes.slice(i + 1, i + 4)
+    if (MONTANT_LIGNE_REGEX.test(ht) && MONTANT_LIGNE_REGEX.test(tva) && MONTANT_LIGNE_REGEX.test(ttc)) {
+      const montantTva = parseAmount(tva)
+      if (montantTva != null) montant = (montant ?? 0) + montantTva
     }
   }
   return { montant: montant != null ? Number(montant.toFixed(2)) : null, lignes }
