@@ -1,7 +1,14 @@
-import { useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { normalizeTiers, slugify } from '../../lib/format'
 import type { Categorie, Piece, SousDossier, TiersCategorie, TypePiece } from '../../lib/types'
+
+function typeApercu(nom: string): 'image' | 'pdf' | 'autre' {
+  const ext = nom.toLowerCase().split('.').pop() ?? ''
+  if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return 'image'
+  if (ext === 'pdf') return 'pdf'
+  return 'autre'
+}
 
 interface Props {
   dossierId: string
@@ -31,6 +38,35 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [extracting, setExtracting] = useState(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
   const [confiance, setConfiance] = useState<'haute' | 'moyenne' | 'basse' | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+  const [previewError, setPreviewError] = useState<string | null>(null)
+
+  // Aperçu : le fichier fraîchement choisi se prévisualise localement (pas besoin de l'uploader
+  // d'abord) ; le fichier déjà en storage passe par une URL signée temporaire, le bucket n'étant pas
+  // public. On révoque l'URL locale à chaque changement pour ne pas fuiter de mémoire.
+  useEffect(() => {
+    if (file) {
+      const url = URL.createObjectURL(file)
+      setPreviewUrl(url)
+      setPreviewError(null)
+      return () => URL.revokeObjectURL(url)
+    }
+    if (piece?.storage_path) {
+      let annule = false
+      supabase.storage.from('pieces').createSignedUrl(piece.storage_path, 300).then(({ data, error }) => {
+        if (annule) return
+        if (error || !data) {
+          setPreviewError("Aperçu indisponible.")
+          setPreviewUrl(null)
+        } else {
+          setPreviewUrl(data.signedUrl)
+          setPreviewError(null)
+        }
+      })
+      return () => { annule = true }
+    }
+    setPreviewUrl(null)
+  }, [file, piece?.storage_path])
 
   // Si ce tiers a déjà été catégorisé sur une pièce précédente de ce dossier, on reprend la même
   // catégorie automatiquement — sans écraser un choix déjà fait manuellement.
@@ -241,6 +277,34 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
             <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
             {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
           </div>
+
+          {(previewUrl || previewError) && (
+            <div className="field">
+              {previewError ? (
+                <p className="muted" style={{ margin: 0 }}>{previewError}</p>
+              ) : (
+                <>
+                  {typeApercu(file?.name ?? piece?.nom_fichier ?? '') === 'image' && (
+                    <img
+                      src={previewUrl!}
+                      alt="Aperçu de la pièce"
+                      style={{ maxWidth: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--color-border)' }}
+                    />
+                  )}
+                  {typeApercu(file?.name ?? piece?.nom_fichier ?? '') === 'pdf' && (
+                    <iframe
+                      src={previewUrl!}
+                      title="Aperçu de la pièce"
+                      style={{ width: '100%', height: 320, border: '1px solid var(--color-border)', borderRadius: 8 }}
+                    />
+                  )}
+                  <a href={previewUrl!} target="_blank" rel="noreferrer" className="muted" style={{ display: 'inline-block', marginTop: 6 }}>
+                    Ouvrir dans un nouvel onglet ↗
+                  </a>
+                </>
+              )}
+            </div>
+          )}
 
           <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
             <button
