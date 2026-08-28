@@ -110,9 +110,22 @@ type ClassificationDocument = "releve_bancaire" | "cotisation" | "attestation" |
 // Aucun appel Textract supplémentaire : réutilise le même texte que la ventilation TVA ci-dessus. Le
 // repli par défaut reste "facture" — en cas de doute, mieux vaut une pièce à vérifier qu'un document
 // classé à tort dans une archive où personne ne relit les montants.
+// Constaté sur un relevé Caisse d'Épargne réel : la mention explicite "relevé de compte" n'apparaît
+// pas forcément (remplacée par "SYNTHESE DE VOTRE COMPTE" / "RESUME D'ACTIVITE" / "SOLDE PRECEDENT"
+// selon la banque). Les codes d'opération ("VIR SEPA", "PRLV") sont un signal plus fiable mais peuvent
+// apparaître une fois isolément sur une facture (conditions de paiement) — on exige plusieurs
+// occurrences plutôt qu'une seule pour éviter un faux positif.
+const MARQUEURS_RELEVE_BANCAIRE = [
+  /RELEV[EÉ]\s+DE\s+COMPTE/,
+  /SOLDE\s+(CR[EÉ]DITEUR|D[EÉ]BITEUR|PR[EÉ]C[EÉ]DENT)/,
+  /SYNTH[EÈ]SE\s+DE\s+VOTRE\s+COMPTE/,
+  /R[EÉ]SUM[EÉ]\s+D.?ACTIVIT[EÉ]/,
+]
+
 function classifieDocument(lignes: string[]): ClassificationDocument {
   const texte = lignes.join(" ").toUpperCase()
-  if (/RELEV[EÉ]\s+DE\s+COMPTE/.test(texte) || /SOLDE\s+(CR[EÉ]DITEUR|D[EÉ]BITEUR)/.test(texte)) {
+  const occurrencesOperationsBancaires = (texte.match(/VIR SEPA|PRLV\b/g) ?? []).length
+  if (MARQUEURS_RELEVE_BANCAIRE.some((m) => m.test(texte)) || occurrencesOperationsBancaires >= 3) {
     return "releve_bancaire"
   }
   if (/URSSAF|CARPIMKO|APPEL\s+DE\s+COTISATIONS?|COTISATIONS?\s+(SOCIALES?|PROVISIONNELLES?)/.test(texte)) {
