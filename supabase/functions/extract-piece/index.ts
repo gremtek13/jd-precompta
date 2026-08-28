@@ -194,7 +194,11 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     }
   }
 
-  const lignes = lignesOcr(doc.Blocks ?? [])
+  // Un document multi-pages (relevé, 2035...) peut être renvoyé par Textract comme plusieurs
+  // ExpenseDocuments — un par page ou groupe de pages — pas forcément un seul avec toutes les Blocks.
+  // La classification, le repli TVA texte brut et la lecture 2035 doivent donc chercher sur toutes les
+  // pages, pas juste la première : sinon un libellé tombant sur une page suivante serait invisible.
+  const lignes = lignesOcr((result.ExpenseDocuments ?? []).flatMap((d) => d.Blocks ?? []))
 
   const summary: Record<string, { text: string; confidence: number }> = {}
   // Une facture peut avoir plusieurs lignes de TVA (taux différents) — Textract renvoie alors
