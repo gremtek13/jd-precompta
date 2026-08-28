@@ -21,6 +21,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   const [categorieFilter, setCategorieFilter] = useState<'toutes' | CategorieDocument>('toutes')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
 
   async function load() {
     setLoading(true)
@@ -56,6 +57,38 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     if (!window.confirm(`Supprimer définitivement "${doc.nom_fichier}" ?`)) return
     await supabase.from('documents_divers').delete().eq('id', doc.id)
     await supabase.storage.from('pieces').remove([doc.storage_path]).catch(() => {})
+    load()
+  }
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  function toggleSelectAll() {
+    if (selected.size === filtered.length && filtered.length > 0) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filtered.map((d) => d.id)))
+    }
+  }
+
+  async function deleteSelection() {
+    if (selected.size === 0) return
+    if (!window.confirm(`Supprimer définitivement ${selected.size} document(s) ? Cette action est irréversible.`)) return
+    for (const id of selected) {
+      const doc = documents.find((d) => d.id === id)
+      const { error: deleteError } = await supabase.from('documents_divers').delete().eq('id', id)
+      if (deleteError) continue
+      if (doc?.storage_path) {
+        await supabase.storage.from('pieces').remove([doc.storage_path]).catch(() => {})
+      }
+    }
+    setSelected(new Set())
     load()
   }
 
@@ -125,11 +158,23 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
               {LABEL_CATEGORIE[c]}
             </button>
           ))}
+          {filtered.length > 0 && (
+            <button className="btn btn-outline btn-sm" onClick={toggleSelectAll}>
+              {selected.size === filtered.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+            </button>
+          )}
         </div>
-        <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
-          {uploading ? 'Envoi…' : '+ Ajouter un document'}
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploading} onChange={handleUpload} />
-        </label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {selected.size > 0 && (
+            <button className="btn btn-danger btn-sm" onClick={deleteSelection}>
+              Supprimer la sélection ({selected.size})
+            </button>
+          )}
+          <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
+            {uploading ? 'Envoi…' : '+ Ajouter un document'}
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploading} onChange={handleUpload} />
+          </label>
+        </div>
       </div>
 
       {error && <p className="error-text">{error}</p>}
@@ -143,6 +188,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           <table>
             <thead>
               <tr>
+                <th></th>
                 <th>Fichier</th>
                 <th>Catégorie</th>
                 <th>Sous-dossier</th>
@@ -153,6 +199,9 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
             <tbody>
               {filtered.map((d) => (
                 <tr key={d.id}>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} />
+                  </td>
                   <td>
                     <a href="#" onClick={(e) => { e.preventDefault(); voir(d.storage_path) }}>{d.nom_fichier}</a>
                     {d.attached_to_cotisation_id && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Rattaché à une échéance</span>}

@@ -81,6 +81,43 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
+  function toggleSelectAll() {
+    if (selected.size === filtered.length && filtered.length > 0) {
+      setSelected(new Set())
+    } else {
+      setSelected(new Set(filtered.map((p) => p.id)))
+    }
+  }
+
+  // Suppression ligne par ligne (pas un .in() groupé) : une pièce encore liée à un rapprochement
+  // bancaire ou à un pack déjà généré bloque sur une contrainte de clé étrangère (23503) — ça ne doit
+  // pas empêcher de supprimer le reste de la sélection, juste être compté à part.
+  async function deleteSelection() {
+    if (selected.size === 0) return
+    if (!window.confirm(`Supprimer définitivement ${selected.size} pièce(s) ? Cette action est irréversible.`)) return
+    let supprimees = 0
+    let bloquees = 0
+    for (const id of selected) {
+      const piece = pieces.find((p) => p.id === id)
+      const { error } = await supabase.from('pieces').delete().eq('id', id)
+      if (error) {
+        bloquees++
+        continue
+      }
+      if (piece?.storage_path) {
+        await supabase.storage.from('pieces').remove([piece.storage_path]).catch(() => {})
+      }
+      supprimees++
+    }
+    setSelected(new Set())
+    load()
+    if (bloquees > 0) {
+      window.alert(
+        `${supprimees} pièce(s) supprimée(s). ${bloquees} n'ont pas pu l'être (liées à un rapprochement bancaire ou à un pack déjà généré) — retire d'abord ce lien.`,
+      )
+    }
+  }
+
   async function createSousDossier() {
     const nom = window.prompt('Nom du sous-dossier (ex : 2024, Chantier A, Notes de frais Jean)')
     if (!nom || !nom.trim()) return
@@ -111,12 +148,22 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
             {sousDossiers.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
           </select>
           <button className="btn btn-outline btn-sm" onClick={createSousDossier}>+ Sous-dossier</button>
+          {filtered.length > 0 && (
+            <button className="btn btn-outline btn-sm" onClick={toggleSelectAll}>
+              {selected.size === filtered.length ? 'Tout désélectionner' : 'Tout sélectionner'}
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           {selected.size > 0 && (
-            <button className="btn btn-outline btn-sm" onClick={validateSelection}>
-              Valider la sélection ({selected.size})
-            </button>
+            <>
+              <button className="btn btn-outline btn-sm" onClick={validateSelection}>
+                Valider la sélection ({selected.size})
+              </button>
+              <button className="btn btn-danger btn-sm" onClick={deleteSelection}>
+                Supprimer la sélection ({selected.size})
+              </button>
+            </>
           )}
           <button className="btn btn-outline btn-sm" onClick={() => setImporting(true)}>📁 Importer un dossier</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Ajouter une pièce</button>
