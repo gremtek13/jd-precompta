@@ -32,6 +32,7 @@ function json(body: unknown, status = 200) {
 
 interface ExpenseField {
   Type?: { Text?: string }
+  LabelDetection?: { Text?: string }
   ValueDetection?: { Text?: string; Confidence?: number }
 }
 
@@ -74,6 +75,16 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   if (!doc) {
     return { tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null, confiance: "basse" as const }
   }
+
+  // Diagnostic temporaire : la TVA n'est toujours pas détectée sur certaines pièces pourtant
+  // lisibles (ex. Astrid SARL) malgré le fallback SUBTOTAL — on ne devine plus, on regarde ce que
+  // Textract renvoie réellement pour ce document précis avant de corriger à nouveau à l'aveugle.
+  const champsBruts = (doc.SummaryFields ?? []).map((f) => ({
+    type: f.Type?.Text ?? null,
+    label: f.LabelDetection?.Text ?? null,
+    valeur: f.ValueDetection?.Text ?? null,
+    confiance: f.ValueDetection?.Confidence ?? null,
+  }))
 
   const summary: Record<string, { text: string; confidence: number }> = {}
   // Une facture peut avoir plusieurs lignes de TVA (taux différents) — Textract renvoie alors
@@ -126,6 +137,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     montant_tva: montantTva,
     montant_ht: montantHtDeclare ?? (montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null),
     confiance: avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const,
+    _champs_bruts: champsBruts, // diagnostic temporaire, à retirer une fois la TVA fiable
   }
 }
 
