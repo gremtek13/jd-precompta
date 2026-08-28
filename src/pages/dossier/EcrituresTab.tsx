@@ -17,7 +17,7 @@ const COMPTE_TVA_COLLECTEE = '445710'
 // ventilation par compte, pas de simuler une vraie comptabilité en partie double — voir le bandeau
 // ci-dessous, non négociable. Quand une pièce porte de la TVA, la ligne HT et la ligne de TVA sont
 // générées séparément (brique 3, TVA) plutôt qu'un seul montant TTC.
-export default function EcrituresTab({ dossierId }: { dossierId: string }) {
+export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
@@ -108,9 +108,27 @@ export default function EcrituresTab({ dossierId }: { dossierId: string }) {
   const tvaDeductible = ecritures.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
   const tvaCollectee = ecritures.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
 
+  // Sur un dossier assujetti, une pièce validée sans TVA renseignée est plus probablement un oubli
+  // de saisie qu'une vraie absence de TVA — signalé pour vérification, jamais corrigé tout seul.
+  const piecesSansTva = assujettiTva ? pieces.filter((p) => p.montant_ttc != null && !p.montant_tva) : []
+
   return (
     <>
       <BrouillonBanner />
+
+      {piecesSansTva.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderColor: 'var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Pièces sans TVA renseignée</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ce dossier est marqué assujetti à la TVA, mais {piecesSansTva.length} pièce{piecesSansTva.length > 1 ? 's' : ''} validée{piecesSansTva.length > 1 ? 's' : ''} n'a{piecesSansTva.length > 1 ? 'ont' : ''} pas de montant de TVA — vérifie si c'est normal (achat auprès d'un non-assujetti…) ou un oubli de saisie.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {piecesSansTva.map((p) => (
+              <li key={p.id}>{p.tiers ?? p.nom_fichier} — {formatMoney(p.montant_ttc)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {categoriesSansCompte.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>

@@ -12,6 +12,7 @@ export interface Dossier {
   archive: boolean
   created_at: string
   code_email: string
+  assujetti_tva: boolean
 }
 
 export interface Categorie {

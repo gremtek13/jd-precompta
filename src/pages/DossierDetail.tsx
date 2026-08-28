@@ -23,13 +23,37 @@ export default function DossierDetail() {
 
   if (!id) return null
 
+  async function toggleAssujettiTva() {
+    if (!dossier) return
+    const nouvelleValeur = !dossier.assujetti_tva
+    setDossier({ ...dossier, assujetti_tva: nouvelleValeur }) // optimiste, un dossier à la fois
+    const { error } = await supabase.from('dossiers').update({ assujetti_tva: nouvelleValeur }).eq('id', dossier.id)
+    if (error) {
+      setDossier({ ...dossier, assujetti_tva: !nouvelleValeur }) // annule si l'enregistrement échoue
+      window.alert(error.message)
+    }
+  }
+
   return (
     <>
       <Link to="/dossiers" className="muted">&larr; Dossiers</Link>
       <div className="topbar">
         <h1>{dossier?.nom ?? 'Chargement…'}</h1>
       </div>
-      {dossier?.siret && <p className="muted" style={{ marginTop: -12 }}>SIRET {dossier.siret}</p>}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: -12, marginBottom: 6, flexWrap: 'wrap' }}>
+        {dossier?.siret && <p className="muted" style={{ margin: 0 }}>SIRET {dossier.siret}</p>}
+        {dossier && (
+          <button
+            type="button"
+            className={`badge ${dossier.assujetti_tva ? 'badge-ok' : 'badge-neutral'}`}
+            style={{ border: 'none', cursor: 'pointer' }}
+            title="Clique pour changer — la plupart des dossiers IDEL sont exonérés de TVA sur les actes de soins"
+            onClick={toggleAssujettiTva}
+          >
+            TVA : {dossier.assujetti_tva ? 'Assujetti' : 'Exonéré'}
+          </button>
+        )}
+      </div>
 
       <div className="tabs">
         <button className={tab === 'pieces' ? 'active' : ''} onClick={() => setTab('pieces')}>Pièces</button>
@@ -43,7 +67,7 @@ export default function DossierDetail() {
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}
-      {tab === 'ecritures' && <EcrituresTab dossierId={id} />}
+      {tab === 'ecritures' && <EcrituresTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
       {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
     </>
