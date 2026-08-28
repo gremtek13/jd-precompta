@@ -188,21 +188,33 @@ function contexteAutourLibelle(lignes: string[], libelleRegex: RegExp): string[]
 // repère annuel de l'onglet Estimation sans ressaisir les chiffres à la main. Toujours à vérifier
 // contre le document affiché : ce formulaire est une grille dense, moins linéaire qu'une facture ou
 // un relevé, donc moins fiable que le reste de l'extraction.
+//
+// Confirmé sur un cas réel (diagnostic) : "Recettes (brutes|encaissées)" est un mauvais repère — le
+// motif matche aussi "Montant de la TVA afférente aux recettes brutes" plus bas dans le formulaire, et
+// la case AA elle-même (juste après le libellé "Recettes encaissées...") peut porter un montant très
+// inférieur au vrai CA (2 € constaté, alors que "Montant net des recettes" donnait le bon chiffre
+// juste après). "Montant net des recettes" (case AD) s'est révélé fiable et sans ambiguïté — on s'y
+// tient plutôt que de deviner un repli supplémentaire non vérifié.
 function lectureDeclaration2035(lignes: string[]): {
   recettes: number | null
   charges_sociales_personnelles: number | null
   _diag_2035?: string[]
 } {
+  const recettes = montantApresLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i)
+  const chargesSociales = montantApresLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i)
   return {
-    recettes:
-      montantApresLibelle(lignes, /RECETTES\s+(BRUTES|ENCAISS[EÉ]ES)/i) ??
-      montantApresLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i),
-    charges_sociales_personnelles: montantApresLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i),
-    _diag_2035: [
-      ...contexteAutourLibelle(lignes, /RECETTES\s+(BRUTES|ENCAISS[EÉ]ES)/i),
-      ...contexteAutourLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i),
-      ...contexteAutourLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i),
-    ],
+    recettes,
+    charges_sociales_personnelles: chargesSociales,
+    // Diagnostic temporaire : uniquement si l'un des deux montants reste introuvable — même logique
+    // que le repli TVA texte brut, pour ajuster sur un cas réel plutôt qu'à l'aveugle.
+    ...(recettes == null || chargesSociales == null
+      ? {
+          _diag_2035: [
+            ...contexteAutourLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i),
+            ...contexteAutourLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i),
+          ],
+        }
+      : {}),
   }
 }
 
