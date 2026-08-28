@@ -4,11 +4,19 @@ import { formatDate, formatMoney } from '../../lib/format'
 import type { Categorie, EcritureBrouillon, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 
+// Comptes PCG standard pour la TVA — fixes, pas besoin de mappage par catégorie comme pour les
+// comptes de charge/produit. Beaucoup de dossiers (ex. actes de soins IDEL, exonérés) n'auront
+// jamais de ligne ici : la brique TVA reste silencieuse tant qu'aucune pièce ne porte de TVA, et se
+// déclenche automatiquement dès qu'une pièce en a (matériel, formation, activité annexe...).
+const COMPTE_TVA_DEDUCTIBLE = '445660'
+const COMPTE_TVA_COLLECTEE = '445710'
+
 // Palier 5 — brouillon comptable, brique 1 (journal). Génère une proposition d'écriture pour
-// chaque pièce validée dont la catégorie a un compte associé. Reste volontairement simple (une
-// ligne par pièce, pas de contrepartie bancaire) : l'objectif est de faire gagner du temps à
-// l'expert-comptable sur la ventilation par compte, pas de simuler une vraie comptabilité en
-// partie double — voir le bandeau ci-dessous, non négociable.
+// chaque pièce validée dont la catégorie a un compte associé. Reste volontairement simple (pas de
+// contrepartie bancaire) : l'objectif est de faire gagner du temps à l'expert-comptable sur la
+// ventilation par compte, pas de simuler une vraie comptabilité en partie double — voir le bandeau
+// ci-dessous, non négociable. Quand une pièce porte de la TVA, la ligne HT et la ligne de TVA sont
+// générées séparément (brique 3, TVA) plutôt qu'un seul montant TTC.
 export default function EcrituresTab({ dossierId }: { dossierId: string }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -68,18 +76,24 @@ export default function EcrituresTab({ dossierId }: { dossierId: string }) {
     setGenerating(true)
     setError(null)
     try {
-      const rows = enAttente.map((p) => {
+      const rows = enAttente.flatMap((p) => {
         const cat = categorieById(p.categorie_id)!
-        return {
-          dossier_id: dossierId,
-          piece_id: p.id,
-          date: p.date_piece ?? p.created_at.slice(0, 10),
-          compte: cat.compte_comptable!,
-          libelle: p.tiers ?? p.nom_fichier,
-          montant: p.montant_ttc!,
-          sens: p.type_piece === 'vente' ? 'credit' : 'debit',
-          statut: 'proposee',
+        const sens = p.type_piece === 'vente' ? 'credit' : 'debit'
+        const libelle = p.tiers ?? p.nom_fichier
+        const date = p.date_piece ?? p.created_at.slice(0, 10)
+        const base = { dossier_id: dossierId, piece_id: p.id, date, libelle, sens, statut: 'proposee' }
+
+        // Une TVA connue sur la pièce se sépare en deux lignes (montant HT + TVA) plutôt qu'un seul
+        // montant TTC — sinon on perd l'information au moment où l'expert-comptable en a le plus besoin.
+        if (p.montant_tva && p.montant_tva > 0) {
+          const montantHt = p.montant_ht ?? p.montant_ttc! - p.montant_tva
+          return [
+            { ...base, compte: cat.compte_comptable!, montant: montantHt },
+            { ...base, compte: p.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, montant: p.montant_tva },
+          ]
         }
+
+        return [{ ...base, compte: cat.compte_comptable!, montant: p.montant_ttc! }]
       })
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
@@ -90,6 +104,9 @@ export default function EcrituresTab({ dossierId }: { dossierId: string }) {
       setGenerating(false)
     }
   }
+
+  const tvaDeductible = ecritures.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
+  const tvaCollectee = ecritures.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
 
   return (
     <>
@@ -123,6 +140,23 @@ export default function EcrituresTab({ dossierId }: { dossierId: string }) {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {(tvaDeductible > 0 || tvaCollectee > 0) && (
+        <div className="card" style={{ marginBottom: 20, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
+          <div>
+            <span className="muted" style={{ display: 'block' }}>TVA déductible (achats)</span>
+            <strong>{formatMoney(tvaDeductible)}</strong>
+          </div>
+          <div>
+            <span className="muted" style={{ display: 'block' }}>TVA collectée (ventes)</span>
+            <strong>{formatMoney(tvaCollectee)}</strong>
+          </div>
+          <div>
+            <span className="muted" style={{ display: 'block' }}>Solde</span>
+            <strong>{formatMoney(tvaCollectee - tvaDeductible)}</strong>
+          </div>
         </div>
       )}
 
