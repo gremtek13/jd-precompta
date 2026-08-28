@@ -31,8 +31,10 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   const [lecture2035Loading, setLecture2035Loading] = useState(false)
   const [lecture2035Error, setLecture2035Error] = useState<string | null>(null)
   const [lecture2035Diag, setLecture2035Diag] = useState<string[] | undefined>(undefined)
+  const [diagResultat, setDiagResultat] = useState<string[] | undefined>(undefined)
 
   const [anneeSaisie, setAnneeSaisie] = useState(String(ANNEE_COURANTE - 1))
+  const [resultatSaisi, setResultatSaisi] = useState('')
   const [caSaisi, setCaSaisi] = useState('')
   const [cotisationsSaisies, setCotisationsSaisies] = useState('')
   const [anneeACalculer, setAnneeACalculer] = useState(String(ANNEE_COURANTE - 1))
@@ -103,15 +105,20 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setLecture2035Loading(true)
     setLecture2035Error(null)
     setLecture2035Diag(undefined)
+    setDiagResultat(undefined)
     try {
       const result = await extractPiece(file, file.name)
-      const { recettes, charges_sociales_personnelles: cotisations, _diag_2035 } = result.lecture_2035
+      const { recettes, charges_sociales_personnelles: cotisations, resultat, _diag_2035, _diag_resultat } = result.lecture_2035
       if (recettes != null) setCaSaisi(String(recettes))
       if (cotisations != null) setCotisationsSaisies(String(cotisations))
+      if (resultat != null) setResultatSaisi(String(resultat))
       if (recettes == null && cotisations == null) {
         setLecture2035Error("Aucun montant reconnu automatiquement sur ce document — vérifie et complète les champs à la main ci-dessous.")
       }
       if (_diag_2035) setLecture2035Diag(_diag_2035)
+      // Le bénéfice n'est jamais deviné pour l'instant (4 zones possibles sur le formulaire) — le
+      // diagnostic ci-dessous sert justement à identifier la bonne avant d'écrire le motif définitif.
+      if (_diag_resultat) setDiagResultat(_diag_resultat)
     } catch (err) {
       setLecture2035Error(err instanceof Error ? err.message : "L'extraction a échoué — saisis les montants à la main.")
     } finally {
@@ -131,11 +138,13 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
           annee: parseInt(anneeSaisie, 10),
           chiffre_affaires: caSaisi ? parseFloat(caSaisi) : null,
           total_cotisations_sociales: cotisationsSaisies ? parseFloat(cotisationsSaisies) : null,
+          resultat_net: resultatSaisi ? parseFloat(resultatSaisi) : null,
           source: 'saisie_manuelle',
         },
         { onConflict: 'dossier_id,annee' },
       )
       if (upsertError) throw upsertError
+      setResultatSaisi('')
       setCaSaisi('')
       setCotisationsSaisies('')
       load()
@@ -332,9 +341,19 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
         {lecture2035Error && <p className="error-text" style={{ marginTop: -8 }}>{lecture2035Error}</p>}
         {lecture2035Diag && lecture2035Diag.length > 0 && (
           <details style={{ marginTop: -8, marginBottom: 16 }}>
-            <summary className="muted" style={{ cursor: 'pointer' }}>Diagnostic (temporaire) — clique pour copier</summary>
+            <summary className="muted" style={{ cursor: 'pointer' }}>Diagnostic CA/cotisations (temporaire) — clique pour copier</summary>
             <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
               {lecture2035Diag.join('\n')}
+            </pre>
+          </details>
+        )}
+        {diagResultat && diagResultat.length > 0 && (
+          <details style={{ marginTop: -8, marginBottom: 16 }}>
+            <summary className="muted" style={{ cursor: 'pointer' }}>
+              Diagnostic bénéfice (temporaire, pas encore préremplissable) — clique pour copier
+            </summary>
+            <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
+              {diagResultat.join('\n')}
             </pre>
           </details>
         )}
@@ -353,7 +372,16 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
               <label htmlFor="cotisSaisies">Total cotisations sociales</label>
               <input id="cotisSaisies" type="number" step="0.01" value={cotisationsSaisies} onChange={(e) => setCotisationsSaisies(e.target.value)} />
             </div>
+            <div className="field">
+              <label htmlFor="resultatSaisi">Bénéfice déclaré (2035)</label>
+              <input id="resultatSaisi" type="number" step="0.01" value={resultatSaisi} onChange={(e) => setResultatSaisi(e.target.value)} />
+            </div>
           </div>
+          <p className="muted" style={{ marginTop: -8 }}>
+            "Bénéfice déclaré" : uniquement le chiffre déjà officiellement déclaré sur une 2035 réelle —
+            jamais calculé par l'appli, à saisir à la main pour l'instant (le préremplissage automatique
+            n'est pas encore fiable sur ce champ, voir le diagnostic ci-dessus).
+          </p>
           {error && <p className="error-text">{error}</p>}
           <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>
             {saving ? 'Enregistrement…' : 'Enregistrer ce repère'}
@@ -371,6 +399,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
                 <th>Année</th>
                 <th>Chiffre d'affaires</th>
                 <th>Cotisations sociales</th>
+                <th>Bénéfice déclaré</th>
                 <th>Source</th>
                 <th></th>
               </tr>
@@ -381,6 +410,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
                   <td>{r.annee}</td>
                   <td>{r.chiffre_affaires != null ? formatMoney(r.chiffre_affaires) : '—'}</td>
                   <td>{r.total_cotisations_sociales != null ? formatMoney(r.total_cotisations_sociales) : '—'}</td>
+                  <td>{r.resultat_net != null ? formatMoney(r.resultat_net) : '—'}</td>
                   <td>
                     <span className={`badge ${r.source === 'calculee' ? 'badge-ok' : 'badge-neutral'}`}>
                       {r.source === 'calculee' ? 'Calculée' : 'Saisie manuelle'}

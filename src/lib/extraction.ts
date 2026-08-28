@@ -20,9 +20,14 @@ export interface ExtractionResult {
   lecture_2035: {
     recettes: number | null
     charges_sociales_personnelles: number | null
+    // Jamais calculé — uniquement lu sur un chiffre déjà officiellement déclaré (comme le CA et les
+    // cotisations). Reste null tant que le motif de recherche n'est pas confirmé sur un cas réel (le
+    // formulaire a 4 zones Bénéfice/Déficit différentes selon la nature du résultat).
+    resultat: number | null
     // Diagnostic temporaire — le contexte autour de chaque libellé trouvé, pour ajuster le motif de
     // recherche sur un cas réel plutôt qu'à l'aveugle. À retirer une fois confirmé.
     _diag_2035?: string[]
+    _diag_resultat?: string[]
   }
   error?: string
   // Diagnostic temporaire — uniquement présent quand la fonction n'a pas réussi à trouver la TVA

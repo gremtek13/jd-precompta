@@ -198,13 +198,22 @@ function contexteAutourLibelle(lignes: string[], libelleRegex: RegExp): string[]
 function lectureDeclaration2035(lignes: string[]): {
   recettes: number | null
   charges_sociales_personnelles: number | null
+  resultat: number | null
   _diag_2035?: string[]
+  _diag_resultat?: string[]
 } {
   const recettes = montantApresLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i)
   const chargesSociales = montantApresLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i)
   return {
     recettes,
     charges_sociales_personnelles: chargesSociales,
+    // Le bénéfice/résultat net n'est pas calculé ici (ce serait exactement le calcul qu'on refuse de
+    // faire ailleurs dans l'appli) — uniquement lu sur un chiffre déjà officiellement déclaré par le
+    // client sur une 2035 réelle, comme le CA et les cotisations. Le formulaire a 4 zones
+    // Bénéfice/Déficit différentes (résultat net, plus-values court/long terme...) — pas assez sûr
+    // pour deviner laquelle sans données réelles, donc jamais de valeur devinée pour l'instant :
+    // uniquement le diagnostic, pour calibrer sur un cas réel avant d'écrire le motif définitif.
+    resultat: null,
     // Diagnostic temporaire : uniquement si l'un des deux montants reste introuvable — même logique
     // que le repli TVA texte brut, pour ajuster sur un cas réel plutôt qu'à l'aveugle.
     ...(recettes == null || chargesSociales == null
@@ -215,6 +224,11 @@ function lectureDeclaration2035(lignes: string[]): {
           ],
         }
       : {}),
+    _diag_resultat: [
+      ...contexteAutourLibelle(lignes, /R[EÉ]SULTAT\s+FISCAL/i),
+      ...contexteAutourLibelle(lignes, /B[EÉ]N[EÉ]FICE/i),
+      ...contexteAutourLibelle(lignes, /D[EÉ]FICIT/i),
+    ],
   }
 }
 
@@ -224,7 +238,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     return {
       tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
       confiance: "basse" as const, classification: "facture" as const,
-      lecture_2035: { recettes: null, charges_sociales_personnelles: null, _diag_2035: undefined },
+      lecture_2035: { recettes: null, charges_sociales_personnelles: null, resultat: null, _diag_2035: undefined, _diag_resultat: undefined },
     }
   }
 

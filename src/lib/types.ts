@@ -187,6 +187,10 @@ export interface ReferenceAnnuelle {
   annee: number
   chiffre_affaires: number | null
   total_cotisations_sociales: number | null
+  // Bénéfice/résultat net déjà officiellement déclaré sur une 2035 réelle — jamais calculé par
+  // l'appli (ce serait précisément le calcul qu'on refuse de faire ailleurs), uniquement transcrit à
+  // la main ou lu depuis le document. "calculee" ne le renseigne jamais.
+  resultat_net: number | null
   source: SourceReference
   notes: string | null
   created_at: string
