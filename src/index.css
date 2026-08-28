@@ -85,6 +85,7 @@ button, input, select, textarea { font: inherit; }
 .badge-warning { background: #fbf1dc; color: var(--color-warning); }
 .badge-ok { background: var(--color-primary-light); color: var(--color-primary); }
 .badge-neutral { background: #eee; color: #555; }
+.badge-danger { background: #fbeee9; color: var(--color-danger); }
 
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 th { text-align: left; padding: 8px 10px; color: var(--color-text-light); font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; border-bottom: 1px solid var(--color-border); }

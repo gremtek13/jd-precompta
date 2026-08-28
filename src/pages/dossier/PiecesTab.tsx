@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { Categorie, Piece, SousDossier, TiersCategorie } from '../../lib/types'
 import PieceFormModal from './PieceFormModal'
+import ImportDossierModal from './ImportDossierModal'
 
 export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -14,6 +15,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [sousDossierFilter, setSousDossierFilter] = useState<'tous' | 'sans' | string>('tous')
   const [editing, setEditing] = useState<Piece | null | 'new'>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [importing, setImporting] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -116,6 +118,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
               Valider la sélection ({selected.size})
             </button>
           )}
+          <button className="btn btn-outline btn-sm" onClick={() => setImporting(true)}>📁 Importer un dossier</button>
           <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Ajouter une pièce</button>
         </div>
       </div>
@@ -171,6 +174,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           piece={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
           onSaved={load}
+        />
+      )}
+
+      {importing && (
+        <ImportDossierModal
+          dossierId={dossierId}
+          sousDossiers={sousDossiers}
+          onClose={() => setImporting(false)}
+          onImported={load}
         />
       )}
     </>
