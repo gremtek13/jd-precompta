@@ -8,8 +8,8 @@ type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'erreur'
 
 interface FichierImport {
   file: File
-  // Chemin des sous-dossiers (sans le dossier racine choisi ni le nom de fichier), ex. "2023 / Achats".
-  // Vide si le fichier est directement à la racine du dossier sélectionné.
+  // Chemin de sous-dossier, dossier racine sélectionné inclus (sans le nom de fichier), ex.
+  // "facturation 2023 / Transmedical". Jamais vide : au minimum le nom du dossier sélectionné.
   cheminDossier: string
   statut: StatutFichier
   message?: string
@@ -38,13 +38,15 @@ async function estFichierSupporte(file: File): Promise<boolean> {
   return sniffeSignature(file)
 }
 
-// webkitRelativePath ressemble à "DossierChoisi/2023/Achats/facture1.pdf" : le premier segment est
-// le dossier racine sélectionné par l'utilisateur (pas un sous-dossier utile ici), le dernier est le
-// nom du fichier. Ce qu'il y a entre les deux devient le chemin de sous-dossier — un sous_dossiers
-// étant une table plate (pas d'arborescence), plusieurs niveaux sont aplatis en un seul nom.
+// webkitRelativePath ressemble à "DossierChoisi/2023/Achats/facture1.pdf" : le dernier segment est le
+// nom du fichier, tout le reste (dossier racine sélectionné inclus) devient le chemin de sous-dossier
+// — un sous_dossiers étant une table plate (pas d'arborescence), plusieurs niveaux sont aplatis en un
+// seul nom. Le dossier racine est gardé (pas juste les niveaux en dessous) : si l'utilisateur importe
+// directement un dossier précis (ex. sélectionner "Transmedical" plutôt qu'un gros dossier parent),
+// c'est ce nom-là qui doit devenir le sous-dossier, pas être perdu.
 function cheminSousDossier(relativePath: string): string {
   const segments = relativePath.split('/')
-  return segments.slice(1, -1).join(' / ')
+  return segments.slice(0, -1).join(' / ')
 }
 
 interface Props {
