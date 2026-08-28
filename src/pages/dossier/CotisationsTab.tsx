@@ -126,6 +126,8 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     return Number((montantCsgCrds * (TAUX_CSG_DEDUCTIBLE / TAUX_CSG_CRDS_TOTAL)).toFixed(2))
   }
 
+  const documentsNonRattaches = documentsCotisation.filter((d) => !d.attached_to_cotisation_id)
+
   const totalAppele = cotisations.reduce((sum, c) => sum + c.montant_appele, 0)
   const totalVerse = cotisations.reduce((sum, c) => sum + (c.montant_verse ?? 0), 0)
   const totalCsgDeductible = cotisations.reduce((sum, c) => sum + (csgDeductible(c.montant_csg_crds) ?? 0), 0)
@@ -176,6 +178,23 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         </p>
       </div>
 
+      {documentsNonRattaches.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Appels de cotisation non rattachés ({documentsNonRattaches.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Déposés mais pas encore attachés à une échéance — crée ou choisis l'échéance correspondante
+            dans le tableau ci-dessous, la colonne "Pièce jointe" les propose.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {documentsNonRattaches.map((d) => (
+              <li key={d.id}>
+                <a href="#" onClick={(e) => { e.preventDefault(); voirDocument(d.storage_path) }}>{d.nom_fichier}</a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {cotisations.length > 0 && (
         <div className="card" style={{ marginBottom: 20, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <div>
@@ -218,7 +237,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
             <tbody>
               {cotisations.map((c) => {
                 const documentAttache = documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)
-                const documentsDisponibles = documentsCotisation.filter((d) => !d.attached_to_cotisation_id)
+                const documentsDisponibles = documentsNonRattaches
                 return (
                   <tr key={c.id}>
                     <td>{formatDate(c.echeance)}</td>
