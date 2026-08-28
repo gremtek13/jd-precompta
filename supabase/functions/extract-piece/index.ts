@@ -270,9 +270,11 @@ function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; 
 
   return {
     echeances,
-    // Diagnostic temporaire : uniquement si rien n'est trouvé — permet de voir le contexte réel autour
-    // d'un éventuel échéancier plutôt que de deviner un nouveau motif à l'aveugle.
-    ...(echeances.length === 0 ? { _diag_cotisation: contexteAutourLibelle(lignes, /[EÉ]CH[EÉ]ANCIER/i) } : {}),
+    // Diagnostic temporaire : le texte OCR en entier, pas juste le contexte autour de "ÉCHÉANCIER" —
+    // constaté sur un cas réel (URSSAF) que le tableau de montants peut être absent des lignes proches
+    // de ce mot-clé (page 2 du document, alors que le mot-clé est mentionné en page 3), donc une
+    // fenêtre étroite ne suffit pas à savoir si Textract a même capté les chiffres du tableau.
+    ...(echeances.length === 0 ? { _diag_cotisation: lignes.map((l, i) => `[${i}] ${l}`) } : {}),
   }
 }
 
