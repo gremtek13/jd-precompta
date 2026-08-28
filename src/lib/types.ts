@@ -11,6 +11,7 @@ export interface Dossier {
   notes: string | null
   archive: boolean
   created_at: string
+  code_email: string
 }
 
 export interface Categorie {

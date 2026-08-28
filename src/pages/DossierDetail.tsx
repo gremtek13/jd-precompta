@@ -39,7 +39,7 @@ export default function DossierDetail() {
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}
-      {tab === 'acces' && <AccesTab dossierId={id} />}
+      {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
     </>
   )
 }
