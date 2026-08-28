@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
+import type { DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 
@@ -241,6 +241,12 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
 
   const [pdfRows, setPdfRows] = useState<LigneExtraite[] | null>(null)
   const [pdfExtracting, setPdfExtracting] = useState(false)
+  const [documentsReleve, setDocumentsReleve] = useState<DocumentDivers[]>([])
+
+  useEffect(() => {
+    supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).eq('categorie', 'releve_bancaire')
+      .then(({ data }) => setDocumentsReleve(data ?? []))
+  }, [dossierId])
 
   async function handleFile(file: File) {
     setError(null)
@@ -267,12 +273,14 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
   // courte que les lignes d'opérations) — on prend le plus grand nombre de colonnes observé.
   const nbColonnes = rows ? rows.reduce((max, r) => Math.max(max, r.length), 0) : 0
 
-  async function handlePdfFile(file: File) {
+  // Point d'entrée commun, qu'il s'agisse d'un fichier fraîchement déposé (Blob = File) ou d'un
+  // relevé déjà classé dans l'archive Documents (Blob téléchargé du storage) — même traitement.
+  async function handlePdfBlob(blob: Blob) {
     setError(null)
     setPdfRows(null)
     setPdfExtracting(true)
     try {
-      const text = await extractPdfText(file)
+      const text = await extractPdfText(blob)
       const extraites = parseLignesFromPdfText(text)
       if (extraites.length === 0) {
         throw new Error("Aucune opération détectée dans ce PDF — la mise en page n'est peut-être pas reconnue. Essaie l'export CSV si la banque le propose.")
@@ -283,6 +291,18 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
     } finally {
       setPdfExtracting(false)
     }
+  }
+
+  async function utiliserDocument(doc: DocumentDivers) {
+    setError(null)
+    setPdfExtracting(true)
+    const { data, error: downloadError } = await supabase.storage.from('pieces').download(doc.storage_path)
+    if (downloadError || !data) {
+      setError("Impossible de récupérer ce document.")
+      setPdfExtracting(false)
+      return
+    }
+    await handlePdfBlob(data)
   }
 
   function updatePdfRow(index: number, patch: Partial<LigneExtraite>) {
@@ -448,8 +468,24 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
 
       {source === 'pdf' && (
         <>
+          {documentsReleve.length > 0 && (
+            <div className="field">
+              <label>Déjà dans Documents</label>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {documentsReleve.map((d) => (
+                  <li key={d.id} style={{ marginBottom: 4 }}>
+                    {d.nom_fichier}{' '}
+                    <button type="button" className="btn btn-outline btn-sm" disabled={pdfExtracting} onClick={() => utiliserDocument(d)}>
+                      Utiliser ce relevé
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted" style={{ marginTop: 6 }}>— ou dépose un nouveau fichier :</p>
+            </div>
+          )}
           <div className="field">
-            <input type="file" accept=".pdf,application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfFile(e.target.files[0])} />
+            <input type="file" accept=".pdf,application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfBlob(e.target.files[0])} />
           </div>
           <p className="muted" style={{ marginTop: -8 }}>
             Une ligne par opération détectée automatiquement (date + montant) — vérifie et corrige le tableau avant d'importer, l'extraction PDF est moins fiable qu'un CSV.
