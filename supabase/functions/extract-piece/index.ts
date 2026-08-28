@@ -247,13 +247,11 @@ const MOIS_FR: Record<string, string> = {
   "DÉCEMBRE": "12", DECEMBRE: "12",
 }
 
-// Un avis d'appel de cotisation (URSSAF/CARPIMKO) réel n'a pas "un montant + une date" mais un
-// échéancier de plusieurs mensualités ("10 JUILLET 2023  1191,00 EUROS", une ligne par échéance).
-// Cherche sur le texte joint plutôt que ligne par ligne (on ne sait pas si Textract regroupe une
-// échéance sur une seule ligne ou la scinde) toutes les occurrences "jour mois année montant EUROS".
-// Coupe avant un éventuel échéancier "PRÉVISIONNEL" (année suivante, pas encore appelé) pour ne
-// retenir que les échéances réellement dues.
-function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; montant: number }[]; _diag_cotisation?: string[] } {
+// Format CARPIMKO réel : "10 JUILLET 2023  1191,00 EUROS", une ligne (jour mois année montant EUROS)
+// par échéance — cherché sur le texte joint plutôt que ligne par ligne, faute de savoir si Textract
+// regroupe une échéance sur une seule ligne ou la scinde. Coupe avant un éventuel échéancier
+// "PRÉVISIONNEL" (année suivante, pas encore appelé) pour ne retenir que les échéances dues.
+function lectureEcheancierEnLigne(lignes: string[]): { date: string; montant: number }[] {
   const texte = lignes.join(" ")
   const idxPrevisionnel = texte.toUpperCase().indexOf("PRÉVISIONNEL")
   const zoneUtile = idxPrevisionnel === -1 ? texte : texte.slice(0, idxPrevisionnel)
@@ -267,14 +265,56 @@ function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; 
     const date = mois ? toIsoDate(+m[3], +mois, +m[1]) : null
     if (date && !Number.isNaN(montant)) echeances.push({ date, montant })
   }
+  return echeances
+}
+
+const JOUR_MOIS_REGEX = /^(\d{1,2})\s+(JANVIER|F[EÉ]VRIER|MARS|AVRIL|MAI|JUIN|JUILLET|AO[UÛ]T|SEPTEMBRE|OCTOBRE|NOVEMBRE|D[EÉ]CEMBRE)$/i
+const MONTANT_EUROS_REGEX = /^([\d\s]+,\d{2})\s*€?$/
+
+function montantEuros(ligne?: string): number | null {
+  if (!ligne) return null
+  const m = ligne.trim().match(MONTANT_EUROS_REGEX)
+  if (!m) return null
+  const n = parseFloat(m[1].replace(/\s/g, "").replace(",", "."))
+  return Number.isNaN(n) ? null : n
+}
+
+// Format URSSAF réel (courrier de régularisation) : le tableau imprime une ligne "jour mois" (sans
+// année, ex. "05 janvier"), suivie de 3 lignes de montants dans un ordre fixe — régularisation,
+// cotisations provisionnelles, montant restant à payer. La 3e ligne (montant restant à payer) est le
+// bon montant, sauf pour les mois déjà passés à la date du courrier où elle affiche "/" (déjà réglé
+// au montant provisionnel d'origine) : on retombe alors sur la 2e ligne, toujours renseignée.
+// L'année est prise sur l'en-tête "ÉCHÉANCIER DE COTISATIONS <année>", absente de la ligne de date.
+function lectureEcheancierParLignes(lignes: string[]): { date: string; montant: number }[] {
+  const anneeMatch = lignes.join(" ").match(/[EÉ]CH[EÉ]ANCIER\s+DE\s+COTISATIONS\s+(\d{4})/i)
+  if (!anneeMatch) return []
+  const annee = anneeMatch[1]
+
+  const echeances: { date: string; montant: number }[] = []
+  for (let i = 0; i < lignes.length; i++) {
+    const m = lignes[i].trim().match(JOUR_MOIS_REGEX)
+    if (!m) continue
+    const mois = MOIS_FR[m[2].toUpperCase()]
+    if (!mois) continue
+    const montant = montantEuros(lignes[i + 3]) ?? montantEuros(lignes[i + 2])
+    if (montant == null) continue
+    const date = toIsoDate(+annee, +mois, +m[1])
+    if (date) echeances.push({ date, montant })
+  }
+  return echeances
+}
+
+function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; montant: number }[]; _diag_cotisation?: string[] } {
+  const echeances = lectureEcheancierEnLigne(lignes)
+  const echeancesFinal = echeances.length > 0 ? echeances : lectureEcheancierParLignes(lignes)
 
   return {
-    echeances,
+    echeances: echeancesFinal,
     // Diagnostic temporaire : le texte OCR en entier, pas juste le contexte autour de "ÉCHÉANCIER" —
     // constaté sur un cas réel (URSSAF) que le tableau de montants peut être absent des lignes proches
     // de ce mot-clé (page 2 du document, alors que le mot-clé est mentionné en page 3), donc une
     // fenêtre étroite ne suffit pas à savoir si Textract a même capté les chiffres du tableau.
-    ...(echeances.length === 0 ? { _diag_cotisation: lignes.map((l, i) => `[${i}] ${l}`) } : {}),
+    ...(echeancesFinal.length === 0 ? { _diag_cotisation: lignes.map((l, i) => `[${i}] ${l}`) } : {}),
   }
 }
 
