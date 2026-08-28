@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney } from '../../lib/format'
+import { formatDate, formatMoney, slugify } from '../../lib/format'
 import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 
@@ -24,6 +24,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [montantAppele, setMontantAppele] = useState('')
   const [montantVerse, setMontantVerse] = useState('')
   const [montantCsgCrds, setMontantCsgCrds] = useState('')
+  const [uploading, setUploading] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -82,6 +83,35 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
+  // Upload direct depuis cet onglet, sans passer par Documents — pratique pour les vieux appels de
+  // cotisation (années précédentes) qu'on n'a pas forcément fait passer par un import en masse.
+  // Catégorie forcée à "cotisation" (contexte de l'onglet), pas de sous-dossier ni de classification
+  // automatique — un simple ajout à l'unité, attachable ensuite à une échéance ci-dessous.
+  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setError(null)
+    try {
+      const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
+      const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
+      if (uploadError) throw uploadError
+      const { error: insertError } = await supabase.from('documents_divers').insert({
+        dossier_id: dossierId,
+        storage_path: path,
+        nom_fichier: file.name,
+        categorie: 'cotisation',
+      })
+      if (insertError) throw insertError
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+    } finally {
+      setUploading(false)
+      e.target.value = ''
+    }
+  }
+
   async function voirDocument(storagePath: string) {
     const { data, error: signError } = await supabase.storage.from('pieces').createSignedUrl(storagePath, 300)
     if (signError || !data) {
@@ -130,10 +160,20 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
             appelé total — c'est la seule part sur laquelle la déductibilité peut être calculée.
           </p>
           {error && <p className="error-text">{error}</p>}
-          <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>
-            {saving ? 'Enregistrement…' : 'Ajouter'}
-          </button>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>
+              {saving ? 'Enregistrement…' : 'Ajouter'}
+            </button>
+            <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
+              {uploading ? 'Envoi…' : '+ Ajouter un appel de cotisation (PDF/JPG/PNG)'}
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploading} onChange={handleUpload} />
+            </label>
+          </div>
         </form>
+        <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>
+          Utile pour les papiers des années précédentes : dépose-le ici directement, il apparaît ensuite
+          dans le sélecteur "Pièce jointe" ci-dessous pour l'attacher à une échéance.
+        </p>
       </div>
 
       {cotisations.length > 0 && (
