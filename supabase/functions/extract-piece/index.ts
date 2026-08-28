@@ -137,12 +137,60 @@ function classifieDocument(lignes: string[]): ClassificationDocument {
   return "facture"
 }
 
+// Formulaire 2035 réel (généré par un logiciel comptable) : le formulaire précise "Ne portez qu'une
+// somme par ligne (ne pas porter les centimes)" — les montants sont des entiers, jamais de virgule,
+// avec l'espace comme séparateur de milliers. Uniquement des chiffres/espaces, donc, contrairement au
+// motif décimal utilisé pour une facture.
+const MONTANT_2035_REGEX = /^\d[\d\s]{0,9}$/
+
+function parseMontant2035(raw: string): number | null {
+  const n = parseInt(raw.replace(/\s/g, ""), 10)
+  return Number.isNaN(n) ? null : n
+}
+
+// Cherche un montant sur la ligne d'un libellé donné (fin de ligne, cas d'un formulaire qui imprime
+// "Libellé ... 12 345" sur une seule ligne visuelle) ou sur l'une des 2 lignes suivantes (cas où l'OCR
+// sépare libellé et montant). Renvoie null plutôt qu'un mauvais numéro si rien de net — sur un
+// formulaire aussi dense qu'une 2035, mieux vaut laisser le champ vide à compléter à la main que
+// remonter un chiffre pris au hasard dans la grille.
+function montantApresLibelle(lignes: string[], libelleRegex: RegExp): number | null {
+  for (let i = 0; i < lignes.length; i++) {
+    if (!libelleRegex.test(lignes[i])) continue
+    const surLaLigne = lignes[i].match(/(\d[\d\s]{0,9})\s*$/)
+    if (surLaLigne) {
+      const montant = parseMontant2035(surLaLigne[1])
+      if (montant != null) return montant
+    }
+    for (const suivante of lignes.slice(i + 1, i + 3)) {
+      if (MONTANT_2035_REGEX.test(suivante.trim())) {
+        const montant = parseMontant2035(suivante.trim())
+        if (montant != null) return montant
+      }
+    }
+  }
+  return null
+}
+
+// Lecture best-effort d'une ancienne déclaration 2035 (revenus non commerciaux), pour préremplir le
+// repère annuel de l'onglet Estimation sans ressaisir les chiffres à la main. Toujours à vérifier
+// contre le document affiché : ce formulaire est une grille dense, moins linéaire qu'une facture ou
+// un relevé, donc moins fiable que le reste de l'extraction.
+function lectureDeclaration2035(lignes: string[]): { recettes: number | null; charges_sociales_personnelles: number | null } {
+  return {
+    recettes:
+      montantApresLibelle(lignes, /RECETTES\s+(BRUTES|ENCAISS[EÉ]ES)/i) ??
+      montantApresLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i),
+    charges_sociales_personnelles: montantApresLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i),
+  }
+}
+
 function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[] }) {
   const doc = result.ExpenseDocuments?.[0]
   if (!doc) {
     return {
       tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
       confiance: "basse" as const, classification: "facture" as const,
+      lecture_2035: { recettes: null, charges_sociales_personnelles: null },
     }
   }
 
@@ -209,6 +257,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     montant_ht: montantHtDeclare ?? (montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null),
     confiance: avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const,
     classification: classifieDocument(lignes),
+    lecture_2035: lectureDeclaration2035(lignes),
     // Diagnostic temporaire : uniquement présent si la TVA reste introuvable après toutes les
     // tentatives — permet de voir le texte OCR brut plutôt que de deviner encore un nouveau motif.
     ...(lignesBrutesDiag ? { _lignes_brutes: lignesBrutesDiag } : {}),

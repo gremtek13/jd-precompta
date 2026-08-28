@@ -13,6 +13,11 @@ export interface ExtractionResult {
   montant_ttc: number | null
   confiance: 'haute' | 'moyenne' | 'basse'
   classification: ClassificationDocument
+  // Lecture best-effort d'une ancienne déclaration 2035 (recettes, charges sociales personnelles) —
+  // sert à préremplir un repère annuel dans l'onglet Estimation, jamais à enregistrer automatiquement.
+  // Moins fiable que le reste de l'extraction (formulaire administratif dense, pas une facture) :
+  // toujours vérifié par l'utilisateur contre le document avant sauvegarde.
+  lecture_2035: { recettes: number | null; charges_sociales_personnelles: number | null }
   error?: string
   // Diagnostic temporaire — uniquement présent quand la fonction n'a pas réussi à trouver la TVA
   // par aucune méthode, pour voir le texte OCR brut plutôt que deviner un nouveau motif à l'aveugle.

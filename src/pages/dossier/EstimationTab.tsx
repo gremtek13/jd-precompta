@@ -1,6 +1,7 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
+import { extractPiece } from '../../lib/extraction'
 import type { CotisationDeclaree, Piece, ReferenceAnnuelle } from '../../lib/types'
 
 const ANNEE_COURANTE = new Date().getFullYear()
@@ -18,6 +19,8 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [calculating, setCalculating] = useState(false)
+  const [lecture2035Loading, setLecture2035Loading] = useState(false)
+  const [lecture2035Error, setLecture2035Error] = useState<string | null>(null)
 
   const [anneeSaisie, setAnneeSaisie] = useState(String(ANNEE_COURANTE - 1))
   const [caSaisi, setCaSaisi] = useState('')
@@ -62,6 +65,31 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   function ecartPct(valeurN: number, valeurN1: number | null): string {
     if (!valeurN1) return '—'
     return `${valeurN >= valeurN1 ? '+' : ''}${(((valeurN - valeurN1) / valeurN1) * 100).toFixed(0)} %`
+  }
+
+  // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
+  // ressaisir les chiffres à la main — jamais un enregistrement automatique, juste un préremplissage
+  // que l'utilisateur vérifie et complète avant de cliquer sur "Enregistrer ce repère". Moins fiable
+  // que le reste de l'extraction (formulaire administratif dense), d'où l'avertissement affiché.
+  async function importerDepuis2035(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setLecture2035Loading(true)
+    setLecture2035Error(null)
+    try {
+      const result = await extractPiece(file, file.name)
+      const { recettes, charges_sociales_personnelles: cotisations } = result.lecture_2035
+      if (recettes != null) setCaSaisi(String(recettes))
+      if (cotisations != null) setCotisationsSaisies(String(cotisations))
+      if (recettes == null && cotisations == null) {
+        setLecture2035Error("Aucun montant reconnu automatiquement sur ce document — vérifie et complète les champs à la main ci-dessous.")
+      }
+    } catch (err) {
+      setLecture2035Error(err instanceof Error ? err.message : "L'extraction a échoué — saisis les montants à la main.")
+    } finally {
+      setLecture2035Loading(false)
+      e.target.value = ''
+    }
   }
 
   async function enregistrerReference(e: FormEvent) {
@@ -182,6 +210,18 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
             {calculating ? 'Calcul…' : 'Calculer depuis ce dossier'}
           </button>
         </div>
+
+        <div className="field" style={{ marginBottom: 16 }}>
+          <label htmlFor="lecture2035">Importer depuis une ancienne 2035 (PDF)</label>
+          <input id="lecture2035" type="file" accept=".pdf" disabled={lecture2035Loading} onChange={importerDepuis2035} />
+          <span className="muted">
+            Préremplit le CA et les cotisations ci-dessous — l'extraction sur ce type de formulaire est
+            moins fiable que sur une facture (grille administrative dense) : vérifie toujours contre le
+            document avant d'enregistrer.
+          </span>
+        </div>
+        {lecture2035Loading && <p className="muted" style={{ marginTop: -8 }}>Lecture en cours…</p>}
+        {lecture2035Error && <p className="error-text" style={{ marginTop: -8 }}>{lecture2035Error}</p>}
 
         <form onSubmit={enregistrerReference}>
           <div className="field-row">
