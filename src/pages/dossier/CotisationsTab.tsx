@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney, slugify } from '../../lib/format'
+import { extractPiece } from '../../lib/extraction'
 import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 
@@ -25,6 +26,9 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [montantVerse, setMontantVerse] = useState('')
   const [montantCsgCrds, setMontantCsgCrds] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [echeancesProposees, setEcheancesProposees] = useState<{ date: string; montant: number }[]>([])
+  const [diagCotisation, setDiagCotisation] = useState<string[] | undefined>(undefined)
+  const [creantEcheances, setCreantEcheances] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -85,13 +89,17 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   // Upload direct depuis cet onglet, sans passer par Documents — pratique pour les vieux appels de
   // cotisation (années précédentes) qu'on n'a pas forcément fait passer par un import en masse.
-  // Catégorie forcée à "cotisation" (contexte de l'onglet), pas de sous-dossier ni de classification
-  // automatique — un simple ajout à l'unité, attachable ensuite à une échéance ci-dessous.
+  // Catégorie forcée à "cotisation" (contexte de l'onglet). Passe aussi par l'extraction : un avis
+  // d'appel réel a un échéancier de plusieurs mensualités (pas "un montant + une date"), proposées
+  // ci-dessous à la création plutôt qu'à ressaisir à la main — jamais créées automatiquement sans
+  // confirmation.
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
     setError(null)
+    setEcheancesProposees([])
+    setDiagCotisation(undefined)
     try {
       const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
       const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
@@ -104,11 +112,36 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
       })
       if (insertError) throw insertError
       load()
+
+      const extraction = await extractPiece(file, file.name).catch(() => null)
+      if (extraction?.lecture_cotisation.echeances.length) {
+        setEcheancesProposees(extraction.lecture_cotisation.echeances)
+      } else if (extraction?.lecture_cotisation._diag_cotisation) {
+        setDiagCotisation(extraction.lecture_cotisation._diag_cotisation)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
       setUploading(false)
       e.target.value = ''
+    }
+  }
+
+  async function creerEcheancesProposees() {
+    if (echeancesProposees.length === 0) return
+    setCreantEcheances(true)
+    setError(null)
+    try {
+      const { error: insertError } = await supabase.from('cotisations_declarees').insert(
+        echeancesProposees.map((e) => ({ dossier_id: dossierId, echeance: e.date, montant_appele: e.montant })),
+      )
+      if (insertError) throw insertError
+      setEcheancesProposees([])
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+    } finally {
+      setCreantEcheances(false)
     }
   }
 
@@ -173,10 +206,47 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
           </div>
         </form>
         <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>
-          Utile pour les papiers des années précédentes : dépose-le ici directement, il apparaît ensuite
-          dans le sélecteur "Pièce jointe" ci-dessous pour l'attacher à une échéance.
+          Utile pour les papiers des années précédentes : dépose-le ici directement, l'appli essaie d'y
+          reconnaître l'échéancier automatiquement — sinon il apparaît dans le sélecteur "Pièce jointe"
+          ci-dessous pour l'attacher à une échéance saisie à la main.
         </p>
+        {diagCotisation && diagCotisation.length > 0 && (
+          <details style={{ marginTop: 10 }}>
+            <summary className="muted" style={{ cursor: 'pointer' }}>
+              Aucun échéancier reconnu — diagnostic (temporaire), clique pour copier
+            </summary>
+            <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
+              {diagCotisation.join('\n')}
+            </pre>
+          </details>
+        )}
       </div>
+
+      {echeancesProposees.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Échéances trouvées sur ce document ({echeancesProposees.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Vérifie avant de créer — rien n'est encore enregistré.
+          </p>
+          <table>
+            <thead><tr><th>Échéance</th><th>Montant appelé</th></tr></thead>
+            <tbody>
+              {echeancesProposees.map((e, i) => (
+                <tr key={i}>
+                  <td>{formatDate(e.date)}</td>
+                  <td>{formatMoney(e.montant)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
+            <button className="btn btn-primary btn-sm" disabled={creantEcheances} onClick={creerEcheancesProposees}>
+              {creantEcheances ? 'Création…' : `Créer ces ${echeancesProposees.length} échéance(s)`}
+            </button>
+            <button className="btn btn-outline btn-sm" onClick={() => setEcheancesProposees([])}>Ignorer</button>
+          </div>
+        </div>
+      )}
 
       {documentsNonRattaches.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>

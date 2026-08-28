@@ -29,6 +29,13 @@ export interface ExtractionResult {
     _diag_2035?: string[]
     _diag_resultat?: string[]
   }
+  // Lecture best-effort d'un avis d'appel de cotisation (URSSAF/CARPIMKO) — un tel document n'a pas
+  // "un montant + une date" mais un échéancier de plusieurs mensualités. Toujours à confirmer par
+  // l'utilisateur avant de créer les échéances proposées.
+  lecture_cotisation: {
+    echeances: { date: string; montant: number }[]
+    _diag_cotisation?: string[]
+  }
   error?: string
   // Diagnostic temporaire — uniquement présent quand la fonction n'a pas réussi à trouver la TVA
   // par aucune méthode, pour voir le texte OCR brut plutôt que deviner un nouveau motif à l'aveugle.

@@ -241,6 +241,41 @@ function lectureDeclaration2035(lignes: string[]): {
   }
 }
 
+const MOIS_FR: Record<string, string> = {
+  JANVIER: "01", "FÉVRIER": "02", FEVRIER: "02", MARS: "03", AVRIL: "04", MAI: "05", JUIN: "06",
+  JUILLET: "07", AOUT: "08", "AOÛT": "08", SEPTEMBRE: "09", OCTOBRE: "10", NOVEMBRE: "11",
+  "DÉCEMBRE": "12", DECEMBRE: "12",
+}
+
+// Un avis d'appel de cotisation (URSSAF/CARPIMKO) réel n'a pas "un montant + une date" mais un
+// échéancier de plusieurs mensualités ("10 JUILLET 2023  1191,00 EUROS", une ligne par échéance).
+// Cherche sur le texte joint plutôt que ligne par ligne (on ne sait pas si Textract regroupe une
+// échéance sur une seule ligne ou la scinde) toutes les occurrences "jour mois année montant EUROS".
+// Coupe avant un éventuel échéancier "PRÉVISIONNEL" (année suivante, pas encore appelé) pour ne
+// retenir que les échéances réellement dues.
+function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; montant: number }[]; _diag_cotisation?: string[] } {
+  const texte = lignes.join(" ")
+  const idxPrevisionnel = texte.toUpperCase().indexOf("PRÉVISIONNEL")
+  const zoneUtile = idxPrevisionnel === -1 ? texte : texte.slice(0, idxPrevisionnel)
+
+  const regex = /(\d{1,2})\s+(JANVIER|F[EÉ]VRIER|MARS|AVRIL|MAI|JUIN|JUILLET|AO[UÛ]T|SEPTEMBRE|OCTOBRE|NOVEMBRE|D[EÉ]CEMBRE)\s+(\d{4})\s+(\d[\d\s]*,\d{2})\s*EUROS/gi
+  const echeances: { date: string; montant: number }[] = []
+  let m: RegExpExecArray | null
+  while ((m = regex.exec(zoneUtile))) {
+    const mois = MOIS_FR[m[2].toUpperCase()]
+    const montant = parseFloat(m[4].replace(/\s/g, "").replace(",", "."))
+    const date = mois ? toIsoDate(+m[3], +mois, +m[1]) : null
+    if (date && !Number.isNaN(montant)) echeances.push({ date, montant })
+  }
+
+  return {
+    echeances,
+    // Diagnostic temporaire : uniquement si rien n'est trouvé — permet de voir le contexte réel autour
+    // d'un éventuel échéancier plutôt que de deviner un nouveau motif à l'aveugle.
+    ...(echeances.length === 0 ? { _diag_cotisation: contexteAutourLibelle(lignes, /[EÉ]CH[EÉ]ANCIER/i) } : {}),
+  }
+}
+
 function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[] }) {
   const doc = result.ExpenseDocuments?.[0]
   if (!doc) {
@@ -248,6 +283,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
       tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
       confiance: "basse" as const, classification: "facture" as const,
       lecture_2035: { recettes: null, charges_sociales_personnelles: null, resultat: null, _diag_2035: undefined, _diag_resultat: undefined },
+      lecture_cotisation: { echeances: [], _diag_cotisation: undefined },
     }
   }
 
@@ -319,6 +355,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     confiance: avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const,
     classification: classifieDocument(lignes),
     lecture_2035: lectureDeclaration2035(lignes),
+    lecture_cotisation: lectureAppelCotisation(lignes),
     // Diagnostic temporaire : uniquement présent si la TVA reste introuvable après toutes les
     // tentatives — permet de voir le texte OCR brut plutôt que de deviner encore un nouveau motif.
     ...(lignesBrutesDiag ? { _lignes_brutes: lignesBrutesDiag } : {}),
