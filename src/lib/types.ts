@@ -128,6 +128,20 @@ export interface Immobilisation {
   created_at: string
 }
 
+// Palier 5, brique 4 — suivi des cotisations sociales URSSAF. Le montant_csg_crds est saisi
+// séparément du montant total appelé car un appel URSSAF cumule plusieurs cotisations (maladie,
+// retraite, CSG-CRDS...) — seule la part CSG-CRDS visible sur le décompte peut être ventilée
+// déductible/non déductible, jamais le montant appelé dans son ensemble.
+export interface CotisationDeclaree {
+  id: string
+  dossier_id: string
+  echeance: string
+  montant_appele: number
+  montant_verse: number | null
+  montant_csg_crds: number | null
+  created_at: string
+}
+
 export interface Membership {
   id: string
   user_id: string
