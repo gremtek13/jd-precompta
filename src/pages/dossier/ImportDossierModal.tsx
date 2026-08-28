@@ -21,6 +21,23 @@ function extensionDe(nom: string): string {
   return nom.toLowerCase().split('.').pop() ?? ''
 }
 
+// Un fichier réel (export sans suffixe, renommage manuel...) peut ne pas avoir d'extension du tout —
+// dans ce cas .split('.').pop() renvoie le nom entier, qui ne matche jamais la liste supportée et le
+// fichier serait ignoré à tort même si c'est bien un PDF/JPEG/PNG valide. On regarde la signature des
+// premiers octets avant de rejeter, plutôt que de se fier uniquement au nom.
+async function sniffeSignature(file: File): Promise<boolean> {
+  const bytes = new Uint8Array(await file.slice(0, 8).arrayBuffer())
+  const estPdf = bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46 // %PDF
+  const estJpeg = bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff
+  const estPng = bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47
+  return estPdf || estJpeg || estPng
+}
+
+async function estFichierSupporte(file: File): Promise<boolean> {
+  if (EXTENSIONS_SUPPORTEES.includes(extensionDe(file.name))) return true
+  return sniffeSignature(file)
+}
+
 // webkitRelativePath ressemble à "DossierChoisi/2023/Achats/facture1.pdf" : le premier segment est
 // le dossier racine sélectionné par l'utilisateur (pas un sous-dossier utile ici), le dernier est le
 // nom du fichier. Ce qu'il y a entre les deux devient le chemin de sous-dossier — un sous_dossiers
@@ -48,13 +65,13 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
   const [running, setRunning] = useState(false)
   const [done, setDone] = useState(false)
 
-  function handleFolderChange(e: ChangeEvent<HTMLInputElement>) {
+  async function handleFolderChange(e: ChangeEvent<HTMLInputElement>) {
     const liste = Array.from(e.target.files ?? [])
     const retenus: FichierImport[] = []
     const rejetes: string[] = []
     for (const file of liste) {
       const relatif = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name
-      if (!EXTENSIONS_SUPPORTEES.includes(extensionDe(file.name))) {
+      if (!(await estFichierSupporte(file))) {
         rejetes.push(relatif)
         continue
       }
