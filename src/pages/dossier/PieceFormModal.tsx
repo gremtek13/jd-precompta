@@ -26,6 +26,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [montantTtc, setMontantTtc] = useState(piece?.montant_ttc?.toString() ?? '')
   const [notes, setNotes] = useState(piece?.notes ?? '')
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [extracting, setExtracting] = useState(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
@@ -197,6 +198,39 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     save('validee')
   }
 
+  async function handleDelete() {
+    if (!piece) return
+    if (!window.confirm(`Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.`)) return
+    setDeleting(true)
+    setError(null)
+    try {
+      const { error: deleteError } = await supabase.from('pieces').delete().eq('id', piece.id)
+      if (deleteError) {
+        // Contrainte de clé étrangère (23503) : la pièce est encore référencée ailleurs (rapprochement
+        // bancaire, pack déjà généré) — message clair plutôt que l'erreur Postgres brute.
+        if (deleteError.code === '23503') {
+          throw new Error(
+            "Impossible de supprimer : cette pièce est liée à un rapprochement bancaire ou à un pack déjà généré. Retire d'abord ce lien avant de la supprimer."
+          )
+        }
+        throw deleteError
+      }
+
+      // Best-effort : le fichier au storage n'a pas besoin de bloquer la suppression de la pièce s'il
+      // a déjà disparu ou si la suppression échoue pour une autre raison.
+      if (piece.storage_path) {
+        await supabase.storage.from('pieces').remove([piece.storage_path]).catch(() => {})
+      }
+
+      onSaved()
+      onClose()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div style={overlayStyle}>
       <div className="card" style={{ width: 'min(520px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -294,14 +328,21 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
 
           {error && <p className="error-text">{error}</p>}
 
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 10 }}>
-            <button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button>
-            <button type="button" className="btn btn-outline" disabled={saving} onClick={() => save('a_valider')}>
-              Enregistrer brouillon
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Enregistrement…' : 'Valider'}
-            </button>
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+            {piece ? (
+              <button type="button" className="btn btn-danger" disabled={deleting || saving} onClick={handleDelete}>
+                {deleting ? 'Suppression…' : 'Supprimer'}
+              </button>
+            ) : <span />}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button>
+              <button type="button" className="btn btn-outline" disabled={saving || deleting} onClick={() => save('a_valider')}>
+                Enregistrer brouillon
+              </button>
+              <button type="submit" className="btn btn-primary" disabled={saving || deleting}>
+                {saving ? 'Enregistrement…' : 'Valider'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
