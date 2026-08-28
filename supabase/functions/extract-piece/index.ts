@@ -204,17 +204,22 @@ function lectureDeclaration2035(lignes: string[]): {
 } {
   const recettes = montantApresLibelle(lignes, /MONTANT\s+NET\s+DES\s+RECETTES/i)
   const chargesSociales = montantApresLibelle(lignes, /CHARGES\s+SOCIALES\s+PERSONNELLES/i)
+
+  // Confirmé sur un cas réel (diagnostic) : la première occurrence de "Bénéfice" dans le document est
+  // bien la bonne — le chiffre de la page de garde ("1- Résultat fiscal") et celui du détail du calcul
+  // ("Bénéfice (ligne 38 – ligne 45)") plus loin donnent la même valeur. Les autres mentions de
+  // "Bénéfice" (case à cocher d'exonération, société civile de moyens...) arrivent toutes après dans
+  // le document, donc jamais rencontrées en premier. Repli sur "Déficit" (négatif) si le client est en
+  // perte plutôt qu'en bénéfice — jamais les deux à la fois sur une même déclaration.
+  const benefice = montantApresLibelle(lignes, /B[EÉ]N[EÉ]FICE/i)
+  const deficit = benefice == null ? montantApresLibelle(lignes, /D[EÉ]FICIT/i) : null
+  const resultat = benefice ?? (deficit != null ? -deficit : null)
+
   return {
     recettes,
     charges_sociales_personnelles: chargesSociales,
-    // Le bénéfice/résultat net n'est pas calculé ici (ce serait exactement le calcul qu'on refuse de
-    // faire ailleurs dans l'appli) — uniquement lu sur un chiffre déjà officiellement déclaré par le
-    // client sur une 2035 réelle, comme le CA et les cotisations. Le formulaire a 4 zones
-    // Bénéfice/Déficit différentes (résultat net, plus-values court/long terme...) — pas assez sûr
-    // pour deviner laquelle sans données réelles, donc jamais de valeur devinée pour l'instant :
-    // uniquement le diagnostic, pour calibrer sur un cas réel avant d'écrire le motif définitif.
-    resultat: null,
-    // Diagnostic temporaire : uniquement si l'un des deux montants reste introuvable — même logique
+    resultat,
+    // Diagnostic temporaire : uniquement si le montant correspondant reste introuvable — même logique
     // que le repli TVA texte brut, pour ajuster sur un cas réel plutôt qu'à l'aveugle.
     ...(recettes == null || chargesSociales == null
       ? {
@@ -224,11 +229,15 @@ function lectureDeclaration2035(lignes: string[]): {
           ],
         }
       : {}),
-    _diag_resultat: [
-      ...contexteAutourLibelle(lignes, /R[EÉ]SULTAT\s+FISCAL/i),
-      ...contexteAutourLibelle(lignes, /B[EÉ]N[EÉ]FICE/i),
-      ...contexteAutourLibelle(lignes, /D[EÉ]FICIT/i),
-    ],
+    ...(resultat == null
+      ? {
+          _diag_resultat: [
+            ...contexteAutourLibelle(lignes, /R[EÉ]SULTAT\s+FISCAL/i),
+            ...contexteAutourLibelle(lignes, /B[EÉ]N[EÉ]FICE/i),
+            ...contexteAutourLibelle(lignes, /D[EÉ]FICIT/i),
+          ],
+        }
+      : {}),
   }
 }
 
