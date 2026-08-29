@@ -12,13 +12,12 @@ import CotisationsTab from './dossier/CotisationsTab'
 import ClotureTab from './dossier/ClotureTab'
 import DocumentsTab from './dossier/DocumentsTab'
 import EstimationTab from './dossier/EstimationTab'
-
-type Tab = 'pieces' | 'packs' | 'banque' | 'documents' | 'ecritures' | 'immobilisations' | 'cotisations' | 'cloture' | 'estimation' | 'acces'
+import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 
 export default function DossierDetail() {
   const { id } = useParams<{ id: string }>()
   const [dossier, setDossier] = useState<Dossier | null>(null)
-  const [tab, setTab] = useState<Tab>('pieces')
+  const [tab, setTab] = useState<DossierTab>('documents')
 
   useEffect(() => {
     if (!id) return
@@ -59,18 +58,7 @@ export default function DossierDetail() {
         )}
       </div>
 
-      <div className="tabs">
-        <button className={tab === 'pieces' ? 'active' : ''} onClick={() => setTab('pieces')}>Pièces</button>
-        <button className={tab === 'packs' ? 'active' : ''} onClick={() => setTab('packs')}>Packs</button>
-        <button className={tab === 'banque' ? 'active' : ''} onClick={() => setTab('banque')}>Banque</button>
-        <button className={tab === 'documents' ? 'active' : ''} onClick={() => setTab('documents')}>Documents</button>
-        <button className={tab === 'ecritures' ? 'active' : ''} onClick={() => setTab('ecritures')}>Écritures</button>
-        <button className={tab === 'immobilisations' ? 'active' : ''} onClick={() => setTab('immobilisations')}>Immobilisations</button>
-        <button className={tab === 'cotisations' ? 'active' : ''} onClick={() => setTab('cotisations')}>Cotisations</button>
-        <button className={tab === 'cloture' ? 'active' : ''} onClick={() => setTab('cloture')}>Clôture</button>
-        <button className={tab === 'estimation' ? 'active' : ''} onClick={() => setTab('estimation')}>Estimation</button>
-        <button className={tab === 'acces' ? 'active' : ''} onClick={() => setTab('acces')}>Accès</button>
-      </div>
+      <DossierParcours tab={tab} onChange={setTab} />
 
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}

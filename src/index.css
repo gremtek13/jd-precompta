@@ -55,6 +55,7 @@ button, input, select, textarea { font: inherit; }
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   padding: 20px;
+  box-shadow: 0 1px 3px rgba(31, 42, 36, 0.05);
 }
 
 .field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
@@ -129,6 +130,39 @@ tr.clickable:hover { background: var(--color-primary-light); }
   border-bottom: 2px solid transparent;
 }
 .tabs button.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
+
+/* Parcours du dossier — remplace la barre d'onglets plate par un chemin visuel, de la collecte des
+   justificatifs à la clôture de l'exercice, plus lisible que dix onglets à plat. */
+.parcours { display: flex; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
+.parcours-etape-wrap { display: flex; align-items: flex-start; flex-shrink: 0; }
+
+.parcours-connecteur { width: 28px; height: 2px; background: var(--color-border); margin-top: 15px; flex-shrink: 0; transition: background 0.15s ease; }
+.parcours-connecteur.franchi { background: var(--color-primary); }
+
+.parcours-etape {
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  background: none; border: none; cursor: pointer; padding: 2px 4px; width: 76px; flex-shrink: 0;
+}
+.parcours-cercle {
+  width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  font-size: 0.95rem; border: 2px solid var(--color-border); background: #fff; transition: all 0.15s ease;
+}
+.parcours-label { font-size: 0.72rem; font-weight: 600; color: var(--color-text-light); white-space: nowrap; }
+
+.parcours-etape:hover .parcours-cercle { border-color: var(--color-primary); }
+.parcours-etape.passe .parcours-cercle { border-color: var(--color-primary); background: var(--color-primary-light); }
+.parcours-etape.passe .parcours-label { color: var(--color-primary); }
+.parcours-etape.active .parcours-cercle { border-color: var(--color-primary); background: var(--color-primary); box-shadow: 0 0 0 4px var(--color-primary-light); }
+.parcours-etape.active .parcours-label { color: var(--color-primary); font-weight: 700; }
+
+.parcours-outils { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.parcours-outil {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 999px;
+  padding: 6px 14px; font-size: 0.82rem; font-weight: 600; color: var(--color-text-light); cursor: pointer;
+}
+.parcours-outil:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.parcours-outil.active { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-light); }
 
 .login-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
 .login-card { width: 100%; max-width: 380px; }
