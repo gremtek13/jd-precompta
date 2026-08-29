@@ -42,6 +42,10 @@ export interface LigneBancaire {
   montant: number
   statut: StatutLigneBancaire
   piece_id: string | null
+  // Rattache le mouvement à une échéance de cotisations_declarees plutôt qu'à une pièce — un
+  // prélèvement URSSAF/CARPIMKO n'a pas de facture, juste un montant appelé sur un échéancier.
+  // Mutuellement exclusif avec piece_id (contrainte en base).
+  cotisation_id: string | null
   created_at: string
 }
 

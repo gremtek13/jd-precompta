@@ -3,13 +3,14 @@ import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
+import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 
 export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
+  const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
@@ -28,6 +29,11 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       .eq('dossier_id', dossierId)
       .eq('statut', 'validee')
 
+    const { data: cotisationsData } = await supabase
+      .from('cotisations_declarees')
+      .select('*')
+      .eq('dossier_id', dossierId)
+
     const { data: reglesData } = await supabase
       .from('regles_bancaires_ignorees')
       .select('*')
@@ -36,6 +42,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
     setLignes(lignesData ?? [])
     setPieces(piecesData ?? [])
+    setCotisations(cotisationsData ?? [])
     setRegles(reglesData ?? [])
     setLoading(false)
   }
@@ -46,6 +53,8 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
   const piecesRapprochees = useMemo(() => new Set(lignes.filter((l) => l.piece_id).map((l) => l.piece_id)), [lignes])
   const piecesSansMouvement = pieces.filter((p) => !piecesRapprochees.has(p.id))
+  const cotisationsRapprochees = useMemo(() => new Set(lignes.filter((l) => l.cotisation_id).map((l) => l.cotisation_id)), [lignes])
+  const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
   const filtered = filter === 'toutes' ? lignes : lignes.filter((l) => l.statut === filter)
 
   function suggestion(ligne: LigneBancaire): Piece | null {
@@ -62,13 +71,34 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     return candidats[0] ?? null
   }
 
+  // Même logique que pour les pièces, mais comparée au montant réellement versé (montant_verse) quand
+  // il est connu — un appel n'est pas toujours prélevé pour son montant appelé exact (régularisation,
+  // paiement partiel) — sinon au montant appelé, seul chiffre disponible avant paiement.
+  function suggestionCotisation(ligne: LigneBancaire): CotisationDeclaree | null {
+    if (ligne.statut !== 'non_rapprochee') return null
+    const ligneDate = new Date(ligne.date).getTime()
+    const candidats = cotisations.filter((c) => {
+      if (cotisationsRapprochees.has(c.id)) return false
+      const montantRef = c.montant_verse ?? c.montant_appele
+      if (Math.abs(Math.abs(montantRef) - Math.abs(ligne.montant)) > 0.01) return false
+      const jours = Math.abs(new Date(c.echeance).getTime() - ligneDate) / 86_400_000
+      return jours <= JOURS_TOLERANCE_RAPPROCHEMENT
+    })
+    return candidats[0] ?? null
+  }
+
   async function rapprocher(ligneId: string, pieceId: string) {
-    await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId }).eq('id', ligneId)
+    await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId, cotisation_id: null }).eq('id', ligneId)
+    load()
+  }
+
+  async function rapprocherCotisation(ligneId: string, cotisationId: string) {
+    await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', cotisation_id: cotisationId, piece_id: null }).eq('id', ligneId)
     load()
   }
 
   async function annulerRapprochement(ligneId: string) {
-    await supabase.from('lignes_bancaires').update({ statut: 'non_rapprochee', piece_id: null }).eq('id', ligneId)
+    await supabase.from('lignes_bancaires').update({ statut: 'non_rapprochee', piece_id: null, cotisation_id: null }).eq('id', ligneId)
     load()
   }
 
@@ -119,6 +149,8 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           {nonRapprochees.length} mouvement(s) bancaire(s) non rapproché(s) ({formatMoney(totalNonRapproche)})
           {' · '}
           {piecesSansMouvement.length} pièce(s) validée(s) sans mouvement bancaire correspondant
+          {' · '}
+          {cotisationsSansMouvement.length} échéance(s) de cotisation sans mouvement bancaire correspondant
         </p>
         {regles.length > 0 && (
           <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
@@ -171,14 +203,22 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
             <tbody>
               {filtered.map((l) => {
                 const propose = suggestion(l)
+                const proposeCotisation = !propose ? suggestionCotisation(l) : null
                 const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
+                const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
                 return (
                   <tr key={l.id}>
                     <td>{formatDate(l.date)}</td>
                     <td>{l.libelle}</td>
                     <td>{formatMoney(l.montant)}</td>
                     <td>
-                      {l.statut === 'rapprochee' && <span className="badge badge-ok">Rapproché{piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}</span>}
+                      {l.statut === 'rapprochee' && (
+                        <span className="badge badge-ok">
+                          Rapproché
+                          {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
+                          {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
+                        </span>
+                      )}
                       {l.statut === 'non_rapprochee' && <span className="badge badge-warning">Non rapproché</span>}
                       {l.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
                     </td>
@@ -188,6 +228,11 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                           Rapprocher avec {propose.tiers ?? 'cette pièce'} ({formatMoney(propose.montant_ttc)})
                         </button>
                       )}
+                      {l.statut === 'non_rapprochee' && proposeCotisation && (
+                        <button className="btn btn-outline btn-sm" onClick={() => rapprocherCotisation(l.id, proposeCotisation.id)}>
+                          Rapprocher avec l'échéance du {formatDate(proposeCotisation.echeance)} ({formatMoney(proposeCotisation.montant_verse ?? proposeCotisation.montant_appele)})
+                        </button>
+                      )}
                       {l.statut === 'non_rapprochee' && (
                         <>
                           <select
@@ -195,10 +240,22 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                             onChange={(e) => e.target.value && rapprocher(l.id, e.target.value)}
                             style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px', fontSize: '0.8rem' }}
                           >
-                            <option value="">Associer manuellement…</option>
+                            <option value="">Associer à une pièce…</option>
                             {pieces.filter((p) => !piecesRapprochees.has(p.id)).map((p) => (
                               <option key={p.id} value={p.id}>
                                 {formatDate(p.date_piece)} — {p.tiers ?? '—'} — {formatMoney(p.montant_ttc)}
+                              </option>
+                            ))}
+                          </select>
+                          <select
+                            defaultValue=""
+                            onChange={(e) => e.target.value && rapprocherCotisation(l.id, e.target.value)}
+                            style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px', fontSize: '0.8rem' }}
+                          >
+                            <option value="">Associer à une cotisation…</option>
+                            {cotisations.filter((c) => !cotisationsRapprochees.has(c.id)).map((c) => (
+                              <option key={c.id} value={c.id}>
+                                {formatDate(c.echeance)} — {formatMoney(c.montant_verse ?? c.montant_appele)}
                               </option>
                             ))}
                           </select>
