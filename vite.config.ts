@@ -3,7 +3,8 @@ import { defineConfig } from 'vite'
 
 // https://vite.dev/config/
 export default defineConfig({
-  // Le site est servi depuis https://gremtek13.github.io/jd-precompta/ (GitHub Pages, dépôt "projet")
-  base: '/jd-precompta/',
+  // Servi depuis la racine de precompta.jdarnis.fr (domaine personnalisé, voir public/CNAME) —
+  // plus depuis un sous-chemin GitHub Pages, d'où base '/' et non '/jd-precompta/'.
+  base: '/',
   plugins: [react()],
 })
