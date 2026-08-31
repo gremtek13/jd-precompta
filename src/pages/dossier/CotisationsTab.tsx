@@ -4,6 +4,7 @@ import { formatDate, formatMoney, slugify } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
 import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
+import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
 // Taux CSG-CRDS en vigueur pour les indépendants/professions libérales : 9,70 % au total, dont
 // 6,80 points déductibles du revenu imposable et 2,90 points non déductibles. Source : barèmes
@@ -29,6 +30,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [echeancesProposees, setEcheancesProposees] = useState<{ date: string; montant: number }[]>([])
   const [diagCotisation, setDiagCotisation] = useState<string[] | undefined>(undefined)
   const [creantEcheances, setCreantEcheances] = useState(false)
+  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
 
   async function load() {
     setLoading(true)
@@ -161,9 +163,12 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   const documentsNonRattaches = documentsCotisation.filter((d) => !d.attached_to_cotisation_id)
 
-  const totalAppele = cotisations.reduce((sum, c) => sum + c.montant_appele, 0)
-  const totalVerse = cotisations.reduce((sum, c) => sum + (c.montant_verse ?? 0), 0)
-  const totalCsgDeductible = cotisations.reduce((sum, c) => sum + (csgDeductible(c.montant_csg_crds) ?? 0), 0)
+  const anneesDisponibles = [...new Set(cotisations.map((c) => new Date(c.echeance).getFullYear()))].sort((a, b) => b - a)
+  const cotisationsFiltrees = anneeFilter === 'toutes' ? cotisations : cotisations.filter((c) => new Date(c.echeance).getFullYear() === anneeFilter)
+
+  const totalAppele = cotisationsFiltrees.reduce((sum, c) => sum + c.montant_appele, 0)
+  const totalVerse = cotisationsFiltrees.reduce((sum, c) => sum + (c.montant_verse ?? 0), 0)
+  const totalCsgDeductible = cotisationsFiltrees.reduce((sum, c) => sum + (csgDeductible(c.montant_csg_crds) ?? 0), 0)
 
   return (
     <>
@@ -265,7 +270,9 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
-      {cotisations.length > 0 && (
+      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
+
+      {cotisationsFiltrees.length > 0 && (
         <div className="card" style={{ marginBottom: 20, display: 'flex', gap: 24, flexWrap: 'wrap' }}>
           <div>
             <span className="muted" style={{ display: 'block' }}>Total appelé</span>
@@ -289,7 +296,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
-        ) : cotisations.length === 0 ? (
+        ) : cotisationsFiltrees.length === 0 ? (
           <div className="empty-state">Aucune échéance enregistrée pour l'instant.</div>
         ) : (
           <table>
@@ -305,7 +312,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
               </tr>
             </thead>
             <tbody>
-              {cotisations.map((c) => {
+              {cotisationsFiltrees.map((c) => {
                 const documentAttache = documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)
                 const documentsDisponibles = documentsNonRattaches
                 return (

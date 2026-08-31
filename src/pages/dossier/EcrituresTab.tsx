@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { Categorie, EcritureBrouillon, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
+import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
 // Comptes PCG standard pour la TVA — fixes, pas besoin de mappage par catégorie comme pour les
 // comptes de charge/produit. Beaucoup de dossiers (ex. actes de soins IDEL, exonérés) n'auront
@@ -26,6 +27,7 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [comptesEdit, setComptesEdit] = useState<Record<string, string>>({})
+  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
 
   async function load() {
     setLoading(true)
@@ -105,8 +107,13 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
     }
   }
 
-  const tvaDeductible = ecritures.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
-  const tvaCollectee = ecritures.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
+  // Le filtre par année ne porte que sur l'affichage des écritures déjà générées — la génération
+  // (bouton ci-dessous) reste globale, sur toutes les pièces en attente quelle que soit leur année.
+  const anneesDisponibles = [...new Set(ecritures.map((e) => new Date(e.date).getFullYear()))].sort((a, b) => b - a)
+  const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => new Date(e.date).getFullYear() === anneeFilter)
+
+  const tvaDeductible = ecrituresFiltrees.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
+  const tvaCollectee = ecrituresFiltrees.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
 
   // Sur un dossier assujetti, une pièce validée sans TVA renseignée est plus probablement un oubli
   // de saisie qu'une vraie absence de TVA — signalé pour vérification, jamais corrigé tout seul.
@@ -190,10 +197,12 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
 
       {error && <p className="error-text">{error}</p>}
 
+      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
+
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
-        ) : ecritures.length === 0 ? (
+        ) : ecrituresFiltrees.length === 0 ? (
           <div className="empty-state">Aucune écriture proposée pour l'instant.</div>
         ) : (
           <table>
@@ -207,7 +216,7 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
               </tr>
             </thead>
             <tbody>
-              {ecritures.map((e) => (
+              {ecrituresFiltrees.map((e) => (
                 <tr key={e.id}>
                   <td>{formatDate(e.date)}</td>
                   <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{e.compte}</td>

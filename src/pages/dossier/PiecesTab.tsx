@@ -4,6 +4,7 @@ import { formatDate, formatMoney } from '../../lib/format'
 import type { Categorie, Piece, SousDossier, TiersCategorie } from '../../lib/types'
 import PieceFormModal from './PieceFormModal'
 import ImportDossierModal from './ImportDossierModal'
+import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
 export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -13,7 +14,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [loading, setLoading] = useState(true)
   const [statutFilter, setStatutFilter] = useState<'toutes' | 'a_valider' | 'validee'>('toutes')
   const [sousDossierFilter, setSousDossierFilter] = useState<'tous' | 'sans' | string>('tous')
-  const [anneeFilter, setAnneeFilter] = useState<'toutes' | 'sans_date' | number>('toutes')
+  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [editing, setEditing] = useState<Piece | null | 'new'>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [importing, setImporting] = useState(false)
@@ -141,23 +142,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
-      {(anneesDisponibles.length > 1 || (anneesDisponibles.length === 1 && aPiecesSansDate)) && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-          <button className={`btn btn-sm ${anneeFilter === 'toutes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter('toutes')}>
-            Toutes années
-          </button>
-          {anneesDisponibles.map((a) => (
-            <button key={a} className={`btn btn-sm ${anneeFilter === a ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter(a)}>
-              {a}
-            </button>
-          ))}
-          {aPiecesSansDate && (
-            <button className={`btn btn-sm ${anneeFilter === 'sans_date' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter('sans_date')}>
-              Sans date
-            </button>
-          )}
-        </div>
-      )}
+      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} sansDate={aPiecesSansDate} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

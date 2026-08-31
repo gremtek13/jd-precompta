@@ -4,6 +4,7 @@ import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire 
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
+import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 
@@ -14,6 +15,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
+  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [rapprochementAuto, setRapprochementAuto] = useState(false)
 
   async function load() {
@@ -56,7 +58,13 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const piecesSansMouvement = pieces.filter((p) => !piecesRapprochees.has(p.id))
   const cotisationsRapprochees = useMemo(() => new Set(lignes.filter((l) => l.cotisation_id).map((l) => l.cotisation_id)), [lignes])
   const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
-  const filtered = filter === 'toutes' ? lignes : lignes.filter((l) => l.statut === filter)
+
+  const anneesDisponibles = [...new Set(lignes.map((l) => new Date(l.date).getFullYear()))].sort((a, b) => b - a)
+  const filtered = lignes.filter((l) => {
+    if (filter !== 'toutes' && l.statut !== filter) return false
+    if (anneeFilter !== 'toutes' && new Date(l.date).getFullYear() !== anneeFilter) return false
+    return true
+  })
 
   function suggestion(ligne: LigneBancaire): Piece | null {
     if (ligne.statut !== 'non_rapprochee') return null
@@ -245,6 +253,8 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           </p>
         )}
       </div>
+
+      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {(['toutes', 'non_rapprochee', 'rapprochee', 'ignoree'] as const).map((s) => (

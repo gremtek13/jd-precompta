@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
+import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
 // Seuil au-delà duquel une dépense est candidate à l'immobilisation plutôt qu'à la charge courante.
 // Valeur usuelle citée dans le document d'architecture — pas encore configurable par dossier, cette
@@ -24,6 +25,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
   const [naturesChoisies, setNaturesChoisies] = useState<Record<string, string>>({})
   const [durees, setDurees] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState<string | null>(null)
+  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
 
   async function load() {
     setLoading(true)
@@ -45,6 +47,13 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
     (p) => p.montant_ttc != null && p.montant_ttc >= SEUIL_IMMOBILISATION && !dejaEnregistrees.has(p.id),
   )
   const natureLabel = (id: string | null) => natures.find((n) => n.id === id)?.libelle ?? '—'
+
+  // Le filtre par année ne porte que sur le registre déjà enregistré — les candidates restent toujours
+  // toutes affichées (une pièce ancienne oubliée reste à traiter quelle que soit l'année sélectionnée).
+  const anneesDisponibles = [...new Set(immobilisations.map((i) => new Date(i.date_acquisition).getFullYear()))].sort((a, b) => b - a)
+  const immobilisationsFiltrees = anneeFilter === 'toutes'
+    ? immobilisations
+    : immobilisations.filter((i) => new Date(i.date_acquisition).getFullYear() === anneeFilter)
 
   // Changer la nature choisie pré-remplit la durée suggérée, sans écraser une durée déjà modifiée à la
   // main pour cette pièce.
@@ -163,10 +172,12 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
 
       {error && <p className="error-text">{error}</p>}
 
+      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
+
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
-        ) : immobilisations.length === 0 ? (
+        ) : immobilisationsFiltrees.length === 0 ? (
           <div className="empty-state">Aucune immobilisation enregistrée pour l'instant.</div>
         ) : (
           <table>
@@ -182,7 +193,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
               </tr>
             </thead>
             <tbody>
-              {immobilisations.map((i) => (
+              {immobilisationsFiltrees.map((i) => (
                 <tr key={i.id}>
                   <td>{i.libelle}</td>
                   <td>{natureLabel(i.nature_id)}</td>

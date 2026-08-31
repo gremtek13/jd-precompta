@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, slugify } from '../../lib/format'
 import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
+import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -19,7 +20,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   const [sousDossiers, setSousDossiers] = useState<SousDossier[]>([])
   const [loading, setLoading] = useState(true)
   const [categorieFilter, setCategorieFilter] = useState<'toutes' | CategorieDocument>('toutes')
-  const [anneeFilter, setAnneeFilter] = useState<'toutes' | number>('toutes')
+  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -158,18 +159,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
         cotisation se rattache à une échéance depuis l'onglet Cotisations.
       </p>
 
-      {anneesDisponibles.length > 1 && (
-        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-          <button className={`btn btn-sm ${anneeFilter === 'toutes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter('toutes')}>
-            Toutes années
-          </button>
-          {anneesDisponibles.map((a) => (
-            <button key={a} className={`btn btn-sm ${anneeFilter === a ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter(a)}>
-              {a}
-            </button>
-          ))}
-        </div>
-      )}
+      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
