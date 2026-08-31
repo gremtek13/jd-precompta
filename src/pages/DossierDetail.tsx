@@ -12,12 +12,14 @@ import CotisationsTab from './dossier/CotisationsTab'
 import ClotureTab from './dossier/ClotureTab'
 import DocumentsTab from './dossier/DocumentsTab'
 import EstimationTab from './dossier/EstimationTab'
+import InformationsTab from './dossier/InformationsTab'
+import ChecklistTab from './dossier/ChecklistTab'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 
 export default function DossierDetail() {
   const { id } = useParams<{ id: string }>()
   const [dossier, setDossier] = useState<Dossier | null>(null)
-  const [tab, setTab] = useState<DossierTab>('documents')
+  const [tab, setTab] = useState<DossierTab>('checklist')
 
   useEffect(() => {
     if (!id) return
@@ -60,6 +62,7 @@ export default function DossierDetail() {
 
       <DossierParcours tab={tab} onChange={setTab} />
 
+      {tab === 'checklist' && <ChecklistTab dossierId={id} onNavigate={setTab} />}
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}
@@ -69,6 +72,7 @@ export default function DossierDetail() {
       {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
       {tab === 'cloture' && <ClotureTab dossierId={id} />}
       {tab === 'estimation' && <EstimationTab dossierId={id} />}
+      {tab === 'informations' && <InformationsTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
     </>
   )

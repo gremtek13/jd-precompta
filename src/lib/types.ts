@@ -221,6 +221,26 @@ export interface DocumentDivers {
   created_at: string
 }
 
+export type VehiculeType = 'aucun' | 'personnel_ik' | 'societe'
+
+// Informations déclaratives du client, saisies une fois et rarement modifiées — alimentent la
+// checklist (véhicule société → justificatif d'achat attendu, tickets/chèques → justificatif à
+// obtenir) et plus tard le calcul des paniers repas (jours_travailles_an). Une ligne par dossier,
+// absente tant que personne n'a encore rempli cet onglet.
+export interface InformationsDossier {
+  id: string
+  dossier_id: string
+  vehicule_type: VehiculeType
+  vehicule_libelle: string | null
+  jours_travailles_an: number | null
+  tickets_restaurant: boolean
+  justificatif_tickets_restaurant_recu: boolean
+  cheques_vacances: boolean
+  justificatif_cheques_vacances_recu: boolean
+  notes: string | null
+  updated_at: string
+}
+
 export interface Membership {
   id: string
   user_id: string

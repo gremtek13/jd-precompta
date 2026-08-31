@@ -1,4 +1,5 @@
 export type DossierTab =
+  | 'checklist'
   | 'documents'
   | 'pieces'
   | 'banque'
@@ -8,6 +9,7 @@ export type DossierTab =
   | 'cloture'
   | 'estimation'
   | 'packs'
+  | 'informations'
   | 'acces'
 
 interface Etape {
@@ -22,6 +24,7 @@ interface Etape {
 // "parcourue" — un repère de navigation, pas un statut d'avancement réel (les pièces/le rapprochement
 // continuent d'arriver toute l'année, rien n'est jamais vraiment "terminé" avant la clôture).
 const ETAPES: Etape[] = [
+  { id: 'checklist', label: 'Checklist', icone: '✅' },
   { id: 'documents', label: 'Documents', icone: '📥' },
   { id: 'pieces', label: 'Pièces', icone: '🧾' },
   { id: 'banque', label: 'Banque', icone: '🏦' },
@@ -34,6 +37,7 @@ const ETAPES: Etape[] = [
 // Outils transverses, utilisables à tout moment de l'année plutôt qu'à une étape précise du parcours
 // — affichés séparément pour ne pas casser la lecture linéaire de la ligne principale.
 const OUTILS: Etape[] = [
+  { id: 'informations', label: 'Informations', icone: '📋' },
   { id: 'estimation', label: 'Estimation', icone: '📈' },
   { id: 'packs', label: 'Packs', icone: '📦' },
   { id: 'acces', label: 'Accès', icone: '🔑' },
