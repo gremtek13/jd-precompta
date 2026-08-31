@@ -319,8 +319,8 @@ function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; 
 }
 
 function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[] }) {
-  const doc = result.ExpenseDocuments?.[0]
-  if (!doc) {
+  const documents = result.ExpenseDocuments ?? []
+  if (documents.length === 0) {
     return {
       tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
       confiance: "basse" as const, classification: "facture" as const,
@@ -333,7 +333,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   // ExpenseDocuments — un par page ou groupe de pages — pas forcément un seul avec toutes les Blocks.
   // La classification, le repli TVA texte brut et la lecture 2035 doivent donc chercher sur toutes les
   // pages, pas juste la première : sinon un libellé tombant sur une page suivante serait invisible.
-  const lignes = lignesOcr((result.ExpenseDocuments ?? []).flatMap((d) => d.Blocks ?? []))
+  const lignes = lignesOcr(documents.flatMap((d) => d.Blocks ?? []))
 
   const summary: Record<string, { text: string; confidence: number }> = {}
   // Une facture peut avoir plusieurs lignes de TVA (taux différents) — Textract renvoie alors
@@ -342,22 +342,29 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   let montantTva: number | null = null
   let taxConfidenceSum = 0
   let taxConfidenceCount = 0
-  for (const field of doc.SummaryFields ?? []) {
-    const type = field.Type?.Text
-    const text = field.ValueDetection?.Text
-    const confidence = field.ValueDetection?.Confidence ?? 0
-    if (!type || !text) continue
+  // Même raison que pour lignesOcr ci-dessus : la date/le fournisseur/le total peuvent être détectés
+  // sur un ExpenseDocuments[1+] plutôt que [0] sur un document multi-pages — constaté en pratique par
+  // des dates trouvées sur certains documents et pas d'autres sans raison apparente. On parcourt tous
+  // les groupes et on garde la première occurrence de chaque champ (page 1 en priorité), jamais la
+  // dernière qui pourrait provenir d'une mention moins fiable plus loin dans le document.
+  for (const doc of documents) {
+    for (const field of doc.SummaryFields ?? []) {
+      const type = field.Type?.Text
+      const text = field.ValueDetection?.Text
+      const confidence = field.ValueDetection?.Confidence ?? 0
+      if (!type || !text) continue
 
-    if (type === "TAX") {
-      const amount = parseAmount(text)
-      if (amount != null) {
-        montantTva = (montantTva ?? 0) + amount
-        taxConfidenceSum += confidence
-        taxConfidenceCount++
+      if (type === "TAX") {
+        const amount = parseAmount(text)
+        if (amount != null) {
+          montantTva = (montantTva ?? 0) + amount
+          taxConfidenceSum += confidence
+          taxConfidenceCount++
+        }
+        continue
       }
-      continue
+      if (!summary[type]) summary[type] = { text, confidence }
     }
-    summary[type] = { text, confidence }
   }
 
   const total = summary["TOTAL"]
