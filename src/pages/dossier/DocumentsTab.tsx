@@ -19,6 +19,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   const [sousDossiers, setSousDossiers] = useState<SousDossier[]>([])
   const [loading, setLoading] = useState(true)
   const [categorieFilter, setCategorieFilter] = useState<'toutes' | CategorieDocument>('toutes')
+  const [anneeFilter, setAnneeFilter] = useState<'toutes' | number>('toutes')
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -36,7 +37,16 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
   useEffect(() => { load() }, [dossierId])
 
-  const filtered = documents.filter((d) => categorieFilter === 'toutes' || d.categorie === categorieFilter)
+  // Pas de date propre au document (juste sa date d'ajout dans l'appli) — l'onglet Année filtre donc
+  // sur created_at, pas sur la période réelle du document (un vieux relevé déposé aujourd'hui atterrit
+  // dans l'année en cours, pas dans l'année qu'il couvre).
+  const anneesDisponibles = [...new Set(documents.map((d) => new Date(d.created_at).getFullYear()))].sort((a, b) => b - a)
+
+  const filtered = documents.filter((d) => {
+    if (categorieFilter !== 'toutes' && d.categorie !== categorieFilter) return false
+    if (anneeFilter !== 'toutes' && new Date(d.created_at).getFullYear() !== anneeFilter) return false
+    return true
+  })
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
 
   async function changerCategorie(doc: DocumentDivers, categorie: CategorieDocument) {
@@ -147,6 +157,19 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
         faire vérifier. Reclasse ou convertis en pièce si le tri automatique s'est trompé ; un appel de
         cotisation se rattache à une échéance depuis l'onglet Cotisations.
       </p>
+
+      {anneesDisponibles.length > 1 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${anneeFilter === 'toutes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter('toutes')}>
+            Toutes années
+          </button>
+          {anneesDisponibles.map((a) => (
+            <button key={a} className={`btn btn-sm ${anneeFilter === a ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter(a)}>
+              {a}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>

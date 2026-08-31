@@ -13,6 +13,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [loading, setLoading] = useState(true)
   const [statutFilter, setStatutFilter] = useState<'toutes' | 'a_valider' | 'validee'>('toutes')
   const [sousDossierFilter, setSousDossierFilter] = useState<'tous' | 'sans' | string>('tous')
+  const [anneeFilter, setAnneeFilter] = useState<'toutes' | 'sans_date' | number>('toutes')
   const [editing, setEditing] = useState<Piece | null | 'new'>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [importing, setImporting] = useState(false)
@@ -54,10 +55,19 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     load()
   }, [dossierId])
 
+  // Un dossier est par client, pas par année (voir Estimation) — les pièces s'accumulent sur plusieurs
+  // exercices sans jamais être archivées ailleurs. Les onglets Année filtrent la liste sans rien
+  // déplacer, sur la vraie date du document (date_piece) plutôt que sa date d'ajout dans l'appli.
+  const anneesDisponibles = [...new Set(pieces.filter((p) => p.date_piece).map((p) => new Date(p.date_piece!).getFullYear()))]
+    .sort((a, b) => b - a)
+  const aPiecesSansDate = pieces.some((p) => !p.date_piece)
+
   const filtered = pieces.filter((p) => {
     if (statutFilter !== 'toutes' && p.statut !== statutFilter) return false
-    if (sousDossierFilter === 'sans') return !p.sous_dossier_id
-    if (sousDossierFilter !== 'tous') return p.sous_dossier_id === sousDossierFilter
+    if (sousDossierFilter === 'sans' && p.sous_dossier_id) return false
+    if (sousDossierFilter !== 'tous' && sousDossierFilter !== 'sans' && p.sous_dossier_id !== sousDossierFilter) return false
+    if (anneeFilter === 'sans_date') return !p.date_piece
+    if (anneeFilter !== 'toutes' && (!p.date_piece || new Date(p.date_piece).getFullYear() !== anneeFilter)) return false
     return true
   })
   const tiersConnus = [...new Set(pieces.map((p) => p.tiers).filter((t): t is string => !!t))]
@@ -131,6 +141,24 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      {(anneesDisponibles.length > 1 || (anneesDisponibles.length === 1 && aPiecesSansDate)) && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${anneeFilter === 'toutes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter('toutes')}>
+            Toutes années
+          </button>
+          {anneesDisponibles.map((a) => (
+            <button key={a} className={`btn btn-sm ${anneeFilter === a ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter(a)}>
+              {a}
+            </button>
+          ))}
+          {aPiecesSansDate && (
+            <button className={`btn btn-sm ${anneeFilter === 'sans_date' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setAnneeFilter('sans_date')}>
+              Sans date
+            </button>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {(['toutes', 'a_valider', 'validee'] as const).map((s) => (
