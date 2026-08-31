@@ -14,6 +14,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
+  const [rapprochementAuto, setRapprochementAuto] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -139,6 +140,68 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const nonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
   const totalNonRapproche = nonRapprochees.reduce((s, l) => s + l.montant, 0)
 
+  // Même critère que suggestion()/suggestionCotisation() (montant + date à ±5 jours), mais avec des
+  // ensembles "consommés" locaux plutôt que piecesRapprochees/cotisationsRapprochees (dérivés de l'état
+  // en base) — sinon deux mouvements différents pourraient tous les deux se voir proposer la même
+  // pièce/échéance dans une seule passe, avant que l'écriture en base n'ait eu le temps de se refléter.
+  function rapprochementsAutomatiques(): { ligneId: string; pieceId?: string; cotisationId?: string }[] {
+    const piecesConsommees = new Set(piecesRapprochees)
+    const cotisationsConsommees = new Set(cotisationsRapprochees)
+    const maj: { ligneId: string; pieceId?: string; cotisationId?: string }[] = []
+
+    for (const ligne of nonRapprochees) {
+      const ligneDate = new Date(ligne.date).getTime()
+      const piece = pieces.find((p) => {
+        if (piecesConsommees.has(p.id)) return false
+        if (p.montant_ttc == null || !p.date_piece) return false
+        if (Math.abs(Math.abs(p.montant_ttc) - Math.abs(ligne.montant)) > 0.01) return false
+        const jours = Math.abs(new Date(p.date_piece).getTime() - ligneDate) / 86_400_000
+        return jours <= JOURS_TOLERANCE_RAPPROCHEMENT
+      })
+      if (piece) {
+        piecesConsommees.add(piece.id)
+        maj.push({ ligneId: ligne.id, pieceId: piece.id })
+        continue
+      }
+      const cotisation = cotisations.find((c) => {
+        if (cotisationsConsommees.has(c.id)) return false
+        const montantRef = c.montant_verse ?? c.montant_appele
+        if (Math.abs(Math.abs(montantRef) - Math.abs(ligne.montant)) > 0.01) return false
+        const jours = Math.abs(new Date(c.echeance).getTime() - ligneDate) / 86_400_000
+        return jours <= JOURS_TOLERANCE_RAPPROCHEMENT
+      })
+      if (cotisation) {
+        cotisationsConsommees.add(cotisation.id)
+        maj.push({ ligneId: ligne.id, cotisationId: cotisation.id })
+      }
+    }
+    return maj
+  }
+
+  const suggestionsAutomatiques = rapprochementsAutomatiques()
+
+  // Applique en une fois tous les rapprochements sûrs (montant + date proches, un seul candidat
+  // disponible) — rien n'est écrit sans ce clic explicite, et le tableau reste modifiable/annulable
+  // ligne par ligne ensuite comme n'importe quel rapprochement.
+  async function rapprocherTout() {
+    const maj = rapprochementsAutomatiques()
+    if (maj.length === 0) return
+    setRapprochementAuto(true)
+    try {
+      await Promise.all(
+        maj.map((m) =>
+          supabase
+            .from('lignes_bancaires')
+            .update({ statut: 'rapprochee', piece_id: m.pieceId ?? null, cotisation_id: m.cotisationId ?? null })
+            .eq('id', m.ligneId),
+        ),
+      )
+    } finally {
+      setRapprochementAuto(false)
+      load()
+    }
+  }
+
   return (
     <>
       <ImportCsv dossierId={dossierId} onImported={load} regles={regles} />
@@ -152,6 +215,17 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           {' · '}
           {cotisationsSansMouvement.length} échéance(s) de cotisation sans mouvement bancaire correspondant
         </p>
+        {suggestionsAutomatiques.length > 0 && (
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            style={{ marginTop: 10 }}
+            disabled={rapprochementAuto}
+            onClick={rapprocherTout}
+          >
+            {rapprochementAuto ? 'Rapprochement…' : `Tout rapprocher automatiquement (${suggestionsAutomatiques.length})`}
+          </button>
+        )}
         {regles.length > 0 && (
           <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
             Ignorés automatiquement :{' '}
