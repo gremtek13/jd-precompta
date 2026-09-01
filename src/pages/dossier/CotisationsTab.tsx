@@ -119,11 +119,10 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
       load()
 
       const extraction = await extractPiece(file, file.name).catch(() => null)
-      if (extraction?.lecture_cotisation.echeances.length) {
-        setEcheancesProposees(extraction.lecture_cotisation.echeances)
-      } else if (extraction?.lecture_cotisation._diag_cotisation) {
-        setDiagCotisation(extraction.lecture_cotisation._diag_cotisation)
-      }
+      setEcheancesProposees(extraction?.lecture_cotisation.echeances ?? [])
+      // Toujours affiché (pas seulement à zéro résultat) : un document peut manquer une partie de ses
+      // échéances (ex. l'année suivante) alors que le reste a bien été trouvé — invisible autrement.
+      setDiagCotisation(extraction?.lecture_cotisation._diag_cotisation)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
@@ -254,7 +253,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         {diagCotisation && diagCotisation.length > 0 && (
           <details style={{ marginTop: 10 }}>
             <summary className="muted" style={{ cursor: 'pointer' }}>
-              Aucun échéancier reconnu — diagnostic (temporaire), clique pour copier
+              Texte brut lu sur le document (diagnostic, temporaire) — utile si une échéance manque, clique pour copier
             </summary>
             <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
               {diagCotisation.join('\n')}
