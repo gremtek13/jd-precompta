@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { normalizeTiers, slugify } from '../../lib/format'
-import { extractPiece } from '../../lib/extraction'
+import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import type { Categorie, Piece, SousDossier, TiersCategorie, TypePiece } from '../../lib/types'
 
 function typeApercu(nom: string): 'image' | 'pdf' | 'autre' {
@@ -158,12 +158,20 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       if (!piece && !file) {
         throw new Error('Merci de déposer un fichier.')
       }
+      // Uniquement quand un nouveau fichier est choisi (pas en simple modification d'une pièce
+      // existante sans redéposer) — même détection que l'import en masse et les autres dépôts à
+      // l'unité (Documents, Cotisations).
+      const hash = file ? await hashFichier(file) : null
+      if (hash && (await fichierDejaPresent(dossierId, hash))) {
+        throw new Error('Ce fichier est déjà présent dans ce dossier (Pièces ou Documents).')
+      }
       const storagePath = await uploadFile()
       const { data: userData } = await supabase.auth.getUser()
 
       const payload = {
         dossier_id: dossierId,
         storage_path: storagePath,
+        ...(hash ? { storage_hash: hash } : {}),
         nom_fichier: file?.name ?? piece?.nom_fichier,
         date_piece: datePiece || null,
         tiers: tiers || null,

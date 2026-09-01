@@ -94,3 +94,14 @@ export async function hashFichier(source: Blob): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', bytes)
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, '0')).join('')
 }
+
+// Même détection de doublon que l'import en masse (ImportDossierModal), mais pour un dépôt à l'unité —
+// Pièces, Documents et Cotisations n'avaient jamais cette vérification : redéposer deux fois le même
+// fichier (ex. en debug) créait deux lignes identiques plutôt que d'être repéré.
+export async function fichierDejaPresent(dossierId: string, hash: string): Promise<boolean> {
+  const [{ count: nbPieces }, { count: nbDocuments }] = await Promise.all([
+    supabase.from('pieces').select('id', { count: 'exact', head: true }).eq('dossier_id', dossierId).eq('storage_hash', hash),
+    supabase.from('documents_divers').select('id', { count: 'exact', head: true }).eq('dossier_id', dossierId).eq('storage_hash', hash),
+  ])
+  return (nbPieces ?? 0) > 0 || (nbDocuments ?? 0) > 0
+}

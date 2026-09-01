@@ -1,7 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, slugify } from '../../lib/format'
-import { extractPiece } from '../../lib/extraction'
+import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
@@ -145,6 +145,11 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     setUploading(true)
     setError(null)
     try {
+      const hash = await hashFichier(file)
+      if (await fichierDejaPresent(dossierId, hash)) {
+        setError('Ce fichier est déjà présent dans ce dossier (Pièces ou Documents) — pas réajouté.')
+        return
+      }
       const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
       const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
       if (uploadError) throw uploadError
@@ -152,6 +157,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       const { error: insertError } = await supabase.from('documents_divers').insert({
         dossier_id: dossierId,
         storage_path: path,
+        storage_hash: hash,
         nom_fichier: file.name,
         categorie,
       })
