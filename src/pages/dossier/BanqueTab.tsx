@@ -389,9 +389,11 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
       .then(({ data }) => setDocumentsReleve(data ?? []))
   }, [dossierId])
 
-  async function handleFile(file: File) {
+  // Même Blob générique que handlePdfBlob ci-dessous : un fichier fraîchement déposé (File) ou un CSV
+  // déjà classé dans l'archive Documents (Blob téléchargé du storage) suivent le même traitement.
+  async function handleFile(blob: Blob) {
     setError(null)
-    const text = await file.text()
+    const text = await blob.text()
     const parsed = parseCsv(text)
     if (parsed.length === 0) {
       setError('Fichier vide ou illisible.')
@@ -445,6 +447,22 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
     }
     await handlePdfBlob(data)
   }
+
+  async function utiliserDocumentCsv(doc: DocumentDivers) {
+    setError(null)
+    const { data, error: downloadError } = await supabase.storage.from('pieces').download(doc.storage_path)
+    if (downloadError || !data) {
+      setError("Impossible de récupérer ce document.")
+      return
+    }
+    await handleFile(data)
+  }
+
+  // Une même catégorie "relevé bancaire" peut désormais contenir des CSV et des PDF (classification
+  // automatique par extension pour les CSV, voir DocumentsTab/ImportDossierModal) — chaque sous-onglet
+  // ne doit proposer que les fichiers qu'il sait effectivement traiter.
+  const documentsReleveCsv = documentsReleve.filter((d) => d.nom_fichier.toLowerCase().endsWith('.csv'))
+  const documentsRelevePdf = documentsReleve.filter((d) => d.nom_fichier.toLowerCase().endsWith('.pdf'))
 
   function updatePdfRow(index: number, patch: Partial<LigneExtraite>) {
     setPdfRows((prev) => prev && prev.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -527,9 +545,27 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
       </div>
 
       {source === 'csv' && (
-      <div className="field">
-        <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-      </div>
+        <>
+          {documentsReleveCsv.length > 0 && (
+            <div className="field">
+              <label>Déjà dans Documents</label>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {documentsReleveCsv.map((d) => (
+                  <li key={d.id} style={{ marginBottom: 4 }}>
+                    {d.nom_fichier}{' '}
+                    <button type="button" className="btn btn-outline btn-sm" onClick={() => utiliserDocumentCsv(d)}>
+                      Utiliser ce relevé
+                    </button>
+                  </li>
+                ))}
+              </ul>
+              <p className="muted" style={{ marginTop: 6 }}>— ou dépose un nouveau fichier :</p>
+            </div>
+          )}
+          <div className="field">
+            <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+          </div>
+        </>
       )}
 
       {source === 'csv' && rows && (
@@ -609,11 +645,11 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
 
       {source === 'pdf' && (
         <>
-          {documentsReleve.length > 0 && (
+          {documentsRelevePdf.length > 0 && (
             <div className="field">
               <label>Déjà dans Documents</label>
               <ul style={{ margin: 0, paddingLeft: 20 }}>
-                {documentsReleve.map((d) => (
+                {documentsRelevePdf.map((d) => (
                   <li key={d.id} style={{ marginBottom: 4 }}>
                     {d.nom_fichier}{' '}
                     <button type="button" className="btn btn-outline btn-sm" disabled={pdfExtracting} onClick={() => utiliserDocument(d)}>

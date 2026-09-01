@@ -134,11 +134,16 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
       const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
       if (uploadError) throw uploadError
+      // Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — donc
+      // jamais classé par l'extraction. Mais dans ce contexte, un CSV est presque toujours un export de
+      // relevé bancaire : classé directement sur la seule foi de l'extension, fiable ici contrairement
+      // à un motif de texte à deviner.
+      const categorie = file.name.toLowerCase().endsWith('.csv') ? 'releve_bancaire' : 'autre'
       const { error: insertError } = await supabase.from('documents_divers').insert({
         dossier_id: dossierId,
         storage_path: path,
         nom_fichier: file.name,
-        categorie: 'autre',
+        categorie,
       })
       if (insertError) throw insertError
       load()
@@ -185,7 +190,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           )}
           <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
             {uploading ? 'Envoi…' : '+ Ajouter un document'}
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploading} onChange={handleUpload} />
+            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.csv" style={{ display: 'none' }} disabled={uploading} onChange={handleUpload} />
           </label>
         </div>
       </div>

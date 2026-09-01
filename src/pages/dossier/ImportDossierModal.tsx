@@ -15,7 +15,7 @@ interface FichierImport {
   message?: string
 }
 
-const EXTENSIONS_SUPPORTEES = ['pdf', 'jpg', 'jpeg', 'png']
+const EXTENSIONS_SUPPORTEES = ['pdf', 'jpg', 'jpeg', 'png', 'csv']
 
 function extensionDe(nom: string): string {
   return nom.toLowerCase().split('.').pop() ?? ''
@@ -148,13 +148,32 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
           const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
           if (uploadError) throw uploadError
 
+          const sousDossierId = sousDossierParChemin.get(cheminDossier) ?? null
+
+          // Un CSV n'est ni un PDF ni une image : Textract ne peut pas l'analyser, donc pas
+          // d'extraction à tenter. Dans ce contexte, un CSV est presque toujours un export de relevé
+          // bancaire — classé directement sur la foi de l'extension plutôt que laissé de côté comme
+          // "format non pris en charge".
+          if (extensionDe(file.name) === 'csv') {
+            const { error: insertError } = await supabase.from('documents_divers').insert({
+              dossier_id: dossierId,
+              sous_dossier_id: sousDossierId,
+              storage_path: path,
+              storage_hash: hash,
+              nom_fichier: file.name,
+              categorie: 'releve_bancaire',
+            })
+            if (insertError) throw insertError
+            setStatutFichier(i, 'ok', `Classé « ${LABEL_CLASSIFICATION.releve_bancaire} » → Documents`)
+            continue
+          }
+
           setStatutFichier(i, 'extraction')
           // L'extraction peut échouer pièce par pièce (page illisible, format refusé...) sans faire
           // échouer l'import : le fichier est quand même archivé, à compléter à la main ensuite. Sans
           // extraction, on ne peut pas savoir si c'est une facture ou autre chose — on part du principe
           // que c'en est une (voir classifieDocument côté extract-piece, même repli par défaut).
           const extraction = await extractPiece(file, file.name).catch(() => null)
-          const sousDossierId = sousDossierParChemin.get(cheminDossier) ?? null
 
           if (extraction && extraction.classification !== 'facture') {
             // Pas une facture : relevé bancaire, appel de cotisation ou attestation — archivé dans
@@ -214,8 +233,10 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
           devient un sous-dossier ici ; chaque PDF/JPG/PNG passe automatiquement par l'extraction, qui
           trie aussi le document : une facture atterrit dans Pièces (à vérifier avant validation, comme
           d'habitude), un relevé bancaire / appel de cotisation / attestation atterrit dans l'onglet
-          Documents — reclassable à la main si le tri automatique s'est trompé. Un fichier déjà importé
-          dans ce dossier (même contenu, même si le nom a changé) est repéré et ignoré, pas dupliqué.
+          Documents — reclassable à la main si le tri automatique s'est trompé. Un CSV est classé
+          directement en relevé bancaire (Textract ne sait pas le lire), à importer ensuite depuis
+          l'onglet Banque. Un fichier déjà importé dans ce dossier (même contenu, même si le nom a
+          changé) est repéré et ignoré, pas dupliqué.
         </p>
 
         {fichiers.length === 0 && (
