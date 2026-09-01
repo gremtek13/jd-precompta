@@ -1,6 +1,7 @@
 import { useEffect, useState, type ChangeEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, slugify } from '../../lib/format'
+import { extractPiece } from '../../lib/extraction'
 import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
@@ -9,6 +10,19 @@ const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   cotisation: 'Appel de cotisation',
   attestation: 'Attestation / certificat',
   autre: 'Autre',
+}
+
+// Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — presque
+// toujours un export de relevé bancaire dans ce contexte, classé directement sur son extension. Les
+// autres formats passent par la même extraction/classification que l'import en masse (ImportDossierModal)
+// plutôt que d'atterrir systématiquement en "Autre" faute d'avoir jamais été analysés : c'est ce qui
+// manquait pour qu'un appel de cotisation déposé ici finisse dans la bonne catégorie. Une "facture"
+// détectée reste "Autre" ici (à reclasser en Pièce via le bouton dédié, pas déplacée automatiquement).
+async function classifierDocument(file: File): Promise<CategorieDocument> {
+  if (file.name.toLowerCase().endsWith('.csv')) return 'releve_bancaire'
+  const extraction = await extractPiece(file, file.name).catch(() => null)
+  if (!extraction || extraction.classification === 'facture') return 'autre'
+  return extraction.classification
 }
 
 // Palier 5+ — archive des documents qui ne sont ni des pièces d'achat/vente ni des lignes bancaires :
@@ -134,11 +148,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
       const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
       if (uploadError) throw uploadError
-      // Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — donc
-      // jamais classé par l'extraction. Mais dans ce contexte, un CSV est presque toujours un export de
-      // relevé bancaire : classé directement sur la seule foi de l'extension, fiable ici contrairement
-      // à un motif de texte à deviner.
-      const categorie = file.name.toLowerCase().endsWith('.csv') ? 'releve_bancaire' : 'autre'
+      const categorie = await classifierDocument(file)
       const { error: insertError } = await supabase.from('documents_divers').insert({
         dossier_id: dossierId,
         storage_path: path,
