@@ -12,19 +12,6 @@ const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   autre: 'Autre',
 }
 
-// Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — presque
-// toujours un export de relevé bancaire dans ce contexte, classé directement sur son extension. Les
-// autres formats passent par la même extraction/classification que l'import en masse (ImportDossierModal)
-// plutôt que d'atterrir systématiquement en "Autre" faute d'avoir jamais été analysés : c'est ce qui
-// manquait pour qu'un appel de cotisation déposé ici finisse dans la bonne catégorie. Une "facture"
-// détectée reste "Autre" ici (à reclasser en Pièce via le bouton dédié, pas déplacée automatiquement).
-async function classifierDocument(file: File): Promise<CategorieDocument> {
-  if (file.name.toLowerCase().endsWith('.csv')) return 'releve_bancaire'
-  const extraction = await extractPiece(file, file.name).catch(() => null)
-  if (!extraction || extraction.classification === 'facture') return 'autre'
-  return extraction.classification
-}
-
 // Palier 5+ — archive des documents qui ne sont ni des pièces d'achat/vente ni des lignes bancaires :
 // relevés de compte, attestations, appels de cotisation avant rattachement à une échéance (voir
 // CotisationsTab). Alimentée automatiquement par la classification de l'import en masse
@@ -38,6 +25,9 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
+  // Documents dont l'analyse Textract tourne encore en arrière-plan (voir handleUpload) — juste pour
+  // afficher un badge "Analyse…" à la place de la catégorie provisoire, pas pour bloquer quoi que ce soit.
+  const [enAnalyse, setEnAnalyse] = useState<Set<string>>(new Set())
 
   async function load() {
     setLoading(true)
@@ -139,6 +129,12 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
+  // Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — presque
+  // toujours un export de relevé bancaire dans ce contexte, classé directement sur son extension, donc
+  // pas besoin d'attendre. Les autres formats passent par Textract, qui peut prendre jusqu'à 50s sur un
+  // document multi-pages : le document est créé tout de suite avec une catégorie provisoire ("Autre"),
+  // et l'analyse tourne en arrière-plan sans bloquer la suite (déposer un autre fichier, changer
+  // d'onglet...) — elle corrige la catégorie toute seule une fois terminée.
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -153,16 +149,37 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
       const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
       if (uploadError) throw uploadError
-      const categorie = await classifierDocument(file)
-      const { error: insertError } = await supabase.from('documents_divers').insert({
+
+      const estCsv = file.name.toLowerCase().endsWith('.csv')
+      const { data: inserted, error: insertError } = await supabase.from('documents_divers').insert({
         dossier_id: dossierId,
         storage_path: path,
         storage_hash: hash,
         nom_fichier: file.name,
-        categorie,
-      })
+        categorie: estCsv ? 'releve_bancaire' : 'autre',
+      }).select().single()
       if (insertError) throw insertError
       load()
+
+      if (!estCsv && inserted) {
+        const documentId = inserted.id
+        setEnAnalyse((prev) => new Set(prev).add(documentId))
+        extractPiece(file, file.name)
+          .then(async (extraction) => {
+            if (extraction.classification !== 'facture') {
+              await supabase.from('documents_divers').update({ categorie: extraction.classification }).eq('id', documentId)
+            }
+          })
+          .catch(() => {}) // best-effort : la catégorie provisoire "Autre" reste, à corriger à la main
+          .finally(() => {
+            setEnAnalyse((prev) => {
+              const next = new Set(prev)
+              next.delete(documentId)
+              return next
+            })
+            load()
+          })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
@@ -240,7 +257,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                     <a href="#" onClick={(e) => { e.preventDefault(); voir(d.storage_path) }}>{d.nom_fichier}</a>
                     {d.attached_to_cotisation_id && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Rattaché à une échéance</span>}
                   </td>
-                  <td>
+                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <select
                       style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px' }}
                       value={d.categorie}
@@ -250,6 +267,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                         <option key={c} value={c}>{LABEL_CATEGORIE[c]}</option>
                       ))}
                     </select>
+                    {enAnalyse.has(d.id) && <span className="badge badge-neutral">Analyse…</span>}
                   </td>
                   <td>{sousDossierLabel(d.sous_dossier_id)}</td>
                   <td>{formatDate(d.created_at)}</td>

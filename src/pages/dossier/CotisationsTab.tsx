@@ -28,6 +28,9 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [montantCsgCrds, setMontantCsgCrds] = useState('')
   const [previsionnel, setPrevisionnel] = useState(false)
   const [uploading, setUploading] = useState(false)
+  // Distinct de "uploading" : celui-ci ne bloque plus rien (dépôt d'un autre fichier, navigation...),
+  // juste un indicateur pendant que Textract analyse le document en arrière-plan.
+  const [analyseEnCours, setAnalyseEnCours] = useState(false)
   const [echeancesProposees, setEcheancesProposees] = useState<{ date: string; montant: number; previsionnel: boolean }[]>([])
   const [diagCotisation, setDiagCotisation] = useState<string[] | undefined>(undefined)
   const [creantEcheances, setCreantEcheances] = useState(false)
@@ -94,10 +97,11 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   // Upload direct depuis cet onglet, sans passer par Documents — pratique pour les vieux appels de
   // cotisation (années précédentes) qu'on n'a pas forcément fait passer par un import en masse.
-  // Catégorie forcée à "cotisation" (contexte de l'onglet). Passe aussi par l'extraction : un avis
-  // d'appel réel a un échéancier de plusieurs mensualités (pas "un montant + une date"), proposées
-  // ci-dessous à la création plutôt qu'à ressaisir à la main — jamais créées automatiquement sans
-  // confirmation.
+  // Catégorie forcée à "cotisation" (contexte de l'onglet). Le document est créé tout de suite ;
+  // l'extraction (jusqu'à 50s sur un multi-pages) tourne ensuite en arrière-plan sans bloquer la suite
+  // (un autre dépôt, changer d'onglet...) — un avis d'appel réel a un échéancier de plusieurs
+  // mensualités (pas "un montant + une date"), proposées ci-dessous dès qu'elles arrivent, jamais
+  // créées automatiquement sans confirmation.
   async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file) return
@@ -123,12 +127,18 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
       })
       if (insertError) throw insertError
       load()
+      setAnalyseEnCours(true)
 
-      const extraction = await extractPiece(file, file.name).catch(() => null)
-      setEcheancesProposees(extraction?.lecture_cotisation.echeances ?? [])
-      // Toujours affiché (pas seulement à zéro résultat) : un document peut manquer une partie de ses
-      // échéances (ex. l'année suivante) alors que le reste a bien été trouvé — invisible autrement.
-      setDiagCotisation(extraction?.lecture_cotisation._diag_cotisation)
+      extractPiece(file, file.name)
+        .catch(() => null)
+        .then((extraction) => {
+          setEcheancesProposees(extraction?.lecture_cotisation.echeances ?? [])
+          // Toujours affiché (pas seulement à zéro résultat) : un document peut manquer une partie de
+          // ses échéances (ex. l'année suivante) alors que le reste a bien été trouvé — invisible
+          // autrement.
+          setDiagCotisation(extraction?.lecture_cotisation._diag_cotisation)
+        })
+        .finally(() => setAnalyseEnCours(false))
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
@@ -249,6 +259,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
               {uploading ? 'Envoi…' : '+ Ajouter un appel de cotisation (PDF/JPG/PNG)'}
               <input type="file" accept=".pdf,.jpg,.jpeg,.png" style={{ display: 'none' }} disabled={uploading} onChange={handleUpload} />
             </label>
+            {analyseEnCours && <span className="badge badge-neutral">Analyse du document en cours…</span>}
           </div>
         </form>
         <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>
