@@ -249,21 +249,25 @@ const MOIS_FR: Record<string, string> = {
 
 // Format CARPIMKO réel : "10 JUILLET 2023  1191,00 EUROS", une ligne (jour mois année montant EUROS)
 // par échéance — cherché sur le texte joint plutôt que ligne par ligne, faute de savoir si Textract
-// regroupe une échéance sur une seule ligne ou la scinde. Coupe avant un éventuel échéancier
-// "PRÉVISIONNEL" (année suivante, pas encore appelé) pour ne retenir que les échéances dues.
-function lectureEcheancierEnLigne(lignes: string[]): { date: string; montant: number }[] {
+// regroupe une échéance sur une seule ligne ou la scinde. Un éventuel échéancier "PRÉVISIONNEL" (année
+// suivante, pas encore un appel officiel) n'est plus exclu : la caisse le prélève en pratique dès les
+// premiers mois de l'année suivante, donc remonté comme les autres mais marqué "previsionnel" pour ne
+// pas le confondre avec un montant définitif — corrigé automatiquement quand l'appel définitif arrive
+// (voir CotisationsTab.creerEcheancesProposees côté client).
+function lectureEcheancierEnLigne(lignes: string[]): { date: string; montant: number; previsionnel: boolean }[] {
   const texte = lignes.join(" ")
   const idxPrevisionnel = texte.toUpperCase().indexOf("PRÉVISIONNEL")
-  const zoneUtile = idxPrevisionnel === -1 ? texte : texte.slice(0, idxPrevisionnel)
 
   const regex = /(\d{1,2})\s+(JANVIER|F[EÉ]VRIER|MARS|AVRIL|MAI|JUIN|JUILLET|AO[UÛ]T|SEPTEMBRE|OCTOBRE|NOVEMBRE|D[EÉ]CEMBRE)\s+(\d{4})\s+(\d[\d\s]*,\d{2})\s*EUROS/gi
-  const echeances: { date: string; montant: number }[] = []
+  const echeances: { date: string; montant: number; previsionnel: boolean }[] = []
   let m: RegExpExecArray | null
-  while ((m = regex.exec(zoneUtile))) {
+  while ((m = regex.exec(texte))) {
     const mois = MOIS_FR[m[2].toUpperCase()]
     const montant = parseFloat(m[4].replace(/\s/g, "").replace(",", "."))
     const date = mois ? toIsoDate(+m[3], +mois, +m[1]) : null
-    if (date && !Number.isNaN(montant)) echeances.push({ date, montant })
+    if (date && !Number.isNaN(montant)) {
+      echeances.push({ date, montant, previsionnel: idxPrevisionnel !== -1 && m.index >= idxPrevisionnel })
+    }
   }
   return echeances
 }
@@ -285,12 +289,14 @@ function montantEuros(ligne?: string): number | null {
 // bon montant, sauf pour les mois déjà passés à la date du courrier où elle affiche "/" (déjà réglé
 // au montant provisionnel d'origine) : on retombe alors sur la 2e ligne, toujours renseignée.
 // L'année est prise sur l'en-tête "ÉCHÉANCIER DE COTISATIONS <année>", absente de la ligne de date.
-function lectureEcheancierParLignes(lignes: string[]): { date: string; montant: number }[] {
+function lectureEcheancierParLignes(lignes: string[]): { date: string; montant: number; previsionnel: boolean }[] {
   const anneeMatch = lignes.join(" ").match(/[EÉ]CH[EÉ]ANCIER\s+DE\s+COTISATIONS\s+(\d{4})/i)
   if (!anneeMatch) return []
   const annee = anneeMatch[1]
 
-  const echeances: { date: string; montant: number }[] = []
+  // Ce format (courrier de régularisation URSSAF) n'a pas de section "PRÉVISIONNEL" séparée comme
+  // CARPIMKO — chaque échéance de ce tableau est déjà un montant à payer, jamais une estimation.
+  const echeances: { date: string; montant: number; previsionnel: boolean }[] = []
   for (let i = 0; i < lignes.length; i++) {
     const m = lignes[i].trim().match(JOUR_MOIS_REGEX)
     if (!m) continue
@@ -299,12 +305,12 @@ function lectureEcheancierParLignes(lignes: string[]): { date: string; montant: 
     const montant = montantEuros(lignes[i + 3]) ?? montantEuros(lignes[i + 2])
     if (montant == null) continue
     const date = toIsoDate(+annee, +mois, +m[1])
-    if (date) echeances.push({ date, montant })
+    if (date) echeances.push({ date, montant, previsionnel: false })
   }
   return echeances
 }
 
-function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; montant: number }[]; _diag_cotisation?: string[] } {
+function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; montant: number; previsionnel: boolean }[]; _diag_cotisation?: string[] } {
   const echeances = lectureEcheancierEnLigne(lignes)
   const echeancesFinal = echeances.length > 0 ? echeances : lectureEcheancierParLignes(lignes)
 

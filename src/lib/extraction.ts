@@ -33,7 +33,10 @@ export interface ExtractionResult {
   // "un montant + une date" mais un échéancier de plusieurs mensualités. Toujours à confirmer par
   // l'utilisateur avant de créer les échéances proposées.
   lecture_cotisation: {
-    echeances: { date: string; montant: number }[]
+    // previsionnel : échéance lue dans une section "ÉCHÉANCIER PRÉVISIONNEL" (CARPIMKO) — une
+    // estimation pour l'année suivante, pas encore un appel officiel, mais prélevée en pratique dès
+    // les premiers mois. Suivie comme les autres (voir CotisationsTab), juste signalée à part.
+    echeances: { date: string; montant: number; previsionnel: boolean }[]
     _diag_cotisation?: string[]
   }
   error?: string

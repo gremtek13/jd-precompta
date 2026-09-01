@@ -161,6 +161,12 @@ export interface CotisationDeclaree {
   montant_appele: number
   montant_verse: number | null
   montant_csg_crds: number | null
+  // Une échéance CARPIMKO peut apparaître dans une section "ÉCHÉANCIER PRÉVISIONNEL" (estimation pour
+  // l'année suivante, pas encore un appel officiel) plutôt que l'échéancier confirmé — prélevée telle
+  // quelle par la caisse en pratique, donc suivie comme les autres plutôt qu'ignorée, mais signalée
+  // pour ne pas la confondre avec un montant définitif. Repassée à false quand l'appel définitif
+  // arrive et corrige le montant (voir CotisationsTab.creerEcheancesProposees).
+  previsionnel: boolean
   created_at: string
 }
 

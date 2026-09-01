@@ -26,8 +26,9 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [montantAppele, setMontantAppele] = useState('')
   const [montantVerse, setMontantVerse] = useState('')
   const [montantCsgCrds, setMontantCsgCrds] = useState('')
+  const [previsionnel, setPrevisionnel] = useState(false)
   const [uploading, setUploading] = useState(false)
-  const [echeancesProposees, setEcheancesProposees] = useState<{ date: string; montant: number }[]>([])
+  const [echeancesProposees, setEcheancesProposees] = useState<{ date: string; montant: number; previsionnel: boolean }[]>([])
   const [diagCotisation, setDiagCotisation] = useState<string[] | undefined>(undefined)
   const [creantEcheances, setCreantEcheances] = useState(false)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
@@ -58,12 +59,14 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         montant_appele: parseFloat(montantAppele),
         montant_verse: montantVerse ? parseFloat(montantVerse) : null,
         montant_csg_crds: montantCsgCrds ? parseFloat(montantCsgCrds) : null,
+        previsionnel,
       })
       if (insertError) throw insertError
       setEcheance('')
       setMontantAppele('')
       setMontantVerse('')
       setMontantCsgCrds('')
+      setPrevisionnel(false)
       load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
@@ -129,17 +132,44 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     }
   }
 
+  // Une échéance "prévisionnelle" (CARPIMKO, année suivante) déjà créée peut être re-proposée plus
+  // tard par l'appel définitif, à la même date mais avec le vrai montant — on corrige alors la ligne
+  // existante (montant + retrait du marqueur) plutôt que de créer un doublon. Une échéance déjà
+  // définitive n'est en revanche jamais réécrite automatiquement (un montant déjà confirmé/vérifié ne
+  // doit pas être silencieusement remplacé).
   async function creerEcheancesProposees() {
     if (echeancesProposees.length === 0) return
     setCreantEcheances(true)
     setError(null)
     try {
-      const { error: insertError } = await supabase.from('cotisations_declarees').insert(
-        echeancesProposees.map((e) => ({ dossier_id: dossierId, echeance: e.date, montant_appele: e.montant })),
-      )
-      if (insertError) throw insertError
+      const aInserer = echeancesProposees
+        .filter((e) => !cotisations.some((c) => c.echeance === e.date))
+        .map((e) => ({ dossier_id: dossierId, echeance: e.date, montant_appele: e.montant, previsionnel: e.previsionnel }))
+
+      const aMettreAJour = echeancesProposees
+        .map((e) => ({ e, existante: cotisations.find((c) => c.echeance === e.date) }))
+        .filter((x): x is { e: { date: string; montant: number; previsionnel: boolean }; existante: CotisationDeclaree } =>
+          !!x.existante?.previsionnel && !x.e.previsionnel,
+        )
+
+      if (aInserer.length > 0) {
+        const { error: insertError } = await supabase.from('cotisations_declarees').insert(aInserer)
+        if (insertError) throw insertError
+      }
+      for (const { e, existante } of aMettreAJour) {
+        const { error: updateError } = await supabase
+          .from('cotisations_declarees')
+          .update({ montant_appele: e.montant, previsionnel: false })
+          .eq('id', existante.id)
+        if (updateError) throw updateError
+      }
+
+      const ignorees = echeancesProposees.length - aInserer.length - aMettreAJour.length
       setEcheancesProposees([])
       load()
+      if (ignorees > 0) {
+        window.alert(`${aInserer.length + aMettreAJour.length} échéance(s) prise(s) en compte, ${ignorees} déjà à jour (ignorée(s)).`)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
@@ -199,6 +229,12 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
             "dont CSG-CRDS" : uniquement la part CSG-CRDS visible sur le décompte Urssaf, pas le montant
             appelé total — c'est la seule part sur laquelle la déductibilité peut être calculée.
           </p>
+          <div className="field">
+            <label>
+              <input type="checkbox" checked={previsionnel} onChange={(e) => setPrevisionnel(e.target.checked)} style={{ marginRight: 6 }} />
+              Prévisionnel (estimation, pas encore un appel définitif)
+            </label>
+          </div>
           {error && <p className="error-text">{error}</p>}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
             <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>
@@ -231,15 +267,22 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0 }}>Échéances trouvées sur ce document ({echeancesProposees.length})</h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            Vérifie avant de créer — rien n'est encore enregistré.
+            Vérifie avant de créer — rien n'est encore enregistré. Une échéance "Prévisionnel" vient
+            d'une section estimée du document (pas encore un appel définitif) — remplacée automatiquement
+            si tu déposes plus tard l'appel définitif pour la même date.
           </p>
           <table>
-            <thead><tr><th>Échéance</th><th>Montant appelé</th></tr></thead>
+            <thead><tr><th>Échéance</th><th>Montant appelé</th><th>Statut</th></tr></thead>
             <tbody>
               {echeancesProposees.map((e, i) => (
                 <tr key={i}>
                   <td>{formatDate(e.date)}</td>
                   <td>{formatMoney(e.montant)}</td>
+                  <td>
+                    {e.previsionnel
+                      ? <span className="badge badge-warning">Prévisionnel</span>
+                      : <span className="badge badge-ok">Définitif</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -317,7 +360,10 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
                 const documentsDisponibles = documentsNonRattaches
                 return (
                   <tr key={c.id}>
-                    <td>{formatDate(c.echeance)}</td>
+                    <td>
+                      {formatDate(c.echeance)}
+                      {c.previsionnel && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Prévisionnel</span>}
+                    </td>
                     <td>{formatMoney(c.montant_appele)}</td>
                     <td>{c.montant_verse != null ? formatMoney(c.montant_verse) : '—'}</td>
                     <td>{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
