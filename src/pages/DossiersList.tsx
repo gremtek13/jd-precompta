@@ -4,9 +4,20 @@ import { supabase } from '../lib/supabase'
 import type { Dossier } from '../lib/types'
 
 interface DossierRow extends Dossier {
-  nb_a_valider: number
+  nbAValider: number
+  moisPresents: number
+  moisEcoules: number
+  cotisationsOk: boolean
 }
 
+const ANNEE_COURANTE = new Date().getFullYear()
+const MOIS_ECOULES = new Date().getMonth() + 1
+
+// Dashboard cabinet : ce qui a besoin d'attention sur l'ensemble des dossiers, sans avoir à ouvrir
+// chacun pour le savoir. Trois requêtes globales (pas une par dossier) puis agrégation côté client —
+// mêmes signaux que la Checklist de chaque dossier (relevés bancaires de l'année en cours, appels de
+// cotisation), volontairement réduits aux deux qui s'appliquent à tous les dossiers sans configuration
+// préalable (véhicule, tickets restaurant... restent spécifiques à la Checklist du dossier).
 export default function DossiersList() {
   const [dossiers, setDossiers] = useState<DossierRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -16,23 +27,37 @@ export default function DossiersList() {
 
   async function load() {
     setLoading(true)
-    const { data: dossierData } = await supabase
-      .from('dossiers')
-      .select('*')
-      .eq('archive', false)
-      .order('nom')
+    const debutAnnee = `${ANNEE_COURANTE}-01-01`
 
-    const { data: pieceCounts } = await supabase
-      .from('pieces')
-      .select('dossier_id')
-      .eq('statut', 'a_valider')
+    const [{ data: dossierData }, { data: pieceCounts }, { data: lignesBancaires }, { data: cotisations }] = await Promise.all([
+      supabase.from('dossiers').select('*').eq('archive', false).order('nom'),
+      supabase.from('pieces').select('dossier_id').eq('statut', 'a_valider'),
+      supabase.from('lignes_bancaires').select('dossier_id, date').gte('date', debutAnnee),
+      supabase.from('cotisations_declarees').select('dossier_id, echeance').gte('echeance', debutAnnee),
+    ])
 
-    const counts = new Map<string, number>()
-    for (const p of pieceCounts ?? []) {
-      counts.set(p.dossier_id, (counts.get(p.dossier_id) ?? 0) + 1)
+    const aValider = new Map<string, number>()
+    for (const p of pieceCounts ?? []) aValider.set(p.dossier_id, (aValider.get(p.dossier_id) ?? 0) + 1)
+
+    const moisParDossier = new Map<string, Set<number>>()
+    for (const l of lignesBancaires ?? []) {
+      const set = moisParDossier.get(l.dossier_id) ?? new Set<number>()
+      set.add(new Date(l.date).getMonth() + 1)
+      moisParDossier.set(l.dossier_id, set)
     }
 
-    setDossiers((dossierData ?? []).map((d) => ({ ...d, nb_a_valider: counts.get(d.id) ?? 0 })))
+    const cotisationsOk = new Set<string>()
+    for (const c of cotisations ?? []) cotisationsOk.add(c.dossier_id)
+
+    setDossiers(
+      (dossierData ?? []).map((d) => ({
+        ...d,
+        nbAValider: aValider.get(d.id) ?? 0,
+        moisPresents: moisParDossier.get(d.id)?.size ?? 0,
+        moisEcoules: MOIS_ECOULES,
+        cotisationsOk: cotisationsOk.has(d.id),
+      })),
+    )
     setLoading(false)
   }
 
@@ -42,12 +67,24 @@ export default function DossiersList() {
 
   const filtered = dossiers.filter((d) => d.nom.toLowerCase().includes(search.toLowerCase()))
 
+  // Un dossier avec au moins un point à régler remonte en premier — inutile de parcourir toute la
+  // liste pour repérer ce qui a besoin d'attention.
+  const alerte = (d: DossierRow) => d.nbAValider > 0 || d.moisPresents < d.moisEcoules || !d.cotisationsOk
+  const trie = [...filtered].sort((a, b) => Number(alerte(b)) - Number(alerte(a)) || a.nom.localeCompare(b.nom))
+  const nbAvecAlerte = filtered.filter(alerte).length
+
   return (
     <>
       <div className="topbar">
         <h1>Dossiers</h1>
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>+ Nouveau dossier</button>
       </div>
+
+      {!loading && filtered.length > 0 && (
+        <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
+          {nbAvecAlerte > 0 ? `${nbAvecAlerte} dossier(s) sur ${filtered.length} ont un point à régler.` : `Les ${filtered.length} dossier(s) sont à jour.`}
+        </p>
+      )}
 
       <input
         placeholder="Rechercher un dossier…"
@@ -66,19 +103,35 @@ export default function DossiersList() {
             <thead>
               <tr>
                 <th>Nom</th>
-                <th>Pièces à valider</th>
+                <th>Pièces</th>
+                <th>Relevés bancaires {ANNEE_COURANTE}</th>
+                <th>Cotisations {ANNEE_COURANTE}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((d) => (
+              {trie.map((d) => (
                 <tr key={d.id} className="clickable" onClick={() => navigate(`/dossiers/${d.id}`)}>
                   <td>{d.nom}</td>
                   <td>
-                    {d.nb_a_valider > 0 ? (
-                      <span className="badge badge-warning">{d.nb_a_valider} à valider</span>
+                    {d.nbAValider > 0 ? (
+                      <span className="badge badge-warning">{d.nbAValider} à valider</span>
                     ) : (
                       <span className="badge badge-ok">à jour</span>
+                    )}
+                  </td>
+                  <td>
+                    {d.moisPresents >= d.moisEcoules ? (
+                      <span className="badge badge-ok">{d.moisPresents}/{d.moisEcoules} mois</span>
+                    ) : (
+                      <span className="badge badge-warning">{d.moisPresents}/{d.moisEcoules} mois</span>
+                    )}
+                  </td>
+                  <td>
+                    {d.cotisationsOk ? (
+                      <span className="badge badge-ok">reçues</span>
+                    ) : (
+                      <span className="badge badge-warning">aucune</span>
                     )}
                   </td>
                   <td>
