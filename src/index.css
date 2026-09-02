@@ -267,6 +267,15 @@ tr.clickable:hover { background: var(--color-primary-light); }
 }
 .theme-toggle:hover { border-color: var(--color-primary); color: var(--color-primary); }
 
+.checklist-item {
+  display: flex; align-items: center; gap: 12px; padding: 14px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+.checklist-item:last-child { border-bottom: none; }
+.checklist-item .checklist-item-body { flex: 1; min-width: 0; }
+
+.mini-progress { width: 70px; }
+
 /* Mobile : sidebar en barre horizontale, formulaires en une colonne, marges réduites */
 @media (max-width: 720px) {
   .app-shell { flex-direction: column; min-height: auto; }
@@ -287,6 +296,10 @@ tr.clickable:hover { background: var(--color-primary-light); }
   .sidebar nav { flex-direction: row; overflow-x: auto; gap: 4px; }
   .sidebar nav a { white-space: nowrap; }
   .sidebar-actions { flex-shrink: 0; margin-left: 10px; }
+  /* Le libellé "Déconnexion" ferait déborder la barre à côté du logo + de la nav + du bouton de
+     thème sur un petit écran — bouton icône seule, avec aria-label pour l'accessibilité. */
+  .sidebar-actions .btn-label { display: none; }
+  .sidebar-actions .btn { padding: 8px; }
 
   .main { padding: 16px; max-width: 100%; }
 
@@ -295,6 +308,21 @@ tr.clickable:hover { background: var(--color-primary-light); }
 
   .field-row { flex-direction: column; gap: 0; }
 
+  /* Empêche le zoom automatique de Safari iOS à la mise au point d'un champ en dessous de 16px. */
+  .field input, .field select, .field textarea { font-size: 16px; }
+
   table { font-size: 0.85rem; }
   th, td { padding: 8px 6px; }
+
+  .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .stat-card { padding: 12px 14px; }
+  .stat-card .stat-value { font-size: 1.5rem; }
+
+  /* La checklist mélange une pastille, un texte parfois long (mois manquants...) et un bouton sur une
+     seule ligne — trop serré sur un petit écran, empile plutôt le bouton sous le texte. */
+  .checklist-item { flex-wrap: wrap; padding: 12px 14px; }
+  .checklist-item .checklist-item-body { flex-basis: 100%; }
+  .checklist-item .btn { margin-left: 26px; }
+
+  .mini-progress { width: 46px; }
 }

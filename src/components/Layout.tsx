@@ -32,7 +32,9 @@ export default function Layout() {
           >
             {theme === 'dark' ? <IconSun width={16} height={16} /> : <IconMoon width={16} height={16} />}
           </button>
-          <button className="btn btn-outline btn-sm" onClick={signOut}><IconLogout width={15} height={15} /> Déconnexion</button>
+          <button className="btn btn-outline btn-sm" onClick={signOut} aria-label="Déconnexion">
+            <IconLogout width={15} height={15} /> <span className="btn-label">Déconnexion</span>
+          </button>
         </div>
       </aside>
       <main className="main">

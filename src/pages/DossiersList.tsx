@@ -133,7 +133,7 @@ export default function DossiersList() {
                   </td>
                   <td>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div className="progress-track" style={{ width: 70 }}>
+                      <div className="progress-track mini-progress">
                         <div
                           className={`progress-fill ${d.moisPresents < d.moisEcoules ? 'warning' : ''}`}
                           style={{ width: `${Math.min(100, (d.moisPresents / d.moisEcoules) * 100)}%` }}

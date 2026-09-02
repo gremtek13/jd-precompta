@@ -167,13 +167,7 @@ export default function ChecklistTab({ dossierId, onNavigate }: { dossierId: str
 
       <div className="card" style={{ padding: 0 }}>
         {items.map((item) => (
-          <div
-            key={item.id}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '14px 20px',
-              borderBottom: '1px solid var(--color-border)',
-            }}
-          >
+          <div key={item.id} className="checklist-item">
             <button
               type="button"
               onClick={item.onToggle}
@@ -186,7 +180,7 @@ export default function ChecklistTab({ dossierId, onNavigate }: { dossierId: str
                 cursor: item.onToggle ? 'pointer' : 'default',
               }}
             />
-            <div style={{ flex: 1 }}>
+            <div className="checklist-item-body">
               <div style={{ fontWeight: 600 }}>{item.label}</div>
               {item.detail && <div className="muted" style={{ fontSize: '0.82rem' }}>{item.detail}</div>}
             </div>
