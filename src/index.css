@@ -39,6 +39,22 @@ a { color: var(--color-primary); }
 
 button, input, select, textarea { font: inherit; }
 
+/* Refonte visuelle (4/4) — hiérarchie de titres cohérente : jusqu'ici chaque écran gérait ses <h3> de
+   section au coup par coup (style inline marginTop:0 uniquement) sans base commune de poids/taille. */
+h2, h3 { margin: 0 0 6px; font-weight: 700; letter-spacing: -0.01em; color: var(--color-text); }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1.05rem; }
+
+/* Anneau de focus cohérent au clavier sur les éléments interactifs qui n'en avaient pas (jusqu'ici
+   seuls .field input/select/textarea en avaient un) — accessibilité et finition, pas de changement de
+   comportement. */
+.btn:focus-visible, .theme-toggle:focus-visible, .parcours-outil:focus-visible {
+  outline: none; box-shadow: 0 0 0 3px var(--color-primary-light);
+}
+.sidebar nav a:focus-visible, .parcours-etape:focus-visible .parcours-cercle, .tabs button:focus-visible {
+  outline: none; box-shadow: 0 0 0 3px var(--color-primary-light); border-radius: var(--radius-sm);
+}
+
 .btn {
   display: inline-flex;
   align-items: center;
@@ -103,8 +119,8 @@ button, input, select, textarea { font: inherit; }
 
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 thead tr { background: var(--color-bg); }
-th { text-align: left; padding: 10px 12px; color: var(--color-text-light); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--color-border); }
-td { padding: 11px 12px; border-bottom: 1px solid var(--color-border); }
+th { text-align: left; padding: 11px 12px; color: var(--color-text-light); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--color-border); }
+td { padding: 12px; border-bottom: 1px solid var(--color-border); font-variant-numeric: tabular-nums; }
 tr:last-child td { border-bottom: none; }
 tbody tr:hover { background: var(--color-bg); }
 tr.clickable { cursor: pointer; }
@@ -135,8 +151,8 @@ tr.clickable:hover { background: var(--color-primary-light); }
 
 .main { flex: 1; padding: 28px 32px; max-width: 1000px; }
 
-.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
-.topbar h1 { margin: 0; font-size: 1.45rem; font-weight: 700; letter-spacing: -0.015em; }
+.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
+.topbar h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
 
 .muted { color: var(--color-text-light); font-size: 0.85rem; }
 .error-text { color: var(--color-danger); font-size: 0.85rem; margin-top: 4px; }
@@ -186,7 +202,10 @@ tr.clickable:hover { background: var(--color-primary-light); }
 .login-card { width: 100%; max-width: 380px; }
 .login-card h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 4px; }
 
-.empty-state { text-align: center; padding: 48px 20px; color: var(--color-text-light); }
+.empty-state {
+  text-align: center; padding: 44px 20px; color: var(--color-text-light);
+  border: 1px dashed var(--color-border); border-radius: var(--radius); margin: 4px;
+}
 
 /* Palier 5 — rappel permanent que les écritures proposées ne sont pas une comptabilité tenue. */
 .brouillon-banner {
