@@ -5,6 +5,7 @@ import Login from './pages/Login'
 import DossiersList from './pages/DossiersList'
 import DossierDetail from './pages/DossierDetail'
 import ClientUpload from './pages/ClientUpload'
+import ClientInformations from './pages/ClientInformations'
 
 function Gate() {
   const { session, role, loading } = useAuth()
@@ -25,6 +26,7 @@ function Gate() {
         {role === 'client' && (
           <>
             <Route path="/mes-pieces" element={<ClientUpload />} />
+            <Route path="/mes-informations" element={<ClientInformations />} />
             <Route path="*" element={<Navigate to="/mes-pieces" replace />} />
           </>
         )}

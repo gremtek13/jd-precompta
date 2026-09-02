@@ -18,9 +18,14 @@ export default function Layout() {
             </NavLink>
           )}
           {role === 'client' && (
-            <NavLink to="/mes-pieces" className={({ isActive }) => (isActive ? 'active' : '')}>
-              Mes pièces
-            </NavLink>
+            <>
+              <NavLink to="/mes-pieces" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Mes pièces
+              </NavLink>
+              <NavLink to="/mes-informations" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Mes informations
+              </NavLink>
+            </>
           )}
         </nav>
         <div className="sidebar-actions" style={{ display: 'flex', gap: 8 }}>
