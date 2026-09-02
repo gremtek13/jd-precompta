@@ -3,14 +3,17 @@
 // Le client configure un transfert automatique de ses e-mails de prélèvement récurrent vers une
 // adresse dédiée <code_dossier>@precompta.jdarnis.fr — sans jamais donner accès à sa messagerie.
 // Resend reçoit ces e-mails et appelle cette fonction via un webhook "email.received" à chaque
-// réception ; on récupère les pièces jointes, on les dépose dans le Storage du dossier correspondant
-// et on crée une pièce "à valider", exactement comme un dépôt manuel — rien n'est jamais validé
-// automatiquement.
+// réception ; on récupère les pièces jointes, on les dépose dans le Storage du dossier correspondant,
+// on les fait passer par la même extraction/classification que l'import manuel ou en masse (voir
+// extract-piece), puis on crée une pièce ou un document "à valider" selon le résultat — exactement
+// comme un dépôt manuel, rien n'est jamais validé automatiquement.
 //
 // Sécurité : cette fonction est publique (pas de vérification JWT Supabase, Resend n'en envoie pas) —
 // la seule authentification est la signature du webhook (RESEND_WEBHOOK_SECRET), vérifiée avant tout
 // traitement. Elle utilise la clé de service Supabase pour écrire directement en base et au storage,
-// sans passer par les policies RLS (il n'y a pas d'utilisateur authentifié dans ce flux).
+// sans passer par les policies RLS (il n'y a pas d'utilisateur authentifié dans ce flux) — et pour
+// appeler extract-piece en tant que service (le client web l'appelle avec la session de l'utilisateur,
+// ici il n'y en a pas).
 
 import { Resend } from "npm:resend@6"
 import { createClient } from "npm:@supabase/supabase-js@2"
@@ -29,6 +32,40 @@ function slugify(input: string): string {
 function extractEmail(raw: string): string {
   const match = raw.match(/<([^>]+)>/)
   return (match ? match[1] : raw).trim().toLowerCase()
+}
+
+async function hashBytes(bytes: Uint8Array): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", bytes)
+  return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("")
+}
+
+interface ExtractionPiece {
+  classification: "releve_bancaire" | "cotisation" | "attestation" | "facture"
+  date_piece: string | null
+  tiers: string | null
+  montant_ht: number | null
+  montant_tva: number | null
+  montant_ttc: number | null
+}
+
+// Même appel que celui que fait le navigateur (lib/extraction.ts côté client) mais depuis le serveur —
+// pas de session utilisateur ici, donc la clé de service sert d'autorisation. Best-effort : un échec
+// (Textract, format refusé...) ne doit pas bloquer l'import, juste laisser les champs vides à compléter
+// à la main, comme pour un dépôt manuel dont l'extraction aurait échoué.
+async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, serviceRoleKey: string): Promise<ExtractionPiece | null> {
+  try {
+    const res = await fetch(`${supabaseUrl}/functions/v1/extract-piece`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
+      body: bytes,
+    })
+    if (!res.ok) return null
+    const result = await res.json()
+    return result.error ? null : result
+  } catch (err) {
+    console.error("Appel extract-piece échoué:", err)
+    return null
+  }
 }
 
 Deno.serve(async (req: Request) => {
@@ -73,7 +110,9 @@ Deno.serve(async (req: Request) => {
 
   const { email_id, to, from, subject, attachments } = event.data
 
-  const supabase = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!)
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  const supabase = createClient(supabaseUrl, serviceRoleKey)
 
   const codeEmail = to.map(extractEmail).map((addr) => addr.split("@")[0]).find((c) => !!c)
   if (!codeEmail) {
@@ -122,6 +161,19 @@ Deno.serve(async (req: Request) => {
       const bytes = new Uint8Array(await res.arrayBuffer())
       if (bytes.byteLength === 0 || bytes.byteLength > 20 * 1024 * 1024) continue
 
+      // Même détection de doublon que les autres points d'entrée (import manuel, en masse) — un
+      // transfert automatique peut renvoyer plusieurs fois le même e-mail (relance client, règle de
+      // transfert mal configurée...).
+      const hash = await hashBytes(bytes)
+      const [{ count: dansPieces }, { count: dansDocuments }] = await Promise.all([
+        supabase.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossier.id).eq("storage_hash", hash),
+        supabase.from("documents_divers").select("id", { count: "exact", head: true }).eq("dossier_id", dossier.id).eq("storage_hash", hash),
+      ])
+      if ((dansPieces ?? 0) > 0 || (dansDocuments ?? 0) > 0) {
+        console.log(`Pièce jointe déjà présente (hash identique), ignorée: ${fichier.id}`)
+        continue
+      }
+
       const nomFichier = fichier.filename || `piece-${fichier.id}`
       const path = `${dossier.id}/${Date.now()}-${slugify(nomFichier)}`
 
@@ -133,16 +185,40 @@ Deno.serve(async (req: Request) => {
         continue
       }
 
-      const { error: insertError } = await supabase.from("pieces").insert({
-        dossier_id: dossier.id,
-        source: "email",
-        storage_path: path,
-        nom_fichier: nomFichier,
-        type_piece: "achat",
-        statut: "a_valider",
-      })
+      // Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — classé
+      // directement en relevé bancaire sur son extension, comme les autres points d'entrée. Les autres
+      // formats passent par la même extraction/classification que l'import manuel ou en masse : une
+      // facture (ou une extraction en échec) atterrit dans Pièces à compléter/vérifier, le reste
+      // (relevé, cotisation, attestation) dans Documents.
+      const estCsv = nomFichier.toLowerCase().endsWith(".csv")
+      const extraction = estCsv ? null : await classifierEtExtraire(bytes, supabaseUrl, serviceRoleKey)
+      const classification = estCsv ? "releve_bancaire" : (extraction?.classification ?? "facture")
+
+      const insertError = classification === "facture"
+        ? (await supabase.from("pieces").insert({
+            dossier_id: dossier.id,
+            source: "email",
+            storage_path: path,
+            storage_hash: hash,
+            nom_fichier: nomFichier,
+            type_piece: "achat",
+            statut: "a_valider",
+            date_piece: extraction?.date_piece ?? null,
+            tiers: extraction?.tiers ?? null,
+            montant_ht: extraction?.montant_ht ?? null,
+            montant_tva: extraction?.montant_tva ?? null,
+            montant_ttc: extraction?.montant_ttc ?? null,
+          })).error
+        : (await supabase.from("documents_divers").insert({
+            dossier_id: dossier.id,
+            storage_path: path,
+            storage_hash: hash,
+            nom_fichier: nomFichier,
+            categorie: classification,
+          })).error
+
       if (insertError) {
-        console.error("Insertion pièce échouée:", fichier.id, insertError)
+        console.error("Insertion échouée:", fichier.id, insertError)
         continue
       }
 
