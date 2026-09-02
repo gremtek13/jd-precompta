@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { IconLogout } from './icons'
 
 export default function Layout() {
   const { role, signOut } = useAuth()
@@ -20,7 +21,7 @@ export default function Layout() {
             </NavLink>
           )}
         </nav>
-        <button className="btn btn-outline btn-sm" onClick={signOut}>Déconnexion</button>
+        <button className="btn btn-outline btn-sm" onClick={signOut}><IconLogout width={15} height={15} /> Déconnexion</button>
       </aside>
       <main className="main">
         <Outlet />
