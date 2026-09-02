@@ -107,12 +107,25 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   }
 
   async function annulerRapprochement(ligneId: string) {
-    await supabase.from('lignes_bancaires').update({ statut: 'non_rapprochee', piece_id: null, cotisation_id: null }).eq('id', ligneId)
+    await supabase.from('lignes_bancaires').update({
+      statut: 'non_rapprochee', piece_id: null, cotisation_id: null, prelevement_personnel: false,
+    }).eq('id', ligneId)
     load()
   }
 
   async function ignorer(ligneId: string) {
     await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).eq('id', ligneId)
+    load()
+  }
+
+  // Virement du compte pro vers le compte personnel — n'a ni pièce ni échéance à rattacher (ce n'est
+  // pas une charge), donc classé "ignoree" comme n'importe quel mouvement sans justificatif, mais avec
+  // ce drapeau à part pour rester identifiable dans l'onglet Virements plutôt que de se perdre parmi
+  // les autres lignes ignorées (assurance, etc.).
+  async function marquerVirementPersonnel(ligneId: string) {
+    await supabase.from('lignes_bancaires').update({
+      statut: 'ignoree', piece_id: null, cotisation_id: null, prelevement_personnel: true,
+    }).eq('id', ligneId)
     load()
   }
 
@@ -296,15 +309,16 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                     <td>{l.libelle}</td>
                     <td>{formatMoney(l.montant)}</td>
                     <td>
-                      {l.statut === 'rapprochee' && (
+                      {l.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && (
                         <span className="badge badge-ok">
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
                           {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
                         </span>
                       )}
-                      {l.statut === 'non_rapprochee' && <span className="badge badge-warning">Non rapproché</span>}
-                      {l.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
+                      {!l.prelevement_personnel && l.statut === 'non_rapprochee' && <span className="badge badge-warning">Non rapproché</span>}
+                      {!l.prelevement_personnel && l.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
                     </td>
                     <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                       {l.statut === 'non_rapprochee' && propose && (
@@ -343,6 +357,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                               </option>
                             ))}
                           </select>
+                          <button className="btn btn-outline btn-sm" onClick={() => marquerVirementPersonnel(l.id)}>Virement personnel</button>
                           <button className="btn btn-outline btn-sm" onClick={() => ignorer(l.id)}>Ignorer</button>
                           <button className="btn btn-outline btn-sm" onClick={() => toujoursIgnorer(l)}>Toujours ignorer ce type…</button>
                         </>

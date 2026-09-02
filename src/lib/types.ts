@@ -46,6 +46,11 @@ export interface LigneBancaire {
   // prélèvement URSSAF/CARPIMKO n'a pas de facture, juste un montant appelé sur un échéancier.
   // Mutuellement exclusif avec piece_id (contrainte en base).
   cotisation_id: string | null
+  // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
+  // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.
+  // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien
+  // d'autre ne viendra jamais s'y rapprocher).
+  prelevement_personnel: boolean
   created_at: string
 }
 

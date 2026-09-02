@@ -10,6 +10,7 @@ export type DossierTab =
   | 'estimation'
   | 'packs'
   | 'informations'
+  | 'virements'
   | 'acces'
 
 interface Etape {
@@ -39,6 +40,7 @@ const ETAPES: Etape[] = [
 const OUTILS: Etape[] = [
   { id: 'informations', label: 'Informations', icone: '📋' },
   { id: 'estimation', label: 'Estimation', icone: '📈' },
+  { id: 'virements', label: 'Virements', icone: '💸' },
   { id: 'packs', label: 'Packs', icone: '📦' },
   { id: 'acces', label: 'Accès', icone: '🔑' },
 ]
