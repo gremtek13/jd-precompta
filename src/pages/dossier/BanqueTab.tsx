@@ -96,6 +96,37 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     return candidats[0] ?? null
   }
 
+  // Un prélèvement récurrent (assurance, virement personnel...) sans règle "Toujours ignorer" — soit
+  // parce que le libellé varie légèrement d'un mois à l'autre (une date ou un numéro dedans), soit
+  // simplement parce que personne n'a pensé à créer la règle — se retraite à la main chaque mois sans
+  // que l'appli s'en souvienne. Repère ici un mouvement au même montant et à peu près au même jour du
+  // mois qu'un ou plusieurs mois précédents déjà résolus de façon cohérente (tous ignorés, ou tous
+  // marqués virement personnel) et propose d'appliquer la même résolution — jamais si les résolutions
+  // passées divergent, ni sur une seule occurrence antérieure (trop tôt pour parler de récurrence).
+  function suggestionRecurrente(ligne: LigneBancaire): { action: 'ignorer' | 'virement_personnel'; occurrences: number } | null {
+    if (ligne.statut !== 'non_rapprochee') return null
+    const jourLigne = new Date(ligne.date).getDate()
+    const moisLigne = new Date(ligne.date).getFullYear() * 12 + new Date(ligne.date).getMonth()
+
+    const correspondances = lignes.filter((l) => {
+      if (l.id === ligne.id) return false
+      if (Math.abs(l.montant - ligne.montant) > 0.01) return false
+      const moisL = new Date(l.date).getFullYear() * 12 + new Date(l.date).getMonth()
+      if (moisL === moisLigne) return false
+      if (Math.abs(new Date(l.date).getDate() - jourLigne) > 3) return false
+      return l.prelevement_personnel || l.statut === 'ignoree'
+    })
+    if (correspondances.length < 2) return null
+
+    if (correspondances.every((l) => l.prelevement_personnel)) {
+      return { action: 'virement_personnel', occurrences: correspondances.length }
+    }
+    if (correspondances.every((l) => l.statut === 'ignoree' && !l.prelevement_personnel)) {
+      return { action: 'ignorer', occurrences: correspondances.length }
+    }
+    return null
+  }
+
   async function rapprocher(ligneId: string, pieceId: string) {
     await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId, cotisation_id: null }).eq('id', ligneId)
     load()
@@ -301,6 +332,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
               {filtered.map((l) => {
                 const propose = suggestion(l)
                 const proposeCotisation = !propose ? suggestionCotisation(l) : null
+                const proposeRecurrent = !propose && !proposeCotisation ? suggestionRecurrente(l) : null
                 const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
                 const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
                 return (
@@ -329,6 +361,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                       {l.statut === 'non_rapprochee' && proposeCotisation && (
                         <button className="btn btn-outline btn-sm" onClick={() => rapprocherCotisation(l.id, proposeCotisation.id)}>
                           Rapprocher avec l'échéance du {formatDate(proposeCotisation.echeance)} ({formatMoney(proposeCotisation.montant_verse ?? proposeCotisation.montant_appele)})
+                        </button>
+                      )}
+                      {l.statut === 'non_rapprochee' && proposeRecurrent && (
+                        <button
+                          className="btn btn-outline btn-sm"
+                          onClick={() => proposeRecurrent.action === 'virement_personnel' ? marquerVirementPersonnel(l.id) : ignorer(l.id)}
+                          title={`Même montant, même période du mois que ${proposeRecurrent.occurrences} mouvement(s) déjà classé(s) ainsi`}
+                        >
+                          {proposeRecurrent.action === 'virement_personnel' ? 'Virement personnel' : 'Ignorer'} (récurrent, {proposeRecurrent.occurrences}×)
                         </button>
                       )}
                       {l.statut === 'non_rapprochee' && (
