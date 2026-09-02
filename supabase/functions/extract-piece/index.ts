@@ -131,7 +131,10 @@ function classifieDocument(lignes: string[]): ClassificationDocument {
   if (/URSSAF|CARPIMKO|APPEL\s+DE\s+COTISATIONS?|COTISATIONS?\s+(SOCIALES?|PROVISIONNELLES?)/.test(texte)) {
     return "cotisation"
   }
-  if (/ATTESTATION|CERTIFICAT\s+DE|[EÉ]CH[EÉ]ANCIER\s+ANNUEL/.test(texte)) {
+  // Constaté sur un avis de situation d'impôt réel : cet en-tête apparaît sur tout document officiel de
+  // l'administration fiscale (avis d'impôt, taxe foncière, CFE...) — jamais sur une vraie facture.
+  // Catégorie "attestation" la plus proche déjà existante, faute d'un poste dédié à ces documents.
+  if (/ATTESTATION|CERTIFICAT\s+DE|[EÉ]CH[EÉ]ANCIER\s+ANNUEL|DIRECTION\s+G[EÉ]N[EÉ]RALE\s+DES\s+FINANCES\s+PUBLIQUES/.test(texte)) {
     return "attestation"
   }
   return "facture"
