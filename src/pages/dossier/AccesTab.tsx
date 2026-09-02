@@ -32,27 +32,16 @@ export default function AccesTab({ dossierId, codeEmail }: { dossierId: string; 
     setInviting(true)
     setError(null)
     try {
-      // Compte client créé via signUp classique (clé publique) : email de confirmation envoyé automatiquement.
-      // Si la confirmation email est désactivée sur le projet, signUp connecte directement le nouveau
-      // compte et remplacerait notre session admin — on la sauvegarde pour la restaurer après coup.
-      const { data: adminSessionData } = await supabase.auth.getSession()
-      const adminSession = adminSessionData.session
-
-      const { data, error: signUpError } = await supabase.auth.signUp({ email, password })
-      if (signUpError) throw signUpError
-      if (!data.user) throw new Error("La création du compte n'a rien retourné.")
-
-      if (data.session && adminSession) {
-        await supabase.auth.setSession({
-          access_token: adminSession.access_token,
-          refresh_token: adminSession.refresh_token,
-        })
-      }
-
-      const { error: membershipError } = await supabase
-        .from('memberships')
-        .insert({ user_id: data.user.id, dossier_id: dossierId, role: 'client', email })
-      if (membershipError) throw membershipError
+      // Passe par une fonction Edge (clé de service) plutôt qu'un signUp() classique côté navigateur :
+      // retirer un accès (bouton "Retirer" ci-dessous) ne supprime que la ligne memberships, jamais le
+      // compte Auth sous-jacent — un signUp() sur la même adresse pour un autre dossier échouerait donc
+      // en "déjà inscrit". La fonction réutilise le compte existant le cas échéant.
+      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: true; error?: string }>(
+        'create-client-access',
+        { body: { dossierId, email, password } },
+      )
+      if (invokeError) throw invokeError
+      if (data?.error) throw new Error(data.error)
 
       setEmail('')
       setPassword('')
