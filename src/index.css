@@ -197,6 +197,19 @@ tr.clickable:hover { background: var(--color-primary-light); }
 
 .table-scroll { overflow-x: auto; }
 
+/* Refonte visuelle (2/4) — cartes chiffrées pour les vues d'ensemble (Dashboard cabinet, Checklist)
+   plutôt que des paragraphes de texte : le chiffre qui compte doit se lire avant la phrase. */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
+.stat-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius); padding: 16px 20px; box-shadow: var(--shadow-sm); }
+.stat-card .stat-value { font-size: 1.85rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: var(--color-text); }
+.stat-card .stat-label { color: var(--color-text-light); font-size: 0.8rem; font-weight: 600; margin-top: 2px; }
+.stat-card.stat-warning .stat-value { color: var(--color-warning); }
+.stat-card.stat-ok .stat-value { color: var(--color-primary); }
+
+.progress-track { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 999px; height: 7px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 999px; background: var(--color-primary); transition: width 0.25s ease; }
+.progress-fill.warning { background: var(--color-warning); }
+
 /* Mobile : sidebar en barre horizontale, formulaires en une colonne, marges réduites */
 @media (max-width: 720px) {
   .app-shell { flex-direction: column; min-height: auto; }

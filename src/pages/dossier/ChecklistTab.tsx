@@ -145,18 +145,25 @@ export default function ChecklistTab({ dossierId, onNavigate }: { dossierId: str
   }
 
   const nbManquants = items.filter((i) => !i.ok).length
+  const nbOk = items.length - nbManquants
 
   return (
     <>
-      <div className="card" style={{ marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>Checklist</h3>
-        <p className="muted" style={{ marginTop: -8, marginBottom: 0 }}>
-          {nbManquants === 0
-            ? 'Tout est à jour.'
-            : `${nbManquants} point(s) à régler avec le client.`}
-          {' '}Indicative — vérifie toujours avant de considérer un point comme réglé.
-        </p>
+      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
+        <div className={`stat-card ${nbManquants > 0 ? 'stat-warning' : 'stat-ok'}`}>
+          <div className="stat-value">{nbOk}/{items.length}</div>
+          <div className="stat-label">Point(s) réglé(s)</div>
+          <div className="progress-track" style={{ marginTop: 10 }}>
+            <div
+              className={`progress-fill ${nbManquants > 0 ? 'warning' : ''}`}
+              style={{ width: `${items.length > 0 ? (nbOk / items.length) * 100 : 100}%` }}
+            />
+          </div>
+        </div>
       </div>
+      <p className="muted" style={{ marginTop: -12, marginBottom: 20 }}>
+        Indicative — vérifie toujours avant de considérer un point comme réglé.
+      </p>
 
       <div className="card" style={{ padding: 0 }}>
         {items.map((item) => (

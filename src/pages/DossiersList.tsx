@@ -81,9 +81,20 @@ export default function DossiersList() {
       </div>
 
       {!loading && filtered.length > 0 && (
-        <p className="muted" style={{ marginTop: -8, marginBottom: 16 }}>
-          {nbAvecAlerte > 0 ? `${nbAvecAlerte} dossier(s) sur ${filtered.length} ont un point à régler.` : `Les ${filtered.length} dossier(s) sont à jour.`}
-        </p>
+        <div className="stat-grid">
+          <div className="stat-card">
+            <div className="stat-value">{filtered.length}</div>
+            <div className="stat-label">Dossier(s) au total</div>
+          </div>
+          <div className={`stat-card ${nbAvecAlerte > 0 ? 'stat-warning' : ''}`}>
+            <div className="stat-value">{nbAvecAlerte}</div>
+            <div className="stat-label">Avec un point à régler</div>
+          </div>
+          <div className="stat-card stat-ok">
+            <div className="stat-value">{filtered.length - nbAvecAlerte}</div>
+            <div className="stat-label">À jour</div>
+          </div>
+        </div>
       )}
 
       <input
@@ -121,11 +132,15 @@ export default function DossiersList() {
                     )}
                   </td>
                   <td>
-                    {d.moisPresents >= d.moisEcoules ? (
-                      <span className="badge badge-ok">{d.moisPresents}/{d.moisEcoules} mois</span>
-                    ) : (
-                      <span className="badge badge-warning">{d.moisPresents}/{d.moisEcoules} mois</span>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <div className="progress-track" style={{ width: 70 }}>
+                        <div
+                          className={`progress-fill ${d.moisPresents < d.moisEcoules ? 'warning' : ''}`}
+                          style={{ width: `${Math.min(100, (d.moisPresents / d.moisEcoules) * 100)}%` }}
+                        />
+                      </div>
+                      <span className="muted" style={{ fontSize: '0.8rem', fontWeight: 600 }}>{d.moisPresents}/{d.moisEcoules}</span>
+                    </div>
                   </td>
                   <td>
                     {d.cotisationsOk ? (
