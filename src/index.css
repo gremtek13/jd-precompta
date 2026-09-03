@@ -276,6 +276,28 @@ tr.clickable:hover { background: var(--color-primary-light); }
 
 .mini-progress { width: 70px; }
 
+/* Accueil client — grosses icônes façon écran d'accueil de téléphone (glyphe blanc sur pastille
+   arrondie en dégradé, libellé dessous) plutôt qu'un menu de texte, pour rester intuitif pour
+   quelqu'un qui n'est pas comptable. */
+.home-client {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  min-height: 60vh; justify-content: center; padding: 20px;
+}
+.home-tiles { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; margin-top: 36px; }
+.home-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  width: 100px; text-decoration: none; color: var(--color-text);
+}
+.home-tile-icon {
+  width: 76px; height: 76px; border-radius: 20px;
+  background: linear-gradient(160deg, var(--color-primary), var(--color-primary-hover));
+  color: #fff; display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-md);
+  transition: transform 0.15s ease;
+}
+.home-tile:hover .home-tile-icon, .home-tile:active .home-tile-icon { transform: scale(1.06); }
+.home-tile-label { font-size: 0.85rem; font-weight: 600; }
+
 /* Mobile : sidebar en barre horizontale, formulaires en une colonne, marges réduites */
 @media (max-width: 720px) {
   .app-shell { flex-direction: column; min-height: auto; }

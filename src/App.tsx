@@ -4,6 +4,7 @@ import Layout from './components/Layout'
 import Login from './pages/Login'
 import DossiersList from './pages/DossiersList'
 import DossierDetail from './pages/DossierDetail'
+import ClientHome from './pages/ClientHome'
 import ClientUpload from './pages/ClientUpload'
 import ClientInformations from './pages/ClientInformations'
 
@@ -25,9 +26,10 @@ function Gate() {
         )}
         {role === 'client' && (
           <>
+            <Route path="/accueil" element={<ClientHome />} />
             <Route path="/mes-pieces" element={<ClientUpload />} />
             <Route path="/mes-informations" element={<ClientInformations />} />
-            <Route path="*" element={<Navigate to="/mes-pieces" replace />} />
+            <Route path="*" element={<Navigate to="/accueil" replace />} />
           </>
         )}
       </Route>

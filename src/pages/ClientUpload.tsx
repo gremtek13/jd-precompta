@@ -3,10 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { extractPiece, fichierDejaPresent, hashFichier, type ExtractionResult } from '../lib/extraction'
 import { formatDate, slugify } from '../lib/format'
-import { IconChecklist, IconDocuments, IconPieces } from '../components/icons'
-import type { CotisationDeclaree, Dossier, DocumentDivers, LigneBancaire, Piece } from '../lib/types'
-
-const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
+import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece } from '../lib/types'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const ANNEE_COURANTE = new Date().getFullYear()
@@ -33,7 +30,6 @@ interface Depot {
 export default function ClientUpload() {
   const { dossierIds } = useAuth()
   const dossierId = dossierIds[0] // un client n'a en général qu'un seul dossier
-  const [dossier, setDossier] = useState<Dossier | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
@@ -44,29 +40,15 @@ export default function ClientUpload() {
   const [enCours, setEnCours] = useState<{ id: string; nomFichier: string }[]>([])
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  // Explication "comment ça marche" affichée seulement à la première visite (localStorage, propre à
-  // ce navigateur) — utile pour arriver à froid sur l'appli, inutile à chaque connexion ensuite.
-  const [onboardingVu, setOnboardingVu] = useState(true)
-
-  useEffect(() => {
-    setOnboardingVu(localStorage.getItem(CLE_ONBOARDING_VU) === '1')
-  }, [])
-
-  function masquerOnboarding() {
-    localStorage.setItem(CLE_ONBOARDING_VU, '1')
-    setOnboardingVu(true)
-  }
 
   async function load() {
     if (!dossierId) return
-    const [{ data: dossierData }, { data: piecesData }, { data: documentsData }, { data: lignesData }, { data: cotisationsData }] = await Promise.all([
-      supabase.from('dossiers').select('*').eq('id', dossierId).maybeSingle(),
+    const [{ data: piecesData }, { data: documentsData }, { data: lignesData }, { data: cotisationsData }] = await Promise.all([
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
       supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
       supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
     ])
-    setDossier(dossierData ?? null)
     setPieces(piecesData ?? [])
     setDocuments(documentsData ?? [])
     setLignes(lignesData ?? [])
@@ -74,10 +56,6 @@ export default function ClientUpload() {
   }
 
   useEffect(() => { load() }, [dossierId])
-
-  // Juste le prénom si on a un nom complet ("Marie Dupont" → "Marie") — plus chaleureux qu'un nom
-  // entier ou qu'un générique "Bonjour" sans rien, mais on ne connaît que ce que le cabinet a saisi.
-  const prenom = dossier?.contact_nom?.trim().split(/\s+/)[0]
 
   // Chaque fichier suit son propre chemin, en parallèle : vérifie d'abord qu'il n'est pas déjà présent
   // (même hash, Pièces ou Documents), l'envoie au storage, puis — sauf CSV, jamais analysé par Textract
@@ -218,46 +196,7 @@ export default function ClientUpload() {
 
   return (
     <>
-      <div className="topbar">
-        <div>
-          <h1>{prenom ? `Bonjour ${prenom} 👋` : 'Bonjour 👋'}</h1>
-          <p className="muted" style={{ margin: '2px 0 0' }}>
-            {dossier ? `Ton espace de dépôt pour ${dossier.nom}` : 'Ton espace de dépôt'}
-          </p>
-        </div>
-      </div>
-
-      {!onboardingVu && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-            <h3 style={{ marginTop: 0 }}>Comment ça marche</h3>
-            <button type="button" className="btn btn-outline btn-sm" onClick={masquerOnboarding}>Compris</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 16 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ color: 'var(--color-primary)', flexShrink: 0 }}><IconDocuments width={22} height={22} /></span>
-              <div>
-                <div style={{ fontWeight: 600 }}>1. Dépose tes fichiers</div>
-                <div className="muted" style={{ fontSize: '0.85rem' }}>Factures, reçus, relevés, appels de cotisation — au fur et à mesure, sans trier.</div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ color: 'var(--color-primary)', flexShrink: 0 }}><IconPieces width={22} height={22} /></span>
-              <div>
-                <div style={{ fontWeight: 600 }}>2. C'est reconnu automatiquement</div>
-                <div className="muted" style={{ fontSize: '0.85rem' }}>Chaque fichier est analysé et classé — tu vois tout de suite qu'il est bien arrivé.</div>
-              </div>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ color: 'var(--color-primary)', flexShrink: 0 }}><IconChecklist width={22} height={22} /></span>
-              <div>
-                <div style={{ fontWeight: 600 }}>3. Suis ce qu'il reste</div>
-                <div className="muted" style={{ fontSize: '0.85rem' }}>La liste ci-dessous te dit ce qui manque encore, sans avoir à nous demander.</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <div className="topbar"><h1>Mes pièces</h1></div>
 
       <h3>Ce qu'il reste à envoyer</h3>
       <div className="card" style={{ padding: 0, marginBottom: 20 }}>

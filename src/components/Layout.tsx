@@ -19,6 +19,9 @@ export default function Layout() {
           )}
           {role === 'client' && (
             <>
+              <NavLink to="/accueil" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Accueil
+              </NavLink>
               <NavLink to="/mes-pieces" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Mes pièces
               </NavLink>
