@@ -40,8 +40,13 @@ export default function AccesTab({ dossierId, codeEmail }: { dossierId: string; 
         'create-client-access',
         { body: { dossierId, email, password } },
       )
-      if (invokeError) throw invokeError
+      // Sur un statut non-2xx, supabase-js renvoie systématiquement un FunctionsHttpError générique
+      // ("Edge Function returned a non-2xx status code") dans invokeError — le message précis qu'on
+      // renvoie nous-mêmes (403/409/500...) est dans data.error, jamais dans invokeError. Il faut donc
+      // vérifier data.error EN PREMIER, sinon l'utilisateur ne voit jamais que "erreur" sans détail.
       if (data?.error) throw new Error(data.error)
+      if (invokeError) throw invokeError
+      if (!data?.ok) throw new Error("La création de l'accès n'a rien retourné.")
 
       setEmail('')
       setPassword('')

@@ -82,23 +82,36 @@ Deno.serve(async (req: Request) => {
     email, password, email_confirm: true,
   })
 
+  // Le message exact ("User already registered", "A user with this email address has already been
+  // registered"...) varie selon la version de GoTrue — on élargit donc la détection (mots-clés +
+  // statut 422, le code HTTP habituel de ce cas précis) plutôt que de dépendre d'un seul libellé.
+  const dejaInscrit = createError && (
+    createError.status === 422 || /already|exist|registered|duplicate/i.test(createError.message)
+  )
+
   let clientUserId: string
   if (created?.user) {
     clientUserId = created.user.id
-  } else if (createError && /already|exist/i.test(createError.message)) {
+  } else if (dejaInscrit) {
     // Compte déjà existant (accès retiré précédemment sur un autre dossier, ou même client réinvité) —
     // on le retrouve par e-mail plutôt que d'échouer. listUsers() ne filtre pas par e-mail côté API,
     // on pagine donc et on compare nous-mêmes (suffisant pour un nombre de comptes clients raisonnable).
     const emailNormalise = email.toLowerCase()
     let trouve: string | null = null
+    let dernierListError: string | null = null
     for (let page = 1; page <= 25 && !trouve; page++) {
       const { data: liste, error: listError } = await supabaseAdmin.auth.admin.listUsers({ page, perPage: 200 })
-      if (listError || !liste || liste.users.length === 0) break
+      if (listError) { dernierListError = listError.message; break }
+      if (!liste || liste.users.length === 0) break
       trouve = liste.users.find((u) => (u.email ?? "").toLowerCase() === emailNormalise)?.id ?? null
       if (liste.users.length < 200) break // dernière page atteinte
     }
     if (!trouve) {
-      return json({ error: "Un compte existe déjà pour cet e-mail mais n'a pas pu être retrouvé — contacte le support." }, 500)
+      return json({
+        error: dernierListError
+          ? `Compte existant introuvable (recherche échouée : ${dernierListError}).`
+          : "Un compte existe déjà pour cet e-mail mais n'a pas pu être retrouvé parmi les comptes existants.",
+      }, 500)
     }
     clientUserId = trouve
     // Le mot de passe saisi dans le formulaire doit rester celui à donner au client, que le compte
