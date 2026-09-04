@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, synchroniserContrepartieBanque } from '../../lib/ecritures'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, synchroniserContrepartieBanque } from '../../lib/ecritures'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -53,8 +53,15 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
     (c) => !c.compte_comptable && pieces.some((p) => p.categorie_id === c.id),
   )
 
+  // Valeur affichée dans le champ tant que le cabinet n'a rien tapé : la suggestion connue pour ce
+  // code de catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
+  function compteAffiche(c: Categorie): string {
+    return comptesEdit[c.id] ?? SUGGESTIONS_COMPTE_PAR_CODE[c.code]?.compte ?? ''
+  }
+
   async function saveCompte(categorieId: string) {
-    const valeur = (comptesEdit[categorieId] ?? '').trim()
+    const categorie = categories.find((c) => c.id === categorieId)
+    const valeur = (comptesEdit[categorieId] ?? (categorie ? SUGGESTIONS_COMPTE_PAR_CODE[categorie.code]?.compte : undefined) ?? '').trim()
     if (!valeur) return
     const { error: saveError } = await supabase.from('categories').update({ compte_comptable: valeur }).eq('id', categorieId)
     if (saveError) {
@@ -161,7 +168,8 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
           <h3 style={{ marginTop: 0 }}>Comptes manquants</h3>
           <p className="muted" style={{ marginTop: -8 }}>
             Ces catégories sont utilisées par des pièces validées mais n'ont pas encore de compte comptable associé —
-            les écritures correspondantes ne peuvent pas être générées tant que ce n'est pas fait.
+            les écritures correspondantes ne peuvent pas être générées tant que ce n'est pas fait. Un compte déjà
+            renseigné est une suggestion à vérifier, pas une valeur figée — modifie-le avant d'enregistrer si besoin.
           </p>
           <table>
             <thead><tr><th>Catégorie</th><th>Compte</th><th></th></tr></thead>
@@ -169,13 +177,16 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
               {categoriesSansCompte.map((c) => (
                 <tr key={c.id}>
                   <td>{c.libelle}</td>
-                  <td>
+                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <input
                       style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 120 }}
                       placeholder="ex. 606100"
-                      value={comptesEdit[c.id] ?? ''}
+                      value={compteAffiche(c)}
                       onChange={(e) => setComptesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
                     />
+                    {!comptesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
+                      <span className="badge badge-neutral">suggestion</span>
+                    )}
                   </td>
                   <td>
                     <button className="btn btn-outline btn-sm" onClick={() => saveCompte(c.id)}>Enregistrer</button>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
+import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -48,8 +49,15 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     (c) => !c.poste_2035 && pieces.some((p) => p.categorie_id === c.id),
   )
 
+  // Valeur affichée tant que le cabinet n'a rien tapé : la suggestion connue pour ce code de
+  // catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
+  function posteAffiche(c: Categorie): string {
+    return postesEdit[c.id] ?? SUGGESTIONS_COMPTE_PAR_CODE[c.code]?.poste2035 ?? ''
+  }
+
   async function savePoste(categorieId: string) {
-    const valeur = (postesEdit[categorieId] ?? '').trim()
+    const categorie = categories.find((c) => c.id === categorieId)
+    const valeur = (postesEdit[categorieId] ?? (categorie ? SUGGESTIONS_COMPTE_PAR_CODE[categorie.code]?.poste2035 : undefined) ?? '').trim()
     if (!valeur) return
     const { error: saveError } = await supabase.from('categories').update({ poste_2035: valeur }).eq('id', categorieId)
     if (saveError) {
@@ -127,6 +135,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
           <p className="muted" style={{ marginTop: -8 }}>
             Ces catégories sont utilisées par des pièces validées mais n'ont pas encore de poste 2035
             associé — leurs montants ne sont pas comptés dans le récapitulatif tant que ce n'est pas fait.
+            Un poste déjà renseigné est une suggestion à vérifier, pas une valeur figée.
           </p>
           <table>
             <thead><tr><th>Catégorie</th><th>Poste 2035</th><th></th></tr></thead>
@@ -134,13 +143,16 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
               {categoriesSansPoste.map((c) => (
                 <tr key={c.id}>
                   <td>{c.libelle}</td>
-                  <td>
+                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <input
                       style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 220 }}
                       placeholder="ex. Achats, Loyers, Recettes..."
-                      value={postesEdit[c.id] ?? ''}
+                      value={posteAffiche(c)}
                       onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
                     />
+                    {!postesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
+                      <span className="badge badge-neutral">suggestion</span>
+                    )}
                   </td>
                   <td>
                     <button className="btn btn-outline btn-sm" onClick={() => savePoste(c.id)}>Enregistrer</button>
