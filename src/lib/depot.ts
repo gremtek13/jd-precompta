@@ -54,6 +54,7 @@ export async function deposerFichier(dossierId: string, file: File): Promise<Res
         montant_ht: extraction?.montant_ht ?? null,
         montant_tva: extraction?.montant_tva ?? null,
         montant_ttc: extraction?.montant_ttc ?? null,
+        confiance: extraction?.confiance ?? null,
       })
       if (insertError) throw insertError
     }

@@ -101,6 +101,9 @@ export interface Piece {
   type_piece: TypePiece
   statut: Statut
   notes: string | null
+  // Score de confiance de l'extraction automatique (haute/moyenne/basse), null pour une pièce jamais
+  // passée par extractPiece() (saisie 100% manuelle, ou créée avant l'ajout de ce champ).
+  confiance: 'haute' | 'moyenne' | 'basse' | null
   created_at: string
   updated_at: string
 }

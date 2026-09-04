@@ -40,7 +40,9 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [error, setError] = useState<string | null>(null)
   const [extracting, setExtracting] = useState(false)
   const [extractionError, setExtractionError] = useState<string | null>(null)
-  const [confiance, setConfiance] = useState<'haute' | 'moyenne' | 'basse' | null>(null)
+  // Initialisé depuis la pièce (pas null) : sans ça, rouvrir une pièce déjà extraite sans relancer
+  // l'extraction écraserait sa confiance enregistrée à la sauvegarde suivante.
+  const [confiance, setConfiance] = useState<'haute' | 'moyenne' | 'basse' | null>(piece?.confiance ?? null)
   const [suggestionAutre, setSuggestionAutre] = useState<string | null>(null)
   const [lignesBrutes, setLignesBrutes] = useState<string[] | undefined>(undefined)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
@@ -186,6 +188,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
         montant_ttc: montantTtc ? parseFloat(montantTtc) : null,
         notes: notes || null,
         statut,
+        confiance,
       }
 
       if (piece) {

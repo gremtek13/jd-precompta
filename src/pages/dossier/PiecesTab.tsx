@@ -71,7 +71,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     .sort((a, b) => b - a)
   const aPiecesSansDate = pieces.some((p) => !p.date_piece)
 
-  const filtered = pieces.filter((p) => {
+  const filteredBase = pieces.filter((p) => {
     if (statutFilter !== 'toutes' && p.statut !== statutFilter) return false
     if (sousDossierFilter === 'sans' && p.sous_dossier_id) return false
     if (sousDossierFilter !== 'tous' && sousDossierFilter !== 'sans' && p.sous_dossier_id !== sousDossierFilter) return false
@@ -79,6 +79,14 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     if (anneeFilter !== 'toutes' && (!p.date_piece || new Date(p.date_piece).getFullYear() !== anneeFilter)) return false
     return true
   })
+  // "À valider" seulement : les pièces à faible confiance d'extraction remontent en premier — ce sont
+  // celles qui ont le plus de chances d'avoir un champ faux, donc celles qui méritent d'être regardées
+  // avant les autres plutôt que de tout revérifier au même niveau d'attention (voir Piece.confiance).
+  // Tri stable (Array.sort) : à confiance égale, l'ordre par date d'origine est conservé.
+  const PRIORITE_CONFIANCE: Record<string, number> = { basse: 0, moyenne: 1, haute: 2 }
+  const filtered = statutFilter === 'a_valider'
+    ? [...filteredBase].sort((a, b) => (PRIORITE_CONFIANCE[a.confiance ?? ''] ?? 3) - (PRIORITE_CONFIANCE[b.confiance ?? ''] ?? 3))
+    : filteredBase
   const tiersConnus = [...new Set(pieces.map((p) => p.tiers).filter((t): t is string => !!t))]
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
@@ -233,6 +241,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                 <th>Catégorie</th>
                 <th>Sous-dossier</th>
                 <th>Montant TTC</th>
+                <th>Confiance</th>
                 <th>Statut</th>
               </tr>
             </thead>
@@ -253,6 +262,12 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                   </td>
                   <td onClick={() => setEditing(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
                   <td onClick={() => setEditing(p)}>{formatMoney(p.montant_ttc)}</td>
+                  <td onClick={() => setEditing(p)}>
+                    {p.confiance === 'basse' && <span className="badge badge-danger">Basse — à vérifier</span>}
+                    {p.confiance === 'moyenne' && <span className="badge badge-warning">Moyenne</span>}
+                    {p.confiance === 'haute' && <span className="badge badge-ok">Haute</span>}
+                    {!p.confiance && <span className="muted">—</span>}
+                  </td>
                   <td onClick={() => setEditing(p)}>
                     {p.statut === 'validee'
                       ? <span className="badge badge-ok">Validée</span>
