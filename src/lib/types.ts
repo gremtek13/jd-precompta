@@ -64,6 +64,15 @@ export interface TiersCategorie {
   updated_at: string
 }
 
+// Même correspondance tiers → catégorie que TiersCategorie, mais partagée entre tous les dossiers
+// (voir migration tiers_categories_cabinet) — categorie_id y référence toujours une catégorie globale.
+export interface TiersCategorieCabinet {
+  id: string
+  tiers_normalise: string
+  categorie_id: string
+  updated_at: string
+}
+
 export interface SousDossier {
   id: string
   dossier_id: string

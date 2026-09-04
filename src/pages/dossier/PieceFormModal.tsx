@@ -2,7 +2,8 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
-import type { Categorie, Piece, SousDossier, TiersCategorie, TypePiece } from '../../lib/types'
+import { suggererCategorie } from '../../lib/tiersCategories'
+import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
 
 function typeApercu(nom: string): 'image' | 'pdf' | 'autre' {
   const ext = nom.toLowerCase().split('.').pop() ?? ''
@@ -16,13 +17,14 @@ interface Props {
   categories: Categorie[]
   sousDossiers: SousDossier[]
   tiersCategories: TiersCategorie[]
+  tiersCategoriesCabinet: TiersCategorieCabinet[]
   tiersConnus: string[]
   piece: Piece | null // null = création
   onClose: () => void
   onSaved: () => void
 }
 
-export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersConnus, piece, onClose, onSaved }: Props) {
+export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, onClose, onSaved }: Props) {
   const [file, setFile] = useState<File | null>(null)
   const [datePiece, setDatePiece] = useState(piece?.date_piece ?? '')
   const [tiers, setTiers] = useState(piece?.tiers ?? '')
@@ -71,12 +73,13 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     setPreviewUrl(null)
   }, [file, piece?.storage_path])
 
-  // Si ce tiers a déjà été catégorisé sur une pièce précédente de ce dossier, on reprend la même
-  // catégorie automatiquement — sans écraser un choix déjà fait manuellement.
+  // Si ce tiers a déjà été catégorisé sur une pièce précédente — de ce dossier en priorité, sinon
+  // partagée entre tous les dossiers (voir lib/tiersCategories.ts) — on reprend la même catégorie
+  // automatiquement, sans écraser un choix déjà fait manuellement.
   function suggestCategorieFromTiers(value: string) {
     if (categorieId || !value.trim()) return
-    const match = tiersCategories.find((tc) => tc.tiers_normalise === normalizeTiers(value))
-    if (match) setCategorieId(match.categorie_id)
+    const suggestion = suggererCategorie(value, tiersCategories, tiersCategoriesCabinet)
+    if (suggestion) setCategorieId(suggestion)
   }
 
   function recalcFromHtTva(ht: string, tva: string) {
@@ -194,12 +197,24 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       }
 
       // Mémorise la correspondance tiers → catégorie pour la reproposer automatiquement la prochaine
-      // fois. Best-effort : un échec ici ne doit pas remettre en cause la sauvegarde de la pièce.
+      // fois, sur ce dossier. Best-effort : un échec ici ne doit pas remettre en cause la sauvegarde
+      // de la pièce.
       if (tiers.trim() && categorieId) {
         await supabase.from('tiers_categories').upsert(
           { dossier_id: dossierId, tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
           { onConflict: 'dossier_id,tiers_normalise' },
         )
+        // Catégorie choisie parmi les catégories globales (dossier_id null) : la correspondance a du
+        // sens au-delà de ce seul dossier (une mutuelle, une banque... reviennent souvent d'un client
+        // à l'autre), donc on la mémorise aussi au niveau cabinet — voir lib/tiersCategories.ts. Une
+        // catégorie propre à ce dossier reste, elle, sans équivalent chez un autre client.
+        const categorieChoisie = categories.find((c) => c.id === categorieId)
+        if (categorieChoisie && categorieChoisie.dossier_id === null) {
+          await supabase.from('tiers_categories_cabinet').upsert(
+            { tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
+            { onConflict: 'tiers_normalise' },
+          )
+        }
       }
 
       onSaved()

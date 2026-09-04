@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { Categorie, Piece, SousDossier, TiersCategorie } from '../../lib/types'
+import { suggererCategorie } from '../../lib/tiersCategories'
+import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
 import PieceFormModal from './PieceFormModal'
 import ImportDossierModal from './ImportDossierModal'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -11,6 +12,8 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [sousDossiers, setSousDossiers] = useState<SousDossier[]>([])
   const [tiersCategories, setTiersCategories] = useState<TiersCategorie[]>([])
+  const [tiersCategoriesCabinet, setTiersCategoriesCabinet] = useState<TiersCategorieCabinet[]>([])
+  const [applyingSuggestions, setApplyingSuggestions] = useState(false)
   const [loading, setLoading] = useState(true)
   const [statutFilter, setStatutFilter] = useState<'toutes' | 'a_valider' | 'validee'>('toutes')
   const [sousDossierFilter, setSousDossierFilter] = useState<'tous' | 'sans' | string>('tous')
@@ -45,10 +48,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
       .select('*')
       .eq('dossier_id', dossierId)
 
+    const { data: tiersCategoriesCabinetData } = await supabase
+      .from('tiers_categories_cabinet')
+      .select('*')
+
     setPieces(piecesData ?? [])
     setCategories(categoriesData ?? [])
     setSousDossiers(sousDossiersData ?? [])
     setTiersCategories(tiersCategoriesData ?? [])
+    setTiersCategoriesCabinet(tiersCategoriesCabinetData ?? [])
     setLoading(false)
   }
 
@@ -74,6 +82,28 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const tiersConnus = [...new Set(pieces.map((p) => p.tiers).filter((t): t is string => !!t))]
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
+
+  // Catégorie suggérée pour une pièce pas encore catégorisée, d'après son tiers — règle du dossier ou
+  // du cabinet déjà apprise (voir lib/tiersCategories.ts). Juste un aperçu tant que rien n'est
+  // appliqué : la pièce garde categorie_id à null jusqu'au clic explicite ci-dessous ou dans la fiche.
+  const suggestionPour = (p: Piece): string | null => {
+    if (p.categorie_id || !p.tiers) return null
+    return suggererCategorie(p.tiers, tiersCategories, tiersCategoriesCabinet)
+  }
+  const piecesAvecSuggestion = pieces.filter((p) => suggestionPour(p) !== null)
+
+  // Un seul clic pour reprendre, sur toutes les pièces sans catégorie, la correspondance déjà connue
+  // pour leur tiers — sans passer par chaque fiche une par une. Ne fait rien sur les pièces sans
+  // correspondance connue : elles restent à catégoriser à la main comme avant.
+  async function appliquerSuggestions() {
+    if (piecesAvecSuggestion.length === 0) return
+    setApplyingSuggestions(true)
+    await Promise.all(
+      piecesAvecSuggestion.map((p) => supabase.from('pieces').update({ categorie_id: suggestionPour(p) }).eq('id', p.id)),
+    )
+    setApplyingSuggestions(false)
+    load()
+  }
 
   function toggleSelect(id: string) {
     setSelected((prev) => {
@@ -168,6 +198,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {piecesAvecSuggestion.length > 0 && (
+            <button className="btn btn-outline btn-sm" disabled={applyingSuggestions} onClick={appliquerSuggestions}>
+              {applyingSuggestions ? 'Application…' : `Appliquer les suggestions (${piecesAvecSuggestion.length})`}
+            </button>
+          )}
           {selected.size > 0 && (
             <>
               <button className="btn btn-outline btn-sm" onClick={validateSelection}>
@@ -209,7 +244,13 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                   </td>
                   <td onClick={() => setEditing(p)}>{formatDate(p.date_piece)}</td>
                   <td onClick={() => setEditing(p)}>{p.tiers ?? '—'}</td>
-                  <td onClick={() => setEditing(p)}>{categorieLabel(p.categorie_id)}</td>
+                  <td onClick={() => setEditing(p)}>
+                    {p.categorie_id ? (
+                      categorieLabel(p.categorie_id)
+                    ) : suggestionPour(p) ? (
+                      <>— <span className="muted" style={{ fontSize: '0.8rem' }}>(suggéré : {categorieLabel(suggestionPour(p))})</span></>
+                    ) : '—'}
+                  </td>
                   <td onClick={() => setEditing(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
                   <td onClick={() => setEditing(p)}>{formatMoney(p.montant_ttc)}</td>
                   <td onClick={() => setEditing(p)}>
@@ -230,6 +271,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           categories={categories}
           sousDossiers={sousDossiers}
           tiersCategories={tiersCategories}
+          tiersCategoriesCabinet={tiersCategoriesCabinet}
           tiersConnus={tiersConnus}
           piece={editing === 'new' ? null : editing}
           onClose={() => setEditing(null)}
