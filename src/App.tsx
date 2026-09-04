@@ -7,6 +7,7 @@ import DossierDetail from './pages/DossierDetail'
 import ClientHome from './pages/ClientHome'
 import ClientUpload from './pages/ClientUpload'
 import ClientInformations from './pages/ClientInformations'
+import ClientSimulation from './pages/ClientSimulation'
 
 function Gate() {
   const { session, role, loading } = useAuth()
@@ -29,6 +30,7 @@ function Gate() {
             <Route path="/accueil" element={<ClientHome />} />
             <Route path="/mes-pieces" element={<ClientUpload />} />
             <Route path="/mes-informations" element={<ClientInformations />} />
+            <Route path="/ma-simulation" element={<ClientSimulation />} />
             <Route path="*" element={<Navigate to="/accueil" replace />} />
           </>
         )}

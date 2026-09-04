@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
+import { ecartPct, totauxPourAnnee } from '../../lib/estimation'
 import type { Categorie, CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 
 const ANNEE_COURANTE = new Date().getFullYear()
@@ -70,30 +71,15 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
 
   useEffect(() => { load() }, [dossierId])
 
-  function totauxPourAnnee(annee: number) {
-    const ca = pieces
-      .filter((p) => p.date_piece?.startsWith(String(annee)))
-      .reduce((sum, p) => sum + (p.montant_ht ?? p.montant_ttc ?? 0), 0)
-    const cotis = cotisations
-      .filter((c) => c.echeance.startsWith(String(annee)))
-      .reduce((sum, c) => sum + (c.montant_verse ?? c.montant_appele), 0)
-    return { ca, cotis }
-  }
-
   // Règle usuelle simple : ce qui est déjà là cette année, ramené à 12 mois au prorata des mois déjà
   // entamés. Pas de lissage saisonnier ni de logique de régularisation URSSAF (calcul provisionnel
   // réel bien plus complexe) — juste un repère pour anticiper, pas un calcul officiel.
   const moisEcoules = new Date().getMonth() + 1
-  const { ca: caAnneeEnCours, cotis: cotisationsAnneeEnCours } = totauxPourAnnee(ANNEE_COURANTE)
+  const { ca: caAnneeEnCours, cotis: cotisationsAnneeEnCours } = totauxPourAnnee(pieces, cotisations, ANNEE_COURANTE)
   const caProjete = (caAnneeEnCours * 12) / moisEcoules
   const cotisationsProjetees = (cotisationsAnneeEnCours * 12) / moisEcoules
 
   const referenceN1 = references.find((r) => r.annee === ANNEE_COURANTE - 1) ?? null
-
-  function ecartPct(valeurN: number, valeurN1: number | null): string {
-    if (!valeurN1) return '—'
-    return `${valeurN >= valeurN1 ? '+' : ''}${(((valeurN - valeurN1) / valeurN1) * 100).toFixed(0)} %`
-  }
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
   // ressaisir les chiffres à la main — jamais un enregistrement automatique, juste un préremplissage
@@ -161,7 +147,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(annee)
+      const { ca, cotis } = totauxPourAnnee(pieces, cotisations, annee)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,

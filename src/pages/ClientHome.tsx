@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { IconCamera, IconChecklist, IconDocuments, IconInformations, IconPieces } from '../components/icons'
+import { IconCamera, IconChecklist, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
 import type { Dossier } from '../lib/types'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
@@ -78,6 +78,10 @@ export default function ClientHome() {
         <Link to="/mes-informations" className="home-tile">
           <span className="home-tile-icon"><IconInformations width={34} height={34} /></span>
           <span className="home-tile-label">Mes informations</span>
+        </Link>
+        <Link to="/ma-simulation" className="home-tile">
+          <span className="home-tile-icon"><IconEstimation width={34} height={34} /></span>
+          <span className="home-tile-label">Ma simulation</span>
         </Link>
         <label className="home-tile" style={{ cursor: capturing ? 'default' : 'pointer', opacity: capturing ? 0.6 : 1 }}>
           <span className="home-tile-icon"><IconCamera width={34} height={34} /></span>
