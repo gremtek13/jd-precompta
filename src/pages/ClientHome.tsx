@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { IconChecklist, IconDocuments, IconInformations, IconPieces } from '../components/icons'
+import { deposerFichier } from '../lib/depot'
+import { IconCamera, IconChecklist, IconDocuments, IconInformations, IconPieces } from '../components/icons'
 import type { Dossier } from '../lib/types'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
@@ -14,8 +15,11 @@ const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 export default function ClientHome() {
   const { dossierIds } = useAuth()
   const dossierId = dossierIds[0]
+  const navigate = useNavigate()
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [onboardingVu, setOnboardingVu] = useState(true)
+  const [capturing, setCapturing] = useState(false)
+  const [captureError, setCaptureError] = useState<string | null>(null)
 
   useEffect(() => {
     if (!dossierId) return
@@ -29,6 +33,28 @@ export default function ClientHome() {
   function masquerOnboarding() {
     localStorage.setItem(CLE_ONBOARDING_VU, '1')
     setOnboardingVu(true)
+  }
+
+  // Prise de photo directement depuis l'accueil — même pipeline que "Déposer des fichiers" (Mes
+  // pièces) via deposerFichier (lib/depot.ts) : hash anti-doublon, upload, extraction automatique,
+  // classement Pièces/Documents. Une fois traité, on renvoie vers "Mes pièces" pour que le client
+  // voie tout de suite que sa photo est bien arrivée et où elle a été rangée.
+  async function handleCapture(fileList: FileList | null) {
+    if (!fileList || fileList.length === 0 || !dossierId) return
+    const file = fileList[0]
+    setCapturing(true)
+    setCaptureError(null)
+    const resultat = await deposerFichier(dossierId, file)
+    setCapturing(false)
+    if (resultat.statut === 'erreur') {
+      setCaptureError(`${file.name} : ${resultat.message}.`)
+      return
+    }
+    if (resultat.statut === 'doublon') {
+      setCaptureError(`${file.name} : déjà déposé, pas réenvoyé.`)
+      return
+    }
+    navigate('/mes-pieces')
   }
 
   if (!dossierId) {
@@ -53,7 +79,21 @@ export default function ClientHome() {
           <span className="home-tile-icon"><IconInformations width={34} height={34} /></span>
           <span className="home-tile-label">Mes informations</span>
         </Link>
+        <label className="home-tile" style={{ cursor: capturing ? 'default' : 'pointer', opacity: capturing ? 0.6 : 1 }}>
+          <span className="home-tile-icon"><IconCamera width={34} height={34} /></span>
+          <span className="home-tile-label">{capturing ? 'Analyse en cours…' : 'Prendre une photo'}</span>
+          <input
+            type="file"
+            accept="image/*"
+            capture="environment"
+            style={{ display: 'none' }}
+            disabled={capturing}
+            onChange={(e) => { handleCapture(e.target.files); e.target.value = '' }}
+          />
+        </label>
       </div>
+
+      {captureError && <p className="error-text" style={{ marginTop: 16 }}>{captureError}</p>}
 
       {!onboardingVu && (
         <div className="card" style={{ marginTop: 32, maxWidth: 560, textAlign: 'left', width: '100%' }}>

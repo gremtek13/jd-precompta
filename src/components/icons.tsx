@@ -102,6 +102,11 @@ export const IconMoon = (p: IconProps) => base(<>
   <path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a7 7 0 0 0 10.5 10.5z" />
 </>, p)
 
+export const IconCamera = (p: IconProps) => base(<>
+  <path d="M4 8.5A1.5 1.5 0 0 1 5.5 7h2l1.2-2h6.6l1.2 2h2A1.5 1.5 0 0 1 20 8.5v9A1.5 1.5 0 0 1 18.5 19h-13A1.5 1.5 0 0 1 4 17.5z" />
+  <circle cx="12" cy="13" r="3.6" />
+</>, p)
+
 export const IconLogout = (p: IconProps) => base(<>
   <path d="M9 4H6a1.5 1.5 0 0 0-1.5 1.5v13A1.5 1.5 0 0 0 6 20h3" />
   <path d="M14 16l4-4-4-4" />

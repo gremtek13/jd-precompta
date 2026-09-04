@@ -1,8 +1,8 @@
 import { useEffect, useState, type DragEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { extractPiece, fichierDejaPresent, hashFichier, type ExtractionResult } from '../lib/extraction'
-import { formatDate, slugify } from '../lib/format'
+import { deposerFichier } from '../lib/depot'
+import { formatDate } from '../lib/format'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece } from '../lib/types'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -57,12 +57,10 @@ export default function ClientUpload() {
 
   useEffect(() => { load() }, [dossierId])
 
-  // Chaque fichier suit son propre chemin, en parallèle : vérifie d'abord qu'il n'est pas déjà présent
-  // (même hash, Pièces ou Documents), l'envoie au storage, puis — sauf CSV, jamais analysé par Textract
-  // et classé directement en relevé bancaire sur son extension — tente une extraction automatique.
-  // L'extraction se fait AVANT l'écriture en base (pas en correction après coup, comme côté cabinet) :
-  // le client n'a pas le droit de modifier une pièce une fois déposée (seul le cabinet valide/corrige),
-  // donc le classement et les montants lus doivent être connus dès l'unique insertion.
+  // Chaque fichier suit son propre chemin, en parallèle — hash-check anti-doublon, upload storage,
+  // extraction automatique, classement Pièces/Documents — via deposerFichier (lib/depot.ts), partagé
+  // avec la prise de photo directe sur l'accueil (ClientHome). Ici on ajoute juste le suivi local
+  // "Analyse en cours…" et l'agrégation des erreurs pour l'affichage de cet écran.
   async function handleFiles(fileList: FileList | File[]) {
     const files = Array.from(fileList)
     if (files.length === 0 || !dossierId) return
@@ -71,60 +69,12 @@ export default function ClientUpload() {
 
     await Promise.all(files.map(async (file) => {
       const localId = `${Date.now()}-${Math.random()}-${file.name}`
-      try {
-        const hash = await hashFichier(file)
-        if (await fichierDejaPresent(dossierId, hash)) {
-          erreurs.push(`${file.name} : déjà déposé, pas réenvoyé.`)
-          return
-        }
-
-        setEnCours((prev) => [...prev, { id: localId, nomFichier: file.name }])
-
-        const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
-        const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
-        if (uploadError) throw uploadError
-
-        const estCsv = file.name.toLowerCase().endsWith('.csv')
-        if (estCsv) {
-          const { error: insertError } = await supabase.from('documents_divers').insert({
-            dossier_id: dossierId, storage_path: path, storage_hash: hash, nom_fichier: file.name, categorie: 'releve_bancaire',
-          })
-          if (insertError) throw insertError
-          return
-        }
-
-        let extraction: ExtractionResult | null = null
-        try {
-          extraction = await extractPiece(file, file.name)
-        } catch {
-          extraction = null // best-effort : atterrit en Pièces à compléter par le cabinet si l'extraction échoue
-        }
-
-        if (extraction && extraction.classification !== 'facture') {
-          const { error: insertError } = await supabase.from('documents_divers').insert({
-            dossier_id: dossierId, storage_path: path, storage_hash: hash, nom_fichier: file.name,
-            categorie: extraction.classification,
-          })
-          if (insertError) throw insertError
-        } else {
-          const { data: userData } = await supabase.auth.getUser()
-          const { error: insertError } = await supabase.from('pieces').insert({
-            dossier_id: dossierId, uploaded_by: userData.user!.id, storage_path: path, storage_hash: hash,
-            nom_fichier: file.name, type_piece: 'achat', statut: 'a_valider',
-            date_piece: extraction?.date_piece ?? null,
-            tiers: extraction?.tiers ?? null,
-            montant_ht: extraction?.montant_ht ?? null,
-            montant_tva: extraction?.montant_tva ?? null,
-            montant_ttc: extraction?.montant_ttc ?? null,
-          })
-          if (insertError) throw insertError
-        }
-      } catch (err) {
-        erreurs.push(`${file.name} : ${err instanceof Error ? err.message : "l'envoi a échoué"}.`)
-      } finally {
-        setEnCours((prev) => prev.filter((f) => f.id !== localId))
-        load()
-      }
+      setEnCours((prev) => [...prev, { id: localId, nomFichier: file.name }])
+      const resultat = await deposerFichier(dossierId, file)
+      if (resultat.statut === 'doublon') erreurs.push(`${file.name} : déjà déposé, pas réenvoyé.`)
+      else if (resultat.statut === 'erreur') erreurs.push(`${file.name} : ${resultat.message}.`)
+      setEnCours((prev) => prev.filter((f) => f.id !== localId))
+      load()
     }))
 
     if (erreurs.length > 0) setError(erreurs.join(' '))
