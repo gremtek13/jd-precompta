@@ -141,6 +141,23 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   }
   const nbSansContrepartie = [...piecesParGroupe.values()].filter((rows) => !rows.some((r) => r.compte === COMPTE_BANQUE)).length
 
+  // Contrôle débit = crédit — le moteur comptable ne l'imposait nulle part jusqu'ici (une pièce
+  // pouvait avoir sa contrepartie banque sans que personne ne vérifie que les deux moitiés
+  // s'équilibrent vraiment). Uniquement sur les groupes déjà complets (contrepartie présente, donc pas
+  // déjà comptés dans nbSansContrepartie ci-dessus) : un groupe encore à moitié généré n'a évidemment
+  // rien d'équilibré, ce n'est pas un défaut à signaler. Tolérance de 2 centimes pour l'arrondi
+  // flottant — un écart réel (frais bancaires, paiement partiel...) est en général bien plus grand,
+  // donc quasiment jamais absorbé par cette marge.
+  const EPSILON_EQUILIBRE = 0.02
+  const groupesDesequilibres = [...piecesParGroupe.entries()]
+    .filter(([, rows]) => rows.some((r) => r.compte === COMPTE_BANQUE))
+    .map(([pieceId, rows]) => {
+      const solde = rows.reduce((sum, r) => sum + (r.sens === 'debit' ? r.montant : -r.montant), 0)
+      return { pieceId, rows, solde }
+    })
+    .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
+  const pieceById = (id: string) => pieces.find((p) => p.id === id) ?? null
+
   // Sur un dossier assujetti, une pièce validée sans TVA renseignée est plus probablement un oubli
   // de saisie qu'une vraie absence de TVA — signalé pour vérification, jamais corrigé tout seul.
   const piecesSansTva = assujettiTva ? pieces.filter((p) => p.montant_ttc != null && !p.montant_tva) : []
@@ -160,6 +177,31 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
               <li key={p.id}>{p.tiers ?? p.nom_fichier} — {formatMoney(p.montant_ttc)}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {groupesDesequilibres.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderColor: 'var(--color-danger)' }}>
+          <h3 style={{ marginTop: 0 }}>Écritures déséquilibrées</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Le total des débits ne correspond pas à celui des crédits sur ces pièces — un montant réel
+            de mouvement bancaire différent de la pièce (frais, paiement partiel...) l'explique parfois,
+            mais ça mérite toujours une vérification avant l'export FEC.
+          </p>
+          <table>
+            <thead><tr><th>Pièce</th><th>Écart</th></tr></thead>
+            <tbody>
+              {groupesDesequilibres.map((g) => {
+                const piece = pieceById(g.pieceId)
+                return (
+                  <tr key={g.pieceId}>
+                    <td>{piece?.tiers ?? piece?.nom_fichier ?? g.pieceId.slice(0, 8)}</td>
+                    <td>{formatMoney(g.solde)}</td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -221,6 +263,9 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
           {enAttente.length > 0 && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
           {nbSansContrepartie > 0 && (
             <> — <span className="badge badge-warning">{nbSansContrepartie} en attente de rapprochement bancaire</span></>
+          )}
+          {groupesDesequilibres.length > 0 && (
+            <> — <span className="badge badge-danger">{groupesDesequilibres.length} déséquilibrée{groupesDesequilibres.length > 1 ? 's' : ''}</span></>
           )}
         </p>
         <button className="btn btn-primary btn-sm" disabled={generating || enAttente.length === 0} onClick={genererEcritures}>
