@@ -1,27 +1,24 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { Categorie, EcritureBrouillon, Piece } from '../../lib/types'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, synchroniserContrepartieBanque } from '../../lib/ecritures'
+import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
+import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
-// Comptes PCG standard pour la TVA — fixes, pas besoin de mappage par catégorie comme pour les
-// comptes de charge/produit. Beaucoup de dossiers (ex. actes de soins IDEL, exonérés) n'auront
-// jamais de ligne ici : la brique TVA reste silencieuse tant qu'aucune pièce ne porte de TVA, et se
-// déclenche automatiquement dès qu'une pièce en a (matériel, formation, activité annexe...).
-const COMPTE_TVA_DEDUCTIBLE = '445660'
-const COMPTE_TVA_COLLECTEE = '445710'
-
 // Palier 5 — brouillon comptable, brique 1 (journal). Génère une proposition d'écriture pour
-// chaque pièce validée dont la catégorie a un compte associé. Reste volontairement simple (pas de
-// contrepartie bancaire) : l'objectif est de faire gagner du temps à l'expert-comptable sur la
-// ventilation par compte, pas de simuler une vraie comptabilité en partie double — voir le bandeau
-// ci-dessous, non négociable. Quand une pièce porte de la TVA, la ligne HT et la ligne de TVA sont
-// générées séparément (brique 3, TVA) plutôt qu'un seul montant TTC.
-export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
+// chaque pièce validée dont la catégorie a un compte associé — la ligne charge/produit, puis la
+// ligne de TVA séparée le cas échéant (brique 3). La contrepartie banque (partie double complète,
+// voir lib/ecritures.ts) s'ajoute automatiquement si la pièce est déjà rapprochée d'un mouvement au
+// moment de la génération, ou plus tard depuis Banque sinon. L'export FEC (voir lib/fec.ts) permet au
+// cabinet de récupérer un fichier directement importable dans son propre logiciel de comptabilité,
+// une fois l'année sélectionnée et le brouillon jugé complet.
+export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: { dossierId: string; dossierSiret: string | null; assujettiTva: boolean }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
+  const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
   const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -31,12 +28,14 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesData }, { data: ecrituresData }, { data: immobilisationsData }] = await Promise.all([
+    const [{ data: categoriesData }, { data: piecesData }, { data: ecrituresData }, { data: immobilisationsData }, { data: lignesData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
       supabase.from('ecritures_brouillon').select('*').eq('dossier_id', dossierId).order('date', { ascending: false }),
       supabase.from('immobilisations').select('piece_id').eq('dossier_id', dossierId),
+      supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null),
     ])
+    setLignesBancaires(lignesData ?? [])
     setCategories(categoriesData ?? [])
     setPieces(piecesData ?? [])
     setEcritures(ecrituresData ?? [])
@@ -99,6 +98,16 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
       })
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
+
+      // Une pièce déjà rapprochée d'un mouvement bancaire au moment où son écriture est générée (import
+      // en masse d'anciens exercices, par exemple) doit recevoir sa contrepartie tout de suite — sinon
+      // il faudrait re-toucher le rapprochement dans Banque pour que la partie double se complète.
+      await Promise.all(
+        enAttente.map((p) => {
+          const ligne = lignesBancaires.find((l) => l.piece_id === p.id)
+          return ligne ? synchroniserContrepartieBanque(dossierId, p, ligne) : Promise.resolve()
+        }),
+      )
       load()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
@@ -114,6 +123,16 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
 
   const tvaDeductible = ecrituresFiltrees.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
   const tvaCollectee = ecrituresFiltrees.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
+
+  // Une écriture sans sa ligne de contrepartie banque (voir lib/ecritures.ts) n'est encore qu'une
+  // demi-partie — pas grave en soi (la pièce n'est peut-être pas encore rapprochée dans Banque), mais
+  // utile à signaler plutôt que de laisser croire que le brouillon est complet.
+  const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
+  for (const e of ecrituresFiltrees) {
+    if (!e.piece_id) continue
+    piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
+  }
+  const nbSansContrepartie = [...piecesParGroupe.values()].filter((rows) => !rows.some((r) => r.compte === COMPTE_BANQUE)).length
 
   // Sur un dossier assujetti, une pièce validée sans TVA renseignée est plus probablement un oubli
   // de saisie qu'une vraie absence de TVA — signalé pour vérification, jamais corrigé tout seul.
@@ -189,6 +208,9 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
         <p className="muted" style={{ margin: 0 }}>
           {ecritures.length} écriture{ecritures.length > 1 ? 's' : ''} proposée{ecritures.length > 1 ? 's' : ''}
           {enAttente.length > 0 && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
+          {nbSansContrepartie > 0 && (
+            <> — <span className="badge badge-warning">{nbSansContrepartie} en attente de rapprochement bancaire</span></>
+          )}
         </p>
         <button className="btn btn-primary btn-sm" disabled={generating || enAttente.length === 0} onClick={genererEcritures}>
           {generating ? 'Génération…' : `Générer les écritures manquantes${enAttente.length > 0 ? ` (${enAttente.length})` : ''}`}
@@ -198,6 +220,21 @@ export default function EcrituresTab({ dossierId, assujettiTva }: { dossierId: s
       {error && <p className="error-text">{error}</p>}
 
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+        <button
+          className="btn btn-outline btn-sm"
+          disabled={typeof anneeFilter !== 'number' || ecrituresFiltrees.length === 0}
+          title={typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice." : undefined}
+          onClick={() => {
+            if (typeof anneeFilter !== 'number') return
+            const contenu = genererFec(ecrituresFiltrees, pieces, categories)
+            telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
+          }}
+        >
+          Exporter FEC {typeof anneeFilter === 'number' ? anneeFilter : ''}
+        </button>
+      </div>
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (

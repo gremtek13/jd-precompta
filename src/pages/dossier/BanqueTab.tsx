@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
 import { formatDate, formatMoney } from '../../lib/format'
+import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/ecritures'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
@@ -129,6 +130,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
   async function rapprocher(ligneId: string, pieceId: string) {
     await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId, cotisation_id: null }).eq('id', ligneId)
+    const ligne = lignes.find((l) => l.id === ligneId)
+    const piece = pieces.find((p) => p.id === pieceId)
+    if (ligne && piece) await synchroniserContrepartieBanque(dossierId, piece, ligne)
     load()
   }
 
@@ -138,9 +142,11 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   }
 
   async function annulerRapprochement(ligneId: string) {
+    const ancienPieceId = lignes.find((l) => l.id === ligneId)?.piece_id ?? null
     await supabase.from('lignes_bancaires').update({
       statut: 'non_rapprochee', piece_id: null, cotisation_id: null, prelevement_personnel: false,
     }).eq('id', ligneId)
+    if (ancienPieceId) await retirerContrepartieBanque(ancienPieceId)
     load()
   }
 
@@ -247,6 +253,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
             .update({ statut: 'rapprochee', piece_id: m.pieceId ?? null, cotisation_id: m.cotisationId ?? null })
             .eq('id', m.ligneId),
         ),
+      )
+      await Promise.all(
+        maj
+          .filter((m): m is { ligneId: string; pieceId: string } => !!m.pieceId)
+          .map((m) => {
+            const ligne = lignes.find((l) => l.id === m.ligneId)
+            const piece = pieces.find((p) => p.id === m.pieceId)
+            return ligne && piece ? synchroniserContrepartieBanque(dossierId, piece, ligne) : Promise.resolve()
+          }),
       )
     } finally {
       setRapprochementAuto(false)

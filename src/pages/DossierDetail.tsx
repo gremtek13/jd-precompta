@@ -68,7 +68,7 @@ export default function DossierDetail() {
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}
       {tab === 'documents' && <DocumentsTab dossierId={id} />}
-      {tab === 'ecritures' && <EcrituresTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
+      {tab === 'ecritures' && <EcrituresTab dossierId={id} dossierSiret={dossier?.siret ?? null} assujettiTva={dossier?.assujetti_tva ?? false} />}
       {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
       {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
       {tab === 'cloture' && <ClotureTab dossierId={id} />}
