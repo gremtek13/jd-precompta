@@ -13,6 +13,8 @@ export interface Dossier {
   created_at: string
   code_email: string
   assujetti_tva: boolean
+  code_naf: string | null
+  libelle_naf: string | null
 }
 
 export interface Categorie {

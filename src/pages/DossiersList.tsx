@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { rechercherCodeNaf } from '../lib/sirene'
 import type { Dossier } from '../lib/types'
 
 interface DossierRow extends Dossier {
@@ -173,6 +174,24 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
   const [contactEmail, setContactEmail] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [codeNaf, setCodeNaf] = useState<string | null>(null)
+  const [libelleNaf, setLibelleNaf] = useState<string | null>(null)
+  const [detectingNaf, setDetectingNaf] = useState(false)
+
+  // Détection best-effort de la profession dès que le SIRET est complet (14 chiffres) — voir
+  // lib/sirene.ts. Jamais bloquant : un échec laisse juste le champ vide, à compléter plus tard.
+  async function detecterNaf() {
+    setCodeNaf(null)
+    setLibelleNaf(null)
+    if (siret.replace(/\D/g, '').length !== 14) return
+    setDetectingNaf(true)
+    const infos = await rechercherCodeNaf(siret)
+    setDetectingNaf(false)
+    if (infos) {
+      setCodeNaf(infos.codeNaf)
+      setLibelleNaf(infos.libelleNaf)
+    }
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -183,6 +202,8 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
       siret: siret || null,
       contact_nom: contactNom || null,
       contact_email: contactEmail || null,
+      code_naf: codeNaf,
+      libelle_naf: libelleNaf,
     })
     setSaving(false)
     if (error) {
@@ -204,7 +225,13 @@ function NewDossierModal({ onClose, onCreated }: { onClose: () => void; onCreate
           </div>
           <div className="field">
             <label htmlFor="siret">SIRET</label>
-            <input id="siret" value={siret} onChange={(e) => setSiret(e.target.value)} />
+            <input id="siret" value={siret} onChange={(e) => setSiret(e.target.value)} onBlur={detecterNaf} />
+            {detectingNaf && <span className="muted" style={{ fontSize: '0.82rem' }}>Détection de la profession…</span>}
+            {!detectingNaf && (libelleNaf || codeNaf) && (
+              <span className="muted" style={{ fontSize: '0.82rem' }}>
+                Profession détectée : {libelleNaf ?? `code NAF ${codeNaf}`}
+              </span>
+            )}
           </div>
           <div className="field-row">
             <div className="field">

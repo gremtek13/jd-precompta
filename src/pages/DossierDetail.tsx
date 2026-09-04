@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
+import { rechercherCodeNaf } from '../lib/sirene'
 import type { Dossier } from '../lib/types'
 import PiecesTab from './dossier/PiecesTab'
 import PacksTab from './dossier/PacksTab'
@@ -21,6 +22,7 @@ export default function DossierDetail() {
   const { id } = useParams<{ id: string }>()
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [tab, setTab] = useState<DossierTab>('checklist')
+  const [detectingNaf, setDetectingNaf] = useState(false)
 
   useEffect(() => {
     if (!id) return
@@ -40,6 +42,26 @@ export default function DossierDetail() {
     }
   }
 
+  // Backfill pour les dossiers créés avant l'ajout du code NAF (voir lib/sirene.ts, appelé
+  // automatiquement à la création d'un nouveau dossier) — un clic explicite, pas automatique au
+  // chargement, pour ne jamais appeler une API externe sans que le cabinet l'ait demandé.
+  async function detecterProfession() {
+    if (!dossier?.siret) return
+    setDetectingNaf(true)
+    const infos = await rechercherCodeNaf(dossier.siret)
+    setDetectingNaf(false)
+    if (!infos) {
+      window.alert("Profession introuvable pour ce SIRET (réseau indisponible ou SIRET non reconnu par la base SIRENE).")
+      return
+    }
+    const { error } = await supabase.from('dossiers').update({ code_naf: infos.codeNaf, libelle_naf: infos.libelleNaf }).eq('id', dossier.id)
+    if (error) {
+      window.alert(error.message)
+      return
+    }
+    setDossier({ ...dossier, code_naf: infos.codeNaf, libelle_naf: infos.libelleNaf })
+  }
+
   return (
     <>
       <Link to="/dossiers" className="muted">&larr; Dossiers</Link>
@@ -57,6 +79,16 @@ export default function DossierDetail() {
             onClick={toggleAssujettiTva}
           >
             TVA : {dossier.assujetti_tva ? 'Assujetti' : 'Exonéré'}
+          </button>
+        )}
+        {dossier && (dossier.libelle_naf || dossier.code_naf) && (
+          <span className="badge badge-neutral" title={dossier.code_naf ?? undefined}>
+            {dossier.libelle_naf ?? `NAF ${dossier.code_naf}`}
+          </span>
+        )}
+        {dossier && dossier.siret && !dossier.code_naf && (
+          <button type="button" className="btn btn-outline btn-sm" onClick={detecterProfession} disabled={detectingNaf}>
+            {detectingNaf ? 'Détection…' : 'Détecter la profession (SIRET)'}
           </button>
         )}
       </div>
