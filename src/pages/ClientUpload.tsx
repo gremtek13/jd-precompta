@@ -233,16 +233,31 @@ export default function ClientUpload() {
         <p className="muted" style={{ margin: '0 0 14px' }}>
           Factures, reçus, notes de frais, relevés bancaires (CSV), appels de cotisation — plusieurs fichiers à la fois.
         </p>
-        <label className="btn btn-primary" style={{ cursor: 'pointer' }} onClick={(e) => e.stopPropagation()}>
-          Choisir des fichiers
-          <input
-            type="file"
-            multiple
-            accept=".pdf,.jpg,.jpeg,.png,.csv"
-            style={{ display: 'none' }}
-            onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }}
-          />
-        </label>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <label className="btn btn-primary" style={{ cursor: 'pointer' }} onClick={(e) => e.stopPropagation()}>
+            Choisir des fichiers
+            <input
+              type="file"
+              multiple
+              accept=".pdf,.jpg,.jpeg,.png,.csv"
+              style={{ display: 'none' }}
+              onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }}
+            />
+          </label>
+          {/* capture="environment" ouvre directement l'appareil photo arrière sur mobile (au lieu de la
+              galerie) — le fichier qui en sort est un File comme un autre, donc handleFiles s'en occupe
+              sans rien savoir de sa provenance : même hash-check, même upload, même extraction automatique. */}
+          <label className="btn btn-outline" style={{ cursor: 'pointer' }} onClick={(e) => e.stopPropagation()}>
+            📷 Prendre une photo
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              style={{ display: 'none' }}
+              onChange={(e) => { if (e.target.files) handleFiles(e.target.files); e.target.value = '' }}
+            />
+          </label>
+        </div>
       </div>
 
       {error && <p className="error-text" style={{ marginBottom: 14 }}>{error}</p>}
