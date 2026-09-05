@@ -44,30 +44,44 @@ export interface LigneAGenerer {
 // piecesDesynchronisees dans EcrituresTab). Ne couvre jamais la contrepartie banque, gérée séparément
 // par synchroniserContrepartieBanque ci-dessous.
 export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, compteComptable: string): LigneAGenerer[] {
-  const sens: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
+  const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const libelle = piece.tiers ?? piece.nom_fichier
   const date = piece.date_piece ?? piece.created_at.slice(0, 10)
-  const base = { dossier_id: dossierId, piece_id: piece.id, date, libelle, sens, statut: 'proposee' as const }
+  const base = { dossier_id: dossierId, piece_id: piece.id, date, libelle, statut: 'proposee' as const }
 
-  if (piece.montant_tva && piece.montant_tva > 0) {
+  // Un montant de pièce négatif (avoir, remboursement — ça arrive, une pièce validée existante en a
+  // un) inverse le sens réel de l'écriture : une "charge" négative est en réalité un crédit, jamais un
+  // débit avec un montant négatif. `montant` reste toujours une grandeur positive, sinon le contrôle
+  // débit = crédit (voir analyserEcritures) se fausse silencieusement — un solde qui semble équilibré
+  // à zéro montant près pourrait en réalité être doublé dans le mauvais sens.
+  function ligne(compte: string, montant: number): LigneAGenerer {
+    const sens = montant >= 0 ? sensPiece : (sensPiece === 'debit' ? 'credit' : 'debit')
+    return { ...base, compte, sens, montant: Math.abs(montant) }
+  }
+
+  if (piece.montant_tva) {
     const montantHt = piece.montant_ht ?? piece.montant_ttc! - piece.montant_tva
     return [
-      { ...base, compte: compteComptable, montant: montantHt },
-      { ...base, compte: piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, montant: piece.montant_tva },
+      ligne(compteComptable, montantHt),
+      ligne(piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, piece.montant_tva),
     ]
   }
-  return [{ ...base, compte: compteComptable, montant: piece.montant_ttc! }]
+  return [ligne(compteComptable, piece.montant_ttc!)]
 }
 
 // Palier 5+ — vraie partie double. Une écriture générée depuis une pièce (voir EcrituresTab) n'a
 // jusqu'ici qu'une moitié : la charge/le produit (+ la TVA le cas échéant), jamais la contrepartie
 // banque — donc jamais un débit=crédit exploitable tel quel par un logiciel de comptabilité. Cette
 // fonction ajoute cette contrepartie dès qu'on connaît le mouvement bancaire réel (le rapprochement),
-// avec le sens opposé à la pièce (une charge déjà débitée est réglée par un crédit banque, et
-// inversement) et le montant réel du mouvement (celui de la pièce peut différer d'un centime — frais
-// bancaires, arrondi...). Best-effort et idempotente : appelée aussi bien depuis un rapprochement
-// (Banque) que depuis une génération d'écritures sur une pièce déjà rapprochée (Écritures) — sans
-// jamais dupliquer la ligne si elle existe déjà.
+// avec le montant réel du mouvement (celui de la pièce peut différer d'un centime — frais bancaires,
+// arrondi...) et son sens déduit du signe de ce même mouvement — jamais du type de la pièce (achat/
+// vente) : un compte banque est un compte d'actif, une entrée d'argent (montant positif) l'augmente
+// donc au débit, une sortie (négatif) le diminue au crédit, quel que soit le type de la pièce en face.
+// Déduire le sens du type de pièce fonctionne pour le cas normal (une vente encaissée, un achat payé)
+// mais se trompe dès que le mouvement réel va dans l'autre sens que prévu (un remboursement, un avoir
+// réglé) — dépendre du signe réel évite ce piège. Best-effort et idempotente : appelée aussi bien
+// depuis un rapprochement (Banque) que depuis une génération d'écritures sur une pièce déjà
+// rapprochée (Écritures) — sans jamais dupliquer la ligne si elle existe déjà.
 export async function synchroniserContrepartieBanque(dossierId: string, piece: Piece, ligne: LigneBancaire) {
   const { data: existantes } = await supabase
     .from('ecritures_brouillon')
@@ -87,7 +101,7 @@ export async function synchroniserContrepartieBanque(dossierId: string, piece: P
     compte: COMPTE_BANQUE,
     libelle: piece.tiers ?? piece.nom_fichier,
     montant: Math.abs(ligne.montant),
-    sens: piece.type_piece === 'vente' ? 'debit' : 'credit',
+    sens: ligne.montant >= 0 ? 'debit' : 'credit',
     statut: 'proposee',
   })
 }
@@ -96,6 +110,18 @@ export async function synchroniserContrepartieBanque(dossierId: string, piece: P
 // ligne banque resterait affichée comme si le mouvement était toujours rapproché.
 export async function retirerContrepartieBanque(pieceId: string) {
   await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('compte', COMPTE_BANQUE)
+}
+
+// Solde d'un compte sur un ensemble d'écritures, dans le sens comptable normal de ce compte (débiteur
+// pour une charge ou la TVA déductible, créditeur pour un produit ou la TVA collectée). Jamais une
+// simple somme des montants (qui ignorerait le sens) : dès qu'une ligne au sens inverse apparaît — un
+// avoir, un remboursement, voir lignesChargeProduitPourPiece — une somme aveugle additionnerait cette
+// ligne au lieu de la soustraire, faussant silencieusement le total.
+export function soldeCompte(ecritures: EcritureBrouillon[], compte: string, sensNormal: 'debit' | 'credit'): number {
+  const lignes = ecritures.filter((e) => e.compte === compte)
+  const debit = lignes.filter((e) => e.sens === 'debit').reduce((sum, e) => sum + e.montant, 0)
+  const credit = lignes.filter((e) => e.sens === 'credit').reduce((sum, e) => sum + e.montant, 0)
+  return sensNormal === 'debit' ? debit - credit : credit - debit
 }
 
 // Tolérance de 2 centimes pour l'arrondi flottant — un écart réel (frais bancaires, paiement
@@ -124,9 +150,7 @@ export interface AnalyseEcritures {
 // Bornes incluses ; comparaison de chaînes ISO (YYYY-MM-DD), valide tant que les dates le sont.
 export function tvaNettePourPeriode(ecritures: EcritureBrouillon[], periodeDebut: string, periodeFin: string): number {
   const dansPeriode = ecritures.filter((e) => e.date >= periodeDebut && e.date <= periodeFin)
-  const collectee = dansPeriode.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
-  const deductible = dansPeriode.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
-  return collectee - deductible
+  return soldeCompte(dansPeriode, COMPTE_TVA_COLLECTEE, 'credit') - soldeCompte(dansPeriode, COMPTE_TVA_DEDUCTIBLE, 'debit')
 }
 
 // Trois contrôles d'intégrité sur le brouillon d'écritures, partagés entre EcrituresTab (où ils
@@ -152,7 +176,12 @@ export function analyserEcritures(ecritures: EcritureBrouillon[], piecesEligible
   const piecesDesynchronisees = piecesEligibles.filter((p) => {
     const lignes = ecritures.filter((e) => e.piece_id === p.id && e.compte !== COMPTE_BANQUE)
     if (lignes.length === 0) return false // pas encore générée — pas une désynchronisation
-    const total = lignes.reduce((sum, e) => sum + e.montant, 0)
+    // Signé par rapport au sens naturel de la pièce (achat = débit, vente = crédit) : une simple somme
+    // des montants (toujours positifs) donnerait un faux "désynchronisée" sur une pièce à montant
+    // négatif (avoir, remboursement), dont les lignes sont correctement enregistrées au sens inverse
+    // par lignesChargeProduitPourPiece — pas en écart, juste du signe attendu pour ce cas-là.
+    const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
+    const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
     return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
   })
 

@@ -1,7 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPourPiece, synchroniserContrepartieBanque, tvaNettePourPeriode } from '../../lib/ecritures'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPourPiece, soldeCompte, synchroniserContrepartieBanque, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
@@ -118,8 +118,8 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   const anneesDisponibles = [...new Set(ecritures.map((e) => new Date(e.date).getFullYear()))].sort((a, b) => b - a)
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => new Date(e.date).getFullYear() === anneeFilter)
 
-  const tvaDeductible = ecrituresFiltrees.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
-  const tvaCollectee = ecrituresFiltrees.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
+  const tvaDeductible = soldeCompte(ecrituresFiltrees, COMPTE_TVA_DEDUCTIBLE, 'debit')
+  const tvaCollectee = soldeCompte(ecrituresFiltrees, COMPTE_TVA_COLLECTEE, 'credit')
 
   // Trois contrôles d'intégrité du brouillon (voir lib/ecritures.ts) — volontairement indépendants du
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
