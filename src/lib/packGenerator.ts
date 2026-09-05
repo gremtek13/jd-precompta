@@ -1,5 +1,5 @@
 import JSZip from 'jszip'
-import * as XLSX from 'xlsx'
+import ExcelJS from 'exceljs'
 import { supabase } from './supabase'
 import { slugify } from './format'
 import type { Categorie, Piece } from './types'
@@ -17,6 +17,17 @@ function pieceFileName(p: Piece): string {
   const montant = p.montant_ttc != null ? `${p.montant_ttc.toFixed(2)}€` : 'montant_inconnu'
   const date = p.date_piece ?? 'sans_date'
   return `${date}_${tiers}_${montant}.${ext}`
+}
+
+// Équivalent de XLSX.utils.json_to_sheet (xlsx) avec exceljs : une ligne d'en-têtes d'après les clés
+// du premier objet, puis une ligne par entrée dans le même ordre. Ne fait rien de plus — pas de mise
+// en forme, comme l'ancien export.
+function ajouterFeuille<T extends Record<string, unknown>>(wb: ExcelJS.Workbook, nom: string, rows: T[]): void {
+  const feuille = wb.addWorksheet(nom)
+  if (rows.length === 0) return
+  const entetes = Object.keys(rows[0])
+  feuille.addRow(entetes)
+  for (const row of rows) feuille.addRow(entetes.map((e) => row[e]))
 }
 
 interface GenerateResult {
@@ -86,18 +97,18 @@ export async function generatePack(
   }
   const resumeRows = [...parCategorie.entries()].map(([categorie, total]) => ({ Catégorie: categorie, 'Total TTC': total }))
 
-  const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(recapRows), 'Récap')
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumeRows), 'Résumé par catégorie')
+  const wb = new ExcelJS.Workbook()
+  ajouterFeuille(wb, 'Récap', recapRows)
+  ajouterFeuille(wb, 'Résumé par catégorie', resumeRows)
   if (pending.length > 0) {
     const pendingRows = pending.map((p) => ({
       Date: p.date_piece ?? '', Tiers: p.tiers ?? '', Fichier: p.nom_fichier,
       Statut: 'À valider — non inclus dans ce pack',
     }))
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(pendingRows), 'Pièces à valider')
+    ajouterFeuille(wb, 'Pièces à valider', pendingRows)
   }
 
-  const excelBuffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' }) as ArrayBuffer
+  const excelBuffer = await wb.xlsx.writeBuffer()
   const excelBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   zip.file('Recap.xlsx', excelBlob)
 
