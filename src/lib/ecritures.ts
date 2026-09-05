@@ -119,6 +119,16 @@ export interface AnalyseEcritures {
   piecesDesynchronisees: Piece[]
 }
 
+// TVA nette (collectée - déductible) du brouillon sur une période donnée — comparée à la TVA
+// réellement déclarée (voir DeclarationTva, EcrituresTab) pour un cross-check comptable vs déclaré.
+// Bornes incluses ; comparaison de chaînes ISO (YYYY-MM-DD), valide tant que les dates le sont.
+export function tvaNettePourPeriode(ecritures: EcritureBrouillon[], periodeDebut: string, periodeFin: string): number {
+  const dansPeriode = ecritures.filter((e) => e.date >= periodeDebut && e.date <= periodeFin)
+  const collectee = dansPeriode.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
+  const deductible = dansPeriode.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
+  return collectee - deductible
+}
+
 // Trois contrôles d'intégrité sur le brouillon d'écritures, partagés entre EcrituresTab (où ils
 // bloquent/alertent dans le détail) et ChecklistTab (vue d'ensemble du dossier) — un seul endroit où
 // ces règles vivent. `piecesEligibles` : pièces validées dont la catégorie a un compte comptable

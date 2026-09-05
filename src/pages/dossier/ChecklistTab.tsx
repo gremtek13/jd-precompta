@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { analyserEcritures } from '../../lib/ecritures'
+import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte, categoriesSansPoste, piecesSansTva } from '../../lib/controles'
-import type { Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -31,6 +31,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
+  const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -45,6 +46,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       { data: naturesData },
       { data: categoriesData },
       { data: ecrituresData },
+      { data: declarationsData },
       { data: infoData },
     ] = await Promise.all([
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
@@ -55,6 +57,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       supabase.from('natures_immobilisation').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
       supabase.from('ecritures_brouillon').select('*').eq('dossier_id', dossierId),
+      supabase.from('declarations_tva').select('*').eq('dossier_id', dossierId),
       supabase.from('informations_dossier').select('*').eq('dossier_id', dossierId).maybeSingle(),
     ])
     setPieces(piecesData ?? [])
@@ -65,6 +68,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     setNatures(naturesData ?? [])
     setCategories(categoriesData ?? [])
     setEcritures(ecrituresData ?? [])
+    setDeclarationsTva(declarationsData ?? [])
     setInfo(infoData ?? null)
     setLoading(false)
   }
@@ -105,11 +109,16 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const catSansCompte = categoriesSansCompte(categories, pieces)
   const catSansPoste = categoriesSansPoste(categories, pieces)
   const sansTva = piecesSansTva(pieces, assujettiTva)
+  // Même tolérance qu'EcrituresTab (1 € : une CA3 se dépose en euros arrondis).
+  const declarationsEnEcart = declarationsTva.filter(
+    (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)) > 1,
+  )
 
   interface PointATraiter { id: string; label: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention' }
   const tousLesPointsATraiter: PointATraiter[] = [
     { id: 'desequilibrees', label: 'écriture(s) déséquilibrée(s)', nb: groupesDesequilibres.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
+    { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention' },
     { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },
     { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },

@@ -1,10 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPourPiece, synchroniserContrepartieBanque } from '../../lib/ecritures'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPourPiece, synchroniserContrepartieBanque, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
-import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
+import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
@@ -27,21 +27,29 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   const [comptesEdit, setComptesEdit] = useState<Record<string, string>>({})
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [regenerating, setRegenerating] = useState<string | null>(null)
+  const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
+  const [periodeDebut, setPeriodeDebut] = useState('')
+  const [periodeFin, setPeriodeFin] = useState('')
+  const [tvaDeclaree, setTvaDeclaree] = useState('')
+  const [dateDeclaration, setDateDeclaration] = useState('')
+  const [savingDeclaration, setSavingDeclaration] = useState(false)
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesData }, { data: ecrituresData }, { data: immobilisationsData }, { data: lignesData }] = await Promise.all([
+    const [{ data: categoriesData }, { data: piecesData }, { data: ecrituresData }, { data: immobilisationsData }, { data: lignesData }, { data: declarationsData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
       supabase.from('ecritures_brouillon').select('*').eq('dossier_id', dossierId).order('date', { ascending: false }),
       supabase.from('immobilisations').select('piece_id').eq('dossier_id', dossierId),
       supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null),
+      supabase.from('declarations_tva').select('*').eq('dossier_id', dossierId).order('periode_debut', { ascending: false }),
     ])
     setLignesBancaires(lignesData ?? [])
     setCategories(categoriesData ?? [])
     setPieces(piecesData ?? [])
     setEcritures(ecrituresData ?? [])
     setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
+    setDeclarationsTva(declarationsData ?? [])
     setLoading(false)
   }
 
@@ -142,6 +150,38 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   }
 
   const piecesSansTva = calculerPiecesSansTva(pieces, assujettiTva)
+
+  async function enregistrerDeclaration(e: FormEvent) {
+    e.preventDefault()
+    if (!periodeDebut || !periodeFin || !tvaDeclaree) return
+    setSavingDeclaration(true)
+    setError(null)
+    try {
+      const { error: insertError } = await supabase.from('declarations_tva').insert({
+        dossier_id: dossierId,
+        periode_debut: periodeDebut,
+        periode_fin: periodeFin,
+        tva_declaree: parseFloat(tvaDeclaree),
+        date_declaration: dateDeclaration || null,
+      })
+      if (insertError) throw insertError
+      setPeriodeDebut('')
+      setPeriodeFin('')
+      setTvaDeclaree('')
+      setDateDeclaration('')
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+    } finally {
+      setSavingDeclaration(false)
+    }
+  }
+
+  async function supprimerDeclaration(id: string) {
+    if (!window.confirm('Retirer cette déclaration ?')) return
+    await supabase.from('declarations_tva').delete().eq('id', id)
+    load()
+  }
 
   return (
     <>
@@ -264,6 +304,69 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
           </div>
         </div>
       )}
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h3 style={{ marginTop: 0 }}>Déclarations de TVA</h3>
+        <p className="muted" style={{ marginTop: -8 }}>
+          Une fois la CA3 réellement déposée, transcris ici le montant déclaré pour la période — jamais
+          calculé par l'appli — pour comparer au total du brouillon sur la même période. Un écart peut
+          venir d'une pièce pas encore traitée ici ou d'une erreur sur l'un des deux côtés, à toi de
+          trancher.
+        </p>
+        <form onSubmit={enregistrerDeclaration} className="field-row" style={{ alignItems: 'flex-end' }}>
+          <div className="field">
+            <label htmlFor="periodeDebut">Début de période</label>
+            <input id="periodeDebut" type="date" required value={periodeDebut} onChange={(e) => setPeriodeDebut(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="periodeFin">Fin de période</label>
+            <input id="periodeFin" type="date" required value={periodeFin} onChange={(e) => setPeriodeFin(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="tvaDeclaree">TVA nette déclarée</label>
+            <input id="tvaDeclaree" type="number" step="0.01" required value={tvaDeclaree} onChange={(e) => setTvaDeclaree(e.target.value)} style={{ width: 140 }} />
+          </div>
+          <div className="field">
+            <label htmlFor="dateDeclaration">Date de dépôt (optionnel)</label>
+            <input id="dateDeclaration" type="date" value={dateDeclaration} onChange={(e) => setDateDeclaration(e.target.value)} />
+          </div>
+          <button className="btn btn-primary btn-sm" type="submit" disabled={savingDeclaration}>
+            {savingDeclaration ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+        </form>
+
+        {declarationsTva.length > 0 && (
+          <table style={{ marginTop: 16 }}>
+            <thead>
+              <tr><th>Période</th><th>Déclarée</th><th>Brouillon</th><th>Écart</th><th></th></tr>
+            </thead>
+            <tbody>
+              {declarationsTva.map((d) => {
+                const brouillon = tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)
+                const ecart = d.tva_declaree - brouillon
+                // Tolérance plus large qu'ailleurs (1 €, pas 2 centimes) : une CA3 est déposée en euros
+                // arrondis, un écart de quelques centimes ici est donc normal, pas un défaut à signaler.
+                const enEcart = Math.abs(ecart) > 1
+                return (
+                  <tr key={d.id}>
+                    <td>{formatDate(d.periode_debut)} → {formatDate(d.periode_fin)}</td>
+                    <td>{formatMoney(d.tva_declaree)}</td>
+                    <td>{formatMoney(brouillon)}</td>
+                    <td>
+                      {enEcart
+                        ? <span className="badge badge-danger">{formatMoney(ecart)}</span>
+                        : <span className="badge badge-ok">{formatMoney(ecart)}</span>}
+                    </td>
+                    <td>
+                      <button className="btn btn-danger btn-sm" onClick={() => supprimerDeclaration(d.id)}>Retirer</button>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <p className="muted" style={{ margin: 0 }}>

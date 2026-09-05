@@ -225,6 +225,21 @@ export interface ReferenceAnnuelle {
   created_at: string
 }
 
+// Montant de TVA réellement déclaré à l'administration (CA3) sur une période — jamais calculé par
+// l'appli, saisi une fois le dépôt réel fait, pour comparer ensuite au total du brouillon sur la même
+// période (voir EcrituresTab). Même logique que ReferenceAnnuelle : une vérité externe transcrite, pas
+// une donnée dérivée.
+export interface DeclarationTva {
+  id: string
+  dossier_id: string
+  periode_debut: string
+  periode_fin: string
+  tva_declaree: number
+  date_declaration: string | null
+  notes: string | null
+  created_at: string
+}
+
 export type CategorieDocument = 'releve_bancaire' | 'cotisation' | 'attestation' | 'autre'
 
 // Archive des documents qui ne sont ni des pièces d'achat/vente (pas de HT/TVA/TTC à extraire) ni des
