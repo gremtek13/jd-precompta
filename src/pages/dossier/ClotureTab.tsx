@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
+import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -44,10 +45,8 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
 
   // Catégories utilisées par une pièce validée mais sans poste 2035 associé — le regroupement par
-  // poste ignorera ces pièces tant que ce n'est pas renseigné.
-  const categoriesSansPoste = categories.filter(
-    (c) => !c.poste_2035 && pieces.some((p) => p.categorie_id === c.id),
-  )
+  // poste ignorera ces pièces tant que ce n'est pas renseigné (voir lib/controles.ts).
+  const categoriesSansPoste = calculerCategoriesSansPoste(categories, pieces)
 
   // Valeur affichée tant que le cabinet n'a rien tapé : la suggestion connue pour ce code de
   // catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".

@@ -95,7 +95,7 @@ export default function DossierDetail() {
 
       <DossierParcours tab={tab} onChange={setTab} />
 
-      {tab === 'checklist' && <ChecklistTab dossierId={id} onNavigate={setTab} />}
+      {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={setTab} />}
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}

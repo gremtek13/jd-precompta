@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { LigneBancaire, Piece } from './types'
+import type { EcritureBrouillon, LigneBancaire, Piece } from './types'
 
 // Comptes PCG standard, fixes — partagés entre Écritures (génération de la ligne charge/produit +
 // TVA) et Banque (génération de la contrepartie ci-dessous), pour n'avoir qu'un seul endroit à
@@ -96,4 +96,55 @@ export async function synchroniserContrepartieBanque(dossierId: string, piece: P
 // ligne banque resterait affichée comme si le mouvement était toujours rapproché.
 export async function retirerContrepartieBanque(pieceId: string) {
   await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('compte', COMPTE_BANQUE)
+}
+
+// Tolérance de 2 centimes pour l'arrondi flottant — un écart réel (frais bancaires, paiement
+// partiel, pièce modifiée après génération...) est en général bien plus grand, donc quasiment jamais
+// absorbé par cette marge.
+const EPSILON_EQUILIBRE = 0.02
+
+export interface GroupeDesequilibre {
+  pieceId: string
+  solde: number
+}
+
+export interface AnalyseEcritures {
+  // Écriture encore à moitié générée (charge/produit sans sa contrepartie banque) — pas forcément un
+  // défaut, la pièce n'est peut-être pas encore rapprochée dans Banque.
+  nbSansContrepartie: number
+  // Écriture complète (contrepartie présente) dont le total débit ne correspond pas au total crédit.
+  groupesDesequilibres: GroupeDesequilibre[]
+  // Pièce modifiée (montant, TVA...) depuis que son écriture a été générée — l'écriture enregistrée
+  // ne correspond plus au montant TTC actuel de la pièce.
+  piecesDesynchronisees: Piece[]
+}
+
+// Trois contrôles d'intégrité sur le brouillon d'écritures, partagés entre EcrituresTab (où ils
+// bloquent/alertent dans le détail) et ChecklistTab (vue d'ensemble du dossier) — un seul endroit où
+// ces règles vivent. `piecesEligibles` : pièces validées dont la catégorie a un compte comptable
+// associé (seules concernées par une génération d'écriture).
+export function analyserEcritures(ecritures: EcritureBrouillon[], piecesEligibles: Piece[]): AnalyseEcritures {
+  const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
+  for (const e of ecritures) {
+    if (!e.piece_id) continue
+    piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
+  }
+  const nbSansContrepartie = [...piecesParGroupe.values()].filter((rows) => !rows.some((r) => r.compte === COMPTE_BANQUE)).length
+
+  const groupesDesequilibres = [...piecesParGroupe.entries()]
+    .filter(([, rows]) => rows.some((r) => r.compte === COMPTE_BANQUE))
+    .map(([pieceId, rows]) => ({
+      pieceId,
+      solde: rows.reduce((sum, r) => sum + (r.sens === 'debit' ? r.montant : -r.montant), 0),
+    }))
+    .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
+
+  const piecesDesynchronisees = piecesEligibles.filter((p) => {
+    const lignes = ecritures.filter((e) => e.piece_id === p.id && e.compte !== COMPTE_BANQUE)
+    if (lignes.length === 0) return false // pas encore générée — pas une désynchronisation
+    const total = lignes.reduce((sum, e) => sum + e.montant, 0)
+    return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
+  })
+
+  return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
 }

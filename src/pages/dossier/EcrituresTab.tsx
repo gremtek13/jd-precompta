@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, lignesChargeProduitPourPiece, synchroniserContrepartieBanque } from '../../lib/ecritures'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPourPiece, synchroniserContrepartieBanque } from '../../lib/ecritures'
+import { categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -49,10 +50,8 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
   // Catégories utilisées par au moins une pièce validée mais sans compte associé — impossible de
-  // générer l'écriture correspondante tant que ce n'est pas renseigné.
-  const categoriesSansCompte = categories.filter(
-    (c) => !c.compte_comptable && pieces.some((p) => p.categorie_id === c.id),
-  )
+  // générer l'écriture correspondante tant que ce n'est pas renseigné (voir lib/controles.ts).
+  const categoriesSansCompte = calculerCategoriesSansCompte(categories, pieces)
 
   // Valeur affichée dans le champ tant que le cabinet n'a rien tapé : la suggestion connue pour ce
   // code de catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -114,44 +113,12 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   const tvaDeductible = ecrituresFiltrees.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((sum, e) => sum + e.montant, 0)
   const tvaCollectee = ecrituresFiltrees.filter((e) => e.compte === COMPTE_TVA_COLLECTEE).reduce((sum, e) => sum + e.montant, 0)
 
-  // Une écriture sans sa ligne de contrepartie banque (voir lib/ecritures.ts) n'est encore qu'une
-  // demi-partie — pas grave en soi (la pièce n'est peut-être pas encore rapprochée dans Banque), mais
-  // utile à signaler plutôt que de laisser croire que le brouillon est complet.
-  const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
-  for (const e of ecrituresFiltrees) {
-    if (!e.piece_id) continue
-    piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
-  }
-  const nbSansContrepartie = [...piecesParGroupe.values()].filter((rows) => !rows.some((r) => r.compte === COMPTE_BANQUE)).length
-
-  // Contrôle débit = crédit — le moteur comptable ne l'imposait nulle part jusqu'ici (une pièce
-  // pouvait avoir sa contrepartie banque sans que personne ne vérifie que les deux moitiés
-  // s'équilibrent vraiment). Uniquement sur les groupes déjà complets (contrepartie présente, donc pas
-  // déjà comptés dans nbSansContrepartie ci-dessus) : un groupe encore à moitié généré n'a évidemment
-  // rien d'équilibré, ce n'est pas un défaut à signaler. Tolérance de 2 centimes pour l'arrondi
-  // flottant — un écart réel (frais bancaires, paiement partiel...) est en général bien plus grand,
-  // donc quasiment jamais absorbé par cette marge.
-  const EPSILON_EQUILIBRE = 0.02
-  const groupesDesequilibres = [...piecesParGroupe.entries()]
-    .filter(([, rows]) => rows.some((r) => r.compte === COMPTE_BANQUE))
-    .map(([pieceId, rows]) => {
-      const solde = rows.reduce((sum, r) => sum + (r.sens === 'debit' ? r.montant : -r.montant), 0)
-      return { pieceId, rows, solde }
-    })
-    .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
+  // Trois contrôles d'intégrité du brouillon (voir lib/ecritures.ts) — volontairement indépendants du
+  // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
+  // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
+  // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, piecesEligibles)
   const pieceById = (id: string) => pieces.find((p) => p.id === id) ?? null
-
-  // Écritures désynchronisées — une pièce éditée (montant, TVA...) après génération de son écriture
-  // ne redéclenchait jusqu'ici jamais cette génération : l'écriture reste silencieusement celle des
-  // anciens montants, sans que rien ne le signale. Indépendant du filtre Année ci-dessus (c'est un
-  // défaut d'intégrité, pas un total à consulter par exercice) : compare la charge/produit + TVA déjà
-  // enregistrées (hors contrepartie banque, propre au mouvement réel) au total TTC actuel de la pièce.
-  const piecesDesynchronisees = piecesEligibles.filter((p) => {
-    const lignes = ecritures.filter((e) => e.piece_id === p.id && e.compte !== COMPTE_BANQUE)
-    if (lignes.length === 0) return false // pas encore générée — déjà compté dans enAttente
-    const total = lignes.reduce((sum, e) => sum + e.montant, 0)
-    return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
-  })
 
   // Reprend les lignes charge/produit + TVA d'une pièce d'après ses montants actuels — jamais
   // automatique, seulement sur ce clic explicite. Ne touche pas à la contrepartie banque (montant du
@@ -174,9 +141,7 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
     }
   }
 
-  // Sur un dossier assujetti, une pièce validée sans TVA renseignée est plus probablement un oubli
-  // de saisie qu'une vraie absence de TVA — signalé pour vérification, jamais corrigé tout seul.
-  const piecesSansTva = assujettiTva ? pieces.filter((p) => p.montant_ttc != null && !p.montant_tva) : []
+  const piecesSansTva = calculerPiecesSansTva(pieces, assujettiTva)
 
   return (
     <>
