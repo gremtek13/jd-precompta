@@ -113,6 +113,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const declarationsEnEcart = declarationsTva.filter(
     (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)) > 1,
   )
+  // Le pendant côté Banque de "en attente de rapprochement bancaire" ci-dessous (qui part des
+  // écritures) : un mouvement bancaire importé mais jamais rattaché à une pièce, une cotisation, ou
+  // marqué personnel/à ignorer — le seul cycle du dossier qui manquait encore à ce tableau de bord.
+  const lignesNonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
 
   interface PointATraiter { id: string; label: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention' }
   const tousLesPointsATraiter: PointATraiter[] = [
@@ -124,6 +128,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },
     { id: 'sans-tva', label: 'pièce(s) validée(s) sans TVA renseignée', nb: sansTva.length, cible: 'ecritures', severite: 'attention' },
     { id: 'sans-contrepartie', label: 'écriture(s) en attente de rapprochement bancaire', nb: nbSansContrepartie, cible: 'banque', severite: 'attention' },
+    { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
   ]
   const pointsATraiter = tousLesPointsATraiter.filter((p) => p.nb > 0)
   const nbErreurs = pointsATraiter.filter((p) => p.severite === 'erreur').reduce((s, p) => s + p.nb, 0)
