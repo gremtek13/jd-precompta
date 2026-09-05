@@ -77,6 +77,12 @@ Deno.serve(async (req: Request) => {
   if (!dossierId || !email || !password) {
     return json({ error: "dossierId, email et password sont requis." }, 400)
   }
+  // Le formulaire (AccesTab) a bien minLength={10}, mais un attribut HTML se contourne facilement —
+  // seule cette vérification côté serveur est une vraie garantie, ici l'unique point d'entrée pour
+  // créer ou changer le mot de passe d'un compte client.
+  if (password.length < 10) {
+    return json({ error: "Le mot de passe doit faire au moins 10 caractères." }, 400)
+  }
 
   const { data: created, error: createError } = await supabaseAdmin.auth.admin.createUser({
     email, password, email_confirm: true,

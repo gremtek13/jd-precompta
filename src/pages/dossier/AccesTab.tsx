@@ -108,7 +108,8 @@ export default function AccesTab({ dossierId, codeEmail }: { dossierId: string; 
             </div>
             <div className="field">
               <label htmlFor="password">Mot de passe initial</label>
-              <input id="password" type="password" required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <input id="password" type="password" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
+              <span className="muted">10 caractères minimum — c'est toi qui le choisis et le communiques au client, pas lui.</span>
             </div>
           </div>
           {error && <p className="error-text">{error}</p>}
