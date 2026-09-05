@@ -46,6 +46,7 @@ interface ExtractionPiece {
   montant_ht: number | null
   montant_tva: number | null
   montant_ttc: number | null
+  confiance: "haute" | "moyenne" | "basse"
 }
 
 // Même appel que celui que fait le navigateur (lib/extraction.ts côté client) mais depuis le serveur —
@@ -208,6 +209,7 @@ Deno.serve(async (req: Request) => {
             montant_ht: extraction?.montant_ht ?? null,
             montant_tva: extraction?.montant_tva ?? null,
             montant_ttc: extraction?.montant_ttc ?? null,
+            confiance: extraction?.confiance ?? null,
           })).error
         : (await supabase.from("documents_divers").insert({
             dossier_id: dossier.id,
