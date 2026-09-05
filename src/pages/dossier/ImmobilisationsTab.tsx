@@ -104,6 +104,13 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
       if (insertError) throw insertError
       load()
     } catch (err) {
+      // Contrainte unique sur piece_id (voir migration immobilisations_piece_id_unique) : deux onglets
+      // ouverts ou un double-clic peuvent tenter d'enregistrer la même pièce deux fois.
+      if (err instanceof Error && /duplicate|unique/i.test(err.message)) {
+        setError('Cette pièce a déjà été enregistrée comme immobilisation.')
+        load()
+        return
+      }
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
       setSaving(null)
