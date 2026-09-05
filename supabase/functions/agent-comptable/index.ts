@@ -16,11 +16,21 @@
 // Réservé au cabinet (cabinet_admins) : le client n'a accès à aucune donnée chiffrée du dossier
 // (voir AccesTab — dépôt de pièces uniquement), l'agent ne doit pas en devenir une porte dérobée.
 //
+// RGPD : appelle Claude via Amazon Bedrock (endpoint "Mantle"), région eu-central-1 (Francfort) —
+// la même région AWS déjà utilisée pour l'OCR (voir extract-piece, Textract/S3) — plutôt que l'API
+// Anthropic directe (hébergée aux États-Unis). Un seul sous-traitant (AWS) et une seule région
+// pour tout le traitement de données du dossier, au lieu d'en ajouter un second. Les identifiants
+// sont les mêmes secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION que Textract — il
+// faut juste leur accorder la permission IAM bedrock-mantle:CreateInference et activer l'accès au
+// modèle Claude Opus 5 dans cette région (Console AWS → Bedrock → Model access), aucun nouveau
+// secret à créer.
+//
 // Fichier auto-porteur, comme les autres fonctions de ce dossier (déployées par copier-coller dans
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts et
 // src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 
-import Anthropic from "npm:@anthropic-ai/sdk@0.124.0"
+import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
+import { AnthropicBedrockMantle } from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
 import { createClient } from "npm:@supabase/supabase-js@2"
 
 const corsHeaders = {
@@ -36,7 +46,7 @@ function json(body: unknown, status = 200) {
   })
 }
 
-const MODEL = "claude-opus-5"
+const MODEL = "anthropic.claude-opus-5" // identifiant Bedrock (préfixe "anthropic." requis)
 // Borne la boucle agentique — évite un enchaînement d'appels d'outils sans fin (coût, latence) ;
 // largement suffisant pour les questions visées (quelques appels d'outils, jamais des dizaines).
 const MAX_TOURS_OUTILS = 8
@@ -292,9 +302,10 @@ Deno.serve(async (req: Request) => {
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!
   const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!
   const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-  const anthropicApiKey = Deno.env.get("ANTHROPIC_API_KEY")
-  if (!anthropicApiKey) {
-    return json({ error: "Clé Anthropic non configurée côté serveur (secret ANTHROPIC_API_KEY manquant)." }, 500)
+  // Mêmes secrets AWS que Textract (voir extract-piece) — Bedrock lit les identifiants via la
+  // chaîne standard AWS (variables d'environnement), pas besoin d'un secret dédié à l'agent.
+  if (!Deno.env.get("AWS_ACCESS_KEY_ID") || !Deno.env.get("AWS_SECRET_ACCESS_KEY")) {
+    return json({ error: "Identifiants AWS non configurés côté serveur (secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY manquants)." }, 500)
   }
 
   // Client "appelant" : sert uniquement à identifier qui fait la demande, avec son propre JWT —
@@ -368,7 +379,7 @@ Règles impératives :
     { role: "user", content: message },
   ]
 
-  const client = new Anthropic({ apiKey: anthropicApiKey })
+  const client = new AnthropicBedrockMantle({ awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1" })
   const ctx: OutilContexte = { admin, dossierId, dossier: { nom: dossierRow.nom, assujetti_tva: dossierRow.assujetti_tva } }
   const outilsUtilises: string[] = []
 
