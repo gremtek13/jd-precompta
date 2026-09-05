@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, synchroniserContrepartieBanque } from '../../lib/ecritures'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, SUGGESTIONS_COMPTE_PAR_CODE, lignesChargeProduitPourPiece, synchroniserContrepartieBanque } from '../../lib/ecritures'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -25,6 +25,7 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   const [error, setError] = useState<string | null>(null)
   const [comptesEdit, setComptesEdit] = useState<Record<string, string>>({})
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  const [regenerating, setRegenerating] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -84,25 +85,7 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
     setGenerating(true)
     setError(null)
     try {
-      const rows = enAttente.flatMap((p) => {
-        const cat = categorieById(p.categorie_id)!
-        const sens = p.type_piece === 'vente' ? 'credit' : 'debit'
-        const libelle = p.tiers ?? p.nom_fichier
-        const date = p.date_piece ?? p.created_at.slice(0, 10)
-        const base = { dossier_id: dossierId, piece_id: p.id, date, libelle, sens, statut: 'proposee' }
-
-        // Une TVA connue sur la pièce se sépare en deux lignes (montant HT + TVA) plutôt qu'un seul
-        // montant TTC — sinon on perd l'information au moment où l'expert-comptable en a le plus besoin.
-        if (p.montant_tva && p.montant_tva > 0) {
-          const montantHt = p.montant_ht ?? p.montant_ttc! - p.montant_tva
-          return [
-            { ...base, compte: cat.compte_comptable!, montant: montantHt },
-            { ...base, compte: p.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, montant: p.montant_tva },
-          ]
-        }
-
-        return [{ ...base, compte: cat.compte_comptable!, montant: p.montant_ttc! }]
-      })
+      const rows = enAttente.flatMap((p) => lignesChargeProduitPourPiece(dossierId, p, categorieById(p.categorie_id)!.compte_comptable!))
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
 
@@ -158,6 +141,39 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
     .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
   const pieceById = (id: string) => pieces.find((p) => p.id === id) ?? null
 
+  // Écritures désynchronisées — une pièce éditée (montant, TVA...) après génération de son écriture
+  // ne redéclenchait jusqu'ici jamais cette génération : l'écriture reste silencieusement celle des
+  // anciens montants, sans que rien ne le signale. Indépendant du filtre Année ci-dessus (c'est un
+  // défaut d'intégrité, pas un total à consulter par exercice) : compare la charge/produit + TVA déjà
+  // enregistrées (hors contrepartie banque, propre au mouvement réel) au total TTC actuel de la pièce.
+  const piecesDesynchronisees = piecesEligibles.filter((p) => {
+    const lignes = ecritures.filter((e) => e.piece_id === p.id && e.compte !== COMPTE_BANQUE)
+    if (lignes.length === 0) return false // pas encore générée — déjà compté dans enAttente
+    const total = lignes.reduce((sum, e) => sum + e.montant, 0)
+    return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
+  })
+
+  // Reprend les lignes charge/produit + TVA d'une pièce d'après ses montants actuels — jamais
+  // automatique, seulement sur ce clic explicite. Ne touche pas à la contrepartie banque (montant du
+  // mouvement réel, indépendant d'une correction sur la pièce).
+  async function regenererEcriture(piece: Piece) {
+    const compte = categorieById(piece.categorie_id)?.compte_comptable
+    if (!compte) return
+    setRegenerating(piece.id)
+    setError(null)
+    try {
+      const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
+      if (deleteError) throw deleteError
+      const { error: insertError } = await supabase.from('ecritures_brouillon').insert(lignesChargeProduitPourPiece(dossierId, piece, compte))
+      if (insertError) throw insertError
+      load()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+    } finally {
+      setRegenerating(null)
+    }
+  }
+
   // Sur un dossier assujetti, une pièce validée sans TVA renseignée est plus probablement un oubli
   // de saisie qu'une vraie absence de TVA — signalé pour vérification, jamais corrigé tout seul.
   const piecesSansTva = assujettiTva ? pieces.filter((p) => p.montant_ttc != null && !p.montant_tva) : []
@@ -177,6 +193,33 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
               <li key={p.id}>{p.tiers ?? p.nom_fichier} — {formatMoney(p.montant_ttc)}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {piecesDesynchronisees.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderColor: 'var(--color-danger)' }}>
+          <h3 style={{ marginTop: 0 }}>Écritures à régénérer</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces pièces ont été modifiées (montant, TVA...) depuis que leur écriture a été générée — la
+            charge/produit enregistrée ne correspond plus au montant actuel de la pièce. Reprend les
+            montants à jour sans toucher à une éventuelle contrepartie banque déjà rapprochée.
+          </p>
+          <table>
+            <thead><tr><th>Pièce</th><th>Montant actuel</th><th></th></tr></thead>
+            <tbody>
+              {piecesDesynchronisees.map((p) => (
+                <tr key={p.id}>
+                  <td>{p.tiers ?? p.nom_fichier}</td>
+                  <td>{formatMoney(p.montant_ttc)}</td>
+                  <td>
+                    <button className="btn btn-outline btn-sm" disabled={regenerating === p.id} onClick={() => regenererEcriture(p)}>
+                      {regenerating === p.id ? 'Régénération…' : 'Régénérer'}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -263,6 +306,9 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
           {enAttente.length > 0 && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
           {nbSansContrepartie > 0 && (
             <> — <span className="badge badge-warning">{nbSansContrepartie} en attente de rapprochement bancaire</span></>
+          )}
+          {piecesDesynchronisees.length > 0 && (
+            <> — <span className="badge badge-danger">{piecesDesynchronisees.length} à régénérer</span></>
           )}
           {groupesDesequilibres.length > 0 && (
             <> — <span className="badge badge-danger">{groupesDesequilibres.length} déséquilibrée{groupesDesequilibres.length > 1 ? 's' : ''}</span></>

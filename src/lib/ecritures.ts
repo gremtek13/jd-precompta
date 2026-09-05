@@ -25,6 +25,40 @@ export const SUGGESTIONS_COMPTE_PAR_CODE: Record<string, { compte: string; poste
   ventes_prestations: { compte: '706000', poste2035: 'Recettes' },
 }
 
+// Une ligne d'écriture brouillon avant insertion (pas encore d'id) — le shape exact attendu par
+// `ecritures_brouillon`, hors ligne_bancaire_id (uniquement pertinent pour la contrepartie banque).
+export interface LigneAGenerer {
+  dossier_id: string
+  piece_id: string
+  date: string
+  libelle: string
+  sens: 'debit' | 'credit'
+  statut: 'proposee'
+  compte: string
+  montant: number
+}
+
+// Ligne(s) charge/produit (+ TVA séparée le cas échéant) pour une pièce donnée — extrait de
+// EcrituresTab pour être appelé aussi bien en génération initiale (une pièce sans encore d'écriture)
+// qu'en régénération (une pièce déjà passée en écritures, mais modifiée depuis — voir
+// piecesDesynchronisees dans EcrituresTab). Ne couvre jamais la contrepartie banque, gérée séparément
+// par synchroniserContrepartieBanque ci-dessous.
+export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, compteComptable: string): LigneAGenerer[] {
+  const sens: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
+  const libelle = piece.tiers ?? piece.nom_fichier
+  const date = piece.date_piece ?? piece.created_at.slice(0, 10)
+  const base = { dossier_id: dossierId, piece_id: piece.id, date, libelle, sens, statut: 'proposee' as const }
+
+  if (piece.montant_tva && piece.montant_tva > 0) {
+    const montantHt = piece.montant_ht ?? piece.montant_ttc! - piece.montant_tva
+    return [
+      { ...base, compte: compteComptable, montant: montantHt },
+      { ...base, compte: piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, montant: piece.montant_tva },
+    ]
+  }
+  return [{ ...base, compte: compteComptable, montant: piece.montant_ttc! }]
+}
+
 // Palier 5+ — vraie partie double. Une écriture générée depuis une pièce (voir EcrituresTab) n'a
 // jusqu'ici qu'une moitié : la charge/le produit (+ la TVA le cas échéant), jamais la contrepartie
 // banque — donc jamais un débit=crédit exploitable tel quel par un logiciel de comptabilité. Cette
