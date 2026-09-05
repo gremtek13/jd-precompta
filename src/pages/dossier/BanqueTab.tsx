@@ -9,6 +9,14 @@ import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 
+// Signature (date, libellé, montant) d'un mouvement bancaire — sert à repérer un doublon d'import
+// (le même relevé déposé deux fois, CSV ou PDF) avant l'insertion. Le montant est arrondi à 2
+// décimales pour éviter qu'un écart d'arrondi flottant sans intérêt (12.1 vs 12.10) fasse manquer un
+// vrai doublon.
+function signatureLigne(l: { date: string; libelle: string; montant: number }): string {
+  return `${l.date}|${l.libelle}|${l.montant.toFixed(2)}`
+}
+
 export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -271,7 +279,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
-      <ImportCsv dossierId={dossierId} onImported={load} regles={regles} />
+      <ImportCsv dossierId={dossierId} onImported={load} regles={regles} lignesExistantes={lignes} />
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Écarts à vérifier</h3>
@@ -438,7 +446,7 @@ function statutPourLibelle(libelle: string, regles: RegleBancaireIgnoree[]): Sta
   return regles.some((r) => l.includes(r.motif)) ? 'ignoree' : 'non_rapprochee'
 }
 
-function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImported: () => void; regles: RegleBancaireIgnoree[] }) {
+function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossierId: string; onImported: () => void; regles: RegleBancaireIgnoree[]; lignesExistantes: LigneBancaire[] }) {
   const [source, setSource] = useState<'csv' | 'pdf'>('csv')
   const [rows, setRows] = useState<string[][] | null>(null)
   const [colDate, setColDate] = useState(0)
@@ -548,8 +556,21 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
     setImporting(true)
     setError(null)
     try {
+      // Même dédoublonnage que l'import CSV (voir handleImport) — un relevé PDF redéposé par erreur
+      // ne doit pas dupliquer chaque mouvement déjà en base.
+      const signaturesVues = new Set(lignesExistantes.map(signatureLigne))
+      const aInserer: typeof pdfRows = []
+      let doublons = 0
+      for (const r of pdfRows) {
+        const sig = signatureLigne(r)
+        if (signaturesVues.has(sig)) { doublons++; continue }
+        signaturesVues.add(sig)
+        aInserer.push(r)
+      }
+      if (aInserer.length === 0) throw new Error("Ce relevé semble déjà importé (mêmes date, libellé et montant).")
+
       const { error } = await supabase.from('lignes_bancaires').insert(
-        pdfRows.map((r) => ({
+        aInserer.map((r) => ({
           dossier_id: dossierId, date: r.date, libelle: r.libelle, montant: r.montant,
           statut: statutPourLibelle(r.libelle, regles),
         })),
@@ -557,6 +578,7 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
       if (error) throw error
       setPdfRows(null)
       onImported()
+      if (doublons > 0) window.alert(`${aInserer.length} ligne(s) importée(s), ${doublons} déjà présente(s) ignorée(s).`)
     } catch (err) {
       setError(err instanceof Error ? err.message : "L'import a échoué.")
     } finally {
@@ -591,14 +613,30 @@ function ImportCsv({ dossierId, onImported, regles }: { dossierId: string; onImp
         }
         toInsert.push({ dossier_id: dossierId, date, libelle, montant, statut: statutPourLibelle(libelle, regles) })
       }
-      if (toInsert.length === 0) throw new Error("Aucune ligne exploitable — vérifie le mapping des colonnes.")
 
-      const { error } = await supabase.from('lignes_bancaires').insert(toInsert)
+      // Un relevé déposé deux fois (nouvelle tentative après un doute, mauvais fichier repris par
+      // erreur...) dupliquerait sinon silencieusement chaque mouvement — même signature (date,
+      // libellé, montant) qu'une ligne déjà en base, ou répétée dans ce même fichier.
+      const signaturesVues = new Set(lignesExistantes.map(signatureLigne))
+      const aInserer: typeof toInsert = []
+      let doublons = 0
+      for (const ligne of toInsert) {
+        const sig = signatureLigne(ligne)
+        if (signaturesVues.has(sig)) { doublons++; continue }
+        signaturesVues.add(sig)
+        aInserer.push(ligne)
+      }
+      if (aInserer.length === 0) throw new Error(doublons > 0 ? "Ce relevé semble déjà importé (mêmes date, libellé et montant)." : "Aucune ligne exploitable — vérifie le mapping des colonnes.")
+
+      const { error } = await supabase.from('lignes_bancaires').insert(aInserer)
       if (error) throw error
 
       setRows(null)
       onImported()
-      if (ignorees > 0) window.alert(`${toInsert.length} ligne(s) importée(s), ${ignorees} ignorée(s) (date/montant illisible).`)
+      const messages = [`${aInserer.length} ligne(s) importée(s)`]
+      if (doublons > 0) messages.push(`${doublons} déjà présente(s), ignorée(s)`)
+      if (ignorees > 0) messages.push(`${ignorees} ignorée(s) (date/montant illisible)`)
+      if (doublons > 0 || ignorees > 0) window.alert(messages.join(', ') + '.')
     } catch (err) {
       setError(err instanceof Error ? err.message : "L'import a échoué.")
     } finally {
