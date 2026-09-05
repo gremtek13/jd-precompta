@@ -14,6 +14,7 @@ export type DossierTab =
   | 'informations'
   | 'virements'
   | 'acces'
+  | 'assistant'
 
 interface Etape {
   id: DossierTab
@@ -43,6 +44,7 @@ const OUTILS: Etape[] = [
   { id: 'estimation', label: 'Estimation' },
   { id: 'virements', label: 'Virements' },
   { id: 'packs', label: 'Packs' },
+  { id: 'assistant', label: 'Assistant' },
   { id: 'acces', label: 'Accès' },
 ]
 

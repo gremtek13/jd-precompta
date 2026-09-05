@@ -93,6 +93,11 @@ export const IconAcces = (p: IconProps) => base(<>
   <path d="M13.5 9.5L16 12" />
 </>, p)
 
+export const IconAssistant = (p: IconProps) => base(<>
+  <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z" />
+  <path d="M8.5 8h7M8.5 11h4.5" />
+</>, p)
+
 export const IconSun = (p: IconProps) => base(<>
   <circle cx="12" cy="12" r="4.5" />
   <path d="M12 2.5v2.5M12 19v2.5M4.6 4.6l1.8 1.8M17.6 17.6l1.8 1.8M2.5 12H5M19 12h2.5M4.6 19.4l1.8-1.8M17.6 6.4l1.8-1.8" />
@@ -127,4 +132,5 @@ export const ICONES_PARCOURS: Record<string, IconComponent> = {
   virements: IconVirements,
   packs: IconPacks,
   acces: IconAcces,
+  assistant: IconAssistant,
 }
