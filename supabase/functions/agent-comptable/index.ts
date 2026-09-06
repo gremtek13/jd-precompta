@@ -422,17 +422,25 @@ Règles impératives :
       // que de deviner à partir d'un blocage silencieux côté plateforme.
       console.log(`[agent-comptable] tour ${tour} : appel Bedrock…`)
       const debut = Date.now()
+      // Timeout passé en option de requête (second argument), et pas seulement via avecTimeout ci-
+      // dessus (Promise.race côté JS) : si l'appel réseau sous-jacent bloque l'event loop plutôt que
+      // de rendre la main normalement, un simple timer JS peut ne jamais se déclencher — ce second
+      // filet passe par le client HTTP du SDK lui-même (AbortController), plus susceptible d'interrompre
+      // une connexion réellement bloquée.
       const response = await avecTimeout(
-        client.messages.create({
-          model: MODEL,
-          max_tokens: 8192,
-          system: systemPrompt,
-          tools: TOOLS,
-          thinking: { type: "adaptive" },
-          output_config: { effort: "high" },
-          messages,
-        }),
-        20_000,
+        client.messages.create(
+          {
+            model: MODEL,
+            max_tokens: 8192,
+            system: systemPrompt,
+            tools: TOOLS,
+            thinking: { type: "adaptive" },
+            output_config: { effort: "high" },
+            messages,
+          },
+          { timeout: 20_000 },
+        ),
+        22_000,
         "appel Bedrock",
       )
       console.log(`[agent-comptable] tour ${tour} : réponse reçue en ${Date.now() - debut} ms, stop_reason=${response.stop_reason}`)
@@ -473,6 +481,9 @@ Règles impératives :
 
     return json({ error: "L'agent n'a pas pu conclure en un nombre raisonnable d'étapes — reformule ou précise ta question." }, 500)
   } catch (err) {
+    // Journalisé explicitement (voir logs de la fonction) : confirme que le bloc catch s'exécute
+    // bien, distinct d'un blocage qui empêcherait tout code de reprendre la main après l'appel réseau.
+    console.error(`[agent-comptable] erreur attrapée :`, err)
     if (err instanceof Anthropic.APIError) {
       return json({ error: `Erreur Claude (${err.status}) : ${err.message}` }, 502)
     }
