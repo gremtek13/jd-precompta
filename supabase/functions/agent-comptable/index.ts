@@ -51,6 +51,17 @@ const MODEL = "anthropic.claude-opus-5" // identifiant Bedrock (préfixe "anthro
 // largement suffisant pour les questions visées (quelques appels d'outils, jamais des dizaines).
 const MAX_TOURS_OUTILS = 8
 
+// Filet de sécurité indépendant du client Bedrock : que son option `timeout` soit honorée ou non
+// (déjà pris en défaut une fois sur cette même intégration — voir la correction awsSecretAccessKey),
+// cette fonction fait toujours avancer l'appelant après `ms`, jamais un blocage silencieux jusqu'à
+// ce que la plateforme coupe la fonction sans réponse (observé : 9 à 75 s selon les tentatives).
+function avecTimeout<T>(promise: Promise<T>, ms: number, etape: string): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<never>((_, reject) => setTimeout(() => reject(new Error(`Timeout (${etape}) après ${ms} ms sans réponse.`)), ms)),
+  ])
+}
+
 // ---- Types minimalistes (uniquement les colonnes lues ici) --------------------------------------
 
 interface EcritureRow { date: string; compte: string; libelle: string; sens: "debit" | "credit"; montant: number; piece_id: string | null }
@@ -390,24 +401,36 @@ Règles impératives :
     // côté fonction. Construit à l'intérieur du bloc try : une erreur ici (nom de champ invalide,
     // identifiants absents...) doit renvoyer une réponse JSON propre, jamais faire planter le
     // handler entier (ce qui produirait un échec réseau brut côté navigateur, sans message utile).
+    // Le timeout n'est plus fixé ici : son support par ce client précis n'est pas garanti (voir la
+    // correction awsSecretAccessKey, une autre incohérence de nommage sur cette même classe) — la
+    // borne réelle est `avecTimeout` ci-dessous, indépendante du SDK.
     const client = new AnthropicBedrockMantle({
       awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1",
       awsAccessKey: Deno.env.get("AWS_ACCESS_KEY_ID"),
       awsSecretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
       awsSessionToken: Deno.env.get("AWS_SESSION_TOKEN"),
-      timeout: 25_000,
     })
 
     for (let tour = 0; tour < MAX_TOURS_OUTILS; tour++) {
-      const response = await client.messages.create({
-        model: MODEL,
-        max_tokens: 8192,
-        system: systemPrompt,
-        tools: TOOLS,
-        thinking: { type: "adaptive" },
-        output_config: { effort: "high" },
-        messages,
-      })
+      // Repères de diagnostic (voir les logs de la fonction dans le Dashboard Supabase) : permet de
+      // voir précisément si l'exécution atteint l'appel Bedrock, et combien de temps il prend, plutôt
+      // que de deviner à partir d'un blocage silencieux côté plateforme.
+      console.log(`[agent-comptable] tour ${tour} : appel Bedrock…`)
+      const debut = Date.now()
+      const response = await avecTimeout(
+        client.messages.create({
+          model: MODEL,
+          max_tokens: 8192,
+          system: systemPrompt,
+          tools: TOOLS,
+          thinking: { type: "adaptive" },
+          output_config: { effort: "high" },
+          messages,
+        }),
+        20_000,
+        "appel Bedrock",
+      )
+      console.log(`[agent-comptable] tour ${tour} : réponse reçue en ${Date.now() - debut} ms, stop_reason=${response.stop_reason}`)
 
       if (response.stop_reason === "refusal") {
         const categorie = response.stop_details?.category ?? null
