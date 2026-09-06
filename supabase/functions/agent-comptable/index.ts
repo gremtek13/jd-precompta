@@ -379,22 +379,25 @@ Règles impératives :
     { role: "user", content: message },
   ]
 
-  // Identifiants passés explicitement (plutôt que de compter sur la chaîne de résolution AWS
-  // ambiante) : sous Deno, la chaîne de secours de cette chaîne (fichier ~/.aws, rôle EC2/ECS,
-  // IMDS...) peut tenter des étapes qui n'ont pas de sens dans ce bac à sable et rester bloquée
-  // plusieurs secondes avant d'échouer — un timeout explicite en plus évite un blocage silencieux
-  // côté fonction (auparavant coupée par la plateforme sans réponse, invisible pour l'utilisateur).
-  const client = new AnthropicBedrockMantle({
-    awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1",
-    awsAccessKey: Deno.env.get("AWS_ACCESS_KEY_ID"),
-    awsSecretKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
-    awsSessionToken: Deno.env.get("AWS_SESSION_TOKEN"),
-    timeout: 25_000,
-  })
   const ctx: OutilContexte = { admin, dossierId, dossier: { nom: dossierRow.nom, assujetti_tva: dossierRow.assujetti_tva } }
   const outilsUtilises: string[] = []
 
   try {
+    // Identifiants passés explicitement (plutôt que de compter sur la chaîne de résolution AWS
+    // ambiante) : sous Deno, la chaîne de secours de cette chaîne (fichier ~/.aws, rôle EC2/ECS,
+    // IMDS...) peut tenter des étapes qui n'ont pas de sens dans ce bac à sable et rester bloquée
+    // plusieurs secondes avant d'échouer — un timeout explicite en plus évite un blocage silencieux
+    // côté fonction. Construit à l'intérieur du bloc try : une erreur ici (nom de champ invalide,
+    // identifiants absents...) doit renvoyer une réponse JSON propre, jamais faire planter le
+    // handler entier (ce qui produirait un échec réseau brut côté navigateur, sans message utile).
+    const client = new AnthropicBedrockMantle({
+      awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1",
+      awsAccessKey: Deno.env.get("AWS_ACCESS_KEY_ID"),
+      awsSecretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
+      awsSessionToken: Deno.env.get("AWS_SESSION_TOKEN"),
+      timeout: 25_000,
+    })
+
     for (let tour = 0; tour < MAX_TOURS_OUTILS; tour++) {
       const response = await client.messages.create({
         model: MODEL,
