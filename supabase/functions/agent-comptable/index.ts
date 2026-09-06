@@ -16,21 +16,27 @@
 // Réservé au cabinet (cabinet_admins) : le client n'a accès à aucune donnée chiffrée du dossier
 // (voir AccesTab — dépôt de pièces uniquement), l'agent ne doit pas en devenir une porte dérobée.
 //
-// RGPD : appelle Claude via Amazon Bedrock (endpoint "Mantle"), région eu-central-1 (Francfort) —
-// la même région AWS déjà utilisée pour l'OCR (voir extract-piece, Textract/S3) — plutôt que l'API
-// Anthropic directe (hébergée aux États-Unis). Un seul sous-traitant (AWS) et une seule région
-// pour tout le traitement de données du dossier, au lieu d'en ajouter un second. Les identifiants
-// sont les mêmes secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION que Textract — il
-// faut juste leur accorder la permission IAM bedrock-mantle:CreateInference et activer l'accès au
-// modèle Claude Opus 5 dans cette région (Console AWS → Bedrock → Model access), aucun nouveau
-// secret à créer.
+// RGPD : appelle Claude via Amazon Bedrock, région eu-central-1 (Francfort) — la même région AWS
+// déjà utilisée pour l'OCR (voir extract-piece, Textract/S3) — plutôt que l'API Anthropic directe
+// (hébergée aux États-Unis). Un seul sous-traitant (AWS) et une seule région pour tout le
+// traitement de données du dossier, au lieu d'en ajouter un second. Les identifiants sont les mêmes
+// secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION que Textract, aucun nouveau secret
+// à créer — juste leur accorder la permission IAM adéquate (voir plus bas) et activer l'accès au
+// modèle Claude Opus 5 dans cette région (Console AWS → Bedrock → catalogue de modèles).
+//
+// Client `AnthropicBedrock` (API InvokeModel classique, domaine bedrock-runtime.{région}.amazonaws.com)
+// plutôt que le plus récent `AnthropicBedrockMantle` (domaine bedrock-mantle.{région}.api.aws) : ce
+// second essai s'est bloqué indéfiniment sans jamais répondre ni erreur (diagnostic par les logs de
+// la fonction) — signe possible d'un souci réseau propre à ce domaine récent depuis le réseau de
+// sortie de Supabase Edge Functions. Le domaine bedrock-runtime est le plus ancien et le plus
+// largement utilisé de tout AWS Bedrock, donc le point de comparaison le plus fiable.
 //
 // Fichier auto-porteur, comme les autres fonctions de ce dossier (déployées par copier-coller dans
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts et
 // src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
-import { AnthropicBedrockMantle } from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
+import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
 import { createClient } from "npm:@supabase/supabase-js@2"
 
 const corsHeaders = {
@@ -397,17 +403,16 @@ Règles impératives :
     // Identifiants passés explicitement (plutôt que de compter sur la chaîne de résolution AWS
     // ambiante) : sous Deno, la chaîne de secours de cette chaîne (fichier ~/.aws, rôle EC2/ECS,
     // IMDS...) peut tenter des étapes qui n'ont pas de sens dans ce bac à sable et rester bloquée
-    // plusieurs secondes avant d'échouer — un timeout explicite en plus évite un blocage silencieux
-    // côté fonction. Construit à l'intérieur du bloc try : une erreur ici (nom de champ invalide,
-    // identifiants absents...) doit renvoyer une réponse JSON propre, jamais faire planter le
-    // handler entier (ce qui produirait un échec réseau brut côté navigateur, sans message utile).
-    // Le timeout n'est plus fixé ici : son support par ce client précis n'est pas garanti (voir la
-    // correction awsSecretAccessKey, une autre incohérence de nommage sur cette même classe) — la
-    // borne réelle est `avecTimeout` ci-dessous, indépendante du SDK.
-    const client = new AnthropicBedrockMantle({
+    // plusieurs secondes avant d'échouer. Construit à l'intérieur du bloc try : une erreur ici (nom
+    // de champ invalide, identifiants absents...) doit renvoyer une réponse JSON propre, jamais
+    // faire planter le handler entier (ce qui produirait un échec réseau brut côté navigateur, sans
+    // message utile). Note : ce client (`AnthropicBedrock`) attend `awsSecretKey`, alors que
+    // `AnthropicBedrockMantle` — essayé avant celui-ci — attendait `awsSecretAccessKey` ; deux noms
+    // différents pour la même chose selon la classe, à vérifier si un jour on change encore de client.
+    const client = new AnthropicBedrock({
       awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1",
       awsAccessKey: Deno.env.get("AWS_ACCESS_KEY_ID"),
-      awsSecretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
+      awsSecretKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
       awsSessionToken: Deno.env.get("AWS_SESSION_TOKEN"),
     })
 
