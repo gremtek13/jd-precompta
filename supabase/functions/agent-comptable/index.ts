@@ -379,7 +379,18 @@ Règles impératives :
     { role: "user", content: message },
   ]
 
-  const client = new AnthropicBedrockMantle({ awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1" })
+  // Identifiants passés explicitement (plutôt que de compter sur la chaîne de résolution AWS
+  // ambiante) : sous Deno, la chaîne de secours de cette chaîne (fichier ~/.aws, rôle EC2/ECS,
+  // IMDS...) peut tenter des étapes qui n'ont pas de sens dans ce bac à sable et rester bloquée
+  // plusieurs secondes avant d'échouer — un timeout explicite en plus évite un blocage silencieux
+  // côté fonction (auparavant coupée par la plateforme sans réponse, invisible pour l'utilisateur).
+  const client = new AnthropicBedrockMantle({
+    awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1",
+    awsAccessKey: Deno.env.get("AWS_ACCESS_KEY_ID"),
+    awsSecretKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
+    awsSessionToken: Deno.env.get("AWS_SESSION_TOKEN"),
+    timeout: 25_000,
+  })
   const ctx: OutilContexte = { admin, dossierId, dossier: { nom: dossierRow.nom, assujetti_tva: dossierRow.assujetti_tva } }
   const outilsUtilises: string[] = []
 
@@ -434,6 +445,10 @@ Règles impératives :
     if (err instanceof Anthropic.APIError) {
       return json({ error: `Erreur Claude (${err.status}) : ${err.message}` }, 502)
     }
-    return json({ error: err instanceof Error ? err.message : "Erreur inattendue." }, 500)
+    // Erreur non typée (ex. réseau/identifiants AWS avant même la requête à Bedrock) — on inclut le
+    // nom de l'erreur en plus du message, sinon un simple "fetch failed" générique ne dit rien sur
+    // sa cause réelle. Diagnostic temporaire, resserré une fois la cause confirmée.
+    const detail = err instanceof Error ? `${err.name} : ${err.message}` : String(err)
+    return json({ error: `Erreur inattendue : ${detail}` }, 500)
   }
 })
