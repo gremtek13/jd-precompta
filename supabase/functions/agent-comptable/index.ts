@@ -16,13 +16,15 @@
 // Réservé au cabinet (cabinet_admins) : le client n'a accès à aucune donnée chiffrée du dossier
 // (voir AccesTab — dépôt de pièces uniquement), l'agent ne doit pas en devenir une porte dérobée.
 //
-// RGPD : appelle Claude via Amazon Bedrock, région eu-central-1 (Francfort) — la même région AWS
-// déjà utilisée pour l'OCR (voir extract-piece, Textract/S3) — plutôt que l'API Anthropic directe
-// (hébergée aux États-Unis). Un seul sous-traitant (AWS) et une seule région pour tout le
-// traitement de données du dossier, au lieu d'en ajouter un second. Les identifiants sont les mêmes
-// secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION que Textract, aucun nouveau secret
-// à créer — juste leur accorder la permission IAM adéquate (voir plus bas) et activer l'accès au
-// modèle Claude Opus 5 dans cette région (Console AWS → Bedrock → catalogue de modèles).
+// RGPD : appelle Claude via Amazon Bedrock, région eu-west-1 (Irlande) — pas eu-central-1
+// (Francfort), utilisée par l'OCR (voir extract-piece, Textract/S3) : Claude Opus 5 n'est proposé
+// en Bedrock, pour ce compte, qu'en eu-west-1 parmi les régions UE (confirmé en testant les deux
+// via AWS CLI). L'Irlande reste dans l'UE, donc aucun souci RGPD à avoir deux régions AWS pour deux
+// usages différents. Les identifiants restent les mêmes secrets AWS_ACCESS_KEY_ID /
+// AWS_SECRET_ACCESS_KEY que Textract (aucun nouveau secret) — seule la région diffère, câblée en
+// dur ci-dessous plutôt que de réutiliser le secret AWS_REGION (qui doit rester eu-central-1 pour
+// Textract). Il faut par ailleurs accorder la permission IAM adéquate (voir plus bas) et activer
+// l'accès au modèle Claude Opus 5 dans cette région (Console AWS → Bedrock → catalogue de modèles).
 //
 // Client `AnthropicBedrock` (API InvokeModel classique, domaine bedrock-runtime.{région}.amazonaws.com)
 // plutôt que le plus récent `AnthropicBedrockMantle` (domaine bedrock-mantle.{région}.api.aws) : ce
@@ -410,7 +412,9 @@ Règles impératives :
     // `AnthropicBedrockMantle` — essayé avant celui-ci — attendait `awsSecretAccessKey` ; deux noms
     // différents pour la même chose selon la classe, à vérifier si un jour on change encore de client.
     const client = new AnthropicBedrock({
-      awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1",
+      // Câblé en dur (pas le secret AWS_REGION, qui reste eu-central-1 pour Textract) : Claude
+      // Opus 5 n'est proposé, pour ce compte, qu'en eu-west-1 parmi les régions UE.
+      awsRegion: "eu-west-1",
       awsAccessKey: Deno.env.get("AWS_ACCESS_KEY_ID"),
       awsSecretKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
       awsSessionToken: Deno.env.get("AWS_SESSION_TOKEN"),
