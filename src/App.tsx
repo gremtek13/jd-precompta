@@ -23,6 +23,10 @@ function Gate() {
           <>
             <Route path="/dossiers" element={<DossiersList />} />
             <Route path="/dossiers/:id" element={<DossierDetail />} />
+            {/* L'onglet actif (Pièces, Banque...) fait partie de l'URL — voir DossierDetail — pour que
+                le bouton "retour" du navigateur (ex. après avoir ouvert une pièce dans un nouvel
+                onglet) revienne au bon endroit plutôt qu'à la liste des dossiers. */}
+            <Route path="/dossiers/:id/:tab" element={<DossierDetail />} />
             {isSuperAdmin && <Route path="/comptes-master" element={<SuperAdminPage />} />}
             <Route path="*" element={<Navigate to="/dossiers" replace />} />
           </>

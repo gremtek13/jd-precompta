@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
 import type { Dossier } from '../lib/types'
@@ -19,11 +19,32 @@ import VirementsTab from './dossier/VirementsTab'
 import AssistantFlottant from './dossier/AssistantFlottant'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 
+// L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
+// simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
+// tout droit à la liste des dossiers au lieu de l'onglet Pièces qu'on venait de quitter — aucune
+// navigation interne n'était mémorisée par le navigateur. Cette liste sert à valider le paramètre
+// d'URL (une valeur absente ou invalide retombe sur "checklist").
+const TABS_VALIDES: DossierTab[] = [
+  'checklist', 'documents', 'pieces', 'banque', 'ecritures', 'immobilisations',
+  'cotisations', 'cloture', 'estimation', 'packs', 'informations', 'virements', 'acces',
+]
+
 export default function DossierDetail() {
-  const { id } = useParams<{ id: string }>()
+  const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>()
+  const navigate = useNavigate()
+  const tab: DossierTab = TABS_VALIDES.includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
   const [dossier, setDossier] = useState<Dossier | null>(null)
-  const [tab, setTab] = useState<DossierTab>('checklist')
   const [detectingNaf, setDetectingNaf] = useState(false)
+
+  // URL toujours explicite (avec son onglet) une fois montée — évite d'avoir deux URLs différentes
+  // (/dossiers/:id et /dossiers/:id/checklist) pour le même écran.
+  useEffect(() => {
+    if (id && !tabParam) navigate(`/dossiers/${id}/checklist`, { replace: true })
+  }, [id, tabParam, navigate])
+
+  function allerA(nouvelOnglet: DossierTab) {
+    if (id) navigate(`/dossiers/${id}/${nouvelOnglet}`)
+  }
 
   useEffect(() => {
     if (!id) return
@@ -94,9 +115,9 @@ export default function DossierDetail() {
         )}
       </div>
 
-      <DossierParcours tab={tab} onChange={setTab} />
+      <DossierParcours tab={tab} onChange={allerA} />
 
-      {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={setTab} />}
+      {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={allerA} />}
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}
