@@ -212,6 +212,9 @@ tr.clickable:hover { background: var(--color-primary-light); }
   background: var(--color-primary);
 }
 .nav-chevron { font-size: 0.6rem; opacity: 0.7; margin-left: 1px; }
+/* Libellé court réservé à la barre de navigation mobile (voir media query) — masqué sur ordinateur,
+   où la place ne manque pas pour le nom complet. */
+.nav-label-court { display: none; }
 
 .nav-menu {
   position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 210px;
@@ -317,6 +320,30 @@ tr.clickable:hover { background: var(--color-primary-light); }
 }
 .theme-toggle:hover { border-color: var(--color-primary); color: var(--color-primary); }
 
+/* Bulle de chat flottante (voir AssistantFlottant) — en classes plutôt qu'en style inline pour que la
+   media query mobile puisse décaler sa position (barre de navigation fixe en bas sur mobile, voir
+   plus bas) sans dupliquer toute la logique de positionnement. */
+.assistant-bouton {
+  position: fixed; bottom: 24px; right: 24px; z-index: 45;
+  width: 52px; height: 52px; border-radius: 50%; border: none;
+  background: var(--color-primary); color: #fff;
+  display: flex; align-items: center; justify-content: center;
+  cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+.assistant-panneau {
+  position: fixed; bottom: 88px; right: 24px; z-index: 45;
+  width: min(420px, 92vw);
+  /* dvh (hauteur de viewport "dynamique") plutôt que vh : sur mobile, vh compte la fenêtre comme si la
+     barre d'adresse était toujours masquée, ce qui pouvait faire déborder le panneau de l'écran visible
+     réel. */
+  height: min(600px, 75dvh);
+  display: flex; flex-direction: column;
+  /* Indispensable : sans ça, un contenu plus haut que prévu déborde du panneau au lieu d'être coupé/
+     scrollable. */
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
 .checklist-item {
   display: flex; align-items: center; gap: 12px; padding: 14px 20px;
   border-bottom: 1px solid var(--color-border);
@@ -418,6 +445,42 @@ tr.clickable:hover { background: var(--color-primary-light); }
 
   .mini-progress { width: 46px; }
 
-  /* Le vrai débordement latéral sur mobile venait des tableaux (Pièces, Documents, Banque...), pas de
-     la navigation du dossier — colonnes secondaires masquées ci-dessous, voir plus bas. */
+  /* Barre de navigation du dossier — repensée façon appli native (inspirée de Binance : la navigation
+     la plus utilisée reste accessible au pouce, fixée en bas de l'écran, plutôt qu'une rangée de
+     pastilles en haut qui demande de remonter le regard à chaque fois). Vue d'ensemble/Documents/
+     Banque/Comptabilité/Cabinet devient une vraie barre d'onglets bas de page, icône au-dessus d'un
+     libellé court. Un sous-menu (Documents/Comptabilité/Cabinet) s'ouvre désormais en fiche pleine
+     largeur au-dessus de la barre plutôt qu'en petit menu ancré au bouton — ancré, un sous-menu ouvert
+     depuis le premier ou le dernier onglet déborderait de l'écran (déjà vu sur cette même barre :
+     voir le fix précédent sur le débordement latéral).
+     .main reçoit un padding-bottom pour que le dernier élément de chaque écran ne se retrouve pas
+     caché derrière la barre fixe. */
+  .main { padding-bottom: 78px; }
+
+  .nav-groupes {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; margin: 0;
+    background: var(--color-surface); border-top: 1px solid var(--color-border);
+    display: flex; justify-content: space-around; align-items: stretch; gap: 0;
+    padding: 6px 4px max(6px, env(safe-area-inset-bottom));
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  }
+  .nav-groupe { flex: 1; position: relative; }
+  .nav-groupe-bouton {
+    flex-direction: column; gap: 3px; width: 100%; height: 100%;
+    background: none; border: none; border-radius: 8px;
+    padding: 6px 2px; font-size: 0.65rem; color: var(--color-text-light);
+  }
+  .nav-groupe-bouton.active { background: none; border-color: transparent; color: var(--color-primary); }
+  .nav-chevron { display: none; }
+  .nav-label-full { display: none; }
+  .nav-label-court { display: inline; }
+
+  .nav-menu {
+    position: fixed; top: auto; left: 12px; right: 12px; bottom: 72px;
+    width: auto; min-width: 0;
+  }
+
+  /* La bulle de chat doit remonter au-dessus de la nouvelle barre fixe, sinon elles se chevauchent. */
+  .assistant-bouton { bottom: 84px; }
+  .assistant-panneau { bottom: 148px; }
 }

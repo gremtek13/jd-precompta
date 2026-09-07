@@ -33,23 +33,27 @@ interface Enfant { id: DossierTab; label: string }
 interface Groupe {
   id: string
   label: string
+  // Libellé court réservé à la barre de navigation mobile (voir media query) — en bas d'écran façon
+  // appli native (inspiré de Binance : navigation principale accessible au pouce, en bas), 5 colonnes
+  // étroites ne laissent la place que pour un mot, jamais "Vue d'ensemble" ou "Comptabilité" en entier.
+  labelCourt: string
   icone: IconComponent
   cible?: DossierTab
   enfants?: Enfant[]
 }
 
 const GROUPES: Groupe[] = [
-  { id: 'checklist', label: "Vue d'ensemble", icone: IconChecklist, cible: 'checklist' },
+  { id: 'checklist', label: "Vue d'ensemble", labelCourt: 'Vue', icone: IconChecklist, cible: 'checklist' },
   {
-    id: 'documents-groupe', label: 'Documents', icone: IconDocuments,
+    id: 'documents-groupe', label: 'Documents', labelCourt: 'Docs', icone: IconDocuments,
     enfants: [
       { id: 'pieces', label: 'Pièces' },
       { id: 'documents', label: 'Documents' },
     ],
   },
-  { id: 'banque', label: 'Banque', icone: ICONES_PARCOURS.banque, cible: 'banque' },
+  { id: 'banque', label: 'Banque', labelCourt: 'Banque', icone: ICONES_PARCOURS.banque, cible: 'banque' },
   {
-    id: 'comptabilite', label: 'Comptabilité', icone: IconEcritures,
+    id: 'comptabilite', label: 'Comptabilité', labelCourt: 'Compta', icone: IconEcritures,
     enfants: [
       { id: 'ecritures', label: 'Écritures' },
       { id: 'immobilisations', label: 'Immobilisations' },
@@ -59,7 +63,7 @@ const GROUPES: Groupe[] = [
     ],
   },
   {
-    id: 'cabinet', label: 'Cabinet', icone: IconInformations,
+    id: 'cabinet', label: 'Cabinet', labelCourt: 'Cabinet', icone: IconInformations,
     enfants: [
       { id: 'informations', label: 'Informations du dossier' },
       { id: 'acces', label: 'Accès client' },
@@ -111,7 +115,8 @@ export default function DossierParcours({ tab, onChange }: { tab: DossierTab; on
               aria-expanded={groupe.enfants ? ouvert === groupe.id : undefined}
             >
               <Icone width={17} height={17} />
-              {groupe.label}
+              <span className="nav-label-full">{groupe.label}</span>
+              <span className="nav-label-court">{groupe.labelCourt}</span>
               {groupe.enfants && <span className="nav-chevron">{ouvert === groupe.id ? '▲' : '▼'}</span>}
             </button>
             {groupe.enfants && ouvert === groupe.id && (
