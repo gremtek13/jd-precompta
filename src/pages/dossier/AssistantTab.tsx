@@ -1,5 +1,7 @@
-import { useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
+import type { AgentConversation } from '../../lib/types'
 
 interface Message {
   role: 'user' | 'assistant'
@@ -10,14 +12,46 @@ interface Message {
 // Assistant conversationnel en lecture seule sur ce dossier (voir supabase/functions/agent-comptable) :
 // répond à des questions ("Pourquoi le compte 6251 a augmenté ?", "Quelles sont les anomalies ?") en
 // interrogeant les données déjà en base via des outils contrôlés, jamais en écrivant quoi que ce soit.
-// Conversation gardée en mémoire le temps de l'onglet seulement (pas de persistance en base pour ce
-// premier jet) — recharger la page ou changer d'onglet repart d'une conversation vide.
+// Historique persisté dans agent_conversations, partagé entre tous les admins du cabinet pour ce
+// dossier (comme le reste de l'appli — le cabinet est un seul acteur) : changer d'onglet ou
+// recharger la page ne perd plus la conversation.
 export default function AssistantTab({ dossierId }: { dossierId: string }) {
+  const { session } = useAuth()
   const [messages, setMessages] = useState<Message[]>([])
+  const [chargement, setChargement] = useState(true)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const zoneRef = useRef<HTMLTextAreaElement>(null)
+
+  async function charger() {
+    setChargement(true)
+    const { data } = await supabase
+      .from('agent_conversations')
+      .select('role, texte, outils_utilises')
+      .eq('dossier_id', dossierId)
+      .order('created_at', { ascending: true })
+    setMessages((data ?? []).map((r: Pick<AgentConversation, 'role' | 'texte' | 'outils_utilises'>) => ({
+      role: r.role,
+      texte: r.texte,
+      outils: r.outils_utilises ?? undefined,
+    })))
+    setChargement(false)
+  }
+
+  useEffect(() => { charger() }, [dossierId])
+
+  // Best-effort : un échec d'enregistrement de l'historique ne doit jamais casser la conversation
+  // elle-même, seulement priver cette ligne de persistance (rare, et sans conséquence grave).
+  async function enregistrer(role: 'user' | 'assistant', texte: string, outils?: string[]) {
+    await supabase.from('agent_conversations').insert({
+      dossier_id: dossierId,
+      role,
+      texte,
+      outils_utilises: outils ?? null,
+      created_by: session?.user.id ?? null,
+    })
+  }
 
   async function envoyer(e: FormEvent) {
     e.preventDefault()
@@ -30,6 +64,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
     const nouveauxMessages: Message[] = [...messages, { role: 'user', texte }]
     setMessages(nouveauxMessages)
     setLoading(true)
+    enregistrer('user', texte)
 
     try {
       const { data, error: invokeError } = await supabase.functions.invoke<{ reponse?: string; outils_utilises?: string[]; error?: string }>(
@@ -42,12 +77,19 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
       if (!data?.reponse) throw new Error("Réponse vide.")
 
       setMessages([...nouveauxMessages, { role: 'assistant', texte: data.reponse, outils: data.outils_utilises }])
+      enregistrer('assistant', data.reponse, data.outils_utilises)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
       setLoading(false)
       zoneRef.current?.focus()
     }
+  }
+
+  async function nouvelleConversation() {
+    setMessages([])
+    setError(null)
+    await supabase.from('agent_conversations').delete().eq('dossier_id', dossierId)
   }
 
   function surTouche(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -66,7 +108,9 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
       </p>
 
       <div className="card" style={{ padding: 0, marginBottom: 12, minHeight: 240 }}>
-        {messages.length === 0 ? (
+        {chargement ? (
+          <p className="muted" style={{ padding: 20 }}>Chargement…</p>
+        ) : messages.length === 0 ? (
           <div className="empty-state">
             Pose une question, par exemple « Pourquoi le compte 6251 a-t-il augmenté cette année ? »
             ou « Quelles sont les anomalies de ce dossier ? ».
@@ -122,7 +166,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
             type="button"
             className="btn btn-outline"
             disabled={loading}
-            onClick={() => { setMessages([]); setError(null) }}
+            onClick={nouvelleConversation}
           >
             Nouvelle conversation
           </button>
