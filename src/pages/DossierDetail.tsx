@@ -16,7 +16,7 @@ import EstimationTab from './dossier/EstimationTab'
 import InformationsTab from './dossier/InformationsTab'
 import ChecklistTab from './dossier/ChecklistTab'
 import VirementsTab from './dossier/VirementsTab'
-import AssistantTab from './dossier/AssistantTab'
+import AssistantFlottant from './dossier/AssistantFlottant'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 
 export default function DossierDetail() {
@@ -108,8 +108,9 @@ export default function DossierDetail() {
       {tab === 'estimation' && <EstimationTab dossierId={id} />}
       {tab === 'informations' && <InformationsTab dossierId={id} />}
       {tab === 'virements' && <VirementsTab dossierId={id} />}
-      {tab === 'assistant' && <AssistantTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
+
+      <AssistantFlottant dossierId={id} />
     </>
   )
 }

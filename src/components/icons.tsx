@@ -132,5 +132,4 @@ export const ICONES_PARCOURS: Record<string, IconComponent> = {
   virements: IconVirements,
   packs: IconPacks,
   acces: IconAcces,
-  assistant: IconAssistant,
 }
