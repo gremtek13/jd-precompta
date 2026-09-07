@@ -227,29 +227,30 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const nbOk = items.length - nbManquants
 
   // Bloc "Paramétrage" / "Travail à effectuer" : même présentation pour les deux, un compteur séparé
-  // par groupe plutôt qu'un total unique mélangeant leurs natures (voir audit ergonomie).
+  // par groupe plutôt qu'un total unique mélangeant leurs natures (voir audit ergonomie). Une seule
+  // carte, pas une carte dans une carte : les lignes sont juste séparées par un filet, la couleur
+  // réservée à la pastille de chaque ligne plutôt qu'à la bordure entière du bloc — moins de boîtes
+  // empilées, moins de couleur qui crie (voir discussion sur l'aspect "amateur").
   function blocPoints(titre: string, points: PointATraiter[], texteVide: string) {
-    const nbErreurGroupe = points.filter((p) => p.severite === 'erreur').reduce((s, p) => s + p.nb, 0)
-    const bordure = points.length === 0 ? 'var(--color-primary)' : nbErreurGroupe > 0 ? 'var(--color-danger)' : 'var(--color-warning)'
     return (
-      <div className="card" style={{ marginBottom: 16, borderColor: bordure }}>
+      <div className="card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>{titre}</h3>
         {points.length === 0 ? (
           <p className="muted" style={{ margin: 0 }}>{texteVide}</p>
         ) : (
-          <div className="card" style={{ padding: 0 }}>
-            {points.map((p) => (
-              <div key={p.id} className="checklist-item">
+          <div>
+            {points.map((p, i) => (
+              <div
+                key={p.id}
+                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}
+              >
                 <span
-                  className="pastille"
                   style={{
-                    width: 14, height: 14, borderRadius: '50%', flexShrink: 0,
+                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
                     background: p.severite === 'erreur' ? 'var(--color-danger)' : 'var(--color-warning)',
                   }}
                 />
-                <div className="checklist-item-body">
-                  <div style={{ fontWeight: 600 }}>{p.nb} {p.label}</div>
-                </div>
+                <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{p.nb} {p.label}</div>
                 <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(p.cible)}>
                   {p.action}
                 </button>
@@ -269,33 +270,35 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       {/* Troisième bloc : ce qui dépend du client (documents), pas du cabinet — sur une échelle
           différente des deux blocs ci-dessus (des anomalies internes), d'où la séparation nette plutôt
           qu'un total combiné. */}
-      <div className="card" style={{ marginBottom: 16, borderColor: nbManquants > 0 ? 'var(--color-warning)' : 'var(--color-primary)' }}>
+      <div className="card" style={{ marginBottom: 16 }}>
         <h3 style={{ marginTop: 0 }}>Documents attendus</h3>
         <p className="muted" style={{ marginTop: -8, marginBottom: 14 }}>
           {nbOk}/{items.length} reçu(s) — ce que le dossier attend du client, à ne pas confondre avec le travail interne ci-dessus.
         </p>
-        <div className="progress-track" style={{ marginBottom: 14 }}>
+        <div className="progress-track" style={{ marginBottom: 4 }}>
           <div
             className={`progress-fill ${nbManquants > 0 ? 'warning' : ''}`}
             style={{ width: `${items.length > 0 ? (nbOk / items.length) * 100 : 100}%` }}
           />
         </div>
-        <div className="card" style={{ padding: 0 }}>
-          {items.map((item) => (
-            <div key={item.id} className="checklist-item">
+        <div>
+          {items.map((item, i) => (
+            <div
+              key={item.id}
+              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}
+            >
               <button
                 type="button"
                 onClick={item.onToggle}
                 disabled={!item.onToggle}
                 title={item.onToggle ? 'Cliquer pour marquer comme reçu/non reçu' : undefined}
-                className="pastille"
                 style={{
-                  width: 14, height: 14, borderRadius: '50%', border: 'none', flexShrink: 0, padding: 0,
+                  width: 8, height: 8, borderRadius: '50%', border: 'none', flexShrink: 0, padding: 0,
                   background: item.ok ? 'var(--color-primary)' : 'var(--color-danger)',
                   cursor: item.onToggle ? 'pointer' : 'default',
                 }}
               />
-              <div className="checklist-item-body">
+              <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600 }}>{item.label}</div>
                 {item.detail && <div className="muted" style={{ fontSize: '0.82rem' }}>{item.detail}</div>}
               </div>
