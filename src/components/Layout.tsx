@@ -16,7 +16,10 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <div className="logo">JD Precompta</div>
+        <div className="logo">
+          <span className="brand-mark">JD</span>
+          JD Precompta
+        </div>
         {!masquerNavClient && (
           <nav>
             {role === 'cabinet' && (

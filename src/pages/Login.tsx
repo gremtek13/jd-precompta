@@ -19,6 +19,7 @@ export default function Login() {
   return (
     <div className="login-shell">
       <div className="card login-card">
+        <div className="brand-mark brand-mark-lg" style={{ margin: '0 auto' }}>JD</div>
         <h1>JD Precompta</h1>
         <p className="muted" style={{ marginBottom: 20 }}>Connexion à ton espace</p>
         <form onSubmit={handleSubmit}>
