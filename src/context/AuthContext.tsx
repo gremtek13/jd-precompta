@@ -8,6 +8,10 @@ interface AuthState {
   session: Session | null
   role: Role
   dossierIds: string[] // dossiers accessibles (pertinent seulement pour role === 'client')
+  // Vrai si l'utilisateur supervise tous les cabinets (voir la page Comptes master) plutôt qu'un seul —
+  // résolu via l'appel RPC is_super_admin() : la table super_admins elle-même est verrouillée (RLS sans
+  // aucune policy), impossible à lire directement depuis le navigateur, même pour soi-même.
+  isSuperAdmin: boolean
   loading: boolean
   signOut: () => Promise<void>
 }
@@ -18,6 +22,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [role, setRole] = useState<Role>(null)
   const [dossierIds, setDossierIds] = useState<string[]>([])
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -33,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!session) {
         setRole(null)
         setDossierIds([])
+        setIsSuperAdmin(false)
         setLoading(false)
         return
       }
@@ -47,8 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
 
       if (adminRow) {
+        const { data: estSuperAdmin } = await supabase.rpc('is_super_admin')
+        if (cancelled) return
         setRole('cabinet')
         setDossierIds([])
+        setIsSuperAdmin(!!estSuperAdmin)
         setLoading(false)
         return
       }
@@ -61,6 +70,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (cancelled) return
       setRole('client')
       setDossierIds((memberships ?? []).map((m) => m.dossier_id))
+      setIsSuperAdmin(false)
       setLoading(false)
     }
 
@@ -75,7 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, role, dossierIds, loading, signOut }}>
+    <AuthContext.Provider value={{ session, role, dossierIds, isSuperAdmin, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   )

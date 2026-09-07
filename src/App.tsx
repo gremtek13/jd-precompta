@@ -8,9 +8,10 @@ import ClientHome from './pages/ClientHome'
 import ClientUpload from './pages/ClientUpload'
 import ClientInformations from './pages/ClientInformations'
 import ClientSimulation from './pages/ClientSimulation'
+import SuperAdminPage from './pages/SuperAdminPage'
 
 function Gate() {
-  const { session, role, loading } = useAuth()
+  const { session, role, isSuperAdmin, loading } = useAuth()
 
   if (loading) return <div className="login-shell"><p className="muted">Chargement…</p></div>
   if (!session) return <Login />
@@ -22,6 +23,7 @@ function Gate() {
           <>
             <Route path="/dossiers" element={<DossiersList />} />
             <Route path="/dossiers/:id" element={<DossierDetail />} />
+            {isSuperAdmin && <Route path="/comptes-master" element={<SuperAdminPage />} />}
             <Route path="*" element={<Navigate to="/dossiers" replace />} />
           </>
         )}

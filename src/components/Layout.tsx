@@ -4,7 +4,7 @@ import { useTheme } from '../lib/theme'
 import { IconLogout, IconMoon, IconSun } from './icons'
 
 export default function Layout() {
-  const { role, signOut } = useAuth()
+  const { role, isSuperAdmin, signOut } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
   // Sur l'accueil client, les grosses tuiles (Mes pièces / Mes informations / Prendre une photo)
@@ -22,6 +22,11 @@ export default function Layout() {
             {role === 'cabinet' && (
               <NavLink to="/dossiers" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Dossiers
+              </NavLink>
+            )}
+            {role === 'cabinet' && isSuperAdmin && (
+              <NavLink to="/comptes-master" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Comptes master
               </NavLink>
             )}
             {role === 'client' && (
