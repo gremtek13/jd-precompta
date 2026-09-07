@@ -383,5 +383,18 @@ tr.clickable:hover { background: var(--color-primary-light); }
   .checklist-item .checklist-item-body { flex-basis: 100%; }
   .checklist-item .btn { margin-left: 26px; }
 
+  /* Navigation du dossier (Documents/Pièces/Banque...) : en rangée de pastilles, ça ne tenait pas sur
+     un écran de téléphone — obligeait à décaler la page tout entière en latéral pour voir les
+     boutons qui débordaient, et le sous-menu (position absolue) pouvait déborder de l'écran plutôt
+     que de rester visible. Empilée en une colonne pleine largeur à la place, chaque bouton lisible
+     d'un coup ; le sous-menu s'ouvre dans le flux normal (juste en dessous), plus jamais en position
+     flottante qui risquerait de sortir de l'écran. */
+  .nav-groupes { flex-direction: column; align-items: stretch; gap: 6px; }
+  .nav-groupe-bouton { width: 100%; justify-content: space-between; }
+  .nav-menu {
+    position: static; width: 100%; margin-top: 4px;
+    box-shadow: none; border-color: var(--color-border);
+  }
+
   .mini-progress { width: 46px; }
 }
