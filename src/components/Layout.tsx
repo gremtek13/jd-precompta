@@ -65,7 +65,7 @@ export default function Layout() {
             )}
           </nav>
         )}
-        <div className="sidebar-actions" style={{ display: 'flex', gap: 8 }}>
+        <div className="sidebar-actions">
           <button
             type="button"
             className="theme-toggle"
