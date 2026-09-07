@@ -13,6 +13,9 @@ interface ItemChecklist {
   ok: boolean
   detail?: string
   cible?: DossierTab
+  // Libellé du bouton d'action quand `cible` est renseigné — jamais le générique "Aller à l'onglet"
+  // (voir PointATraiter, même principe).
+  action?: string
   onToggle?: () => void
 }
 
@@ -92,7 +95,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const moisManquants = Array.from({ length: moisEcoules }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
 
   const cotisationsAnnee = cotisations.filter((c) => new Date(c.echeance).getFullYear() === anneeCourante)
-  const piecesAnnee = pieces.filter((p) => p.date_piece && new Date(p.date_piece).getFullYear() === anneeCourante)
+  // Toutes les pièces reçues cette année, validées ou non : ce point vérifie que le client a bien
+  // envoyé quelque chose, pas que le cabinet a fini de le vérifier (ce serait plutôt "confiance-basse"
+  // ci-dessus) — se limiter aux pièces validées faisait dire "aucune pièce déposée" alors que des
+  // pièces fraîchement importées, encore à valider, étaient déjà bien là.
+  const piecesAnnee = [...pieces, ...piecesAValider].filter((p) => p.date_piece && new Date(p.date_piece).getFullYear() === anneeCourante)
 
   // "Points à traiter" — regroupe en un seul endroit les anomalies déjà détectées séparément dans
   // Pièces (confiance basse), Écritures (comptes manquants, TVA, désynchronisation, déséquilibre) et
@@ -118,17 +125,19 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // marqué personnel/à ignorer — le seul cycle du dossier qui manquait encore à ce tableau de bord.
   const lignesNonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
 
-  interface PointATraiter { id: string; label: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention' }
+  // "action" : le libellé du bouton, propre à chaque point plutôt qu'un "Aller à l'onglet" générique
+  // répété sur toute la liste — dit ce que l'onglet cible va permettre de faire, pas juste où il est.
+  interface PointATraiter { id: string; label: string; action: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention' }
   const tousLesPointsATraiter: PointATraiter[] = [
-    { id: 'desequilibrees', label: 'écriture(s) déséquilibrée(s)', nb: groupesDesequilibres.length, cible: 'ecritures', severite: 'erreur' },
-    { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
-    { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
-    { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention' },
-    { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },
-    { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },
-    { id: 'sans-tva', label: 'pièce(s) validée(s) sans TVA renseignée', nb: sansTva.length, cible: 'ecritures', severite: 'attention' },
-    { id: 'sans-contrepartie', label: 'écriture(s) en attente de rapprochement bancaire', nb: nbSansContrepartie, cible: 'banque', severite: 'attention' },
-    { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
+    { id: 'desequilibrees', label: 'écriture(s) déséquilibrée(s)', action: 'Voir les écritures déséquilibrées', nb: groupesDesequilibres.length, cible: 'ecritures', severite: 'erreur' },
+    { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', action: 'Régénérer les écritures concernées', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
+    { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
+    { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention' },
+    { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', action: 'Compléter le compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },
+    { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', action: 'Compléter le poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },
+    { id: 'sans-tva', label: 'pièce(s) validée(s) sans TVA renseignée', action: 'Compléter la TVA', nb: sansTva.length, cible: 'ecritures', severite: 'attention' },
+    { id: 'sans-contrepartie', label: 'écriture(s) en attente de rapprochement bancaire', action: 'Voir les écritures à rapprocher', nb: nbSansContrepartie, cible: 'banque', severite: 'attention' },
+    { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', action: 'Voir les opérations à rapprocher', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
   ]
   const pointsATraiter = tousLesPointsATraiter.filter((p) => p.nb > 0)
   const nbErreurs = pointsATraiter.filter((p) => p.severite === 'erreur').reduce((s, p) => s + p.nb, 0)
@@ -143,6 +152,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         ? `Mois manquants : ${moisManquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
         : `${moisEcoules}/${moisEcoules} mois reçus`,
       cible: 'banque',
+      action: 'Importer le relevé manquant',
     },
     {
       id: 'cotisations',
@@ -150,6 +160,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       ok: cotisationsAnnee.length > 0,
       detail: cotisationsAnnee.length > 0 ? `${cotisationsAnnee.length} échéance(s) enregistrée(s)` : 'Aucune échéance enregistrée pour cette année',
       cible: 'cotisations',
+      action: 'Voir les cotisations',
     },
     {
       id: 'factures',
@@ -157,6 +168,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       ok: piecesAnnee.length > 0,
       detail: piecesAnnee.length > 0 ? `${piecesAnnee.length} pièce(s) déposée(s)` : 'Aucune pièce déposée pour cette année',
       cible: 'pieces',
+      action: 'Voir les pièces',
     },
   ]
 
@@ -167,6 +179,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       ok: false,
       detail: 'Véhicule, tickets restaurant, chèques vacances… à renseigner une fois',
       cible: 'informations',
+      action: 'Compléter les informations',
     })
   } else {
     if (info.vehicule_type === 'societe') {
@@ -180,6 +193,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         ok: vehiculeTrouve,
         detail: vehiculeTrouve ? undefined : 'Aucune immobilisation de type véhicule enregistrée',
         cible: 'immobilisations',
+        action: 'Enregistrer le véhicule',
       })
     }
     if (info.tickets_restaurant) {
@@ -230,7 +244,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
                   <div style={{ fontWeight: 600 }}>{p.nb} {p.label}</div>
                 </div>
                 <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(p.cible)}>
-                  Aller à l'onglet
+                  {p.action}
                 </button>
               </div>
             ))}
@@ -243,10 +257,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         </div>
       )}
 
+      {/* Sans rapport avec "Points à traiter" ci-dessus (qui compte des anomalies) : ceci compte des
+          informations administratives à obtenir du client (relevés, cotisations, pièces de l'année,
+          justificatifs) — deux échelles différentes, précisées explicitement pour ne pas les confondre. */}
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
         <div className={`stat-card ${nbManquants > 0 ? 'stat-warning' : 'stat-ok'}`}>
           <div className="stat-value">{nbOk}/{items.length}</div>
-          <div className="stat-label">Point(s) réglé(s)</div>
+          <div className="stat-label">Information(s) reçue(s) du client</div>
           <div className="progress-track" style={{ marginTop: 10 }}>
             <div
               className={`progress-fill ${nbManquants > 0 ? 'warning' : ''}`}
@@ -256,7 +273,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         </div>
       </div>
       <p className="muted" style={{ marginTop: -12, marginBottom: 20 }}>
-        Indicative — vérifie toujours avant de considérer un point comme réglé.
+        Ce qui reste à obtenir du client (relevés, cotisations, pièces, justificatifs) — indicative,
+        vérifie toujours avant de considérer un point comme réglé. Différent des « Points à traiter »
+        ci-dessus, qui sont des anomalies détectées dans les données déjà reçues.
       </p>
 
       <div className="card" style={{ padding: 0 }}>
@@ -280,7 +299,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
             </div>
             {item.cible && !item.ok && (
               <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(item.cible!)}>
-                Aller à l'onglet
+                {item.action ?? 'Voir'}
               </button>
             )}
           </div>
