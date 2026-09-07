@@ -1,6 +1,6 @@
 export type Statut = 'a_valider' | 'validee'
 export type TypePiece = 'achat' | 'vente' | 'note_frais' | 'autre'
-export type Source = 'upload' | 'email'
+export type Source = 'upload' | 'email' | 'superpdp'
 
 export interface Dossier {
   id: string
@@ -104,6 +104,10 @@ export interface Piece {
   // Score de confiance de l'extraction automatique (haute/moyenne/basse), null pour une pièce jamais
   // passée par extractPiece() (saisie 100% manuelle, ou créée avant l'ajout de ce champ).
   confiance: 'haute' | 'moyenne' | 'basse' | null
+  // Id de la facture côté Super PDP — non nul uniquement pour une pièce importée par superpdp-sync ;
+  // sert à la déduplication (voir la migration) et à savoir qu'une pièce vient de la facturation
+  // électronique plutôt que d'un dépôt (voir source).
+  superpdp_invoice_id: number | null
   created_at: string
   updated_at: string
 }
