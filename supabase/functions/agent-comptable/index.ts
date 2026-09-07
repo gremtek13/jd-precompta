@@ -17,14 +17,12 @@
 // (voir AccesTab — dépôt de pièces uniquement), l'agent ne doit pas en devenir une porte dérobée.
 //
 // RGPD : appelle Claude via Amazon Bedrock, région eu-west-1 (Irlande) — pas eu-central-1
-// (Francfort), utilisée par l'OCR (voir extract-piece, Textract/S3) : Claude Opus 5 n'est proposé
-// en Bedrock, pour ce compte, qu'en eu-west-1 parmi les régions UE (confirmé en testant les deux
-// via AWS CLI). L'Irlande reste dans l'UE, donc aucun souci RGPD à avoir deux régions AWS pour deux
-// usages différents. Les identifiants restent les mêmes secrets AWS_ACCESS_KEY_ID /
-// AWS_SECRET_ACCESS_KEY que Textract (aucun nouveau secret) — seule la région diffère, câblée en
-// dur ci-dessous plutôt que de réutiliser le secret AWS_REGION (qui doit rester eu-central-1 pour
-// Textract). Il faut par ailleurs accorder la permission IAM adéquate (voir plus bas) et activer
-// l'accès au modèle Claude Opus 5 dans cette région (Console AWS → Bedrock → catalogue de modèles).
+// (Francfort), utilisée par l'OCR (voir extract-piece, Textract/S3) : c'est la région où l'accord
+// de modèle a été accepté et où l'invocation a été confirmée fonctionnelle via AWS CLI. L'Irlande
+// reste dans l'UE, donc aucun souci RGPD à avoir deux régions AWS pour deux usages différents. Les
+// identifiants restent les mêmes secrets AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY que Textract
+// (aucun nouveau secret) — seule la région diffère, câblée en dur ci-dessous plutôt que de
+// réutiliser le secret AWS_REGION (qui doit rester eu-central-1 pour Textract).
 //
 // Client `AnthropicBedrock` (API InvokeModel classique, domaine bedrock-runtime.{région}.amazonaws.com)
 // plutôt que le plus récent `AnthropicBedrockMantle` (domaine bedrock-mantle.{région}.api.aws) : ce
@@ -54,7 +52,14 @@ function json(body: unknown, status = 200) {
   })
 }
 
-const MODEL = "anthropic.claude-opus-5" // identifiant Bedrock (préfixe "anthropic." requis)
+// Claude Opus 5 / Sonnet 5 : accord de modèle accepté et confirmé "AVAILABLE" côté Bedrock
+// (get-foundation-model-availability), mais AWS refuse encore l'invocation elle-même
+// (AccessDeniedException persistante, incohérence remontée à AWS Support). En attendant leur
+// réponse, on utilise Claude Sonnet 4.6 — confirmé fonctionnel sur ce compte via AWS CLI — avec le
+// préfixe "eu." (profil d'inférence européen, obligatoire pour ce modèle : l'ID nu échoue avec
+// "on-demand throughput isn't supported"). Repasser sur "anthropic.claude-opus-5" dès qu'AWS aura
+// débloqué l'invocation (l'accord est déjà en place, rien d'autre à changer côté code).
+const MODEL = "eu.anthropic.claude-sonnet-4-6"
 // Borne la boucle agentique — évite un enchaînement d'appels d'outils sans fin (coût, latence) ;
 // largement suffisant pour les questions visées (quelques appels d'outils, jamais des dizaines).
 const MAX_TOURS_OUTILS = 8
