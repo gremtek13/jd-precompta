@@ -48,10 +48,10 @@ h3 { font-size: 1.05rem; }
 /* Anneau de focus cohérent au clavier sur les éléments interactifs qui n'en avaient pas (jusqu'ici
    seuls .field input/select/textarea en avaient un) — accessibilité et finition, pas de changement de
    comportement. */
-.btn:focus-visible, .theme-toggle:focus-visible, .parcours-outil:focus-visible {
+.btn:focus-visible, .theme-toggle:focus-visible, .nav-groupe-bouton:focus-visible, .nav-menu-item:focus-visible {
   outline: none; box-shadow: 0 0 0 3px var(--color-primary-light);
 }
-.sidebar nav a:focus-visible, .parcours-etape:focus-visible .parcours-cercle, .tabs button:focus-visible {
+.sidebar nav a:focus-visible, .tabs button:focus-visible {
   outline: none; box-shadow: 0 0 0 3px var(--color-primary-light); border-radius: var(--radius-sm);
 }
 
@@ -165,38 +165,34 @@ tr.clickable:hover { background: var(--color-primary-light); }
 }
 .tabs button.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
 
-/* Parcours du dossier — remplace la barre d'onglets plate par un chemin visuel, de la collecte des
-   justificatifs à la clôture de l'exercice, plus lisible que dix onglets à plat. */
-.parcours { display: flex; align-items: flex-start; overflow-x: auto; padding-bottom: 8px; -webkit-overflow-scrolling: touch; }
-.parcours-etape-wrap { display: flex; align-items: flex-start; flex-shrink: 0; }
-
-.parcours-connecteur { width: 28px; height: 2px; background: var(--color-border); margin-top: 15px; flex-shrink: 0; transition: background 0.15s ease; }
-.parcours-connecteur.franchi { background: var(--color-primary); }
-
-.parcours-etape {
-  display: flex; flex-direction: column; align-items: center; gap: 6px;
-  background: none; border: none; cursor: pointer; padding: 2px 4px; width: 76px; flex-shrink: 0;
+/* Navigation du dossier — 5 destinations au premier niveau (au lieu de 13 à plat), certaines
+   déroulant un sous-menu au clic. Remplace l'ancien "chemin" à étapes reliées par des traits, qui
+   suggérait à tort une progression séquentielle (voir DossierParcours). */
+.nav-groupes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+.nav-groupe { position: relative; }
+.nav-groupe-bouton {
+  display: inline-flex; align-items: center; gap: 7px;
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  padding: 9px 14px; font-size: 0.85rem; font-weight: 600; color: var(--color-text-light); cursor: pointer;
+  transition: all 0.15s ease;
 }
-.parcours-cercle {
-  width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-  font-size: 0.95rem; border: 2px solid var(--color-border); background: var(--color-surface); transition: all 0.15s ease;
-}
-.parcours-label { font-size: 0.72rem; font-weight: 600; color: var(--color-text-light); white-space: nowrap; }
+.nav-groupe-bouton:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.nav-groupe-bouton.active { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-light); }
+.nav-chevron { font-size: 0.6rem; opacity: 0.7; margin-left: 1px; }
 
-.parcours-etape:hover .parcours-cercle { border-color: var(--color-primary); }
-.parcours-etape.passe .parcours-cercle { border-color: var(--color-primary); background: var(--color-primary-light); }
-.parcours-etape.passe .parcours-label { color: var(--color-primary); }
-.parcours-etape.active .parcours-cercle { border-color: var(--color-primary); background: var(--color-primary); box-shadow: 0 0 0 4px var(--color-primary-light); }
-.parcours-etape.active .parcours-label { color: var(--color-primary); font-weight: 700; }
-
-.parcours-outils { display: flex; align-items: center; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-.parcours-outil {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 999px;
-  padding: 6px 14px; font-size: 0.82rem; font-weight: 600; color: var(--color-text-light); cursor: pointer;
+.nav-menu {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 210px;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
 }
-.parcours-outil:hover { border-color: var(--color-primary); color: var(--color-primary); }
-.parcours-outil.active { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-light); }
+.nav-menu-item {
+  display: flex; align-items: center; gap: 9px; text-align: left; white-space: nowrap;
+  background: none; border: none; border-radius: 8px; padding: 9px 10px;
+  font-size: 0.85rem; font-weight: 600; color: var(--color-text); cursor: pointer;
+}
+.nav-menu-item:hover { background: var(--color-primary-light); color: var(--color-primary); }
+.nav-menu-item.active { color: var(--color-primary); background: var(--color-primary-light); }
 
 .login-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--color-bg); }
 .login-card { width: 100%; max-width: 380px; }
