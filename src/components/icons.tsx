@@ -118,6 +118,15 @@ export const IconLogout = (p: IconProps) => base(<>
   <path d="M18 12H9" />
 </>, p)
 
+// Menu "plus d'options" (réglages secondaires — thème, déconnexion) : trois points verticaux, la
+// convention la plus reconnue pour ce type de menu (Gmail, Android/iOS) — un logo sur lequel taper
+// pour ouvrir un menu ne se devine pas de la même façon.
+export const IconPlusOptions = (p: IconProps) => base(<>
+  <circle cx="12" cy="5.5" r="1.4" fill="currentColor" stroke="none" />
+  <circle cx="12" cy="12" r="1.4" fill="currentColor" stroke="none" />
+  <circle cx="12" cy="18.5" r="1.4" fill="currentColor" stroke="none" />
+</>, p)
+
 export const ICONES_PARCOURS: Record<string, IconComponent> = {
   checklist: IconChecklist,
   documents: IconDocuments,

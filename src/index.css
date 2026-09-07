@@ -179,6 +179,17 @@ tr.clickable:hover { background: var(--color-primary-light); }
   color: #fff; font-weight: 600;
 }
 
+/* Menu "..." (thème + déconnexion) — masqué sur ordinateur où les deux boutons restent visibles
+   directement (voir .sidebar-actions) ; affiché uniquement sur mobile (voir media query), pour
+   désencombrer la barre du haut plutôt que d'avoir 4 éléments serrés à côté de la nav. */
+.sidebar-actions-mobile { display: none; }
+.options-menu {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 190px;
+  display: flex; flex-direction: column; gap: 2px; padding: 6px;
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
 .main { flex: 1; padding: 28px 32px; max-width: 1000px; }
 
 .topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
@@ -396,11 +407,10 @@ tr.clickable:hover { background: var(--color-primary-light); }
   .sidebar .logo { margin: 0 14px 0 0; font-size: 0.95rem; white-space: nowrap; }
   .sidebar nav { flex-direction: row; overflow-x: auto; gap: 4px; }
   .sidebar nav a { white-space: nowrap; }
-  .sidebar-actions { flex-shrink: 0; margin-left: 10px; }
-  /* Le libellé "Déconnexion" ferait déborder la barre à côté du logo + de la nav + du bouton de
-     thème sur un petit écran — bouton icône seule, avec aria-label pour l'accessibilité. */
-  .sidebar-actions .btn-label { display: none; }
-  .sidebar-actions .btn { padding: 8px; }
+  /* Thème + déconnexion repliés dans le menu "..." (voir .options-menu) plutôt que deux boutons en
+     permanence — la barre du haut était surchargée (logo + nav + 2 boutons sur un petit écran). */
+  .sidebar-actions { display: none; }
+  .sidebar-actions-mobile { display: block; position: relative; flex-shrink: 0; margin-left: 10px; }
 
   .main { padding: 16px; max-width: 100%; }
 
