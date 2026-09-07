@@ -140,8 +140,15 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', action: 'Voir les opérations à rapprocher', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
   ]
   const pointsATraiter = tousLesPointsATraiter.filter((p) => p.nb > 0)
-  const nbErreurs = pointsATraiter.filter((p) => p.severite === 'erreur').reduce((s, p) => s + p.nb, 0)
-  const nbAttentions = pointsATraiter.filter((p) => p.severite === 'attention').reduce((s, p) => s + p.nb, 0)
+  // Trois groupes distincts (voir audit ergonomie) plutôt qu'un seul total mélangeant des natures très
+  // différentes ("315 à vérifier" ne dit rien d'actionnable si 312 sont des lignes bancaires courantes
+  // et 3 des vraies erreurs) : paramétrage (config à finir une fois, ne dépend pas du client), travail
+  // courant du cabinet (à traiter au fil de l'eau), documents attendus (dépend du client, voir `items`
+  // plus bas). Un déséquilibre ou une désynchronisation reste plus urgent qu'une case de paramétrage,
+  // d'où la sévérité conservée à l'intérieur du groupe "Travail à effectuer".
+  const IDS_PARAMETRAGE = new Set(['comptes-manquants', 'postes-manquants'])
+  const pointsParametrage = pointsATraiter.filter((p) => IDS_PARAMETRAGE.has(p.id))
+  const pointsTravail = pointsATraiter.filter((p) => !IDS_PARAMETRAGE.has(p.id))
 
   const items: ItemChecklist[] = [
     {
@@ -219,19 +226,19 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const nbManquants = items.filter((i) => !i.ok).length
   const nbOk = items.length - nbManquants
 
-  return (
-    <>
-      {pointsATraiter.length > 0 ? (
-        <div className="card" style={{ marginBottom: 20, borderColor: nbErreurs > 0 ? 'var(--color-danger)' : 'var(--color-warning)' }}>
-          <h3 style={{ marginTop: 0 }}>Points à traiter</h3>
-          <p className="muted" style={{ marginTop: -8 }}>
-            {nbErreurs > 0 && <>{nbErreurs} erreur{nbErreurs > 1 ? 's' : ''} probable{nbErreurs > 1 ? 's' : ''}</>}
-            {nbErreurs > 0 && nbAttentions > 0 && ' — '}
-            {nbAttentions > 0 && <>{nbAttentions} à vérifier</>}
-            {' '}— déjà détecté dans Pièces, Écritures ou Clôture, juste rassemblé ici pour ne pas avoir à visiter chaque onglet.
-          </p>
+  // Bloc "Paramétrage" / "Travail à effectuer" : même présentation pour les deux, un compteur séparé
+  // par groupe plutôt qu'un total unique mélangeant leurs natures (voir audit ergonomie).
+  function blocPoints(titre: string, points: PointATraiter[], texteVide: string) {
+    const nbErreurGroupe = points.filter((p) => p.severite === 'erreur').reduce((s, p) => s + p.nb, 0)
+    const bordure = points.length === 0 ? 'var(--color-primary)' : nbErreurGroupe > 0 ? 'var(--color-danger)' : 'var(--color-warning)'
+    return (
+      <div className="card" style={{ marginBottom: 16, borderColor: bordure }}>
+        <h3 style={{ marginTop: 0 }}>{titre}</h3>
+        {points.length === 0 ? (
+          <p className="muted" style={{ margin: 0 }}>{texteVide}</p>
+        ) : (
           <div className="card" style={{ padding: 0 }}>
-            {pointsATraiter.map((p) => (
+            {points.map((p) => (
               <div key={p.id} className="checklist-item">
                 <span
                   className="pastille"
@@ -249,61 +256,57 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
               </div>
             ))}
           </div>
-        </div>
-      ) : (
-        <div className="card" style={{ marginBottom: 20, borderColor: 'var(--color-primary)' }}>
-          <h3 style={{ marginTop: 0 }}>Points à traiter</h3>
-          <p className="muted" style={{ margin: 0 }}>Rien à signaler pour l'instant — aucune anomalie détectée.</p>
-        </div>
-      )}
-
-      {/* Sans rapport avec "Points à traiter" ci-dessus (qui compte des anomalies) : ceci compte des
-          informations administratives à obtenir du client (relevés, cotisations, pièces de l'année,
-          justificatifs) — deux échelles différentes, précisées explicitement pour ne pas les confondre. */}
-      <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))' }}>
-        <div className={`stat-card ${nbManquants > 0 ? 'stat-warning' : 'stat-ok'}`}>
-          <div className="stat-value">{nbOk}/{items.length}</div>
-          <div className="stat-label">Information(s) reçue(s) du client</div>
-          <div className="progress-track" style={{ marginTop: 10 }}>
-            <div
-              className={`progress-fill ${nbManquants > 0 ? 'warning' : ''}`}
-              style={{ width: `${items.length > 0 ? (nbOk / items.length) * 100 : 100}%` }}
-            />
-          </div>
-        </div>
+        )}
       </div>
-      <p className="muted" style={{ marginTop: -12, marginBottom: 20 }}>
-        Ce qui reste à obtenir du client (relevés, cotisations, pièces, justificatifs) — indicative,
-        vérifie toujours avant de considérer un point comme réglé. Différent des « Points à traiter »
-        ci-dessus, qui sont des anomalies détectées dans les données déjà reçues.
-      </p>
+    )
+  }
 
-      <div className="card" style={{ padding: 0 }}>
-        {items.map((item) => (
-          <div key={item.id} className="checklist-item">
-            <button
-              type="button"
-              onClick={item.onToggle}
-              disabled={!item.onToggle}
-              title={item.onToggle ? 'Cliquer pour marquer comme reçu/non reçu' : undefined}
-              className="pastille"
-              style={{
-                width: 14, height: 14, borderRadius: '50%', border: 'none', flexShrink: 0, padding: 0,
-                background: item.ok ? 'var(--color-primary)' : 'var(--color-danger)',
-                cursor: item.onToggle ? 'pointer' : 'default',
-              }}
-            />
-            <div className="checklist-item-body">
-              <div style={{ fontWeight: 600 }}>{item.label}</div>
-              {item.detail && <div className="muted" style={{ fontSize: '0.82rem' }}>{item.detail}</div>}
+  return (
+    <>
+      {blocPoints('Paramétrage à compléter', pointsParametrage, 'Rien à compléter — comptes et postes 2035 sont renseignés.')}
+      {blocPoints('Travail à effectuer', pointsTravail, 'Rien à signaler pour l\'instant — aucune anomalie détectée.')}
+
+      {/* Troisième bloc : ce qui dépend du client (documents), pas du cabinet — sur une échelle
+          différente des deux blocs ci-dessus (des anomalies internes), d'où la séparation nette plutôt
+          qu'un total combiné. */}
+      <div className="card" style={{ marginBottom: 16, borderColor: nbManquants > 0 ? 'var(--color-warning)' : 'var(--color-primary)' }}>
+        <h3 style={{ marginTop: 0 }}>Documents attendus</h3>
+        <p className="muted" style={{ marginTop: -8, marginBottom: 14 }}>
+          {nbOk}/{items.length} reçu(s) — ce que le dossier attend du client, à ne pas confondre avec le travail interne ci-dessus.
+        </p>
+        <div className="progress-track" style={{ marginBottom: 14 }}>
+          <div
+            className={`progress-fill ${nbManquants > 0 ? 'warning' : ''}`}
+            style={{ width: `${items.length > 0 ? (nbOk / items.length) * 100 : 100}%` }}
+          />
+        </div>
+        <div className="card" style={{ padding: 0 }}>
+          {items.map((item) => (
+            <div key={item.id} className="checklist-item">
+              <button
+                type="button"
+                onClick={item.onToggle}
+                disabled={!item.onToggle}
+                title={item.onToggle ? 'Cliquer pour marquer comme reçu/non reçu' : undefined}
+                className="pastille"
+                style={{
+                  width: 14, height: 14, borderRadius: '50%', border: 'none', flexShrink: 0, padding: 0,
+                  background: item.ok ? 'var(--color-primary)' : 'var(--color-danger)',
+                  cursor: item.onToggle ? 'pointer' : 'default',
+                }}
+              />
+              <div className="checklist-item-body">
+                <div style={{ fontWeight: 600 }}>{item.label}</div>
+                {item.detail && <div className="muted" style={{ fontSize: '0.82rem' }}>{item.detail}</div>}
+              </div>
+              {item.cible && !item.ok && (
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(item.cible!)}>
+                  {item.action ?? 'Voir'}
+                </button>
+              )}
             </div>
-            {item.cible && !item.ok && (
-              <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(item.cible!)}>
-                {item.action ?? 'Voir'}
-              </button>
-            )}
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </>
   )

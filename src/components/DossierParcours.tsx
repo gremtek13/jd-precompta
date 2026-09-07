@@ -27,7 +27,7 @@ interface Etape {
 // "parcourue" — un repère de navigation, pas un statut d'avancement réel (les pièces/le rapprochement
 // continuent d'arriver toute l'année, rien n'est jamais vraiment "terminé" avant la clôture).
 const ETAPES: Etape[] = [
-  { id: 'checklist', label: 'Checklist' },
+  { id: 'checklist', label: "Vue d'ensemble" },
   { id: 'documents', label: 'Documents' },
   { id: 'pieces', label: 'Pièces' },
   { id: 'banque', label: 'Banque' },
