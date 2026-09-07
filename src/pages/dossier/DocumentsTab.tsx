@@ -271,7 +271,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                   </td>
                   <td className="hide-mobile">{sousDossierLabel(d.sous_dossier_id)}</td>
                   <td className="hide-mobile">{formatDate(d.created_at)}</td>
-                  <td style={{ display: 'flex', gap: 6 }} onClick={(e) => e.stopPropagation()}>
+                  <td className="td-actions" onClick={(e) => e.stopPropagation()}>
                     <button className="btn btn-outline btn-sm" onClick={() => convertirEnPiece(d)}>C'est une facture</button>
                     <button className="btn btn-danger btn-sm" onClick={() => supprimer(d)}>Supprimer</button>
                   </td>

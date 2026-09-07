@@ -126,6 +126,11 @@ tbody tr:hover { background: var(--color-bg); }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover { background: var(--color-primary-light); }
 
+/* Cellule d'actions (plusieurs boutons dans une même colonne, ex. DocumentsTab) — en ligne sur
+   ordinateur où la place ne manque pas ; empilée verticalement sur mobile (voir media query), sinon
+   des boutons pleine largeur forcée dans une colonne étroite font éclater leur texte mot par mot. */
+.td-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+
 .app-shell { display: flex; min-height: 100vh; }
 .sidebar {
   width: 224px;
@@ -380,6 +385,10 @@ tr.clickable:hover { background: var(--color-primary-light); }
   /* Case à cocher (Pièces, Documents) : une largeur fixe étroite plutôt qu'une part égale des
      colonnes, pour laisser le plus de place possible au tiers (texte variable, souvent le plus long). */
   th.col-checkbox, td.col-checkbox { width: 26px; padding-right: 0; }
+  /* Boutons d'action (DocumentsTab) empilés plutôt que côte à côte — sinon, forcés dans une colonne
+     étroite par table-layout:fixed, leur texte éclatait mot par mot ("C'es / t / une / fact / ure"). */
+  .td-actions { flex-direction: column; align-items: stretch; }
+  .td-actions .btn { width: 100%; }
 
   /* Colonnes secondaires (Catégorie, Sous-dossier, Confiance, dates d'ajout...) masquées sur mobile
      plutôt que forcer un défilement latéral de toute la page pour les voir — l'essentiel (tiers,
