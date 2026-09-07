@@ -99,21 +99,20 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
     }
   }
 
+  // Mise en page "chat" à hauteur pleine (remplit le panneau flottant qui l'héberge, voir
+  // AssistantFlottant) : seule la zone de messages défile, le champ de saisie reste toujours visible
+  // en bas — jamais toute la conversation qui défile en bloc, ce qui pousserait le champ hors écran
+  // sur mobile (bug initial : le contenu débordait carrément du panneau, non contenu du tout).
   return (
-    <>
-      <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Répond uniquement à partir des données déjà présentes dans ce dossier — ne modifie jamais
-        rien, ne peut pas accéder à un autre dossier. Vérifie toujours un chiffre important avant de
-        le communiquer.
-      </p>
-
-      <div className="card" style={{ padding: 0, marginBottom: 12, minHeight: 240 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div className="card table-scroll" style={{ padding: 0, flex: 1, minHeight: 0, overflowY: 'auto', marginBottom: 10 }}>
         {chargement ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : messages.length === 0 ? (
           <div className="empty-state">
-            Pose une question, par exemple « Pourquoi le compte 6251 a-t-il augmenté cette année ? »
-            ou « Quelles sont les anomalies de ce dossier ? ».
+            Répond uniquement à partir des données déjà présentes dans ce dossier — ne modifie jamais
+            rien. Pose une question, par exemple « Pourquoi le compte 6251 a-t-il augmenté cette
+            année ? » ou « Quelles sont les anomalies de ce dossier ? ».
           </div>
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16 }}>
@@ -125,7 +124,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
                     padding: '10px 14px',
                     borderRadius: 10,
                     whiteSpace: 'pre-wrap',
-                    background: m.role === 'user' ? 'var(--color-primary)' : 'var(--surface-2, #f4f4f4)',
+                    background: m.role === 'user' ? 'var(--color-primary)' : 'var(--color-bg)',
                     color: m.role === 'user' ? '#fff' : 'inherit',
                   }}
                 >
@@ -143,10 +142,10 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
         )}
       </div>
 
-      {error && <p className="error-text">{error}</p>}
+      {error && <p className="error-text" style={{ flexShrink: 0 }}>{error}</p>}
 
-      <form onSubmit={envoyer} className="field-row" style={{ alignItems: 'flex-end' }}>
-        <div className="field" style={{ flex: 1 }}>
+      <form onSubmit={envoyer} style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="field" style={{ margin: 0 }}>
           <textarea
             aria-label="Question"
             ref={zoneRef}
@@ -158,20 +157,22 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
             disabled={loading}
           />
         </div>
-        <button className="btn btn-primary" type="submit" disabled={loading || !input.trim()}>
-          {loading ? 'Envoi…' : 'Envoyer'}
-        </button>
-        {messages.length > 0 && (
-          <button
-            type="button"
-            className="btn btn-outline"
-            disabled={loading}
-            onClick={nouvelleConversation}
-          >
-            Nouvelle conversation
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button className="btn btn-primary" type="submit" disabled={loading || !input.trim()} style={{ flex: 1 }}>
+            {loading ? 'Envoi…' : 'Envoyer'}
           </button>
-        )}
+          {messages.length > 0 && (
+            <button
+              type="button"
+              className="btn btn-outline"
+              disabled={loading}
+              onClick={nouvelleConversation}
+            >
+              Nouvelle conversation
+            </button>
+          )}
+        </div>
       </form>
-    </>
+    </div>
   )
 }

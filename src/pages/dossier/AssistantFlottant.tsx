@@ -26,7 +26,7 @@ export default function AssistantFlottant({ dossierId }: { dossierId: string }) 
               ✕
             </button>
           </div>
-          <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+          <div style={{ flex: 1, minHeight: 0 }}>
             <AssistantTab dossierId={dossierId} />
           </div>
         </div>
@@ -54,7 +54,15 @@ const boutonStyle: CSSProperties = {
 
 const panneauStyle: CSSProperties = {
   position: 'fixed', bottom: 88, right: 24, zIndex: 45,
-  width: 'min(420px, 92vw)', height: 'min(600px, 75vh)',
+  width: 'min(420px, 92vw)',
+  // dvh (hauteur de viewport "dynamique") plutôt que vh : sur mobile, vh compte la fenêtre comme si la
+  // barre d'adresse était toujours masquée, ce qui pouvait faire déborder le panneau de l'écran visible
+  // réel (c'est ce qui rendait le contenu "flottant" par-dessus la page sur la capture envoyée).
+  height: 'min(600px, 75dvh)',
   display: 'flex', flexDirection: 'column',
+  // Rustine défensive indispensable : sans ça, un contenu plus haut que prévu déborde du panneau au
+  // lieu d'être coupé/scrollable — exactement le bug observé (texte et boutons visibles par-dessus le
+  // reste de la page, sans fond).
+  overflow: 'hidden',
   boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
 }
