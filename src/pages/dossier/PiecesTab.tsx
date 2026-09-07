@@ -241,10 +241,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                 <th></th>
                 <th>Date</th>
                 <th>Tiers</th>
-                <th>Catégorie</th>
-                <th>Sous-dossier</th>
+                <th className="hide-mobile">Catégorie</th>
+                <th className="hide-mobile">Sous-dossier</th>
                 <th>Montant TTC</th>
-                <th>Confiance</th>
+                <th className="hide-mobile">Confiance</th>
                 <th>Statut</th>
               </tr>
             </thead>
@@ -256,16 +256,16 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                   </td>
                   <td onClick={() => setEditing(p)}>{formatDate(p.date_piece)}</td>
                   <td onClick={() => setEditing(p)}>{p.tiers ?? '—'}</td>
-                  <td onClick={() => setEditing(p)}>
+                  <td className="hide-mobile" onClick={() => setEditing(p)}>
                     {p.categorie_id ? (
                       categorieLabel(p.categorie_id)
                     ) : suggestionPour(p) ? (
                       <>— <span className="muted" style={{ fontSize: '0.8rem' }}>(suggéré : {categorieLabel(suggestionPour(p))})</span></>
                     ) : '—'}
                   </td>
-                  <td onClick={() => setEditing(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
+                  <td className="hide-mobile" onClick={() => setEditing(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
                   <td onClick={() => setEditing(p)}>{formatMoney(p.montant_ttc)}</td>
-                  <td onClick={() => setEditing(p)}>
+                  <td className="hide-mobile" onClick={() => setEditing(p)}>
                     {p.confiance === 'basse' && <span className="badge badge-danger">Basse — à vérifier</span>}
                     {p.confiance === 'moyenne' && <span className="badge badge-warning">Moyenne</span>}
                     {p.confiance === 'haute' && <span className="badge badge-ok">Haute</span>}

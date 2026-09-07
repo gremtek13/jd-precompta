@@ -373,6 +373,12 @@ tr.clickable:hover { background: var(--color-primary-light); }
   table { font-size: 0.85rem; }
   th, td { padding: 8px 6px; }
 
+  /* Colonnes secondaires (Catégorie, Sous-dossier, Confiance, dates d'ajout...) masquées sur mobile
+     plutôt que forcer un défilement latéral de toute la page pour les voir — l'essentiel (tiers,
+     montant, statut) reste visible d'un coup ; le détail complet reste consultable en ouvrant la
+     ligne (voir PiecesTab, DocumentsTab). */
+  .hide-mobile { display: none; }
+
   .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .stat-card { padding: 12px 14px; }
   .stat-card .stat-value { font-size: 1.5rem; }
@@ -383,18 +389,8 @@ tr.clickable:hover { background: var(--color-primary-light); }
   .checklist-item .checklist-item-body { flex-basis: 100%; }
   .checklist-item .btn { margin-left: 26px; }
 
-  /* Navigation du dossier (Documents/Pièces/Banque...) : en rangée de pastilles, ça ne tenait pas sur
-     un écran de téléphone — obligeait à décaler la page tout entière en latéral pour voir les
-     boutons qui débordaient, et le sous-menu (position absolue) pouvait déborder de l'écran plutôt
-     que de rester visible. Empilée en une colonne pleine largeur à la place, chaque bouton lisible
-     d'un coup ; le sous-menu s'ouvre dans le flux normal (juste en dessous), plus jamais en position
-     flottante qui risquerait de sortir de l'écran. */
-  .nav-groupes { flex-direction: column; align-items: stretch; gap: 6px; }
-  .nav-groupe-bouton { width: 100%; justify-content: space-between; }
-  .nav-menu {
-    position: static; width: 100%; margin-top: 4px;
-    box-shadow: none; border-color: var(--color-border);
-  }
-
   .mini-progress { width: 46px; }
+
+  /* Le vrai débordement latéral sur mobile venait des tableaux (Pièces, Documents, Banque...), pas de
+     la navigation du dossier — colonnes secondaires masquées ci-dessous, voir plus bas. */
 }
