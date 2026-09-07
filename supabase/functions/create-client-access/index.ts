@@ -56,24 +56,6 @@ Deno.serve(async (req: Request) => {
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
 
-  // "cabinet_id" (pas juste l'appartenance à cabinet_admins) : depuis l'introduction du multi-cabinet,
-  // c'est LE contrôle qui empêche l'admin d'un cabinet de donner un accès client à un dossier d'un
-  // autre cabinet — sans ça, cette fonction (clé de service, contourne RLS) serait le seul endroit de
-  // toute l'appli où l'étanchéité entre cabinets ne serait pas garantie.
-  const { data: adminRow } = await supabaseAdmin
-    .from("cabinet_admins")
-    .select("cabinet_id")
-    .eq("user_id", callerData.user.id)
-    .maybeSingle()
-  const { data: superAdminRow } = await supabaseAdmin
-    .from("super_admins")
-    .select("user_id")
-    .eq("user_id", callerData.user.id)
-    .maybeSingle()
-  if (!adminRow && !superAdminRow) {
-    return json({ error: "Réservé au cabinet." }, 403)
-  }
-
   let payload: { dossierId?: string; email?: string; password?: string }
   try {
     payload = await req.json()
@@ -87,8 +69,13 @@ Deno.serve(async (req: Request) => {
     return json({ error: "dossierId, email et password sont requis." }, 400)
   }
 
-  const { data: dossierRow } = await supabaseAdmin.from("dossiers").select("cabinet_id").eq("id", dossierId).maybeSingle()
-  if (!dossierRow || (!superAdminRow && dossierRow.cabinet_id !== adminRow?.cabinet_id)) {
+  // Un seul appel, avec le JWT de l'appelant : réutilise exactement la même fonction que les règles de
+  // sécurité de la base (voir migration hiérarchie_comptables) — c'est LE contrôle qui empêche de donner
+  // un accès client à un dossier hors de son cabinet (ou, pour un simple comptable, hors des dossiers
+  // qui lui sont assignés) — sans ça, cette fonction (clé de service, contourne RLS) serait le seul
+  // endroit de toute l'appli où cette règle ne serait pas garantie.
+  const { data: aAcces } = await supabaseAsCaller.rpc("admin_du_dossier", { p_dossier_id: dossierId })
+  if (!aAcces) {
     return json({ error: "Dossier introuvable." }, 404)
   }
   // Le formulaire (AccesTab) a bien minLength={10}, mais un attribut HTML se contourne facilement —

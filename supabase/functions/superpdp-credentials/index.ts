@@ -52,24 +52,6 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
-  // "cabinet_id" (pas juste l'appartenance à cabinet_admins) : depuis l'introduction du multi-cabinet,
-  // être admin ne suffit pas — encore faut-il être admin DU cabinet propriétaire de ce dossier précis
-  // (ou super-admin). Sans cette seconde vérification, l'admin d'un cabinet pourrait configurer les
-  // identifiants Super PDP d'un dossier appartenant à un autre cabinet.
-  const { data: adminRow } = await admin
-    .from("cabinet_admins")
-    .select("cabinet_id")
-    .eq("user_id", callerData.user.id)
-    .maybeSingle()
-  const { data: superAdminRow } = await admin
-    .from("super_admins")
-    .select("user_id")
-    .eq("user_id", callerData.user.id)
-    .maybeSingle()
-  if (!adminRow && !superAdminRow) {
-    return json({ error: "Réservé au cabinet." }, 403)
-  }
-
   let payload: { dossierId?: string; action?: string; client_id?: string; client_secret?: string }
   try {
     payload = await req.json()
@@ -82,8 +64,11 @@ Deno.serve(async (req: Request) => {
     return json({ error: "dossierId est requis." }, 400)
   }
 
-  const { data: dossierRow } = await admin.from("dossiers").select("cabinet_id").eq("id", dossierId).maybeSingle()
-  if (!dossierRow || (!superAdminRow && dossierRow.cabinet_id !== adminRow?.cabinet_id)) {
+  // Un seul appel, avec le JWT de l'appelant : réutilise exactement la même fonction que les règles de
+  // sécurité de la base (voir migration hiérarchie_comptables) — super-admin, chef de cabinet ou
+  // comptable simple assigné à ce dossier précisément.
+  const { data: aAcces } = await supabaseAsCaller.rpc("admin_du_dossier", { p_dossier_id: dossierId })
+  if (!aAcces) {
     return json({ error: "Dossier introuvable." }, 404)
   }
 

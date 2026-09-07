@@ -344,23 +344,6 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
-  // "cabinet_id" (pas juste l'appartenance à cabinet_admins) : depuis l'introduction du multi-cabinet,
-  // un admin ne doit pouvoir interroger l'agent que sur les dossiers de son propre cabinet (super-admin
-  // excepté) — vérifié plus bas une fois le dossier chargé, en comparant son cabinet_id au sien.
-  const { data: adminRow } = await admin
-    .from("cabinet_admins")
-    .select("cabinet_id")
-    .eq("user_id", callerData.user.id)
-    .maybeSingle()
-  const { data: superAdminRow } = await admin
-    .from("super_admins")
-    .select("user_id")
-    .eq("user_id", callerData.user.id)
-    .maybeSingle()
-  if (!adminRow && !superAdminRow) {
-    return json({ error: "Réservé au cabinet." }, 403)
-  }
-
   let payload: { dossierId?: string; message?: string; historique?: unknown }
   try {
     payload = await req.json()
@@ -374,12 +357,21 @@ Deno.serve(async (req: Request) => {
     return json({ error: "dossierId et message sont requis." }, 400)
   }
 
+  // Un seul appel, avec le JWT de l'appelant (pas la clé de service) : réutilise exactement la même
+  // fonction que les règles de sécurité de la base (voir migration hiérarchie_comptables) — super-admin,
+  // chef de cabinet (accès à tout son cabinet) ou comptable simple (seulement ses dossiers assignés).
+  // Une seule source de vérité, correcte même si ce modèle évolue encore.
+  const { data: aAcces } = await supabaseAsCaller.rpc("admin_du_dossier", { p_dossier_id: dossierId })
+  if (!aAcces) {
+    return json({ error: "Dossier introuvable." }, 404)
+  }
+
   const { data: dossierRow, error: dossierError } = await admin
     .from("dossiers")
-    .select("nom, assujetti_tva, cabinet_id")
+    .select("nom, assujetti_tva")
     .eq("id", dossierId)
     .single()
-  if (dossierError || !dossierRow || (!superAdminRow && dossierRow.cabinet_id !== adminRow?.cabinet_id)) {
+  if (dossierError || !dossierRow) {
     return json({ error: "Dossier introuvable." }, 404)
   }
 
