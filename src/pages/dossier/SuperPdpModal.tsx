@@ -91,9 +91,10 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
       <div className="card" style={{ width: 'min(560px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 style={{ marginTop: 0 }}>Facturation électronique — Super PDP</h2>
         <p className="muted" style={{ marginTop: -8 }}>
-          Récupère automatiquement les factures fournisseurs reçues par ce dossier via Super PDP
-          (plateforme agréée DGFiP). Chaque facture importée arrive en Pièces avec le statut « à
-          valider », comme un import classique — rien n'est jamais validé automatiquement.
+          Récupère automatiquement les factures de ce dossier via Super PDP (plateforme agréée
+          DGFiP) : reçues (achats) comme émises (ventes). Chaque facture importée arrive en Pièces
+          avec le statut « à valider », comme un import classique — rien n'est jamais validé
+          automatiquement.
         </p>
 
         {statut === null && !error && <p className="muted">Vérification…</p>}

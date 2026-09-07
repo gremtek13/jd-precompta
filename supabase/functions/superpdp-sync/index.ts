@@ -1,7 +1,8 @@
-// Edge Function : synchronisation des factures reçues via Super PDP (plateforme de dématérialisation
-// partenaire agréée DGFiP, https://www.superpdp.tech) — brique "réception" de la facturation
-// électronique. L'émission (factures de vente) n'est pas traitée : aucun dossier actuel n'émet de
-// facture électronique, seuls des achats sont concernés pour l'instant (voir discussion).
+// Edge Function : synchronisation des factures (reçues ET émises) via Super PDP (plateforme de
+// dématérialisation partenaire agréée DGFiP, https://www.superpdp.tech). Aucun dossier n'émet
+// actuellement de facture de vente électronique — en pratique cette synchro ne remonte donc pour
+// l'instant que des achats — mais les deux sens sont gérés dès maintenant : l'expert-comptable en
+// aura besoin dès qu'un dossier facturera via une PDP, pas seulement pour la réception.
 //
 // Fonctionnement : Super PDP normalise n'importe quel format reçu (Factur-X, UBL, CII...) en une
 // structure unique "en_invoice" (norme EN16931) — on n'a donc jamais besoin de parser un PDF ou un
@@ -75,11 +76,11 @@ async function obtenirToken(clientId: string, clientSecret: string): Promise<str
 // Résumé texte lisible d'une facture EN16931 — sert de document attaché à la pièce en l'absence
 // d'accès au fichier original (voir note en tête de fichier). Volontairement simple, pas un vrai
 // rendu de facture : juste de quoi identifier le document sans ambiguïté à l'ouverture.
-function resumeTexteFacture(inv: EnInvoice, invoiceId: number): string {
+function resumeTexteFacture(inv: EnInvoice, invoiceId: number, direction: "in" | "out"): string {
   const lignes = (inv.lines ?? [])
     .map((l) => `  - ${l.item_information?.name ?? "(sans libellé)"} : ${l.net_amount ?? "?"} € HT`)
     .join("\n")
-  return `Facture reçue via Super PDP (id ${invoiceId})
+  return `Facture ${direction === "in" ? "reçue" : "émise"} via Super PDP (id ${invoiceId})
 Numéro : ${inv.number}
 Date d'émission : ${inv.issue_date}
 Fournisseur : ${inv.seller?.name ?? "?"}
@@ -171,9 +172,8 @@ Deno.serve(async (req: Request) => {
       apres = data[data.length - 1].id
     }
 
-    // Uniquement les factures reçues (direction "in") — l'émission n'est pas traitée par cette
-    // synchronisation (voir note en tête de fichier).
-    const recues = invoices.filter((i) => i.direction === "in").slice(0, MAX_FACTURES_PAR_SYNC)
+    // Les deux sens : "in" (reçue → achat) et "out" (émise → vente) — voir note en tête de fichier.
+    const factures = invoices.slice(0, MAX_FACTURES_PAR_SYNC)
 
     const { data: dejaImportees } = await admin
       .from("pieces")
@@ -182,7 +182,7 @@ Deno.serve(async (req: Request) => {
       .not("superpdp_invoice_id", "is", null)
     const idsConnus = new Set(((dejaImportees ?? []) as { superpdp_invoice_id: number }[]).map((p) => p.superpdp_invoice_id))
 
-    const aTraiter = recues.filter((i) => !idsConnus.has(i.id))
+    const aTraiter = factures.filter((i) => !idsConnus.has(i.id))
 
     let importees = 0
     let enAttenteTraitement = 0
@@ -204,8 +204,12 @@ Deno.serve(async (req: Request) => {
         }
 
         const inv = detail.en_invoice
-        const texte = resumeTexteFacture(inv, item.id)
-        const nomFichier = `Facture Super PDP ${inv.number || item.id} - ${inv.seller?.name ?? "fournisseur inconnu"}.txt`
+        // Achat (reçue) : le tiers est le fournisseur (seller). Vente (émise) : le tiers est le
+        // client facturé (buyer) — comme pour une pièce de vente saisie normalement.
+        const estAchat = item.direction === "in"
+        const tiers = estAchat ? inv.seller?.name : inv.buyer?.name
+        const texte = resumeTexteFacture(inv, item.id, item.direction)
+        const nomFichier = `Facture Super PDP ${inv.number || item.id} - ${tiers ?? "tiers inconnu"}.txt`
         const path = `${dossierId}/superpdp-${item.id}.txt`
         const { error: uploadError } = await admin.storage.from("pieces").upload(path, new Blob([texte], { type: "text/plain" }), { upsert: true })
         if (uploadError) {
@@ -219,10 +223,10 @@ Deno.serve(async (req: Request) => {
           storage_path: path,
           nom_fichier: nomFichier,
           superpdp_invoice_id: item.id,
-          type_piece: "achat",
+          type_piece: estAchat ? "achat" : "vente",
           statut: "a_valider",
           date_piece: inv.issue_date || null,
-          tiers: inv.seller?.name || null,
+          tiers: tiers || null,
           montant_ht: inv.totals?.total_without_vat ? Number(inv.totals.total_without_vat) : null,
           montant_tva: inv.totals?.total_vat_amount?.value ? Number(inv.totals.total_vat_amount.value) : null,
           montant_ttc: inv.totals?.total_with_vat ? Number(inv.totals.total_with_vat) : null,
@@ -240,7 +244,7 @@ Deno.serve(async (req: Request) => {
 
     return json({
       importees,
-      deja_connues: recues.length - aTraiter.length,
+      deja_connues: factures.length - aTraiter.length,
       en_attente_traitement: enAttenteTraitement,
       erreurs,
     })
