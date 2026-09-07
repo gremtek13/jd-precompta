@@ -56,12 +56,21 @@ Deno.serve(async (req: Request) => {
 
   const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey)
 
+  // "cabinet_id" (pas juste l'appartenance à cabinet_admins) : depuis l'introduction du multi-cabinet,
+  // c'est LE contrôle qui empêche l'admin d'un cabinet de donner un accès client à un dossier d'un
+  // autre cabinet — sans ça, cette fonction (clé de service, contourne RLS) serait le seul endroit de
+  // toute l'appli où l'étanchéité entre cabinets ne serait pas garantie.
   const { data: adminRow } = await supabaseAdmin
     .from("cabinet_admins")
+    .select("cabinet_id")
+    .eq("user_id", callerData.user.id)
+    .maybeSingle()
+  const { data: superAdminRow } = await supabaseAdmin
+    .from("super_admins")
     .select("user_id")
     .eq("user_id", callerData.user.id)
     .maybeSingle()
-  if (!adminRow) {
+  if (!adminRow && !superAdminRow) {
     return json({ error: "Réservé au cabinet." }, 403)
   }
 
@@ -76,6 +85,11 @@ Deno.serve(async (req: Request) => {
   const password = payload.password
   if (!dossierId || !email || !password) {
     return json({ error: "dossierId, email et password sont requis." }, 400)
+  }
+
+  const { data: dossierRow } = await supabaseAdmin.from("dossiers").select("cabinet_id").eq("id", dossierId).maybeSingle()
+  if (!dossierRow || (!superAdminRow && dossierRow.cabinet_id !== adminRow?.cabinet_id)) {
+    return json({ error: "Dossier introuvable." }, 404)
   }
   // Le formulaire (AccesTab) a bien minLength={10}, mais un attribut HTML se contourne facilement —
   // seule cette vérification côté serveur est une vraie garantie, ici l'unique point d'entrée pour

@@ -122,12 +122,19 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
+  // Voir superpdp-credentials : "cabinet_id" (pas juste cabinet_admins) — un admin ne doit pouvoir
+  // synchroniser que les dossiers de son propre cabinet, super-admin excepté.
   const { data: adminRow } = await admin
     .from("cabinet_admins")
+    .select("cabinet_id")
+    .eq("user_id", callerData.user.id)
+    .maybeSingle()
+  const { data: superAdminRow } = await admin
+    .from("super_admins")
     .select("user_id")
     .eq("user_id", callerData.user.id)
     .maybeSingle()
-  if (!adminRow) {
+  if (!adminRow && !superAdminRow) {
     return json({ error: "Réservé au cabinet." }, 403)
   }
 
@@ -140,6 +147,11 @@ Deno.serve(async (req: Request) => {
   const dossierId = payload.dossierId?.trim()
   if (!dossierId) {
     return json({ error: "dossierId est requis." }, 400)
+  }
+
+  const { data: dossierCabinet } = await admin.from("dossiers").select("cabinet_id").eq("id", dossierId).maybeSingle()
+  if (!dossierCabinet || (!superAdminRow && dossierCabinet.cabinet_id !== adminRow?.cabinet_id)) {
+    return json({ error: "Dossier introuvable." }, 404)
   }
 
   const { data: creds } = await admin

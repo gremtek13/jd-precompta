@@ -52,12 +52,21 @@ Deno.serve(async (req: Request) => {
 
   const admin = createClient(supabaseUrl, serviceRoleKey)
 
+  // "cabinet_id" (pas juste l'appartenance à cabinet_admins) : depuis l'introduction du multi-cabinet,
+  // être admin ne suffit pas — encore faut-il être admin DU cabinet propriétaire de ce dossier précis
+  // (ou super-admin). Sans cette seconde vérification, l'admin d'un cabinet pourrait configurer les
+  // identifiants Super PDP d'un dossier appartenant à un autre cabinet.
   const { data: adminRow } = await admin
     .from("cabinet_admins")
+    .select("cabinet_id")
+    .eq("user_id", callerData.user.id)
+    .maybeSingle()
+  const { data: superAdminRow } = await admin
+    .from("super_admins")
     .select("user_id")
     .eq("user_id", callerData.user.id)
     .maybeSingle()
-  if (!adminRow) {
+  if (!adminRow && !superAdminRow) {
     return json({ error: "Réservé au cabinet." }, 403)
   }
 
@@ -71,6 +80,11 @@ Deno.serve(async (req: Request) => {
   const dossierId = payload.dossierId?.trim()
   if (!dossierId) {
     return json({ error: "dossierId est requis." }, 400)
+  }
+
+  const { data: dossierRow } = await admin.from("dossiers").select("cabinet_id").eq("id", dossierId).maybeSingle()
+  if (!dossierRow || (!superAdminRow && dossierRow.cabinet_id !== adminRow?.cabinet_id)) {
+    return json({ error: "Dossier introuvable." }, 404)
   }
 
   if (payload.action === "status") {
