@@ -238,7 +238,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           <table>
             <thead>
               <tr>
-                <th></th>
+                <th className="col-checkbox"></th>
                 <th>Date</th>
                 <th>Tiers</th>
                 <th className="hide-mobile">Catégorie</th>
@@ -251,7 +251,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
             <tbody>
               {filtered.map((p) => (
                 <tr key={p.id} className="clickable">
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
                   </td>
                   <td onClick={() => setEditing(p)}>{formatDate(p.date_piece)}</td>

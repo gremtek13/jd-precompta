@@ -239,7 +239,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           <table>
             <thead>
               <tr>
-                <th></th>
+                <th className="col-checkbox"></th>
                 <th>Fichier</th>
                 <th>Catégorie</th>
                 <th className="hide-mobile">Sous-dossier</th>
@@ -250,7 +250,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
             <tbody>
               {filtered.map((d) => (
                 <tr key={d.id}>
-                  <td onClick={(e) => e.stopPropagation()}>
+                  <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} />
                   </td>
                   <td>
