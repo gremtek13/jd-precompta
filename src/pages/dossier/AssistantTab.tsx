@@ -1,51 +1,99 @@
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
-import type { AgentConversation } from '../../lib/types'
+import { formatDate } from '../../lib/format'
 
-interface Message {
+interface MessageBrut {
+  conversation_id: string
   role: 'user' | 'assistant'
   texte: string
-  outils?: string[]
+  outils_utilises: string[] | null
+  created_at: string
 }
 
 // Assistant conversationnel en lecture seule sur ce dossier (voir supabase/functions/agent-comptable) :
 // répond à des questions ("Pourquoi le compte 6251 a augmenté ?", "Quelles sont les anomalies ?") en
 // interrogeant les données déjà en base via des outils contrôlés, jamais en écrivant quoi que ce soit.
 // Historique persisté dans agent_conversations, partagé entre tous les admins du cabinet pour ce
-// dossier (comme le reste de l'appli — le cabinet est un seul acteur) : changer d'onglet ou
-// recharger la page ne perd plus la conversation.
+// dossier (comme le reste de l'appli — le cabinet est un seul acteur) : changer d'onglet ou recharger
+// la page ne perd plus la conversation.
+//
+// Plusieurs conversations distinctes par dossier (voir conversation_id, migration
+// agent_conversations_threads) — "Nouvelle conversation" ouvrait auparavant un fil vide en effaçant
+// définitivement l'ancien, partagé avec tout le cabinet, sans confirmation (voir audit ergonomie).
+// Elle se contente maintenant de générer un nouvel identifiant de fil localement : rien n'est
+// supprimé, les anciennes conversations restent consultables depuis le menu "Conversations". Seule
+// une suppression explicite (bouton "×" sur un fil précis, avec confirmation) efface pour de bon.
 export default function AssistantTab({ dossierId }: { dossierId: string }) {
   const { session } = useAuth()
-  const [messages, setMessages] = useState<Message[]>([])
+  const [tous, setTous] = useState<MessageBrut[]>([])
+  const [conversationId, setConversationId] = useState<string | null>(null)
   const [chargement, setChargement] = useState(true)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
   const zoneRef = useRef<HTMLTextAreaElement>(null)
+  const historiqueRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function surClicExterieur(e: MouseEvent) {
+      if (historiqueRef.current && !historiqueRef.current.contains(e.target as Node)) setHistoriqueOuvert(false)
+    }
+    document.addEventListener('mousedown', surClicExterieur)
+    return () => document.removeEventListener('mousedown', surClicExterieur)
+  }, [])
 
   async function charger() {
     setChargement(true)
     const { data } = await supabase
       .from('agent_conversations')
-      .select('role, texte, outils_utilises')
+      .select('conversation_id, role, texte, outils_utilises, created_at')
       .eq('dossier_id', dossierId)
       .order('created_at', { ascending: true })
-    setMessages((data ?? []).map((r: Pick<AgentConversation, 'role' | 'texte' | 'outils_utilises'>) => ({
-      role: r.role,
-      texte: r.texte,
-      outils: r.outils_utilises ?? undefined,
-    })))
+    const lignes = data ?? []
+    setTous(lignes)
+    // Seulement au tout premier chargement (conversationId encore null) : ouvre le fil le plus récent
+    // s'il y en a un, sinon un fil neuf — un rechargement après l'envoi d'un message ne doit pas
+    // changer le fil affiché.
+    setConversationId((actuel) => actuel ?? (lignes.length > 0 ? lignes[lignes.length - 1].conversation_id : crypto.randomUUID()))
     setChargement(false)
   }
 
-  useEffect(() => { charger() }, [dossierId])
+  useEffect(() => {
+    setConversationId(null) // force charger() à retomber sur le fil le plus récent de ce dossier
+    charger()
+  }, [dossierId])
+
+  // Un fil par conversation_id, le plus récent en premier — regroupé côté client à partir de la même
+  // liste déjà chargée (pas de requête séparée) : le volume par dossier reste modeste, comme pour les
+  // lignes bancaires ou les pièces ailleurs dans l'appli.
+  const threads = useMemo(() => {
+    const parConversation = new Map<string, MessageBrut[]>()
+    for (const m of tous) {
+      const arr = parConversation.get(m.conversation_id) ?? []
+      arr.push(m)
+      parConversation.set(m.conversation_id, arr)
+    }
+    return [...parConversation.entries()]
+      .map(([id, msgs]) => ({
+        id,
+        debut: msgs[0].created_at,
+        nbMessages: msgs.length,
+        premierMessage: msgs.find((m) => m.role === 'user')?.texte ?? msgs[0].texte,
+      }))
+      .sort((a, b) => new Date(b.debut).getTime() - new Date(a.debut).getTime())
+  }, [tous])
+
+  const messages = tous.filter((m) => m.conversation_id === conversationId)
 
   // Best-effort : un échec d'enregistrement de l'historique ne doit jamais casser la conversation
   // elle-même, seulement priver cette ligne de persistance (rare, et sans conséquence grave).
   async function enregistrer(role: 'user' | 'assistant', texte: string, outils?: string[]) {
+    if (!conversationId) return
     await supabase.from('agent_conversations').insert({
       dossier_id: dossierId,
+      conversation_id: conversationId,
       role,
       texte,
       outils_utilises: outils ?? null,
@@ -56,13 +104,12 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
   async function envoyer(e: FormEvent) {
     e.preventDefault()
     const texte = input.trim()
-    if (!texte || loading) return
+    if (!texte || loading || !conversationId) return
 
     setInput('')
     setError(null)
     const historique = messages.map((m) => ({ role: m.role, texte: m.texte }))
-    const nouveauxMessages: Message[] = [...messages, { role: 'user', texte }]
-    setMessages(nouveauxMessages)
+    setTous((prev) => [...prev, { conversation_id: conversationId, role: 'user', texte, outils_utilises: null, created_at: new Date().toISOString() }])
     setLoading(true)
     enregistrer('user', texte)
 
@@ -74,10 +121,14 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
       // Sur un statut non-2xx, invokeError est générique — le message précis est dans data.error.
       if (data?.error) throw new Error(data.error)
       if (invokeError) throw invokeError
-      if (!data?.reponse) throw new Error("Réponse vide.")
+      const reponseTexte = data?.reponse
+      if (!reponseTexte) throw new Error("Réponse vide.")
 
-      setMessages([...nouveauxMessages, { role: 'assistant', texte: data.reponse, outils: data.outils_utilises }])
-      enregistrer('assistant', data.reponse, data.outils_utilises)
+      setTous((prev) => [...prev, {
+        conversation_id: conversationId, role: 'assistant', texte: reponseTexte,
+        outils_utilises: data.outils_utilises ?? null, created_at: new Date().toISOString(),
+      }])
+      enregistrer('assistant', reponseTexte, data.outils_utilises)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
@@ -86,16 +137,24 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
     }
   }
 
-  // Historique partagé entre tout le cabinet (voir le commentaire en tête de fichier) : un clic
-  // malheureux ici effaçait jusqu'ici la conversation de tout le monde, sans confirmation — contraire
-  // à toute autre suppression de l'appli, qui en demande toujours une (voir audit ergonomie).
-  async function nouvelleConversation() {
+  // Ouvre un fil neuf sans rien supprimer — voir le commentaire en tête de fichier. Le premier message
+  // envoyé dans ce fil est ce qui le fera apparaître dans la liste des conversations ; tant que rien
+  // n'est envoyé, un fil vide n'est jamais persisté.
+  function nouvelleConversation() {
+    setConversationId(crypto.randomUUID())
+    setError(null)
+    setHistoriqueOuvert(false)
+  }
+
+  // Seule vraie suppression restante — explicitement nommée et confirmée (voir audit ergonomie),
+  // contrairement à l'ancien comportement de "Nouvelle conversation".
+  async function supprimerConversation(id: string) {
     if (!window.confirm(
       "Supprimer définitivement cette conversation ? Elle est partagée avec le reste du cabinet — personne ne pourra plus la relire.",
     )) return
-    setMessages([])
-    setError(null)
-    await supabase.from('agent_conversations').delete().eq('dossier_id', dossierId)
+    await supabase.from('agent_conversations').delete().eq('dossier_id', dossierId).eq('conversation_id', id)
+    setTous((prev) => prev.filter((m) => m.conversation_id !== id))
+    if (id === conversationId) setConversationId(crypto.randomUUID())
   }
 
   function surTouche(e: KeyboardEvent<HTMLTextAreaElement>) {
@@ -111,6 +170,44 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
   // sur mobile (bug initial : le contenu débordait carrément du panneau, non contenu du tout).
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, flexShrink: 0 }}>
+        <div style={{ position: 'relative' }} ref={historiqueRef}>
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => setHistoriqueOuvert((v) => !v)}>
+            Conversations{threads.length > 0 ? ` (${threads.length})` : ''}
+          </button>
+          {historiqueOuvert && (
+            <div className="options-menu" style={{ right: 0, left: 'auto', minWidth: 260 }}>
+              <button type="button" className="nav-menu-item" onClick={nouvelleConversation}>
+                + Nouvelle conversation
+              </button>
+              {threads.length > 0 && <div style={{ borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />}
+              {threads.map((t) => (
+                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                  <button
+                    type="button"
+                    className={`nav-menu-item ${t.id === conversationId ? 'active' : ''}`}
+                    style={{ flex: 1, minWidth: 0 }}
+                    onClick={() => { setConversationId(t.id); setHistoriqueOuvert(false) }}
+                  >
+                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                      {formatDate(t.debut)} — {t.premierMessage.length > 32 ? `${t.premierMessage.slice(0, 32)}…` : t.premierMessage}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => supprimerConversation(t.id)}
+                    title="Supprimer cette conversation"
+                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-light)', padding: '6px 8px', fontWeight: 700 }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="card table-scroll" style={{ padding: 0, flex: 1, minHeight: 0, overflowY: 'auto', marginBottom: 10 }}>
         {chargement ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -136,9 +233,9 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
                 >
                   {m.texte}
                 </div>
-                {m.outils && m.outils.length > 0 && (
+                {m.outils_utilises && m.outils_utilises.length > 0 && (
                   <span className="muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>
-                    Outils utilisés : {m.outils.join(', ')}
+                    Outils utilisés : {m.outils_utilises.join(', ')}
                   </span>
                 )}
               </div>
@@ -163,21 +260,9 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
             disabled={loading}
           />
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn btn-primary" type="submit" disabled={loading || !input.trim()} style={{ flex: 1 }}>
-            {loading ? 'Envoi…' : 'Envoyer'}
-          </button>
-          {messages.length > 0 && (
-            <button
-              type="button"
-              className="btn btn-outline"
-              disabled={loading}
-              onClick={nouvelleConversation}
-            >
-              Nouvelle conversation
-            </button>
-          )}
-        </div>
+        <button className="btn btn-primary" type="submit" disabled={loading || !input.trim()}>
+          {loading ? 'Envoi…' : 'Envoyer'}
+        </button>
       </form>
     </div>
   )

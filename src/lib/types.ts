@@ -288,9 +288,13 @@ export interface InformationsDossier {
 // Historique de l'agent comptable (voir AssistantTab, supabase/functions/agent-comptable) —
 // partagé entre tous les admins du cabinet pour un dossier donné, comme le reste de l'appli
 // (le cabinet est traité comme un seul acteur). created_by n'est qu'un repère d'audit.
+// conversation_id regroupe les messages d'un même fil — un dossier peut avoir plusieurs conversations
+// distinctes dans le temps (voir "Nouvelle conversation" dans AssistantTab), aucune n'écrasant les
+// précédentes.
 export interface AgentConversation {
   id: string
   dossier_id: string
+  conversation_id: string
   role: 'user' | 'assistant'
   texte: string
   outils_utilises: string[] | null
