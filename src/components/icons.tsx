@@ -93,6 +93,13 @@ export const IconAcces = (p: IconProps) => base(<>
   <path d="M13.5 9.5L16 12" />
 </>, p)
 
+// Facture — silhouette de reçu (bord inférieur en dents de scie, comme un vrai ticket/facture papier),
+// distincte d'IconPieces (coin plié) et d'IconDocuments.
+export const IconFactures = (p: IconProps) => base(<>
+  <path d="M6 3h12v18l-2.5-1.5L13 21l-2.5-1.5L8 21l-2-1.5z" />
+  <path d="M9 8h6M9 12h6M9 16h3" />
+</>, p)
+
 export const IconAssistant = (p: IconProps) => base(<>
   <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z" />
   <path d="M8.5 8h7M8.5 11h4.5" />
@@ -131,6 +138,7 @@ export const ICONES_PARCOURS: Record<string, IconComponent> = {
   checklist: IconChecklist,
   documents: IconDocuments,
   pieces: IconPieces,
+  factures: IconFactures,
   banque: IconBanque,
   ecritures: IconEcritures,
   immobilisations: IconImmobilisations,

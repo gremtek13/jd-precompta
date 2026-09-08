@@ -15,6 +15,9 @@ export interface Dossier {
   assujetti_tva: boolean
   code_naf: string | null
   libelle_naf: string | null
+  // Adresse de l'émetteur — mention obligatoire sur une facture (voir FacturesTab). Absente du modèle
+  // jusqu'à l'ajout de la facturation : nom/siret suffisaient à tout ce qui existait avant.
+  adresse: string | null
 }
 
 export interface Categorie {
@@ -347,4 +350,49 @@ export interface DossierAssignation {
   dossier_id: string
   user_id: string
   created_at: string
+}
+
+export type StatutFacture = 'brouillon' | 'validee'
+
+// Facture émise par le dossier à un tiers (voir FacturesTab) — première brique pour émettre
+// soi-même des factures conformes, pas seulement en recevoir (voir Piece.source === 'superpdp'). Tant
+// que statut === 'brouillon', numero reste nul et tout le reste est librement modifiable ; à la
+// validation, un numéro séquentiel sans trou est attribué une fois pour toutes (voir
+// lib/factures.ts:validerFacture) et la facture n'est plus éditable — corriger une facture déjà
+// numérotée se fait par une facture d'avoir, pas en la rouvrant (pas encore construit).
+export interface FactureEmise {
+  id: string
+  dossier_id: string
+  numero: string | null
+  statut: StatutFacture
+  date_emission: string
+  date_echeance: string | null
+  tiers_nom: string
+  tiers_adresse: string | null
+  tiers_siret: string | null
+  montant_ht: number
+  montant_tva: number
+  montant_ttc: number
+  mentions_legales: string | null
+  notes: string | null
+  // Identité de l'émetteur (nom/siret/adresse du dossier) recopiée à chaque enregistrement du
+  // brouillon — jamais relue en direct depuis Dossier à l'affichage, pour qu'une facture déjà validée
+  // ne change jamais rétroactivement si l'identité du dossier est corrigée plus tard.
+  emetteur_nom: string | null
+  emetteur_siret: string | null
+  emetteur_adresse: string | null
+  created_by: string | null
+  created_at: string
+  validated_at: string | null
+}
+
+export interface FactureLigne {
+  id: string
+  facture_id: string
+  ordre: number
+  designation: string
+  quantite: number
+  prix_unitaire_ht: number
+  // Pourcentage (0, 5.5, 10, 20...), pas un montant.
+  taux_tva: number
 }

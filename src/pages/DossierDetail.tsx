@@ -4,6 +4,7 @@ import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
 import type { Dossier } from '../lib/types'
 import PiecesTab from './dossier/PiecesTab'
+import FacturesTab from './dossier/FacturesTab'
 import PacksTab from './dossier/PacksTab'
 import BanqueTab from './dossier/BanqueTab'
 import AccesTab from './dossier/AccesTab'
@@ -25,7 +26,7 @@ import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 // navigation interne n'était mémorisée par le navigateur. Cette liste sert à valider le paramètre
 // d'URL (une valeur absente ou invalide retombe sur "checklist").
 const TABS_VALIDES: DossierTab[] = [
-  'checklist', 'documents', 'pieces', 'banque', 'ecritures', 'immobilisations',
+  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'packs', 'informations', 'virements', 'acces',
 ]
 
@@ -119,6 +120,16 @@ export default function DossierDetail() {
 
       {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={allerA} />}
       {tab === 'pieces' && <PiecesTab dossierId={id} />}
+      {tab === 'factures' && (
+        <FacturesTab
+          dossierId={id}
+          dossierNom={dossier?.nom ?? ''}
+          dossierSiret={dossier?.siret ?? null}
+          dossierAdresse={dossier?.adresse ?? null}
+          assujettiTva={dossier?.assujetti_tva ?? false}
+          onAdresseUpdated={(adresse) => dossier && setDossier({ ...dossier, adresse })}
+        />
+      )}
       {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
       {tab === 'banque' && <BanqueTab dossierId={id} />}
       {tab === 'documents' && <DocumentsTab dossierId={id} />}

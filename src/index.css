@@ -529,3 +529,17 @@ tr.clickable:hover { background: var(--color-primary-light); }
   .assistant-bouton { bottom: 84px; }
   .assistant-panneau { bottom: 148px; }
 }
+
+/* Impression d'une facture (voir FactureApercu) — masque tout le reste de la page (menu, boutons,
+   fond assombri de la modale) pour ne garder que le contenu de la facture, en pleine page. Technique
+   standard "n'imprimer qu'un seul élément" : tout est caché puis seul .facture-imprimable (et son
+   contenu) est rendu visible et repositionné en haut de la page imprimée. */
+@media print {
+  body * { visibility: hidden; }
+  .facture-imprimable, .facture-imprimable * { visibility: visible; }
+  .facture-imprimable {
+    position: absolute; top: 0; left: 0; width: 100%;
+    box-shadow: none; border: none; max-height: none; overflow: visible;
+  }
+  .facture-imprimable-actions { display: none; }
+}

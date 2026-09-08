@@ -5,6 +5,7 @@ export type DossierTab =
   | 'checklist'
   | 'documents'
   | 'pieces'
+  | 'factures'
   | 'banque'
   | 'ecritures'
   | 'immobilisations'
@@ -49,6 +50,7 @@ const GROUPES: Groupe[] = [
     enfants: [
       { id: 'pieces', label: 'Pièces' },
       { id: 'documents', label: 'Documents' },
+      { id: 'factures', label: 'Factures' },
     ],
   },
   { id: 'banque', label: 'Banque', labelCourt: 'Banque', icone: ICONES_PARCOURS.banque, cible: 'banque' },
