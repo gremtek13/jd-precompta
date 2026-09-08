@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
@@ -8,6 +8,7 @@ import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBan
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
+const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
 // Signature (date, libellé, montant) d'un mouvement bancaire — sert à repérer un doublon d'import
 // (le même relevé déposé deux fois, CSV ou PDF) avant l'insertion. Le montant est arrondi à 2
@@ -36,7 +37,16 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  // 'tous' ou un mois 0-11 — remis à 'tous' à chaque changement d'année (voir changerAnnee) pour ne
+  // jamais rester bloqué sur un mois qui n'existe plus dans la nouvelle année sélectionnée.
+  const [moisFilter, setMoisFilter] = useState<'tous' | number>('tous')
+  const [recherche, setRecherche] = useState('')
   const [rapprochementAuto, setRapprochementAuto] = useState(false)
+  // Ligne ouverte dans le panneau de détail (voir plus bas) — le tableau lui-même reste compact
+  // (date/libellé/montant/statut uniquement) : sur un dossier avec plusieurs centaines de mouvements,
+  // afficher les boutons et menus de rapprochement sur chaque ligne rendait l'écran interminable
+  // (voir audit ergonomie). Toutes les actions vivent maintenant dans ce panneau, une ligne à la fois.
+  const [ligneOuverte, setLigneOuverte] = useState<LigneBancaire | null>(null)
 
   async function load() {
     setLoading(true)
@@ -80,9 +90,30 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
 
   const anneesDisponibles = [...new Set(lignes.map((l) => new Date(l.date).getFullYear()))].sort((a, b) => b - a)
-  const filtered = lignes.filter((l) => {
+
+  function changerAnnee(v: ValeurAnnee) {
+    setAnneeFilter(v)
+    setMoisFilter('tous') // un mois de l'année précédente n'a pas de sens une fois l'année changée
+  }
+
+  // Mois proposés dans le filtre : seulement ceux qui existent réellement dans l'année déjà
+  // sélectionnée (et le statut déjà filtré) — jamais les 12 mois de l'année par défaut, dont la
+  // plupart seraient vides sur un dossier récent.
+  const lignesAnneeEtStatut = lignes.filter((l) => {
     if (filter !== 'toutes' && l.statut !== filter) return false
     if (anneeFilter !== 'toutes' && new Date(l.date).getFullYear() !== anneeFilter) return false
+    return true
+  })
+  const moisDisponibles = [...new Set(lignesAnneeEtStatut.map((l) => new Date(l.date).getMonth()))].sort((a, b) => a - b)
+
+  const rechercheNormalisee = recherche.trim().toLowerCase()
+  const filtered = lignesAnneeEtStatut.filter((l) => {
+    if (moisFilter !== 'tous' && new Date(l.date).getMonth() !== moisFilter) return false
+    if (rechercheNormalisee) {
+      const matchLibelle = l.libelle.toLowerCase().includes(rechercheNormalisee)
+      const matchMontant = l.montant.toFixed(2).replace('.', ',').includes(rechercheNormalisee)
+      if (!matchLibelle && !matchMontant) return false
+    }
     return true
   })
 
@@ -332,7 +363,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         )}
       </div>
 
-      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
+      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={changerAnnee} />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {(['toutes', 'non_rapprochee', 'rapprochee', 'ignoree'] as const).map((s) => (
@@ -346,11 +377,35 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         ))}
       </div>
 
+      {moisDisponibles.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
+          <button className={`btn btn-sm ${moisFilter === 'tous' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setMoisFilter('tous')}>
+            Tous les mois
+          </button>
+          {moisDisponibles.map((m) => (
+            <button key={m} className={`btn btn-sm ${moisFilter === m ? 'btn-primary' : 'btn-outline'}`} onClick={() => setMoisFilter(m)}>
+              {NOMS_MOIS[m]}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <input
+        placeholder="Rechercher par libellé ou montant…"
+        value={recherche}
+        onChange={(e) => setRecherche(e.target.value)}
+        style={{ marginBottom: 14, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, width: 320, maxWidth: '100%' }}
+      />
+
+      {/* Tableau volontairement compact (date/libellé/montant/statut) — les boutons et menus de
+          rapprochement vivent dans le panneau de détail ouvert au clic sur une ligne, pas ici : avec
+          plusieurs centaines de mouvements, les répéter sur chaque ligne rendait l'écran interminable
+          (voir audit ergonomie). */}
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (
-          <div className="empty-state">Aucun mouvement bancaire{filter !== 'toutes' ? ' dans ce filtre' : ''}.</div>
+          <div className="empty-state">Aucun mouvement bancaire{filter !== 'toutes' || moisFilter !== 'tous' || recherche ? ' dans ce filtre' : ''}.</div>
         ) : (
           <table>
             <thead>
@@ -359,31 +414,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                 <th>Libellé</th>
                 <th>Montant</th>
                 <th>Statut</th>
-                <th></th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((l) => {
-                const propose = suggestion(l)
-                const proposeCotisation = !propose ? suggestionCotisation(l) : null
-                const proposeRecurrent = !propose && !proposeCotisation ? suggestionRecurrente(l) : null
                 const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
                 const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
-                // Candidates du menu déroulant, classées par plausibilité (voir scoreCorrespondance) —
-                // seulement calculé pour une ligne non rapprochée, les deux menus n'étant affichés que
-                // dans ce cas juste en dessous.
-                const piecesTriees = l.statut === 'non_rapprochee'
-                  ? [...pieces].filter((p) => !piecesRapprochees.has(p.id))
-                      .sort((a, b) => scoreCorrespondance(a.montant_ttc, a.date_piece, l) - scoreCorrespondance(b.montant_ttc, b.date_piece, l))
-                  : []
-                const cotisationsTriees = l.statut === 'non_rapprochee'
-                  ? [...cotisations].filter((c) => !cotisationsRapprochees.has(c.id))
-                      .sort((a, b) =>
-                        scoreCorrespondance(a.montant_verse ?? a.montant_appele, a.echeance, l)
-                        - scoreCorrespondance(b.montant_verse ?? b.montant_appele, b.echeance, l))
-                  : []
+                const aUneSuggestion = l.statut === 'non_rapprochee' && !!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
                 return (
-                  <tr key={l.id}>
+                  <tr key={l.id} className="clickable" onClick={() => setLigneOuverte(l)}>
                     <td>{formatDate(l.date)}</td>
                     <td>{l.libelle}</td>
                     <td>{formatMoney(l.montant)}</td>
@@ -396,63 +435,10 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                           {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
                         </span>
                       )}
-                      {!l.prelevement_personnel && l.statut === 'non_rapprochee' && <span className="badge badge-warning">Non rapproché</span>}
+                      {!l.prelevement_personnel && l.statut === 'non_rapprochee' && (
+                        <span className="badge badge-warning">Non rapproché{aUneSuggestion ? ' · suggestion' : ''}</span>
+                      )}
                       {!l.prelevement_personnel && l.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
-                    </td>
-                    <td style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                      {l.statut === 'non_rapprochee' && propose && (
-                        <button className="btn btn-outline btn-sm" onClick={() => rapprocher(l.id, propose.id)}>
-                          Rapprocher avec {propose.tiers ?? 'cette pièce'} ({formatMoney(propose.montant_ttc)})
-                        </button>
-                      )}
-                      {l.statut === 'non_rapprochee' && proposeCotisation && (
-                        <button className="btn btn-outline btn-sm" onClick={() => rapprocherCotisation(l.id, proposeCotisation.id)}>
-                          Rapprocher avec l'échéance du {formatDate(proposeCotisation.echeance)} ({formatMoney(proposeCotisation.montant_verse ?? proposeCotisation.montant_appele)})
-                        </button>
-                      )}
-                      {l.statut === 'non_rapprochee' && proposeRecurrent && (
-                        <button
-                          className="btn btn-outline btn-sm"
-                          onClick={() => proposeRecurrent.action === 'virement_personnel' ? marquerVirementPersonnel(l.id) : ignorer(l.id)}
-                          title={`Même montant, même période du mois que ${proposeRecurrent.occurrences} mouvement(s) déjà classé(s) ainsi`}
-                        >
-                          {proposeRecurrent.action === 'virement_personnel' ? 'Virement personnel' : 'Ignorer'} (récurrent, {proposeRecurrent.occurrences}×)
-                        </button>
-                      )}
-                      {l.statut === 'non_rapprochee' && (
-                        <>
-                          <select
-                            defaultValue=""
-                            onChange={(e) => e.target.value && rapprocher(l.id, e.target.value)}
-                            style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px', fontSize: '0.8rem' }}
-                          >
-                            <option value="">Associer à une pièce…</option>
-                            {piecesTriees.map((p) => (
-                              <option key={p.id} value={p.id}>
-                                {formatDate(p.date_piece)} — {p.tiers ?? '—'} — {formatMoney(p.montant_ttc)}
-                              </option>
-                            ))}
-                          </select>
-                          <select
-                            defaultValue=""
-                            onChange={(e) => e.target.value && rapprocherCotisation(l.id, e.target.value)}
-                            style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px', fontSize: '0.8rem' }}
-                          >
-                            <option value="">Associer à une cotisation…</option>
-                            {cotisationsTriees.map((c) => (
-                              <option key={c.id} value={c.id}>
-                                {formatDate(c.echeance)} — {formatMoney(c.montant_verse ?? c.montant_appele)}
-                              </option>
-                            ))}
-                          </select>
-                          <button className="btn btn-outline btn-sm" onClick={() => marquerVirementPersonnel(l.id)}>Virement personnel</button>
-                          <button className="btn btn-outline btn-sm" onClick={() => ignorer(l.id)}>Ignorer</button>
-                          <button className="btn btn-outline btn-sm" onClick={() => toujoursIgnorer(l)}>Toujours ignorer ce type…</button>
-                        </>
-                      )}
-                      {l.statut !== 'non_rapprochee' && (
-                        <button className="btn btn-outline btn-sm" onClick={() => annulerRapprochement(l.id)}>Annuler</button>
-                      )}
                     </td>
                   </tr>
                 )
@@ -461,8 +447,164 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           </table>
         )}
       </div>
+
+      {ligneOuverte && (
+        <PanneauLigne
+          ligne={ligneOuverte}
+          pieces={pieces}
+          cotisations={cotisations}
+          piecesRapprochees={piecesRapprochees}
+          cotisationsRapprochees={cotisationsRapprochees}
+          suggestion={suggestion}
+          suggestionCotisation={suggestionCotisation}
+          suggestionRecurrente={suggestionRecurrente}
+          onClose={() => setLigneOuverte(null)}
+          onRapprocher={(pieceId) => { rapprocher(ligneOuverte.id, pieceId); setLigneOuverte(null) }}
+          onRapprocherCotisation={(cotisationId) => { rapprocherCotisation(ligneOuverte.id, cotisationId); setLigneOuverte(null) }}
+          onVirementPersonnel={() => { marquerVirementPersonnel(ligneOuverte.id); setLigneOuverte(null) }}
+          onIgnorer={() => { ignorer(ligneOuverte.id); setLigneOuverte(null) }}
+          onToujoursIgnorer={() => { toujoursIgnorer(ligneOuverte); setLigneOuverte(null) }}
+          onAnnuler={() => { annulerRapprochement(ligneOuverte.id); setLigneOuverte(null) }}
+        />
+      )}
     </>
   )
+}
+
+interface PanneauLigneProps {
+  ligne: LigneBancaire
+  pieces: Piece[]
+  cotisations: CotisationDeclaree[]
+  piecesRapprochees: Set<string | null>
+  cotisationsRapprochees: Set<string | null>
+  suggestion: (l: LigneBancaire) => Piece | null
+  suggestionCotisation: (l: LigneBancaire) => CotisationDeclaree | null
+  suggestionRecurrente: (l: LigneBancaire) => { action: 'ignorer' | 'virement_personnel'; occurrences: number } | null
+  onClose: () => void
+  onRapprocher: (pieceId: string) => void
+  onRapprocherCotisation: (cotisationId: string) => void
+  onVirementPersonnel: () => void
+  onIgnorer: () => void
+  onToujoursIgnorer: () => void
+  onAnnuler: () => void
+}
+
+// Panneau de détail ouvert au clic sur une ligne (voir le tableau compact ci-dessus) : regroupe tout
+// ce qui était avant étalé sur chaque ligne du tableau (suggestion, menus d'association, ignorer...).
+// Une seule ligne ouverte à la fois, jamais de rapprochement fait par erreur en glissant sur le
+// tableau — l'utilisateur doit explicitement ouvrir puis choisir une action.
+function PanneauLigne({
+  ligne, pieces, cotisations, piecesRapprochees, cotisationsRapprochees,
+  suggestion, suggestionCotisation, suggestionRecurrente,
+  onClose, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onAnnuler,
+}: PanneauLigneProps) {
+  const propose = suggestion(ligne)
+  const proposeCotisation = !propose ? suggestionCotisation(ligne) : null
+  const proposeRecurrent = !propose && !proposeCotisation ? suggestionRecurrente(ligne) : null
+  const piecePayee = ligne.piece_id ? pieces.find((p) => p.id === ligne.piece_id) : null
+  const cotisationPayee = ligne.cotisation_id ? cotisations.find((c) => c.id === ligne.cotisation_id) : null
+  const piecesTriees = ligne.statut === 'non_rapprochee'
+    ? [...pieces].filter((p) => !piecesRapprochees.has(p.id))
+        .sort((a, b) => scoreCorrespondance(a.montant_ttc, a.date_piece, ligne) - scoreCorrespondance(b.montant_ttc, b.date_piece, ligne))
+    : []
+  const cotisationsTriees = ligne.statut === 'non_rapprochee'
+    ? [...cotisations].filter((c) => !cotisationsRapprochees.has(c.id))
+        .sort((a, b) =>
+          scoreCorrespondance(a.montant_verse ?? a.montant_appele, a.echeance, ligne)
+          - scoreCorrespondance(b.montant_verse ?? b.montant_appele, b.echeance, ligne))
+    : []
+
+  return (
+    <div style={overlayStyle} onClick={onClose}>
+      <div className="card" style={{ width: 'min(480px, 92vw)', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+          <div>
+            <h2 style={{ margin: 0 }}>{formatMoney(ligne.montant)}</h2>
+            <p className="muted" style={{ margin: '4px 0 0' }}>{formatDate(ligne.date)} — {ligne.libelle}</p>
+          </div>
+          <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>Fermer</button>
+        </div>
+
+        <div style={{ marginTop: 16 }}>
+          {ligne.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && (
+            <span className="badge badge-ok">
+              Rapproché
+              {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
+              {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
+            </span>
+          )}
+          {!ligne.prelevement_personnel && ligne.statut === 'non_rapprochee' && <span className="badge badge-warning">Non rapproché</span>}
+          {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
+        </div>
+
+        {ligne.statut === 'non_rapprochee' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+            {propose && (
+              <button className="btn btn-outline" onClick={() => onRapprocher(propose.id)}>
+                Rapprocher avec {propose.tiers ?? 'cette pièce'} ({formatMoney(propose.montant_ttc)})
+              </button>
+            )}
+            {proposeCotisation && (
+              <button className="btn btn-outline" onClick={() => onRapprocherCotisation(proposeCotisation.id)}>
+                Rapprocher avec l'échéance du {formatDate(proposeCotisation.echeance)} ({formatMoney(proposeCotisation.montant_verse ?? proposeCotisation.montant_appele)})
+              </button>
+            )}
+            {proposeRecurrent && (
+              <button
+                className="btn btn-outline"
+                onClick={() => proposeRecurrent.action === 'virement_personnel' ? onVirementPersonnel() : onIgnorer()}
+                title={`Même montant, même période du mois que ${proposeRecurrent.occurrences} mouvement(s) déjà classé(s) ainsi`}
+              >
+                {proposeRecurrent.action === 'virement_personnel' ? 'Virement personnel' : 'Ignorer'} (récurrent, {proposeRecurrent.occurrences}×)
+              </button>
+            )}
+
+            <div className="field">
+              <label htmlFor="associer-piece">Associer à une pièce</label>
+              <select id="associer-piece" defaultValue="" onChange={(e) => e.target.value && onRapprocher(e.target.value)}>
+                <option value="">— Choisir —</option>
+                {piecesTriees.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {formatDate(p.date_piece)} — {p.tiers ?? '—'} — {formatMoney(p.montant_ttc)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="field">
+              <label htmlFor="associer-cotisation">Associer à une cotisation</label>
+              <select id="associer-cotisation" defaultValue="" onChange={(e) => e.target.value && onRapprocherCotisation(e.target.value)}>
+                <option value="">— Choisir —</option>
+                {cotisationsTriees.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {formatDate(c.echeance)} — {formatMoney(c.montant_verse ?? c.montant_appele)}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn btn-outline btn-sm" onClick={onVirementPersonnel}>Virement personnel</button>
+              <button className="btn btn-outline btn-sm" onClick={onIgnorer}>Ignorer</button>
+              <button className="btn btn-outline btn-sm" onClick={onToujoursIgnorer}>Toujours ignorer ce type…</button>
+            </div>
+          </div>
+        )}
+
+        {ligne.statut !== 'non_rapprochee' && (
+          <div style={{ marginTop: 16 }}>
+            <button className="btn btn-outline" onClick={onAnnuler}>Annuler le rapprochement</button>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+const overlayStyle: CSSProperties = {
+  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20,
 }
 
 function statutPourLibelle(libelle: string, regles: RegleBancaireIgnoree[]): StatutLigneBancaire {
