@@ -10,10 +10,13 @@
          navigateur, favori, et icône d'ajout à l'écran d'accueil (iOS/Android). Le SVG sert de
          source ; les PNG sont un repli pour les navigateurs/plateformes qui ne savent pas encore
          afficher un favicon vectoriel. -->
-    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
-    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" />
-    <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <!-- data-favicon-default : repère utilisé par useCabinetBranding (src/lib/branding.ts) pour
+         détacher ces icônes quand un cabinet a son propre logo, et les remettre en place sinon —
+         un cabinet en marque blanche ne doit jamais voir le monogramme JD Consult à la place du sien. -->
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" data-favicon-default />
+    <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png" data-favicon-default />
+    <link rel="icon" href="/favicon-16.png" sizes="16x16" type="image/png" data-favicon-default />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" data-favicon-default />
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#0F2438" />
     <meta name="apple-mobile-web-app-title" content="JD Precompta" />
