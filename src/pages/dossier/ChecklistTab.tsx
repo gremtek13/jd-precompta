@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte, categoriesSansPoste, piecesSansTva } from '../../lib/controles'
+import { moisEcoulesCetteAnnee } from '../../lib/format'
 import type { Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
 
@@ -87,7 +88,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   if (loading) return <p className="muted">Chargement…</p>
 
   const anneeCourante = new Date().getFullYear()
-  const moisEcoules = new Date().getMonth() + 1
+  const moisEcoules = moisEcoulesCetteAnnee()
 
   const moisPresents = new Set(
     lignes.filter((l) => new Date(l.date).getFullYear() === anneeCourante).map((l) => new Date(l.date).getMonth() + 1),
@@ -155,9 +156,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       id: 'banque',
       label: `Relevés bancaires ${anneeCourante}`,
       ok: moisManquants.length === 0,
-      detail: moisManquants.length > 0
-        ? `Mois manquants : ${moisManquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
-        : `${moisEcoules}/${moisEcoules} mois reçus`,
+      // moisEcoules à 0 (janvier, aucun mois encore révolu) : rien à réclamer pour l'instant, pas un
+      // "0/0" qui se lirait comme un compte à rebours étrange.
+      detail: moisEcoules === 0
+        ? "Aucun mois encore révolu cette année"
+        : moisManquants.length > 0
+          ? `Mois manquants : ${moisManquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
+          : `${moisEcoules}/${moisEcoules} mois reçus`,
       cible: 'banque',
       action: 'Importer le relevé manquant',
     },

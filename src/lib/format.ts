@@ -23,6 +23,15 @@ export function formatDate(value: string | null): string {
   return new Date(value).toLocaleDateString('fr-FR')
 }
 
+// Nombre de mois de l'année en cours déjà entièrement terminés (0 en janvier, 8 en septembre...) —
+// sert à ne jamais réclamer un relevé bancaire ou une échéance pour le mois en cours, qui vient
+// peut-être de commencer (voir DossiersList, ChecklistTab). Avant ce correctif, le mois en cours
+// comptait comme "écoulé" dès son premier jour — le 8 septembre signalait déjà septembre comme
+// manquant alors que le mois n'était même pas fini.
+export function moisEcoulesCetteAnnee(): number {
+  return new Date().getMonth()
+}
+
 export const CATEGORIE_LABELS: Record<string, string> = {
   achat: 'Achat',
   vente: 'Vente',

@@ -86,7 +86,13 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
     }
   }
 
+  // Historique partagé entre tout le cabinet (voir le commentaire en tête de fichier) : un clic
+  // malheureux ici effaçait jusqu'ici la conversation de tout le monde, sans confirmation — contraire
+  // à toute autre suppression de l'appli, qui en demande toujours une (voir audit ergonomie).
   async function nouvelleConversation() {
+    if (!window.confirm(
+      "Supprimer définitivement cette conversation ? Elle est partagée avec le reste du cabinet — personne ne pourra plus la relire.",
+    )) return
     setMessages([])
     setError(null)
     await supabase.from('agent_conversations').delete().eq('dossier_id', dossierId)

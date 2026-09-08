@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
+import { moisEcoulesCetteAnnee } from '../lib/format'
 import type { Dossier } from '../lib/types'
 
 interface DossierRow extends Dossier {
@@ -12,7 +13,7 @@ interface DossierRow extends Dossier {
 }
 
 const ANNEE_COURANTE = new Date().getFullYear()
-const MOIS_ECOULES = new Date().getMonth() + 1
+const MOIS_ECOULES = moisEcoulesCetteAnnee()
 
 // Dashboard cabinet : ce qui a besoin d'attention sur l'ensemble des dossiers, sans avoir à ouvrir
 // chacun pour le savoir. Trois requêtes globales (pas une par dossier) puis agrégation côté client —
@@ -24,34 +25,52 @@ export default function DossiersList() {
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [showNew, setShowNew] = useState(false)
+  // Distingue deux pannes possibles (voir audit ergonomie) : la liste des dossiers elle-même
+  // (indispensable, rien de fiable à afficher sans elle) et les trois requêtes d'indicateurs
+  // secondaires (pièces à valider, mois couverts, cotisations) — un échec sur ces dernières ne doit
+  // pas cacher la liste, mais ne doit surtout pas non plus se lire comme des zéros rassurants.
+  const [erreurChargement, setErreurChargement] = useState<string | null>(null)
+  const [erreurIndicateurs, setErreurIndicateurs] = useState(false)
   const navigate = useNavigate()
 
   async function load() {
     setLoading(true)
+    setErreurChargement(null)
+    setErreurIndicateurs(false)
     const debutAnnee = `${ANNEE_COURANTE}-01-01`
 
-    const [{ data: dossierData }, { data: pieceCounts }, { data: lignesBancaires }, { data: cotisations }] = await Promise.all([
+    const [dossiersRes, piecesRes, lignesRes, cotisationsRes] = await Promise.all([
       supabase.from('dossiers').select('*').eq('archive', false).order('nom'),
       supabase.from('pieces').select('dossier_id').eq('statut', 'a_valider'),
       supabase.from('lignes_bancaires').select('dossier_id, date').gte('date', debutAnnee),
       supabase.from('cotisations_declarees').select('dossier_id, echeance').gte('echeance', debutAnnee),
     ])
 
+    if (dossiersRes.error) {
+      setErreurChargement(dossiersRes.error.message)
+      setDossiers([])
+      setLoading(false)
+      return
+    }
+    if (piecesRes.error || lignesRes.error || cotisationsRes.error) {
+      setErreurIndicateurs(true)
+    }
+
     const aValider = new Map<string, number>()
-    for (const p of pieceCounts ?? []) aValider.set(p.dossier_id, (aValider.get(p.dossier_id) ?? 0) + 1)
+    for (const p of piecesRes.data ?? []) aValider.set(p.dossier_id, (aValider.get(p.dossier_id) ?? 0) + 1)
 
     const moisParDossier = new Map<string, Set<number>>()
-    for (const l of lignesBancaires ?? []) {
+    for (const l of lignesRes.data ?? []) {
       const set = moisParDossier.get(l.dossier_id) ?? new Set<number>()
       set.add(new Date(l.date).getMonth() + 1)
       moisParDossier.set(l.dossier_id, set)
     }
 
     const cotisationsOk = new Set<string>()
-    for (const c of cotisations ?? []) cotisationsOk.add(c.dossier_id)
+    for (const c of cotisationsRes.data ?? []) cotisationsOk.add(c.dossier_id)
 
     setDossiers(
-      (dossierData ?? []).map((d) => ({
+      (dossiersRes.data ?? []).map((d) => ({
         ...d,
         nbAValider: aValider.get(d.id) ?? 0,
         moisPresents: moisParDossier.get(d.id)?.size ?? 0,
@@ -81,7 +100,7 @@ export default function DossiersList() {
         <button className="btn btn-primary" onClick={() => setShowNew(true)}>+ Nouveau dossier</button>
       </div>
 
-      {!loading && filtered.length > 0 && (
+      {!loading && !erreurChargement && filtered.length > 0 && (
         <div className="stat-grid">
           <div className="stat-card">
             <div className="stat-value">{filtered.length}</div>
@@ -98,16 +117,33 @@ export default function DossiersList() {
         </div>
       )}
 
-      <input
-        placeholder="Rechercher un dossier…"
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        style={{ marginBottom: 16, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, width: 280, maxWidth: '100%' }}
-      />
+      {erreurIndicateurs && !erreurChargement && (
+        <p className="error-text" style={{ marginBottom: 14 }}>
+          Certains indicateurs (pièces, relevés bancaires ou cotisations) n'ont pas pu être chargés —
+          les colonnes concernées peuvent être incomplètes le temps de ce chargement.{' '}
+          <button type="button" className="btn btn-outline btn-sm" onClick={load}>Réessayer</button>
+        </p>
+      )}
+
+      {!erreurChargement && (
+        <input
+          placeholder="Rechercher un dossier…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          style={{ marginBottom: 16, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, width: 280, maxWidth: '100%' }}
+        />
+      )}
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
+        ) : erreurChargement ? (
+          <div className="empty-state">
+            Données indisponibles — impossible de charger la liste des dossiers ({erreurChargement}).
+            <div style={{ marginTop: 12 }}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={load}>Réessayer</button>
+            </div>
+          </div>
         ) : filtered.length === 0 ? (
           <div className="empty-state">Aucun dossier pour l'instant.</div>
         ) : (
@@ -129,19 +165,25 @@ export default function DossiersList() {
                     {d.nbAValider > 0 ? (
                       <span className="badge badge-warning">{d.nbAValider} à valider</span>
                     ) : (
-                      <span className="badge badge-ok">à jour</span>
+                      <span className="badge badge-ok">aucune à valider</span>
                     )}
                   </td>
                   <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div className="progress-track mini-progress">
-                        <div
-                          className={`progress-fill ${d.moisPresents < d.moisEcoules ? 'warning' : ''}`}
-                          style={{ width: `${Math.min(100, (d.moisPresents / d.moisEcoules) * 100)}%` }}
-                        />
+                    {/* En janvier, moisEcoules vaut 0 (aucun mois révolu pour l'instant) — pas de division
+                        par zéro à afficher, juste rien à attendre encore. */}
+                    {d.moisEcoules === 0 ? (
+                      <span className="muted" style={{ fontSize: '0.8rem' }}>Aucun mois écoulé pour l'instant</span>
+                    ) : (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div className="progress-track mini-progress">
+                          <div
+                            className={`progress-fill ${d.moisPresents < d.moisEcoules ? 'warning' : ''}`}
+                            style={{ width: `${Math.min(100, (d.moisPresents / d.moisEcoules) * 100)}%` }}
+                          />
+                        </div>
+                        <span className="muted" style={{ fontSize: '0.8rem', fontWeight: 600 }}>{d.moisPresents}/{d.moisEcoules}</span>
                       </div>
-                      <span className="muted" style={{ fontSize: '0.8rem', fontWeight: 600 }}>{d.moisPresents}/{d.moisEcoules}</span>
-                    </div>
+                    )}
                   </td>
                   <td>
                     {d.cotisationsOk ? (

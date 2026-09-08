@@ -17,6 +17,17 @@ function signatureLigne(l: { date: string; libelle: string; montant: number }): 
   return `${l.date}|${l.libelle}|${l.montant.toFixed(2)}`
 }
 
+// Trie les pièces/cotisations candidates du menu "Associer à…" par plausibilité pour cette ligne —
+// montant identique d'abord, puis proximité de date — plutôt que dans l'ordre de la requête, qui
+// mélangeait sans distinction une pièce de l'année en cours avec une pièce de deux ans plus tôt (voir
+// audit ergonomie). Un score, pas un filtre : aucune candidate n'est retirée, on peut toujours associer
+// une pièce d'une autre année, juste plus bas dans la liste plutôt qu'au hasard.
+function scoreCorrespondance(montantRef: number | null, dateRef: string | null, ligne: LigneBancaire): number {
+  const montantOk = montantRef != null && Math.abs(Math.abs(montantRef) - Math.abs(ligne.montant)) <= 0.01
+  const jours = dateRef ? Math.abs(new Date(dateRef).getTime() - new Date(ligne.date).getTime()) / 86_400_000 : Number.MAX_SAFE_INTEGER
+  return (montantOk ? 0 : 1_000_000) + jours
+}
+
 export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -358,6 +369,19 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                 const proposeRecurrent = !propose && !proposeCotisation ? suggestionRecurrente(l) : null
                 const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
                 const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
+                // Candidates du menu déroulant, classées par plausibilité (voir scoreCorrespondance) —
+                // seulement calculé pour une ligne non rapprochée, les deux menus n'étant affichés que
+                // dans ce cas juste en dessous.
+                const piecesTriees = l.statut === 'non_rapprochee'
+                  ? [...pieces].filter((p) => !piecesRapprochees.has(p.id))
+                      .sort((a, b) => scoreCorrespondance(a.montant_ttc, a.date_piece, l) - scoreCorrespondance(b.montant_ttc, b.date_piece, l))
+                  : []
+                const cotisationsTriees = l.statut === 'non_rapprochee'
+                  ? [...cotisations].filter((c) => !cotisationsRapprochees.has(c.id))
+                      .sort((a, b) =>
+                        scoreCorrespondance(a.montant_verse ?? a.montant_appele, a.echeance, l)
+                        - scoreCorrespondance(b.montant_verse ?? b.montant_appele, b.echeance, l))
+                  : []
                 return (
                   <tr key={l.id}>
                     <td>{formatDate(l.date)}</td>
@@ -403,7 +427,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                             style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px', fontSize: '0.8rem' }}
                           >
                             <option value="">Associer à une pièce…</option>
-                            {pieces.filter((p) => !piecesRapprochees.has(p.id)).map((p) => (
+                            {piecesTriees.map((p) => (
                               <option key={p.id} value={p.id}>
                                 {formatDate(p.date_piece)} — {p.tiers ?? '—'} — {formatMoney(p.montant_ttc)}
                               </option>
@@ -415,7 +439,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                             style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px', fontSize: '0.8rem' }}
                           >
                             <option value="">Associer à une cotisation…</option>
-                            {cotisations.filter((c) => !cotisationsRapprochees.has(c.id)).map((c) => (
+                            {cotisationsTriees.map((c) => (
                               <option key={c.id} value={c.id}>
                                 {formatDate(c.echeance)} — {formatMoney(c.montant_verse ?? c.montant_appele)}
                               </option>
