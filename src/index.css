@@ -176,6 +176,7 @@ tr.clickable:hover { background: var(--color-primary-light); }
 }
 .sidebar nav { display: flex; flex-direction: column; gap: 3px; flex: 1; }
 .sidebar nav a {
+  display: flex; align-items: center; gap: 8px;
   padding: 9px 12px;
   border-radius: var(--radius-sm);
   color: var(--color-text);
@@ -440,8 +441,30 @@ tr.clickable:hover { background: var(--color-primary-light); }
     z-index: 10;
   }
   .sidebar .logo { margin: 0 14px 0 0; font-size: 0.95rem; white-space: nowrap; }
-  .sidebar nav { flex-direction: row; overflow-x: auto; gap: 4px; }
-  .sidebar nav a { white-space: nowrap; }
+
+  /* Nav principale (Dossiers/Équipe/Apparence/Comptes master, ou les 4 onglets client) en barre
+     d'onglets fixée en bas plutôt qu'une rangée qui défilait horizontalement dans la barre du haut —
+     "Comptes master" (le dernier lien) finissait hors champ, invisible sans penser à faire défiler.
+     Même traitement que .nav-groupes de DossierParcours juste plus bas dans ce fichier, mais un bloc
+     séparé : les deux barres ne coexistent jamais (voir .app-nav-en-dossier). */
+  .sidebar nav {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
+    flex-direction: row; justify-content: space-around; align-items: stretch; gap: 0;
+    background: var(--color-surface); border-top: 1px solid var(--color-border);
+    padding: 6px 4px max(6px, env(safe-area-inset-bottom));
+    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  }
+  .sidebar nav a {
+    flex: 1; flex-direction: column; gap: 3px; align-items: center; justify-content: center;
+    padding: 6px 2px; border-radius: 8px; font-size: 0.65rem; white-space: nowrap;
+  }
+  .sidebar nav a.active { background: none; color: var(--color-primary); }
+  /* Masquée à l'intérieur d'un dossier (voir Layout.tsx, dansUnDossier) : DossierParcours affiche
+     déjà sa propre barre fixée en bas, empiler les deux se chevaucherait. */
+  /* .sidebar nav (juste au-dessus) l'emporterait sur un simple .app-nav-en-dossier à spécificité
+     égale de sélecteur de classe — il faut ré-inclure le même contexte .sidebar nav pour gagner. */
+  .sidebar nav.app-nav-en-dossier { display: none; }
+
   /* Thème + déconnexion repliés dans le menu "..." (voir .options-menu) plutôt que deux boutons en
      permanence — la barre du haut était surchargée (logo + nav + 2 boutons sur un petit écran). */
   .sidebar-actions { display: none; }

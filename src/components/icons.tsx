@@ -107,6 +107,45 @@ export const IconStatistiques = (p: IconProps) => base(<>
   <path d="M2.5 20h19" />
 </>, p)
 
+// Icônes de la navigation principale (voir Layout.tsx) — distinctes de celles de DossierParcours
+// (ICONES_PARCOURS ci-dessous), qui portent un tout autre sens à l'intérieur d'un dossier.
+
+// Accueil (client) — maison classique.
+export const IconAccueil = (p: IconProps) => base(<>
+  <path d="M4 10.5L12 4l8 6.5" />
+  <path d="M6 9.5V19a1 1 0 0 0 1 1h10a1 1 0 0 0 1-1V9.5" />
+</>, p)
+
+// Dossiers (cabinet) — silhouette de dossier suspendu, distincte d'IconDocuments (page cornée) et
+// d'IconPieces (reçu), déjà prises pour un autre sens ailleurs dans l'appli.
+export const IconDossiers = (p: IconProps) => base(<>
+  <path d="M3.5 7.5A1.5 1.5 0 0 1 5 6h4.5l2 2H19a1.5 1.5 0 0 1 1.5 1.5v8.5A1.5 1.5 0 0 1 19 19.5H5A1.5 1.5 0 0 1 3.5 18z" />
+</>, p)
+
+// Équipe — deux silhouettes qui se chevauchent, convention la plus reconnue pour "équipe/contacts".
+export const IconEquipe = (p: IconProps) => base(<>
+  <circle cx="9" cy="9" r="3.2" />
+  <path d="M3.7 19c0-3 2.4-5 5.3-5s5.3 2 5.3 5" />
+  <circle cx="16.5" cy="8.3" r="2.5" />
+  <path d="M14.6 11c2.3.4 4 2.2 4.4 4.6" />
+</>, p)
+
+// Apparence — palette de peintre, déjà associée à la personnalisation visuelle ailleurs (logos,
+// couleurs...).
+export const IconApparence = (p: IconProps) => base(<>
+  <path d="M12 3.5a8.5 7.5 0 1 0 0 15c1 0 1.7-.9 1.3-1.8-.3-.7.2-1.4 1-1.4H16a3.5 3.5 0 0 0 3.5-3.5c0-4.6-3.4-8.3-7.5-8.3z" />
+  <circle cx="8" cy="10.8" r="1" fill="currentColor" stroke="none" />
+  <circle cx="12" cy="8" r="1" fill="currentColor" stroke="none" />
+  <circle cx="15.8" cy="10.8" r="1" fill="currentColor" stroke="none" />
+</>, p)
+
+// Comptes master — bouclier, pour un accès plateforme (super-admin) plutôt qu'un simple réglage
+// (distinct d'IconInformations, déjà utilisée pour les réglages d'un dossier).
+export const IconComptesMaster = (p: IconProps) => base(<>
+  <path d="M12 3.5l6.5 2.8v4.6c0 4.6-2.8 7.9-6.5 9.3-3.7-1.4-6.5-4.7-6.5-9.3V6.3z" />
+  <path d="M9 12l2 2 4-4.2" />
+</>, p)
+
 export const IconAssistant = (p: IconProps) => base(<>
   <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z" />
   <path d="M8.5 8h7M8.5 11h4.5" />

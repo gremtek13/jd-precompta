@@ -3,7 +3,10 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../lib/theme'
 import { useCabinetBranding } from '../lib/branding'
-import { IconLogout, IconMoon, IconPlusOptions, IconSun } from './icons'
+import {
+  IconAccueil, IconApparence, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation,
+  IconInformations, IconLogout, IconMoon, IconPieces, IconPlusOptions, IconSun,
+} from './icons'
 
 export default function Layout() {
   const { role, isSuperAdmin, estChef, signOut } = useAuth()
@@ -18,6 +21,13 @@ export default function Layout() {
   // horizontale sur mobile, juste sous la salutation) sont redondants et encombrent l'écran. Masqués
   // uniquement là ; toujours visibles depuis les autres écrans client pour revenir ou changer d'onglet.
   const masquerNavClient = role === 'client' && pathname === '/accueil'
+
+  // À l'intérieur d'un dossier, DossierParcours affiche déjà sa propre barre d'onglets fixée en bas
+  // sur mobile (voir index.css) — garder aussi celle-ci en bas empilerait deux barres fixes l'une sur
+  // l'autre. On la masque donc uniquement là (voir .app-nav-en-dossier dans la media query mobile ;
+  // sur ordinateur, où elle reste une simple liste dans la barre latérale, rien ne change) — le lien
+  // "← Dossiers" en haut de DossierDetail reste le chemin de retour vers cette nav.
+  const dansUnDossier = pathname !== '/dossiers' && pathname.startsWith('/dossiers/')
 
   // Sur mobile, thème + déconnexion se replient derrière un menu "..." plutôt que deux boutons en
   // permanence à côté du logo et de la nav — la barre du haut était surchargée (voir discussion).
@@ -45,40 +55,56 @@ export default function Layout() {
           {branding?.logoUrl ? branding.nom : 'JD Precompta'}
         </div>
         {!masquerNavClient && (
-          <nav>
+          <nav className={dansUnDossier ? 'app-nav-en-dossier' : undefined}>
             {role === 'cabinet' && (
               <NavLink to="/dossiers" className={({ isActive }) => (isActive ? 'active' : '')}>
-                Dossiers
+                <IconDossiers width={18} height={18} />
+                <span className="nav-label-full">Dossiers</span>
+                <span className="nav-label-court">Dossiers</span>
               </NavLink>
             )}
             {role === 'cabinet' && estChef && (
               <NavLink to="/equipe" className={({ isActive }) => (isActive ? 'active' : '')}>
-                Équipe
+                <IconEquipe width={18} height={18} />
+                <span className="nav-label-full">Équipe</span>
+                <span className="nav-label-court">Équipe</span>
               </NavLink>
             )}
             {role === 'cabinet' && estChef && (
               <NavLink to="/apparence" className={({ isActive }) => (isActive ? 'active' : '')}>
-                Apparence
+                <IconApparence width={18} height={18} />
+                <span className="nav-label-full">Apparence</span>
+                <span className="nav-label-court">Apparence</span>
               </NavLink>
             )}
             {role === 'cabinet' && isSuperAdmin && (
               <NavLink to="/comptes-master" className={({ isActive }) => (isActive ? 'active' : '')}>
-                Comptes master
+                <IconComptesMaster width={18} height={18} />
+                <span className="nav-label-full">Comptes master</span>
+                <span className="nav-label-court">Comptes</span>
               </NavLink>
             )}
             {role === 'client' && (
               <>
                 <NavLink to="/accueil" className={({ isActive }) => (isActive ? 'active' : '')}>
-                  Accueil
+                  <IconAccueil width={18} height={18} />
+                  <span className="nav-label-full">Accueil</span>
+                  <span className="nav-label-court">Accueil</span>
                 </NavLink>
                 <NavLink to="/mes-pieces" className={({ isActive }) => (isActive ? 'active' : '')}>
-                  Mes pièces
+                  <IconPieces width={18} height={18} />
+                  <span className="nav-label-full">Mes pièces</span>
+                  <span className="nav-label-court">Pièces</span>
                 </NavLink>
                 <NavLink to="/mes-informations" className={({ isActive }) => (isActive ? 'active' : '')}>
-                  Mes informations
+                  <IconInformations width={18} height={18} />
+                  <span className="nav-label-full">Mes informations</span>
+                  <span className="nav-label-court">Infos</span>
                 </NavLink>
                 <NavLink to="/ma-simulation" className={({ isActive }) => (isActive ? 'active' : '')}>
-                  Ma simulation
+                  <IconEstimation width={18} height={18} />
+                  <span className="nav-label-full">Ma simulation</span>
+                  <span className="nav-label-court">Simu</span>
                 </NavLink>
               </>
             )}
