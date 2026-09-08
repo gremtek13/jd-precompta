@@ -100,6 +100,13 @@ export const IconFactures = (p: IconProps) => base(<>
   <path d="M9 8h6M9 12h6M9 16h3" />
 </>, p)
 
+// Statistiques — trois barres de hauteurs croissantes, distinctes d'IconEstimation (une courbe) :
+// une balance/tableau de comptes, pas une projection dans le temps.
+export const IconStatistiques = (p: IconProps) => base(<>
+  <path d="M4 20V13M11 20V8M18 20V4" />
+  <path d="M2.5 20h19" />
+</>, p)
+
 export const IconAssistant = (p: IconProps) => base(<>
   <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z" />
   <path d="M8.5 8h7M8.5 11h4.5" />
@@ -141,6 +148,7 @@ export const ICONES_PARCOURS: Record<string, IconComponent> = {
   factures: IconFactures,
   banque: IconBanque,
   ecritures: IconEcritures,
+  statistiques: IconStatistiques,
   immobilisations: IconImmobilisations,
   cotisations: IconCotisations,
   cloture: IconCloture,

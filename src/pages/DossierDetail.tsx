@@ -9,6 +9,7 @@ import PacksTab from './dossier/PacksTab'
 import BanqueTab from './dossier/BanqueTab'
 import AccesTab from './dossier/AccesTab'
 import EcrituresTab from './dossier/EcrituresTab'
+import StatistiquesTab from './dossier/StatistiquesTab'
 import ImmobilisationsTab from './dossier/ImmobilisationsTab'
 import CotisationsTab from './dossier/CotisationsTab'
 import ClotureTab from './dossier/ClotureTab'
@@ -26,7 +27,7 @@ import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 // navigation interne n'était mémorisée par le navigateur. Cette liste sert à valider le paramètre
 // d'URL (une valeur absente ou invalide retombe sur "checklist").
 const TABS_VALIDES: DossierTab[] = [
-  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'immobilisations',
+  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'packs', 'informations', 'virements', 'acces',
 ]
 
@@ -134,6 +135,7 @@ export default function DossierDetail() {
       {tab === 'banque' && <BanqueTab dossierId={id} />}
       {tab === 'documents' && <DocumentsTab dossierId={id} />}
       {tab === 'ecritures' && <EcrituresTab dossierId={id} dossierSiret={dossier?.siret ?? null} assujettiTva={dossier?.assujetti_tva ?? false} />}
+      {tab === 'statistiques' && <StatistiquesTab dossierId={id} />}
       {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
       {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
       {tab === 'cloture' && <ClotureTab dossierId={id} />}

@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { EcritureBrouillon, LigneBancaire, Piece } from './types'
+import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 
 // Comptes PCG standard, fixes — partagés entre Écritures (génération de la ligne charge/produit +
 // TVA) et Banque (génération de la contrepartie ci-dessous), pour n'avoir qu'un seul endroit à
@@ -186,4 +186,59 @@ export function analyserEcritures(ecritures: EcritureBrouillon[], piecesEligible
   })
 
   return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
+}
+
+// Libellé des trois comptes PCG fixes (voir constantes ci-dessus) — jamais rattachés à une catégorie
+// (contrairement à un compte de charge/produit), donc absents de `categories` : sans ce repère, la
+// balance (voir calculerBalance) les afficherait avec un libellé vide.
+const LIBELLES_COMPTES_FIXES: Record<string, string> = {
+  [COMPTE_BANQUE]: 'Banque',
+  [COMPTE_TVA_DEDUCTIBLE]: 'TVA déductible',
+  [COMPTE_TVA_COLLECTEE]: 'TVA collectée',
+}
+
+export interface LigneBalance {
+  compte: string
+  libelle: string
+  nbEcritures: number
+  totalDebit: number
+  totalCredit: number
+  // Positif = solde débiteur, négatif = solde créditeur — jamais réparti sur deux colonnes ici
+  // (contrairement à soldeCompte, qui a besoin de connaître le sens normal du compte pour ça) : une
+  // balance générale regroupe tous les comptes, charges et produits confondus, sans a priori sur leur
+  // sens habituel.
+  solde: number
+}
+
+// Balance des comptes (onglet Statistiques) — un compte par ligne, tous confondus (charge, produit,
+// TVA, banque), avec son nombre d'écritures et ses totaux débit/crédit. Sert à repérer d'un coup d'œil
+// un compte au solde anormal (une charge créditrice, par exemple) sans avoir à parcourir le journal
+// ligne à ligne comme dans EcrituresTab. Le libellé vient de la catégorie associée à ce compte
+// (compte_comptable) quand elle existe, sinon des trois comptes fixes ci-dessus, sinon "—" (compte
+// entré à la main sur une catégorie propre à un dossier, jamais recroisé ici avec son libellé).
+export function calculerBalance(ecritures: EcritureBrouillon[], categories: Categorie[]): LigneBalance[] {
+  const libelleParCompte = new Map<string, string>()
+  for (const c of categories) {
+    if (c.compte_comptable) libelleParCompte.set(c.compte_comptable, c.libelle)
+  }
+
+  const lignesParCompte = new Map<string, EcritureBrouillon[]>()
+  for (const e of ecritures) {
+    lignesParCompte.set(e.compte, [...(lignesParCompte.get(e.compte) ?? []), e])
+  }
+
+  return [...lignesParCompte.entries()]
+    .map(([compte, lignes]) => {
+      const totalDebit = lignes.filter((l) => l.sens === 'debit').reduce((sum, l) => sum + l.montant, 0)
+      const totalCredit = lignes.filter((l) => l.sens === 'credit').reduce((sum, l) => sum + l.montant, 0)
+      return {
+        compte,
+        libelle: LIBELLES_COMPTES_FIXES[compte] ?? libelleParCompte.get(compte) ?? '—',
+        nbEcritures: lignes.length,
+        totalDebit,
+        totalCredit,
+        solde: totalDebit - totalCredit,
+      }
+    })
+    .sort((a, b) => a.compte.localeCompare(b.compte))
 }

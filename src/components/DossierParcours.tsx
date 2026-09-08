@@ -8,6 +8,7 @@ export type DossierTab =
   | 'factures'
   | 'banque'
   | 'ecritures'
+  | 'statistiques'
   | 'immobilisations'
   | 'cotisations'
   | 'cloture'
@@ -58,6 +59,7 @@ const GROUPES: Groupe[] = [
     id: 'comptabilite', label: 'Comptabilité', labelCourt: 'Compta', icone: IconEcritures,
     enfants: [
       { id: 'ecritures', label: 'Écritures' },
+      { id: 'statistiques', label: 'Statistiques' },
       { id: 'immobilisations', label: 'Immobilisations' },
       { id: 'cotisations', label: 'Cotisations' },
       { id: 'cloture', label: 'Clôture' },
