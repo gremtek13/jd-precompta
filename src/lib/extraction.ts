@@ -1,9 +1,19 @@
 import { supabase } from './supabase'
+import type { CategorieDocument } from './types'
 
 // Classification automatique du document, déduite du texte OCR brut (voir extract-piece) — permet de
 // router un import en masse vers Pièces (facture) ou vers l'archive Documents (le reste), sans coût
 // Textract supplémentaire puisqu'elle réutilise le texte déjà extrait pour la ventilation TVA.
 export type ClassificationDocument = 'releve_bancaire' | 'cotisation' | 'attestation' | 'facture'
+
+// Libellé humain d'une catégorie de document classé automatiquement — partagé entre l'import en masse
+// (ImportDossierModal) et l'ajout unifié (AjouterDocumentsModal), voir lib/importFichiers.ts.
+export const LABEL_CLASSIFICATION: Record<CategorieDocument, string> = {
+  releve_bancaire: 'Relevé bancaire',
+  cotisation: 'Appel de cotisation',
+  attestation: 'Attestation',
+  autre: 'Autre',
+}
 
 export interface ExtractionResult {
   tiers: string | null

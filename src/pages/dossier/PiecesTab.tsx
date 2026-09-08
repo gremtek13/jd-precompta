@@ -4,6 +4,7 @@ import { formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
 import PieceFormModal from './PieceFormModal'
+import AjouterDocumentsModal from './AjouterDocumentsModal'
 import ImportDossierModal from './ImportDossierModal'
 import SuperPdpModal from './SuperPdpModal'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -19,9 +20,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [statutFilter, setStatutFilter] = useState<'toutes' | 'a_valider' | 'validee'>('toutes')
   const [sousDossierFilter, setSousDossierFilter] = useState<'tous' | 'sans' | string>('tous')
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
-  const [editing, setEditing] = useState<Piece | null | 'new'>(null)
+  const [editing, setEditing] = useState<Piece | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  const [importing, setImporting] = useState(false)
+  const [ajoutOuvert, setAjoutOuvert] = useState(false)
+  const [importDossierOuvert, setImportDossierOuvert] = useState(false)
   const [superPdpOpen, setSuperPdpOpen] = useState(false)
 
   async function load() {
@@ -223,9 +225,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
               </button>
             </>
           )}
-          <button className="btn btn-outline btn-sm" onClick={() => setImporting(true)}>📁 Importer un dossier</button>
           <button className="btn btn-outline btn-sm" onClick={() => setSuperPdpOpen(true)}>🔌 Facture électronique</button>
-          <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Ajouter une pièce</button>
+          <button className="btn btn-outline btn-sm" onClick={() => setImportDossierOuvert(true)} title="Pour importer une arborescence de dossiers depuis ton ordinateur, avec sous-dossiers automatiques">
+            📁 Importer un dossier complet
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => setAjoutOuvert(true)}>+ Ajouter des documents</button>
         </div>
       </div>
 
@@ -291,17 +295,26 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           tiersCategories={tiersCategories}
           tiersCategoriesCabinet={tiersCategoriesCabinet}
           tiersConnus={tiersConnus}
-          piece={editing === 'new' ? null : editing}
+          piece={editing}
           onClose={() => setEditing(null)}
           onSaved={load}
         />
       )}
 
-      {importing && (
+      {ajoutOuvert && (
+        <AjouterDocumentsModal
+          dossierId={dossierId}
+          sousDossiers={sousDossiers}
+          onClose={() => setAjoutOuvert(false)}
+          onImported={load}
+        />
+      )}
+
+      {importDossierOuvert && (
         <ImportDossierModal
           dossierId={dossierId}
           sousDossiers={sousDossiers}
-          onClose={() => setImporting(false)}
+          onClose={() => setImportDossierOuvert(false)}
           onImported={load}
         />
       )}

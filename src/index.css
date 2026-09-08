@@ -262,6 +262,19 @@ tr.clickable:hover { background: var(--color-primary-light); }
   border: 1px dashed var(--color-border); border-radius: var(--radius); margin: 4px;
 }
 
+/* Zone de dépôt de fichiers (voir AjouterDocumentsModal) — même esprit que .empty-state (bordure en
+   pointillés) mais cliquable/glissable, donc surlignée au survol et pendant un glisser-déposer plutôt
+   que statique. */
+.dropzone {
+  display: block; text-align: center; cursor: pointer;
+  padding: 28px 16px; color: var(--color-text-light); font-size: 0.9rem;
+  border: 2px dashed var(--color-border); border-radius: var(--radius);
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.dropzone:hover, .dropzone[data-dragover] {
+  border-color: var(--color-primary); color: var(--color-text);
+}
+
 /* Palier 5 — rappel permanent que les écritures proposées ne sont pas une comptabilité tenue. */
 .brouillon-banner {
   background: var(--color-danger-light);

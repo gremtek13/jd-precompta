@@ -1,9 +1,9 @@
-import { useEffect, useState, type ChangeEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, slugify } from '../../lib/format'
-import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
+import { formatDate } from '../../lib/format'
 import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import AjouterDocumentsModal from './AjouterDocumentsModal'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -14,20 +14,17 @@ const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
 
 // Palier 5+ — archive des documents qui ne sont ni des pièces d'achat/vente ni des lignes bancaires :
 // relevés de compte, attestations, appels de cotisation avant rattachement à une échéance (voir
-// CotisationsTab). Alimentée automatiquement par la classification de l'import en masse
-// (ImportDossierModal) — reclassable et complétable ici à la main.
+// CotisationsTab). Alimentée automatiquement par le tri de AjouterDocumentsModal (même point d'entrée
+// que Pièces, voir PiecesTab) — reclassable et complétable ici à la main.
 export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
   const [sousDossiers, setSousDossiers] = useState<SousDossier[]>([])
   const [loading, setLoading] = useState(true)
   const [categorieFilter, setCategorieFilter] = useState<'toutes' | CategorieDocument>('toutes')
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
-  const [uploading, setUploading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
-  // Documents dont l'analyse Textract tourne encore en arrière-plan (voir handleUpload) — juste pour
-  // afficher un badge "Analyse…" à la place de la catégorie provisoire, pas pour bloquer quoi que ce soit.
-  const [enAnalyse, setEnAnalyse] = useState<Set<string>>(new Set())
+  const [ajoutOuvert, setAjoutOuvert] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -129,72 +126,14 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
-  // Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — presque
-  // toujours un export de relevé bancaire dans ce contexte, classé directement sur son extension, donc
-  // pas besoin d'attendre. Les autres formats passent par Textract, qui peut prendre jusqu'à 50s sur un
-  // document multi-pages : le document est créé tout de suite avec une catégorie provisoire ("Autre"),
-  // et l'analyse tourne en arrière-plan sans bloquer la suite (déposer un autre fichier, changer
-  // d'onglet...) — elle corrige la catégorie toute seule une fois terminée.
-  async function handleUpload(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setUploading(true)
-    setError(null)
-    try {
-      const hash = await hashFichier(file)
-      if (await fichierDejaPresent(dossierId, hash)) {
-        setError('Ce fichier est déjà présent dans ce dossier (Pièces ou Documents) — pas réajouté.')
-        return
-      }
-      const path = `${dossierId}/documents/${Date.now()}-${slugify(file.name)}`
-      const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
-      if (uploadError) throw uploadError
-
-      const estCsv = file.name.toLowerCase().endsWith('.csv')
-      const { data: inserted, error: insertError } = await supabase.from('documents_divers').insert({
-        dossier_id: dossierId,
-        storage_path: path,
-        storage_hash: hash,
-        nom_fichier: file.name,
-        categorie: estCsv ? 'releve_bancaire' : 'autre',
-      }).select().single()
-      if (insertError) throw insertError
-      load()
-
-      if (!estCsv && inserted) {
-        const documentId = inserted.id
-        setEnAnalyse((prev) => new Set(prev).add(documentId))
-        extractPiece(file, file.name)
-          .then(async (extraction) => {
-            if (extraction.classification !== 'facture') {
-              await supabase.from('documents_divers').update({ categorie: extraction.classification }).eq('id', documentId)
-            }
-          })
-          .catch(() => {}) // best-effort : la catégorie provisoire "Autre" reste, à corriger à la main
-          .finally(() => {
-            setEnAnalyse((prev) => {
-              const next = new Set(prev)
-              next.delete(documentId)
-              return next
-            })
-            load()
-          })
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
-    } finally {
-      setUploading(false)
-      e.target.value = ''
-    }
-  }
-
   return (
     <>
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Relevés bancaires, attestations, appels de cotisation — les documents classés automatiquement
-        lors d'un import en masse atterrissent ici plutôt que dans Pièces, faute de montant HT/TVA/TTC à
-        faire vérifier. Reclasse ou convertis en pièce si le tri automatique s'est trompé ; un appel de
-        cotisation se rattache à une échéance depuis l'onglet Cotisations.
+        Relevés bancaires, attestations, appels de cotisation — les documents triés automatiquement
+        (voir "+ Ajouter des documents", ici comme dans Pièces) atterrissent ici plutôt que dans Pièces,
+        faute de montant HT/TVA/TTC à faire vérifier. Reclasse ou convertis en pièce si le tri
+        automatique s'est trompé ; un appel de cotisation se rattache à une échéance depuis l'onglet
+        Cotisations.
       </p>
 
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
@@ -221,10 +160,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
               Supprimer la sélection ({selected.size})
             </button>
           )}
-          <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
-            {uploading ? 'Envoi…' : '+ Ajouter un document'}
-            <input type="file" accept=".pdf,.jpg,.jpeg,.png,.csv" style={{ display: 'none' }} disabled={uploading} onChange={handleUpload} />
-          </label>
+          <button className="btn btn-primary btn-sm" onClick={() => setAjoutOuvert(true)}>+ Ajouter des documents</button>
         </div>
       </div>
 
@@ -267,7 +203,6 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                         <option key={c} value={c}>{LABEL_CATEGORIE[c]}</option>
                       ))}
                     </select>
-                    {enAnalyse.has(d.id) && <span className="badge badge-neutral">Analyse…</span>}
                   </td>
                   <td className="hide-mobile">{sousDossierLabel(d.sous_dossier_id)}</td>
                   <td className="hide-mobile">{formatDate(d.created_at)}</td>
@@ -281,6 +216,15 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           </table>
         )}
       </div>
+
+      {ajoutOuvert && (
+        <AjouterDocumentsModal
+          dossierId={dossierId}
+          sousDossiers={sousDossiers}
+          onClose={() => setAjoutOuvert(false)}
+          onImported={load}
+        />
+      )}
     </>
   )
 }
