@@ -305,3 +305,23 @@ export interface Membership {
   role: 'client'
   created_at: string
 }
+
+export type RoleCabinetAdmin = 'comptable_en_chef' | 'comptable'
+
+// Un membre de l'équipe du cabinet (voir EquipePage) — "en chef" voit tous les dossiers du cabinet,
+// "comptable" seulement ceux qui lui sont explicitement assignés (voir DossierAssignation).
+export interface CabinetAdmin {
+  user_id: string
+  cabinet_id: string
+  role: RoleCabinetAdmin
+  email: string | null
+}
+
+// Quels dossiers précis un comptable (rôle non "en chef") peut voir — gérée uniquement par un chef de
+// cabinet (ou super-admin), voir EquipePage.
+export interface DossierAssignation {
+  id: string
+  dossier_id: string
+  user_id: string
+  created_at: string
+}

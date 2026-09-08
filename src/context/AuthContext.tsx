@@ -12,6 +12,13 @@ interface AuthState {
   // résolu via l'appel RPC is_super_admin() : la table super_admins elle-même est verrouillée (RLS sans
   // aucune policy), impossible à lire directement depuis le navigateur, même pour soi-même.
   isSuperAdmin: boolean
+  // Chef de cabinet (rôle comptable_en_chef, voir cabinet_admins.role) — donne accès à la page
+  // Équipe. Un super-admin est toujours considéré chef (il gère son propre cabinet en plus de
+  // superviser les autres). Sans intérêt pour role !== 'cabinet'.
+  estChef: boolean
+  // Cabinet de l'utilisateur connecté (pertinent seulement pour role === 'cabinet') — sert à la page
+  // Équipe pour savoir quel cabinet gérer sans avoir à le redemander.
+  monCabinetId: string | null
   loading: boolean
   signOut: () => Promise<void>
 }
@@ -23,6 +30,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [role, setRole] = useState<Role>(null)
   const [dossierIds, setDossierIds] = useState<string[]>([])
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
+  const [estChef, setEstChef] = useState(false)
+  const [monCabinetId, setMonCabinetId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -39,6 +48,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole(null)
         setDossierIds([])
         setIsSuperAdmin(false)
+        setEstChef(false)
+        setMonCabinetId(null)
         setLoading(false)
         return
       }
@@ -46,7 +57,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const { data: adminRow } = await supabase
         .from('cabinet_admins')
-        .select('user_id')
+        .select('cabinet_id, role')
         .eq('user_id', session.user.id)
         .maybeSingle()
 
@@ -58,6 +69,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setRole('cabinet')
         setDossierIds([])
         setIsSuperAdmin(!!estSuperAdmin)
+        setEstChef(!!estSuperAdmin || adminRow.role === 'comptable_en_chef')
+        setMonCabinetId(adminRow.cabinet_id)
         setLoading(false)
         return
       }
@@ -71,6 +84,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setRole('client')
       setDossierIds((memberships ?? []).map((m) => m.dossier_id))
       setIsSuperAdmin(false)
+      setEstChef(false)
+      setMonCabinetId(null)
       setLoading(false)
     }
 
@@ -85,7 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ session, role, dossierIds, isSuperAdmin, loading, signOut }}>
+    <AuthContext.Provider value={{ session, role, dossierIds, isSuperAdmin, estChef, monCabinetId, loading, signOut }}>
       {children}
     </AuthContext.Provider>
   )

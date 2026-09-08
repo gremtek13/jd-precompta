@@ -9,9 +9,10 @@ import ClientUpload from './pages/ClientUpload'
 import ClientInformations from './pages/ClientInformations'
 import ClientSimulation from './pages/ClientSimulation'
 import SuperAdminPage from './pages/SuperAdminPage'
+import EquipePage from './pages/EquipePage'
 
 function Gate() {
-  const { session, role, isSuperAdmin, loading } = useAuth()
+  const { session, role, isSuperAdmin, estChef, loading } = useAuth()
 
   if (loading) return <div className="login-shell"><p className="muted">Chargement…</p></div>
   if (!session) return <Login />
@@ -28,6 +29,7 @@ function Gate() {
                 onglet) revienne au bon endroit plutôt qu'à la liste des dossiers. */}
             <Route path="/dossiers/:id/:tab" element={<DossierDetail />} />
             {isSuperAdmin && <Route path="/comptes-master" element={<SuperAdminPage />} />}
+            {estChef && <Route path="/equipe" element={<EquipePage />} />}
             <Route path="*" element={<Navigate to="/dossiers" replace />} />
           </>
         )}
