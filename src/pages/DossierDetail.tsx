@@ -140,7 +140,7 @@ export default function DossierDetail() {
       {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
       {tab === 'cloture' && <ClotureTab dossierId={id} />}
       {tab === 'estimation' && <EstimationTab dossierId={id} />}
-      {tab === 'informations' && <InformationsTab dossierId={id} />}
+      {tab === 'informations' && <InformationsTab dossierId={id} dossierNom={dossier?.nom ?? ''} />}
       {tab === 'virements' && <VirementsTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
 

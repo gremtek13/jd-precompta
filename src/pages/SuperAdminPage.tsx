@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { estimerCoutUsd, formatUsd } from '../lib/coutsApi'
+import ConfirmationSuppression from '../components/ConfirmationSuppression'
 
 interface CabinetApercu {
   id: string
@@ -33,6 +34,10 @@ export default function SuperAdminPage() {
   const [password, setPassword] = useState('')
   const [enregistrement, setEnregistrement] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+
+  const [aSupprimer, setASupprimer] = useState<CabinetApercu | null>(null)
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false)
+  const [suppressionErreur, setSuppressionErreur] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -110,6 +115,24 @@ export default function SuperAdminPage() {
     load()
   }
 
+  // Réservée aux cabinets déjà vides (voir delete-cabinet) — la contrainte de clé étrangère fait déjà
+  // tout le travail de garde-fou, cette fonction ne fait que relayer son message d'erreur.
+  async function supprimerCabinet() {
+    if (!aSupprimer) return
+    setSuppressionEnCours(true)
+    setSuppressionErreur(null)
+    const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('delete-cabinet', {
+      body: { cabinetId: aSupprimer.id },
+    })
+    setSuppressionEnCours(false)
+    if (data?.error || invokeError) {
+      setSuppressionErreur(data?.error ?? 'Échec de la suppression.')
+      return
+    }
+    setASupprimer(null)
+    load()
+  }
+
   return (
     <>
       <div className="topbar">
@@ -142,6 +165,7 @@ export default function SuperAdminPage() {
                 <th>Tokens agent (E/S)</th>
                 <th>Coût estimé agent</th>
                 <th>Créé le</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -168,6 +192,19 @@ export default function SuperAdminPage() {
                   </td>
                   <td>{formatUsd(estimerCoutUsd(c.tokens_entree, c.tokens_sortie))}</td>
                   <td>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
+                  <td className="td-actions">
+                    <button
+                      type="button"
+                      className="btn btn-danger btn-sm"
+                      disabled={c.nb_dossiers > 0 || c.nb_admins > 0}
+                      title={c.nb_dossiers > 0 || c.nb_admins > 0
+                        ? `Retire d'abord ses ${c.nb_dossiers} dossier(s) et ${c.nb_admins} membre(s) d'équipe.`
+                        : undefined}
+                      onClick={() => setASupprimer(c)}
+                    >
+                      Supprimer
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -206,6 +243,19 @@ export default function SuperAdminPage() {
             </form>
           </div>
         </div>
+      )}
+
+      {aSupprimer && (
+        <ConfirmationSuppression
+          titre="Supprimer ce cabinet"
+          description={`Cette action supprime définitivement le cabinet "${aSupprimer.nom}". Impossible tant qu'il a encore des dossiers ou des membres d'équipe (retire-les d'abord).`}
+          nomAttendu={aSupprimer.nom}
+          boutonLabel="Supprimer définitivement"
+          enCours={suppressionEnCours}
+          erreur={suppressionErreur}
+          onConfirmer={supprimerCabinet}
+          onAnnuler={() => { setASupprimer(null); setSuppressionErreur(null) }}
+        />
       )}
     </>
   )

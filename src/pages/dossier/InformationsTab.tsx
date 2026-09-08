@@ -1,16 +1,33 @@
 import { useEffect, useState, type FormEvent } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
+import { useAuth } from '../../context/AuthContext'
+import { generatePack } from '../../lib/packGenerator'
+import { supprimerDossierDefinitivement } from '../../lib/suppressionDossier'
+import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
 
 // Informations déclaratives saisies une fois par le cabinet (ou récupérées auprès du client) plutôt
 // que déduites d'un document — un type de véhicule ou l'existence de tickets-restaurant ne se lit pas
 // de manière fiable dans un relevé bancaire. Alimentent la Checklist (justificatifs à obtenir) et,
 // plus tard, le calcul des paniers repas (jours_travailles_an).
-export default function InformationsTab({ dossierId }: { dossierId: string }) {
+//
+// Porte aussi la "zone dangereuse" du dossier (export puis suppression définitive) — pas un onglet à
+// part : une action aussi rare mérite d'être au bout du même écran de réglages plutôt que de justifier
+// sa propre entrée de menu.
+export default function InformationsTab({ dossierId, dossierNom }: { dossierId: string; dossierNom: string }) {
+  const { estChef } = useAuth()
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+
+  const [exportEnCours, setExportEnCours] = useState(false)
+  const [exportErreur, setExportErreur] = useState<string | null>(null)
+  const [confirmerSuppression, setConfirmerSuppression] = useState(false)
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false)
+  const [suppressionErreur, setSuppressionErreur] = useState<string | null>(null)
 
   const [vehiculeType, setVehiculeType] = useState<VehiculeType>('aucun')
   const [vehiculeLibelle, setVehiculeLibelle] = useState('')
@@ -64,9 +81,53 @@ export default function InformationsTab({ dossierId }: { dossierId: string }) {
     }
   }
 
+  // Export "clôture" : un pack complet (ZIP des pièces + Excel récap), sur toute l'histoire du
+  // dossier plutôt qu'une période choisie — même mécanisme que l'onglet Packs (voir packGenerator),
+  // juste avec une plage assez large pour tout couvrir. Comme les packs périodiques, ne reprend que
+  // les pièces validées ayant une date renseignée (limite déjà connue de generatePack, pas nouvelle
+  // ici) — pense à valider les pièces en attente avant de l'utiliser en vue d'une suppression.
+  async function exporterAvantSuppression() {
+    setExportEnCours(true)
+    setExportErreur(null)
+    try {
+      const periodeDebut = '2000-01-01'
+      const periodeFin = new Date().toISOString().slice(0, 10)
+      const { nbPieces, storagePathZip, storagePathExcel, totalTtc } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
+      if (nbPieces === 0) {
+        setExportErreur("Aucune pièce validée à exporter sur ce dossier (les pièces sans date ne sont jamais incluses dans un pack).")
+        return
+      }
+      const { data: userData } = await supabase.auth.getUser()
+      await supabase.from('packs').insert({
+        dossier_id: dossierId, periode_debut: periodeDebut, periode_fin: periodeFin,
+        generated_by: userData.user!.id, storage_path_zip: storagePathZip, storage_path_excel: storagePathExcel,
+        nb_pieces: nbPieces, total_ttc: totalTtc,
+      })
+      const { data: signed } = await supabase.storage.from('packs').createSignedUrl(storagePathZip, 60)
+      if (signed) window.open(signed.signedUrl, '_blank')
+    } catch (err) {
+      setExportErreur(err instanceof Error ? err.message : "L'export a échoué.")
+    } finally {
+      setExportEnCours(false)
+    }
+  }
+
+  async function confirmerEtSupprimer() {
+    setSuppressionEnCours(true)
+    setSuppressionErreur(null)
+    try {
+      await supprimerDossierDefinitivement(dossierId)
+      navigate('/dossiers')
+    } catch (err) {
+      setSuppressionErreur(err instanceof Error ? err.message : 'La suppression a échoué.')
+      setSuppressionEnCours(false)
+    }
+  }
+
   if (loading) return <p className="muted">Chargement…</p>
 
   return (
+    <>
     <div className="card" style={{ maxWidth: 640 }}>
       <h3 style={{ marginTop: 0 }}>Informations du client</h3>
       <p className="muted" style={{ marginTop: -8 }}>
@@ -124,5 +185,47 @@ export default function InformationsTab({ dossierId }: { dossierId: string }) {
         </div>
       </form>
     </div>
+
+    <div className="card" style={{ maxWidth: 640, marginTop: 20 }}>
+      <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+        Zone dangereuse <span className="badge badge-danger">irréversible</span>
+      </h3>
+      <p className="muted" style={{ marginTop: -8 }}>
+        Exporte un pack complet (toutes les pièces validées, du début à aujourd'hui) avant de
+        supprimer ce dossier si tu comptes archiver le dossier en clôture — la suppression retire
+        aussi définitivement toutes les écritures, immobilisations, factures et accès client rattachés,
+        et rien de tout ça n'est récupérable ensuite.
+      </p>
+      {exportErreur && <p className="error-text">{exportErreur}</p>}
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+        <button type="button" className="btn btn-outline" onClick={exporterAvantSuppression} disabled={exportEnCours}>
+          {exportEnCours ? 'Export…' : 'Exporter avant suppression'}
+        </button>
+        {estChef && (
+          <button type="button" className="btn btn-danger" onClick={() => setConfirmerSuppression(true)}>
+            Supprimer ce dossier définitivement
+          </button>
+        )}
+      </div>
+      {!estChef && (
+        <p className="muted" style={{ marginTop: 10, marginBottom: 0 }}>
+          Seul un comptable en chef peut supprimer un dossier.
+        </p>
+      )}
+    </div>
+
+    {confirmerSuppression && (
+      <ConfirmationSuppression
+        titre="Supprimer ce dossier"
+        description={`Cette action supprime définitivement "${dossierNom}" et tout ce qui lui est rattaché (pièces, écritures, immobilisations, factures, accès client...). Elle est irréversible.`}
+        nomAttendu={dossierNom}
+        boutonLabel="Supprimer définitivement"
+        enCours={suppressionEnCours}
+        erreur={suppressionErreur}
+        onConfirmer={confirmerEtSupprimer}
+        onAnnuler={() => { setConfirmerSuppression(false); setSuppressionErreur(null) }}
+      />
+    )}
+    </>
   )
 }
