@@ -2,12 +2,17 @@ import { useEffect, useRef, useState } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../lib/theme'
+import { useCabinetBranding } from '../lib/branding'
 import { IconLogout, IconMoon, IconPlusOptions, IconSun } from './icons'
 
 export default function Layout() {
   const { role, isSuperAdmin, estChef, signOut } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
+  // Charte graphique du cabinet (voir lib/branding.ts, CabinetBrandingPage) — appliquée ici pour
+  // comptables et clients à la fois, puisque les deux passent par ce même Layout. branding reste null
+  // (repli sur le logo/couleur JD Precompta par défaut) pour un cabinet qui n'a rien configuré.
+  const branding = useCabinetBranding()
   // Sur l'accueil client, les grosses tuiles (Mes pièces / Mes informations / Prendre une photo)
   // font déjà office de navigation — les mêmes liens en rangée d'onglets au-dessus (repliés en barre
   // horizontale sur mobile, juste sous la salutation) sont redondants et encombrent l'écran. Masqués
@@ -32,8 +37,12 @@ export default function Layout() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="logo">
-          <span className="brand-mark">JD</span>
-          JD Precompta
+          {branding?.logoUrl ? (
+            <img src={branding.logoUrl} alt={branding.nom} className="brand-logo" />
+          ) : (
+            <span className="brand-mark">JD</span>
+          )}
+          {branding?.logoUrl ? branding.nom : 'JD Precompta'}
         </div>
         {!masquerNavClient && (
           <nav>
@@ -45,6 +54,11 @@ export default function Layout() {
             {role === 'cabinet' && estChef && (
               <NavLink to="/equipe" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Équipe
+              </NavLink>
+            )}
+            {role === 'cabinet' && estChef && (
+              <NavLink to="/apparence" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Apparence
               </NavLink>
             )}
             {role === 'cabinet' && isSuperAdmin && (

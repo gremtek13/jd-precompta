@@ -10,6 +10,7 @@ import ClientInformations from './pages/ClientInformations'
 import ClientSimulation from './pages/ClientSimulation'
 import SuperAdminPage from './pages/SuperAdminPage'
 import EquipePage from './pages/EquipePage'
+import CabinetBrandingPage from './pages/CabinetBrandingPage'
 
 function Gate() {
   const { session, role, isSuperAdmin, estChef, loading } = useAuth()
@@ -30,6 +31,7 @@ function Gate() {
             <Route path="/dossiers/:id/:tab" element={<DossierDetail />} />
             {isSuperAdmin && <Route path="/comptes-master" element={<SuperAdminPage />} />}
             {estChef && <Route path="/equipe" element={<EquipePage />} />}
+            {estChef && <Route path="/apparence" element={<CabinetBrandingPage />} />}
             <Route path="*" element={<Navigate to="/dossiers" replace />} />
           </>
         )}

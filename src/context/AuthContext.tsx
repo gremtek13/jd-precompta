@@ -16,8 +16,10 @@ interface AuthState {
   // Équipe. Un super-admin est toujours considéré chef (il gère son propre cabinet en plus de
   // superviser les autres). Sans intérêt pour role !== 'cabinet'.
   estChef: boolean
-  // Cabinet de l'utilisateur connecté (pertinent seulement pour role === 'cabinet') — sert à la page
-  // Équipe pour savoir quel cabinet gérer sans avoir à le redemander.
+  // Cabinet de l'utilisateur connecté — sert à la page Équipe (rôle cabinet) et à la charte graphique
+  // (voir lib/branding.ts, les deux rôles), qui a besoin de savoir quel cabinet habiller sans le
+  // redemander. Pour un client, résolu via le cabinet_id du dossier de sa première adhésion (un client
+  // n'appartient jamais qu'à un seul cabinet dans ce modèle) ; null tant qu'aucune adhésion n'existe.
   monCabinetId: string | null
   loading: boolean
   signOut: () => Promise<void>
@@ -81,11 +83,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .eq('user_id', session.user.id)
 
       if (cancelled) return
+
+      // Cabinet du client, via le dossier de sa première adhésion — seulement pour la charte
+      // graphique (voir lib/branding.ts) ; sans conséquence sur ses droits d'accès, déjà gérés par
+      // dossierIds/RLS. Best-effort : un échec ici ne doit pas empêcher la connexion.
+      let cabinetId: string | null = null
+      if (memberships && memberships.length > 0) {
+        const { data: dossier } = await supabase
+          .from('dossiers')
+          .select('cabinet_id')
+          .eq('id', memberships[0].dossier_id)
+          .maybeSingle()
+        cabinetId = dossier?.cabinet_id ?? null
+      }
+      if (cancelled) return
+
       setRole('client')
       setDossierIds((memberships ?? []).map((m) => m.dossier_id))
       setIsSuperAdmin(false)
       setEstChef(false)
-      setMonCabinetId(null)
+      setMonCabinetId(cabinetId)
       setLoading(false)
     }
 

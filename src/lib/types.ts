@@ -308,6 +308,19 @@ export interface AgentConversation {
   created_at: string
 }
 
+// Charte graphique d'un cabinet (voir CabinetBrandingPage, lib/branding.ts) — couleur_primaire_claire
+// n'est jamais saisie à la main (dérivée automatiquement de couleur_primaire à l'enregistrement, voir
+// lib/colors.ts) : demander deux couleurs cohérentes à quelqu'un de non technique n'a pas de sens.
+export interface Cabinet {
+  id: string
+  nom: string
+  couleur_primaire: string | null
+  couleur_primaire_claire: string | null
+  police_google_font: string | null
+  logo_storage_path: string | null
+  created_at: string
+}
+
 export interface Membership {
   id: string
   user_id: string
