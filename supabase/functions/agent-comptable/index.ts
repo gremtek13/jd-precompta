@@ -405,6 +405,12 @@ Règles impératives :
 
   const ctx: OutilContexte = { admin, dossierId, dossier: { nom: dossierRow.nom, assujetti_tva: dossierRow.assujetti_tva } }
   const outilsUtilises: string[] = []
+  // Cumul sur tous les tours de la boucle d'outils (voir plus bas) : une question qui déclenche
+  // plusieurs allers-retours d'outils fait autant d'appels Bedrock, chacun facturé séparément — le
+  // coût réel de la réponse est la somme, pas seulement le dernier appel. Sert à estimer le coût
+  // par dossier/cabinet (voir lib/coutsApi.ts, page Comptes master), jamais à facturer précisément.
+  let usageEntree = 0
+  let usageSortie = 0
 
   try {
     // Identifiants passés explicitement (plutôt que de compter sur la chaîne de résolution AWS
@@ -453,6 +459,8 @@ Règles impératives :
         "appel Bedrock",
       )
       console.log(`[agent-comptable] tour ${tour} : réponse reçue en ${Date.now() - debut} ms, stop_reason=${response.stop_reason}`)
+      usageEntree += response.usage?.input_tokens ?? 0
+      usageSortie += response.usage?.output_tokens ?? 0
 
       if (response.stop_reason === "refusal") {
         const categorie = response.stop_details?.category ?? null
@@ -474,7 +482,7 @@ Règles impératives :
 
       if (toolUseBlocks.length === 0) {
         const texte = response.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n\n")
-        return json({ reponse: texte || "(réponse vide)", outils_utilises: outilsUtilises })
+        return json({ reponse: texte || "(réponse vide)", outils_utilises: outilsUtilises, usage: { tokens_entree: usageEntree, tokens_sortie: usageSortie } })
       }
 
       messages.push({ role: "assistant", content: response.content })

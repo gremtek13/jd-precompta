@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
+import { estimerCoutUsd, formatUsd } from '../lib/coutsApi'
 
 interface CabinetApercu {
   id: string
@@ -10,6 +11,11 @@ interface CabinetApercu {
   nb_admins: number
   nb_clients: number
   created_at: string
+  // Consommation de l'agent comptable (Claude/Bedrock, voir lib/coutsApi.ts) cumulée sur tous les
+  // dossiers du cabinet — 0 tant qu'aucune conversation n'a été enregistrée depuis l'ajout de ce
+  // suivi (voir migration agent_conversations_tokens), jamais une facture AWS exacte.
+  tokens_entree: number
+  tokens_sortie: number
 }
 
 // Réservée au(x) super-admin(s) (voir AuthContext.isSuperAdmin, résolu via le RPC is_super_admin()) —
@@ -23,11 +29,14 @@ export default function SuperAdminPage() {
 
   async function load() {
     setLoading(true)
-    const [{ data: cabinetsData }, { data: dossiersData }, { data: adminsData }, { data: membershipsData }] = await Promise.all([
+    const [{ data: cabinetsData }, { data: dossiersData }, { data: adminsData }, { data: membershipsData }, { data: usageData }] = await Promise.all([
       supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at').order('created_at'),
       supabase.from('dossiers').select('id, cabinet_id'),
       supabase.from('cabinet_admins').select('cabinet_id'),
       supabase.from('memberships').select('dossier_id'),
+      // Uniquement les messages assistant (voir AssistantTab.enregistrer) : seuls eux déclenchent un
+      // appel Bedrock facturé, un message user n'a jamais de tokens_entree/tokens_sortie renseignés.
+      supabase.from('agent_conversations').select('dossier_id, tokens_entree, tokens_sortie').eq('role', 'assistant'),
     ])
 
     const cabinetParDossier = new Map(((dossiersData ?? []) as { id: string; cabinet_id: string }[]).map((d) => [d.id, d.cabinet_id]))
@@ -47,12 +56,24 @@ export default function SuperAdminPage() {
       const cabinetId = cabinetParDossier.get(m.dossier_id)
       if (cabinetId) nbClients.set(cabinetId, (nbClients.get(cabinetId) ?? 0) + 1)
     }
+    // Même logique que nbClients : un message d'agent est rattaché à un dossier, agrégé ici au
+    // niveau du cabinet auquel ce dossier appartient.
+    const tokensEntree = new Map<string, number>()
+    const tokensSortie = new Map<string, number>()
+    for (const u of (usageData ?? []) as { dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null }[]) {
+      const cabinetId = cabinetParDossier.get(u.dossier_id)
+      if (!cabinetId) continue
+      tokensEntree.set(cabinetId, (tokensEntree.get(cabinetId) ?? 0) + (u.tokens_entree ?? 0))
+      tokensSortie.set(cabinetId, (tokensSortie.get(cabinetId) ?? 0) + (u.tokens_sortie ?? 0))
+    }
 
     setCabinets(((cabinetsData ?? []) as { id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string }[]).map((c) => ({
       ...c,
       nb_dossiers: nbDossiers.get(c.id) ?? 0,
       nb_admins: nbAdmins.get(c.id) ?? 0,
       nb_clients: nbClients.get(c.id) ?? 0,
+      tokens_entree: tokensEntree.get(c.id) ?? 0,
+      tokens_sortie: tokensSortie.get(c.id) ?? 0,
     })))
     setLoading(false)
   }
@@ -67,7 +88,9 @@ export default function SuperAdminPage() {
       <p className="muted" style={{ marginTop: -12, marginBottom: 20 }}>
         Vue d'ensemble de tous les cabinets de la plateforme (le tien inclus) — en lecture seule.
         Créer un nouveau cabinet ou changer sa charte graphique reste un accès direct en base, jamais
-        un formulaire ici.
+        un formulaire ici. Le coût estimé ne couvre que l'agent comptable (Claude via Amazon Bedrock,
+        voir AssistantTab) — pas les autres API payantes de l'appli (Textract pour l'OCR des pièces,
+        notamment) — et reste un ordre de grandeur, jamais la facture AWS exacte.
       </p>
 
       <div className="card table-scroll" style={{ padding: 0 }}>
@@ -84,6 +107,8 @@ export default function SuperAdminPage() {
                 <th>Dossiers</th>
                 <th>Admins</th>
                 <th>Clients</th>
+                <th>Tokens agent (E/S)</th>
+                <th>Coût estimé agent</th>
                 <th>Créé le</th>
               </tr>
             </thead>
@@ -104,6 +129,12 @@ export default function SuperAdminPage() {
                   <td>{c.nb_dossiers}</td>
                   <td>{c.nb_admins}</td>
                   <td>{c.nb_clients}</td>
+                  <td>
+                    {c.tokens_entree === 0 && c.tokens_sortie === 0
+                      ? <span className="muted">—</span>
+                      : `${c.tokens_entree.toLocaleString('fr-FR')} / ${c.tokens_sortie.toLocaleString('fr-FR')}`}
+                  </td>
+                  <td>{formatUsd(estimerCoutUsd(c.tokens_entree, c.tokens_sortie))}</td>
                   <td>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
                 </tr>
               ))}

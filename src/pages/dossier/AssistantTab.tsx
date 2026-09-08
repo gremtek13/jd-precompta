@@ -89,7 +89,10 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
 
   // Best-effort : un échec d'enregistrement de l'historique ne doit jamais casser la conversation
   // elle-même, seulement priver cette ligne de persistance (rare, et sans conséquence grave).
-  async function enregistrer(role: 'user' | 'assistant', texte: string, outils?: string[]) {
+  // `usage` (tokens Bedrock consommés pour produire cette réponse — voir agent-comptable) n'existe
+  // que pour un message assistant, jamais un message user (aucun appel modèle) : sert à estimer le
+  // coût réel de l'agent par dossier/cabinet (voir lib/coutsApi.ts, page Comptes master).
+  async function enregistrer(role: 'user' | 'assistant', texte: string, outils?: string[], usage?: { tokens_entree: number; tokens_sortie: number }) {
     if (!conversationId) return
     await supabase.from('agent_conversations').insert({
       dossier_id: dossierId,
@@ -97,6 +100,8 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
       role,
       texte,
       outils_utilises: outils ?? null,
+      tokens_entree: usage?.tokens_entree ?? null,
+      tokens_sortie: usage?.tokens_sortie ?? null,
       created_by: session?.user.id ?? null,
     })
   }
@@ -114,10 +119,9 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
     enregistrer('user', texte)
 
     try {
-      const { data, error: invokeError } = await supabase.functions.invoke<{ reponse?: string; outils_utilises?: string[]; error?: string }>(
-        'agent-comptable',
-        { body: { dossierId, message: texte, historique } },
-      )
+      const { data, error: invokeError } = await supabase.functions.invoke<{
+        reponse?: string; outils_utilises?: string[]; usage?: { tokens_entree: number; tokens_sortie: number }; error?: string
+      }>('agent-comptable', { body: { dossierId, message: texte, historique } })
       // Sur un statut non-2xx, invokeError est générique — le message précis est dans data.error.
       if (data?.error) throw new Error(data.error)
       if (invokeError) throw invokeError
@@ -128,7 +132,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
         conversation_id: conversationId, role: 'assistant', texte: reponseTexte,
         outils_utilises: data.outils_utilises ?? null, created_at: new Date().toISOString(),
       }])
-      enregistrer('assistant', reponseTexte, data.outils_utilises)
+      enregistrer('assistant', reponseTexte, data.outils_utilises, data.usage)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
