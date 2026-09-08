@@ -178,8 +178,14 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     return null
   }
 
+  // Correctif audit sécurité (rapprochements, Importante) : le résultat de la mise à jour de
+  // lignes_bancaires était ignoré — en cas d'échec (RLS, réseau...), le code créait quand même la
+  // contrepartie banque comme si le rapprochement avait réussi, laissant une écriture de contrepartie
+  // pour un mouvement qui, en base, n'est pas réellement marqué rapproché. On vérifie maintenant
+  // l'erreur avant d'enchaîner sur l'opération dépendante, et on la signale plutôt que de la taire.
   async function rapprocher(ligneId: string, pieceId: string) {
-    await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId, cotisation_id: null }).eq('id', ligneId)
+    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId, cotisation_id: null }).eq('id', ligneId)
+    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return }
     const ligne = lignes.find((l) => l.id === ligneId)
     const piece = pieces.find((p) => p.id === pieceId)
     if (ligne && piece) await synchroniserContrepartieBanque(dossierId, piece, ligne)
@@ -187,15 +193,17 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   }
 
   async function rapprocherCotisation(ligneId: string, cotisationId: string) {
-    await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', cotisation_id: cotisationId, piece_id: null }).eq('id', ligneId)
+    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', cotisation_id: cotisationId, piece_id: null }).eq('id', ligneId)
+    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return }
     load()
   }
 
   async function annulerRapprochement(ligneId: string) {
     const ancienPieceId = lignes.find((l) => l.id === ligneId)?.piece_id ?? null
-    await supabase.from('lignes_bancaires').update({
+    const { error } = await supabase.from('lignes_bancaires').update({
       statut: 'non_rapprochee', piece_id: null, cotisation_id: null, prelevement_personnel: false,
     }).eq('id', ligneId)
+    if (error) { window.alert(`L'annulation du rapprochement n'a pas pu être enregistrée : ${error.message}`); return }
     if (ancienPieceId) await retirerContrepartieBanque(ancienPieceId)
     load()
   }
@@ -296,7 +304,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     if (maj.length === 0) return
     setRapprochementAuto(true)
     try {
-      await Promise.all(
+      const resultats = await Promise.all(
         maj.map((m) =>
           supabase
             .from('lignes_bancaires')
@@ -304,8 +312,19 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
             .eq('id', m.ligneId),
         ),
       )
+      // Correctif audit sécurité (rapprochements, Importante) : seules les lignes réellement mises à
+      // jour reçoivent leur contrepartie banque — jamais toutes en bloc, sinon un échec isolé (une
+      // ligne verrouillée, une erreur réseau au milieu du lot...) laisserait une écriture de
+      // contrepartie pour un mouvement qui, en base, n'est en réalité pas rapproché.
+      const echecs = resultats.filter((r) => r.error)
+      const reussies = maj.filter((_, i) => !resultats[i].error)
+      if (echecs.length > 0) {
+        window.alert(
+          `${echecs.length} rapprochement${echecs.length > 1 ? 's' : ''} sur ${maj.length} n'${echecs.length > 1 ? 'ont' : 'a'} pas pu être enregistré${echecs.length > 1 ? 's' : ''} (${echecs[0].error!.message}) — les autres ont bien été appliqués.`,
+        )
+      }
       await Promise.all(
-        maj
+        reussies
           .filter((m): m is { ligneId: string; pieceId: string } => !!m.pieceId)
           .map((m) => {
             const ligne = lignes.find((l) => l.id === m.ligneId)

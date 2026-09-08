@@ -209,14 +209,21 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   const { admin, dossierId, dossier } = ctx
 
   if (nom === "resume_dossier") {
-    const [{ count: piecesAValider }, { count: piecesValidees }, { count: ecrituresBrouillon }, { data: dates }] = await Promise.all([
+    const [r1, r2, r3, r4] = await Promise.all([
       admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),
       admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee"),
       admin.from("ecritures_brouillon").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId),
       admin.from("ecritures_brouillon").select("date").eq("dossier_id", dossierId),
     ])
-    const annees = [...new Set(((dates ?? []) as { date: string }[]).map((r) => r.date.slice(0, 4)))].sort()
-    return { nom: dossier.nom, assujetti_tva: dossier.assujetti_tva, pieces_a_valider: piecesAValider ?? 0, pieces_validees: piecesValidees ?? 0, ecritures_brouillon: ecrituresBrouillon ?? 0, annees_avec_ecritures: annees }
+    // Correctif audit sécurité (indicateurs/IA, Importante) : une lecture échouée ne doit jamais
+    // retomber silencieusement sur 0 (count/data valent alors null) — l'agent répondrait avec
+    // assurance sur un chiffre faux ("aucune pièce à valider") au lieu de dire qu'il ne sait pas.
+    const erreurs = [r1.error, r2.error, r3.error, r4.error].filter((e): e is NonNullable<typeof e> => !!e)
+    if (erreurs.length > 0) {
+      return { erreur: `Lecture partielle : ${erreurs.map((e) => e.message).join(" ; ")} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
+    }
+    const annees = [...new Set(((r4.data ?? []) as { date: string }[]).map((r) => r.date.slice(0, 4)))].sort()
+    return { nom: dossier.nom, assujetti_tva: dossier.assujetti_tva, pieces_a_valider: r1.count ?? 0, pieces_validees: r2.count ?? 0, ecritures_brouillon: r3.count ?? 0, annees_avec_ecritures: annees }
   }
 
   if (nom === "lister_comptes") {
@@ -270,7 +277,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [{ data: pieces }, { data: piecesAValider }, { data: categories }, { data: ecritures }, { data: declarationsTva }, { data: immobilisations }] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rDeclarationsTva, rImmobilisations] = await Promise.all([
       admin.from("pieces").select("id, montant_ttc, montant_tva, categorie_id, type_piece").eq("dossier_id", dossierId).eq("statut", "validee"),
       admin.from("pieces").select("confiance").eq("dossier_id", dossierId).eq("statut", "a_valider"),
       admin.from("categories").select("id, libelle, compte_comptable, poste_2035").or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
@@ -278,6 +285,21 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       admin.from("declarations_tva").select("periode_debut, periode_fin, tva_declaree").eq("dossier_id", dossierId),
       admin.from("immobilisations").select("piece_id").eq("dossier_id", dossierId),
     ])
+    // Correctif audit sécurité (indicateurs/IA, Importante) : ces six lectures alimentent des
+    // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
+    // retombant silencieusement sur un tableau vide masquerait une vraie anomalie derrière un faux
+    // "tout va bien" plutôt que de dire que le contrôle n'a pas pu être fait.
+    const erreurs = [rPieces.error, rPiecesAValider.error, rCategories.error, rEcritures.error, rDeclarationsTva.error, rImmobilisations.error]
+      .filter((e): e is NonNullable<typeof e> => !!e)
+    if (erreurs.length > 0) {
+      return { erreur: `Lecture partielle : ${erreurs.map((e) => e.message).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
+    }
+    const { data: pieces } = rPieces
+    const { data: piecesAValider } = rPiecesAValider
+    const { data: categories } = rCategories
+    const { data: ecritures } = rEcritures
+    const { data: declarationsTva } = rDeclarationsTva
+    const { data: immobilisations } = rImmobilisations
     const piecesTyped = (pieces ?? []) as PieceRow[]
     const categoriesTyped = (categories ?? []) as CategorieRow[]
     const ecrituresTyped = (ecritures ?? []) as EcritureRow[]

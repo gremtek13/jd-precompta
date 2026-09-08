@@ -24,6 +24,34 @@ function json(body: unknown, status = 200) {
   })
 }
 
+// Correctif audit sécurité (compte utilisateurs, Haute) — voir create-client-access, même fonction
+// dupliquée ici (fichiers auto-porteurs, voir en-tête) : réutiliser un compte Auth existant en lui
+// appliquant un nouveau mot de passe n'est sûr QUE si ce compte a déjà une relation avec CE cabinet.
+async function appartientDejaAuCabinet(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  cabinetId: string,
+): Promise<boolean> {
+  const { data: dossiers } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+  const dossierIds = ((dossiers ?? []) as { id: string }[]).map((d) => d.id)
+  if (dossierIds.length > 0) {
+    const { data: membership } = await admin
+      .from("memberships")
+      .select("id")
+      .eq("user_id", userId)
+      .in("dossier_id", dossierIds)
+      .limit(1)
+    if (membership && membership.length > 0) return true
+  }
+  const { data: adminRow } = await admin
+    .from("cabinet_admins")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("cabinet_id", cabinetId)
+    .maybeSingle()
+  return !!adminRow
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -115,6 +143,13 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Un compte existe déjà pour cet e-mail mais n'a pas pu être retrouvé." }, 500)
     }
     userId = trouve
+    // Voir appartientDejaAuCabinet ci-dessus : jamais toucher au mot de passe d'un compte qui n'a
+    // aucun lien préexistant avec ce cabinet (prise de contrôle du compte de quelqu'un d'autre sinon).
+    if (!(await appartientDejaAuCabinet(admin, userId, cabinetId))) {
+      return json({
+        error: "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet — impossible de le réutiliser ici (ça écraserait le mot de passe d'un compte qui n'est pas le tien). Demande à cette personne d'utiliser une autre adresse e-mail.",
+      }, 409)
+    }
     await admin.auth.admin.updateUserById(userId, { password })
   } else {
     return json({ error: createError?.message ?? "Création du compte échouée." }, 500)

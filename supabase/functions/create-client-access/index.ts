@@ -27,6 +27,38 @@ function json(body: unknown, status = 200) {
   })
 }
 
+// Correctif audit sécurité (compte utilisateurs, Haute) : réutiliser un compte Auth existant en lui
+// appliquant un nouveau mot de passe n'est sûr QUE si ce compte a déjà une relation avec CE cabinet —
+// un client d'un de ses dossiers, ou un membre de son équipe. Avant ce contrôle, n'importe quel email
+// déjà inscrit ailleurs sur la plateforme (client d'un autre cabinet, comptable d'un autre cabinet...)
+// voyait son mot de passe écrasé par le premier cabinet qui tapait cet email dans ce formulaire —
+// prise de contrôle de compte, avant même toute vérification d'appartenance. Vrai uniquement si le
+// cabinet appelant a déjà, en base, une raison légitime de gérer ce compte.
+async function appartientDejaAuCabinet(
+  admin: ReturnType<typeof createClient>,
+  userId: string,
+  cabinetId: string,
+): Promise<boolean> {
+  const { data: dossiers } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+  const dossierIds = ((dossiers ?? []) as { id: string }[]).map((d) => d.id)
+  if (dossierIds.length > 0) {
+    const { data: membership } = await admin
+      .from("memberships")
+      .select("id")
+      .eq("user_id", userId)
+      .in("dossier_id", dossierIds)
+      .limit(1)
+    if (membership && membership.length > 0) return true
+  }
+  const { data: adminRow } = await admin
+    .from("cabinet_admins")
+    .select("user_id")
+    .eq("user_id", userId)
+    .eq("cabinet_id", cabinetId)
+    .maybeSingle()
+  return !!adminRow
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -78,6 +110,17 @@ Deno.serve(async (req: Request) => {
   if (!aAcces) {
     return json({ error: "Dossier introuvable." }, 404)
   }
+  // Cabinet propriétaire de ce dossier — sert au contrôle appartientDejaAuCabinet ci-dessous, pas à
+  // l'autorisation elle-même (déjà tranchée par admin_du_dossier juste au-dessus).
+  const { data: dossierRow, error: dossierError } = await supabaseAdmin
+    .from("dossiers")
+    .select("cabinet_id")
+    .eq("id", dossierId)
+    .single()
+  if (dossierError || !dossierRow) {
+    return json({ error: "Dossier introuvable." }, 404)
+  }
+  const cabinetId = dossierRow.cabinet_id as string
   // Le formulaire (AccesTab) a bien minLength={10}, mais un attribut HTML se contourne facilement —
   // seule cette vérification côté serveur est une vraie garantie, ici l'unique point d'entrée pour
   // créer ou changer le mot de passe d'un compte client.
@@ -121,6 +164,14 @@ Deno.serve(async (req: Request) => {
       }, 500)
     }
     clientUserId = trouve
+    // Voir appartientDejaAuCabinet ci-dessus : jamais toucher au mot de passe d'un compte qui n'a
+    // aucun lien préexistant avec ce cabinet, sous peine de prise de contrôle du compte de quelqu'un
+    // d'autre (client ou comptable d'un cabinet tiers, ou personne sans lien du tout avec celui-ci).
+    if (!(await appartientDejaAuCabinet(supabaseAdmin, clientUserId, cabinetId))) {
+      return json({
+        error: "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet — impossible de lui donner accès depuis ici (ça écraserait le mot de passe d'un compte qui n'est pas le tien). Demande à cette personne d'utiliser une autre adresse e-mail.",
+      }, 409)
+    }
     // Le mot de passe saisi dans le formulaire doit rester celui à donner au client, que le compte
     // soit neuf ou réutilisé.
     await supabaseAdmin.auth.admin.updateUserById(clientUserId, { password })
