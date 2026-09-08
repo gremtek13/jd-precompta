@@ -152,8 +152,8 @@ export default function DossiersList() {
               <tr>
                 <th>Nom</th>
                 <th>Pièces</th>
-                <th>Relevés bancaires {ANNEE_COURANTE}</th>
-                <th>Cotisations {ANNEE_COURANTE}</th>
+                <th className="hide-mobile">Relevés bancaires {ANNEE_COURANTE}</th>
+                <th className="hide-mobile">Cotisations {ANNEE_COURANTE}</th>
                 <th></th>
               </tr>
             </thead>
@@ -168,7 +168,7 @@ export default function DossiersList() {
                       <span className="badge badge-ok">aucune à valider</span>
                     )}
                   </td>
-                  <td>
+                  <td className="hide-mobile">
                     {/* En janvier, moisEcoules vaut 0 (aucun mois révolu pour l'instant) — pas de division
                         par zéro à afficher, juste rien à attendre encore. */}
                     {d.moisEcoules === 0 ? (
@@ -185,7 +185,7 @@ export default function DossiersList() {
                       </div>
                     )}
                   </td>
-                  <td>
+                  <td className="hide-mobile">
                     {d.cotisationsOk ? (
                       <span className="badge badge-ok">reçues</span>
                     ) : (

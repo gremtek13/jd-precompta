@@ -184,21 +184,21 @@ export default function SuperAdminPage() {
           <table>
             <thead>
               <tr>
-                <th></th>
+                <th className="hide-mobile"></th>
                 <th>Cabinet</th>
                 <th>Dossiers</th>
-                <th>Admins</th>
-                <th>Clients</th>
-                <th>Tokens agent (E/S)</th>
-                <th>Coût estimé agent</th>
-                <th>Créé le</th>
+                <th className="hide-mobile">Admins</th>
+                <th className="hide-mobile">Clients</th>
+                <th className="hide-mobile">Tokens agent (E/S)</th>
+                <th className="hide-mobile">Coût estimé agent</th>
+                <th className="hide-mobile">Créé le</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {cabinets.map((c) => (
                 <tr key={c.id}>
-                  <td>
+                  <td className="hide-mobile">
                     <span
                       title={c.couleur_primaire ?? 'Aucune couleur configurée'}
                       style={{
@@ -210,16 +210,16 @@ export default function SuperAdminPage() {
                   </td>
                   <td style={{ fontWeight: 600 }}>{c.nom}</td>
                   <td>{c.nb_dossiers}</td>
-                  <td>{c.nb_admins}</td>
-                  <td>{c.nb_clients}</td>
-                  <td>
+                  <td className="hide-mobile">{c.nb_admins}</td>
+                  <td className="hide-mobile">{c.nb_clients}</td>
+                  <td className="hide-mobile">
                     {c.tokens_entree === 0 && c.tokens_sortie === 0
                       ? <span className="muted">—</span>
                       : `${c.tokens_entree.toLocaleString('fr-FR')} / ${c.tokens_sortie.toLocaleString('fr-FR')}`}
                   </td>
-                  <td>{formatUsd(estimerCoutUsd(c.tokens_entree, c.tokens_sortie))}</td>
-                  <td>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
-                  <td className="td-actions" style={{ display: 'flex', gap: 8 }}>
+                  <td className="hide-mobile">{formatUsd(estimerCoutUsd(c.tokens_entree, c.tokens_sortie))}</td>
+                  <td className="hide-mobile">{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
+                  <td className="td-actions">
                     <button
                       type="button"
                       className="btn btn-outline btn-sm"

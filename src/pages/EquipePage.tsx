@@ -135,7 +135,11 @@ export default function EquipePage() {
                       value={m.role}
                       onChange={(e) => changerRole(m, e.target.value as RoleCabinetAdmin)}
                       aria-label={`Rôle actuel : ${LABEL_ROLE[m.role]}`}
-                      style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px' }}
+                      // maxWidth 100% : sans ça un <select> prend la largeur de sa plus longue option
+                      // ("Comptable en chef") indépendamment de sa cellule — sur mobile, où
+                      // table-layout:fixed serre les colonnes, ça le faisait déborder par-dessus la
+                      // colonne suivante ("Dossiers assignés") au lieu de s'y contenir.
+                      style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '4px 6px', maxWidth: '100%' }}
                     >
                       <option value="comptable_en_chef">Comptable en chef</option>
                       <option value="comptable">Comptable</option>
