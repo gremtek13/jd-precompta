@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { estimerCoutUsd, formatUsd } from '../lib/coutsApi'
+import { genererExportCabinet } from '../lib/exportCabinet'
 import ConfirmationSuppression from '../components/ConfirmationSuppression'
 
 interface CabinetApercu {
@@ -38,6 +39,13 @@ export default function SuperAdminPage() {
   const [aSupprimer, setASupprimer] = useState<CabinetApercu | null>(null)
   const [suppressionEnCours, setSuppressionEnCours] = useState(false)
   const [suppressionErreur, setSuppressionErreur] = useState<string | null>(null)
+
+  // Export en cours pour au plus un cabinet à la fois (un export lit potentiellement des dizaines de
+  // fichiers, inutile d'en permettre plusieurs en parallèle depuis le même écran) — l'id du cabinet
+  // sert de clé pour savoir quelle ligne afficher "en cours", et le texte de progression accompagne.
+  const [exportEnCours, setExportEnCours] = useState<string | null>(null)
+  const [exportProgression, setExportProgression] = useState<{ fait: number; total: number } | null>(null)
+  const [exportErreur, setExportErreur] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -133,6 +141,23 @@ export default function SuperAdminPage() {
     load()
   }
 
+  // Un ZIP par cabinet, un sous-dossier par dossier client, sur toute leur histoire (voir
+  // lib/exportCabinet.ts) — utile notamment avant de vider un cabinet en vue de sa suppression, mais
+  // pas réservé à ce cas : n'importe quel export ponctuel de tout un cabinet.
+  async function exporterCabinet(c: CabinetApercu) {
+    setExportEnCours(c.id)
+    setExportErreur(null)
+    setExportProgression({ fait: 0, total: c.nb_dossiers })
+    try {
+      await genererExportCabinet(c.id, c.nom, (fait, total) => setExportProgression({ fait, total }))
+    } catch (err) {
+      setExportErreur(`Export de "${c.nom}" : ${err instanceof Error ? err.message : 'échec.'}`)
+    } finally {
+      setExportEnCours(null)
+      setExportProgression(null)
+    }
+  }
+
   return (
     <>
       <div className="topbar">
@@ -147,6 +172,8 @@ export default function SuperAdminPage() {
         pas les autres API payantes de l'appli (Textract pour l'OCR des pièces, notamment) — et reste
         un ordre de grandeur, jamais la facture AWS exacte.
       </p>
+
+      {exportErreur && <p className="error-text">{exportErreur}</p>}
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
@@ -192,7 +219,18 @@ export default function SuperAdminPage() {
                   </td>
                   <td>{formatUsd(estimerCoutUsd(c.tokens_entree, c.tokens_sortie))}</td>
                   <td>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
-                  <td className="td-actions">
+                  <td className="td-actions" style={{ display: 'flex', gap: 8 }}>
+                    <button
+                      type="button"
+                      className="btn btn-outline btn-sm"
+                      disabled={c.nb_dossiers === 0 || exportEnCours !== null}
+                      title={c.nb_dossiers === 0 ? 'Aucun dossier à exporter.' : undefined}
+                      onClick={() => exporterCabinet(c)}
+                    >
+                      {exportEnCours === c.id
+                        ? (exportProgression ? `Export… (${exportProgression.fait}/${exportProgression.total})` : 'Export…')
+                        : 'Exporter'}
+                    </button>
                     <button
                       type="button"
                       className="btn btn-danger btn-sm"

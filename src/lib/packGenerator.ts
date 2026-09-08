@@ -30,19 +30,23 @@ function ajouterFeuille<T extends Record<string, unknown>>(wb: ExcelJS.Workbook,
   for (const row of rows) feuille.addRow(entetes.map((e) => row[e]))
 }
 
-interface GenerateResult {
+interface RemplissageResult {
   nbPieces: number
   totalTtc: number
-  storagePathZip: string
-  storagePathExcel: string
+  excelBlob: Blob
 }
 
-export async function generatePack(
+// Remplit `destination` (le zip lui-même, ou un sous-dossier obtenu via zip.folder(...) — même API
+// JSZip dans les deux cas) avec les pièces validées d'un dossier sur une période, plus son Excel
+// récapitulatif — extrait de generatePack pour être réutilisé tel quel par l'export multi-dossiers
+// d'un cabinet entier (voir lib/exportCabinet.ts), qui répète juste cet appel une fois par dossier
+// dans un sous-dossier du même zip plutôt que de générer un pack séparé par dossier.
+async function remplirZipDossier(
+  destination: JSZip,
   dossierId: string,
-  dossierNom: string,
   periodeDebut: string,
   periodeFin: string,
-): Promise<GenerateResult> {
+): Promise<RemplissageResult> {
   const { data: piecesData, error: piecesError } = await supabase
     .from('pieces')
     .select('*')
@@ -64,8 +68,7 @@ export async function generatePack(
   const pending = allPieces.filter((p) => p.statut === 'a_valider')
 
   // --- ZIP : pièces classées par type ---
-  const zip = new JSZip()
-  const piecesFolder = zip.folder('Pieces')!
+  const piecesFolder = destination.folder('Pieces')!
   for (const p of included) {
     const { data: blob, error } = await supabase.storage.from('pieces').download(p.storage_path)
     if (error || !blob) continue // pièce introuvable : on continue plutôt que de faire échouer tout le pack
@@ -110,8 +113,26 @@ export async function generatePack(
 
   const excelBuffer = await wb.xlsx.writeBuffer()
   const excelBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  zip.file('Recap.xlsx', excelBlob)
+  destination.file('Recap.xlsx', excelBlob)
 
+  return { nbPieces: included.length, totalTtc, excelBlob }
+}
+
+interface GenerateResult {
+  nbPieces: number
+  totalTtc: number
+  storagePathZip: string
+  storagePathExcel: string
+}
+
+export async function generatePack(
+  dossierId: string,
+  dossierNom: string,
+  periodeDebut: string,
+  periodeFin: string,
+): Promise<GenerateResult> {
+  const zip = new JSZip()
+  const { nbPieces, totalTtc, excelBlob } = await remplirZipDossier(zip, dossierId, periodeDebut, periodeFin)
   const zipBlob = await zip.generateAsync({ type: 'blob' })
 
   const basePath = `${dossierId}/${periodeDebut}_${periodeFin}-${Date.now()}`
@@ -123,5 +144,9 @@ export async function generatePack(
   const { error: excelUploadError } = await supabase.storage.from('packs').upload(excelPath, excelBlob)
   if (excelUploadError) throw excelUploadError
 
-  return { nbPieces: included.length, totalTtc, storagePathZip: zipPath, storagePathExcel: excelPath }
+  return { nbPieces, totalTtc, storagePathZip: zipPath, storagePathExcel: excelPath }
 }
+
+// Exporté pour lib/exportCabinet.ts — même remplissage, mais dans un sous-dossier d'un zip partagé
+// entre plusieurs dossiers plutôt qu'un zip dédié uploadé sur Storage.
+export { remplirZipDossier }
