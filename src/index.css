@@ -413,7 +413,9 @@ tr.clickable:hover { background: var(--color-primary-light); }
 }
 .home-tile-icon {
   width: 76px; height: 76px; border-radius: 20px;
-  background: linear-gradient(160deg, var(--color-primary), var(--color-primary-hover));
+  /* Couleur plate, pas un dégradé (voir discipline visuelle — les autres dégradés de l'appli ont déjà
+     été aplatis ; celui-ci avait été manqué lors de ce passage). */
+  background: var(--color-primary);
   color: #fff; display: flex; align-items: center; justify-content: center;
   box-shadow: var(--shadow-md);
   transition: transform 0.15s ease;

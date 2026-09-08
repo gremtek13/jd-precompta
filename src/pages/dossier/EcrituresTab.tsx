@@ -188,8 +188,12 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
       <BrouillonBanner />
 
       {piecesSansTva.length > 0 && (
-        <div className="card" style={{ marginBottom: 20, borderColor: 'var(--color-warning)' }}>
-          <h3 style={{ marginTop: 0 }}>Pièces sans TVA renseignée</h3>
+        <div className="card" style={{ marginBottom: 20 }}>
+          {/* Sévérité signalée par un badge, pas par une bordure de couleur sur toute la carte (voir
+              discipline visuelle — une couleur d'accent utilisée avec parcimonie, pas dispersée). */}
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Pièces sans TVA renseignée <span className="badge badge-warning">à vérifier</span>
+          </h3>
           <p className="muted" style={{ marginTop: -8 }}>
             Ce dossier est marqué assujetti à la TVA, mais {piecesSansTva.length} pièce{piecesSansTva.length > 1 ? 's' : ''} validée{piecesSansTva.length > 1 ? 's' : ''} n'a{piecesSansTva.length > 1 ? 'ont' : ''} pas de montant de TVA — vérifie si c'est normal (achat auprès d'un non-assujetti…) ou un oubli de saisie.
           </p>
@@ -202,8 +206,10 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
       )}
 
       {piecesDesynchronisees.length > 0 && (
-        <div className="card" style={{ marginBottom: 20, borderColor: 'var(--color-danger)' }}>
-          <h3 style={{ marginTop: 0 }}>Écritures à régénérer</h3>
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Écritures à régénérer <span className="badge badge-danger">à traiter</span>
+          </h3>
           <p className="muted" style={{ marginTop: -8 }}>
             Ces pièces ont été modifiées (montant, TVA...) depuis que leur écriture a été générée — la
             charge/produit enregistrée ne correspond plus au montant actuel de la pièce. Reprend les
@@ -229,8 +235,10 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
       )}
 
       {groupesDesequilibres.length > 0 && (
-        <div className="card" style={{ marginBottom: 20, borderColor: 'var(--color-danger)' }}>
-          <h3 style={{ marginTop: 0 }}>Écritures déséquilibrées</h3>
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Écritures déséquilibrées <span className="badge badge-danger">à vérifier</span>
+          </h3>
           <p className="muted" style={{ marginTop: -8 }}>
             Le total des débits ne correspond pas à celui des crédits sur ces pièces — un montant réel
             de mouvement bancaire différent de la pièce (frais, paiement partiel...) l'explique parfois,
