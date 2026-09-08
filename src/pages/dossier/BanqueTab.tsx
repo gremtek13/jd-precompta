@@ -525,6 +525,17 @@ function PanneauLigne({
           <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>Fermer</button>
         </div>
 
+        {/* Traçabilité de l'import (voir audit ergonomie) — surtout utile quand libelle est retombé
+            sur le générique "Mouvement bancaire" : de quoi retrouver le fichier et la ligne d'origine
+            sans devoir rouvrir le relevé. Absent sur tout import antérieur à cet ajout. */}
+        {(ligne.source_fichier || (ligne.libelle_brut && ligne.libelle_brut !== ligne.libelle)) && (
+          <p className="muted" style={{ fontSize: '0.78rem', marginTop: 6 }}>
+            {ligne.source_fichier && <>Importé depuis « {ligne.source_fichier} »</>}
+            {ligne.source_fichier && ligne.libelle_brut && ligne.libelle_brut !== ligne.libelle && ' — '}
+            {ligne.libelle_brut && ligne.libelle_brut !== ligne.libelle && <>ligne brute : {ligne.libelle_brut}</>}
+          </p>
+        )}
+
         <div style={{ marginTop: 16 }}>
           {ligne.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && (
@@ -628,6 +639,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
   const [pdfRows, setPdfRows] = useState<LigneExtraite[] | null>(null)
   const [pdfExtracting, setPdfExtracting] = useState(false)
   const [documentsReleve, setDocumentsReleve] = useState<DocumentDivers[]>([])
+  // Nom du fichier en cours d'import (voir audit ergonomie) — persisté sur chaque ligne créée
+  // (source_fichier) pour pouvoir retrouver le relevé d'origine plus tard, notamment quand le libellé
+  // est retombé sur le générique "Mouvement bancaire".
+  const [sourceFileName, setSourceFileName] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).eq('categorie', 'releve_bancaire')
@@ -636,8 +651,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
 
   // Même Blob générique que handlePdfBlob ci-dessous : un fichier fraîchement déposé (File) ou un CSV
   // déjà classé dans l'archive Documents (Blob téléchargé du storage) suivent le même traitement.
-  async function handleFile(blob: Blob) {
+  async function handleFile(blob: Blob, nom: string) {
     setError(null)
+    setSourceFileName(nom)
     const text = await blob.text()
     const parsed = parseCsv(text)
     if (parsed.length === 0) {
@@ -663,8 +679,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
 
   // Point d'entrée commun, qu'il s'agisse d'un fichier fraîchement déposé (Blob = File) ou d'un
   // relevé déjà classé dans l'archive Documents (Blob téléchargé du storage) — même traitement.
-  async function handlePdfBlob(blob: Blob) {
+  async function handlePdfBlob(blob: Blob, nom: string) {
     setError(null)
+    setSourceFileName(nom)
     setPdfRows(null)
     setPdfExtracting(true)
     try {
@@ -690,7 +707,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       setPdfExtracting(false)
       return
     }
-    await handlePdfBlob(data)
+    await handlePdfBlob(data, doc.nom_fichier)
   }
 
   async function utiliserDocumentCsv(doc: DocumentDivers) {
@@ -700,7 +717,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       setError("Impossible de récupérer ce document.")
       return
     }
-    await handleFile(data)
+    await handleFile(data, doc.nom_fichier)
   }
 
   // Une même catégorie "relevé bancaire" peut désormais contenir des CSV et des PDF (classification
@@ -738,11 +755,12 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       const { error } = await supabase.from('lignes_bancaires').insert(
         aInserer.map((r) => ({
           dossier_id: dossierId, date: r.date, libelle: r.libelle, montant: r.montant,
-          statut: statutPourLibelle(r.libelle, regles),
+          statut: statutPourLibelle(r.libelle, regles), source_fichier: sourceFileName,
         })),
       )
       if (error) throw error
       setPdfRows(null)
+      setSourceFileName(null)
       onImported()
       if (doublons > 0) window.alert(`${aInserer.length} ligne(s) importée(s), ${doublons} déjà présente(s) ignorée(s).`)
     } catch (err) {
@@ -757,13 +775,16 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     setImporting(true)
     setError(null)
     try {
-      const toInsert: { dossier_id: string; date: string; libelle: string; montant: number; statut: StatutLigneBancaire }[] = []
+      const toInsert: { dossier_id: string; date: string; libelle: string; montant: number; statut: StatutLigneBancaire; source_fichier: string | null; libelle_brut: string | null }[] = []
       let ignorees = 0
       for (const row of dataRows) {
         const date = parseDateBancaire(row[colDate] ?? '')
         // Le libellé n'est qu'informatif (pas utilisé pour le rapprochement) — certaines banques le
         // laissent vide sur certaines lignes selon le type d'opération. On ne rejette la ligne que si
-        // la date ou le montant, les deux champs réellement nécessaires, sont illisibles.
+        // la date ou le montant, les deux champs réellement nécessaires, sont illisibles. La ligne
+        // brute du fichier est gardée à part (libelle_brut) : si le générique "Mouvement bancaire"
+        // s'applique faute de mieux, on garde de quoi retrouver ce qu'il y avait réellement dessus
+        // (voir audit ergonomie) plutôt que de perdre l'information.
         const libelle = (row[colLibelle] ?? '').trim() || 'Mouvement bancaire'
         let montant: number | null = null
         if (mode === 'signe') {
@@ -777,7 +798,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
           ignorees++
           continue
         }
-        toInsert.push({ dossier_id: dossierId, date, libelle, montant, statut: statutPourLibelle(libelle, regles) })
+        toInsert.push({
+          dossier_id: dossierId, date, libelle, montant, statut: statutPourLibelle(libelle, regles),
+          source_fichier: sourceFileName, libelle_brut: row.join(' | '),
+        })
       }
 
       // Un relevé déposé deux fois (nouvelle tentative après un doute, mauvais fichier repris par
@@ -798,6 +822,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       if (error) throw error
 
       setRows(null)
+      setSourceFileName(null)
       onImported()
       const messages = [`${aInserer.length} ligne(s) importée(s)`]
       if (doublons > 0) messages.push(`${doublons} déjà présente(s), ignorée(s)`)
@@ -838,7 +863,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
             </div>
           )}
           <div className="field">
-            <input type="file" accept=".csv,text/csv" onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
+            <input type="file" accept=".csv,text/csv" onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f, f.name) }} />
           </div>
         </>
       )}
@@ -937,7 +962,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
             </div>
           )}
           <div className="field">
-            <input type="file" accept=".pdf,application/pdf" onChange={(e) => e.target.files?.[0] && handlePdfBlob(e.target.files[0])} />
+            <input type="file" accept=".pdf,application/pdf" onChange={(e) => { const f = e.target.files?.[0]; if (f) handlePdfBlob(f, f.name) }} />
           </div>
           <p className="muted" style={{ marginTop: -8 }}>
             Une ligne par opération détectée automatiquement (date + montant) — vérifie et corrige le tableau avant d'importer, l'extraction PDF est moins fiable qu'un CSV.

@@ -53,6 +53,12 @@ export interface LigneBancaire {
   // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien
   // d'autre ne viendra jamais s'y rapprocher).
   prelevement_personnel: boolean
+  // Traçabilité de l'import (voir audit ergonomie) : nom du fichier déposé (CSV ou PDF) et ligne brute
+  // telle que trouvée dans ce fichier — utile surtout quand libelle est retombé sur le générique
+  // "Mouvement bancaire" (colonne Libellé vide sur cette ligne côté banque), pour retrouver de quoi il
+  // s'agissait sans devoir rouvrir le relevé d'origine. Nuls sur tout import antérieur à leur ajout.
+  source_fichier: string | null
+  libelle_brut: string | null
   created_at: string
 }
 
