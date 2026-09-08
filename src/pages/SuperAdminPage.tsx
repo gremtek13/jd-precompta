@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { estimerCoutUsd, formatUsd } from '../lib/coutsApi'
 
@@ -19,13 +19,20 @@ interface CabinetApercu {
 }
 
 // Réservée au(x) super-admin(s) (voir AuthContext.isSuperAdmin, résolu via le RPC is_super_admin()) —
-// une vue d'ensemble en lecture seule de tous les comptes master (cabinets) de la plateforme. Aucune
-// création/modification de cabinet ici : ça reste un accès direct en base, fait manuellement à chaque
-// onboarding (voir discussion) — cet écran sert seulement à ne pas avoir à redemander "combien j'ai de
-// cabinets, avec combien de dossiers chacun" à chaque fois.
+// vue d'ensemble de tous les comptes master (cabinets) de la plateforme, plus la création d'un
+// nouveau cabinet (voir create-cabinet, la seule écriture possible depuis cet écran — changer la
+// charte graphique d'un cabinet existant reste un accès direct en base). Un cabinet créé ici reçoit
+// aussitôt son premier comptable en chef : un cabinet sans personne pour s'y connecter ne sert à rien.
 export default function SuperAdminPage() {
   const [cabinets, setCabinets] = useState<CabinetApercu[]>([])
   const [loading, setLoading] = useState(true)
+
+  const [ajout, setAjout] = useState(false)
+  const [nom, setNom] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [enregistrement, setEnregistrement] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -80,17 +87,42 @@ export default function SuperAdminPage() {
 
   useEffect(() => { load() }, [])
 
+  async function creerCabinet(e: FormEvent) {
+    e.preventDefault()
+    if (password.length < 10) {
+      setErreur('Le mot de passe doit faire au moins 10 caractères.')
+      return
+    }
+    setEnregistrement(true)
+    setErreur(null)
+    const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('create-cabinet', {
+      body: { nom: nom.trim(), email: email.trim(), password },
+    })
+    setEnregistrement(false)
+    if (data?.error || invokeError) {
+      setErreur(data?.error ?? "Échec de la création du cabinet.")
+      return
+    }
+    setNom('')
+    setEmail('')
+    setPassword('')
+    setAjout(false)
+    load()
+  }
+
   return (
     <>
       <div className="topbar">
         <h1>Comptes master</h1>
+        <button className="btn btn-primary btn-sm" onClick={() => setAjout(true)}>+ Nouveau cabinet</button>
       </div>
       <p className="muted" style={{ marginTop: -12, marginBottom: 20 }}>
-        Vue d'ensemble de tous les cabinets de la plateforme (le tien inclus) — en lecture seule.
-        Créer un nouveau cabinet ou changer sa charte graphique reste un accès direct en base, jamais
-        un formulaire ici. Le coût estimé ne couvre que l'agent comptable (Claude via Amazon Bedrock,
-        voir AssistantTab) — pas les autres API payantes de l'appli (Textract pour l'OCR des pièces,
-        notamment) — et reste un ordre de grandeur, jamais la facture AWS exacte.
+        Vue d'ensemble de tous les cabinets de la plateforme (le tien inclus). Changer la charte
+        graphique d'un cabinet existant reste un accès direct en base, jamais un formulaire ici — seule
+        la création d'un nouveau cabinet (avec son premier comptable en chef) passe par ce bouton. Le
+        coût estimé ne couvre que l'agent comptable (Claude via Amazon Bedrock, voir AssistantTab) —
+        pas les autres API payantes de l'appli (Textract pour l'OCR des pièces, notamment) — et reste
+        un ordre de grandeur, jamais la facture AWS exacte.
       </p>
 
       <div className="card table-scroll" style={{ padding: 0 }}>
@@ -142,6 +174,44 @@ export default function SuperAdminPage() {
           </table>
         )}
       </div>
+
+      {ajout && (
+        <div style={overlayStyle}>
+          <div className="card" style={{ width: 'min(420px, 92vw)' }}>
+            <h2 style={{ marginTop: 0 }}>Nouveau cabinet</h2>
+            <p className="muted" style={{ marginTop: -8 }}>
+              Crée le cabinet et son premier comptable en chef — il pourra ensuite inviter le reste de
+              son équipe lui-même depuis son propre écran Équipe.
+            </p>
+            <form onSubmit={creerCabinet}>
+              <div className="field">
+                <label htmlFor="cab-nom">Nom du cabinet</label>
+                <input id="cab-nom" required value={nom} onChange={(e) => setNom(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="cab-email">Email du comptable en chef</label>
+                <input id="cab-email" type="email" required value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="cab-password">Mot de passe (au moins 10 caractères)</label>
+                <input id="cab-password" type="text" required minLength={10} value={password} onChange={(e) => setPassword(e.target.value)} />
+              </div>
+              {erreur && <p className="error-text">{erreur}</p>}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+                <button type="button" className="btn btn-outline" onClick={() => setAjout(false)} disabled={enregistrement}>Annuler</button>
+                <button type="submit" className="btn btn-primary" disabled={enregistrement}>
+                  {enregistrement ? 'Création…' : 'Créer le cabinet'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   )
+}
+
+const overlayStyle: CSSProperties = {
+  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
+  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20,
 }
