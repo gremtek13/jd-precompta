@@ -10,6 +10,16 @@ export interface CabinetBranding {
   logoUrl: string | null
 }
 
+// CabinetBrandingPage (formulaire) et Layout (application réelle de la charte) montent chacun leur
+// propre instance de useCabinetBranding — sans ce petit bus d'événements, enregistrer un changement
+// dans le formulaire n'avait aucun moyen de prévenir l'instance de Layout déjà montée, qui ne
+// rechargeait donc qu'au prochain rechargement complet de la page (bug remonté : "ça change pas").
+const EVENEMENT_MAJ = 'cabinet-branding:maj'
+
+export function signalerMajBranding() {
+  window.dispatchEvent(new Event(EVENEMENT_MAJ))
+}
+
 // Charte graphique par cabinet (voir CabinetBrandingPage) — appliquée aussi bien aux comptables du
 // cabinet qu'à ses clients, les deux partageant le même Layout : la couleur d'accent et la police
 // choisies par un cabinet remplacent le turquoise/Inter par défaut de JD Precompta pour tout le monde
@@ -18,6 +28,13 @@ export interface CabinetBranding {
 export function useCabinetBranding(): CabinetBranding | null {
   const { monCabinetId } = useAuth()
   const [branding, setBranding] = useState<CabinetBranding | null>(null)
+  const [version, setVersion] = useState(0)
+
+  useEffect(() => {
+    function surMaj() { setVersion((v) => v + 1) }
+    window.addEventListener(EVENEMENT_MAJ, surMaj)
+    return () => window.removeEventListener(EVENEMENT_MAJ, surMaj)
+  }, [])
 
   useEffect(() => {
     let annule = false
@@ -43,7 +60,7 @@ export function useCabinetBranding(): CabinetBranding | null {
         })
       })
     return () => { annule = true }
-  }, [monCabinetId])
+  }, [monCabinetId, version])
 
   // Couleur : posée en style inline sur la racine — priorité systématique sur les valeurs de
   // index.css (thème clair ou sombre), qui restent la référence pour tout cabinet n'ayant rien

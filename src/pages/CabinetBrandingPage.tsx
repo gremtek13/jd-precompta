@@ -2,6 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { eclaircir, estCouleurHexValide } from '../lib/colors'
+import { signalerMajBranding } from '../lib/branding'
 import type { Cabinet } from '../lib/types'
 
 // Polices proposées, pas de champ libre : un nom de police Google Fonts mal orthographié ne casse
@@ -109,6 +110,7 @@ export default function CabinetBrandingPage() {
       setLogoFile(null)
       setSucces(true)
       await charger()
+      signalerMajBranding() // sans ça, la sidebar (déjà montée) ne voyait le changement qu'au rechargement de la page
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
@@ -127,6 +129,7 @@ export default function CabinetBrandingPage() {
       if (updateError) throw updateError
       setLogoFile(null)
       await charger()
+      signalerMajBranding()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
