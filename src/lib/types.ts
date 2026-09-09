@@ -397,6 +397,9 @@ export interface FactureEmise {
   // (fr:200 soumise, fr:205 acceptée, fr:210 refusée...) pour affichage rapide sans jointure.
   superpdp_invoice_id: number | null
   superpdp_dernier_statut: string | null
+  // Dernière adresse utilisée pour un envoi par e-mail (voir send-email) — pré-remplit la prochaine
+  // fois, jamais obligatoire (beaucoup de factures restent imprimées/exportées manuellement).
+  tiers_email: string | null
   created_by: string | null
   created_at: string
   validated_at: string | null

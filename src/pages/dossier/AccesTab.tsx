@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
+import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 
 interface MembershipRow {
   id: string
@@ -12,13 +13,14 @@ interface MembershipRow {
 // automatique de ses e-mails de prélèvement vers cette adresse, sans jamais donner accès à sa boîte.
 const DOMAINE_COLLECTE_EMAIL = 'precompta.jdarnis.fr'
 
-export default function AccesTab({ dossierId, codeEmail }: { dossierId: string; codeEmail: string | null }) {
+export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossierId: string; dossierNom: string; codeEmail: string | null }) {
   const [rows, setRows] = useState<MembershipRow[]>([])
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [inviting, setInviting] = useState(false)
   const [copie, setCopie] = useState(false)
+  const [relanceDe, setRelanceDe] = useState<MembershipRow | null>(null)
 
   async function load() {
     const { data } = await supabase.from('memberships').select('id, user_id, email').eq('dossier_id', dossierId)
@@ -130,13 +132,29 @@ export default function AccesTab({ dossierId, codeEmail }: { dossierId: string; 
               {rows.map((r) => (
                 <tr key={r.id}>
                   <td>{r.email ?? r.user_id}</td>
-                  <td><button className="btn btn-danger btn-sm" onClick={() => revoke(r.id)}>Retirer</button></td>
+                  <td className="td-actions">
+                    {r.email && (
+                      <button className="btn btn-outline btn-sm" onClick={() => setRelanceDe(r)}>Relancer</button>
+                    )}
+                    <button className="btn btn-danger btn-sm" onClick={() => revoke(r.id)}>Retirer</button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         )}
       </div>
+
+      {relanceDe?.email && (
+        <EnvoyerEmailModal
+          dossierId={dossierId}
+          type="relance_pieces"
+          destinataireInitial={relanceDe.email}
+          titre="Relancer pour obtenir des pièces"
+          description={`Un e-mail invitant à se connecter pour déposer ses pièces sur "${dossierNom}".`}
+          onClose={() => setRelanceDe(null)}
+        />
+      )}
     </>
   )
 }

@@ -8,6 +8,7 @@ import FactureAvoirModal from './FactureAvoirModal'
 import FactureApercu from './FactureApercu'
 import SuperPdpFactureModal from './SuperPdpFactureModal'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
+import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 
 interface Props {
   dossierId: string
@@ -31,6 +32,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   const [apercu, setApercu] = useState<FactureEmise | null>(null)
   const [avoirDe, setAvoirDe] = useState<FactureEmise | null>(null)
   const [superpdpDe, setSuperpdpDe] = useState<FactureEmise | null>(null)
+  const [emailDe, setEmailDe] = useState<FactureEmise | null>(null)
 
   async function load() {
     setLoading(true)
@@ -122,6 +124,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                       {f.statut === 'validee' && (
                         <button className="btn btn-outline btn-sm" onClick={() => setSuperpdpDe(f)}>Super PDP</button>
                       )}
+                      {f.statut === 'validee' && (
+                        <button className="btn btn-outline btn-sm" onClick={() => setEmailDe(f)}>Envoyer par e-mail</button>
+                      )}
                     </td>
                   </tr>
                 )
@@ -162,6 +167,19 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           facture={superpdpDe}
           onClose={() => setSuperpdpDe(null)}
           onUpdated={load}
+        />
+      )}
+
+      {emailDe && (
+        <EnvoyerEmailModal
+          dossierId={dossierId}
+          type="facture"
+          factureId={emailDe.id}
+          destinataireInitial={emailDe.tiers_email}
+          titre={`Envoyer la ${emailDe.type === 'avoir' ? 'note d’avoir' : 'facture'} ${emailDe.numero ?? ''} par e-mail`}
+          description="Le détail (lignes, montants, mentions légales) est envoyé dans le corps de l'e-mail — sans pièce jointe PDF pour l'instant."
+          onClose={() => setEmailDe(null)}
+          onSent={load}
         />
       )}
     </>

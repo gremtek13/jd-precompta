@@ -142,7 +142,7 @@ export default function DossierDetail() {
       {tab === 'estimation' && <EstimationTab dossierId={id} />}
       {tab === 'informations' && <InformationsTab dossierId={id} dossierNom={dossier?.nom ?? ''} />}
       {tab === 'virements' && <VirementsTab dossierId={id} />}
-      {tab === 'acces' && <AccesTab dossierId={id} codeEmail={dossier?.code_email ?? null} />}
+      {tab === 'acces' && <AccesTab dossierId={id} dossierNom={dossier?.nom ?? ''} codeEmail={dossier?.code_email ?? null} />}
 
       <AssistantFlottant dossierId={id} />
     </>
