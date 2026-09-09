@@ -22,12 +22,13 @@
 // - "actualiser" : relit le statut d'une facture déjà transmise et met à jour son historique.
 //
 // Simplifications connues, à corriger si le validateur Super PDP les signale en sandbox (voir échange
-// avec l'utilisateur — test en sandbox avant tout dossier réel) :
+// avec l'utilisateur — test en sandbox avant tout dossier réel ; BR-S-08, BR-23 et BR-S-02 déjà
+// rencontrées et corrigées en cours de route) :
 // - postal_address : l'adresse stockée en base est un simple texte multi-lignes (voir FacturesTab),
 //   aplati ici en une seule ligne plutôt que découpé en rue/code postal/ville — EN16931 n'exige que
 //   country_code, donc ça passe la validation structurelle, mais un futur découpage serait plus propre.
-// - vat_identifier (numéro de TVA intracommunautaire) n'est jamais renseigné : aucun champ ne le
-//   stocke aujourd'hui côté dossier — à ajouter si le schematron l'exige pour un dossier assujetti.
+// - invoiced_quantity_code (unité de mesure) est toujours "C62" (générique, voir CODE_UNITE_GENERIQUE) —
+//   cette app ne distingue pas encore les unités par ligne (kg, heure...).
 // - electronic_address de l'acheteur est déduite de son SIREN (les 9 premiers chiffres du SIRET
 //   stocké) avec le schéma Peppol France "0225", en supposant qu'il n'a pas déclaré d'adresse
 //   spécifique (voir doc "Annuaire" : c'est le cas de la grande majorité des entreprises).
@@ -92,6 +93,24 @@ function siren(siret: string): string {
   return siret.replace(/\s/g, "").slice(0, 9)
 }
 
+// Numéro de TVA intracommunautaire français, calculé à partir du SIREN (clé officielle : voir Code
+// général des impôts, art. 286 ter) — évite de demander un champ de plus au cabinet alors que la
+// valeur se déduit entièrement et de façon fiable du SIREN déjà saisi. Repose sur BR-S-02 (EN16931) :
+// une facture avec une ligne à taux standard doit porter au moins un identifiant fiscal du vendeur
+// (numéro de TVA, immatriculation fiscale locale, ou représentant fiscal) — celui-ci est le plus
+// naturel pour une entreprise française assujettie.
+function numeroTvaFr(siren9: string): string {
+  const n = parseInt(siren9, 10)
+  const cle = (12 + 3 * (n % 97)) % 97
+  return `FR${String(cle).padStart(2, "0")}${siren9}`
+}
+
+// Code d'unité UN/ECE Rec. 20 générique ("un", "pièce") — cette app ne distingue pas encore les
+// unités de mesure (kg, heure...) par ligne de facture, "C62" est le repli standard des logiciels de
+// facturation français quand aucune unité spécifique n'est saisie. BR-23 (EN16931) l'exige sur
+// chaque ligne, quel que soit le cas d'usage.
+const CODE_UNITE_GENERIQUE = "C62"
+
 function adresseUneLigne(adresse: string | null): string {
   return (adresse ?? "").replace(/\r?\n/g, ", ").trim() || "Adresse non renseignée"
 }
@@ -113,6 +132,8 @@ function construireEnInvoice(facture: FactureRow, lignes: LigneRow[]) {
       identifier: String(i + 1),
       item_information: { name: l.designation },
       invoiced_quantity: String(Math.abs(l.quantite)),
+      // Exigé par BR-23 (EN16931) — voir CODE_UNITE_GENERIQUE.
+      invoiced_quantity_code: CODE_UNITE_GENERIQUE,
       net_amount: (signe * Math.abs(ht)).toFixed(2),
       price_details: { item_net_price: Math.abs(l.prix_unitaire_ht).toFixed(2) },
       // Indispensable pour BR-S-08 (voir doc EN16931) : sans le taux de TVA propre à chaque ligne,
@@ -155,6 +176,10 @@ function construireEnInvoice(facture: FactureRow, lignes: LigneRow[]) {
       electronic_address: { scheme: SCHEME_ELECTRONIC_ADDRESS_FR, value: siren(emetteurSiret) },
       postal_address: { address_line1: adresseUneLigne(facture.emetteur_adresse), country_code: "FR" },
       legal_registration_identifier: { scheme: SCHEME_LEGAL_SIRET, value: emetteurSiret },
+      // Exigé par BR-S-02 dès qu'une ligne est à taux standard (voir numeroTvaFr) — omis quand la
+      // facture ne comporte que des lignes exonérées (franchise en base, taux 0) : réclamer un numéro
+      // de TVA sur une facture "TVA non applicable, art. 293 B du CGI" serait trompeur.
+      ...(lignes.some((l) => l.taux_tva > 0) ? { vat_identifier: numeroTvaFr(siren(emetteurSiret)) } : {}),
     },
     buyer: {
       name: facture.tiers_nom,
