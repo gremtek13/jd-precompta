@@ -142,7 +142,15 @@ export default function DossierDetail() {
       {tab === 'cloture' && <ClotureTab dossierId={id} />}
       {tab === 'estimation' && <EstimationTab dossierId={id} />}
       {tab === 'financement' && <FinancementTab dossierId={id} />}
-      {tab === 'informations' && <InformationsTab dossierId={id} dossierNom={dossier?.nom ?? ''} />}
+      {tab === 'informations' && (
+        <InformationsTab
+          dossierId={id}
+          dossierNom={dossier?.nom ?? ''}
+          dossierSiret={dossier?.siret ?? null}
+          dossierAdresse={dossier?.adresse ?? null}
+          onIdentiteUpdated={(siret, adresse) => dossier && setDossier({ ...dossier, siret, adresse })}
+        />
+      )}
       {tab === 'virements' && <VirementsTab dossierId={id} />}
       {tab === 'acces' && <AccesTab dossierId={id} dossierNom={dossier?.nom ?? ''} codeEmail={dossier?.code_email ?? null} />}
 

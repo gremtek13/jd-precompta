@@ -15,13 +15,33 @@ import type { VehiculeType } from '../../lib/types'
 // Porte aussi la "zone dangereuse" du dossier (export puis suppression définitive) — pas un onglet à
 // part : une action aussi rare mérite d'être au bout du même écran de réglages plutôt que de justifier
 // sa propre entrée de menu.
-export default function InformationsTab({ dossierId, dossierNom }: { dossierId: string; dossierNom: string }) {
+//
+// SIRET/adresse (identité légale du dossier) : jusqu'ici saisis uniquement à la création du dossier
+// (voir DossiersList), sans aucun moyen de les corriger ensuite — un vrai manque, découvert quand un
+// SIRET manquant a bloqué une émission Super PDP sans qu'il y ait où le renseigner après coup. Vivent
+// ici plutôt que dans "Informations du client" ci-dessous (données déclaratives différentes, propre
+// table `informations_dossier`) : siret/adresse sont des colonnes de `dossiers` lui-même.
+interface Props {
+  dossierId: string
+  dossierNom: string
+  dossierSiret: string | null
+  dossierAdresse: string | null
+  onIdentiteUpdated: (siret: string | null, adresse: string | null) => void
+}
+
+export default function InformationsTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, onIdentiteUpdated }: Props) {
   const { estChef } = useAuth()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saved, setSaved] = useState(false)
+
+  const [siret, setSiret] = useState(dossierSiret ?? '')
+  const [adresse, setAdresse] = useState(dossierAdresse ?? '')
+  const [savingIdentite, setSavingIdentite] = useState(false)
+  const [erreurIdentite, setErreurIdentite] = useState<string | null>(null)
+  const [identiteEnregistree, setIdentiteEnregistree] = useState(false)
 
   const [exportEnCours, setExportEnCours] = useState(false)
   const [exportErreur, setExportErreur] = useState<string | null>(null)
@@ -51,6 +71,23 @@ export default function InformationsTab({ dossierId, dossierNom }: { dossierId: 
   }
 
   useEffect(() => { load() }, [dossierId])
+
+  async function enregistrerIdentite(e: FormEvent) {
+    e.preventDefault()
+    setSavingIdentite(true)
+    setErreurIdentite(null)
+    setIdentiteEnregistree(false)
+    const siretNettoye = siret.trim() || null
+    const adresseNettoyee = adresse.trim() || null
+    const { error: updateError } = await supabase.from('dossiers').update({ siret: siretNettoye, adresse: adresseNettoyee }).eq('id', dossierId)
+    setSavingIdentite(false)
+    if (updateError) {
+      setErreurIdentite(updateError.message)
+      return
+    }
+    setIdentiteEnregistree(true)
+    onIdentiteUpdated(siretNettoye, adresseNettoyee)
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -128,6 +165,33 @@ export default function InformationsTab({ dossierId, dossierNom }: { dossierId: 
 
   return (
     <>
+    <div className="card" style={{ maxWidth: 640, marginBottom: 20 }}>
+      <h3 style={{ marginTop: 0 }}>Identité du dossier</h3>
+      <p className="muted" style={{ marginTop: -8 }}>
+        SIRET et adresse de "{dossierNom}" — repris automatiquement sur chaque nouvelle facture émise
+        et requis pour la transmettre via Super PDP.
+      </p>
+      <form onSubmit={enregistrerIdentite}>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="identite-siret">SIRET</label>
+            <input id="identite-siret" value={siret} onChange={(e) => setSiret(e.target.value)} placeholder="14 chiffres" />
+          </div>
+        </div>
+        <div className="field">
+          <label htmlFor="identite-adresse">Adresse</label>
+          <textarea id="identite-adresse" rows={2} value={adresse} onChange={(e) => setAdresse(e.target.value)} />
+        </div>
+        {erreurIdentite && <p className="error-text">{erreurIdentite}</p>}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button className="btn btn-primary btn-sm" type="submit" disabled={savingIdentite}>
+            {savingIdentite ? 'Enregistrement…' : 'Enregistrer'}
+          </button>
+          {identiteEnregistree && <span className="muted">Enregistré ✓</span>}
+        </div>
+      </form>
+    </div>
+
     <div className="card" style={{ maxWidth: 640 }}>
       <h3 style={{ marginTop: 0 }}>Informations du client</h3>
       <p className="muted" style={{ marginTop: -8 }}>
