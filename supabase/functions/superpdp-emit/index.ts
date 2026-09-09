@@ -115,6 +115,13 @@ function construireEnInvoice(facture: FactureRow, lignes: LigneRow[]) {
       invoiced_quantity: String(Math.abs(l.quantite)),
       net_amount: (signe * Math.abs(ht)).toFixed(2),
       price_details: { item_net_price: Math.abs(l.prix_unitaire_ht).toFixed(2) },
+      // Indispensable pour BR-S-08 (voir doc EN16931) : sans le taux de TVA propre à chaque ligne,
+      // le validateur Super PDP ne peut pas rattacher son montant au bon vat_break_down ci-dessous —
+      // il constate alors un total à 0 € pour la catégorie déclarée et rejette la facture.
+      vat_information: {
+        invoiced_item_vat_category_code: l.taux_tva === 0 ? "E" : "S",
+        invoiced_item_vat_rate: l.taux_tva.toFixed(2),
+      },
     }
   })
 
@@ -298,7 +305,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const enInvoice = construireEnInvoice(facture, lignes)
-    console.log(`[superpdp-emit] en_invoice construit : ${JSON.stringify(enInvoice).slice(0, 800)}`)
+    console.log(`[superpdp-emit] en_invoice construit : ${JSON.stringify(enInvoice)}`)
 
     // 1. Conversion JSON EN16931 → XML CII (endpoint public, sans authentification).
     const convertResp = await fetch(`${SUPERPDP_ENDPOINT}/v1.beta/invoices/convert?from=en16931&to=cii`, {
@@ -307,9 +314,9 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify(enInvoice),
     })
     const cii = await convertResp.text()
-    console.log(`[superpdp-emit] convert status=${convertResp.status}`)
+    console.log(`[superpdp-emit] convert status=${convertResp.status} body=${cii.slice(0, 1500)}`)
     if (!convertResp.ok) {
-      throw new Error(`Conversion en CII échouée (${convertResp.status}) : ${cii.slice(0, 500)}`)
+      throw new Error(`Conversion en CII échouée (${convertResp.status}) : ${cii.slice(0, 1500)}`)
     }
 
     // 2. Validation schematron officielle AVANT tout envoi réel — voir en-tête de fichier.
