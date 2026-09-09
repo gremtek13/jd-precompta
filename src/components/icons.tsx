@@ -107,6 +107,15 @@ export const IconStatistiques = (p: IconProps) => base(<>
   <path d="M2.5 20h19" />
 </>, p)
 
+// Financement — fronton de banque (colonnes + toit triangulaire), convention la plus reconnue pour
+// "banque/institution financière" — distincte d'IconBanque (relevé/rapprochement bancaire courant) :
+// ici il s'agit d'un dossier de financement (emprunts, échéancier), pas des mouvements du compte.
+export const IconFinancement = (p: IconProps) => base(<>
+  <path d="M4 10l8-5.5L20 10" />
+  <path d="M5 10v8M9.5 10v8M14.5 10v8M19 10v8" />
+  <path d="M3.5 18h17" />
+</>, p)
+
 // Icônes de la navigation principale (voir Layout.tsx) — distinctes de celles de DossierParcours
 // (ICONES_PARCOURS ci-dessous), qui portent un tout autre sens à l'intérieur d'un dossier.
 
@@ -196,4 +205,5 @@ export const ICONES_PARCOURS: Record<string, IconComponent> = {
   virements: IconVirements,
   packs: IconPacks,
   acces: IconAcces,
+  financement: IconFinancement,
 }
