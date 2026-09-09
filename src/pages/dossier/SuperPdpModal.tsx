@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
+import { extraireErreurFonction } from '../../lib/invokeErreur'
 
 interface Statut {
   configured: boolean
@@ -50,7 +51,7 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
     })
     setSaving(false)
     if (data?.error || invokeError) {
-      setError(data?.error ?? "Échec de l'enregistrement.")
+      setError(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'enregistrement."))
       return
     }
     setClientId('')
@@ -75,7 +76,7 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
     })
     setSyncing(false)
     if (data?.error || invokeError) {
-      setError(data?.error ?? 'Échec de la synchronisation.')
+      setError(data?.error ?? await extraireErreurFonction(invokeError, 'Échec de la synchronisation.'))
       return
     }
     if (data) {

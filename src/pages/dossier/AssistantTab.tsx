@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/format'
 import { formatUsd } from '../../lib/coutsApi'
+import { extraireErreurFonction } from '../../lib/invokeErreur'
 
 interface MessageBrut {
   conversation_id: string
@@ -131,11 +132,12 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
         reponse?: string; outils_utilises?: string[]; usage?: { tokens_entree: number; tokens_sortie: number }
         alerte_cout?: boolean; cout_mois_usd?: number; limite_alerte_usd?: number; error?: string
       }>('agent-comptable', { body: { dossierId, message: texte, historique } })
-      // Sur un statut non-2xx, invokeError est générique — le message précis est dans data.error.
-      // C'est ici (et seulement ici) que remonte le blocage par plafond IA (voir agent-comptable,
-      // verifierPlafondCabinet) : pas de champ dédié côté réponse, juste ce même message d'erreur.
+      // Sur un statut non-2xx, data reste toujours vide (voir lib/invokeErreur.ts) — le message
+      // précis se lit sur invokeError.context. C'est ici (et seulement ici) que remonte le blocage
+      // par plafond IA (voir agent-comptable, verifierPlafondCabinet) : pas de champ dédié côté
+      // réponse, juste ce même message d'erreur.
       if (data?.error) throw new Error(data.error)
-      if (invokeError) throw invokeError
+      if (invokeError) throw new Error(await extraireErreurFonction(invokeError))
       const reponseTexte = data?.reponse
       if (!reponseTexte) throw new Error("Réponse vide.")
 

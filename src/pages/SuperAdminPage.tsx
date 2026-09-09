@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { estimerCoutUsd, formatUsd } from '../lib/coutsApi'
 import { genererExportCabinet } from '../lib/exportCabinet'
 import ConfirmationSuppression from '../components/ConfirmationSuppression'
+import { extraireErreurFonction } from '../lib/invokeErreur'
 
 interface CabinetApercu {
   id: string
@@ -145,7 +146,7 @@ export default function SuperAdminPage() {
     })
     setEnregistrement(false)
     if (data?.error || invokeError) {
-      setErreur(data?.error ?? "Échec de la création du cabinet.")
+      setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de la création du cabinet."))
       return
     }
     setNom('')
@@ -166,7 +167,7 @@ export default function SuperAdminPage() {
     })
     setSuppressionEnCours(false)
     if (data?.error || invokeError) {
-      setSuppressionErreur(data?.error ?? 'Échec de la suppression.')
+      setSuppressionErreur(data?.error ?? await extraireErreurFonction(invokeError, 'Échec de la suppression.'))
       return
     }
     setASupprimer(null)

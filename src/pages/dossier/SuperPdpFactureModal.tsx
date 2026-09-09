@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
+import { extraireErreurFonction } from '../../lib/invokeErreur'
 import type { FactureEmise, FactureSuperpdpEvent } from '../../lib/types'
 
 interface Props {
@@ -41,7 +42,7 @@ export default function SuperPdpFactureModal({ dossierId, facture, onClose, onUp
     })
     setEnCours(false)
     if (data?.error || invokeError) {
-      setErreur(data?.error ?? "Échec de l'appel à Super PDP.")
+      setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'appel à Super PDP."))
       return
     }
     await charger()

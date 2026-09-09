@@ -257,7 +257,9 @@ Deno.serve(async (req: Request) => {
   }
 
   try {
+    console.log(`[superpdp-emit] action=${action} facture=${factureId}`)
     const token = await obtenirToken(creds.client_id, creds.client_secret)
+    console.log(`[superpdp-emit] token OK`)
     const headers = { Authorization: `Bearer ${token}` }
 
     if (action === "actualiser") {
@@ -269,6 +271,7 @@ Deno.serve(async (req: Request) => {
     }
 
     // action === "envoyer"
+    console.log(`[superpdp-emit] checkpoint 1 : statut=${facture.statut} superpdp_invoice_id=${facture.superpdp_invoice_id} emetteur_siret=${JSON.stringify(facture.emetteur_siret)} tiers_siret=${JSON.stringify(facture.tiers_siret)}`)
     if (facture.statut !== "validee") {
       return json({ error: "Seule une facture validée peut être transmise." }, 400)
     }
@@ -281,6 +284,7 @@ Deno.serve(async (req: Request) => {
     if (!facture.tiers_siret || facture.tiers_siret.replace(/\s/g, "").length < 9) {
       return json({ error: "Le SIRET du client facturé est manquant ou invalide — Super PDP a besoin de son identifiant pour acheminer la facture." }, 400)
     }
+    console.log(`[superpdp-emit] checkpoint 2 : garde-fous passés, lecture des lignes…`)
 
     const { data: lignesData, error: lignesError } = await admin
       .from("facture_lignes")
@@ -294,6 +298,7 @@ Deno.serve(async (req: Request) => {
     }
 
     const enInvoice = construireEnInvoice(facture, lignes)
+    console.log(`[superpdp-emit] en_invoice construit : ${JSON.stringify(enInvoice).slice(0, 800)}`)
 
     // 1. Conversion JSON EN16931 → XML CII (endpoint public, sans authentification).
     const convertResp = await fetch(`${SUPERPDP_ENDPOINT}/v1.beta/invoices/convert?from=en16931&to=cii`, {
@@ -302,6 +307,7 @@ Deno.serve(async (req: Request) => {
       body: JSON.stringify(enInvoice),
     })
     const cii = await convertResp.text()
+    console.log(`[superpdp-emit] convert status=${convertResp.status}`)
     if (!convertResp.ok) {
       throw new Error(`Conversion en CII échouée (${convertResp.status}) : ${cii.slice(0, 500)}`)
     }
@@ -311,6 +317,7 @@ Deno.serve(async (req: Request) => {
     form.append("file_name", new File([cii], `facture-${facture.numero ?? facture.id}.xml`, { type: "application/xml" }))
     const validationResp = await fetch(`${SUPERPDP_ENDPOINT}/v1.beta/validation_reports`, { method: "POST", body: form })
     const validationBody = await validationResp.json().catch(() => null)
+    console.log(`[superpdp-emit] validation status=${validationResp.status} body=${JSON.stringify(validationBody).slice(0, 800)}`)
     if (!validationResp.ok) {
       throw new Error(`Validation Super PDP échouée (${validationResp.status}) : ${validationBody?.error ?? "réponse invalide"}.`)
     }
@@ -329,6 +336,7 @@ Deno.serve(async (req: Request) => {
       body: cii,
     })
     const sendBody = await sendResp.json().catch(() => null)
+    console.log(`[superpdp-emit] send status=${sendResp.status} body=${JSON.stringify(sendBody).slice(0, 800)}`)
     if (!sendResp.ok || !sendBody?.id) {
       throw new Error(`Envoi Super PDP échoué (${sendResp.status}) : ${sendBody?.error ?? "réponse invalide"}.`)
     }
@@ -342,6 +350,8 @@ Deno.serve(async (req: Request) => {
 
     return json({ ok: true, superpdp_invoice_id: sendBody.id, dernier_statut: dernierStatut, evenements })
   } catch (err) {
-    return json({ error: err instanceof Error ? err.message : "Erreur inattendue." }, 500)
+    console.error(`[superpdp-emit] erreur attrapée :`, err)
+    const detail = err instanceof Error ? `${err.name} : ${err.message}` : String(err)
+    return json({ error: `Erreur inattendue : ${detail}` }, 500)
   }
 })

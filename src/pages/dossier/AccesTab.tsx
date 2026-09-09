@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
+import { extraireErreurFonction } from '../../lib/invokeErreur'
 
 interface MembershipRow {
   id: string
@@ -42,12 +43,12 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
         'create-client-access',
         { body: { dossierId, email, password } },
       )
-      // Sur un statut non-2xx, supabase-js renvoie systématiquement un FunctionsHttpError générique
-      // ("Edge Function returned a non-2xx status code") dans invokeError — le message précis qu'on
-      // renvoie nous-mêmes (403/409/500...) est dans data.error, jamais dans invokeError. Il faut donc
-      // vérifier data.error EN PREMIER, sinon l'utilisateur ne voit jamais que "erreur" sans détail.
+      // Sur un statut non-2xx, supabase-js jette systématiquement un FunctionsHttpError générique
+      // ("Edge Function returned a non-2xx status code") dans invokeError SANS jamais remplir data
+      // (voir lib/invokeErreur.ts) — le message précis qu'on renvoie nous-mêmes (403/409/500...) se
+      // lit sur invokeError.context, jamais sur data.error (toujours undefined dans ce cas).
       if (data?.error) throw new Error(data.error)
-      if (invokeError) throw invokeError
+      if (invokeError) throw new Error(await extraireErreurFonction(invokeError))
       if (!data?.ok) throw new Error("La création de l'accès n'a rien retourné.")
 
       setEmail('')

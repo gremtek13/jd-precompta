@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
+import { extraireErreurFonction } from '../lib/invokeErreur'
 import type { CabinetAdmin, Dossier, DossierAssignation, RoleCabinetAdmin } from '../lib/types'
 
 const LABEL_ROLE: Record<RoleCabinetAdmin, string> = {
@@ -60,7 +61,7 @@ export default function EquipePage() {
     })
     setEnregistrement(false)
     if (data?.error || invokeError) {
-      setErreur(data?.error ?? "Échec de la création du compte.")
+      setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de la création du compte."))
       return
     }
     setEmail('')

@@ -1,5 +1,6 @@
 import { useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { extraireErreurFonction } from '../lib/invokeErreur'
 
 interface Props {
   dossierId: string
@@ -33,7 +34,7 @@ export default function EnvoyerEmailModal({ dossierId, type, destinataireInitial
     })
     setEnvoi(false)
     if (data?.error || invokeError) {
-      setErreur(data?.error ?? "Échec de l'envoi.")
+      setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'envoi."))
       return
     }
     setEnvoye(true)

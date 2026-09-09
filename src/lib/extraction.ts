@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { extraireErreurFonction } from './invokeErreur'
 import type { CategorieDocument } from './types'
 
 // Classification automatique du document, déduite du texte OCR brut (voir extract-piece) — permet de
@@ -91,7 +92,7 @@ export async function extractPiece(source: Blob, name: string): Promise<Extracti
   const bytes = await normalized.arrayBuffer()
 
   const { data: result, error } = await supabase.functions.invoke<ExtractionResult>('extract-piece', { body: bytes })
-  if (error) throw error
+  if (error) throw new Error(await extraireErreurFonction(error, "L'extraction a échoué."))
   if (!result || result.error) throw new Error(result?.error ?? "L'extraction a échoué.")
   return result
 }
