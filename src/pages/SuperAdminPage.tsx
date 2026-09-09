@@ -18,6 +18,15 @@ interface CabinetApercu {
   // suivi (voir migration agent_conversations_tokens), jamais une facture AWS exacte.
   tokens_entree: number
   tokens_sortie: number
+  // Même calcul que tokens_entree/tokens_sortie, mais restreint au mois calendaire en cours (UTC) —
+  // c'est ce total, pas le cumul depuis toujours, que compare le plafond IA (voir migration
+  // cabinets_plafond_ia et agent-comptable, verifierPlafondCabinet) contre les deux seuils ci-dessous.
+  cout_mois_usd: number
+  // Seuils du plafond IA (voir migration cabinets_plafond_ia) — null = pas de plafond configuré sur
+  // ce seuil. Alerte : signale sans bloquer. Blocage : refuse toute nouvelle question de l'agent tant
+  // que le mois en cours n'est pas terminé.
+  limite_ia_alerte_usd: number | null
+  limite_ia_blocage_usd: number | null
 }
 
 // Réservée au(x) super-admin(s) (voir AuthContext.isSuperAdmin, résolu via le RPC is_super_admin()) —
@@ -47,16 +56,24 @@ export default function SuperAdminPage() {
   const [exportProgression, setExportProgression] = useState<{ fait: number; total: number } | null>(null)
   const [exportErreur, setExportErreur] = useState<string | null>(null)
 
+  const [plafondEdit, setPlafondEdit] = useState<CabinetApercu | null>(null)
+  const [plafondAlerte, setPlafondAlerte] = useState('')
+  const [plafondBlocage, setPlafondBlocage] = useState('')
+  const [plafondEnregistrement, setPlafondEnregistrement] = useState(false)
+  const [plafondErreur, setPlafondErreur] = useState<string | null>(null)
+
   async function load() {
     setLoading(true)
     const [{ data: cabinetsData }, { data: dossiersData }, { data: adminsData }, { data: membershipsData }, { data: usageData }] = await Promise.all([
-      supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at').order('created_at'),
+      supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at, limite_ia_alerte_usd, limite_ia_blocage_usd').order('created_at'),
       supabase.from('dossiers').select('id, cabinet_id'),
       supabase.from('cabinet_admins').select('cabinet_id'),
       supabase.from('memberships').select('dossier_id'),
       // Uniquement les messages assistant (voir AssistantTab.enregistrer) : seuls eux déclenchent un
       // appel Bedrock facturé, un message user n'a jamais de tokens_entree/tokens_sortie renseignés.
-      supabase.from('agent_conversations').select('dossier_id, tokens_entree, tokens_sortie').eq('role', 'assistant'),
+      // created_at sert à isoler le mois calendaire en cours (voir tokensEntreeMois plus bas), en plus
+      // du cumul depuis toujours déjà affiché.
+      supabase.from('agent_conversations').select('dossier_id, tokens_entree, tokens_sortie, created_at').eq('role', 'assistant'),
     ])
 
     const cabinetParDossier = new Map(((dossiersData ?? []) as { id: string; cabinet_id: string }[]).map((d) => [d.id, d.cabinet_id]))
@@ -76,24 +93,39 @@ export default function SuperAdminPage() {
       const cabinetId = cabinetParDossier.get(m.dossier_id)
       if (cabinetId) nbClients.set(cabinetId, (nbClients.get(cabinetId) ?? 0) + 1)
     }
+    // Mois calendaire UTC en cours — même frontière que verifierPlafondCabinet côté agent-comptable,
+    // pour que le total affiché ici corresponde exactement à ce que le plafond compare.
+    const maintenant = new Date()
+    const debutMoisIso = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString()
     // Même logique que nbClients : un message d'agent est rattaché à un dossier, agrégé ici au
-    // niveau du cabinet auquel ce dossier appartient.
+    // niveau du cabinet auquel ce dossier appartient — une fois pour le cumul depuis toujours, une
+    // fois restreint au mois en cours (celui que compare le plafond).
     const tokensEntree = new Map<string, number>()
     const tokensSortie = new Map<string, number>()
-    for (const u of (usageData ?? []) as { dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null }[]) {
+    const tokensEntreeMois = new Map<string, number>()
+    const tokensSortieMois = new Map<string, number>()
+    for (const u of (usageData ?? []) as { dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null; created_at: string }[]) {
       const cabinetId = cabinetParDossier.get(u.dossier_id)
       if (!cabinetId) continue
       tokensEntree.set(cabinetId, (tokensEntree.get(cabinetId) ?? 0) + (u.tokens_entree ?? 0))
       tokensSortie.set(cabinetId, (tokensSortie.get(cabinetId) ?? 0) + (u.tokens_sortie ?? 0))
+      if (u.created_at >= debutMoisIso) {
+        tokensEntreeMois.set(cabinetId, (tokensEntreeMois.get(cabinetId) ?? 0) + (u.tokens_entree ?? 0))
+        tokensSortieMois.set(cabinetId, (tokensSortieMois.get(cabinetId) ?? 0) + (u.tokens_sortie ?? 0))
+      }
     }
 
-    setCabinets(((cabinetsData ?? []) as { id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string }[]).map((c) => ({
+    setCabinets(((cabinetsData ?? []) as {
+      id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string
+      limite_ia_alerte_usd: number | null; limite_ia_blocage_usd: number | null
+    }[]).map((c) => ({
       ...c,
       nb_dossiers: nbDossiers.get(c.id) ?? 0,
       nb_admins: nbAdmins.get(c.id) ?? 0,
       nb_clients: nbClients.get(c.id) ?? 0,
       tokens_entree: tokensEntree.get(c.id) ?? 0,
       tokens_sortie: tokensSortie.get(c.id) ?? 0,
+      cout_mois_usd: estimerCoutUsd(tokensEntreeMois.get(c.id) ?? 0, tokensSortieMois.get(c.id) ?? 0),
     })))
     setLoading(false)
   }
@@ -138,6 +170,44 @@ export default function SuperAdminPage() {
       return
     }
     setASupprimer(null)
+    load()
+  }
+
+  function ouvrirPlafond(c: CabinetApercu) {
+    setPlafondEdit(c)
+    setPlafondAlerte(c.limite_ia_alerte_usd != null ? String(c.limite_ia_alerte_usd) : '')
+    setPlafondBlocage(c.limite_ia_blocage_usd != null ? String(c.limite_ia_blocage_usd) : '')
+    setPlafondErreur(null)
+  }
+
+  // Écriture directe (voir migration cabinets_plafond_ia) : la politique cabinets_update
+  // (est_chef_du_cabinet, qui inclut déjà is_super_admin()) autorise un super-admin à modifier
+  // n'importe quel cabinet sans RLS dédiée. Un champ vidé remet le seuil correspondant à "pas de
+  // plafond" (null), jamais 0 (qui bloquerait/alerterait immédiatement au moindre usage).
+  async function enregistrerPlafond(e: FormEvent) {
+    e.preventDefault()
+    if (!plafondEdit) return
+    const alerte = plafondAlerte.trim() === '' ? null : Number(plafondAlerte)
+    const blocage = plafondBlocage.trim() === '' ? null : Number(plafondBlocage)
+    if ((alerte != null && (Number.isNaN(alerte) || alerte < 0)) || (blocage != null && (Number.isNaN(blocage) || blocage < 0))) {
+      setPlafondErreur('Les seuils doivent être des montants positifs (ou vides pour ne fixer aucun plafond).')
+      return
+    }
+    if (alerte != null && blocage != null && alerte > blocage) {
+      setPlafondErreur("Le seuil d'alerte doit être inférieur ou égal au seuil de blocage.")
+      return
+    }
+    setPlafondEnregistrement(true)
+    setPlafondErreur(null)
+    const { error: updateError } = await supabase.from('cabinets')
+      .update({ limite_ia_alerte_usd: alerte, limite_ia_blocage_usd: blocage })
+      .eq('id', plafondEdit.id)
+    setPlafondEnregistrement(false)
+    if (updateError) {
+      setPlafondErreur(updateError.message)
+      return
+    }
+    setPlafondEdit(null)
     load()
   }
 
@@ -191,6 +261,7 @@ export default function SuperAdminPage() {
                 <th className="hide-mobile">Clients</th>
                 <th className="hide-mobile">Tokens agent (E/S)</th>
                 <th className="hide-mobile">Coût estimé agent</th>
+                <th className="hide-mobile">Plafond IA (mois)</th>
                 <th className="hide-mobile">Créé le</th>
                 <th></th>
               </tr>
@@ -218,8 +289,31 @@ export default function SuperAdminPage() {
                       : `${c.tokens_entree.toLocaleString('fr-FR')} / ${c.tokens_sortie.toLocaleString('fr-FR')}`}
                   </td>
                   <td className="hide-mobile">{formatUsd(estimerCoutUsd(c.tokens_entree, c.tokens_sortie))}</td>
+                  <td className="hide-mobile">
+                    {c.limite_ia_alerte_usd == null && c.limite_ia_blocage_usd == null ? (
+                      <span className="muted">Aucun</span>
+                    ) : (
+                      <>
+                        <span
+                          className={`badge ${
+                            c.limite_ia_blocage_usd != null && c.cout_mois_usd >= c.limite_ia_blocage_usd ? 'badge-danger'
+                            : c.limite_ia_alerte_usd != null && c.cout_mois_usd >= c.limite_ia_alerte_usd ? 'badge-warning'
+                            : 'badge-ok'
+                          }`}
+                        >
+                          {formatUsd(c.cout_mois_usd)}
+                        </span>
+                        <div className="muted" style={{ fontSize: '0.78rem' }}>
+                          alerte {c.limite_ia_alerte_usd != null ? formatUsd(c.limite_ia_alerte_usd) : '—'} · blocage {c.limite_ia_blocage_usd != null ? formatUsd(c.limite_ia_blocage_usd) : '—'}
+                        </div>
+                      </>
+                    )}
+                  </td>
                   <td className="hide-mobile">{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
                   <td className="td-actions">
+                    <button type="button" className="btn btn-outline btn-sm" onClick={() => ouvrirPlafond(c)}>
+                      Plafond IA
+                    </button>
                     <button
                       type="button"
                       className="btn btn-outline btn-sm"
@@ -276,6 +370,37 @@ export default function SuperAdminPage() {
                 <button type="button" className="btn btn-outline" onClick={() => setAjout(false)} disabled={enregistrement}>Annuler</button>
                 <button type="submit" className="btn btn-primary" disabled={enregistrement}>
                   {enregistrement ? 'Création…' : 'Créer le cabinet'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {plafondEdit && (
+        <div style={overlayStyle}>
+          <div className="card" style={{ width: 'min(420px, 92vw)' }}>
+            <h2 style={{ marginTop: 0 }}>Plafond IA — {plafondEdit.nom}</h2>
+            <p className="muted" style={{ marginTop: -8 }}>
+              Calculé sur l'usage de l'agent comptable (Claude, tous les dossiers du cabinet confondus)
+              depuis le début du mois calendaire en cours. L'alerte signale sans bloquer ; le blocage
+              refuse toute nouvelle question de l'agent jusqu'au mois prochain. Laisse un champ vide
+              pour ne fixer aucun plafond sur ce seuil.
+            </p>
+            <form onSubmit={enregistrerPlafond}>
+              <div className="field">
+                <label htmlFor="plafond-alerte">Seuil d'alerte (USD)</label>
+                <input id="plafond-alerte" type="number" min="0" step="0.01" placeholder="Aucun" value={plafondAlerte} onChange={(e) => setPlafondAlerte(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor="plafond-blocage">Seuil de blocage (USD)</label>
+                <input id="plafond-blocage" type="number" min="0" step="0.01" placeholder="Aucun" value={plafondBlocage} onChange={(e) => setPlafondBlocage(e.target.value)} />
+              </div>
+              {plafondErreur && <p className="error-text">{plafondErreur}</p>}
+              <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
+                <button type="button" className="btn btn-outline" onClick={() => setPlafondEdit(null)} disabled={plafondEnregistrement}>Annuler</button>
+                <button type="submit" className="btn btn-primary" disabled={plafondEnregistrement}>
+                  {plafondEnregistrement ? 'Enregistrement…' : 'Enregistrer'}
                 </button>
               </div>
             </form>

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEven
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/format'
+import { formatUsd } from '../../lib/coutsApi'
 
 interface MessageBrut {
   conversation_id: string
@@ -32,6 +33,12 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Plafond IA du cabinet (voir agent-comptable, verifierPlafondCabinet et migration
+  // cabinets_plafond_ia) : non bloquant, contrairement au blocage (qui remonte comme une erreur
+  // ordinaire via data.error, voir plus bas) — juste un signal affiché au comptable après chaque
+  // réponse. Réinitialisé à null au changement de dossier : reflète l'usage du dossier consulté, pas
+  // un cabinet précédent.
+  const [alerteCout, setAlerteCout] = useState<{ coutMoisUsd: number; limiteAlerteUsd: number } | null>(null)
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
   const zoneRef = useRef<HTMLTextAreaElement>(null)
   const historiqueRef = useRef<HTMLDivElement>(null)
@@ -62,6 +69,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
 
   useEffect(() => {
     setConversationId(null) // force charger() à retomber sur le fil le plus récent de ce dossier
+    setAlerteCout(null)
     charger()
   }, [dossierId])
 
@@ -120,9 +128,12 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
 
     try {
       const { data, error: invokeError } = await supabase.functions.invoke<{
-        reponse?: string; outils_utilises?: string[]; usage?: { tokens_entree: number; tokens_sortie: number }; error?: string
+        reponse?: string; outils_utilises?: string[]; usage?: { tokens_entree: number; tokens_sortie: number }
+        alerte_cout?: boolean; cout_mois_usd?: number; limite_alerte_usd?: number; error?: string
       }>('agent-comptable', { body: { dossierId, message: texte, historique } })
       // Sur un statut non-2xx, invokeError est générique — le message précis est dans data.error.
+      // C'est ici (et seulement ici) que remonte le blocage par plafond IA (voir agent-comptable,
+      // verifierPlafondCabinet) : pas de champ dédié côté réponse, juste ce même message d'erreur.
       if (data?.error) throw new Error(data.error)
       if (invokeError) throw invokeError
       const reponseTexte = data?.reponse
@@ -133,6 +144,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
         outils_utilises: data.outils_utilises ?? null, created_at: new Date().toISOString(),
       }])
       enregistrer('assistant', reponseTexte, data.outils_utilises, data.usage)
+      setAlerteCout(data.alerte_cout ? { coutMoisUsd: data.cout_mois_usd ?? 0, limiteAlerteUsd: data.limite_alerte_usd ?? 0 } : null)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
@@ -250,6 +262,19 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
       </div>
 
       {error && <p className="error-text" style={{ flexShrink: 0 }}>{error}</p>}
+
+      {alerteCout && (
+        <p
+          className="muted"
+          style={{
+            flexShrink: 0, margin: '0 0 8px', padding: '8px 12px', borderRadius: 8, fontSize: '0.82rem',
+            background: 'var(--color-warning-light)', color: 'var(--color-warning)',
+          }}
+        >
+          Seuil d'alerte du cabinet atteint : {formatUsd(alerteCout.coutMoisUsd)} d'usage de l'agent ce mois-ci
+          (seuil {formatUsd(alerteCout.limiteAlerteUsd)}). L'agent reste utilisable — ajustable depuis Comptes master.
+        </p>
+      )}
 
       <form onSubmit={envoyer} style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div className="field" style={{ margin: 0 }}>

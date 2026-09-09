@@ -64,6 +64,12 @@ const MODEL = "eu.anthropic.claude-sonnet-4-6"
 // largement suffisant pour les questions visées (quelques appels d'outils, jamais des dizaines).
 const MAX_TOURS_OUTILS = 8
 
+// Tarifs Claude Sonnet — mêmes constantes que src/lib/coutsApi.ts, dupliquées ici (voir "fichier
+// auto-porteur" en en-tête) : servent uniquement à évaluer le plafond IA mensuel du cabinet (voir
+// verifierPlafondCabinet plus bas), jamais à facturer précisément le client final.
+const PRIX_TOKEN_ENTREE_USD = 3 / 1_000_000
+const PRIX_TOKEN_SORTIE_USD = 15 / 1_000_000
+
 // Filet de sécurité indépendant du client Bedrock : que son option `timeout` soit honorée ou non
 // (déjà pris en défaut une fois sur cette même intégration — voir la correction awsSecretAccessKey),
 // cette fonction fait toujours avancer l'appelant après `ms`, jamais un blocage silencieux jusqu'à
@@ -143,6 +149,63 @@ function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
 function bornesAnnee(annee?: number): { date_debut?: string; date_fin?: string } {
   if (!annee) return {}
   return { date_debut: `${annee}-01-01`, date_fin: `${annee}-12-31` }
+}
+
+interface PlafondResultat {
+  bloque: boolean
+  alerte: boolean
+  coutMoisUsd: number
+  limiteAlerteUsd: number | null
+  limiteBlocageUsd: number | null
+}
+
+// Plafond IA mensuel, paramétrable par cabinet depuis Comptes master (voir migration
+// cabinets_plafond_ia et src/pages/SuperAdminPage.tsx) : deux seuils indépendants — l'alerte
+// (n'empêche rien, signale juste au comptable) et le blocage (refuse toute nouvelle question tant
+// que le mois calendaire en cours n'est pas terminé). Recalculé à chaque question plutôt que mis en
+// cache : un compteur figé laisserait passer un dossier au-delà du plafond entre deux rafraîchissements.
+// Mois calendaire UTC (comme tokens_entree/tokens_sortie, écrits en UTC par Postgres) — pas le fuseau
+// du navigateur, qui décalerait la frontière du mois de quelques heures selon l'endroit d'où on se connecte.
+async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, cabinetId: string): Promise<PlafondResultat> {
+  const { data: cabinet } = await admin
+    .from("cabinets")
+    .select("limite_ia_alerte_usd, limite_ia_blocage_usd")
+    .eq("id", cabinetId)
+    .single()
+  const limiteAlerteUsd = (cabinet?.limite_ia_alerte_usd as number | null | undefined) ?? null
+  const limiteBlocageUsd = (cabinet?.limite_ia_blocage_usd as number | null | undefined) ?? null
+  // Aucun des deux seuils configuré (défaut) : pas de plafond, on évite même la requête suivante.
+  if (limiteAlerteUsd == null && limiteBlocageUsd == null) {
+    return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd: null, limiteBlocageUsd: null }
+  }
+
+  const { data: dossiersCabinet } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+  const dossierIds = ((dossiersCabinet ?? []) as { id: string }[]).map((d) => d.id)
+  if (dossierIds.length === 0) {
+    return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd }
+  }
+
+  const maintenant = new Date()
+  const debutMois = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString()
+  const { data: conversations } = await admin
+    .from("agent_conversations")
+    .select("tokens_entree, tokens_sortie")
+    .eq("role", "assistant")
+    .in("dossier_id", dossierIds)
+    .gte("created_at", debutMois)
+
+  const lignesUsage = (conversations ?? []) as { tokens_entree: number | null; tokens_sortie: number | null }[]
+  const totalEntree = lignesUsage.reduce((s, c) => s + (c.tokens_entree ?? 0), 0)
+  const totalSortie = lignesUsage.reduce((s, c) => s + (c.tokens_sortie ?? 0), 0)
+  const coutMoisUsd = totalEntree * PRIX_TOKEN_ENTREE_USD + totalSortie * PRIX_TOKEN_SORTIE_USD
+
+  return {
+    bloque: limiteBlocageUsd != null && coutMoisUsd >= limiteBlocageUsd,
+    alerte: limiteAlerteUsd != null && coutMoisUsd >= limiteAlerteUsd,
+    coutMoisUsd,
+    limiteAlerteUsd,
+    limiteBlocageUsd,
+  }
 }
 
 // ---- Outils -----------------------------------------------------------------------------------
@@ -390,11 +453,20 @@ Deno.serve(async (req: Request) => {
 
   const { data: dossierRow, error: dossierError } = await admin
     .from("dossiers")
-    .select("nom, assujetti_tva")
+    .select("nom, assujetti_tva, cabinet_id")
     .eq("id", dossierId)
     .single()
   if (dossierError || !dossierRow) {
     return json({ error: "Dossier introuvable." }, 404)
+  }
+
+  // Plafond IA du cabinet (voir verifierPlafondCabinet) : vérifié avant tout appel Bedrock — un
+  // cabinet bloqué ne doit générer aucun coût supplémentaire, pas même un premier tour d'outils.
+  const plafond = await verifierPlafondCabinet(admin, dossierRow.cabinet_id as string)
+  if (plafond.bloque) {
+    return json({
+      error: `Plafond mensuel d'usage de l'agent atteint pour ce cabinet (${plafond.coutMoisUsd.toFixed(2)} $ ce mois-ci, limite ${plafond.limiteBlocageUsd?.toFixed(2)} $). Il sera réinitialisé le mois prochain, ou peut être relevé depuis Comptes master.`,
+    }, 402)
   }
 
   // Historique : uniquement du texte brut, jamais des blocs structurés que le navigateur pourrait
@@ -504,7 +576,15 @@ Règles impératives :
 
       if (toolUseBlocks.length === 0) {
         const texte = response.content.filter((b): b is Anthropic.TextBlock => b.type === "text").map((b) => b.text).join("\n\n")
-        return json({ reponse: texte || "(réponse vide)", outils_utilises: outilsUtilises, usage: { tokens_entree: usageEntree, tokens_sortie: usageSortie } })
+        return json({
+          reponse: texte || "(réponse vide)",
+          outils_utilises: outilsUtilises,
+          usage: { tokens_entree: usageEntree, tokens_sortie: usageSortie },
+          // Alerte (non bloquante, voir verifierPlafondCabinet) : recalculée sur l'usage d'avant cette
+          // question, donc peut ne pas encore compter la question en cours — un léger retard sans
+          // conséquence puisque l'alerte ne fait que signaler, jamais bloquer.
+          ...(plafond.alerte ? { alerte_cout: true, cout_mois_usd: plafond.coutMoisUsd, limite_alerte_usd: plafond.limiteAlerteUsd } : {}),
+        })
       }
 
       messages.push({ role: "assistant", content: response.content })
