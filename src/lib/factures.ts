@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import type { FactureLigne } from './types'
+import type { FactureLigne, TypeFacture } from './types'
 
 // Mentions légales par défaut, proposées à la création d'une facture puis librement modifiables avant
 // validation — un point de départ raisonnable, pas une garantie de conformité exhaustive : la
@@ -42,14 +42,17 @@ export function calculerTotaux(lignes: { quantite: number; prix_unitaire_ht: num
   )
 }
 
-// Numéro définitif au format F<année>-<numéro sur 4 chiffres> (ex. F2026-0007) — l'année vient de la
-// date d'émission, pas de la date du jour, pour qu'une facture antidatée en janvier pour décembre
-// dernier reste dans la bonne suite annuelle.
-export async function attribuerNumeroFacture(dossierId: string, dateEmission: string): Promise<string> {
+// Numéro définitif au format F<année>-<numéro sur 4 chiffres> (ex. F2026-0007) pour une facture, ou
+// A<année>-<numéro> pour un avoir — deux séries indépendantes (voir la migration factures_avoir), chacune
+// gapless séparément, convention la plus répandue dans les logiciels de facturation français plutôt
+// qu'un compteur unique partagé. L'année vient de la date d'émission, pas de la date du jour, pour
+// qu'un document antidaté en janvier pour décembre dernier reste dans la bonne suite annuelle.
+export async function attribuerNumeroFacture(dossierId: string, dateEmission: string, type: TypeFacture = 'facture'): Promise<string> {
   const annee = new Date(dateEmission).getFullYear()
-  const { data, error } = await supabase.rpc('prochain_numero_facture', { p_dossier_id: dossierId, p_annee: annee })
+  const { data, error } = await supabase.rpc('prochain_numero_facture', { p_dossier_id: dossierId, p_annee: annee, p_type: type })
   if (error || data == null) throw new Error(error?.message ?? "Échec de l'attribution du numéro.")
-  return `F${annee}-${String(data).padStart(4, '0')}`
+  const prefixe = type === 'avoir' ? 'A' : 'F'
+  return `${prefixe}${annee}-${String(data).padStart(4, '0')}`
 }
 
 // Représentation triée par ordre d'affichage — les lignes arrivent de Supabase déjà triées par la

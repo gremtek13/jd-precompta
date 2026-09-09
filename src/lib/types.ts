@@ -353,18 +353,28 @@ export interface DossierAssignation {
 }
 
 export type StatutFacture = 'brouillon' | 'validee'
+export type TypeFacture = 'facture' | 'avoir'
 
 // Facture émise par le dossier à un tiers (voir FacturesTab) — première brique pour émettre
 // soi-même des factures conformes, pas seulement en recevoir (voir Piece.source === 'superpdp'). Tant
 // que statut === 'brouillon', numero reste nul et tout le reste est librement modifiable ; à la
 // validation, un numéro séquentiel sans trou est attribué une fois pour toutes (voir
-// lib/factures.ts:validerFacture) et la facture n'est plus éditable — corriger une facture déjà
-// numérotée se fait par une facture d'avoir, pas en la rouvrant (pas encore construit).
+// lib/factures.ts:attribuerNumeroFacture) et la facture n'est plus éditable — corriger une facture
+// déjà numérotée se fait par une facture d'avoir (voir type/facture_origine_id, FactureAvoirModal),
+// jamais en la rouvrant.
 export interface FactureEmise {
   id: string
   dossier_id: string
   numero: string | null
   statut: StatutFacture
+  // 'avoir' uniquement pour un document créé via FactureAvoirModal, jamais un brouillon (un avoir est
+  // toujours créé déjà validé) — voir facture_origine_id. Sa numérotation vit dans une série "A"
+  // indépendante de la série "F" des factures (voir prochain_numero_facture), et ses montants/lignes
+  // sont toujours stockés négatifs : sommer tout montant_ttc d'un dossier/année annule alors
+  // automatiquement l'effet de l'avoir sur le total, sans cas particulier à coder ailleurs.
+  type: TypeFacture
+  // Facture corrigée par cet avoir — non nul seulement si type === 'avoir'.
+  facture_origine_id: string | null
   date_emission: string
   date_echeance: string | null
   tiers_nom: string

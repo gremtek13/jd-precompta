@@ -4,6 +4,7 @@ import { formatDate, formatMoney } from '../../lib/format'
 import type { FactureEmise } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import FactureFormModal from './FactureFormModal'
+import FactureAvoirModal from './FactureAvoirModal'
 import FactureApercu from './FactureApercu'
 
 interface Props {
@@ -25,6 +26,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [editing, setEditing] = useState<FactureEmise | 'new' | null>(null)
   const [apercu, setApercu] = useState<FactureEmise | null>(null)
+  const [avoirDe, setAvoirDe] = useState<FactureEmise | null>(null)
 
   async function load() {
     setLoading(true)
@@ -52,9 +54,10 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
     <>
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
         Une facture validée reçoit un numéro définitif et n'est plus modifiable — corrige une erreur
-        par une facture d'avoir plutôt qu'en la rouvrant (pas encore un écran dédié, à faire à la main
-        en attendant). La transmission automatique via une plateforme agréée arrivera dans une
-        prochaine étape : imprime ou enregistre en PDF pour l'envoyer toi-même.
+        par une facture d'avoir (bouton "Avoir" sur la ligne) plutôt qu'en la rouvrant. Un avoir a sa
+        propre numérotation (série "A", indépendante des factures) et référence toujours la facture
+        corrigée. La transmission automatique via une plateforme agréée arrivera dans une prochaine
+        étape : imprime ou enregistre en PDF pour l'envoyer toi-même.
       </p>
 
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
@@ -74,27 +77,41 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
               <tr><th>Numéro</th><th>Date</th><th>Client</th><th>Montant TTC</th><th>Statut</th><th></th></tr>
             </thead>
             <tbody>
-              {filtered.map((f) => (
-                <tr key={f.id} className="clickable" onClick={() => ouvrir(f)}>
-                  <td>{f.numero ?? '—'}</td>
-                  <td>{formatDate(f.date_emission)}</td>
-                  <td>{f.tiers_nom}</td>
-                  <td>{formatMoney(f.montant_ttc)}</td>
-                  <td>
-                    {f.statut === 'validee'
-                      ? <span className="badge badge-ok">Validée</span>
-                      : <span className="badge badge-warning">Brouillon</span>}
-                  </td>
-                  <td className="td-actions" onClick={(e) => e.stopPropagation()}>
-                    {f.statut === 'brouillon' && (
-                      <button className="btn btn-danger btn-sm" onClick={() => supprimer(f)}>Supprimer</button>
-                    )}
-                    {f.statut === 'validee' && (
-                      <button className="btn btn-outline btn-sm" onClick={() => setApercu(f)}>Aperçu</button>
-                    )}
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((f) => {
+                const origine = f.facture_origine_id ? factures.find((o) => o.id === f.facture_origine_id) : null
+                return (
+                  <tr key={f.id} className="clickable" onClick={() => ouvrir(f)}>
+                    <td>
+                      {f.numero ?? '—'}
+                      {f.type === 'avoir' && (
+                        <>
+                          {' '}<span className="badge badge-neutral">Avoir</span>
+                          <div className="muted" style={{ fontSize: '0.78rem' }}>→ {origine?.numero ?? f.facture_origine_id?.slice(0, 8)}</div>
+                        </>
+                      )}
+                    </td>
+                    <td>{formatDate(f.date_emission)}</td>
+                    <td>{f.tiers_nom}</td>
+                    <td>{formatMoney(f.montant_ttc)}</td>
+                    <td>
+                      {f.statut === 'validee'
+                        ? <span className="badge badge-ok">Validée</span>
+                        : <span className="badge badge-warning">Brouillon</span>}
+                    </td>
+                    <td className="td-actions" onClick={(e) => e.stopPropagation()}>
+                      {f.statut === 'brouillon' && (
+                        <button className="btn btn-danger btn-sm" onClick={() => supprimer(f)}>Supprimer</button>
+                      )}
+                      {f.statut === 'validee' && (
+                        <button className="btn btn-outline btn-sm" onClick={() => setApercu(f)}>Aperçu</button>
+                      )}
+                      {f.statut === 'validee' && f.type === 'facture' && (
+                        <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}
@@ -115,6 +132,15 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
       )}
 
       {apercu && <FactureApercu facture={apercu} onClose={() => setApercu(null)} />}
+
+      {avoirDe && (
+        <FactureAvoirModal
+          dossierId={dossierId}
+          factureOrigine={avoirDe}
+          onClose={() => setAvoirDe(null)}
+          onCreated={load}
+        />
+      )}
     </>
   )
 }

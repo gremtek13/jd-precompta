@@ -11,11 +11,21 @@ import type { FactureEmise, FactureLigne } from '../../lib/types'
 // l'appli (menu, boutons, autres onglets) est masqué.
 export default function FactureApercu({ facture, onClose }: { facture: FactureEmise; onClose: () => void }) {
   const [lignes, setLignes] = useState<FactureLigne[] | null>(null)
+  // Numéro de la facture corrigée, affiché uniquement pour un avoir (voir facture_origine_id) — une
+  // requête à part plutôt qu'une jointure : FacturesTab connaît déjà cette info pour ses propres
+  // lignes de tableau (elle a toute la liste en mémoire), mais l'aperçu peut aussi être ouvert seul.
+  const [numeroOrigine, setNumeroOrigine] = useState<string | null>(null)
 
   useEffect(() => {
     supabase.from('facture_lignes').select('*').eq('facture_id', facture.id).order('ordre')
       .then(({ data }) => setLignes((data ?? []) as FactureLigne[]))
   }, [facture.id])
+
+  useEffect(() => {
+    if (!facture.facture_origine_id) { setNumeroOrigine(null); return }
+    supabase.from('factures_emises').select('numero').eq('id', facture.facture_origine_id).maybeSingle()
+      .then(({ data }) => setNumeroOrigine(data?.numero ?? null))
+  }, [facture.facture_origine_id])
 
   return (
     <div style={overlayStyle}>
@@ -32,7 +42,10 @@ export default function FactureApercu({ facture, onClose }: { facture: FactureEm
             {facture.emetteur_siret && <div className="muted">SIRET {facture.emetteur_siret}</div>}
           </div>
           <div style={{ textAlign: 'right' }}>
-            <h2 style={{ margin: 0 }}>FACTURE {facture.numero}</h2>
+            <h2 style={{ margin: 0 }}>{facture.type === 'avoir' ? 'AVOIR' : 'FACTURE'} {facture.numero}</h2>
+            {facture.type === 'avoir' && (
+              <div className="muted">En référence à la facture {numeroOrigine ?? '…'}</div>
+            )}
             <div className="muted">Émise le {formatDate(facture.date_emission)}</div>
             {facture.date_echeance && <div className="muted">Échéance le {formatDate(facture.date_echeance)}</div>}
           </div>
