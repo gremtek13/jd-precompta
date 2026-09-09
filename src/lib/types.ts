@@ -391,9 +391,27 @@ export interface FactureEmise {
   emetteur_nom: string | null
   emetteur_siret: string | null
   emetteur_adresse: string | null
+  // Transmission via Super PDP (voir supabase/functions/superpdp-emit) — null tant que la facture n'a
+  // jamais été envoyée par cette voie (l'impression/export PDF manuel reste toujours possible sans).
+  // superpdp_dernier_statut est une dénormalisation du plus récent facture_superpdp_events.status_code
+  // (fr:200 soumise, fr:205 acceptée, fr:210 refusée...) pour affichage rapide sans jointure.
+  superpdp_invoice_id: number | null
+  superpdp_dernier_statut: string | null
   created_by: string | null
   created_at: string
   validated_at: string | null
+}
+
+// Un événement du cycle de vie d'une facture transmise via Super PDP (voir migration
+// superpdp_emission_factures) — l'envoi est asynchrone, un statut à l'instant T ne dit rien du
+// suivant : accumulés dans l'ordre, jamais remplacés.
+export interface FactureSuperpdpEvent {
+  id: string
+  facture_id: string
+  superpdp_event_id: number
+  status_code: string
+  status_text: string
+  occurred_at: string
 }
 
 export interface FactureLigne {

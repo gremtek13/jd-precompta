@@ -6,6 +6,8 @@ import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import FactureFormModal from './FactureFormModal'
 import FactureAvoirModal from './FactureAvoirModal'
 import FactureApercu from './FactureApercu'
+import SuperPdpFactureModal from './SuperPdpFactureModal'
+import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 
 interface Props {
   dossierId: string
@@ -16,10 +18,11 @@ interface Props {
   onAdresseUpdated: (adresse: string) => void
 }
 
-// Facturation du dossier — première brique pour émettre soi-même des factures conformes, en
-// complément de la réception déjà en place (Super PDP, voir SuperPdpModal). La transmission
-// automatique via une plateforme agréée n'est pas encore branchée (schéma de l'API à valider) : pour
-// l'instant une facture validée s'imprime/s'exporte en PDF pour être envoyée manuellement.
+// Facturation du dossier — émet soi-même des factures conformes, en complément de la réception déjà
+// en place (Super PDP, voir SuperPdpModal). Une facture validée peut être transmise au client via
+// Super PDP (voir SuperPdpFactureModal, supabase/functions/superpdp-emit) ou, comme avant, simplement
+// imprimée/exportée en PDF pour être envoyée manuellement — les deux restent possibles, la
+// transmission électronique n'est jamais obligatoire (ex. client sans SIRET, ou pas encore configuré).
 export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, assujettiTva, onAdresseUpdated }: Props) {
   const [factures, setFactures] = useState<FactureEmise[]>([])
   const [loading, setLoading] = useState(true)
@@ -27,6 +30,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   const [editing, setEditing] = useState<FactureEmise | 'new' | null>(null)
   const [apercu, setApercu] = useState<FactureEmise | null>(null)
   const [avoirDe, setAvoirDe] = useState<FactureEmise | null>(null)
+  const [superpdpDe, setSuperpdpDe] = useState<FactureEmise | null>(null)
 
   async function load() {
     setLoading(true)
@@ -97,6 +101,13 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                       {f.statut === 'validee'
                         ? <span className="badge badge-ok">Validée</span>
                         : <span className="badge badge-warning">Brouillon</span>}
+                      {f.statut === 'validee' && f.superpdp_invoice_id && (
+                        <div style={{ marginTop: 4 }}>
+                          <span className={`badge ${badgeClasseStatutSuperpdp(f.superpdp_dernier_statut)}`}>
+                            Super PDP · {f.superpdp_dernier_statut ? libelleStatutSuperpdp(f.superpdp_dernier_statut) : '…'}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     <td className="td-actions" onClick={(e) => e.stopPropagation()}>
                       {f.statut === 'brouillon' && (
@@ -107,6 +118,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
                       )}
                       {f.statut === 'validee' && f.type === 'facture' && (
                         <button className="btn btn-outline btn-sm" onClick={() => setAvoirDe(f)}>Avoir</button>
+                      )}
+                      {f.statut === 'validee' && (
+                        <button className="btn btn-outline btn-sm" onClick={() => setSuperpdpDe(f)}>Super PDP</button>
                       )}
                     </td>
                   </tr>
@@ -139,6 +153,15 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
           factureOrigine={avoirDe}
           onClose={() => setAvoirDe(null)}
           onCreated={load}
+        />
+      )}
+
+      {superpdpDe && (
+        <SuperPdpFactureModal
+          dossierId={dossierId}
+          facture={superpdpDe}
+          onClose={() => setSuperpdpDe(null)}
+          onUpdated={load}
         />
       )}
     </>
