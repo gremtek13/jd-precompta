@@ -226,14 +226,18 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   (`superpdp-sync`) et émission de factures de vente conformes EN16931/CII
   (`superpdp-emit`), configuration des identifiants OAuth par dossier.
 - Financement : suivi d'emprunts avec échéancier d'amortissement
-  (`FinancementTab`, `src/lib/emprunts.ts`), et deux premières briques du
-  dossier bancaire automatisé — situation intermédiaire (recettes/charges/
-  résultat par poste 2035, même logique que Clôture, sur une période libre
-  du 1er janvier à une date choisie, plus la trésorerie à cette date :
-  `src/lib/situationIntermediaire.ts`) et plan de trésorerie (projection du
+  (`FinancementTab`, `src/lib/emprunts.ts`), et trois briques du dossier
+  bancaire automatisé — situation intermédiaire (recettes/charges/résultat
+  par poste 2035, même logique que Clôture, sur une période libre du 1er
+  janvier à une date choisie, plus la trésorerie à cette date :
+  `src/lib/situationIntermediaire.ts`), plan de trésorerie (projection du
   solde bancaire par moyenne mensuelle réelle observée — emprunts et
   cotisations déjà compris puisqu'ils transitent par le même compte, liste
-  séparée des échéances connues à titre indicatif : `src/lib/planTresorerie.ts`).
+  séparée des échéances connues à titre indicatif : `src/lib/planTresorerie.ts`),
+  et échéancier des dettes consolidé + ratios bancaires (capacité de
+  remboursement = dettes financières / CAF annuelle estimée, taux
+  d'endettement mensuel = mensualités / moyenne des encaissements —
+  `src/lib/ratiosBancaires.ts`).
 - Suppléments : prestations ponctuelles hors mission courante (création/
   fermeture de société, situation intermédiaire, autre), à facturer ou
   facturée avec lien facultatif vers la facture réelle ; et comptes courants
@@ -256,9 +260,9 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
   pièges déjà traités).
 - Dossier bancaire automatisé — échéancier d'emprunts, situation
-  intermédiaire et plan de trésorerie faits (onglet Financement) ;
-  échéancier des dettes consolidé + ratios bancaires, prévisionnel à 3 ans
-  et note d'hypothèses restent hors périmètre tant que non demandés
+  intermédiaire, plan de trésorerie et échéancier des dettes + ratios
+  bancaires faits (onglet Financement) ; seul le prévisionnel à 3 ans et la
+  note d'hypothèses restent hors périmètre tant que non demandés
   explicitement.
 
 ## Problèmes connus importants
