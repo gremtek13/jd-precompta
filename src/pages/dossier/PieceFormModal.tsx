@@ -269,146 +269,157 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
 
   return (
     <div style={overlayStyle}>
-      <div className="card" style={{ width: 'min(520px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
-        <h2 style={{ marginTop: 0 }}>{piece ? 'Modifier la pièce' : 'Ajouter une pièce'}</h2>
-        <form onSubmit={handleSubmit}>
-          <div className="field">
-            <label htmlFor="file">Fichier {piece && '(laisser vide pour garder l\'actuel)'}</label>
-            <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
-            {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
-          </div>
+      <div className="card" style={{ width: 'min(880px, 94vw)', maxHeight: '90vh', padding: 0, display: 'flex', flexDirection: 'column' }}>
+        <h2 style={{ margin: 0, padding: '20px 20px 0' }}>{piece ? 'Modifier la pièce' : 'Ajouter une pièce'}</h2>
+        {/* Formulaire en deux blocs distincts (contenu qui défile / pied fixe) — voir .piece-modal-footer
+            dans index.css : sur un justificatif long (PDF), les boutons d'action restaient sinon hors
+            champ tant qu'on n'avait pas fait défiler tout le formulaire jusqu'en bas. */}
+        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
+            <div className="piece-modal-grid">
+              <div>
+                <div className="field">
+                  <label htmlFor="file">Fichier {piece && '(laisser vide pour garder l\'actuel)'}</label>
+                  <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
+                  {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
+                </div>
 
-          {(previewUrl || previewError) && (
-            <div className="field">
-              {previewError ? (
-                <p className="muted" style={{ margin: 0 }}>{previewError}</p>
-              ) : (
-                <>
-                  {typeApercu(file?.name ?? piece?.nom_fichier ?? '') === 'image' && (
-                    <img
-                      src={previewUrl!}
-                      alt="Aperçu de la pièce"
-                      style={{ maxWidth: '100%', maxHeight: 280, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--color-border)' }}
-                    />
+                {(previewUrl || previewError) && (
+                  <div className="field">
+                    {previewError ? (
+                      <p className="muted" style={{ margin: 0 }}>{previewError}</p>
+                    ) : (
+                      <>
+                        {typeApercu(file?.name ?? piece?.nom_fichier ?? '') === 'image' && (
+                          <img
+                            src={previewUrl!}
+                            alt="Aperçu de la pièce"
+                            style={{ maxWidth: '100%', maxHeight: 340, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--color-border)' }}
+                          />
+                        )}
+                        {typeApercu(file?.name ?? piece?.nom_fichier ?? '') === 'pdf' && (
+                          <iframe
+                            src={previewUrl!}
+                            title="Aperçu de la pièce"
+                            style={{ width: '100%', height: 420, border: '1px solid var(--color-border)', borderRadius: 8 }}
+                          />
+                        )}
+                        <a href={previewUrl!} target="_blank" rel="noreferrer" className="muted" style={{ display: 'inline-block', marginTop: 6 }}>
+                          Ouvrir dans un nouvel onglet ↗
+                        </a>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    disabled={extracting || (!file && !piece?.storage_path)}
+                    onClick={handleExtract}
+                  >
+                    {extracting ? 'Extraction…' : '✨ Extraire automatiquement'}
+                  </button>
+                  {confiance && (
+                    <span className={`badge ${confiance === 'haute' ? 'badge-ok' : confiance === 'moyenne' ? 'badge-warning' : 'badge-neutral'}`}>
+                      Confiance {confiance} — vérifie les champs
+                    </span>
                   )}
-                  {typeApercu(file?.name ?? piece?.nom_fichier ?? '') === 'pdf' && (
-                    <iframe
-                      src={previewUrl!}
-                      title="Aperçu de la pièce"
-                      style={{ width: '100%', height: 320, border: '1px solid var(--color-border)', borderRadius: 8 }}
-                    />
-                  )}
-                  <a href={previewUrl!} target="_blank" rel="noreferrer" className="muted" style={{ display: 'inline-block', marginTop: 6 }}>
-                    Ouvrir dans un nouvel onglet ↗
-                  </a>
-                </>
-              )}
-            </div>
-          )}
+                </div>
+                {extractionError && <p className="error-text" style={{ marginTop: -8 }}>{extractionError}</p>}
+                {suggestionAutre && <p className="muted" style={{ marginTop: -8 }}>💡 {suggestionAutre}</p>}
 
-          <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              disabled={extracting || (!file && !piece?.storage_path)}
-              onClick={handleExtract}
-            >
-              {extracting ? 'Extraction…' : '✨ Extraire automatiquement'}
-            </button>
-            {confiance && (
-              <span className={`badge ${confiance === 'haute' ? 'badge-ok' : confiance === 'moyenne' ? 'badge-warning' : 'badge-neutral'}`}>
-                Confiance {confiance} — vérifie les champs
-              </span>
-            )}
-          </div>
-          {extractionError && <p className="error-text" style={{ marginTop: -8 }}>{extractionError}</p>}
-          {suggestionAutre && <p className="muted" style={{ marginTop: -8 }}>💡 {suggestionAutre}</p>}
+                {lignesBrutes && (
+                  <details className="field" style={{ marginTop: -8 }}>
+                    <summary className="muted" style={{ cursor: 'pointer' }}>TVA introuvable — diagnostic (temporaire), clique pour copier</summary>
+                    <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
+                      {lignesBrutes.join('\n')}
+                    </pre>
+                  </details>
+                )}
 
-          {lignesBrutes && (
-            <details className="field" style={{ marginTop: -8 }}>
-              <summary className="muted" style={{ cursor: 'pointer' }}>TVA introuvable — diagnostic (temporaire), clique pour copier</summary>
-              <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
-                {lignesBrutes.join('\n')}
-              </pre>
-            </details>
-          )}
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="date">Date de la pièce</label>
+                    <input id="date" type="date" value={datePiece} onChange={(e) => setDatePiece(e.target.value)} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="type">Type</label>
+                    <select id="type" value={typePiece} onChange={(e) => setTypePiece(e.target.value as TypePiece)}>
+                      <option value="achat">Achat</option>
+                      <option value="vente">Vente</option>
+                      <option value="note_frais">Note de frais</option>
+                      <option value="autre">Autre</option>
+                    </select>
+                  </div>
+                </div>
 
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="date">Date de la pièce</label>
-              <input id="date" type="date" value={datePiece} onChange={(e) => setDatePiece(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor="type">Type</label>
-              <select id="type" value={typePiece} onChange={(e) => setTypePiece(e.target.value as TypePiece)}>
-                <option value="achat">Achat</option>
-                <option value="vente">Vente</option>
-                <option value="note_frais">Note de frais</option>
-                <option value="autre">Autre</option>
-              </select>
-            </div>
-          </div>
+                <div className="field">
+                  <label htmlFor="tiers">Tiers (fournisseur / client)</label>
+                  <input
+                    id="tiers"
+                    list="tiers-connus"
+                    value={tiers}
+                    onChange={(e) => setTiers(e.target.value)}
+                    onBlur={(e) => suggestCategorieFromTiers(e.target.value)}
+                  />
+                  <datalist id="tiers-connus">
+                    {tiersConnus.map((t) => <option key={t} value={t} />)}
+                  </datalist>
+                </div>
 
-          <div className="field">
-            <label htmlFor="tiers">Tiers (fournisseur / client)</label>
-            <input
-              id="tiers"
-              list="tiers-connus"
-              value={tiers}
-              onChange={(e) => setTiers(e.target.value)}
-              onBlur={(e) => suggestCategorieFromTiers(e.target.value)}
-            />
-            <datalist id="tiers-connus">
-              {tiersConnus.map((t) => <option key={t} value={t} />)}
-            </datalist>
-          </div>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="categorie">Catégorie</label>
+                    <select id="categorie" value={categorieId} onChange={(e) => setCategorieId(e.target.value)}>
+                      <option value="">— Choisir —</option>
+                      {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
+                    </select>
+                  </div>
+                  <div className="field">
+                    <label htmlFor="sousDossier">Sous-dossier</label>
+                    <select id="sousDossier" value={sousDossierId} onChange={(e) => setSousDossierId(e.target.value)}>
+                      <option value="">— Aucun —</option>
+                      {sousDossiers.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+                    </select>
+                  </div>
+                </div>
 
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="categorie">Catégorie</label>
-              <select id="categorie" value={categorieId} onChange={(e) => setCategorieId(e.target.value)}>
-                <option value="">— Choisir —</option>
-                {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor="sousDossier">Sous-dossier</label>
-              <select id="sousDossier" value={sousDossierId} onChange={(e) => setSousDossierId(e.target.value)}>
-                <option value="">— Aucun —</option>
-                {sousDossiers.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-              </select>
+                <div className="field-row">
+                  <div className="field">
+                    <label htmlFor="ht">Montant HT</label>
+                    <input id="ht" type="number" step="0.01" value={montantHt} onChange={(e) => { setMontantHt(e.target.value); recalcFromHtTva(e.target.value, montantTva) }} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="tva">TVA</label>
+                    <input id="tva" type="number" step="0.01" value={montantTva} onChange={(e) => { setMontantTva(e.target.value); recalcFromHtTva(montantHt, e.target.value) }} />
+                  </div>
+                  <div className="field">
+                    <label htmlFor="ttc">Montant TTC</label>
+                    <input id="ttc" type="number" step="0.01" value={montantTtc} onChange={(e) => setMontantTtc(e.target.value)} />
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label htmlFor="notes">Notes</label>
+                  <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+                </div>
+
+                {error && <p className="error-text">{error}</p>}
+              </div>
             </div>
           </div>
 
-          <div className="field-row">
-            <div className="field">
-              <label htmlFor="ht">Montant HT</label>
-              <input id="ht" type="number" step="0.01" value={montantHt} onChange={(e) => { setMontantHt(e.target.value); recalcFromHtTva(e.target.value, montantTva) }} />
-            </div>
-            <div className="field">
-              <label htmlFor="tva">TVA</label>
-              <input id="tva" type="number" step="0.01" value={montantTva} onChange={(e) => { setMontantTva(e.target.value); recalcFromHtTva(montantHt, e.target.value) }} />
-            </div>
-            <div className="field">
-              <label htmlFor="ttc">Montant TTC</label>
-              <input id="ttc" type="number" step="0.01" value={montantTtc} onChange={(e) => setMontantTtc(e.target.value)} />
-            </div>
-          </div>
-
-          <div className="field">
-            <label htmlFor="notes">Notes</label>
-            <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-          </div>
-
-          {error && <p className="error-text">{error}</p>}
-
-          <div style={{ display: 'flex', gap: 10, justifyContent: 'space-between', alignItems: 'center', marginTop: 10 }}>
+          <div className="piece-modal-footer" style={{ padding: 16, borderTop: '1px solid var(--color-border)' }}>
             {piece ? (
               <button type="button" className="btn btn-danger" disabled={deleting || saving} onClick={handleDelete}>
                 {deleting ? 'Suppression…' : 'Supprimer'}
               </button>
             ) : <span />}
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div className="piece-modal-actions" style={{ display: 'flex', gap: 10 }}>
               <button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button>
               <button type="button" className="btn btn-outline" disabled={saving || deleting} onClick={() => save('a_valider')}>
                 Enregistrer brouillon
