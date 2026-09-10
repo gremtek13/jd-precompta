@@ -4,6 +4,7 @@ import { formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE } from '../../lib/ecritures'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire } from '../../lib/situationIntermediaire'
+import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, type EcheanceConnue } from '../../lib/planTresorerie'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 
 interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number }
@@ -26,6 +27,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   const [editing, setEditing] = useState<Emprunt | 'new' | null>(null)
   const [echeancierDe, setEcheancierDe] = useState<Emprunt | null>(null)
   const [situationOuverte, setSituationOuverte] = useState(false)
+  const [tresorerieOuverte, setTresorerieOuverte] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -104,6 +106,16 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
         l'exercice.
       </p>
 
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
+        <h3 style={{ margin: 0 }}>Plan de trésorerie</h3>
+        <button className="btn btn-outline btn-sm" onClick={() => setTresorerieOuverte(true)}>Générer</button>
+      </div>
+      <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
+        Projection mensuelle du solde bancaire sur les prochains mois, à partir du rythme réel
+        d'encaissements/décaissements observé sur l'historique — « si le rythme actuel se maintient »,
+        pas un budget poste par poste.
+      </p>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <h3 style={{ margin: 0 }}>Emprunts</h3>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvel emprunt</button>
@@ -168,7 +180,103 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
           onClose={() => setSituationOuverte(false)}
         />
       )}
+
+      {tresorerieOuverte && (
+        <PlanTresorerieModal
+          lignesBanque={lignesBanque}
+          soldeActuel={soldeBanque}
+          emprunts={emprunts}
+          cotisations={cotisations}
+          onClose={() => setTresorerieOuverte(false)}
+        />
+      )}
     </>
+  )
+}
+
+function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations, onClose }: {
+  lignesBanque: LigneBanque[]; soldeActuel: number; emprunts: Emprunt[]; cotisations: CotisationDeclaree[]; onClose: () => void
+}) {
+  const [nbMoisHistorique, setNbMoisHistorique] = useState(6)
+  const [nbMoisProjection, setNbMoisProjection] = useState(6)
+
+  const plan = calculerPlanTresorerie(lignesBanque, soldeActuel, nbMoisHistorique, nbMoisProjection)
+  const debutProjection = plan.lignes[0]?.mois ? `${plan.lignes[0].mois}-01` : new Date().toISOString().slice(0, 10)
+  // "-31" plutôt que le vrai dernier jour du mois : comparaison de chaînes (YYYY-MM-DD), pas de
+  // date réelle — sert seulement de borne haute, valide même pour un mois de moins de 31 jours.
+  const finProjection = plan.lignes.at(-1)?.mois ? `${plan.lignes.at(-1)!.mois}-31` : debutProjection
+  const echeances: EcheanceConnue[] = [
+    ...echeancesEmprunts(emprunts, debutProjection, finProjection),
+    ...echeancesCotisations(cotisations, debutProjection, finProjection),
+  ].sort((a, b) => a.date.localeCompare(b.date))
+
+  return (
+    <div style={overlayStyle}>
+      <div className="card" style={{ width: 'min(680px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2 style={{ marginTop: 0 }}>Plan de trésorerie</h2>
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="tr-historique">Moyenne calculée sur (mois)</label>
+            <input id="tr-historique" type="number" min="1" max="24" value={nbMoisHistorique} onChange={(e) => setNbMoisHistorique(Math.max(1, parseInt(e.target.value, 10) || 1))} />
+          </div>
+          <div className="field">
+            <label htmlFor="tr-projection">Projeter sur (mois)</label>
+            <input id="tr-projection" type="number" min="1" max="24" value={nbMoisProjection} onChange={(e) => setNbMoisProjection(Math.max(1, parseInt(e.target.value, 10) || 1))} />
+          </div>
+        </div>
+        <p className="muted" style={{ marginTop: -6 }}>
+          Moyenne mensuelle observée sur les {nbMoisHistorique} derniers mois complets : {formatMoney(plan.moyenneEncaissements)} d'encaissements,{' '}
+          {formatMoney(plan.moyenneDecaissements)} de décaissements — mensualités d'emprunts et cotisations déjà payées comprises, puisqu'elles
+          transitent par le même compte banque.
+        </p>
+
+        <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginBottom: 20 }}>
+          <table>
+            <thead><tr><th>Mois</th><th>Solde début</th><th>Encaissements</th><th>Décaissements</th><th>Solde fin</th></tr></thead>
+            <tbody>
+              {plan.lignes.map((l) => (
+                <tr key={l.mois}>
+                  <td>{l.mois}</td>
+                  <td>{formatMoney(l.soldeDebut)}</td>
+                  <td>{formatMoney(l.encaissements)}</td>
+                  <td>{formatMoney(l.decaissements)}</td>
+                  <td style={l.soldeFin < 0 ? { color: 'var(--color-danger, #c0392b)', fontWeight: 600 } : undefined}>{formatMoney(l.soldeFin)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <h3 style={{ marginBottom: 6 }}>Échéances connues sur la période</h3>
+        <p className="muted" style={{ marginTop: -4, marginBottom: 10, fontSize: '0.85rem' }}>
+          À titre indicatif — déjà comprises dans la moyenne ci-dessus si l'emprunt ou la cotisation
+          existe depuis plus de {nbMoisHistorique} mois. Utile surtout pour repérer un emprunt qui se
+          termine bientôt ou trop récent pour être dans l'historique.
+        </p>
+        <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
+          {echeances.length === 0 ? (
+            <div className="empty-state">Aucune échéance connue sur la période.</div>
+          ) : (
+            <table>
+              <thead><tr><th>Date</th><th>Libellé</th><th>Montant</th></tr></thead>
+              <tbody>
+                {echeances.map((e, i) => (
+                  <tr key={i}>
+                    <td>{formatDate(e.date)}</td>
+                    <td>{e.libelle}</td>
+                    <td>{formatMoney(e.montant)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    </div>
   )
 }
 
