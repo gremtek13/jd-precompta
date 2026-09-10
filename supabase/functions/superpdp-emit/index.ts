@@ -349,15 +349,28 @@ Deno.serve(async (req: Request) => {
     form.append("file_name", new File([cii], `facture-${facture.numero ?? facture.id}.xml`, { type: "application/xml" }))
     const validationResp = await fetch(`${SUPERPDP_ENDPOINT}/v1.beta/validation_reports`, { method: "POST", body: form })
     const validationBody = await validationResp.json().catch(() => null)
-    console.log(`[superpdp-emit] validation status=${validationResp.status} body=${JSON.stringify(validationBody).slice(0, 800)}`)
+    console.log(`[superpdp-emit] validation status=${validationResp.status} body=${JSON.stringify(validationBody).slice(0, 5000)}`)
     if (!validationResp.ok) {
       throw new Error(`Validation Super PDP échouée (${validationResp.status}) : ${validationBody?.error ?? "réponse invalide"}.`)
     }
     const rapport = validationBody?.data?.[0]
     if (rapport?.is_valid === false) {
-      const messages = ((rapport.subreports ?? []) as { failures?: { message: string }[] }[])
-        .flatMap((s) => (s.failures ?? []).map((m) => m.message))
-      return json({ error: `Facture non conforme selon le validateur Super PDP : ${messages.slice(0, 5).join(" ; ") || "raison non précisée."}` }, 400)
+      // is_valid vaut false dès qu'un contrôle échoue, y compris un simple avertissement (ex.
+      // BR-FR-05 sur les mentions de pénalités/escompte, ou BR-FR-08 sur le mode de facturation) —
+      // observé en sandbox : un rapport composé uniquement d'avertissements (flag="warning" dans
+      // `raw`, ou schematron nommé "..._WARNING.xslt") est malgré tout marqué is_valid=false, alors
+      // que ces règles ne sont pas bloquantes pour la transmission réelle (voir doc "Erreurs" : le
+      // POST /invoices lui-même est l'arbitre final). On ne bloque donc ici que s'il reste au moins
+      // un message qui n'est PAS un avertissement, jamais sur is_valid seul.
+      type Msg = { message: string; raw?: string }
+      const messagesBloquants = ((rapport.subreports ?? []) as { messages?: Msg[]; failures?: Msg[] }[])
+        .flatMap((s) => [...(s.failures ?? []), ...(s.messages ?? [])])
+        .filter((m) => !m.raw?.includes('flag="warning"'))
+        .map((m) => m.message)
+      if (messagesBloquants.length > 0) {
+        return json({ error: `Facture non conforme selon le validateur Super PDP : ${[...new Set(messagesBloquants)].slice(0, 5).join(" ; ")}` }, 400)
+      }
+      console.log(`[superpdp-emit] validation is_valid=false mais uniquement des avertissements — envoi maintenu`)
     }
 
     // 3. Envoi réel — irréversible, voir en-tête de fichier. external_id (l'id de notre facture,
