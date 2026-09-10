@@ -1,9 +1,17 @@
+/* Refonte visuelle 2026 — un seul principe pour tout ce qui est nouveau ici : aucune couleur d'accent
+   en dur. Chaque nuance (fond teinté, halo de focus, survol, ombre colorée) est dérivée de
+   --color-primary via color-mix(), parce que la charte par cabinet (voir lib/branding.ts) ne remplace
+   que trois variables en inline sur :root (--color-primary, -hover, -light) : tout ce qui découle de
+   la première par calcul suit automatiquement la couleur choisie par chaque cabinet, en clair comme en
+   sombre, sans qu'aucune règle n'ait à connaître la teinte réelle. */
 :root {
-  --color-bg: #f5f6f3;
+  --color-bg: #f4f5f2;
   --color-surface: #ffffff;
-  --color-border: #e4e7e0;
-  --color-text: #1a2420;
-  --color-text-light: #667066;
+  --color-surface-2: #f9faf8;
+  --color-border: #e3e6e0;
+  --color-border-strong: #d2d7cf;
+  --color-text: #17201c;
+  --color-text-light: #64706a;
   --color-primary: #2f7a6f;
   --color-primary-hover: #26645b;
   --color-primary-light: #eaf5f3;
@@ -12,12 +20,18 @@
   --color-danger-text: #7a3020;
   --color-warning: #b5850f;
   --color-warning-light: #fbf1dc;
-  --color-neutral-bg: #eee;
-  --color-neutral-text: #555;
-  /* Échelle d'espacement — sert de référence pour les nouveaux écrans/composants (valeurs rondes
-     seulement, jamais un chiffre choisi au pif comme 14px ou 22px) : la rigueur ne se voit pas
-     élément par élément, mais l'œil sent la cohérence à l'échelle de toute l'appli. Les écrans plus
-     anciens gardent leurs valeurs actuelles pour l'instant — pas de réécriture générale aujourd'hui. */
+  --color-neutral-bg: #eceeea;
+  --color-neutral-text: #555c58;
+
+  /* Teintes dérivées — toujours calculées, jamais fixées (voir en-tête). */
+  --tint-primary: color-mix(in srgb, var(--color-primary) 9%, transparent);
+  --tint-primary-strong: color-mix(in srgb, var(--color-primary) 16%, transparent);
+  --ring-primary: color-mix(in srgb, var(--color-primary) 28%, transparent);
+  --glow-primary: color-mix(in srgb, var(--color-primary) 32%, transparent);
+  --wash-primary: color-mix(in srgb, var(--color-primary) 6%, transparent);
+
+  /* Échelle d'espacement — valeurs rondes seulement, jamais un chiffre choisi au pif : la rigueur ne
+     se voit pas élément par élément, mais l'œil sent la cohérence à l'échelle de toute l'appli. */
   --space-1: 4px;
   --space-2: 8px;
   --space-3: 12px;
@@ -25,11 +39,23 @@
   --space-5: 20px;
   --space-6: 24px;
   --space-8: 32px;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow-sm: 0 1px 3px rgba(20, 30, 24, 0.07), 0 1px 2px rgba(20, 30, 24, 0.05);
-  --shadow-md: 0 8px 20px rgba(20, 30, 24, 0.10), 0 2px 6px rgba(20, 30, 24, 0.06);
+  --radius-lg: 18px;
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-xs: 8px;
+
+  /* Ombres à deux couches (contact + portée), très douces — la profondeur vient surtout du contraste
+     surface/fond et d'une bordure fine, pas d'ombres lourdes. */
+  --shadow-xs: 0 1px 2px rgba(16, 24, 20, 0.05);
+  --shadow-sm: 0 1px 2px rgba(16, 24, 20, 0.05), 0 2px 8px rgba(16, 24, 20, 0.05);
+  --shadow-md: 0 2px 4px rgba(16, 24, 20, 0.05), 0 12px 32px -8px rgba(16, 24, 20, 0.16);
+  --shadow-lg: 0 4px 8px rgba(16, 24, 20, 0.06), 0 24px 56px -12px rgba(16, 24, 20, 0.24);
+
+  --ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+  --duree: 160ms;
+
   font-family: "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-optical-sizing: auto;
   color-scheme: light;
 }
 
@@ -37,57 +63,83 @@
 
 body {
   margin: 0;
-  background: var(--color-bg);
   color: var(--color-text);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+  /* Lavis très léger de la couleur du cabinet en haut de page — donne une identité à l'écran sans
+     jamais concurrencer le contenu ; en dur ce serait une teinte JD, ici ça suit chaque cabinet. */
+  background:
+    radial-gradient(900px 420px at 8% -10%, var(--wash-primary), transparent 70%),
+    var(--color-bg);
+  background-attachment: fixed;
 }
 
-#root {
-  min-height: 100vh;
-}
+#root { min-height: 100vh; }
 
-a { color: var(--color-primary); }
+a { color: var(--color-primary); text-decoration-thickness: 1px; text-underline-offset: 2px; }
 
 button, input, select, textarea { font: inherit; }
 
-/* Refonte visuelle (4/4) — hiérarchie de titres cohérente : jusqu'ici chaque écran gérait ses <h3> de
-   section au coup par coup (style inline marginTop:0 uniquement) sans base commune de poids/taille. */
-h2, h3 { margin: 0 0 6px; font-weight: 700; letter-spacing: -0.01em; color: var(--color-text); }
-h2 { font-size: 1.2rem; }
-h3 { font-size: 1.05rem; }
+::selection { background: var(--tint-primary-strong); }
 
-/* Anneau de focus cohérent au clavier sur les éléments interactifs qui n'en avaient pas (jusqu'ici
-   seuls .field input/select/textarea en avaient un) — accessibilité et finition, pas de changement de
-   comportement. */
-.btn:focus-visible, .theme-toggle:focus-visible, .nav-groupe-bouton:focus-visible, .nav-menu-item:focus-visible {
-  outline: none; box-shadow: 0 0 0 3px var(--color-primary-light);
+h1, h2, h3 { text-wrap: balance; }
+h2, h3 { margin: 0 0 6px; font-weight: 700; letter-spacing: -0.012em; color: var(--color-text); }
+h2 { font-size: 1.2rem; }
+h3 { font-size: 1.02rem; }
+
+/* Mouvement : micro-transitions courtes, coupées pour qui a demandé moins d'animations. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0ms !important; animation-duration: 0ms !important; }
+}
+
+/* Anneau de focus clavier commun à tout ce qui est interactif — dérivé de la couleur d'accent. */
+.btn:focus-visible, .theme-toggle:focus-visible, .nav-groupe-bouton:focus-visible, .nav-menu-item:focus-visible,
+.home-tile:focus-visible, tr.clickable:focus-visible {
+  outline: none; box-shadow: 0 0 0 3px var(--ring-primary);
 }
 .sidebar nav a:focus-visible, .tabs button:focus-visible {
-  outline: none; box-shadow: 0 0 0 3px var(--color-primary-light); border-radius: var(--radius-sm);
+  outline: none; box-shadow: 0 0 0 3px var(--ring-primary); border-radius: var(--radius-sm);
 }
 
+/* ---------- Boutons ---------- */
 .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 6px;
   border: 1px solid transparent;
-  border-radius: 10px;
+  border-radius: var(--radius-sm);
   padding: 9px 16px;
-  font-size: 0.92rem;
+  font-size: 0.9rem;
   font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
   cursor: pointer;
-  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+  white-space: nowrap;
+  transition: background-color var(--duree) var(--ease), border-color var(--duree) var(--ease),
+    color var(--duree) var(--ease), box-shadow var(--duree) var(--ease), transform var(--duree) var(--ease);
 }
+.btn:active:not(:disabled) { transform: translateY(0) scale(0.985); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
-.btn-primary { background: var(--color-primary); color: #fff; box-shadow: var(--shadow-sm); }
-.btn-primary:hover:not(:disabled) { background: var(--color-primary-hover); box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.btn-outline { background: transparent; border-color: var(--color-border); color: var(--color-text); }
-.btn-outline:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); background: var(--color-primary-light); }
-.btn-danger { background: transparent; border-color: var(--color-danger); color: var(--color-danger); }
-.btn-danger:hover:not(:disabled) { background: var(--color-danger-light); }
-.btn-sm { padding: 5px 10px; font-size: 0.8rem; }
+/* Bouton principal : fond plat (pas de dégradé — voir discipline visuelle), mais une ombre portée
+   colorée par l'accent, qui le fait "flotter" légèrement au-dessus de la carte. */
+.btn-primary {
+  background: var(--color-primary); color: #fff;
+  box-shadow: 0 1px 2px rgba(16, 24, 20, 0.08), 0 6px 16px -6px var(--glow-primary);
+}
+.btn-primary:hover:not(:disabled) {
+  background: var(--color-primary-hover);
+  box-shadow: 0 2px 4px rgba(16, 24, 20, 0.08), 0 10px 22px -6px var(--glow-primary);
+  transform: translateY(-1px);
+}
+.btn-outline { background: var(--color-surface); border-color: var(--color-border-strong); color: var(--color-text); box-shadow: var(--shadow-xs); }
+.btn-outline:hover:not(:disabled) { border-color: var(--color-primary); color: var(--color-primary); background: var(--tint-primary); }
+.btn-danger { background: var(--color-surface); border-color: color-mix(in srgb, var(--color-danger) 45%, var(--color-border)); color: var(--color-danger); }
+.btn-danger:hover:not(:disabled) { background: var(--color-danger-light); border-color: var(--color-danger); }
+.btn-sm { padding: 6px 11px; font-size: 0.8rem; border-radius: var(--radius-xs); }
 
+/* ---------- Cartes ---------- */
 .card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -96,137 +148,148 @@ h3 { font-size: 1.05rem; }
   box-shadow: var(--shadow-sm);
 }
 
-.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
-.field label { font-size: 0.82rem; font-weight: 600; color: var(--color-text-light); }
+/* ---------- Champs ---------- */
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field label { font-size: 0.8rem; font-weight: 600; color: var(--color-text-light); letter-spacing: 0.005em; }
 .field input, .field select, .field textarea {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-strong);
   border-radius: var(--radius-sm);
-  padding: 9px 12px;
+  padding: 10px 12px;
   font-size: 0.95rem;
   background: var(--color-surface);
   color: var(--color-text);
-  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  box-shadow: var(--shadow-xs);
+  transition: border-color var(--duree) var(--ease), box-shadow var(--duree) var(--ease), background-color var(--duree) var(--ease);
 }
+.field input:hover, .field select:hover, .field textarea:hover { border-color: color-mix(in srgb, var(--color-primary) 40%, var(--color-border-strong)); }
 .field input:focus, .field select:focus, .field textarea:focus {
   outline: none;
   border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-light);
+  box-shadow: 0 0 0 3px var(--ring-primary);
 }
+.field input::placeholder, .field textarea::placeholder { color: color-mix(in srgb, var(--color-text-light) 70%, transparent); }
 .field-row { display: flex; gap: 12px; }
 .field-row .field { flex: 1; }
 
 /* Fiche pièce (PieceFormModal) — justificatif à gauche, champs à droite dès qu'il y a assez de
-   place ; une seule colonne sinon (mobile, ou fenêtre étroite), comme avant. Pied de formulaire à
-   part (hors du bloc qui défile) : les boutons d'action restent toujours atteignables sans avoir à
-   faire défiler tout le formulaire, même avec un long aperçu PDF au-dessus (voir retour d'un audit
-   comparatif avec un logiciel concurrent — le bouton "Valider" pouvait rester hors champ). */
+   place ; une seule colonne sinon (mobile, ou fenêtre étroite). Pied de formulaire à part (hors du
+   bloc qui défile) : les boutons d'action restent toujours atteignables sans avoir à faire défiler
+   tout le formulaire, même avec un long aperçu PDF au-dessus (voir audit comparatif). */
 .piece-modal-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
 @media (min-width: 760px) {
   .piece-modal-grid { grid-template-columns: 320px 1fr; align-items: start; }
 }
 .piece-modal-footer { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
 
+/* ---------- Badges ---------- */
 .badge {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
   border-radius: 999px;
-  padding: 3px 11px;
-  /* Taille remontée (0.8rem, avant 0.75rem) — même raison que .muted ci-dessus : le contraste
-     couleur passe déjà largement WCAG AA, la pastille était juste petite pour son rôle (souvent le
-     seul indicateur de statut d'une ligne de tableau). */
-  font-size: 0.8rem;
+  padding: 3px 10px;
+  font-size: 0.78rem;
   font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.005em;
+  /* Liseré de la même teinte que le fond, un ton plus soutenu : garde la pastille nette sur fond
+     sombre, où un aplat pâle seul se fond dans la carte. */
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, currentColor 18%, transparent);
 }
 .badge-warning { background: var(--color-warning-light); color: var(--color-warning); }
 .badge-ok { background: var(--color-primary-light); color: var(--color-primary); }
 .badge-neutral { background: var(--color-neutral-bg); color: var(--color-neutral-text); }
 .badge-danger { background: var(--color-danger-light); color: var(--color-danger); }
 
+/* ---------- Tableaux ---------- */
 table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-thead tr { background: var(--color-bg); }
-th { text-align: left; padding: 11px 12px; color: var(--color-text-light); font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; border-bottom: 1px solid var(--color-border); }
-td { padding: 12px; border-bottom: 1px solid var(--color-border); font-variant-numeric: tabular-nums; }
+thead tr { background: var(--color-surface-2); }
+th {
+  text-align: left; padding: 11px 14px;
+  color: var(--color-text-light); font-size: 0.72rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.06em;
+  border-bottom: 1px solid var(--color-border);
+}
+td { padding: 12px 14px; border-bottom: 1px solid var(--color-border); font-variant-numeric: tabular-nums; }
 tr:last-child td { border-bottom: none; }
-tbody tr:hover { background: var(--color-bg); }
+tbody tr { transition: background-color var(--duree) var(--ease); }
+tbody tr:hover { background: var(--color-surface-2); }
 tr.clickable { cursor: pointer; }
-tr.clickable:hover { background: var(--color-primary-light); }
+tr.clickable:hover { background: var(--tint-primary); }
 
 /* Cellule d'actions (plusieurs boutons dans une même colonne, ex. DocumentsTab) — en ligne sur
-   ordinateur où la place ne manque pas ; empilée verticalement sur mobile (voir media query), sinon
-   des boutons pleine largeur forcée dans une colonne étroite font éclater leur texte mot par mot. */
+   ordinateur ; empilée sur mobile (voir media query), sinon des boutons pleine largeur forcée dans une
+   colonne étroite font éclater leur texte mot par mot. */
 .td-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
+/* ---------- Coque de l'application ---------- */
 .app-shell { display: flex; min-height: 100vh; }
 .sidebar {
-  width: 224px;
-  background: var(--color-surface);
+  width: 236px;
+  background: color-mix(in srgb, var(--color-surface) 72%, var(--color-bg));
   border-right: 1px solid var(--color-border);
   padding: 22px 14px;
   display: flex;
   flex-direction: column;
+  position: sticky; top: 0; height: 100vh;
 }
-.sidebar .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.02rem; letter-spacing: -0.01em; margin-bottom: 26px; color: var(--color-text); }
+.sidebar .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.02rem; letter-spacing: -0.015em; margin-bottom: 28px; color: var(--color-text); padding: 0 4px; }
 
-/* Passe visuelle — petite marque de marque (dégradé + initiales), réutilisée dans la sidebar et sur
-   la page de connexion, pour donner un repère visuel identifiable plutôt qu'un simple libellé texte. */
+/* Marque de marque (initiales sur pastille), sidebar et page de connexion. */
 .brand-mark {
   display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
-  width: 32px; height: 32px; border-radius: 9px;
+  width: 34px; height: 34px; border-radius: 10px;
   background: var(--color-primary);
   color: #fff; font-weight: 800; font-size: 0.8rem; letter-spacing: -0.02em;
-  box-shadow: var(--shadow-sm);
+  box-shadow: 0 1px 2px rgba(16, 24, 20, 0.1), 0 6px 14px -6px var(--glow-primary);
 }
-.brand-mark.brand-mark-lg { width: 52px; height: 52px; border-radius: 14px; font-size: 1.15rem; }
+.brand-mark.brand-mark-lg { width: 56px; height: 56px; border-radius: 16px; font-size: 1.2rem; }
 
-/* Logo de cabinet (voir CabinetBrandingPage, lib/branding.ts) — remplace .brand-mark quand un cabinet
-   en a configuré un. Fond blanc systématique : un logo transparent (PNG/SVG) reste lisible même en
-   thème sombre, où il se fondrait sinon dans l'arrière-plan de la sidebar. */
+/* Logo de cabinet (voir CabinetBrandingPage) — fond blanc systématique : un logo transparent reste
+   lisible même en thème sombre. */
 .brand-logo {
   height: 32px; max-width: 140px; object-fit: contain; flex-shrink: 0;
-  border-radius: 6px; background: #fff; padding: 2px;
+  border-radius: 8px; background: #fff; padding: 2px;
 }
-.sidebar nav { display: flex; flex-direction: column; gap: 3px; flex: 1; }
+.sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
 .sidebar nav a {
-  display: flex; align-items: center; gap: 8px;
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
   padding: 9px 12px;
   border-radius: var(--radius-sm);
-  color: var(--color-text);
+  color: var(--color-text-light);
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 500;
-  transition: background-color 0.15s ease, color 0.15s ease;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
 }
-.sidebar nav a:hover { background: var(--color-primary-light); color: var(--color-primary); }
-.sidebar nav a.active {
+.sidebar nav a:hover { background: var(--tint-primary); color: var(--color-text); }
+/* Entrée active : fond teinté + texte accent, plus un petit trait vertical à gauche — lisible sans un
+   gros pavé de couleur pleine dans la barre latérale. */
+.sidebar nav a.active { background: var(--tint-primary-strong); color: var(--color-primary); font-weight: 600; }
+.sidebar nav a.active::before {
+  content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 3px;
   background: var(--color-primary);
-  color: #fff; font-weight: 600;
 }
 
-/* Anciennement en style inline sur l'élément (display:flex) — un style inline gagne toujours contre
-   une règle CSS, y compris une media query : ça empêchait le masquage sur mobile ci-dessous de
-   fonctionner (bug constaté : les deux boutons restaient affichés en plus du nouveau menu "..."). */
+/* Anciennement en style inline (display:flex) — un style inline gagne contre une media query et
+   empêchait le masquage sur mobile. */
 .sidebar-actions { display: flex; gap: 8px; }
 
-/* Menu "..." (thème + déconnexion) — masqué sur ordinateur où les deux boutons restent visibles
-   directement (voir .sidebar-actions) ; affiché uniquement sur mobile (voir media query), pour
-   désencombrer la barre du haut plutôt que d'avoir 4 éléments serrés à côté de la nav. */
+/* Menu "..." (thème + déconnexion) — mobile seulement (voir media query). */
 .sidebar-actions-mobile { display: none; }
 .options-menu {
   position: absolute; top: calc(100% + 6px); right: 0; z-index: 30; min-width: 190px;
   display: flex; flex-direction: column; gap: 2px; padding: 6px;
-  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
 }
 
-.main { flex: 1; padding: 28px 32px; max-width: 1000px; }
+.main { flex: 1; padding: 32px 36px 40px; max-width: 1120px; min-width: 0; }
 
-.topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; }
-.topbar h1 { margin: 0; font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; }
+.topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
+.topbar h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.025em; line-height: 1.15; }
 
-/* Taille légèrement remontée (0.875rem, avant 0.85rem) suite à l'audit ergonomie sur le thème sombre
-   — vérification faite : le contraste couleur (--color-text-light sur --color-bg/--color-surface) est
-   déjà largement conforme WCAG AA (~7:1) en sombre comme en clair, donc pas de recoloration ici ; le
-   texte muted restait juste un peu petit à lire en pratique, surtout répété dans un tableau dense. */
 .muted { color: var(--color-text-light); font-size: 0.875rem; }
 .error-text { color: var(--color-danger); font-size: 0.875rem; margin-top: 4px; }
 
@@ -234,125 +297,135 @@ tr.clickable:hover { background: var(--color-primary-light); }
 .tabs button {
   background: none; border: none; padding: 10px 14px; cursor: pointer;
   font-size: 0.9rem; font-weight: 600; color: var(--color-text-light);
-  border-bottom: 2px solid transparent;
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  transition: color var(--duree) var(--ease), border-color var(--duree) var(--ease);
 }
+.tabs button:hover { color: var(--color-text); }
 .tabs button.active { color: var(--color-primary); border-bottom-color: var(--color-primary); }
 
-/* Navigation du dossier — 5 destinations au premier niveau (au lieu de 13 à plat), certaines
-   déroulant un sous-menu au clic. Remplace l'ancien "chemin" à étapes reliées par des traits, qui
-   suggérait à tort une progression séquentielle (voir DossierParcours). */
-.nav-groupes { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 22px; }
+/* ---------- Navigation du dossier (DossierParcours) ----------
+   Sur ordinateur, les 5 destinations forment une barre segmentée : un seul conteneur au fond doux,
+   dont l'onglet actif ressort en "pastille" blanche ombrée — plus une rangée de boutons séparés. */
+.nav-groupes {
+  display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap;
+  padding: 4px; margin-bottom: 24px;
+  background: color-mix(in srgb, var(--color-neutral-bg) 70%, transparent);
+  border: 1px solid var(--color-border); border-radius: var(--radius);
+}
 .nav-groupe { position: relative; }
 .nav-groupe-bouton {
   display: inline-flex; align-items: center; gap: 7px;
-  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
-  padding: 9px 14px; font-size: 0.85rem; font-weight: 600; color: var(--color-text-light); cursor: pointer;
-  transition: all 0.15s ease;
+  background: transparent; border: 1px solid transparent; border-radius: var(--radius-sm);
+  padding: 8px 14px; font-size: 0.86rem; font-weight: 600; color: var(--color-text-light); cursor: pointer;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease), box-shadow var(--duree) var(--ease);
 }
-.nav-groupe-bouton:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.nav-groupe-bouton:hover { color: var(--color-text); background: color-mix(in srgb, var(--color-surface) 60%, transparent); }
 .nav-groupe-bouton.active {
-  border-color: var(--color-primary); color: #fff;
-  background: var(--color-primary);
+  color: var(--color-primary); background: var(--color-surface);
+  border-color: var(--color-border); box-shadow: var(--shadow-sm);
 }
-.nav-chevron { font-size: 0.6rem; opacity: 0.7; margin-left: 1px; }
-/* Libellé court réservé à la barre de navigation mobile (voir media query) — masqué sur ordinateur,
-   où la place ne manque pas pour le nom complet. */
+.nav-chevron { font-size: 0.55rem; opacity: 0.6; margin-left: 1px; }
 .nav-label-court { display: none; }
 
 .nav-menu {
-  position: absolute; top: calc(100% + 6px); left: 0; z-index: 30; min-width: 210px;
+  position: absolute; top: calc(100% + 8px); left: 0; z-index: 30; min-width: 220px;
   display: flex; flex-direction: column; gap: 2px; padding: 6px;
-  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+  background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-lg);
+  animation: nav-menu-in var(--duree) var(--ease);
 }
+@keyframes nav-menu-in { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
 .nav-menu-item {
   display: flex; align-items: center; gap: 9px; text-align: left; white-space: nowrap;
-  background: none; border: none; border-radius: 8px; padding: 9px 10px;
-  font-size: 0.85rem; font-weight: 600; color: var(--color-text); cursor: pointer;
+  background: none; border: none; border-radius: var(--radius-xs); padding: 9px 10px;
+  font-size: 0.86rem; font-weight: 600; color: var(--color-text); cursor: pointer;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
 }
-.nav-menu-item:hover { background: var(--color-primary-light); color: var(--color-primary); }
-.nav-menu-item.active { color: var(--color-primary); background: var(--color-primary-light); }
+.nav-menu-item:hover { background: var(--tint-primary); color: var(--color-primary); }
+.nav-menu-item.active { color: var(--color-primary); background: var(--tint-primary-strong); }
 
+/* ---------- Connexion ---------- */
 .login-shell {
   min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px;
   background:
-    radial-gradient(600px circle at 15% 15%, var(--color-primary-light), transparent 60%),
-    radial-gradient(500px circle at 85% 85%, var(--color-primary-light), transparent 55%),
+    radial-gradient(720px 520px at 12% 10%, color-mix(in srgb, var(--color-primary) 18%, transparent), transparent 62%),
+    radial-gradient(640px 480px at 88% 92%, color-mix(in srgb, var(--color-primary) 12%, transparent), transparent 60%),
     var(--color-bg);
 }
-.login-card { width: 100%; max-width: 380px; text-align: center; box-shadow: var(--shadow-md); }
+.login-card { width: 100%; max-width: 400px; text-align: center; padding: 32px 28px; border-radius: var(--radius-lg); box-shadow: var(--shadow-lg); }
 .login-card form { text-align: left; }
-.login-card h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.01em; margin: 14px 0 4px; }
+.login-card h1 { font-size: 1.35rem; font-weight: 800; letter-spacing: -0.02em; margin: 16px 0 4px; }
 
+/* ---------- États vides / dépôt ---------- */
 .empty-state {
   text-align: center; padding: 44px 20px; color: var(--color-text-light);
-  border: 1px dashed var(--color-border); border-radius: var(--radius); margin: 4px;
+  border: 1px dashed var(--color-border-strong); border-radius: var(--radius-sm); margin: 8px;
+  background: var(--color-surface-2);
 }
 
-/* Zone de dépôt de fichiers (voir AjouterDocumentsModal) — même esprit que .empty-state (bordure en
-   pointillés) mais cliquable/glissable, donc surlignée au survol et pendant un glisser-déposer plutôt
-   que statique. */
 .dropzone {
   display: block; text-align: center; cursor: pointer;
   padding: 28px 16px; color: var(--color-text-light); font-size: 0.9rem;
-  border: 2px dashed var(--color-border); border-radius: var(--radius);
-  transition: border-color 0.15s, color 0.15s, background 0.15s;
+  border: 2px dashed var(--color-border-strong); border-radius: var(--radius);
+  background: var(--color-surface-2);
+  transition: border-color var(--duree) var(--ease), color var(--duree) var(--ease), background-color var(--duree) var(--ease);
 }
 .dropzone:hover, .dropzone[data-dragover] {
-  border-color: var(--color-primary); color: var(--color-text);
+  border-color: var(--color-primary); color: var(--color-text); background: var(--tint-primary);
 }
 
 /* Palier 5 — rappel permanent que les écritures proposées ne sont pas une comptabilité tenue. */
 .brouillon-banner {
   background: var(--color-danger-light);
-  border: 1px solid var(--color-danger);
+  border: 1px solid color-mix(in srgb, var(--color-danger) 40%, transparent);
+  border-left: 4px solid var(--color-danger);
   color: var(--color-danger-text);
-  border-radius: var(--radius);
+  border-radius: var(--radius-sm);
   padding: 12px 16px;
   font-size: 0.85rem;
   margin-bottom: 18px;
 }
-.brouillon-banner strong { text-transform: uppercase; letter-spacing: 0.03em; }
+.brouillon-banner strong { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.78rem; }
 
-.table-scroll { overflow-x: auto; }
+.table-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
+.table-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
+.table-scroll::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 999px; }
 
-/* Refonte visuelle (2/4) — cartes chiffrées pour les vues d'ensemble (Dashboard cabinet, Checklist)
-   plutôt que des paragraphes de texte : le chiffre qui compte doit se lire avant la phrase. */
-.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 20px; }
+/* ---------- Cartes chiffrées ---------- */
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 22px; }
 .stat-card {
   position: relative; overflow: hidden;
   background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius);
-  padding: 16px 20px; box-shadow: var(--shadow-sm);
-  transition: box-shadow 0.15s ease, transform 0.15s ease;
+  padding: 18px 20px; box-shadow: var(--shadow-sm);
+  transition: box-shadow var(--duree) var(--ease), transform var(--duree) var(--ease), border-color var(--duree) var(--ease);
 }
-/* Liseré de couleur en haut de la carte — un repère immédiat (neutre/vert/orange) avant même de lire
-   le chiffre, plutôt que la seule couleur du texte à l'intérieur. */
-.stat-card::before {
-  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  background: var(--color-border);
-}
-.stat-card.stat-ok::before { background: var(--color-primary); }
-.stat-card.stat-warning::before { background: var(--color-warning); }
+/* L'état (à jour / à régler) se lit à la teinte de toute la carte plutôt qu'à un liseré en haut :
+   fond légèrement coloré + chiffre de la même couleur. */
+.stat-card.stat-ok { background: color-mix(in srgb, var(--color-primary) 7%, var(--color-surface)); border-color: color-mix(in srgb, var(--color-primary) 22%, var(--color-border)); }
+.stat-card.stat-warning { background: color-mix(in srgb, var(--color-warning) 8%, var(--color-surface)); border-color: color-mix(in srgb, var(--color-warning) 28%, var(--color-border)); }
 .stat-card:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.stat-card .stat-value { font-size: 1.85rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; color: var(--color-text); }
-.stat-card .stat-label { color: var(--color-text-light); font-size: 0.8rem; font-weight: 600; margin-top: 2px; }
+.stat-card .stat-value { font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.1; color: var(--color-text); font-variant-numeric: tabular-nums; }
+.stat-card .stat-label { color: var(--color-text-light); font-size: 0.8rem; font-weight: 600; margin-top: 4px; }
 .stat-card.stat-warning .stat-value { color: var(--color-warning); }
 .stat-card.stat-ok .stat-value { color: var(--color-primary); }
 
-.progress-track { background: var(--color-bg); border: 1px solid var(--color-border); border-radius: 999px; height: 7px; overflow: hidden; }
-.progress-fill { height: 100%; border-radius: 999px; background: var(--color-primary); transition: width 0.25s ease; }
+.progress-track { background: var(--color-neutral-bg); border-radius: 999px; height: 7px; overflow: hidden; }
+.progress-fill { height: 100%; border-radius: 999px; background: var(--color-primary); transition: width 0.3s var(--ease); }
 .progress-fill.warning { background: var(--color-warning); }
 
-/* Refonte visuelle (3/4) — mode sombre. Bascule manuelle (bouton dans la sidebar, persistée en
-   localStorage, cf. lib/theme.ts) posée en attribut data-theme avant le premier rendu (script inline
-   dans index.html) pour éviter le flash blanc au chargement — jamais dérivée de prefers-color-scheme
-   ici, l'attribut est toujours présent une fois l'app chargée. */
+/* ---------- Mode sombre ----------
+   Bascule manuelle (bouton dans la sidebar, persistée en localStorage, cf. lib/theme.ts) posée en
+   attribut data-theme avant le premier rendu (script inline dans index.html). Les teintes dérivées
+   (--tint-*, --ring-*, --glow-*) n'ont rien à redéfinir : elles suivent d'elles-mêmes la couleur
+   d'accent sombre. */
 :root[data-theme="dark"] {
-  --color-bg: #101513;
-  --color-surface: #1a211e;
-  --color-border: #2a332e;
-  --color-text: #e7ece8;
-  --color-text-light: #93a39a;
+  --color-bg: #0f1412;
+  --color-surface: #171d1a;
+  --color-surface-2: #1c2320;
+  --color-border: #262e2a;
+  --color-border-strong: #313b36;
+  --color-text: #e8ede9;
+  --color-text-light: #98a69f;
   --color-primary: #52b6a4;
   --color-primary-hover: #6bc7b6;
   --color-primary-light: rgba(82, 182, 164, 0.16);
@@ -361,86 +434,92 @@ tr.clickable:hover { background: var(--color-primary-light); }
   --color-danger-text: #f0a48d;
   --color-warning: #e0ab4a;
   --color-warning-light: rgba(224, 171, 74, 0.16);
-  --color-neutral-bg: #2a332e;
+  --color-neutral-bg: #262e2a;
   --color-neutral-text: #b7c2bb;
-  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 8px 20px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.35);
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 4px 8px rgba(0, 0, 0, 0.4), 0 24px 56px -12px rgba(0, 0, 0, 0.7);
   color-scheme: dark;
 }
+:root[data-theme="dark"] .brand-logo { background: #fff; }
 
 .theme-toggle {
   display: inline-flex; align-items: center; justify-content: center;
-  width: 32px; height: 32px; border-radius: var(--radius-sm);
+  width: 34px; height: 34px; border-radius: var(--radius-sm);
   border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text-light);
   cursor: pointer; flex-shrink: 0;
+  transition: border-color var(--duree) var(--ease), color var(--duree) var(--ease), background-color var(--duree) var(--ease);
 }
-.theme-toggle:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.theme-toggle:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--tint-primary); }
 
-/* Bulle de chat flottante (voir AssistantFlottant) — en classes plutôt qu'en style inline pour que la
-   media query mobile puisse décaler sa position (barre de navigation fixe en bas sur mobile, voir
-   plus bas) sans dupliquer toute la logique de positionnement. */
+/* Bulle de chat flottante (voir AssistantFlottant) — en classes pour que la media query mobile
+   puisse la décaler au-dessus de la barre de navigation fixe. */
 .assistant-bouton {
   position: fixed; bottom: 24px; right: 24px; z-index: 45;
-  width: 52px; height: 52px; border-radius: 50%; border: none;
+  width: 54px; height: 54px; border-radius: 50%; border: none;
   background: var(--color-primary); color: #fff;
   display: flex; align-items: center; justify-content: center;
-  cursor: pointer; box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+  cursor: pointer;
+  box-shadow: 0 2px 4px rgba(16, 24, 20, 0.1), 0 12px 28px -8px var(--glow-primary);
+  transition: transform var(--duree) var(--ease), box-shadow var(--duree) var(--ease);
 }
+.assistant-bouton:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(16, 24, 20, 0.1), 0 16px 32px -8px var(--glow-primary); }
 .assistant-panneau {
-  position: fixed; bottom: 88px; right: 24px; z-index: 45;
+  position: fixed; bottom: 92px; right: 24px; z-index: 45;
   width: min(420px, 92vw);
-  /* dvh (hauteur de viewport "dynamique") plutôt que vh : sur mobile, vh compte la fenêtre comme si la
-     barre d'adresse était toujours masquée, ce qui pouvait faire déborder le panneau de l'écran visible
-     réel. */
+  /* dvh plutôt que vh : sur mobile, vh compte la fenêtre comme si la barre d'adresse était toujours
+     masquée, ce qui pouvait faire déborder le panneau de l'écran visible réel. */
   height: min(600px, 75dvh);
   display: flex; flex-direction: column;
-  /* Indispensable : sans ça, un contenu plus haut que prévu déborde du panneau au lieu d'être coupé/
-     scrollable. */
   overflow: hidden;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
 }
 
 .checklist-item {
   display: flex; align-items: center; gap: 12px; padding: 14px 20px;
   border-bottom: 1px solid var(--color-border);
-  transition: background-color 0.15s ease;
+  transition: background-color var(--duree) var(--ease);
 }
 .checklist-item:last-child { border-bottom: none; }
-.checklist-item:hover { background: var(--color-bg); }
+.checklist-item:hover { background: var(--color-surface-2); }
 .checklist-item .checklist-item-body { flex: 1; min-width: 0; }
 
 .mini-progress { width: 70px; }
 
-/* Accueil client — grosses icônes façon écran d'accueil de téléphone (glyphe blanc sur pastille
-   arrondie en dégradé, libellé dessous) plutôt qu'un menu de texte, pour rester intuitif pour
-   quelqu'un qui n'est pas comptable. */
+/* ---------- Accueil client ----------
+   Grosses icônes façon écran d'accueil de téléphone (glyphe sur pastille arrondie, libellé dessous),
+   plus intuitif pour quelqu'un qui n'est pas comptable qu'un menu de texte. */
 .home-client {
   display: flex; flex-direction: column; align-items: center; text-align: center;
   min-height: 60vh; justify-content: center; padding: 20px;
 }
-.home-tiles { display: flex; gap: 32px; flex-wrap: wrap; justify-content: center; margin-top: 36px; }
+.home-tiles { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; margin-top: 36px; }
 .home-tile {
   display: flex; flex-direction: column; align-items: center; gap: 10px;
-  width: 100px; text-decoration: none; color: var(--color-text);
+  width: 104px; text-decoration: none; color: var(--color-text); border-radius: var(--radius);
 }
 .home-tile-icon {
-  width: 76px; height: 76px; border-radius: 20px;
-  /* Couleur plate, pas un dégradé (voir discipline visuelle — les autres dégradés de l'appli ont déjà
-     été aplatis ; celui-ci avait été manqué lors de ce passage). */
+  width: 78px; height: 78px; border-radius: 22px;
   background: var(--color-primary);
   color: #fff; display: flex; align-items: center; justify-content: center;
-  box-shadow: var(--shadow-md);
-  transition: transform 0.15s ease;
+  box-shadow: 0 2px 4px rgba(16, 24, 20, 0.1), 0 14px 28px -10px var(--glow-primary);
+  transition: transform var(--duree) var(--ease), box-shadow var(--duree) var(--ease);
 }
-.home-tile:hover .home-tile-icon, .home-tile:active .home-tile-icon { transform: scale(1.06); }
+.home-tile:hover .home-tile-icon, .home-tile:active .home-tile-icon { transform: translateY(-2px) scale(1.04); }
 .home-tile-label { font-size: 0.85rem; font-weight: 600; }
 
-/* Mobile : sidebar en barre horizontale, formulaires en une colonne, marges réduites */
+/* ============================================================================
+   Mobile : barre du haut compacte et translucide, navigation principale fixée en bas façon appli
+   native, formulaires en une colonne, marges réduites.
+   ============================================================================ */
 @media (max-width: 720px) {
   .app-shell { flex-direction: column; min-height: auto; }
+  body { background-attachment: scroll; }
 
   .sidebar {
-    width: 100%;
+    width: 100%; height: auto;
     flex-direction: row;
     align-items: center;
     justify-content: space-between;
@@ -450,46 +529,52 @@ tr.clickable:hover { background: var(--color-primary-light); }
     position: sticky;
     top: 0;
     z-index: 10;
+    /* Surtout pas de backdrop-filter ici (contrairement aux barres du bas) : un filtre sur un ancêtre
+       devient la référence de positionnement de ses descendants en position:fixed — la nav principale
+       (.sidebar nav, fixée en bas) venait alors se coller au bas de cette barre du haut, par-dessus le
+       logo. Fond opaque, donc. */
+    background: var(--color-surface);
   }
-  .sidebar .logo { margin: 0 14px 0 0; font-size: 0.95rem; white-space: nowrap; }
+  .sidebar .logo { margin: 0 14px 0 0; font-size: 0.95rem; white-space: nowrap; padding: 0; }
 
-  /* Nav principale (Dossiers/Équipe/Apparence/Comptes master, ou les 4 onglets client) en barre
-     d'onglets fixée en bas plutôt qu'une rangée qui défilait horizontalement dans la barre du haut —
-     "Comptes master" (le dernier lien) finissait hors champ, invisible sans penser à faire défiler.
-     Même traitement que .nav-groupes de DossierParcours juste plus bas dans ce fichier, mais un bloc
-     séparé : les deux barres ne coexistent jamais (voir .app-nav-en-dossier). */
+  /* Nav principale en barre d'onglets fixée en bas — même traitement que .nav-groupes plus bas, mais
+     un bloc séparé : les deux barres ne coexistent jamais (voir .app-nav-en-dossier). */
   .sidebar nav {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 40;
     flex-direction: row; justify-content: space-around; align-items: stretch; gap: 0;
-    background: var(--color-surface); border-top: 1px solid var(--color-border);
-    padding: 6px 4px max(6px, env(safe-area-inset-bottom));
-    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+    background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+    -webkit-backdrop-filter: saturate(160%) blur(16px);
+    backdrop-filter: saturate(160%) blur(16px);
+    border-top: 1px solid var(--color-border);
+    padding: 6px 6px max(6px, env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.06);
   }
   .sidebar nav a {
-    flex: 1; flex-direction: column; gap: 3px; align-items: center; justify-content: center;
-    padding: 6px 2px; border-radius: 8px; font-size: 0.65rem; white-space: nowrap;
+    flex: 1; flex-direction: column; gap: 4px; align-items: center; justify-content: center;
+    padding: 6px 2px; border-radius: var(--radius-sm); font-size: 0.66rem; font-weight: 600; white-space: nowrap;
   }
+  .sidebar nav a::before { display: none; }
+  .sidebar nav a:hover { background: none; }
+  /* Onglet actif : icône posée sur une petite pastille teintée, libellé en couleur d'accent. */
   .sidebar nav a.active { background: none; color: var(--color-primary); }
-  /* Masquée à l'intérieur d'un dossier (voir Layout.tsx, dansUnDossier) : DossierParcours affiche
-     déjà sa propre barre fixée en bas, empiler les deux se chevaucherait. */
-  /* .sidebar nav (juste au-dessus) l'emporterait sur un simple .app-nav-en-dossier à spécificité
-     égale de sélecteur de classe — il faut ré-inclure le même contexte .sidebar nav pour gagner. */
+  .sidebar nav a.active svg { background: var(--tint-primary-strong); border-radius: 10px; padding: 3px 9px; box-sizing: content-box; }
   .sidebar nav.app-nav-en-dossier { display: none; }
 
-  /* Thème + déconnexion repliés dans le menu "..." (voir .options-menu) plutôt que deux boutons en
-     permanence — la barre du haut était surchargée (logo + nav + 2 boutons sur un petit écran). */
   .sidebar-actions { display: none; }
   .sidebar-actions-mobile { display: block; position: relative; flex-shrink: 0; margin-left: 10px; }
 
-  .main { padding: 16px; max-width: 100%; }
+  .main { padding: 16px 16px 84px; max-width: 100%; }
 
   .topbar { flex-wrap: wrap; gap: 10px; }
-  .topbar h1 { font-size: 1.2rem; }
+  .topbar h1 { font-size: 1.3rem; }
+
+  .card { padding: 16px; border-radius: var(--radius-sm); }
+  .stat-card { border-radius: var(--radius-sm); }
 
   .field-row { flex-direction: column; gap: 0; }
 
   /* Pied de la fiche pièce — "Supprimer" (si présent) au-dessus, puis Annuler/Brouillon/Valider
-     empilés en pleine largeur plutôt que 3-4 boutons côte à côte trop serrés sur un petit écran. */
+     empilés en pleine largeur plutôt que 3-4 boutons côte à côte trop serrés. */
   .piece-modal-footer { flex-direction: column-reverse; align-items: stretch; }
   .piece-modal-footer .piece-modal-actions { flex-direction: column; }
   .piece-modal-footer .piece-modal-actions .btn { width: 100%; }
@@ -497,84 +582,76 @@ tr.clickable:hover { background: var(--color-primary-light); }
   /* Empêche le zoom automatique de Safari iOS à la mise au point d'un champ en dessous de 16px. */
   .field input, .field select, .field textarea { font-size: 16px; }
 
-  /* table-layout:fixed (au lieu du auto par défaut) : un texte long dans une cellule (un nom de tiers
-     entier, ex. "DIRECTION GÉNÉRALE DES FINANCES PUBLIQUES") faisait sinon grandir toute la largeur
-     du tableau plutôt que de revenir à la ligne dans sa colonne — combiné à .table-scroll qui laisse
-     le tableau grandir librement, le résultat ne tenait jamais dans l'écran. Avec une largeur fixe à
-     100% du conteneur, le texte est maintenant forcé de revenir à la ligne à l'intérieur de sa colonne. */
+  /* table-layout:fixed : un texte long dans une cellule revient à la ligne dans sa colonne au lieu de
+     faire grandir tout le tableau hors de l'écran. */
   table { font-size: 0.85rem; table-layout: fixed; width: 100%; }
   th, td { padding: 8px 6px; overflow-wrap: break-word; word-break: break-word; }
-  /* Case à cocher (Pièces, Documents) : une largeur fixe étroite plutôt qu'une part égale des
-     colonnes, pour laisser le plus de place possible au tiers (texte variable, souvent le plus long). */
+  /* Une pastille peut passer à la ligne entre deux mots ("Non / rapprochée"), jamais au milieu d'un
+     mot ("Rapproc / hée") comme le permettait la règle de coupure des cellules ci-dessus. */
+  td .badge { word-break: normal; overflow-wrap: normal; }
   th.col-checkbox, td.col-checkbox { width: 26px; padding-right: 0; }
-  /* Boutons d'action (DocumentsTab) empilés plutôt que côte à côte — sinon, forcés dans une colonne
-     étroite par table-layout:fixed, leur texte éclatait mot par mot ("C'es / t / une / fact / ure"). */
   .td-actions { flex-direction: column; align-items: stretch; }
   .td-actions .btn { width: 100%; }
 
-  /* Colonnes secondaires (Catégorie, Sous-dossier, Confiance, dates d'ajout...) masquées sur mobile
-     plutôt que forcer un défilement latéral de toute la page pour les voir — l'essentiel (tiers,
-     montant, statut) reste visible d'un coup ; le détail complet reste consultable en ouvrant la
-     ligne (voir PiecesTab, DocumentsTab). */
+  /* Colonnes secondaires masquées sur mobile plutôt que forcer un défilement latéral — l'essentiel
+     (tiers, montant, statut) reste visible d'un coup ; le détail en ouvrant la ligne. */
   .hide-mobile { display: none; }
 
   .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
-  .stat-card { padding: 12px 14px; }
+  .stat-card { padding: 14px 16px; }
   .stat-card .stat-value { font-size: 1.5rem; }
 
-  /* La checklist mélange une pastille, un texte parfois long (mois manquants...) et un bouton sur une
-     seule ligne — trop serré sur un petit écran, empile plutôt le bouton sous le texte. */
   .checklist-item { flex-wrap: wrap; padding: 12px 14px; }
   .checklist-item .checklist-item-body { flex-basis: 100%; }
   .checklist-item .btn { margin-left: 26px; }
 
   .mini-progress { width: 46px; }
 
-  /* Barre de navigation du dossier — repensée façon appli native (inspirée de Binance : la navigation
-     la plus utilisée reste accessible au pouce, fixée en bas de l'écran, plutôt qu'une rangée de
-     pastilles en haut qui demande de remonter le regard à chaque fois). Vue d'ensemble/Documents/
-     Banque/Comptabilité/Cabinet devient une vraie barre d'onglets bas de page, icône au-dessus d'un
-     libellé court. Un sous-menu (Documents/Comptabilité/Cabinet) s'ouvre désormais en fiche pleine
-     largeur au-dessus de la barre plutôt qu'en petit menu ancré au bouton — ancré, un sous-menu ouvert
-     depuis le premier ou le dernier onglet déborderait de l'écran (déjà vu sur cette même barre :
-     voir le fix précédent sur le débordement latéral).
-     .main reçoit un padding-bottom pour que le dernier élément de chaque écran ne se retrouve pas
-     caché derrière la barre fixe. */
-  .main { padding-bottom: 78px; }
-
+  /* Barre de navigation du dossier — repensée façon appli native : la navigation la plus utilisée
+     reste accessible au pouce, fixée en bas de l'écran. Un sous-menu s'ouvre en fiche pleine largeur
+     au-dessus de la barre plutôt qu'ancré au bouton (ancré, il déborderait depuis le premier ou le
+     dernier onglet). .main reçoit un padding-bottom pour que rien ne finisse caché derrière. */
   .nav-groupes {
     position: fixed; left: 0; right: 0; bottom: 0; z-index: 40; margin: 0;
-    background: var(--color-surface); border-top: 1px solid var(--color-border);
     display: flex; justify-content: space-around; align-items: stretch; gap: 0;
-    padding: 6px 4px max(6px, env(safe-area-inset-bottom));
-    box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+    background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+    -webkit-backdrop-filter: saturate(160%) blur(16px);
+    backdrop-filter: saturate(160%) blur(16px);
+    border: none; border-top: 1px solid var(--color-border); border-radius: 0;
+    padding: 6px 6px max(6px, env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.06);
   }
   .nav-groupe { flex: 1; position: relative; }
   .nav-groupe-bouton {
-    flex-direction: column; gap: 3px; width: 100%; height: 100%;
-    background: none; border: none; border-radius: 8px;
-    padding: 6px 2px; font-size: 0.65rem; color: var(--color-text-light);
+    flex-direction: column; gap: 4px; width: 100%; height: 100%;
+    background: none; border: none; border-radius: var(--radius-sm); box-shadow: none;
+    padding: 6px 2px; font-size: 0.66rem; color: var(--color-text-light);
   }
-  .nav-groupe-bouton.active { background: none; border-color: transparent; color: var(--color-primary); }
+  .nav-groupe-bouton:hover { background: none; }
+  .nav-groupe-bouton.active { background: none; border-color: transparent; box-shadow: none; color: var(--color-primary); }
+  .nav-groupe-bouton.active svg { background: var(--tint-primary-strong); border-radius: 10px; padding: 3px 9px; box-sizing: content-box; }
   .nav-chevron { display: none; }
   .nav-label-full { display: none; }
   .nav-label-court { display: inline; }
 
   .nav-menu {
-    position: fixed; top: auto; left: 12px; right: 12px; bottom: 72px;
-    width: auto; min-width: 0;
+    position: fixed; top: auto; left: 12px; right: 12px; bottom: 76px;
+    width: auto; min-width: 0; border-radius: var(--radius);
+    animation: nav-menu-in-mobile var(--duree) var(--ease);
   }
+  @keyframes nav-menu-in-mobile { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
-  /* La bulle de chat doit remonter au-dessus de la nouvelle barre fixe, sinon elles se chevauchent. */
-  .assistant-bouton { bottom: 84px; }
-  .assistant-panneau { bottom: 148px; }
+  .home-tiles { gap: 20px; }
+
+  /* La bulle de chat remonte au-dessus de la barre fixe, sinon elles se chevauchent. */
+  .assistant-bouton { bottom: 88px; right: 16px; }
+  .assistant-panneau { bottom: 152px; right: 16px; }
 }
 
-/* Impression d'une facture (voir FactureApercu) — masque tout le reste de la page (menu, boutons,
-   fond assombri de la modale) pour ne garder que le contenu de la facture, en pleine page. Technique
-   standard "n'imprimer qu'un seul élément" : tout est caché puis seul .facture-imprimable (et son
-   contenu) est rendu visible et repositionné en haut de la page imprimée. */
+/* Impression d'une facture (voir FactureApercu) — ne garder que le contenu de la facture, en pleine
+   page. Technique standard "n'imprimer qu'un seul élément". */
 @media print {
+  body { background: #fff; }
   body * { visibility: hidden; }
   .facture-imprimable, .facture-imprimable * { visibility: visible; }
   .facture-imprimable {

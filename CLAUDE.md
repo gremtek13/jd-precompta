@@ -100,6 +100,16 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Conventions de développement
 
+- **Système visuel = `src/index.css` seul, et aucune couleur d'accent en dur** : la charte par
+  cabinet (`lib/branding.ts`) ne remplace en inline sur `:root` que `--color-primary`, `-hover` et
+  `-light`. Toute nuance dérivée (fond teinté, halo de focus, ombre colorée, survol) doit donc être
+  calculée depuis `--color-primary` avec `color-mix()` — voir les tokens `--tint-primary`,
+  `--tint-primary-strong`, `--ring-primary`, `--glow-primary`, `--wash-primary` — pour suivre la
+  couleur de chaque cabinet en clair comme en sombre. Fonds plats (pas de dégradés sur les boutons/
+  pastilles), profondeur par ombres douces à deux couches (`--shadow-xs/sm/md/lg`), rayons
+  `--radius-xs/sm/lg` + `--radius`, transitions `var(--duree) var(--ease)`. Piège connu : jamais de
+  `backdrop-filter`/`filter`/`transform` sur `.sidebar` (ancêtre d'une nav en `position: fixed`) —
+  ça en fait la référence de positionnement et la barre du bas remonte se coller à celle du haut.
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
