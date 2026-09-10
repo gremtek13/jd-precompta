@@ -31,6 +31,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [ajoutOuvert, setAjoutOuvert] = useState(false)
   const [importDossierOuvert, setImportDossierOuvert] = useState(false)
   const [superPdpOpen, setSuperPdpOpen] = useState(false)
+  // Pièces déjà rapprochées d'un mouvement bancaire (voir BanqueTab) — pour ne plus laisser
+  // "Validée" seule donner l'impression que le traitement d'une pièce est terminé (voir audit
+  // ergonomie comparatif) : validation, paiement/rapprochement et écriture générée sont trois états
+  // distincts, une pièce validée n'a pas forcément encore été rapprochée d'un mouvement réel.
+  const [piecesRapprochees, setPiecesRapprochees] = useState<Set<string>>(new Set())
 
   async function load() {
     setLoading(true)
@@ -39,6 +44,13 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
       .select('*')
       .eq('dossier_id', dossierId)
       .order('date_piece', { ascending: false, nullsFirst: false })
+
+    const { data: lignesBancairesData } = await supabase
+      .from('lignes_bancaires')
+      .select('piece_id')
+      .eq('dossier_id', dossierId)
+      .eq('statut', 'rapprochee')
+      .not('piece_id', 'is', null)
 
     const { data: categoriesData } = await supabase
       .from('categories')
@@ -67,6 +79,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     setSousDossiers(sousDossiersData ?? [])
     setTiersCategories(tiersCategoriesData ?? [])
     setTiersCategoriesCabinet(tiersCategoriesCabinetData ?? [])
+    setPiecesRapprochees(new Set((lignesBancairesData ?? []).map((l) => l.piece_id as string)))
     setLoading(false)
   }
 
@@ -293,6 +306,16 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                     {p.statut === 'validee'
                       ? <span className="badge badge-ok">Validée</span>
                       : <span className="badge badge-warning">À valider</span>}
+                    {/* Distinct de la validation (voir audit ergonomie comparatif) : une pièce validée
+                        n'est pas forcément encore rapprochée d'un mouvement bancaire réel — l'un ne
+                        dit rien de l'autre, jamais fusionnés dans un seul badge "tout est fait". */}
+                    {p.statut === 'validee' && (
+                      <div style={{ marginTop: 4 }}>
+                        {piecesRapprochees.has(p.id)
+                          ? <span className="badge badge-ok" style={{ fontSize: '0.7rem' }}>Rapprochée</span>
+                          : <span className="badge badge-neutral" style={{ fontSize: '0.7rem' }}>Non rapprochée</span>}
+                      </div>
+                    )}
                   </td>
                 </tr>
               ))}
