@@ -50,10 +50,14 @@ const GROUPES: Groupe[] = [
   { id: 'checklist', label: "Vue d'ensemble", labelCourt: 'Vue', icone: IconChecklist, cible: 'checklist' },
   {
     id: 'documents-groupe', label: 'Documents', labelCourt: 'Docs', icone: IconDocuments,
+    // Libellés distingués suite à un audit comparatif (confusion "Pièces" vs "Documents" relevée) :
+    // Justificatifs (factures/reçus d'achat ou de vente à ventiler comptablement), Documents
+    // administratifs (archive sans ventilation — relevés, attestations...), Factures émises (la
+    // facturation du dossier lui-même, jamais confondue avec les pièces reçues des tiers).
     enfants: [
-      { id: 'pieces', label: 'Pièces' },
-      { id: 'documents', label: 'Documents' },
-      { id: 'factures', label: 'Factures' },
+      { id: 'pieces', label: 'Justificatifs' },
+      { id: 'documents', label: 'Documents administratifs' },
+      { id: 'factures', label: 'Factures émises' },
     ],
   },
   { id: 'banque', label: 'Banque', labelCourt: 'Banque', icone: ICONES_PARCOURS.banque, cible: 'banque' },
@@ -61,7 +65,7 @@ const GROUPES: Groupe[] = [
     id: 'comptabilite', label: 'Comptabilité', labelCourt: 'Compta', icone: IconEcritures,
     enfants: [
       { id: 'ecritures', label: 'Écritures' },
-      { id: 'statistiques', label: 'Statistiques' },
+      { id: 'statistiques', label: 'Balance des comptes' },
       { id: 'immobilisations', label: 'Immobilisations' },
       { id: 'cotisations', label: 'Cotisations' },
       { id: 'cloture', label: 'Clôture' },
