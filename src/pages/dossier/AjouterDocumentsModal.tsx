@@ -100,13 +100,19 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
     <div style={overlayStyle}>
       <div className="card" style={{ width: 'min(560px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 style={{ marginTop: 0 }}>Ajouter des documents</h2>
-        <p className="muted" style={{ marginTop: -8 }}>
+        <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
           Dépose une ou plusieurs pièces, photos, relevés ou attestations — chaque fichier est trié
-          automatiquement : une facture atterrit dans Pièces (à vérifier avant validation), un relevé
-          bancaire, un appel de cotisation ou une attestation atterrit dans Documents. Un fichier déjà
-          présent dans ce dossier (même contenu, même si le nom a changé) est repéré et ignoré, pas
-          dupliqué.
+          et extrait automatiquement.
         </p>
+        <details className="muted" style={{ marginBottom: 14 }}>
+          <summary style={{ cursor: 'pointer' }}>En savoir plus</summary>
+          <p style={{ marginTop: 6, marginBottom: 0 }}>
+            Une facture atterrit dans Justificatifs (à vérifier avant validation), un relevé
+            bancaire, un appel de cotisation ou une attestation atterrit dans Documents
+            administratifs. Un fichier déjà présent dans ce dossier (même contenu, même si le nom a
+            changé) est repéré et ignoré, pas dupliqué.
+          </p>
+        </details>
 
         {!running && (
           <div className="field">

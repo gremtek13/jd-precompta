@@ -116,16 +116,22 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
     <div style={overlayStyle}>
       <div className="card" style={{ width: 'min(640px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 style={{ marginTop: 0 }}>Importer un dossier complet</h2>
-        <p className="muted" style={{ marginTop: -8 }}>
-          Sélectionne le dossier de fichiers racine sur ton ordinateur. Chaque sous-dossier de fichiers
-          devient un sous-dossier ici ; chaque PDF/JPG/PNG passe automatiquement par l'extraction, qui
-          trie aussi le document : une facture atterrit dans Pièces (à vérifier avant validation, comme
-          d'habitude), un relevé bancaire / appel de cotisation / attestation atterrit dans l'onglet
-          Documents — reclassable à la main si le tri automatique s'est trompé. Un CSV est classé
-          directement en relevé bancaire (Textract ne sait pas le lire), à importer ensuite depuis
-          l'onglet Banque. Un fichier déjà importé dans ce dossier (même contenu, même si le nom a
-          changé) est repéré et ignoré, pas dupliqué.
+        <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
+          Sélectionne le dossier de fichiers racine sur ton ordinateur — chaque sous-dossier devient
+          un sous-dossier ici, chaque fichier est trié et extrait automatiquement.
         </p>
+        <details className="muted" style={{ marginBottom: 14 }}>
+          <summary style={{ cursor: 'pointer' }}>En savoir plus</summary>
+          <p style={{ marginTop: 6, marginBottom: 0 }}>
+            Chaque PDF/JPG/PNG passe par l'extraction, qui trie aussi le document : une facture
+            atterrit dans Pièces (à vérifier avant validation, comme d'habitude), un relevé bancaire /
+            appel de cotisation / attestation atterrit dans l'onglet Documents — reclassable à la main
+            si le tri automatique s'est trompé. Un CSV est classé directement en relevé bancaire
+            (Textract ne sait pas le lire), à importer ensuite depuis l'onglet Banque. Un fichier déjà
+            importé dans ce dossier (même contenu, même si le nom a changé) est repéré et ignoré, pas
+            dupliqué.
+          </p>
+        </details>
 
         {fichiers.length === 0 && (
           <div className="field">

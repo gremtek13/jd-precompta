@@ -58,13 +58,20 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
 
   return (
     <>
-      <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
+      <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
         Une facture validée reçoit un numéro définitif et n'est plus modifiable — corrige une erreur
-        par une facture d'avoir (bouton "Avoir" sur la ligne) plutôt qu'en la rouvrant. Un avoir a sa
-        propre numérotation (série "A", indépendante des factures) et référence toujours la facture
-        corrigée. La transmission automatique via une plateforme agréée arrivera dans une prochaine
-        étape : imprime ou enregistre en PDF pour l'envoyer toi-même.
+        par une facture d'avoir plutôt qu'en la rouvrant.
       </p>
+      <details className="muted" style={{ marginBottom: 20 }}>
+        <summary style={{ cursor: 'pointer' }}>En savoir plus</summary>
+        <p style={{ marginTop: 6, marginBottom: 0 }}>
+          Le bouton "Avoir" sur une ligne crée un avoir avec sa propre numérotation (série "A",
+          indépendante des factures), qui référence toujours la facture corrigée. Une fois validée,
+          une facture peut être transmise directement au client via Super PDP (facturation
+          électronique, plateforme agréée) ou envoyée par e-mail — imprimer/enregistrer en PDF reste
+          possible si tu préfères l'envoyer toi-même.
+        </p>
+      </details>
 
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 

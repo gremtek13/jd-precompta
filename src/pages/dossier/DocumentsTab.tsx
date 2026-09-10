@@ -128,13 +128,17 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
-      <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Relevés bancaires, attestations, appels de cotisation — les documents triés automatiquement
-        (voir "+ Ajouter des documents", ici comme dans Pièces) atterrissent ici plutôt que dans Pièces,
-        faute de montant HT/TVA/TTC à faire vérifier. Reclasse ou convertis en pièce si le tri
-        automatique s'est trompé ; un appel de cotisation se rattache à une échéance depuis l'onglet
-        Cotisations.
+      <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
+        Relevés bancaires, attestations, appels de cotisation — les documents sans montant à
+        ventiler, triés et classés ici automatiquement plutôt que dans Justificatifs.
       </p>
+      <details className="muted" style={{ marginBottom: 20 }}>
+        <summary style={{ cursor: 'pointer' }}>En savoir plus</summary>
+        <p style={{ marginTop: 6, marginBottom: 0 }}>
+          Reclasse ou convertis en justificatif si le tri automatique s'est trompé ; un appel de
+          cotisation se rattache à une échéance depuis l'onglet Cotisations.
+        </p>
+      </details>
 
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
