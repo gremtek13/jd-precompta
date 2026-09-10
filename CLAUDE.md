@@ -100,6 +100,13 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Conventions de développement
 
+- **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
+  Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
+  sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
+  chacun son propre filtre local — toute nouvelle vue dont un total dépend de l'exercice devrait
+  rejoindre ce même contexte plutôt que réinventer un `useState<ValeurAnnee>` local. Le filtre "sans
+  date" (propre aux pièces, sans équivalent sur un mouvement bancaire ou une écriture) reste un état
+  local à `PiecesTab`, hors de ce contexte.
 - **Français partout** : noms de variables/fonctions, commentaires, libellés
   UI, messages d'erreur utilisateur. Les commentaires expliquent le
   *pourquoi* (contrainte métier, bug évité, choix délibéré), jamais un simple
@@ -263,6 +270,25 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
   pièges déjà traités).
+- Améliorations issues d'un audit comparatif avec un logiciel concurrent
+  (MEG, utilisé par l'expert-comptable de l'utilisateur) — priorisées par
+  l'utilisateur, traitées dans l'ordre :
+  1. Fiche pièce (justificatif/champs en deux colonnes, pied fixe) — fait.
+  2. Exercice unifié en en-tête du dossier — fait (voir AnneeContext).
+  3. Rapprochement bancaire : suggestions par montant/date déjà en place
+     (voir `BanqueTab`) ; reste à faire — aperçu du justificatif directement
+     depuis le panneau de rapprochement, et une explication explicite quand
+     aucune pièce n'est disponible pour une ligne.
+  4. Statuts : `pieces.statut` ne distingue que validée/à valider — le
+     paiement/rapprochement bancaire (`lignes_bancaires.statut`) n'est pas
+     encore reflété sur la pièce elle-même dans les listes (ex. badge
+     "Validée" qui ne dit rien du rapprochement).
+  5. Tableau de pilotage : renommer "Statistiques" en "Balance des comptes"
+     et ajouter une vraie synthèse (encaissements/décaissements, évolution
+     mensuelle, avancement du dossier) — pas commencé.
+  6. Navigation/textes : clarifier "Pièces" → "Justificatifs" et
+     "Factures" → "Factures émises" dans `DossierParcours`, réduire les
+     paragraphes longs — pas commencé.
 
 ## Problèmes connus importants
 
