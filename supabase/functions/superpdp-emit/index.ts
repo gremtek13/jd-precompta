@@ -209,7 +209,7 @@ async function actualiserStatut(
 ): Promise<{ dernierStatut: string | null; evenements: InvoiceEvent[] }> {
   const resp = await fetch(`${SUPERPDP_ENDPOINT}/v1.beta/invoices/${superpdpInvoiceId}`, { headers })
   const body = await resp.json().catch(() => null)
-  if (!resp.ok) throw new Error(`Lecture du statut Super PDP échouée (${resp.status}) : ${body?.error ?? "réponse invalide"}.`)
+  if (!resp.ok) throw new Error(`Lecture du statut Super PDP échouée (${resp.status}) : ${body?.message ?? body?.error ?? "réponse invalide"}.`)
   const evenements = (body?.events ?? []) as InvoiceEvent[]
   if (evenements.length > 0) {
     const lignes = evenements.map((e) => ({
@@ -351,7 +351,7 @@ Deno.serve(async (req: Request) => {
     const validationBody = await validationResp.json().catch(() => null)
     console.log(`[superpdp-emit] validation status=${validationResp.status} body=${JSON.stringify(validationBody).slice(0, 5000)}`)
     if (!validationResp.ok) {
-      throw new Error(`Validation Super PDP échouée (${validationResp.status}) : ${validationBody?.error ?? "réponse invalide"}.`)
+      throw new Error(`Validation Super PDP échouée (${validationResp.status}) : ${validationBody?.message ?? validationBody?.error ?? "réponse invalide"}.`)
     }
     const rapport = validationBody?.data?.[0]
     if (rapport?.is_valid === false) {
@@ -383,7 +383,10 @@ Deno.serve(async (req: Request) => {
     const sendBody = await sendResp.json().catch(() => null)
     console.log(`[superpdp-emit] send status=${sendResp.status} body=${JSON.stringify(sendBody).slice(0, 800)}`)
     if (!sendResp.ok || !sendBody?.id) {
-      throw new Error(`Envoi Super PDP échoué (${sendResp.status}) : ${sendBody?.error ?? "réponse invalide"}.`)
+      // Super PDP renvoie {http_status_code, message} sur erreur (pas {error}) — d'où le repli
+      // "réponse invalide" observé tant que seul .error était lu, alors que .message contenait déjà
+      // la vraie raison (ex. "pre-check: receiver address <...> does not accept this document").
+      throw new Error(`Envoi Super PDP échoué (${sendResp.status}) : ${sendBody?.message ?? sendBody?.error ?? "réponse invalide"}.`)
     }
 
     const { error: updateError } = await admin.from("factures_emises").update({ superpdp_invoice_id: sendBody.id }).eq("id", factureId)
