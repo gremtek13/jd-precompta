@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
 import { calculerBalance } from '../../lib/ecritures'
 import type { Categorie, EcritureBrouillon } from '../../lib/types'
-import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import { useAnnee } from '../../context/AnneeContext'
 
 // Balance des comptes — vue transversale sur tout le brouillon (voir EcrituresTab, qui ne montre le
 // journal que ligne à ligne, pièce par pièce) : un compte par ligne, avec son nombre d'écritures et
@@ -15,7 +15,9 @@ export default function StatistiquesTab({ dossierId }: { dossierId: string }) {
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [loading, setLoading] = useState(true)
-  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  // Exercice partagé avec Pièces/Banque/Écritures/Clôture, sélectionné dans l'en-tête du dossier
+  // (voir AnneeContext) — pas de sélecteur local ici.
+  const { annee: anneeFilter } = useAnnee()
   const [recherche, setRecherche] = useState('')
 
   useEffect(() => {
@@ -30,10 +32,6 @@ export default function StatistiquesTab({ dossierId }: { dossierId: string }) {
     })
   }, [dossierId])
 
-  const anneesDisponibles = useMemo(
-    () => [...new Set(ecritures.map((e) => new Date(e.date).getFullYear()))].sort((a, b) => b - a),
-    [ecritures],
-  )
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => new Date(e.date).getFullYear() === anneeFilter)
 
   const balance = useMemo(() => calculerBalance(ecrituresFiltrees, categories), [ecrituresFiltrees, categories])
@@ -56,8 +54,6 @@ export default function StatistiquesTab({ dossierId }: { dossierId: string }) {
         Écritures, regroupée par compte plutôt que par pièce. Solde positif = débiteur, négatif =
         créditeur.
       </p>
-
-      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
       <input
         placeholder="Rechercher par numéro ou libellé de compte…"

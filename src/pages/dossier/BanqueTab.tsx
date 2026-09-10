@@ -5,7 +5,7 @@ import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../.
 import { formatDate, formatMoney } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/ecritures'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
-import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import { useAnnee } from '../../context/AnneeContext'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -36,10 +36,13 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
-  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
-  // 'tous' ou un mois 0-11 — remis à 'tous' à chaque changement d'année (voir changerAnnee) pour ne
-  // jamais rester bloqué sur un mois qui n'existe plus dans la nouvelle année sélectionnée.
+  // Exercice partagé avec Pièces/Écritures/Statistiques/Clôture, sélectionné dans l'en-tête du
+  // dossier (voir AnneeContext) — pas de sélecteur local ici.
+  const { annee: anneeFilter } = useAnnee()
+  // 'tous' ou un mois 0-11 — remis à 'tous' à chaque changement d'année pour ne jamais rester bloqué
+  // sur un mois qui n'existe plus dans la nouvelle année sélectionnée.
   const [moisFilter, setMoisFilter] = useState<'tous' | number>('tous')
+  useEffect(() => { setMoisFilter('tous') }, [anneeFilter])
   const [recherche, setRecherche] = useState('')
   const [rapprochementAuto, setRapprochementAuto] = useState(false)
   // Ligne ouverte dans le panneau de détail (voir plus bas) — le tableau lui-même reste compact
@@ -89,12 +92,6 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const cotisationsRapprochees = useMemo(() => new Set(lignes.filter((l) => l.cotisation_id).map((l) => l.cotisation_id)), [lignes])
   const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
 
-  const anneesDisponibles = [...new Set(lignes.map((l) => new Date(l.date).getFullYear()))].sort((a, b) => b - a)
-
-  function changerAnnee(v: ValeurAnnee) {
-    setAnneeFilter(v)
-    setMoisFilter('tous') // un mois de l'année précédente n'a pas de sens une fois l'année changée
-  }
 
   // Mois proposés dans le filtre : seulement ceux qui existent réellement dans l'année déjà
   // sélectionnée (et le statut déjà filtré) — jamais les 12 mois de l'année par défaut, dont la
@@ -381,8 +378,6 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           </p>
         )}
       </div>
-
-      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={changerAnnee} />
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {(['toutes', 'non_rapprochee', 'rapprochee', 'ignoree'] as const).map((s) => (

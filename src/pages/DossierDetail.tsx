@@ -22,6 +22,8 @@ import ChecklistTab from './dossier/ChecklistTab'
 import VirementsTab from './dossier/VirementsTab'
 import AssistantFlottant from './dossier/AssistantFlottant'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
+import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
+import { AnneeProvider, useAnnee } from '../context/AnneeContext'
 
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
@@ -33,12 +35,31 @@ const TABS_VALIDES: DossierTab[] = [
   'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
 ]
 
+// Onglets où l'exercice sélectionné a un effet réel (voir AnneeContext) — le sélecteur d'exercice de
+// l'en-tête ne s'affiche que là, pas sur des écrans (Informations, Packs...) où il ne changerait rien.
+const TABS_AVEC_EXERCICE: DossierTab[] = ['pieces', 'banque', 'ecritures', 'statistiques', 'cloture']
+
+// Exercice le plus pertinent à afficher par défaut à l'ouverture du dossier — jamais "toutes" sur un
+// dossier qui a déjà de l'historique : mélanger plusieurs exercices dans un total (Clôture, en
+// particulier) n'a de sens que si l'utilisateur le choisit explicitement. Préfère l'année civile en
+// cours si elle a déjà de l'activité, sinon l'année précédente (cas courant : on clôture N-1 en début
+// d'année N), sinon la plus récente année avec de l'activité, sinon "toutes" (dossier neuf, rien à
+// mélanger).
+function calculerAnneeParDefaut(anneesDisponibles: number[]): ValeurAnnee {
+  if (anneesDisponibles.length === 0) return 'toutes'
+  const anneeCourante = new Date().getFullYear()
+  if (anneesDisponibles.includes(anneeCourante)) return anneeCourante
+  if (anneesDisponibles.includes(anneeCourante - 1)) return anneeCourante - 1
+  return anneesDisponibles[0]
+}
+
 export default function DossierDetail() {
   const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>()
   const navigate = useNavigate()
   const tab: DossierTab = TABS_VALIDES.includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [detectingNaf, setDetectingNaf] = useState(false)
+  const [anneesDisponibles, setAnneesDisponibles] = useState<number[] | null>(null)
 
   // URL toujours explicite (avec son onglet) une fois montée — évite d'avoir deux URLs différentes
   // (/dossiers/:id et /dossiers/:id/checklist) pour le même écran.
@@ -53,6 +74,29 @@ export default function DossierDetail() {
   useEffect(() => {
     if (!id) return
     supabase.from('dossiers').select('*').eq('id', id).single().then(({ data }) => setDossier(data))
+  }, [id])
+
+  // Années réellement disponibles sur les trois sources datées qui alimentent les onglets partageant
+  // l'exercice (voir TABS_AVEC_EXERCICE) — juste la colonne date de chacune, pas les lignes entières :
+  // chaque onglet continue de charger ses propres données pour son propre affichage, cette requête ne
+  // sert qu'à calculer l'exercice par défaut et la liste de boutons de l'en-tête.
+  useEffect(() => {
+    if (!id) return
+    let annule = false
+    setAnneesDisponibles(null)
+    Promise.all([
+      supabase.from('pieces').select('date_piece').eq('dossier_id', id).not('date_piece', 'is', null),
+      supabase.from('lignes_bancaires').select('date').eq('dossier_id', id),
+      supabase.from('ecritures_brouillon').select('date').eq('dossier_id', id),
+    ]).then(([{ data: pcs }, { data: lgs }, { data: ecr }]) => {
+      if (annule) return
+      const annees = new Set<number>()
+      for (const p of pcs ?? []) if (p.date_piece) annees.add(new Date(p.date_piece).getFullYear())
+      for (const l of lgs ?? []) annees.add(new Date(l.date).getFullYear())
+      for (const e of ecr ?? []) annees.add(new Date(e.date).getFullYear())
+      setAnneesDisponibles([...annees].sort((a, b) => b - a))
+    })
+    return () => { annule = true }
   }, [id])
 
   if (!id) return null
@@ -121,42 +165,58 @@ export default function DossierDetail() {
 
       <DossierParcours tab={tab} onChange={allerA} />
 
-      {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={allerA} />}
-      {tab === 'pieces' && <PiecesTab dossierId={id} />}
-      {tab === 'factures' && (
-        <FacturesTab
-          dossierId={id}
-          dossierNom={dossier?.nom ?? ''}
-          dossierSiret={dossier?.siret ?? null}
-          dossierAdresse={dossier?.adresse ?? null}
-          assujettiTva={dossier?.assujetti_tva ?? false}
-          onAdresseUpdated={(adresse) => dossier && setDossier({ ...dossier, adresse })}
-        />
+      {anneesDisponibles === null ? (
+        <p className="muted">Chargement…</p>
+      ) : (
+        <AnneeProvider key={id} defaut={calculerAnneeParDefaut(anneesDisponibles)}>
+          {TABS_AVEC_EXERCICE.includes(tab) && <SelecteurExerciceEntete annees={anneesDisponibles} />}
+
+          {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={allerA} />}
+          {tab === 'pieces' && <PiecesTab dossierId={id} />}
+          {tab === 'factures' && (
+            <FacturesTab
+              dossierId={id}
+              dossierNom={dossier?.nom ?? ''}
+              dossierSiret={dossier?.siret ?? null}
+              dossierAdresse={dossier?.adresse ?? null}
+              assujettiTva={dossier?.assujetti_tva ?? false}
+              onAdresseUpdated={(adresse) => dossier && setDossier({ ...dossier, adresse })}
+            />
+          )}
+          {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
+          {tab === 'banque' && <BanqueTab dossierId={id} />}
+          {tab === 'documents' && <DocumentsTab dossierId={id} />}
+          {tab === 'ecritures' && <EcrituresTab dossierId={id} dossierSiret={dossier?.siret ?? null} assujettiTva={dossier?.assujetti_tva ?? false} />}
+          {tab === 'statistiques' && <StatistiquesTab dossierId={id} />}
+          {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
+          {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
+          {tab === 'cloture' && <ClotureTab dossierId={id} />}
+          {tab === 'estimation' && <EstimationTab dossierId={id} />}
+          {tab === 'financement' && <FinancementTab dossierId={id} />}
+          {tab === 'supplements' && <SupplementsTab dossierId={id} />}
+          {tab === 'informations' && (
+            <InformationsTab
+              dossierId={id}
+              dossierNom={dossier?.nom ?? ''}
+              dossierSiret={dossier?.siret ?? null}
+              dossierAdresse={dossier?.adresse ?? null}
+              onIdentiteUpdated={(siret, adresse) => dossier && setDossier({ ...dossier, siret, adresse })}
+            />
+          )}
+          {tab === 'virements' && <VirementsTab dossierId={id} />}
+          {tab === 'acces' && <AccesTab dossierId={id} dossierNom={dossier?.nom ?? ''} codeEmail={dossier?.code_email ?? null} />}
+        </AnneeProvider>
       )}
-      {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
-      {tab === 'banque' && <BanqueTab dossierId={id} />}
-      {tab === 'documents' && <DocumentsTab dossierId={id} />}
-      {tab === 'ecritures' && <EcrituresTab dossierId={id} dossierSiret={dossier?.siret ?? null} assujettiTva={dossier?.assujetti_tva ?? false} />}
-      {tab === 'statistiques' && <StatistiquesTab dossierId={id} />}
-      {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
-      {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
-      {tab === 'cloture' && <ClotureTab dossierId={id} />}
-      {tab === 'estimation' && <EstimationTab dossierId={id} />}
-      {tab === 'financement' && <FinancementTab dossierId={id} />}
-      {tab === 'supplements' && <SupplementsTab dossierId={id} />}
-      {tab === 'informations' && (
-        <InformationsTab
-          dossierId={id}
-          dossierNom={dossier?.nom ?? ''}
-          dossierSiret={dossier?.siret ?? null}
-          dossierAdresse={dossier?.adresse ?? null}
-          onIdentiteUpdated={(siret, adresse) => dossier && setDossier({ ...dossier, siret, adresse })}
-        />
-      )}
-      {tab === 'virements' && <VirementsTab dossierId={id} />}
-      {tab === 'acces' && <AccesTab dossierId={id} dossierNom={dossier?.nom ?? ''} codeEmail={dossier?.code_email ?? null} />}
 
       <AssistantFlottant dossierId={id} />
     </>
   )
+}
+
+// Sélecteur d'exercice de l'en-tête (voir AnneeContext) — un seul composant plutôt qu'un appel direct
+// à useAnnee() dans DossierDetail : useAnnee() suppose d'être sous un <AnneeProvider>, qui n'englobe
+// que ce bloc (pas tout DossierDetail), lui-même conditionné par le chargement des années disponibles.
+function SelecteurExerciceEntete({ annees }: { annees: number[] }) {
+  const { annee, setAnnee } = useAnnee()
+  return <AnneeTabs annees={annees} valeur={annee} onChange={setAnnee} />
 }

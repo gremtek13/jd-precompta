@@ -5,7 +5,7 @@ import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
-import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import { useAnnee } from '../../context/AnneeContext'
 
 const POSTE_AMORTISSEMENTS = 'Amortissements'
 const POSTE_COTISATIONS = 'Cotisations sociales personnelles'
@@ -22,7 +22,11 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [postesEdit, setPostesEdit] = useState<Record<string, string>>({})
-  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  // Exercice partagé avec Pièces/Banque/Écritures/Statistiques, sélectionné dans l'en-tête du dossier
+  // (voir AnneeContext) — pas de sélecteur local ici. Sa valeur par défaut (voir DossierDetail,
+  // calculerAnneeParDefaut) est déjà un exercice précis plutôt que "toutes", justement pour éviter
+  // que Clôture s'ouvre sur un mélange de plusieurs exercices sans que l'utilisateur l'ait choisi.
+  const { annee: anneeFilter } = useAnnee()
 
   async function load() {
     setLoading(true)
@@ -119,12 +123,10 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
         ce travail reste celui de l'expert-comptable.
       </p>
 
-      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
-
       {anneeFilter === 'toutes' && anneesDisponibles.length > 1 && (
         <p className="muted" style={{ marginTop: -4, marginBottom: 20, color: 'var(--color-warning)' }}>
-          ⚠ Plusieurs exercices ({anneesDisponibles.join(', ')}) sont mélangés dans ce total — sélectionne
-          une année ci-dessus pour un vrai total de clôture.
+          ⚠ Plusieurs exercices ({anneesDisponibles.join(', ')}) sont mélangés dans ce total — choisis
+          un exercice dans le sélecteur en en-tête du dossier pour un vrai total de clôture.
         </p>
       )}
 

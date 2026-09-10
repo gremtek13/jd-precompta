@@ -7,7 +7,7 @@ import PieceFormModal from './PieceFormModal'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 import ImportDossierModal from './ImportDossierModal'
 import SuperPdpModal from './SuperPdpModal'
-import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import { useAnnee } from '../../context/AnneeContext'
 
 export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -19,7 +19,13 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [loading, setLoading] = useState(true)
   const [statutFilter, setStatutFilter] = useState<'toutes' | 'a_valider' | 'validee'>('toutes')
   const [sousDossierFilter, setSousDossierFilter] = useState<'tous' | 'sans' | string>('tous')
-  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  // L'exercice lui-même vient de l'en-tête du dossier (voir AnneeContext, partagé avec Banque,
+  // Écritures, Statistiques et Clôture) — "sans date" reste un filtre local, propre aux pièces : les
+  // autres onglets partagés n'ont pas cette notion (un mouvement bancaire ou une écriture a toujours
+  // une date), donc rien à unifier avec l'en-tête pour ce cas précis. Mutuellement exclusif avec
+  // l'exercice sélectionné : cocher "Sans date" met de côté le filtre d'exercice, comme avant.
+  const { annee: anneeFilter } = useAnnee()
+  const [sansDateOnly, setSansDateOnly] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [ajoutOuvert, setAjoutOuvert] = useState(false)
@@ -69,17 +75,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   }, [dossierId])
 
   // Un dossier est par client, pas par année (voir Estimation) — les pièces s'accumulent sur plusieurs
-  // exercices sans jamais être archivées ailleurs. Les onglets Année filtrent la liste sans rien
-  // déplacer, sur la vraie date du document (date_piece) plutôt que sa date d'ajout dans l'appli.
-  const anneesDisponibles = [...new Set(pieces.filter((p) => p.date_piece).map((p) => new Date(p.date_piece!).getFullYear()))]
-    .sort((a, b) => b - a)
+  // exercices sans jamais être archivées ailleurs. Le filtre d'exercice ne déplace rien, il joue sur
+  // la vraie date du document (date_piece) plutôt que sa date d'ajout dans l'appli.
   const aPiecesSansDate = pieces.some((p) => !p.date_piece)
 
   const filteredBase = pieces.filter((p) => {
     if (statutFilter !== 'toutes' && p.statut !== statutFilter) return false
     if (sousDossierFilter === 'sans' && p.sous_dossier_id) return false
     if (sousDossierFilter !== 'tous' && sousDossierFilter !== 'sans' && p.sous_dossier_id !== sousDossierFilter) return false
-    if (anneeFilter === 'sans_date') return !p.date_piece
+    if (sansDateOnly) return !p.date_piece
     if (anneeFilter !== 'toutes' && (!p.date_piece || new Date(p.date_piece).getFullYear() !== anneeFilter)) return false
     return true
   })
@@ -184,8 +188,6 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
-      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} sansDate={aPiecesSansDate} />
-
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {(['toutes', 'a_valider', 'validee'] as const).map((s) => (
@@ -197,6 +199,18 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
               {s === 'toutes' ? 'Toutes' : s === 'a_valider' ? 'À valider' : 'Validées'}
             </button>
           ))}
+          {/* Filtre local, indépendant de l'exercice de l'en-tête (voir déclaration de sansDateOnly
+              ci-dessus) — une pièce sans date n'appartient à aucun exercice, ça ne fait pas sens de
+              l'unifier avec le sélecteur partagé. */}
+          {aPiecesSansDate && (
+            <button
+              className={`btn btn-sm ${sansDateOnly ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setSansDateOnly((v) => !v)}
+              title="Pièces sans date renseignée, en dehors de tout exercice"
+            >
+              Sans date
+            </button>
+          )}
           <select value={sousDossierFilter} onChange={(e) => setSousDossierFilter(e.target.value)} style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', fontSize: '0.8rem' }}>
             <option value="tous">Tous les sous-dossiers</option>
             <option value="sans">Sans sous-dossier</option>

@@ -6,7 +6,7 @@ import { categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as 
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
-import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import { useAnnee } from '../../context/AnneeContext'
 
 // Palier 5 — brouillon comptable, brique 1 (journal). Génère une proposition d'écriture pour
 // chaque pièce validée dont la catégorie a un compte associé — la ligne charge/produit, puis la
@@ -25,7 +25,9 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [comptesEdit, setComptesEdit] = useState<Record<string, string>>({})
-  const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  // Exercice partagé avec Pièces/Banque/Statistiques/Clôture, sélectionné dans l'en-tête du dossier
+  // (voir AnneeContext) — pas de sélecteur local ici.
+  const { annee: anneeFilter } = useAnnee()
   const [regenerating, setRegenerating] = useState<string | null>(null)
   const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
   const [periodeDebut, setPeriodeDebut] = useState('')
@@ -115,7 +117,6 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
 
   // Le filtre par année ne porte que sur l'affichage des écritures déjà générées — la génération
   // (bouton ci-dessous) reste globale, sur toutes les pièces en attente quelle que soit leur année.
-  const anneesDisponibles = [...new Set(ecritures.map((e) => new Date(e.date).getFullYear()))].sort((a, b) => b - a)
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => new Date(e.date).getFullYear() === anneeFilter)
 
   const tvaDeductible = soldeCompte(ecrituresFiltrees, COMPTE_TVA_DEDUCTIBLE, 'debit')
@@ -396,8 +397,6 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
       </div>
 
       {error && <p className="error-text">{error}</p>}
-
-      <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
         <button
