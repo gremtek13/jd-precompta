@@ -226,7 +226,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   (`superpdp-sync`) et émission de factures de vente conformes EN16931/CII
   (`superpdp-emit`), configuration des identifiants OAuth par dossier.
 - Financement : suivi d'emprunts avec échéancier d'amortissement
-  (`FinancementTab`, `src/lib/emprunts.ts`), et trois briques du dossier
+  (`FinancementTab`, `src/lib/emprunts.ts`), et les 4 briques du dossier
   bancaire automatisé — situation intermédiaire (recettes/charges/résultat
   par poste 2035, même logique que Clôture, sur une période libre du 1er
   janvier à une date choisie, plus la trésorerie à cette date :
@@ -234,10 +234,14 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   solde bancaire par moyenne mensuelle réelle observée — emprunts et
   cotisations déjà compris puisqu'ils transitent par le même compte, liste
   séparée des échéances connues à titre indicatif : `src/lib/planTresorerie.ts`),
-  et échéancier des dettes consolidé + ratios bancaires (capacité de
+  échéancier des dettes consolidé + ratios bancaires (capacité de
   remboursement = dettes financières / CAF annuelle estimée, taux
   d'endettement mensuel = mensualités / moyenne des encaissements —
-  `src/lib/ratiosBancaires.ts`).
+  `src/lib/ratiosBancaires.ts`), et prévisionnel à 3 ans (taux de croissance
+  annuel uniforme sur CA/charges de référence, préchargeables depuis une
+  année passée, plus une note d'hypothèses en texte libre — jamais devinée
+  par l'app, une ligne par dossier dans `previsionnels_bancaires` :
+  `src/lib/previsionnel.ts`).
 - Suppléments : prestations ponctuelles hors mission courante (création/
   fermeture de société, situation intermédiaire, autre), à facturer ou
   facturée avec lien facultatif vers la facture réelle ; et comptes courants
@@ -259,11 +263,6 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
   pièges déjà traités).
-- Dossier bancaire automatisé — échéancier d'emprunts, situation
-  intermédiaire, plan de trésorerie et échéancier des dettes + ratios
-  bancaires faits (onglet Financement) ; seul le prévisionnel à 3 ans et la
-  note d'hypothèses restent hors périmètre tant que non demandés
-  explicitement.
 
 ## Problèmes connus importants
 
