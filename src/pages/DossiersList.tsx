@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
-import { moisEcoulesCetteAnnee } from '../lib/format'
+import { dateRelative, moisEcoulesCetteAnnee } from '../lib/format'
 import type { Dossier } from '../lib/types'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -48,17 +48,6 @@ function depotsParSemaine(depots: DepotRecent[], nbSemaines: number): number[] {
     if (index >= 0 && index < nbSemaines) compteurs[index] += 1
   }
   return compteurs
-}
-
-function dateRelative(iso: string): string {
-  const diffMs = Date.now() - new Date(iso).getTime()
-  const heures = Math.floor(diffMs / 3_600_000)
-  if (heures < 1) return "à l'instant"
-  if (heures < 24) return `il y a ${heures} h`
-  const jours = Math.floor(heures / 24)
-  if (jours === 1) return 'hier'
-  if (jours < 7) return `il y a ${jours} j`
-  return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }
 
 // Dashboard cabinet : ce qui a besoin d'attention sur l'ensemble des dossiers, sans avoir à ouvrir

@@ -2,12 +2,15 @@ import { useEffect, useState, type DragEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { formatDate } from '../lib/format'
+import { formatDate, moisEcoulesCetteAnnee } from '../lib/format'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece } from '../lib/types'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const ANNEE_COURANTE = new Date().getFullYear()
-const MOIS_ECOULES = new Date().getMonth() + 1
+// Mois entièrement terminés, pas mois entamés (voir lib/format) — cet écran comptait le mois en cours
+// comme dû, et réclamait donc au client un relevé qui n'existe pas encore, en contradiction avec
+// l'accueil et la Checklist du cabinet, qui utilisent tous deux ce même calcul.
+const MOIS_ECOULES = moisEcoulesCetteAnnee()
 
 const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -126,9 +129,11 @@ export default function ClientUpload() {
       id: 'banque',
       label: `Relevés bancaires ${ANNEE_COURANTE}`,
       ok: moisManquants.length === 0,
-      detail: moisManquants.length > 0
-        ? `Mois manquants : ${moisManquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
-        : `${MOIS_ECOULES}/${MOIS_ECOULES} mois reçus`,
+      detail: MOIS_ECOULES === 0
+        ? "Aucun mois encore terminé cette année"
+        : moisManquants.length > 0
+          ? `Mois manquants : ${moisManquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
+          : `${MOIS_ECOULES}/${MOIS_ECOULES} mois reçus`,
     },
     {
       id: 'cotisations',

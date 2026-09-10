@@ -287,6 +287,17 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   voir `Layout.tsx`) — les 4 écrans client (accueil, pièces, informations,
   simulation) suivent la société sélectionnée plutôt que la première par
   défaut.
+- L'accueil client (`ClientHome`) est aussi un petit tableau de bord : tuiles
+  d'action d'abord (la photo en tête), puis quatre tuiles chiffrées (envois de
+  l'année avec tendance sur 12 mois, pièces en cours de vérification, relevés
+  reçus, cotisations), "Ce qu'il reste à envoyer" (anneau d'avancement) et
+  "Mes derniers envois". Chiffres volontairement limités à ce qu'un
+  non-comptable comprend et formulés de son point de vue ("en cours de
+  vérification", pas "à valider") — jamais de solde, de TVA ni de résultat
+  côté client. Les trois points de "Ce qu'il reste à envoyer" sont les mêmes
+  que ceux de `ClientUpload` et de la Checklist du cabinet, avec le même
+  `moisEcoulesCetteAnnee()` : les trois écrans doivent toujours dire la même
+  chose au même moment.
 - Assistant comptable IA par dossier, avec plafond de coût mensuel
   configurable par cabinet (alerte non bloquante + blocage réel côté
   `agent-comptable`).
