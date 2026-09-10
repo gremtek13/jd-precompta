@@ -5,6 +5,7 @@ import { COMPTE_BANQUE } from '../../lib/ecritures'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire } from '../../lib/situationIntermediaire'
 import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, type EcheanceConnue } from '../../lib/planTresorerie'
+import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 
 interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number }
@@ -28,6 +29,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   const [echeancierDe, setEcheancierDe] = useState<Emprunt | null>(null)
   const [situationOuverte, setSituationOuverte] = useState(false)
   const [tresorerieOuverte, setTresorerieOuverte] = useState(false)
+  const [dettesOuvertes, setDettesOuvertes] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -116,6 +118,15 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
         pas un budget poste par poste.
       </p>
 
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
+        <h3 style={{ margin: 0 }}>Dettes & ratios bancaires</h3>
+        <button className="btn btn-outline btn-sm" onClick={() => setDettesOuvertes(true)}>Générer</button>
+      </div>
+      <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
+        Échéancier consolidé des dettes (emprunts + cotisations sociales) et deux ratios usuels pour
+        un dossier bancaire : capacité de remboursement et taux d'endettement mensuel.
+      </p>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <h3 style={{ margin: 0 }}>Emprunts</h3>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvel emprunt</button>
@@ -190,7 +201,108 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
           onClose={() => setTresorerieOuverte(false)}
         />
       )}
+
+      {dettesOuvertes && (
+        <DettesRatiosModal
+          pieces={pieces}
+          categories={categories}
+          immobilisations={immobilisations}
+          cotisations={cotisations}
+          emprunts={emprunts}
+          lignesBanque={lignesBanque}
+          capitalRestantTotal={capitalRestantTotal}
+          mensualiteTotale={mensualiteTotale}
+          onClose={() => setDettesOuvertes(false)}
+        />
+      )}
     </>
+  )
+}
+
+function DettesRatiosModal({ pieces, categories, immobilisations, cotisations, emprunts, lignesBanque, capitalRestantTotal, mensualiteTotale, onClose }: {
+  pieces: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+  emprunts: Emprunt[]; lignesBanque: LigneBanque[]; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
+}) {
+  const aujourdHui = new Date().toISOString().slice(0, 10)
+  const debutAnnee = `${new Date().getFullYear()}-01-01`
+  const moisEcoules = new Date().getMonth() + 1
+
+  const situationAnnee = calculerSituationIntermediaire(pieces, categories, immobilisations, cotisations, debutAnnee, aujourdHui)
+  // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
+  // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
+  const plan = calculerPlanTresorerie(lignesBanque, 0, 6, 1)
+  const ratios = calculerRatiosBancaires(situationAnnee, moisEcoules, capitalRestantTotal, mensualiteTotale, plan.moyenneEncaissements)
+
+  const dansSixMois = new Date()
+  dansSixMois.setMonth(dansSixMois.getMonth() + 6)
+  const finPeriode = dansSixMois.toISOString().slice(0, 10)
+  const echeances: EcheanceConnue[] = [
+    ...echeancesEmprunts(emprunts, aujourdHui, finPeriode),
+    ...echeancesCotisations(cotisations, aujourdHui, finPeriode),
+  ].sort((a, b) => a.date.localeCompare(b.date))
+  const totalCotisationsDues = cotisations
+    .filter((c) => c.montant_verse == null)
+    .reduce((s, c) => s + c.montant_appele, 0)
+
+  return (
+    <div style={overlayStyle}>
+      <div className="card" style={{ width: 'min(640px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2 style={{ marginTop: 0 }}>Dettes & ratios bancaires</h2>
+
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 8 }}>
+          <div className="card" style={{ flex: '1 1 170px' }}>
+            <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Dettes financières (emprunts)</span>
+            <strong style={{ fontSize: '1.2rem' }}>{formatMoney(Math.round(capitalRestantTotal * 100) / 100)}</strong>
+          </div>
+          <div className="card" style={{ flex: '1 1 170px' }}>
+            <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Cotisations sociales dues</span>
+            <strong style={{ fontSize: '1.2rem' }}>{formatMoney(Math.round(totalCotisationsDues * 100) / 100)}</strong>
+          </div>
+        </div>
+        <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0, marginBottom: 20 }}>
+          CAF annuelle estimée (sur {moisEcoules} mois écoulés cette année, ramenée à 12) : <strong>{formatMoney(ratios.cafAnnuelleEstimee)}</strong>
+        </p>
+
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
+          <div className="card" style={{ flex: '1 1 220px' }}>
+            <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Capacité de remboursement</span>
+            <strong style={{ fontSize: '1.2rem' }}>
+              {ratios.capaciteRemboursementAnnees === null ? '—' : `${ratios.capaciteRemboursementAnnees} an${ratios.capaciteRemboursementAnnees >= 2 ? 's' : ''}`}
+            </strong>
+            <div className="muted" style={{ fontSize: '0.78rem' }}>Dettes financières / CAF — souvent souhaité ≤ 3-4 ans, seuil variable selon l'établissement.</div>
+          </div>
+          <div className="card" style={{ flex: '1 1 220px' }}>
+            <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Taux d'endettement mensuel</span>
+            <strong style={{ fontSize: '1.2rem' }}>{ratios.tauxEndettementMensuel === null ? '—' : `${ratios.tauxEndettementMensuel} %`}</strong>
+            <div className="muted" style={{ fontSize: '0.78rem' }}>Mensualités / moyenne des encaissements mensuels.</div>
+          </div>
+        </div>
+
+        <h3 style={{ marginBottom: 6 }}>Échéances des 6 prochains mois</h3>
+        <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
+          {echeances.length === 0 ? (
+            <div className="empty-state">Aucune échéance connue sur la période.</div>
+          ) : (
+            <table>
+              <thead><tr><th>Date</th><th>Libellé</th><th>Montant</th></tr></thead>
+              <tbody>
+                {echeances.map((e, i) => (
+                  <tr key={i}>
+                    <td>{formatDate(e.date)}</td>
+                    <td>{e.libelle}</td>
+                    <td>{formatMoney(e.montant)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    </div>
   )
 }
 
