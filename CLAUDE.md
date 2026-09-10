@@ -263,6 +263,18 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `agent-comptable`).
 - Export de pack (ZIP + Excel récapitulatif) à la demande, export global
   d'un cabinet, export de sauvegarde avant suppression d'un dossier/cabinet.
+- Ergonomie issue d'un audit comparatif avec un logiciel concurrent (MEG,
+  utilisé par l'expert-comptable de l'utilisateur) : fiche pièce en deux
+  colonnes avec pied de formulaire fixe ; exercice unifié en en-tête du
+  dossier (voir AnneeContext) ; aperçu du justificatif et message explicite
+  sur l'absence de candidat directement dans le panneau de rapprochement
+  bancaire (`lib/depot.ts::ouvrirJustificatif`) ; badge de rapprochement
+  distinct du statut de validation dans la liste des pièces ; "Statistiques"
+  renommé "Balance des comptes" avec un tableau de pilotage (évolution
+  mensuelle des encaissements/décaissements, avancement du dossier — voir
+  `lib/tableauPilotage.ts`) ; navigation clarifiée (Justificatifs/Documents
+  administratifs/Factures émises) et paragraphes d'intro longs raccourcis
+  avec le détail replié en `<details>`.
 
 ## Fonctionnalités actuellement en cours
 
@@ -270,25 +282,6 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
   pièges déjà traités).
-- Améliorations issues d'un audit comparatif avec un logiciel concurrent
-  (MEG, utilisé par l'expert-comptable de l'utilisateur) — priorisées par
-  l'utilisateur, traitées dans l'ordre :
-  1. Fiche pièce (justificatif/champs en deux colonnes, pied fixe) — fait.
-  2. Exercice unifié en en-tête du dossier — fait (voir AnneeContext).
-  3. Rapprochement bancaire : suggestions par montant/date déjà en place
-     (voir `BanqueTab`) ; reste à faire — aperçu du justificatif directement
-     depuis le panneau de rapprochement, et une explication explicite quand
-     aucune pièce n'est disponible pour une ligne.
-  4. Statuts : `pieces.statut` ne distingue que validée/à valider — le
-     paiement/rapprochement bancaire (`lignes_bancaires.statut`) n'est pas
-     encore reflété sur la pièce elle-même dans les listes (ex. badge
-     "Validée" qui ne dit rien du rapprochement).
-  5. Tableau de pilotage : renommer "Statistiques" en "Balance des comptes"
-     et ajouter une vraie synthèse (encaissements/décaissements, évolution
-     mensuelle, avancement du dossier) — pas commencé.
-  6. Navigation/textes : clarifier "Pièces" → "Justificatifs" et
-     "Factures" → "Factures émises" dans `DossierParcours`, réduire les
-     paragraphes longs — pas commencé.
 
 ## Problèmes connus importants
 
