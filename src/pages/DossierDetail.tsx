@@ -24,6 +24,7 @@ import AssistantFlottant from './dossier/AssistantFlottant'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
+import Avatar from '../components/widgets/Avatar'
 
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
@@ -132,44 +133,67 @@ export default function DossierDetail() {
     setDossier({ ...dossier, code_naf: infos.codeNaf, libelle_naf: infos.libelleNaf })
   }
 
+  // "Cockpit" du dossier : avatar, nom, identifiants et réglages en pastilles, sélecteur d'exercice à
+  // droite (partagé entre onglets, voir AnneeContext) — un seul bloc d'en-tête plutôt qu'un titre
+  // suivi d'une ligne de badges flottants.
+  const cockpit = (
+    <header className="cockpit">
+      <div className="cockpit-identite">
+        {dossier ? <Avatar nom={dossier.nom} taille={56} /> : <span className="skeleton" style={{ width: 56, height: 56, borderRadius: 12 }} />}
+        <div style={{ minWidth: 0 }}>
+          {dossier ? <h1>{dossier.nom}</h1> : <div className="skeleton skeleton-ligne" style={{ width: 220, height: 22 }} />}
+          <div className="cockpit-meta">
+            {dossier?.siret && <span className="cockpit-siret">SIRET {dossier.siret}</span>}
+            {dossier && (
+              <button
+                type="button"
+                className={`badge badge-bouton ${dossier.assujetti_tva ? 'badge-ok' : 'badge-neutral'}`}
+                title="Clique pour changer — la plupart des dossiers IDEL sont exonérés de TVA sur les actes de soins"
+                onClick={toggleAssujettiTva}
+              >
+                TVA : {dossier.assujetti_tva ? 'assujetti' : 'exonéré'}
+              </button>
+            )}
+            {dossier && (dossier.libelle_naf || dossier.code_naf) && (
+              <span className="badge badge-neutral" title={dossier.code_naf ?? undefined}>
+                {dossier.libelle_naf ?? `NAF ${dossier.code_naf}`}
+              </span>
+            )}
+            {dossier && dossier.siret && !dossier.code_naf && (
+              <button type="button" className="btn btn-outline btn-sm" onClick={detecterProfession} disabled={detectingNaf}>
+                {detectingNaf ? 'Détection…' : 'Détecter la profession (SIRET)'}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+      {anneesDisponibles !== null && TABS_AVEC_EXERCICE.includes(tab) && (
+        <div className="cockpit-droite">
+          <SelecteurExerciceEntete annees={anneesDisponibles} />
+        </div>
+      )}
+    </header>
+  )
+
   return (
     <>
-      <Link to="/dossiers" className="muted">&larr; Dossiers</Link>
-      <div className="topbar">
-        <h1>{dossier?.nom ?? 'Chargement…'}</h1>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: -12, marginBottom: 6, flexWrap: 'wrap' }}>
-        {dossier?.siret && <p className="muted" style={{ margin: 0 }}>SIRET {dossier.siret}</p>}
-        {dossier && (
-          <button
-            type="button"
-            className={`badge ${dossier.assujetti_tva ? 'badge-ok' : 'badge-neutral'}`}
-            style={{ border: 'none', cursor: 'pointer' }}
-            title="Clique pour changer — la plupart des dossiers IDEL sont exonérés de TVA sur les actes de soins"
-            onClick={toggleAssujettiTva}
-          >
-            TVA : {dossier.assujetti_tva ? 'Assujetti' : 'Exonéré'}
-          </button>
-        )}
-        {dossier && (dossier.libelle_naf || dossier.code_naf) && (
-          <span className="badge badge-neutral" title={dossier.code_naf ?? undefined}>
-            {dossier.libelle_naf ?? `NAF ${dossier.code_naf}`}
-          </span>
-        )}
-        {dossier && dossier.siret && !dossier.code_naf && (
-          <button type="button" className="btn btn-outline btn-sm" onClick={detecterProfession} disabled={detectingNaf}>
-            {detectingNaf ? 'Détection…' : 'Détecter la profession (SIRET)'}
-          </button>
-        )}
-      </div>
-
-      <DossierParcours tab={tab} onChange={allerA} />
+      <Link to="/dossiers" className="retour">&larr; Tableau de bord</Link>
 
       {anneesDisponibles === null ? (
-        <p className="muted">Chargement…</p>
+        <>
+          {cockpit}
+          <DossierParcours tab={tab} onChange={allerA} />
+          <div className="bento" aria-busy="true" aria-label="Chargement">
+            <div className="skeleton skeleton-kpi span-3" />
+            <div className="skeleton skeleton-kpi span-3" />
+            <div className="skeleton skeleton-kpi span-3" />
+            <div className="skeleton skeleton-kpi span-3" />
+          </div>
+        </>
       ) : (
         <AnneeProvider key={id} defaut={calculerAnneeParDefaut(anneesDisponibles)}>
-          {TABS_AVEC_EXERCICE.includes(tab) && <SelecteurExerciceEntete annees={anneesDisponibles} />}
+          {cockpit}
+          <DossierParcours tab={tab} onChange={allerA} />
 
           {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={allerA} />}
           {tab === 'pieces' && <PiecesTab dossierId={id} />}

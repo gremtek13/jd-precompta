@@ -110,6 +110,19 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `--radius-xs/sm/lg` + `--radius`, transitions `var(--duree) var(--ease)`. Piège connu : jamais de
   `backdrop-filter`/`filter`/`transform` sur `.sidebar` (ancêtre d'une nav en `position: fixed`) —
   ça en fait la référence de positionnement et la barre du bas remonte se coller à celle du haut.
+- **Tableaux de bord = widgets partagés + grille bento** (`src/components/widgets/`) : `KpiTile`
+  (libellé, valeur en chiffres proportionnels, delta signé, `Sparkline` 12 points), `ProgressRing`,
+  `MonthlyBars` (encaissements en accent, décaissements en gris — jamais le rouge de danger en
+  couleur de série ; légende obligatoire ; infobulle au survol), `Widget` (carte titrée avec action),
+  `Avatar` (initiales sur teinte du cabinet, une seule couleur). Disposition en `.bento` 12 colonnes
+  (`.span-3/4/5/6/7/8/12`, une colonne sur mobile, tuiles KPI deux par ligne). Règles du guide de
+  visualisation : le texte garde sa couleur de texte, le statut se lit à une pastille (`.kpi-dot`,
+  `.check-dot`) ; couleurs de statut réservées, jamais réutilisées comme série. Police par défaut
+  Manrope (Inter en repli). En-tête de dossier en "cockpit" (`.cockpit`, avatar + badges + sélecteur
+  d'exercice à droite). Chargements en squelettes (`.skeleton*`), jamais un simple "Chargement…" sur
+  un tableau de bord. Vérification visuelle : `scratchpad/captures/rendu.tsx` (react-dom/server sur
+  les vrais composants, bundlé par rolldown) + `vitrine.js` (Playwright, PC 1280 / mobile 390, clair
+  et sombre) — à rejouer après toute modification de `index.css`.
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que

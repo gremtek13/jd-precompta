@@ -12,6 +12,25 @@ export interface MoisPilotage {
 // Financement, juste regroupée mois par mois plutôt qu'en un solde unique. Volontairement indépendant
 // de l'exercice sélectionné en en-tête (voir AnneeContext) : une tendance récente reste utile même en
 // consultant une année passée, comme le plan de trésorerie de Financement.
+// Solde du compte banque (512) à la fin de chacun des N derniers mois d'activité, dans l'ordre
+// chronologique — alimente la tendance de trésorerie de la Vue d'ensemble (voir ChecklistTab). Un
+// solde cumulé depuis la première écriture du brouillon, donc relatif (pas le solde réel du compte,
+// que seul le relevé connaît) : c'est la pente qui compte, pas le niveau absolu.
+export function soldesFinDeMois(ecritures: EcritureBrouillon[], nbMois: number): { mois: string; solde: number }[] {
+  const parMois = new Map<string, number>()
+  for (const e of ecritures) {
+    if (e.compte !== COMPTE_BANQUE) continue
+    const mois = e.date.slice(0, 7)
+    parMois.set(mois, (parMois.get(mois) ?? 0) + (e.sens === 'debit' ? e.montant : -e.montant))
+  }
+  const moisTries = [...parMois.keys()].sort()
+  const cumules = moisTries.reduce<{ mois: string; solde: number }[]>((acc, mois) => {
+    const precedent = acc.length > 0 ? acc[acc.length - 1].solde : 0
+    return [...acc, { mois, solde: Math.round((precedent + (parMois.get(mois) ?? 0)) * 100) / 100 }]
+  }, [])
+  return cumules.slice(-nbMois)
+}
+
 export function calculerEvolutionMensuelle(ecritures: EcritureBrouillon[], nbMois: number): MoisPilotage[] {
   const lignesBanque = ecritures.filter((e) => e.compte === COMPTE_BANQUE)
   const parMois = new Map<string, { encaissements: number; decaissements: number }>()

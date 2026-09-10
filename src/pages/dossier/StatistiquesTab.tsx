@@ -6,6 +6,8 @@ import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
 import type { Categorie, EcritureBrouillon, Piece } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 import type { DossierTab } from '../../components/DossierParcours'
+import MonthlyBars from '../../components/widgets/MonthlyBars'
+import ProgressRing from '../../components/widgets/ProgressRing'
 
 const NB_MOIS_EVOLUTION = 6
 
@@ -53,7 +55,6 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
   const piecesAnnee = pieces.filter((p) => p.date_piece && new Date(p.date_piece).getFullYear() === anneeCourante)
   const piecesValideesAnnee = piecesAnnee.filter((p) => p.statut === 'validee')
   const avancementPct = piecesAnnee.length > 0 ? Math.round((piecesValideesAnnee.length / piecesAnnee.length) * 100) : null
-  const maxMontantEvolution = Math.max(1, ...evolutionMensuelle.flatMap((m) => [m.encaissements, m.decaissements]))
 
   const balance = useMemo(() => calculerBalance(ecrituresFiltrees, categories), [ecrituresFiltrees, categories])
 
@@ -86,51 +87,40 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
         </p>
 
         {loading ? (
-          <p className="muted">Chargement…</p>
+          <div className="skeleton skeleton-widget" style={{ height: 180 }} />
         ) : evolutionMensuelle.length === 0 ? (
           <p className="muted">
             Aucune écriture bancaire générée pour l'instant — ce tableau se remplira au fil des
             écritures (voir l'onglet Écritures).
           </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 16 }}>
-            {evolutionMensuelle.map((m) => (
-              <div key={m.mois}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.82rem', marginBottom: 4 }}>
-                  <span className="muted">{m.mois}</span>
-                  <span>
-                    <span style={{ color: 'var(--color-primary)' }}>+{formatMoney(m.encaissements)}</span>
-                    {'  '}
-                    <span style={{ color: 'var(--color-danger)' }}>-{formatMoney(m.decaissements)}</span>
-                  </span>
-                </div>
-                <div style={{ height: 6, borderRadius: 3, background: 'var(--color-bg)', overflow: 'hidden', marginBottom: 3 }}>
-                  <div style={{ width: `${(m.encaissements / maxMontantEvolution) * 100}%`, height: '100%', background: 'var(--color-primary)' }} />
-                </div>
-                <div style={{ height: 6, borderRadius: 3, background: 'var(--color-bg)', overflow: 'hidden' }}>
-                  <div style={{ width: `${(m.decaissements / maxMontantEvolution) * 100}%`, height: '100%', background: 'var(--color-danger)' }} />
-                </div>
-              </div>
-            ))}
+          <div style={{ marginBottom: 20 }}>
+            <MonthlyBars mois={evolutionMensuelle} />
           </div>
         )}
 
         {avancementPct !== null && (
-          <p style={{ margin: 0 }}>
-            Avancement {anneeCourante} : <strong>{avancementPct} %</strong> des pièces déposées cette
-            année sont validées ({piecesValideesAnnee.length}/{piecesAnnee.length}).{' '}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+            <ProgressRing ratio={avancementPct / 100} taille={64} epaisseur={7} statut={avancementPct === 100 ? 'ok' : 'warning'} libelle={`Avancement ${anneeCourante} : ${avancementPct} %`} />
+            <div style={{ flex: 1, minWidth: 200 }}>
+              <div style={{ fontWeight: 700 }}>Avancement {anneeCourante}</div>
+              <div className="muted">
+                {piecesValideesAnnee.length} pièce(s) validée(s) sur {piecesAnnee.length} déposée(s) cette année.
+              </div>
+            </div>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate('checklist')}>
-              Voir le détail dans Vue d'ensemble
+              Voir la vue d'ensemble
             </button>
-          </p>
+          </div>
         )}
       </div>
 
       <input
+        className="recherche"
         placeholder="Rechercher par numéro ou libellé de compte…"
         value={recherche}
         onChange={(e) => setRecherche(e.target.value)}
-        style={{ marginBottom: 14, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, width: 320, maxWidth: '100%' }}
+        style={{ marginBottom: 14, width: 340 }}
       />
 
       <div className="card table-scroll" style={{ padding: 0 }}>

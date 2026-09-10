@@ -7,9 +7,11 @@ import {
   IconAccueil, IconApparence, IconComptesMaster, IconDossiers, IconEquipe, IconEstimation,
   IconInformations, IconLogout, IconMoon, IconPieces, IconPlusOptions, IconSun,
 } from './icons'
+import Avatar from './widgets/Avatar'
 
 export default function Layout() {
-  const { role, isSuperAdmin, estChef, mesSocietes, dossierActifId, setDossierActifId, signOut } = useAuth()
+  const { session, role, isSuperAdmin, estChef, mesSocietes, dossierActifId, setDossierActifId, signOut } = useAuth()
+  const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
   // Charte graphique du cabinet (voir lib/branding.ts, CabinetBrandingPage) — appliquée ici pour
@@ -110,6 +112,17 @@ export default function Layout() {
             )}
           </nav>
         )}
+        {/* Qui est connecté, en bas de la barre latérale (ordinateur seulement — sur mobile la barre
+            du haut n'a pas la place ; le menu "…" garde la déconnexion). */}
+        {session?.user.email && (
+          <div className="sidebar-user">
+            <Avatar nom={session.user.email.split('@')[0].replace(/[._-]+/g, ' ')} taille={34} />
+            <div className="sidebar-user-texte">
+              <div className="sidebar-user-nom" title={session.user.email}>{session.user.email}</div>
+              <div className="sidebar-user-role">{libelleRole}</div>
+            </div>
+          </div>
+        )}
         <div className="sidebar-actions">
           <button
             type="button"
@@ -155,15 +168,12 @@ export default function Layout() {
             pour un comportement responsive identique sur mobile (barre du haut) et ordinateur, sans
             traitement CSS à part. Masqué pour un client à une seule société (cas le plus courant). */}
         {role === 'client' && mesSocietes.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
-            <label htmlFor="selecteur-societe" className="muted" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
-              Société :
-            </label>
+          <div className="selecteur-societe">
+            <label htmlFor="selecteur-societe">Société</label>
             <select
               id="selecteur-societe"
               value={dossierActifId ?? ''}
               onChange={(e) => setDossierActifId(e.target.value)}
-              style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '7px 10px', fontSize: '0.85rem', fontWeight: 600, maxWidth: '100%' }}
             >
               {mesSocietes.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
             </select>

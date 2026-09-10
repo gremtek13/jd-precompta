@@ -1,9 +1,9 @@
 export type ValeurAnnee = 'toutes' | 'sans_date' | number
 
-// Filtre par année réutilisé dans chaque onglet dont la liste s'accumule sur plusieurs exercices (un
-// dossier est par client, pas par année — voir Estimation) : Pièces, Documents, Banque, Écritures,
-// Immobilisations, Cotisations, Clôture. Ne s'affiche que si plusieurs années coexistent réellement
-// dans les données (pas une liste figée) — inutile de montrer un filtre sur un dossier qui débute.
+// Sélecteur d'exercice en contrôle segmenté (un conteneur, l'option active en pastille) — soit
+// partagé entre onglets via l'en-tête du dossier (voir AnneeContext, DossierDetail), soit local aux
+// onglets dont la date n'est pas celle de l'exercice (Documents, Factures...). Ne s'affiche que si
+// plusieurs années coexistent réellement dans les données — inutile sur un dossier qui débute.
 export default function AnneeTabs({
   annees,
   valeur,
@@ -18,17 +18,17 @@ export default function AnneeTabs({
   if (annees.length <= 1 && !sansDate) return null
 
   return (
-    <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap' }}>
-      <button className={`btn btn-sm ${valeur === 'toutes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => onChange('toutes')}>
-        Toutes années
+    <div className="segmented" role="tablist" aria-label="Exercice">
+      <button type="button" role="tab" aria-selected={valeur === 'toutes'} className={valeur === 'toutes' ? 'active' : ''} onClick={() => onChange('toutes')}>
+        Toutes
       </button>
       {annees.map((a) => (
-        <button key={a} className={`btn btn-sm ${valeur === a ? 'btn-primary' : 'btn-outline'}`} onClick={() => onChange(a)}>
+        <button key={a} type="button" role="tab" aria-selected={valeur === a} className={valeur === a ? 'active' : ''} onClick={() => onChange(a)}>
           {a}
         </button>
       ))}
       {sansDate && (
-        <button className={`btn btn-sm ${valeur === 'sans_date' ? 'btn-primary' : 'btn-outline'}`} onClick={() => onChange('sans_date')}>
+        <button type="button" role="tab" aria-selected={valeur === 'sans_date'} className={valeur === 'sans_date' ? 'active' : ''} onClick={() => onChange('sans_date')}>
           Sans date
         </button>
       )}

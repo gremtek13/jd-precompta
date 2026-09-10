@@ -2,9 +2,17 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte, categoriesSansPoste, piecesSansTva } from '../../lib/controles'
-import { moisEcoulesCetteAnnee } from '../../lib/format'
+import { formatMoney, moisEcoulesCetteAnnee } from '../../lib/format'
+import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import type { Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
+import KpiTile from '../../components/widgets/KpiTile'
+import Widget from '../../components/widgets/Widget'
+import ProgressRing from '../../components/widgets/ProgressRing'
+import MonthlyBars from '../../components/widgets/MonthlyBars'
+
+const NB_MOIS_TRESORERIE = 12
+const NB_MOIS_COLONNES = 6
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 
@@ -85,7 +93,18 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     load()
   }
 
-  if (loading) return <p className="muted">Chargement…</p>
+  if (loading) {
+    return (
+      <div className="bento" aria-busy="true" aria-label="Chargement">
+        <div className="skeleton skeleton-kpi span-3" />
+        <div className="skeleton skeleton-kpi span-3" />
+        <div className="skeleton skeleton-kpi span-3" />
+        <div className="skeleton skeleton-kpi span-3" />
+        <div className="skeleton skeleton-widget span-7" />
+        <div className="skeleton skeleton-widget span-5" />
+      </div>
+    )
+  }
 
   const anneeCourante = new Date().getFullYear()
   const moisEcoules = moisEcoulesCetteAnnee()
@@ -231,90 +250,137 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const nbManquants = items.filter((i) => !i.ok).length
   const nbOk = items.length - nbManquants
 
-  // Bloc "Paramétrage" / "Travail à effectuer" : même présentation pour les deux, un compteur séparé
-  // par groupe plutôt qu'un total unique mélangeant leurs natures (voir audit ergonomie). Une seule
-  // carte, pas une carte dans une carte : les lignes sont juste séparées par un filet, la couleur
-  // réservée à la pastille de chaque ligne plutôt qu'à la bordure entière du bloc — moins de boîtes
-  // empilées, moins de couleur qui crie (voir discussion sur l'aspect "amateur").
-  function blocPoints(titre: string, points: PointATraiter[], texteVide: string) {
+  // Tendances de trésorerie (compte 512 du brouillon d'écritures, voir lib/tableauPilotage) —
+  // indépendantes de l'exercice sélectionné dans l'en-tête : une pente récente reste utile même en
+  // consultant une année passée.
+  const soldes = soldesFinDeMois(ecritures, NB_MOIS_TRESORERIE)
+  const soldeActuel = soldes.length > 0 ? soldes[soldes.length - 1].solde : null
+  const soldePrecedent = soldes.length > 1 ? soldes[soldes.length - 2].solde : null
+  const variationSolde = soldeActuel !== null && soldePrecedent !== null ? soldeActuel - soldePrecedent : null
+  const evolutionMensuelle = calculerEvolutionMensuelle(ecritures, NB_MOIS_COLONNES)
+  const nbErreurs = pointsTravail.filter((p) => p.severite === 'erreur').length
+
+  // Liste de points (Paramétrage / Travail à effectuer) : même présentation pour les deux, un compteur
+  // séparé par groupe plutôt qu'un total unique mélangeant leurs natures (voir audit ergonomie). Les
+  // lignes sont juste séparées par un filet, la couleur réservée à la pastille de chaque ligne plutôt
+  // qu'à la bordure entière du bloc.
+  function listePoints(points: PointATraiter[], texteVide: string) {
+    if (points.length === 0) return <p className="widget-vide">{texteVide}</p>
     return (
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>{titre}</h3>
-        {points.length === 0 ? (
-          <p className="muted" style={{ margin: 0 }}>{texteVide}</p>
-        ) : (
-          <div>
-            {points.map((p, i) => (
-              <div
-                key={p.id}
-                style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}
-              >
-                <span
-                  style={{
-                    width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
-                    background: p.severite === 'erreur' ? 'var(--color-danger)' : 'var(--color-warning)',
-                  }}
-                />
-                <div style={{ flex: 1, minWidth: 0, fontWeight: 600 }}>{p.nb} {p.label}</div>
-                <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(p.cible)}>
-                  {p.action}
-                </button>
-              </div>
-            ))}
+      <div>
+        {points.map((p) => (
+          <div key={p.id} className="check-ligne">
+            <span className={`check-dot ${p.severite === 'erreur' ? 'check-manque' : 'check-attention'}`} />
+            <div className="check-ligne-corps">
+              <div className="check-ligne-libelle">{p.nb} {p.label}</div>
+            </div>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(p.cible)}>
+              {p.action}
+            </button>
           </div>
-        )}
+        ))}
       </div>
     )
   }
 
   return (
     <>
-      {blocPoints('Paramétrage à compléter', pointsParametrage, 'Rien à compléter — comptes et postes 2035 sont renseignés.')}
-      {blocPoints('Travail à effectuer', pointsTravail, 'Rien à signaler pour l\'instant — aucune anomalie détectée.')}
-
-      {/* Troisième bloc : ce qui dépend du client (documents), pas du cabinet — sur une échelle
-          différente des deux blocs ci-dessus (des anomalies internes), d'où la séparation nette plutôt
-          qu'un total combiné. */}
-      <div className="card" style={{ marginBottom: 16 }}>
-        <h3 style={{ marginTop: 0 }}>Documents attendus</h3>
-        <p className="muted" style={{ marginTop: -8, marginBottom: 14 }}>
-          {nbOk}/{items.length} reçu(s) — ce que le dossier attend du client, à ne pas confondre avec le travail interne ci-dessus.
-        </p>
-        <div className="progress-track" style={{ marginBottom: 4 }}>
-          <div
-            className={`progress-fill ${nbManquants > 0 ? 'warning' : ''}`}
-            style={{ width: `${items.length > 0 ? (nbOk / items.length) * 100 : 100}%` }}
+      <div className="bento">
+        <div className="span-3">
+          <KpiTile
+            libelle="Pièces à valider"
+            valeur={piecesAValider.length}
+            statut={piecesAValider.length > 0 ? 'warning' : 'ok'}
+            detail={piecesConfianceBasse.length > 0 ? `dont ${piecesConfianceBasse.length} à faible confiance` : 'extraction vérifiée'}
+            onClick={() => onNavigate('pieces')}
           />
         </div>
-        <div>
-          {items.map((item, i) => (
-            <div
-              key={item.id}
-              style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 0', borderTop: i > 0 ? '1px solid var(--color-border)' : 'none' }}
-            >
-              <button
-                type="button"
-                onClick={item.onToggle}
-                disabled={!item.onToggle}
-                title={item.onToggle ? 'Cliquer pour marquer comme reçu/non reçu' : undefined}
-                style={{
-                  width: 8, height: 8, borderRadius: '50%', border: 'none', flexShrink: 0, padding: 0,
-                  background: item.ok ? 'var(--color-primary)' : 'var(--color-danger)',
-                  cursor: item.onToggle ? 'pointer' : 'default',
-                }}
-              />
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600 }}>{item.label}</div>
-                {item.detail && <div className="muted" style={{ fontSize: '0.82rem' }}>{item.detail}</div>}
-              </div>
-              {item.cible && !item.ok && (
-                <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(item.cible!)}>
-                  {item.action ?? 'Voir'}
-                </button>
-              )}
-            </div>
-          ))}
+        <div className="span-3">
+          <KpiTile
+            libelle="Trésorerie (brouillon)"
+            valeur={soldeActuel === null ? '—' : formatMoney(soldeActuel)}
+            statut={soldeActuel === null ? 'neutral' : soldeActuel < 0 ? 'danger' : 'ok'}
+            delta={variationSolde === null ? undefined : { texte: `${variationSolde >= 0 ? '+' : '−'}${formatMoney(Math.abs(variationSolde))} sur le mois`, positif: variationSolde >= 0 }}
+            detail={soldeActuel === null ? 'aucune écriture bancaire' : `${soldes.length} mois d'écritures`}
+            tendance={soldes.map((s) => s.solde)}
+            onClick={() => onNavigate('ecritures')}
+          />
         </div>
+        <div className="span-3">
+          <KpiTile
+            libelle={`Relevés ${anneeCourante}`}
+            valeur={moisEcoules === 0 ? '—' : <>{moisPresents.size}<small>/ {moisEcoules}</small></>}
+            statut={moisEcoules === 0 ? 'neutral' : moisManquants.length > 0 ? 'warning' : 'ok'}
+            detail={moisEcoules === 0 ? 'aucun mois encore révolu' : moisManquants.length > 0 ? `${moisManquants.length} mois manquant(s)` : 'tous les mois reçus'}
+            onClick={() => onNavigate('banque')}
+          />
+        </div>
+        <div className="span-3">
+          <KpiTile
+            libelle="Anomalies"
+            valeur={pointsTravail.reduce((s, p) => s + p.nb, 0)}
+            statut={nbErreurs > 0 ? 'danger' : pointsTravail.length > 0 ? 'warning' : 'ok'}
+            detail={nbErreurs > 0 ? `${nbErreurs} type(s) d'erreur bloquante` : pointsTravail.length > 0 ? 'à traiter au fil de l\'eau' : 'rien à signaler'}
+          />
+        </div>
+
+        <Widget
+          className="span-7"
+          titre="Travail à effectuer"
+          sousTitre="Anomalies détectées dans Pièces, Écritures, Banque et Clôture — rassemblées ici"
+        >
+          {listePoints(pointsTravail, "Rien à signaler pour l'instant — aucune anomalie détectée.")}
+        </Widget>
+
+        {/* Ce qui dépend du client (documents), pas du cabinet — sur une échelle différente des
+            anomalies internes, d'où un widget à part plutôt qu'un total combiné. */}
+        <Widget
+          className="span-5"
+          titre="Documents attendus"
+          sousTitre="Ce que le dossier attend du client"
+          action={<ProgressRing ratio={items.length > 0 ? nbOk / items.length : 1} statut={nbManquants > 0 ? 'warning' : 'ok'} taille={56} epaisseur={6} libelle={`${nbOk} sur ${items.length} reçus`} />}
+        >
+          <div>
+            {items.map((item) => (
+              <div key={item.id} className="check-ligne">
+                <button
+                  type="button"
+                  className={`check-dot ${item.ok ? '' : 'check-manque'} ${item.onToggle ? 'check-cliquable' : ''}`}
+                  onClick={item.onToggle}
+                  disabled={!item.onToggle}
+                  title={item.onToggle ? 'Cliquer pour marquer comme reçu/non reçu' : undefined}
+                  aria-label={item.ok ? 'Reçu' : 'Manquant'}
+                />
+                <div className="check-ligne-corps">
+                  <div className="check-ligne-libelle">{item.label}</div>
+                  {item.detail && <div className="check-ligne-detail">{item.detail}</div>}
+                </div>
+                {item.cible && !item.ok && (
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(item.cible!)}>
+                    {item.action ?? 'Voir'}
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </Widget>
+
+        <Widget
+          className="span-7"
+          titre="Encaissements et décaissements"
+          sousTitre={`${NB_MOIS_COLONNES} derniers mois d'écritures bancaires (compte 512 du brouillon)`}
+          action={<button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate('statistiques')}>Balance</button>}
+        >
+          {evolutionMensuelle.length === 0 ? (
+            <p className="widget-vide">Aucune écriture bancaire générée pour l'instant — ce graphique se remplira au fil des écritures.</p>
+          ) : (
+            <MonthlyBars mois={evolutionMensuelle} />
+          )}
+        </Widget>
+
+        <Widget className="span-5" titre="Paramétrage à compléter" sousTitre="Configuration à finir une fois, indépendante du client">
+          {listePoints(pointsParametrage, 'Rien à compléter — comptes et postes 2035 sont renseignés.')}
+        </Widget>
       </div>
     </>
   )

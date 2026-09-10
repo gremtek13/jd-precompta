@@ -3,15 +3,15 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { IconCamera, IconChecklist, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
+import { IconCamera, IconDocuments, IconEstimation, IconInformations } from '../components/icons'
 import type { Dossier } from '../lib/types'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 
-// Page d'accueil du client — un point d'entrée, pas un tableau de bord : une salutation et deux
-// grosses icônes façon écran d'accueil de téléphone (glyphe blanc sur pastille arrondie, libellé
-// dessous), plus intuitif pour quelqu'un qui n'est pas comptable qu'un menu latéral avec plusieurs
-// entrées de texte. La sidebar reste disponible pour la navigation directe une fois qu'on connaît l'appli.
+// Page d'accueil du client — un point d'entrée, pas un tableau de bord : une carte de bienvenue et
+// quatre grandes tuiles (icône, libellé, une phrase qui dit à quoi ça sert), plus intuitif pour
+// quelqu'un qui n'est pas comptable qu'un menu latéral de texte. La prise de photo est la tuile
+// principale : c'est le geste le plus fréquent d'un client (une facture reçue → une photo).
 export default function ClientHome() {
   const { dossierActifId } = useAuth()
   const dossierId = dossierActifId
@@ -64,28 +64,21 @@ export default function ClientHome() {
   // Juste le prénom si on a un nom complet ("Marie Dupont" → "Marie") — plus chaleureux qu'un nom
   // entier ou qu'un générique "Bonjour" sans rien, mais on ne connaît que ce que le cabinet a saisi.
   const prenom = dossier?.contact_nom?.trim().split(/\s+/)[0]
+  const aujourdhui = new Date().toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })
 
   return (
-    <div className="home-client">
-      <h1 style={{ marginBottom: 2 }}>{prenom ? `Bonjour ${prenom} 👋` : 'Bonjour 👋'}</h1>
-      <p className="muted" style={{ margin: 0 }}>{dossier ? `Ton espace pour ${dossier.nom}` : 'Ton espace'}</p>
+    <>
+      <section className="client-hero">
+        <span className="client-hero-date">{aujourdhui}</span>
+        <h1>{prenom ? `Bonjour ${prenom} 👋` : 'Bonjour 👋'}</h1>
+        <p className="client-hero-sous">{dossier ? `Ton espace pour ${dossier.nom}` : 'Ton espace'} — dépose, on s'occupe du reste.</p>
+      </section>
 
-      <div className="home-tiles">
-        <Link to="/mes-pieces" className="home-tile">
-          <span className="home-tile-icon"><IconDocuments width={34} height={34} /></span>
-          <span className="home-tile-label">Mes pièces</span>
-        </Link>
-        <Link to="/mes-informations" className="home-tile">
-          <span className="home-tile-icon"><IconInformations width={34} height={34} /></span>
-          <span className="home-tile-label">Mes informations</span>
-        </Link>
-        <Link to="/ma-simulation" className="home-tile">
-          <span className="home-tile-icon"><IconEstimation width={34} height={34} /></span>
-          <span className="home-tile-label">Ma simulation</span>
-        </Link>
-        <label className="home-tile" style={{ cursor: capturing ? 'default' : 'pointer', opacity: capturing ? 0.6 : 1 }}>
-          <span className="home-tile-icon"><IconCamera width={34} height={34} /></span>
-          <span className="home-tile-label">{capturing ? 'Analyse en cours…' : 'Prendre une photo'}</span>
+      <div className="tuiles">
+        <label className={`tuile tuile-principale${capturing ? ' tuile-desactivee' : ''}`}>
+          <span className="tuile-icone"><IconCamera width={24} height={24} /></span>
+          <span className="tuile-libelle">{capturing ? 'Analyse en cours…' : 'Prendre une photo'}</span>
+          <span className="tuile-desc">Une facture, un reçu : photographie-le, il est reconnu et classé tout seul.</span>
           <input
             type="file"
             accept="image/*"
@@ -95,41 +88,63 @@ export default function ClientHome() {
             onChange={(e) => { handleCapture(e.target.files); e.target.value = '' }}
           />
         </label>
+        <Link to="/mes-pieces" className="tuile">
+          <span className="tuile-icone"><IconDocuments width={24} height={24} /></span>
+          <span className="tuile-libelle">Mes pièces</span>
+          <span className="tuile-desc">Dépose des fichiers et vois ce qu'il manque encore à ton dossier.</span>
+        </Link>
+        <Link to="/mes-informations" className="tuile">
+          <span className="tuile-icone"><IconInformations width={24} height={24} /></span>
+          <span className="tuile-libelle">Mes informations</span>
+          <span className="tuile-desc">Véhicule, titres-restaurant, chèques-vacances… à renseigner une fois.</span>
+        </Link>
+        <Link to="/ma-simulation" className="tuile">
+          <span className="tuile-icone"><IconEstimation width={24} height={24} /></span>
+          <span className="tuile-libelle">Ma simulation</span>
+          <span className="tuile-desc">Une estimation de tes charges sociales à partir de tes chiffres.</span>
+        </Link>
       </div>
 
-      {captureError && <p className="error-text" style={{ marginTop: 16 }}>{captureError}</p>}
+      {captureError && <p className="error-text" style={{ marginBottom: 16 }}>{captureError}</p>}
 
       {!onboardingVu && (
-        <div className="card" style={{ marginTop: 32, maxWidth: 560, textAlign: 'left', width: '100%' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-            <h3 style={{ marginTop: 0 }}>Comment ça marche</h3>
-            <button type="button" className="btn btn-outline btn-sm" onClick={masquerOnboarding}>Compris</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ color: 'var(--color-primary)', flexShrink: 0 }}><IconDocuments width={20} height={20} /></span>
-              <div>
-                <div style={{ fontWeight: 600 }}>1. Dépose tes fichiers</div>
-                <div className="muted" style={{ fontSize: '0.85rem' }}>Factures, reçus, relevés, appels de cotisation — sans trier.</div>
-              </div>
+        <div className="widget">
+          <header className="widget-entete">
+            <div>
+              <h3 className="widget-titre">Comment ça marche</h3>
+              <p className="widget-sous-titre">Trois étapes, rien à trier de ton côté.</p>
             </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ color: 'var(--color-primary)', flexShrink: 0 }}><IconPieces width={20} height={20} /></span>
-              <div>
-                <div style={{ fontWeight: 600 }}>2. C'est reconnu automatiquement</div>
-                <div className="muted" style={{ fontSize: '0.85rem' }}>Chaque fichier est analysé et classé dès l'envoi.</div>
-              </div>
+            <div className="widget-action">
+              <button type="button" className="btn btn-outline btn-sm" onClick={masquerOnboarding}>Compris</button>
             </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-              <span style={{ color: 'var(--color-primary)', flexShrink: 0 }}><IconChecklist width={20} height={20} /></span>
-              <div>
-                <div style={{ fontWeight: 600 }}>3. Suis ce qu'il reste</div>
-                <div className="muted" style={{ fontSize: '0.85rem' }}>La checklist dans "Mes pièces" te dit ce qui manque.</div>
+          </header>
+          <div className="widget-corps">
+            <div className="etapes">
+              <div className="etape">
+                <span className="etape-num">1</span>
+                <div>
+                  <div className="etape-titre">Dépose tes fichiers</div>
+                  <div className="etape-desc">Factures, reçus, relevés, appels de cotisation — sans trier.</div>
+                </div>
+              </div>
+              <div className="etape">
+                <span className="etape-num">2</span>
+                <div>
+                  <div className="etape-titre">C'est reconnu automatiquement</div>
+                  <div className="etape-desc">Chaque fichier est analysé et classé dès l'envoi.</div>
+                </div>
+              </div>
+              <div className="etape">
+                <span className="etape-num">3</span>
+                <div>
+                  <div className="etape-titre">Suis ce qu'il reste</div>
+                  <div className="etape-desc">La checklist dans "Mes pièces" te dit ce qui manque.</div>
+                </div>
               </div>
             </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
