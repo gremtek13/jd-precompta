@@ -226,7 +226,11 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   (`superpdp-sync`) et émission de factures de vente conformes EN16931/CII
   (`superpdp-emit`), configuration des identifiants OAuth par dossier.
 - Financement : suivi d'emprunts avec échéancier d'amortissement
-  (`FinancementTab`, `src/lib/emprunts.ts`).
+  (`FinancementTab`, `src/lib/emprunts.ts`), et situation intermédiaire —
+  première brique du dossier bancaire automatisé : recettes/charges/résultat
+  regroupés par poste 2035 (même logique que Clôture) sur une période libre
+  du 1er janvier à une date choisie, plus la trésorerie bancaire à cette
+  date (`src/lib/situationIntermediaire.ts`).
 - Suppléments : prestations ponctuelles hors mission courante (création/
   fermeture de société, situation intermédiaire, autre), à facturer ou
   facturée avec lien facultatif vers la facture réelle ; et comptes courants
@@ -248,10 +252,10 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
   pièges déjà traités).
-- Dossier bancaire automatisé — seule une version minimale (Financement :
-  échéancier d'emprunts + ratios simples) est faite ; la génération de
-  prévisionnel à 3 ans, plan de trésorerie, plan de financement et note
-  d'hypothèses reste hors périmètre tant que non demandée explicitement.
+- Dossier bancaire automatisé — échéancier d'emprunts et situation
+  intermédiaire faits (onglet Financement) ; plan de trésorerie, échéancier
+  des dettes consolidé + ratios bancaires, prévisionnel à 3 ans et note
+  d'hypothèses restent hors périmètre tant que non demandés explicitement.
 
 ## Problèmes connus importants
 
