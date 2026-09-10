@@ -7,7 +7,7 @@ import type { Dossier } from '../lib/types'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
 import Avatar from '../components/widgets/Avatar'
-import { IconPieces } from '../components/icons'
+import { IconChevron, IconPieces } from '../components/icons'
 
 interface DossierRow extends Dossier {
   nbAValider: number
@@ -234,8 +234,11 @@ export default function DossiersList() {
                 <p className="widget-vide" style={{ padding: '10px 20px 20px' }}>Rien à traiter — beau travail.</p>
               ) : (
                 <div className="liste-priorites">
+                  {/* Toute la ligne est le lien, pas un bouton "Ouvrir" en bout de ligne : sur une
+                      largeur de téléphone ce bouton n'a pas la place et se retrouvait masqué, ce qui
+                      laissait la ligne sans aucune zone cliquable. */}
                   {priorites.map((d) => (
-                    <div key={d.id} className="ligne-priorite">
+                    <Link key={d.id} to={`/dossiers/${d.id}`} className="ligne-priorite">
                       <Avatar nom={d.nom} />
                       <div className="ligne-priorite-corps">
                         <div className="ligne-priorite-nom">{d.nom}</div>
@@ -247,8 +250,8 @@ export default function DossiersList() {
                           {!d.cotisationsOk && <span className="badge badge-neutral">cotisations {ANNEE_COURANTE} absentes</span>}
                         </div>
                       </div>
-                      <Link to={`/dossiers/${d.id}`} className="btn btn-outline btn-sm">Ouvrir</Link>
-                    </div>
+                      <IconChevron width={18} height={18} className="ligne-chevron" />
+                    </Link>
                   ))}
                 </div>
               )}
@@ -259,15 +262,17 @@ export default function DossiersList() {
                 <p className="widget-vide" style={{ padding: '10px 20px 20px' }}>Aucun dépôt ces {NB_SEMAINES_TENDANCE} dernières semaines.</p>
               ) : (
                 <div className="feed">
+                  {/* Chaque dépôt renvoie vers les pièces du dossier concerné — une ligne qui nomme un
+                      dossier doit y mener, surtout sur mobile où c'est la seule zone tactile. */}
                   {activite.map((p, i) => (
-                    <div key={`${p.created_at}-${i}`} className="feed-item">
+                    <Link key={`${p.created_at}-${i}`} to={`/dossiers/${p.dossier_id}/pieces`} className="feed-item">
                       <span className="feed-icone"><IconPieces width={16} height={16} /></span>
                       <div className="feed-texte">
                         <strong>{nomDossier.get(p.dossier_id) ?? 'Dossier'}</strong>
                         <span className="feed-fichier">{p.nom_fichier}</span>
                       </div>
                       <span className="feed-date">{dateRelative(p.created_at)}</span>
-                    </div>
+                    </Link>
                   ))}
                 </div>
               )}
@@ -342,9 +347,13 @@ export default function DossiersList() {
                           )}
                         </td>
                         <td className="col-ouvrir">
+                          {/* Bouton sur ordinateur, simple chevron sur mobile (voir index.css) : la
+                              ligne entière reste cliquable dans les deux cas, mais un bouton "Ouvrir"
+                              mangerait un tiers de la largeur d'un téléphone. */}
                           <Link to={`/dossiers/${d.id}`} className="btn btn-outline btn-sm" onClick={(e) => e.stopPropagation()}>
                             Ouvrir
                           </Link>
+                          <IconChevron width={18} height={18} className="ligne-chevron chevron-mobile" />
                         </td>
                       </tr>
                     ))}

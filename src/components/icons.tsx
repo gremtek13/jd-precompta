@@ -198,6 +198,13 @@ export const IconPlusOptions = (p: IconProps) => base(<>
   <circle cx="12" cy="18.5" r="1.4" fill="currentColor" stroke="none" />
 </>, p)
 
+// Chevron de fin de ligne — signale qu'une ligne entière de liste est cliquable (voir
+// .ligne-priorite, .feed-item dans index.css), là où un bouton "Ouvrir" en bout de ligne ne tient pas
+// sur une largeur de téléphone.
+export const IconChevron = (p: IconProps) => base(<>
+  <path d="M9.5 5.5l6.5 6.5-6.5 6.5" />
+</>, p)
+
 export const ICONES_PARCOURS: Record<string, IconComponent> = {
   checklist: IconChecklist,
   documents: IconDocuments,

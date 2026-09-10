@@ -698,18 +698,32 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .selecteur-societe select:focus { outline: none; border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--ring-primary); }
 
 /* ---------- Listes de tableau de bord ---------- */
+/* Lignes de liste entièrement cliquables (priorités, activité) : la balise est un lien, pas une
+   ligne muette avec un bouton en bout — un bouton en bout de ligne ne tient pas sur la largeur d'un
+   téléphone, et le masquer laissait la ligne sans aucune zone tactile. D'où aussi la couleur de texte
+   normale et le chevron en fin de ligne, qui dit que ça mène quelque part. */
 .liste-priorites { display: flex; flex-direction: column; }
 .ligne-priorite {
   display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-top: 1px solid var(--color-border);
+  color: var(--color-text); text-decoration: none;
   transition: background-color var(--duree) var(--ease);
 }
 .ligne-priorite:hover { background: var(--color-surface-2); }
+.ligne-priorite:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-primary); }
+.ligne-chevron { flex-shrink: 0; color: var(--color-text-light); }
+.ligne-priorite:hover .ligne-chevron, .feed-item:hover .ligne-chevron { color: var(--color-primary); }
 .ligne-priorite-corps { flex: 1; min-width: 0; }
 .ligne-priorite-nom { font-weight: 700; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ligne-priorite-raisons { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
 
 .feed { display: flex; flex-direction: column; gap: 0; }
-.feed-item { display: flex; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--color-border); align-items: flex-start; }
+.feed-item {
+  display: flex; gap: 12px; padding: 10px 20px; border-top: 1px solid var(--color-border); align-items: flex-start;
+  color: var(--color-text); text-decoration: none;
+  transition: background-color var(--duree) var(--ease);
+}
+.feed-item:hover { background: var(--color-surface-2); }
+.feed-item:focus-visible { outline: none; box-shadow: inset 0 0 0 2px var(--color-primary); }
 .feed-icone {
   width: 32px; height: 32px; border-radius: 10px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
   background: var(--tint-primary); color: var(--color-primary);
@@ -732,6 +746,8 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 
 /* Cellule tableau "nom + avatar". */
 .cellule-identite { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* Chevron de fin de ligne réservé au mobile — sur ordinateur c'est le bouton "Ouvrir" qui s'affiche. */
+.chevron-mobile { display: none; }
 .cellule-identite-nom { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Champ de recherche autonome (hors .field). */
@@ -955,7 +971,6 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   .widget-corps { padding: 12px 14px 14px; }
   .widget-plein .widget-corps { padding: 0; }
   .ligne-priorite, .feed-item { padding-left: 14px; padding-right: 14px; }
-  .ligne-priorite .btn { display: none; }
   /* Ligne de check : le bouton d'action passe sous le libellé, aligné sur le texte (pastille 10 px +
      interstice 12 px), plutôt que d'écraser le libellé en colonne étroite. */
   .check-ligne { flex-wrap: wrap; }
@@ -964,7 +979,12 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   .widget-entete { flex-wrap: wrap; }
   .widget-action:has(.recherche) { flex-basis: 100%; }
   .widget-action .recherche { width: 100%; }
-  .col-ouvrir { display: none; }
+  /* La colonne d'action se réduit à un chevron : la ligne entière est déjà cliquable (tr.clickable),
+     le chevron ne fait que le dire. Largeur fixée, sinon table-layout:fixed lui donnerait une colonne
+     entière comme aux autres. */
+  th.col-ouvrir, td.col-ouvrir { width: 26px; padding-left: 0; padding-right: 4px; }
+  .col-ouvrir .btn { display: none; }
+  .chevron-mobile { display: block; }
   .page-entete h1 { font-size: 1.35rem; }
   .cockpit { padding: 14px 16px; gap: 12px; border-radius: var(--radius); }
   .cockpit h1 { font-size: 1.2rem; }
