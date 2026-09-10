@@ -6,6 +6,7 @@ import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from 
 import { calculerSituationIntermediaire } from '../../lib/situationIntermediaire'
 import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, type EcheanceConnue } from '../../lib/planTresorerie'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
+import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 
 interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number }
@@ -30,6 +31,8 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   const [situationOuverte, setSituationOuverte] = useState(false)
   const [tresorerieOuverte, setTresorerieOuverte] = useState(false)
   const [dettesOuvertes, setDettesOuvertes] = useState(false)
+  const [previsionnel, setPrevisionnel] = useState<PrevisionnelBancaire | null>(null)
+  const [previsionnelOuvert, setPrevisionnelOuvert] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -40,6 +43,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       { data: immobilisationsData },
       { data: cotisationsData },
       { data: lignesBanqueData },
+      { data: previsionnelData },
     ] = await Promise.all([
       supabase.from('emprunts').select('*').eq('dossier_id', dossierId).order('date_debut', { ascending: false }),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
@@ -50,6 +54,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       // pouvoir aussi répondre "à telle date" dans la situation intermédiaire ci-dessous — sur tout
       // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours.
       supabase.from('ecritures_brouillon').select('date, sens, montant').eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE),
+      supabase.from('previsionnels_bancaires').select('*').eq('dossier_id', dossierId).maybeSingle(),
     ])
     setEmprunts((empruntsData ?? []) as Emprunt[])
     setPieces((piecesData ?? []) as Piece[])
@@ -57,6 +62,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
     setImmobilisations((immobilisationsData ?? []) as Immobilisation[])
     setCotisations((cotisationsData ?? []) as CotisationDeclaree[])
     setLignesBanque((lignesBanqueData ?? []) as LigneBanque[])
+    setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
@@ -125,6 +131,20 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
         Échéancier consolidé des dettes (emprunts + cotisations sociales) et deux ratios usuels pour
         un dossier bancaire : capacité de remboursement et taux d'endettement mensuel.
+      </p>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
+        <h3 style={{ margin: 0 }}>Prévisionnel à 3 ans</h3>
+        <button className="btn btn-outline btn-sm" onClick={() => setPrevisionnelOuvert(true)}>
+          {previsionnel ? 'Modifier' : 'Générer'}
+        </button>
+      </div>
+      <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
+        Projection sur 3 ans par taux de croissance annuel, à partir d'un CA et de charges de
+        référence — les hypothèses restent celles du cabinet, jamais devinées par l'application.
+        {previsionnel && (
+          <> Dernière hypothèse enregistrée : {previsionnel.taux_croissance_ca} % CA / {previsionnel.taux_croissance_charges} % charges par an.</>
+        )}
       </p>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
@@ -213,6 +233,19 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
           capitalRestantTotal={capitalRestantTotal}
           mensualiteTotale={mensualiteTotale}
           onClose={() => setDettesOuvertes(false)}
+        />
+      )}
+
+      {previsionnelOuvert && (
+        <PrevisionnelModal
+          dossierId={dossierId}
+          previsionnel={previsionnel}
+          pieces={pieces}
+          categories={categories}
+          immobilisations={immobilisations}
+          cotisations={cotisations}
+          onClose={() => setPrevisionnelOuvert(false)}
+          onSaved={load}
         />
       )}
     </>
@@ -456,6 +489,134 @@ function SituationIntermediaireModal({ pieces, categories, immobilisations, coti
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
           <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function PrevisionnelModal({ dossierId, previsionnel, pieces, categories, immobilisations, cotisations, onClose, onSaved }: {
+  dossierId: string; previsionnel: PrevisionnelBancaire | null
+  pieces: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+  onClose: () => void; onSaved: () => void
+}) {
+  const anneeParDefaut = new Date().getFullYear() - 1
+  const [anneeReference, setAnneeReference] = useState(previsionnel?.annee_reference ?? anneeParDefaut)
+  const [caReference, setCaReference] = useState(String(previsionnel?.ca_reference ?? 0))
+  const [chargesReference, setChargesReference] = useState(String(previsionnel?.charges_reference ?? 0))
+  const [tauxCa, setTauxCa] = useState(String(previsionnel?.taux_croissance_ca ?? 0))
+  const [tauxCharges, setTauxCharges] = useState(String(previsionnel?.taux_croissance_charges ?? 0))
+  const [note, setNote] = useState(previsionnel?.note_hypotheses ?? '')
+  const [saving, setSaving] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
+
+  // Simple point de départ, jamais enregistré tel quel — réutilise le même calcul que la situation
+  // intermédiaire (voir plus haut) sur une année civile complète, pour préremplir CA et charges de
+  // référence sans resaisir depuis Clôture. Le cabinet reste libre d'ajuster avant d'enregistrer.
+  function precharger() {
+    const situation = calculerSituationIntermediaire(pieces, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`)
+    setCaReference(String(situation.recettes))
+    setChargesReference(String(situation.charges))
+  }
+
+  const lignes = calculerPrevisionnel(
+    anneeReference, parseFloat(caReference) || 0, parseFloat(chargesReference) || 0,
+    parseFloat(tauxCa) || 0, parseFloat(tauxCharges) || 0,
+  )
+
+  async function enregistrer() {
+    setSaving(true)
+    setErreur(null)
+    const { error } = await supabase.from('previsionnels_bancaires').upsert({
+      dossier_id: dossierId,
+      annee_reference: anneeReference,
+      ca_reference: parseFloat(caReference) || 0,
+      charges_reference: parseFloat(chargesReference) || 0,
+      taux_croissance_ca: parseFloat(tauxCa) || 0,
+      taux_croissance_charges: parseFloat(tauxCharges) || 0,
+      note_hypotheses: note.trim() || null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'dossier_id' })
+    setSaving(false)
+    if (error) {
+      setErreur(error.message)
+      return
+    }
+    onSaved()
+    onClose()
+  }
+
+  return (
+    <div style={overlayStyle}>
+      <div className="card" style={{ width: 'min(680px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2 style={{ marginTop: 0 }}>Prévisionnel à 3 ans</h2>
+        <p className="muted" style={{ marginTop: -8 }}>
+          Projection simple par taux de croissance annuel uniforme, à partir d'une année de référence —
+          les hypothèses restent celles du cabinet, jamais devinées par l'application.
+        </p>
+
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="prev-annee">Année de référence</label>
+            <input id="prev-annee" type="number" value={anneeReference} onChange={(e) => setAnneeReference(parseInt(e.target.value, 10) || anneeParDefaut)} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 14 }}>
+            <button type="button" className="btn btn-outline btn-sm" onClick={precharger}>Précharger depuis cette année</button>
+          </div>
+        </div>
+
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="prev-ca">CA de référence (€)</label>
+            <input id="prev-ca" type="number" step="0.01" value={caReference} onChange={(e) => setCaReference(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="prev-charges">Charges de référence (€)</label>
+            <input id="prev-charges" type="number" step="0.01" value={chargesReference} onChange={(e) => setChargesReference(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="field-row">
+          <div className="field">
+            <label htmlFor="prev-taux-ca">Croissance CA (%/an)</label>
+            <input id="prev-taux-ca" type="number" step="0.1" value={tauxCa} onChange={(e) => setTauxCa(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor="prev-taux-charges">Croissance charges (%/an)</label>
+            <input id="prev-taux-charges" type="number" step="0.1" value={tauxCharges} onChange={(e) => setTauxCharges(e.target.value)} />
+          </div>
+        </div>
+
+        <div className="field">
+          <label htmlFor="prev-note">Note d'hypothèses</label>
+          <textarea
+            id="prev-note" rows={3} value={note} onChange={(e) => setNote(e.target.value)}
+            placeholder="ex. Croissance portée par l'ouverture d'un nouveau secteur au T2, hausse tarifaire prévue en année 2…"
+          />
+        </div>
+
+        <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginTop: 10, marginBottom: 16 }}>
+          <table>
+            <thead><tr><th>Année</th><th>CA prévisionnel</th><th>Charges prévisionnelles</th><th>Résultat prévisionnel</th></tr></thead>
+            <tbody>
+              {lignes.map((l) => (
+                <tr key={l.annee}>
+                  <td>{l.annee}</td>
+                  <td>{formatMoney(l.ca)}</td>
+                  <td>{formatMoney(l.charges)}</td>
+                  <td>{formatMoney(l.resultat)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {erreur && <p className="error-text">{erreur}</p>}
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button type="button" className="btn btn-outline" onClick={onClose} disabled={saving}>Fermer</button>
+          <button type="button" className="btn btn-primary" onClick={enregistrer} disabled={saving}>
+            {saving ? 'Enregistrement…' : 'Enregistrer les hypothèses'}
+          </button>
         </div>
       </div>
     </div>
