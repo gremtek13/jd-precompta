@@ -135,7 +135,10 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   un dossier : une policy RLS unique `FOR ALL` basée sur
   `admin_du_dossier(dossier_id)`. Toute nouvelle table doit être vérifiée par
   impersonation réelle (JWT de test via `set_config`) avant d'être considérée
-  fiable, jamais seulement relue.
+  fiable, jamais seulement relue. Une table sans colonne `dossier_id` propre
+  (enfant d'une autre table métier, ex. `mouvements_cca` sous
+  `comptes_courants_associes`) suit plutôt le précédent `pack_pieces` :
+  `admin_du_dossier((select dossier_id from parent where parent.id = enfant.parent_id))`.
 - **Edge Functions auto-porteuses** : aucun import depuis `src/` — aussi
   petites et pures soient certaines fonctions (ex. calcul de montants de
   ligne de facture, constantes tarifaires IA), elles sont dupliquées entre
@@ -224,6 +227,12 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   (`superpdp-emit`), configuration des identifiants OAuth par dossier.
 - Financement : suivi d'emprunts avec échéancier d'amortissement
   (`FinancementTab`, `src/lib/emprunts.ts`).
+- Suppléments : prestations ponctuelles hors mission courante (création/
+  fermeture de société, situation intermédiaire, autre), à facturer ou
+  facturée avec lien facultatif vers la facture réelle ; et comptes courants
+  d'associés (un par associé, mouvements apports/retraits/intérêts, solde
+  toujours recalculé depuis l'historique) — voir `SupplementsTab`,
+  `src/lib/supplements.ts`, `src/lib/cca.ts`.
 - Immobilisations, Cotisations sociales (avec lecture best-effort d'avis
   d'appel URSSAF/CARPIMKO), Clôture, Estimation (aide à la déclaration 2035),
   Statistiques (balance tous comptes), Virements, Accès client, Équipe.
@@ -239,13 +248,10 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
   pièges déjà traités).
-- Idées non encore engagées, à cadrer avant développement : facturation de
-  suppléments (création/fermeture de société, situation comptable
-  intermédiaire, compte courant d'associé — **périmètre exact non encore
-  confirmé par l'utilisateur**) ; dossier bancaire automatisé — seule une
-  version minimale a été discutée, la génération de prévisionnel à 3 ans,
-  plan de trésorerie, plan de financement et note d'hypothèses reste hors
-  périmètre tant que non demandée explicitement.
+- Dossier bancaire automatisé — seule une version minimale (Financement :
+  échéancier d'emprunts + ratios simples) est faite ; la génération de
+  prévisionnel à 3 ans, plan de trésorerie, plan de financement et note
+  d'hypothèses reste hors périmètre tant que non demandée explicitement.
 
 ## Problèmes connus importants
 
