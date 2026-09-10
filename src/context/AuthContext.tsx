@@ -4,10 +4,25 @@ import { supabase } from '../lib/supabase'
 
 type Role = 'cabinet' | 'client' | null
 
+// Clé localStorage du dossier actif choisi par un client ayant plusieurs sociétés — survit à un
+// rafraîchissement de page, mais reste propre à ce navigateur (pas un champ en base : ce n'est qu'une
+// préférence d'affichage, sans conséquence sur les droits d'accès déjà gérés par dossierIds/RLS).
+const CLE_DOSSIER_ACTIF = 'jd-precompta-dossier-actif'
+
+export interface SocieteClient { id: string; nom: string }
+
 interface AuthState {
   session: Session | null
   role: Role
   dossierIds: string[] // dossiers accessibles (pertinent seulement pour role === 'client')
+  // Sociétés accessibles avec leur nom, pour le sélecteur de société (voir Layout.tsx,
+  // SelecteurSociete) — un simple client à un seul dossier n'en a jamais l'usage.
+  mesSocietes: SocieteClient[]
+  // Société actuellement affichée pour un client qui en a plusieurs — toutes les pages client
+  // (ClientHome, ClientUpload...) lisent cette valeur plutôt que dossierIds[0], qui ignorait
+  // silencieusement toute société au-delà de la première.
+  dossierActifId: string | null
+  setDossierActifId: (id: string) => void
   // Vrai si l'utilisateur supervise tous les cabinets (voir la page Comptes master) plutôt qu'un seul —
   // résolu via l'appel RPC is_super_admin() : la table super_admins elle-même est verrouillée (RLS sans
   // aucune policy), impossible à lire directement depuis le navigateur, même pour soi-même.
@@ -31,6 +46,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [role, setRole] = useState<Role>(null)
   const [dossierIds, setDossierIds] = useState<string[]>([])
+  const [mesSocietes, setMesSocietes] = useState<SocieteClient[]>([])
+  const [dossierActifId, setDossierActifIdState] = useState<string | null>(null)
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [estChef, setEstChef] = useState(false)
   const [monCabinetId, setMonCabinetId] = useState<string | null>(null)
@@ -49,6 +66,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!session) {
         setRole(null)
         setDossierIds([])
+        setMesSocietes([])
+        setDossierActifIdState(null)
         setIsSuperAdmin(false)
         setEstChef(false)
         setMonCabinetId(null)
@@ -70,6 +89,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return
         setRole('cabinet')
         setDossierIds([])
+        setMesSocietes([])
+        setDossierActifIdState(null)
         setIsSuperAdmin(!!estSuperAdmin)
         setEstChef(!!estSuperAdmin || adminRow.role === 'comptable_en_chef')
         setMonCabinetId(adminRow.cabinet_id)
@@ -84,22 +105,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (cancelled) return
 
-      // Cabinet du client, via le dossier de sa première adhésion — seulement pour la charte
-      // graphique (voir lib/branding.ts) ; sans conséquence sur ses droits d'accès, déjà gérés par
-      // dossierIds/RLS. Best-effort : un échec ici ne doit pas empêcher la connexion.
+      const ids = (memberships ?? []).map((m) => m.dossier_id)
+
+      // Nom + cabinet de chaque société accessible, en un seul aller-retour — sert au sélecteur de
+      // société (voir mesSocietes ci-dessus) et, pour le cabinet_id, uniquement à la charte graphique
+      // (lib/branding.ts) : sans conséquence sur les droits d'accès, déjà gérés par dossierIds/RLS. Un
+      // client n'appartient jamais qu'à un seul cabinet dans ce modèle, donc n'importe laquelle de ses
+      // sociétés donne le bon cabinet_id. Best-effort : un échec ici ne doit pas empêcher la connexion.
       let cabinetId: string | null = null
-      if (memberships && memberships.length > 0) {
-        const { data: dossier } = await supabase
-          .from('dossiers')
-          .select('cabinet_id')
-          .eq('id', memberships[0].dossier_id)
-          .maybeSingle()
-        cabinetId = dossier?.cabinet_id ?? null
+      let societes: SocieteClient[] = []
+      if (ids.length > 0) {
+        const { data: dossiersData } = await supabase.from('dossiers').select('id, nom, cabinet_id').in('id', ids)
+        if (dossiersData && dossiersData.length > 0) {
+          cabinetId = dossiersData[0].cabinet_id
+          societes = dossiersData.map((d) => ({ id: d.id, nom: d.nom }))
+        }
       }
       if (cancelled) return
 
+      // Restaure la société choisie au dernier passage (voir CLE_DOSSIER_ACTIF) si elle est toujours
+      // accessible, sinon retombe sur la première — jamais une société qu'un accès révoqué depuis
+      // aurait retirée entre-temps.
+      const dossierSauvegarde = localStorage.getItem(CLE_DOSSIER_ACTIF)
+      const dossierActif = dossierSauvegarde && ids.includes(dossierSauvegarde) ? dossierSauvegarde : (ids[0] ?? null)
+
       setRole('client')
-      setDossierIds((memberships ?? []).map((m) => m.dossier_id))
+      setDossierIds(ids)
+      setMesSocietes(societes)
+      setDossierActifIdState(dossierActif)
       setIsSuperAdmin(false)
       setEstChef(false)
       setMonCabinetId(cabinetId)
@@ -116,8 +149,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await supabase.auth.signOut()
   }
 
+  function setDossierActifId(id: string) {
+    setDossierActifIdState(id)
+    localStorage.setItem(CLE_DOSSIER_ACTIF, id)
+  }
+
   return (
-    <AuthContext.Provider value={{ session, role, dossierIds, isSuperAdmin, estChef, monCabinetId, loading, signOut }}>
+    <AuthContext.Provider
+      value={{ session, role, dossierIds, mesSocietes, dossierActifId, setDossierActifId, isSuperAdmin, estChef, monCabinetId, loading, signOut }}
+    >
       {children}
     </AuthContext.Provider>
   )

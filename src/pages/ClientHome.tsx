@@ -13,8 +13,8 @@ const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 // dessous), plus intuitif pour quelqu'un qui n'est pas comptable qu'un menu latéral avec plusieurs
 // entrées de texte. La sidebar reste disponible pour la navigation directe une fois qu'on connaît l'appli.
 export default function ClientHome() {
-  const { dossierIds } = useAuth()
-  const dossierId = dossierIds[0]
+  const { dossierActifId } = useAuth()
+  const dossierId = dossierActifId
   const navigate = useNavigate()
   const [dossier, setDossier] = useState<Dossier | null>(null)
   const [onboardingVu, setOnboardingVu] = useState(true)

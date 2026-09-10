@@ -8,8 +8,8 @@ import type { VehiculeType } from '../lib/types'
 // comptable. Le client peut renseigner directement plutôt que de passer par un aller-retour avec le
 // cabinet ; ce dernier garde la main dessus depuis son propre onglet Informations si besoin d'ajuster.
 export default function ClientInformations() {
-  const { dossierIds } = useAuth()
-  const dossierId = dossierIds[0]
+  const { dossierActifId } = useAuth()
+  const dossierId = dossierActifId
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

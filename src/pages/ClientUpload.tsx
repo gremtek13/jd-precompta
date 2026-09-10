@@ -28,8 +28,8 @@ interface Depot {
 }
 
 export default function ClientUpload() {
-  const { dossierIds } = useAuth()
-  const dossierId = dossierIds[0] // un client n'a en général qu'un seul dossier
+  const { dossierActifId } = useAuth()
+  const dossierId = dossierActifId
   const [pieces, setPieces] = useState<Piece[]>([])
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
   const [lignes, setLignes] = useState<LigneBancaire[]>([])

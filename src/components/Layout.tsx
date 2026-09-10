@@ -9,7 +9,7 @@ import {
 } from './icons'
 
 export default function Layout() {
-  const { role, isSuperAdmin, estChef, signOut } = useAuth()
+  const { role, isSuperAdmin, estChef, mesSocietes, dossierActifId, setDossierActifId, signOut } = useAuth()
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
   // Charte graphique du cabinet (voir lib/branding.ts, CabinetBrandingPage) — appliquée ici pour
@@ -149,6 +149,26 @@ export default function Layout() {
         </div>
       </aside>
       <main className="main">
+        {/* Sélecteur de société — un client avec plusieurs dossiers (plusieurs sociétés suivies par
+            le même cabinet) n'en voyait jusqu'ici que le premier : dossierIds[0] était utilisé partout
+            côté client sans jamais proposer de changer. Dans le contenu plutôt que la barre latérale,
+            pour un comportement responsive identique sur mobile (barre du haut) et ordinateur, sans
+            traitement CSS à part. Masqué pour un client à une seule société (cas le plus courant). */}
+        {role === 'client' && mesSocietes.length > 1 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+            <label htmlFor="selecteur-societe" className="muted" style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+              Société :
+            </label>
+            <select
+              id="selecteur-societe"
+              value={dossierActifId ?? ''}
+              onChange={(e) => setDossierActifId(e.target.value)}
+              style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '7px 10px', fontSize: '0.85rem', fontWeight: 600, maxWidth: '100%' }}
+            >
+              {mesSocietes.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+            </select>
+          </div>
+        )}
         <Outlet />
       </main>
     </div>

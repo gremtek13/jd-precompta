@@ -14,8 +14,8 @@ const ANNEE_COURANTE = new Date().getFullYear()
 // client voit où il en est, il ne modifie rien ici — cohérent avec le reste de l'app côté client
 // (dépôt de pièces mis à part, rien ne s'écrit sans un clic explicite du cabinet).
 export default function ClientSimulation() {
-  const { dossierIds } = useAuth()
-  const dossierId = dossierIds[0]
+  const { dossierActifId } = useAuth()
+  const dossierId = dossierActifId
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
