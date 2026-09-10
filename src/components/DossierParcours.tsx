@@ -14,6 +14,7 @@ export type DossierTab =
   | 'cloture'
   | 'estimation'
   | 'financement'
+  | 'supplements'
   | 'packs'
   | 'informations'
   | 'virements'
@@ -66,6 +67,7 @@ const GROUPES: Groupe[] = [
       { id: 'cloture', label: 'Clôture' },
       { id: 'estimation', label: 'Estimation' },
       { id: 'financement', label: 'Financement' },
+      { id: 'supplements', label: 'Suppléments' },
     ],
   },
   {

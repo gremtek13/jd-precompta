@@ -16,6 +16,7 @@ import ClotureTab from './dossier/ClotureTab'
 import DocumentsTab from './dossier/DocumentsTab'
 import EstimationTab from './dossier/EstimationTab'
 import FinancementTab from './dossier/FinancementTab'
+import SupplementsTab from './dossier/SupplementsTab'
 import InformationsTab from './dossier/InformationsTab'
 import ChecklistTab from './dossier/ChecklistTab'
 import VirementsTab from './dossier/VirementsTab'
@@ -29,7 +30,7 @@ import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 // d'URL (une valeur absente ou invalide retombe sur "checklist").
 const TABS_VALIDES: DossierTab[] = [
   'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'immobilisations',
-  'cotisations', 'cloture', 'estimation', 'financement', 'packs', 'informations', 'virements', 'acces',
+  'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
 ]
 
 export default function DossierDetail() {
@@ -142,6 +143,7 @@ export default function DossierDetail() {
       {tab === 'cloture' && <ClotureTab dossierId={id} />}
       {tab === 'estimation' && <EstimationTab dossierId={id} />}
       {tab === 'financement' && <FinancementTab dossierId={id} />}
+      {tab === 'supplements' && <SupplementsTab dossierId={id} />}
       {tab === 'informations' && (
         <InformationsTab
           dossierId={id}

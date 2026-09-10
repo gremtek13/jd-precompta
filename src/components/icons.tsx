@@ -116,6 +116,15 @@ export const IconFinancement = (p: IconProps) => base(<>
   <path d="M3.5 18h17" />
 </>, p)
 
+// Suppléments — document (comme IconDocuments) avec un "+" au centre : une prestation ponctuelle
+// en plus de la mission courante (création/fermeture de société, situation intermédiaire, compte
+// courant d'associé), distincte d'IconFactures qui reste la facturation courante du dossier.
+export const IconSupplements = (p: IconProps) => base(<>
+  <path d="M5 4h9l5 5v11a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
+  <path d="M14 4v4a1 1 0 0 0 1 1h4" />
+  <path d="M9 14.5h4M11 12.5v4" />
+</>, p)
+
 // Icônes de la navigation principale (voir Layout.tsx) — distinctes de celles de DossierParcours
 // (ICONES_PARCOURS ci-dessous), qui portent un tout autre sens à l'intérieur d'un dossier.
 
@@ -206,4 +215,5 @@ export const ICONES_PARCOURS: Record<string, IconComponent> = {
   packs: IconPacks,
   acces: IconAcces,
   financement: IconFinancement,
+  supplements: IconSupplements,
 }
