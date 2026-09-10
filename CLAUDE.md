@@ -258,6 +258,12 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 - Immobilisations, Cotisations sociales (avec lecture best-effort d'avis
   d'appel URSSAF/CARPIMKO), Clôture, Estimation (aide à la déclaration 2035),
   Statistiques (balance tous comptes), Virements, Accès client, Équipe.
+- Un client avec plusieurs sociétés (plusieurs dossiers rattachés au même
+  compte, une ligne `memberships` par dossier) peut basculer entre elles via
+  un sélecteur dans son espace (`AuthContext.mesSocietes`/`dossierActifId`,
+  voir `Layout.tsx`) — les 4 écrans client (accueil, pièces, informations,
+  simulation) suivent la société sélectionnée plutôt que la première par
+  défaut.
 - Assistant comptable IA par dossier, avec plafond de coût mensuel
   configurable par cabinet (alerte non bloquante + blocage réel côté
   `agent-comptable`).
