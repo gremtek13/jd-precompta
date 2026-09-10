@@ -1,34 +1,65 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate, formatMoney } from '../../lib/format'
+import { COMPTE_BANQUE } from '../../lib/ecritures'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
+import { calculerSituationIntermediaire } from '../../lib/situationIntermediaire'
+import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
+
+interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number }
 
 // Première brique du "dossier bancaire automatisé" — l'échéancier des emprunts (voir lib/emprunts.ts),
 // avec quelques ratios simples qui ne demandent pas de résoudre au préalable la question, plus large,
 // d'un bilan complet par régime (BNC/société) : trésorerie et capacité de remboursement se calculent
-// pareil dans les deux cas à partir du compte banque et des mensualités. La situation intermédiaire
-// détaillée (balance complète) reste dans l'onglet Statistiques plutôt que dupliquée ici.
+// pareil dans les deux cas à partir du compte banque et des mensualités. La balance complète (tous
+// comptes) reste dans l'onglet Statistiques plutôt que dupliquée ici — la situation intermédiaire
+// ci-dessous s'en distingue : un état "à ce jour" regroupé par poste 2035 (comme Clôture), pas un
+// tableau brut par compte.
 export default function FinancementTab({ dossierId }: { dossierId: string }) {
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
+  const [pieces, setPieces] = useState<Piece[]>([])
+  const [categories, setCategories] = useState<Categorie[]>([])
+  const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
+  const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  const [lignesBanque, setLignesBanque] = useState<LigneBanque[]>([])
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<Emprunt | 'new' | null>(null)
   const [echeancierDe, setEcheancierDe] = useState<Emprunt | null>(null)
-  const [soldeBanque, setSoldeBanque] = useState<number | null>(null)
+  const [situationOuverte, setSituationOuverte] = useState(false)
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('emprunts').select('*').eq('dossier_id', dossierId).order('date_debut', { ascending: false })
-    setEmprunts((data ?? []) as Emprunt[])
-    // Trésorerie actuelle — solde du compte banque (512) sur tout l'historique du brouillon
-    // d'écritures, comme un relevé : pas borné à l'année en cours, contrairement à Statistiques.
-    const { data: lignesBanque } = await supabase.from('ecritures_brouillon').select('sens, montant').eq('dossier_id', dossierId).eq('compte', '512000')
-    if (lignesBanque) {
-      const solde = lignesBanque.reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0)
-      setSoldeBanque(Math.round(solde * 100) / 100)
-    }
+    const [
+      { data: empruntsData },
+      { data: piecesData },
+      { data: categoriesData },
+      { data: immobilisationsData },
+      { data: cotisationsData },
+      { data: lignesBanqueData },
+    ] = await Promise.all([
+      supabase.from('emprunts').select('*').eq('dossier_id', dossierId).order('date_debut', { ascending: false }),
+      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
+      supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
+      supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
+      supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      // Solde de trésorerie recalculé depuis le détail (pas juste l'agrégat "aujourd'hui") pour
+      // pouvoir aussi répondre "à telle date" dans la situation intermédiaire ci-dessous — sur tout
+      // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours.
+      supabase.from('ecritures_brouillon').select('date, sens, montant').eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE),
+    ])
+    setEmprunts((empruntsData ?? []) as Emprunt[])
+    setPieces((piecesData ?? []) as Piece[])
+    setCategories((categoriesData ?? []) as Categorie[])
+    setImmobilisations((immobilisationsData ?? []) as Immobilisation[])
+    setCotisations((cotisationsData ?? []) as CotisationDeclaree[])
+    setLignesBanque((lignesBanqueData ?? []) as LigneBanque[])
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
+
+  const soldeBanque = lignesBanque.length > 0
+    ? Math.round(lignesBanque.reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0) * 100) / 100
+    : 0
 
   async function supprimer(e: Emprunt) {
     if (!window.confirm(`Supprimer l'emprunt "${e.nom}" ? Cette action est irréversible.`)) return
@@ -43,16 +74,15 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   return (
     <>
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Échéancier des emprunts du dossier et quelques ratios utiles pour un dossier bancaire. La
-        situation intermédiaire détaillée (balance complète des comptes) reste dans l'onglet
-        Statistiques — cet écran se concentre sur ce qu'elle ne couvre pas : les conditions des prêts
-        en cours.
+        Échéancier des emprunts, situation intermédiaire et quelques ratios utiles pour un dossier
+        bancaire. La balance complète (tous comptes, sans regroupement par poste) reste dans l'onglet
+        Statistiques — cet écran regroupe plutôt ce qui sert à un banquier.
       </p>
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>
         <div className="card" style={{ flex: '1 1 200px' }}>
           <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Trésorerie actuelle (banque)</span>
-          <strong style={{ fontSize: '1.3rem' }}>{soldeBanque === null ? '—' : formatMoney(soldeBanque)}</strong>
+          <strong style={{ fontSize: '1.3rem' }}>{loading ? '—' : formatMoney(soldeBanque)}</strong>
         </div>
         <div className="card" style={{ flex: '1 1 200px' }}>
           <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Mensualités en cours (total)</span>
@@ -64,7 +94,18 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
         </div>
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
+        <h3 style={{ margin: 0 }}>Situation intermédiaire</h3>
+        <button className="btn btn-outline btn-sm" onClick={() => setSituationOuverte(true)}>Générer</button>
+      </div>
+      <p className="muted" style={{ marginTop: -4, marginBottom: 26 }}>
+        Recettes, charges et résultat depuis le 1er janvier jusqu'à une date choisie, regroupés par
+        poste 2035 comme dans l'onglet Clôture — un état « à ce jour » sans attendre la fin de
+        l'exercice.
+      </p>
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+        <h3 style={{ margin: 0 }}>Emprunts</h3>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvel emprunt</button>
       </div>
 
@@ -116,7 +157,88 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       )}
 
       {echeancierDe && <EcheancierModal emprunt={echeancierDe} onClose={() => setEcheancierDe(null)} />}
+
+      {situationOuverte && (
+        <SituationIntermediaireModal
+          pieces={pieces}
+          categories={categories}
+          immobilisations={immobilisations}
+          cotisations={cotisations}
+          lignesBanque={lignesBanque}
+          onClose={() => setSituationOuverte(false)}
+        />
+      )}
     </>
+  )
+}
+
+function SituationIntermediaireModal({ pieces, categories, immobilisations, cotisations, lignesBanque, onClose }: {
+  pieces: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+  lignesBanque: LigneBanque[]; onClose: () => void
+}) {
+  const [dateFin, setDateFin] = useState(new Date().toISOString().slice(0, 10))
+  const periodeDebut = `${new Date(dateFin).getFullYear()}-01-01`
+
+  const situation = calculerSituationIntermediaire(pieces, categories, immobilisations, cotisations, periodeDebut, dateFin)
+  const tresorerieADate = Math.round(
+    lignesBanque.filter((l) => l.date <= dateFin).reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0) * 100,
+  ) / 100
+
+  return (
+    <div style={overlayStyle}>
+      <div className="card" style={{ width: 'min(600px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
+        <h2 style={{ marginTop: 0 }}>Situation intermédiaire</h2>
+        <div className="field" style={{ maxWidth: 220 }}>
+          <label htmlFor="situ-date">À la date du</label>
+          <input id="situ-date" type="date" value={dateFin} onChange={(e) => setDateFin(e.target.value)} />
+        </div>
+        <p className="muted" style={{ marginTop: -6 }}>
+          Période du {formatDate(periodeDebut)} au {formatDate(dateFin)} — uniquement les pièces
+          validées dont la catégorie a un poste 2035 renseigné (voir onglet Clôture pour compléter les
+          postes manquants).
+        </p>
+
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+          <div className="card" style={{ flex: '1 1 160px' }}>
+            <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Recettes</span>
+            <strong style={{ fontSize: '1.2rem' }}>{formatMoney(situation.recettes)}</strong>
+          </div>
+          <div className="card" style={{ flex: '1 1 160px' }}>
+            <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Charges</span>
+            <strong style={{ fontSize: '1.2rem' }}>{formatMoney(situation.charges)}</strong>
+          </div>
+          <div className="card" style={{ flex: '1 1 160px' }}>
+            <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Résultat intermédiaire</span>
+            <strong style={{ fontSize: '1.2rem' }}>{formatMoney(situation.resultat)}</strong>
+          </div>
+          <div className="card" style={{ flex: '1 1 160px' }}>
+            <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Trésorerie à cette date</span>
+            <strong style={{ fontSize: '1.2rem' }}>{formatMoney(tresorerieADate)}</strong>
+          </div>
+        </div>
+
+        <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
+          {situation.totauxParPoste.length === 0 ? (
+            <div className="empty-state">Rien à afficher pour cette période.</div>
+          ) : (
+            <table>
+              <thead><tr><th>Poste 2035</th><th>Total</th></tr></thead>
+              <tbody>
+                {situation.totauxParPoste.map(([poste, total]) => (
+                  <tr key={poste}>
+                    <td>{poste}</td>
+                    <td>{formatMoney(total)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16 }}>
+          <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+        </div>
+      </div>
+    </div>
   )
 }
 
