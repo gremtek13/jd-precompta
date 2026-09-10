@@ -4,6 +4,7 @@ import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire 
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
 import { formatDate, formatMoney } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/ecritures'
+import { ouvrirJustificatif } from '../../lib/depot'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 
@@ -527,6 +528,11 @@ function PanneauLigne({
           scoreCorrespondance(a.montant_verse ?? a.montant_appele, a.echeance, ligne)
           - scoreCorrespondance(b.montant_verse ?? b.montant_appele, b.echeance, ligne))
     : []
+  // Explique explicitement pourquoi rien n'est proposé (voir audit ergonomie comparatif) — sans ça,
+  // deux listes vides et aucune suggestion laissaient deviner si le dossier n'a tout simplement rien
+  // à associer, ou si tout existe déjà mais est rapproché ailleurs.
+  const aucunePieceEnregistree = pieces.length === 0 && cotisations.length === 0
+  const toutDejaRapprocheAilleurs = !aucunePieceEnregistree && piecesTriees.length === 0 && cotisationsTriees.length === 0
 
   return (
     <div style={overlayStyle} onClick={onClose}>
@@ -550,7 +556,7 @@ function PanneauLigne({
           </p>
         )}
 
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {ligne.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && (
             <span className="badge badge-ok">
@@ -561,14 +567,26 @@ function PanneauLigne({
           )}
           {!ligne.prelevement_personnel && ligne.statut === 'non_rapprochee' && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
+          {/* Consulter le justificatif sans quitter cet écran (voir audit ergonomie comparatif) — avant,
+              seul le tiers et le montant étaient visibles, jamais le document lui-même. */}
+          {piecePayee && (
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => ouvrirJustificatif(piecePayee.storage_path)}>
+              👁 Voir le justificatif
+            </button>
+          )}
         </div>
 
         {ligne.statut === 'non_rapprochee' && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
             {propose && (
-              <button className="btn btn-outline" onClick={() => onRapprocher(propose.id)}>
-                Rapprocher avec {propose.tiers ?? 'cette pièce'} ({formatMoney(propose.montant_ttc)})
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => onRapprocher(propose.id)}>
+                  Rapprocher avec {propose.tiers ?? 'cette pièce'} ({formatMoney(propose.montant_ttc)})
+                </button>
+                <button type="button" className="btn btn-outline" onClick={() => ouvrirJustificatif(propose.storage_path)} title="Voir le justificatif avant de confirmer">
+                  👁
+                </button>
+              </div>
             )}
             {proposeCotisation && (
               <button className="btn btn-outline" onClick={() => onRapprocherCotisation(proposeCotisation.id)}>
@@ -608,6 +626,21 @@ function PanneauLigne({
                 ))}
               </select>
             </div>
+
+            {aucunePieceEnregistree && (
+              <p className="muted" style={{ fontSize: '0.82rem', marginTop: -4 }}>
+                Aucune pièce validée ni échéance de cotisation enregistrée dans ce dossier pour
+                l'instant — dépose et valide d'abord le justificatif correspondant (onglet Pièces),
+                ou déclare l'échéance (onglet Cotisations).
+              </p>
+            )}
+            {toutDejaRapprocheAilleurs && (
+              <p className="muted" style={{ fontSize: '0.82rem', marginTop: -4 }}>
+                Toutes les pièces et échéances de ce dossier sont déjà rapprochées à un autre
+                mouvement — si aucune ne correspond en réalité, vérifie un éventuel rapprochement fait
+                par erreur ailleurs.
+              </p>
+            )}
 
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <button className="btn btn-outline btn-sm" onClick={onVirementPersonnel}>Virement personnel</button>

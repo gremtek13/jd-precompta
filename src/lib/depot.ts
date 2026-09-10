@@ -63,3 +63,16 @@ export async function deposerFichier(dossierId: string, file: File): Promise<Res
     return { statut: 'erreur', message: err instanceof Error ? err.message : "l'envoi a échoué" }
   }
 }
+
+// Ouvre le justificatif d'une pièce dans un nouvel onglet via une URL signée temporaire (le bucket
+// "pieces" n'est pas public) — même mécanisme que l'aperçu de PieceFormModal, réutilisé pour
+// consulter un justificatif sans quitter l'écran de rapprochement bancaire (voir BanqueTab) : on n'y
+// affichait jusqu'ici que le tiers et le montant, jamais le document lui-même.
+export async function ouvrirJustificatif(storagePath: string): Promise<void> {
+  const { data, error } = await supabase.storage.from('pieces').createSignedUrl(storagePath, 300)
+  if (error || !data) {
+    window.alert('Aperçu indisponible pour ce justificatif.')
+    return
+  }
+  window.open(data.signedUrl, '_blank', 'noopener')
+}
