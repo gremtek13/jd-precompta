@@ -67,8 +67,8 @@ l'appli est conçue multi-cabinets dès l'origine (voir `cabinets`,
 - `@supabase/supabase-js` 2.x — client unique exporté par `src/lib/supabase.ts`.
 - `exceljs` (génération des packs Excel), `jszip` (packs ZIP), `pdfjs-dist`
   (lecture de PDF côté navigateur, ex. relevés bancaires).
-- Lint : `oxlint` (`npm run lint`), pas d'ESLint. Pas de suite de tests
-  automatisés à ce jour.
+- Lint : `oxlint` (`npm run lint`), pas d'ESLint. Tests : Vitest (`npm test`),
+  sur la logique métier pure de `src/lib` uniquement (voir "Tests").
 - Aucun framework CSS — styles maison (voir `src/lib/theme.ts`,
   `src/lib/colors.ts` pour la charte graphique personnalisable par cabinet).
 
@@ -351,10 +351,38 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
     — comportement normal de Super PDP, pas un bug applicatif : pour tester
     en bac à sable, le SIRET du dossier de test doit être aligné sur le
     SIREN de l'entreprise sandbox utilisée.
-- **Aucun test automatisé** dans ce dépôt à ce jour — toute vérification
-  passe par la relecture de code, les advisors Supabase et des tests manuels
-  réels (y compris, pour Super PDP, par l'utilisateur lui-même puisque cet
+- **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
+  composants, les policies RLS et les Edge Functions restent vérifiés par la
+  relecture de code, les advisors Supabase et des tests manuels réels (y
+  compris, pour Super PDP, par l'utilisateur lui-même puisque cet
   environnement ne peut pas atteindre `api.superpdp.tech`).
+
+## Tests
+
+Vitest sur la logique métier pure de `src/lib` — les fichiers `*.test.ts` sont
+posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
+
+- `npm test` — la suite, dans le fuseau des utilisateurs.
+- `npm run test:watch` — en continu pendant le développement.
+- `npm run test:fuseaux` — la même suite sous Europe/Paris, UTC,
+  America/New_York et Pacific/Auckland.
+
+**Le fuseau est épinglé sur `Europe/Paris` dans `vitest.config.ts`, et ce n'est
+pas un détail.** La suite est née de trois bugs de dates qui faussaient le plan
+de trésorerie (chaque mois étiqueté un mois trop tôt), l'échéancier d'emprunt
+(février sauté pour un prêt démarré un 31, puis tout décalé d'un jour après le
+passage à l'heure d'été) et la période par défaut d'un pack. Tous passaient en
+UTC — qui est justement le fuseau des runners GitHub. Une suite lancée au fuseau
+par défaut les aurait laissés revenir sans rien dire.
+
+Règle qui en découle : **tout calcul de date reste sur le calendrier civil**
+(`ajouterMois`, `dernierJourDuMois`, `premierJourDuMoisCourant`, `aujourdHuiSql`
+dans `lib/format.ts`), jamais un `new Date(...)` converti par `toISOString()`, et
+les bornes de période se comparent en chaînes `AAAA-MM-JJ`.
+
+CI : `.github/workflows/tests.yml` rejoue tests multi-fuseaux + lint + build sur
+toutes les branches et les PR ; `deploy.yml` lance `npm test` avant de publier,
+donc un test rouge arrête le déploiement.
 
 ## Commandes utiles
 
@@ -364,6 +392,9 @@ npm run dev          # serveur de dev local (Vite)
 npm run build        # tsc -b && vite build — build de prod
 npm run preview      # sert le build de prod en local
 npm run lint         # oxlint
+npm test             # Vitest, logique métier de src/lib
+npm run test:watch   # Vitest en continu
+npm run test:fuseaux # la suite sous 4 fuseaux (voir "Tests")
 ```
 
 Déploiement : automatique sur push vers `main` (GitHub Actions →
