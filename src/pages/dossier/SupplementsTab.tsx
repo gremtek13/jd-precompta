@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney } from '../../lib/format'
+import { aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import {
   LABEL_STATUT_SUPPLEMENT, LABEL_TYPE_SUPPLEMENT, type Supplement, type TypeSupplement,
 } from '../../lib/supplements'
@@ -191,7 +191,7 @@ function SupplementFormModal({ dossierId, supplement, onClose, onSaved }: {
   const [type, setType] = useState<TypeSupplement>(supplement?.type ?? 'creation_societe')
   const [libelle, setLibelle] = useState(supplement?.libelle ?? '')
   const [montantHt, setMontantHt] = useState(supplement?.montant_ht != null ? String(supplement.montant_ht) : '')
-  const [dateDemande, setDateDemande] = useState(supplement?.date_demande ?? new Date().toISOString().slice(0, 10))
+  const [dateDemande, setDateDemande] = useState(supplement?.date_demande ?? aujourdHuiSql())
   const [notes, setNotes] = useState(supplement?.notes ?? '')
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -361,7 +361,7 @@ function CompteFormModal({ dossierId, compte, onClose, onSaved }: {
 function MouvementsModal({ compte, mouvements, onClose, onChanged }: {
   compte: CompteCourantAssocie; mouvements: MouvementCca[]; onClose: () => void; onChanged: () => void
 }) {
-  const [date, setDate] = useState(new Date().toISOString().slice(0, 10))
+  const [date, setDate] = useState(aujourdHuiSql())
   const [type, setType] = useState<TypeMouvementCca>('apport')
   const [montant, setMontant] = useState('')
   const [libelle, setLibelle] = useState('')

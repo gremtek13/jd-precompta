@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney } from '../../lib/format'
+import { ajouterMois, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE } from '../../lib/ecritures'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire } from '../../lib/situationIntermediaire'
@@ -256,7 +256,7 @@ function DettesRatiosModal({ pieces, categories, immobilisations, cotisations, e
   pieces: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   emprunts: Emprunt[]; lignesBanque: LigneBanque[]; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
 }) {
-  const aujourdHui = new Date().toISOString().slice(0, 10)
+  const aujourdHui = aujourdHuiSql()
   const debutAnnee = `${new Date().getFullYear()}-01-01`
   const moisEcoules = new Date().getMonth() + 1
 
@@ -266,9 +266,7 @@ function DettesRatiosModal({ pieces, categories, immobilisations, cotisations, e
   const plan = calculerPlanTresorerie(lignesBanque, 0, 6, 1)
   const ratios = calculerRatiosBancaires(situationAnnee, moisEcoules, capitalRestantTotal, mensualiteTotale, plan.moyenneEncaissements)
 
-  const dansSixMois = new Date()
-  dansSixMois.setMonth(dansSixMois.getMonth() + 6)
-  const finPeriode = dansSixMois.toISOString().slice(0, 10)
+  const finPeriode = ajouterMois(aujourdHui, 6)
   const echeances: EcheanceConnue[] = [
     ...echeancesEmprunts(emprunts, aujourdHui, finPeriode),
     ...echeancesCotisations(cotisations, aujourdHui, finPeriode),
@@ -346,7 +344,7 @@ function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations,
   const [nbMoisProjection, setNbMoisProjection] = useState(6)
 
   const plan = calculerPlanTresorerie(lignesBanque, soldeActuel, nbMoisHistorique, nbMoisProjection)
-  const debutProjection = plan.lignes[0]?.mois ? `${plan.lignes[0].mois}-01` : new Date().toISOString().slice(0, 10)
+  const debutProjection = plan.lignes[0]?.mois ? `${plan.lignes[0].mois}-01` : aujourdHuiSql()
   // "-31" plutôt que le vrai dernier jour du mois : comparaison de chaînes (YYYY-MM-DD), pas de
   // date réelle — sert seulement de borne haute, valide même pour un mois de moins de 31 jours.
   const finProjection = plan.lignes.at(-1)?.mois ? `${plan.lignes.at(-1)!.mois}-31` : debutProjection
@@ -429,7 +427,7 @@ function SituationIntermediaireModal({ pieces, categories, immobilisations, coti
   pieces: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lignesBanque: LigneBanque[]; onClose: () => void
 }) {
-  const [dateFin, setDateFin] = useState(new Date().toISOString().slice(0, 10))
+  const [dateFin, setDateFin] = useState(aujourdHuiSql())
   const periodeDebut = `${new Date(dateFin).getFullYear()}-01-01`
 
   const situation = calculerSituationIntermediaire(pieces, categories, immobilisations, cotisations, periodeDebut, dateFin)
@@ -628,7 +626,7 @@ function EmpruntFormModal({ dossierId, emprunt, onClose, onSaved }: { dossierId:
   const [organisme, setOrganisme] = useState(emprunt?.organisme_preteur ?? '')
   const [capital, setCapital] = useState(emprunt ? String(emprunt.capital_initial) : '')
   const [taux, setTaux] = useState(emprunt ? String(emprunt.taux_annuel) : '')
-  const [dateDebut, setDateDebut] = useState(emprunt?.date_debut ?? new Date().toISOString().slice(0, 10))
+  const [dateDebut, setDateDebut] = useState(emprunt?.date_debut ?? aujourdHuiSql())
   const [dureeMois, setDureeMois] = useState(emprunt ? String(emprunt.duree_mois) : '')
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)

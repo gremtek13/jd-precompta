@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { attribuerNumeroFacture, calculerLigne, calculerTotaux, mentionsLegalesParDefaut } from '../../lib/factures'
-import { formatMoney } from '../../lib/format'
+import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 
 interface LigneEdit {
@@ -36,7 +36,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
   const [tiersNom, setTiersNom] = useState(facture?.tiers_nom ?? '')
   const [tiersAdresse, setTiersAdresse] = useState(facture?.tiers_adresse ?? '')
   const [tiersSiret, setTiersSiret] = useState(facture?.tiers_siret ?? '')
-  const [dateEmission, setDateEmission] = useState(facture?.date_emission ?? new Date().toISOString().slice(0, 10))
+  const [dateEmission, setDateEmission] = useState(facture?.date_emission ?? aujourdHuiSql())
   const [dateEcheance, setDateEcheance] = useState(facture?.date_echeance ?? '')
   const [notes, setNotes] = useState(facture?.notes ?? '')
   const [mentionsLegales, setMentionsLegales] = useState(facture?.mentions_legales ?? mentionsLegalesParDefaut(assujettiTva))

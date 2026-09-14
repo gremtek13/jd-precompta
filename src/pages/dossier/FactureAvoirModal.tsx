@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { attribuerNumeroFacture, calculerLigne, calculerTotaux } from '../../lib/factures'
-import { formatMoney } from '../../lib/format'
+import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 
 interface LigneAvoirEdit {
@@ -37,7 +37,7 @@ interface Props {
 // creerAvoir) : sommer tous les montant_ttc d'un dossier/année annule alors automatiquement l'effet de
 // l'avoir sur le total, sans cas particulier à coder ailleurs (FactureApercu, un futur export...).
 export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, onCreated }: Props) {
-  const [dateEmission, setDateEmission] = useState(new Date().toISOString().slice(0, 10))
+  const [dateEmission, setDateEmission] = useState(aujourdHuiSql())
   const [motif, setMotif] = useState('')
   const [mentionsLegales, setMentionsLegales] = useState(factureOrigine.mentions_legales ?? '')
   const [lignes, setLignes] = useState<LigneAvoirEdit[]>([])

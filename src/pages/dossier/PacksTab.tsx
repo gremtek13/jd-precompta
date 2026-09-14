@@ -1,24 +1,24 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney } from '../../lib/format'
+import { ajouterMois, dernierJourDuMois, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
 import { generatePack } from '../../lib/packGenerator'
 import type { Pack, Piece } from '../../lib/types'
 
-function firstDayLastMonth(): string {
-  const d = new Date()
-  d.setMonth(d.getMonth() - 1, 1)
-  return d.toISOString().slice(0, 10)
+// Période proposée par défaut : le mois précédent en entier. Calculée sur le calendrier civil plutôt
+// que via `Date.toISOString()`, qui rendait la veille du bon jour à Paris (minuit local = 22 h UTC la
+// veille en été) — la période démarrait et finissait un jour trop tôt, et le pack ratait les pièces
+// datées du dernier jour du mois.
+function premierJourMoisPrecedent(): string {
+  return ajouterMois(premierJourDuMoisCourant(), -1)
 }
-function lastDayLastMonth(): string {
-  const d = new Date()
-  d.setDate(0) // dernier jour du mois précédent
-  return d.toISOString().slice(0, 10)
+function dernierJourMoisPrecedent(): string {
+  return dernierJourDuMois(premierJourMoisPrecedent())
 }
 
 export default function PacksTab({ dossierId, dossierNom }: { dossierId: string; dossierNom: string }) {
   const [packs, setPacks] = useState<Pack[]>([])
-  const [periodeDebut, setPeriodeDebut] = useState(firstDayLastMonth())
-  const [periodeFin, setPeriodeFin] = useState(lastDayLastMonth())
+  const [periodeDebut, setPeriodeDebut] = useState(premierJourMoisPrecedent())
+  const [periodeFin, setPeriodeFin] = useState(dernierJourMoisPrecedent())
   const [preview, setPreview] = useState<{ nbValidees: number; nbAValider: number; total: number } | null>(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
