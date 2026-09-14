@@ -1,4 +1,5 @@
 import { empruntActif, genererEcheancier, type Emprunt } from './emprunts'
+import { ajouterMois, premierJourDuMoisCourant } from './format'
 import type { CotisationDeclaree } from './types'
 
 export interface LigneBanquePourPlan { date: string; sens: 'debit' | 'credit'; montant: number }
@@ -29,15 +30,15 @@ export interface PlanTresorerie {
 export function calculerPlanTresorerie(
   lignesBanque: LigneBanquePourPlan[], soldeActuel: number, nbMoisHistorique: number, nbMoisProjection: number,
 ): PlanTresorerie {
-  const aujourdHui = new Date()
-  const premierJourMoisCourant = new Date(aujourdHui.getFullYear(), aujourdHui.getMonth(), 1)
-  const debutHistorique = new Date(premierJourMoisCourant)
-  debutHistorique.setMonth(debutHistorique.getMonth() - nbMoisHistorique)
+  // Bornes comparées en chaînes AAAA-MM-JJ plutôt qu'en objets Date : `l.date` est une date SQL nue,
+  // et la convertir en Date la place à minuit UTC, décalée par rapport à un minuit local — de quoi
+  // faire basculer d'un jour les lignes situées pile sur une borne.
+  const premierJourMoisCourant = premierJourDuMoisCourant()
+  const debutHistorique = ajouterMois(premierJourMoisCourant, -nbMoisHistorique)
 
-  const dansHistorique = lignesBanque.filter((l) => {
-    const d = new Date(l.date)
-    return d >= debutHistorique && d < premierJourMoisCourant
-  })
+  const dansHistorique = lignesBanque.filter(
+    (l) => l.date >= debutHistorique && l.date < premierJourMoisCourant,
+  )
   const totalEncaissements = dansHistorique.filter((l) => l.sens === 'debit').reduce((s, l) => s + l.montant, 0)
   const totalDecaissements = dansHistorique.filter((l) => l.sens === 'credit').reduce((s, l) => s + l.montant, 0)
   const moyenneEncaissements = Math.round((totalEncaissements / nbMoisHistorique) * 100) / 100
@@ -46,11 +47,10 @@ export function calculerPlanTresorerie(
   const lignes: MoisTresorerie[] = []
   let soldeCourant = soldeActuel
   for (let i = 1; i <= nbMoisProjection; i++) {
-    const date = new Date(premierJourMoisCourant)
-    date.setMonth(date.getMonth() + i)
     const soldeDebut = soldeCourant
     const soldeFin = Math.round((soldeDebut + moyenneEncaissements - moyenneDecaissements) * 100) / 100
-    lignes.push({ mois: date.toISOString().slice(0, 7), soldeDebut, encaissements: moyenneEncaissements, decaissements: moyenneDecaissements, soldeFin })
+    const mois = ajouterMois(premierJourMoisCourant, i).slice(0, 7)
+    lignes.push({ mois, soldeDebut, encaissements: moyenneEncaissements, decaissements: moyenneDecaissements, soldeFin })
     soldeCourant = soldeFin
   }
 

@@ -1,3 +1,5 @@
+import { ajouterMois } from './format'
+
 export interface Emprunt {
   id: string
   dossier_id: string
@@ -35,7 +37,6 @@ export function calculerMensualite(capitalInitial: number, tauxAnnuel: number, d
 export function genererEcheancier(emprunt: Pick<Emprunt, 'capital_initial' | 'taux_annuel' | 'duree_mois' | 'date_debut'>): LigneEcheancier[] {
   const tauxMensuel = emprunt.taux_annuel / 100 / 12
   const mensualite = Math.round(calculerMensualite(emprunt.capital_initial, emprunt.taux_annuel, emprunt.duree_mois) * 100) / 100
-  const debut = new Date(emprunt.date_debut)
   let capitalRestant = emprunt.capital_initial
   const lignes: LigneEcheancier[] = []
 
@@ -44,9 +45,7 @@ export function genererEcheancier(emprunt: Pick<Emprunt, 'capital_initial' | 'ta
     let capitalRembourse = Math.round((mensualite - interets) * 100) / 100
     if (i === emprunt.duree_mois) capitalRembourse = capitalRestant
     capitalRestant = Math.max(Math.round((capitalRestant - capitalRembourse) * 100) / 100, 0)
-    const date = new Date(debut)
-    date.setMonth(date.getMonth() + i)
-    lignes.push({ numero: i, date: date.toISOString().slice(0, 10), mensualite, interets, capitalRembourse, capitalRestant })
+    lignes.push({ numero: i, date: ajouterMois(emprunt.date_debut, i), mensualite, interets, capitalRembourse, capitalRestant })
   }
   return lignes
 }

@@ -45,6 +45,48 @@ export function dateRelative(iso: string): string {
   return new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })
 }
 
+// Date SQL (AAAA-MM-JJ) d'aujourd'hui vue par l'utilisateur. `new Date().toISOString()` donnerait la
+// veille entre minuit et 2 h du matin à Paris (l'instant est alors encore hier en UTC) — de quoi
+// dater une facture de la veille pour qui la saisit tard le soir.
+export function aujourdHuiSql(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// Dernier jour du mois auquel appartient `dateSql`.
+export function dernierJourDuMois(dateSql: string): string {
+  const [annee, mois] = dateSql.slice(0, 10).split('-').map(Number)
+  const jour = new Date(Date.UTC(annee, mois, 0)).getUTCDate()
+  return `${dateSql.slice(0, 7)}-${String(jour).padStart(2, '0')}`
+}
+
+// Date SQL (AAAA-MM-JJ) du 1er du mois en cours, construite depuis les composantes locales — la
+// seule façon sûre de nommer "le mois courant" : passer par `new Date(a, m, 1).toISOString()`
+// renverrait le mois précédent dès que le fuseau local est à l'est de Greenwich (le 1er septembre à
+// minuit à Paris, c'est le 31 août 22 h en UTC).
+export function premierJourDuMoisCourant(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+// Ajoute `n` mois (négatif accepté) à une date SQL en restant dans le calendrier civil, sans jamais
+// repasser par un objet Date converti en UTC — deux pièges évités d'un coup :
+//   - le décalage de fuseau/heure d'été : `new Date('2026-01-15')` puis `setMonth(+6)` puis
+//     `toISOString()` rend le 14 juillet, pas le 15, parce que Paris passe de UTC+1 à UTC+2 ;
+//   - le débordement de fin de mois : `setMonth()` transforme le 31 janvier + 1 mois en 3 mars.
+// Un jour absent du mois d'arrivée est ramené au dernier jour de ce mois, convention des
+// échéanciers de prêt : une mensualité au 31 janvier tombe le 28 février.
+export function ajouterMois(dateSql: string, n: number): string {
+  const [annee, mois, jour] = dateSql.slice(0, 10).split('-').map(Number)
+  const indexMois = mois - 1 + n
+  const anneeCible = annee + Math.floor(indexMois / 12)
+  const moisCible = ((indexMois % 12) + 12) % 12
+  // Jour 0 du mois suivant = dernier jour du mois visé. En UTC, donc insensible au fuseau local.
+  const dernierJour = new Date(Date.UTC(anneeCible, moisCible + 1, 0)).getUTCDate()
+  const jourCible = Math.min(jour, dernierJour)
+  return `${anneeCible}-${String(moisCible + 1).padStart(2, '0')}-${String(jourCible).padStart(2, '0')}`
+}
+
 // Nombre de dépôts par mois sur les `nbMois` derniers mois (le dernier = mois en cours), dans l'ordre
 // chronologique — alimente les tendances des tuiles chiffrées.
 export function comptesParMois(datesIso: string[], nbMois: number): number[] {
