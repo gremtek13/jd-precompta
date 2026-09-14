@@ -1,0 +1,25 @@
+name: Tests
+
+# Sur toutes les branches, pas seulement main : l'intérêt est d'attraper une régression avant la
+# fusion, pas au moment de déployer.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verifier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # Plusieurs fuseaux volontairement : les bugs de dates que cette suite verrouille passaient
+      # tous en UTC, qui est justement le fuseau des runners GitHub. S'en tenir au fuseau par défaut
+      # laisserait revenir exactement ce qu'on vient de corriger.
+      - run: npm run test:fuseaux
+      - run: npm run lint
+      - run: npm run build

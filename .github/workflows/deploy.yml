@@ -24,6 +24,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
+      # Un test rouge arrête le déploiement : compta.jdarnis.fr sert des calculs comptables, mieux
+      # vaut ne pas publier que publier un chiffre faux.
+      - run: npm test
       - run: npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
