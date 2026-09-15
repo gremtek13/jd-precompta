@@ -351,6 +351,12 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
     — comportement normal de Super PDP, pas un bug applicatif : pour tester
     en bac à sable, le SIRET du dossier de test doit être aligné sur le
     SIREN de l'entreprise sandbox utilisée.
+- **Un module de calcul n'importe jamais le client Supabase** : `supabase.ts` lève au
+  chargement quand les variables d'environnement manquent, ce qui rend intestable tout
+  module qui le tire, fût-ce pour une constante. Les opérations qui parlent à la base
+  vivent à part (`comptes.ts` pour les numéros de comptes PCG, `contrepartieBanque.ts`
+  pour les deux écritures bancaires) — c'est ce découplage qui rend `ecritures.ts`,
+  `fec.ts` et les autres couvrables.
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -359,7 +365,9 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — les fichiers `*.test.ts` sont
+Vitest sur la logique métier pure de `src/lib` — 87 tests couvrant les dates, les
+échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le cœur
+comptable (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 - `npm test` — la suite, dans le fuseau des utilisateurs.
