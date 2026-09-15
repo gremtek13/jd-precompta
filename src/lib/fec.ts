@@ -1,5 +1,5 @@
 import type { Categorie, EcritureBrouillon, Piece } from './types'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './ecritures'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
 // A47 A-1 du Livre des procédures fiscales, que tout logiciel de comptabilité sait importer sans
