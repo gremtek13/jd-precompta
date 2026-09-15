@@ -1,7 +1,11 @@
 import { anneeDe } from './format'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
 
-const POSTE_AMORTISSEMENTS = 'Amortissements'
+// Exporté parce que `ratiosBancaires.ts` doit retrouver ce poste dans `totauxParPoste` pour calculer
+// la CAF. Il le cherchait par une chaîne littérale écrite de son côté : renommer le poste ici aurait
+// fait rendre 0 à ce `find`, donc une CAF sous-estimée et une capacité de remboursement surévaluée —
+// un chiffre montré à une banque, faux sans le moindre signal.
+export const POSTE_AMORTISSEMENTS = 'Amortissements'
 const POSTE_COTISATIONS = 'Cotisations sociales personnelles'
 
 export interface SituationIntermediaire {

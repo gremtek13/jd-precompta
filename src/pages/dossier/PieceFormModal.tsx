@@ -3,7 +3,17 @@ import { supabase } from '../../lib/supabase'
 import { normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import { suggererCategorie } from '../../lib/tiersCategories'
+import { useAuth } from '../../context/AuthContext'
 import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
+
+// L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
+// reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
+// règle cabinet d'échouer à chaque fois sans que rien ne le signale — la table est restée vide alors
+// que les quatre règles de dossier, elles, se sont bien écrites. Un échec est désormais journalisé.
+async function memoriser(quoi: string, requete: PromiseLike<{ error: { message: string } | null }>) {
+  const { error } = await requete
+  if (error) console.warn(`Mémorisation de ${quoi} impossible (sans conséquence sur la pièce) :`, error.message)
+}
 
 function typeApercu(nom: string): 'image' | 'pdf' | 'autre' {
   const ext = nom.toLowerCase().split('.').pop() ?? ''
@@ -25,6 +35,10 @@ interface Props {
 }
 
 export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, onClose, onSaved }: Props) {
+  // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
+  // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
+  // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
+  const { monCabinetId } = useAuth()
   const [file, setFile] = useState<File | null>(null)
   const [datePiece, setDatePiece] = useState(piece?.date_piece ?? '')
   const [tiers, setTiers] = useState(piece?.tiers ?? '')
@@ -201,21 +215,27 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
 
       // Mémorise la correspondance tiers → catégorie pour la reproposer automatiquement la prochaine
       // fois, sur ce dossier. Best-effort : un échec ici ne doit pas remettre en cause la sauvegarde
-      // de la pièce.
+      // de la pièce — mais il est journalisé, jamais avalé en silence (voir `memoriser`).
       if (tiers.trim() && categorieId) {
-        await supabase.from('tiers_categories').upsert(
-          { dossier_id: dossierId, tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
-          { onConflict: 'dossier_id,tiers_normalise' },
+        await memoriser(
+          'la règle de ce dossier',
+          supabase.from('tiers_categories').upsert(
+            { dossier_id: dossierId, tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
+            { onConflict: 'dossier_id,tiers_normalise' },
+          ),
         )
         // Catégorie choisie parmi les catégories globales (dossier_id null) : la correspondance a du
         // sens au-delà de ce seul dossier (une mutuelle, une banque... reviennent souvent d'un client
         // à l'autre), donc on la mémorise aussi au niveau cabinet — voir lib/tiersCategories.ts. Une
         // catégorie propre à ce dossier reste, elle, sans équivalent chez un autre client.
         const categorieChoisie = categories.find((c) => c.id === categorieId)
-        if (categorieChoisie && categorieChoisie.dossier_id === null) {
-          await supabase.from('tiers_categories_cabinet').upsert(
-            { tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
-            { onConflict: 'tiers_normalise' },
+        if (categorieChoisie && categorieChoisie.dossier_id === null && monCabinetId) {
+          await memoriser(
+            'la règle du cabinet',
+            supabase.from('tiers_categories_cabinet').upsert(
+              { cabinet_id: monCabinetId, tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
+              { onConflict: 'cabinet_id,tiers_normalise' },
+            ),
           )
         }
       }
