@@ -63,6 +63,27 @@ describe('parseDateBancaire', () => {
     expect(parseDateBancaire('VIREMENT')).toBeNull()
     expect(parseDateBancaire('')).toBeNull()
   })
+
+  it('refuse une date qui n’existe pas au calendrier', () => {
+    // Rendait auparavant la chaîne « 2026-02-31 », que Postgres rejette : l'insertion échouait pour
+    // tout le lot, pas seulement pour cette ligne. La refuser fait ignorer la seule ligne fautive,
+    // comme n'importe quelle autre ligne illisible.
+    expect(parseDateBancaire('31/02/2026')).toBeNull()
+    expect(parseDateBancaire('31/04/2026')).toBeNull()
+    expect(parseDateBancaire('2026-04-31')).toBeNull()
+    expect(parseDateBancaire('02/13/2026')).toBeNull() // mois 13 — une date américaine mal lue
+  })
+
+  it('suit les années bissextiles', () => {
+    expect(parseDateBancaire('29/02/2023')).toBeNull()
+    expect(parseDateBancaire('29/02/2024')).toBe('2024-02-29')
+  })
+
+  it('laisse intactes les fins de mois légitimes', () => {
+    expect(parseDateBancaire('31/01/2026')).toBe('2026-01-31')
+    expect(parseDateBancaire('30/04/2026')).toBe('2026-04-30')
+    expect(parseDateBancaire('2026-12-31')).toBe('2026-12-31')
+  })
 })
 
 describe('parseCsv', () => {

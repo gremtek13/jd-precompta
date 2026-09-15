@@ -94,15 +94,27 @@ export function parseMontantBancaire(raw: string): number | null {
   return Number.isNaN(n) ? null : (negatif ? -n : n)
 }
 
+// Une date qui n'existe pas au calendrier ("31/02") n'est pas une date, et laisser passer la chaîne
+// fait échouer l'insertion de tout le lot. La rejeter ici la fait simplement ignorer, comme
+// n'importe quelle autre ligne illisible.
+function dateExiste(annee: number, mois: number, jour: number): boolean {
+  if (mois < 1 || mois > 12 || jour < 1) return false
+  return jour <= new Date(Date.UTC(annee, mois, 0)).getUTCDate()
+}
+
 // Date au format JJ/MM/AAAA (le plus courant sur les relevés français) ou déjà ISO AAAA-MM-JJ.
 export function parseDateBancaire(raw: string): string | null {
   const trimmed = raw.trim()
   let m = trimmed.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
-  if (m) return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  if (m) {
+    if (!dateExiste(+m[1], +m[2], +m[3])) return null
+    return `${m[1]}-${m[2].padStart(2, '0')}-${m[3].padStart(2, '0')}`
+  }
   m = trimmed.match(/^(\d{1,2})[/.](\d{1,2})[/.](\d{2,4})/)
   if (m) {
     let year = +m[3]
     if (year < 100) year += year < 70 ? 2000 : 1900
+    if (!dateExiste(year, +m[2], +m[1])) return null
     return `${year}-${m[2].padStart(2, '0')}-${m[1].padStart(2, '0')}`
   }
   return null
