@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
-import { extractPdfText } from '../../lib/pdfText'
-import { parseLignesFromPdfText, type LigneExtraite } from '../../lib/relevePdf'
+import { extractPdfLignes } from '../../lib/pdfText'
+import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { ouvrirJustificatif } from '../../lib/depot'
@@ -685,6 +685,11 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
   const [error, setError] = useState<string | null>(null)
 
   const [pdfRows, setPdfRows] = useState<LigneExtraite[] | null>(null)
+  // Les lignes brutes du PDF sont gardées telles quelles : changer le format du montant doit
+  // pouvoir relire le relevé sans le redemander, et sans perdre les corrections déjà saisies moins
+  // que de faire redéposer le fichier.
+  const [pdfLignes, setPdfLignes] = useState<LignePdf[] | null>(null)
+  const [pdfFormat, setPdfFormat] = useState<FormatMontant>('signe')
   const [pdfExtracting, setPdfExtracting] = useState(false)
   const [documentsReleve, setDocumentsReleve] = useState<DocumentDivers[]>([])
   // Nom du fichier en cours d'import (voir audit ergonomie) — persisté sur chaque ligne créée
@@ -731,13 +736,15 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     setError(null)
     setSourceFileName(nom)
     setPdfRows(null)
+    setPdfLignes(null)
     setPdfExtracting(true)
     try {
-      const text = await extractPdfText(blob)
-      const extraites = parseLignesFromPdfText(text)
+      const lignes = await extractPdfLignes(blob)
+      const extraites = parseLignesFromPdf(lignes, pdfFormat)
       if (extraites.length === 0) {
         throw new Error("Aucune opération détectée dans ce PDF — la mise en page n'est peut-être pas reconnue. Essaie l'export CSV si la banque le propose.")
       }
+      setPdfLignes(lignes)
       setPdfRows(extraites)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Lecture du PDF impossible.')
@@ -782,6 +789,15 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     setPdfRows((prev) => prev && prev.filter((_, i) => i !== index))
   }
 
+  // Changer de format relit le relevé depuis les lignes brutes gardées en mémoire, plutôt que de
+  // demander à nouveau le fichier. Les corrections déjà saisies dans le tableau sont perdues — le
+  // format se choisit avant de corriger, pas après, et le dire vaut mieux que de tenter une fusion
+  // qui donnerait un mélange des deux.
+  function changerFormatPdf(format: FormatMontant) {
+    setPdfFormat(format)
+    if (pdfLignes) setPdfRows(parseLignesFromPdf(pdfLignes, format))
+  }
+
   async function handleImportPdfRows() {
     if (!pdfRows || pdfRows.length === 0) return
     setImporting(true)
@@ -808,6 +824,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       )
       if (error) throw error
       setPdfRows(null)
+      setPdfLignes(null)
       setSourceFileName(null)
       onImported()
       if (doublons > 0) window.alert(`${aInserer.length} ligne(s) importée(s), ${doublons} déjà présente(s) ignorée(s).`)
@@ -1020,6 +1037,20 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
 
           {pdfRows && (
             <>
+              <div className="field">
+                <label htmlFor="pdfFormat">Format du montant</label>
+                <select id="pdfFormat" value={pdfFormat} onChange={(e) => changerFormatPdf(e.target.value as FormatMontant)}>
+                  <option value="signe">Une colonne (montant signé, négatif si débit)</option>
+                  <option value="debit_credit">Deux colonnes (Débit / Crédit séparées)</option>
+                </select>
+              </div>
+              {pdfFormat === 'debit_credit' && (
+                <p className="muted" style={{ marginTop: -8 }}>
+                  {pdfRows.every((r) => r.montant <= 0)
+                    ? "Une seule colonne de montants trouvée sur ce relevé : impossible de dire laquelle, tout est passé en débit. Corrige les crédits ci-dessous."
+                    : "Le débit et le crédit sont reconnus à la position du montant sur la ligne. Vérifie quand même quelques lignes."}
+                </p>
+              )}
               <div className="table-scroll" style={{ marginBottom: 14, border: '1px solid var(--color-border)', borderRadius: 8 }}>
                 <table>
                   <thead><tr><th>Date</th><th>Libellé</th><th>Montant</th><th></th></tr></thead>

@@ -1,15 +1,32 @@
 import { parseDateBancaire, parseMontantBancaire } from './csv'
 
-// Lecture des opérations d'un relevé bancaire déjà converti en texte (voir `extractPdfText`).
+// Lecture des opérations d'un relevé bancaire déjà converti en lignes (voir `extractPdfLignes`).
 // Séparé de `pdfText.ts` parce que celui-ci charge pdf.js, qui touche au DOM dès l'import et rend
 // tout le module impossible à exécuter en test — même découpage que `comptes.ts`, pour la même
 // raison.
+
+// `xFin` est l'abscisse du dernier fragment de la ligne, c'est-à-dire du montant. Le texte seul ne
+// permet pas de distinguer un débit d'un crédit sur un relevé à deux colonnes : une fois les
+// fragments recollés, les deux colonnes donnent la même chose. Leur position, elle, les sépare.
+export interface LignePdf {
+  texte: string
+  xFin: number
+}
 
 export interface LigneExtraite {
   date: string
   libelle: string
   montant: number
 }
+
+// Deux mises en page, comme pour l'import CSV :
+// - `signe` : une seule colonne, le débit porte un signe moins ;
+// - `debit_credit` : deux colonnes, le signe se lit dans celle où le montant est imprimé.
+export type FormatMontant = 'signe' | 'debit_credit'
+
+// Écart horizontal minimal, en unités PDF (~1/72 de pouce), pour considérer que deux montants sont
+// dans des colonnes différentes. Un centimètre : en deçà, c'est du désalignement, pas une colonne.
+const ECART_COLONNES_MIN = 28
 
 // Certaines banques (Caisse d'Épargne, vérifié sur un relevé réel) n'impriment que jour/mois sur
 // chaque ligne d'opération, l'année n'apparaissant qu'une fois dans l'en-tête du relevé ("...de
@@ -25,12 +42,31 @@ function trouvePeriode(texte: string): { mois: number; annee: number } | null {
   return { mois, annee }
 }
 
+// Sépare les montants en deux colonnes d'après le plus grand écart horizontal observé entre eux :
+// à gauche le débit, à droite le crédit. Rendre null quand cet écart reste sous le seuil est
+// délibéré — une seule colonne occupée ne dit pas *laquelle*, et deviner inverserait une ligne sur
+// deux. L'appelant traite alors tout en débit, le cas de loin le plus fréquent, et la
+// prévisualisation reste modifiable.
+export function seuilDeuxColonnes(abscisses: number[]): number | null {
+  const distinctes = [...new Set(abscisses)].sort((a, b) => a - b)
+  let meilleurEcart = 0
+  let seuil: number | null = null
+  for (let i = 1; i < distinctes.length; i++) {
+    const ecart = distinctes[i] - distinctes[i - 1]
+    if (ecart > meilleurEcart) {
+      meilleurEcart = ecart
+      seuil = (distinctes[i] + distinctes[i - 1]) / 2
+    }
+  }
+  return meilleurEcart >= ECART_COLONNES_MIN ? seuil : null
+}
+
 // Heuristique volontairement simple : une opération = une ligne avec une date en début et un
 // montant en fin (format le plus courant sur les relevés PDF). Les lignes qui ne matchent pas
 // (en-têtes, totaux, texte de libellé qui déborde sur une deuxième ligne) sont ignorées — mieux
 // vaut manquer une ligne que d'en inventer une. Le tableau de prévisualisation reste modifiable
 // pour corriger ou compléter à la main.
-export function parseLignesFromPdfText(text: string): LigneExtraite[] {
+export function parseLignesFromPdf(lignes: LignePdf[], format: FormatMontant = 'signe'): LigneExtraite[] {
   // Date en tout début de ligne : c'est la date d'opération. Une même ligne réelle porte souvent
   // une seconde date (date de valeur, ou date d'achat rappelée dans le libellé — "CB FACTURE DU
   // 03/01/26"), qui n'est pas celle de l'opération.
@@ -47,7 +83,7 @@ export function parseLignesFromPdfText(text: string): LigneExtraite[] {
   //
   // Deux formes acceptées faute de pouvoir supposer le séparateur de milliers : par groupes de
   // trois ("1 234,56", "1.234,56") ou d'une traite ("1234,56"). Sans la seconde, l'expression
-  // s'accrochait aux trois derniers chiffres avant la virgule — "20846,00" devenait 846,00 et
+  // s'accrochait aux trois derniers chiffres avant la virgule — "20846,47" devenait 846,47 et
   // "-1500,00" devenait +500,00, sans le moindre signal.
   //
   // Le `(?<![\d.,])` interdit de commencer au milieu d'un nombre : c'est précisément ce qui
@@ -55,14 +91,14 @@ export function parseLignesFromPdfText(text: string): LigneExtraite[] {
   // premier caractère du montant, ce dont dépend le découpage du libellé.
   const montantRegex = /(?<![\d.,])(\(?[-+]?(?:\d{1,3}(?:[\s.,]\d{3})*|\d+)[.,]\d{2}\)?\s*-?)\s*(?:€|EUR)?\s*$/i
 
-  const periode = trouvePeriode(text)
+  const periode = trouvePeriode(lignes.map((l) => l.texte).join('\n'))
 
-  const results: LigneExtraite[] = []
-  for (const rawLine of text.split('\n')) {
+  const brutes: { ligne: LigneExtraite; xFin: number }[] = []
+  for (const { texte, xFin } of lignes) {
     // pdf.js rend des fragments de texte, pas des lignes : recoller ces fragments laisse des
     // espaces doublés au milieu des nombres. "1  234,56" ne ressemblait plus à un montant groupé et
     // se faisait tronquer en 234,56.
-    const line = rawLine.replace(/\s+/g, ' ').trim()
+    const line = texte.replace(/\s+/g, ' ').trim()
     // Lignes de solde (ouverture/synthèse/clôture) : portent souvent une date et un montant en fin
     // de ligne comme une vraie opération, mais n'en sont pas une — exclues explicitement plutôt que
     // de polluer le rapprochement avec un faux mouvement.
@@ -101,7 +137,16 @@ export function parseLignesFromPdfText(text: string): LigneExtraite[] {
     if (montant === null) continue
 
     const libelle = line.slice(finDate, montantMatch.index).trim()
-    results.push({ date, libelle: libelle || 'Mouvement bancaire', montant })
+    brutes.push({ ligne: { date, libelle: libelle || 'Mouvement bancaire', montant }, xFin })
   }
-  return results
+
+  if (format === 'signe') return brutes.map((b) => b.ligne)
+
+  // Deux colonnes : le signe imprimé, s'il y en a un, ne veut plus rien dire — c'est la colonne qui
+  // porte l'information.
+  const seuil = seuilDeuxColonnes(brutes.map((b) => b.xFin))
+  return brutes.map(({ ligne, xFin }) => ({
+    ...ligne,
+    montant: seuil !== null && xFin > seuil ? Math.abs(ligne.montant) : -Math.abs(ligne.montant),
+  }))
 }
