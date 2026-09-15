@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { genererFec, libelleCompte, nomFichierFec } from './fec'
-import { COMPTE_BANQUE } from './ecritures'
+import { COMPTE_BANQUE } from './comptes'
 import type { Categorie, EcritureBrouillon, Piece } from './types'
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({

@@ -1,7 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_BANQUE } from '../../lib/ecritures'
+import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire } from '../../lib/situationIntermediaire'
 import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, type EcheanceConnue } from '../../lib/planTresorerie'

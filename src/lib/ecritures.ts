@@ -1,12 +1,6 @@
 import { supabase } from './supabase'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
-
-// Comptes PCG standard, fixes — partagés entre Écritures (génération de la ligne charge/produit +
-// TVA) et Banque (génération de la contrepartie ci-dessous), pour n'avoir qu'un seul endroit à
-// changer si un jour ces comptes deviennent configurables par dossier.
-export const COMPTE_TVA_DEDUCTIBLE = '445660'
-export const COMPTE_TVA_COLLECTEE = '445710'
-export const COMPTE_BANQUE = '512000'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
 // valider ou ajuster par le cabinet (voir "Comptes manquants" dans Écritures, "Postes manquants"

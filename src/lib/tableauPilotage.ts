@@ -1,5 +1,5 @@
 import type { EcritureBrouillon } from './types'
-import { COMPTE_BANQUE } from './ecritures'
+import { COMPTE_BANQUE } from './comptes'
 
 export interface MoisPilotage {
   mois: string // 'YYYY-MM'
