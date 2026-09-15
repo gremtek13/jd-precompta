@@ -1,7 +1,6 @@
-import { supabase } from './supabase'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 import { dateLocaleDe } from './format'
-import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import type { Categorie, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
 // valider ou ajuster par le cabinet (voir "Comptes manquants" dans Écritures, "Postes manquants"
@@ -37,7 +36,7 @@ export interface LigneAGenerer {
 // EcrituresTab pour être appelé aussi bien en génération initiale (une pièce sans encore d'écriture)
 // qu'en régénération (une pièce déjà passée en écritures, mais modifiée depuis — voir
 // piecesDesynchronisees dans EcrituresTab). Ne couvre jamais la contrepartie banque, gérée séparément
-// par synchroniserContrepartieBanque ci-dessous.
+// par synchroniserContrepartieBanque (voir lib/contrepartieBanque.ts).
 export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, compteComptable: string): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const libelle = piece.tiers ?? piece.nom_fichier
@@ -62,49 +61,6 @@ export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, co
     ]
   }
   return [ligne(compteComptable, piece.montant_ttc!)]
-}
-
-// Palier 5+ — vraie partie double. Une écriture générée depuis une pièce (voir EcrituresTab) n'a
-// jusqu'ici qu'une moitié : la charge/le produit (+ la TVA le cas échéant), jamais la contrepartie
-// banque — donc jamais un débit=crédit exploitable tel quel par un logiciel de comptabilité. Cette
-// fonction ajoute cette contrepartie dès qu'on connaît le mouvement bancaire réel (le rapprochement),
-// avec le montant réel du mouvement (celui de la pièce peut différer d'un centime — frais bancaires,
-// arrondi...) et son sens déduit du signe de ce même mouvement — jamais du type de la pièce (achat/
-// vente) : un compte banque est un compte d'actif, une entrée d'argent (montant positif) l'augmente
-// donc au débit, une sortie (négatif) le diminue au crédit, quel que soit le type de la pièce en face.
-// Déduire le sens du type de pièce fonctionne pour le cas normal (une vente encaissée, un achat payé)
-// mais se trompe dès que le mouvement réel va dans l'autre sens que prévu (un remboursement, un avoir
-// réglé) — dépendre du signe réel évite ce piège. Best-effort et idempotente : appelée aussi bien
-// depuis un rapprochement (Banque) que depuis une génération d'écritures sur une pièce déjà
-// rapprochée (Écritures) — sans jamais dupliquer la ligne si elle existe déjà.
-export async function synchroniserContrepartieBanque(dossierId: string, piece: Piece, ligne: LigneBancaire) {
-  const { data: existantes } = await supabase
-    .from('ecritures_brouillon')
-    .select('id, compte')
-    .eq('piece_id', piece.id)
-  // Rien à faire tant que la pièce n'a pas encore sa ligne de charge/produit (catégorie sans compte
-  // comptable, ou "Générer les écritures" pas encore lancé) — la contrepartie viendra d'elle-même au
-  // prochain passage.
-  if (!existantes || existantes.length === 0) return
-  if (existantes.some((e) => e.compte === COMPTE_BANQUE)) return
-
-  await supabase.from('ecritures_brouillon').insert({
-    dossier_id: dossierId,
-    piece_id: piece.id,
-    ligne_bancaire_id: ligne.id,
-    date: ligne.date,
-    compte: COMPTE_BANQUE,
-    libelle: piece.tiers ?? piece.nom_fichier,
-    montant: Math.abs(ligne.montant),
-    sens: ligne.montant >= 0 ? 'debit' : 'credit',
-    statut: 'proposee',
-  })
-}
-
-// Retire la contrepartie banque d'une pièce — appelée quand un rapprochement est annulé, sinon la
-// ligne banque resterait affichée comme si le mouvement était toujours rapproché.
-export async function retirerContrepartieBanque(pieceId: string) {
-  await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('compte', COMPTE_BANQUE)
 }
 
 // Solde d'un compte sur un ensemble d'écritures, dans le sens comptable normal de ce compte (débiteur
