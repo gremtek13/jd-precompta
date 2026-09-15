@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import type { Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -50,10 +50,10 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
 
   // Le filtre par année ne porte que sur le registre déjà enregistré — les candidates restent toujours
   // toutes affichées (une pièce ancienne oubliée reste à traiter quelle que soit l'année sélectionnée).
-  const anneesDisponibles = [...new Set(immobilisations.map((i) => new Date(i.date_acquisition).getFullYear()))].sort((a, b) => b - a)
+  const anneesDisponibles = [...new Set(immobilisations.map((i) => anneeDe(i.date_acquisition)))].sort((a, b) => b - a)
   const immobilisationsFiltrees = anneeFilter === 'toutes'
     ? immobilisations
-    : immobilisations.filter((i) => new Date(i.date_acquisition).getFullYear() === anneeFilter)
+    : immobilisations.filter((i) => anneeDe(i.date_acquisition) === anneeFilter)
 
   // Changer la nature choisie pré-remplit la durée suggérée, sans écraser une durée déjà modifiée à la
   // main pour cette pièce.

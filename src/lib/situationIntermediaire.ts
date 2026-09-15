@@ -1,3 +1,4 @@
+import { anneeDe } from './format'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
 
 const POSTE_AMORTISSEMENTS = 'Amortissements'
@@ -25,7 +26,7 @@ export function calculerSituationIntermediaire(
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
-  const anneeFin = new Date(periodeFin).getFullYear()
+  const anneeFin = anneeDe(periodeFin)
 
   const totauxParPoste = new Map<string, number>()
   for (const p of pieces) {
@@ -42,7 +43,7 @@ export function calculerSituationIntermediaire(
   // Même règle que ClotureTab : la dotation compte pour chaque année de la durée d'amortissement,
   // pas seulement l'année d'achat.
   const totalAmortissements = immobilisations.reduce((sum, i) => {
-    const anneeAcquisition = new Date(i.date_acquisition).getFullYear()
+    const anneeAcquisition = anneeDe(i.date_acquisition)
     const dansLaDuree = anneeFin >= anneeAcquisition && anneeFin < anneeAcquisition + i.duree_annees
     return dansLaDuree ? sum + i.valeur / i.duree_annees : sum
   }, 0)

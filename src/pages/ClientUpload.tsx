@@ -2,7 +2,7 @@ import { useEffect, useState, type DragEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { formatDate, moisEcoulesCetteAnnee } from '../lib/format'
+import { anneeDe, formatDate, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece } from '../lib/types'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -118,11 +118,11 @@ export default function ClientUpload() {
   // ces trois-là : le reste (véhicule, tickets restaurant...) dépend d'une configuration par dossier
   // que le client ne voit pas ici.
   const moisPresents = new Set(
-    lignes.filter((l) => new Date(l.date).getFullYear() === ANNEE_COURANTE).map((l) => new Date(l.date).getMonth() + 1),
+    lignes.filter((l) => anneeDe(l.date) === ANNEE_COURANTE).map((l) => moisDe(l.date)),
   )
   const moisManquants = Array.from({ length: MOIS_ECOULES }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
-  const cotisationsAnnee = cotisations.filter((c) => new Date(c.echeance).getFullYear() === ANNEE_COURANTE)
-  const piecesEtDocsAnnee = depots.filter((d) => new Date(d.createdAt).getFullYear() === ANNEE_COURANTE)
+  const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === ANNEE_COURANTE)
+  const piecesEtDocsAnnee = depots.filter((d) => anneeDe(d.createdAt) === ANNEE_COURANTE)
 
   const items = [
     {

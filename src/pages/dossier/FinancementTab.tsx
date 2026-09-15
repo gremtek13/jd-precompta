@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { ajouterMois, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
+import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE } from '../../lib/ecritures'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire } from '../../lib/situationIntermediaire'
@@ -428,7 +428,7 @@ function SituationIntermediaireModal({ pieces, categories, immobilisations, coti
   lignesBanque: LigneBanque[]; onClose: () => void
 }) {
   const [dateFin, setDateFin] = useState(aujourdHuiSql())
-  const periodeDebut = `${new Date(dateFin).getFullYear()}-01-01`
+  const periodeDebut = `${anneeDe(dateFin)}-01-01`
 
   const situation = calculerSituationIntermediaire(pieces, categories, immobilisations, cotisations, periodeDebut, dateFin)
   const tresorerieADate = Math.round(

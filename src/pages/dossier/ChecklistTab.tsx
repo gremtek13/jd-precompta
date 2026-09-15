@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte, categoriesSansPoste, piecesSansTva } from '../../lib/controles'
-import { formatMoney, moisEcoulesCetteAnnee } from '../../lib/format'
+import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import type { Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
@@ -110,16 +110,16 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const moisEcoules = moisEcoulesCetteAnnee()
 
   const moisPresents = new Set(
-    lignes.filter((l) => new Date(l.date).getFullYear() === anneeCourante).map((l) => new Date(l.date).getMonth() + 1),
+    lignes.filter((l) => anneeDe(l.date) === anneeCourante).map((l) => moisDe(l.date)),
   )
   const moisManquants = Array.from({ length: moisEcoules }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
 
-  const cotisationsAnnee = cotisations.filter((c) => new Date(c.echeance).getFullYear() === anneeCourante)
+  const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === anneeCourante)
   // Toutes les pièces reçues cette année, validées ou non : ce point vérifie que le client a bien
   // envoyé quelque chose, pas que le cabinet a fini de le vérifier (ce serait plutôt "confiance-basse"
   // ci-dessus) — se limiter aux pièces validées faisait dire "aucune pièce déposée" alors que des
   // pièces fraîchement importées, encore à valider, étaient déjà bien là.
-  const piecesAnnee = [...pieces, ...piecesAValider].filter((p) => p.date_piece && new Date(p.date_piece).getFullYear() === anneeCourante)
+  const piecesAnnee = [...pieces, ...piecesAValider].filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
 
   // "Points à traiter" — regroupe en un seul endroit les anomalies déjà détectées séparément dans
   // Pièces (confiance basse), Écritures (comptes manquants, TVA, désynchronisation, déséquilibre) et

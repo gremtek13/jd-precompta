@@ -1,6 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney, slugify } from '../../lib/format'
+import { anneeDe, formatDate, formatMoney, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -208,8 +208,8 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   const documentsNonRattaches = documentsCotisation.filter((d) => !d.attached_to_cotisation_id)
 
-  const anneesDisponibles = [...new Set(cotisations.map((c) => new Date(c.echeance).getFullYear()))].sort((a, b) => b - a)
-  const cotisationsFiltrees = anneeFilter === 'toutes' ? cotisations : cotisations.filter((c) => new Date(c.echeance).getFullYear() === anneeFilter)
+  const anneesDisponibles = [...new Set(cotisations.map((c) => anneeDe(c.echeance)))].sort((a, b) => b - a)
+  const cotisationsFiltrees = anneeFilter === 'toutes' ? cotisations : cotisations.filter((c) => anneeDe(c.echeance) === anneeFilter)
 
   const totalAppele = cotisationsFiltrees.reduce((sum, c) => sum + c.montant_appele, 0)
   const totalVerse = cotisationsFiltrees.reduce((sum, c) => sum + (c.montant_verse ?? 0), 0)

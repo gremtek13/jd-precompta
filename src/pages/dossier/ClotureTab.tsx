@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatMoney } from '../../lib/format'
+import { anneeDe, formatMoney } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
@@ -74,9 +74,9 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // exercices dans un seul total par poste — pas ce qu'on attend d'une clôture. "Toutes années" reste
   // disponible (utile pour un premier tour d'horizon) mais affiche un avertissement explicite.
   const anneesDisponibles = [...new Set([
-    ...pieces.filter((p) => p.date_piece).map((p) => new Date(p.date_piece!).getFullYear()),
-    ...cotisations.map((c) => new Date(c.echeance).getFullYear()),
-    ...immobilisations.map((i) => new Date(i.date_acquisition).getFullYear()),
+    ...pieces.filter((p) => p.date_piece).map((p) => anneeDe(p.date_piece!)),
+    ...cotisations.map((c) => anneeDe(c.echeance)),
+    ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
   ])].sort((a, b) => b - a)
 
   // Une pièce déjà enregistrée comme immobilisation est représentée par sa dotation annuelle (poste
@@ -85,7 +85,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const totauxParPoste = new Map<string, number>()
   for (const p of pieces) {
     if (immobilisationPieceIds.has(p.id)) continue
-    if (anneeFilter !== 'toutes' && (!p.date_piece || new Date(p.date_piece).getFullYear() !== anneeFilter)) continue
+    if (anneeFilter !== 'toutes' && (!p.date_piece || anneeDe(p.date_piece) !== anneeFilter)) continue
     const cat = categorieById(p.categorie_id)
     if (!cat?.poste_2035) continue
     const montant = p.montant_ht ?? p.montant_ttc ?? 0
@@ -100,14 +100,14 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     // "sans_date" n'est jamais utilisé sur cet onglet (AnneeTabs n'a pas sansDate ici) — seul "toutes"
     // demande le total non filtré, traité comme un cas particulier plutôt que deviné par le typage.
     if (typeof anneeFilter !== 'number') return sum + i.valeur / i.duree_annees
-    const anneeAcquisition = new Date(i.date_acquisition).getFullYear()
+    const anneeAcquisition = anneeDe(i.date_acquisition)
     const dansLaDuree = anneeFilter >= anneeAcquisition && anneeFilter < anneeAcquisition + i.duree_annees
     return dansLaDuree ? sum + i.valeur / i.duree_annees : sum
   }, 0)
   if (totalAmortissements > 0) totauxParPoste.set(POSTE_AMORTISSEMENTS, -(totalAmortissements))
 
   const totalCotisations = cotisations.reduce((sum, c) => {
-    if (anneeFilter !== 'toutes' && new Date(c.echeance).getFullYear() !== anneeFilter) return sum
+    if (anneeFilter !== 'toutes' && anneeDe(c.echeance) !== anneeFilter) return sum
     return sum + (c.montant_verse ?? c.montant_appele)
   }, 0)
   if (totalCotisations > 0) totauxParPoste.set(POSTE_COTISATIONS, -(totalCotisations))

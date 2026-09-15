@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { anneeDe } from './format'
 import type { FactureLigne, TypeFacture } from './types'
 
 // Mentions légales par défaut, proposées à la création d'une facture puis librement modifiables avant
@@ -48,7 +49,7 @@ export function calculerTotaux(lignes: { quantite: number; prix_unitaire_ht: num
 // qu'un compteur unique partagé. L'année vient de la date d'émission, pas de la date du jour, pour
 // qu'un document antidaté en janvier pour décembre dernier reste dans la bonne suite annuelle.
 export async function attribuerNumeroFacture(dossierId: string, dateEmission: string, type: TypeFacture = 'facture'): Promise<string> {
-  const annee = new Date(dateEmission).getFullYear()
+  const annee = anneeDe(dateEmission)
   const { data, error } = await supabase.rpc('prochain_numero_facture', { p_dossier_id: dossierId, p_annee: annee, p_type: type })
   if (error || data == null) throw new Error(error?.message ?? "Échec de l'attribution du numéro.")
   const prefixe = type === 'avoir' ? 'A' : 'F'

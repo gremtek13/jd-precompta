@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfText, parseLignesFromPdfText, type LigneExtraite } from '../../lib/pdfText'
-import { formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/ecritures'
 import { ouvrirJustificatif } from '../../lib/depot'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
@@ -99,14 +99,14 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   // plupart seraient vides sur un dossier récent.
   const lignesAnneeEtStatut = lignes.filter((l) => {
     if (filter !== 'toutes' && l.statut !== filter) return false
-    if (anneeFilter !== 'toutes' && new Date(l.date).getFullYear() !== anneeFilter) return false
+    if (anneeFilter !== 'toutes' && anneeDe(l.date) !== anneeFilter) return false
     return true
   })
-  const moisDisponibles = [...new Set(lignesAnneeEtStatut.map((l) => new Date(l.date).getMonth()))].sort((a, b) => a - b)
+  const moisDisponibles = [...new Set(lignesAnneeEtStatut.map((l) => (moisDe(l.date) - 1)))].sort((a, b) => a - b)
 
   const rechercheNormalisee = recherche.trim().toLowerCase()
   const filtered = lignesAnneeEtStatut.filter((l) => {
-    if (moisFilter !== 'tous' && new Date(l.date).getMonth() !== moisFilter) return false
+    if (moisFilter !== 'tous' && (moisDe(l.date) - 1) !== moisFilter) return false
     if (rechercheNormalisee) {
       const matchLibelle = l.libelle.toLowerCase().includes(rechercheNormalisee)
       const matchMontant = l.montant.toFixed(2).replace('.', ',').includes(rechercheNormalisee)
@@ -154,15 +154,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   // passées divergent, ni sur une seule occurrence antérieure (trop tôt pour parler de récurrence).
   function suggestionRecurrente(ligne: LigneBancaire): { action: 'ignorer' | 'virement_personnel'; occurrences: number } | null {
     if (ligne.statut !== 'non_rapprochee') return null
-    const jourLigne = new Date(ligne.date).getDate()
-    const moisLigne = new Date(ligne.date).getFullYear() * 12 + new Date(ligne.date).getMonth()
+    const jourLigne = jourDe(ligne.date)
+    const moisLigne = anneeDe(ligne.date) * 12 + (moisDe(ligne.date) - 1)
 
     const correspondances = lignes.filter((l) => {
       if (l.id === ligne.id) return false
       if (Math.abs(l.montant - ligne.montant) > 0.01) return false
-      const moisL = new Date(l.date).getFullYear() * 12 + new Date(l.date).getMonth()
+      const moisL = anneeDe(l.date) * 12 + (moisDe(l.date) - 1)
       if (moisL === moisLigne) return false
-      if (Math.abs(new Date(l.date).getDate() - jourLigne) > 3) return false
+      if (Math.abs(jourDe(l.date) - jourLigne) > 3) return false
       return l.prelevement_personnel || l.statut === 'ignoree'
     })
     if (correspondances.length < 2) return null

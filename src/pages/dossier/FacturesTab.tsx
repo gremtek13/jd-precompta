@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import type { FactureEmise } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import FactureFormModal from './FactureFormModal'
@@ -42,8 +42,8 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   }
   useEffect(() => { load() }, [dossierId])
 
-  const anneesDisponibles = [...new Set(factures.map((f) => new Date(f.date_emission).getFullYear()))].sort((a, b) => b - a)
-  const filtered = factures.filter((f) => anneeFilter === 'toutes' || new Date(f.date_emission).getFullYear() === anneeFilter)
+  const anneesDisponibles = [...new Set(factures.map((f) => anneeDe(f.date_emission)))].sort((a, b) => b - a)
+  const filtered = factures.filter((f) => anneeFilter === 'toutes' || anneeDe(f.date_emission) === anneeFilter)
 
   async function supprimer(f: FactureEmise) {
     if (!window.confirm(`Supprimer le brouillon de facture pour "${f.tiers_nom}" ? Cette action est irréversible.`)) return

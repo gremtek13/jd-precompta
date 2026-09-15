@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import type { LigneBancaire } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 
@@ -34,8 +34,8 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
-  const anneesDisponibles = [...new Set(lignes.map((l) => new Date(l.date).getFullYear()))].sort((a, b) => b - a)
-  const filtered = anneeFilter === 'toutes' ? lignes : lignes.filter((l) => new Date(l.date).getFullYear() === anneeFilter)
+  const anneesDisponibles = [...new Set(lignes.map((l) => anneeDe(l.date)))].sort((a, b) => b - a)
+  const filtered = anneeFilter === 'toutes' ? lignes : lignes.filter((l) => anneeDe(l.date) === anneeFilter)
   const total = filtered.reduce((s, l) => s + Math.abs(l.montant), 0)
 
   return (

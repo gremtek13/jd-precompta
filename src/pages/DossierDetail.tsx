@@ -25,6 +25,7 @@ import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
 import Avatar from '../components/widgets/Avatar'
+import { anneeDe } from '../lib/format'
 
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
@@ -92,9 +93,9 @@ export default function DossierDetail() {
     ]).then(([{ data: pcs }, { data: lgs }, { data: ecr }]) => {
       if (annule) return
       const annees = new Set<number>()
-      for (const p of pcs ?? []) if (p.date_piece) annees.add(new Date(p.date_piece).getFullYear())
-      for (const l of lgs ?? []) annees.add(new Date(l.date).getFullYear())
-      for (const e of ecr ?? []) annees.add(new Date(e.date).getFullYear())
+      for (const p of pcs ?? []) if (p.date_piece) annees.add(anneeDe(p.date_piece))
+      for (const l of lgs ?? []) annees.add(anneeDe(l.date))
+      for (const e of ecr ?? []) annees.add(anneeDe(e.date))
       setAnneesDisponibles([...annees].sort((a, b) => b - a))
     })
     return () => { annule = true }
