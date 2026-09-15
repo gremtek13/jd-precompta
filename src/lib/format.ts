@@ -23,6 +23,29 @@ export function formatDate(value: string | null): string {
   return new Date(value).toLocaleDateString('fr-FR')
 }
 
+// Année, mois (1-12) et jour d'une date, lus sur le calendrier civil.
+//
+// `new Date('2026-01-01').getFullYear()` ne rend 2026 qu'à l'est de Greenwich : la chaîne est
+// interprétée comme minuit UTC, donc replacée en heure locale elle recule d'un jour dès que le
+// décalage est négatif — à New York, ce 1er janvier se lit 31 décembre 2025. Tant que les
+// utilisateurs sont en France le résultat est juste par chance, pas par construction ; ces
+// fonctions lisent directement les composantes de la chaîne et ne dépendent d'aucun fuseau.
+//
+// À n'utiliser que sur une date SQL (AAAA-MM-JJ) ou un horodatage ISO : pour un instant précis
+// (`created_at`), c'est bien la date UTC portée par la chaîne qui est lue, ce qui reste le repère
+// stable attendu pour classer par exercice.
+export function anneeDe(date: string): number {
+  return Number(date.slice(0, 4))
+}
+
+export function moisDe(date: string): number {
+  return Number(date.slice(5, 7))
+}
+
+export function jourDe(date: string): number {
+  return Number(date.slice(8, 10))
+}
+
 // Nombre de mois de l'année en cours déjà entièrement terminés (0 en janvier, 8 en septembre...) —
 // sert à ne jamais réclamer un relevé bancaire ou une échéance pour le mois en cours, qui vient
 // peut-être de commencer (voir DossiersList, ChecklistTab). Avant ce correctif, le mois en cours

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatMoney } from '../../lib/format'
+import { anneeDe, formatMoney } from '../../lib/format'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
 import type { Categorie, EcritureBrouillon, Piece } from '../../lib/types'
@@ -43,7 +43,7 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
     })
   }, [dossierId])
 
-  const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => new Date(e.date).getFullYear() === anneeFilter)
+  const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => anneeDe(e.date) === anneeFilter)
 
   // Tableau de pilotage (voir audit ergonomie comparatif) — deux repères qui manquaient à cet onglet :
   // une tendance de trésorerie récente (indépendante de l'exercice sélectionné, comme le plan de
@@ -52,7 +52,7 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
   // juste un chiffre de synthèse avec un renvoi.
   const evolutionMensuelle = useMemo(() => calculerEvolutionMensuelle(ecritures, NB_MOIS_EVOLUTION), [ecritures])
   const anneeCourante = new Date().getFullYear()
-  const piecesAnnee = pieces.filter((p) => p.date_piece && new Date(p.date_piece).getFullYear() === anneeCourante)
+  const piecesAnnee = pieces.filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
   const piecesValideesAnnee = piecesAnnee.filter((p) => p.statut === 'validee')
   const avancementPct = piecesAnnee.length > 0 ? Math.round((piecesValideesAnnee.length / piecesAnnee.length) * 100) : null
 

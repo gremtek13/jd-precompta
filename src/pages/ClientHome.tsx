@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { comptesParMois, dateRelative, moisEcoulesCetteAnnee } from '../lib/format'
+import { anneeDe, comptesParMois, dateRelative, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
 import { IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -125,7 +125,7 @@ export default function ClientHome() {
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 
-  const depotsAnnee = depots.filter((d) => new Date(d.createdAt).getFullYear() === ANNEE_COURANTE)
+  const depotsAnnee = depots.filter((d) => anneeDe(d.createdAt) === ANNEE_COURANTE)
   const tendanceDepots = comptesParMois(depots.map((d) => d.createdAt), NB_MOIS_TENDANCE)
   const moisCourant = tendanceDepots[tendanceDepots.length - 1] ?? 0
   const moisPrecedent = tendanceDepots[tendanceDepots.length - 2] ?? 0
@@ -140,10 +140,10 @@ export default function ClientHome() {
   // mois qui n'est pas fini.
   const moisEcoules = moisEcoulesCetteAnnee()
   const moisPresents = new Set(
-    lignes.filter((l) => new Date(l.date).getFullYear() === ANNEE_COURANTE).map((l) => new Date(l.date).getMonth() + 1),
+    lignes.filter((l) => anneeDe(l.date) === ANNEE_COURANTE).map((l) => moisDe(l.date)),
   )
   const moisManquants = Array.from({ length: moisEcoules }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
-  const cotisationsAnnee = cotisations.filter((c) => new Date(c.echeance).getFullYear() === ANNEE_COURANTE)
+  const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === ANNEE_COURANTE)
 
   const aEnvoyer = [
     {

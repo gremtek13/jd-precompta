@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
 import PieceFormModal from './PieceFormModal'
@@ -97,7 +97,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     if (sousDossierFilter === 'sans' && p.sous_dossier_id) return false
     if (sousDossierFilter !== 'tous' && sousDossierFilter !== 'sans' && p.sous_dossier_id !== sousDossierFilter) return false
     if (sansDateOnly) return !p.date_piece
-    if (anneeFilter !== 'toutes' && (!p.date_piece || new Date(p.date_piece).getFullYear() !== anneeFilter)) return false
+    if (anneeFilter !== 'toutes' && (!p.date_piece || anneeDe(p.date_piece) !== anneeFilter)) return false
     return true
   })
   // "À valider" seulement : les pièces à faible confiance d'extraction remontent en premier — ce sont

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ajouterMois, dernierJourDuMois, premierJourDuMoisCourant, aujourdHuiSql } from './format'
+import { ajouterMois, anneeDe, aujourdHuiSql, dernierJourDuMois, jourDe, moisDe, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -34,6 +34,29 @@ describe('ajouterMois', () => {
 
   it('ignore une éventuelle partie horaire', () => {
     expect(ajouterMois('2026-01-15T23:30:00Z', 1)).toBe('2026-02-15')
+  })
+})
+
+describe('anneeDe, moisDe, jourDe', () => {
+  it('lit le 1er janvier dans la bonne année', () => {
+    // Le cas qui décide : `new Date('2026-01-01').getFullYear()` rend 2025 à New York, parce que
+    // minuit UTC y est encore le 31 décembre. C'est l'année qui choisit la suite de numérotation
+    // d'une facture — une suite annuelle légalement sans trou.
+    expect(anneeDe('2026-01-01')).toBe(2026)
+    expect(anneeDe('2026-12-31')).toBe(2026)
+  })
+
+  it('lit le mois en 1-12 et le jour sans décalage', () => {
+    expect(moisDe('2026-01-01')).toBe(1)
+    expect(moisDe('2026-12-31')).toBe(12)
+    expect(jourDe('2026-03-10')).toBe(10)
+    expect(jourDe('2026-03-01')).toBe(1)
+  })
+
+  it('accepte aussi un horodatage complet', () => {
+    expect(anneeDe('2026-07-04T22:30:00Z')).toBe(2026)
+    expect(moisDe('2026-07-04T22:30:00Z')).toBe(7)
+    expect(jourDe('2026-07-04T22:30:00Z')).toBe(4)
   })
 })
 

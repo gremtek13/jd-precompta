@@ -367,7 +367,7 @@ posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 - `npm run test:fuseaux` — la même suite sous Europe/Paris, UTC,
   America/New_York et Pacific/Auckland.
 
-**Le fuseau est épinglé sur `Europe/Paris` dans `vitest.config.ts`, et ce n'est
+**Le fuseau est porté par les scripts npm, pas par `vitest.config.ts`, et ce n'est
 pas un détail.** La suite est née de trois bugs de dates qui faussaient le plan
 de trésorerie (chaque mois étiqueté un mois trop tôt), l'échéancier d'emprunt
 (février sauté pour un prêt démarré un 31, puis tout décalé d'un jour après le
@@ -375,9 +375,15 @@ passage à l'heure d'été) et la période par défaut d'un pack. Tous passaient
 UTC — qui est justement le fuseau des runners GitHub. Une suite lancée au fuseau
 par défaut les aurait laissés revenir sans rien dire.
 
+Le fuseau a d'abord été épinglé dans `vitest.config.ts` via `env: { TZ: ... }` : cette
+valeur écrasait celle du shell, si bien que `test:fuseaux` rejouait quatre fois la
+même suite sous Europe/Paris en affichant les étiquettes des quatre fuseaux. D'où
+`fuseau.test.ts`, qui vérifie à chaque exécution que le fuseau demandé est bien
+celui appliqué — un harnais qui ment est pire qu'un harnais absent.
+
 Règle qui en découle : **tout calcul de date reste sur le calendrier civil**
-(`ajouterMois`, `dernierJourDuMois`, `premierJourDuMoisCourant`, `aujourdHuiSql`
-dans `lib/format.ts`), jamais un `new Date(...)` converti par `toISOString()`, et
+(`ajouterMois`, `dernierJourDuMois`, `premierJourDuMoisCourant`, `aujourdHuiSql`,
+`anneeDe`, `moisDe`, `jourDe` dans `lib/format.ts`), jamais un `new Date(...)` converti par `toISOString()`, et
 les bornes de période se comparent en chaînes `AAAA-MM-JJ`.
 
 CI : `.github/workflows/tests.yml` rejoue tests multi-fuseaux + lint + build sur

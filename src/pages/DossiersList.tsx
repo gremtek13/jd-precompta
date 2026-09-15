@@ -2,7 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
-import { dateRelative, moisEcoulesCetteAnnee } from '../lib/format'
+import { dateRelative, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
 import type { Dossier } from '../lib/types'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -101,7 +101,7 @@ export default function DossiersList() {
     const moisParDossier = new Map<string, Set<number>>()
     for (const l of lignesRes.data ?? []) {
       const set = moisParDossier.get(l.dossier_id) ?? new Set<number>()
-      set.add(new Date(l.date).getMonth() + 1)
+      set.add(moisDe(l.date))
       moisParDossier.set(l.dossier_id, set)
     }
 

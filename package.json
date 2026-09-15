@@ -7,8 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
-    "test": "vitest run",
-    "test:watch": "vitest",
+    "test": "TZ=Europe/Paris vitest run",
+    "test:watch": "TZ=Europe/Paris vitest",
     "test:fuseaux": "for tz in Europe/Paris UTC America/New_York Pacific/Auckland; do echo \"— $tz\"; TZ=$tz vitest run || exit 1; done",
     "preview": "vite preview"
   },
