@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, dernierJourDuMois, jourDe, moisDe, premierJourDuMoisCourant } from './format'
+import { ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, comptesParMois, dateLocaleDe, dernierJourDuMois, jourDe, moisDe, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -81,6 +81,39 @@ describe('anneeLocaleDe', () => {
   it('coïncide avec le libellé en dehors de la bascule', () => {
     expect(anneeLocaleDe('2026-06-15T10:00:00Z')).toBe(2026)
     expect(anneeLocaleDe('2026-01-02T12:00:00Z')).toBe(2026)
+  })
+})
+
+describe('dateLocaleDe', () => {
+  it('rend la date civile que vit l’utilisateur', () => {
+    // Sert de date de repli à une écriture ou à une date d'acquisition d'immobilisation quand la
+    // pièce ne porte pas de date : prendre le libellé UTC daterait de la veille tout ce qui est
+    // déposé entre minuit et 1 ou 2 h du matin, et rangerait un dépôt du Nouvel An dans
+    // l'exercice précédent.
+    const minuitPasse = new Date(2026, 0, 1, 0, 30)
+    expect(dateLocaleDe(minuitPasse.toISOString())).toBe('2026-01-01')
+
+    const unJourQuelconque = new Date(2026, 6, 4, 15, 0)
+    expect(dateLocaleDe(unJourQuelconque.toISOString())).toBe('2026-07-04')
+  })
+
+  it('produit toujours une date SQL bien formée', () => {
+    expect(dateLocaleDe(new Date(2026, 8, 5, 9, 0).toISOString())).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+describe('comptesParMois', () => {
+  it('range un dépôt du 1er à minuit passé dans le bon mois', () => {
+    // Les clés énumèrent des mois locaux : ranger les dépôts par leur libellé UTC attribuerait au
+    // mois précédent tout ce qui est déposé le 1er entre minuit et 1 ou 2 h.
+    const maintenant = new Date()
+    const premierDuMois = new Date(maintenant.getFullYear(), maintenant.getMonth(), 1, 0, 30)
+    const compteurs = comptesParMois([premierDuMois.toISOString()], 3)
+    expect(compteurs[compteurs.length - 1]).toBe(1) // le mois en cours, dernier de la série
+  })
+
+  it('ignore ce qui tombe hors de la fenêtre', () => {
+    expect(comptesParMois(['2019-01-01T12:00:00Z'], 3)).toEqual([0, 0, 0])
   })
 })
 

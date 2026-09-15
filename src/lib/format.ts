@@ -51,6 +51,19 @@ export function anneeLocaleDe(horodatage: string): number {
   return new Date(horodatage).getFullYear()
 }
 
+// Date civile (AAAA-MM-JJ) d'un horodatage, telle que la voit l'utilisateur — même raisonnement que
+// `anneeLocaleDe`, poussé au jour près.
+//
+// Sert partout où un `created_at` doit servir de date civile de repli : la date d'une écriture quand
+// la pièce n'en porte pas, la date d'acquisition d'une immobilisation. Prendre le libellé UTC
+// (`created_at.slice(0, 10)`) daterait de la veille tout ce qui est déposé entre minuit et 1 ou 2 h
+// du matin — et pour une écriture déposée dans la nuit du Nouvel An, la rangerait dans l'exercice
+// précédent.
+export function dateLocaleDe(horodatage: string): string {
+  const d = new Date(horodatage)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export function moisDe(date: string): number {
   return Number(date.slice(5, 7))
 }
@@ -133,7 +146,9 @@ export function comptesParMois(datesIso: string[], nbMois: number): number[] {
   })
   const compteurs = new Map(cles.map((c) => [c, 0]))
   for (const iso of datesIso) {
-    const cle = iso.slice(0, 7)
+    // Les clés ci-dessus énumèrent des mois locaux : ranger les dépôts par leur libellé UTC
+    // attribuerait au mois précédent tout ce qui est déposé le 1er entre minuit et 1 ou 2 h.
+    const cle = dateLocaleDe(iso).slice(0, 7)
     const actuel = compteurs.get(cle)
     if (actuel !== undefined) compteurs.set(cle, actuel + 1)
   }

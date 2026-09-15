@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { anneeDe, formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
 import type { Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -98,7 +98,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
         nature_id: naturesChoisies[piece.id] || null,
         libelle: piece.tiers ?? piece.nom_fichier,
         valeur: piece.montant_ttc,
-        date_acquisition: piece.date_piece ?? piece.created_at.slice(0, 10),
+        date_acquisition: piece.date_piece ?? dateLocaleDe(piece.created_at),
         duree_annees: duree,
       })
       if (insertError) throw insertError

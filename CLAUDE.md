@@ -384,9 +384,10 @@ celui appliqué — un harnais qui ment est pire qu'un harnais absent.
 Règle qui en découle : **tout calcul de date reste sur le calendrier civil**
 (`ajouterMois`, `dernierJourDuMois`, `premierJourDuMoisCourant`, `aujourdHuiSql`,
 `anneeDe`, `moisDe`, `jourDe` dans `lib/format.ts`) — avec une exception explicite :
-un `created_at` est un **instant**, pas une date civile, et son année se lit dans le fuseau
-de qui le regarde (`anneeLocaleDe`), sinon un dépôt fait le 1er janvier à 00 h 30 compterait
-dans l'année précédente, jamais un `new Date(...)` converti par `toISOString()`, et
+un `created_at` est un **instant**, pas une date civile, et se lit donc dans le fuseau
+de qui le regarde (`anneeLocaleDe`, `dateLocaleDe`), sinon un dépôt fait le 1er janvier à
+00 h 30 compterait dans l'année précédente — et son écriture de repli, dans l'exercice
+précédent, jamais un `new Date(...)` converti par `toISOString()`, et
 les bornes de période se comparent en chaînes `AAAA-MM-JJ`.
 
 CI : `.github/workflows/tests.yml` rejoue tests multi-fuseaux + lint + build sur
