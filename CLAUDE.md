@@ -356,7 +356,15 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   module qui le tire, fût-ce pour une constante. Les opérations qui parlent à la base
   vivent à part (`comptes.ts` pour les numéros de comptes PCG, `contrepartieBanque.ts`
   pour les deux écritures bancaires) — c'est ce découplage qui rend `ecritures.ts`,
-  `fec.ts` et les autres couvrables.
+  `fec.ts` et les autres couvrables. Même règle pour les dépendances navigateur :
+  `pdfText.ts` charge pdf.js, qui touche au DOM dès l'import, donc la lecture des
+  opérations d'un relevé PDF vit dans `relevePdf.ts`.
+- **Un montant ou une date bancaire n'est jamais analysé deux fois** : `csv.ts` porte
+  les deux seuls analyseurs (`parseMontantBancaire`, `parseDateBancaire`). Toute
+  expression régulière parallèle finit par diverger d'eux, et en silence — c'est le
+  défaut qui rendait 1,23 € pour « 1.234,56 » à l'import CSV, puis 846,47 € pour
+  « 20846,47 » à l'import PDF. Une expression régulière peut *repérer* un montant dans
+  une ligne ; elle ne l'interprète pas.
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -365,9 +373,11 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 87 tests couvrant les dates, les
-échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le cœur
-comptable (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts`) — les fichiers `*.test.ts` sont
+Vitest sur la logique métier pure de `src/lib` — 137 tests couvrant les dates, les
+échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
+pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
+(`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
+`relevePdf.ts` pour le PDF) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 - `npm test` — la suite, dans le fuseau des utilisateurs.
