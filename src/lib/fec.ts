@@ -27,6 +27,18 @@ function montant(n: number): string {
   return n.toFixed(2)
 }
 
+// Le FEC est un fichier en colonnes séparées par des tabulations : une tabulation ou un saut de
+// ligne dans un champ texte ne décale pas seulement une colonne, il coupe la ligne en deux et rend
+// le fichier structurellement invalide pour l'outil d'import d'un contrôleur.
+//
+// Ce n'est pas théorique : les libellés viennent du tiers extrait par OCR (voir extract-piece), et
+// un en-tête de facture sur plusieurs lignes ressort tel quel — "CAISSE\nD'EPARGNE\nCEPAC" est un
+// cas réellement présent en base. Tout séparateur est donc remplacé par une espace, et les espaces
+// multiples réduites, ce qui garde le libellé lisible sans casser le format.
+function champFec(valeur: string): string {
+  return valeur.replace(/[\t\r\n]+/g, ' ').replace(/ {2,}/g, ' ').trim()
+}
+
 // Libellé du compte pour la colonne CompteLib — les comptes fixes (TVA, banque) d'abord, sinon celui
 // de la catégorie qui porte ce compte_comptable, sinon le numéro de compte lui-même à défaut de mieux.
 export function libelleCompte(compte: string, categories: Categorie[]): string {
@@ -47,18 +59,34 @@ export function genererFec(ecritures: EcritureBrouillon[], pieces: Piece[], cate
     groupes.set(e.piece_id, [...(groupes.get(e.piece_id) ?? []), e])
   }
 
-  const entrees = [...groupes.entries()].sort((a, b) => a[1][0].date.localeCompare(b[1][0].date))
+  // Date de la pièce : celle du justificatif lui-même, avec pour repli la plus ancienne de ses
+  // lignes — jamais `rows[0].date`, qui dépend de l'ordre de retour de la requête et pourrait aussi
+  // bien être la date de paiement portée par la contrepartie banque que celle de la facture. Elle
+  // sert aussi de clé de tri : un EcritureNum non croissant dans un même journal fait rejeter le
+  // fichier, il ne doit donc pas dépendre d'un ordre non garanti.
+  function dateDePiece(pieceId: string, rows: EcritureBrouillon[]): string {
+    const piece = pieceById.get(pieceId)
+    if (piece?.date_piece) return piece.date_piece
+    return rows.reduce((plusAncienne, e) => (e.date < plusAncienne ? e.date : plusAncienne), rows[0].date)
+  }
+
+  const entrees = [...groupes.entries()]
+    .map(([pieceId, rows]) => ({ pieceId, rows, date: dateDePiece(pieceId, rows) }))
+    // À date égale, on départage sur l'identifiant pour que deux exports successifs du même
+    // brouillon produisent exactement le même fichier.
+    .sort((a, b) => a.date.localeCompare(b.date) || a.pieceId.localeCompare(b.pieceId))
+
   const compteurs: Record<string, number> = {}
   const lignes: string[] = [ENTETES_FEC.join('\t')]
 
-  for (const [pieceId, rows] of entrees) {
+  for (const { pieceId, rows, date } of entrees) {
     const piece = pieceById.get(pieceId)
     const journalCode = piece?.type_piece === 'vente' ? 'VE' : 'AC'
     const journalLib = piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
     compteurs[journalCode] = (compteurs[journalCode] ?? 0) + 1
     const ecritureNum = `${journalCode}${String(compteurs[journalCode]).padStart(5, '0')}`
     const pieceRef = piece?.nom_fichier ?? pieceId.slice(0, 8)
-    const pieceDate = yyyymmdd(rows[0].date)
+    const pieceDate = yyyymmdd(date)
 
     for (const e of rows) {
       lignes.push([
@@ -66,12 +94,12 @@ export function genererFec(ecritures: EcritureBrouillon[], pieces: Piece[], cate
         journalLib,
         ecritureNum,
         yyyymmdd(e.date),
-        e.compte,
-        libelleCompte(e.compte, categories),
+        champFec(e.compte),
+        champFec(libelleCompte(e.compte, categories)),
         '', '',
-        pieceRef,
+        champFec(pieceRef),
         pieceDate,
-        e.libelle,
+        champFec(e.libelle),
         e.sens === 'debit' ? montant(e.montant) : montant(0),
         e.sens === 'credit' ? montant(e.montant) : montant(0),
         '', '',
