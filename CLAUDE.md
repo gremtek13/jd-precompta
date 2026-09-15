@@ -365,6 +365,11 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   défaut qui rendait 1,23 € pour « 1.234,56 » à l'import CSV, puis 846,47 € pour
   « 20846,47 » à l'import PDF. Une expression régulière peut *repérer* un montant dans
   une ligne ; elle ne l'interprète pas.
+- **Sur un relevé à deux colonnes Débit / Crédit, le sens est une information de mise en
+  page, pas de texte.** Une fois les fragments recollés, les deux colonnes donnent la
+  même chaîne : c'est l'abscisse du montant (`LignePdf.xFin`, gardée par
+  `extractPdfLignes`) qui les sépare. D'où le sélecteur « Format du montant » côté PDF
+  comme côté CSV — sans lui, tout un relevé ressortait en positif.
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -373,7 +378,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 137 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 144 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
