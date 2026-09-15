@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
+import { dateLocaleDe } from './format'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
@@ -40,7 +41,7 @@ export interface LigneAGenerer {
 export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, compteComptable: string): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const libelle = piece.tiers ?? piece.nom_fichier
-  const date = piece.date_piece ?? piece.created_at.slice(0, 10)
+  const date = piece.date_piece ?? dateLocaleDe(piece.created_at)
   const base = { dossier_id: dossierId, piece_id: piece.id, date, libelle, statut: 'proposee' as const }
 
   // Un montant de pièce négatif (avoir, remboursement — ça arrive, une pièce validée existante en a
