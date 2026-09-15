@@ -370,6 +370,15 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   même chaîne : c'est l'abscisse du montant (`LignePdf.xFin`, gardée par
   `extractPdfLignes`) qui les sépare. D'où le sélecteur « Format du montant » côté PDF
   comme côté CSV — sans lui, tout un relevé ressortait en positif.
+- **Une écriture en base est vérifiée, jamais supposée réussie.** `supabase.from(...)` ne lève
+  pas : l'erreur se lit dans `{ error }`. Un `await` sans destructuration est un échec
+  silencieux — c'est ainsi que la règle tiers → catégorie du cabinet a échoué à chaque
+  tentative pendant des mois (`cabinet_id` absent du payload *et* `onConflict` ne
+  correspondant à aucun index unique), table vide, sans un seul signal. Une écriture
+  best-effort reste non bloquante, mais elle est journalisée.
+- **Un type de `types.ts` décrit la table, colonnes NOT NULL comprises.** `TiersCategorieCabinet`
+  omettait `cabinet_id` : le compilateur validait donc un payload que Postgres rejetait. Vérifier
+  la table (`information_schema.columns`, `pg_constraint`) avant d'écrire le type, pas après.
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -378,7 +387,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 144 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 173 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,

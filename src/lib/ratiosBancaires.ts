@@ -1,4 +1,4 @@
-import type { SituationIntermediaire } from './situationIntermediaire'
+import { POSTE_AMORTISSEMENTS, type SituationIntermediaire } from './situationIntermediaire'
 
 export interface RatiosBancaires {
   cafAnnuelleEstimee: number
@@ -18,7 +18,9 @@ export function calculerRatiosBancaires(
   situationAnnee: SituationIntermediaire, moisEcoules: number, capitalRestantDuTotal: number,
   mensualiteTotale: number, moyenneEncaissements: number,
 ): RatiosBancaires {
-  const posteAmortissements = situationAnnee.totauxParPoste.find(([poste]) => poste === 'Amortissements')?.[1] ?? 0
+  // Poste importé, jamais réécrit : une chaîne littérale recopiée ici se serait désynchronisée d'un
+  // renommage côté situationIntermediaire.ts, et le `find` aurait rendu 0 en silence.
+  const posteAmortissements = situationAnnee.totauxParPoste.find(([poste]) => poste === POSTE_AMORTISSEMENTS)?.[1] ?? 0
   // CAF = résultat + dotations aux amortissements (charge non décaissée). `posteAmortissements` est
   // déjà négatif et déjà compté pour l'année entière (voir situationIntermediaire.ts) — le retirer du
   // résultat avant de reproratiser au nombre de mois écoulés donne directement la CAF annualisée,

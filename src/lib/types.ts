@@ -74,9 +74,12 @@ export interface TiersCategorie {
 }
 
 // Même correspondance tiers → catégorie que TiersCategorie, mais partagée entre tous les dossiers
-// (voir migration tiers_categories_cabinet) — categorie_id y référence toujours une catégorie globale.
+// d'un cabinet (voir migration tiers_categories_cabinet) — categorie_id y référence toujours une
+// catégorie globale. `cabinet_id` manquait ici alors que la colonne existe et est NOT NULL : c'est
+// ce qui a laissé écrire un enregistrement sans elle, rejeté à chaque fois par la base.
 export interface TiersCategorieCabinet {
   id: string
+  cabinet_id: string
   tiers_normalise: string
   categorie_id: string
   updated_at: string
