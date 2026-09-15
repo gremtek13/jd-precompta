@@ -2,7 +2,7 @@ import { useEffect, useState, type DragEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { anneeDe, formatDate, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
+import { anneeDe, anneeLocaleDe, formatDate, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece } from '../lib/types'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -122,7 +122,7 @@ export default function ClientUpload() {
   )
   const moisManquants = Array.from({ length: MOIS_ECOULES }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
   const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === ANNEE_COURANTE)
-  const piecesEtDocsAnnee = depots.filter((d) => anneeDe(d.createdAt) === ANNEE_COURANTE)
+  const piecesEtDocsAnnee = depots.filter((d) => anneeLocaleDe(d.createdAt) === ANNEE_COURANTE)
 
   const items = [
     {

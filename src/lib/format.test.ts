@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ajouterMois, anneeDe, aujourdHuiSql, dernierJourDuMois, jourDe, moisDe, premierJourDuMoisCourant } from './format'
+import { ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, dernierJourDuMois, jourDe, moisDe, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -57,6 +57,30 @@ describe('anneeDe, moisDe, jourDe', () => {
     expect(anneeDe('2026-07-04T22:30:00Z')).toBe(2026)
     expect(moisDe('2026-07-04T22:30:00Z')).toBe(7)
     expect(jourDe('2026-07-04T22:30:00Z')).toBe(4)
+  })
+})
+
+describe('anneeLocaleDe', () => {
+  it('classe un horodatage dans l’année que voit l’utilisateur', () => {
+    // La propriété, énoncée sans dépendre du fuseau du runner : un dépôt que l'utilisateur vit
+    // comme le 1er janvier à 00 h 30 doit compter dans la nouvelle année, quel que soit le libellé
+    // UTC de l'horodatage. À Paris ce moment s'écrit 2025-12-31T23:30:00Z — lire son libellé le
+    // rangerait en 2025, alors que l'utilisateur vient de le déposer en 2026.
+    const reveillonLocal = new Date(2026, 0, 1, 0, 30)
+    const horodatage = reveillonLocal.toISOString()
+
+    expect(anneeLocaleDe(horodatage)).toBe(2026)
+
+    // Et là où le fuseau est à l'est de Greenwich, le libellé diverge bien — c'est toute la raison
+    // d'être des deux fonctions. Ailleurs, les deux coïncident et il n'y a rien à démontrer.
+    if (horodatage.startsWith('2025')) {
+      expect(anneeDe(horodatage)).toBe(2025)
+    }
+  })
+
+  it('coïncide avec le libellé en dehors de la bascule', () => {
+    expect(anneeLocaleDe('2026-06-15T10:00:00Z')).toBe(2026)
+    expect(anneeLocaleDe('2026-01-02T12:00:00Z')).toBe(2026)
   })
 })
 

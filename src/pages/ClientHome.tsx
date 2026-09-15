@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { anneeDe, comptesParMois, dateRelative, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
+import { anneeDe, anneeLocaleDe, comptesParMois, dateRelative, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
 import { IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -125,7 +125,7 @@ export default function ClientHome() {
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 
-  const depotsAnnee = depots.filter((d) => anneeDe(d.createdAt) === ANNEE_COURANTE)
+  const depotsAnnee = depots.filter((d) => anneeLocaleDe(d.createdAt) === ANNEE_COURANTE)
   const tendanceDepots = comptesParMois(depots.map((d) => d.createdAt), NB_MOIS_TENDANCE)
   const moisCourant = tendanceDepots[tendanceDepots.length - 1] ?? 0
   const moisPrecedent = tendanceDepots[tendanceDepots.length - 2] ?? 0

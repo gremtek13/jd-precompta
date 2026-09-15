@@ -31,11 +31,24 @@ export function formatDate(value: string | null): string {
 // utilisateurs sont en France le résultat est juste par chance, pas par construction ; ces
 // fonctions lisent directement les composantes de la chaîne et ne dépendent d'aucun fuseau.
 //
-// À n'utiliser que sur une date SQL (AAAA-MM-JJ) ou un horodatage ISO : pour un instant précis
-// (`created_at`), c'est bien la date UTC portée par la chaîne qui est lue, ce qui reste le repère
-// stable attendu pour classer par exercice.
+// **À réserver aux colonnes `date` de Postgres** (`date_piece`, `echeance`, `date_acquisition`,
+// `date_emission`, `date_debut`, `date` des mouvements et des écritures) : une date civile n'a pas
+// d'heure, donc pas de fuseau, et c'est bien son libellé qu'il faut lire.
+//
+// Pour un `created_at` (timestamptz), c'est `anneeLocaleDe` qu'il faut — voir juste en dessous.
 export function anneeDe(date: string): number {
   return Number(date.slice(0, 4))
+}
+
+// Année d'un horodatage (`created_at`), telle que la voit l'utilisateur.
+//
+// Un timestamptz désigne un instant, pas une date civile : son année dépend donc légitimement du
+// fuseau de qui le regarde. Un dépôt fait le 1er janvier à 00 h 30 à Paris est horodaté
+// `2025-12-31T23:30:00Z` ; lire son libellé donnerait 2025, alors que l'utilisateur vient de le
+// déposer en 2026 et le cherchera dans les dépôts de cette année-là. Ici, contrairement aux dates
+// civiles, passer par `Date` est la bonne réponse et non le piège.
+export function anneeLocaleDe(horodatage: string): number {
+  return new Date(horodatage).getFullYear()
 }
 
 export function moisDe(date: string): number {

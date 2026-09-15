@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { anneeDe, formatDate } from '../../lib/format'
+import { anneeLocaleDe, formatDate } from '../../lib/format'
 import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
@@ -42,11 +42,11 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // Pas de date propre au document (juste sa date d'ajout dans l'appli) — l'onglet Année filtre donc
   // sur created_at, pas sur la période réelle du document (un vieux relevé déposé aujourd'hui atterrit
   // dans l'année en cours, pas dans l'année qu'il couvre).
-  const anneesDisponibles = [...new Set(documents.map((d) => anneeDe(d.created_at)))].sort((a, b) => b - a)
+  const anneesDisponibles = [...new Set(documents.map((d) => anneeLocaleDe(d.created_at)))].sort((a, b) => b - a)
 
   const filtered = documents.filter((d) => {
     if (categorieFilter !== 'toutes' && d.categorie !== categorieFilter) return false
-    if (anneeFilter !== 'toutes' && anneeDe(d.created_at) !== anneeFilter) return false
+    if (anneeFilter !== 'toutes' && anneeLocaleDe(d.created_at) !== anneeFilter) return false
     return true
   })
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
