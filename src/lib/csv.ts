@@ -46,11 +46,52 @@ export function parseCsv(text: string): string[][] {
   return rows
 }
 
-// Un montant bancaire français : "1 234,56", "-45,20", parfois avec des espaces insécables.
+// Un montant bancaire tel qu'il sort d'un export de banque : "1 234,56", "-45,20", "1.234,56",
+// "1,234.56", "45,20-", "(45,20)" — avec espaces insécables éventuels et symbole €.
+//
+// Le séparateur décimal ne peut pas être supposé : selon la banque, le point sépare les milliers
+// ("1.234,56") ou les décimales ("1,234.56"). On retient donc comme séparateur décimal le dernier
+// séparateur suivi d'un ou deux chiffres en fin de chaîne — un montant n'a jamais trois décimales —
+// et on traite tous les autres comme des séparateurs de milliers. L'ancienne version remplaçait la
+// première virgule par un point et laissait faire parseFloat, qui s'arrête au deuxième séparateur :
+// "1.234,56" devenait 1,23 €, silencieusement.
+//
+// Le signe peut aussi être rejeté en fin ("45,20-") ou porté par des parenthèses ("(45,20)"). Ne pas
+// les reconnaître transformait un débit en crédit — le sens d'une opération inversé sans que rien
+// ne le signale.
 export function parseMontantBancaire(raw: string): number | null {
-  const cleaned = raw.replace(/[\s ]/g, '').replace(',', '.')
-  const n = parseFloat(cleaned)
-  return Number.isNaN(n) ? null : n
+  let s = raw.replace(/[\s\u00a0\u202f]/g, '').replace(/\u20ac/g, '')
+  if (!s) return null
+
+  let negatif = false
+  if (/^\(.+\)$/.test(s)) {
+    negatif = true
+    s = s.slice(1, -1)
+  }
+  if (s.endsWith('-')) {
+    negatif = true
+    s = s.slice(0, -1)
+  } else if (s.startsWith('-')) {
+    negatif = true
+    s = s.slice(1)
+  } else if (s.startsWith('+')) {
+    s = s.slice(1)
+  }
+
+  if (!/^\d[\d.,]*$/.test(s)) return null
+
+  const dernierSeparateur = Math.max(s.lastIndexOf(','), s.lastIndexOf('.'))
+  let entier = s
+  let decimales = ''
+  if (dernierSeparateur !== -1 && /^\d{1,2}$/.test(s.slice(dernierSeparateur + 1))) {
+    entier = s.slice(0, dernierSeparateur)
+    decimales = s.slice(dernierSeparateur + 1)
+  }
+  entier = entier.replace(/[.,]/g, '')
+  if (!/^\d+$/.test(entier)) return null
+
+  const n = Number(decimales ? entier + '.' + decimales : entier)
+  return Number.isNaN(n) ? null : (negatif ? -n : n)
 }
 
 // Date au format JJ/MM/AAAA (le plus courant sur les relevés français) ou déjà ISO AAAA-MM-JJ.
@@ -75,7 +116,14 @@ function isFullDate(s: string): boolean {
   return /^\d{4}-\d{1,2}-\d{1,2}$/.test(t) || /^\d{1,2}[/.]\d{1,2}[/.]\d{2,4}$/.test(t)
 }
 function isFullMontant(s: string): boolean {
-  return /^-?\d{1,9}([.,]\d{1,2})?\s*€?$/.test(s.trim())
+  // Une date écrite en points ("01.01.2026") n'est faite que de chiffres et de séparateurs : sans
+  // cette exclusion elle compterait aussi comme un montant et brouillerait la détection.
+  if (isFullDate(s)) return false
+  // Délibérément adossé à l'analyseur plutôt qu'à une expression régulière parallèle : les deux
+  // divergeaient, l'expression rejetant les séparateurs de milliers que l'analyseur acceptait. Un
+  // relevé dont tous les montants dépassaient 999,99 n'obtenait alors aucune correspondance, et la
+  // colonne des montants était devinée par défaut — en pratique celle du libellé.
+  return parseMontantBancaire(s) !== null
 }
 
 export interface ColumnMapping {
