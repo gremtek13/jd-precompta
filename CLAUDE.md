@@ -172,9 +172,11 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `admin_du_dossier(dossier_id)`. Toute nouvelle table doit être vérifiée par
   impersonation réelle (JWT de test via `set_config`) avant d'être considérée
   fiable, jamais seulement relue. Une table sans colonne `dossier_id` propre
-  (enfant d'une autre table métier, ex. `mouvements_cca` sous
-  `comptes_courants_associes`) suit plutôt le précédent `pack_pieces` :
+  (enfant d'une autre table métier) remonte au parent dans sa policy :
   `admin_du_dossier((select dossier_id from parent where parent.id = enfant.parent_id))`.
+  Exemple vivant : `mouvements_cca` sous `comptes_courants_associes`. (Ce
+  motif venait à l'origine de `pack_pieces`, supprimée depuis — voir
+  "Problèmes connus".)
 - **Edge Functions auto-porteuses** : aucun import depuis `src/` — aussi
   petites et pures soient certaines fonctions (ex. calcul de montants de
   ligne de facture, constantes tarifaires IA), elles sont dupliquées entre
@@ -331,6 +333,35 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Problèmes connus importants
 
+- **Les advisors de sécurité Supabase ne seront jamais tous au vert, et deux
+  familles sont à laisser telles quelles :**
+  - `auth_leaked_password_protection` (WARN) — **non corrigeable sur ce
+    projet.** Le contrôle des mots de passe contre HaveIBeenPwned est réservé
+    au plan **Pro**, et l'organisation (`dloewvpmposfbvdwtqfz`) est sur le plan
+    **free** : la case est absente du dashboard, pas seulement décochée. Ce
+    n'est donc pas une négligence à corriger mais une fonctionnalité payante,
+    et le risque est faible ici (2 comptes, ceux du cabinet — pas une base
+    d'utilisateurs exposée au credential stuffing). Ne pas repartir en chasse
+    à chaque audit. Ce qui **est** réglable gratuitement, et vaut le détour :
+    la longueur minimale et les classes de caractères obligatoires, dans
+    Authentication → Providers → Email (8 caractères minimum, chiffres +
+    minuscules + majuscules + symboles).
+  - `rls_enabled_no_policy` (INFO) sur `super_admins`, `superpdp_credentials`
+    et `facture_numerotation` — **volontaire.** RLS activée sans aucune policy
+    vaut refus total côté client : ces tables ne sont atteintes que par les
+    fonctions `SECURITY DEFINER` et le service role. Y ajouter une policy pour
+    faire taire l'advisor ouvrirait précisément ce que ce réglage ferme.
+- **`pack_pieces` a été supprimée** (migration `drop_table_morte_pack_pieces`).
+  Elle devait tracer la composition de chaque pack livré au comptable ; le
+  générateur ne l'a jamais écrite. La preuve n'était pas qu'elle soit vide mais
+  qu'elle le soit **restée après qu'un pack a réellement été généré** — donc
+  contournée, pas « pas encore utilisée ». `packs` porte `nb_pieces` (un
+  compteur) et les chemins ZIP/Excel, la composition réelle vivant dans les
+  fichiers livrés. Conséquence à connaître : savoir « quelles pièces dans le
+  pack X » n'est pas modélisé en base, et ne l'a jamais été. Si le besoin
+  apparaît, le reconstruire depuis la période du pack et le statut des pièces,
+  ou créer une table réellement alimentée — ne pas recréer celle-ci à
+  l'identique en espérant qu'elle se remplisse.
 - **`supabase.functions.invoke()` ne peuple jamais `data` en cas d'erreur** —
   toujours utiliser `extraireErreurFonction()` (voir "Décisions
   techniques"), jamais lire `data?.error` directement sur un appel qui peut
@@ -596,3 +627,14 @@ pas de Supabase CLI configurée dans ce dépôt.
 - Avant d'élargir le périmètre d'une fonctionnalité en cours de cadrage
   (ex. facturation de suppléments), confirmer le périmètre exact avec
   l'utilisateur plutôt que de supposer.
+- Un advisor Supabase au rouge n'est pas forcément une action : vérifier
+  d'abord s'il est **verrouillé par le plan** (`get_organization` rend le
+  plan) ou **volontaire** avant d'envoyer l'utilisateur cliquer dans un
+  dashboard où le réglage n'existe pas. Voir "Problèmes connus".
+- Avant de supprimer une table jugée morte, réunir les six preuves plutôt
+  qu'une seule : 0 ligne, 0 clé étrangère entrante, 0 vue dépendante, 0
+  trigger, 0 fonction la mentionnant (`pg_proc.prosrc`), 0 référence dans le
+  code (front **et** Edge Functions). Et surtout distinguer « vide » de
+  « morte » : une table vide alors que la fonctionnalité qu'elle sert a
+  réellement tourné est contournée ; une table vide parce que rien ne l'a
+  encore exercée ne prouve rien.
