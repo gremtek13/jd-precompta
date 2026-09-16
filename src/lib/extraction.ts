@@ -54,6 +54,10 @@ export interface ExtractionResult {
   // Diagnostic temporaire — uniquement présent quand la fonction n'a pas réussi à trouver la TVA
   // par aucune méthode, pour voir le texte OCR brut plutôt que deviner un nouveau motif à l'aveugle.
   _lignes_brutes?: string[]
+  // Diagnostic de la date : les dates que le repli sur texte OCR a vues sans pouvoir trancher entre
+  // elles (voir extract-piece). Présent uniquement quand `date_piece` reste nul — c'est ce qui permet
+  // de comprendre un échec sur un document réel plutôt que de deviner un nouveau motif à l'aveugle.
+  _diag_dates?: string[]
 }
 
 // Textract n'accepte que JPEG/PNG/PDF(1 page)/TIFF. Une photo de téléphone peut être en HEIC en
