@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { attribuerNumeroFacture, calculerLigne, calculerTotaux, mentionsLegalesParDefaut } from '../../lib/factures'
+import { calculerLigne, calculerTotaux, enregistrerFacture, mentionsLegalesParDefaut } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
 
@@ -89,9 +89,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
     setSaving(statutCible === 'validee' ? 'validation' : 'brouillon')
     setError(null)
     try {
-      const { data: userData } = await supabase.auth.getUser()
       const payloadFacture = {
-        dossier_id: dossierId,
         tiers_nom: tiersNom.trim(),
         tiers_adresse: tiersAdresse.trim() || null,
         tiers_siret: tiersSiret.trim() || null,
@@ -107,44 +105,21 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
         montant_ttc: totaux.montant_ttc,
       }
 
-      let factureId = facture?.id
-      if (factureId) {
-        const { error: updateError } = await supabase.from('factures_emises').update(payloadFacture).eq('id', factureId)
-        if (updateError) throw updateError
-        // Remplacement complet des lignes plutôt qu'un diff ligne à ligne — une facture a rarement plus
-        // de quelques lignes, la complexité d'un vrai diff n'apporterait rien ici.
-        //
-        // L'erreur de cette suppression se lit avant d'insérer les nouvelles lignes : sans ce
-        // contrôle, un échec laissait les anciennes en place et l'insertion s'ajoutait par-dessus.
-        // La facture portait alors le double de ses lignes, avec un en-tête calculé sur les nouvelles
-        // seules — détail incohérent avec le total, et aucun signal. Toutes les autres écritures de
-        // cette fonction vérifiaient déjà la leur ; celle-ci était le seul oubli.
-        const { error: suppressionError } = await supabase.from('facture_lignes').delete().eq('facture_id', factureId)
-        if (suppressionError) throw suppressionError
-      } else {
-        const { data: inserted, error: insertError } = await supabase.from('factures_emises')
-          .insert({ ...payloadFacture, created_by: userData.user?.id ?? null })
-          .select().single()
-        if (insertError) throw insertError
-        factureId = inserted.id
-      }
+      // En-tête, remplacement complet des lignes et, le cas échéant, numéro et validation : un seul
+      // appel, une seule transaction côté base (voir la migration enregistrer_facture_transactionnel).
+      // C'étaient auparavant trois à cinq écritures indépendantes, dont chacune pouvait échouer seule
+      // et laisser la facture à mi-chemin — lignes doublées, ou numéro consommé sans être posé sur la
+      // facture, c'est-à-dire un trou dans une suite annuelle qui ne doit pas en avoir.
+      //
+      // Le remplacement complet des lignes reste préféré à un diff ligne à ligne : une facture en a
+      // rarement plus de quelques-unes.
+      await enregistrerFacture(dossierId, facture?.id ?? null, payloadFacture, lignesValides, statutCible === 'validee')
 
-      const { error: lignesError } = await supabase.from('facture_lignes').insert(
-        lignesValides.map((l, i) => ({ facture_id: factureId, ordre: i, ...l })),
-      )
-      if (lignesError) throw lignesError
-
+      // Hors transaction à dessein : mémoriser l'adresse sur le dossier est un confort, sans rapport
+      // avec l'intégrité de la facture, et son échec ne doit pas la remettre en cause.
       if (enregistrerAdresseDossier && emetteurAdresse.trim()) {
         const { error: adresseError } = await supabase.from('dossiers').update({ adresse: emetteurAdresse.trim() }).eq('id', dossierId)
         if (!adresseError) onAdresseUpdated(emetteurAdresse.trim())
-      }
-
-      if (statutCible === 'validee') {
-        const numero = await attribuerNumeroFacture(dossierId, dateEmission)
-        const { error: validationError } = await supabase.from('factures_emises')
-          .update({ statut: 'validee', numero, validated_at: new Date().toISOString() })
-          .eq('id', factureId)
-        if (validationError) throw validationError
       }
 
       onSaved()
