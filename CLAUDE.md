@@ -376,6 +376,15 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   tentative pendant des mois (`cabinet_id` absent du payload *et* `onConflict` ne
   correspondant à aucun index unique), table vide, sans un seul signal. Une écriture
   best-effort reste non bloquante, mais elle est journalisée.
+  Le danger se mesure à ce que l'écran fait ensuite : le plus souvent un `load()` suit, donc
+  l'échec se voit (l'ancien état réapparaît). Les cas à traiter en priorité sont ceux que
+  **rien ne recharge** — une écriture d'effet de bord, une suppression suivie d'un retrait
+  optimiste de l'état local, ou un `delete` dont dépend l'`insert` suivant (c'est ce dernier
+  motif qui dupliquait les lignes d'une facture modifiée).
+- **Un module couplé à Supabase se teste en simulant le client**, quand il n'y a pas de calcul
+  pur à en extraire : `vi.mock('./supabase', ...)` avec un faux chaînage (`from().select().eq()`)
+  dont le test programme la réponse — voir `contrepartieBanque.test.ts`. C'est la voie pour
+  couvrir `extraction.ts`, `importFichiers.ts`, `packGenerator.ts` et les autres.
 - **Un type de `types.ts` décrit la table, colonnes NOT NULL comprises.** `TiersCategorieCabinet`
   omettait `cabinet_id` : le compilateur validait donc un payload que Postgres rejetait. Vérifier
   la table (`information_schema.columns`, `pg_constraint`) avant d'écrire le type, pas après.
@@ -387,7 +396,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 173 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 182 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,

@@ -113,7 +113,14 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
         if (updateError) throw updateError
         // Remplacement complet des lignes plutôt qu'un diff ligne à ligne — une facture a rarement plus
         // de quelques lignes, la complexité d'un vrai diff n'apporterait rien ici.
-        await supabase.from('facture_lignes').delete().eq('facture_id', factureId)
+        //
+        // L'erreur de cette suppression se lit avant d'insérer les nouvelles lignes : sans ce
+        // contrôle, un échec laissait les anciennes en place et l'insertion s'ajoutait par-dessus.
+        // La facture portait alors le double de ses lignes, avec un en-tête calculé sur les nouvelles
+        // seules — détail incohérent avec le total, et aucun signal. Toutes les autres écritures de
+        // cette fonction vérifiaient déjà la leur ; celle-ci était le seul oubli.
+        const { error: suppressionError } = await supabase.from('facture_lignes').delete().eq('facture_id', factureId)
+        if (suppressionError) throw suppressionError
       } else {
         const { data: inserted, error: insertError } = await supabase.from('factures_emises')
           .insert({ ...payloadFacture, created_by: userData.user?.id ?? null })

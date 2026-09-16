@@ -187,7 +187,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return }
     const ligne = lignes.find((l) => l.id === ligneId)
     const piece = pieces.find((p) => p.id === pieceId)
-    if (ligne && piece) await synchroniserContrepartieBanque(dossierId, piece, ligne)
+    // Le rapprochement est enregistré ; seule la contrepartie comptable a pu échouer. On le dit sans
+    // annuler ce qui a réussi — la contrepartie se recréera au prochain passage, elle est idempotente.
+    if (ligne && piece) {
+      try {
+        await synchroniserContrepartieBanque(dossierId, piece, ligne)
+      } catch (err) {
+        window.alert(`Le rapprochement est enregistré, mais l'écriture de contrepartie banque n'a pas pu être créée : ${err instanceof Error ? err.message : err}`)
+      }
+    }
     load()
   }
 
@@ -203,7 +211,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       statut: 'non_rapprochee', piece_id: null, cotisation_id: null, prelevement_personnel: false,
     }).eq('id', ligneId)
     if (error) { window.alert(`L'annulation du rapprochement n'a pas pu être enregistrée : ${error.message}`); return }
-    if (ancienPieceId) await retirerContrepartieBanque(ancienPieceId)
+    // Ici l'échec compte double : l'annulation est enregistrée mais la contrepartie banque reste,
+    // donc une écriture de paiement subsiste pour un mouvement qui n'est plus rapproché.
+    if (ancienPieceId) {
+      try {
+        await retirerContrepartieBanque(ancienPieceId)
+      } catch (err) {
+        window.alert(`Le rapprochement est annulé, mais l'écriture de contrepartie banque n'a pas pu être retirée : ${err instanceof Error ? err.message : err}\n\nElle reste dans le brouillon d'écritures.`)
+      }
+    }
     load()
   }
 
@@ -322,7 +338,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           `${echecs.length} rapprochement${echecs.length > 1 ? 's' : ''} sur ${maj.length} n'${echecs.length > 1 ? 'ont' : 'a'} pas pu être enregistré${echecs.length > 1 ? 's' : ''} (${echecs[0].error!.message}) — les autres ont bien été appliqués.`,
         )
       }
-      await Promise.all(
+      // `allSettled` et non `all` : une contrepartie en échec ne doit pas empêcher les autres d'être
+      // créées. Les échecs sont comptés et annoncés en une fois, comme les rapprochements ci-dessus.
+      const contreparties = await Promise.allSettled(
         reussies
           .filter((m): m is { ligneId: string; pieceId: string } => !!m.pieceId)
           .map((m) => {
@@ -331,6 +349,13 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
             return ligne && piece ? synchroniserContrepartieBanque(dossierId, piece, ligne) : Promise.resolve()
           }),
       )
+      const contrepartiesEnEchec = contreparties.filter((r) => r.status === 'rejected')
+      if (contrepartiesEnEchec.length > 0) {
+        const premier = contrepartiesEnEchec[0] as PromiseRejectedResult
+        window.alert(
+          `${contrepartiesEnEchec.length} écriture${contrepartiesEnEchec.length > 1 ? 's' : ''} de contrepartie banque n'${contrepartiesEnEchec.length > 1 ? 'ont' : 'a'} pas pu être créée${contrepartiesEnEchec.length > 1 ? 's' : ''} (${premier.reason instanceof Error ? premier.reason.message : premier.reason}) — les rapprochements, eux, sont enregistrés.`,
+        )
+      }
     } finally {
       setRapprochementAuto(false)
       load()
