@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type CSSProperties } from 'react'
+import { useRef, useState, type ChangeEvent, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { chargerHashsExistants, estFichierSupporte, importerFichierDossier } from '../../lib/importFichiers'
 import type { SousDossier } from '../../lib/types'
@@ -42,6 +42,14 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
   const [ignores, setIgnores] = useState<string[]>([])
   const [running, setRunning] = useState(false)
   const [done, setDone] = useState(false)
+  // Verrou d'exécution, volontairement un ref et non l'état `running` : `setRunning(true)` ne prend
+  // effet qu'au rendu suivant, donc `disabled={running}` laisse passer deux clics rapprochés. Les
+  // deux appels entraient alors dans lancerImport(), chacun repartant avec SON ensemble d'empreintes
+  // (chargerHashsExistants est appelé une fois par exécution) : deux boucles parallèles aveugles
+  // l'une à l'autre, réimportant chaque fichier. Constaté sur un import réel — 141 lignes pour 78
+  // fichiers, le dédoublonnage ne rattrapant que les paires où le minutage jouait en sa faveur.
+  // Un ref s'écrit et se lit de façon synchrone : le second clic voit le verrou déjà posé.
+  const enCours = useRef(false)
 
   async function handleFolderChange(e: ChangeEvent<HTMLInputElement>) {
     const liste = Array.from(e.target.files ?? [])
@@ -78,6 +86,9 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
   }
 
   async function lancerImport() {
+    // Posé avant tout `await` : c'est ce qui rend le verrou effectif contre un double clic.
+    if (enCours.current) return
+    enCours.current = true
     setRunning(true)
     setDone(false)
     try {
@@ -102,6 +113,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
         }
       }
     } finally {
+      enCours.current = false
       setRunning(false)
       setDone(true)
       onImported()

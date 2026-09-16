@@ -522,6 +522,25 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   exactement à un typecheck réussi. La commande réelle est **`npx tsc -b`** (ce que fait
   `npm run build`). Un identifiant non importé est passé trois fois de suite à travers ce faux
   contrôle — c'est `oxlint` (`react(jsx-no-undef)`) qui l'a rattrapé.
+- **Un verrou d'exécution est un `useRef`, jamais un état React.** `setRunning(true)` ne prend
+  effet qu'au rendu suivant : `disabled={running}` laisse donc passer deux clics rapprochés, et
+  les deux entrent dans le traitement. Sur l'import en masse, chacun repartait avec **son propre**
+  ensemble d'empreintes (`chargerHashsExistants` est appelé une fois par exécution) : deux boucles
+  parallèles aveugles l'une à l'autre. Constaté sur un import réel — **141 lignes pour 78
+  fichiers**, le dédoublonnage ne rattrapant que les paires où le minutage jouait en sa faveur.
+  Poser le verrou dans un ref, **avant le premier `await`**. Même famille que la réservation
+  avant `await` du dépôt parallèle.
+- **Une date de pièce postérieure à aujourd'hui est impossible, pas improbable.** Ce qu'on lit
+  alors est une validité, une échéance ou une fin de droits. Le refus vit dans `toIsoDate`
+  (extract-piece), avec un jour de marge pour l'écart UTC/Paris. Le placer là et non dans la règle
+  de repli est délibéré : la date fautive venait du champ étiqueté par Textract, qui rejoint
+  `parseDate` **sans** passer par la fenêtre `a > anneeReference + 1` de `datesDeLaLigne`. Deux
+  chemins mènent à une date, un seul contrôle les couvre tous les deux.
+- **Le dernier recours de `parseDate` a deux défauts connus, non corrigés.** Il délègue à
+  `new Date()`, qui ignore les mois français (« 30 juin 2025 » rend `null` — les dates françaises
+  en toutes lettres sont lues par l'autre chemin, `DATE_TEXTUELLE_REGEX` + `MOIS_PAR_NOM`), et il
+  fait `new Date(texte).toISOString()`, soit minuit **local** relu en UTC : à l'est de Greenwich
+  la date recule d'un jour. À reprendre avec les tests multi-fuseaux qui vont avec.
 - **Une recherche filtre l'affichage, jamais un total.** Une barre de recherche réduit les
   lignes visibles ; les montants calculés à côté (TVA déductible/collectée, total appelé/versé,
   total prélevé) restent sur l'ensemble filtré par l'exercice, et un export (FEC) reste sur cet
@@ -540,7 +559,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 308 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 314 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
