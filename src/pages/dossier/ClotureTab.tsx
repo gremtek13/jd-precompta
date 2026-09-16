@@ -3,12 +3,10 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatMoney } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
+import { calculerDeclaration2035 } from '../../lib/declaration2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
-
-const POSTE_AMORTISSEMENTS = 'Amortissements'
-const POSTE_COTISATIONS = 'Cotisations sociales personnelles'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer de
@@ -45,8 +43,6 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 
   useEffect(() => { load() }, [dossierId])
 
-  const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
-  const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
 
   // Catégories utilisées par une pièce validée mais sans poste 2035 associé — le regroupement par
   // poste ignorera ces pièces tant que ce n'est pas renseigné (voir lib/controles.ts).
@@ -82,37 +78,34 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // Une pièce déjà enregistrée comme immobilisation est représentée par sa dotation annuelle (poste
   // Amortissements) plutôt que par son montant complet — même logique d'exclusion que l'onglet
   // Écritures, pour ne pas compter la dépense deux fois.
+  // Le calcul vit dans lib/declaration2035.ts : c'est le même moteur qui alimentera le formulaire
+  // fiscal, donc il doit être testé et partagé plutôt que refait ici. Une 2035 est par nature
+  // annuelle — le moteur exige un exercice précis, et « toutes » n'est qu'un cumul d'exercices pour
+  // consultation (l'avertissement ci-dessous le dit).
+  const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
+  const declarations = exercices.map((a) =>
+    calculerDeclaration2035(a, pieces, categories, immobilisations, cotisations),
+  )
+
+  // Cumul des exercices affichés. Sur un seul exercice — le cas normal — c'est l'identité.
   const totauxParPoste = new Map<string, number>()
-  for (const p of pieces) {
-    if (immobilisationPieceIds.has(p.id)) continue
-    if (anneeFilter !== 'toutes' && (!p.date_piece || anneeDe(p.date_piece) !== anneeFilter)) continue
-    const cat = categorieById(p.categorie_id)
-    if (!cat?.poste_2035) continue
-    const montant = p.montant_ht ?? p.montant_ttc ?? 0
-    const signe = p.type_piece === 'vente' ? 1 : -1
-    totauxParPoste.set(cat.poste_2035, (totauxParPoste.get(cat.poste_2035) ?? 0) + signe * montant)
+  for (const d of declarations) {
+    for (const l of d.recettes) totauxParPoste.set(l.poste, (totauxParPoste.get(l.poste) ?? 0) + l.montant)
+    for (const l of d.depenses) totauxParPoste.set(l.poste, (totauxParPoste.get(l.poste) ?? 0) - l.montant)
   }
-
-  // La dotation d'une immobilisation compte pour chaque année de sa durée d'amortissement, pas
-  // seulement l'année d'achat — filtrer par simple égalité d'année exclurait à tort les dotations des
-  // années suivantes pour un bien acheté avant l'année sélectionnée.
-  const totalAmortissements = immobilisations.reduce((sum, i) => {
-    // "sans_date" n'est jamais utilisé sur cet onglet (AnneeTabs n'a pas sansDate ici) — seul "toutes"
-    // demande le total non filtré, traité comme un cas particulier plutôt que deviné par le typage.
-    if (typeof anneeFilter !== 'number') return sum + i.valeur / i.duree_annees
-    const anneeAcquisition = anneeDe(i.date_acquisition)
-    const dansLaDuree = anneeFilter >= anneeAcquisition && anneeFilter < anneeAcquisition + i.duree_annees
-    return dansLaDuree ? sum + i.valeur / i.duree_annees : sum
-  }, 0)
-  if (totalAmortissements > 0) totauxParPoste.set(POSTE_AMORTISSEMENTS, -(totalAmortissements))
-
-  const totalCotisations = cotisations.reduce((sum, c) => {
-    if (anneeFilter !== 'toutes' && anneeDe(c.echeance) !== anneeFilter) return sum
-    return sum + (c.montant_verse ?? c.montant_appele)
-  }, 0)
-  if (totalCotisations > 0) totauxParPoste.set(POSTE_COTISATIONS, -(totalCotisations))
-
   const lignes = [...totauxParPoste.entries()].sort((a, b) => b[1] - a[1])
+
+  // Ce que le calcul a écarté, tous exercices affichés confondus. Une pièce validée qui n'entre dans
+  // aucun total était jusqu'ici retirée par un `continue` muet : sur une base fiscale, c'est un
+  // manquant que personne ne voit. Dédoublonné par id, une même pièce pouvant sortir d'un exercice
+  // à l'autre pour la même raison.
+  const exclues = new Map<string, { piece: Piece; raison: string }>()
+  for (const d of declarations) {
+    for (const p of d.exclusions.sansPoste) exclues.set(p.id, { piece: p, raison: 'catégorie sans poste 2035' })
+    for (const p of d.exclusions.sansDate) exclues.set(p.id, { piece: p, raison: 'aucune date' })
+    for (const p of d.exclusions.sansMontant) exclues.set(p.id, { piece: p, raison: 'aucun montant lisible' })
+  }
+  const piecesExclues = [...exclues.values()]
 
   return (
     <>
@@ -157,6 +150,30 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
                   </td>
                   <td>
                     <button className="btn btn-outline btn-sm" onClick={() => savePoste(c.id)}>Enregistrer</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {piecesExclues.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Pièces validées absentes du récapitulatif ({piecesExclues.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces pièces sont validées mais n'entrent dans aucun total : leur montant manquera dans la
+            déclaration tant que la cause n'est pas levée.
+          </p>
+          <table>
+            <thead><tr><th>Pièce</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
+            <tbody>
+              {piecesExclues.map(({ piece: p, raison }) => (
+                <tr key={p.id}>
+                  <td>{p.tiers ?? p.nom_fichier}</td>
+                  <td className="muted">{raison}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatMoney(p.montant_ht ?? p.montant_ttc)}
                   </td>
                 </tr>
               ))}
