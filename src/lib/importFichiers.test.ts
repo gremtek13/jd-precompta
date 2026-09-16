@@ -26,9 +26,27 @@ vi.mock('./supabase', () => {
     supabase: {
       from: (table: string) => ({
         ...lecture(table === 'pieces' ? 'pieces' : 'documents'),
+        // `.insert().select().single()` et non `.insert()` seul : l'import rend désormais la ligne
+        // écrite, à laquelle rattacher le texte OCR (voir lib/texteOcr.ts) — sa policy exige que la
+        // pièce existe déjà. Le faux client reproduit ce chaînage, sinon il testerait une écriture
+        // que la production ne fait plus.
         insert: (ligne: Record<string, unknown>) => {
           journal.push({ action: `insert:${table}`, cible: String(ligne.categorie ?? ligne.type_piece ?? '') })
-          return Promise.resolve({ error: etat.insertError })
+          return {
+            select: () => ({
+              single: () => Promise.resolve(
+                etat.insertError
+                  ? { data: null, error: etat.insertError }
+                  : { data: { id: `id-${table}` }, error: null },
+              ),
+            }),
+          }
+        },
+        // Archivage du texte lu — sans effet sur les assertions de ce fichier, mais le faux client
+        // doit le porter, sinon l'import échouerait sur un `upsert` absent.
+        upsert: (ligne: Record<string, unknown>) => {
+          journal.push({ action: `upsert:${table}`, cible: String(ligne.piece_id ?? '') })
+          return Promise.resolve({ error: null })
         },
       }),
       storage: {

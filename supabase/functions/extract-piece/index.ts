@@ -562,7 +562,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   if (documents.length === 0) {
     return {
       tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
-      confiance: "basse" as const, classification: "facture" as const,
+      confiance: "basse" as const, classification: "facture" as const, texte_ocr: "",
       lecture_2035: { recettes: null, charges_sociales_personnelles: null, resultat: null, _diag_2035: undefined, _diag_resultat: undefined },
       lecture_cotisation: { echeances: [], _diag_cotisation: undefined },
     }
@@ -660,6 +660,13 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     montant_ht: montantHtDeclare ?? (montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null),
     confiance: avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const,
     classification: classifieDocument(lignes),
+    // Le texte lu, rendu tel quel. Il était jusqu'ici calculé puis jeté : il sert à classer le
+    // document, à retrouver une date et à rattraper une TVA, mais rien n'en sortait. Or c'est
+    // exactement ce qui manque à l'opérateur devant « BOULANGER MARSEILLE, 199,99 € » — la réponse
+    // (« FOUR MICRO-ONDES ») était sous ses yeux à l'extraction, et personne ne l'a gardée.
+    // Aucun filtrage ni troncature : ce qui sera montré doit être ce qui a été lu, sinon on ne peut
+    // plus diagnostiquer une extraction douteuse avec.
+    texte_ocr: lignes.join("\n"),
     lecture_2035: lectureDeclaration2035(lignes),
     lecture_cotisation: lectureAppelCotisation(lignes),
     // Diagnostic temporaire : uniquement présent si la TVA reste introuvable après toutes les

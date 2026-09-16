@@ -17,13 +17,19 @@ const journal: { action: string; cible: string; charge?: Record<string, unknown>
 
 vi.mock('./supabase', () => ({
   supabase: {
-    from: () => ({
+    from: (table: string) => ({
       update: (ligne: Record<string, unknown>) => ({
         eq: (_col: string, id: string) => {
           journal.push({ action: 'update', cible: id, charge: ligne })
           return Promise.resolve({ error: etat.erreurEcriture })
         },
       }),
+      // Le texte OCR s'archive par upsert sur `piece_textes_ocr` (clé primaire piece_id) : une pièce
+      // relue remplace son texte au lieu d'en accumuler un second.
+      upsert: (ligne: Record<string, unknown>) => {
+        journal.push({ action: `upsert:${table}`, cible: String(ligne.piece_id), charge: ligne })
+        return Promise.resolve({ error: null })
+      },
     }),
     storage: {
       from: () => ({
@@ -60,7 +66,11 @@ vi.mock('./extraction', async (importOriginal) => {
   }
 })
 
-const { reextraireDates, piecesADater } = await import('./reextractionDates')
+const { relireDocuments, piecesADater, piecesARelire } = await import('./relectureDocuments')
+
+// Aucune pièce n'a de texte archivé, sauf mention contraire : c'est l'état d'un dossier existant au
+// moment où ce texte commence à être conservé.
+const AUCUN_TEXTE = new Set<string>()
 
 const piece = (o: Partial<Piece>): Piece => ({
   id: 'p1', dossier_id: 'd1', nom_fichier: 'facture.pdf', storage_path: 'd1/facture.pdf',
@@ -90,10 +100,10 @@ describe('piecesADater', () => {
   })
 })
 
-describe('reextraireDates', () => {
+describe('relireDocuments', () => {
   it('écrit la date trouvée sur les pièces qui en manquaient', async () => {
     etat.extractions.set('51310.pdf', { date_piece: '2025-06-30' })
-    const r = await reextraireDates([piece({ id: 'p1', nom_fichier: '51310.pdf', storage_path: 'd1/51310.pdf' })])
+    const r = await relireDocuments([piece({ id: 'p1', nom_fichier: '51310.pdf', storage_path: 'd1/51310.pdf' })], AUCUN_TEXTE)
 
     expect(r.datees).toEqual([{ nomFichier: '51310.pdf', date: '2025-06-30', deduite: false }])
     expect(journal.map((j) => j.action)).toEqual(['download', 'extract', 'update'])
@@ -107,23 +117,28 @@ describe('reextraireDates', () => {
       date_piece: '2025-06-30', tiers: 'TRANSMEDICAL SA', montant_ttc: 999.99,
       montant_ht: 833.32, montant_tva: 166.67, confiance: 'basse',
     })
-    await reextraireDates([piece({ id: 'p1', nom_fichier: '51310.pdf', storage_path: 'd1/51310.pdf' })])
+    await relireDocuments([piece({ id: 'p1', nom_fichier: '51310.pdf', storage_path: 'd1/51310.pdf' })], AUCUN_TEXTE)
 
     const ecriture = journal.find((j) => j.action === 'update')
     expect(Object.keys(ecriture!.charge!)).toEqual(['date_piece'])
     expect(ecriture!.charge).toEqual({ date_piece: '2025-06-30' })
   })
 
-  it('ne touche pas aux pièces qui ont déjà une date', async () => {
-    await reextraireDates([piece({ id: 'p1', date_piece: '2023-01-31' })])
-    expect(journal).toEqual([])
+  it('ne réécrit jamais la date d’une pièce qui en a déjà une', async () => {
+    // Elle est bien relue — son texte manque — mais sa date, corrigée à la main le cas échéant, ne
+    // doit pas être remplacée par ce que l'OCR croit lire.
+    etat.extractions.set('facture.pdf', { date_piece: '2099-12-31', texte_ocr: 'FOUR MICRO-ONDES' })
+    const r = await relireDocuments([piece({ id: 'p1', date_piece: '2023-01-31' })], AUCUN_TEXTE)
+    expect(journal.some((j) => j.action === 'update')).toBe(false)
+    expect(r.datees).toEqual([])
+    expect(r.textesArchives).toEqual(['facture.pdf'])
   })
 
   it('recense les pièces restées sans date, avec ce que la lecture a vu', async () => {
     // C'est ce diagnostic qui permet d'ajuster la lecture sur un document réel : sans lui, un échec
     // ne dit rien de plus que « ça n'a pas marché ».
     etat.extractions.set('880222.pdf', { date_piece: null, _diag_dates: ['2025-06-30', '2025-07-31'] })
-    const r = await reextraireDates([piece({ id: 'p1', nom_fichier: '880222.pdf', storage_path: 'd1/880222.pdf' })])
+    const r = await relireDocuments([piece({ id: 'p1', nom_fichier: '880222.pdf', storage_path: 'd1/880222.pdf' })], AUCUN_TEXTE)
 
     expect(r.sansDate).toEqual([{ nomFichier: '880222.pdf', datesVues: ['2025-06-30', '2025-07-31'] }])
     expect(journal.some((j) => j.action === 'update')).toBe(false)
@@ -135,11 +150,11 @@ describe('reextraireDates', () => {
     etat.extractions.set('a.pdf', { date_piece: '2025-01-31' })
     etat.extractions.set('b.pdf', new Error('Textract indisponible'))
     etat.extractions.set('c.pdf', { date_piece: '2025-03-31' })
-    const r = await reextraireDates([
+    const r = await relireDocuments([
       piece({ id: '1', nom_fichier: 'a.pdf', storage_path: 'd1/a.pdf' }),
       piece({ id: '2', nom_fichier: 'b.pdf', storage_path: 'd1/b.pdf' }),
       piece({ id: '3', nom_fichier: 'c.pdf', storage_path: 'd1/c.pdf' }),
-    ])
+    ], AUCUN_TEXTE)
 
     expect(r.datees.map((d) => d.nomFichier)).toEqual(['a.pdf', 'c.pdf'])
     expect(r.echecs).toEqual([{ nomFichier: 'b.pdf', message: 'Textract indisponible' }])
@@ -147,7 +162,7 @@ describe('reextraireDates', () => {
 
   it('compte en échec un fichier introuvable dans le stockage', async () => {
     etat.telechargementsEnEchec.add('d1/perdue.pdf')
-    const r = await reextraireDates([piece({ id: 'p1', nom_fichier: 'perdue.pdf', storage_path: 'd1/perdue.pdf' })])
+    const r = await relireDocuments([piece({ id: 'p1', nom_fichier: 'perdue.pdf', storage_path: 'd1/perdue.pdf' })], AUCUN_TEXTE)
 
     expect(r.echecs).toEqual([{ nomFichier: 'perdue.pdf', message: 'Object not found' }])
     expect(journal.some((j) => j.action === 'extract')).toBe(false)
@@ -158,7 +173,7 @@ describe('reextraireDates', () => {
     // restée vide en base — et le pack continuerait de l'ignorer.
     etat.extractions.set('51310.pdf', { date_piece: '2025-06-30' })
     etat.erreurEcriture = new Error('permission denied')
-    const r = await reextraireDates([piece({ id: 'p1', nom_fichier: '51310.pdf', storage_path: 'd1/51310.pdf' })])
+    const r = await relireDocuments([piece({ id: 'p1', nom_fichier: '51310.pdf', storage_path: 'd1/51310.pdf' })], AUCUN_TEXTE)
 
     expect(r.datees).toEqual([])
     expect(r.echecs).toEqual([{ nomFichier: '51310.pdf', message: 'permission denied' }])
@@ -172,11 +187,11 @@ describe('reextraireDates', () => {
     etat.delaiMs = 5
     for (const nom of ['a.pdf', 'b.pdf', 'c.pdf']) etat.extractions.set(nom, { date_piece: '2025-06-30' })
 
-    await reextraireDates([
+    await relireDocuments([
       piece({ id: '1', nom_fichier: 'a.pdf', storage_path: 'd1/a.pdf' }),
       piece({ id: '2', nom_fichier: 'b.pdf', storage_path: 'd1/b.pdf' }),
       piece({ id: '3', nom_fichier: 'c.pdf', storage_path: 'd1/c.pdf' }),
-    ])
+    ], AUCUN_TEXTE)
     expect(etat.maxEnVol).toBe(1)
   })
 
@@ -184,19 +199,21 @@ describe('reextraireDates', () => {
     etat.extractions.set('a.pdf', { date_piece: '2025-01-31' })
     etat.extractions.set('b.pdf', { date_piece: '2025-02-28' })
     const vues: string[] = []
-    await reextraireDates(
+    await relireDocuments(
       [
         piece({ id: '1', nom_fichier: 'a.pdf', storage_path: 'd1/a.pdf' }),
         piece({ id: '2', nom_fichier: 'b.pdf', storage_path: 'd1/b.pdf' }),
       ],
+      AUCUN_TEXTE,
       (fait, total, nom) => vues.push(`${fait}/${total} ${nom}`),
     )
     expect(vues).toEqual(['0/2 a.pdf', '1/2 b.pdf', '2/2 '])
   })
 
-  it('ne fait aucun appel quand il n’y a rien à dater', async () => {
-    const r = await reextraireDates([piece({ date_piece: '2023-01-31' })])
-    expect(r).toEqual({ datees: [], sansDate: [], echecs: [] })
+  it('ne fait aucun appel quand tout est déjà daté ET lu', async () => {
+    const dejaFaite = piece({ id: 'p1', date_piece: '2023-01-31' })
+    const r = await relireDocuments([dejaFaite], new Set(['p1']))
+    expect(r).toEqual({ datees: [], sansDate: [], textesArchives: [], echecs: [] })
     expect(journal).toEqual([])
   })
 })
@@ -207,10 +224,10 @@ describe('dates déduites', () => {
     // les déduites à part, avec leur valeur, et l'utilisateur les vérifie d'un coup d'œil.
     etat.extractions.set('lue.pdf', { date_piece: '2023-01-31' })
     etat.extractions.set('deduite.pdf', { date_piece: '2023-02-28', _date_deduite: true })
-    const r = await reextraireDates([
+    const r = await relireDocuments([
       piece({ id: '1', nom_fichier: 'lue.pdf', storage_path: 'd1/lue.pdf' }),
       piece({ id: '2', nom_fichier: 'deduite.pdf', storage_path: 'd1/deduite.pdf' }),
-    ])
+    ], AUCUN_TEXTE)
 
     expect(r.datees).toEqual([
       { nomFichier: 'lue.pdf', date: '2023-01-31', deduite: false },
@@ -220,7 +237,77 @@ describe('dates déduites', () => {
 
   it('n’invente pas une déduction quand le drapeau est absent', async () => {
     etat.extractions.set('a.pdf', { date_piece: '2023-01-31' })
-    const r = await reextraireDates([piece({ id: '1', nom_fichier: 'a.pdf', storage_path: 'd1/a.pdf' })])
+    const r = await relireDocuments([piece({ id: '1', nom_fichier: 'a.pdf', storage_path: 'd1/a.pdf' })], AUCUN_TEXTE)
     expect(r.datees[0].deduite).toBe(false)
+  })
+})
+
+describe('piecesARelire — ne repayer Textract que pour ce qui manque', () => {
+  it('retient une pièce sans date, et une pièce sans texte lu', () => {
+    const retenues = piecesARelire([
+      piece({ id: 'sans-date', date_piece: null }),
+      piece({ id: 'sans-texte', date_piece: '2023-01-31' }),
+      piece({ id: 'complete', date_piece: '2023-01-31' }),
+      piece({ id: 'sans-fichier', date_piece: null, storage_path: '' }),
+    ], new Set(['sans-date', 'complete']))
+    expect(retenues.map((p) => p.id)).toEqual(['sans-date', 'sans-texte'])
+  })
+
+  it('ne retient rien quand tout est daté et lu', () => {
+    // Chaque relecture est un appel Textract facturé : relire un dossier déjà complet serait payer
+    // deux fois la même lecture.
+    expect(piecesARelire([piece({ id: 'a', date_piece: '2023-01-31' })], new Set(['a']))).toEqual([])
+  })
+})
+
+describe('texte lu — ce qui manquait à l’arbitrage', () => {
+  it('archive le texte sous la pièce, dans son dossier', async () => {
+    etat.extractions.set('boulanger.pdf', { date_piece: '2025-03-04', texte_ocr: 'BOULANGER\nFOUR MICRO-ONDES\n199,99' })
+    const r = await relireDocuments(
+      [piece({ id: 'p9', dossier_id: 'd7', nom_fichier: 'boulanger.pdf', storage_path: 'd1/boulanger.pdf' })],
+      AUCUN_TEXTE,
+    )
+
+    const archive = journal.find((j) => j.action === 'upsert:piece_textes_ocr')
+    expect(archive?.charge).toMatchObject({
+      piece_id: 'p9', dossier_id: 'd7', texte: 'BOULANGER\nFOUR MICRO-ONDES\n199,99',
+    })
+    expect(r.textesArchives).toEqual(['boulanger.pdf'])
+  })
+
+  it('archive le texte même quand aucune date n’est trouvée', async () => {
+    // C'est justement la pièce indatable dont l'opérateur a le plus besoin de savoir ce qu'elle
+    // contient : la priver de son texte parce que sa date manque serait exactement à l'envers.
+    etat.extractions.set('illisible.pdf', { date_piece: null, texte_ocr: 'FOUR MICRO-ONDES' })
+    const r = await relireDocuments(
+      [piece({ id: 'p1', nom_fichier: 'illisible.pdf', storage_path: 'd1/illisible.pdf' })],
+      AUCUN_TEXTE,
+    )
+    expect(r.textesArchives).toEqual(['illisible.pdf'])
+    expect(r.sansDate.map((s) => s.nomFichier)).toEqual(['illisible.pdf'])
+  })
+
+  it('n’archive rien quand Textract n’a rien lu', async () => {
+    // Un texte vide ferait croire à l'écran que le document a été lu et qu'il ne contient rien,
+    // alors que le vrai message est « la lecture a échoué ».
+    etat.extractions.set('floue.jpg', { date_piece: '2025-01-31', texte_ocr: '   ' })
+    const r = await relireDocuments(
+      [piece({ id: 'p1', nom_fichier: 'floue.jpg', storage_path: 'd1/floue.jpg' })],
+      AUCUN_TEXTE,
+    )
+    expect(journal.some((j) => j.action === 'upsert:piece_textes_ocr')).toBe(false)
+    expect(r.textesArchives).toEqual([])
+  })
+
+  it('n’archive rien quand la fonction déployée ne rend pas encore ce champ', async () => {
+    // L'application et l'Edge Function se déploient séparément : pendant quelques minutes, l'une peut
+    // attendre un champ que l'autre n'envoie pas encore. Cela ne doit rien casser.
+    etat.extractions.set('ancienne.pdf', { date_piece: '2025-01-31' })
+    const r = await relireDocuments(
+      [piece({ id: 'p1', nom_fichier: 'ancienne.pdf', storage_path: 'd1/ancienne.pdf' })],
+      AUCUN_TEXTE,
+    )
+    expect(r.textesArchives).toEqual([])
+    expect(r.datees).toHaveLength(1)
   })
 })
