@@ -236,7 +236,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "lister_ecritures",
-    description: "Liste les lignes du brouillon d'écritures (date, compte, libellé, sens, montant), triées par date décroissante, plafonnées à 200 lignes. Sert à comprendre en détail pourquoi un compte a bougé.",
+    description: "Liste les lignes du brouillon d'écritures (date, compte, libellé, sens, montant), triées par date décroissante, plafonnées à 200 lignes. Sert à comprendre en détail pourquoi un compte a bougé. Renvoie { ecritures, total_disponible, nombre_renvoye, tronque } : si tronque vaut true, la liste est incomplète — n'en tire ni total ni comptage, resserre le filtre ou passe par lister_comptes, qui agrège sans plafond.",
     input_schema: {
       type: "object",
       properties: {
@@ -249,7 +249,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "lister_pieces",
-    description: "Liste les pièces (factures/reçus) du dossier avec tiers, montant, catégorie, statut et confiance d'extraction. Plafonné à 100 résultats.",
+    description: "Liste les pièces (factures/reçus) du dossier avec tiers, montant, catégorie, statut et confiance d'extraction. Plafonné à 100 résultats. Renvoie { pieces, total_disponible, nombre_renvoye, tronque } : si tronque vaut true, la liste est incomplète — n'en tire ni total ni comptage, resserre le filtre (tiers, année, statut) ou passe par resume_dossier / points_a_traiter, qui comptent sans plafond.",
     input_schema: {
       type: "object",
       properties: {
@@ -267,6 +267,28 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
+
+// Enveloppe d'un outil de liste plafonnée. Le plafond est nécessaire (une réponse d'outil part dans
+// le contexte du modèle, donc elle est facturée et bornée), mais il était invisible : l'outil rendait
+// le tableau tronqué, sans rien qui le distingue d'une liste complète. Le modèle additionnait alors
+// ce qu'il avait reçu et annonçait un total au comptable — le prompt système lui demande justement
+// des « montants exacts », et de signaler des données insuffisantes, ce qu'il ne pouvait pas faire
+// faute de savoir qu'il lui en manquait. `count: "exact"` donne le total réel côté base, sans
+// rapatrier les lignes : le modèle peut alors resserrer son filtre, ou passer aux outils qui
+// agrègent (`lister_comptes`, `points_a_traiter`), qui eux ne plafonnent pas.
+function resultatListe<T>(lignes: T[] | null, total: number | null, cle: string): Record<string, unknown> {
+  const recues = lignes ?? []
+  const totalReel = total ?? recues.length
+  return {
+    [cle]: recues,
+    total_disponible: totalReel,
+    nombre_renvoye: recues.length,
+    tronque: totalReel > recues.length,
+    ...(totalReel > recues.length
+      ? { avertissement: `Liste tronquée : ${recues.length} lignes renvoyées sur ${totalReel}. N'en tire aucun total ni comptage — resserre le filtre (compte, tiers, année) ou utilise lister_comptes / points_a_traiter, qui agrègent sans plafond.` }
+      : {}),
+  }
+}
 
 async function executerOutil(ctx: OutilContexte, nom: string, input: Record<string, unknown>): Promise<unknown> {
   const { admin, dossierId, dossier } = ctx
@@ -311,12 +333,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const annee = typeof input.annee === "number" ? input.annee : undefined
     const { date_debut, date_fin } = bornesAnnee(annee)
     const limite = Math.min(typeof input.limite === "number" ? input.limite : 100, 200)
-    let q = admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id").eq("dossier_id", dossierId)
+    let q = admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id", { count: "exact" }).eq("dossier_id", dossierId)
     if (typeof input.compte === "string" && input.compte) q = q.eq("compte", input.compte)
     if (date_debut) q = q.gte("date", date_debut).lte("date", date_fin!)
-    const { data, error } = await q.order("date", { ascending: false }).limit(limite)
+    const { data, error, count } = await q.order("date", { ascending: false }).limit(limite)
     if (error) return { erreur: error.message }
-    return data
+    return resultatListe(data, count, "ecritures")
   }
 
   if (nom === "lister_pieces") {
@@ -324,19 +346,20 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const { date_debut, date_fin } = bornesAnnee(annee)
     const limite = Math.min(typeof input.limite === "number" ? input.limite : 100, 100)
     let q = admin.from("pieces")
-      .select("date_piece, tiers, nom_fichier, montant_ht, montant_tva, montant_ttc, type_piece, statut, confiance, categorie_id")
+      .select("date_piece, tiers, nom_fichier, montant_ht, montant_tva, montant_ttc, type_piece, statut, confiance, categorie_id", { count: "exact" })
       .eq("dossier_id", dossierId)
     if (typeof input.statut === "string" && input.statut) q = q.eq("statut", input.statut)
     if (typeof input.tiers === "string" && input.tiers) q = q.ilike("tiers", `%${input.tiers}%`)
     if (date_debut) q = q.gte("date_piece", date_debut).lte("date_piece", date_fin!)
-    const { data, error } = await q.order("date_piece", { ascending: false }).limit(limite)
+    const { data, error, count } = await q.order("date_piece", { ascending: false }).limit(limite)
     if (error) return { erreur: error.message }
     const { data: categories } = await admin.from("categories").select("id, libelle").or(`dossier_id.eq.${dossierId},dossier_id.is.null`)
     const libelleParCategorie = new Map(((categories ?? []) as { id: string; libelle: string }[]).map((c) => [c.id, c.libelle]))
-    return ((data ?? []) as Record<string, unknown>[]).map(({ categorie_id, ...reste }) => ({
+    const avecCategorie = ((data ?? []) as Record<string, unknown>[]).map(({ categorie_id, ...reste }) => ({
       ...reste,
       categorie: typeof categorie_id === "string" ? libelleParCategorie.get(categorie_id) ?? null : null,
     }))
+    return resultatListe(avecCategorie, count, "pieces")
   }
 
   if (nom === "points_a_traiter") {
