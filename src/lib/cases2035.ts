@@ -324,6 +324,52 @@ export function valeursDesCases(declaration: Declaration2035): {
   return { valeurs, postesSansCase }
 }
 
+export interface IncoherenceCase {
+  porteuse: Case2035
+  sousCases: Case2035[]
+  montantPorteuse: number
+  totalSousCases: number
+}
+
+// Une case « dont » ne peut pas dépasser la case qui la porte : son montant en est un sous-ensemble.
+// Le formulaire le dit explicitement pour la ligne 16 — notice 2035-NOT-SD, note (9) : « individualiser
+// à la ligne 16 dans le cadre BW […] le montant de ces redevances puis porter le total des locations de
+// matériel et de mobilier, Y COMPRIS ces redevances, en ligne BG ».
+//
+// Le moteur ne remplit aucune case « dont » (toutes marquées `saisieCabinet`), donc l'incohérence ne
+// peut venir que d'une saisie. C'est justement ce qu'un relecteur ne voit pas : les deux cases sont
+// loin l'une de l'autre sur le formulaire, et rien n'oblige l'œil à les rapprocher.
+//
+// Les sous-cases d'une même porteuse sont additionnées avant comparaison : BT (obligatoires), BZ
+// (Madelin) et BU (nouveaux plans) sont trois parts disjointes de BK, donc c'est leur somme qui ne
+// doit pas dépasser le total, pas chacune prise isolément.
+export function incoherencesDesCases(valeurs: Map<string, number>): IncoherenceCase[] {
+  const parPorteuse = new Map<string, Case2035[]>()
+  for (const c of CASES_2035) {
+    if (!c.sousCaseDe) continue
+    parPorteuse.set(c.sousCaseDe, [...(parPorteuse.get(c.sousCaseDe) ?? []), c])
+  }
+
+  const incoherences: IncoherenceCase[] = []
+  for (const [codePorteuse, sousCases] of parPorteuse) {
+    const porteuse = CASE_PAR_CODE.get(codePorteuse)
+    if (!porteuse) continue
+    const totalSousCases = sousCases.reduce((s, c) => s + (valeurs.get(c.code) ?? 0), 0)
+    if (totalSousCases === 0) continue
+    const montantPorteuse = valeurs.get(codePorteuse) ?? 0
+    // Un centime de tolérance : l'écart qui compte ici est une saisie contradictoire, pas un arrondi.
+    if (totalSousCases > montantPorteuse + 0.01) {
+      incoherences.push({
+        porteuse,
+        sousCases,
+        montantPorteuse,
+        totalSousCases: Number(totalSousCases.toFixed(2)),
+      })
+    }
+  }
+  return incoherences
+}
+
 // « Ne pas porter les centimes », dit le formulaire. Arrondir chaque case indépendamment casserait
 // l'addition imprimée (les totaux ne tomberaient plus juste à l'euro près) : on arrondit donc les
 // cases alimentées, puis on RECALCULE les totaux à partir des valeurs arrondies. Un formulaire dont

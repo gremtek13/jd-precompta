@@ -4,8 +4,8 @@ import { anneeDe, formatMoney } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
 import { calculerDeclaration2035 } from '../../lib/declaration2035'
-import { CASES_2035, arrondirPourFormulaire, valeursDesCases } from '../../lib/cases2035'
-import type { PosteNonRattache } from '../../lib/cases2035'
+import { CASES_2035, arrondirPourFormulaire, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
+import type { IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
 import { remplir2035 } from '../../lib/remplir2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -110,6 +110,12 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     for (const p of f.postesSansCase) sansCase.set(p.ligne.poste, p)
   }
   const postesSansCase = [...sansCase.values()]
+
+  // Garde armé à l'avance : une case « dont » qui dépasse sa porteuse est une saisie contradictoire.
+  // Le moteur ne remplit jamais ces cases (toutes marquées `saisieCabinet`), donc rien ne peut le
+  // déclencher tant que l'écran de saisie manuelle n'existe pas — il sera en place le jour où elle
+  // arrivera, plutôt qu'à écrire après coup en ayant oublié la règle.
+  const incoherences: IncoherenceCase[] = formulaires.flatMap((f) => incoherencesDesCases(f.valeurs))
 
   // Verrou posé avant tout `await` — c'est ce qui le rend effectif contre un double clic, là où un
   // `disabled` piloté par un état React laisse passer le second clic (voir ImportDossierModal).
@@ -251,6 +257,44 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
                   </td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {formatMoney(p.ligne.montant)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {incoherences.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-danger)' }}>
+          <h3 style={{ marginTop: 0 }}>Cases « dont » incohérentes ({incoherences.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Une case « dont » est une part de sa case porteuse : son montant y est déjà compté, il ne
+            peut donc pas la dépasser. Les deux cases sont éloignées sur le formulaire, c'est le genre
+            d'écart qu'une relecture ne rapproche pas toute seule.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Case porteuse</th>
+                <th>Cases « dont »</th>
+                <th style={{ textAlign: 'right' }}>Total « dont »</th>
+                <th style={{ textAlign: 'right' }}>Porteuse</th>
+              </tr>
+            </thead>
+            <tbody>
+              {incoherences.map((i) => (
+                <tr key={i.porteuse.code}>
+                  <td>
+                    <span style={{ fontFamily: 'monospace' }}>{i.porteuse.code}</span>
+                    <span className="muted" style={{ marginLeft: 8 }}>{i.porteuse.libelle}</span>
+                  </td>
+                  <td style={{ fontFamily: 'monospace' }}>{i.sousCases.map((c) => c.code).join(' + ')}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                    {formatMoney(i.totalSousCases)}
+                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatMoney(i.montantPorteuse)}
                   </td>
                 </tr>
               ))}
