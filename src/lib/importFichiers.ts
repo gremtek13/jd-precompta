@@ -35,14 +35,21 @@ export async function estFichierSupporte(file: File): Promise<boolean> {
 // Empreintes déjà présentes dans ce dossier (Pièces + Documents) — sert à ignorer un fichier déjà
 // importé plutôt que de le dupliquer. Comparaison par contenu, pas par nom de fichier : un nom peut se
 // répéter sans être le même document (ou l'inverse, après un renommage).
+//
+// Lève si l'une des deux lectures échoue, au lieu de rendre un ensemble vide. Un `data` nul est
+// indiscernable d'un « aucune empreinte connue » : une lecture refusée faisait donc conclure que rien
+// n'était encore importé, et tout un dossier repartait en double. C'est le même piège que
+// `fichierDejaPresent`, mais sur un import en masse — donc à l'échelle du dossier entier.
 export async function chargerHashsExistants(dossierId: string): Promise<Set<string>> {
-  const [{ data: piecesHash }, { data: documentsHash }] = await Promise.all([
+  const [pieces, documents] = await Promise.all([
     supabase.from('pieces').select('storage_hash').eq('dossier_id', dossierId).not('storage_hash', 'is', null),
     supabase.from('documents_divers').select('storage_hash').eq('dossier_id', dossierId).not('storage_hash', 'is', null),
   ])
+  const erreur = pieces.error ?? documents.error
+  if (erreur) throw new Error(`Empreintes des fichiers déjà importés illisibles : ${erreur.message}`)
   const hashs = new Set<string>()
-  for (const p of piecesHash ?? []) if (p.storage_hash) hashs.add(p.storage_hash)
-  for (const d of documentsHash ?? []) if (d.storage_hash) hashs.add(d.storage_hash)
+  for (const p of pieces.data ?? []) if (p.storage_hash) hashs.add(p.storage_hash)
+  for (const d of documents.data ?? []) if (d.storage_hash) hashs.add(d.storage_hash)
   return hashs
 }
 
@@ -72,18 +79,30 @@ export async function importerFichierDossier(params: {
   if (hashsConnus.has(hash)) {
     return { statut: 'doublon', message: 'Déjà présent dans ce dossier — ignoré' }
   }
-  hashsConnus.add(hash)
 
   onProgress?.('upload')
   const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
   const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
   if (uploadError) throw uploadError
 
+  // Le fichier est dans le stockage mais rien ne pointe encore dessus : si l'insertion échoue, on le
+  // retire avant de remonter l'erreur, sinon il y resterait orphelin jusqu'à la suppression du
+  // dossier entier. L'empreinte n'est retenue qu'une fois la ligne écrite — l'ajouter avant faisait
+  // passer pour « déjà présent » un fichier dont l'import venait en réalité d'échouer.
+  const enregistrer = async (table: 'pieces' | 'documents_divers', ligne: Record<string, unknown>) => {
+    const { error } = await supabase.from(table).insert(ligne)
+    if (error) {
+      await supabase.storage.from('pieces').remove([path])
+      throw error
+    }
+    hashsConnus.add(hash)
+  }
+
   // Un CSV n'est ni un PDF ni une image : Textract ne peut pas l'analyser, donc pas d'extraction à
   // tenter. Dans ce contexte, un CSV est presque toujours un export de relevé bancaire — classé
   // directement sur la foi de l'extension plutôt que laissé de côté comme "format non pris en charge".
   if (extensionDe(file.name) === 'csv') {
-    const { error: insertError } = await supabase.from('documents_divers').insert({
+    await enregistrer('documents_divers', {
       dossier_id: dossierId,
       sous_dossier_id: sousDossierId,
       storage_path: path,
@@ -91,7 +110,6 @@ export async function importerFichierDossier(params: {
       nom_fichier: file.name,
       categorie: 'releve_bancaire',
     })
-    if (insertError) throw insertError
     return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION.releve_bancaire} » → Documents` }
   }
 
@@ -105,7 +123,7 @@ export async function importerFichierDossier(params: {
   if (extraction && extraction.classification !== 'facture') {
     // Pas une facture : relevé bancaire, appel de cotisation ou attestation — archivé dans Documents
     // plutôt que dans Pièces, faute de montant HT/TVA/TTC à faire vérifier.
-    const { error: insertError } = await supabase.from('documents_divers').insert({
+    await enregistrer('documents_divers', {
       dossier_id: dossierId,
       sous_dossier_id: sousDossierId,
       storage_path: path,
@@ -113,11 +131,10 @@ export async function importerFichierDossier(params: {
       nom_fichier: file.name,
       categorie: extraction.classification as CategorieDocument,
     })
-    if (insertError) throw insertError
     return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION[extraction.classification]} » → Documents` }
   }
 
-  const { error: insertError } = await supabase.from('pieces').insert({
+  await enregistrer('pieces', {
     dossier_id: dossierId,
     uploaded_by: userId,
     storage_path: path,
@@ -133,7 +150,6 @@ export async function importerFichierDossier(params: {
     montant_ttc: extraction?.montant_ttc ?? null,
     confiance: extraction?.confiance ?? null,
   })
-  if (insertError) throw insertError
   return {
     statut: 'ok',
     message: extraction ? 'Classé « Facture » → Pièces' : 'Importé — extraction à refaire à la main',
