@@ -755,6 +755,27 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   client peut se tromper ou arranger les choses ; l'arbitrage reste celui du
   cabinet, comme partout ailleurs.
 
+- **Le texte lu par l'OCR est conservé, et montré à l'arbitrage.** Il était
+  calculé à chaque extraction — c'est lui qui classe le document, retrouve une
+  date, rattrape une TVA — puis jeté. Or c'est la réponse la moins chère au
+  problème du « pourquoi » : zéro saisie, pour personne. « BOULANGER MARSEILLE »
+  ne dit pas ce qui a été acheté ; le texte du document, lui, dit
+  « FOUR MICRO-ONDES ». Il complète le commentaire du client sans le remplacer —
+  l'OCR dit CE QUI a été acheté, le client dit POURQUOI.
+  Trois décisions le rendent utilisable : il vit dans une table à part
+  (`piece_textes_ocr`) et **jamais sur `pieces`**, parce que plusieurs écrans
+  font `select('*')` dessus et qu'un texte OCR pèse des kilo-octets par ligne ;
+  il se **charge à la demande**, une pièce à la fois ; et il est **rendu tel
+  quel**, sans filtrage ni troncature, sinon on ne peut plus diagnostiquer une
+  extraction douteuse avec.
+- **Une relecture coûte un appel Textract facturé.** `relireDocuments`
+  (lib/relectureDocuments.ts) comble la date ET le texte en UNE passe : les
+  séparer paierait deux fois la même lecture. Elle ne relit que ce qui manque
+  (`piecesARelire`), et n'écrit jamais rien d'autre — jamais le tiers, jamais les
+  montants, jamais le statut, et la date seulement si elle était vide. C'est
+  cette règle qui la rend sûre à lancer sur un dossier entier de pièces déjà
+  validées et corrigées à la main.
+
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -763,7 +784,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 524 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 541 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

@@ -1061,3 +1061,31 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .piece-precision > span:nth-child(2) {
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 28ch;
 }
+
+/* ── Texte lu par l'OCR sur une pièce (voir lib/texteOcr.ts) ──────────────────────────────────── */
+/* « BOULANGER MARSEILLE » ne dit pas ce qui a été acheté ; le texte du document, lui, le dit. Il est
+   consultable depuis la ligne d'arbitrage — s'il fallait ouvrir une fiche, l'opérateur choisirait la
+   catégorie sans l'avoir lu. */
+.lien-texte-lu {
+  display: inline-block; margin-top: 4px; padding: 0;
+  border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 0.78rem; color: var(--color-text-light);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.lien-texte-lu:hover { color: var(--color-primary); }
+
+.texte-lu { padding: 6px 2px 10px; }
+.texte-lu-entete { display: flex; flex-direction: column; gap: 2px; margin-bottom: 8px; font-size: 0.82rem; }
+
+/* Chasse fixe et retours à la ligne conservés : le texte se lit comme il est imprimé sur le
+   document, colonnes comprises. Hauteur bornée — un relevé fait des centaines de lignes, et la ligne
+   suivante du tableau doit rester atteignable. */
+.texte-lu-corps {
+  margin: 0; max-height: 260px; overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem; line-height: 1.5;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}

@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { extractPiece, fichierDejaPresent, hashFichier, type ExtractionResult } from './extraction'
 import { slugify } from './format'
 import type { CibleCommentaire } from './commentaires'
+import { enregistrerTexteOcr } from './texteOcr'
 
 // En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
 // d'y ajouter une précision tout de suite, au seul moment où il sait encore pourquoi la dépense a été
@@ -101,6 +102,10 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
         montant_ttc: extraction?.montant_ttc ?? null,
         confiance: extraction?.confiance ?? null,
       })
+      // Après l'insertion, jamais avant : la policy exige que la pièce existe déjà. N'échoue jamais
+      // le dépôt — ce texte est un confort de relecture, et perdre le document du client pour ça
+      // serait sans commune mesure (voir lib/texteOcr.ts).
+      await enregistrerTexteOcr(dossierId, id, extraction?.texte_ocr)
       return { statut: 'ok', cible: { type: 'piece', id } }
     }
   } catch (err) {

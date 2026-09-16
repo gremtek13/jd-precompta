@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import { slugify } from './format'
 import { extractPiece, hashFichier, LABEL_CLASSIFICATION } from './extraction'
+import { enregistrerTexteOcr } from './texteOcr'
 import type { CategorieDocument } from './types'
 
 // Logique de dépôt de fichier(s) dans un dossier, partagée entre l'import en masse d'une arborescence
@@ -89,13 +90,16 @@ export async function importerFichierDossier(params: {
   // retire avant de remonter l'erreur, sinon il y resterait orphelin jusqu'à la suppression du
   // dossier entier. L'empreinte n'est retenue qu'une fois la ligne écrite — l'ajouter avant faisait
   // passer pour « déjà présent » un fichier dont l'import venait en réalité d'échouer.
-  const enregistrer = async (table: 'pieces' | 'documents_divers', ligne: Record<string, unknown>) => {
-    const { error } = await supabase.from(table).insert(ligne)
-    if (error) {
+  // Rend l'identifiant écrit : il sert à rattacher le texte OCR à la pièce (voir lib/texteOcr.ts),
+  // dont la policy exige que la pièce existe déjà.
+  const enregistrer = async (table: 'pieces' | 'documents_divers', ligne: Record<string, unknown>): Promise<string> => {
+    const { data, error } = await supabase.from(table).insert(ligne).select('id').single()
+    if (error || !data) {
       await supabase.storage.from('pieces').remove([path])
-      throw error
+      throw error ?? new Error("l'enregistrement n'a rien rendu")
     }
     hashsConnus.add(hash)
+    return data.id as string
   }
 
   // Un CSV n'est ni un PDF ni une image : Textract ne peut pas l'analyser, donc pas d'extraction à
@@ -134,7 +138,7 @@ export async function importerFichierDossier(params: {
     return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION[extraction.classification]} » → Documents` }
   }
 
-  await enregistrer('pieces', {
+  const pieceId = await enregistrer('pieces', {
     dossier_id: dossierId,
     uploaded_by: userId,
     storage_path: path,
@@ -150,6 +154,9 @@ export async function importerFichierDossier(params: {
     montant_ttc: extraction?.montant_ttc ?? null,
     confiance: extraction?.confiance ?? null,
   })
+  // Porté ici comme dans lib/depot.ts, son jumeau côté client : une correction apportée à l'un doit
+  // l'être à l'autre, et le texte lu n'a aucune raison d'exister d'un seul côté du pipeline.
+  await enregistrerTexteOcr(dossierId, pieceId, extraction?.texte_ocr)
   return {
     statut: 'ok',
     message: extraction ? 'Classé « Facture » → Pièces' : 'Importé — extraction à refaire à la main',

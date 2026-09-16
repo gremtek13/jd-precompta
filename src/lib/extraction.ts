@@ -24,6 +24,14 @@ export interface ExtractionResult {
   montant_ttc: number | null
   confiance: 'haute' | 'moyenne' | 'basse'
   classification: ClassificationDocument
+  // Le texte lu sur le document, lignes séparées par des retours à la ligne, dans l'ordre de lecture
+  // et sans nettoyage. C'est lui qui dit ce qui a été acheté quand le nom du tiers ne le dit pas —
+  // « BOULANGER MARSEILLE » n'est pas une boulangerie. Conservé en base (`piece_textes_ocr`) et
+  // affiché à l'arbitrage.
+  // Optionnel : une pièce extraite avant l'ajout de ce champ n'en a pas, et la fonction déployée peut
+  // être en retard d'une version sur l'application. Un appelant doit traiter l'absence, pas la
+  // supposer impossible.
+  texte_ocr?: string
   // Lecture best-effort d'une ancienne déclaration 2035 (recettes, charges sociales personnelles) —
   // sert à préremplir un repère annuel dans l'onglet Estimation, jamais à enregistrer automatiquement.
   // Moins fiable que le reste de l'extraction (formulaire administratif dense, pas une facture) :

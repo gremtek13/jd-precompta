@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
-import { piecesADater, reextraireDates } from '../../lib/reextractionDates'
+import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
+import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
 import { grouperParTiers } from '../../lib/suggestionTiers'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -47,13 +48,19 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // ergonomie comparatif) : validation, paiement/rapprochement et écriture générée sont trois états
   // distincts, une pièce validée n'a pas forcément encore été rapprochée d'un mouvement réel.
   const [piecesRapprochees, setPiecesRapprochees] = useState<Set<string>>(new Set())
-  // Reprise groupée des dates manquantes (voir lib/reextractionDates.ts). L'avancement est affiché
+  // Reprise groupée des pièces incomplètes (voir lib/relectureDocuments.ts). L'avancement est affiché
   // pièce par pièce : chaque PDF repasse par Textract, donc l'opération dure des dizaines de secondes
   // sur un lot, et un bouton qui semble figé pousserait à recharger la page en plein traitement.
   const [reextraction, setReextraction] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
   const [recherche, setRecherche] = useState('')
   // Précisions déposées par le client (et notes du cabinet) sur les pièces — voir lib/commentaires.ts.
   const [commentaires, setCommentaires] = useState<PieceCommentaire[]>([])
+  // Identifiants SEULS des pièces dont on a le texte lu : de quoi savoir où proposer « texte lu »
+  // sans rapatrier les textes, qui pèsent des kilo-octets chacun (voir lib/texteOcr.ts).
+  const [avecTexteOcr, setAvecTexteOcr] = useState<Set<string>>(new Set())
+  // Le texte de la pièce dépliée, chargé à la demande. Une seule à la fois : c'est une consultation
+  // ponctuelle pour lever un doute, pas une colonne du tableau.
+  const [ocrOuvert, setOcrOuvert] = useState<{ pieceId: string; texte: string | null } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -96,6 +103,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     // dossier, et passées à la ligne : c'est le seul endroit où elles servent vraiment, au moment où
     // l'opérateur choisit une catégorie sans savoir ce qu'est « BOULANGER MARSEILLE ».
     setCommentaires(await chargerCommentaires(dossierId))
+    setAvecTexteOcr(await piecesAvecTexteOcr(dossierId))
 
     setPieces(piecesData ?? [])
     setCategories(categoriesData ?? [])
@@ -134,7 +142,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // Pièces du dossier entier, pas seulement du filtre affiché : ce sont elles qui n'entrent dans
   // aucun pack, et l'oubli ne dépend pas de l'exercice qu'on regarde au moment du clic. Le bouton
   // annonce le nombre, donc ce qu'il va traiter reste explicite.
-  const piecesSansDate = piecesADater(pieces)
+  const piecesIncompletes = piecesARelire(pieces, avecTexteOcr)
   const tiersConnus = [...new Set(pieces.map((p) => p.tiers).filter((t): t is string => !!t))]
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
   // Cherchable = ce qui est lisible sur la ligne. Le montant TTC en fait partie : retrouver « 192 »
@@ -154,6 +162,17 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   )
 
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
+
+  // Le texte lu ne se charge qu'au clic : garder les quatre-vingts textes d'un dossier en mémoire
+  // pour qu'un seul soit lu coûterait à chaque ouverture d'onglet ce qu'on ne consulte qu'une fois.
+  async function basculerTexteOcr(pieceId: string) {
+    if (ocrOuvert?.pieceId === pieceId) { setOcrOuvert(null); return }
+    // Affiché tout de suite en « chargement », sinon un document de plusieurs pages laisse la ligne
+    // muette assez longtemps pour qu'on reclique.
+    setOcrOuvert({ pieceId, texte: null })
+    const texte = await texteOcrDeLaPiece(pieceId)
+    setOcrOuvert((actuel) => (actuel?.pieceId === pieceId ? { pieceId, texte } : actuel))
+  }
 
   // Catégorie suggérée pour une pièce pas encore catégorisée, d'après son tiers — règle du dossier ou
   // du cabinet déjà apprise (voir lib/tiersCategories.ts). Juste un aperçu tant que rien n'est
@@ -235,27 +254,31 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     }
   }
 
-  // Rejoue l'extraction sur les pièces du filtre courant qui n'ont pas de date, et n'écrit que cette
-  // date (voir lib/reextractionDates.ts pour la garantie). Une pièce sans date n'entre dans aucun
-  // pack, quelle que soit la période : les reprendre une par une n'a pas de sens quand elles se
-  // comptent par dizaines.
-  async function reextraireDatesManquantes() {
-    if (piecesSansDate.length === 0) return
+  // Rejoue l'extraction sur les pièces du dossier auxquelles il manque une date OU le texte lu
+  // (voir lib/relectureDocuments.ts pour la garantie : rien d'autre n'est jamais écrit). Les deux en
+  // une seule passe — chaque relecture est un appel Textract facturé, les séparer paierait deux fois
+  // la même lecture.
+  async function relirePiecesIncompletes() {
+    if (piecesIncompletes.length === 0) return
     if (!window.confirm(
-      `Relancer la lecture automatique sur ${piecesSansDate.length} pièce(s) sans date ?\n\n` +
-      `Seule la date sera renseignée — le tiers, les montants et le statut ne sont jamais modifiés.\n` +
+      `Relancer la lecture automatique sur ${piecesIncompletes.length} pièce(s) ?\n\n` +
+      `Cela renseigne la date quand elle manque, et archive le texte lu sur le document pour l'afficher ici.\n` +
+      `Le tiers, les montants et le statut ne sont jamais modifiés, et une date déjà saisie n'est jamais remplacée.\n` +
       `Chaque pièce repasse par l'analyse, compte quelques secondes par document.`,
     )) return
 
-    setReextraction({ fait: 0, total: piecesSansDate.length, nomFichier: '' })
-    const resultat = await reextraireDates(piecesSansDate, (fait, total, nomFichier) =>
+    setReextraction({ fait: 0, total: piecesIncompletes.length, nomFichier: '' })
+    const resultat = await relireDocuments(pieces, avecTexteOcr, (fait, total, nomFichier) =>
       setReextraction({ fait, total, nomFichier }),
     )
     setReextraction(null)
     load()
 
     const deduites = resultat.datees.filter((d) => d.deduite)
-    const lignes = [`${resultat.datees.length} pièce(s) datée(s).`]
+    const lignes = [
+      `${resultat.datees.length} pièce(s) datée(s).`,
+      `${resultat.textesArchives.length} texte(s) lu(s) archivé(s) — visibles sous « texte lu » sur chaque ligne.`,
+    ]
     if (deduites.length > 0) {
       // Dites à part, avec leur date : elles viennent de la règle de dernier recours (première date
       // en ordre de lecture) et non d'un libellé reconnu. Juste dans la très grande majorité des
@@ -353,16 +376,16 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
               Catégoriser par fournisseur ({groupesACategoriser.length})
             </button>
           )}
-          {piecesSansDate.length > 0 && (
+          {piecesIncompletes.length > 0 && (
             <button
               className="btn btn-outline btn-sm"
               disabled={reextraction !== null}
-              onClick={reextraireDatesManquantes}
-              title="Relance la lecture automatique pour retrouver la date de ces pièces. Une pièce sans date ne figure dans aucun pack. Seule la date est renseignée — montants, tiers et statut ne sont jamais modifiés."
+              onClick={relirePiecesIncompletes}
+              title="Relance la lecture automatique : retrouve la date quand elle manque, et archive le texte lu sur le document pour l'afficher ici. Montants, tiers et statut ne sont jamais modifiés, et une date déjà saisie n'est jamais remplacée."
             >
               {reextraction
                 ? `Lecture… ${reextraction.fait}/${reextraction.total}${reextraction.nomFichier ? ` — ${reextraction.nomFichier}` : ''}`
-                : `Retrouver les dates manquantes (${piecesSansDate.length})`}
+                : `Relire les documents (${piecesIncompletes.length})`}
             </button>
           )}
           {selected.size > 0 && (
@@ -406,7 +429,8 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
             </thead>
             <tbody>
               {filtered.map((p) => (
-                <tr key={p.id} className="clickable">
+                <Fragment key={p.id}>
+                <tr className="clickable">
                   <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
                   </td>
@@ -432,6 +456,19 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                         </div>
                       )
                     })()}
+                    {/* « BOULANGER MARSEILLE » ne dit pas ce qui a été acheté — le texte du document,
+                        lui, le dit. Il était lu à l'extraction puis jeté ; il se consulte maintenant
+                        ici, sans quitter la ligne ni ouvrir la fiche. */}
+                    {avecTexteOcr.has(p.id) && (
+                      <button
+                        type="button"
+                        className="lien-texte-lu"
+                        onClick={(e) => { e.stopPropagation(); basculerTexteOcr(p.id) }}
+                        title="Afficher le texte lu par la reconnaissance automatique sur ce document"
+                      >
+                        {ocrOuvert?.pieceId === p.id ? '▾ texte lu' : '▸ texte lu'}
+                      </button>
+                    )}
                   </td>
                   <td className="hide-mobile" onClick={() => setEditing(p)}>
                     {p.categorie_id ? (
@@ -464,6 +501,25 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                     )}
                   </td>
                 </tr>
+                {ocrOuvert?.pieceId === p.id && (
+                  <tr>
+                    <td colSpan={8} style={{ background: 'var(--color-surface-2)' }}>
+                      <div className="texte-lu">
+                        <div className="texte-lu-entete">
+                          <strong>Texte lu sur le document</strong>
+                          <span className="muted">
+                            Tel que la reconnaissance automatique l'a lu, sans correction — c'est ce
+                            qui a servi à remplir les champs ci-dessus.
+                          </span>
+                        </div>
+                        {ocrOuvert.texte === null
+                          ? <p className="muted" style={{ margin: 0 }}>Chargement…</p>
+                          : <pre className="texte-lu-corps">{ocrOuvert.texte}</pre>}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>
