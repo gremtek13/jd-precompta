@@ -399,6 +399,12 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `extractPieceMontants.test.ts` lit la vraie source déployée, en extrait `parseAmount` et
   l'exécute — volontairement fragile : renommer la fonction casse le test bruyamment, ce qui
   vaut mieux qu'une copie qui dérive en silence.
+- **Une liste plafonnée dit qu'elle l'est.** Les outils de l'agent comptable rendaient leur
+  tableau tronqué tel quel, indiscernable d'une liste complète : le modèle en tirait un total
+  qu'il annonçait au comptable, alors même que le prompt lui demande des montants exacts et de
+  signaler des données insuffisantes — ce qu'il ne pouvait pas faire faute de le savoir. Un
+  plafond s'accompagne donc du total réel (`count: "exact"`, qui ne rapatrie rien) et d'un
+  drapeau `tronque`. C'est la version « données » de la règle ci-dessous sur les livrables.
 - **Un livrable incomplet le dit, il ne se contente pas d'être incomplet.** Un pack est
   envoyé au comptable : quand une pièce ne peut pas être ajoutée au ZIP, elle est recensée,
   écrite dans une feuille « Pièces manquantes » du récapitulatif *et* remontée à l'écran.
@@ -447,7 +453,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 243 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 249 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
