@@ -77,6 +77,82 @@ describe('grouperParTiers', () => {
     expect(groupes).toHaveLength(2)
   })
 
+  it('réunit les graphies qu’un OCR produit pour un même fournisseur', () => {
+    // Le cas réel qui bloquait tout : dix-sept pièces Transmedical réparties sur trois tiers parce
+    // que l'OCR avait recopié des bouts de slogan avec le nom. Trois arbitrages pour un fournisseur.
+    const groupes = grouperParTiers(
+      [
+        piece({ id: 'a', tiers: 'Transmedical', montant_ttc: 38.4 }),
+        piece({ id: 'b', tiers: 'Transmedical\net redevient', montant_ttc: 198 }),
+        piece({ id: 'c', tiers: 'Transmedical\net soigner redevient', montant_ttc: 38.4 }),
+      ],
+      categories, [], [],
+    )
+    expect(groupes).toHaveLength(1)
+    expect(groupes[0].pieceIds).toEqual(['a', 'b', 'c'])
+    expect(groupes[0].tiersNormalise).toBe('transmedical')
+  })
+
+  it('montre la graphie la plus courte, et liste les autres', () => {
+    // La plus courte est la plus propre : c'est le nom sans le bruit. Les variantes restent
+    // affichées pour que le cabinet voie ce qui a été regroupé et puisse contester.
+    const groupes = grouperParTiers(
+      [
+        piece({ id: 'a', tiers: 'Transmedical et soigner redevient' }),
+        piece({ id: 'b', tiers: 'Transmedical' }),
+      ],
+      categories, [], [],
+    )
+    expect(groupes[0].libelle).toBe('Transmedical')
+    expect(groupes[0].variantes).toEqual(['Transmedical et soigner redevient'])
+  })
+
+  it('ne dépend pas de l’ordre des pièces pour choisir le libellé', () => {
+    const inverse = grouperParTiers(
+      [
+        piece({ id: 'b', tiers: 'Transmedical' }),
+        piece({ id: 'a', tiers: 'Transmedical et soigner redevient' }),
+      ],
+      categories, [], [],
+    )
+    expect(inverse[0].libelle).toBe('Transmedical')
+  })
+
+  it('n’invente pas de fournisseur là où le nom n’en désigne aucun', () => {
+    // « CARTE BANCAIRE » est le moyen de paiement lu par l'OCR, pas un fournisseur. Regrouper
+    // dessus mettrait dans un même lot des dépenses qui n'ont rien à voir.
+    const groupes = grouperParTiers(
+      [
+        piece({ id: 'a', tiers: 'CARTE BANCAIRE', montant_ttc: 10 }),
+        piece({ id: 'b', tiers: 'CARTE BANCAIRE', montant_ttc: 59.8 }),
+        piece({ id: 'c', tiers: 'm\nsa', montant_ttc: 52357 }),
+      ],
+      categories, [], [],
+    )
+    expect(groupes.map((g) => g.fournisseurIdentifiable)).toEqual([false, false])
+    // Chaque libellé reste son propre groupe : aucune fusion hasardeuse.
+    expect(groupes).toHaveLength(2)
+    expect(groupes[0].pieceIds).toEqual(['a', 'b'])
+  })
+
+  it('marque identifiable un fournisseur court mais réel', () => {
+    // « ulys » fait quatre lettres et désigne bien un fournisseur — descendre le seuil plus bas
+    // ferait en revanche passer « m » ou « sa » pour des noms.
+    const groupes = grouperParTiers([piece({ id: 'a', tiers: 'ulys' })], categories, [], [])
+    expect(groupes[0].fournisseurIdentifiable).toBe(true)
+    expect(groupes[0].tiersNormalise).toBe('ulys')
+  })
+
+  it('ignore les qualificatifs qui ne désignent personne', () => {
+    // « Restaurant DALLOYAU » et « DALLOYAU » sont le même fournisseur.
+    const groupes = grouperParTiers(
+      [piece({ id: 'a', tiers: 'Restaurant DALLOYAU' }), piece({ id: 'b', tiers: 'DALLOYAU' })],
+      categories, [], [],
+    )
+    expect(groupes).toHaveLength(1)
+    expect(groupes[0].tiersNormalise).toBe('dalloyau')
+  })
+
   it('préfère une règle apprise à un mot-clé, et le dit', () => {
     // MACSF tomberait sur « assurance » par mot-clé ; une règle apprise doit primer, parce qu'elle
     // vient d'un choix que le cabinet a réellement fait.

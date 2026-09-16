@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { normalizeTiers, slugify } from '../../lib/format'
+import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { useAuth } from '../../context/AuthContext'
@@ -217,10 +217,15 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       // fois, sur ce dossier. Best-effort : un échec ici ne doit pas remettre en cause la sauvegarde
       // de la pièce — mais il est journalisé, jamais avalé en silence (voir `memoriser`).
       if (tiers.trim() && categorieId) {
+        // La règle est apprise sous l'identité du fournisseur, pas sous la graphie exacte lue par
+        // l'OCR : sinon un arbitrage fait sur « Transmedical et soigner redevient » ne servirait à
+        // aucune des seize autres pièces du même fournisseur. Même clé que l'écran de
+        // catégorisation en masse, pour que les deux chemins alimentent le même apprentissage.
+        const cleRegle = cleFournisseur(tiers) ?? normalizeTiers(tiers)
         await memoriser(
           'la règle de ce dossier',
           supabase.from('tiers_categories').upsert(
-            { dossier_id: dossierId, tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
+            { dossier_id: dossierId, tiers_normalise: cleRegle, categorie_id: categorieId },
             { onConflict: 'dossier_id,tiers_normalise' },
           ),
         )
@@ -233,7 +238,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
           await memoriser(
             'la règle du cabinet',
             supabase.from('tiers_categories_cabinet').upsert(
-              { cabinet_id: monCabinetId, tiers_normalise: normalizeTiers(tiers), categorie_id: categorieId },
+              { cabinet_id: monCabinetId, tiers_normalise: cleRegle, categorie_id: categorieId },
               { onConflict: 'cabinet_id,tiers_normalise' },
             ),
           )

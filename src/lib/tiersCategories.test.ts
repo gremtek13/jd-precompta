@@ -33,10 +33,44 @@ describe('suggererCategorie', () => {
     expect(suggererCategorie('   ', [regleDossier('', 'c')], [])).toBeNull()
   })
 
-  it('distingue deux tiers que seul l’accent sépare', () => {
-    // `normalizeTiers` ne replie pas les accents : "Sécu" et "Secu" restent deux clés distinctes.
-    // Choix de fait plutôt que décision explicite — noté ici pour qu'il soit visible le jour où un
-    // tiers mal accentué par l'OCR ne retrouvera pas sa règle.
-    expect(suggererCategorie('SÉCU', [regleDossier('secu', 'c')], [])).toBeNull()
+  it('retrouve la règle malgré un accent que l’OCR a perdu ou ajouté', () => {
+    // `normalizeTiers` ne replie pas les accents : longtemps, « Sécu » et « secu » étaient deux clés
+    // distinctes et la règle ne s'appliquait pas. La clé d'identité du fournisseur, elle, les replie.
+    expect(suggererCategorie('SÉCU', [regleDossier('secu', 'c')], [])).toBe('c')
+  })
+
+  it('retrouve la règle à travers le bruit que l’OCR colle au nom', () => {
+    // Le cas réel : dix-sept pièces du même fournisseur, trois graphies, parce que l'OCR a recopié
+    // des bouts de slogan avec le nom. Une règle apprise sur le nom propre doit toutes les couvrir.
+    const regles = [regleDossier('transmedical', 'c-honoraires')]
+    expect(suggererCategorie('Transmedical', regles, [])).toBe('c-honoraires')
+    expect(suggererCategorie('Transmedical\net redevient', regles, [])).toBe('c-honoraires')
+    expect(suggererCategorie('Transmedical\net soigner redevient', regles, [])).toBe('c-honoraires')
+  })
+
+  it('fait primer une règle posée sur le nom exact sur une règle posée sur l’identité', () => {
+    // Sinon un arbitrage précis (« Apple Marseille » chez ce client) serait écrasé par un arbitrage
+    // plus large (« Apple »), alors que c'est l'inverse qui doit se produire.
+    const suggestion = suggererCategorie(
+      'Apple Marseille',
+      [regleDossier('apple', 'large'), regleDossier('apple marseille', 'precis')],
+      [],
+    )
+    expect(suggestion).toBe('precis')
+  })
+
+  it('ne regroupe pas deux fournisseurs sans identité lisible', () => {
+    // « CARTE BANCAIRE » n'est pas un fournisseur : aucun mot ne l'identifie, donc aucune règle ne
+    // doit s'y accrocher par ricochet.
+    expect(suggererCategorie('CARTE BANCAIRE', [regleDossier('edf', 'c')], [])).toBeNull()
+  })
+
+  it('préfère toujours le dossier au cabinet, y compris par l’identité', () => {
+    const suggestion = suggererCategorie(
+      'Transmedical et soigner redevient',
+      [regleDossier('transmedical', 'dossier')],
+      [regleCabinet('transmedical', 'cabinet')],
+    )
+    expect(suggestion).toBe('dossier')
   })
 })

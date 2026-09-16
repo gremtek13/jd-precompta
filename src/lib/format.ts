@@ -26,6 +26,41 @@ export function normalizeTiers(input: string): string {
   return input.trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
+// Mots qui n'identifient personne : formes juridiques, qualificatifs de lieu, et le bruit que l'OCR
+// ramasse autour d'un nom sur une facture. « Restaurant DALLOYAU » et « DALLOYAU » sont le même
+// fournisseur ; « CARTE BANCAIRE » n'est pas un fournisseur du tout.
+const MOTS_SANS_IDENTITE = new Set([
+  'sarl', 'sasu', 'eurl', 'selarl', 'societe', 'entreprise', 'cabinet', 'groupe', 'siege',
+  'monsieur', 'madame', 'france', 'paris', 'carte', 'bancaire', 'restaurant', 'client', 'compte',
+  'service', 'services', 'facture', 'pour', 'avec', 'dont', 'les', 'des', 'sur',
+])
+
+// Clé d'identité d'un fournisseur : le premier mot de son nom qui puisse vraiment le désigner.
+//
+// C'est ce qui permet de reconnaître un même fournisseur à travers les graphies que l'OCR produit.
+// Sur un import réel, « Transmedical », « Transmedical / et redevient » et « Transmedical / et
+// soigner redevient » — des bouts de slogan recopiés avec le nom — donnaient trois tiers distincts,
+// donc trois arbitrages pour dix-sept pièces du même fournisseur. Idem pour « Siège Institut national
+// de la propriété industrielle » avec et sans virgule finale.
+//
+// Quatre caractères au minimum : en dessous un fragment ne désigne rien (« m », « sa »), mais
+// descendre plus bas ferait perdre des fournisseurs réels comme « ulys ».
+//
+// Rend null quand rien dans le nom n'identifie un fournisseur — l'appelant traite alors la pièce
+// isolément plutôt que de la regrouper avec d'autres qui n'ont rien à voir.
+export function cleFournisseur(tiers: string | null): string | null {
+  if (!tiers) return null
+  const mots = tiers
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(' ')
+    .filter(Boolean)
+  return mots.find((m) => m.length >= 4 && !MOTS_SANS_IDENTITE.has(m)) ?? null
+}
+
 export function formatMoney(value: number | null): string {
   if (value === null || Number.isNaN(value)) return '—'
   return value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })

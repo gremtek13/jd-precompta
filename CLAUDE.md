@@ -653,6 +653,28 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   sinon un relevé qui chevauche un import précédent afficherait un écart qui n'existe pas. Sur le
   premier relevé réel, il révèle un écart de 5 359,00 € que rien dans les données n'explique.
 
+- **Un fournisseur se reconnaît à une clé d'identité, pas à son nom exact.** L'OCR recopie du bruit
+  autour du nom : sur un import réel, « Transmedical », « Transmedical / et redevient » et
+  « Transmedical / et soigner redevient » faisaient trois tiers distincts pour dix-sept pièces du
+  même fournisseur, donc trois arbitrages. `cleFournisseur` (lib/format.ts) retient le premier mot
+  d'au moins quatre caractères qui ne soit pas une forme juridique ou un qualificatif — quatre et
+  pas plus, sinon « ulys » (fournisseur réel) est perdu ; pas moins, sinon « m » et « sa » passent
+  pour des noms. Elle rend null quand rien n'identifie personne (« CARTE BANCAIRE »), et l'appelant
+  traite alors la pièce isolément plutôt que de la regrouper au hasard.
+- **`suggererCategorie` cherche dans cet ordre : nom exact, puis clé d'identité.** L'ordre porte une
+  règle métier — un arbitrage posé sur « Apple Marseille » doit primer sur un arbitrage posé sur
+  « Apple ». L'essai sur le nom exact garde aussi les règles d'avant, enregistrées sous le nom
+  complet.
+- **Les deux chemins d'apprentissage écrivent sous la même clé.** PieceFormModal (pièce par pièce)
+  et CategoriserTiersModal (en masse) enregistrent tous deux `cleFournisseur`, sinon l'un
+  n'alimenterait pas l'autre.
+- **Une règle apprise ne sert à rien si elle reste enfermée dans son dossier.** `tiers_categories`
+  est par dossier, `tiers_categories_cabinet` est partagée — et seules les catégories globales
+  (`dossier_id` nul) ont vocation à y monter, une catégorie propre à un client n'ayant pas
+  d'équivalent ailleurs. Vécu : quatre règles existaient, toutes dans `tiers_categories`, la table
+  cabinet vide ; `transmedical → honoraires` avait été arbitré sur un dossier pendant que dix-sept
+  pièces du même fournisseur attendaient sur un autre.
+
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -661,7 +683,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 447 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 457 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
