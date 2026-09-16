@@ -430,6 +430,16 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   de dossiers que `slugify` réduit au même (« Café Martin » / « Cafe Martin »), qui fusionnaient
   dans l'export de cabinet. Le nom est décidé une fois pour toutes avant d'écrire, et c'est ce
   même nom que porte le récapitulatif : l'archive et l'Excel doivent désigner le même fichier.
+- **Une vérification anti-doublon en base ne protège pas d'un lot parti en parallèle.** Rien
+  n'est encore écrit quand toutes les branches interrogent la base, et il n'existe aucun index
+  unique sur `(dossier_id, storage_hash)`. Le dépôt client (`Promise.all` dans `ClientUpload`)
+  réserve donc l'empreinte dans un Set du lot *avant* toute attente — test et `add` sans `await`
+  entre les deux — et la relâche si le dépôt échoue. Le cabinet, qui traite ses fichiers en
+  série, peut se contenter de noter l'empreinte après écriture : même besoin, mécanique
+  différente, et c'est l'ordonnancement de l'appelant qui décide laquelle est correcte.
+- **Un jumeau assumé se corrige des deux côtés.** `depot.ts` (client) et `importFichiers.ts`
+  (cabinet) font le même pipeline pour deux contrats différents ; chacun porte un en-tête qui
+  pointe l'autre. Le nettoyage de l'orphelin a existé côté cabinet avant d'être porté ici.
 - **Un paramètre par défaut est un angle mort des tests.** `capitalRestantDu` et `empruntActif`
   prenaient « aujourd'hui » en `toISOString()` — la date UTC — depuis toujours : tous les tests
   passaient une date explicite, donc ce chemin n'a jamais été exercé. Quand une fonction testée
@@ -453,12 +463,13 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 249 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 261 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
-(`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
+(`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
 `relevePdf.ts` pour le PDF), la génération des packs et l'export d'un cabinet
-(`packGenerator.ts`, `exportCabinet.ts`) — les fichiers `*.test.ts` sont
+(`packGenerator.ts`, `exportCabinet.ts`) et le dépôt de fichiers côté client
+(`depot.ts`) comme côté cabinet (`importFichiers.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 - `npm test` — la suite, dans le fuseau des utilisateurs.

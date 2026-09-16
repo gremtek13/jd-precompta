@@ -69,11 +69,16 @@ export default function ClientUpload() {
     if (files.length === 0 || !dossierId) return
     setError(null)
     const erreurs: string[] = []
+    // Partagé par tous les fichiers de ce dépôt-ci : les branches partent en parallèle, donc deux
+    // fichiers de contenu identique passeraient sinon tous deux la vérification anti-doublon en base
+    // avant que l'un ait écrit sa ligne (voir deposerFichier). Un Set neuf par lot, jamais réutilisé
+    // d'un dépôt à l'autre : au dépôt suivant, la base fait foi.
+    const hashsDuLot = new Set<string>()
 
     await Promise.all(files.map(async (file) => {
       const localId = `${Date.now()}-${Math.random()}-${file.name}`
       setEnCours((prev) => [...prev, { id: localId, nomFichier: file.name }])
-      const resultat = await deposerFichier(dossierId, file)
+      const resultat = await deposerFichier(dossierId, file, hashsDuLot)
       if (resultat.statut === 'doublon') erreurs.push(`${file.name} : déjà déposé, pas réenvoyé.`)
       else if (resultat.statut === 'erreur') erreurs.push(`${file.name} : ${resultat.message}.`)
       setEnCours((prev) => prev.filter((f) => f.id !== localId))
