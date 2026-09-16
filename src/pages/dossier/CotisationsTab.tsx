@@ -5,6 +5,8 @@ import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extract
 import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import BarreRecherche from '../../components/BarreRecherche'
+import { correspondALaRecherche } from '../../lib/recherche'
 
 // Taux CSG-CRDS en vigueur pour les indépendants/professions libérales : 9,70 % au total, dont
 // 6,80 points déductibles du revenu imposable et 2,90 points non déductibles. Source : barèmes
@@ -35,6 +37,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [diagCotisation, setDiagCotisation] = useState<string[] | undefined>(undefined)
   const [creantEcheances, setCreantEcheances] = useState(false)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  const [recherche, setRecherche] = useState('')
 
   async function load() {
     setLoading(true)
@@ -211,6 +214,19 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const anneesDisponibles = [...new Set(cotisations.map((c) => anneeDe(c.echeance)))].sort((a, b) => b - a)
   const cotisationsFiltrees = anneeFilter === 'toutes' ? cotisations : cotisations.filter((c) => anneeDe(c.echeance) === anneeFilter)
 
+  // La recherche ne filtre QUE les lignes affichées : les quatre totaux ci-dessous restent calculés
+  // sur `cotisationsFiltrees`. Les brancher sur la recherche ferait varier le « reste à verser » et la
+  // CSG déductible au fil de la frappe, alors que ce sont des montants d'exercice, pas des sous-totaux
+  // de sélection.
+  const cotisationsAffichees = cotisationsFiltrees.filter((c) =>
+    correspondALaRecherche(
+      [c.echeance, formatDate(c.echeance), c.montant_appele, c.montant_verse, c.montant_csg_crds,
+        c.previsionnel ? 'prévisionnel' : null,
+        documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)?.nom_fichier],
+      recherche,
+    ),
+  )
+
   const totalAppele = cotisationsFiltrees.reduce((sum, c) => sum + c.montant_appele, 0)
   const totalVerse = cotisationsFiltrees.reduce((sum, c) => sum + (c.montant_verse ?? 0), 0)
   const totalCsgDeductible = cotisationsFiltrees.reduce((sum, c) => sum + (csgDeductible(c.montant_csg_crds) ?? 0), 0)
@@ -352,11 +368,25 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher une échéance, un montant…"
+          affiches={cotisationsAffichees.length}
+          total={cotisationsFiltrees.length}
+        />
+      </div>
+
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
-        ) : cotisationsFiltrees.length === 0 ? (
-          <div className="empty-state">Aucune échéance enregistrée pour l'instant.</div>
+        ) : cotisationsAffichees.length === 0 ? (
+          <div className="empty-state">
+            {recherche.trim()
+              ? `Aucune échéance ne correspond à « ${recherche.trim()} ».`
+              : "Aucune échéance enregistrée pour l'instant."}
+          </div>
         ) : (
           <table>
             <thead>
@@ -371,7 +401,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
               </tr>
             </thead>
             <tbody>
-              {cotisationsFiltrees.map((c) => {
+              {cotisationsAffichees.map((c) => {
                 const documentAttache = documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)
                 const documentsDisponibles = documentsNonRattaches
                 return (

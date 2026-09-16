@@ -8,6 +8,8 @@ import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../..
 import { ouvrirJustificatif } from '../../lib/depot'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
+import BarreRecherche from '../../components/BarreRecherche'
+import { correspondALaRecherche } from '../../lib/recherche'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -105,16 +107,14 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   })
   const moisDisponibles = [...new Set(lignesAnneeEtStatut.map((l) => (moisDe(l.date) - 1)))].sort((a, b) => a - b)
 
-  const rechercheNormalisee = recherche.trim().toLowerCase()
-  const filtered = lignesAnneeEtStatut.filter((l) => {
-    if (moisFilter !== 'tous' && (moisDe(l.date) - 1) !== moisFilter) return false
-    if (rechercheNormalisee) {
-      const matchLibelle = l.libelle.toLowerCase().includes(rechercheNormalisee)
-      const matchMontant = l.montant.toFixed(2).replace('.', ',').includes(rechercheNormalisee)
-      if (!matchLibelle && !matchMontant) return false
-    }
-    return true
-  })
+  // Le compteur de la barre de recherche compare ce qui est comparable : `avantRecherche` porte déjà
+  // les filtres Statut/Année/Mois, la recherche ne fait que réduire cet ensemble-là.
+  const avantRecherche = lignesAnneeEtStatut.filter(
+    (l) => moisFilter === 'tous' || (moisDe(l.date) - 1) === moisFilter,
+  )
+  const filtered = avantRecherche.filter((l) =>
+    correspondALaRecherche([l.libelle, l.montant, l.date, formatDate(l.date)], recherche),
+  )
 
   function suggestion(ligne: LigneBancaire): Piece | null {
     if (ligne.statut !== 'non_rapprochee') return null
@@ -431,12 +431,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
-      <input
-        placeholder="Rechercher par libellé ou montant…"
-        value={recherche}
-        onChange={(e) => setRecherche(e.target.value)}
-        style={{ marginBottom: 14, padding: '8px 12px', border: '1px solid var(--color-border)', borderRadius: 8, width: 320, maxWidth: '100%' }}
-      />
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher un libellé, un montant, une date…"
+          affiches={filtered.length}
+          total={avantRecherche.length}
+        />
+      </div>
 
       {/* Tableau volontairement compact (date/libellé/montant/statut) — les boutons et menus de
           rapprochement vivent dans le panneau de détail ouvert au clic sur une ligne, pas ici : avec
@@ -446,7 +449,11 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (
-          <div className="empty-state">Aucun mouvement bancaire{filter !== 'toutes' || moisFilter !== 'tous' || recherche ? ' dans ce filtre' : ''}.</div>
+          <div className="empty-state">
+            {recherche.trim()
+              ? `Aucun mouvement ne correspond à « ${recherche.trim()} ».`
+              : `Aucun mouvement bancaire${filter !== 'toutes' || moisFilter !== 'tous' ? ' dans ce filtre' : ''}.`}
+          </div>
         ) : (
           <table>
             <thead>

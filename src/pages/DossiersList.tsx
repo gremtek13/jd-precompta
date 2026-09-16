@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
+import { correspondALaRecherche } from '../lib/recherche'
 import { dateRelative, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
 import type { Dossier } from '../lib/types'
 import KpiTile from '../components/widgets/KpiTile'
@@ -125,7 +126,12 @@ export default function DossiersList() {
     load()
   }, [])
 
-  const filtered = dossiers.filter((d) => d.nom.toLowerCase().includes(search.toLowerCase()))
+  // Même moteur de recherche que partout ailleurs (lib/recherche) : insensible aux accents et aux
+  // majuscules, et multi-termes. Cherche aussi sur le SIRET et le contact, pas seulement le nom —
+  // c'est souvent par là qu'on retrouve un dossier dont on n'a pas l'intitulé exact en tête.
+  const filtered = dossiers.filter((d) =>
+    correspondALaRecherche([d.nom, d.siret, d.contact_nom, d.contact_email, d.libelle_naf], search),
+  )
 
   // Un dossier avec au moins un point à régler remonte en premier — inutile de parcourir toute la
   // liste pour repérer ce qui a besoin d'attention.

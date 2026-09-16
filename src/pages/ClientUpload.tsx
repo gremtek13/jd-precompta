@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
 import { anneeDe, anneeLocaleDe, formatDate, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece } from '../lib/types'
+import BarreRecherche from '../components/BarreRecherche'
+import { correspondALaRecherche } from '../lib/recherche'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const ANNEE_COURANTE = new Date().getFullYear()
@@ -42,6 +44,7 @@ export default function ClientUpload() {
   // rien à corriger après coup. Voir handleFiles.
   const [enCours, setEnCours] = useState<{ id: string; nomFichier: string }[]>([])
   const [dragOver, setDragOver] = useState(false)
+  const [recherche, setRecherche] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   async function load() {
@@ -117,6 +120,10 @@ export default function ClientUpload() {
       id: f.id, nomFichier: f.nomFichier, createdAt: new Date().toISOString(), label: 'Analyse en cours…', traite: false,
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
+
+  const depotsAffiches = depots.filter((d) =>
+    correspondALaRecherche([d.nomFichier, d.label, d.createdAt, formatDate(d.createdAt)], recherche),
+  )
 
   // "Ce qu'il manque" — les 3 signaux communs à tous les dossiers (mêmes que le Dashboard cabinet),
   // pour que le client sache ce qu'il reste à envoyer sans avoir à demander. Volontairement limité à
@@ -223,14 +230,27 @@ export default function ClientUpload() {
       {error && <p className="error-text" style={{ marginBottom: 14 }}>{error}</p>}
 
       <h3>Mes dépôts</h3>
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher un fichier…"
+          affiches={depotsAffiches.length}
+          total={depots.length}
+        />
+      </div>
       <div className="card table-scroll" style={{ padding: 0 }}>
-        {depots.length === 0 ? (
-          <div className="empty-state">Aucun dépôt pour l'instant.</div>
+        {depotsAffiches.length === 0 ? (
+          <div className="empty-state">
+            {recherche.trim()
+              ? `Aucun dépôt ne correspond à « ${recherche.trim()} ».`
+              : "Aucun dépôt pour l'instant."}
+          </div>
         ) : (
           <table>
             <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th></tr></thead>
             <tbody>
-              {depots.map((d) => (
+              {depotsAffiches.map((d) => (
                 <tr key={d.id}>
                   <td>{d.nomFichier}</td>
                   <td>{formatDate(d.createdAt)}</td>

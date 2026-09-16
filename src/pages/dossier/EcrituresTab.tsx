@@ -8,6 +8,8 @@ import { categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as 
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
+import BarreRecherche from '../../components/BarreRecherche'
+import { correspondALaRecherche } from '../../lib/recherche'
 import { useAnnee } from '../../context/AnneeContext'
 
 // Palier 5 — brouillon comptable, brique 1 (journal). Génère une proposition d'écriture pour
@@ -27,6 +29,7 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [comptesEdit, setComptesEdit] = useState<Record<string, string>>({})
+  const [recherche, setRecherche] = useState('')
   // Exercice partagé avec Pièces/Banque/Statistiques/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
@@ -120,6 +123,15 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   // Le filtre par année ne porte que sur l'affichage des écritures déjà générées — la génération
   // (bouton ci-dessous) reste globale, sur toutes les pièces en attente quelle que soit leur année.
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => anneeDe(e.date) === anneeFilter)
+
+  // La recherche ne filtre QUE les lignes affichées, jamais les données de calcul ni l'export : les
+  // totaux de TVA ci-dessous et le FEC exporté plus bas portent sur `ecrituresFiltrees`. Les brancher
+  // sur la recherche ferait varier la TVA déductible au fil de la frappe, et surtout exporterait un
+  // FEC amputé des lignes qui ne correspondent pas au texte tapé — un fichier fiscal incomplet sans
+  // que rien ne le signale.
+  const ecrituresAffichees = ecrituresFiltrees.filter((e) =>
+    correspondALaRecherche([e.date, formatDate(e.date), e.compte, e.libelle, e.sens, e.montant], recherche),
+  )
 
   const tvaDeductible = soldeCompte(ecrituresFiltrees, COMPTE_TVA_DEDUCTIBLE, 'debit')
   const tvaCollectee = soldeCompte(ecrituresFiltrees, COMPTE_TVA_COLLECTEE, 'credit')
@@ -415,11 +427,23 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
         </button>
       </div>
 
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher un compte, un libellé, un montant…"
+          affiches={ecrituresAffichees.length}
+          total={ecrituresFiltrees.length}
+        />
+      </div>
+
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
-        ) : ecrituresFiltrees.length === 0 ? (
-          <div className="empty-state">Aucune écriture proposée pour l'instant.</div>
+        ) : ecrituresAffichees.length === 0 ? (
+          <div className="empty-state">
+            {recherche.trim() ? `Aucune écriture ne correspond à « ${recherche.trim()} ».` : "Aucune écriture proposée pour l'instant."}
+          </div>
         ) : (
           <table>
             <thead>
@@ -432,7 +456,7 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
               </tr>
             </thead>
             <tbody>
-              {ecrituresFiltrees.map((e) => (
+              {ecrituresAffichees.map((e) => (
                 <tr key={e.id}>
                   <td>{formatDate(e.date)}</td>
                   <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{e.compte}</td>

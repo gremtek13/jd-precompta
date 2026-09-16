@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { piecesADater, reextraireDates } from '../../lib/reextractionDates'
+import BarreRecherche from '../../components/BarreRecherche'
+import { correspondALaRecherche } from '../../lib/recherche'
 import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
 import PieceFormModal from './PieceFormModal'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
@@ -41,6 +43,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // pièce par pièce : chaque PDF repasse par Textract, donc l'opération dure des dizaines de secondes
   // sur un lot, et un bouton qui semble figé pousserait à recharger la page en plein traitement.
   const [reextraction, setReextraction] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
+  const [recherche, setRecherche] = useState('')
 
   async function load() {
     setLoading(true)
@@ -110,7 +113,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // avant les autres plutôt que de tout revérifier au même niveau d'attention (voir Piece.confiance).
   // Tri stable (Array.sort) : à confiance égale, l'ordre par date d'origine est conservé.
   const PRIORITE_CONFIANCE: Record<string, number> = { basse: 0, moyenne: 1, haute: 2 }
-  const filtered = statutFilter === 'a_valider'
+  const trie = statutFilter === 'a_valider'
     ? [...filteredBase].sort((a, b) => (PRIORITE_CONFIANCE[a.confiance ?? ''] ?? 3) - (PRIORITE_CONFIANCE[b.confiance ?? ''] ?? 3))
     : filteredBase
   // Pièces du dossier entier, pas seulement du filtre affiché : ce sont elles qui n'entrent dans
@@ -119,6 +122,16 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const piecesSansDate = piecesADater(pieces)
   const tiersConnus = [...new Set(pieces.map((p) => p.tiers).filter((t): t is string => !!t))]
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
+  // Cherchable = ce qui est lisible sur la ligne. Le montant TTC en fait partie : retrouver « 192 »
+  // parmi des dizaines de factures d'un même fournisseur est un usage courant.
+  const filtered = trie.filter((p) =>
+    correspondALaRecherche(
+      [p.nom_fichier, p.tiers, categorieLabel(p.categorie_id), p.type_piece, p.date_piece,
+       p.date_piece ? formatDate(p.date_piece) : null, p.montant_ttc],
+      recherche,
+    ),
+  )
+
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
 
   // Catégorie suggérée pour une pièce pas encore catégorisée, d'après son tiers — règle du dossier ou
@@ -259,6 +272,16 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher un fichier, un tiers, une catégorie, un montant…"
+          affiches={filtered.length}
+          total={trie.length}
+        />
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {(['toutes', 'a_valider', 'validee'] as const).map((s) => (
@@ -334,7 +357,9 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (
-          <div className="empty-state">Aucune pièce.</div>
+          <div className="empty-state">
+            {recherche.trim() ? `Aucune pièce ne correspond à « ${recherche.trim()} ».` : 'Aucune pièce.'}
+          </div>
         ) : (
           <table>
             <thead>

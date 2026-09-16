@@ -81,7 +81,13 @@ src/
                   lib/supabase.ts. Gestion centralisée des erreurs d'Edge
                   Function : lib/invokeErreur.ts (voir "Décisions techniques").
   components/     composants UI réutilisables transverses (Layout, modales
-                  génériques, icônes).
+                  génériques, icônes, BarreRecherche).
+                  BarreRecherche + lib/recherche.ts forment le moteur de
+                  recherche commun à tous les écrans qui portent une liste :
+                  insensible aux accents et aux majuscules, multi-termes en ET,
+                  virgule et point équivalents sur les montants. Un nouvel écran
+                  de liste s'y branche plutôt que de refaire un `toLowerCase()`
+                  local (qui, lui, ne trouve pas « Télécom » en tapant « telecom »).
   pages/          un composant par écran/route de premier niveau (liste des
                   dossiers, équipe, comptes master, écrans client...).
   pages/dossier/  tous les onglets d'un dossier (Pièces, Factures, Banque,
@@ -479,6 +485,22 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 - **Un type de `types.ts` décrit la table, colonnes NOT NULL comprises.** `TiersCategorieCabinet`
   omettait `cabinet_id` : le compilateur validait donc un payload que Postgres rejetait. Vérifier
   la table (`information_schema.columns`, `pg_constraint`) avant d'écrire le type, pas après.
+- **`npx tsc --noEmit` ne vérifie rien dans ce dépôt.** Le `tsconfig.json` racine a
+  `"files": []` et ne fait que référencer `tsconfig.app.json` / `tsconfig.node.json` : lancé
+  seul, `tsc --noEmit` sort silencieusement sans avoir typé une seule ligne, ce qui ressemble
+  exactement à un typecheck réussi. La commande réelle est **`npx tsc -b`** (ce que fait
+  `npm run build`). Un identifiant non importé est passé trois fois de suite à travers ce faux
+  contrôle — c'est `oxlint` (`react(jsx-no-undef)`) qui l'a rattrapé.
+- **Une recherche filtre l'affichage, jamais un total.** Une barre de recherche réduit les
+  lignes visibles ; les montants calculés à côté (TVA déductible/collectée, total appelé/versé,
+  total prélevé) restent sur l'ensemble filtré par l'exercice, et un export (FEC) reste sur cet
+  ensemble aussi — sinon le fichier fiscal part amputé des lignes ne correspondant pas au texte
+  tapé. La Balance des comptes violait la règle : ses totaux débit/crédit portaient sur les
+  lignes trouvées, donc taper « 606 » affichait le badge rouge « écart … », celui qui signale
+  normalement un brouillon cassé. Une recherche ne doit jamais fabriquer une alerte.
+- **Le compteur « N sur M » compare ce qui est comparable.** `M` est l'ensemble après les
+  filtres de l'écran (statut, année, mois) et avant la recherche — pas la liste brute, sinon le
+  compteur annonce un écart dû au filtre Année et non à la recherche.
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -487,13 +509,14 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 298 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 308 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
 `relevePdf.ts` pour le PDF), la génération des packs et l'export d'un cabinet
 (`packGenerator.ts`, `exportCabinet.ts`) et le dépôt de fichiers côté client
-(`depot.ts`) comme côté cabinet (`importFichiers.ts`) — les fichiers `*.test.ts` sont
+(`depot.ts`) comme côté cabinet (`importFichiers.ts`), et le moteur de recherche partagé
+par tous les écrans (`recherche.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 - `npm test` — la suite, dans le fuseau des utilisateurs.
