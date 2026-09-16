@@ -62,7 +62,7 @@ interface TextractBlock {
 // d'un ou deux chiffres en fin de chaîne — un montant n'a jamais trois décimales.
 function parseAmount(raw?: string): number | null {
   if (!raw) return null
-  let s = raw.replace(/[\s  ]/g, "").replace(/€/g, "")
+  let s = raw.replace(/[\s\u00a0\u202f]/g, "").replace(/\u20ac/g, "")
   if (!s) return null
 
   let negatif = false
