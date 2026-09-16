@@ -50,7 +50,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
     setGenerating(true)
     setError(null)
     try {
-      const { nbPieces, totalTtc, storagePathZip, storagePathExcel } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
+      const { nbPieces, totalTtc, storagePathZip, storagePathExcel, manquantes } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
       const { data: userData } = await supabase.auth.getUser()
       // Le ZIP et l'Excel sont déjà dans le stockage à ce stade : sans cette ligne, ils y restent
       // sans que rien ne pointe dessus. Taire l'échec laissait l'écran afficher une génération
@@ -66,6 +66,11 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
         total_ttc: totalTtc,
       })
       if (packError) throw packError
+      // Le pack est généré et enregistré, mais incomplet : l'Excel liste des pièces dont le fichier
+      // n'a pas pu être récupéré. À dire ici, pas seulement dans une feuille du classeur.
+      if (manquantes.length > 0) {
+        setError(`Pack généré, mais ${manquantes.length} pièce(s) n'ont pas pu être ajoutées à l'archive (fichier introuvable) : ${manquantes.slice(0, 3).join(', ')}${manquantes.length > 3 ? '…' : ''}. Elles sont listées dans l'onglet « Pièces manquantes » du récapitulatif.`)
+      }
       loadPacks()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'La génération a échoué.')

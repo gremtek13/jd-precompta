@@ -17,6 +17,9 @@ function telechargerBlob(nomFichier: string, blob: Blob) {
 export interface ResultatExportCabinet {
   nbDossiers: number
   nbPiecesTotal: number
+  // Fichiers listés dans les récapitulatifs mais absents de l'archive (voir packGenerator) —
+  // préfixés du nom du dossier, un export de cabinet en couvrant plusieurs.
+  manquantes: string[]
 }
 
 // Export global d'un cabinet (voir SuperAdminPage, "Comptes master") — un seul ZIP téléchargé
@@ -45,6 +48,7 @@ export async function genererExportCabinet(
   // excluant les pièces du jour et datant le fichier d'hier.
   const periodeFin = aujourdHuiSql()
   let nbPiecesTotal = 0
+  const manquantes: string[] = []
 
   // Séquentiel plutôt que Promise.all : chaque dossier télécharge potentiellement des dizaines de
   // fichiers depuis Storage — un cabinet avec beaucoup de dossiers exportés tous en parallèle
@@ -53,8 +57,9 @@ export async function genererExportCabinet(
   for (const dossier of dossiers) {
     onProgression?.(fait, dossiers.length, dossier.nom)
     const sousDossier = zip.folder(slugify(dossier.nom) || dossier.id)!
-    const { nbPieces } = await remplirZipDossier(sousDossier, dossier.id, periodeDebut, periodeFin)
-    nbPiecesTotal += nbPieces
+    const resultat = await remplirZipDossier(sousDossier, dossier.id, periodeDebut, periodeFin)
+    nbPiecesTotal += resultat.nbPieces
+    manquantes.push(...resultat.manquantes.map((f) => `${dossier.nom} / ${f}`))
     fait += 1
   }
   onProgression?.(fait, dossiers.length, '')
@@ -62,5 +67,5 @@ export async function genererExportCabinet(
   const zipBlob = await zip.generateAsync({ type: 'blob' })
   telechargerBlob(`Export_${slugify(cabinetNom)}_${periodeFin}.zip`, zipBlob)
 
-  return { nbDossiers: dossiers.length, nbPiecesTotal }
+  return { nbDossiers: dossiers.length, nbPiecesTotal, manquantes }
 }

@@ -220,7 +220,13 @@ export default function SuperAdminPage() {
     setExportErreur(null)
     setExportProgression({ fait: 0, total: c.nb_dossiers })
     try {
-      await genererExportCabinet(c.id, c.nom, (fait, total) => setExportProgression({ fait, total }))
+      const { manquantes } = await genererExportCabinet(c.id, c.nom, (fait, total) => setExportProgression({ fait, total }))
+      // L'archive est téléchargée, mais incomplète : des pièces figurent dans les récapitulatifs sans
+      // que leur fichier ait pu être récupéré. Le dire, plutôt que de laisser croire à un export
+      // intégral — c'est justement l'export qu'on fait avant de supprimer un cabinet.
+      if (manquantes.length > 0) {
+        setExportErreur(`Export de "${c.nom}" terminé, mais ${manquantes.length} fichier(s) manquent à l'archive : ${manquantes.slice(0, 3).join(', ')}${manquantes.length > 3 ? '…' : ''}. Chaque récapitulatif concerné les liste dans son onglet « Pièces manquantes ».`)
+      }
     } catch (err) {
       setExportErreur(`Export de "${c.nom}" : ${err instanceof Error ? err.message : 'échec.'}`)
     } finally {
