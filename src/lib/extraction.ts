@@ -109,10 +109,17 @@ export async function hashFichier(source: Blob): Promise<string> {
 // Même détection de doublon que l'import en masse (ImportDossierModal), mais pour un dépôt à l'unité —
 // Pièces, Documents et Cotisations n'avaient jamais cette vérification : redéposer deux fois le même
 // fichier (ex. en debug) créait deux lignes identiques plutôt que d'être repéré.
+//
+// Lève si l'une des deux lectures échoue, au lieu de rendre `false`. Un `count` nul est
+// indiscernable d'un « aucun doublon trouvé » : une lecture refusée faisait donc répondre « ce
+// fichier est nouveau » avec assurance, et créait précisément la ligne en double que cette fonction
+// existe pour empêcher. Même piège que la lecture préalable de `contrepartieBanque`.
 export async function fichierDejaPresent(dossierId: string, hash: string): Promise<boolean> {
-  const [{ count: nbPieces }, { count: nbDocuments }] = await Promise.all([
+  const [pieces, documents] = await Promise.all([
     supabase.from('pieces').select('id', { count: 'exact', head: true }).eq('dossier_id', dossierId).eq('storage_hash', hash),
     supabase.from('documents_divers').select('id', { count: 'exact', head: true }).eq('dossier_id', dossierId).eq('storage_hash', hash),
   ])
-  return (nbPieces ?? 0) > 0 || (nbDocuments ?? 0) > 0
+  const erreur = pieces.error ?? documents.error
+  if (erreur) throw new Error(`Vérification des doublons impossible : ${erreur.message}`)
+  return (pieces.count ?? 0) > 0 || (documents.count ?? 0) > 0
 }

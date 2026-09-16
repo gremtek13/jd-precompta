@@ -40,10 +40,63 @@ interface TextractBlock {
   Text?: string
 }
 
+// Reprend l'algorithme de src/lib/csv.ts (parseMontantBancaire) — fichier auto-porteur, voir
+// l'en-tête — plutôt que d'en écrire une troisième version.
+//
+// Une seule différence, assumée : ici les lettres résiduelles sont retirées ("120,00 EUR"), parce
+// que Textract rend le texte tel qu'imprimé sur la facture. Côté CSV, au contraire, refuser "12abc"
+// est délibéré — c'est une cellule qui n'est pas un montant, et l'accepter fausserait la détection
+// des colonnes. Les deux ne peuvent donc pas être strictement identiques.
+//
+// L'ancienne version était `parseFloat(raw.replace(/[^0-9.,-]/g,"").replace(",","."))`. Elle ne
+// remplaçait que la *première* virgule, et parseFloat s'arrête au séparateur suivant :
+//   "1.234,56" → "1.234.56" → 1,23 €   (une facture de 1 234,56 € enregistrée à 1,23 €)
+//   "1,234.56" → "1.234.56" → 1,23 €
+//   "45,20-"   → "45.20-"   → +45,20   (signe rejeté en fin perdu : un avoir devient une charge)
+//   "(45,20)"  → "45,20"    → +45,20   (idem entre parenthèses)
+// C'est le montant TTC et le HT de chaque pièce qui en dépendent — même défaut que celui corrigé
+// dans csv.ts (import CSV) puis relevePdf.ts (import PDF), troisième occurrence.
+//
+// Le séparateur décimal ne peut pas être supposé : selon l'émetteur, le point sépare les milliers
+// ("1.234,56") ou les décimales ("1,234.56"). On retient comme décimal le dernier séparateur suivi
+// d'un ou deux chiffres en fin de chaîne — un montant n'a jamais trois décimales.
 function parseAmount(raw?: string): number | null {
   if (!raw) return null
-  const n = parseFloat(raw.replace(/[^0-9.,-]/g, "").replace(",", "."))
-  return Number.isNaN(n) ? null : n
+  let s = raw.replace(/[\s  ]/g, "").replace(/€/g, "")
+  if (!s) return null
+
+  let negatif = false
+  if (/^\(.+\)$/.test(s)) {
+    negatif = true
+    s = s.slice(1, -1)
+  }
+  if (s.endsWith("-")) {
+    negatif = true
+    s = s.slice(0, -1)
+  } else if (s.startsWith("-")) {
+    negatif = true
+    s = s.slice(1)
+  } else if (s.startsWith("+")) {
+    s = s.slice(1)
+  }
+
+  // Textract rend le texte tel qu'imprimé : il peut rester des lettres ("EUR", "TTC"). On les retire
+  // après le traitement du signe, pour ne pas confondre un "-" de fin avec un tiret de mise en forme.
+  s = s.replace(/[^0-9.,]/g, "")
+  if (!/^\d[\d.,]*$/.test(s)) return null
+
+  const dernierSeparateur = Math.max(s.lastIndexOf(","), s.lastIndexOf("."))
+  let entier = s
+  let decimales = ""
+  if (dernierSeparateur !== -1 && /^\d{1,2}$/.test(s.slice(dernierSeparateur + 1))) {
+    entier = s.slice(0, dernierSeparateur)
+    decimales = s.slice(dernierSeparateur + 1)
+  }
+  entier = entier.replace(/[.,]/g, "")
+  if (!/^\d+$/.test(entier)) return null
+
+  const n = Number(decimales ? entier + "." + decimales : entier)
+  return Number.isNaN(n) ? null : (negatif ? -n : n)
 }
 
 function toIsoDate(year: number, month: number, day: number): string | null {

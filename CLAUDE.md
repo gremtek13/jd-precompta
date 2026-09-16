@@ -394,6 +394,15 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   l'atomicité suffit à garantir que l'en-tête décrit le jeu de lignes dont il vient. À l'inverse,
   le *format* du numéro est passé du TypeScript au SQL (`numero_facture_formate`), la base devant
   de toute façon l'écrire elle-même.
+- **Une Edge Function auto-portée duplique du code, donc elle est gardée par un test.**
+  `extract-piece` ne peut rien importer de `src/lib` et redéclare sa lecture de montant.
+  `extractPieceMontants.test.ts` lit la vraie source déployée, en extrait `parseAmount` et
+  l'exécute — volontairement fragile : renommer la fonction casse le test bruyamment, ce qui
+  vaut mieux qu'une copie qui dérive en silence.
+- **Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture.**
+  Un `count` nul, un `data` nul : indiscernables d'un « rien trouvé ». C'est ce qui faisait
+  répondre « ce fichier est nouveau » à `fichierDejaPresent` quand la lecture était refusée,
+  et abandonner silencieusement `synchroniserContrepartieBanque`.
 - **Un module couplé à Supabase se teste en simulant le client**, quand il n'y a pas de calcul
   pur à en extraire : `vi.mock('./supabase', ...)` avec un faux chaînage (`from().select().eq()`)
   dont le test programme la réponse — voir `contrepartieBanque.test.ts`. C'est la voie pour
@@ -409,7 +418,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 199 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 207 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
