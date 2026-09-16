@@ -99,8 +99,14 @@ function parseAmount(raw?: string): number | null {
   return Number.isNaN(n) ? null : (negatif ? -n : n)
 }
 
+// Le calendrier est vérifié, pas seulement les bornes 1-12 et 1-31 : un « 31/02/2023 » lu de travers
+// rendait « 2023-02-31 », une date qui n'existe pas. Postgres refuse la ligne (`date` invalide) et le
+// dépôt échoue sur une erreur incompréhensible, ou la valeur voyage jusqu'à un tri qui la classe
+// n'importe où. Même contrôle que `dateExiste` dans src/lib/csv.ts — jour 0 du mois suivant = dernier
+// jour du mois visé, en UTC donc insensible au fuseau.
 function toIsoDate(year: number, month: number, day: number): string | null {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  if (month < 1 || month > 12 || day < 1) return null
+  if (day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
 }
 
@@ -125,6 +131,110 @@ function parseDate(raw?: string): string | null {
   // Dernier recours pour les formats textuels (ex. "27 August 2026") que Date sait parfois lire.
   const d = new Date(trimmed)
   return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
+}
+
+// Repli de lecture de la date sur le texte OCR brut, quand Textract n'a étiqueté aucun champ
+// INVOICE_RECEIPT_DATE. Même principe que `tvaDepuisTexteBrut` plus bas : le texte a bien été lu,
+// c'est l'étiquetage qui manque. Constaté sur un fournisseur récurrent dont 18 factures sur 22 sont
+// ressorties sans date alors qu'elle y est imprimée en clair — et une pièce sans date n'entre
+// ensuite dans aucun pack (voir packGenerator), donc le manque coûte cher.
+//
+// Volontairement prudent : dater une facture du jour où elle doit être *payée* la range dans le
+// mauvais mois, parfois dans le mauvais exercice. Mieux vaut rendre null — le manque est désormais
+// signalé à l'écran et dans le récapitulatif — que de remplir avec une date plausible mais fausse.
+
+// Distincte de `MOIS_FR` plus bas, qui sert aux échéanciers de cotisation : celle-là est indexée en
+// majuscules accentuées et rend "01".."12", celle-ci sans accents et rend un nombre. Les deux ne sont
+// pas fusionnées ici parce que unifier reviendrait à toucher la lecture des cotisations, qui n'est
+// pas couverte par des tests — à faire, mais pas en passant.
+const MOIS_PAR_NOM: Record<string, number> = {
+  janvier: 1, fevrier: 2, mars: 3, avril: 4, mai: 5, juin: 6,
+  juillet: 7, aout: 8, septembre: 9, octobre: 10, novembre: 11, decembre: 12,
+}
+
+// Accents retirés pour que "février"/"fevrier" et "août"/"aout" tombent sur la même clé : l'OCR rend
+// l'un ou l'autre selon la qualité du scan.
+function sansAccents(s: string): string {
+  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+}
+
+// Libellés qui annoncent la date de la facture elle-même.
+const LIBELLE_DATE_FACTURE = /\b(date\s*(?:de\s*)?(?:la\s*)?(?:facture|facturation|emission|edition)?|facturee?\s+le|facture\s+du|emise?\s+le)\b/
+// Libellés qui annoncent une AUTRE date : échéance, règlement, livraison, commande, bornes de
+// période. Une ligne qui en contient un est écartée, même si elle porte aussi une date valide.
+const LIBELLE_AUTRE_DATE = /\b(echeance|reglement|payable|a\s*payer|date\s*limite|livraison|commande|periode|valable|naissance)\b/
+
+const DATE_ISO_REGEX = /\b(\d{4})-(\d{1,2})-(\d{1,2})\b/g
+const DATE_NUMERIQUE_REGEX = /\b(\d{1,2})[./-](\d{1,2})[./-](\d{2,4})\b/g
+const DATE_TEXTUELLE_REGEX = /\b(\d{1,2})(?:er)?\s+([a-z]+)\.?\s+(\d{4})\b/g
+
+// Toutes les dates lisibles d'une ligne, en ISO. Une année aberrante est écartée : un numéro de
+// facture ou une référence peut ressembler à une date par accident.
+function datesDeLaLigne(ligne: string, anneeReference: number): string[] {
+  const normalisee = sansAccents(ligne)
+  const trouvees: string[] = []
+  const ajouter = (a: number, m: number, j: number) => {
+    if (a < 2000 || a > anneeReference + 1) return
+    const iso = toIsoDate(a, m, j)
+    if (iso) trouvees.push(iso)
+  }
+
+  for (const m of normalisee.matchAll(DATE_ISO_REGEX)) ajouter(+m[1], +m[2], +m[3])
+  for (const m of normalisee.matchAll(DATE_NUMERIQUE_REGEX)) {
+    let annee = +m[3]
+    if (annee < 100) annee += annee < 70 ? 2000 : 1900
+    // JJ/MM et non MM/JJ : ces documents sont français. Lire à l'américaine daterait du 1er décembre
+    // une facture du 12 janvier, sans que rien ne le signale.
+    ajouter(annee, +m[2], +m[1])
+  }
+  for (const m of normalisee.matchAll(DATE_TEXTUELLE_REGEX)) {
+    const mois = MOIS_PAR_NOM[m[2]]
+    if (mois) ajouter(+m[3], mois, +m[1])
+  }
+  return trouvees
+}
+
+function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: string | null; candidates: string[] } {
+  const utiles = lignes.map((ligne) => {
+    const normalisee = sansAccents(ligne)
+    return {
+      dates: datesDeLaLigne(ligne, anneeReference),
+      estDateFacture: LIBELLE_DATE_FACTURE.test(normalisee),
+      estAutreDate: LIBELLE_AUTRE_DATE.test(normalisee),
+    }
+  })
+
+  // 1. Une ligne qui annonce explicitement la date de facture, sans autre libellé trompeur.
+  for (const u of utiles) {
+    if (u.estDateFacture && !u.estAutreDate && u.dates.length > 0) return { date: u.dates[0], candidates: [] }
+  }
+
+  // 2. Le libellé seul sur sa ligne, la date plus bas — mise en page en tableau, où l'en-tête
+  //    « Date » et sa valeur ne survivent pas sur la même ligne OCR. Même piège que la ventilation
+  //    TVA des tickets de caisse, traitée plus bas.
+  //
+  //    La valeur n'est pas forcément sur la ligne juste après : entre « Date » et « 31/01/2023 » il
+  //    reste les autres colonnes de l'en-tête puis le début de la ligne de valeurs. On regarde donc
+  //    quelques lignes en avant, mais pas tout le document — au-delà, la première date rencontrée
+  //    n'a plus de rapport avec l'en-tête et on retomberait à choisir au hasard.
+  const PORTEE_APRES_LIBELLE = 5
+  for (let i = 0; i < utiles.length - 1; i++) {
+    const u = utiles[i]
+    if (!u.estDateFacture || u.estAutreDate || u.dates.length > 0) continue
+    for (let j = i + 1; j < Math.min(i + 1 + PORTEE_APRES_LIBELLE, utiles.length); j++) {
+      const suivante = utiles[j]
+      if (suivante.estAutreDate) continue
+      if (suivante.dates.length > 0) return { date: suivante.dates[0], candidates: [] }
+    }
+  }
+
+  // 3. Aucun libellé reconnu, mais le document ne porte qu'une seule date distincte : elle ne peut
+  //    guère être autre chose que la sienne. Dès qu'il y en a plusieurs on s'arrête — trancher au
+  //    hasard entre une date d'émission et une date d'échéance n'est pas trancher.
+  const candidates = [...new Set(utiles.filter((u) => !u.estAutreDate).flatMap((u) => u.dates))]
+  if (candidates.length === 1) return { date: candidates[0], candidates: [] }
+
+  return { date: null, candidates: [...new Set(utiles.flatMap((u) => u.dates))] }
 }
 
 // Certains tickets de caisse (restauration notamment) impriment un tableau de ventilation TVA par
@@ -454,13 +564,24 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     else lignesBrutesDiag = lignes
   }
 
+  // Date : le champ étiqueté par Textract d'abord, puis le texte OCR brut. Textract n'étiquette
+  // INVOICE_RECEIPT_DATE que de façon irrégulière — sur un fournisseur récurrent réel, 4 factures
+  // sur 22 seulement — alors que la date est lue et présente dans `lignes` dans tous les cas.
+  let datePiece = parseDate(date?.text)
+  let datesDiag: string[] | undefined
+  if (!datePiece) {
+    const repli = dateDepuisTexteBrut(lignes, new Date().getUTCFullYear())
+    if (repli.date) datePiece = repli.date
+    else if (repli.candidates.length > 0) datesDiag = repli.candidates
+  }
+
   const confidences = [total, vendor, date].filter((f): f is { text: string; confidence: number } => !!f).map((f) => f.confidence)
   if (taxConfidenceCount > 0) confidences.push(taxConfidenceSum / taxConfidenceCount)
   const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0
 
   return {
     tiers: vendor?.text ?? null,
-    date_piece: parseDate(date?.text),
+    date_piece: datePiece,
     montant_ttc: montantTtc,
     montant_tva: montantTva,
     montant_ht: montantHtDeclare ?? (montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null),
@@ -471,6 +592,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     // Diagnostic temporaire : uniquement présent si la TVA reste introuvable après toutes les
     // tentatives — permet de voir le texte OCR brut plutôt que de deviner encore un nouveau motif.
     ...(lignesBrutesDiag ? { _lignes_brutes: lignesBrutesDiag } : {}),
+    ...(datesDiag ? { _diag_dates: datesDiag } : {}),
   }
 }
 

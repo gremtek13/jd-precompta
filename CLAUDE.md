@@ -399,6 +399,14 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `extractPieceMontants.test.ts` lit la vraie source déployée, en extrait `parseAmount` et
   l'exécute — volontairement fragile : renommer la fonction casse le test bruyamment, ce qui
   vaut mieux qu'une copie qui dérive en silence.
+- **Un champ que l'OCR a lu mais que Textract n'a pas étiqueté n'est pas un champ perdu.**
+  `AnalyzeExpense` rend deux choses : du texte brut ligne à ligne, et des champs qu'il *tente*
+  d'étiqueter. L'étiquetage est irrégulier — `INVOICE_RECEIPT_DATE` n'est sorti que sur 4 factures
+  sur 22 d'un même fournisseur, alors que la date était lue dans tous les cas. Chaque champ qui
+  compte a donc un repli sur le texte brut, comme la TVA en avait déjà un. Le repli reste prudent :
+  il écarte les lignes d'échéance ou de règlement, refuse de trancher entre plusieurs dates sans
+  libellé, et rend un diagnostic plutôt qu'une valeur plausible — une pièce datée à tort part dans
+  le mauvais mois, parfois dans le mauvais exercice, sans que rien ne le signale.
 - **Une liste plafonnée dit qu'elle l'est.** Les outils de l'agent comptable rendaient leur
   tableau tronqué tel quel, indiscernable d'une liste complète : le modèle en tirait un total
   qu'il annonçait au comptable, alors même que le prompt lui demande des montants exacts et de
@@ -463,7 +471,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 261 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 279 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
