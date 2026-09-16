@@ -1016,3 +1016,48 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   }
   .facture-imprimable-actions { display: none; }
 }
+
+/* ── Fil de précisions sur une pièce (voir components/FilCommentaires) ────────────────────────── */
+/* Le client écrit ce qu'il sait d'un dépôt, le cabinet lit et répond après un appel. Mis en forme
+   comme une conversation et non comme un champ de formulaire : ce sont des paroles datées, pas un
+   attribut de la pièce, et rien n'y est modifiable après coup. */
+.fil-commentaires { display: flex; flex-direction: column; gap: 8px; padding: 4px 0; }
+
+.fil-commentaires-liste { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+
+.fil-commentaire {
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  padding: 8px 10px;
+}
+/* La provenance se lit d'un coup d'œil, avant même le texte : « le client dit que » et
+   « l'opérateur suppose que » n'ont pas le même poids devant un contrôle. */
+.fil-commentaire-client { border-left-color: var(--color-primary); }
+.fil-commentaire-entete { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; margin-bottom: 4px; }
+.fil-commentaire-texte { margin: 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.fil-commentaires-saisie {
+  width: 100%;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  background: var(--color-surface);
+  color: inherit;
+  resize: vertical;
+}
+
+.fil-commentaires-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+/* La dernière précision, lue directement sur la ligne d'arbitrage : si l'opérateur doit ouvrir une
+   fiche pour savoir ce qu'est « BOULANGER MARSEILLE », il choisira la catégorie sans l'avoir lue. */
+.piece-precision {
+  display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap;
+  margin-top: 4px; font-size: 0.8rem; color: var(--color-text-light);
+}
+.piece-precision > span:nth-child(2) {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 28ch;
+}

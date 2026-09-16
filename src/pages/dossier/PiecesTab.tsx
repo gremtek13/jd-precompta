@@ -6,7 +6,8 @@ import { piecesADater, reextraireDates } from '../../lib/reextractionDates'
 import { grouperParTiers } from '../../lib/suggestionTiers'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
-import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
+import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
+import { chargerCommentaires, commentairesParCible, dernierCommentaire } from '../../lib/commentaires'
 import PieceFormModal from './PieceFormModal'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 import ImportDossierModal from './ImportDossierModal'
@@ -51,6 +52,8 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // sur un lot, et un bouton qui semble figé pousserait à recharger la page en plein traitement.
   const [reextraction, setReextraction] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
   const [recherche, setRecherche] = useState('')
+  // Précisions déposées par le client (et notes du cabinet) sur les pièces — voir lib/commentaires.ts.
+  const [commentaires, setCommentaires] = useState<PieceCommentaire[]>([])
 
   async function load() {
     setLoading(true)
@@ -88,6 +91,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     const { data: tiersCategoriesCabinetData } = await supabase
       .from('tiers_categories_cabinet')
       .select('*')
+
+    // Les précisions portées par le client sur ses dépôts. Chargées ici, en une requête pour tout le
+    // dossier, et passées à la ligne : c'est le seul endroit où elles servent vraiment, au moment où
+    // l'opérateur choisit une catégorie sans savoir ce qu'est « BOULANGER MARSEILLE ».
+    setCommentaires(await chargerCommentaires(dossierId))
 
     setPieces(piecesData ?? [])
     setCategories(categoriesData ?? [])
@@ -131,10 +139,16 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
   // Cherchable = ce qui est lisible sur la ligne. Le montant TTC en fait partie : retrouver « 192 »
   // parmi des dizaines de factures d'un même fournisseur est un usage courant.
+  const commentairesParPiece = commentairesParCible(commentaires)
+  const filDeLaPiece = (id: string) => commentairesParPiece.get(`piece:${id}`) ?? []
+
+  // Le texte des précisions entre dans la recherche : c'est souvent le seul endroit où figure ce
+  // qu'était vraiment l'achat, quand ni le nom du fichier ni le tiers lu par l'OCR ne le disent.
   const filtered = trie.filter((p) =>
     correspondALaRecherche(
       [p.nom_fichier, p.tiers, categorieLabel(p.categorie_id), p.type_piece, p.date_piece,
-       p.date_piece ? formatDate(p.date_piece) : null, p.montant_ttc],
+       p.date_piece ? formatDate(p.date_piece) : null, p.montant_ttc,
+       ...filDeLaPiece(p.id).map((c) => c.texte)],
       recherche,
     ),
   )
@@ -397,7 +411,28 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                     <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
                   </td>
                   <td onClick={() => setEditing(p)}>{formatDate(p.date_piece)}</td>
-                  <td onClick={() => setEditing(p)}>{p.tiers ?? '—'}</td>
+                  <td onClick={() => setEditing(p)}>
+                    {p.tiers ?? '—'}
+                    {/* La dernière précision est lue ICI, sur la ligne, pas dans la fiche : si
+                        l'opérateur doit ouvrir une modale pour savoir ce qu'est « BOULANGER
+                        MARSEILLE », il choisira la catégorie sans l'avoir lue. Le plus récent des
+                        commentaires prime — quand le cabinet a rappelé le client, sa note vaut mieux
+                        que la précision initiale. */}
+                    {(() => {
+                      const fil = filDeLaPiece(p.id)
+                      const dernier = dernierCommentaire(fil)
+                      if (!dernier) return null
+                      return (
+                        <div className="piece-precision" title={fil.map((c) => `${c.origine === 'cabinet' ? 'Cabinet' : 'Client'} : ${c.texte}`).join('\n')}>
+                          <span className={`badge ${dernier.origine === 'cabinet' ? 'badge-neutral' : 'badge-ok'}`}>
+                            {dernier.origine === 'cabinet' ? 'Cabinet' : 'Client'}
+                          </span>
+                          <span>{dernier.texte}</span>
+                          {fil.length > 1 && <span className="muted"> +{fil.length - 1}</span>}
+                        </div>
+                      )
+                    })()}
+                  </td>
                   <td className="hide-mobile" onClick={() => setEditing(p)}>
                     {p.categorie_id ? (
                       categorieLabel(p.categorie_id)
@@ -444,8 +479,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           tiersCategoriesCabinet={tiersCategoriesCabinet}
           tiersConnus={tiersConnus}
           piece={editing}
+          commentaires={filDeLaPiece(editing.id)}
           onClose={() => setEditing(null)}
           onSaved={load}
+          onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
         />
       )}
 

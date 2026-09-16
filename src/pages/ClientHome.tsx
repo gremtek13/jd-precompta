@@ -102,7 +102,10 @@ export default function ClientHome() {
       setCaptureError(`${file.name} : déjà déposé, pas réenvoyé.`)
       return
     }
-    navigate('/mes-pieces')
+    // On emporte la ligne qui vient d'être créée : « Mes pièces » ouvre alors la zone de précision
+    // sur ce dépôt-là. C'est le seul moment où le client sait encore pourquoi il a photographié ce
+    // reçu — deux mois plus tard, personne au cabinet ne pourra le reconstituer.
+    navigate('/mes-pieces', { state: { preciser: resultat.cible } })
   }
 
   if (!dossierId) {

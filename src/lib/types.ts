@@ -277,6 +277,21 @@ export interface DocumentDivers {
   created_at: string
 }
 
+// Un commentaire porté sur une pièce ou un document déposé — voir lib/commentaires.ts pour ce qui le
+// justifie. Exactement un de `piece_id` / `document_id` est renseigné (contrainte en base).
+export interface PieceCommentaire {
+  id: string
+  dossier_id: string
+  piece_id: string | null
+  document_id: string | null
+  auteur_id: string | null
+  // Qui parle. Déduit du droit de l'auteur sur le dossier au moment de l'écriture, jamais déclaré
+  // par l'écran : « le client dit que » et « l'opérateur suppose que » n'ont pas le même poids.
+  origine: 'client' | 'cabinet'
+  texte: string
+  created_at: string
+}
+
 export type VehiculeType = 'aucun' | 'personnel_ik' | 'societe'
 
 // Un véhicule du cadre 7 du 2035-B (« Barèmes kilométriques »), pour un exercice donné. Le
