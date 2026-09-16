@@ -203,10 +203,28 @@ function datesDeLaLigne(ligne: string, anneeReference: number): string[] {
   return trouvees
 }
 
-function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: string | null; candidates: string[] } {
+type OrigineDate = "libelle" | "unique" | "premiere"
+
+// Le diagnostic porte la ligne d'où chaque date a été lue : sans elle, un échec ne dit que « voici
+// des dates », sans permettre de comprendre laquelle était la bonne ni pourquoi la règle a hésité.
+function candidatsAvecLigne(utiles: { ligne: string; dates: string[] }[]): string[] {
+  const vus = new Set<string>()
+  const sortie: string[] = []
+  for (const u of utiles) {
+    for (const d of u.dates) {
+      if (vus.has(d)) continue
+      vus.add(d)
+      sortie.push(`${d} \u2190 ${u.ligne.slice(0, 80)}`)
+    }
+  }
+  return sortie
+}
+
+function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: string | null; origine: OrigineDate | null; candidats: string[] } {
   const utiles = lignes.map((ligne) => {
     const normalisee = sansAccents(ligne)
     return {
+      ligne,
       dates: datesDeLaLigne(ligne, anneeReference),
       estDateFacture: LIBELLE_DATE_FACTURE.test(normalisee) || LIBELLE_VILLE_LE.test(normalisee),
       estAutreDate: LIBELLE_AUTRE_DATE.test(normalisee),
@@ -215,7 +233,7 @@ function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: 
 
   // 1. Une ligne qui annonce explicitement la date de facture, sans autre libellé trompeur.
   for (const u of utiles) {
-    if (u.estDateFacture && !u.estAutreDate && u.dates.length > 0) return { date: u.dates[0], candidates: [] }
+    if (u.estDateFacture && !u.estAutreDate && u.dates.length > 0) return { date: u.dates[0], origine: "libelle", candidats: [] }
   }
 
   // 2. Le libellé seul sur sa ligne, la date plus bas — mise en page en tableau, où l'en-tête
@@ -233,17 +251,32 @@ function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: 
     for (let j = i + 1; j < Math.min(i + 1 + PORTEE_APRES_LIBELLE, utiles.length); j++) {
       const suivante = utiles[j]
       if (suivante.estAutreDate) continue
-      if (suivante.dates.length > 0) return { date: suivante.dates[0], candidates: [] }
+      if (suivante.dates.length > 0) return { date: suivante.dates[0], origine: "libelle", candidats: [] }
     }
   }
 
   // 3. Aucun libellé reconnu, mais le document ne porte qu'une seule date distincte : elle ne peut
-  //    guère être autre chose que la sienne. Dès qu'il y en a plusieurs on s'arrête — trancher au
-  //    hasard entre une date d'émission et une date d'échéance n'est pas trancher.
+  //    guère être autre chose que la sienne.
   const candidates = [...new Set(utiles.filter((u) => !u.estAutreDate).flatMap((u) => u.dates))]
-  if (candidates.length === 1) return { date: candidates[0], candidates: [] }
+  if (candidates.length === 1) return { date: candidates[0], origine: "unique", candidats: [] }
 
-  return { date: null, candidates: [...new Set(utiles.flatMap((u) => u.dates))] }
+  // 4. Plusieurs dates, aucun libellé : on retient la première dans l'ordre de lecture. Une facture
+  //    imprime sa propre date dans son en-tête, avant ses conditions de règlement et avant ses
+  //    mentions légales de pied de page — l'ordre de lecture porte donc l'information.
+  //
+  //    Cette règle a d'abord été écartée : mieux valait rendre null que risquer de dater une pièce
+  //    du jour où elle doit être payée. Un cas réel l'a tranchée. Sur huit factures d'un fournisseur,
+  //    les dates vues étaient systématiquement, dans cet ordre : la date de facture (fin de mois),
+  //    trois dates constantes d'un document à l'autre (mentions légales), et l'échéance au 5 du mois
+  //    suivant. La première est la bonne à chaque fois, et recoupée avec les factures voisines déjà
+  //    datées par Textract, elle forme une série strictement croissante avec les numéros de facture.
+  //
+  //    Le résultat est marqué "premiere" et remonté à part par l'appelant : une date déduite est
+  //    proposée à la vérification, jamais présentée comme lue. C'est ce qui permet de retenir cette
+  //    règle sans revenir sur le principe — ne jamais deviner en silence.
+  if (candidates.length > 1) return { date: candidates[0], origine: "premiere", candidats: [] }
+
+  return { date: null, origine: null, candidats: candidatsAvecLigne(utiles) }
 }
 
 // Certains tickets de caisse (restauration notamment) impriment un tableau de ventilation TVA par
@@ -578,10 +611,17 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   // sur 22 seulement — alors que la date est lue et présente dans `lignes` dans tous les cas.
   let datePiece = parseDate(date?.text)
   let datesDiag: string[] | undefined
+  // Renseigné uniquement quand la date vient de la règle de dernier recours (première date en ordre
+  // de lecture) : l'appelant la remonte alors à vérifier plutôt que de la présenter comme lue.
+  let dateDeduite = false
   if (!datePiece) {
     const repli = dateDepuisTexteBrut(lignes, new Date().getUTCFullYear())
-    if (repli.date) datePiece = repli.date
-    else if (repli.candidates.length > 0) datesDiag = repli.candidates
+    if (repli.date) {
+      datePiece = repli.date
+      dateDeduite = repli.origine === "premiere"
+    } else if (repli.candidats.length > 0) {
+      datesDiag = repli.candidats
+    }
   }
 
   const confidences = [total, vendor, date].filter((f): f is { text: string; confidence: number } => !!f).map((f) => f.confidence)
@@ -602,6 +642,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     // tentatives — permet de voir le texte OCR brut plutôt que de deviner encore un nouveau motif.
     ...(lignesBrutesDiag ? { _lignes_brutes: lignesBrutesDiag } : {}),
     ...(datesDiag ? { _diag_dates: datesDiag } : {}),
+    ...(dateDeduite ? { _date_deduite: true } : {}),
   }
 }
 

@@ -216,7 +216,18 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     setReextraction(null)
     load()
 
+    const deduites = resultat.datees.filter((d) => d.deduite)
     const lignes = [`${resultat.datees.length} pièce(s) datée(s).`]
+    if (deduites.length > 0) {
+      // Dites à part, avec leur date : elles viennent de la règle de dernier recours (première date
+      // en ordre de lecture) et non d'un libellé reconnu. Juste dans la très grande majorité des
+      // mises en page, mais c'est une déduction — elle se vérifie d'un coup d'œil sur la liste.
+      lignes.push(
+        `\nDont ${deduites.length} déduite(s) de la mise en page, à vérifier :\n` +
+        deduites.slice(0, 10).map((d) => `• ${d.nomFichier} → ${d.date}`).join('\n') +
+        (deduites.length > 10 ? `\n… et ${deduites.length - 10} autre(s)` : ''),
+      )
+    }
     if (resultat.sansDate.length > 0) {
       // Les dates vues sont affichées telles quelles : c'est ce qui permet de comprendre pourquoi la
       // lecture n'a pas tranché, plutôt que de rester sur un « ça n'a pas marché ».

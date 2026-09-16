@@ -43,12 +43,16 @@ function extraireDeLEdgeFunction() {
           'function datesDeLaLigne(ligne, anneeReference) {',
           [['const trouvees: string[] = []', 'const trouvees = []'],
            ['(a: number, m: number, j: number) =>', '(a, m, j) =>']])
-  prendre('function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: string | null; candidates: string[] } {',
+  prendre('function candidatsAvecLigne(utiles: { ligne: string; dates: string[] }[]): string[] {',
+          'function candidatsAvecLigne(utiles) {',
+          [['const vus = new Set<string>()', 'const vus = new Set()'],
+           ['const sortie: string[] = []', 'const sortie = []']])
+  prendre('function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: string | null; origine: OrigineDate | null; candidats: string[] } {',
           'function dateDepuisTexteBrut(lignes, anneeReference) {')
 
   return new Function(`${morceaux.join('\n')}; return dateDepuisTexteBrut`)() as (
     lignes: string[], anneeReference: number,
-  ) => { date: string | null; candidates: string[] }
+  ) => { date: string | null; origine: string | null; candidats: string[] }
 }
 
 const dateDepuisTexteBrut = extraireDeLEdgeFunction()
@@ -105,10 +109,13 @@ describe('extract-piece / dateDepuisTexteBrut (copie déployée)', () => {
   })
 
   it('ne va pas chercher une date trop loin après le libellé', () => {
-    // Au-delà de quelques lignes, la date rencontrée n'a plus de rapport avec l'en-tête : on
-    // retomberait à choisir au hasard, en le présentant comme une lecture.
+    // Au-delà de quelques lignes, la date rencontrée n'a plus de rapport avec l'en-tête. Le résultat
+    // n'est plus null depuis la règle de dernier recours, mais c'est bien elle qui doit trancher —
+    // pas la règle du libellé, qui présenterait cette date comme lue sous « Date ».
     const loin = ['Date', 'a', 'b', 'c', 'd', 'e', 'f', '31/01/2023', '28/02/2023']
-    expect(lire(loin).date).toBeNull()
+    expect(lire(loin).origine).toBe('premiere')
+    // Le libellé est bien reconnu, c'est sa portée qui s'arrête : rapprochée, la valeur est lue.
+    expect(lire(['Date', 'a', '31/01/2023', '28/02/2023']).origine).toBe('libelle')
   })
 
   it('retient la date unique d’un document qui n’annonce aucun libellé', () => {
@@ -141,16 +148,46 @@ describe('extract-piece / dateDepuisTexteBrut (copie déployée)', () => {
 
   it('ne prend pas n’importe quel « , le » pour une annonce de date', () => {
     // Sans le contrôle du chiffre qui suit, une formule de politesse deviendrait un libellé de date.
-    expect(lire(['Cordialement, le service comptable', 'Prestation', '05/01/2023', '28/02/2023']).date)
-      .toBeNull()
+    // La règle de dernier recours finit par trancher, mais ce test porte sur l'autre point : cette
+    // ligne ne doit pas être reconnue comme une annonce de date.
+    expect(lire(['Cordialement, le service comptable', 'Prestation', '05/01/2023', '28/02/2023']).origine)
+      .toBe('premiere')
+    // La même tournure suivie d'un chiffre, elle, est bien un libellé.
+    expect(lire(['Marseille, le 05/01/2023', 'Autre 28/02/2023']).origine).toBe('libelle')
   })
 
-  it('refuse de trancher entre plusieurs dates sans libellé, et dit ce qu’il a vu', () => {
-    // Remplir au hasard produirait une pièce datée avec assurance dans le mauvais mois. Le manque est
-    // désormais visible (feuille « Pièces sans date », message à l'écran) : il vaut mieux que le faux.
+  it('retient la première date en ordre de lecture quand aucun libellé ne tranche', () => {
+    // Règle de dernier recours, et c'est un vrai revirement : la version précédente rendait null.
+    // Un cas réel l'a tranchée — sur huit factures d'un même fournisseur, les dates vues étaient
+    // toujours, dans cet ordre : la date de facture, trois mentions légales constantes, puis
+    // l'échéance. La première est la bonne à chaque fois. Une facture imprime sa date en en-tête,
+    // avant ses conditions de règlement et son pied de page.
     const r = lire(['ACME', '05/01/2023', 'Prestation du mois', '28/02/2023', 'Total 100,00'])
-    expect(r.date).toBeNull()
-    expect(r.candidates).toEqual(['2023-01-05', '2023-02-28'])
+    expect(r.date).toBe('2023-01-05')
+    expect(r.origine).toBe('premiere')
+  })
+
+  it('marque la date déduite comme telle, pour qu’elle soit proposée à vérifier', () => {
+    // La distinction qui permet de garder cette règle sans deviner en silence : une date lue sur un
+    // libellé et une date déduite de l'ordre de lecture ne sont pas la même chose, et l'appelant
+    // remonte la seconde à part.
+    expect(lire(['Date : 31/01/2023', 'Échéance : 28/02/2023']).origine).toBe('libelle')
+    expect(lire(['ACME', '31/01/2023', 'Total']).origine).toBe('unique')
+    expect(lire(['ACME', '31/01/2023', 'Autre 15/03/2023']).origine).toBe('premiere')
+  })
+
+  it('reproduit le cas réel du fournisseur : facture, mentions légales, échéance', () => {
+    // Les dates exactes remontées par le diagnostic sur 54201.pdf, dans leur ordre d'apparition.
+    const r = lire([
+      'TRANSMEDICAL',
+      'FACTURE N° 54201  30/06/2023',
+      'Prestation du mois',
+      'SARL au capital de 10 000 € - RCS Marseille du 05/12/2017',
+      'Paiement au 05/07/2023',
+      'Agrément du 02/10/2012',
+      'CGV en vigueur au 01/01/2013',
+    ])
+    expect(r.date).toBe('2023-06-30')
   })
 
   it('ne prend pas un numéro ou une référence pour une date', () => {
@@ -163,10 +200,25 @@ describe('extract-piece / dateDepuisTexteBrut (copie déployée)', () => {
     expect(lire(['Date : 31/02/2023', 'Date : 45/13/2023']).date).toBeNull()
   })
 
+  it('dit dans son diagnostic de quelle ligne vient chaque date', () => {
+    // Sans la ligne source, un échec ne dit que « voici des dates » — impossible de savoir laquelle
+    // était la bonne ni pourquoi la lecture a hésité. C'est précisément ce qui manquait au premier
+    // diagnostic remonté sur un cas réel.
+    // Les deux lignes portent un libellé d'exclusion : aucune candidate ne subsiste, donc ni la
+    // règle « date unique » ni celle de dernier recours ne peuvent trancher, et c'est le diagnostic
+    // qui parle.
+    const r = lire(['Échéance : 31/01/2023', 'Payable le 28/02/2023'])
+    expect(r.date).toBeNull()
+    expect(r.candidats).toEqual([
+      '2023-01-31 \u2190 Échéance : 31/01/2023',
+      '2023-02-28 \u2190 Payable le 28/02/2023',
+    ])
+  })
+
   it('ne rend rien sur un document sans aucune date', () => {
     const r = lire(['TRANSMEDICAL', 'Prestation mensuelle', 'Total TTC 192,00 €'])
     expect(r.date).toBeNull()
-    expect(r.candidates).toEqual([])
+    expect(r.candidats).toEqual([])
   })
 
   it('accepte une année sur deux chiffres', () => {
@@ -200,7 +252,9 @@ describe('extract-piece / branchement du repli', () => {
     expect(source).toContain('let datePiece = parseDate(date?.text)')
     expect(source).toContain('if (!datePiece) {')
     expect(source).toContain('const repli = dateDepuisTexteBrut(lignes, new Date().getUTCFullYear())')
-    expect(source).toContain('if (repli.date) datePiece = repli.date')
+    expect(source).toContain('datePiece = repli.date')
+    expect(source).toContain('dateDeduite = repli.origine === "premiere"')
+    expect(source).toContain('...(dateDeduite ? { _date_deduite: true } : {}),')
   })
 
   it('renvoie la date issue du repli, et le diagnostic quand il n’a rien pu conclure', () => {

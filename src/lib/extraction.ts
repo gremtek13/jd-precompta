@@ -58,6 +58,11 @@ export interface ExtractionResult {
   // elles (voir extract-piece). Présent uniquement quand `date_piece` reste nul — c'est ce qui permet
   // de comprendre un échec sur un document réel plutôt que de deviner un nouveau motif à l'aveugle.
   _diag_dates?: string[]
+  // Vrai quand la date ne vient pas d'un libellé reconnu mais de la règle de dernier recours (la
+  // première date en ordre de lecture, voir extract-piece). Elle est alors proposée à vérifier
+  // plutôt que présentée comme lue — c'est ce qui permet de garder cette règle sans deviner en
+  // silence.
+  _date_deduite?: boolean
 }
 
 // Textract n'accepte que JPEG/PNG/PDF(1 page)/TIFF. Une photo de téléphone peut être en HEIC en
