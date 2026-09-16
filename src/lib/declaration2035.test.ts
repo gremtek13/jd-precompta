@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { calculerDeclaration2035, dotationPourAnnee, POSTE_AMORTISSEMENTS, POSTE_COTISATIONS } from './declaration2035'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
+import {
+  calculerDeclaration2035, dotationPourAnnee,
+  POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM,
+} from './declaration2035'
+import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -17,7 +20,16 @@ const piece = (o: Partial<Piece>): Piece =>
 
 const calcul = (o: {
   pieces?: Piece[]; immos?: Immobilisation[]; cotis?: CotisationDeclaree[]; annee?: number
-}) => calculerDeclaration2035(o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [])
+  vehicules?: VehiculeDossier[]
+}) => calculerDeclaration2035(
+  o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [], o.vehicules ?? [],
+)
+
+const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
+  ({
+    id: 'v', annee: 2025, type: 'voiture', puissance_fiscale: 6, motorisation: 'thermique',
+    km_professionnel: 4000, ...o,
+  }) as VehiculeDossier
 
 describe('calculerDeclaration2035 — périmètre', () => {
   it('ne retient que les pièces validées', () => {
@@ -182,5 +194,58 @@ describe('amortissements et cotisations', () => {
       cotis: [{ echeance: '2024-05-05', montant_appele: 500, montant_verse: 500 } as CotisationDeclaree],
     })
     expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)).toBeUndefined()
+  })
+})
+
+describe('calculerDeclaration2035 — indemnités kilométriques', () => {
+  it('porte le total du cadre 7 dans un poste à lui', () => {
+    // 4 000 km, 6 CV thermique : l'exemple publié par l'administration, 2 660 €.
+    const d = calcul({ vehicules: [vehicule({})] })
+    expect(d.depenses.find((l) => l.poste === POSTE_INDEMNITES_KM)?.montant).toBe(2660)
+    expect(d.totalDepenses).toBe(2660)
+  })
+
+  it('n’emprunte pas le kilométrage d’un autre exercice', () => {
+    // L'option pour le forfait se prend au 1er janvier et vaut l'année entière (notice, renvoi 12) :
+    // un véhicule saisi pour 2024 n'a rien à faire dans la déclaration 2025.
+    const d = calcul({ vehicules: [vehicule({ annee: 2024 })] })
+    expect(d.depenses.find((l) => l.poste === POSTE_INDEMNITES_KM)).toBeUndefined()
+    expect(d.indemnitesKilometriques).toBeNull()
+  })
+
+  it('additionne les véhicules d’un même exercice', () => {
+    const d = calcul({
+      vehicules: [vehicule({ id: 'a' }), vehicule({ id: 'b', puissance_fiscale: 3, km_professionnel: 1000 })],
+    })
+    expect(d.depenses.find((l) => l.poste === POSTE_INDEMNITES_KM)?.montant).toBe(2660 + 529)
+  })
+
+  it('remonte un véhicule non calculé au lieu de le faire disparaître', () => {
+    // Absent du total, c'est une déduction perdue que personne ne verrait manquer — et sur le PDF,
+    // rien ne distinguerait une case BJ amputée d'une case BJ juste.
+    const d = calcul({ vehicules: [vehicule({}), vehicule({ id: 'b', annee: 2023 })], annee: 2023 })
+    expect(d.indemnitesKilometriques?.total).toBe(0)
+    expect(d.indemnitesKilometriques?.nonCalcules).toHaveLength(1)
+    expect(d.indemnitesKilometriques?.nonCalcules[0].motif).toBe('barème non renseigné pour cet exercice')
+  })
+
+  it('ne crée pas de poste quand le total est nul', () => {
+    // Un véhicule déclaré sans trajet professionnel est un cas réel : il ne doit pas écrire une
+    // ligne à zéro dans la déclaration, mais il ne doit pas non plus être signalé comme un défaut.
+    const d = calcul({ vehicules: [vehicule({ km_professionnel: 0 })] })
+    expect(d.depenses.find((l) => l.poste === POSTE_INDEMNITES_KM)).toBeUndefined()
+    expect(d.indemnitesKilometriques).toEqual({ total: 0, nonCalcules: [] })
+  })
+
+  it('range un hybride et un véhicule à hydrogène dans la table thermique', () => {
+    // Seuls les 100 % électriques ont leur propre table. Confondre les deux vaut 20 % de la
+    // déduction — 3 192 € au lieu de 2 660 € sur le même trajet.
+    const thermique = calcul({ vehicules: [vehicule({})] }).indemnitesKilometriques?.total
+    for (const motorisation of ['hybride', 'hydrogene'] as const) {
+      expect(calcul({ vehicules: [vehicule({ motorisation })] }).indemnitesKilometriques?.total)
+        .toBe(thermique)
+    }
+    expect(calcul({ vehicules: [vehicule({ motorisation: 'electrique' })] }).indemnitesKilometriques?.total)
+      .toBe(3192)
   })
 })

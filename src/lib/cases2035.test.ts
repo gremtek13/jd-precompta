@@ -5,13 +5,16 @@ import {
   CASE_PAR_CODE,
   CODES_TOTALISES_BR,
   caseDuPoste,
+  doublonFraisVehicules,
   incoherencesDesCases,
   repartirEnCases,
   valeursDesCases,
 } from './cases2035'
-import { calculerDeclaration2035, POSTE_AMORTISSEMENTS, POSTE_COTISATIONS } from './declaration2035'
+import {
+  calculerDeclaration2035, POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM,
+} from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
-import type { Categorie, Piece } from './types'
+import type { Categorie, Piece, VehiculeDossier } from './types'
 
 const ligne = (o: Partial<LigneDeclaration>): LigneDeclaration =>
   ({ poste: 'Achats', nature: 'depense', montant: 100, nbPieces: 1, ...o })
@@ -24,6 +27,7 @@ const declaration = (o: Partial<Declaration2035>): Declaration2035 => ({
   totalDepenses: 0,
   resultat: 0,
   exclusions: { sansPoste: [], sansDate: [], sansMontant: [] },
+  indemnitesKilometriques: null,
   ...o,
 })
 
@@ -308,7 +312,7 @@ describe('bout en bout depuis les pièces', () => {
       piece({ id: 'a', categorie_id: 'c-hono', montant_ht: 800 }),
       piece({ id: 'b', categorie_id: 'c-assur', montant_ht: 200 }),
       piece({ id: 'c', categorie_id: 'c-vente', type_piece: 'vente', montant_ht: 5000 }),
-    ], categories, [], [])
+    ], categories, [], [], [])
 
     const { valeurs, postesSansCase } = valeursDesCases(d)
     expect(postesSansCase).toEqual([])
@@ -316,5 +320,101 @@ describe('bout en bout depuis les pièces', () => {
     expect(valeurs.get('BH')).toBe(1000)
     expect(valeurs.get('BR')).toBe(1000)
     expect(valeurs.get('CP')).toBe(4000)
+  })
+})
+
+describe('le barème kilométrique arrive en case BJ', () => {
+  const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
+    ({
+      id: 'v', annee: 2025, type: 'voiture', puissance_fiscale: 6, motorisation: 'thermique',
+      km_professionnel: 4000, ...o,
+    }) as VehiculeDossier
+
+  it('porte le « total A » du cadre 7 ligne 23, comme le dit le formulaire', () => {
+    // Le bas du 2035-B : « Total A à reporter ligne 23 de l'annexe 2035 A ». Ligne 23 = BJ.
+    const d = calculerDeclaration2035(2025, [], [], [], [], [vehicule({})])
+    const { valeurs, postesSansCase } = valeursDesCases(d)
+    expect(postesSansCase).toEqual([])
+    expect(valeurs.get('BJ')).toBe(2660)
+    // Et il compte bien dans le total des dépenses : une case BJ remplie mais hors de BR ne
+    // déduirait rien du tout.
+    expect(valeurs.get('BR')).toBe(2660)
+  })
+
+  it('s’additionne aux autres frais de déplacement de la ligne 24', () => {
+    // BJ est un total groupé sur deux lignes : le forfait véhicule ligne 23, le train et l'hôtel
+    // ligne 24. Les deux coexistent, et la case doit porter leur somme.
+    const categories = [{ id: 'c-depl', poste_2035: 'Autres frais de déplacements' }] as Categorie[]
+    const piece = {
+      id: 'train', statut: 'validee', type_piece: 'achat', date_piece: '2025-04-02',
+      montant_ht: 340, montant_ttc: 340, categorie_id: 'c-depl',
+    } as Piece
+    const d = calculerDeclaration2035(2025, [piece], categories, [], [], [vehicule({})])
+    expect(valeursDesCases(d).valeurs.get('BJ')).toBe(2660 + 340)
+  })
+})
+
+describe('doublonFraisVehicules — le forfait et le réel ne cohabitent pas', () => {
+  it('signale des frais de véhicule au réel à côté du barème', () => {
+    // Les deux tombent dans BJ, donc la même dépense y est comptée deux fois — et la case n'affiche
+    // qu'un total qui ne dit pas de quoi il est fait. Note (12) de la notice.
+    const doublon = doublonFraisVehicules(declaration({
+      depenses: [
+        ligne({ poste: POSTE_INDEMNITES_KM, montant: 2660, nbPieces: 0 }),
+        ligne({ poste: 'Frais de véhicules', montant: 1200, nbPieces: 7 }),
+      ],
+    }))
+    expect(doublon?.montantIndemnites).toBe(2660)
+    expect(doublon?.totalPostes).toBe(1200)
+    expect(doublon?.postes.map((p) => p.poste)).toEqual(['Frais de véhicules'])
+  })
+
+  it('ne crie pas au loup sur les autres frais de déplacements', () => {
+    // Train, hôtel, taxi : la ligne 24 cohabite tout à fait légitimement avec le forfait, qui ne
+    // couvre que le véhicule. Un avertissement qui se trompe souvent finit par ne plus être lu.
+    expect(doublonFraisVehicules(declaration({
+      depenses: [
+        ligne({ poste: POSTE_INDEMNITES_KM, montant: 2660 }),
+        ligne({ poste: 'Autres frais de déplacements', montant: 340 }),
+      ],
+    }))).toBeNull()
+  })
+
+  it('ne dit rien d’un forfait nul', () => {
+    // Un véhicule déclaré sans trajet professionnel ne déduit rien : il ne fait donc double emploi
+    // avec rien. Signaler ce cas enverrait le cabinet chercher un doublon qui n'existe pas.
+    expect(doublonFraisVehicules(declaration({
+      depenses: [
+        ligne({ poste: POSTE_INDEMNITES_KM, montant: 0 }),
+        ligne({ poste: 'Frais de véhicules', montant: 1200 }),
+      ],
+    }))).toBeNull()
+  })
+
+  it('ne dit rien sans barème kilométrique', () => {
+    // Des frais de véhicule au réel tout seuls, c'est le régime réel : parfaitement régulier.
+    expect(doublonFraisVehicules(declaration({
+      depenses: [ligne({ poste: 'Frais de véhicules', montant: 1200 })],
+    }))).toBeNull()
+  })
+
+  it('reconnaît le poste malgré l’accent, le pluriel et la casse', () => {
+    // Le poste est un texte libre recopié par le cabinet. Comparer brut laisserait passer le
+    // doublon sur « FRAIS DE VEHICULE », qui est pourtant le même.
+    for (const poste of ['FRAIS DE VEHICULE', 'frais de véhicules', 'Carburant']) {
+      expect(doublonFraisVehicules(declaration({
+        depenses: [ligne({ poste: POSTE_INDEMNITES_KM, montant: 2660 }), ligne({ poste, montant: 900 })],
+      }))?.totalPostes).toBe(900)
+    }
+  })
+
+  it('additionne plusieurs postes au réel', () => {
+    expect(doublonFraisVehicules(declaration({
+      depenses: [
+        ligne({ poste: POSTE_INDEMNITES_KM, montant: 2660 }),
+        ligne({ poste: 'Frais de véhicules', montant: 1200 }),
+        ligne({ poste: 'Carburant', montant: 800.5 }),
+      ],
+    }))?.totalPostes).toBe(2000.5)
   })
 })

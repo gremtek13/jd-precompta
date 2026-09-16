@@ -1,4 +1,4 @@
-import { POSTE_AMORTISSEMENTS, POSTE_COTISATIONS } from './declaration2035'
+import { POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
 
 // Rattachement des postes du moteur (voir declaration2035.ts) aux cases du formulaire officiel.
@@ -184,6 +184,9 @@ const RATTACHEMENTS: [string, string][] = [
   ['Autres frais de déplacements', 'BJ'],
   ['Frais de déplacement', 'BJ'],
   ['Frais de déplacements', 'BJ'],
+  // Le « total A » du cadre 7 du 2035-B : le formulaire dit lui-même, sous le tableau des barèmes,
+  // « Total A à reporter ligne 23 de l'annexe 2035 A ». Ligne 23, donc BJ.
+  [POSTE_INDEMNITES_KM, 'BJ'],
 
   // Dépenses — ligne 25
   [POSTE_COTISATIONS, 'BK'],
@@ -322,6 +325,46 @@ export function valeursDesCases(declaration: Declaration2035): {
 
   for (const [code, montant] of valeurs) valeurs.set(code, Number(montant.toFixed(2)))
   return { valeurs, postesSansCase }
+}
+
+// Les postes dont la dépense est DÉJÀ couverte par le barème kilométrique. Note (12) de la notice
+// 2035-NOT-SD : l'option pour le forfait vaut pour tous les véhicules, et les dépenses qu'il couvre
+// « ne doivent alors figurer à aucun poste de charges ».
+//
+// Volontairement pas « toutes les cases BJ » : la ligne 24, « Autres frais de déplacements » (train,
+// hôtel, taxi), coexiste tout à fait légitimement avec le forfait — le barème ne couvre que le
+// véhicule. Ni « Entretien et réparations » ni « Primes d'assurance », qui vont en BH et désignent
+// aussi bien le cabinet que la voiture : les signaler ferait crier au loup sur des dossiers justes,
+// et un avertissement qui se trompe souvent finit par ne plus être lu.
+const POSTES_COUVERTS_PAR_LE_BAREME = ['Frais de véhicules', 'Frais de véhicule', 'Carburant', 'Frais de carburant']
+const CLES_COUVERTES_PAR_LE_BAREME = new Set(POSTES_COUVERTS_PAR_LE_BAREME.map(cle))
+
+export interface DoublonFraisVehicule {
+  montantIndemnites: number
+  // Les postes qui font double emploi, avec leur montant — de quoi décider lequel des deux retirer.
+  postes: LigneDeclaration[]
+  totalPostes: number
+}
+
+// Le barème kilométrique et des frais de véhicule au réel dans la même déclaration : les deux
+// tombent dans la case BJ, donc la même dépense y est comptée deux fois. C'est exactement ce que la
+// note (12) interdit, et c'est invisible à la relecture — la case BJ n'affiche qu'un total, sans dire
+// de quoi il est fait.
+//
+// Signalé, jamais corrigé tout seul : choisir entre le forfait et le réel est un arbitrage, et il
+// engage l'année entière pour tous les véhicules.
+export function doublonFraisVehicules(declaration: Declaration2035): DoublonFraisVehicule | null {
+  const indemnites = declaration.depenses.find((l) => l.poste === POSTE_INDEMNITES_KM)
+  if (!indemnites || indemnites.montant === 0) return null
+
+  const postes = declaration.depenses.filter((l) => CLES_COUVERTES_PAR_LE_BAREME.has(cle(l.poste)))
+  if (postes.length === 0) return null
+
+  return {
+    montantIndemnites: indemnites.montant,
+    postes,
+    totalPostes: Number(postes.reduce((s, l) => s + l.montant, 0).toFixed(2)),
+  }
 }
 
 export interface IncoherenceCase {

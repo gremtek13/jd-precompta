@@ -14,6 +14,8 @@
 // doivent alors figurer à aucun poste de charges, et les amortissements des véhicules inscrits au
 // registre doivent être réintégrés.
 
+import type { VehiculeDossier } from './types'
+
 export type TypeVehicule = 'voiture' | 'moto' | 'cyclomoteur'
 
 // Une tranche de distance du barème. La formule officielle est toujours de la forme
@@ -121,6 +123,20 @@ export interface Vehicule {
   puissanceFiscale: number
   kmProfessionnel: number
   electrique: boolean
+}
+
+// Passage de la fiche véhicule enregistrée à ce que le barème attend. Écrit une seule fois plutôt
+// que recopié dans chaque appelant : le seul point délicat est `electrique`, et il vaut 20 % de la
+// déduction. Un hybride ou un véhicule à hydrogène relève de la table THERMIQUE — seuls les 100 %
+// électriques ont la leur — et une conversion recopiée à deux endroits finirait par diverger sur
+// exactement ce point.
+export function vehiculeDuDossier(v: VehiculeDossier): Vehicule {
+  return {
+    type: v.type,
+    puissanceFiscale: v.puissance_fiscale,
+    kmProfessionnel: v.km_professionnel,
+    electrique: v.motorisation === 'electrique',
+  }
 }
 
 // L'indemnité déductible pour un véhicule sur un exercice, ou null quand le calcul ne peut pas être

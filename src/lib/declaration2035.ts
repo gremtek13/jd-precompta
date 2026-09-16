@@ -1,5 +1,7 @@
 import { anneeDe } from './format'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
+import { totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
+import type { TotalKilometrique } from './baremeKilometrique'
+import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
 
 // Moteur de la déclaration 2035 (bénéfices non commerciaux, régime de la déclaration contrôlée).
 //
@@ -15,6 +17,11 @@ import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './typ
 
 export const POSTE_AMORTISSEMENTS = 'Amortissements'
 export const POSTE_COTISATIONS = 'Cotisations sociales personnelles'
+// Le « total A » du cadre 7 du 2035-B, que le bas du formulaire envoie ligne 23 du 2035-A. Un poste
+// à lui, et non un ajout au poste « Frais de véhicules » des pièces : les deux arrivent dans la même
+// case BJ mais n'ont pas la même origine, et les confondre rendrait la case impossible à justifier —
+// or ce sont précisément les deux montants qui ne doivent pas coexister (voir doublonFraisVehicules).
+export const POSTE_INDEMNITES_KM = 'Indemnités kilométriques'
 
 // Un poste de la déclaration. `montant` est TOUJOURS positif : c'est `nature` qui porte le sens.
 // Mélanger les deux (une charge en négatif) obligerait chaque consommateur — PDF, EDI, écran — à
@@ -50,6 +57,10 @@ export interface Declaration2035 {
   // cas existent et vont dans deux cases différentes du formulaire.
   resultat: number
   exclusions: ExclusionsDeclaration
+  // Le détail du cadre 7 pour cet exercice, ou null quand aucun véhicule n'y est déclaré. Porté à
+  // part du poste : `nonCalcules` doit remonter jusqu'à l'écran, sans quoi un véhicule dont le
+  // barème manque disparaîtrait de la déclaration sans laisser de trace.
+  indemnitesKilometriques: TotalKilometrique | null
 }
 
 function arrondi(n: number): number {
@@ -71,6 +82,9 @@ export function calculerDeclaration2035(
   categories: Categorie[],
   immobilisations: Immobilisation[],
   cotisations: CotisationDeclaree[],
+  // Sans valeur par défaut, volontairement : un appelant qui oublie les véhicules doit s'en rendre
+  // compte à la compilation, pas en découvrant une case BJ vide sur un formulaire déjà déposé.
+  vehicules: VehiculeDossier[],
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -133,6 +147,17 @@ export function calculerDeclaration2035(
   }, 0)
   if (totalCotisations > 0) ajouter(POSTE_COTISATIONS, 'depense', totalCotisations, 0)
 
+  // Cadre 7 du 2035-B → ligne 23 du 2035-A. Le kilométrage est propre à un exercice (l'option pour
+  // le forfait se prend au 1er janvier et vaut l'année entière, notice renvoi 12), d'où le filtre sur
+  // l'année — un véhicule saisi pour 2024 n'a rien à faire dans la déclaration 2025.
+  const vehiculesDeLExercice = vehicules.filter((v) => v.annee === annee)
+  const indemnitesKilometriques = vehiculesDeLExercice.length > 0
+    ? totalIndemnitesKilometriques(vehiculesDeLExercice.map(vehiculeDuDossier), annee)
+    : null
+  if (indemnitesKilometriques && indemnitesKilometriques.total > 0) {
+    ajouter(POSTE_INDEMNITES_KM, 'depense', indemnitesKilometriques.total, 0)
+  }
+
   const lignes = [...totaux.entries()].map(([poste, t]) => ({
     poste,
     nature: t.nature,
@@ -153,5 +178,6 @@ export function calculerDeclaration2035(
     totalDepenses,
     resultat: arrondi(totalRecettes - totalDepenses),
     exclusions,
+    indemnitesKilometriques,
   }
 }
