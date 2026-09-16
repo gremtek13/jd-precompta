@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import type { FactureEmise } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import BarreRecherche from '../../components/BarreRecherche'
+import { correspondALaRecherche } from '../../lib/recherche'
 import FactureFormModal from './FactureFormModal'
 import FactureAvoirModal from './FactureAvoirModal'
 import FactureApercu from './FactureApercu'
@@ -28,6 +30,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   const [factures, setFactures] = useState<FactureEmise[]>([])
   const [loading, setLoading] = useState(true)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  const [recherche, setRecherche] = useState('')
   const [editing, setEditing] = useState<FactureEmise | 'new' | null>(null)
   const [apercu, setApercu] = useState<FactureEmise | null>(null)
   const [avoirDe, setAvoirDe] = useState<FactureEmise | null>(null)
@@ -43,7 +46,10 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   useEffect(() => { load() }, [dossierId])
 
   const anneesDisponibles = [...new Set(factures.map((f) => anneeDe(f.date_emission)))].sort((a, b) => b - a)
-  const filtered = factures.filter((f) => anneeFilter === 'toutes' || anneeDe(f.date_emission) === anneeFilter)
+  const avantRecherche = factures.filter((f) => anneeFilter === 'toutes' || anneeDe(f.date_emission) === anneeFilter)
+  const filtered = avantRecherche.filter((f) =>
+    correspondALaRecherche([f.numero, f.tiers_nom, f.statut, f.date_emission, formatDate(f.date_emission), f.montant_ttc], recherche),
+  )
 
   async function supprimer(f: FactureEmise) {
     if (!window.confirm(`Supprimer le brouillon de facture pour "${f.tiers_nom}" ? Cette action est irréversible.`)) return
@@ -75,6 +81,16 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
 
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher un numéro, un client, un montant…"
+          affiches={filtered.length}
+          total={avantRecherche.length}
+        />
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvelle facture</button>
       </div>
@@ -83,7 +99,9 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (
-          <div className="empty-state">Aucune facture.</div>
+          <div className="empty-state">
+            {recherche.trim() ? `Aucune facture ne correspond à « ${recherche.trim()} ».` : 'Aucune facture.'}
+          </div>
         ) : (
           <table>
             <thead>

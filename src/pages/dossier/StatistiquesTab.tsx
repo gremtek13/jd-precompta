@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatMoney } from '../../lib/format'
+import { correspondALaRecherche } from '../../lib/recherche'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
 import type { Categorie, EcritureBrouillon, Piece } from '../../lib/types'
@@ -8,6 +9,7 @@ import { useAnnee } from '../../context/AnneeContext'
 import type { DossierTab } from '../../components/DossierParcours'
 import MonthlyBars from '../../components/widgets/MonthlyBars'
 import ProgressRing from '../../components/widgets/ProgressRing'
+import BarreRecherche from '../../components/BarreRecherche'
 
 const NB_MOIS_EVOLUTION = 6
 
@@ -58,13 +60,16 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
 
   const balance = useMemo(() => calculerBalance(ecrituresFiltrees, categories), [ecrituresFiltrees, categories])
 
-  const rechercheNormalisee = recherche.trim().toLowerCase()
-  const lignesAffichees = rechercheNormalisee
-    ? balance.filter((l) => l.compte.toLowerCase().includes(rechercheNormalisee) || l.libelle.toLowerCase().includes(rechercheNormalisee))
-    : balance
+  const lignesAffichees = balance.filter((l) =>
+    correspondALaRecherche([l.compte, l.libelle, l.totalDebit, l.totalCredit, l.solde], recherche),
+  )
 
-  const totalDebit = lignesAffichees.reduce((sum, l) => sum + l.totalDebit, 0)
-  const totalCredit = lignesAffichees.reduce((sum, l) => sum + l.totalCredit, 0)
+  // Totaux calculés sur `balance` entière, jamais sur les lignes trouvées par la recherche. Une
+  // balance n'est équilibrée que prise en entier : sommer un sous-ensemble (« 606 ») donne forcément
+  // un écart, et le badge ci-dessous passait alors au rouge — le même badge qui signale un vrai
+  // brouillon cassé. La recherche ne doit jamais fabriquer cette alerte.
+  const totalDebit = balance.reduce((sum, l) => sum + l.totalDebit, 0)
+  const totalCredit = balance.reduce((sum, l) => sum + l.totalCredit, 0)
   // Tolérance identique à analyserEcritures — un écart ici signale la même chose qu'un groupe
   // déséquilibré dans Écritures, mais vu depuis l'angle du compte plutôt que de la pièce.
   const desequilibre = Math.abs(totalDebit - totalCredit) > 0.02
@@ -115,19 +120,25 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
         )}
       </div>
 
-      <input
-        className="recherche"
-        placeholder="Rechercher par numéro ou libellé de compte…"
-        value={recherche}
-        onChange={(e) => setRecherche(e.target.value)}
-        style={{ marginBottom: 14, width: 340 }}
-      />
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher un numéro, un libellé de compte, un montant…"
+          affiches={lignesAffichees.length}
+          total={balance.length}
+        />
+      </div>
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : lignesAffichees.length === 0 ? (
-          <div className="empty-state">Aucun compte pour l'instant — génère des écritures depuis l'onglet Écritures.</div>
+          <div className="empty-state">
+            {recherche.trim()
+              ? `Aucun compte ne correspond à « ${recherche.trim()} ».`
+              : "Aucun compte pour l'instant — génère des écritures depuis l'onglet Écritures."}
+          </div>
         ) : (
           <table>
             <thead>
@@ -158,7 +169,7 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
             </tbody>
             <tfoot>
               <tr style={{ fontWeight: 700 }}>
-                <td colSpan={3}>Total</td>
+                <td colSpan={3}>{recherche.trim() ? 'Total (tous les comptes)' : 'Total'}</td>
                 <td>{formatMoney(totalDebit)}</td>
                 <td>{formatMoney(totalCredit)}</td>
                 <td>

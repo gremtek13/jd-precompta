@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import type { LigneBancaire } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import BarreRecherche from '../../components/BarreRecherche'
+import { correspondALaRecherche } from '../../lib/recherche'
 
 // Prélèvements de l'exploitant — virements du compte pro vers le compte personnel, marqués depuis
 // l'onglet Banque (bouton "Virement personnel" sur un mouvement non rapproché). Une lecture seule ici :
@@ -12,6 +14,7 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [loading, setLoading] = useState(true)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
+  const [recherche, setRecherche] = useState('')
 
   async function load() {
     setLoading(true)
@@ -36,6 +39,12 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
 
   const anneesDisponibles = [...new Set(lignes.map((l) => anneeDe(l.date)))].sort((a, b) => b - a)
   const filtered = anneeFilter === 'toutes' ? lignes : lignes.filter((l) => anneeDe(l.date) === anneeFilter)
+
+  // La recherche ne filtre que les lignes affichées : le total prélevé ci-dessous reste celui de
+  // l'année sélectionnée. Un « total » qui suivrait le texte tapé ne voudrait plus rien dire.
+  const affichees = filtered.filter((l) =>
+    correspondALaRecherche([l.libelle, l.montant, l.date, formatDate(l.date)], recherche),
+  )
   const total = filtered.reduce((s, l) => s + Math.abs(l.montant), 0)
 
   return (
@@ -55,11 +64,25 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher un libellé, un montant…"
+          affiches={affichees.length}
+          total={filtered.length}
+        />
+      </div>
+
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
-        ) : filtered.length === 0 ? (
-          <div className="empty-state">Aucun virement personnel marqué pour l'instant.</div>
+        ) : affichees.length === 0 ? (
+          <div className="empty-state">
+            {recherche.trim()
+              ? `Aucun virement ne correspond à « ${recherche.trim()} ».`
+              : "Aucun virement personnel marqué pour l'instant."}
+          </div>
         ) : (
           <table>
             <thead>
@@ -71,7 +94,7 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((l) => (
+              {affichees.map((l) => (
                 <tr key={l.id}>
                   <td>{formatDate(l.date)}</td>
                   <td>{l.libelle}</td>

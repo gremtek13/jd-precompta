@@ -3,6 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { anneeLocaleDe, formatDate } from '../../lib/format'
 import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
+import BarreRecherche from '../../components/BarreRecherche'
+import { correspondALaRecherche } from '../../lib/recherche'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
@@ -25,6 +27,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [ajoutOuvert, setAjoutOuvert] = useState(false)
+  const [recherche, setRecherche] = useState('')
 
   async function load() {
     setLoading(true)
@@ -44,12 +47,23 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // dans l'année en cours, pas dans l'année qu'il couvre).
   const anneesDisponibles = [...new Set(documents.map((d) => anneeLocaleDe(d.created_at)))].sort((a, b) => b - a)
 
-  const filtered = documents.filter((d) => {
+  const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
+
+  // Filtres et recherche séparés : le décompte de la barre compare ce qui reste après recherche à ce
+  // que les filtres laissaient passer, sinon « 3 sur 40 » mélangerait deux causes de réduction.
+  const avantRecherche = documents.filter((d) => {
     if (categorieFilter !== 'toutes' && d.categorie !== categorieFilter) return false
     if (anneeFilter !== 'toutes' && anneeLocaleDe(d.created_at) !== anneeFilter) return false
     return true
   })
-  const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
+  // Ce qui est cherchable est ce qui est affiché sur la ligne : nom du fichier, catégorie lisible,
+  // sous-dossier et date d'ajout — pas les identifiants ni les chemins de stockage, invisibles.
+  const filtered = avantRecherche.filter((d) =>
+    correspondALaRecherche(
+      [d.nom_fichier, LABEL_CATEGORIE[d.categorie], sousDossierLabel(d.sous_dossier_id), formatDate(d.created_at)],
+      recherche,
+    ),
+  )
 
   async function changerCategorie(doc: DocumentDivers, categorie: CategorieDocument) {
     await supabase.from('documents_divers').update({ categorie }).eq('id', doc.id)
@@ -142,6 +156,16 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
+      <div style={{ marginBottom: 14 }}>
+        <BarreRecherche
+          valeur={recherche}
+          onChange={setRecherche}
+          placeholder="Rechercher un document, une catégorie, un sous-dossier…"
+          affiches={filtered.length}
+          total={avantRecherche.length}
+        />
+      </div>
+
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <button className={`btn btn-sm ${categorieFilter === 'toutes' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setCategorieFilter('toutes')}>
@@ -174,7 +198,9 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (
-          <div className="empty-state">Aucun document.</div>
+          <div className="empty-state">
+            {recherche.trim() ? `Aucun document ne correspond à « ${recherche.trim()} ».` : 'Aucun document.'}
+          </div>
         ) : (
           <table>
             <thead>
