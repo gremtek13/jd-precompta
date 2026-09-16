@@ -403,6 +403,10 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   envoyé au comptable : quand une pièce ne peut pas être ajoutée au ZIP, elle est recensée,
   écrite dans une feuille « Pièces manquantes » du récapitulatif *et* remontée à l'écran.
   Auparavant l'Excel l'annonçait, le total la comptait, l'archive ne la contenait pas.
+- **Un fichier envoyé au stockage sans ligne en base est un orphelin.** L'import retire le
+  fichier quand l'insertion échoue, et ne retient son empreinte qu'une fois la ligne écrite —
+  la retenir avant faisait passer pour « déjà présent » un fichier dont l'import venait
+  d'échouer.
 - **Les API paginées de Storage sont paginées explicitement.** `list()` plafonne à 100 entrées
   sans le signaler : la suppression d'un dossier laissait tout le reste orphelin au-delà.
 - **Un paramètre par défaut est un angle mort des tests.** `capitalRestantDu` et `empruntActif`
@@ -428,7 +432,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 215 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 227 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
