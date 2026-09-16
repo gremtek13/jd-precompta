@@ -10,6 +10,7 @@ import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBan
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
 import { analyserAppariements, libelleExploitable } from '../../lib/appariementBanque'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
@@ -1016,9 +1017,18 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     setImporting(true)
     setError(null)
     try {
+      const mapping = { colDate, colMontant, colLibelle, hasHeader }
+
+      // Un relevé ne contient pas que des opérations : il porte aussi le solde d'ouverture et le
+      // solde de clôture. Importées comme des mouvements, ces lignes faussent tous les totaux et ne
+      // pourront jamais être rapprochées. Elles sont écartées de l'import — et servent juste après à
+      // contrôler le relevé lui-même.
+      const indicesSolde = new Set(lignesDeSolde(dataRows, mapping).map((l) => l.index))
+      const soldes: { date: string; montant: number }[] = []
+
       const toInsert: { dossier_id: string; date: string; libelle: string; montant: number; statut: StatutLigneBancaire; source_fichier: string | null; libelle_brut: string | null }[] = []
       let ignorees = 0
-      for (const row of dataRows) {
+      for (const [index, row] of dataRows.entries()) {
         const date = parseDateBancaire(row[colDate] ?? '')
         // Certaines banques laissent la colonne Libellé vide sur une partie des lignes (débits et
         // crédits dans deux colonnes distinctes, par exemple) : `libelleDeLigne` reconstitue alors le
@@ -1028,7 +1038,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
         // brute reste gardée à part (libelle_brut) pour pouvoir remonter à la source.
         // On ne rejette la ligne que si la date ou le montant, seuls champs réellement nécessaires,
         // sont illisibles.
-        const libelle = libelleDeLigne(row, { colDate, colMontant, colLibelle, hasHeader }) || 'Mouvement bancaire'
+        const libelle = libelleDeLigne(row, mapping) || 'Mouvement bancaire'
         let montant: number | null = null
         if (mode === 'signe') {
           montant = parseMontantBancaire(row[colMontant] ?? '')
@@ -1039,6 +1049,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
         }
         if (!date || montant == null) {
           ignorees++
+          continue
+        }
+        if (indicesSolde.has(index)) {
+          soldes.push({ date, montant })
           continue
         }
         toInsert.push({
@@ -1070,7 +1084,21 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       const messages = [`${aInserer.length} ligne(s) importée(s)`]
       if (doublons > 0) messages.push(`${doublons} déjà présente(s), ignorée(s)`)
       if (ignorees > 0) messages.push(`${ignorees} ignorée(s) (date/montant illisible)`)
-      if (doublons > 0 || ignorees > 0) window.alert(messages.join(', ') + '.')
+      if (soldes.length > 0) messages.push(`${soldes.length} ligne(s) de solde écartée(s)`)
+
+      // Le contrôle que les lignes de solde rendent possible : solde d'ouverture + mouvements doit
+      // donner le solde de clôture. Quand ça ne tombe pas juste, le relevé est incomplet — il vaut
+      // mieux l'apprendre maintenant qu'après avoir bâti une comptabilité dessus.
+      // `toInsert` et non `aInserer` : le contrôle vérifie l'arithmétique DU FICHIER. Les lignes
+      // écartées comme déjà présentes en base en font partie ; les retirer de la somme ferait
+      // apparaître un écart qui n'existe pas dès qu'un relevé chevauche un import précédent.
+      const controle = controlerSolde(soldes, toInsert)
+      const alerte = controle && !controle.coherent
+        ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controle.soldeInitial.toFixed(2)} € + mouvements ${controle.sommeMouvements.toFixed(2)} € = ${controle.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controle.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controle.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
+        : ''
+      if (doublons > 0 || ignorees > 0 || soldes.length > 0 || alerte) {
+        window.alert(messages.join(', ') + '.' + alerte)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "L'import a échoué.")
     } finally {

@@ -639,6 +639,20 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   ligne du fichier ; `libelleExploitable` (lib/appariementBanque.ts) y retombe pour les lignes
   importées avant cette correction.
 
+- **Un relevé ne contient pas que des opérations.** Il porte aussi le solde d'ouverture et le solde
+  de clôture. Importées comme des mouvements, ces deux lignes faussent tous les totaux bancaires
+  (28 294,39 € de mouvements inexistants sur le premier relevé réel) et ne peuvent jamais être
+  rapprochées. Sur ce relevé elles n'écrivent nulle part le mot « solde » : elles portent le numéro
+  de compte en guise de libellé, et le seul signal est qu'elles ont MOINS de colonnes que les
+  opérations. `lignesDeSolde` (lib/soldeReleve.ts) combine les deux indices — libellé et largeur —
+  en comparant à la largeur la plus FRÉQUENTE, pas à la plus grande.
+- **Ces deux lignes servent à contrôler le relevé, pas seulement à être écartées.** Solde
+  d'ouverture + somme des mouvements doit donner le solde de clôture ; sinon le fichier est
+  incomplet, et le cabinet doit l'apprendre avant de bâtir une comptabilité dessus. Le contrôle
+  porte sur TOUTES les opérations du fichier, pas sur celles qui restent après dédoublonnage —
+  sinon un relevé qui chevauche un import précédent afficherait un écart qui n'existe pas. Sur le
+  premier relevé réel, il révèle un écart de 5 359,00 € que rien dans les données n'explique.
+
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -647,7 +661,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 435 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 447 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
