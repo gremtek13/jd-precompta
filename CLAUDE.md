@@ -577,6 +577,42 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 - **Le compteur « N sur M » compare ce qui est comparable.** `M` est l'ensemble après les
   filtres de l'écran (statut, année, mois) et avant la recherche — pas la liste brute, sinon le
   compteur annonce un écart dû au filtre Année et non à la recherche.
+- **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
+  Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
+  passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
+  17 à 22), `BJ` (transport et déplacements, 23-24) et `BM` (frais divers de gestion, 26-30).
+  Une lecture rapide du PDF fait lire « BH = petit outillage » parce que la case est dessinée à
+  la hauteur de la ligne 19, au sommet de l'accolade. Trois vérifications indépendantes le
+  démentent : la ligne 33 est `TOTAL (lignes 8 à 32) = BR`, donc ces onze lignes ne pourraient
+  jamais y entrer ; dans le PDF les cases qui entrent dans un total sont en colonne x ≈ 456-459
+  et les cases « dont » (BW, BT, BZ, BU, BY) en colonne intérieure x ≤ 374 ; enfin le bas du
+  2035-B dit « Total A à reporter **ligne 23** de l'annexe 2035 A », or la seule case de ce bloc
+  est BJ. Conséquence produit : « Honoraires » et « Assurance » tombent toutes les deux dans BH,
+  donc le rattachement poste → case n'est pas un pour un (voir `cases2035.ts`).
+- **Les amortissements ne sont pas dans le cadre 3.** Ils entrent ligne 41 du 2035-**B** (`CH`)
+  et redescendent par la ligne 45. Le résultat final est le même qu'en les mettant dans les
+  dépenses, l'emplacement non — et c'est l'emplacement qui fait une déclaration juste.
+- **Le PDF officiel de la 2035 n'a aucun champ de formulaire** — zéro `/AcroForm`, zéro
+  `/Widget`, vérifié sur le fichier de la DGFiP. Le remplissage écrit donc du texte à des
+  coordonnées. Elles ne sont **pas** codées en dur, sinon tout serait à reprendre à chaque
+  millésime : chaque case porte son code dans la couche texte, et le **deuxième** filet vertical
+  à droite du code ferme la case du montant (le premier ferme la cellule du code lui-même). La
+  règle vaut aussi pour les cases « dont », plus étroites. Voir `gabarit2035.ts`, dont les tests
+  lisent le vrai formulaire livré dans `public/formulaires/`.
+- **`Intl.NumberFormat('fr-FR')` casse la génération de PDF.** Il sépare les milliers par une
+  espace fine insécable (U+202F) que l'encodage WinAnsi des polices PDF standard ne sait pas
+  représenter : pdf-lib lève une exception sur le premier montant à quatre chiffres, donc sur à
+  peu près toute déclaration réelle. Formater les milliers à la main. Même famille de problème
+  pour le texte libre (nom du dossier) : `texteCompatiblePdf` translittère ce qui sort de CP1252
+  plutôt que de laisser échouer le formulaire, et les lettres barrées (Ł, Đ) ont besoin d'une
+  table explicite puisque Unicode ne les décompose pas.
+- **pdf.js vide (`detach`) le tampon qu'on lui passe.** Lire le modèle avec pdf.js puis le
+  donner à pdf-lib sans `slice(0)` préalable livre un `ArrayBuffer` de longueur zéro — panne
+  silencieuse et déroutante.
+- **Pour regarder un PDF généré, le rendre soi-même.** Le visualiseur PDF de Chromium ignore
+  `#view=Fit` et ne se laisse pas cadrer ; passer par pdf.js dans un canvas. Les hôtes inventés
+  (`https://rendu.local`) sont interceptés par le proxy de l'environnement avant les routes
+  Playwright : servir les fichiers depuis un vrai serveur HTTP sur `127.0.0.1`.
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -585,7 +621,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 349 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 396 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

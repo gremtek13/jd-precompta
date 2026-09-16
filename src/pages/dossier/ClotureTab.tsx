@@ -1,11 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatMoney } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
 import { calculerDeclaration2035 } from '../../lib/declaration2035'
-import { CASES_2035, valeursDesCases } from '../../lib/cases2035'
+import { CASES_2035, arrondirPourFormulaire, valeursDesCases } from '../../lib/cases2035'
 import type { PosteNonRattache } from '../../lib/cases2035'
+import { remplir2035 } from '../../lib/remplir2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
@@ -22,6 +23,10 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [postesEdit, setPostesEdit] = useState<Record<string, string>>({})
+  // Identité portée en en-tête du formulaire. Le reste (SIRET, code activité...) reste à compléter
+  // à la main : une grille de quatorze cases mal alignée est pire qu'une grille vide.
+  const [dossier, setDossier] = useState<{ nom: string | null; libelle_naf: string | null } | null>(null)
+  const [genere, setGenere] = useState<number | null>(null)
   // Exercice partagé avec Pièces/Banque/Écritures/Statistiques, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici. Sa valeur par défaut (voir DossierDetail,
   // calculerAnneeParDefaut) est déjà un exercice précis plutôt que "toutes", justement pour éviter
@@ -30,12 +35,14 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesData }, { data: immobilisationsData }, { data: cotisationsData }] = await Promise.all([
+    const [{ data: categoriesData }, { data: piecesData }, { data: immobilisationsData }, { data: cotisationsData }, { data: dossierData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      supabase.from('dossiers').select('nom, libelle_naf').eq('id', dossierId).maybeSingle(),
     ])
+    setDossier(dossierData ?? null)
     setCategories(categoriesData ?? [])
     setPieces(piecesData ?? [])
     setImmobilisations(immobilisationsData ?? [])
@@ -103,6 +110,38 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     for (const p of f.postesSansCase) sansCase.set(p.ligne.poste, p)
   }
   const postesSansCase = [...sansCase.values()]
+
+  // Verrou posé avant tout `await` — c'est ce qui le rend effectif contre un double clic, là où un
+  // `disabled` piloté par un état React laisse passer le second clic (voir ImportDossierModal).
+  const generationEnCours = useRef(false)
+
+  async function telechargerFormulaire(annee: number, valeurs: Map<string, number>) {
+    if (generationEnCours.current) return
+    generationEnCours.current = true
+    setError(null)
+    try {
+      // Arrondi à l'euro AVANT le dessin : le formulaire dit « ne pas porter les centimes », et les
+      // totaux sont recalculés depuis les cases arrondies pour que la colonne s'additionne.
+      const { pdf, codesSansAncrage } = await remplir2035(arrondirPourFormulaire(valeurs), {
+        nom: dossier?.nom ?? null,
+        activite: dossier?.libelle_naf ?? null,
+      })
+      if (codesSansAncrage.length > 0) {
+        setError(`Cases non placées sur le formulaire : ${codesSansAncrage.join(', ')} — leur montant manque sur le PDF.`)
+      }
+      const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }))
+      const lien = document.createElement('a')
+      lien.href = url
+      lien.download = `2035-${annee}-${(dossier?.nom ?? 'dossier').replace(/[^\w-]+/g, '-')}.pdf`
+      lien.click()
+      URL.revokeObjectURL(url)
+      setGenere(annee)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Génération du formulaire impossible')
+    } finally {
+      generationEnCours.current = false
+    }
+  }
 
   // Ce que le calcul a écarté, tous exercices affichés confondus. Une pièce validée qui n'entre dans
   // aucun total était jusqu'ici retirée par un `continue` muet : sur une base fiscale, c'est un
@@ -228,7 +267,13 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
         <div className="card"><div className="empty-state">Rien à regrouper pour l'instant.</div></div>
       ) : (
         formulaires.map((f) => (
-          <FormulaireAnnuel key={f.declaration.annee} annee={f.declaration.annee} valeurs={f.valeurs} />
+          <FormulaireAnnuel
+            key={f.declaration.annee}
+            annee={f.declaration.annee}
+            valeurs={f.valeurs}
+            genere={genere === f.declaration.annee}
+            onTelecharger={() => telechargerFormulaire(f.declaration.annee, f.valeurs)}
+          />
         ))
       )}
     </>
@@ -238,19 +283,33 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 // Un exercice rendu dans la forme du formulaire : une ligne par case, dans l'ordre imprimé, avec son
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
-function FormulaireAnnuel({ annee, valeurs }: { annee: number; valeurs: Map<string, number> }) {
+function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger }: {
+  annee: number
+  valeurs: Map<string, number>
+  genere: boolean
+  onTelecharger: () => void
+}) {
   // Une case à zéro que personne n'a alimentée n'apprend rien et noie le reste : on ne montre que
   // les cases qui portent un montant, plus les totaux, toujours affichés parce que c'est sur eux que
   // se fait la relecture.
   const visibles = CASES_2035.filter((c) => (valeurs.get(c.code) ?? 0) !== 0 || c.calculee)
 
   return (
-    <div className="card table-scroll" style={{ padding: 0, marginBottom: 20 }}>
+    <div className="card" style={{ padding: 0, marginBottom: 20 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '14px 16px' }}>
+        <div>
+          <strong>Exercice {annee}</strong>
+          <span className="muted" style={{ marginLeft: 10, fontSize: '0.9em' }}>
+            2035-A-SD et 2035-B-SD — à relire case par case avant dépôt
+          </span>
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={onTelecharger}>
+          {genere ? '↻ Regénérer le formulaire' : '⬇ Remplir le formulaire officiel'}
+        </button>
+      </div>
+      <div className="table-scroll">
       <table>
         <thead>
-          <tr>
-            <th colSpan={4}>Exercice {annee}</th>
-          </tr>
           <tr>
             <th style={{ width: 60 }}>Case</th>
             <th style={{ width: 80 }}>Ligne</th>
@@ -276,6 +335,7 @@ function FormulaireAnnuel({ annee, valeurs }: { annee: number; valeurs: Map<stri
           ))}
         </tbody>
       </table>
+      </div>
     </div>
   )
 }
