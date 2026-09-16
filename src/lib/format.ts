@@ -1,3 +1,16 @@
+// Rend un nom unique au sein d'une archive. JSZip écrase silencieusement un chemin déjà pris : rien
+// n'est signalé, le fichier précédent disparaît simplement. Partout où plusieurs entrées se rangent
+// dans un même ZIP, le nom passe donc par ici, et `utilises` — enrichi au passage — porte la mémoire
+// de l'archive entière. Le suffixe `_2`, `_3`… n'apparaît qu'en cas de collision réelle, pour ne pas
+// alourdir le cas courant. L'extension est passée à part (« .pdf », ou « » pour un dossier) parce
+// qu'elle doit rester en fin de nom : la couper au dernier point découperait « S.A.R.L_Martin ».
+export function nomUnique(racine: string, extension: string, utilises: Set<string>): string {
+  let nom = `${racine}${extension}`
+  for (let n = 2; utilises.has(nom); n += 1) nom = `${racine}_${n}${extension}`
+  utilises.add(nom)
+  return nom
+}
+
 export function slugify(input: string): string {
   return input
     .normalize('NFD')
