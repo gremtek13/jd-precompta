@@ -516,6 +516,19 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 - **Un type de `types.ts` décrit la table, colonnes NOT NULL comprises.** `TiersCategorieCabinet`
   omettait `cabinet_id` : le compilateur validait donc un payload que Postgres rejetait. Vérifier
   la table (`information_schema.columns`, `pg_constraint`) avant d'écrire le type, pas après.
+- **Déployer une Edge Function via l'outil MCP décode les échappements `\uXXXX`.** La source
+  envoyée passe par une couche JSON : `̀` arrive dans le fichier déployé sous forme du
+  caractère réel. Le fichier du dépôt et la copie déployée diffèrent donc textuellement partout où
+  le code utilise un échappement — c'est **sans conséquence**, `/[̀-ͯ]/` et la même
+  classe écrite en littéral sont la même expression.
+  **Ne pas essayer de « corriger » en doublant les antislashs** : ils sont transmis tels quels et
+  produisent `\\u0300`, soit un antislash littéral dans la classe de caractères. Essayé, déployé,
+  et `sansAccents` ne retirait plus les accents — extraction dégradée pendant quatre minutes avant
+  restauration.
+  **Un déploiement se vérifie par l'empreinte, pas par une relecture** : `deploy_edge_function`
+  rend un `ezbr_sha256`. Redéployer une source déjà déployée doit rendre exactement la même
+  empreinte ; c'est la seule preuve bon marché qu'aucune dérive de transcription ne s'est glissée
+  dans les 770 lignes qu'il faut retransmettre à chaque fois.
 - **`npx tsc --noEmit` ne vérifie rien dans ce dépôt.** Le `tsconfig.json` racine a
   `"files": []` et ne fait que référencer `tsconfig.app.json` / `tsconfig.node.json` : lancé
   seul, `tsc --noEmit` sort silencieusement sans avoir typé une seule ligne, ce qui ressemble
