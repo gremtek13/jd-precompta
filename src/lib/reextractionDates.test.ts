@@ -95,7 +95,7 @@ describe('reextraireDates', () => {
     etat.extractions.set('51310.pdf', { date_piece: '2025-06-30' })
     const r = await reextraireDates([piece({ id: 'p1', nom_fichier: '51310.pdf', storage_path: 'd1/51310.pdf' })])
 
-    expect(r.datees).toEqual([{ nomFichier: '51310.pdf', date: '2025-06-30' }])
+    expect(r.datees).toEqual([{ nomFichier: '51310.pdf', date: '2025-06-30', deduite: false }])
     expect(journal.map((j) => j.action)).toEqual(['download', 'extract', 'update'])
   })
 
@@ -198,5 +198,29 @@ describe('reextraireDates', () => {
     const r = await reextraireDates([piece({ date_piece: '2023-01-31' })])
     expect(r).toEqual({ datees: [], sansDate: [], echecs: [] })
     expect(journal).toEqual([])
+  })
+})
+
+describe('dates déduites', () => {
+  it('distingue une date déduite de la mise en page d’une date lue sur un libellé', async () => {
+    // Ce qui permet de garder la règle de dernier recours sans deviner en silence : l'écran annonce
+    // les déduites à part, avec leur valeur, et l'utilisateur les vérifie d'un coup d'œil.
+    etat.extractions.set('lue.pdf', { date_piece: '2023-01-31' })
+    etat.extractions.set('deduite.pdf', { date_piece: '2023-02-28', _date_deduite: true })
+    const r = await reextraireDates([
+      piece({ id: '1', nom_fichier: 'lue.pdf', storage_path: 'd1/lue.pdf' }),
+      piece({ id: '2', nom_fichier: 'deduite.pdf', storage_path: 'd1/deduite.pdf' }),
+    ])
+
+    expect(r.datees).toEqual([
+      { nomFichier: 'lue.pdf', date: '2023-01-31', deduite: false },
+      { nomFichier: 'deduite.pdf', date: '2023-02-28', deduite: true },
+    ])
+  })
+
+  it('n’invente pas une déduction quand le drapeau est absent', async () => {
+    etat.extractions.set('a.pdf', { date_piece: '2023-01-31' })
+    const r = await reextraireDates([piece({ id: '1', nom_fichier: 'a.pdf', storage_path: 'd1/a.pdf' })])
+    expect(r.datees[0].deduite).toBe(false)
   })
 })

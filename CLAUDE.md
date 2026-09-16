@@ -399,6 +399,15 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `extractPieceMontants.test.ts` lit la vraie source déployée, en extrait `parseAmount` et
   l'exécute — volontairement fragile : renommer la fonction casse le test bruyamment, ce qui
   vaut mieux qu'une copie qui dérive en silence.
+- **Une déduction se dit, elle ne se déguise pas en lecture.** Faute de libellé reconnu, la date
+  d'une pièce est prise comme la première en ordre de lecture — une facture imprime sa date en
+  en-tête, avant ses conditions de règlement et ses mentions légales. Cette règle avait d'abord été
+  écartée (mieux valait null qu'une date fausse) ; un cas réel l'a tranchée, huit factures d'un même
+  fournisseur donnant toujours, dans cet ordre, la date de facture, trois mentions légales
+  constantes, puis l'échéance — et le recoupement avec les numéros de facture donne une série
+  strictement croissante. Le résultat est marqué `_date_deduite` et remonté à part (« à vérifier »),
+  jamais confondu avec une date lue sur un libellé. Le diagnostic porte la ligne d'origine de chaque
+  date : sans elle, un échec ne dit que « voici des dates ».
 - **Une reprise en masse ne réécrit que le champ qu'elle vient chercher.** « Retrouver les dates
   manquantes » (onglet Pièces, `lib/reextractionDates.ts`) rejoue l'extraction sur les pièces sans
   date et n'écrit que `date_piece`. Jamais le tiers, les montants ni le statut : ces pièces sont
@@ -478,7 +487,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 293 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 298 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

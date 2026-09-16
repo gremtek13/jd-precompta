@@ -19,8 +19,10 @@ import type { Piece } from './types'
 // rend cette action sûre à lancer sur un dossier entier.
 
 export interface ResultatReextraction {
-  // Pièces effectivement datées et enregistrées.
-  datees: { nomFichier: string; date: string }[]
+  // Pièces effectivement datées et enregistrées. `deduite` distingue une date lue sur un libellé
+  // reconnu d'une date retenue par la règle de dernier recours (première date en ordre de lecture) :
+  // la seconde est juste dans la très grande majorité des mises en page, mais elle se vérifie.
+  datees: { nomFichier: string; date: string; deduite: boolean }[]
   // Extraction réussie, mais aucune date exploitable. `datesVues` porte ce que le repli a trouvé sans
   // pouvoir trancher — de quoi ajuster la lecture sur un cas réel plutôt qu'à l'aveugle.
   sansDate: { nomFichier: string; datesVues: string[] }[]
@@ -69,7 +71,11 @@ export async function reextraireDates(
         .eq('id', piece.id)
       if (erreurEcriture) throw erreurEcriture
 
-      resultat.datees.push({ nomFichier: piece.nom_fichier, date: extraction.date_piece })
+      resultat.datees.push({
+        nomFichier: piece.nom_fichier,
+        date: extraction.date_piece,
+        deduite: extraction._date_deduite === true,
+      })
     } catch (err) {
       resultat.echecs.push({
         nomFichier: piece.nom_fichier,
