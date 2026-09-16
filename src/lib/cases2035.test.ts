@@ -5,6 +5,7 @@ import {
   CASE_PAR_CODE,
   CODES_TOTALISES_BR,
   caseDuPoste,
+  incoherencesDesCases,
   repartirEnCases,
   valeursDesCases,
 } from './cases2035'
@@ -229,6 +230,41 @@ describe('valeurs des cases — l’addition du formulaire', () => {
     // formulaire attend un chiffre.
     const { valeurs } = valeursDesCases(declaration({}))
     for (const c of CASES_2035) expect(valeurs.get(c.code), c.code).toBe(0)
+  })
+})
+
+describe('une case « dont » ne peut pas dépasser sa porteuse', () => {
+  it('signale BW supérieure à BG', () => {
+    // Notice 2035-NOT-SD, note (9) : BG porte le total des locations « y compris ces redevances »,
+    // BW en isole la part « redevances de collaboration ». BW > BG est donc contradictoire.
+    const [i] = incoherencesDesCases(new Map([['BW', 850], ['BG', 0]]))
+    expect(i.porteuse.code).toBe('BG')
+    expect(i.sousCases.map((c) => c.code)).toEqual(['BW'])
+    expect(i.totalSousCases).toBe(850)
+    expect(i.montantPorteuse).toBe(0)
+  })
+
+  it('additionne les sous-cases d’une même porteuse avant de comparer', () => {
+    // BT, BZ et BU sont trois parts disjointes de BK : chacune passe seule, leur somme non.
+    expect(incoherencesDesCases(new Map([['BT', 5000], ['BZ', 4000], ['BU', 3000], ['BK', 12_000]]))).toEqual([])
+    const [i] = incoherencesDesCases(new Map([['BT', 5000], ['BZ', 4000], ['BU', 3000], ['BK', 11_000]]))
+    expect(i.porteuse.code).toBe('BK')
+    expect(i.totalSousCases).toBe(12_000)
+  })
+
+  it('accepte une sous-case égale à sa porteuse', () => {
+    // Un praticien dont toute la location est une redevance de collaboration : BW = BG, c'est valide.
+    expect(incoherencesDesCases(new Map([['BW', 850], ['BG', 850]]))).toEqual([])
+  })
+
+  it('ne dit rien quand aucune sous-case n’est renseignée', () => {
+    // Le cas normal : le moteur ne remplit jamais une case « dont ». Une porteuse seule est valide.
+    expect(incoherencesDesCases(new Map([['BG', 9000], ['BK', 14_800]]))).toEqual([])
+    expect(incoherencesDesCases(new Map())).toEqual([])
+  })
+
+  it('ne se déclenche pas sur un écart d’arrondi', () => {
+    expect(incoherencesDesCases(new Map([['BW', 850.004], ['BG', 850]]))).toEqual([])
   })
 })
 
