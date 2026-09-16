@@ -3,7 +3,7 @@
 // distingue « ma recherche ne donne rien » de « la liste est vide », deux situations que les écrans
 // confondaient en affichant le même « Aucun résultat ».
 //
-// Le filtrage lui-même reste à l'appelant (voir lib/recherche.ts) : chaque liste sait seuls quels
+// Le filtrage lui-même reste à l'appelant (voir lib/recherche.ts) : chaque liste sait seule quels
 // champs sont pertinents chez elle, et c'est ce qui doit rester explicite dans chaque onglet.
 interface Props {
   valeur: string
