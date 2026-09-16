@@ -409,6 +409,13 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   d'échouer.
 - **Les API paginées de Storage sont paginées explicitement.** `list()` plafonne à 100 entrées
   sans le signaler : la suppression d'un dossier laissait tout le reste orphelin au-delà.
+- **Un filtre de période écarte les NULL sans le dire.** En SQL, une comparaison avec NULL n'est
+  jamais vraie : `gte`/`lte` sur `date_piece` excluait donc les pièces validées sans date de
+  *toutes* les périodes à la fois — absentes du ZIP, du récapitulatif et du total de chaque pack,
+  invisibles partout. Un dossier réel en comptait 18 sur 22, pour 1 697,39 €. Elles sont lues par
+  une requête à part et recensées dans une feuille « Pièces sans date » : on ne les rattache pas
+  d'office à la période demandée (ce serait les compter dans chaque pack), on dit qu'elles
+  existent et qu'il leur manque une date.
 - **Un ZIP écrase sans rien dire.** JSZip ne lève rien sur un chemin déjà pris — le fichier
   précédent disparaît, simplement. Tout nom écrit dans une archive passe donc par `nomUnique`
   (`format.ts`), qui n'ajoute un suffixe qu'en cas de collision réelle. Deux cas l'ont montré :
@@ -440,7 +447,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 240 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 243 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
