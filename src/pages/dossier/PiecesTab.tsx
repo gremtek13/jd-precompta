@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { piecesADater, reextraireDates } from '../../lib/reextractionDates'
+import { grouperParTiers } from '../../lib/suggestionTiers'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
@@ -10,7 +11,9 @@ import PieceFormModal from './PieceFormModal'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 import ImportDossierModal from './ImportDossierModal'
 import SuperPdpModal from './SuperPdpModal'
+import CategoriserTiersModal from './CategoriserTiersModal'
 import { useAnnee } from '../../context/AnneeContext'
+import { useAuth } from '../../context/AuthContext'
 
 export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -19,6 +22,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [tiersCategories, setTiersCategories] = useState<TiersCategorie[]>([])
   const [tiersCategoriesCabinet, setTiersCategoriesCabinet] = useState<TiersCategorieCabinet[]>([])
   const [applyingSuggestions, setApplyingSuggestions] = useState(false)
+  const [categoriserTiers, setCategoriserTiers] = useState(false)
   const [loading, setLoading] = useState(true)
   const [statutFilter, setStatutFilter] = useState<'toutes' | 'a_valider' | 'validee'>('toutes')
   const [sousDossierFilter, setSousDossierFilter] = useState<'tous' | 'sans' | string>('tous')
@@ -28,6 +32,9 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // une date), donc rien à unifier avec l'en-tête pour ce cas précis. Mutuellement exclusif avec
   // l'exercice sélectionné : cocher "Sans date" met de côté le filtre d'exercice, comme avant.
   const { annee: anneeFilter } = useAnnee()
+  // Sert à mémoriser aussi la règle au niveau cabinet quand la catégorie est globale — une mutuelle
+  // ou une banque reviennent d'un dossier à l'autre (voir CategoriserTiersModal).
+  const { monCabinetId } = useAuth()
   const [sansDateOnly, setSansDateOnly] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
@@ -142,6 +149,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     return suggererCategorie(p.tiers, tiersCategories, tiersCategoriesCabinet)
   }
   const piecesAvecSuggestion = pieces.filter((p) => suggestionPour(p) !== null)
+
+  // Fournisseurs distincts encore à arbitrer — c'est le vrai volume de travail restant, bien plus
+  // parlant que le nombre de pièces : sur un import réel, 58 pièces ne portaient que 28 tiers.
+  const groupesACategoriser = grouperParTiers(pieces, categories, tiersCategories, tiersCategoriesCabinet)
 
   // Un seul clic pour reprendre, sur toutes les pièces sans catégorie, la correspondance déjà connue
   // pour leur tiers — sans passer par chaque fiche une par une. Ne fait rien sur les pièces sans
@@ -323,6 +334,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
               {applyingSuggestions ? 'Application…' : `Appliquer les suggestions (${piecesAvecSuggestion.length})`}
             </button>
           )}
+          {groupesACategoriser.length > 0 && (
+            <button className="btn btn-outline btn-sm" onClick={() => setCategoriserTiers(true)}>
+              Catégoriser par fournisseur ({groupesACategoriser.length})
+            </button>
+          )}
           {piecesSansDate.length > 0 && (
             <button
               className="btn btn-outline btn-sm"
@@ -453,6 +469,19 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
       {superPdpOpen && (
         <SuperPdpModal dossierId={dossierId} onClose={() => setSuperPdpOpen(false)} onImported={load} />
+      )}
+
+      {categoriserTiers && (
+        <CategoriserTiersModal
+          dossierId={dossierId}
+          cabinetId={monCabinetId}
+          pieces={pieces}
+          categories={categories}
+          reglesDossier={tiersCategories}
+          reglesCabinet={tiersCategoriesCabinet}
+          onClose={() => setCategoriserTiers(false)}
+          onApplied={load}
+        />
       )}
     </>
   )

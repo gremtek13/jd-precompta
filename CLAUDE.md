@@ -535,6 +535,19 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   exactement à un typecheck réussi. La commande réelle est **`npx tsc -b`** (ce que fait
   `npm run build`). Un identifiant non importé est passé trois fois de suite à travers ce faux
   contrôle — c'est `oxlint` (`react(jsx-no-undef)`) qui l'a rattrapé.
+- **La chaîne vers l'écriture comptable a DEUX portes, pas une.** Une pièce ne génère une écriture
+  que si elle a une `categorie_id` **et** que cette catégorie porte un `compte_comptable`
+  (`lignesChargeProduitPourPiece` l'exige en paramètre). Une troisième porte, `poste_2035`, commande
+  les totaux de Clôture et donc la 2035. Constaté en production : 23 pièces catégorisées à la main
+  ne produisaient rien parce que « Honoraires » n'avait pas de compte — le travail était fait et
+  invisible. **Diagnostiquer les trois portes ensemble**, jamais la première seule.
+- **Une valeur par défaut connue s'applique, elle ne s'affiche pas en attendant un clic.**
+  `SUGGESTIONS_COMPTE_PAR_CODE` (lib/ecritures.ts) portait depuis le début les bons comptes PCG et
+  postes 2035, mais seulement comme pré-remplissage d'un champ à valider catégorie par catégorie.
+  Résultat : 8 catégories sur 9 sans compte, et toute la comptabilité bloquée en aval. L'application
+  vise un cabinet qui veut réduire sa saisie : ce qui est connu est appliqué, l'utilisateur vérifie
+  et corrige. Un champ vide qui fait disparaître des pièces en silence est pire qu'un défaut
+  modifiable — c'est pour ça que « Autre » a aussi reçu un compte (628000 / Divers).
 - **Un verrou d'exécution est un `useRef`, jamais un état React.** `setRunning(true)` ne prend
   effet qu'au rendu suivant : `disabled={running}` laisse donc passer deux clics rapprochés, et
   les deux entrent dans le traitement. Sur l'import en masse, chacun repartait avec **son propre**
@@ -572,7 +585,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 314 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 328 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
