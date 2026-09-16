@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
+import { piecesADater, reextraireDates } from '../../lib/reextractionDates'
 import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
 import PieceFormModal from './PieceFormModal'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
@@ -36,6 +37,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // ergonomie comparatif) : validation, paiement/rapprochement et écriture générée sont trois états
   // distincts, une pièce validée n'a pas forcément encore été rapprochée d'un mouvement réel.
   const [piecesRapprochees, setPiecesRapprochees] = useState<Set<string>>(new Set())
+  // Reprise groupée des dates manquantes (voir lib/reextractionDates.ts). L'avancement est affiché
+  // pièce par pièce : chaque PDF repasse par Textract, donc l'opération dure des dizaines de secondes
+  // sur un lot, et un bouton qui semble figé pousserait à recharger la page en plein traitement.
+  const [reextraction, setReextraction] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
 
   async function load() {
     setLoading(true)
@@ -108,6 +113,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const filtered = statutFilter === 'a_valider'
     ? [...filteredBase].sort((a, b) => (PRIORITE_CONFIANCE[a.confiance ?? ''] ?? 3) - (PRIORITE_CONFIANCE[b.confiance ?? ''] ?? 3))
     : filteredBase
+  // Pièces du dossier entier, pas seulement du filtre affiché : ce sont elles qui n'entrent dans
+  // aucun pack, et l'oubli ne dépend pas de l'exercice qu'on regarde au moment du clic. Le bouton
+  // annonce le nombre, donc ce qu'il va traiter reste explicite.
+  const piecesSansDate = piecesADater(pieces)
   const tiersConnus = [...new Set(pieces.map((p) => p.tiers).filter((t): t is string => !!t))]
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
@@ -188,6 +197,44 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     }
   }
 
+  // Rejoue l'extraction sur les pièces du filtre courant qui n'ont pas de date, et n'écrit que cette
+  // date (voir lib/reextractionDates.ts pour la garantie). Une pièce sans date n'entre dans aucun
+  // pack, quelle que soit la période : les reprendre une par une n'a pas de sens quand elles se
+  // comptent par dizaines.
+  async function reextraireDatesManquantes() {
+    if (piecesSansDate.length === 0) return
+    if (!window.confirm(
+      `Relancer la lecture automatique sur ${piecesSansDate.length} pièce(s) sans date ?\n\n` +
+      `Seule la date sera renseignée — le tiers, les montants et le statut ne sont jamais modifiés.\n` +
+      `Chaque pièce repasse par l'analyse, compte quelques secondes par document.`,
+    )) return
+
+    setReextraction({ fait: 0, total: piecesSansDate.length, nomFichier: '' })
+    const resultat = await reextraireDates(piecesSansDate, (fait, total, nomFichier) =>
+      setReextraction({ fait, total, nomFichier }),
+    )
+    setReextraction(null)
+    load()
+
+    const lignes = [`${resultat.datees.length} pièce(s) datée(s).`]
+    if (resultat.sansDate.length > 0) {
+      // Les dates vues sont affichées telles quelles : c'est ce qui permet de comprendre pourquoi la
+      // lecture n'a pas tranché, plutôt que de rester sur un « ça n'a pas marché ».
+      const detail = resultat.sansDate
+        .slice(0, 5)
+        .map((s) => `• ${s.nomFichier}${s.datesVues.length > 0 ? ` — dates vues : ${s.datesVues.join(', ')}` : ' — aucune date lisible'}`)
+        .join('\n')
+      lignes.push(
+        `\n${resultat.sansDate.length} pièce(s) restent sans date :\n${detail}` +
+        (resultat.sansDate.length > 5 ? `\n… et ${resultat.sansDate.length - 5} autre(s)` : ''),
+      )
+    }
+    if (resultat.echecs.length > 0) {
+      lignes.push(`\n${resultat.echecs.length} en échec :\n` + resultat.echecs.slice(0, 5).map((e) => `• ${e.nomFichier} : ${e.message}`).join('\n'))
+    }
+    window.alert(lignes.join('\n'))
+  }
+
   async function createSousDossier() {
     const nom = window.prompt('Nom du sous-dossier (ex : 2024, Chantier A, Notes de frais Jean)')
     if (!nom || !nom.trim()) return
@@ -240,6 +287,18 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           {piecesAvecSuggestion.length > 0 && (
             <button className="btn btn-outline btn-sm" disabled={applyingSuggestions} onClick={appliquerSuggestions}>
               {applyingSuggestions ? 'Application…' : `Appliquer les suggestions (${piecesAvecSuggestion.length})`}
+            </button>
+          )}
+          {piecesSansDate.length > 0 && (
+            <button
+              className="btn btn-outline btn-sm"
+              disabled={reextraction !== null}
+              onClick={reextraireDatesManquantes}
+              title="Relance la lecture automatique pour retrouver la date de ces pièces. Une pièce sans date ne figure dans aucun pack. Seule la date est renseignée — montants, tiers et statut ne sont jamais modifiés."
+            >
+              {reextraction
+                ? `Lecture… ${reextraction.fait}/${reextraction.total}${reextraction.nomFichier ? ` — ${reextraction.nomFichier}` : ''}`
+                : `Retrouver les dates manquantes (${piecesSansDate.length})`}
             </button>
           )}
           {selected.size > 0 && (

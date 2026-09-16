@@ -155,7 +155,7 @@ const MOIS_PAR_NOM: Record<string, number> = {
 // Accents retirés pour que "février"/"fevrier" et "août"/"aout" tombent sur la même clé : l'OCR rend
 // l'un ou l'autre selon la qualité du scan.
 function sansAccents(s: string): string {
-  return s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase()
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase()
 }
 
 // Libellés qui annoncent la date de la facture elle-même.
