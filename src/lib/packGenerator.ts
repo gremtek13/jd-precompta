@@ -34,6 +34,10 @@ interface RemplissageResult {
   nbPieces: number
   totalTtc: number
   excelBlob: Blob
+  // Pièces listées dans l'Excel mais dont le fichier n'a pas pu être téléchargé, donc absentes du
+  // ZIP. Remontée jusqu'à l'écran : sans elle, le comptable recevait un récapitulatif annonçant
+  // N pièces pour X € avec moins de fichiers dans l'archive, sans que rien ne le signale.
+  manquantes: string[]
 }
 
 // Remplit `destination` (le zip lui-même, ou un sous-dossier obtenu via zip.folder(...) — même API
@@ -55,10 +59,14 @@ async function remplirZipDossier(
     .lte('date_piece', periodeFin)
   if (piecesError) throw piecesError
 
-  const { data: categoriesData } = await supabase
+  // Erreur vérifiée : sans catégories, `categorieLabel` retomberait sur « — » pour toutes les lignes
+  // et le résumé par catégorie n'aurait plus qu'une seule entrée — un récapitulatif silencieusement
+  // vidé de son classement, envoyé tel quel au comptable.
+  const { data: categoriesData, error: categoriesError } = await supabase
     .from('categories')
     .select('*')
     .or(`dossier_id.eq.${dossierId},dossier_id.is.null`)
+  if (categoriesError) throw categoriesError
 
   const categories = (categoriesData ?? []) as Categorie[]
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
@@ -69,9 +77,15 @@ async function remplirZipDossier(
 
   // --- ZIP : pièces classées par type ---
   const piecesFolder = destination.folder('Pieces')!
+  const manquantes: string[] = []
   for (const p of included) {
     const { data: blob, error } = await supabase.storage.from('pieces').download(p.storage_path)
-    if (error || !blob) continue // pièce introuvable : on continue plutôt que de faire échouer tout le pack
+    // Une pièce introuvable ne fait pas échouer tout le pack — mais elle n'est plus passée sous
+    // silence : elle est recensée, écrite dans l'Excel et remontée à l'appelant.
+    if (error || !blob) {
+      manquantes.push(pieceFileName(p))
+      continue
+    }
     const folder = piecesFolder.folder(FOLDER_BY_TYPE[p.type_piece] ?? '04_Autres')!
     folder.file(pieceFileName(p), blob)
   }
@@ -111,11 +125,23 @@ async function remplirZipDossier(
     ajouterFeuille(wb, 'Pièces à valider', pendingRows)
   }
 
+  // Écrite avant l'Excel lui-même : le récapitulatif doit porter la trace des fichiers absents,
+  // c'est lui que le comptable lit, pas l'écran de celui qui a généré le pack.
+  if (manquantes.length > 0) {
+    ajouterFeuille(wb, 'Pièces manquantes', manquantes.map((fichier) => ({
+      Fichier: fichier,
+      Statut: "Listée dans le récapitulatif mais absente de l'archive — fichier introuvable au moment de la génération",
+    })))
+  }
+
   const excelBuffer = await wb.xlsx.writeBuffer()
   const excelBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
-  destination.file('Recap.xlsx', excelBlob)
+  // Le buffer, pas le Blob : JSZip accepte les deux dans un navigateur, mais seul le buffer partout
+  // (il lui faut un FileReader pour un Blob, absent de Node — ce qui rendait ce chemin inexécutable
+  // en test). Le Blob reste utile tel quel pour l'envoi séparé vers Storage.
+  destination.file('Recap.xlsx', excelBuffer)
 
-  return { nbPieces: included.length, totalTtc, excelBlob }
+  return { nbPieces: included.length, totalTtc, excelBlob, manquantes }
 }
 
 interface GenerateResult {
@@ -123,6 +149,7 @@ interface GenerateResult {
   totalTtc: number
   storagePathZip: string
   storagePathExcel: string
+  manquantes: string[]
 }
 
 export async function generatePack(
@@ -132,7 +159,7 @@ export async function generatePack(
   periodeFin: string,
 ): Promise<GenerateResult> {
   const zip = new JSZip()
-  const { nbPieces, totalTtc, excelBlob } = await remplirZipDossier(zip, dossierId, periodeDebut, periodeFin)
+  const { nbPieces, totalTtc, excelBlob, manquantes } = await remplirZipDossier(zip, dossierId, periodeDebut, periodeFin)
   const zipBlob = await zip.generateAsync({ type: 'blob' })
 
   const basePath = `${dossierId}/${periodeDebut}_${periodeFin}-${Date.now()}`
@@ -144,7 +171,7 @@ export async function generatePack(
   const { error: excelUploadError } = await supabase.storage.from('packs').upload(excelPath, excelBlob)
   if (excelUploadError) throw excelUploadError
 
-  return { nbPieces, totalTtc, storagePathZip: zipPath, storagePathExcel: excelPath }
+  return { nbPieces, totalTtc, storagePathZip: zipPath, storagePathExcel: excelPath, manquantes }
 }
 
 // Exporté pour lib/exportCabinet.ts — même remplissage, mais dans un sous-dossier d'un zip partagé

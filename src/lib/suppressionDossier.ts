@@ -8,23 +8,41 @@ import { supabase } from './supabase'
 // doit jamais empêcher la suppression du dossier lui-même, seulement laisser quelques fichiers
 // orphelins — un dossier supprimé sans ses pièces vaut mieux qu'un dossier qui refuse de se supprimer
 // à cause d'un fichier de stockage récalcitrant.
+// `list()` du client Storage plafonne à 100 entrées par défaut, sans le dire : au-delà, le reste
+// serait resté en place indéfiniment. On pagine donc explicitement jusqu'à épuisement.
+const TAILLE_PAGE = 100
+
+async function listerTout(bucket: 'pieces' | 'packs', chemin: string) {
+  const tout: { name: string; id: string | null }[] = []
+  for (let offset = 0; ; offset += TAILLE_PAGE) {
+    const { data } = await supabase.storage.from(bucket).list(chemin, { limit: TAILLE_PAGE, offset })
+    if (!data || data.length === 0) return tout
+    tout.push(...data)
+    if (data.length < TAILLE_PAGE) return tout
+  }
+}
+
 async function viderDossierDuStockage(bucket: 'pieces' | 'packs', dossierId: string): Promise<void> {
   try {
-    const { data: entrees } = await supabase.storage.from(bucket).list(dossierId)
-    if (!entrees || entrees.length === 0) return
+    const entrees = await listerTout(bucket, dossierId)
+    if (entrees.length === 0) return
     const chemins: string[] = []
     for (const entree of entrees) {
       // Un id null signale un sous-dossier (convention Supabase Storage) — un pack range son
       // ZIP/Excel sous `dossierId/période-timestamp/`, jamais directement sous `dossierId/` (voir
       // packGenerator.ts) ; une pièce, elle, est toujours un fichier direct.
       if (entree.id === null) {
-        const { data: sousEntrees } = await supabase.storage.from(bucket).list(`${dossierId}/${entree.name}`)
-        for (const sousEntree of sousEntrees ?? []) chemins.push(`${dossierId}/${entree.name}/${sousEntree.name}`)
+        const sousEntrees = await listerTout(bucket, `${dossierId}/${entree.name}`)
+        for (const sousEntree of sousEntrees) chemins.push(`${dossierId}/${entree.name}/${sousEntree.name}`)
       } else {
         chemins.push(`${dossierId}/${entree.name}`)
       }
     }
-    if (chemins.length > 0) await supabase.storage.from(bucket).remove(chemins)
+    // Suppression par lots, pour la même raison : une liste trop longue passée d'un coup peut être
+    // refusée côté serveur, et l'échec serait avalé par le `catch` ci-dessous.
+    for (let i = 0; i < chemins.length; i += TAILLE_PAGE) {
+      await supabase.storage.from(bucket).remove(chemins.slice(i, i + TAILLE_PAGE))
+    }
   } catch {
     // Best-effort, voir plus haut.
   }

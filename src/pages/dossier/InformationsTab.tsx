@@ -131,7 +131,7 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
       const periodeDebut = '2000-01-01'
       // Calendrier civil et non UTC : un export lancé peu après minuit s'arrêterait sinon la veille.
       const periodeFin = aujourdHuiSql()
-      const { nbPieces, storagePathZip, storagePathExcel, totalTtc } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
+      const { nbPieces, storagePathZip, storagePathExcel, totalTtc, manquantes } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
       if (nbPieces === 0) {
         setExportErreur("Aucune pièce validée à exporter sur ce dossier (les pièces sans date ne sont jamais incluses dans un pack).")
         return
@@ -145,6 +145,11 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
         nb_pieces: nbPieces, total_ttc: totalTtc,
       })
       if (packError) throw packError
+      // Export fait juste avant une suppression définitive : un fichier absent de l'archive est
+      // perdu pour de bon une fois le dossier supprimé. À signaler avant, pas après.
+      if (manquantes.length > 0) {
+        setExportErreur(`Export terminé, mais ${manquantes.length} pièce(s) manquent à l'archive (fichier introuvable) : ${manquantes.slice(0, 3).join(', ')}${manquantes.length > 3 ? '…' : ''}. Vérifie avant toute suppression — le récapitulatif les liste dans son onglet « Pièces manquantes ».`)
+      }
       const { data: signed } = await supabase.storage.from('packs').createSignedUrl(storagePathZip, 60)
       if (signed) window.open(signed.signedUrl, '_blank')
     } catch (err) {
