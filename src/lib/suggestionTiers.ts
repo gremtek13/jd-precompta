@@ -1,4 +1,4 @@
-import { normalizeTiers } from './format'
+import { cleFournisseur, normalizeTiers } from './format'
 import { suggererCategorie } from './tiersCategories'
 import type { Categorie, Piece, TiersCategorie, TiersCategorieCabinet } from './types'
 
@@ -53,12 +53,19 @@ export function categorieParMotCle(tiers: string, categories: Categorie[]): stri
 
 // Une ligne de l'écran de catégorisation : un tiers, ce qu'il représente, et ce qu'on propose.
 export interface GroupeTiers {
-  // Clé de correspondance — c'est elle qui sera écrite dans `tiers_categories`.
+  // Clé de correspondance — c'est elle qui sera écrite dans `tiers_categories`, et c'est aussi elle
+  // que `suggererCategorie` retrouvera plus tard.
   tiersNormalise: string
-  // Le libellé tel qu'il apparaît sur les pièces, pour que le cabinet reconnaisse le fournisseur.
-  // La première graphie rencontrée : elles ne diffèrent que par la casse ou les espaces, par
-  // construction de `normalizeTiers`.
+  // Le libellé montré au cabinet : la graphie la plus COURTE du groupe. Les variantes d'un même
+  // fournisseur ne diffèrent que par le bruit que l'OCR a collé autour du nom, donc la plus courte
+  // est la plus propre — « Transmedical » plutôt que « Transmedical et soigner redevient ».
   libelle: string
+  // Les autres graphies rencontrées pour ce même fournisseur, s'il y en a. Affichées pour que le
+  // cabinet voie ce qui a été regroupé et puisse contester le regroupement.
+  variantes: string[]
+  // Faux quand rien dans le nom n'identifie un fournisseur (« CARTE BANCAIRE », « m sa ») : le
+  // groupe ne contient alors que les pièces portant exactement ce libellé, et mérite un regard.
+  fournisseurIdentifiable: boolean
   pieceIds: string[]
   // Montant cumulé, pour trancher en connaissance de cause : une ligne à 5 000 € mérite plus
   // d'attention qu'une à 12 €. Null si aucune pièce du groupe n'a de montant lu.
@@ -84,20 +91,38 @@ export function grouperParTiers(
     if (piece.categorie_id) continue
     if (!piece.tiers || !piece.tiers.trim()) continue
 
-    const cle = normalizeTiers(piece.tiers)
+    // Regroupement sur l'identité du fournisseur plutôt que sur le nom exact : c'est ce qui réunit
+    // les graphies produites par l'OCR pour un même fournisseur. À défaut d'identité lisible, on
+    // retombe sur le nom complet — le groupe ne réunira que des pièces au libellé identique, ce qui
+    // est le comportement prudent : mieux vaut deux arbitrages qu'un regroupement faux.
+    const identite = cleFournisseur(piece.tiers)
+    const cle = identite ?? normalizeTiers(piece.tiers)
+    const libelle = piece.tiers.trim()
+
     let groupe = groupes.get(cle)
     if (!groupe) {
       const parRegle = suggererCategorie(piece.tiers, reglesDossier, reglesCabinet)
       const parMotCle = parRegle ? null : categorieParMotCle(piece.tiers, categories)
       groupe = {
         tiersNormalise: cle,
-        libelle: piece.tiers.trim(),
+        libelle,
+        variantes: [],
+        fournisseurIdentifiable: identite !== null,
         pieceIds: [],
         totalTtc: null,
         categorieProposee: parRegle ?? parMotCle,
         origine: parRegle ? 'regle' : parMotCle ? 'motcle' : 'aucune',
       }
       groupes.set(cle, groupe)
+    } else if (libelle !== groupe.libelle && !groupe.variantes.includes(libelle)) {
+      // La plus courte graphie devient le libellé ; l'autre rejoint les variantes. Comparer les
+      // longueurs à chaque rencontre évite de dépendre de l'ordre des pièces.
+      if (libelle.length < groupe.libelle.length) {
+        groupe.variantes.push(groupe.libelle)
+        groupe.libelle = libelle
+      } else {
+        groupe.variantes.push(libelle)
+      }
     }
     groupe.pieceIds.push(piece.id)
     if (piece.montant_ttc != null) groupe.totalTtc = (groupe.totalTtc ?? 0) + piece.montant_ttc
