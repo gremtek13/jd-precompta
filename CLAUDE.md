@@ -625,11 +625,20 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   bien là, à l'intérieur d'un autre mot. Au centime et au jour près, ça validait le prélèvement d'un
   tout autre fournisseur. La troncature reste tolérée (les relevés coupent : « SWISSLIFE PREVOYAN »)
   mais seulement en début de mot — l'un des deux doit commencer par l'autre.
-- **Un libellé bancaire vide n'est pas rare, et le texte est ailleurs.** L'import retombe sur le
-  générique « Mouvement bancaire » quand la colonne choisie au mapping est vide sur cette ligne ;
-  sur le premier relevé réel, 250 lignes sur 385 étaient dans ce cas parce que le vrai libellé était
-  dans la colonne suivante. `libelle_brut` conserve la ligne du fichier : tout traitement qui a
-  besoin du libellé doit passer par `libelleExploitable`, pas par `libelle`.
+- **La colonne « libellé » se détecte sur la densité de texte, pas sur la longueur moyenne.**
+  Une moyenne calculée sur les seules valeurs non vides fait gagner une colonne presque toujours
+  vide dès que ses rares valeurs sont longues. Constaté sur un relevé réel : la banque sépare le
+  libellé des débits et celui des crédits en deux colonnes mutuellement exclusives, et la colonne
+  « crédit » (135 lignes remplies sur 385) a battu la colonne « débit » (247 lignes). Les deux
+  tiers du relevé sont entrés sans libellé — invisibles pour la recherche, pour les règles
+  « toujours ignorer » et pour la détection de récurrence, toutes fondées sur ce texte.
+- **Quand la colonne retenue est vide sur une ligne, le libellé se reconstitue depuis les autres.**
+  `libelleDeLigne` (lib/csv.ts) joint les colonnes restantes, hors date et montant — les répéter
+  polluerait toute recherche sur un montant. Le générique « Mouvement bancaire » ne sert plus que
+  si la ligne entière est vide en dehors de la date et du montant. `libelle_brut` conserve la
+  ligne du fichier ; `libelleExploitable` (lib/appariementBanque.ts) y retombe pour les lignes
+  importées avant cette correction.
+
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -638,7 +647,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 428 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 435 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
