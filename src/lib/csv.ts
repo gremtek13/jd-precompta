@@ -168,7 +168,13 @@ export function detectColumnMapping(rows: string[][]): ColumnMapping {
       if (isFullMontant(val)) montantHits++
       totalLen += val.length
     }
-    return { col, dateHits, montantHits, avgLen: nonVides ? totalLen / nonVides : 0 }
+    // Densité de texte rapportée à TOUTES les lignes de l'échantillon, pas seulement à celles où la
+    // colonne est remplie. Une moyenne calculée sur les seules valeurs non vides fait gagner une
+    // colonne presque toujours vide dès que ses rares valeurs sont longues — c'est exactement ce qui
+    // s'est produit sur un relevé réel : la banque sépare le libellé des débits et celui des crédits
+    // en deux colonnes, et la colonne « crédit » (135 lignes remplies sur 385, textes longs) a été
+    // préférée à la colonne « débit » (247 lignes). Les deux tiers du relevé sont entrés sans libellé.
+    return { col, dateHits, montantHits, densiteTexte: totalLen / Math.max(1, echantillon.length) }
   })
 
   const colDate = scores.reduce((best, s) => (s.dateHits > (best?.dateHits ?? 0) ? s : best), null as (typeof scores)[number] | null)?.col ?? 0
@@ -177,7 +183,7 @@ export function detectColumnMapping(rows: string[][]): ColumnMapping {
     .reduce((best, s) => (s.montantHits > (best?.montantHits ?? 0) ? s : best), null as (typeof scores)[number] | null)?.col ?? Math.min(1, nbColonnes - 1)
   const colLibelle = scores
     .filter((s) => s.col !== colDate && s.col !== colMontant)
-    .reduce((best, s) => (s.avgLen > (best?.avgLen ?? -1) ? s : best), null as (typeof scores)[number] | null)?.col ?? Math.min(2, nbColonnes - 1)
+    .reduce((best, s) => (s.densiteTexte > (best?.densiteTexte ?? -1) ? s : best), null as (typeof scores)[number] | null)?.col ?? Math.min(2, nbColonnes - 1)
 
   // En-tête : si la toute première ligne ne ressemble pas elle-même à une opération (date/montant
   // valides sur les colonnes détectées), c'est probablement une ligne de titres de colonnes.
@@ -185,4 +191,25 @@ export function detectColumnMapping(rows: string[][]): ColumnMapping {
   const hasHeader = !(first && isFullDate((first[colDate] ?? '').trim()) && isFullMontant((first[colMontant] ?? '').trim()))
 
   return { colDate, colMontant, colLibelle, hasHeader }
+}
+
+// Libellé d'une ligne du relevé. Quand la colonne retenue est vide SUR CETTE LIGNE, le texte est
+// reconstitué à partir des autres colonnes plutôt que remplacé par un générique.
+//
+// Ce n'est pas un cas tordu : certaines banques éclatent le libellé en deux colonnes, l'une pour les
+// débits, l'autre pour les crédits, mutuellement exclusives. Quelle que soit la colonne choisie,
+// l'autre moitié du relevé arrive vide — et un mouvement sans libellé est invisible pour la
+// recherche, pour les règles « toujours ignorer » et pour la détection de récurrence, toutes fondées
+// sur ce texte.
+//
+// Les colonnes date et montant sont exclues du repli : elles sont déjà stockées dans leurs champs,
+// les répéter dans le libellé n'apprendrait rien et polluerait toutes les recherches sur un montant.
+export function libelleDeLigne(row: string[], mapping: ColumnMapping): string {
+  const choisi = (row[mapping.colLibelle] ?? '').trim()
+  if (choisi) return choisi
+  return row
+    .filter((_, i) => i !== mapping.colDate && i !== mapping.colMontant && i !== mapping.colLibelle)
+    .map((v) => (v ?? '').trim())
+    .filter(Boolean)
+    .join(' ')
 }

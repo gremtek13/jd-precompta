@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
-import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
+import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfLignes } from '../../lib/pdfText'
 import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
@@ -1020,13 +1020,15 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       let ignorees = 0
       for (const row of dataRows) {
         const date = parseDateBancaire(row[colDate] ?? '')
-        // Le libellé n'est qu'informatif (pas utilisé pour le rapprochement) — certaines banques le
-        // laissent vide sur certaines lignes selon le type d'opération. On ne rejette la ligne que si
-        // la date ou le montant, les deux champs réellement nécessaires, sont illisibles. La ligne
-        // brute du fichier est gardée à part (libelle_brut) : si le générique "Mouvement bancaire"
-        // s'applique faute de mieux, on garde de quoi retrouver ce qu'il y avait réellement dessus
-        // (voir audit ergonomie) plutôt que de perdre l'information.
-        const libelle = (row[colLibelle] ?? '').trim() || 'Mouvement bancaire'
+        // Certaines banques laissent la colonne Libellé vide sur une partie des lignes (débits et
+        // crédits dans deux colonnes distinctes, par exemple) : `libelleDeLigne` reconstitue alors le
+        // texte depuis les autres colonnes, parce qu'un mouvement sans libellé est invisible pour la
+        // recherche, les règles « toujours ignorer » et la détection de récurrence. Le générique ne
+        // sert plus que si la ligne entière est vide en dehors de la date et du montant. La ligne
+        // brute reste gardée à part (libelle_brut) pour pouvoir remonter à la source.
+        // On ne rejette la ligne que si la date ou le montant, seuls champs réellement nécessaires,
+        // sont illisibles.
+        const libelle = libelleDeLigne(row, { colDate, colMontant, colLibelle, hasHeader }) || 'Mouvement bancaire'
         let montant: number | null = null
         if (mode === 'signe') {
           montant = parseMontantBancaire(row[colMontant] ?? '')

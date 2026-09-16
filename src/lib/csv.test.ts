@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from './csv'
+import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from './csv'
 
 describe('parseMontantBancaire', () => {
   it('lit le format français courant', () => {
@@ -105,8 +105,67 @@ describe('parseCsv', () => {
   })
 })
 
+describe('libelleDeLigne', () => {
+  const mapping = { colDate: 0, colMontant: 1, colLibelle: 4, hasHeader: true }
+
+  it('prend la colonne choisie quand elle dit quelque chose', () => {
+    expect(libelleDeLigne(['06/01/2025', '-38,4', 'Virement', '', 'PRLV SEPA TRANSMEDICAL', ''], mapping))
+      .toBe('PRLV SEPA TRANSMEDICAL')
+  })
+
+  it('reconstitue le libellé depuis les autres colonnes quand la sienne est vide', () => {
+    // Le cas qui rendait un tiers du relevé illisible : sur les crédits, la colonne retenue est vide
+    // et le texte se trouve ailleurs. Un générique à la place perdrait le seul indice disponible.
+    expect(libelleDeLigne(['27/08/2025', '60', 'Virement', '', '', 'ASSISTANCE PUBLIQUE MARSEILLE'], mapping))
+      .toBe('Virement ASSISTANCE PUBLIQUE MARSEILLE')
+  })
+
+  it('assemble les colonnes utiles d’un chèque, dont le numéro', () => {
+    expect(libelleDeLigne(['24/04/2025', '-77', 'Chèque', '0697298', '', ''], mapping))
+      .toBe('Chèque 0697298')
+  })
+
+  it('n’écrit jamais la date ni le montant dans le libellé', () => {
+    // Les répéter polluerait toute recherche sur un montant : taper « 38,40 » remonterait la ligne
+    // par son libellé autant que par son montant.
+    const libelle = libelleDeLigne(['06/01/2025', '-38,4', 'Virement', '', '', ''], mapping)
+    expect(libelle).toBe('Virement')
+    expect(libelle).not.toContain('38')
+    expect(libelle).not.toContain('2025')
+  })
+
+  it('rend une chaîne vide quand il n’y a vraiment rien', () => {
+    // C'est à l'appelant de décider du générique — pas à cette fonction d'en inventer un.
+    expect(libelleDeLigne(['06/01/2025', '-38,4', '', '', '', ''], mapping)).toBe('')
+  })
+
+  it('tient les lignes plus courtes que le mapping', () => {
+    // Les lignes de solde d'ouverture et de clôture ont moins de colonnes que les opérations.
+    expect(libelleDeLigne(['01/01/2025', '8270,84', '', '02871 073921S'], mapping)).toBe('02871 073921S')
+  })
+})
+
 describe('detectColumnMapping', () => {
   const entete = ['Date', 'Libellé', 'Montant']
+
+  // Extrait d'un relevé réel : la banque sépare le libellé des débits (colonne 4) de celui des
+  // crédits (colonne 5), les deux ne sont jamais remplies ensemble.
+  const releveDeuxColonnes = [
+    ['Date', 'Montant', 'Type', 'Réf', 'Libellé débit', 'Libellé crédit'],
+    ['06/01/2025', '-38,4', 'Virement', '', 'PRLV SEPA TRANSMEDICAL', ''],
+    ['05/02/2025', '-38,4', 'Virement', '', 'PRLV SEPA TRANSMEDICAL', ''],
+    ['05/03/2025', '-198', 'Virement', '', 'PRLV SEPA TRANSMEDICAL', ''],
+    ['07/04/2025', '-19,73', 'Virement', '', 'PRLV SEPA MACSF-ASSU-', ''],
+    ['27/08/2025', '60', 'Virement', '', '', '2025-2043ASSISTANCE PUBLIQUE MARSEILLE'],
+  ]
+
+  it('préfère la colonne la plus souvent remplie, pas celle aux textes les plus longs', () => {
+    // Le défaut, constaté sur un vrai relevé : la moyenne était calculée sur les seules valeurs non
+    // vides, donc une colonne remplie 135 fois sur 385 avec des libellés longs battait une colonne
+    // remplie 247 fois. Les deux tiers du relevé sont entrés sans libellé — invisibles pour la
+    // recherche, pour les règles « toujours ignorer » et pour la détection de récurrence.
+    expect(detectColumnMapping(releveDeuxColonnes).colLibelle).toBe(4)
+  })
 
   it('trouve la colonne des montants même au-delà de mille', () => {
     // Le défaut qui a motivé ces tests : `isFullMontant` rejetait les séparateurs de milliers que
