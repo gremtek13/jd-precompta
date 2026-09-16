@@ -52,7 +52,10 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
     try {
       const { nbPieces, totalTtc, storagePathZip, storagePathExcel } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
       const { data: userData } = await supabase.auth.getUser()
-      await supabase.from('packs').insert({
+      // Le ZIP et l'Excel sont déjà dans le stockage à ce stade : sans cette ligne, ils y restent
+      // sans que rien ne pointe dessus. Taire l'échec laissait l'écran afficher une génération
+      // réussie et une liste inchangée, sans expliquer pourquoi.
+      const { error: packError } = await supabase.from('packs').insert({
         dossier_id: dossierId,
         periode_debut: periodeDebut,
         periode_fin: periodeFin,
@@ -62,6 +65,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
         nb_pieces: nbPieces,
         total_ttc: totalTtc,
       })
+      if (packError) throw packError
       loadPacks()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'La génération a échoué.')

@@ -135,11 +135,14 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
         return
       }
       const { data: userData } = await supabase.auth.getUser()
-      await supabase.from('packs').insert({
+      // Même raison qu'en PacksTab : le ZIP est déjà dans le stockage, la ligne est ce qui permet de
+      // le retrouver ensuite. Un échec tu laissait un pack orphelin.
+      const { error: packError } = await supabase.from('packs').insert({
         dossier_id: dossierId, periode_debut: periodeDebut, periode_fin: periodeFin,
         generated_by: userData.user!.id, storage_path_zip: storagePathZip, storage_path_excel: storagePathExcel,
         nb_pieces: nbPieces, total_ttc: totalTtc,
       })
+      if (packError) throw packError
       const { data: signed } = await supabase.storage.from('packs').createSignedUrl(storagePathZip, 60)
       if (signed) window.open(signed.signedUrl, '_blank')
     } catch (err) {

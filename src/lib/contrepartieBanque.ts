@@ -21,18 +21,27 @@ import type { LigneBancaire, Piece } from './types'
 // réglé) — dépendre du signe réel évite ce piège. Best-effort et idempotente : appelée aussi bien
 // depuis un rapprochement (Banque) que depuis une génération d'écritures sur une pièce déjà
 // rapprochée (Écritures) — sans jamais dupliquer la ligne si elle existe déjà.
+//
+// Les deux fonctions lèvent si la base refuse l'écriture, plutôt que de rendre la main comme si de
+// rien n'était. Ce sont des écritures comptables : leur absence ne se voit qu'indirectement, une
+// pièce comptée « en attente de rapprochement bancaire » dans la Checklist sans qu'on sache que
+// l'écriture a en réalité été refusée. BanqueTab vérifiait déjà l'erreur du rapprochement lui-même
+// avant d'enchaîner ici (voir son commentaire) ; le contrôle s'arrêtait à cette frontière.
 export async function synchroniserContrepartieBanque(dossierId: string, piece: Piece, ligne: LigneBancaire) {
-  const { data: existantes } = await supabase
+  const { data: existantes, error: lectureError } = await supabase
     .from('ecritures_brouillon')
     .select('id, compte')
     .eq('piece_id', piece.id)
+  if (lectureError) throw lectureError
   // Rien à faire tant que la pièce n'a pas encore sa ligne de charge/produit (catégorie sans compte
   // comptable, ou "Générer les écritures" pas encore lancé) — la contrepartie viendra d'elle-même au
-  // prochain passage.
+  // prochain passage. À distinguer d'une lecture en échec, ci-dessus : sans ce contrôle, une lecture
+  // refusée rendait `existantes` nul et ressemblait à « pas encore d'écriture », donc à un abandon
+  // silencieux et légitime.
   if (!existantes || existantes.length === 0) return
   if (existantes.some((e) => e.compte === COMPTE_BANQUE)) return
 
-  await supabase.from('ecritures_brouillon').insert({
+  const { error } = await supabase.from('ecritures_brouillon').insert({
     dossier_id: dossierId,
     piece_id: piece.id,
     ligne_bancaire_id: ligne.id,
@@ -43,10 +52,12 @@ export async function synchroniserContrepartieBanque(dossierId: string, piece: P
     sens: ligne.montant >= 0 ? 'debit' : 'credit',
     statut: 'proposee',
   })
+  if (error) throw error
 }
 
 // Retire la contrepartie banque d'une pièce — appelée quand un rapprochement est annulé, sinon la
 // ligne banque resterait affichée comme si le mouvement était toujours rapproché.
 export async function retirerContrepartieBanque(pieceId: string) {
-  await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('compte', COMPTE_BANQUE)
+  const { error } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('compte', COMPTE_BANQUE)
+  if (error) throw error
 }

@@ -103,7 +103,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
   // coût réel de l'agent par dossier/cabinet (voir lib/coutsApi.ts, page Comptes master).
   async function enregistrer(role: 'user' | 'assistant', texte: string, outils?: string[], usage?: { tokens_entree: number; tokens_sortie: number }) {
     if (!conversationId) return
-    await supabase.from('agent_conversations').insert({
+    const { error } = await supabase.from('agent_conversations').insert({
       dossier_id: dossierId,
       conversation_id: conversationId,
       role,
@@ -113,6 +113,10 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
       tokens_sortie: usage?.tokens_sortie ?? null,
       created_by: session?.user.id ?? null,
     })
+    // Reste best-effort (la conversation à l'écran n'est pas remise en cause), mais plus muet : cette
+    // table alimente aussi le plafond IA mensuel du cabinet, que l'Edge Function recalcule en sommant
+    // tokens_entree/tokens_sortie. Une ligne perdue, c'est un coût qui n'est jamais décompté.
+    if (error) console.warn("Historique de l'agent non enregistré (conversation intacte) :", error.message)
   }
 
   async function envoyer(e: FormEvent) {
@@ -170,7 +174,14 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
     if (!window.confirm(
       "Supprimer définitivement cette conversation ? Elle est partagée avec le reste du cabinet — personne ne pourra plus la relire.",
     )) return
-    await supabase.from('agent_conversations').delete().eq('dossier_id', dossierId).eq('conversation_id', id)
+    // L'écran retire la conversation de son état local, sans rechargement : un échec silencieux la
+    // ferait disparaître de l'affichage alors qu'elle reste lisible en base par tout le cabinet —
+    // exactement le contraire de ce que la confirmation vient de promettre.
+    const { error } = await supabase.from('agent_conversations').delete().eq('dossier_id', dossierId).eq('conversation_id', id)
+    if (error) {
+      window.alert(`Cette conversation n'a pas pu être supprimée : ${error.message}\n\nElle est toujours lisible par le cabinet.`)
+      return
+    }
     setTous((prev) => prev.filter((m) => m.conversation_id !== id))
     if (id === conversationId) setConversationId(crypto.randomUUID())
   }
