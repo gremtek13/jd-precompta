@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { generatePack } from '../../lib/packGenerator'
+import { aujourdHuiSql } from '../../lib/format'
 import { supprimerDossierDefinitivement } from '../../lib/suppressionDossier'
 import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
@@ -128,7 +129,8 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
     setExportErreur(null)
     try {
       const periodeDebut = '2000-01-01'
-      const periodeFin = new Date().toISOString().slice(0, 10)
+      // Calendrier civil et non UTC : un export lancé peu après minuit s'arrêterait sinon la veille.
+      const periodeFin = aujourdHuiSql()
       const { nbPieces, storagePathZip, storagePathExcel, totalTtc } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
       if (nbPieces === 0) {
         setExportErreur("Aucune pièce validée à exporter sur ce dossier (les pièces sans date ne sont jamais incluses dans un pack).")
@@ -136,7 +138,7 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
       }
       const { data: userData } = await supabase.auth.getUser()
       // Même raison qu'en PacksTab : le ZIP est déjà dans le stockage, la ligne est ce qui permet de
-      // le retrouver ensuite. Un échec tu laissait un pack orphelin.
+      // le retrouver ensuite. Un échec te laissait un pack orphelin.
       const { error: packError } = await supabase.from('packs').insert({
         dossier_id: dossierId, periode_debut: periodeDebut, periode_fin: periodeFin,
         generated_by: userData.user!.id, storage_path_zip: storagePathZip, storage_path_excel: storagePathExcel,

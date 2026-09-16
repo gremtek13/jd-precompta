@@ -1,4 +1,4 @@
-import { ajouterMois } from './format'
+import { ajouterMois, aujourdHuiSql } from './format'
 
 export interface Emprunt {
   id: string
@@ -53,7 +53,11 @@ export function genererEcheancier(emprunt: Pick<Emprunt, 'capital_initial' | 'ta
 // Capital restant dû à une date donnée (par défaut aujourd'hui) — sert à afficher un état actuel sans
 // dérouler tout l'échéancier à l'écran. Avant le début du prêt : le capital initial en entier. Après
 // le terme : zéro.
-export function capitalRestantDu(emprunt: Emprunt, dateReference: string = new Date().toISOString().slice(0, 10)): number {
+//
+// « Aujourd'hui » au calendrier civil (`aujourdHuiSql`), jamais `toISOString()` qui rend la date UTC :
+// à 00 h 30 le 1er janvier à Paris, celle-ci vaut encore le 31 décembre. Les tests passaient tous une
+// date explicite, si bien que ce défaut par défaut n'a jamais été exercé.
+export function capitalRestantDu(emprunt: Emprunt, dateReference: string = aujourdHuiSql()): number {
   if (dateReference < emprunt.date_debut) return emprunt.capital_initial
   const echeancier = genererEcheancier(emprunt)
   const passees = echeancier.filter((l) => l.date <= dateReference)
@@ -62,6 +66,6 @@ export function capitalRestantDu(emprunt: Emprunt, dateReference: string = new D
 
 // Un prêt est "actif" à une date donnée s'il reste du capital à rembourser à ce moment — sert à
 // exclure les emprunts déjà soldés des totaux (mensualités actuelles, endettement en cours).
-export function empruntActif(emprunt: Emprunt, dateReference: string = new Date().toISOString().slice(0, 10)): boolean {
+export function empruntActif(emprunt: Emprunt, dateReference: string = aujourdHuiSql()): boolean {
   return dateReference >= emprunt.date_debut && capitalRestantDu(emprunt, dateReference) > 0
 }
