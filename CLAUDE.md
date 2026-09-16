@@ -399,6 +399,10 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `extractPieceMontants.test.ts` lit la vraie source déployée, en extrait `parseAmount` et
   l'exécute — volontairement fragile : renommer la fonction casse le test bruyamment, ce qui
   vaut mieux qu'une copie qui dérive en silence.
+- **Un paramètre par défaut est un angle mort des tests.** `capitalRestantDu` et `empruntActif`
+  prenaient « aujourd'hui » en `toISOString()` — la date UTC — depuis toujours : tous les tests
+  passaient une date explicite, donc ce chemin n'a jamais été exercé. Quand une fonction testée
+  a une valeur par défaut, elle mérite son propre test.
 - **Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture.**
   Un `count` nul, un `data` nul : indiscernables d'un « rien trouvé ». C'est ce qui faisait
   répondre « ce fichier est nouveau » à `fichierDejaPresent` quand la lecture était refusée,
@@ -418,7 +422,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 207 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 208 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,

@@ -1,6 +1,6 @@
 import JSZip from 'jszip'
 import { supabase } from './supabase'
-import { slugify } from './format'
+import { aujourdHuiSql, slugify } from './format'
 import { remplirZipDossier } from './packGenerator'
 
 function telechargerBlob(nomFichier: string, blob: Blob) {
@@ -41,7 +41,9 @@ export async function genererExportCabinet(
 
   const zip = new JSZip()
   const periodeDebut = '2000-01-01'
-  const periodeFin = new Date().toISOString().slice(0, 10)
+  // Calendrier civil et non UTC : un export lancé peu après minuit s'arrêterait sinon la veille,
+  // excluant les pièces du jour et datant le fichier d'hier.
+  const periodeFin = aujourdHuiSql()
   let nbPiecesTotal = 0
 
   // Séquentiel plutôt que Promise.all : chaque dossier télécharge potentiellement des dizaines de

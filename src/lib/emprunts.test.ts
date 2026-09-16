@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { calculerMensualite, capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from './emprunts'
+import { aujourdHuiSql } from './format'
 
 const PRET: Emprunt = {
   id: 'test', dossier_id: 'test', nom: 'Prêt matériel', organisme_preteur: null,
@@ -79,5 +80,38 @@ describe('empruntActif', () => {
     expect(empruntActif(PRET, '2026-01-01')).toBe(false)
     expect(empruntActif(PRET, '2027-03-10')).toBe(true)
     expect(empruntActif(PRET, '2032-01-01')).toBe(false)
+  })
+})
+
+describe('date de référence par défaut', () => {
+  // Ces deux fonctions prennent « aujourd'hui » par défaut, et tous les tests ci-dessus passaient une
+  // date explicite : ce chemin n'était donc jamais exercé. Il utilisait `toISOString()`, c'est-à-dire
+  // la date UTC — à 00 h 30 le 1er janvier à Paris, celle-ci vaut encore le 31 décembre.
+  const PRET_EN_COURS: Emprunt = {
+    capital_initial: 50000, taux_annuel: 2, duree_mois: 72, date_debut: '2020-01-01',
+  } as Emprunt
+
+  afterEach(() => vi.useRealTimers())
+
+  it('suit le calendrier civil, pas l’horloge UTC', () => {
+    // Instant choisi pour que les deux dates divergent là où elles peuvent : 23 h 30 UTC le
+    // 31 décembre, soit déjà le 1er janvier à Paris (+1) et à Auckland (+13).
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2025-12-31T23:30:00Z'))
+
+    const maintenant = new Date()
+    const civil = `${maintenant.getFullYear()}-${String(maintenant.getMonth() + 1).padStart(2, '0')}-${String(maintenant.getDate()).padStart(2, '0')}`
+    const utc = maintenant.toISOString().slice(0, 10)
+
+    expect(aujourdHuiSql()).toBe(civil)
+    expect(capitalRestantDu(PRET_EN_COURS)).toBe(capitalRestantDu(PRET_EN_COURS, civil))
+    expect(empruntActif(PRET_EN_COURS)).toBe(empruntActif(PRET_EN_COURS, civil))
+
+    // L'assertion qui mord : seulement là où les deux dates diffèrent réellement (ni en UTC, ni à
+    // New York à cette heure-là). Sous Europe/Paris et Pacific/Auckland, elle échoue si le défaut
+    // repasse à `toISOString()`.
+    if (civil !== utc) {
+      expect(capitalRestantDu(PRET_EN_COURS)).not.toBe(capitalRestantDu(PRET_EN_COURS, utc))
+    }
   })
 })
