@@ -4,6 +4,8 @@ import { anneeDe, formatMoney } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
 import { calculerDeclaration2035 } from '../../lib/declaration2035'
+import { CASES_2035, valeursDesCases } from '../../lib/cases2035'
+import type { PosteNonRattache } from '../../lib/cases2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
@@ -87,13 +89,20 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     calculerDeclaration2035(a, pieces, categories, immobilisations, cotisations),
   )
 
-  // Cumul des exercices affichés. Sur un seul exercice — le cas normal — c'est l'identité.
-  const totauxParPoste = new Map<string, number>()
-  for (const d of declarations) {
-    for (const l of d.recettes) totauxParPoste.set(l.poste, (totauxParPoste.get(l.poste) ?? 0) + l.montant)
-    for (const l of d.depenses) totauxParPoste.set(l.poste, (totauxParPoste.get(l.poste) ?? 0) - l.montant)
+  // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
+  // l'ordre imprimé. Une 2035 est annuelle : plutôt que de cumuler des cases de plusieurs exercices
+  // (ce qui remplirait par exemple à la fois « excédent » et « insuffisance », impossible sur un vrai
+  // formulaire), on affiche un tableau par exercice.
+  const formulaires = declarations.map((d) => ({ declaration: d, ...valeursDesCases(d) }))
+
+  // Postes que le rattachement ne sait pas placer, tous exercices affichés confondus. Même principe
+  // que les pièces exclues : un poste qui n'atterrit dans aucune case est un montant absent de la
+  // déclaration, et il doit se voir.
+  const sansCase = new Map<string, PosteNonRattache>()
+  for (const f of formulaires) {
+    for (const p of f.postesSansCase) sansCase.set(p.ligne.poste, p)
   }
-  const lignes = [...totauxParPoste.entries()].sort((a, b) => b[1] - a[1])
+  const postesSansCase = [...sansCase.values()]
 
   // Ce que le calcul a écarté, tous exercices affichés confondus. Une pièce validée qui n'entre dans
   // aucun total était jusqu'ici retirée par un `continue` muet : sur une base fiscale, c'est un
@@ -182,32 +191,91 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
-      {error && <p className="error-text">{error}</p>}
-
-      <div className="card table-scroll" style={{ padding: 0 }}>
-        {loading ? (
-          <p className="muted" style={{ padding: 20 }}>Chargement…</p>
-        ) : lignes.length === 0 ? (
-          <div className="empty-state">Rien à regrouper pour l'instant.</div>
-        ) : (
+      {postesSansCase.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Postes sans case du formulaire ({postesSansCase.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces postes ont bien un total, mais le rattachement ne sait pas dans quelle case du
+            formulaire les porter — leur montant n'apparaîtra nulle part sur la 2035. Renomme le poste
+            de la catégorie avec un libellé du formulaire (onglet Clôture, « Postes manquants »).
+          </p>
           <table>
-            <thead>
-              <tr>
-                <th>Poste 2035</th>
-                <th>Total</th>
-              </tr>
-            </thead>
+            <thead><tr><th>Poste</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
             <tbody>
-              {lignes.map(([poste, total]) => (
-                <tr key={poste}>
-                  <td>{poste}</td>
-                  <td>{formatMoney(total)}</td>
+              {postesSansCase.map((p) => (
+                <tr key={p.ligne.poste}>
+                  <td>{p.ligne.poste}</td>
+                  <td className="muted">
+                    {p.raison === 'case du mauvais sens'
+                      ? `case ${p.codeRefuse} incompatible avec une ${p.ligne.nature}`
+                      : p.raison}
+                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatMoney(p.ligne.montant)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        )}
-      </div>
+        </div>
+      )}
+
+      {error && <p className="error-text">{error}</p>}
+
+      {loading ? (
+        <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
+      ) : formulaires.length === 0 ? (
+        <div className="card"><div className="empty-state">Rien à regrouper pour l'instant.</div></div>
+      ) : (
+        formulaires.map((f) => (
+          <FormulaireAnnuel key={f.declaration.annee} annee={f.declaration.annee} valeurs={f.valeurs} />
+        ))
+      )}
     </>
+  )
+}
+
+// Un exercice rendu dans la forme du formulaire : une ligne par case, dans l'ordre imprimé, avec son
+// code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
+// plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
+function FormulaireAnnuel({ annee, valeurs }: { annee: number; valeurs: Map<string, number> }) {
+  // Une case à zéro que personne n'a alimentée n'apprend rien et noie le reste : on ne montre que
+  // les cases qui portent un montant, plus les totaux, toujours affichés parce que c'est sur eux que
+  // se fait la relecture.
+  const visibles = CASES_2035.filter((c) => (valeurs.get(c.code) ?? 0) !== 0 || c.calculee)
+
+  return (
+    <div className="card table-scroll" style={{ padding: 0, marginBottom: 20 }}>
+      <table>
+        <thead>
+          <tr>
+            <th colSpan={4}>Exercice {annee}</th>
+          </tr>
+          <tr>
+            <th style={{ width: 60 }}>Case</th>
+            <th style={{ width: 80 }}>Ligne</th>
+            <th>Libellé du formulaire</th>
+            <th style={{ textAlign: 'right' }}>Montant</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visibles.map((c) => (
+            <tr key={c.code} style={c.calculee ? { fontWeight: 600 } : undefined}>
+              <td style={{ fontFamily: 'monospace' }}>{c.code}</td>
+              <td className="muted">{c.ligne}</td>
+              <td>
+                {c.libelle}
+                <span className="muted" style={{ marginLeft: 8, fontSize: '0.85em' }}>
+                  {c.formulaire}{c.calculee ? ` — ${c.calculee}` : ''}
+                </span>
+              </td>
+              <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                {formatMoney(valeurs.get(c.code) ?? 0)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   )
 }
