@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfLignes } from '../../lib/pdfText'
@@ -10,6 +10,7 @@ import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBan
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { analyserAppariements, libelleExploitable } from '../../lib/appariementBanque'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -63,11 +64,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       .eq('dossier_id', dossierId)
       .order('date', { ascending: false })
 
+    // Les pièces encore à valider sont chargées elles aussi : c'est justement sur elles que porte
+    // l'appariement certain (voir lib/appariementBanque.ts), qui sert à les valider plutôt qu'à
+    // attendre qu'elles le soient. Les propositions ligne à ligne existantes restent, elles,
+    // limitées aux pièces déjà validées — voir `piecesValidees`.
     const { data: piecesData } = await supabase
       .from('pieces')
       .select('*')
       .eq('dossier_id', dossierId)
-      .eq('statut', 'validee')
+      .in('statut', ['a_valider', 'validee'])
 
     const { data: cotisationsData } = await supabase
       .from('cotisations_declarees')
@@ -91,8 +96,12 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     load()
   }, [dossierId])
 
+  // Les propositions ligne à ligne et le bouton « tout rapprocher » historiques ne portent que sur
+  // des pièces déjà relues par le cabinet : rapprocher sur de l'OCR non validé reviendrait à écrire
+  // une écriture comptable sur un montant que personne n'a confirmé.
+  const piecesValidees = useMemo(() => pieces.filter((p) => p.statut === 'validee'), [pieces])
   const piecesRapprochees = useMemo(() => new Set(lignes.filter((l) => l.piece_id).map((l) => l.piece_id)), [lignes])
-  const piecesSansMouvement = pieces.filter((p) => !piecesRapprochees.has(p.id))
+  const piecesSansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id))
   const cotisationsRapprochees = useMemo(() => new Set(lignes.filter((l) => l.cotisation_id).map((l) => l.cotisation_id)), [lignes])
   const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
 
@@ -119,7 +128,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   function suggestion(ligne: LigneBancaire): Piece | null {
     if (ligne.statut !== 'non_rapprochee') return null
     const ligneDate = new Date(ligne.date).getTime()
-    const candidats = pieces.filter((p) => {
+    const candidats = piecesValidees.filter((p) => {
       if (piecesRapprochees.has(p.id)) return false
       if (p.montant_ttc == null) return false
       if (Math.abs(Math.abs(p.montant_ttc) - Math.abs(ligne.montant)) > 0.01) return false
@@ -282,7 +291,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
     for (const ligne of nonRapprochees) {
       const ligneDate = new Date(ligne.date).getTime()
-      const piece = pieces.find((p) => {
+      const piece = piecesValidees.find((p) => {
         if (piecesConsommees.has(p.id)) return false
         if (p.montant_ttc == null || !p.date_piece) return false
         if (Math.abs(Math.abs(p.montant_ttc) - Math.abs(ligne.montant)) > 0.01) return false
@@ -310,6 +319,58 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   }
 
   const suggestionsAutomatiques = rapprochementsAutomatiques()
+
+  // Appariements où le montant, la date ET le fournisseur concordent — le seul cas où valider une
+  // pièce n'apprend rien à personne. Le tri vit dans lib/appariementBanque.ts, testé ; ici il ne
+  // reste que l'écriture en base. Voir ce module pour pourquoi trois signaux et pas deux.
+  const { certains: appariementsCertains, aArbitrer: appariementsDouteux } = useMemo(
+    () => analyserAppariements(pieces, lignes),
+    [pieces, lignes],
+  )
+  const certainsAValider = appariementsCertains.filter((a) => a.piece.statut !== 'validee')
+
+  // Verrou posé avant tout `await` : un double clic sur un lot enverrait deux fois les mêmes
+  // écritures de contrepartie (voir ImportDossierModal, même correctif).
+  const lotEnCours = useRef(false)
+
+  // Valide la pièce ET rapproche le mouvement, en une passe. Les deux vont ensemble : c'est la
+  // concordance avec la banque qui justifie la validation, la séparer n'aurait pas de sens.
+  async function validerEtRapprocherLot() {
+    if (lotEnCours.current || certainsAValider.length === 0) return
+    lotEnCours.current = true
+    setRapprochementAuto(true)
+    const echecs: string[] = []
+    try {
+      for (const a of certainsAValider) {
+        const { error: errPiece } = await supabase.from('pieces').update({ statut: 'validee' }).eq('id', a.piece.id)
+        if (errPiece) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errPiece.message}`); continue }
+
+        // Le rapprochement n'est tenté qu'une fois la validation réellement écrite : l'inverse
+        // laisserait un mouvement rapproché sur une pièce restée « à valider ».
+        const { error: errLigne } = await supabase
+          .from('lignes_bancaires')
+          .update({ statut: 'rapprochee', piece_id: a.piece.id, cotisation_id: null })
+          .eq('id', a.ligne.id)
+        if (errLigne) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errLigne.message}`); continue }
+
+        try {
+          await synchroniserContrepartieBanque(dossierId, a.piece, a.ligne)
+        } catch (err) {
+          // La pièce est validée et le mouvement rapproché ; seule la contrepartie comptable manque.
+          // On le dit plutôt que de laisser croire que tout est passé.
+          echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : contrepartie banque non créée (${err instanceof Error ? err.message : err})`)
+        }
+      }
+      if (echecs.length > 0) {
+        window.alert(`${certainsAValider.length - echecs.length} pièce(s) validée(s) et rapprochée(s).\n\nÉchecs :\n${echecs.join('\n')}`)
+      }
+      load()
+    } finally {
+      lotEnCours.current = false
+      setRapprochementAuto(false)
+    }
+  }
+
 
   // Applique en une fois tous les rapprochements sûrs (montant + date proches, un seul candidat
   // disponible) — rien n'est écrit sans ce clic explicite, et le tableau reste modifiable/annulable
@@ -405,6 +466,89 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           </p>
         )}
       </div>
+
+      {certainsAValider.length > 0 && (
+        <div className="card" style={{ marginBottom: 14, borderLeft: '3px solid var(--color-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Sans doute possible ({certainsAValider.length})</h3>
+              <p className="muted" style={{ margin: '4px 0 0' }}>
+                Pour ces pièces, la banque confirme les trois : le montant au centime, la date à
+                {' '}{JOURS_TOLERANCE_RAPPROCHEMENT} jours près avec un seul rapprochement possible, et le fournisseur dans
+                le libellé du mouvement. Les relire une par une n'apprendrait rien.
+              </p>
+            </div>
+            <button type="button" className="btn btn-primary" disabled={rapprochementAuto} onClick={validerEtRapprocherLot}>
+              {rapprochementAuto ? 'Traitement…' : `Valider et rapprocher les ${certainsAValider.length}`}
+            </button>
+          </div>
+          <div className="table-scroll" style={{ marginTop: 12 }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Pièce</th>
+                  <th style={{ textAlign: 'right' }}>Montant</th>
+                  <th>Date pièce</th>
+                  <th>Mouvement</th>
+                  <th>Libellé bancaire</th>
+                </tr>
+              </thead>
+              <tbody>
+                {certainsAValider.map((a) => (
+                  <tr key={a.piece.id}>
+                    <td>{a.piece.tiers ?? a.piece.nom_fichier}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.piece.montant_ttc ?? 0)}</td>
+                    <td>{formatDate(a.piece.date_piece!)}</td>
+                    <td>
+                      {formatDate(a.ligne.date)}
+                      <span className="muted" style={{ marginLeft: 6 }}>({a.ecartJours} j)</span>
+                    </td>
+                    <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {libelleExploitable(a.ligne)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {appariementsDouteux.length > 0 && (
+        <div className="card" style={{ marginBottom: 14, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>À trancher par l'opérateur ({appariementsDouteux.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Le montant et la date collent, mais quelque chose empêche de conclure. Ce sont les cas où
+            un humain décide — et les seuls qui méritent son temps.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead>
+                <tr>
+                  <th>Pièce</th>
+                  <th style={{ textAlign: 'right' }}>Montant</th>
+                  <th>Date pièce</th>
+                  <th>Pourquoi</th>
+                  <th>Libellé bancaire</th>
+                </tr>
+              </thead>
+              <tbody>
+                {appariementsDouteux.map((a) => (
+                  <tr key={`${a.piece.id}-${a.ligne.id}`}>
+                    <td>{a.piece.tiers ?? a.piece.nom_fichier}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.piece.montant_ttc ?? 0)}</td>
+                    <td>{formatDate(a.piece.date_piece!)}</td>
+                    <td style={{ color: 'var(--color-warning)' }}>{a.motif}</td>
+                    <td className="muted" style={{ maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {libelleExploitable(a.ligne)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {(['toutes', 'non_rapprochee', 'rapprochee', 'ignoree'] as const).map((s) => (
