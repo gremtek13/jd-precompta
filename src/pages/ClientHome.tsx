@@ -91,7 +91,8 @@ export default function ClientHome() {
     const file = fileList[0]
     setCapturing(true)
     setCaptureError(null)
-    const resultat = await deposerFichier(dossierId, file)
+    // Un seul fichier par prise de photo : rien à dédoublonner au sein du lot, la base suffit.
+    const resultat = await deposerFichier(dossierId, file, new Set())
     setCapturing(false)
     if (resultat.statut === 'erreur') {
       setCaptureError(`${file.name} : ${resultat.message}.`)

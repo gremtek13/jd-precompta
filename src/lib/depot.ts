@@ -13,21 +13,55 @@ export type ResultatDepot = { statut: 'ok' } | { statut: 'doublon' } | { statut:
 // Comme dans ClientUpload, l'extraction se fait AVANT l'écriture en base, jamais en correction après
 // coup : le client n'a pas le droit de modifier une pièce une fois déposée, donc le classement et les
 // montants lus doivent être connus dès l'unique insertion.
-export async function deposerFichier(dossierId: string, file: File): Promise<ResultatDepot> {
+//
+// Pipeline volontairement jumeau de `importerFichierDossier` (lib/importFichiers.ts), qui fait la
+// même chose côté cabinet : hash, anti-doublon, envoi, raccourci CSV, extraction, aiguillage
+// Pièces/Documents. Les deux existent parce que les contrats diffèrent (le cabinet importe un lot et
+// laisse remonter ses erreurs, le client dépose un fichier et reçoit un statut), mais toute
+// correction apportée à l'un doit être portée à l'autre — c'est ainsi que le nettoyage de l'orphelin
+// ci-dessous a manqué ici pendant un temps alors qu'il existait déjà là-bas.
+//
+// `hashsDuLot` est l'équivalent du `hashsConnus` du cabinet, mais il n'a pas le même rôle et ne peut
+// pas avoir la même mécanique : le cabinet traite ses fichiers en série et n'y note un fichier
+// qu'une fois écrit, alors que le client les dépose en parallèle (Promise.all dans ClientUpload).
+// Deux fichiers de contenu identique du même lot — le cas courant étant la même facture téléchargée
+// deux fois depuis un portail fournisseur, « facture.pdf » et « facture (1).pdf » — passent donc
+// tous deux la vérification en base avant que l'un ait écrit sa ligne, et repartent en double sans
+// que rien ne les arrête : il n'y a pas d'index unique sur (dossier_id, storage_hash). Le paramètre
+// est requis, et non optionnel avec un Set vide par défaut, pour qu'aucun appelant ne retombe dans
+// ce trou sans l'avoir décidé.
+export async function deposerFichier(dossierId: string, file: File, hashsDuLot: Set<string>): Promise<ResultatDepot> {
+  const hash = await hashFichier(file)
+  if (hashsDuLot.has(hash)) return { statut: 'doublon' }
+  // Réservation immédiate : aucun `await` entre le test et l'ajout, donc rien ne peut s'intercaler
+  // (JavaScript est mono-thread). Ce Set note ce qui est *engagé*, pas ce qui est écrit — la
+  // réservation est relâchée plus bas si le dépôt échoue, sans quoi un fichier dont l'envoi a raté
+  // serait ensuite annoncé « déjà déposé » et ne repartirait jamais.
+  hashsDuLot.add(hash)
+
   try {
-    const hash = await hashFichier(file)
     if (await fichierDejaPresent(dossierId, hash)) return { statut: 'doublon' }
 
     const path = `${dossierId}/${Date.now()}-${slugify(file.name)}`
     const { error: uploadError } = await supabase.storage.from('pieces').upload(path, file)
     if (uploadError) throw uploadError
 
+    // Le fichier est dans le stockage mais rien ne pointe encore dessus : si l'insertion échoue, on
+    // le retire avant de remonter l'erreur. Sans cela il y restait orphelin — un client ne voit rien,
+    // et seule la suppression du dossier entier l'aurait nettoyé.
+    const enregistrer = async (table: 'pieces' | 'documents_divers', ligne: Record<string, unknown>) => {
+      const { error } = await supabase.from(table).insert(ligne)
+      if (error) {
+        await supabase.storage.from('pieces').remove([path])
+        throw error
+      }
+    }
+
     const estCsv = file.name.toLowerCase().endsWith('.csv')
     if (estCsv) {
-      const { error: insertError } = await supabase.from('documents_divers').insert({
+      await enregistrer('documents_divers', {
         dossier_id: dossierId, storage_path: path, storage_hash: hash, nom_fichier: file.name, categorie: 'releve_bancaire',
       })
-      if (insertError) throw insertError
       return { statut: 'ok' }
     }
 
@@ -39,15 +73,14 @@ export async function deposerFichier(dossierId: string, file: File): Promise<Res
     }
 
     if (extraction && extraction.classification !== 'facture') {
-      const { error: insertError } = await supabase.from('documents_divers').insert({
+      await enregistrer('documents_divers', {
         dossier_id: dossierId, storage_path: path, storage_hash: hash, nom_fichier: file.name,
         categorie: extraction.classification,
       })
-      if (insertError) throw insertError
     } else {
       const { data: userData } = await supabase.auth.getUser()
-      const { error: insertError } = await supabase.from('pieces').insert({
-        dossier_id: dossierId, uploaded_by: userData.user!.id, storage_path: path, storage_hash: hash,
+      await enregistrer('pieces', {
+        dossier_id: dossierId, uploaded_by: userData.user?.id ?? null, storage_path: path, storage_hash: hash,
         nom_fichier: file.name, type_piece: 'achat', statut: 'a_valider',
         date_piece: extraction?.date_piece ?? null,
         tiers: extraction?.tiers ?? null,
@@ -56,10 +89,10 @@ export async function deposerFichier(dossierId: string, file: File): Promise<Res
         montant_ttc: extraction?.montant_ttc ?? null,
         confiance: extraction?.confiance ?? null,
       })
-      if (insertError) throw insertError
     }
     return { statut: 'ok' }
   } catch (err) {
+    hashsDuLot.delete(hash)
     return { statut: 'erreur', message: err instanceof Error ? err.message : "l'envoi a échoué" }
   }
 }
