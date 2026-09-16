@@ -7,6 +7,7 @@ import { aujourdHuiSql } from '../../lib/format'
 import { supprimerDossierDefinitivement } from '../../lib/suppressionDossier'
 import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
+import VehiculesCard from './VehiculesCard'
 
 // Informations déclaratives saisies une fois par le cabinet (ou récupérées auprès du client) plutôt
 // que déduites d'un document — un type de véhicule ou l'existence de tickets-restaurant ne se lit pas
@@ -259,6 +260,9 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
         </div>
       </form>
     </div>
+
+    {/* Cadre 7 du 2035-B : sans le kilométrage, la case BJ (frais de véhicules) reste vide. */}
+    <VehiculesCard dossierId={dossierId} />
 
     <div className="card" style={{ maxWidth: 640, marginTop: 20 }}>
       <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -279,6 +279,29 @@ export interface DocumentDivers {
 
 export type VehiculeType = 'aucun' | 'personnel_ik' | 'societe'
 
+// Un véhicule du cadre 7 du 2035-B (« Barèmes kilométriques »), pour un exercice donné. Le
+// kilométrage est par année : l'option pour le forfait se prend au 1er janvier et vaut pour l'année
+// entière (notice 2035-NOT-SD, renvoi 12), donc un même véhicule a une ligne par exercice.
+export interface VehiculeDossier {
+  id: string
+  dossier_id: string
+  annee: number
+  modele: string | null
+  type: 'voiture' | 'moto' | 'cyclomoteur'
+  // Zéro pour un cyclomoteur, qui n'a pas de puissance fiscale au sens du barème.
+  puissance_fiscale: number
+  bareme: 'bnc' | 'bic'
+  motorisation: 'thermique' | 'hydrogene' | 'hybride' | 'electrique' | null
+  carburant: 'diesel' | 'super_sans_plomb' | 'gpl' | null
+  km_professionnel: number
+  // Véhicule inscrit au registre des immobilisations : ses amortissements sont à réintégrer, le
+  // barème les couvrant déjà (notice, renvoi 12).
+  inscrit_immobilisations: boolean
+  amortissements_a_reintegrer: number | null
+  created_at: string
+  updated_at: string
+}
+
 // Informations déclaratives du client, saisies une fois et rarement modifiées — alimentent la
 // checklist (véhicule société → justificatif d'achat attendu, tickets/chèques → justificatif à
 // obtenir) et plus tard le calcul des paniers repas (jours_travailles_an). Une ligne par dossier,

@@ -683,6 +683,26 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   fait 20,8 pt là où ses voisines font 19,8. La fonction renonce si le compte de cellules trouvé
   n'est pas celui attendu — un numéro décalé d'une case est pire qu'un numéro absent.
 
+- **Le barème kilométrique est saisi, jamais deviné, et jamais emprunté à une autre année.**
+  `BAREMES` (lib/baremeKilometrique.ts) porte un millésime et sa source ; une année absente fait
+  échouer le calcul plutôt que de retomber sur la précédente — un barème périmé appliqué en silence
+  produit une déduction plausible et fausse. L'administration publie des tables SÉPARÉES pour les
+  véhicules 100 % électriques ; elles valent les thermiques × 1,2 arrondies (vérifié sur les vingt
+  valeurs), mais ce sont les chiffres publiés qui sont repris — c'est contre eux qu'un contrôle se
+  fera. Hybrides et hydrogène relèvent de la table thermique, comme le dit la publication.
+- **Ce barème n'est pas progressif par tranches cumulées.** La tranche sert à choisir une formule,
+  qui s'applique ensuite au kilométrage TOTAL ; le forfait de la tranche intermédiaire n'existe que
+  pour rattraper l'écart au point de bascule. Conséquence pour les tests : le barème est **continu à
+  la borne basse** (5 000 × 0,529 = 5 000 × 0,316 + 1 065), donc un test posé sur cette borne ne
+  distingue pas `<` de `<=` et ne prouve rien. La borne haute, elle, est discontinue (7 385 € contre
+  7 400 € à 20 000 km) : c'est là qu'il faut tester. Même piège pour les deux-roues, dont les bornes
+  sont 3 000 / 6 000 et non 5 000 / 20 000 — un test à 3 000 km ne les distingue pas de celles des
+  voitures, un test à 4 000 km oui.
+- **Les véhicules du cadre 7 sont par EXERCICE, pas par dossier.** L'option pour le forfait se prend
+  au 1er janvier et vaut pour l'année entière (notice, renvoi 12), donc la table `vehicules` porte
+  une ligne par véhicule ET par année. Le total se reporte ligne 23 du 2035-A (case BJ) — le bas du
+  2035-B le dit explicitement.
+
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -691,7 +711,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 466 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 486 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
