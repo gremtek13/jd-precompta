@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import * as pdfjs from 'pdfjs-dist/legacy/build/pdf.mjs'
-import { ancragesDesCases, formaterMontant, planDeRemplissage, texteCompatiblePdf } from './gabarit2035'
+import {
+  ancragesDesCases,
+  chiffresDuSiret,
+  formaterMontant,
+  grilleDeSaisie,
+  planDeRemplissage,
+  texteCompatiblePdf,
+} from './gabarit2035'
 import type { FiletVertical, FragmentTexte, PageFormulaire } from './gabarit2035'
 import { CASES_2035, CODES_TOTALISES_BR } from './cases2035'
 
@@ -67,6 +74,79 @@ describe('texteCompatiblePdf', () => {
   })
 })
 
+describe('chiffresDuSiret', () => {
+  it('accepte quatorze chiffres, espaces de présentation compris', () => {
+    expect(chiffresDuSiret('123 456 789 00012')?.join('')).toBe('12345678900012')
+    expect(chiffresDuSiret('12345678900012')).toHaveLength(14)
+  })
+
+  it('refuse tout ce qui n’a pas exactement quatorze chiffres', () => {
+    // Une grille de quatorze cases ne pardonne pas un décalage : mieux vaut ne rien écrire.
+    expect(chiffresDuSiret('123456789')).toBeNull()
+    expect(chiffresDuSiret('123456789000123')).toBeNull()
+    expect(chiffresDuSiret('1234567890001A')).toBeNull()
+    expect(chiffresDuSiret(null)).toBeNull()
+    expect(chiffresDuSiret('')).toBeNull()
+  })
+})
+
+describe('grilleDeSaisie', () => {
+  // Filets régulièrement espacés à droite d'un libellé : la signature d'une grille de saisie.
+  const grille = (debut: number, pas: number, nb: number, o: Partial<FiletVertical> = {}) =>
+    Array.from({ length: nb + 1 }, (_, i) => filet(debut + i * pas, { y0: 680, y1: 700, ...o }))
+
+  const label: FragmentTexte = { texte: 'N° SIRET', x: 29, y: 690, largeur: 34, hauteur: 8 }
+
+  it('rend le centre de chaque cellule', () => {
+    const centres = grilleDeSaisie({ fragments: [label], filets: grille(70, 20, 14) }, 'N° SIRET', 14)
+    expect(centres).toHaveLength(14)
+    expect(centres![0]).toBeCloseTo(80, 5)
+    expect(centres![13]).toBeCloseTo(340, 5)
+  })
+
+  it('tolère une cellule un poil plus large que ses voisines', () => {
+    // Positions relevées telles quelles sur le formulaire livré dans le dépôt : la cellule
+    // 188,8 → 209,6 fait 20,8 pt là où ses voisines font 19,8. Un critère d'écart ABSOLU cassait
+    // là et ne trouvait que la moitié de la grille — sept cases au lieu de quatorze.
+    const reelles = [69.7, 89.5, 109.4, 129.2, 149.1, 168.9, 188.8, 209.6,
+      229.5, 249.2, 269, 288.9, 308.7, 328.5, 348.4]
+    const filets = reelles.map((x) => filet(x, { y0: 680, y1: 700 }))
+    const centres = grilleDeSaisie({ fragments: [label], filets }, 'N° SIRET', 14)
+    expect(centres).toHaveLength(14)
+    expect(centres![0]).toBeCloseTo(79.6, 1)
+    expect(centres![13]).toBeCloseTo(338.45, 2)
+  })
+
+  it('s’arrête avant les cases voisines de la même ligne', () => {
+    // Sur le formulaire, la ligne du SIRET porte aussi les cases AV et AS, bien plus loin à droite.
+    // La rupture d'espacement doit les exclure, sinon le compte de cellules serait faux.
+    const reelles = [69.7, 89.5, 109.4, 129.2, 149.1, 168.9, 188.8, 209.6,
+      229.5, 249.2, 269, 288.9, 308.7, 328.5, 348.4, 410.5, 431.1, 451.8, 493.2, 513.9, 534.6, 555.3]
+    const filets = reelles.map((x) => filet(x, { y0: 680, y1: 700 }))
+    expect(grilleDeSaisie({ fragments: [label], filets }, 'N° SIRET', 14)).toHaveLength(14)
+  })
+
+  it('renonce quand le compte de cellules n’est pas celui attendu', () => {
+    // Treize ou quinze cases décaleraient tout le numéro d'un cran.
+    expect(grilleDeSaisie({ fragments: [label], filets: grille(70, 20, 13) }, 'N° SIRET', 14)).toBeNull()
+    expect(grilleDeSaisie({ fragments: [label], filets: grille(70, 20, 15) }, 'N° SIRET', 14)).toBeNull()
+  })
+
+  it('ignore les filets d’une autre ligne', () => {
+    const filets = [...grille(70, 20, 14), filet(200, { y0: 300, y1: 320 })]
+    expect(grilleDeSaisie({ fragments: [label], filets }, 'N° SIRET', 14)).toHaveLength(14)
+  })
+
+  it('ignore les filets situés à gauche du libellé', () => {
+    const filets = [filet(10, { y0: 680, y1: 700 }), ...grille(70, 20, 14)]
+    expect(grilleDeSaisie({ fragments: [label], filets }, 'N° SIRET', 14)).toHaveLength(14)
+  })
+
+  it('renonce quand le libellé est absent', () => {
+    expect(grilleDeSaisie({ fragments: [], filets: grille(70, 20, 14) }, 'N° SIRET', 14)).toBeNull()
+  })
+})
+
 describe('ancragesDesCases — la géométrie déduite du formulaire', () => {
   it('prend le DEUXIÈME filet à droite du code, pas le premier', () => {
     // Le premier ferme la cellule où le code est imprimé ; le deuxième ferme la case du montant.
@@ -117,7 +197,7 @@ describe('planDeRemplissage', () => {
     fragments: [fragment({ texte: 'BH', y: 339 }), fragment({ texte: 'BA', y: 500 })],
     filets: [filet(473, { y0: 300, y1: 600 }), filet(555, { y0: 300, y1: 600 })],
   }])
-  const sansEntete = { nom: null, activite: null }
+  const sansEntete = { nom: null, activite: null, siret: null }
 
   it('n’inscrit pas les cases à zéro', () => {
     // Sur un formulaire fiscal, une case vide vaut zéro. Imprimer « 0 » dans les cinquante cases
@@ -146,7 +226,7 @@ describe('planDeRemplissage', () => {
       fragments: [{ texte: 'NOM ET PRENOMS OU DÉNOMINATION', x: 50, y: 723, largeur: 180, hauteur: 8 }],
       filets: [],
     }]
-    const { inscriptions } = planDeRemplissage(new Map(), new Map(), { nom: 'Dupont', activite: null }, pages)
+    const { inscriptions } = planDeRemplissage(new Map(), new Map(), { nom: 'Dupont', activite: null, siret: null }, pages)
     expect(inscriptions).toHaveLength(1)
     expect(inscriptions[0]).toMatchObject({ texte: 'Dupont', alignement: 'gauche', y: 723 })
     expect(inscriptions[0].x).toBeGreaterThan(230)
@@ -157,7 +237,7 @@ describe('planDeRemplissage', () => {
       fragments: [{ texte: 'NOM ET PRENOMS OU DÉNOMINATION', x: 50, y: 723, largeur: 180, hauteur: 8 }],
       filets: [],
     }]
-    const { inscriptions } = planDeRemplissage(new Map(), new Map(), { nom: '   ', activite: null }, pages)
+    const { inscriptions } = planDeRemplissage(new Map(), new Map(), { nom: '   ', activite: null, siret: null }, pages)
     expect(inscriptions).toHaveLength(0)
   })
 })
@@ -215,7 +295,7 @@ describe('sur le formulaire officiel livré dans le dépôt', () => {
 
   it('trouve le libellé d’en-tête sur lequel le nom s’ancre', async () => {
     const pages = await lireModele()
-    const { inscriptions } = planDeRemplissage(new Map(), new Map(), { nom: 'Cabinet Test', activite: null }, pages)
+    const { inscriptions } = planDeRemplissage(new Map(), new Map(), { nom: 'Cabinet Test', activite: null, siret: null }, pages)
     expect(inscriptions.map((i) => i.texte)).toEqual(['Cabinet Test'])
     expect(inscriptions[0].page).toBe(1)
   })

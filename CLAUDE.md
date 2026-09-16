@@ -675,6 +675,14 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   cabinet vide ; `transmedical → honoraires` avait été arbitré sur un dossier pendant que dix-sept
   pièces du même fournisseur attendaient sur un autre.
 
+- **Une grille de saisie se repère à la régularité de son espacement, avec un écart RELATIF.**
+  `grilleDeSaisie` (lib/gabarit2035.ts) trouve la plus longue suite de filets également espacés à
+  droite d'un libellé — c'est ce qui distingue une grille de caractères du reste du tableau, et ce
+  qui l'arrête avant les cases voisines de la même ligne (AV, AS). Un critère d'écart ABSOLU ne
+  trouvait que sept cases sur quatorze : sur le formulaire livré, une cellule de la grille SIRET
+  fait 20,8 pt là où ses voisines font 19,8. La fonction renonce si le compte de cellules trouvé
+  n'est pas celui attendu — un numéro décalé d'une case est pire qu'un numéro absent.
+
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -683,7 +691,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 457 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 466 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
