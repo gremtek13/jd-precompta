@@ -1,7 +1,7 @@
 import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
 import { supabase } from './supabase'
-import { slugify } from './format'
+import { nomUnique, slugify } from './format'
 import type { Categorie, Piece } from './types'
 
 const FOLDER_BY_TYPE: Record<string, string> = {
@@ -11,12 +11,35 @@ const FOLDER_BY_TYPE: Record<string, string> = {
   autre: '04_Autres',
 }
 
-function pieceFileName(p: Piece): string {
-  const ext = (p.nom_fichier.split('.').pop() ?? 'pdf').toLowerCase()
+// Racine et extension séparées : le nom final est décidé par `nommerPieces`, qui doit pouvoir
+// insérer un suffixe avant l'extension. `lastIndexOf` et non `split('.').pop()`, qui rend le nom
+// entier quand il n'y a pas de point — un fichier nommé « scan » serait devenu « ….scan ».
+function pieceFileName(p: Piece): { racine: string; extension: string } {
+  const point = p.nom_fichier.lastIndexOf('.')
+  const ext = point > 0 ? p.nom_fichier.slice(point + 1).toLowerCase() : 'pdf'
   const tiers = slugify(p.tiers ?? 'Inconnu')
   const montant = p.montant_ttc != null ? `${p.montant_ttc.toFixed(2)}€` : 'montant_inconnu'
   const date = p.date_piece ?? 'sans_date'
-  return `${date}_${tiers}_${montant}.${ext}`
+  return { racine: `${date}_${tiers}_${montant}`, extension: `.${ext}` }
+}
+
+// Un nom de fichier par pièce, unique dans tout le pack, décidé une fois pour toutes avant d'écrire
+// quoi que ce soit — l'archive et le récapitulatif doivent désigner le même fichier.
+//
+// Le nom ne tient qu'à la date, au tiers et au montant : deux pièces qui partagent les trois
+// portaient le même, et JSZip écrasait la précédente sans rien dire. Le cas n'a rien de théorique —
+// il est systématique dès que la date n'a pas pu être lue (`sans_date` pour toutes) chez un
+// fournisseur récurrent au tarif fixe : un dossier réel y perdait 14 factures sur 17, pendant que
+// l'Excel les listait toutes et que le total les comptait toutes.
+//
+// L'unicité est établie sur le pack entier, pas seulement sur le sous-dossier de type : c'est la
+// colonne « Fichier » du récapitulatif qui doit rester sans ambiguïté, et elle ne dit pas le type.
+function nommerPieces(pieces: Piece[]): Map<string, string> {
+  const utilises = new Set<string>()
+  return new Map(pieces.map((p) => {
+    const { racine, extension } = pieceFileName(p)
+    return [p.id, nomUnique(racine, extension, utilises)]
+  }))
 }
 
 // Équivalent de XLSX.utils.json_to_sheet (xlsx) avec exceljs : une ligne d'en-têtes d'après les clés
@@ -77,17 +100,18 @@ async function remplirZipDossier(
 
   // --- ZIP : pièces classées par type ---
   const piecesFolder = destination.folder('Pieces')!
+  const nomDeLaPiece = nommerPieces(included)
   const manquantes: string[] = []
   for (const p of included) {
     const { data: blob, error } = await supabase.storage.from('pieces').download(p.storage_path)
     // Une pièce introuvable ne fait pas échouer tout le pack — mais elle n'est plus passée sous
     // silence : elle est recensée, écrite dans l'Excel et remontée à l'appelant.
     if (error || !blob) {
-      manquantes.push(pieceFileName(p))
+      manquantes.push(nomDeLaPiece.get(p.id)!)
       continue
     }
     const folder = piecesFolder.folder(FOLDER_BY_TYPE[p.type_piece] ?? '04_Autres')!
-    folder.file(pieceFileName(p), blob)
+    folder.file(nomDeLaPiece.get(p.id)!, blob)
   }
 
   // --- Excel récapitulatif ---
@@ -99,7 +123,7 @@ async function remplirZipDossier(
     'Montant HT': p.montant_ht ?? '',
     TVA: p.montant_tva ?? '',
     'Montant TTC': p.montant_ttc ?? '',
-    Fichier: pieceFileName(p),
+    Fichier: nomDeLaPiece.get(p.id)!,
   }))
   const totalTtc = included.reduce((sum, p) => sum + (p.montant_ttc ?? 0), 0)
   recapRows.push({

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, comptesParMois, dateLocaleDe, dernierJourDuMois, jourDe, moisDe, premierJourDuMoisCourant } from './format'
+import { ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, comptesParMois, dateLocaleDe, dernierJourDuMois, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -147,5 +147,44 @@ describe('dates du jour', () => {
     const obtenu = aujourdHuiSql()
     const apres = jourLocal(new Date())
     expect([avant, apres]).toContain(obtenu)
+  })
+})
+
+describe('nomUnique', () => {
+  it('laisse le nom intact tant qu’il est libre', () => {
+    const utilises = new Set<string>()
+    expect(nomUnique('2026-03-10_EDF_120.00€', '.pdf', utilises)).toBe('2026-03-10_EDF_120.00€.pdf')
+    expect(nomUnique('2026-03-11_EDF_120.00€', '.pdf', utilises)).toBe('2026-03-11_EDF_120.00€.pdf')
+  })
+
+  it('numérote les suivants en cas de collision, sans toucher au premier', () => {
+    const utilises = new Set<string>()
+    const noms = [1, 2, 3].map(() => nomUnique('sans_date_Transmedical_38.40€', '.pdf', utilises))
+    expect(noms).toEqual([
+      'sans_date_Transmedical_38.40€.pdf',
+      'sans_date_Transmedical_38.40€_2.pdf',
+      'sans_date_Transmedical_38.40€_3.pdf',
+    ])
+  })
+
+  it('garde le suffixe avant l’extension', () => {
+    // Un nom contient déjà des points (le montant), et c'est l'extension qui doit rester en dernier :
+    // un fichier « ….pdf_2 » ne s'ouvrirait plus.
+    const utilises = new Set(['2026-03-10_EDF_120.00€.pdf'])
+    expect(nomUnique('2026-03-10_EDF_120.00€', '.pdf', utilises)).toBe('2026-03-10_EDF_120.00€_2.pdf')
+  })
+
+  it('ne coupe pas un nom sans extension au premier point venu', () => {
+    // Cas d'un nom de dossier : « S.A.R.L_Martin » ne doit pas devenir « S.A.R_2.L_Martin ».
+    const utilises = new Set(['S.A.R.L_Martin'])
+    expect(nomUnique('S.A.R.L_Martin', '', utilises)).toBe('S.A.R.L_Martin_2')
+  })
+
+  it('n’attribue jamais deux fois le même nom, suffixes compris', () => {
+    // Le piège : « x_2 » peut exister par lui-même avant que « x » n'ait besoin d'un suffixe.
+    const utilises = new Set<string>()
+    expect(nomUnique('x_2', '', utilises)).toBe('x_2')
+    expect(nomUnique('x', '', utilises)).toBe('x')
+    expect(nomUnique('x', '', utilises)).toBe('x_3')
   })
 })

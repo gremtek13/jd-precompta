@@ -409,6 +409,14 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   d'échouer.
 - **Les API paginées de Storage sont paginées explicitement.** `list()` plafonne à 100 entrées
   sans le signaler : la suppression d'un dossier laissait tout le reste orphelin au-delà.
+- **Un ZIP écrase sans rien dire.** JSZip ne lève rien sur un chemin déjà pris — le fichier
+  précédent disparaît, simplement. Tout nom écrit dans une archive passe donc par `nomUnique`
+  (`format.ts`), qui n'ajoute un suffixe qu'en cas de collision réelle. Deux cas l'ont montré :
+  un nom de pièce qui ne tient qu'à la date, au tiers et au montant (un fournisseur récurrent au
+  tarif fixe, dates non lues, faisait perdre 14 factures sur 17 à un dossier réel), et deux noms
+  de dossiers que `slugify` réduit au même (« Café Martin » / « Cafe Martin »), qui fusionnaient
+  dans l'export de cabinet. Le nom est décidé une fois pour toutes avant d'écrire, et c'est ce
+  même nom que porte le récapitulatif : l'archive et l'Excel doivent désigner le même fichier.
 - **Un paramètre par défaut est un angle mort des tests.** `capitalRestantDu` et `empruntActif`
   prenaient « aujourd'hui » en `toISOString()` — la date UTC — depuis toujours : tous les tests
   passaient une date explicite, donc ce chemin n'a jamais été exercé. Quand une fonction testée
@@ -432,11 +440,12 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 227 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 240 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
-`relevePdf.ts` pour le PDF) — les fichiers `*.test.ts` sont
+`relevePdf.ts` pour le PDF), la génération des packs et l'export d'un cabinet
+(`packGenerator.ts`, `exportCabinet.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 - `npm test` — la suite, dans le fuseau des utilisateurs.

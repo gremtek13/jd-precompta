@@ -157,6 +157,48 @@ describe('remplirZipDossier', () => {
     })
   })
 
+  it('garde les deux fichiers quand deux pièces porteraient le même nom', async () => {
+    // Le défaut corrigé, et il n'a rien de théorique : le nom ne tient qu'à la date, au tiers et au
+    // montant, si bien qu'un fournisseur récurrent au tarif fixe dont la date n'a pas pu être lue
+    // (`sans_date` pour toutes) produit N fois le même nom. JSZip écrase alors silencieusement la
+    // précédente — un dossier réel perdait 14 factures sur 17, pendant que l'Excel les listait
+    // toutes et que le total les comptait toutes.
+    etat.pieces.data = [
+      piece({ id: '1', storage_path: 'd1/1.pdf', date_piece: null, tiers: 'Transmedical', montant_ttc: 38.4 }),
+      piece({ id: '2', storage_path: 'd1/2.pdf', date_piece: null, tiers: 'Transmedical', montant_ttc: 38.4 }),
+      piece({ id: '3', storage_path: 'd1/3.pdf', date_piece: null, tiers: 'Transmedical', montant_ttc: 38.4 }),
+    ]
+    const zip = new JSZip()
+    const resultat = await remplirZipDossier(zip, 'd1', '2026-01-01', '2026-12-31')
+
+    const fichiers = cheminsDuZip(zip).filter((c) => c.includes('Pieces/'))
+    expect(fichiers).toHaveLength(3)
+    // Et chacun a bien son propre contenu : trois entrées distinctes, pas trois fois la dernière.
+    const contenus = await Promise.all(fichiers.map((f) => zip.file(f)!.async('string')))
+    expect(new Set(contenus).size).toBe(3)
+    expect(resultat.nbPieces).toBe(3)
+  })
+
+  it('fait désigner à l’Excel le fichier réellement écrit dans le ZIP', async () => {
+    // Sans cela le récapitulatif nommerait trois fois le même fichier : impossible pour le comptable
+    // de rapprocher une ligne de son justificatif, alors même que les trois sont dans l'archive.
+    etat.pieces.data = [
+      piece({ id: '1', storage_path: 'd1/1.pdf', date_piece: null, tiers: 'Transmedical', montant_ttc: 38.4 }),
+      piece({ id: '2', storage_path: 'd1/2.pdf', date_piece: null, tiers: 'Transmedical', montant_ttc: 38.4 }),
+    ]
+    const zip = new JSZip()
+    const resultat = await remplirZipDossier(zip, 'd1', '2026-01-01', '2026-12-31')
+
+    const recap = (await feuilles(resultat.excelBlob))['Récap']
+    const colonneFichier = recap[0].indexOf('Fichier')
+    // La dernière ligne est le TOTAL, sans fichier.
+    const nommes = recap.slice(1, -1).map((l) => l[colonneFichier] as string)
+    expect(new Set(nommes).size).toBe(2)
+
+    const dansLeZip = cheminsDuZip(zip).filter((c) => c.includes('Pieces/')).map((c) => c.split('/').pop())
+    expect(nommes.slice().sort()).toEqual(dansLeZip.slice().sort())
+  })
+
   it('totalise par catégorie dans le résumé', async () => {
     etat.pieces.data = [
       piece({ id: 'a', storage_path: 'd1/a.pdf', montant_ttc: 120 }),

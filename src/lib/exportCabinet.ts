@@ -1,6 +1,6 @@
 import JSZip from 'jszip'
 import { supabase } from './supabase'
-import { aujourdHuiSql, slugify } from './format'
+import { aujourdHuiSql, nomUnique, slugify } from './format'
 import { remplirZipDossier } from './packGenerator'
 
 function telechargerBlob(nomFichier: string, blob: Blob) {
@@ -54,9 +54,15 @@ export async function genererExportCabinet(
   // fichiers depuis Storage — un cabinet avec beaucoup de dossiers exportés tous en parallèle
   // risquerait de saturer la connexion, sans intérêt pour un export ponctuel et rare par nature.
   let fait = 0
+  // `slugify` retire les accents et réduit toute ponctuation à « _ » : « Café Martin » et
+  // « Cafe Martin », ou « Dupont & Fils » et « Dupont Fils », donnent le même nom de dossier. Deux
+  // appels à `zip.folder()` sur ce nom ne lèvent rien — ils pointent le même chemin, si bien que les
+  // deux dossiers se mélangeaient et que le second `Recap.xlsx` écrasait le premier. Sur un export
+  // fait justement avant de vider un cabinet, c'était la dernière copie des données qui y passait.
+  const nomsUtilises = new Set<string>()
   for (const dossier of dossiers) {
     onProgression?.(fait, dossiers.length, dossier.nom)
-    const sousDossier = zip.folder(slugify(dossier.nom) || dossier.id)!
+    const sousDossier = zip.folder(nomUnique(slugify(dossier.nom) || dossier.id, '', nomsUtilises))!
     const resultat = await remplirZipDossier(sousDossier, dossier.id, periodeDebut, periodeFin)
     nbPiecesTotal += resultat.nbPieces
     manquantes.push(...resultat.manquantes.map((f) => `${dossier.nom} / ${f}`))
