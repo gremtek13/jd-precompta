@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
-import { totalIndemnitesKilometriques } from '../../lib/baremeKilometrique'
+import { totalIndemnitesKilometriques, vehiculeDuDossier } from '../../lib/baremeKilometrique'
 import type { TypeVehicule } from '../../lib/baremeKilometrique'
 import type { VehiculeDossier } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
@@ -83,15 +83,7 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
     await charger()
   }
 
-  const { total, nonCalcules } = totalIndemnitesKilometriques(
-    vehicules.map((v) => ({
-      type: v.type,
-      puissanceFiscale: v.puissance_fiscale,
-      kmProfessionnel: v.km_professionnel,
-      electrique: v.motorisation === 'electrique',
-    })),
-    exercice,
-  )
+  const { total, nonCalcules } = totalIndemnitesKilometriques(vehicules.map(vehiculeDuDossier), exercice)
   const baremeManquant = nonCalcules.some((n) => n.motif === 'barème non renseigné pour cet exercice')
 
   return (
@@ -128,15 +120,7 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
             </thead>
             <tbody>
               {vehicules.map((v) => {
-                const indemnite = totalIndemnitesKilometriques(
-                  [{
-                    type: v.type,
-                    puissanceFiscale: v.puissance_fiscale,
-                    kmProfessionnel: v.km_professionnel,
-                    electrique: v.motorisation === 'electrique',
-                  }],
-                  exercice,
-                )
+                const indemnite = totalIndemnitesKilometriques([vehiculeDuDossier(v)], exercice)
                 return (
                   <tr key={v.id}>
                     <td>

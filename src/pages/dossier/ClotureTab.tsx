@@ -4,10 +4,10 @@ import { anneeDe, formatMoney } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
 import { calculerDeclaration2035 } from '../../lib/declaration2035'
-import { CASES_2035, arrondirPourFormulaire, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
-import type { IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
+import { CASES_2035, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
+import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
 import { remplir2035 } from '../../lib/remplir2035'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
 
@@ -20,6 +20,8 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const [pieces, setPieces] = useState<Piece[]>([])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  // Cadre 7 du 2035-B : le total des indemnités kilométriques alimente la case BJ, ligne 23.
+  const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [postesEdit, setPostesEdit] = useState<Record<string, string>>({})
@@ -36,14 +38,17 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesData }, { data: immobilisationsData }, { data: cotisationsData }, { data: dossierData }] = await Promise.all([
+    const [{ data: categoriesData }, { data: piecesData }, { data: immobilisationsData }, { data: cotisationsData }, { data: vehiculesData }, { data: dossierData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      // Tous exercices : c'est le moteur qui filtre sur l'année, comme pour les cotisations.
+      supabase.from('vehicules').select('*').eq('dossier_id', dossierId),
       supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
     ])
     setDossier(dossierData ?? null)
+    setVehicules(vehiculesData ?? [])
     setCategories(categoriesData ?? [])
     setPieces(piecesData ?? [])
     setImmobilisations(immobilisationsData ?? [])
@@ -83,6 +88,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     ...pieces.filter((p) => p.date_piece).map((p) => anneeDe(p.date_piece!)),
     ...cotisations.map((c) => anneeDe(c.echeance)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
+    ...vehicules.map((v) => v.annee),
   ])].sort((a, b) => b - a)
 
   // Une pièce déjà enregistrée comme immobilisation est représentée par sa dotation annuelle (poste
@@ -94,7 +100,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, pieces, categories, immobilisations, cotisations),
+    calculerDeclaration2035(a, pieces, categories, immobilisations, cotisations, vehicules),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -117,6 +123,18 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // déclencher tant que l'écran de saisie manuelle n'existe pas — il sera en place le jour où elle
   // arrivera, plutôt qu'à écrire après coup en ayant oublié la règle.
   const incoherences: IncoherenceCase[] = formulaires.flatMap((f) => incoherencesDesCases(f.valeurs))
+
+  // Forfait kilométrique ET frais de véhicule au réel dans la même déclaration : la dépense est
+  // comptée deux fois en case BJ, et la case ne montre qu'un total qui ne dit pas de quoi il est fait.
+  const doublonsVehicules: { annee: number; doublon: DoublonFraisVehicule }[] = declarations
+    .map((d) => ({ annee: d.annee, doublon: doublonFraisVehicules(d) }))
+    .filter((x): x is { annee: number; doublon: DoublonFraisVehicule } => x.doublon !== null)
+
+  // Véhicules dont l'indemnité n'a pas pu être calculée : leur déduction manque sur le formulaire,
+  // et rien sur le PDF ne le dirait.
+  const vehiculesNonCalcules = declarations.flatMap((d) =>
+    (d.indemnitesKilometriques?.nonCalcules ?? []).map((n) => ({ annee: d.annee, ...n })),
+  )
 
   // Verrou posé avant tout `await` — c'est ce qui le rend effectif contre un double clic, là où un
   // `disabled` piloté par un état React laisse passer le second clic (voir ImportDossierModal).
@@ -260,6 +278,76 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {formatMoney(p.ligne.montant)}
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {doublonsVehicules.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-danger)' }}>
+          <h3 style={{ marginTop: 0 }}>Frais de véhicule comptés deux fois ({doublonsVehicules.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Le barème kilométrique et des frais de véhicule au réel arrivent tous les deux dans la
+            case BJ. La notice (renvoi 12) est explicite : l'option pour le forfait vaut pour l'année
+            entière et pour tous les véhicules, et les dépenses qu'il couvre ne doivent alors figurer
+            à aucun poste de charges. Il faut retirer l'un des deux — le choix vous revient, il engage
+            l'exercice entier.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Exercice</th>
+                <th>Poste au réel</th>
+                <th style={{ textAlign: 'right' }}>Montant au réel</th>
+                <th style={{ textAlign: 'right' }}>Barème kilométrique</th>
+              </tr>
+            </thead>
+            <tbody>
+              {doublonsVehicules.map(({ annee, doublon }) => (
+                <tr key={annee}>
+                  <td>{annee}</td>
+                  <td>{doublon.postes.map((p) => p.poste).join(', ')}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                    {formatMoney(doublon.totalPostes)}
+                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatMoney(doublon.montantIndemnites)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {vehiculesNonCalcules.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Véhicules absents de la case BJ ({vehiculesNonCalcules.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces véhicules sont déclarés et leurs kilomètres saisis, mais l'indemnité n'a pas pu être
+            calculée : leur déduction manque ligne 23 du formulaire, et rien sur le PDF ne le dirait.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Exercice</th><th>Véhicule</th><th style={{ textAlign: 'right' }}>Km pro</th><th>Motif</th>
+              </tr>
+            </thead>
+            <tbody>
+              {vehiculesNonCalcules.map((n, i) => (
+                <tr key={`${n.annee}-${i}`}>
+                  <td>{n.annee}</td>
+                  <td>
+                    {n.vehicule.type}
+                    {n.vehicule.type !== 'cyclomoteur' && ` ${n.vehicule.puissanceFiscale} CV`}
+                    {n.vehicule.electrique && ' électrique'}
+                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {n.vehicule.kmProfessionnel.toLocaleString('fr-FR')}
+                  </td>
+                  <td className="muted">{n.motif}</td>
                 </tr>
               ))}
             </tbody>

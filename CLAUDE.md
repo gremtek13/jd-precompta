@@ -702,6 +702,24 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   au 1er janvier et vaut pour l'année entière (notice, renvoi 12), donc la table `vehicules` porte
   une ligne par véhicule ET par année. Le total se reporte ligne 23 du 2035-A (case BJ) — le bas du
   2035-B le dit explicitement.
+- **Le forfait kilométrique et les frais de véhicule au réel ne cohabitent pas.** Les deux tombent
+  dans la case BJ, donc la même dépense y serait comptée deux fois — et BJ n'affiche qu'un total qui
+  ne dit pas de quoi il est fait. La note (12) de la notice est explicite : les dépenses couvertes
+  par le barème « ne doivent alors figurer à aucun poste de charges ». `doublonFraisVehicules`
+  (lib/cases2035.ts) le signale sans jamais corriger : choisir entre le forfait et le réel est un
+  arbitrage qui engage l'exercice entier et tous les véhicules.
+  Le contrôle vise une **liste explicite de postes** (frais de véhicules, carburant), pas « toutes
+  les cases BJ » : la ligne 24, « Autres frais de déplacements » — train, hôtel, taxi — coexiste
+  légitimement avec le forfait. Ni « Entretien et réparations » ni « Primes d'assurance », qui vont
+  en BH et désignent aussi bien le cabinet que la voiture. Un avertissement qui se trompe souvent
+  finit par ne plus être lu, et le seul poste existant en production (« Frais de déplacement ») est
+  précisément un de ceux qu'il ne faut pas signaler.
+- **`vehiculeDuDossier` est le seul passage fiche → barème.** Le champ `electrique` vaut 20 % de la
+  déduction et se déduit de `motorisation === 'electrique'` ; recopier cette conversion dans chaque
+  appelant la ferait diverger sur exactement ce point.
+- **Le moteur de la 2035 exige les véhicules, sans valeur par défaut.** `calculerDeclaration2035`
+  prend `vehicules` en paramètre obligatoire : un appelant qui les oublie doit le découvrir à la
+  compilation, pas en lisant une case BJ vide sur un formulaire déjà déposé.
 
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
@@ -711,7 +729,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 486 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 500 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
