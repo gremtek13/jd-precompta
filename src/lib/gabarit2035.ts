@@ -134,19 +134,64 @@ const CP1252_SUPPLEMENTAIRES = new Set([
   '‘', '’', '“', '”', '•', '–', '—', '˜', '™', 'š', '›', 'œ', 'ž', 'Ÿ',
 ])
 
+// Une grille de saisie du formulaire : la suite de cases d'un caractère, tracées au filet, où se
+// porte un numéro chiffre par chiffre. Rendue par ses centres, prêts à recevoir un caractère centré.
+//
+// Repérée par la régularité de l'espacement : une grille de saisie, contrairement au reste du
+// tableau, avance d'un pas constant. L'écart toléré est RELATIF et non absolu — sur le formulaire
+// réel, une cellule de la grille SIRET est large d'un point de plus que ses voisines, ce qui suffit
+// à casser un critère absolu et à ne trouver que la moitié de la grille.
+//
+// Rend null si le compte de cellules trouvé n'est pas celui attendu : mieux vaut laisser la grille
+// vide que d'y écrire des chiffres décalés d'une case.
+export function grilleDeSaisie(
+  page: PageFormulaire,
+  libelle: string,
+  nbCellules: number,
+  ecartRelatifTolere = 0.18,
+): number[] | null {
+  const label = page.fragments.find((f) => f.texte.trim() === libelle)
+  if (!label) return null
+
+  const centre = label.y + label.hauteur / 2
+  const filets = [...new Set(
+    page.filets
+      .filter((f) => f.y0 < centre && f.y1 > centre && f.x > label.x + label.largeur)
+      .map((f) => Math.round(f.x * 10) / 10),
+  )].sort((a, b) => a - b)
+
+  // Plus longue suite de filets régulièrement espacés.
+  let grille: number[] = []
+  for (let i = 0; i < filets.length - 1; i++) {
+    const pas = filets[i + 1] - filets[i]
+    const suite = [filets[i], filets[i + 1]]
+    for (let j = i + 1; j < filets.length - 1; j++) {
+      if (Math.abs(filets[j + 1] - filets[j] - pas) / pas > ecartRelatifTolere) break
+      suite.push(filets[j + 1])
+    }
+    if (suite.length > grille.length) grille = suite
+  }
+
+  if (grille.length !== nbCellules + 1) return null
+  return grille.slice(0, -1).map((x, i) => (x + grille[i + 1]) / 2)
+}
+
 export interface Inscription {
   page: number
   texte: string
   // Coordonnée d'ancrage. `alignement` dit si c'est le bord gauche ou le bord droit du texte.
   x: number
   y: number
-  alignement: 'gauche' | 'droite'
+  alignement: 'gauche' | 'droite' | 'centre'
   taille: number
 }
 
 export interface EnteteDeclaration {
   nom: string | null
   activite: string | null
+  // Quatorze chiffres, un par case. Tout autre contenu est ignoré plutôt que tassé de travers dans
+  // une grille qui n'a pas la bonne longueur.
+  siret: string | null
 }
 
 export const TAILLE_MONTANT = 9
@@ -158,6 +203,16 @@ const CHAMPS_ENTETE: { cle: keyof EnteteDeclaration; libelle: string }[] = [
   { cle: 'nom', libelle: 'NOM ET PRENOMS OU DÉNOMINATION' },
   { cle: 'activite', libelle: "Nature de l'activité (1)" },
 ]
+
+// Le SIRET compte exactement quatorze chiffres. Les espaces de présentation sont retirés ; tout
+// autre caractère fait renoncer, parce qu'une grille de quatorze cases ne pardonne pas un décalage.
+export const LONGUEUR_SIRET = 14
+
+export function chiffresDuSiret(siret: string | null): string[] | null {
+  const chiffres = (siret ?? '').replace(/\s/g, '')
+  if (!/^\d{14}$/.test(chiffres)) return null
+  return [...chiffres]
+}
 
 // Ce qu'il faut écrire, et où. Une case à zéro n'est pas inscrite : sur un formulaire fiscal une case
 // vide vaut zéro, et imprimer « 0 » dans les cinquante cases inutilisées noierait les montants réels.
@@ -190,6 +245,28 @@ export function planDeRemplissage(
       alignement: 'droite',
       taille: TAILLE_MONTANT,
     })
+  }
+
+  // Le SIRET s'écrit chiffre par chiffre dans une grille de quatorze cases. Elle n'est remplie que
+  // si le formulaire la livre entière : une grille trouvée à treize ou quinze cases décalerait tout
+  // le numéro d'un cran, ce qui est pire qu'un numéro absent.
+  const chiffres = chiffresDuSiret(entete.siret)
+  if (chiffres) {
+    for (const [index, page] of pages.entries()) {
+      const label = page.fragments.find((f) => f.texte.trim() === 'N° SIRET')
+      const cellules = grilleDeSaisie(page, 'N° SIRET', LONGUEUR_SIRET)
+      if (!label || !cellules) continue
+      cellules.forEach((x, i) => {
+        inscriptions.push({
+          page: index + 1,
+          texte: chiffres[i],
+          x,
+          y: label.y,
+          alignement: 'centre',
+          taille: TAILLE_ENTETE,
+        })
+      })
+    }
   }
 
   for (const champ of CHAMPS_ENTETE) {

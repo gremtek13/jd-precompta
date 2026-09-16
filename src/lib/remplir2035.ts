@@ -94,8 +94,11 @@ export async function remplir2035(
     const feuille = feuilles[i.page - 1]
     if (!feuille) continue
     const largeur = police.widthOfTextAtSize(i.texte, i.taille)
+    const x = i.alignement === 'droite' ? i.x - largeur
+      : i.alignement === 'centre' ? i.x - largeur / 2
+      : i.x
     feuille.drawText(i.texte, {
-      x: i.alignement === 'droite' ? i.x - largeur : i.x,
+      x,
       y: i.y,
       size: i.taille,
       font: police,

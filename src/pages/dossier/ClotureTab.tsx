@@ -23,9 +23,10 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [postesEdit, setPostesEdit] = useState<Record<string, string>>({})
-  // Identité portée en en-tête du formulaire. Le reste (SIRET, code activité...) reste à compléter
-  // à la main : une grille de quatorze cases mal alignée est pire qu'une grille vide.
-  const [dossier, setDossier] = useState<{ nom: string | null; libelle_naf: string | null } | null>(null)
+  // Identité portée en en-tête du formulaire. Le SIRET s'écrit chiffre par chiffre dans sa grille,
+  // et seulement si le formulaire la livre entière (voir grilleDeSaisie) : une grille mal alignée
+  // décalerait tout le numéro d'un cran, ce qui est pire qu'une grille vide.
+  const [dossier, setDossier] = useState<{ nom: string | null; libelle_naf: string | null; siret: string | null } | null>(null)
   const [genere, setGenere] = useState<number | null>(null)
   // Exercice partagé avec Pièces/Banque/Écritures/Statistiques, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici. Sa valeur par défaut (voir DossierDetail,
@@ -40,7 +41,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
-      supabase.from('dossiers').select('nom, libelle_naf').eq('id', dossierId).maybeSingle(),
+      supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
     ])
     setDossier(dossierData ?? null)
     setCategories(categoriesData ?? [])
@@ -131,6 +132,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
       const { pdf, codesSansAncrage } = await remplir2035(arrondirPourFormulaire(valeurs), {
         nom: dossier?.nom ?? null,
         activite: dossier?.libelle_naf ?? null,
+        siret: dossier?.siret ?? null,
       })
       if (codesSansAncrage.length > 0) {
         setError(`Cases non placées sur le formulaire : ${codesSansAncrage.join(', ')} — leur montant manque sur le PDF.`)
