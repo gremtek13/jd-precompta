@@ -1,11 +1,15 @@
-import { useEffect, useState, type DragEvent } from 'react'
+import { Fragment, useEffect, useState, type DragEvent } from 'react'
 import { supabase } from '../lib/supabase'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
 import { anneeDe, anneeLocaleDe, formatDate, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
-import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece } from '../lib/types'
+import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, PieceCommentaire } from '../lib/types'
 import BarreRecherche from '../components/BarreRecherche'
 import { correspondALaRecherche } from '../lib/recherche'
+import FilCommentaires from '../components/FilCommentaires'
+import { chargerCommentaires, cleCible, commentairesParCible } from '../lib/commentaires'
+import type { CibleCommentaire } from '../lib/commentaires'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const ANNEE_COURANTE = new Date().getFullYear()
@@ -30,6 +34,9 @@ interface Depot {
   createdAt: string
   label: string
   traite: boolean
+  // Ce sur quoi une précision se rattache. Null tant que le fichier est en cours d'analyse : aucune
+  // ligne n'existe encore en base, il n'y a rien à commenter.
+  cible: CibleCommentaire | null
 }
 
 export default function ClientUpload() {
@@ -46,19 +53,30 @@ export default function ClientUpload() {
   const [dragOver, setDragOver] = useState(false)
   const [recherche, setRecherche] = useState('')
   const [error, setError] = useState<string | null>(null)
+  // Les précisions du dossier, chargées en une fois. Une requête par ligne de la liste en produirait
+  // autant que de dépôts, pour un écran que le client ouvre sur son téléphone.
+  const [commentaires, setCommentaires] = useState<PieceCommentaire[]>([])
+  // Le dépôt dont la zone de précision est ouverte. Amorcé par la photo prise depuis l'accueil, qui
+  // navigue ici en désignant la ligne qu'elle vient de créer (voir ClientHome).
+  const cibleDepuisAccueil = (useLocation().state as { preciser?: CibleCommentaire } | null)?.preciser
+  const [filOuvert, setFilOuvert] = useState<string | null>(
+    cibleDepuisAccueil ? cleCible(cibleDepuisAccueil) : null,
+  )
 
   async function load() {
     if (!dossierId) return
-    const [{ data: piecesData }, { data: documentsData }, { data: lignesData }, { data: cotisationsData }] = await Promise.all([
+    const [{ data: piecesData }, { data: documentsData }, { data: lignesData }, { data: cotisationsData }, commentairesData] = await Promise.all([
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
       supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
       supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      chargerCommentaires(dossierId),
     ])
     setPieces(piecesData ?? [])
     setDocuments(documentsData ?? [])
     setLignes(lignesData ?? [])
     setCotisations(cotisationsData ?? [])
+    setCommentaires(commentairesData)
   }
 
   useEffect(() => { load() }, [dossierId])
@@ -84,6 +102,10 @@ export default function ClientUpload() {
       const resultat = await deposerFichier(dossierId, file, hashsDuLot)
       if (resultat.statut === 'doublon') erreurs.push(`${file.name} : déjà déposé, pas réenvoyé.`)
       else if (resultat.statut === 'erreur') erreurs.push(`${file.name} : ${resultat.message}.`)
+      // Un seul fichier déposé : on ouvre sa zone de précision, tant que le client se souvient de ce
+      // qu'il vient d'envoyer. Sur un lot, on ne devine pas lequel mériterait un mot — en ouvrir un
+      // au hasard ferait écrire la précision sous la mauvaise pièce.
+      else if (files.length === 1) setFilOuvert(cleCible(resultat.cible))
       setEnCours((prev) => prev.filter((f) => f.id !== localId))
       load()
     }))
@@ -108,6 +130,7 @@ export default function ClientUpload() {
       createdAt: p.created_at,
       label: p.statut === 'validee' ? 'Facture — traitée' : 'Facture — en attente de traitement',
       traite: p.statut === 'validee',
+      cible: { type: 'piece', id: p.id },
     })),
     ...documents.map((d): Depot => ({
       id: `doc-${d.id}`,
@@ -115,15 +138,26 @@ export default function ClientUpload() {
       createdAt: d.created_at,
       label: LABEL_CATEGORIE[d.categorie],
       traite: true,
+      cible: { type: 'document', id: d.id },
     })),
     ...enCours.map((f): Depot => ({
       id: f.id, nomFichier: f.nomFichier, createdAt: new Date().toISOString(), label: 'Analyse en cours…', traite: false,
+      cible: null,
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 
-  const depotsAffiches = depots.filter((d) =>
-    correspondALaRecherche([d.nomFichier, d.label, d.createdAt, formatDate(d.createdAt)], recherche),
-  )
+  const parCible = commentairesParCible(commentaires)
+
+  // La recherche porte aussi sur les précisions : « salle d'attente » est souvent tout ce dont le
+  // client se souvient d'un dépôt, bien plus sûrement que le nom du fichier que son téléphone a
+  // choisi tout seul.
+  const depotsAffiches = depots.filter((d) => {
+    const fil = d.cible ? parCible.get(cleCible(d.cible)) ?? [] : []
+    return correspondALaRecherche(
+      [d.nomFichier, d.label, d.createdAt, formatDate(d.createdAt), ...fil.map((c) => c.texte)],
+      recherche,
+    )
+  })
 
   // "Ce qu'il manque" — les 3 signaux communs à tous les dossiers (mêmes que le Dashboard cabinet),
   // pour que le client sache ce qu'il reste à envoyer sans avoir à demander. Volontairement limité à
@@ -248,21 +282,56 @@ export default function ClientUpload() {
           </div>
         ) : (
           <table>
-            <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th></tr></thead>
+            <thead><tr><th>Fichier</th><th>Déposé le</th><th>Statut</th><th>Précisions</th></tr></thead>
             <tbody>
-              {depotsAffiches.map((d) => (
-                <tr key={d.id}>
-                  <td>{d.nomFichier}</td>
-                  <td>{formatDate(d.createdAt)}</td>
-                  <td>
-                    {!d.traite && d.label === 'Analyse en cours…'
-                      ? <span className="badge badge-neutral">Analyse en cours…</span>
-                      : d.traite
-                        ? <span className="badge badge-ok">{d.label}</span>
-                        : <span className="badge badge-neutral">{d.label}</span>}
-                  </td>
-                </tr>
-              ))}
+              {depotsAffiches.map((d) => {
+                const cle = d.cible ? cleCible(d.cible) : null
+                const fil = cle ? parCible.get(cle) ?? [] : []
+                const ouvert = cle !== null && filOuvert === cle
+                return (
+                  <Fragment key={d.id}>
+                    <tr>
+                      <td>{d.nomFichier}</td>
+                      <td>{formatDate(d.createdAt)}</td>
+                      <td>
+                        {!d.traite && d.label === 'Analyse en cours…'
+                          ? <span className="badge badge-neutral">Analyse en cours…</span>
+                          : d.traite
+                            ? <span className="badge badge-ok">{d.label}</span>
+                            : <span className="badge badge-neutral">{d.label}</span>}
+                      </td>
+                      <td>
+                        {/* Rien à commenter tant que l'analyse tourne : la ligne n'existe pas encore. */}
+                        {d.cible === null ? (
+                          <span className="muted">—</span>
+                        ) : (
+                          <button
+                            type="button"
+                            className="btn btn-outline btn-sm"
+                            onClick={() => setFilOuvert(ouvert ? null : cle)}
+                          >
+                            {fil.length > 0 ? `💬 ${fil.length}` : '+ Préciser'}
+                          </button>
+                        )}
+                      </td>
+                    </tr>
+                    {ouvert && d.cible && dossierId && (
+                      <tr>
+                        <td colSpan={4} style={{ background: 'var(--color-surface-2)' }}>
+                          <FilCommentaires
+                            dossierId={dossierId}
+                            cible={d.cible}
+                            commentaires={fil}
+                            estCabinet={false}
+                            autoFocus
+                            onAjout={(c) => setCommentaires((prev) => [...prev, c])}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
             </tbody>
           </table>
         )}

@@ -4,7 +4,8 @@ import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { useAuth } from '../../context/AuthContext'
-import type { Categorie, Piece, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
+import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
+import FilCommentaires from '../../components/FilCommentaires'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -30,11 +31,16 @@ interface Props {
   tiersCategoriesCabinet: TiersCategorieCabinet[]
   tiersConnus: string[]
   piece: Piece | null // null = création
+  // Le fil des précisions de cette pièce, déjà chargé par l'écran appelant — voir lib/commentaires.ts.
+  commentaires: PieceCommentaire[]
   onClose: () => void
   onSaved: () => void
+  // Remonté à l'écran appelant : une précision ajoutée ici doit apparaître sur la ligne d'arbitrage
+  // même si la fiche est fermée sans être enregistrée. Commenter n'est pas modifier la pièce.
+  onCommentaireAjoute: (commentaire: PieceCommentaire) => void
 }
 
-export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, onClose, onSaved }: Props) {
+export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute }: Props) {
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
   // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
@@ -49,6 +55,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [montantTva, setMontantTva] = useState(piece?.montant_tva?.toString() ?? '')
   const [montantTtc, setMontantTtc] = useState(piece?.montant_ttc?.toString() ?? '')
   const [notes, setNotes] = useState(piece?.notes ?? '')
+  const [commentaires, setCommentaires] = useState(commentairesInitiaux)
   const [saving, setSaving] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -429,9 +436,29 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
                 </div>
 
                 <div className="field">
-                  <label htmlFor="notes">Notes</label>
+                  <label htmlFor="notes">Notes internes</label>
                   <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+                  <p className="muted" style={{ fontSize: '0.78rem', margin: '4px 0 0' }}>
+                    Pour le cabinet seul. Les précisions échangées avec le client sont plus bas.
+                  </p>
                 </div>
+
+                {/* Le fil client/cabinet, à côté du document plutôt que dans un onglet à part : c'est
+                    en regardant la facture qu'on a besoin de savoir ce que le client en a dit. Une
+                    pièce pas encore enregistrée n'a pas d'identifiant, donc rien à quoi rattacher un
+                    commentaire — le fil n'apparaît qu'une fois la pièce créée. */}
+                {piece && (
+                  <div className="field">
+                    <label>Précisions du client</label>
+                    <FilCommentaires
+                      dossierId={dossierId}
+                      cible={{ type: 'piece', id: piece.id }}
+                      commentaires={commentaires}
+                      estCabinet
+                      onAjout={(c) => { setCommentaires((prev) => [...prev, c]); onCommentaireAjoute(c) }}
+                    />
+                  </div>
+                )}
 
                 {error && <p className="error-text">{error}</p>}
               </div>

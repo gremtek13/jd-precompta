@@ -12,6 +12,9 @@ const etat = {
   // `{ message }` aurait testé un comportement que la production n'a pas.
   uploadError: null as Error | null,
   insertError: null as Error | null,
+  // Écriture acceptée mais relecture vide : ce que rendrait une policy qui autorise l'insert sans
+  // autoriser le select. Ni erreur, ni ligne — le cas qu'un `if (error)` seul laisserait passer.
+  insertRendVide: false,
   extraction: null as Record<string, unknown> | null,
   extractionLeve: false,
   utilisateur: 'u1' as string | null,
@@ -21,9 +24,21 @@ const journal: { action: string; cible: string }[] = []
 vi.mock('./supabase', () => ({
   supabase: {
     from: (table: string) => ({
+      // `.insert().select().single()` et non `.insert()` seul : le dépôt rend désormais la ligne
+      // créée, de quoi proposer au client d'y ajouter une précision tout de suite (voir
+      // lib/commentaires.ts). Le faux client reproduit ce chaînage, sans quoi il testerait une
+      // écriture que la production ne fait plus.
       insert: (ligne: Record<string, unknown>) => {
         journal.push({ action: `insert:${table}`, cible: String(ligne.categorie ?? ligne.uploaded_by ?? '') })
-        return Promise.resolve({ error: etat.insertError })
+        return {
+          select: () => ({
+            single: () => Promise.resolve(
+              etat.insertError
+                ? { data: null, error: etat.insertError }
+                : { data: etat.insertRendVide ? null : { id: `id-${table}` }, error: null },
+            ),
+          }),
+        }
       },
     }),
     auth: {
@@ -78,6 +93,7 @@ beforeEach(() => {
   etat.lectureDoublonLeve = false
   etat.uploadError = null
   etat.insertError = null
+  etat.insertRendVide = false
   etat.extraction = { classification: 'facture', date_piece: '2026-03-10', tiers: 'EDF', montant_ttc: 120, confiance: 'haute' }
   etat.extractionLeve = false
   etat.utilisateur = 'u1'
@@ -86,7 +102,7 @@ beforeEach(() => {
 
 describe('deposerFichier', () => {
   it('range une facture dans Pièces, à valider', async () => {
-    expect(await deposer('facture.pdf')).toEqual({ statut: 'ok' })
+    expect(await deposer('facture.pdf')).toEqual({ statut: 'ok', cible: { type: 'piece', id: 'id-pieces' } })
     expect(journal.map((j) => j.action)).toEqual(['upload', 'insert:pieces'])
   })
 
@@ -100,7 +116,7 @@ describe('deposerFichier', () => {
     // Textract ne sait pas lire un CSV ; l'extraction est court-circuitée. `extractionLeve` ferait
     // échouer le test si le raccourci disparaissait.
     etat.extractionLeve = true
-    expect(await deposer('export.csv')).toEqual({ statut: 'ok' })
+    expect(await deposer('export.csv')).toEqual({ statut: 'ok', cible: { type: 'document', id: 'id-documents_divers' } })
     expect(journal.find((j) => j.action === 'insert:documents_divers')?.cible).toBe('releve_bancaire')
   })
 
@@ -108,7 +124,7 @@ describe('deposerFichier', () => {
     // Le client n'a pas le droit de corriger une pièce après coup : un document illisible par
     // Textract doit quand même arriver au cabinet, à compléter à la main, pas être refusé.
     etat.extractionLeve = true
-    expect(await deposer('illisible.pdf')).toEqual({ statut: 'ok' })
+    expect(await deposer('illisible.pdf')).toEqual({ statut: 'ok', cible: { type: 'piece', id: 'id-pieces' } })
     expect(journal.map((j) => j.action)).toEqual(['upload', 'insert:pieces'])
   })
 
@@ -140,7 +156,7 @@ describe('deposerFichier', () => {
     // `uploaded_by` était lu avec `user!.id` : une session expirée entre l'envoi et l'insertion
     // faisait planter le dépôt sur un TypeError, après que le fichier soit déjà dans le stockage.
     etat.utilisateur = null
-    expect(await deposer('facture.pdf')).toEqual({ statut: 'ok' })
+    expect(await deposer('facture.pdf')).toEqual({ statut: 'ok', cible: { type: 'piece', id: 'id-pieces' } })
     expect(journal.find((j) => j.action === 'insert:pieces')?.cible).toBe('')
   })
 })
@@ -192,5 +208,29 @@ describe('doublons au sein d’un même dépôt', () => {
     const premierLot = new Set<string>()
     await deposer('facture.pdf', 'EDF', premierLot)
     expect((await deposer('facture.pdf', 'EDF', new Set())).statut).toBe('ok')
+  })
+})
+
+describe('la ligne créée est nommée', () => {
+  // Sans elle, l'écran devrait deviner laquelle des lignes rechargées est celle qu'on vient de
+  // déposer — et sur deux photos de la même enseigne prises à une minute d'intervalle, il se
+  // tromperait. C'est ce qui permet de proposer une précision sur LE bon dépôt, au seul moment où le
+  // client sait encore pourquoi il l'a envoyé (voir lib/commentaires.ts).
+  it('désigne la pièce pour une facture', async () => {
+    const resultat = await deposer('facture.pdf')
+    expect(resultat).toMatchObject({ cible: { type: 'piece' } })
+  })
+
+  it('désigne le document pour un relevé', async () => {
+    etat.extraction = { classification: 'releve_bancaire' }
+    expect(await deposer('releve.pdf')).toMatchObject({ cible: { type: 'document' } })
+  })
+
+  it('traite une insertion qui ne rend aucune ligne comme un échec, et nettoie le stockage', async () => {
+    // Une policy qui laisse passer l'écriture mais interdit la relecture rendrait `data` nul sans
+    // erreur. Sans cette garde, le dépôt s'annoncerait réussi en désignant une cible inexistante.
+    etat.insertRendVide = true
+    expect((await deposer('facture.pdf')).statut).toBe('erreur')
+    expect(journal.map((j) => j.action)).toEqual(['upload', 'insert:pieces', 'remove'])
   })
 })

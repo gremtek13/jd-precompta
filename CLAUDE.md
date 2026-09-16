@@ -177,6 +177,21 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   Exemple vivant : `mouvements_cca` sous `comptes_courants_associes`. (Ce
   motif venait à l'origine de `pack_pieces`, supprimée depuis — voir
   "Problèmes connus".)
+- **Une table que le CLIENT écrit sort de la convention `FOR ALL`.** Le client
+  a un `membership`, pas `admin_du_dossier` : la policy doit donc lister ses
+  droits un par un, et surtout pas lui ouvrir la table entière. `piece_commentaires`
+  est le cas de référence, et son `WITH CHECK` porte trois garanties qu'aucune
+  relecture ne remplace : l'auteur est forcément `auth.uid()`, `origine = 'cabinet'`
+  équivaut exactement à `admin_du_dossier(dossier_id)` (un client ne peut pas
+  signer « cabinet »), et la cible doit appartenir au dossier annoncé — sans quoi
+  un `dossier_id` porté en propre serait une porte ouverte. Les neuf cas ont été
+  vérifiés par impersonation réelle avant livraison.
+- **Une déclaration datée ne se réécrit pas.** `piece_commentaires` n'a AUCUNE
+  policy `UPDATE`, pour personne : un commentaire est une parole prononcée à un
+  moment, la réécrire après coup lui retire sa valeur devant un contrôle. On se
+  corrige en ajoutant un commentaire, pas en effaçant le précédent. La
+  suppression reste au cabinet, pour retirer un hors-sujet — pas pour réécrire
+  l'histoire.
 - **Edge Functions auto-porteuses** : aucun import depuis `src/` — aussi
   petites et pures soient certaines fonctions (ex. calcul de montants de
   ligne de facture, constantes tarifaires IA), elles sont dupliquées entre
@@ -721,6 +736,25 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   prend `vehicules` en paramètre obligatoire : un appelant qui les oublie doit le découvrir à la
   compilation, pas en lisant une case BJ vide sur un formulaire déjà déposé.
 
+- **Le « pourquoi » d'une dépense ne s'extrait pas, il se demande.** L'OCR lit
+  « BOULANGER MARSEILLE, 199,99 € » et s'arrête là : il ne dira jamais si c'est le
+  four de la salle d'attente ou un cadeau, et c'est pourtant ce qui décide de la
+  catégorie. Le seul qui le sache est le client, à la seconde où il prend la
+  photo. D'où `piece_commentaires` et le fil de précisions — pensé pour coûter
+  cinq secondes au client plutôt qu'un appel téléphonique au cabinet, qui est la
+  chose la plus chère de toute la chaîne.
+  Trois règles le rendent utile plutôt que décoratif : la précision se demande
+  **au dépôt** (`deposerFichier` rend la ligne créée pour qu'on puisse la
+  proposer sur CE dépôt-là) ; elle est **facultative et jamais bloquante**, sinon
+  le client cesse d'envoyer ses documents ; et elle se lit **sur la ligne
+  d'arbitrage**, pas dans une modale — un opérateur qui doit ouvrir une fiche
+  choisira la catégorie sans l'avoir lue. Le champ `pieces.notes` existait depuis
+  le début et n'a jamais servi (0 pièce sur 83) précisément parce qu'il n'était
+  exposé qu'au cabinet, dans une modale.
+  Et la limite : un commentaire est une **information, pas une décision**. Le
+  client peut se tromper ou arranger les choses ; l'arbitrage reste celui du
+  cabinet, comme partout ailleurs.
+
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -729,7 +763,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 500 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 524 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

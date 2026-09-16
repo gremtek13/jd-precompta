@@ -1,8 +1,16 @@
 import { supabase } from './supabase'
 import { extractPiece, fichierDejaPresent, hashFichier, type ExtractionResult } from './extraction'
 import { slugify } from './format'
+import type { CibleCommentaire } from './commentaires'
 
-export type ResultatDepot = { statut: 'ok' } | { statut: 'doublon' } | { statut: 'erreur'; message: string }
+// En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
+// d'y ajouter une précision tout de suite, au seul moment où il sait encore pourquoi la dépense a été
+// faite (voir lib/commentaires.ts). Sans elle, il faudrait deviner laquelle des lignes rechargées est
+// la sienne — et sur deux photos de la même enseigne prises à une minute d'intervalle, c'est faux.
+export type ResultatDepot =
+  | { statut: 'ok'; cible: CibleCommentaire }
+  | { statut: 'doublon' }
+  | { statut: 'erreur'; message: string }
 
 // Dépose un seul fichier pour un dossier client : hash anti-doublon, upload storage, extraction
 // automatique (sauf CSV, classé direct en relevé bancaire), puis insertion en pieces ou
@@ -49,20 +57,23 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
     // Le fichier est dans le stockage mais rien ne pointe encore dessus : si l'insertion échoue, on
     // le retire avant de remonter l'erreur. Sans cela il y restait orphelin — un client ne voit rien,
     // et seule la suppression du dossier entier l'aurait nettoyé.
-    const enregistrer = async (table: 'pieces' | 'documents_divers', ligne: Record<string, unknown>) => {
-      const { error } = await supabase.from(table).insert(ligne)
-      if (error) {
+    // Rend l'identifiant de la ligne écrite : l'écran en a besoin pour proposer tout de suite une
+    // précision sur CE dépôt-là.
+    const enregistrer = async (table: 'pieces' | 'documents_divers', ligne: Record<string, unknown>): Promise<string> => {
+      const { data, error } = await supabase.from(table).insert(ligne).select('id').single()
+      if (error || !data) {
         await supabase.storage.from('pieces').remove([path])
-        throw error
+        throw error ?? new Error("l'enregistrement n'a rien rendu")
       }
+      return data.id as string
     }
 
     const estCsv = file.name.toLowerCase().endsWith('.csv')
     if (estCsv) {
-      await enregistrer('documents_divers', {
+      const id = await enregistrer('documents_divers', {
         dossier_id: dossierId, storage_path: path, storage_hash: hash, nom_fichier: file.name, categorie: 'releve_bancaire',
       })
-      return { statut: 'ok' }
+      return { statut: 'ok', cible: { type: 'document', id } }
     }
 
     let extraction: ExtractionResult | null = null
@@ -73,13 +84,14 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
     }
 
     if (extraction && extraction.classification !== 'facture') {
-      await enregistrer('documents_divers', {
+      const id = await enregistrer('documents_divers', {
         dossier_id: dossierId, storage_path: path, storage_hash: hash, nom_fichier: file.name,
         categorie: extraction.classification,
       })
+      return { statut: 'ok', cible: { type: 'document', id } }
     } else {
       const { data: userData } = await supabase.auth.getUser()
-      await enregistrer('pieces', {
+      const id = await enregistrer('pieces', {
         dossier_id: dossierId, uploaded_by: userData.user?.id ?? null, storage_path: path, storage_hash: hash,
         nom_fichier: file.name, type_piece: 'achat', statut: 'a_valider',
         date_piece: extraction?.date_piece ?? null,
@@ -89,8 +101,8 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
         montant_ttc: extraction?.montant_ttc ?? null,
         confiance: extraction?.confiance ?? null,
       })
+      return { statut: 'ok', cible: { type: 'piece', id } }
     }
-    return { statut: 'ok' }
   } catch (err) {
     hashsDuLot.delete(hash)
     return { statut: 'erreur', message: err instanceof Error ? err.message : "l'envoi a échoué" }
