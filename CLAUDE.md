@@ -381,6 +381,19 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   **rien ne recharge** — une écriture d'effet de bord, une suppression suivie d'un retrait
   optimiste de l'état local, ou un `delete` dont dépend l'`insert` suivant (c'est ce dernier
   motif qui dupliquait les lignes d'une facture modifiée).
+- **Ce qui doit être tout ou rien vit dans une fonction SQL.** Une facture s'enregistre en un
+  seul appel (`enregistrer_facture`) : en-tête, remplacement des lignes, numéro et validation
+  dans la même transaction. En trois à cinq allers-retours, un échec au milieu laissait la
+  facture à mi-chemin — lignes doublées, ou numéro consommé sans être posé, c'est-à-dire un
+  trou dans une suite annuelle qui n'en admet pas. Ces fonctions sont `SECURITY DEFINER`,
+  contournent donc la RLS et **vérifient l'accès elles-mêmes** (`admin_du_dossier`) ; elles
+  énumèrent les colonnes qu'elles écrivent au lieu d'un `jsonb_populate_record`, sans quoi
+  l'appelant pourrait forger `numero` ou `statut`.
+- **Ce qui est déjà testé en TypeScript n'est pas réécrit en SQL.** `enregistrer_facture` stocke
+  les montants tels que `calculerLigne` les a calculés plutôt que de refaire l'arrondi côté base :
+  l'atomicité suffit à garantir que l'en-tête décrit le jeu de lignes dont il vient. À l'inverse,
+  le *format* du numéro est passé du TypeScript au SQL (`numero_facture_formate`), la base devant
+  de toute façon l'écrire elle-même.
 - **Un module couplé à Supabase se teste en simulant le client**, quand il n'y a pas de calcul
   pur à en extraire : `vi.mock('./supabase', ...)` avec un faux chaînage (`from().select().eq()`)
   dont le test programme la réponse — voir `contrepartieBanque.test.ts`. C'est la voie pour
@@ -396,7 +409,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 182 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 199 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'import de relevés (`csv.ts` pour le CSV,
