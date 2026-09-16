@@ -28,7 +28,7 @@ function extraireDeLEdgeFunction() {
   }
 
   // Les constantes se recopient telles quelles : ce sont elles qui décident quels libellés comptent.
-  for (const nom of ['const MOIS_PAR_NOM', 'const LIBELLE_DATE_FACTURE', 'const LIBELLE_AUTRE_DATE',
+  for (const nom of ['const MOIS_PAR_NOM', 'const LIBELLE_DATE_FACTURE', 'const LIBELLE_VILLE_LE', 'const LIBELLE_AUTRE_DATE',
                      'const DATE_ISO_REGEX', 'const DATE_NUMERIQUE_REGEX', 'const DATE_TEXTUELLE_REGEX']) {
     const debut = source.indexOf(nom)
     expect(debut, `\`${nom}\` introuvable`).toBeGreaterThan(-1)
@@ -113,9 +113,36 @@ describe('extract-piece / dateDepuisTexteBrut (copie déployée)', () => {
 
   it('retient la date unique d’un document qui n’annonce aucun libellé', () => {
     // Beaucoup de factures simples n'écrivent pas « Date » : si le document n'en porte qu'une, elle
-    // ne peut guère être autre chose que la sienne.
-    expect(lire(['TRANSMEDICAL SARL', 'Marseille, le 31/01/2023', 'Prestation janvier', '192,00 €']).date)
+    // ne peut guère être autre chose que la sienne. Aucun libellé ici — « Marseille, le … » en est
+    // devenu un depuis (voir plus bas), il ne conviendrait donc plus pour exercer cette règle.
+    expect(lire(['TRANSMEDICAL SARL', 'Prestation janvier', '31/01/2023', '192,00 €']).date)
       .toBe('2023-01-31')
+  })
+
+  it('lit la formule « Ville, le <date> », sans aucun libellé « Date »', () => {
+    // La mise en page réelle du fournisseur : « FACTURE  N° 65233  Marseille, le 30 juin 2025 ».
+    // Aucun mot « Date » nulle part, et la date en toutes lettres.
+    expect(lire(['FACTURE N° 65233 Marseille, le 30 juin 2025', 'Total TTC 192,00 €']).date)
+      .toBe('2025-06-30')
+    // Les colonnes peuvent aussi ressortir en lignes séparées, « Marseille, le » d'un côté et la
+    // valeur de l'autre. Une seconde date est nécessaire ici, sinon la règle « une seule date
+    // distincte » suffirait et ce test ne prouverait rien — une mutation l'a montré.
+    expect(lire(['FACTURE', 'N° 65233', 'Marseille, le', '30 juin 2025', 'Livré le 28/06/2025']).date)
+      .toBe('2025-06-30')
+  })
+
+  it('tient quand le document porte une autre date que la règle d’exclusion ne connaît pas', () => {
+    // Avant cette reconnaissance, la lecture ne marchait que par élimination — le document ne portant
+    // qu'une seule date. Une date de livraison ou de relevé suffisait à tout faire échouer.
+    for (const autre of ['Livré le 28/06/2025', 'Relevé arrêté au 25/06/2025']) {
+      expect(lire(['FACTURE N° 65233 Marseille, le 30 juin 2025', autre]).date, autre).toBe('2025-06-30')
+    }
+  })
+
+  it('ne prend pas n’importe quel « , le » pour une annonce de date', () => {
+    // Sans le contrôle du chiffre qui suit, une formule de politesse deviendrait un libellé de date.
+    expect(lire(['Cordialement, le service comptable', 'Prestation', '05/01/2023', '28/02/2023']).date)
+      .toBeNull()
   })
 
   it('refuse de trancher entre plusieurs dates sans libellé, et dit ce qu’il a vu', () => {

@@ -160,6 +160,15 @@ function sansAccents(s: string): string {
 
 // Libellés qui annoncent la date de la facture elle-même.
 const LIBELLE_DATE_FACTURE = /\b(date\s*(?:de\s*)?(?:la\s*)?(?:facture|facturation|emission|edition)?|facturee?\s+le|facture\s+du|emise?\s+le)\b/
+// « Marseille, le 30 juin 2025 » : la formule d'usage des factures et courriers français, où aucun
+// libellé « Date » n'apparaît nulle part — c'est exactement la mise en page du fournisseur qui a
+// motivé ce repli. Sans cette règle, la lecture ne tenait que parce que le document ne portait
+// qu'une seule date (règle 3) : dès qu'il en porte une autre non exclue — « Livré le… », « Relevé
+// arrêté au… » — elle échouait.
+//
+// Le lookahead exige un chiffre juste après, ou la fin de ligne quand la date tombe dans la colonne
+// suivante. Sans lui, « Cordialement, le service comptable » passerait pour une annonce de date.
+const LIBELLE_VILLE_LE = /,\s*le(?=\s*$|\s+\d)/
 // Libellés qui annoncent une AUTRE date : échéance, règlement, livraison, commande, bornes de
 // période. Une ligne qui en contient un est écartée, même si elle porte aussi une date valide.
 const LIBELLE_AUTRE_DATE = /\b(echeance|reglement|payable|a\s*payer|date\s*limite|livraison|commande|periode|valable|naissance)\b/
@@ -199,7 +208,7 @@ function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: 
     const normalisee = sansAccents(ligne)
     return {
       dates: datesDeLaLigne(ligne, anneeReference),
-      estDateFacture: LIBELLE_DATE_FACTURE.test(normalisee),
+      estDateFacture: LIBELLE_DATE_FACTURE.test(normalisee) || LIBELLE_VILLE_LE.test(normalisee),
       estAutreDate: LIBELLE_AUTRE_DATE.test(normalisee),
     }
   })

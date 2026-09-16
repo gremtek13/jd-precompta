@@ -471,7 +471,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 279 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 282 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
