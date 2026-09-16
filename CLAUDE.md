@@ -613,6 +613,23 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `#view=Fit` et ne se laisse pas cadrer ; passer par pdf.js dans un canvas. Les hôtes inventés
   (`https://rendu.local`) sont interceptés par le proxy de l'environnement avant les routes
   Playwright : servir les fichiers depuis un vrai serveur HTTP sur `127.0.0.1`.
+- **Valider automatiquement demande TROIS signaux concordants, pas deux.** Montant au centime,
+  date dans la tolérance avec un appariement mutuellement unique, ET fournisseur de la pièce
+  retrouvé dans le libellé bancaire (voir `appariementBanque.ts`). Les deux premiers ne suffisent
+  pas : sur le premier jeu réel, une pièce à 198 € avait le bon montant, la bonne date et un seul
+  candidat en face — avec un tiers lu « DARNIS JEREMY », le nom du client lui-même, là où la banque
+  disait « PRLV SEPA TRANSMEDICAL ». Un faux négatif coûte un clic ; un faux positif inscrit une
+  donnée fausse comme vérifiée par le cabinet.
+- **Comparer deux noms se fait mot à mot, jamais par sous-chaîne.** `libelle.includes(mot)` sur le
+  libellé entier confirmait « Medical Service » avec « Transmedical » : la suite de lettres est
+  bien là, à l'intérieur d'un autre mot. Au centime et au jour près, ça validait le prélèvement d'un
+  tout autre fournisseur. La troncature reste tolérée (les relevés coupent : « SWISSLIFE PREVOYAN »)
+  mais seulement en début de mot — l'un des deux doit commencer par l'autre.
+- **Un libellé bancaire vide n'est pas rare, et le texte est ailleurs.** L'import retombe sur le
+  générique « Mouvement bancaire » quand la colonne choisie au mapping est vide sur cette ligne ;
+  sur le premier relevé réel, 250 lignes sur 385 étaient dans ce cas parce que le vrai libellé était
+  dans la colonne suivante. `libelle_brut` conserve la ligne du fichier : tout traitement qui a
+  besoin du libellé doit passer par `libelleExploitable`, pas par `libelle`.
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -621,7 +638,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 396 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 428 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
