@@ -107,7 +107,28 @@ function parseAmount(raw?: string): number | null {
 function toIsoDate(year: number, month: number, day: number): string | null {
   if (month < 1 || month > 12 || day < 1) return null
   if (day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+  const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+  return dateFuture(iso) ? null : iso
+}
+
+// Une pièce comptable ne peut pas être datée du futur : ce qu'on lit alors est une date de validité,
+// d'échéance ou de fin de droits, pas la date du document. Constaté sur un import réel — un
+// justificatif d'immatriculation ressorti au 27/09/2028.
+//
+// Le contrôle est ici, dans `toIsoDate`, et non dans la règle de repli : le repli passe déjà par la
+// fenêtre `a > anneeReference + 1` de `datesDeLaLigne` et n'aurait jamais pu produire 2028. Cette
+// date venait du champ INVOICE_RECEIPT_DATE étiqueté par Textract, qui rejoint `parseDate` sans
+// aucune borne d'année. Placer le refus dans `toIsoDate` couvre les deux chemins d'un coup.
+//
+// Un jour de marge : la fonction tourne en UTC alors que les pièces sont datées à Paris (UTC+1/+2).
+// Sans cette marge, une facture du jour même serait refusée en fin de soirée.
+//
+// Ne corrige QUE l'impossible. Une date passée mais fausse — un relevé de situation 2025 ressorti au
+// 15/05/2023 parce que la première date lue était celle d'un contrat — reste à traiter par la règle
+// de lecture elle-même : aucun contrôle de bornes ne peut la distinguer d'une pièce ancienne réelle.
+function dateFuture(iso: string): boolean {
+  const limite = new Date(Date.now() + 86_400_000).toISOString().slice(0, 10)
+  return iso > limite
 }
 
 function parseDate(raw?: string): string | null {
@@ -129,8 +150,11 @@ function parseDate(raw?: string): string | null {
   }
 
   // Dernier recours pour les formats textuels (ex. "27 August 2026") que Date sait parfois lire.
+  // Repasse par le même refus du futur que toIsoDate — sinon ce chemin le contournerait.
   const d = new Date(trimmed)
-  return Number.isNaN(d.getTime()) ? null : d.toISOString().slice(0, 10)
+  if (Number.isNaN(d.getTime())) return null
+  const iso = d.toISOString().slice(0, 10)
+  return dateFuture(iso) ? null : iso
 }
 
 // Repli de lecture de la date sur le texte OCR brut, quand Textract n'a étiqueté aucun champ

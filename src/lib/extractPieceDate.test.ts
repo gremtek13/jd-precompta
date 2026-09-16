@@ -38,6 +38,7 @@ function extraireDeLEdgeFunction() {
 
   prendre('function toIsoDate(year: number, month: number, day: number): string | null {',
           'function toIsoDate(year, month, day) {')
+  prendre('function dateFuture(iso: string): boolean {', 'function dateFuture(iso) {')
   prendre('function sansAccents(s: string): string {', 'function sansAccents(s) {')
   prendre('function datesDeLaLigne(ligne: string, anneeReference: number): string[] {',
           'function datesDeLaLigne(ligne, anneeReference) {',
@@ -49,13 +50,18 @@ function extraireDeLEdgeFunction() {
            ['const sortie: string[] = []', 'const sortie = []']])
   prendre('function dateDepuisTexteBrut(lignes: string[], anneeReference: number): { date: string | null; origine: OrigineDate | null; candidats: string[] } {',
           'function dateDepuisTexteBrut(lignes, anneeReference) {')
+  // `parseDate` lit le champ INVOICE_RECEIPT_DATE étiqueté par Textract — un chemin distinct du
+  // repli, et sans fenêtre d'années. C'est lui qui avait laissé passer une pièce datée de 2028.
+  prendre('function parseDate(raw?: string): string | null {', 'function parseDate(raw) {')
 
-  return new Function(`${morceaux.join('\n')}; return dateDepuisTexteBrut`)() as (
-    lignes: string[], anneeReference: number,
-  ) => { date: string | null; origine: string | null; candidats: string[] }
+  return new Function(`${morceaux.join('\n')}; return { dateDepuisTexteBrut, parseDate }`)() as {
+    dateDepuisTexteBrut: (lignes: string[], anneeReference: number) =>
+      { date: string | null; origine: string | null; candidats: string[] }
+    parseDate: (raw?: string) => string | null
+  }
 }
 
-const dateDepuisTexteBrut = extraireDeLEdgeFunction()
+const { dateDepuisTexteBrut, parseDate } = extraireDeLEdgeFunction()
 const lire = (lignes: string[]) => dateDepuisTexteBrut(lignes, 2026)
 
 describe('extract-piece / dateDepuisTexteBrut (copie déployée)', () => {
@@ -238,6 +244,65 @@ describe('extract-piece / toIsoDate (copie déployée)', () => {
     // incompréhensible plutôt que de simplement laisser la date vide.
     expect(lire(['Date : 31/04/2023']).date).toBeNull()
     expect(lire(['Date : 30/04/2023']).date).toBe('2023-04-30')
+  })
+
+  it('n’écarte pas une date récente sous prétexte de fuseau', () => {
+    // La limite est « demain », pas « maintenant » : la fonction tourne en UTC alors que les pièces
+    // sont datées à Paris. Sans cette marge, une facture du jour serait refusée en fin de soirée.
+    // Une date dix jours en avant reste refusée — la marge est un coussin, pas une porte ouverte.
+    const dans10Jours = new Date(Date.now() + 10 * 86_400_000)
+    const j = String(dans10Jours.getUTCDate()).padStart(2, '0')
+    const m = String(dans10Jours.getUTCMonth() + 1).padStart(2, '0')
+    expect(lire([`Date : ${j}/${m}/${dans10Jours.getUTCFullYear()}`]).date).toBeNull()
+
+    const hier = new Date(Date.now() - 86_400_000)
+    const jh = String(hier.getUTCDate()).padStart(2, '0')
+    const mh = String(hier.getUTCMonth() + 1).padStart(2, '0')
+    expect(lire([`Date : ${jh}/${mh}/${hier.getUTCFullYear()}`]).date)
+      .toBe(hier.toISOString().slice(0, 10))
+  })
+})
+
+describe('extract-piece / date étiquetée par Textract (parseDate)', () => {
+  // Chemin distinct du repli : quand Textract étiquette INVOICE_RECEIPT_DATE, sa valeur passe par
+  // `parseDate` sans jamais traverser la fenêtre d'années de `datesDeLaLigne`. C'est par là qu'un
+  // justificatif d'immatriculation est entré daté du 27/09/2028 sur un import réel.
+  it('refuse une date postérieure à aujourd’hui', () => {
+    expect(parseDate('27/09/2028')).toBeNull()
+    expect(parseDate('2028-09-27')).toBeNull()
+  })
+
+  it('refuse le futur aussi sur le dernier recours textuel', () => {
+    // Troisième chemin de `parseDate` : ni ISO ni numérique, délégué à `new Date()`. Il rendait sa
+    // date sans repasser par `toIsoDate`, et contournait donc le refus. Seul `null` est affirmé ici,
+    // jamais une valeur : ce recours décale la date d'un jour à l'est de Greenwich (voir plus bas),
+    // mais 2099 reste dans le futur quel que soit le fuseau.
+    expect(parseDate('27 August 2099')).toBeNull()
+  })
+
+  it('accepte toujours une date passée dans les formats numériques', () => {
+    // Le refus du futur ne doit pas emporter les lectures normales — c'est la moitié du contrat.
+    // Seuls les deux formats numériques sont vérifiés ici : eux passent par `toIsoDate`, qui
+    // construit la chaîne champ par champ et ne dépend donc pas du fuseau.
+    expect(parseDate('05/06/2024')).toBe('2024-06-05')
+    expect(parseDate('2024-06-05')).toBe('2024-06-05')
+  })
+
+  it('ne sait pas lire un mois écrit en toutes lettres en français', () => {
+    // Constat, pas un souhait. Le dernier recours de `parseDate` délègue à `new Date()`, qui ne
+    // connaît que les mois anglais — d'où `null` sur « 30 juin 2025 ». Les dates françaises en
+    // toutes lettres sont bien lues, mais par l'autre chemin (DATE_TEXTUELLE_REGEX + MOIS_PAR_NOM
+    // dans le repli sur texte brut), jamais par celui-ci.
+    //
+    // Ce même recours a un second défaut, volontairement non corrigé ici pour ne pas élargir : il
+    // fait `new Date(texte).toISOString()`, soit minuit LOCAL relu en UTC. À l'est de Greenwich la
+    // date recule d'un jour. À reprendre à part, avec les tests multi-fuseaux qui vont avec.
+    expect(parseDate('30 juin 2025')).toBeNull()
+  })
+
+  it('refuse toujours une date qui n’existe pas au calendrier', () => {
+    expect(parseDate('31/04/2023')).toBeNull()
+    expect(parseDate('29/02/2023')).toBeNull()
   })
 })
 
