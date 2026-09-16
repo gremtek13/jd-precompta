@@ -27,10 +27,10 @@ function pieceFileName(p: Piece): { racine: string; extension: string } {
 // quoi que ce soit — l'archive et le récapitulatif doivent désigner le même fichier.
 //
 // Le nom ne tient qu'à la date, au tiers et au montant : deux pièces qui partagent les trois
-// portaient le même, et JSZip écrasait la précédente sans rien dire. Le cas n'a rien de théorique —
-// il est systématique dès que la date n'a pas pu être lue (`sans_date` pour toutes) chez un
-// fournisseur récurrent au tarif fixe : un dossier réel y perdait 14 factures sur 17, pendant que
-// l'Excel les listait toutes et que le total les comptait toutes.
+// portaient le même, et JSZip écrase la précédente sans rien dire (vérifié par exécution). Le cas
+// n'a rien de théorique dès qu'un fournisseur récurrent facture le même montant le même jour —
+// livraisons multiples, péages, carburant. L'Excel les listait toutes et le total les comptait
+// toutes, pendant que l'archive n'en gardait qu'une.
 //
 // L'unicité est établie sur le pack entier, pas seulement sur le sous-dossier de type : c'est la
 // colonne « Fichier » du récapitulatif qui doit rester sans ambiguïté, et elle ne dit pas le type.
@@ -61,6 +61,9 @@ interface RemplissageResult {
   // ZIP. Remontée jusqu'à l'écran : sans elle, le comptable recevait un récapitulatif annonçant
   // N pièces pour X € avec moins de fichiers dans l'archive, sans que rien ne le signale.
   manquantes: string[]
+  // Pièces validées sans date : elles n'entrent dans aucune période, donc dans aucun pack. Remontée
+  // pour la même raison — un manque tu qui ne se voit qu'en recomptant les pièces du dossier.
+  sansDate: string[]
 }
 
 // Remplit `destination` (le zip lui-même, ou un sous-dossier obtenu via zip.folder(...) — même API
@@ -93,6 +96,21 @@ async function remplirZipDossier(
 
   const categories = (categoriesData ?? []) as Categorie[]
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
+
+  // Une pièce validée sans date n'appartient à aucune période : le filtre `gte`/`lte` ci-dessus
+  // écarte les NULL (une comparaison SQL avec NULL n'est jamais vraie), si bien qu'elle est absente
+  // de *tous* les packs — du ZIP, du récapitulatif et du total — sans que rien ne le signale. Un
+  // dossier réel en comptait 18 sur 22, pour 1 697,39 €, invisibles à la génération comme au
+  // comptable qui la reçoit. On ne peut pas la rattacher à cette période pour autant : elle est
+  // recensée à part, pour que le manque soit dit et qu'on puisse lui donner une date.
+  const { data: sansDateData, error: sansDateError } = await supabase
+    .from('pieces')
+    .select('*')
+    .eq('dossier_id', dossierId)
+    .eq('statut', 'validee')
+    .is('date_piece', null)
+  if (sansDateError) throw sansDateError
+  const sansDate = (sansDateData ?? []) as Piece[]
 
   const allPieces = (piecesData ?? []) as Piece[]
   const included = allPieces.filter((p) => p.statut === 'validee')
@@ -158,6 +176,15 @@ async function remplirZipDossier(
     })))
   }
 
+  // Même principe que la feuille ci-dessus : ce qui manque au livrable est écrit dans le livrable.
+  // Ces pièces-là ne manquent pas à cette période en particulier, elles manquent à toutes.
+  if (sansDate.length > 0) {
+    ajouterFeuille(wb, 'Pièces sans date', sansDate.map((p) => ({
+      Tiers: p.tiers ?? '', Fichier: p.nom_fichier, 'Montant TTC': p.montant_ttc ?? '',
+      Statut: "Validée mais sans date : rattachable à aucune période, donc absente de ce pack comme de tous les autres. Lui donner une date pour qu'elle y entre.",
+    })))
+  }
+
   const excelBuffer = await wb.xlsx.writeBuffer()
   const excelBlob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
   // Le buffer, pas le Blob : JSZip accepte les deux dans un navigateur, mais seul le buffer partout
@@ -165,7 +192,10 @@ async function remplirZipDossier(
   // en test). Le Blob reste utile tel quel pour l'envoi séparé vers Storage.
   destination.file('Recap.xlsx', excelBuffer)
 
-  return { nbPieces: included.length, totalTtc, excelBlob, manquantes }
+  return {
+    nbPieces: included.length, totalTtc, excelBlob, manquantes,
+    sansDate: sansDate.map((p) => `${p.tiers ?? 'Tiers inconnu'} — ${p.nom_fichier}`),
+  }
 }
 
 interface GenerateResult {
@@ -174,6 +204,7 @@ interface GenerateResult {
   storagePathZip: string
   storagePathExcel: string
   manquantes: string[]
+  sansDate: string[]
 }
 
 export async function generatePack(
@@ -183,7 +214,7 @@ export async function generatePack(
   periodeFin: string,
 ): Promise<GenerateResult> {
   const zip = new JSZip()
-  const { nbPieces, totalTtc, excelBlob, manquantes } = await remplirZipDossier(zip, dossierId, periodeDebut, periodeFin)
+  const { nbPieces, totalTtc, excelBlob, manquantes, sansDate } = await remplirZipDossier(zip, dossierId, periodeDebut, periodeFin)
   const zipBlob = await zip.generateAsync({ type: 'blob' })
 
   const basePath = `${dossierId}/${periodeDebut}_${periodeFin}-${Date.now()}`
@@ -195,7 +226,7 @@ export async function generatePack(
   const { error: excelUploadError } = await supabase.storage.from('packs').upload(excelPath, excelBlob)
   if (excelUploadError) throw excelUploadError
 
-  return { nbPieces, totalTtc, storagePathZip: zipPath, storagePathExcel: excelPath, manquantes }
+  return { nbPieces, totalTtc, storagePathZip: zipPath, storagePathExcel: excelPath, manquantes, sansDate }
 }
 
 // Exporté pour lib/exportCabinet.ts — même remplissage, mais dans un sous-dossier d'un zip partagé

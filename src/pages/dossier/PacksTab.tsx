@@ -50,7 +50,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
     setGenerating(true)
     setError(null)
     try {
-      const { nbPieces, totalTtc, storagePathZip, storagePathExcel, manquantes } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
+      const { nbPieces, totalTtc, storagePathZip, storagePathExcel, manquantes, sansDate } = await generatePack(dossierId, dossierNom, periodeDebut, periodeFin)
       const { data: userData } = await supabase.auth.getUser()
       // Le ZIP et l'Excel sont déjà dans le stockage à ce stade : sans cette ligne, ils y restent
       // sans que rien ne pointe dessus. Taire l'échec laissait l'écran afficher une génération
@@ -66,11 +66,18 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
         total_ttc: totalTtc,
       })
       if (packError) throw packError
-      // Le pack est généré et enregistré, mais incomplet : l'Excel liste des pièces dont le fichier
-      // n'a pas pu être récupéré. À dire ici, pas seulement dans une feuille du classeur.
+      // Le pack est généré et enregistré, mais peut-être incomplet. Deux manques distincts, tous deux
+      // à dire ici et pas seulement dans une feuille du classeur : un fichier qu'on n'a pas pu
+      // récupérer, et une pièce validée sans date — celle-ci n'entre dans aucune période, donc dans
+      // aucun pack, et rien ne le signalait jusqu'ici.
+      const avertissements: string[] = []
       if (manquantes.length > 0) {
-        setError(`Pack généré, mais ${manquantes.length} pièce(s) n'ont pas pu être ajoutées à l'archive (fichier introuvable) : ${manquantes.slice(0, 3).join(', ')}${manquantes.length > 3 ? '…' : ''}. Elles sont listées dans l'onglet « Pièces manquantes » du récapitulatif.`)
+        avertissements.push(`${manquantes.length} pièce(s) n'ont pas pu être ajoutées à l'archive (fichier introuvable) : ${manquantes.slice(0, 3).join(', ')}${manquantes.length > 3 ? '…' : ''}. Voir l'onglet « Pièces manquantes » du récapitulatif.`)
       }
+      if (sansDate.length > 0) {
+        avertissements.push(`${sansDate.length} pièce(s) validée(s) de ce dossier n'ont pas de date : elles ne figurent dans aucun pack, quelle que soit la période — ${sansDate.slice(0, 3).join(', ')}${sansDate.length > 3 ? '…' : ''}. Leur donner une date pour qu'elles y entrent. Voir l'onglet « Pièces sans date ».`)
+      }
+      if (avertissements.length > 0) setError(`Pack généré, mais : ${avertissements.join(' ')}`)
       loadPacks()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'La génération a échoué.')

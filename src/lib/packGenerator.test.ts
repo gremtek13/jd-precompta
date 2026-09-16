@@ -9,19 +9,27 @@ import type { Categorie, Piece } from './types'
 // précis — le cas qui rendait le pack silencieusement incomplet.
 const etat = {
   pieces: { data: [] as Piece[], error: null as { message: string } | null },
+  // Seconde requête du module sur `pieces` : les pièces validées sans date, que le filtre `gte`/`lte`
+  // sur `date_piece` écarte (en SQL, NULL ne satisfait aucune comparaison) et qui n'entrent donc dans
+  // aucun pack, quelle que soit la période demandée.
+  sansDate: { data: [] as Piece[], error: null as { message: string } | null },
   categories: { data: [] as Categorie[], error: null as { message: string } | null },
   telechargementsEnEchec: new Set<string>(),
 }
 
 vi.mock('./supabase', () => {
   const requete = (table: 'pieces' | 'categories') => {
+    // `.is(...)` n'apparaît que dans la requête des pièces sans date : le faux client s'en sert pour
+    // distinguer les deux lectures de `pieces`, faute de pouvoir inspecter les filtres accumulés.
+    let source: 'pieces' | 'categories' | 'sansDate' = table
     const chaine = {
       select: () => chaine,
       eq: () => chaine,
       gte: () => chaine,
       lte: () => chaine,
       or: () => chaine,
-      then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(etat[table])),
+      is: () => { source = 'sansDate'; return chaine },
+      then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(etat[source])),
     }
     return chaine
   }
@@ -74,6 +82,7 @@ const cheminsDuZip = (zip: JSZip) => Object.keys(zip.files).filter((f) => !zip.f
 
 beforeEach(() => {
   etat.pieces = { data: [], error: null }
+  etat.sansDate = { data: [], error: null }
   etat.categories = { data: CATEGORIES, error: null }
   etat.telechargementsEnEchec = new Set()
 })
@@ -207,5 +216,48 @@ describe('remplirZipDossier', () => {
     const resultat = await remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')
     const resume = (await feuilles(resultat.excelBlob))['Résumé par catégorie']
     expect(resume).toEqual([['Catégorie', 'Total TTC'], ['Achats fournisseurs', 200]])
+  })
+})
+
+describe('pièces validées sans date', () => {
+  it('les signale, alors qu’aucune période ne peut les contenir', async () => {
+    // Le défaut : le filtre `gte`/`lte` sur `date_piece` écarte les NULL — en SQL, une comparaison
+    // avec NULL n'est jamais vraie. Une pièce validée sans date est donc absente de *tous* les packs,
+    // du ZIP comme du récapitulatif et du total, sans que rien ne le dise. Un dossier réel en
+    // comptait 18 sur 22, pour 1 697,39 € : le comptable ne pouvait s'en apercevoir qu'en recomptant
+    // les pièces du dossier à la main.
+    etat.pieces.data = [piece({ id: 'ok', storage_path: 'd1/ok.pdf' })]
+    etat.sansDate.data = [
+      piece({ id: 'nd1', storage_path: 'd1/nd1.pdf', date_piece: null, tiers: 'Transmedical', nom_fichier: '879698.pdf' }),
+      piece({ id: 'nd2', storage_path: 'd1/nd2.pdf', date_piece: null, tiers: 'Transmedical', nom_fichier: '878667.pdf' }),
+    ]
+    const resultat = await remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')
+
+    expect(resultat.sansDate).toHaveLength(2)
+    expect(resultat.sansDate[0]).toContain('Transmedical')
+    expect(resultat.sansDate[0]).toContain('879698.pdf')
+    // Elles restent hors du pack et de son total : elles n'appartiennent pas à cette période.
+    expect(resultat.nbPieces).toBe(1)
+    const f = await feuilles(resultat.excelBlob)
+    expect(f['Pièces sans date']).toBeDefined()
+    expect(JSON.stringify(f['Pièces sans date'])).toContain('879698.pdf')
+  })
+
+  it('n’ajoute pas la feuille quand toutes les pièces ont une date', async () => {
+    // Une feuille vide en permanence serait ignorée comme le reste.
+    etat.pieces.data = [piece({ id: 'ok', storage_path: 'd1/ok.pdf' })]
+    const resultat = await remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')
+    expect(resultat.sansDate).toEqual([])
+    expect((await feuilles(resultat.excelBlob))['Pièces sans date']).toBeUndefined()
+  })
+
+  it('lève si cette lecture échoue, plutôt que d’annoncer « aucune »', async () => {
+    // Même piège que partout ailleurs : un tableau vide veut dire « rien à signaler », donc une
+    // lecture refusée aurait rétabli exactement le silence qu'on vient de supprimer.
+    etat.pieces.data = [piece({ id: 'ok', storage_path: 'd1/ok.pdf' })]
+    etat.sansDate = { data: [], error: { message: 'permission denied' } }
+    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')).rejects.toMatchObject({
+      message: 'permission denied',
+    })
   })
 })
