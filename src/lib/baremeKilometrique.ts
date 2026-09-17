@@ -250,3 +250,21 @@ export function totalIndemnitesKilometriques(
 
   return { total: Number(total.toFixed(2)), nonCalcules }
 }
+
+// Les exercices qu'il est utile de proposer pour la saisie des véhicules : ceux qui portent déjà des
+// véhicules, et ceux dont le barème est renseigné. Du plus récent au plus ancien.
+//
+// L'union des deux, et pas seulement les millésimes du barème : un exercice où des kilomètres ont été
+// saisis avant que le barème n'arrive doit rester atteignable, sinon les données deviendraient
+// invisibles depuis l'écran — et personne ne saurait qu'elles existent.
+//
+// Sert à ne PLUS choisir l'exercice à la place de l'utilisateur. La carte retombait sur l'année
+// civile en cours quand l'en-tête était sur « toutes années » : elle enregistrait alors des
+// kilomètres sur un exercice que personne n'avait demandé, et l'indemnité repartait en « barème non
+// renseigné » sans que le lien avec l'année soit évident.
+export function exercicesProposables(
+  anneesAvecVehicules: number[],
+  baremes: BaremeAnnuel[] = BAREMES,
+): number[] {
+  return [...new Set([...anneesAvecVehicules, ...baremes.map((b) => b.annee)])].sort((a, b) => b - a)
+}

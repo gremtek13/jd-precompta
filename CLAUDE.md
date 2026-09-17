@@ -724,6 +724,17 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   au 1er janvier et vaut pour l'année entière (notice, renvoi 12), donc la table `vehicules` porte
   une ligne par véhicule ET par année. Le total se reporte ligne 23 du 2035-A (case BJ) — le bas du
   2035-B le dit explicitement.
+- **Un écran de SAISIE ne choisit pas l'exercice à la place du cabinet.** Les
+  onglets de consultation acceptent « toutes années » et cumulent ; un écran qui
+  écrit des données datées ne le peut pas. La carte Véhicules retombait sur
+  l'année civile en cours : des kilomètres partaient sur un exercice que personne
+  n'avait demandé, et l'indemnité revenait en « barème non renseigné » sans que le
+  lien avec l'année soit visible. Elle propose maintenant les exercices
+  (`exercicesProposables` : ceux qui portent déjà des véhicules ∪ ceux dont le
+  barème est saisi) et n'affiche ni tableau ni bouton d'ajout tant qu'aucun n'est
+  choisi. Le choix est offert LÀ où la question se pose, pas par un renvoi vers
+  l'en-tête. Et un exercice vide dit sur quelles autres années les véhicules
+  existent — c'est ce qui évite de ressaisir des kilomètres déjà enregistrés.
 - **Un champ grisé garde sa valeur, et cette valeur compte encore.** Une voiture
   de 6 CV basculée en « cyclomoteur » conservait sa puissance fiscale ; la ligne
   « cyclomoteur » du barème ne couvrant que la puissance 0, l'indemnité repartait
@@ -801,7 +812,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 550 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 555 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
