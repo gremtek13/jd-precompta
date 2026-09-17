@@ -4,6 +4,7 @@ import {
   baremeDeLAnnee,
   carburantApplicable,
   completerModificationVehicule,
+  exercicesProposables,
   indemniteKilometrique,
   totalIndemnitesKilometriques,
 } from './baremeKilometrique'
@@ -279,5 +280,32 @@ describe('cohérence de la fiche véhicule', () => {
     expect(carburantApplicable('hybride')).toBe(true)
     // Motorisation pas encore renseignée : la question reste ouverte, on ne grise pas.
     expect(carburantApplicable(null)).toBe(true)
+  })
+})
+
+describe('exercicesProposables — ne plus choisir l’exercice à la place du cabinet', () => {
+  it('propose les millésimes du barème quand rien n’est encore saisi', () => {
+    expect(exercicesProposables([], [bareme])).toEqual([2025])
+  })
+
+  it('propose aussi un exercice qui porte déjà des véhicules sans barème', () => {
+    // Des kilomètres saisis avant que le barème n'arrive doivent rester atteignables : sans cela,
+    // les données deviendraient invisibles depuis l'écran et personne ne saurait qu'elles existent.
+    expect(exercicesProposables([2023], [bareme])).toEqual([2025, 2023])
+  })
+
+  it('ne propose pas deux fois le même exercice', () => {
+    expect(exercicesProposables([2025, 2025], [bareme])).toEqual([2025])
+  })
+
+  it('range du plus récent au plus ancien', () => {
+    // L'exercice en cours de clôture est le plus probable : il doit tomber sous le pouce en premier.
+    expect(exercicesProposables([2021, 2024, 2019], [bareme])).toEqual([2025, 2024, 2021, 2019])
+  })
+
+  it('propose les millésimes réellement saisis, pas une plage devinée', () => {
+    // Sur les vrais barèmes : 2025 et 2026 sont ouverts, 2027 ne l'est pas — la liste ne doit pas
+    // inventer d'année « en cours » que le calcul refuserait ensuite.
+    expect(exercicesProposables([])).toEqual([2026, 2025])
   })
 })

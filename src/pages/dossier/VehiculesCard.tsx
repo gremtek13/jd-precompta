@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
 import {
-  carburantApplicable, completerModificationVehicule, totalIndemnitesKilometriques, vehiculeDuDossier,
+  carburantApplicable, completerModificationVehicule, exercicesProposables,
+  totalIndemnitesKilometriques, vehiculeDuDossier,
 } from '../../lib/baremeKilometrique'
 import type { TypeVehicule } from '../../lib/baremeKilometrique'
 import type { VehiculeDossier } from '../../lib/types'
@@ -15,6 +16,11 @@ import { useAnnee } from '../../context/AnneeContext'
 // Le kilométrage est par EXERCICE, pas par véhicule : l'option pour le forfait se prend au 1er
 // janvier et vaut pour l'année entière (notice 2035-NOT-SD, renvoi 12). Un même véhicule a donc une
 // ligne par année, et l'écran suit l'exercice choisi en en-tête du dossier.
+//
+// Quand l'en-tête est sur « toutes années », l'écran ne saisit RIEN et propose de choisir. Il
+// retombait auparavant sur l'année civile en cours : des kilomètres partaient alors sur un exercice
+// que personne n'avait demandé, et l'indemnité revenait en « barème non renseigné » sans que le lien
+// avec l'année soit visible. C'est le cas qui a fait perdre du temps en production.
 
 const TYPES: { valeur: TypeVehicule; libelle: string }[] = [
   { valeur: 'voiture', libelle: 'Voiture (tourisme)' },
@@ -33,32 +39,43 @@ const LIBELLE_CARBURANT: Record<(typeof CARBURANTS)[number], string> = {
 }
 
 export default function VehiculesCard({ dossierId }: { dossierId: string }) {
-  const { annee } = useAnnee()
+  const { annee, setAnnee } = useAnnee()
   const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
   const [erreur, setErreur] = useState<string | null>(null)
   const [chargement, setChargement] = useState(true)
 
-  // L'exercice courant, ou l'année en cours quand l'en-tête affiche « toutes » — un kilométrage se
-  // rattache forcément à une année précise.
-  const exercice = typeof annee === 'number' ? annee : new Date().getFullYear()
+  // Null quand l'en-tête est sur « toutes années » : un kilométrage se rattache forcément à un
+  // exercice précis, et la carte n'en choisit PAS un à la place de l'utilisateur. Elle retombait
+  // auparavant sur l'année civile en cours — elle enregistrait alors des kilomètres sur un exercice
+  // que personne n'avait demandé, et l'indemnité repartait en « barème non renseigné » sans que le
+  // lien avec l'année saute aux yeux.
+  const exercice = typeof annee === 'number' ? annee : null
 
+  // Tous les exercices du dossier en une requête, filtrés ensuite en mémoire : quelques véhicules par
+  // dossier, et cela donne gratuitement la liste des exercices déjà pourvus, qu'il faut de toute
+  // façon proposer.
   async function charger() {
     setChargement(true)
     const { data, error } = await supabase
-      .from('vehicules').select('*').eq('dossier_id', dossierId).eq('annee', exercice)
-      .order('created_at')
+      .from('vehicules').select('*').eq('dossier_id', dossierId)
+      .order('annee', { ascending: false }).order('created_at')
     if (error) setErreur(error.message)
     setVehicules(data ?? [])
     setChargement(false)
   }
 
-  useEffect(() => { charger() }, [dossierId, exercice])
+  useEffect(() => { charger() }, [dossierId])
+
+  const vehiculesDeLExercice = vehicules.filter((v) => v.annee === exercice)
+  const anneesAvecVehicules = [...new Set(vehicules.map((v) => v.annee))]
+  const exercicesAuChoix = exercicesProposables(anneesAvecVehicules)
+  const nbVehiculesDe = (a: number) => vehicules.filter((v) => v.annee === a).length
 
   // Verrou posé avant tout `await` : un double clic créerait deux véhicules vides.
   const ajoutEnCours = useRef(false)
 
   async function ajouter() {
-    if (ajoutEnCours.current) return
+    if (exercice === null || ajoutEnCours.current) return
     ajoutEnCours.current = true
     try {
       const { error } = await supabase.from('vehicules').insert({ dossier_id: dossierId, annee: exercice })
@@ -89,12 +106,16 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
     await charger()
   }
 
-  const { total, nonCalcules } = totalIndemnitesKilometriques(vehicules.map(vehiculeDuDossier), exercice)
+  const { total, nonCalcules } = exercice === null
+    ? { total: 0, nonCalcules: [] }
+    : totalIndemnitesKilometriques(vehiculesDeLExercice.map(vehiculeDuDossier), exercice)
   const baremeManquant = nonCalcules.some((n) => n.motif === 'barème non renseigné pour cet exercice')
 
   return (
     <div className="card" style={{ marginTop: 20 }}>
-      <h3 style={{ marginTop: 0 }}>Véhicules et barème kilométrique — exercice {exercice}</h3>
+      <h3 style={{ marginTop: 0 }}>
+        Véhicules et barème kilométrique{exercice !== null && ` — exercice ${exercice}`}
+      </h3>
       <p className="muted" style={{ marginTop: -8 }}>
         Cadre 7 du 2035-B. Le total des indemnités se reporte ligne 23 du 2035-A (case BJ, frais de
         véhicules). Le kilométrage est propre à chaque exercice : l'option pour le forfait se prend
@@ -105,9 +126,50 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
 
       {chargement ? (
         <p className="muted">Chargement…</p>
-      ) : vehicules.length === 0 ? (
+      ) : exercice === null ? (
+        /* L'en-tête du dossier est sur « toutes années ». La carte ne choisit PAS un exercice à la
+           place de l'utilisateur : des kilomètres enregistrés sur une année que personne n'a
+           demandée sont une donnée fausse, et le calcul qui échoue derrière ne dit pas pourquoi.
+           Les exercices sont proposés ici même plutôt que par un renvoi vers l'en-tête — le choix se
+           fait là où la question se pose. */
+        <div style={{ padding: '4px 0 8px' }}>
+          <p style={{ marginTop: 0 }}>
+            Choisis l'exercice à renseigner : un kilométrage se rattache à une année précise, et
+            l'option pour le forfait vaut pour l'année entière.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {exercicesAuChoix.map((a) => (
+              <button key={a} className="btn btn-outline btn-sm" onClick={() => setAnnee(a)}>
+                {a}
+                {nbVehiculesDe(a) > 0 && (
+                  <span className="muted" style={{ marginLeft: 6 }}>
+                    · {nbVehiculesDe(a)} véhicule{nbVehiculesDe(a) > 1 ? 's' : ''}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          {anneesAvecVehicules.length === 0 && (
+            <p className="muted" style={{ marginBottom: 0, marginTop: 10, fontSize: '0.85rem' }}>
+              Aucun véhicule déclaré sur ce dossier, quel que soit l'exercice.
+            </p>
+          )}
+        </div>
+      ) : vehiculesDeLExercice.length === 0 ? (
         <div className="empty-state" style={{ padding: 16 }}>
-          Aucun véhicule déclaré sur cet exercice.
+          Aucun véhicule déclaré sur l'exercice {exercice}.
+          {anneesAvecVehicules.length > 0 && (
+            /* Dit où sont les véhicules plutôt que de laisser croire que le dossier n'en a aucun :
+               c'est exactement la confusion qui fait ressaisir des kilomètres déjà enregistrés. */
+            <div style={{ marginTop: 10, display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center' }}>
+              <span className="muted">Déjà renseignés sur :</span>
+              {anneesAvecVehicules.map((a) => (
+                <button key={a} className="btn btn-outline btn-sm" onClick={() => setAnnee(a)}>
+                  {a} · {nbVehiculesDe(a)}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       ) : (
         <div className="table-scroll">
@@ -128,7 +190,7 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
               </tr>
             </thead>
             <tbody>
-              {vehicules.map((v) => {
+              {vehiculesDeLExercice.map((v) => {
                 const indemnite = totalIndemnitesKilometriques([vehiculeDuDossier(v)], exercice)
                 return (
                   <tr key={v.id}>
@@ -221,9 +283,14 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
         </p>
       )}
 
-      <button className="btn btn-outline btn-sm" style={{ marginTop: 12 }} onClick={ajouter}>
-        + Ajouter un véhicule
-      </button>
+      {/* Rien à ajouter tant qu'aucun exercice n'est choisi : le véhicule serait rattaché à une année
+          devinée. Le bouton disparaît plutôt que d'être grisé — grisé, il laisserait chercher ce qui
+          le débloque, alors que la réponse est juste au-dessus. */}
+      {exercice !== null && (
+        <button className="btn btn-outline btn-sm" style={{ marginTop: 12 }} onClick={ajouter}>
+          + Ajouter un véhicule sur {exercice}
+        </button>
+      )}
     </div>
   )
 }
