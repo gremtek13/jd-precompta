@@ -78,10 +78,13 @@ const deuxRoues = (
   ],
 })
 
-// Barème applicable aux revenus 2025 (déclaration déposée en 2026). Non revalorisé pour 2026.
+// Barème applicable aux revenus 2025 (déclaration déposée en 2026), saisi d'après la publication de
+// l'administration.
 //
-// Une année absente de cette liste fait échouer le calcul plutôt que d'emprunter le barème d'une
-// autre année : un millésime périmé appliqué en silence est le défaut le plus coûteux ici.
+// Une année absente de la liste `BAREMES` fait échouer le calcul plutôt que d'emprunter le barème
+// d'une autre année : un millésime périmé appliqué en silence est le défaut le plus coûteux ici.
+// Ajouter une année reste donc un acte explicite, même quand les valeurs ne changent pas — voir
+// BAREME_2026 plus bas.
 const BAREME_2025: BaremeAnnuel = {
   annee: 2025,
   source: 'impots.gouv.fr — barème kilométrique applicable aux revenus 2025, non revalorisé en 2026',
@@ -112,7 +115,25 @@ const BAREME_2025: BaremeAnnuel = {
   ],
 }
 
-export const BAREMES: BaremeAnnuel[] = [BAREME_2025]
+// Barème applicable aux revenus 2026. Le barème n'ayant pas été revalorisé, ce sont les mêmes
+// valeurs qu'en 2025 — et c'est littéralement la MÊME table qui est réutilisée, pas une copie : deux
+// listes recopiées à la main finiraient par diverger sur un chiffre, et personne ne saurait laquelle
+// fait foi. Un test fige cette identité.
+//
+// **Provenance, à lire avant de s'en servir.** Contrairement au millésime 2025, saisi d'après la
+// publication de l'administration, celui-ci repose sur l'absence de revalorisation confirmée par le
+// cabinet (septembre 2026). Le barème applicable aux revenus 2026 ne sera publié qu'au printemps
+// 2027 : il faudra alors le confronter à cette table et remplacer cette entrée par la publication,
+// que les chiffres bougent ou non. C'est le sens de ce commentaire — qu'on sache dans deux ans
+// d'où venaient ces valeurs.
+const BAREME_2026: BaremeAnnuel = {
+  annee: 2026,
+  source: 'Identique au barème des revenus 2025, non revalorisé — sur confirmation du cabinet '
+    + '(septembre 2026). À confronter à la publication officielle dès sa parution, au printemps 2027.',
+  lignes: BAREME_2025.lignes,
+}
+
+export const BAREMES: BaremeAnnuel[] = [BAREME_2025, BAREME_2026]
 
 export function baremeDeLAnnee(annee: number, baremes: BaremeAnnuel[] = BAREMES): BaremeAnnuel | null {
   return baremes.find((b) => b.annee === annee) ?? null
