@@ -5,7 +5,11 @@ import type { CategorieDocument } from './types'
 // Classification automatique du document, déduite du texte OCR brut (voir extract-piece) — permet de
 // router un import en masse vers Pièces (facture) ou vers l'archive Documents (le reste), sans coût
 // Textract supplémentaire puisqu'elle réutilise le texte déjà extrait pour la ventilation TVA.
-export type ClassificationDocument = 'releve_bancaire' | 'cotisation' | 'attestation' | 'facture'
+// `autre` couvre les documents qui ne sont ni une facture, ni un relevé bancaire, ni un appel de
+// cotisation, ni une attestation : relevés d'activité de l'Assurance Maladie, relevés de situation
+// d'épargne. Ils atterrissaient en « facture » par défaut, donc dans les PIÈCES — et le montant lu
+// dessus se présentait comme une charge. Voir extract-piece/classifieDocument.
+export type ClassificationDocument = 'releve_bancaire' | 'cotisation' | 'attestation' | 'autre' | 'facture'
 
 // Libellé humain d'une catégorie de document classé automatiquement — partagé entre l'import en masse
 // (ImportDossierModal) et l'ajout unifié (AjouterDocumentsModal), voir lib/importFichiers.ts.

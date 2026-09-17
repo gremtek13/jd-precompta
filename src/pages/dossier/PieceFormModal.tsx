@@ -156,6 +156,10 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
           releve_bancaire: 'un relevé bancaire',
           cotisation: 'un appel de cotisation',
           attestation: 'une attestation/certificat',
+          // Relevé d'activité de l'Assurance Maladie, relevé de situation d'un contrat d'épargne :
+          // des états, jamais une dépense. Le montant qu'on y lit est un capital ou un chiffre
+          // d'activité, et le porter en charge fausse la déclaration de son montant entier.
+          autre: "un relevé d'activité ou de situation (ni une facture, ni une dépense)",
         }
         setSuggestionAutre(`Ce document ressemble plutôt à ${labels[classification]} qu'à une facture — l'onglet Documents serait peut-être plus adapté.`)
       }
