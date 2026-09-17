@@ -19,7 +19,9 @@ const etat = {
   extractionLeve: false,
   utilisateur: 'u1' as string | null,
 }
-const journal: { action: string; cible: string }[] = []
+// `type` note le sens de la pièce écrite : « rangé dans Pièces » ne suffit plus à décrire un dépôt
+// correct depuis qu'un justificatif de recette peut y entrer à l'envers.
+const journal: { action: string; cible: string; type?: string }[] = []
 
 vi.mock('./supabase', () => ({
   supabase: {
@@ -29,7 +31,11 @@ vi.mock('./supabase', () => ({
       // lib/commentaires.ts). Le faux client reproduit ce chaînage, sans quoi il testerait une
       // écriture que la production ne fait plus.
       insert: (ligne: Record<string, unknown>) => {
-        journal.push({ action: `insert:${table}`, cible: String(ligne.categorie ?? ligne.uploaded_by ?? '') })
+        journal.push({
+          action: `insert:${table}`,
+          cible: String(ligne.categorie ?? ligne.uploaded_by ?? ''),
+          type: ligne.type_piece as string | undefined,
+        })
         return {
           select: () => ({
             single: () => Promise.resolve(
@@ -106,10 +112,25 @@ describe('deposerFichier', () => {
     expect(journal.map((j) => j.action)).toEqual(['upload', 'insert:pieces'])
   })
 
+  it('range une facture au débit', async () => {
+    await deposer('facture.pdf')
+    expect(journal.find((j) => j.action === 'insert:pieces')?.type).toBe('achat')
+  })
+
   it('range un relevé ou une attestation dans Documents', async () => {
     etat.extraction = { classification: 'releve_bancaire' }
     await deposer('releve.pdf')
     expect(journal.map((j) => j.action)).toContain('insert:documents_divers')
+  })
+
+  it('range un justificatif de recette dans Pièces, en vente', async () => {
+    // Les deux moitiés comptent. Dans Documents, le bordereau serait perdu comme justificatif
+    // d'encaissement ; en Pièces mais en « achat », son montant partirait en charge — et la recette
+    // manquerait par-dessus le marché. Le dépôt client est le chemin le plus exposé : le praticien
+    // photographie son bordereau, et il n'a pas le droit de corriger la pièce ensuite.
+    etat.extraction = { classification: 'facture_vente', date_piece: '2025-12-09', montant_ttc: 364.75 }
+    expect(await deposer('bordereau.pdf')).toEqual({ statut: 'ok', cible: { type: 'piece', id: 'id-pieces' } })
+    expect(journal.find((j) => j.action === 'insert:pieces')?.type).toBe('vente')
   })
 
   it('classe un CSV en relevé sans tenter d’extraction', async () => {

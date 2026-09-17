@@ -54,3 +54,33 @@ describe('fichierDejaPresent', () => {
     await expect(fichierDejaPresent('d1', 'abc')).rejects.toThrow('réseau indisponible')
   })
 })
+
+const { orientationDe, ACHAT_PAR_DEFAUT } = await import('./extraction')
+
+describe('orientationDe', () => {
+  it('garde une facture en Pièces, au débit', () => {
+    expect(orientationDe('facture')).toEqual({ destination: 'pieces', type_piece: 'achat' })
+  })
+
+  it('garde un justificatif de recette en Pièces, mais en vente', () => {
+    // Le cœur de la règle : un bordereau de télétransmission est une PIÈCE (il a un montant à
+    // ventiler, il se rapproche d'un encaissement) — simplement dans l'autre sens. L'envoyer dans
+    // l'archive Documents le perdrait tout autant que le laisser en achat.
+    expect(orientationDe('facture_vente')).toEqual({ destination: 'pieces', type_piece: 'vente' })
+  })
+
+  it('envoie tout le reste dans Documents, sous sa propre catégorie', () => {
+    // Exhaustif volontairement : c'est la liste que `CategorieDocument` doit continuer de couvrir.
+    // Une classification ajoutée sans être traitée ici ne compilerait pas — et si elle compilait,
+    // elle atterrirait dans Documents sans que personne l'ait décidé.
+    for (const c of ['releve_bancaire', 'cotisation', 'attestation', 'autre'] as const) {
+      expect(orientationDe(c)).toEqual({ destination: 'documents', categorie: c })
+    }
+  })
+
+  it('retombe sur un achat en Pièces quand l\'extraction n\'a rien donné', () => {
+    // Le repli partagé par les deux pipelines : sans extraction on ne sait rien, et une pièce à
+    // vérifier vaut mieux qu'un fichier rangé dans une archive que personne ne relit.
+    expect(ACHAT_PAR_DEFAUT).toEqual({ destination: 'pieces', type_piece: 'achat' })
+  })
+})

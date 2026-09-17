@@ -1,6 +1,6 @@
 import { supabase } from './supabase'
 import { extraireErreurFonction } from './invokeErreur'
-import type { CategorieDocument } from './types'
+import type { CategorieDocument, TypePiece } from './types'
 
 // Classification automatique du document, déduite du texte OCR brut (voir extract-piece) — permet de
 // router un import en masse vers Pièces (facture) ou vers l'archive Documents (le reste), sans coût
@@ -9,7 +9,10 @@ import type { CategorieDocument } from './types'
 // cotisation, ni une attestation : relevés d'activité de l'Assurance Maladie, relevés de situation
 // d'épargne. Ils atterrissaient en « facture » par défaut, donc dans les PIÈCES — et le montant lu
 // dessus se présentait comme une charge. Voir extract-piece/classifieDocument.
-export type ClassificationDocument = 'releve_bancaire' | 'cotisation' | 'attestation' | 'autre' | 'facture'
+// `facture_vente` est un justificatif de RECETTE (bordereau de télétransmission) : une pièce, comme
+// une facture, mais dans l'autre sens.
+export type ClassificationDocument =
+  | 'releve_bancaire' | 'cotisation' | 'attestation' | 'autre' | 'facture' | 'facture_vente'
 
 // Libellé humain d'une catégorie de document classé automatiquement — partagé entre l'import en masse
 // (ImportDossierModal) et l'ajout unifié (AjouterDocumentsModal), voir lib/importFichiers.ts.
@@ -18,6 +21,34 @@ export const LABEL_CLASSIFICATION: Record<CategorieDocument, string> = {
   cotisation: 'Appel de cotisation',
   attestation: 'Attestation',
   autre: 'Autre',
+}
+
+// Où va un document une fois classé, et sous quelle forme.
+//
+// Rendue par une seule fonction plutôt que recopiée dans `depot.ts` (dépôt client) et
+// `importFichiers.ts` (import cabinet). Ces deux pipelines sont jumeaux assumés (voir leurs en-têtes
+// respectifs) et portaient la même règle écrite deux fois : « tout ce qui n'est pas une facture part
+// en Documents ». Elle était vraie tant que `facture` était la seule classification qui restait en
+// Pièces ; l'arrivée d'un justificatif de recette la rend fausse — et l'aurait rendue fausse des deux
+// côtés à la fois, un bordereau de télétransmission atterrissant dans l'archive Documents au lieu
+// d'être une recette. Une répartition exhaustive, à un seul endroit, ne peut plus diverger.
+export type Orientation =
+  | { destination: 'pieces'; type_piece: TypePiece }
+  | { destination: 'documents'; categorie: CategorieDocument }
+
+// Quand l'extraction échoue (page illisible, Textract en erreur), on ne sait rien du document : il
+// part en Pièces comme un achat, à compléter à la main. Même repli par défaut que `classifieDocument`
+// côté extract-piece — une pièce à vérifier vaut mieux qu'un fichier rangé dans une archive où
+// personne ne relit les montants.
+export const ACHAT_PAR_DEFAUT: Orientation = { destination: 'pieces', type_piece: 'achat' }
+
+export function orientationDe(classification: ClassificationDocument): Orientation {
+  // Le type de pièce est décidé ICI et pas par l'appelant : c'est la classification qui sait qu'un
+  // bordereau est une recette, et un `type_piece: 'achat'` en dur dans chaque dépôt est précisément
+  // ce qui faisait entrer un encaissement dans les charges.
+  if (classification === 'facture') return { destination: 'pieces', type_piece: 'achat' }
+  if (classification === 'facture_vente') return { destination: 'pieces', type_piece: 'vente' }
+  return { destination: 'documents', categorie: classification }
 }
 
 export interface ExtractionResult {

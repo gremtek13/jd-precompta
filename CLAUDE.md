@@ -450,7 +450,15 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `extract-piece` ne peut rien importer de `src/lib` et redéclare sa lecture de montant.
   `extractPieceMontants.test.ts` lit la vraie source déployée, en extrait `parseAmount` et
   l'exécute — volontairement fragile : renommer la fonction casse le test bruyamment, ce qui
-  vaut mieux qu'une copie qui dérive en silence.
+  vaut mieux qu'une copie qui dérive en silence. Même harnais pour `dateDepuisTexteBrut`
+  (`extractPieceDate.test.ts`) et pour `classifieDocument`
+  (`extractPieceClassification.test.ts`).
+  **Les textes de ces tests sont reconstruits, jamais copiés d'un document réel** : les bordereaux
+  et feuilles de soins portent des noms de patients, des dates de naissance et des numéros de
+  sécurité sociale, qui n'ont rien à faire dans un dépôt Git. Seules la structure et les mentions
+  qui servent de marqueur sont reproduites — c'est tout ce que la fonction regarde. Pour vérifier
+  un changement de classification sur le corpus réel, faire tourner les marqueurs **en base**
+  (`piece_textes_ocr`, regex extraites de la source) plutôt que rapatrier les textes.
 - **Une déduction se dit, elle ne se déguise pas en lecture.** Faute de libellé reconnu, la date
   d'une pièce est prise comme la première en ordre de lecture — une facture imprime sa date en
   en-tête, avant ses conditions de règlement et ses mentions légales. Cette règle avait d'abord été
@@ -779,6 +787,33 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   évitent le seul mot « assurance vie », qui figure sur de vraies factures de
   courtier. Validés en exécutant la vraie fonction sur les textes OCR réels du
   dossier : 41 factures sur 41 restent des factures.
+- **Un justificatif de RECETTE est une pièce, pas un document — et pas un achat.** Un bordereau
+  de télétransmission (le récapitulatif d'un lot de feuilles de soins envoyé à l'Assurance Maladie
+  et aux mutuelles) est le justificatif de ce que le praticien a facturé. Classé « facture » comme
+  tout le reste, il devenait une pièce d'ACHAT : son montant partait en charge, et la recette qu'il
+  justifie n'était comptée nulle part — **le même euro compté deux fois à l'envers dans le
+  résultat**. Trouvé en production sur un bordereau à 364,75 €, statut « à valider ».
+  Le marqueur porte sur le nom du document (`BORDEREAU DE TÉLÉTRANSMISSION`), réglementaire
+  SESAM-Vitale donc commun à tous les logiciels de facturation, jamais sur les libellés d'un éditeur
+  (« LOT NON SECURISE », « Réalisé par … ») qui ne diraient rien du bordereau d'un confrère équipé
+  autrement. Il est testé **en premier**, avant toutes les autres familles : c'est le seul marqueur
+  posé sur le TITRE du document, et un mot-clé croisé au fil d'un long texte OCR ne doit pas primer
+  sur le nom que le document se donne.
+  Frontière à garder en tête : un **relevé d'honoraires** reste « autre » (Documents). C'est un ÉTAT
+  de l'activité de l'année, pas le justificatif d'un encaissement — les deux documents parlent
+  pourtant d'activité facturée, et c'est la distinction la plus fine de `classifieDocument`.
+  Réserve professionnelle assumée : un bordereau dit ce qui a été FACTURÉ, l'encaissement arrive plus
+  tard sur le compte. En BNC (recettes-dépenses), la recette se reconnaît à l'encaissement — la pièce
+  sert donc de justificatif à rapprocher du virement de la caisse, et c'est la date de l'encaissement
+  qui fait foi si elle diffère. L'écran le dit à l'arbitrage.
+- **Le sens d'une pièce est décidé par la classification, jamais par l'appelant.** `orientationDe`
+  (lib/extraction.ts) rend en un seul endroit la destination (Pièces / Documents) **et** le
+  `type_piece`. `depot.ts` (client) et `importFichiers.ts` (cabinet) sont des jumeaux assumés et
+  portaient tous deux la même règle écrite en dur : « tout ce qui n'est pas une facture part en
+  Documents », plus un `type_piece: 'achat'` littéral. Cette règle était vraie tant que `facture`
+  était la seule classification restant en Pièces ; le premier justificatif de recette la rendait
+  fausse **des deux côtés à la fois**. Une répartition exhaustive, à un seul endroit, ne peut plus
+  diverger — et une classification ajoutée sans être traitée ne compile pas.
 - **Le « pourquoi » d'une dépense ne s'extrait pas, il se demande.** L'OCR lit
   « BOULANGER MARSEILLE, 199,99 € » et s'arrête là : il ne dira jamais si c'est le
   four de la salle d'attente ou un cadeau, et c'est pourtant ce qui décide de la
@@ -827,7 +862,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 555 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 572 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
