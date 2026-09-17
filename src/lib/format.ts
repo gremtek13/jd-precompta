@@ -35,6 +35,20 @@ const MOTS_SANS_IDENTITE = new Set([
   'service', 'services', 'facture', 'pour', 'avec', 'dont', 'les', 'des', 'sur',
 ])
 
+// Recolle les sigles pointés : « C.P.A.M. » devient « cpam », « S.A.R.L. » devient « sarl ».
+//
+// Sans ça, les points sont aplatis en espaces comme n'importe quelle ponctuation et le sigle explose
+// en lettres isolées. Le seuil des quatre caractères, qui existe justement pour refuser les fragments
+// (« m », « sa »), les élimine alors toutes — et `cleFournisseur` retient le mot suivant. Une CPAM
+// écrite « C.P.A.M. Marseille » rendait donc la clé **« marseille »** : pas une absence de clé, une
+// clé FAUSSE, celle d'une ville. Deux sigles différents de la même ville se seraient confondus.
+//
+// Un point ne compte que s'il suit une lettre seule et qu'une lettre le suit immédiatement : il faut
+// au moins deux groupes, et le dernier point est facultatif (l'OCR le perd souvent). Ni « x. y. »
+// (espace après le point), ni « www.edf.fr » (trois lettres avant le point) ne sont donc touchés —
+// seul le motif propre aux sigles l'est.
+const SIGLE_POINTE = /(?:[a-z]\.){2,}[a-z]?/g
+
 // Clé d'identité d'un fournisseur : le premier mot de son nom qui puisse vraiment le désigner.
 //
 // C'est ce qui permet de reconnaître un même fournisseur à travers les graphies que l'OCR produit.
@@ -54,6 +68,9 @@ export function cleFournisseur(tiers: string | null): string | null {
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
     .toLowerCase()
+    // Avant l'aplatissement de la ponctuation, jamais après : une fois les points devenus des
+    // espaces, plus rien ne distingue un sigle d'une suite de mots d'une lettre.
+    .replace(SIGLE_POINTE, (sigle) => sigle.replace(/\./g, ''))
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .split(' ')

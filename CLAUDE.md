@@ -698,6 +698,15 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   pas plus, sinon « ulys » (fournisseur réel) est perdu ; pas moins, sinon « m » et « sa » passent
   pour des noms. Elle rend null quand rien n'identifie personne (« CARTE BANCAIRE »), et l'appelant
   traite alors la pièce isolément plutôt que de la regrouper au hasard.
+  **Les sigles pointés sont recollés avant que la ponctuation ne soit aplatie** : « C.P.A.M. » devient
+  « cpam ». Sans ça les points passaient en espaces comme le reste, le sigle explosait en lettres
+  isolées, le seuil de quatre caractères les éliminait toutes — et la fonction retenait le mot
+  suivant. « C.P.A.M. Marseille » rendait donc **« marseille »** : pas une absence de clé, une clé
+  FAUSSE, celle d'une ville, sous laquelle deux organismes différents de la même ville se seraient
+  confondus. Un point ne compte que s'il suit une lettre SEULE et qu'une lettre le suit
+  immédiatement, avec au moins deux groupes et un point final facultatif (l'OCR le perd souvent) :
+  ni « www.edf.fr » ni « Cabinet X. Y. Martin » ne sont touchés. Le seuil des quatre caractères reste
+  entier et le déborde : « E.D.F. » devient « edf », donc rejeté comme l'était « EDF ».
 - **`suggererCategorie` cherche dans cet ordre : nom exact, puis clé d'identité.** L'ordre porte une
   règle métier — un arbitrage posé sur « Apple Marseille » doit primer sur un arbitrage posé sur
   « Apple ». L'essai sur le nom exact garde aussi les règles d'avant, enregistrées sous le nom
@@ -887,7 +896,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 580 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 588 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
