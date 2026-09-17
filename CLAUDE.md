@@ -705,6 +705,13 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   véhicules 100 % électriques ; elles valent les thermiques × 1,2 arrondies (vérifié sur les vingt
   valeurs), mais ce sont les chiffres publiés qui sont repris — c'est contre eux qu'un contrôle se
   fera. Hybrides et hydrogène relèvent de la table thermique, comme le dit la publication.
+  **2026 reprend la table de 2025**, le barème n'ayant pas été revalorisé : c'est littéralement la
+  même table qui est partagée, jamais une copie — deux listes recopiées finiraient par diverger sur
+  un chiffre, et personne ne saurait laquelle fait foi (un test fige l'identité). Sa `source` dit
+  qu'elle ne vient PAS d'une publication mais d'une absence de revalorisation confirmée par le
+  cabinet : le barème des revenus 2026 paraîtra au printemps 2027 et devra alors être confronté à
+  cette table. Ajouter un millésime reste un acte explicite même quand les valeurs ne changent pas —
+  la liste `BAREMES` est figée par un test.
 - **Ce barème n'est pas progressif par tranches cumulées.** La tranche sert à choisir une formule,
   qui s'applique ensuite au kilométrage TOTAL ; le forfait de la tranche intermédiaire n'existe que
   pour rattraper l'écart au point de bascule. Conséquence pour les tests : le barème est **continu à
@@ -794,7 +801,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 548 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 550 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

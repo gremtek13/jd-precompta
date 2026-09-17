@@ -107,12 +107,34 @@ describe('le barème officiel, tel que publié', () => {
 
   it('n’est renseigné que pour les millésimes réellement saisis', () => {
     // Emprunter le barème d'une autre année est le défaut le plus coûteux ici : il produit une
-    // déduction plausible et fausse. Ajouter une année doit être un acte explicite.
-    expect(BAREMES.map((b) => b.annee)).toEqual([2025])
+    // déduction plausible et fausse. Ajouter une année reste un acte explicite, même quand les
+    // valeurs ne changent pas — ce test le force.
+    expect(BAREMES.map((b) => b.annee)).toEqual([2025, 2026])
     expect(BAREMES.every((b) => b.source.length > 0)).toBe(true)
     expect(indemniteKilometrique(
       { type: 'voiture', puissanceFiscale: 6, kmProfessionnel: 4000, electrique: false }, 2024,
     )).toBeNull()
+  })
+
+  it('applique à 2026 exactement la même table qu’à 2025', () => {
+    // Le barème n'a pas été revalorisé. Les deux millésimes partagent la même table plutôt que d'en
+    // recopier une : deux listes recopiées finiraient par diverger sur un chiffre, et personne ne
+    // saurait laquelle fait foi. Ce test fige l'identité, valeur par valeur.
+    expect(baremeDeLAnnee(2026)?.lignes).toEqual(baremeDeLAnnee(2025)?.lignes)
+
+    // Et le calcul le confirme de bout en bout, sur les trois tranches d'une voiture.
+    const v = (km: number) => ({ type: 'voiture' as const, puissanceFiscale: 3, kmProfessionnel: km, electrique: false })
+    for (const km of [4000, 10_000, 25_000]) {
+      expect(indemniteKilometrique(v(km), 2026)).toBe(indemniteKilometrique(v(km), 2025))
+    }
+  })
+
+  it('dit d’où viennent les chiffres de 2026, qui ne sont pas encore publiés', () => {
+    // Le millésime 2026 ne repose pas sur une publication mais sur l'absence de revalorisation. La
+    // source doit le dire : dans deux ans, personne ne s'en souviendra, et la table sera à confronter
+    // à la publication officielle du printemps 2027.
+    expect(baremeDeLAnnee(2026)?.source).toMatch(/non revalorisé/i)
+    expect(baremeDeLAnnee(2026)?.source).toMatch(/publication officielle/i)
   })
 })
 
