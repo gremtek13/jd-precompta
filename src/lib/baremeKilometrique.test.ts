@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   BAREMES,
   baremeDeLAnnee,
+  carburantApplicable,
+  completerModificationVehicule,
   indemniteKilometrique,
   totalIndemnitesKilometriques,
 } from './baremeKilometrique'
@@ -202,5 +204,58 @@ describe('totalIndemnitesKilometriques — le report ligne 23', () => {
 
   it('rend un total nul et rien à signaler sans véhicule', () => {
     expect(totalIndemnitesKilometriques([], 2025, [bareme])).toEqual({ total: 0, nonCalcules: [] })
+  })
+})
+
+describe('cohérence de la fiche véhicule', () => {
+  it('remet la puissance fiscale à zéro en basculant sur un cyclomoteur', () => {
+    // Le défaut réel : une voiture de 6 CV passée en cyclomoteur gardait sa puissance. La ligne
+    // « cyclomoteur » du barème ne couvrant que la puissance 0, l'indemnité repartait en « puissance
+    // hors barème » — un calcul qui échoue alors que rien à l'écran ne paraît faux, le champ étant
+    // grisé.
+    expect(completerModificationVehicule({ type: 'cyclomoteur' }))
+      .toEqual({ type: 'cyclomoteur', puissance_fiscale: 0 })
+  })
+
+  it('laisse la puissance fiscale tranquille sur une voiture ou une moto', () => {
+    expect(completerModificationVehicule({ type: 'voiture' })).toEqual({ type: 'voiture' })
+    expect(completerModificationVehicule({ type: 'moto' })).toEqual({ type: 'moto' })
+  })
+
+  it('efface le carburant d’un véhicule électrique ou à hydrogène', () => {
+    // Aucun des carburants du formulaire (gazole, sans plomb, GPL) ne s'applique. Laisser la valeur
+    // précédente ferait porter au 2035-B un carburant que le véhicule ne consomme pas.
+    for (const motorisation of ['electrique', 'hydrogene'] as const) {
+      expect(completerModificationVehicule({ motorisation })).toEqual({ motorisation, carburant: null })
+    }
+  })
+
+  it('garde le carburant d’un thermique ou d’un hybride', () => {
+    // Un hybride consomme bien du carburant — l'effacer lui retirerait une information juste.
+    for (const motorisation of ['thermique', 'hybride'] as const) {
+      expect(completerModificationVehicule({ motorisation })).toEqual({ motorisation })
+    }
+  })
+
+  it('efface aussi le carburant quand la motorisation est vidée', () => {
+    // « — » remet la motorisation à null : on ne sait plus ce que le véhicule consomme, et un
+    // carburant hérité de la saisie précédente serait une affirmation que plus rien ne soutient.
+    expect(completerModificationVehicule({ motorisation: null })).toEqual({ motorisation: null })
+  })
+
+  it('ne touche pas aux champs qu’on ne modifie pas', () => {
+    // La règle complète une modification, elle n'en invente pas : modifier le seul kilométrage ne
+    // doit rien remettre à zéro au passage.
+    expect(completerModificationVehicule({ km_professionnel: 12_000 })).toEqual({ km_professionnel: 12_000 })
+    expect(completerModificationVehicule({ modele: 'Zoe' })).toEqual({ modele: 'Zoe' })
+  })
+
+  it('dit quand le carburant n’a pas de sens', () => {
+    expect(carburantApplicable('electrique')).toBe(false)
+    expect(carburantApplicable('hydrogene')).toBe(false)
+    expect(carburantApplicable('thermique')).toBe(true)
+    expect(carburantApplicable('hybride')).toBe(true)
+    // Motorisation pas encore renseignée : la question reste ouverte, on ne grise pas.
+    expect(carburantApplicable(null)).toBe(true)
   })
 })
