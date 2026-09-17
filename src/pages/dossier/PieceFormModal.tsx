@@ -147,12 +147,16 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       if (result.montant_ttc != null) setMontantTtc(result.montant_ttc.toString())
       setConfiance(result.confiance)
       if (result._lignes_brutes) setLignesBrutes(result._lignes_brutes)
-      // Signal doux, pas bloquant : la classification auto (utilisée pour trier l'import en masse)
-      // pense que ce n'est pas une facture — l'utilisateur reste libre de continuer ici, mais autant
-      // le prévenir plutôt que de laisser deviner pourquoi aucun montant ne ressort.
+      // Un bordereau de télétransmission est une pièce, mais dans l'autre sens : ce que le praticien a
+      // facturé. Le sens connu est APPLIQUÉ plutôt que suggéré (voir CLAUDE.md, « une valeur par
+      // défaut connue s'applique ») — laissé sur « Achat », le montant part en charge et la recette
+      // qu'il justifie n'est comptée nulle part. L'utilisateur garde le sélecteur pour corriger.
       const classification = result.classification
-      if (classification !== 'facture') {
-        const labels: Record<Exclude<typeof classification, 'facture'>, string> = {
+      if (classification === 'facture_vente') {
+        setTypePiece('vente')
+        setSuggestionAutre("Ce document est un bordereau de télétransmission : un justificatif de RECETTE, pas une dépense. Le type est passé à « Vente » — la date à retenir reste celle de l'encaissement si elle diffère.")
+      } else if (classification !== 'facture') {
+        const labels: Record<Exclude<typeof classification, 'facture' | 'facture_vente'>, string> = {
           releve_bancaire: 'un relevé bancaire',
           cotisation: 'un appel de cotisation',
           attestation: 'une attestation/certificat',

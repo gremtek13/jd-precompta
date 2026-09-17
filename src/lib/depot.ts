@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { extractPiece, fichierDejaPresent, hashFichier, type ExtractionResult } from './extraction'
+import { ACHAT_PAR_DEFAUT, extractPiece, fichierDejaPresent, hashFichier, orientationDe, type ExtractionResult } from './extraction'
 import { slugify } from './format'
 import type { CibleCommentaire } from './commentaires'
 import { enregistrerTexteOcr } from './texteOcr'
@@ -84,17 +84,19 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
       extraction = null // best-effort : atterrit en Pièces à compléter par le cabinet si l'extraction échoue
     }
 
-    if (extraction && extraction.classification !== 'facture') {
+    const orientation = extraction ? orientationDe(extraction.classification) : ACHAT_PAR_DEFAUT
+
+    if (orientation.destination === 'documents') {
       const id = await enregistrer('documents_divers', {
         dossier_id: dossierId, storage_path: path, storage_hash: hash, nom_fichier: file.name,
-        categorie: extraction.classification,
+        categorie: orientation.categorie,
       })
       return { statut: 'ok', cible: { type: 'document', id } }
     } else {
       const { data: userData } = await supabase.auth.getUser()
       const id = await enregistrer('pieces', {
         dossier_id: dossierId, uploaded_by: userData.user?.id ?? null, storage_path: path, storage_hash: hash,
-        nom_fichier: file.name, type_piece: 'achat', statut: 'a_valider',
+        nom_fichier: file.name, type_piece: orientation.type_piece, statut: 'a_valider',
         date_piece: extraction?.date_piece ?? null,
         tiers: extraction?.tiers ?? null,
         montant_ht: extraction?.montant_ht ?? null,

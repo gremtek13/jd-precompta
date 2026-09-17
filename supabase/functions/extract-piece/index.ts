@@ -331,7 +331,9 @@ function tvaDepuisTexteBrut(lignes: string[]): number | null {
   return montant != null ? Number(montant.toFixed(2)) : null
 }
 
-type ClassificationDocument = "releve_bancaire" | "cotisation" | "attestation" | "autre" | "facture"
+// "facture" et "facture_vente" restent en PIÈCES, les autres partent dans l'archive Documents — c'est
+// `orientationDe` (src/lib/extraction.ts) qui porte cette répartition côté application.
+type ClassificationDocument = "releve_bancaire" | "cotisation" | "attestation" | "autre" | "facture" | "facture_vente"
 
 // Repère les documents qui ne sont pas des factures d'achat/vente avant même l'extraction HT/TVA/TTC —
 // sur mots-clés caractéristiques cherchés dans le texte OCR brut (ces documents n'ont justement pas de
@@ -375,9 +377,34 @@ const MARQUEURS_SITUATION_EPARGNE = [
   /RETRAITE\s+PROFESSIONNELLE\s+SUPPL[EÉ]MENTAIRE/,
 ]
 
+// Bordereau de télétransmission : le récapitulatif d'un lot de feuilles de soins électroniques envoyé
+// à l'Assurance Maladie et aux mutuelles. C'est ce que le praticien a FACTURÉ, donc une pièce de
+// RECETTE — la seule famille reconnue ici qui reste en Pièces sans être un achat.
+//
+// Le danger est double et silencieux : classé en achat (le défaut de tous les dépôts), son montant
+// part en charge, et la recette qu'il justifie n'est comptée nulle part. Un même euro compte alors
+// deux fois à l'envers dans le résultat.
+//
+// Le nom du document est réglementaire (SESAM-Vitale) et commun à tous les logiciels de facturation
+// professionnels, contrairement à la mise en page : c'est donc lui, et lui seul, qui sert de marqueur.
+// Les libellés propres à un éditeur (« LOT NON SECURISE », « Réalisé par ... ») sont volontairement
+// écartés — ils ne diraient rien du bordereau du confrère qui utilise un autre logiciel. Ajouter une
+// variante suppose de l'avoir lue sur un vrai document, jamais devinée.
+const MARQUEURS_RECETTE = [
+  /BORDEREAU\s+DE\s+T[EÉ]L[EÉ]TRANSMISSION/,
+]
+
 function classifieDocument(lignes: string[]): ClassificationDocument {
   const texte = lignes.join(" ").toUpperCase()
   const occurrencesOperationsBancaires = (texte.match(/VIR SEPA|PRLV\b/g) ?? []).length
+  // En premier, volontairement : ce marqueur porte sur le TITRE du document, le signal le plus
+  // spécifique de toute la fonction. Un mot-clé croisé au fil d'un long texte OCR (« attestation »
+  // dans une mention de bas de page, un « PRLV » dans un libellé de règlement) ne doit pas primer sur
+  // le nom que le document se donne lui-même — d'autant qu'ici l'erreur ne déclasse pas une pièce vers
+  // une archive, elle perd une recette.
+  if (MARQUEURS_RECETTE.some((m) => m.test(texte))) {
+    return "facture_vente"
+  }
   if (MARQUEURS_RELEVE_BANCAIRE.some((m) => m.test(texte)) || occurrencesOperationsBancaires >= 3) {
     return "releve_bancaire"
   }

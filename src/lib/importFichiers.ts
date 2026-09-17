@@ -1,8 +1,7 @@
 import { supabase } from './supabase'
 import { slugify } from './format'
-import { extractPiece, hashFichier, LABEL_CLASSIFICATION } from './extraction'
+import { ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orientationDe } from './extraction'
 import { enregistrerTexteOcr } from './texteOcr'
-import type { CategorieDocument } from './types'
 
 // Logique de dépôt de fichier(s) dans un dossier, partagée entre l'import en masse d'une arborescence
 // (ImportDossierModal) et l'ajout ponctuel d'un ou plusieurs fichiers (AjouterDocumentsModal) : même
@@ -124,18 +123,21 @@ export async function importerFichierDossier(params: {
   // (même repli par défaut que côté extract-piece).
   const extraction = await extractPiece(file, file.name).catch(() => null)
 
-  if (extraction && extraction.classification !== 'facture') {
-    // Pas une facture : relevé bancaire, appel de cotisation ou attestation — archivé dans Documents
-    // plutôt que dans Pièces, faute de montant HT/TVA/TTC à faire vérifier.
+  const orientation = extraction ? orientationDe(extraction.classification) : ACHAT_PAR_DEFAUT
+
+  if (orientation.destination === 'documents') {
+    // Ni une facture ni un justificatif de recette : relevé bancaire, appel de cotisation, attestation
+    // ou relevé d'activité — archivé dans Documents plutôt que dans Pièces, faute de montant
+    // HT/TVA/TTC à faire vérifier.
     await enregistrer('documents_divers', {
       dossier_id: dossierId,
       sous_dossier_id: sousDossierId,
       storage_path: path,
       storage_hash: hash,
       nom_fichier: file.name,
-      categorie: extraction.classification as CategorieDocument,
+      categorie: orientation.categorie,
     })
-    return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION[extraction.classification]} » → Documents` }
+    return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION[orientation.categorie]} » → Documents` }
   }
 
   const pieceId = await enregistrer('pieces', {
@@ -145,7 +147,7 @@ export async function importerFichierDossier(params: {
     storage_hash: hash,
     nom_fichier: file.name,
     sous_dossier_id: sousDossierId,
-    type_piece: 'achat',
+    type_piece: orientation.type_piece,
     statut: 'a_valider',
     date_piece: extraction?.date_piece ?? null,
     tiers: extraction?.tiers ?? null,
@@ -159,6 +161,10 @@ export async function importerFichierDossier(params: {
   await enregistrerTexteOcr(dossierId, pieceId, extraction?.texte_ocr)
   return {
     statut: 'ok',
-    message: extraction ? 'Classé « Facture » → Pièces' : 'Importé — extraction à refaire à la main',
+    message: !extraction
+      ? 'Importé — extraction à refaire à la main'
+      : orientation.type_piece === 'vente'
+        ? 'Classé « Justificatif de recette » → Pièces'
+        : 'Classé « Facture » → Pièces',
   }
 }

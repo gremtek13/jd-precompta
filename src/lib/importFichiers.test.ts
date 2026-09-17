@@ -137,6 +137,17 @@ describe('importerFichierDossier', () => {
     expect(journal.map((j) => j.action)).toContain('insert:documents_divers')
   })
 
+  it('range un justificatif de recette dans Pièces, en vente', async () => {
+    // Même règle que côté client (lib/depot.test.ts) : les deux pipelines sont jumeaux et c'est la
+    // classification, pas l'appelant, qui décide du sens. L'import en masse est le chemin par lequel
+    // les bordereaux arrivent par paquets — un par mois et par praticien.
+    etat.extraction = { classification: 'facture_vente', date_piece: '2025-12-09', montant_ttc: 364.75 }
+    const resultat = await importer('bordereau.pdf')
+    expect(resultat.statut).toBe('ok')
+    expect(journal.find((j) => j.action === 'insert:pieces')?.cible).toBe('vente')
+    expect(resultat.message).toContain('recette')
+  })
+
   it('classe un CSV en relevé sans tenter d’extraction', async () => {
     // Textract ne sait pas lire un CSV ; dans ce contexte c'en est presque toujours un export bancaire.
     etat.extractionLeve = true // prouverait un appel à l'extraction en faisant échouer le test
