@@ -390,6 +390,14 @@ tr.clickable:hover { background: var(--tint-primary); }
 .brouillon-banner strong { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.78rem; }
 
 .table-scroll { overflow-x: auto; scrollbar-width: thin; scrollbar-color: var(--color-border-strong) transparent; }
+
+/* Un tableau qu'on REMPLIT (voir .table-formulaire dans le bloc mobile) : les champs suivent la
+   largeur de leur colonne au lieu de la dicter. Un `input` a une largeur intrinsèque d'environ
+   200 px, sans aucun rapport avec ce qu'il contient — trois champs numériques suffisaient à demander
+   1 290 px dans un conteneur de 1 086, et le montant comme le bouton finissaient derrière un
+   défilement latéral que rien n'annonce. Mesuré, pas supposé. */
+.table-formulaire td input,
+.table-formulaire td select { width: 100%; box-sizing: border-box; }
 .table-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
 .table-scroll::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 999px; }
 
@@ -905,6 +913,66 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   /* Colonnes secondaires masquées sur mobile plutôt que forcer un défilement latéral — l'essentiel
      (tiers, montant, statut) reste visible d'un coup ; le détail en ouvrant la ligne. */
   .hide-mobile { display: none; }
+
+  /* ---------- Tableau qui est en réalité un formulaire ---------- */
+  /* `table-layout: fixed` plus haut convient à un tableau qu'on LIT : un texte long revient à la
+     ligne dans sa colonne. Il est désastreux sur un tableau qu'on REMPLIT — huit colonnes de champs
+     comprimées dans 360 px donnent des en-têtes à une lettre par ligne et des champs de deux
+     caractères (constaté sur la carte Véhicules).
+     Le défilement latéral ne vaudrait pas mieux : on remplirait un formulaire sans jamais en voir
+     plus de deux champs à la fois. La ligne se replie donc en fiche empilée, chaque champ précédé de
+     son libellé — c'est l'en-tête du tableau qui redescend dans chaque cellule. */
+  .table-formulaire thead { display: none; }
+  .table-formulaire,
+  .table-formulaire tbody,
+  .table-formulaire tfoot,
+  .table-formulaire tr,
+  .table-formulaire td { display: block; width: 100%; }
+
+  .table-formulaire tr {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 4px 12px;
+    margin-bottom: 12px;
+    background: var(--color-surface);
+  }
+  .table-formulaire tfoot tr { background: var(--color-surface-2); margin-bottom: 0; }
+
+  .table-formulaire td {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+    /* Les alignements à droite posés en style inline pour la vue tableau n'ont plus de sens une fois
+       la cellule devenue une ligne libellé/valeur. */
+    text-align: left !important;
+  }
+  .table-formulaire tr td:last-child { border-bottom: none; }
+
+  /* Le libellé vient de `data-libelle` sur la cellule : aucun balisage en double à maintenir, et une
+     colonne qui n'en porte pas (le bouton Retirer) n'affiche simplement rien. */
+  .table-formulaire td::before {
+    content: attr(data-libelle);
+    flex: 0 0 auto;
+    font-size: 0.78rem; font-weight: 600; color: var(--color-text-light);
+  }
+  .table-formulaire td:not([data-libelle])::before { content: none; }
+
+  /* Le champ occupe ce qui reste, à droite du libellé. `min-width: 0` sans quoi un `input` refuse de
+     descendre sous sa largeur intrinsèque et repousse le libellé hors de l'écran. */
+  .table-formulaire td input,
+  .table-formulaire td select {
+    flex: 1 1 auto; min-width: 0; max-width: 62%;
+    /* 16px : en dessous, Safari iOS zoome à la mise au point et l'écran part de travers. */
+    font-size: 16px;
+  }
+
+  .table-formulaire td.td-action { padding-top: 10px; }
+  .table-formulaire td.td-action:empty { display: none; }
+  .table-formulaire td.td-action .btn { width: 100%; }
+
+  /* La cellule fusionnée qui ne porte que l'intitulé du total fait doublon une fois empilée : le
+     montant, juste en dessous, annonce déjà le sien. */
+  .table-formulaire tfoot td[colspan] { display: none; }
 
   .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .stat-card { padding: 14px 16px; }

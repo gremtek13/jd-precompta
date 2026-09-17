@@ -105,7 +105,10 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
         </div>
       ) : (
         <div className="table-scroll">
-          <table>
+          {/* `table-formulaire` : une ligne de ce tableau est un FORMULAIRE, pas une donnée à lire.
+              Sur téléphone, elle se replie en fiche empilée libellé/champ plutôt que de se comprimer
+              — voir index.css. */}
+          <table className="table-formulaire">
             <thead>
               <tr>
                 <th>Modèle</th>
@@ -123,19 +126,19 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
                 const indemnite = totalIndemnitesKilometriques([vehiculeDuDossier(v)], exercice)
                 return (
                   <tr key={v.id}>
-                    <td>
+                    <td data-libelle="Modèle">
                       <input
                         value={v.modele ?? ''}
                         placeholder="ex. Peugeot 308"
                         onChange={(e) => modifier(v.id, { modele: e.target.value || null })}
                       />
                     </td>
-                    <td>
+                    <td data-libelle="Type">
                       <select value={v.type} onChange={(e) => modifier(v.id, { type: e.target.value as TypeVehicule })}>
                         {TYPES.map((t) => <option key={t.valeur} value={t.valeur}>{t.libelle}</option>)}
                       </select>
                     </td>
-                    <td>
+                    <td data-libelle="Puiss. fisc.">
                       <input
                         type="number" min={0} max={99}
                         value={v.puissance_fiscale}
@@ -144,7 +147,7 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
                         onChange={(e) => modifier(v.id, { puissance_fiscale: Number(e.target.value) || 0 })}
                       />
                     </td>
-                    <td>
+                    <td data-libelle="Motorisation">
                       <select
                         value={v.motorisation ?? ''}
                         onChange={(e) => modifier(v.id, { motorisation: (e.target.value || null) as VehiculeDossier['motorisation'] })}
@@ -153,7 +156,7 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
                         {MOTORISATIONS.map((m) => <option key={m} value={m}>{LIBELLE_MOTORISATION[m]}</option>)}
                       </select>
                     </td>
-                    <td>
+                    <td data-libelle="Carburant">
                       <select
                         value={v.carburant ?? ''}
                         onChange={(e) => modifier(v.id, { carburant: (e.target.value || null) as VehiculeDossier['carburant'] })}
@@ -162,19 +165,19 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
                         {CARBURANTS.map((c) => <option key={c} value={c}>{LIBELLE_CARBURANT[c]}</option>)}
                       </select>
                     </td>
-                    <td>
+                    <td data-libelle="Km pro">
                       <input
                         type="number" min={0}
                         value={v.km_professionnel}
                         onChange={(e) => modifier(v.id, { km_professionnel: Number(e.target.value) || 0 })}
                       />
                     </td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    <td data-libelle="Indemnité" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                       {indemnite.nonCalcules.length > 0
                         ? <span className="muted" title={indemnite.nonCalcules[0].motif}>—</span>
                         : formatMoney(indemnite.total)}
                     </td>
-                    <td>
+                    <td className="td-action">
                       <button className="btn btn-outline btn-sm" onClick={() => supprimer(v.id)}>Retirer</button>
                     </td>
                   </tr>
@@ -186,10 +189,10 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
                 <td colSpan={6} style={{ textAlign: 'right', fontWeight: 600 }}>
                   Total à reporter ligne 23 (case BJ)
                 </td>
-                <td style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
+                <td data-libelle="Total ligne 23 (case BJ)" style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>
                   {baremeManquant ? '—' : formatMoney(total)}
                 </td>
-                <td></td>
+                <td className="td-action"></td>
               </tr>
             </tfoot>
           </table>
