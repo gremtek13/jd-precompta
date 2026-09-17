@@ -764,6 +764,21 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   prend `vehicules` en paramètre obligatoire : un appelant qui les oublie doit le découvrir à la
   compilation, pas en lisant une case BJ vide sur un formulaire déjà déposé.
 
+- **Un relevé n'est pas une facture, et son montant n'est pas une charge.** La
+  classification retombait sur « facture » par défaut, donc en PIÈCES, pour deux
+  familles qu'elle ne connaissait pas : les relevés d'ACTIVITÉ de l'Assurance
+  Maladie (SNIR, relevé individuel d'activité, relevé d'honoraires) et les relevés
+  de SITUATION d'un contrat d'épargne. Sept dormaient ainsi dans le dossier test
+  pour **73 565 €**, sur une base de facturation réelle de 8 806 € — un facteur
+  huit, prêt à partir en charges le jour où un opérateur leur donnait une
+  catégorie. Un relevé de situation donne un CAPITAL, pas un versement : ce n'est
+  pas davantage une preuve de cotisation déductible, celle-ci passe par un avis de
+  versement.
+  Les marqueurs sont testés APRÈS les cotisations : un courrier URSSAF parle lui
+  aussi de « situation », et c'est un appel de cotisation qu'il faut y voir. Ils
+  évitent le seul mot « assurance vie », qui figure sur de vraies factures de
+  courtier. Validés en exécutant la vraie fonction sur les textes OCR réels du
+  dossier : 41 factures sur 41 restent des factures.
 - **Le « pourquoi » d'une dépense ne s'extrait pas, il se demande.** L'OCR lit
   « BOULANGER MARSEILLE, 199,99 € » et s'arrête là : il ne dira jamais si c'est le
   four de la salle d'attente ou un cadeau, et c'est pourtant ce qui décide de la

@@ -331,7 +331,7 @@ function tvaDepuisTexteBrut(lignes: string[]): number | null {
   return montant != null ? Number(montant.toFixed(2)) : null
 }
 
-type ClassificationDocument = "releve_bancaire" | "cotisation" | "attestation" | "facture"
+type ClassificationDocument = "releve_bancaire" | "cotisation" | "attestation" | "autre" | "facture"
 
 // Repère les documents qui ne sont pas des factures d'achat/vente avant même l'extraction HT/TVA/TTC —
 // sur mots-clés caractéristiques cherchés dans le texte OCR brut (ces documents n'ont justement pas de
@@ -351,6 +351,30 @@ const MARQUEURS_RELEVE_BANCAIRE = [
   /R[EÉ]SUM[EÉ]\s+D.?ACTIVIT[EÉ]/,
 ]
 
+// Relevés d'ACTIVITÉ de l'Assurance Maladie (SNIR, relevé individuel d'activité et de prescriptions,
+// relevé d'honoraires). Ce sont des états de ce que le praticien a facturé — jamais une dépense.
+// Constaté en production : trois d'entre eux dormaient dans les Pièces du dossier test, statut « à
+// valider », dont un à 52 357 € que l'OCR avait pris pour un montant de facture. Le jour où un
+// opérateur leur donne une catégorie, les charges du dossier gonflent d'autant.
+const MARQUEURS_RELEVE_ACTIVITE = [
+  /RELEV[EÉ]\s+INDIVIDUEL\s+D.ACTIVIT[EÉ]/,
+  /RELEV[EÉ]\s+D.HONORAIRES/,
+  /\bSNIR\b/,
+]
+
+// Relevés de SITUATION d'un contrat d'épargne (assurance vie, épargne retraite, retraite
+// professionnelle supplémentaire). Un relevé de situation donne un CAPITAL, pas un versement : ce
+// n'est ni une charge ni une preuve de cotisation déductible — celle-ci passe par un avis de
+// versement. Quatre d'entre eux étaient en Pièces pour 21 208 €.
+//
+// Volontairement fondés sur « relevé … de situation » et sur les libellés de produit, jamais sur le
+// seul mot « assurance vie » : il figure aussi sur de vraies factures de courtier.
+const MARQUEURS_SITUATION_EPARGNE = [
+  /RELEV[EÉ]\s+(ANNUEL\s+|TRIMESTRIEL\s+)?(DE\s+)?SITUATION/,
+  /[EÉ]PARGNE\s+RETRAITE/,
+  /RETRAITE\s+PROFESSIONNELLE\s+SUPPL[EÉ]MENTAIRE/,
+]
+
 function classifieDocument(lignes: string[]): ClassificationDocument {
   const texte = lignes.join(" ").toUpperCase()
   const occurrencesOperationsBancaires = (texte.match(/VIR SEPA|PRLV\b/g) ?? []).length
@@ -359,6 +383,11 @@ function classifieDocument(lignes: string[]): ClassificationDocument {
   }
   if (/URSSAF|CARPIMKO|APPEL\s+DE\s+COTISATIONS?|COTISATIONS?\s+(SOCIALES?|PROVISIONNELLES?)/.test(texte)) {
     return "cotisation"
+  }
+  // APRÈS les cotisations, volontairement : un courrier URSSAF parle lui aussi de « situation », et
+  // c'est bien un appel de cotisation qu'il faut y voir, pas un relevé d'épargne.
+  if (MARQUEURS_RELEVE_ACTIVITE.some((m) => m.test(texte)) || MARQUEURS_SITUATION_EPARGNE.some((m) => m.test(texte))) {
+    return "autre"
   }
   // Constaté sur un avis de situation d'impôt réel : cet en-tête apparaît sur tout document officiel de
   // l'administration fiscale (avis d'impôt, taxe foncière, CFE...) — jamais sur une vraie facture.
