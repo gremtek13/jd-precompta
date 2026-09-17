@@ -717,6 +717,16 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   au 1er janvier et vaut pour l'année entière (notice, renvoi 12), donc la table `vehicules` porte
   une ligne par véhicule ET par année. Le total se reporte ligne 23 du 2035-A (case BJ) — le bas du
   2035-B le dit explicitement.
+- **Un champ grisé garde sa valeur, et cette valeur compte encore.** Une voiture
+  de 6 CV basculée en « cyclomoteur » conservait sa puissance fiscale ; la ligne
+  « cyclomoteur » du barème ne couvrant que la puissance 0, l'indemnité repartait
+  en « puissance hors barème » — un calcul qui échoue alors que rien à l'écran ne
+  paraît faux. Le champ devenu sans objet est donc remis à zéro dans la MÊME
+  écriture (`completerModificationVehicule`), et la règle vit dans le barème, pas
+  dans l'écran : c'est lui qui décide qu'un cyclomoteur n'a pas de puissance
+  fiscale et qu'un véhicule électrique ou à hydrogène n'a pas de carburant. Elle
+  est appliquée dans `modifier()`, un seul point de passage, pour qu'aucun champ
+  ajouté plus tard n'y échappe par oubli.
 - **Le forfait kilométrique et les frais de véhicule au réel ne cohabitent pas.** Les deux tombent
   dans la case BJ, donc la même dépense y serait comptée deux fois — et BJ n'affiche qu'un total qui
   ne dit pas de quoi il est fait. La note (12) de la notice est explicite : les dépenses couvertes
@@ -784,7 +794,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 541 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 548 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

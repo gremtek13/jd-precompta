@@ -139,6 +139,34 @@ export function vehiculeDuDossier(v: VehiculeDossier): Vehicule {
   }
 }
 
+// Les motorisations qui ne consomment aucun carburant du tableau (gazole, sans plomb, GPL). Le
+// formulaire demande le carburant, mais la question n'a pas de réponse pour ces deux-là.
+const SANS_CARBURANT: VehiculeDossier['motorisation'][] = ['electrique', 'hydrogene']
+
+// Complète une modification de fiche véhicule des champs qu'elle vient de priver de sens.
+//
+// Ce n'est pas du confort d'écran : une valeur restée en place ne se voit plus (son champ est grisé)
+// mais continue de compter. Une voiture de 6 CV basculée en « cyclomoteur » gardait sa puissance
+// fiscale, et la ligne « cyclomoteur » du barème ne couvrant que la puissance 0, l'indemnité repartait
+// en « puissance hors barème » — un calcul qui échoue alors que rien à l'écran ne paraît faux.
+//
+// Écrit ici et non dans l'écran pour être testable, et parce que c'est une règle du barème : c'est lui
+// qui décide qu'un cyclomoteur n'a pas de puissance fiscale et qu'un véhicule électrique n'a pas de
+// carburant.
+export function completerModificationVehicule(champs: Partial<VehiculeDossier>): Partial<VehiculeDossier> {
+  const complet = { ...champs }
+  if (champs.type === 'cyclomoteur') complet.puissance_fiscale = 0
+  if (champs.motorisation !== undefined && SANS_CARBURANT.includes(champs.motorisation)) complet.carburant = null
+  return complet
+}
+
+// Le carburant a-t-il un sens pour cette motorisation ? Sert à griser le champ plutôt qu'à le masquer :
+// la colonne existe sur le formulaire, et la voir grisée dit « sans objet », là où une colonne absente
+// laisserait croire à un oubli.
+export function carburantApplicable(motorisation: VehiculeDossier['motorisation']): boolean {
+  return !SANS_CARBURANT.includes(motorisation)
+}
+
 // L'indemnité déductible pour un véhicule sur un exercice, ou null quand le calcul ne peut pas être
 // fait de façon sûre — barème absent pour l'année, ou puissance fiscale hors des tranches publiées.
 // Null n'est pas zéro : zéro se déclarerait, null demande une saisie.

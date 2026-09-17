@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
-import { totalIndemnitesKilometriques, vehiculeDuDossier } from '../../lib/baremeKilometrique'
+import {
+  carburantApplicable, completerModificationVehicule, totalIndemnitesKilometriques, vehiculeDuDossier,
+} from '../../lib/baremeKilometrique'
 import type { TypeVehicule } from '../../lib/baremeKilometrique'
 import type { VehiculeDossier } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
@@ -70,7 +72,11 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
 
   // Écriture immédiate sur changement de champ : une modale de plus pour six champs ferait perdre
   // plus de temps qu'elle n'en fait gagner. L'échec est dit, jamais avalé.
-  async function modifier(id: string, champs: Partial<VehiculeDossier>) {
+  async function modifier(id: string, demande: Partial<VehiculeDossier>) {
+    // Passe systématiquement par la règle de cohérence : un champ devenu sans objet est remis à zéro
+    // dans la MÊME écriture (voir completerModificationVehicule). Le faire ici plutôt qu'au cas par cas
+    // dans chaque `onChange` garantit qu'aucun champ ajouté plus tard n'y échappera par oubli.
+    const champs = completerModificationVehicule(demande)
     setVehicules((v) => v.map((x) => (x.id === id ? { ...x, ...champs } : x)))
     const { error } = await supabase.from('vehicules').update(champs).eq('id', id)
     if (error) { setErreur(error.message); charger() } else setErreur(null)
@@ -159,9 +165,14 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
                     <td data-libelle="Carburant">
                       <select
                         value={v.carburant ?? ''}
+                        // Un véhicule électrique ou à hydrogène ne consomme aucun des carburants du
+                        // formulaire : le champ est grisé plutôt que masqué, parce que la colonne
+                        // existe sur le 2035-B et qu'une colonne absente passerait pour un oubli.
+                        disabled={!carburantApplicable(v.motorisation)}
+                        title={carburantApplicable(v.motorisation) ? undefined : 'Sans objet pour cette motorisation'}
                         onChange={(e) => modifier(v.id, { carburant: (e.target.value || null) as VehiculeDossier['carburant'] })}
                       >
-                        <option value="">—</option>
+                        <option value="">{carburantApplicable(v.motorisation) ? '—' : 'Sans objet'}</option>
                         {CARBURANTS.map((c) => <option key={c} value={c}>{LIBELLE_CARBURANT[c]}</option>)}
                       </select>
                     </td>
