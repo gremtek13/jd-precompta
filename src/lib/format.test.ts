@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, comptesParMois, dateLocaleDe, dernierJourDuMois, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
+import { ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, cleFournisseur, comptesParMois, dateLocaleDe, dernierJourDuMois, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -186,5 +186,53 @@ describe('nomUnique', () => {
     expect(nomUnique('x_2', '', utilises)).toBe('x_2')
     expect(nomUnique('x', '', utilises)).toBe('x')
     expect(nomUnique('x', '', utilises)).toBe('x_3')
+  })
+})
+
+describe('cleFournisseur — sigles pointés', () => {
+  it('recolle un sigle écrit avec des points', () => {
+    // Le cas qui a motivé la règle : l'OCR rend « C.P.A.M. Marseille » sur certains bordereaux et
+    // « CPAM Marseille » sur d'autres. Les deux graphies doivent donner la même identité, sinon le
+    // cabinet arbitre deux fois le même organisme.
+    expect(cleFournisseur('C.P.A.M. Marseille')).toBe('cpam')
+    expect(cleFournisseur('CPAM Marseille')).toBe('cpam')
+  })
+
+  it('accepte le dernier point manquant', () => {
+    // L'OCR perd fréquemment le point final du sigle.
+    expect(cleFournisseur('C.P.A.M Marseille')).toBe('cpam')
+  })
+
+  it('ne rend plus le nom de la VILLE comme identité', () => {
+    // Le vrai défaut, et il était pire qu'une absence de clé. Points aplatis en espaces, le sigle
+    // explosait en lettres isolées ; le seuil de quatre caractères les éliminait toutes et la
+    // fonction retenait le mot suivant. « C.P.A.M. Marseille » rendait « marseille » — l'identité
+    // d'une ville, sous laquelle deux organismes différents de la même ville se confondraient.
+    expect(cleFournisseur('C.P.A.M. Marseille')).not.toBe('marseille')
+  })
+
+  it('laisse la forme juridique pointée se faire écarter comme la forme collée', () => {
+    // Recoller « S.A.R.L. » en « sarl » le fait retomber dans MOTS_SANS_IDENTITE, donc la clé est le
+    // vrai nom. Avant, « sarl » explosé en lettres était écarté par accident, pour la mauvaise raison.
+    expect(cleFournisseur('S.A.R.L. Martin')).toBe('martin')
+  })
+
+  it('ne touche pas à ce qui n’est pas un sigle', () => {
+    // Un point doit suivre une lettre SEULE et être suivi immédiatement d'une lettre. Ces trois cas
+    // ne remplissent pas la condition et doivent rendre exactement ce qu'ils rendaient avant.
+    expect(cleFournisseur('www.edf.fr')).toBeNull()          // trois lettres avant le point
+    expect(cleFournisseur('Cabinet X. Y. Martin')).toBe('martin') // une espace après le point
+    expect(cleFournisseur('Orange SA')).toBe('orange')
+    expect(cleFournisseur('Boulanger Marseille')).toBe('boulanger')
+    expect(cleFournisseur('Transmedical / et soigner redevient')).toBe('transmedical')
+    expect(cleFournisseur('CARTE BANCAIRE')).toBeNull()
+  })
+
+  it('reste soumis au seuil de quatre caractères', () => {
+    // Limite connue et inchangée : « E.D.F. » devient « edf », trois caractères, donc rejeté comme
+    // l'était « EDF » collé. Ce seuil est une décision à part (voir cleFournisseur), pas un effet de
+    // cette règle — documenté ici pour que le jour où on l'abaisse, le cas soit déjà écrit.
+    expect(cleFournisseur('E.D.F.')).toBeNull()
+    expect(cleFournisseur('EDF')).toBeNull()
   })
 })

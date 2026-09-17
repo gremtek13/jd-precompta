@@ -65,6 +65,19 @@ describe('suggererCategorie', () => {
     expect(suggererCategorie('CARTE BANCAIRE', [regleDossier('edf', 'c')], [])).toBeNull()
   })
 
+  it('retrouve la règle d’un sigle écrit avec des points', () => {
+    // Bout en bout : la règle est enregistrée sous « cpam » (c'est ce que produit cleFournisseur au
+    // moment de l'arbitrage), et une pièce dont l'OCR a lu « C.P.A.M. Marseille » doit la retrouver.
+    expect(suggererCategorie('C.P.A.M. Marseille', [regleDossier('cpam', 'recettes')], [])).toBe('recettes')
+    expect(suggererCategorie('C.P.A.M Marseille', [], [regleCabinet('cpam', 'recettes')])).toBe('recettes')
+  })
+
+  it('ne fait pas d’un sigle pointé la clé de sa ville', () => {
+    // Le ricochet que la correction évite : sans elle « C.P.A.M. Marseille » avait pour identité
+    // « marseille », et se serait accroché à toute règle portant sur ce mot.
+    expect(suggererCategorie('C.P.A.M. Marseille', [regleDossier('marseille', 'autre')], [])).toBeNull()
+  })
+
   it('préfère toujours le dossier au cabinet, y compris par l’identité', () => {
     const suggestion = suggererCategorie(
       'Transmedical et soigner redevient',
