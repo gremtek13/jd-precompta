@@ -16,6 +16,24 @@ export function categoriesSansPoste(categories: Categorie[], pieces: Piece[]): C
   return categories.filter((c) => !c.poste_2035 && pieces.some((p) => p.categorie_id === c.id))
 }
 
+// Pièces VALIDÉES sans aucune catégorie. C'est le trou que les deux contrôles ci-dessus ne voient
+// pas : ils partent d'une catégorie et cherchent ce qui lui manque, donc une pièce dont
+// `categorie_id` est nul leur est invisible — il n'y a pas de catégorie à inspecter. Le résultat est
+// pourtant exactement le même : aucune écriture générée (`lignesChargeProduitPourPiece` exige un
+// compte, donc une catégorie) et aucune ligne dans les totaux de Clôture ni dans la 2035.
+//
+// C'est la première des « trois portes » (voir CLAUDE.md) et la seule qui n'était pas gardée. Elle
+// est aussi la plus coûteuse, parce que la pièce a l'air traitée : le cabinet a écrit « validée »
+// dessus, donc plus personne ne la regarde. Constaté en production sur deux dossiers — 11 pièces
+// validées sans catégorie, le travail fait et invisible.
+//
+// Seulement les validées, délibérément. Une pièce « à valider » sans catégorie est la situation
+// NORMALE — c'est la corbeille d'arrivée — et la signaler noierait le vrai signal : le même dossier
+// en portait 30 d'un coup.
+export function piecesValideesSansCategorie(pieces: Piece[]): Piece[] {
+  return pieces.filter((p) => p.statut === 'validee' && !p.categorie_id)
+}
+
 // Sur un dossier assujetti, une pièce validée sans TVA renseignée est plus probablement un oubli de
 // saisie qu'une vraie absence de TVA — signalé pour vérification, jamais corrigé tout seul.
 export function piecesSansTva(pieces: Piece[], assujettiTva: boolean): Piece[] {

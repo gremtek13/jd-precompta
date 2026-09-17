@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatMoney } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
-import { categoriesSansPoste as calculerCategoriesSansPoste } from '../../lib/controles'
+import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
 import { calculerDeclaration2035 } from '../../lib/declaration2035'
 import { CASES_2035, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
 import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
@@ -62,6 +62,9 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // Catégories utilisées par une pièce validée mais sans poste 2035 associé — le regroupement par
   // poste ignorera ces pièces tant que ce n'est pas renseigné (voir lib/controles.ts).
   const categoriesSansPoste = calculerCategoriesSansPoste(categories, pieces)
+  // Même famille que « Postes manquants », un cran plus tôt dans la chaîne : sans catégorie du tout,
+  // le montant n'atteint même pas la question du poste (voir lib/controles.ts).
+  const piecesSansCategorie = piecesValideesSansCategorie(pieces)
 
   // Valeur affichée tant que le cabinet n'a rien tapé : la suggestion connue pour ce code de
   // catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -195,6 +198,22 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
           ⚠ Plusieurs exercices ({anneesDisponibles.join(', ')}) sont mélangés dans ce total — choisis
           un exercice dans le sélecteur en en-tête du dossier pour un vrai total de clôture.
         </p>
+      )}
+
+      {piecesSansCategorie.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Pièces validées sans catégorie <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            {piecesSansCategorie.length === 1 ? 'Cette pièce validée n\'a' : `Ces ${piecesSansCategorie.length} pièces validées n'ont`} aucune catégorie : {piecesSansCategorie.length === 1 ? 'son montant n\'entre' : 'leurs montants n\'entrent'} dans aucun total ci-dessous, ni dans la 2035. Le récapitulatif est donc incomplet de {formatMoney(piecesSansCategorie.reduce((s, p) => s + (p.montant_ttc ?? 0), 0))} tant que la catégorie n'est pas donnée depuis l'onglet Justificatifs.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {piecesSansCategorie.map((p) => (
+              <li key={p.id}>{p.tiers ?? p.nom_fichier} — {formatMoney(p.montant_ttc)}{p.date_piece ? ` (${p.date_piece})` : ''}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {categoriesSansPoste.length > 0 && (

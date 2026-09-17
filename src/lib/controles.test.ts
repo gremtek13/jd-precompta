@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriesSansCompte, categoriesSansPoste, piecesSansTva } from './controles'
+import { categoriesSansCompte, categoriesSansPoste, piecesSansTva, piecesValideesSansCategorie } from './controles'
 import type { Categorie, Piece } from './types'
 
 const categorie = (o: Partial<Categorie>): Categorie =>
@@ -65,5 +65,32 @@ describe('piecesSansTva', () => {
     // enregistrée avec une TVA nulle, jamais à zéro — aucune pièce en base n'a de TVA à 0.
     // Documenté ici pour que le jour où ce cas apparaîtrait, le choix soit visible plutôt que subi.
     expect(piecesSansTva([piece({ id: 'exonere', montant_tva: 0 })], true).map((p) => p.id)).toEqual(['exonere'])
+  })
+})
+
+describe('piecesValideesSansCategorie', () => {
+  it('signale une pièce validée qui n’a pas de catégorie', () => {
+    // Le cas que ni categoriesSansCompte ni categoriesSansPoste ne peuvent voir : ils partent d'une
+    // catégorie, et ici il n'y en a pas. La pièce est pourtant aussi stérile — ni écriture, ni 2035.
+    const orpheline = piece({ id: 'orpheline', categorie_id: null })
+    expect(piecesValideesSansCategorie([orpheline, piece({ id: 'ok' })]).map((p) => p.id)).toEqual(['orpheline'])
+  })
+
+  it('ne signale pas une pièce encore à valider', () => {
+    // C'est la corbeille d'arrivée : une pièce qui attend son arbitrage n'a pas à avoir de catégorie,
+    // et les signaler noierait le vrai signal — un dossier réel en portait 30 face à 10 validées.
+    expect(piecesValideesSansCategorie([piece({ statut: 'a_valider', categorie_id: null })])).toEqual([])
+  })
+
+  it('ne signale rien quand toutes les pièces validées sont catégorisées', () => {
+    expect(piecesValideesSansCategorie([piece({}), piece({ id: 'b' })])).toEqual([])
+  })
+
+  it('reste indifférent au montant et au sens de la pièce', () => {
+    // Une recette, un avoir : le contrôle porte sur l'absence de catégorie, pas sur ce qu'elle vaut.
+    // Constaté en production, l'une des onze était un avoir à −214,21 €.
+    const recette = piece({ id: 'recette', type_piece: 'vente', categorie_id: null })
+    const avoir = piece({ id: 'avoir', montant_ttc: -214.21, categorie_id: null })
+    expect(piecesValideesSansCategorie([recette, avoir]).map((p) => p.id)).toEqual(['recette', 'avoir'])
   })
 })
