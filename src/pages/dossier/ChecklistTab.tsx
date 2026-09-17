@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, piecesSansTva } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, piecesSansTva, piecesValideesSansCategorie } from '../../lib/controles'
 import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import type { Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
@@ -136,6 +136,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const catSansCompte = categoriesSansCompte(categories, pieces)
   const catSansPoste = categoriesSansPoste(categories, pieces)
   const sansTva = piecesSansTva(pieces, assujettiTva)
+  const sansCategorie = piecesValideesSansCategorie(pieces)
   // Même tolérance qu'EcrituresTab (1 € : une CA3 se dépose en euros arrondis).
   const declarationsEnEcart = declarationsTva.filter(
     (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)) > 1,
@@ -149,6 +150,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // répété sur toute la liste — dit ce que l'onglet cible va permettre de faire, pas juste où il est.
   interface PointATraiter { id: string; label: string; action: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention' }
   const tousLesPointsATraiter: PointATraiter[] = [
+    // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
+    // ailleurs. Une pièce validée sans catégorie a l'air traitée — elle ne produit pourtant ni
+    // écriture ni ligne de 2035, et aucun autre contrôle ne la voit (voir lib/controles.ts).
+    { id: 'sans-categorie', label: 'pièce(s) validée(s) sans catégorie — invisibles en compta', action: 'Catégoriser ces pièces', nb: sansCategorie.length, cible: 'pieces', severite: 'erreur' },
     { id: 'desequilibrees', label: 'écriture(s) déséquilibrée(s)', action: 'Voir les écritures déséquilibrées', nb: groupesDesequilibres.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', action: 'Régénérer les écritures concernées', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },

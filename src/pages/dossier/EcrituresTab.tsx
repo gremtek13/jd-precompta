@@ -4,7 +4,7 @@ import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
 import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPourPiece, soldeCompte, tvaNettePourPeriode } from '../../lib/ecritures'
 import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
-import { categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva } from '../../lib/controles'
+import { categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -165,6 +165,7 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   }
 
   const piecesSansTva = calculerPiecesSansTva(pieces, assujettiTva)
+  const piecesSansCategorie = piecesValideesSansCategorie(pieces)
 
   async function enregistrerDeclaration(e: FormEvent) {
     e.preventDefault()
@@ -201,6 +202,24 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   return (
     <>
       <BrouillonBanner />
+
+      {/* Avant « Pièces sans TVA » : une pièce sans catégorie ne produit RIEN, là où une TVA manquante
+          ne fausse qu'une ligne. Le contrôle le plus bloquant se lit en premier. */}
+      {piecesSansCategorie.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Pièces validées sans catégorie <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            {piecesSansCategorie.length === 1 ? 'Cette pièce est validée' : `Ces ${piecesSansCategorie.length} pièces sont validées`} mais {piecesSansCategorie.length === 1 ? 'n\'a' : 'n\'ont'} aucune catégorie : {piecesSansCategorie.length === 1 ? 'elle ne génère' : 'elles ne génèrent'} aucune écriture et {piecesSansCategorie.length === 1 ? 'n\'entre' : 'n\'entrent'} dans aucun total de Clôture ni dans la 2035. Le travail de vérification est fait, il ne compte nulle part — la catégorie se donne depuis l'onglet Justificatifs.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {piecesSansCategorie.map((p) => (
+              <li key={p.id}>{p.tiers ?? p.nom_fichier} — {formatMoney(p.montant_ttc)}{p.date_piece ? ` (${p.date_piece})` : ''}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {piecesSansTva.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>

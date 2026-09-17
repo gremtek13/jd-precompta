@@ -564,6 +564,16 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   les totaux de Clôture et donc la 2035. Constaté en production : 23 pièces catégorisées à la main
   ne produisaient rien parce que « Honoraires » n'avait pas de compte — le travail était fait et
   invisible. **Diagnostiquer les trois portes ensemble**, jamais la première seule.
+  **Et les trois sont gardées par un contrôle, désormais.** `categoriesSansCompte` et
+  `categoriesSansPoste` (lib/controles.ts) couvraient les portes 2 et 3 ; toutes deux partent d'une
+  catégorie et cherchent ce qui lui manque, si bien qu'une pièce dont `categorie_id` est **nul** leur
+  était invisible — il n'y a pas de catégorie à inspecter. Le résultat est pourtant identique : ni
+  écriture, ni ligne de 2035. `piecesValideesSansCategorie` ferme la porte 1, signalé dans Écritures,
+  Clôture et la Checklist. Trouvé en production : 11 pièces validées sans catégorie sur deux dossiers.
+  C'est la plus coûteuse des trois, parce que la pièce a l'air traitée — le cabinet a écrit
+  « validée » dessus, donc plus personne ne la regarde. Le contrôle ne vise QUE les validées : une
+  pièce « à valider » sans catégorie est la corbeille d'arrivée, et le même dossier en portait 30
+  face à 10 — les signaler noierait le signal.
 - **Une valeur par défaut connue s'applique, elle ne s'affiche pas en attendant un clic.**
   `SUGGESTIONS_COMPTE_PAR_CODE` (lib/ecritures.ts) portait depuis le début les bons comptes PCG et
   postes 2035, mais seulement comme pré-remplissage d'un champ à valider catégorie par catégorie.
@@ -862,7 +872,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 572 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 576 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
