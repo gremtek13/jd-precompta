@@ -3,6 +3,7 @@ import { ACHAT_PAR_DEFAUT, extractPiece, fichierDejaPresent, hashFichier, orient
 import { slugify } from './format'
 import type { CibleCommentaire } from './commentaires'
 import { enregistrerTexteOcr } from './texteOcr'
+import { montantsPourPiece } from './tauxChange'
 
 // En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
 // d'y ajouter une précision tout de suite, au seul moment où il sait encore pourquoi la dépense a été
@@ -98,14 +99,15 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
       return { statut: 'ok', cible: { type: 'document', id } }
     } else {
       const { data: userData } = await supabase.auth.getUser()
+      // Conversion en euros AVANT l'insertion, comme le classement et les montants lus : le client
+      // n'a pas le droit de modifier une pièce déposée, donc rien ne peut être corrigé après coup.
+      const montants = await montantsPourPiece(extraction ?? {}, extraction?.date_piece ?? null)
       const id = await enregistrer('pieces', {
         dossier_id: dossierId, uploaded_by: userData.user?.id ?? null, storage_path: path, storage_hash: hash,
         nom_fichier: file.name, type_piece: orientation.type_piece, statut: 'a_valider',
         date_piece: extraction?.date_piece ?? null,
         tiers: extraction?.tiers ?? null,
-        montant_ht: extraction?.montant_ht ?? null,
-        montant_tva: extraction?.montant_tva ?? null,
-        montant_ttc: extraction?.montant_ttc ?? null,
+        ...montants,
         confiance: extraction?.confiance ?? null,
       })
       // Après l'insertion, jamais avant : la policy exige que la pièce existe déjà. N'échoue jamais

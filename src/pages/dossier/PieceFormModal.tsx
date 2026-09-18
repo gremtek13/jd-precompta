@@ -4,6 +4,8 @@ import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
+import { convertirMontants, deviseDuTexte, DEVISE_PIVOT, libelleConversion } from '../../lib/devises'
+import { tauxBce } from '../../lib/tauxChange'
 import { useAuth } from '../../context/AuthContext'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
 import FilCommentaires from '../../components/FilCommentaires'
@@ -55,6 +57,16 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [montantHt, setMontantHt] = useState(piece?.montant_ht?.toString() ?? '')
   const [montantTva, setMontantTva] = useState(piece?.montant_tva?.toString() ?? '')
   const [montantTtc, setMontantTtc] = useState(piece?.montant_ttc?.toString() ?? '')
+  // La devise et sa conversion suivent la pièce sans être modifiables champ par champ : un taux saisi
+  // à la main ne serait plus justifiable devant un contrôle. Ce qui est offert, c'est de REFAIRE la
+  // conversion au taux BCE de la date courante — le cas qui arrive vraiment, quand la date lue était
+  // fausse et qu'on vient de la corriger.
+  const [devise, setDevise] = useState(piece?.devise ?? DEVISE_PIVOT)
+  const [montantDevise, setMontantDevise] = useState<number | null>(piece?.montant_devise ?? null)
+  const [tauxChange, setTauxChange] = useState<number | null>(piece?.taux_change ?? null)
+  const [dateTaux, setDateTaux] = useState<string | null>(null)
+  const [conversionEnCours, setConversionEnCours] = useState(false)
+  const [conversionErreur, setConversionErreur] = useState<string | null>(null)
   const [notes, setNotes] = useState(piece?.notes ?? '')
   const [commentaires, setCommentaires] = useState(commentairesInitiaux)
   const [saving, setSaving] = useState(false)
@@ -143,9 +155,26 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
         setTiers(result.tiers)
         suggestCategorieFromTiers(result.tiers)
       }
-      if (result.montant_ht != null) setMontantHt(result.montant_ht.toString())
-      if (result.montant_tva != null) setMontantTva(result.montant_tva.toString())
-      if (result.montant_ttc != null) setMontantTtc(result.montant_ttc.toString())
+      // La devise se pose AVANT les montants, et les montants lus sont convertis s'il le faut : ils
+      // sortent de l'extraction dans la devise du document, alors que les champs de ce formulaire —
+      // comme les colonnes en base — sont en euros. Les recopier tels quels ferait entrer des dollars
+      // dans la comptabilité, à un montant parfaitement plausible.
+      const lue = (deviseDuTexte(result.texte_ocr) ?? DEVISE_PIVOT).toUpperCase()
+      const enDevise = { montant_ht: result.montant_ht, montant_tva: result.montant_tva, montant_ttc: result.montant_ttc }
+      const trouve = lue === DEVISE_PIVOT ? null : await tauxBce(lue, result.date_piece ?? datePiece)
+      const montants = trouve ? convertirMontants(enDevise, trouve.taux) : enDevise
+
+      setDevise(lue)
+      setMontantDevise(lue === DEVISE_PIVOT ? null : result.montant_ttc ?? null)
+      setTauxChange(trouve?.taux ?? null)
+      setDateTaux(trouve?.date ?? null)
+      if (lue !== DEVISE_PIVOT && !trouve) {
+        setConversionErreur(`Document en ${lue}, mais aucun taux BCE n'a pu être obtenu — les montants restent à convertir.`)
+      }
+
+      if (montants.montant_ht != null) setMontantHt(montants.montant_ht.toString())
+      if (montants.montant_tva != null) setMontantTva(montants.montant_tva.toString())
+      if (montants.montant_ttc != null) setMontantTtc(montants.montant_ttc.toString())
       setConfiance(result.confiance)
       if (result._lignes_brutes) setLignesBrutes(result._lignes_brutes)
       // Un bordereau de télétransmission est une pièce, mais dans l'autre sens : ce que le praticien a
@@ -181,6 +210,41 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     const { error } = await supabase.storage.from('pieces').upload(path, file)
     if (error) throw error
     return path
+  }
+
+  // Refait la conversion au taux BCE de la date actuellement saisie. Le seul geste offert sur le
+  // change : le taux n'est pas modifiable à la main, parce qu'un taux inventé ne se justifie pas, et
+  // la devise non plus — elle est lue sur le document.
+  async function reconvertir() {
+    if (devise === DEVISE_PIVOT || montantDevise == null) return
+    if (!datePiece) {
+      setConversionErreur('Renseigne la date de la pièce : le taux dépend du jour.')
+      return
+    }
+    setConversionEnCours(true)
+    setConversionErreur(null)
+    try {
+      const trouve = await tauxBce(devise, datePiece)
+      if (!trouve) {
+        setConversionErreur(`Aucun taux BCE trouvé pour ${devise} au ${datePiece}.`)
+        return
+      }
+      // Le TTC d'origine est la seule valeur sûre quand la pièce a déjà été convertie une fois :
+      // reconvertir les montants EN EUROS déjà stockés les ferait passer deux fois par le change.
+      const base = {
+        montant_ht: montantHt ? Number.parseFloat(montantHt) * trouve.taux : null,
+        montant_tva: montantTva ? Number.parseFloat(montantTva) * trouve.taux : null,
+        montant_ttc: montantDevise,
+      }
+      const converti = convertirMontants(base, trouve.taux)
+      setMontantHt(converti.montant_ht?.toFixed(2) ?? '')
+      setMontantTva(converti.montant_tva?.toFixed(2) ?? '')
+      setMontantTtc(converti.montant_ttc?.toFixed(2) ?? '')
+      setTauxChange(trouve.taux)
+      setDateTaux(trouve.date)
+    } finally {
+      setConversionEnCours(false)
+    }
   }
 
   // Le contrôle partagé appliqué aux valeurs EN COURS DE SAISIE, sans passer par la base : la règle
@@ -227,6 +291,12 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
         montant_ht: montantHt ? parseFloat(montantHt) : null,
         montant_tva: montantTva ? parseFloat(montantTva) : null,
         montant_ttc: montantTtc ? parseFloat(montantTtc) : null,
+        // Les trois montants ci-dessus sont en euros, toujours. Ces trois-ci disent dans quelle
+        // devise le document est écrit et comment on est passé de l'un à l'autre (voir
+        // lib/devises.ts) — une contrainte en base impose qu'ils soient nuls pour une pièce en euros.
+        devise,
+        montant_devise: devise === DEVISE_PIVOT ? null : montantDevise,
+        taux_change: devise === DEVISE_PIVOT ? null : tauxChange,
         notes: notes || null,
         statut,
         confiance,
@@ -454,6 +524,31 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
                     <input id="ttc" type="number" step="0.01" value={montantTtc} onChange={(e) => setMontantTtc(e.target.value)} />
                   </div>
                 </div>
+
+                {/* Au-dessus des trois montants : ils sont en EUROS, et le document dit autre chose.
+                    Sans cette ligne, on croit relire la facture alors qu'on lit sa conversion. */}
+                {devise !== DEVISE_PIVOT && (
+                  <div className="bloc-devise">
+                    <div>
+                      <strong>Document en {devise}</strong>
+                      {tauxChange != null && montantDevise != null ? (
+                        <span className="muted">
+                          {' — '}{libelleConversion(montantDevise, devise, tauxChange, dateTaux ?? datePiece)}.
+                          {' '}Les montants ci-dessous sont le résultat de cette conversion, en euros.
+                        </span>
+                      ) : (
+                        <span className="muted">
+                          {' — '}non convertie : aucun taux BCE n'a pu être obtenu au dépôt.
+                          {montantDevise != null && ` Montant lu sur le document : ${montantDevise.toFixed(2)} ${devise}.`}
+                        </span>
+                      )}
+                    </div>
+                    <button type="button" className="btn btn-outline btn-sm" disabled={conversionEnCours || montantDevise == null} onClick={reconvertir}>
+                      {conversionEnCours ? 'Conversion…' : `Convertir au taux du ${datePiece || '…'}`}
+                    </button>
+                    {conversionErreur && <p className="alerte-tva" style={{ margin: 0 }}>{conversionErreur}</p>}
+                  </div>
+                )}
 
                 {/* Sous les trois champs, et calculé en direct : c'est l'endroit et le moment où la
                     personne a le document sous les yeux. La règle n'est pas réécrite ici — c'est le

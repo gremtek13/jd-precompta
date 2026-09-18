@@ -126,9 +126,20 @@ export interface Piece {
   storage_hash: string | null
   date_piece: string | null
   tiers: string | null
+  // Les trois montants sont TOUJOURS en euros, y compris pour une pièce libellée en devise
+  // étrangère : tout l'aval en dépend — écritures, rapprochement bancaire, FEC, clôture, 2035. La
+  // devise d'origine vit dans les trois champs qui suivent (voir lib/devises.ts).
   montant_ht: number | null
   montant_tva: number | null
   montant_ttc: number | null
+  // Devise du document (ISO 4217). 'EUR' pour l'écrasante majorité des pièces ; jamais nulle, pour
+  // qu'« inconnue » ne soit pas une valeur possible.
+  devise: string
+  // Montant TTC tel qu'écrit sur le document, dans sa devise, et taux BCE retenu (unités de devise
+  // pour 1 EUR). Nuls quand devise vaut 'EUR' — une contrainte en base l'impose, sans quoi deux
+  // champs diraient deux choses différentes de la même somme.
+  montant_devise: number | null
+  taux_change: number | null
   categorie_id: string | null
   sous_dossier_id: string | null
   type_piece: TypePiece

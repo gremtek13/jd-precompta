@@ -1169,3 +1169,15 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   background: var(--color-danger-light); color: var(--color-danger-text);
   font-size: 0.82rem; line-height: 1.45;
 }
+
+/* Bandeau de conversion, au-dessus des montants de la fiche pièce. Il contredit ce que le document
+   affiche — « 24.00 » y est écrit, « 20,52 » est enregistré — donc il doit se lire avant les champs,
+   pas après. Teinte neutre : c'est une information, pas une anomalie (voir PieceFormModal). */
+.bloc-devise {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
+  margin-bottom: 14px; padding: 10px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-size: 0.84rem; line-height: 1.45;
+}
+.bloc-devise > div:first-child { flex: 1 1 260px; }

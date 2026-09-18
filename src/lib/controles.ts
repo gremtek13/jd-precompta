@@ -126,3 +126,15 @@ export function piecesTvaImpossible(pieces: Piece[]): PieceTvaImpossible[] {
   }
   return anomalies
 }
+
+// Pièces libellées en devise étrangère dont la conversion en euros n'a pas pu se faire — BCE
+// injoignable au moment du dépôt, ou devise qu'elle ne cote pas.
+//
+// Le pendant de `piecesTvaImpossible` pour la devise : là aussi, le danger n'est pas le montant
+// absent mais le montant qui a l'air juste. Une facture de 24,00 USD enregistrée « 24,00 » sans
+// mention de devise passe pour 24,00 € et fausse la charge de 15 % sans que rien ne dépasse.
+// C'est pour éviter cela que le dépôt laisse les montants en euros NULS plutôt que d'y écrire des
+// dollars (voir lib/tauxChange.ts) — et ce contrôle est ce qui rend cette absence visible.
+export function piecesDeviseNonConvertie(pieces: Piece[]): Piece[] {
+  return pieces.filter((p) => p.devise !== 'EUR' && p.taux_change == null)
+}

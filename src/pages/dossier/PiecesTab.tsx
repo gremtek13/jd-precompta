@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
 import { LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
+import { DEVISE_PIVOT } from '../../lib/devises'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
 import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
 import { grouperParTiers } from '../../lib/suggestionTiers'
@@ -491,6 +492,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                   <td className="hide-mobile" onClick={() => setEditing(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
                   <td onClick={() => setEditing(p)}>
                     {formatMoney(p.montant_ttc)}
+                    {/* Le montant affiché est en euros ; le document, lui, dit autre chose. Sans ce
+                        rappel, chercher « 24 » sur une facture OpenAI ne donne rien — la ligne
+                        porte 20,52. */}
+                    {p.devise !== DEVISE_PIVOT && (
+                      <div className="muted" style={{ fontSize: '0.75rem' }}>
+                        {p.montant_devise != null ? `${p.montant_devise.toFixed(2)} ${p.devise}` : p.devise}
+                        {p.taux_change == null && ' — à convertir'}
+                      </div>
+                    )}
                     {/* Sur la ligne, pas seulement dans un onglet de contrôle : c'est ici que la
                         pièce se valide, et une fois validée le chiffre part tel quel en TVA
                         déductible. Le badge dit ce qui est démontré faux, pas « à vérifier ». */}

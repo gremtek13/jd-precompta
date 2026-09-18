@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
@@ -151,6 +151,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // lecture ratée du document, et sur un dossier non assujetti c'est le TTC — donc la charge — qui
   // peut être faux (voir lib/controles.ts).
   const tvaImpossible = piecesTvaImpossible([...pieces, ...piecesAValider])
+  const deviseNonConvertie = piecesDeviseNonConvertie([...pieces, ...piecesAValider])
   // Même tolérance qu'EcrituresTab (1 € : une CA3 se dépose en euros arrondis).
   const declarationsEnEcart = declarationsTva.filter(
     (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)) > 1,
@@ -175,6 +176,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // « Erreur » et non « attention » : ce n'est pas une TVA douteuse, c'est une TVA dont le calcul
     // démontre qu'elle est fausse. Elle part telle quelle en TVA déductible et dans la charge.
     { id: 'tva-impossible', label: 'pièce(s) dont la TVA est arithmétiquement impossible', action: 'Corriger ces montants', nb: tvaImpossible.length, cible: 'pieces', severite: 'erreur' },
+    // En « erreur » : la pièce n'a AUCUN montant en euros tant que le taux manque, donc elle ne
+    // compte nulle part — ni en charge, ni en TVA, ni dans la 2035. Exactement l'effet d'une pièce
+    // sans catégorie, par un autre chemin.
+    { id: 'devise-non-convertie', label: 'pièce(s) en devise étrangère non converties en euros', action: 'Convertir ces pièces', nb: deviseNonConvertie.length, cible: 'pieces', severite: 'erreur' },
     { id: 'desequilibrees', label: 'écriture(s) déséquilibrée(s)', action: 'Voir les écritures déséquilibrées', nb: groupesDesequilibres.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', action: 'Régénérer les écritures concernées', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
