@@ -346,6 +346,31 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
   pièges déjà traités).
 
+## Feuille de route — page Notion à tenir à jour
+
+La feuille de route du projet vit dans une page Notion, et non dans ce
+fichier : elle couvre le chemin complet du premier commit jusqu'à une
+application qui tiendrait seule la production d'un cabinet, y compris ce qui
+est difficile et ce qui est hors d'atteinte pour des raisons légales.
+
+**Page** : « jd-precompta — état des lieux et route vers le cabinet autonome »
+(https://app.notion.com/p/3df6a715e8ad81148546d58c449c593a). Elle contient une
+base inline « Feuille de route — du premier commit au cabinet autonome », triée
+par la colonne `Ordre` : le livré d'abord (phase 0), puis le restant dans
+l'ordre de ses dépendances (phases 1 à 7).
+
+**Règle** : à chaque chantier terminé, mettre la ligne correspondante à
+`État = Fait`, `Effort = Fait`, `Phase = 0 — Livré`, et compléter
+`Quand / ce qui bloque` avec la date et ce que le travail a réellement changé —
+y compris ce qu'il a coûté ou révélé, pas seulement ce qu'il a ajouté. Les
+autres lignes gardent leur `Ordre` : seule la phase change, pour que la
+frontière entre le fait et le restant se lise d'un coup d'œil.
+
+Ajouter une ligne quand un chantier apparaît en cours de route. Le cas le plus
+fréquent est celui d'un défaut trouvé en travaillant sur autre chose — c'est
+ainsi que les 56 paiements par carte incapables de confirmer leur fournisseur
+ont été découverts, en cherchant à apparier une facture en dollars.
+
 ## Problèmes connus importants
 
 - **Les advisors de sécurité Supabase ne seront jamais tous au vert, et deux
