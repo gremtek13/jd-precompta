@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriesSansCompte, categoriesSansPoste, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
+import { categoriesSansCompte, categoriesSansPoste, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import type { Categorie, Piece } from './types'
 
 const categorie = (o: Partial<Categorie>): Categorie =>
@@ -9,6 +9,7 @@ const categorie = (o: Partial<Categorie>): Categorie =>
 const piece = (o: Partial<Piece>): Piece => ({
   id: 'p', dossier_id: 'd1', nom_fichier: 'x.pdf', statut: 'validee', type_piece: 'achat',
   date_piece: '2026-03-10', montant_ht: null, montant_tva: 20, montant_ttc: 120,
+  devise: 'EUR', montant_devise: null, taux_change: null,
   categorie_id: 'c1', created_at: '2026-03-10T00:00:00Z', ...o,
 } as Piece)
 
@@ -172,5 +173,25 @@ describe('piecesTvaImpossible', () => {
     // 479,00 ET 60 % de taux — et ne doit apparaître qu'une fois.
     const apple = avecMontants({ id: 'apple', statut: 'a_valider', montant_ht: 399.16, montant_tva: 239.52, montant_ttc: 479 })
     expect(piecesTvaImpossible([apple])).toEqual([{ piece: apple, motif: 'arithmetique' }])
+  })
+})
+
+describe('piecesDeviseNonConvertie', () => {
+  it('signale une pièce en devise étrangère restée sans taux', () => {
+    // Le dépôt laisse les montants en euros nuls quand la BCE n'a pas répondu, plutôt que d'y écrire
+    // des dollars : sans ce contrôle, l'absence ne se verrait nulle part.
+    const sansTaux = piece({ id: 'openai', devise: 'USD', montant_devise: 24, taux_change: null,
+      montant_ht: null, montant_tva: null, montant_ttc: null })
+    expect(piecesDeviseNonConvertie([sansTaux]).map((p) => p.id)).toEqual(['openai'])
+  })
+
+  it('laisse tranquille une pièce convertie', () => {
+    const convertie = piece({ devise: 'USD', montant_devise: 24, taux_change: 1.1698,
+      montant_ht: 17.10, montant_tva: 3.42, montant_ttc: 20.52 })
+    expect(piecesDeviseNonConvertie([convertie])).toEqual([])
+  })
+
+  it('ne dit rien des pièces en euros, qui n’ont pas de taux par construction', () => {
+    expect(piecesDeviseNonConvertie([piece({}), piece({ id: 'b', taux_change: null })])).toEqual([])
   })
 })

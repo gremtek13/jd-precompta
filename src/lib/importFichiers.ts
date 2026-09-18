@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { slugify } from './format'
 import { ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orientationDe } from './extraction'
 import { enregistrerTexteOcr } from './texteOcr'
+import { montantsPourPiece } from './tauxChange'
 
 // Logique de dépôt de fichier(s) dans un dossier, partagée entre l'import en masse d'une arborescence
 // (ImportDossierModal) et l'ajout ponctuel d'un ou plusieurs fichiers (AjouterDocumentsModal) : même
@@ -143,6 +144,9 @@ export async function importerFichierDossier(params: {
     return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION[orientation.categorie]} » → Documents` }
   }
 
+  // Même conversion que côté client (lib/depot.ts) : la devise du document ne dépend pas de qui le
+  // dépose, et une règle appliquée à un seul des deux chemins d'entrée ne tient jamais longtemps.
+  const montants = await montantsPourPiece(extraction ?? {}, extraction?.date_piece ?? null)
   const pieceId = await enregistrer('pieces', {
     dossier_id: dossierId,
     uploaded_by: userId,
@@ -154,9 +158,7 @@ export async function importerFichierDossier(params: {
     statut: 'a_valider',
     date_piece: extraction?.date_piece ?? null,
     tiers: extraction?.tiers ?? null,
-    montant_ht: extraction?.montant_ht ?? null,
-    montant_tva: extraction?.montant_tva ?? null,
-    montant_ttc: extraction?.montant_ttc ?? null,
+    ...montants,
     confiance: extraction?.confiance ?? null,
   })
   // Porté ici comme dans lib/depot.ts, son jumeau côté client : une correction apportée à l'un doit
