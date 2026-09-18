@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriesSansCompte, categoriesSansPoste, piecesSansTva, piecesValideesSansCategorie } from './controles'
+import { categoriesSansCompte, categoriesSansPoste, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import type { Categorie, Piece } from './types'
 
 const categorie = (o: Partial<Categorie>): Categorie =>
@@ -92,5 +92,85 @@ describe('piecesValideesSansCategorie', () => {
     const recette = piece({ id: 'recette', type_piece: 'vente', categorie_id: null })
     const avoir = piece({ id: 'avoir', montant_ttc: -214.21, categorie_id: null })
     expect(piecesValideesSansCategorie([recette, avoir]).map((p) => p.id)).toEqual(['recette', 'avoir'])
+  })
+})
+
+describe('piecesTvaImpossible', () => {
+  // Les montants de ce bloc sont ceux relevés en production — pas des cas d'école.
+  const avecMontants = (o: Partial<Piece>) => piece({ montant_ht: 20, montant_tva: 4, montant_ttc: 24, ...o })
+
+  it('signale une addition qui ne tombe pas juste', () => {
+    // « HT 20,00 / TVA 20,60 / TTC 24,00 » : la vraie TVA est 4,00, l'extraction a lu la ligne
+    // au-dessus. Confiance annoncée « haute ».
+    const fausse = avecMontants({ id: 'openai', montant_tva: 20.6 })
+    expect(piecesTvaImpossible([fausse])).toEqual([{ piece: fausse, motif: 'arithmetique' }])
+  })
+
+  it('signale un taux au-dessus de 20 %, même quand l’addition tombe juste', () => {
+    // SwissLife : 3 243,46 + 943,89 = 4 187,35, l'addition est cohérente et le taux — 29,1 % —
+    // n'existe pas. Une assurance est de surcroît exonérée : tout est faux sauf l'arithmétique.
+    const assurance = avecMontants({ id: 'swisslife', montant_ht: 3243.46, montant_tva: 943.89, montant_ttc: 4187.35 })
+    expect(piecesTvaImpossible([assurance])).toEqual([{ piece: assurance, motif: 'taux' }])
+  })
+
+  it('signale une TVA posée sur une base nulle', () => {
+    // INPI : HT 0,00 / TVA 188,81 / TTC 188,81. L'addition tombe juste, le taux est infini.
+    const inpi = avecMontants({ id: 'inpi', montant_ht: 0, montant_tva: 188.81, montant_ttc: 188.81 })
+    expect(piecesTvaImpossible([inpi]).map((a) => a.motif)).toEqual(['taux'])
+  })
+
+  it('applique la même borne au TTC quand le HT n’a pas été lu', () => {
+    // Sans HT, la borne « TVA ≤ 20 % du HT » s'écrit « TVA ≤ un sixième du TTC ». Sinon une pièce
+    // dont le HT manque échapperait entièrement au contrôle.
+    const sansHt = avecMontants({ id: 'sans-ht', montant_ht: null, montant_tva: 20, montant_ttc: 24 })
+    expect(piecesTvaImpossible([sansHt]).map((a) => a.motif)).toEqual(['taux'])
+    expect(piecesTvaImpossible([avecMontants({ montant_ht: null, montant_tva: 4, montant_ttc: 24 })])).toEqual([])
+  })
+
+  it('signale une TVA de sens contraire au HT', () => {
+    const incoherente = avecMontants({ id: 'signe', montant_ht: 100, montant_tva: -20, montant_ttc: 80 })
+    expect(piecesTvaImpossible([incoherente])).toEqual([{ piece: incoherente, motif: 'signe' }])
+  })
+
+  it('signale un avoir dont la TVA est elle aussi impossible', () => {
+    // Le pendant du test suivant, et celui qui exige la valeur absolue des DEUX côtés de la
+    // comparaison : sans elle, un avoir faux passe — une TVA négative n'est jamais supérieure à un
+    // plafond positif. Se protéger des faux positifs sur les avoirs ne doit pas les rendre aveugles.
+    const avoirFaux = avecMontants({ id: 'avoir-faux', montant_ht: -20, montant_tva: -20.6, montant_ttc: -40.6 })
+    expect(piecesTvaImpossible([avoirFaux])).toEqual([{ piece: avoirFaux, motif: 'taux' }])
+  })
+
+  it('laisse tranquille un avoir entièrement négatif', () => {
+    // Le piège du contrôle : comparer sans valeur absolue inverse les inégalités, et CHAQUE avoir
+    // correct serait signalé. Un avoir porte ses trois montants en négatif.
+    const avoir = avecMontants({ id: 'avoir', montant_ht: -178.51, montant_tva: -35.70, montant_ttc: -214.21 })
+    expect(piecesTvaImpossible([avoir])).toEqual([])
+  })
+
+  it('laisse passer un taux bâtard mais possible', () => {
+    // 11,96 % n'est aucun taux légal, et c'est pourtant ce que rend un ticket mêlant 10 % et 20 %.
+    // Les signaler ferait crier au loup plus souvent qu'à raison : le contrôle ne retient que ce
+    // qu'il peut prouver.
+    const mixte = avecMontants({ montant_ht: 50.91, montant_tva: 6.09, montant_ttc: 57 })
+    const taux275 = avecMontants({ montant_ht: 1200, montant_tva: 33, montant_ttc: 1233 })
+    expect(piecesTvaImpossible([mixte, taux275])).toEqual([])
+  })
+
+  it('accepte le taux normal à l’euro près et tolère l’arrondi au centime', () => {
+    const plein = avecMontants({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+    const arrondi = avecMontants({ montant_ht: 33.33, montant_tva: 6.67, montant_ttc: 40 })
+    expect(piecesTvaImpossible([plein, arrondi])).toEqual([])
+  })
+
+  it('ignore une pièce sans TVA — c’est le domaine de piecesSansTva', () => {
+    expect(piecesTvaImpossible([avecMontants({ montant_tva: null }), avecMontants({ montant_tva: 0 })])).toEqual([])
+  })
+
+  it('ne dépend pas du statut, et ne compte chaque pièce qu’une fois', () => {
+    // Une TVA impossible l'est à tout stade, et c'est avant la validation qu'elle doit se voir :
+    // après, le chiffre est figé dans l'écriture. Apple cumule les deux motifs — 399,16 + 239,52 ≠
+    // 479,00 ET 60 % de taux — et ne doit apparaître qu'une fois.
+    const apple = avecMontants({ id: 'apple', statut: 'a_valider', montant_ht: 399.16, montant_tva: 239.52, montant_ttc: 479 })
+    expect(piecesTvaImpossible([apple])).toEqual([{ piece: apple, motif: 'arithmetique' }])
   })
 })
