@@ -59,6 +59,10 @@ export function lignesDeSolde(rows: string[][], mapping: ColumnMapping): LigneDe
 export interface ControleSolde {
   soldeInitial: number
   soldeFinal: number
+  // Dates des deux lignes de solde : c'est ce qui permet de dire QUEL relevé ne boucle pas, une fois
+  // le contrôle conservé en base et relu des mois plus tard (voir lib/controlesReleves.ts).
+  dateInitiale: string
+  dateFinale: string
   sommeMouvements: number
   // Ce que le solde de clôture devrait valoir d'après les mouvements importés.
   attendu: number
@@ -87,6 +91,8 @@ export function controlerSolde(
   return {
     soldeInitial: ouverture.montant,
     soldeFinal: cloture.montant,
+    dateInitiale: ouverture.date,
+    dateFinale: cloture.date,
     sommeMouvements,
     attendu,
     ecart,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseLignesFromPdf, seuilDeuxColonnes } from './relevePdf'
+import { parseLignesFromPdf, seuilDeuxColonnes, soldesDuPdf } from './relevePdf'
 import type { LignePdf } from './relevePdf'
 
 // Un relevé PDF converti en lignes : une opération par ligne, date en tête, montant en queue.
@@ -190,5 +190,54 @@ describe('parseLignesFromPdf — relevé à deux colonnes Débit / Crédit', () 
 
   it('choisit le format « signé » par défaut, comportement d’avant', () => {
     expect(parseLignesFromPdf(deuxColonnes).map((l) => l.montant)).toEqual([1517, 1000, 43.1])
+  })
+})
+
+describe('soldesDuPdf', () => {
+  it('rend les soldes d’ouverture et de clôture, et eux seuls', () => {
+    // Ils étaient jusqu'ici jetés au parsing : le chemin PDF n'avait donc aucun moyen de vérifier
+    // que le relevé bouclait. Les voici rendus à part, pour `controlerSolde`.
+    const lignes = releve(
+      'SOLDE AU 01/01/2025 8270,84',
+      '15/01/2025 VIR SEPA CPAM MARSEILLE 5675,02',
+      '20/01/2025 PRLV URSSAF -1200,00',
+      'SOLDE AU 31/12/2025 20023,55',
+    )
+    expect(soldesDuPdf(lignes)).toEqual([
+      { date: '2025-01-01', montant: 8270.84 },
+      { date: '2025-12-31', montant: 20023.55 },
+    ])
+  })
+
+  it('n’emporte aucune opération avec lui', () => {
+    // Le miroir du test précédent : ce que `soldesDuPdf` prend, `parseLignesFromPdf` ne doit pas le
+    // rendre, et réciproquement. Une ligne comptée des deux côtés fausserait le contrôle.
+    const lignes = releve(
+      'SOLDE AU 01/01/2025 8270,84',
+      '15/01/2025 VIR SEPA CPAM MARSEILLE 5675,02',
+      'SOLDE AU 31/12/2025 20023,55',
+    )
+    expect(parseLignesFromPdf(lignes).map((l) => l.libelle)).toEqual(['VIR SEPA CPAM MARSEILLE'])
+    expect(soldesDuPdf(lignes)).toHaveLength(2)
+  })
+
+  it('ne reconnaît PAS un solde qui n’écrit pas le mot — limite assumée', () => {
+    // Sur le relevé réel du dossier de test, les deux lignes de solde portent le NUMÉRO DE COMPTE en
+    // guise de libellé. Le chemin CSV les attrape par un signal structurel (moins de colonnes que les
+    // opérations) qui ne survit pas au recollage de pdf.js.
+    //
+    // Une heuristique textuelle — « aucun mot d'au moins trois lettres » — a été essayée et ÉCARTÉE :
+    // confrontée aux données réelles elle attrapait 32 vrais encaissements CPAM, dont un à 14 812 €,
+    // pour 2 lignes de solde. Ce test fige le comportement actuel ET la raison de ne pas l'« améliorer »
+    // à l'aveugle : mieux vaut un contrôle qui ne tourne pas qu'un import qui perd des recettes.
+    const lignes = releve(
+      '01/01/2025 02871 073921S 8270,84',
+      '25/03/2025 0000001366072490830101250325 14812,01',
+      '31/12/2025 02871 073921S 20023,55',
+    )
+    expect(soldesDuPdf(lignes)).toEqual([])
+    // Les trois restent donc des opérations — y compris le vrai encaissement de 14 812,01 €, que
+    // l'heuristique écartée aurait supprimé.
+    expect(parseLignesFromPdf(lignes).map((l) => l.montant)).toEqual([8270.84, 14812.01, 20023.55])
   })
 })

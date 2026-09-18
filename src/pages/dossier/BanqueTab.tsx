@@ -2,15 +2,16 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfLignes } from '../../lib/pdfText'
-import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
+import { parseLignesFromPdf, soldesDuPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { ouvrirJustificatif } from '../../lib/depot'
-import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
+import type { ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
+import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
 import { analyserAppariements, libelleExploitable } from '../../lib/appariementBanque'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
@@ -56,6 +57,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   // afficher les boutons et menus de rapprochement sur chaque ligne rendait l'écran interminable
   // (voir audit ergonomie). Toutes les actions vivent maintenant dans ce panneau, une ligne à la fois.
   const [ligneOuverte, setLigneOuverte] = useState<LigneBancaire | null>(null)
+  // Relevés dont l'arithmétique ne tombe pas juste. Affichés en permanence, pas seulement à l'import :
+  // c'est toute la raison d'être de leur conservation en base (voir lib/controlesReleves.ts).
+  const [relevesIncoherents, setRelevesIncoherents] = useState<ControleReleveBancaire[]>([])
 
   async function load() {
     setLoading(true)
@@ -86,10 +90,18 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       .eq('dossier_id', dossierId)
       .order('motif')
 
+    // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
+    // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
+    const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
+      console.error(err)
+      return [] as ControleReleveBancaire[]
+    })
+
     setLignes(lignesData ?? [])
     setPieces(piecesData ?? [])
     setCotisations(cotisationsData ?? [])
     setRegles(reglesData ?? [])
+    setRelevesIncoherents(controles)
     setLoading(false)
   }
 
@@ -427,6 +439,31 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   return (
     <>
       <ImportCsv dossierId={dossierId} onImported={load} regles={regles} lignesExistantes={lignes} />
+
+      {relevesIncoherents.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {relevesIncoherents.length === 1 ? 'Un relevé ne boucle pas' : `${relevesIncoherents.length} relevés ne bouclent pas`}
+            <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Solde d'ouverture + somme des mouvements ne donne pas le solde de clôture : il manque
+            probablement des opérations dans le fichier importé. Tant que l'écart n'est pas expliqué,
+            les totaux bancaires de ce dossier — et tout ce qui en découle — sont incomplets.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {relevesIncoherents.map((c) => (
+              <li key={c.id} style={{ marginBottom: 4 }}>
+                {c.source_fichier ?? 'Relevé sans nom de fichier'}
+                {c.periode_debut && c.periode_fin ? ` (${formatDate(c.periode_debut)} → ${formatDate(c.periode_fin)})` : ''}
+                {' — écart de '}<strong>{formatMoney(Math.abs(c.ecart))}</strong>
+                {' : '}{formatMoney(c.solde_initial)} + {formatMoney(c.somme_mouvements)} ={' '}
+                {formatMoney(c.solde_initial + c.somme_mouvements)}, alors que la clôture indique {formatMoney(c.solde_final)}.
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Écarts à vérifier</h3>
@@ -1000,11 +1037,25 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
         })),
       )
       if (error) throw error
+
+      // Le chemin PDF n'avait AUCUN contrôle d'arithmétique : les lignes de solde étaient jetées au
+      // parsing, donc rien ne vérifiait que le relevé bouclait. Elles sont maintenant relues à part.
+      // `pdfRows` et non `aInserer` : le contrôle porte sur l'arithmétique DU RELEVÉ, donc les lignes
+      // écartées comme déjà présentes en base en font partie — les retirer ferait apparaître un écart
+      // qui n'existe pas dès qu'un relevé chevauche un import précédent (même raison que côté CSV).
+      const controlePdf = pdfLignes ? controlerSolde(soldesDuPdf(pdfLignes, pdfFormat), pdfRows) : null
+      if (controlePdf) await enregistrerControleReleve(dossierId, sourceFileName, controlePdf)
+      const alertePdf = controlePdf && !controlePdf.coherent
+        ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controlePdf.soldeInitial.toFixed(2)} € + mouvements ${controlePdf.sommeMouvements.toFixed(2)} € = ${controlePdf.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controlePdf.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controlePdf.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
+        : ''
+
       setPdfRows(null)
       setPdfLignes(null)
       setSourceFileName(null)
       onImported()
-      if (doublons > 0) window.alert(`${aInserer.length} ligne(s) importée(s), ${doublons} déjà présente(s) ignorée(s).`)
+      if (doublons > 0 || alertePdf) {
+        window.alert(`${aInserer.length} ligne(s) importée(s)${doublons > 0 ? `, ${doublons} déjà présente(s) ignorée(s)` : ''}.${alertePdf}`)
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "L'import a échoué.")
     } finally {
@@ -1093,6 +1144,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       // écartées comme déjà présentes en base en font partie ; les retirer de la somme ferait
       // apparaître un écart qui n'existe pas dès qu'un relevé chevauche un import précédent.
       const controle = controlerSolde(soldes, toInsert)
+      // Conservé en base, et pas seulement annoncé : l'alerte ci-dessous disparaît au premier clic,
+      // alors qu'un relevé qui ne boucle pas reste un problème tant qu'il n'est pas traité.
+      if (controle) await enregistrerControleReleve(dossierId, sourceFileName, controle)
       const alerte = controle && !controle.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controle.soldeInitial.toFixed(2)} € + mouvements ${controle.sommeMouvements.toFixed(2)} € = ${controle.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controle.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controle.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
         : ''

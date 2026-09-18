@@ -129,3 +129,17 @@ describe('controlerSolde', () => {
     expect(c?.ecart).toBe(0)
   })
 })
+
+describe('controlerSolde — dates des soldes', () => {
+  it('rend les dates d’ouverture et de clôture, dans l’ordre chronologique', () => {
+    // C'est ce qui permet de dire QUEL relevé ne boucle pas, une fois le contrôle conservé en base
+    // et relu des mois plus tard : sans elles, l'écran n'aurait qu'un montant sans période.
+    // Les soldes sont fournis à l'envers exprès — la fonction les trie, elle ne suppose pas l'ordre.
+    const c = controlerSolde(
+      [{ date: '2025-12-31', montant: 20023.55 }, { date: '2025-01-01', montant: 8270.84 }],
+      [{ montant: 100 }],
+    )
+    expect(c?.dateInitiale).toBe('2025-01-01')
+    expect(c?.dateFinale).toBe('2025-12-31')
+  })
+})

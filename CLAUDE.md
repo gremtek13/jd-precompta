@@ -683,6 +683,31 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   de compte en guise de libellé, et le seul signal est qu'elles ont MOINS de colonnes que les
   opérations. `lignesDeSolde` (lib/soldeReleve.ts) combine les deux indices — libellé et largeur —
   en comparant à la largeur la plus FRÉQUENTE, pas à la plus grande.
+- **Un contrôle affiché une fois puis jeté ne contrôle rien.** Le résultat du contrôle de solde
+  vivait dans un `window.alert()` à l'import : l'opérateur cliquait « OK » et l'information était
+  détruite. Un relevé incomplet redevenait invisible dans la seconde, alors que c'est précisément ce
+  qu'un cabinet doit savoir avant de bâtir une comptabilité dessus. Il est désormais conservé
+  (`controles_releves_bancaires`, voir `lib/controlesReleves.ts`), affiché en permanence dans Banque
+  et remonté en tête de Checklist en sévérité « erreur » — avant les autres points, parce qu'un
+  relevé amputé fausse tout ce qui en découle. L'écart de 5 359,00 € du dossier de test, recalculé
+  depuis la base, est enregistré : il redevient visible au lieu de vivre dans un commentaire.
+- **Le chemin PDF n'avait AUCUN contrôle d'arithmétique**, ses lignes de solde étant jetées au
+  parsing. `soldesDuPdf` les rend maintenant à part. Mais il ne reconnaît que les lignes qui écrivent
+  le mot « solde » — et **c'est une limite assumée, pas un oubli** : sur le relevé réel, ces lignes
+  portent le numéro de compte, et le signal structurel qui sauve le CSV (moins de colonnes que les
+  opérations) ne survit pas au recollage de pdf.js. Une heuristique textuelle a été essayée puis
+  **écartée sur preuve** : « aucun mot d'au moins trois lettres » attrapait, sur les données réelles,
+  32 vrais encaissements CPAM (références nues, jusqu'à 14 812 €) pour 2 lignes de solde. Elle aurait
+  supprimé les recettes du dossier. Mieux vaut un contrôle qui ne tourne pas qu'un import qui perd
+  des recettes — et un test fige ce choix pour qu'il ne soit pas « amélioré » à l'aveugle.
+- **Un index unique PARTIEL ne peut pas être visé par un upsert.** `ON CONFLICT (a, b)` exige de
+  répéter la clause WHERE de l'index partiel, ce que le client Supabase ne sait pas produire :
+  l'écriture échoue. `controles_releves_bancaires` est née avec un index partiel (pour laisser
+  s'empiler les relevés sans nom de fichier) et son upsert aurait raté à chaque import, en silence —
+  la même panne que la règle tiers → catégorie restée muette des mois durant. Une contrainte unique
+  **totale** donne la même sémantique sans le piège : deux NULL ne sont jamais égaux en SQL, donc les
+  relevés anonymes s'empilent de toute façon. Vérifié par un aller-retour réel en base, pas par le
+  faux client — un mock ne peut pas prouver qu'une contrainte existe.
 - **Ces deux lignes servent à contrôler le relevé, pas seulement à être écartées.** Solde
   d'ouverture + somme des mouvements doit donner le solde de clôture ; sinon le fichier est
   incomplet, et le cabinet doit l'apprendre avant de bâtir une comptabilité dessus. Le contrôle
@@ -896,7 +921,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 588 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 598 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
