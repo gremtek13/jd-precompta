@@ -2,7 +2,6 @@
   "permissions": {
     "allow": [
       "Edit",
-
       "Bash(npm run *)",
       "Bash(npm test*)",
       "Bash(npm ci*)",
@@ -10,7 +9,6 @@
       "Bash(npx vitest *)",
       "Bash(npx tsc *)",
       "Bash(npx oxlint*)",
-
       "Bash(git add *)",
       "Bash(git commit *)",
       "Bash(git push *)",
@@ -22,7 +20,6 @@
       "Bash(git rebase *)",
       "Bash(git stash*)",
       "Bash(git restore *)",
-
       "Bash(python3 *)",
       "Bash(perl *)",
       "Bash(mkdir *)",
@@ -30,7 +27,6 @@
       "Bash(mv *)",
       "Bash(touch *)",
       "Bash(chmod *)",
-
       "mcp__Supabase__execute_sql",
       "mcp__Supabase__apply_migration",
       "mcp__Supabase__deploy_edge_function",
@@ -45,7 +41,6 @@
       "mcp__Supabase__get_publishable_keys",
       "mcp__Supabase__generate_typescript_types",
       "mcp__Supabase__search_docs",
-
       "mcp__github__actions_list",
       "mcp__github__actions_get",
       "mcp__github__get_job_logs",
@@ -59,12 +54,25 @@
       "mcp__github__get_file_contents",
       "mcp__github__subscribe_pr_activity",
       "mcp__github__unsubscribe_pr_activity",
-
       "mcp__Notion__notion-fetch",
       "mcp__Notion__notion-search",
       "mcp__Notion__notion-query-data-sources",
       "mcp__Notion__notion-create-pages",
-      "mcp__Notion__notion-update-page"
+      "mcp__Notion__notion-update-page",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__execute_sql",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__apply_migration",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__deploy_edge_function",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__get_edge_function",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__list_edge_functions",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__list_tables",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__list_extensions",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__list_migrations",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__get_advisors",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__query_logs",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__get_project_url",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__get_publishable_keys",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__generate_typescript_types",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2__search_docs"
     ]
   }
 }
