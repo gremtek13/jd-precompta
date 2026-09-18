@@ -39,6 +39,27 @@ export interface RegleBancaireIgnoree {
   created_at: string
 }
 
+// Contrôle de cohérence d'un relevé bancaire importé : solde d'ouverture + somme des mouvements
+// doit donner le solde de clôture. Conservé en base (et non affiché une fois puis jeté) parce qu'un
+// relevé incomplet est une information qui doit survivre à la fermeture d'une alerte — voir
+// lib/controlesReleves.ts. Décrit la table `controles_releves_bancaires`, colonnes NOT NULL comprises.
+export interface ControleReleveBancaire {
+  id: string
+  dossier_id: string
+  // Nul sur les chemins d'import qui ne portent pas de nom de fichier.
+  source_fichier: string | null
+  solde_initial: number
+  solde_final: number
+  somme_mouvements: number
+  // (solde_initial + somme_mouvements) − solde_final. Positif : le relevé porte plus d'entrées que
+  // le solde ne le justifie, donc il manque des sorties (ou des entrées sont en double).
+  ecart: number
+  coherent: boolean
+  periode_debut: string | null
+  periode_fin: string | null
+  created_at: string
+}
+
 export interface LigneBancaire {
   id: string
   dossier_id: string

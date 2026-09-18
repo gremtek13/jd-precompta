@@ -66,7 +66,14 @@ export function seuilDeuxColonnes(abscisses: number[]): number | null {
 // (en-têtes, totaux, texte de libellé qui déborde sur une deuxième ligne) sont ignorées — mieux
 // vaut manquer une ligne que d'en inventer une. Le tableau de prévisualisation reste modifiable
 // pour corriger ou compléter à la main.
-export function parseLignesFromPdf(lignes: LignePdf[], format: FormatMontant = 'signe'): LigneExtraite[] {
+// `soldes: true` inverse le filtre : la fonction ne rend QUE les lignes de solde, avec la même
+// lecture de date et de montant. C'est ce qui permet de contrôler l'arithmétique du relevé plutôt
+// que de jeter ces deux lignes (voir `soldesDuPdf` plus bas).
+export function parseLignesFromPdf(
+  lignes: LignePdf[],
+  format: FormatMontant = 'signe',
+  options: { soldes?: boolean } = {},
+): LigneExtraite[] {
   // Date en tout début de ligne : c'est la date d'opération. Une même ligne réelle porte souvent
   // une seconde date (date de valeur, ou date d'achat rappelée dans le libellé — "CB FACTURE DU
   // 03/01/26"), qui n'est pas celle de l'opération.
@@ -102,7 +109,11 @@ export function parseLignesFromPdf(lignes: LignePdf[], format: FormatMontant = '
     // Lignes de solde (ouverture/synthèse/clôture) : portent souvent une date et un montant en fin
     // de ligne comme une vraie opération, mais n'en sont pas une — exclues explicitement plutôt que
     // de polluer le rapprochement avec un faux mouvement.
-    if (!line || /SOLDE/i.test(line)) continue
+    if (!line) continue
+    // Un relevé ne contient pas que des opérations : il porte aussi les soldes d'ouverture et de
+    // clôture, qui ressemblent à une opération (une date, un montant en fin de ligne) sans en être
+    // une. Elles sont écartées du flux normal — et récupérées à part pour contrôler le relevé.
+    if (/SOLDE/i.test(line) !== !!options.soldes) continue
 
     const montantMatch = line.match(montantRegex)
     if (!montantMatch || montantMatch.index === undefined) continue
@@ -149,4 +160,21 @@ export function parseLignesFromPdf(lignes: LignePdf[], format: FormatMontant = '
     ...ligne,
     montant: seuil !== null && xFin > seuil ? Math.abs(ligne.montant) : -Math.abs(ligne.montant),
   }))
+}
+
+// Soldes d'ouverture et de clôture lus sur un relevé PDF, pour `controlerSolde`.
+//
+// **Ne reconnaît que les lignes qui écrivent le mot « solde ».** C'est une limite assumée, pas un
+// oubli : sur le relevé réel du dossier de test, les deux lignes de solde portent le NUMÉRO DE
+// COMPTE en guise de libellé et n'écrivent jamais ce mot. L'import CSV s'en sort grâce à un signal
+// structurel — ces lignes ont moins de colonnes que les opérations (voir `lignesDeSolde`) — qui ne
+// survit pas au recollage des fragments de pdf.js.
+//
+// Une heuristique textuelle a été essayée puis ÉCARTÉE sur preuve : « un libellé sans aucun mot d'au
+// moins trois lettres ». Confrontée aux données réelles, elle attrapait 32 vrais encaissements CPAM
+// (des références nues du type « 0000001366072490830101250325 », jusqu'à 14 812 €) pour 2 lignes de
+// solde. Appliquée, elle aurait supprimé les recettes du dossier. Tant qu'aucun signal fiable n'est
+// trouvé, mieux vaut un contrôle qui ne s'exécute pas qu'un import qui perd des recettes.
+export function soldesDuPdf(lignes: LignePdf[], format: FormatMontant = 'signe'): { date: string; montant: number }[] {
+  return parseLignesFromPdf(lignes, format, { soldes: true }).map(({ date, montant }) => ({ date, montant }))
 }
