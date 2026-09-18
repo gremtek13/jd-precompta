@@ -18,7 +18,27 @@ import type { LigneBancaire, Piece } from './types'
 // Un faux négatif coûte un clic. Un faux positif inscrit une donnée fausse comme vérifiée par le
 // cabinet. Les règles ci-dessous penchent donc systématiquement vers l'arbitrage.
 
-export const JOURS_TOLERANCE = 5
+// Écart maximal entre la date de la pièce et celle du mouvement bancaire.
+//
+// Sept jours, et pas cinq, parce qu'un prélèvement mensuel est facturé le 1er ou le dernier jour du
+// mois et débité le 5, le 6 ou le 7. À cinq jours, le cas le plus courant d'un dossier — l'abonnement
+// prélevé — ne s'apparie jamais.
+//
+// Mesuré sur le relevé réel du dossier pilote, 41 pièces contre 385 mouvements :
+//
+//   tolérance |  certains | à arbitrer
+//           5 |         0 |          4
+//           6 |         4 |          5
+//           7 |         6 |          6   <- retenu
+//     8 à 15  |         6 |          7
+//          30 |         4 |         21
+//
+// La courbe dit deux choses. Tout ce qui est gagnable l'est à sept jours : de 8 à 15, plus une seule
+// paire certaine de plus. Et au-delà, ça se RETOURNE — à trente jours les mouvements récurrents du
+// même montant deviennent interchangeables, « plusieurs mouvements possibles » explose, et le nombre
+// de paires sûres RECULE. Élargir davantage ne rendrait pas le rapprochement plus permissif, ça le
+// rendrait plus bête.
+export const JOURS_TOLERANCE = 7
 
 // Libellé générique posé par l'import quand la colonne « Libellé » du relevé est vide sur cette
 // ligne (voir BanqueTab). Il ne dit rien : dans ce cas la ligne brute du fichier, conservée à part,

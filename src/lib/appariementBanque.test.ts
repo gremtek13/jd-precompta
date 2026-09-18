@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  JOURS_TOLERANCE,
   analyserAppariements,
   libelleExploitable,
   motsIdentifiants,
@@ -314,5 +315,31 @@ describe('préfixe de terminal carte collé au commerçant', () => {
   it('laisse intact un libellé sans préfixe', () => {
     expect(tiersConfirmeParBanque('Transmedical', 'PRLV SEPA TRANSMEDICAL')).toBe(true)
     expect(tiersConfirmeParBanque('OpenAI, LLC', 'PRLV SEPA MACSF-ASSU-')).toBe(false)
+  })
+})
+
+describe('tolérance de date', () => {
+  it('couvre le décalage d’un prélèvement mensuel', () => {
+    // Le cas le plus courant d'un dossier : facture au 1er ou au dernier jour du mois, prélèvement
+    // le 5, 6 ou 7. À cinq jours, aucun abonnement ne s'appariait — 0 paire certaine sur le relevé
+    // réel du dossier pilote, contre 6 à sept jours.
+    expect(JOURS_TOLERANCE).toBeGreaterThanOrEqual(7)
+    const facture = piece({ date_piece: '2025-04-01' })
+    const preleve = ligne({ date: '2025-04-07', montant: -38.4 })
+    const { certains } = analyserAppariements([piece({ ...facture, montant_ttc: 38.4 })], [preleve])
+    expect(certains).toHaveLength(1)
+    expect(certains[0].ecartJours).toBe(6)
+  })
+
+  it('ne va pas jusqu’à confondre deux mensualités voisines', () => {
+    // La borne haute compte autant que la basse : à trente jours, deux prélèvements successifs du
+    // même montant deviennent interchangeables et le nombre de paires SÛRES recule. Une facture ne
+    // doit jamais pouvoir s'apparier au prélèvement du mois suivant.
+    expect(JOURS_TOLERANCE).toBeLessThan(28)
+    const facture = piece({ date_piece: '2025-04-01', montant_ttc: 38.4 })
+    const moisSuivant = ligne({ date: '2025-05-05', montant: -38.4 })
+    const { certains, aArbitrer } = analyserAppariements([facture], [moisSuivant])
+    expect(certains).toEqual([])
+    expect(aArbitrer).toEqual([])
   })
 })
