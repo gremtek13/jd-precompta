@@ -700,6 +700,12 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   32 vrais encaissements CPAM (références nues, jusqu'à 14 812 €) pour 2 lignes de solde. Elle aurait
   supprimé les recettes du dossier. Mieux vaut un contrôle qui ne tourne pas qu'un import qui perd
   des recettes — et un test fige ce choix pour qu'il ne soit pas « amélioré » à l'aveugle.
+  **La réponse est donc humaine, et assumée comme telle** : l'aperçu d'import PDF montre TOUTES les
+  lignes, soldes compris, avec une case « Solde » — pré-cochée quand la banque écrit le mot, à cocher
+  à la main sinon. Les lignes cochées ne s'importent pas et alimentent le contrôle. Le drapeau vit
+  **sur la ligne** (`LigneExtraite.estSolde`) et non dans un jeu d'indices à côté : retirer une ligne
+  de l'aperçu décalerait sinon les suivantes, et le contrôle porterait en silence sur les mauvais
+  montants. L'écran dit combien de soldes sont désignés et qu'il en faut exactement deux.
 - **Un index unique PARTIEL ne peut pas être visé par un upsert.** `ON CONFLICT (a, b)` exige de
   répéter la clause WHERE de l'index partiel, ce que le client Supabase ne sait pas produire :
   l'écriture échoue. `controles_releves_bancaires` est née avec un index partiel (pour laisser
@@ -921,7 +927,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 598 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 601 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

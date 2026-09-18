@@ -241,3 +241,41 @@ describe('soldesDuPdf', () => {
     expect(parseLignesFromPdf(lignes).map((l) => l.montant)).toEqual([8270.84, 14812.01, 20023.55])
   })
 })
+
+describe('parseLignesFromPdf — mode « tous » (aperçu d’import)', () => {
+  it('rend toutes les lignes en marquant celles qui sont des soldes', () => {
+    // L'aperçu montre TOUT : c'est ce qui permet à l'opérateur de cocher lui-même les soldes que sa
+    // banque n'a pas nommés. Rien n'est caché, rien n'est jeté avant qu'il ait vu.
+    const lignes = releve(
+      'SOLDE AU 01/01/2025 8270,84',
+      '15/01/2025 VIR SEPA CPAM MARSEILLE 5675,02',
+      'SOLDE AU 31/12/2025 20023,55',
+    )
+    // Le drapeau et le montant, pas le libellé : celui-ci se lit ENTRE la date et le montant, or
+    // « SOLDE AU » est écrit avant la date — il ne survit donc pas au découpage, et c'est sans
+    // importance puisque la ligne ne s'importe pas.
+    expect(parseLignesFromPdf(lignes, 'signe', 'tous').map((l) => [l.montant, l.estSolde])).toEqual([
+      [8270.84, true],
+      [5675.02, false],
+      [20023.55, true],
+    ])
+  })
+
+  it('marque « false » un solde que la banque n’a pas nommé — à l’opérateur de cocher', () => {
+    // Le relevé réel du dossier de test : les lignes de solde portent le numéro de compte. Aucune
+    // heuristique fiable ne les distingue d'un encaissement CPAM (voir soldesDuPdf), donc elles
+    // arrivent décochées et l'écran demande explicitement de les désigner.
+    const lignes = releve(
+      '01/01/2025 02871 073921S 8270,84',
+      '25/03/2025 0000001366072490830101250325 14812,01',
+    )
+    expect(parseLignesFromPdf(lignes, 'signe', 'tous').every((l) => l.estSolde === false)).toBe(true)
+  })
+
+  it('ne pose le drapeau que dans ce mode', () => {
+    // En mode 'operations', `estSolde` n'a aucun sens : les soldes ont déjà été retirés. Le laisser
+    // traîner à `false` inviterait à s'y fier là où il ne veut rien dire.
+    const lignes = releve('15/01/2025 VIR SEPA CPAM 5675,02')
+    expect(parseLignesFromPdf(lignes).every((l) => l.estSolde === undefined)).toBe(true)
+  })
+})
