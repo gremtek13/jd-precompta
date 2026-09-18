@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import { suggererCategorie } from '../../lib/tiersCategories'
+import { LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
 import { useAuth } from '../../context/AuthContext'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
 import FilCommentaires from '../../components/FilCommentaires'
@@ -181,6 +182,17 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     if (error) throw error
     return path
   }
+
+  // Le contrôle partagé appliqué aux valeurs EN COURS DE SAISIE, sans passer par la base : la règle
+  // n'existe qu'à un seul endroit (lib/controles.ts) et cet écran ne fait que la consulter. Un champ
+  // vide vaut « non renseigné » — le contrôle ne se prononce que sur ce qui est là.
+  const nombreOuNull = (v: string) => (v.trim() === '' ? null : Number.parseFloat(v))
+  const motifTvaSaisie = piecesTvaImpossible([{
+    ...(piece ?? ({} as Piece)),
+    montant_ht: nombreOuNull(montantHt),
+    montant_tva: nombreOuNull(montantTva),
+    montant_ttc: nombreOuNull(montantTtc),
+  } as Piece])[0]?.motif ?? null
 
   async function save(statut: 'a_valider' | 'validee') {
     setSaving(true)
@@ -442,6 +454,17 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
                     <input id="ttc" type="number" step="0.01" value={montantTtc} onChange={(e) => setMontantTtc(e.target.value)} />
                   </div>
                 </div>
+
+                {/* Sous les trois champs, et calculé en direct : c'est l'endroit et le moment où la
+                    personne a le document sous les yeux. La règle n'est pas réécrite ici — c'est le
+                    contrôle partagé qui tranche (voir lib/controles.ts), appliqué aux valeurs en
+                    cours de saisie plutôt qu'à la pièce enregistrée. */}
+                {motifTvaSaisie && (
+                  <p className="alerte-tva">
+                    <strong>TVA impossible :</strong> {LIBELLE_MOTIF_TVA[motifTvaSaisie]}. Ces montants
+                    ne peuvent pas être ceux du document — la TVA lue part telle quelle en déduction.
+                  </p>
+                )}
 
                 <div className="field">
                   <label htmlFor="notes">Notes internes</label>

@@ -4,7 +4,7 @@ import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
 import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPourPiece, soldeCompte, tvaNettePourPeriode } from '../../lib/ecritures'
 import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
-import { categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesValideesSansCategorie } from '../../lib/controles'
+import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -166,6 +166,10 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
 
   const piecesSansTva = calculerPiecesSansTva(pieces, assujettiTva)
   const piecesSansCategorie = piecesValideesSansCategorie(pieces)
+  // Cet onglet ne charge que les pièces VALIDÉES : ce sont donc les TVA fausses déjà figées dans une
+  // écriture et parties en déduction. Les autres se voient en amont, dans Justificatifs, là où on
+  // peut encore les corriger avant de valider.
+  const tvaImpossible = piecesTvaImpossible(pieces)
 
   async function enregistrerDeclaration(e: FormEvent) {
     e.preventDefault()
@@ -218,6 +222,36 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
               <li key={p.id}>{p.tiers ?? p.nom_fichier} — {formatMoney(p.montant_ttc)}{p.date_piece ? ` (${p.date_piece})` : ''}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {/* Avant « Pièces sans TVA » : une TVA absente se voit (la case est vide), une TVA fausse a
+          l'air remplie — et c'est celle-là qui part en déduction. */}
+      {tvaImpossible.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            TVA impossible <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Sur {tvaImpossible.length === 1 ? 'cette pièce validée' : `ces ${tvaImpossible.length} pièces validées`}, le calcul démontre que la TVA lue
+            ne peut pas être celle du document — elle est pourtant déjà partie en TVA déductible et
+            dans la charge. Les montants se corrigent depuis l'onglet Justificatifs, puis l'écriture
+            est à régénérer.
+          </p>
+          <table>
+            <thead><tr><th>Pièce</th><th>HT</th><th>TVA lue</th><th>TTC</th><th>Ce qui cloche</th></tr></thead>
+            <tbody>
+              {tvaImpossible.map(({ piece: p, motif }) => (
+                <tr key={p.id}>
+                  <td>{p.tiers ?? p.nom_fichier}</td>
+                  <td>{formatMoney(p.montant_ht)}</td>
+                  <td>{formatMoney(p.montant_tva)}</td>
+                  <td>{formatMoney(p.montant_ttc)}</td>
+                  <td className="muted">{LIBELLE_MOTIF_TVA[motif]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

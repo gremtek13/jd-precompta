@@ -2,6 +2,7 @@ import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
+import { LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
 import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
 import { grouperParTiers } from '../../lib/suggestionTiers'
@@ -131,13 +132,23 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     if (anneeFilter !== 'toutes' && (!p.date_piece || anneeDe(p.date_piece) !== anneeFilter)) return false
     return true
   })
+  // Sur le dossier entier, pas sur le filtre affiché : c'est l'écran où la pièce se corrige encore,
+  // et le montant reste faux quel que soit l'exercice qu'on regarde (voir lib/controles.ts).
+  const motifTvaParPiece = new Map(piecesTvaImpossible(pieces).map(({ piece, motif }) => [piece.id, motif]))
+
   // "À valider" seulement : les pièces à faible confiance d'extraction remontent en premier — ce sont
   // celles qui ont le plus de chances d'avoir un champ faux, donc celles qui méritent d'être regardées
   // avant les autres plutôt que de tout revérifier au même niveau d'attention (voir Piece.confiance).
   // Tri stable (Array.sort) : à confiance égale, l'ordre par date d'origine est conservé.
+  //
+  // Une TVA impossible passe AVANT la confiance basse, et pas au même rang : la confiance est un
+  // pronostic de l'extraction sur elle-même — souvent « haute » sur les pièces fausses, c'est tout le
+  // problème — là où l'impossibilité est démontrée. Un doute ne prime pas sur une certitude.
   const PRIORITE_CONFIANCE: Record<string, number> = { basse: 0, moyenne: 1, haute: 2 }
+  const prioriteDe = (p: Piece) =>
+    motifTvaParPiece.has(p.id) ? -1 : (PRIORITE_CONFIANCE[p.confiance ?? ''] ?? 3)
   const trie = statutFilter === 'a_valider'
-    ? [...filteredBase].sort((a, b) => (PRIORITE_CONFIANCE[a.confiance ?? ''] ?? 3) - (PRIORITE_CONFIANCE[b.confiance ?? ''] ?? 3))
+    ? [...filteredBase].sort((a, b) => prioriteDe(a) - prioriteDe(b))
     : filteredBase
   // Pièces du dossier entier, pas seulement du filtre affiché : ce sont elles qui n'entrent dans
   // aucun pack, et l'oubli ne dépend pas de l'exercice qu'on regarde au moment du clic. Le bouton
@@ -478,7 +489,19 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                     ) : '—'}
                   </td>
                   <td className="hide-mobile" onClick={() => setEditing(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
-                  <td onClick={() => setEditing(p)}>{formatMoney(p.montant_ttc)}</td>
+                  <td onClick={() => setEditing(p)}>
+                    {formatMoney(p.montant_ttc)}
+                    {/* Sur la ligne, pas seulement dans un onglet de contrôle : c'est ici que la
+                        pièce se valide, et une fois validée le chiffre part tel quel en TVA
+                        déductible. Le badge dit ce qui est démontré faux, pas « à vérifier ». */}
+                    {motifTvaParPiece.has(p.id) && (
+                      <div style={{ marginTop: 4 }}>
+                        <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={`TVA lue : ${formatMoney(p.montant_tva)} — ${LIBELLE_MOTIF_TVA[motifTvaParPiece.get(p.id)!]}`}>
+                          TVA impossible
+                        </span>
+                      </div>
+                    )}
+                  </td>
                   <td className="hide-mobile" onClick={() => setEditing(p)}>
                     {p.confiance === 'basse' && <span className="badge badge-danger">Basse — à vérifier</span>}
                     {p.confiance === 'moyenne' && <span className="badge badge-warning">Moyenne</span>}

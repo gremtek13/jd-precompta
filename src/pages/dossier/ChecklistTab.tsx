@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, piecesSansTva, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
@@ -145,6 +145,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const catSansPoste = categoriesSansPoste(categories, pieces)
   const sansTva = piecesSansTva(pieces, assujettiTva)
   const sansCategorie = piecesValideesSansCategorie(pieces)
+  // Sur les deux piles, validées comme à valider : une TVA arithmétiquement impossible l'est à tout
+  // stade, et c'est avant la validation qu'il faut la voir — après, le chiffre est figé dans
+  // l'écriture. Sans filtre sur l'assujettissement non plus : un montant impossible signale une
+  // lecture ratée du document, et sur un dossier non assujetti c'est le TTC — donc la charge — qui
+  // peut être faux (voir lib/controles.ts).
+  const tvaImpossible = piecesTvaImpossible([...pieces, ...piecesAValider])
   // Même tolérance qu'EcrituresTab (1 € : une CA3 se dépose en euros arrondis).
   const declarationsEnEcart = declarationsTva.filter(
     (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)) > 1,
@@ -166,6 +172,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // revient à bâtir sur du sable.
     { id: 'releve-incoherent', label: 'relevé(s) bancaire(s) qui ne bouclent pas — mouvements manquants', action: 'Voir les relevés en écart', nb: relevesIncoherents.length, cible: 'banque', severite: 'erreur' },
     { id: 'sans-categorie', label: 'pièce(s) validée(s) sans catégorie — invisibles en compta', action: 'Catégoriser ces pièces', nb: sansCategorie.length, cible: 'pieces', severite: 'erreur' },
+    // « Erreur » et non « attention » : ce n'est pas une TVA douteuse, c'est une TVA dont le calcul
+    // démontre qu'elle est fausse. Elle part telle quelle en TVA déductible et dans la charge.
+    { id: 'tva-impossible', label: 'pièce(s) dont la TVA est arithmétiquement impossible', action: 'Corriger ces montants', nb: tvaImpossible.length, cible: 'pieces', severite: 'erreur' },
     { id: 'desequilibrees', label: 'écriture(s) déséquilibrée(s)', action: 'Voir les écritures déséquilibrées', nb: groupesDesequilibres.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', action: 'Régénérer les écritures concernées', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },

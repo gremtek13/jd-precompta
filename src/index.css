@@ -1157,3 +1157,15 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   font-size: 0.78rem; line-height: 1.5;
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
+
+/* Alerte de saisie, sous les trois champs de montant de la fiche pièce. Un fond teinté plutôt qu'un
+   simple texte rouge : elle contredit une valeur que l'écran affiche juste au-dessus, et doit se
+   distinguer des libellés d'aide qui l'entourent. Discrète malgré tout — elle informe, elle
+   n'empêche pas d'enregistrer (voir PieceFormModal). */
+.alerte-tva {
+  margin: -4px 0 0; padding: 9px 12px;
+  border: 1px solid color-mix(in srgb, var(--color-danger) 35%, var(--color-border));
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-light); color: var(--color-danger-text);
+  font-size: 0.82rem; line-height: 1.45;
+}
