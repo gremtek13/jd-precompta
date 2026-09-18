@@ -17,6 +17,10 @@ export interface LigneExtraite {
   date: string
   libelle: string
   montant: number
+  // Vrai quand la ligne décrit un SOLDE et non une opération. Renseigné uniquement en mode 'tous'
+  // (voir `parseLignesFromPdf`), où l'aperçu d'import montre tout et laisse l'opérateur corriger :
+  // sur les relevés où la banque n'écrit pas le mot « solde », c'est lui qui les désigne.
+  estSolde?: boolean
 }
 
 // Deux mises en page, comme pour l'import CSV :
@@ -66,13 +70,16 @@ export function seuilDeuxColonnes(abscisses: number[]): number | null {
 // (en-têtes, totaux, texte de libellé qui déborde sur une deuxième ligne) sont ignorées — mieux
 // vaut manquer une ligne que d'en inventer une. Le tableau de prévisualisation reste modifiable
 // pour corriger ou compléter à la main.
-// `soldes: true` inverse le filtre : la fonction ne rend QUE les lignes de solde, avec la même
-// lecture de date et de montant. C'est ce qui permet de contrôler l'arithmétique du relevé plutôt
-// que de jeter ces deux lignes (voir `soldesDuPdf` plus bas).
+// `inclure` décide de ce que la fonction rend, avec la même lecture de date et de montant dans les
+// trois cas :
+//   - 'operations' (défaut) : tout sauf les lignes de solde, comme avant ;
+//   - 'soldes'     : uniquement les lignes de solde, pour contrôler l'arithmétique du relevé ;
+//   - 'tous'       : tout, chaque ligne portant `estSolde`. C'est ce que montre l'aperçu d'import,
+//                    où l'opérateur coche lui-même les soldes que la banque n'a pas nommés.
 export function parseLignesFromPdf(
   lignes: LignePdf[],
   format: FormatMontant = 'signe',
-  options: { soldes?: boolean } = {},
+  inclure: 'operations' | 'soldes' | 'tous' = 'operations',
 ): LigneExtraite[] {
   // Date en tout début de ligne : c'est la date d'opération. Une même ligne réelle porte souvent
   // une seconde date (date de valeur, ou date d'achat rappelée dans le libellé — "CB FACTURE DU
@@ -113,7 +120,8 @@ export function parseLignesFromPdf(
     // Un relevé ne contient pas que des opérations : il porte aussi les soldes d'ouverture et de
     // clôture, qui ressemblent à une opération (une date, un montant en fin de ligne) sans en être
     // une. Elles sont écartées du flux normal — et récupérées à part pour contrôler le relevé.
-    if (/SOLDE/i.test(line) !== !!options.soldes) continue
+    const estSolde = /SOLDE/i.test(line)
+    if (inclure !== 'tous' && estSolde !== (inclure === 'soldes')) continue
 
     const montantMatch = line.match(montantRegex)
     if (!montantMatch || montantMatch.index === undefined) continue
@@ -148,7 +156,7 @@ export function parseLignesFromPdf(
     if (montant === null) continue
 
     const libelle = line.slice(finDate, montantMatch.index).trim()
-    brutes.push({ ligne: { date, libelle: libelle || 'Mouvement bancaire', montant }, xFin })
+    brutes.push({ ligne: { date, libelle: libelle || 'Mouvement bancaire', montant, ...(inclure === 'tous' ? { estSolde } : {}) }, xFin })
   }
 
   if (format === 'signe') return brutes.map((b) => b.ligne)
@@ -176,5 +184,5 @@ export function parseLignesFromPdf(
 // solde. Appliquée, elle aurait supprimé les recettes du dossier. Tant qu'aucun signal fiable n'est
 // trouvé, mieux vaut un contrôle qui ne s'exécute pas qu'un import qui perd des recettes.
 export function soldesDuPdf(lignes: LignePdf[], format: FormatMontant = 'signe'): { date: string; montant: number }[] {
-  return parseLignesFromPdf(lignes, format, { soldes: true }).map(({ date, montant }) => ({ date, montant }))
+  return parseLignesFromPdf(lignes, format, 'soldes').map(({ date, montant }) => ({ date, montant }))
 }

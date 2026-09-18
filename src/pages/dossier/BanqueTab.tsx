@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfLignes } from '../../lib/pdfText'
-import { parseLignesFromPdf, soldesDuPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
+import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { ouvrirJustificatif } from '../../lib/depot'
@@ -954,7 +954,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     setPdfExtracting(true)
     try {
       const lignes = await extractPdfLignes(blob)
-      const extraites = parseLignesFromPdf(lignes, pdfFormat)
+      const extraites = parseLignesFromPdf(lignes, pdfFormat, 'tous')
       if (extraites.length === 0) {
         throw new Error("Aucune opération détectée dans ce PDF — la mise en page n'est peut-être pas reconnue. Essaie l'export CSV si la banque le propose.")
       }
@@ -1009,7 +1009,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
   // qui donnerait un mélange des deux.
   function changerFormatPdf(format: FormatMontant) {
     setPdfFormat(format)
-    if (pdfLignes) setPdfRows(parseLignesFromPdf(pdfLignes, format))
+    if (pdfLignes) setPdfRows(parseLignesFromPdf(pdfLignes, format, 'tous'))
   }
 
   async function handleImportPdfRows() {
@@ -1019,10 +1019,17 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     try {
       // Même dédoublonnage que l'import CSV (voir handleImport) — un relevé PDF redéposé par erreur
       // ne doit pas dupliquer chaque mouvement déjà en base.
+      // Les lignes cochées « solde » ne sont pas des opérations : elles ne s'importent pas, elles
+      // servent à contrôler le relevé. Le drapeau vit sur la ligne et non dans un jeu d'indices à
+      // côté — retirer une ligne de l'aperçu décalerait sinon les suivantes, et le contrôle porterait
+      // en silence sur les mauvais montants.
+      const operations = pdfRows.filter((r) => !r.estSolde)
+      const soldesDesignes = pdfRows.filter((r) => r.estSolde).map(({ date, montant }) => ({ date, montant }))
+
       const signaturesVues = new Set(lignesExistantes.map(signatureLigne))
       const aInserer: typeof pdfRows = []
       let doublons = 0
-      for (const r of pdfRows) {
+      for (const r of operations) {
         const sig = signatureLigne(r)
         if (signaturesVues.has(sig)) { doublons++; continue }
         signaturesVues.add(sig)
@@ -1043,7 +1050,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       // `pdfRows` et non `aInserer` : le contrôle porte sur l'arithmétique DU RELEVÉ, donc les lignes
       // écartées comme déjà présentes en base en font partie — les retirer ferait apparaître un écart
       // qui n'existe pas dès qu'un relevé chevauche un import précédent (même raison que côté CSV).
-      const controlePdf = pdfLignes ? controlerSolde(soldesDuPdf(pdfLignes, pdfFormat), pdfRows) : null
+      // `operations` et non `aInserer` : le contrôle porte sur l'arithmétique DU RELEVÉ, donc les
+      // lignes écartées comme déjà présentes en base en font partie — les retirer ferait apparaître
+      // un écart qui n'existe pas dès qu'un relevé chevauche un import précédent (comme côté CSV).
+      const controlePdf = controlerSolde(soldesDesignes, operations)
       if (controlePdf) await enregistrerControleReleve(dossierId, sourceFileName, controlePdf)
       const alertePdf = controlePdf && !controlePdf.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controlePdf.soldeInitial.toFixed(2)} € + mouvements ${controlePdf.sommeMouvements.toFixed(2)} € = ${controlePdf.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controlePdf.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controlePdf.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
@@ -1054,7 +1064,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       setSourceFileName(null)
       onImported()
       if (doublons > 0 || alertePdf) {
-        window.alert(`${aInserer.length} ligne(s) importée(s)${doublons > 0 ? `, ${doublons} déjà présente(s) ignorée(s)` : ''}.${alertePdf}`)
+        window.alert(`${aInserer.length} ligne(s) importée(s)${doublons > 0 ? `, ${doublons} déjà présente(s) ignorée(s)` : ''}${soldesDesignes.length > 0 ? `, ${soldesDesignes.length} ligne(s) de solde écartée(s)` : ''}.${alertePdf}`)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "L'import a échoué.")
@@ -1311,12 +1321,32 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
                     : "Le débit et le crédit sont reconnus à la position du montant sur la ligne. Vérifie quand même quelques lignes."}
                 </p>
               )}
+              <p className="muted" style={{ marginTop: pdfFormat === 'debit_credit' ? 0 : -8 }}>
+                Coche « Solde » sur les deux lignes qui portent le solde d'ouverture et le solde de
+                clôture : elles ne seront pas importées comme des mouvements, et serviront à vérifier
+                que le relevé boucle. Les banques qui écrivent le mot « solde » sont déjà cochées —
+                la tienne écrit parfois le numéro de compte à la place, d'où la case.
+                {(() => {
+                  const coches = pdfRows.filter((r) => r.estSolde).length
+                  if (coches === 2) return ' ✓ Deux soldes désignés : le relevé sera vérifié.'
+                  if (coches === 0) return ' Aucun solde désigné pour l’instant : le relevé sera importé sans vérification.'
+                  return ` ${coches} solde désigné : il en faut exactement deux (ouverture et clôture) pour que la vérification soit possible.`
+                })()}
+              </p>
               <div className="table-scroll" style={{ marginBottom: 14, border: '1px solid var(--color-border)', borderRadius: 8 }}>
                 <table>
-                  <thead><tr><th>Date</th><th>Libellé</th><th>Montant</th><th></th></tr></thead>
+                  <thead><tr><th>Solde</th><th>Date</th><th>Libellé</th><th>Montant</th><th></th></tr></thead>
                   <tbody>
                     {pdfRows.map((r, i) => (
-                      <tr key={i}>
+                      <tr key={i} style={r.estSolde ? { opacity: 0.6 } : undefined}>
+                        <td style={{ textAlign: 'center' }}>
+                          <input
+                            type="checkbox"
+                            checked={!!r.estSolde}
+                            aria-label={`Ligne ${i + 1} : solde plutôt qu'opération`}
+                            onChange={(e) => updatePdfRow(i, { estSolde: e.target.checked })}
+                          />
+                        </td>
                         <td><input type="date" value={r.date} onChange={(e) => updatePdfRow(i, { date: e.target.value })} style={{ width: 135 }} /></td>
                         <td><input value={r.libelle} onChange={(e) => updatePdfRow(i, { libelle: e.target.value })} style={{ width: '100%', minWidth: 180 }} /></td>
                         <td><input type="number" step="0.01" value={r.montant} onChange={(e) => updatePdfRow(i, { montant: parseFloat(e.target.value) || 0 })} style={{ width: 95 }} /></td>
@@ -1326,8 +1356,12 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
                   </tbody>
                 </table>
               </div>
-              <button className="btn btn-primary" onClick={handleImportPdfRows} disabled={importing || pdfRows.length === 0}>
-                {importing ? 'Import…' : `Importer ${pdfRows.length} ligne(s)`}
+              <button
+                className="btn btn-primary"
+                onClick={handleImportPdfRows}
+                disabled={importing || pdfRows.filter((r) => !r.estSolde).length === 0}
+              >
+                {importing ? 'Import…' : `Importer ${pdfRows.filter((r) => !r.estSolde).length} ligne(s)`}
               </button>
             </>
           )}
