@@ -30,6 +30,15 @@ vi.mock('./supabase', () => ({
       // créée, de quoi proposer au client d'y ajouter une précision tout de suite (voir
       // lib/commentaires.ts). Le faux client reproduit ce chaînage, sans quoi il testerait une
       // écriture que la production ne fait plus.
+      // Le texte OCR s'archive par upsert (voir lib/texteOcr.ts) — le faux client doit le porter,
+      // sinon la branche Documents échouerait dès qu'une extraction rend un texte.
+      upsert: (ligne: Record<string, unknown>) => {
+        journal.push({
+          action: `upsert:${table}`,
+          cible: String(ligne.piece_id ?? ligne.document_id ?? ''),
+        })
+        return Promise.resolve({ error: null })
+      },
       insert: (ligne: Record<string, unknown>) => {
         journal.push({
           action: `insert:${table}`,
@@ -121,6 +130,16 @@ describe('deposerFichier', () => {
     etat.extraction = { classification: 'releve_bancaire' }
     await deposer('releve.pdf')
     expect(journal.map((j) => j.action)).toContain('insert:documents_divers')
+  })
+
+  it('archive le texte lu d’un DOCUMENT, pas seulement celui d’une pièce', async () => {
+    // Textract tourne sur tous les fichiers ; le texte revenait donc aussi pour les relevés et les
+    // SNIR, et il était jeté. Le dépôt client est le chemin par lequel arrivent les documents du
+    // praticien — c'est là que la perte était la plus coûteuse.
+    etat.extraction = { classification: 'releve_bancaire', texte_ocr: 'RELEVE SNIR 2025' }
+    await deposer('snir.pdf')
+    expect(journal.map((j) => j.action)).toEqual(['upload', 'insert:documents_divers', 'upsert:piece_textes_ocr'])
+    expect(journal.find((j) => j.action === 'upsert:piece_textes_ocr')?.cible).toBe('id-documents_divers')
   })
 
   it('range un justificatif de recette dans Pièces, en vente', async () => {

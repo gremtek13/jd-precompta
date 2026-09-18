@@ -129,7 +129,7 @@ export async function importerFichierDossier(params: {
     // Ni une facture ni un justificatif de recette : relevé bancaire, appel de cotisation, attestation
     // ou relevé d'activité — archivé dans Documents plutôt que dans Pièces, faute de montant
     // HT/TVA/TTC à faire vérifier.
-    await enregistrer('documents_divers', {
+    const documentId = await enregistrer('documents_divers', {
       dossier_id: dossierId,
       sous_dossier_id: sousDossierId,
       storage_path: path,
@@ -137,6 +137,9 @@ export async function importerFichierDossier(params: {
       nom_fichier: file.name,
       categorie: orientation.categorie,
     })
+    // Porté ici comme dans lib/depot.ts, son jumeau côté client — le texte est déjà extrait et déjà
+    // facturé, le jeter pour un document n'économise rien et rend l'archive illisible.
+    await enregistrerTexteOcr(dossierId, { type: 'document', id: documentId }, extraction?.texte_ocr)
     return { statut: 'ok', message: `Classé « ${LABEL_CLASSIFICATION[orientation.categorie]} » → Documents` }
   }
 
@@ -158,7 +161,7 @@ export async function importerFichierDossier(params: {
   })
   // Porté ici comme dans lib/depot.ts, son jumeau côté client : une correction apportée à l'un doit
   // l'être à l'autre, et le texte lu n'a aucune raison d'exister d'un seul côté du pipeline.
-  await enregistrerTexteOcr(dossierId, pieceId, extraction?.texte_ocr)
+  await enregistrerTexteOcr(dossierId, { type: 'piece', id: pieceId }, extraction?.texte_ocr)
   return {
     statut: 'ok',
     message: !extraction
