@@ -1,6 +1,15 @@
 import { readFileSync } from 'node:fs'
-import { describe, expect, it } from 'vitest'
-import { orientationDe, type ClassificationDocument } from './extraction'
+import { describe, expect, it, vi } from 'vitest'
+import type { ClassificationDocument } from './extraction'
+
+// `extraction.ts` importe le client Supabase, qui lève au chargement quand les variables
+// d'environnement manquent (voir CLAUDE.md, « un module de calcul n'importe jamais le client
+// Supabase »). Sans ce faux module, ce fichier passe en local — où un `.env` existe — et casse en
+// CI, où il n'y en a pas. C'est exactement ce qui est arrivé à la première version de ce test.
+// Un `import type` ne charge rien, donc seule la valeur passe par l'import dynamique ci-dessous.
+vi.mock('./supabase', () => ({ supabase: {} }))
+
+const { orientationDe } = await import('./extraction')
 
 // `supabase/functions/receive-email/index.ts` est auto-portée : elle ne peut rien importer de
 // `src/lib` et redéclare donc sa propre copie de `orientationDe`. Ce test lit la *vraie* source

@@ -534,7 +534,11 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   et abandonner silencieusement `synchroniserContrepartieBanque`.
 - **Un module couplé à Supabase se teste en simulant le client**, quand il n'y a pas de calcul
   pur à en extraire : `vi.mock('./supabase', ...)` avec un faux chaînage (`from().select().eq()`)
-  dont le test programme la réponse — voir `contrepartieBanque.test.ts`. C'est la voie pour
+  dont le test programme la réponse — voir `contrepartieBanque.test.ts`. **Le faux client est requis
+  même pour une fonction PURE** dès lors qu'elle vit dans un module qui importe `supabase.ts` :
+  l'import suffit à faire lever. Le piège est qu'un `.env` existe en local et pas en CI, donc le test
+  passe ici et casse là-bas — vérifié en déplaçant `.env` avant de pousser, ce qui reproduit
+  exactement les conditions du runner. C'est la voie pour
   couvrir `extraction.ts`, `importFichiers.ts`, `packGenerator.ts` et les autres.
 - **Un type de `types.ts` décrit la table, colonnes NOT NULL comprises.** `TiersCategorieCabinet`
   omettait `cabinet_id` : le compilateur validait donc un payload que Postgres rejetait. Vérifier
