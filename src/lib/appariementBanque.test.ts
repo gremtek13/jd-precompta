@@ -229,3 +229,90 @@ describe('le scénario réel qui a servi de référence', () => {
     ])
   })
 })
+
+describe('appariement d’une pièce en devise étrangère', () => {
+  // Facture OpenAI d'août 2025 : 24,00 USD, convertie provisoirement 20,60 € au taux BCE. Le débit
+  // réel n'est jamais égal à ce montant — la banque applique son propre cours et ses frais.
+  const enUsd = (o: Partial<Piece> = {}) => piece({
+    id: 'openai', tiers: 'OpenAI, LLC', date_piece: '2025-08-09',
+    montant_ttc: 20.60, montant_ht: 17.17, montant_tva: 3.43,
+    devise: 'USD', montant_devise: 24, taux_change: 1.1648, ...o,
+  })
+
+  it('apparie un débit proche, que l’égalité au centime rejetterait', () => {
+    const debit = ligne({ date: '2025-08-12', montant: -20.68, libelle: 'CB59OPENAI          09/08/25' })
+    const { certains } = analyserAppariements([enUsd()], [debit])
+    expect(certains).toHaveLength(1)
+    expect(certains[0].ligne.montant).toBe(-20.68)
+  })
+
+  it('n’apparie pas un mouvement hors de la borne de vraisemblance', () => {
+    // Même fournisseur, même semaine, mais 34 € pour une facture de 24 USD : ce n'est pas un écart
+    // de change, c'est un autre mouvement.
+    const debit = ligne({ date: '2025-08-12', montant: -34.00, libelle: 'CB59OPENAI          09/08/25' })
+    const { certains, aArbitrer } = analyserAppariements([enUsd()], [debit])
+    expect(certains).toEqual([])
+    expect(aArbitrer).toEqual([])
+  })
+
+  it('écarte le prélèvement MACSF réel, que le montant et la date laissaient passer', () => {
+    // Le cas qui justifie de garder TROIS signaux. Relevé réel du dossier : un prélèvement
+    // d'assurance de 19,72 € le 14/08, soit 4,3 % sous la conversion provisoire — dans la borne — et
+    // cinq jours après la facture — dans la tolérance. Seul le libellé l'écarte. Sans lui, une
+    // prime d'assurance devenait le montant d'une facture OpenAI.
+    const macsf = ligne({ date: '2025-08-14', montant: -19.72, libelle: 'PRLV SEPA MACSF-ASSU-' })
+    const { certains, aArbitrer } = analyserAppariements([enUsd()], [macsf])
+    expect(certains).toEqual([])
+    expect(aArbitrer).toHaveLength(1)
+    expect(aArbitrer[0].motif).toBe('fournisseur non confirmé par le libellé bancaire')
+  })
+
+  it('ne forme aucune paire pour une pièce en devise non convertie', () => {
+    // Sans conversion provisoire, il n'y a pas d'ancre : aucun montant ne peut être jugé plausible.
+    // La pièce se rapproche à la main, ce qui est le bon niveau d'attention pour une pièce dont on
+    // ignore encore ce qu'elle vaut.
+    const sansAncre = enUsd({ montant_ttc: null, montant_ht: null, montant_tva: null, taux_change: null })
+    const debit = ligne({ date: '2025-08-12', montant: -20.68, libelle: 'CB59OPENAI          09/08/25' })
+    const { certains, aArbitrer } = analyserAppariements([sansAncre], [debit])
+    expect(certains).toEqual([])
+    expect(aArbitrer).toEqual([])
+  })
+
+  it('garde la règle stricte pour une pièce dont la devise n’est pas renseignée', () => {
+    // Le défaut trouvé par les tests existants : `devise` absente valait « étrangère », et toutes
+    // les pièces gagnaient cinq pour cent de tolérance sans que personne l'ait demandé.
+    const sansDevise = piece({ montant_ttc: 38.4 })
+    delete (sansDevise as { devise?: string }).devise
+    const { certains, aArbitrer } = analyserAppariements([sansDevise], [ligne({ montant: -38.42 })])
+    expect(certains).toEqual([])
+    expect(aArbitrer).toEqual([])
+  })
+})
+
+describe('préfixe de terminal carte collé au commerçant', () => {
+  // Formats réels des trois dossiers : la banque colle « CB » + deux chiffres au nom, sans séparateur.
+  it('retrouve le commerçant sous le préfixe', () => {
+    expect(tiersConfirmeParBanque('Anthropic', 'CB30ANTHROPIC* C     15/06/26')).toBe(true)
+    expect(tiersConfirmeParBanque('CONVERGENCE', 'CB30CONVERGENCE      08/02/26')).toBe(true)
+    expect(tiersConfirmeParBanque('Flamaco', 'CB59FLAMACO          20/02/25')).toBe(true)
+    expect(tiersConfirmeParBanque('OpenAI, LLC', 'CB59OPENAI          09/08/25')).toBe(true)
+  })
+
+  it('n’abaisse pas le plancher de cinq caractères en nettoyant', () => {
+    // « CB30cote de boeu » ne doit pas faire de « cote » un mot identifiant : c'est trop court pour
+    // distinguer qui que ce soit, préfixe retiré ou non.
+    expect(tiersConfirmeParBanque('Cote', 'CB30cote de boeu     03/02/26')).toBe(false)
+  })
+
+  it('ne confond toujours pas deux fournisseurs dont l’un contient l’autre', () => {
+    // La garantie que le nettoyage ne rouvre pas la porte que ce module a fermée : le préfixe est
+    // retiré mot à mot, on ne cherche jamais une sous-chaîne dans le libellé entier.
+    expect(tiersConfirmeParBanque('Transmedical', 'CB30MEDICAL SERVICE  01/03/26')).toBe(false)
+    expect(tiersConfirmeParBanque('Medical', 'CB30TRANSMEDICAL     01/03/26')).toBe(false)
+  })
+
+  it('laisse intact un libellé sans préfixe', () => {
+    expect(tiersConfirmeParBanque('Transmedical', 'PRLV SEPA TRANSMEDICAL')).toBe(true)
+    expect(tiersConfirmeParBanque('OpenAI, LLC', 'PRLV SEPA MACSF-ASSU-')).toBe(false)
+  })
+})

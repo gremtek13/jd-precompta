@@ -140,6 +140,9 @@ export interface Piece {
   // champs diraient deux choses différentes de la même somme.
   montant_devise: number | null
   taux_change: number | null
+  // D'où vient le montant en euros : 'bce' (provisoire, taux de référence à la date de la pièce) ou
+  // 'banque' (définitif, repris du mouvement qui l'a payée). Nulle pour une pièce en euros.
+  conversion_source: 'bce' | 'banque' | null
   categorie_id: string | null
   sous_dossier_id: string | null
   type_piece: TypePiece

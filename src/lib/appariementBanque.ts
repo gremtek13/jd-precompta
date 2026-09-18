@@ -1,3 +1,4 @@
+import { DEVISE_PIVOT, montantPlausiblePourDevise } from './devises'
 import type { LigneBancaire, Piece } from './types'
 
 // Appariement pièce ↔ mouvement bancaire, et tri entre ce qui est certain et ce qui demande un
@@ -74,10 +75,24 @@ export function motsIdentifiants(tiers: string | null): string[] {
 // Un mot tronqué reste accepté, parce que les banques coupent leurs libellés
 // (« SWISSLIFE PREVOYAN »), mais seulement en début de mot : l'un des deux doit commencer par
 // l'autre. « medical » et « transmedical » ne se confirment donc dans aucun sens.
+// Préfixe de terminal carte collé au nom du commerçant par la banque : « CB30ANTHROPIC* C »,
+// « CB59FLAMACO », « CB30CONVERGENCE ». Il n'est séparé par rien, donc la comparaison mot à mot ne
+// retrouve jamais le commerçant — « cb30convergence » ne commence pas par « convergence » et
+// réciproquement. Constaté sur les trois dossiers : 56 mouvements par carte, dont AUCUN ne pouvait
+// confirmer son fournisseur. Ils partaient tous à l'arbitrage manuel, en silence.
+//
+// Retiré mot par mot, jamais par une recherche de sous-chaîne dans le libellé entier : c'est
+// précisément ce que ce module refuse de faire (voir plus bas). Le mot nettoyé reste soumis au
+// plancher de cinq caractères, donc « CB30cote de boeu » ne rend pas « cote » identifiant.
+const PREFIXE_CARTE = /^cb\d+/
+
 export function tiersConfirmeParBanque(tiers: string | null, libelleBanque: string): boolean {
   const mots = motsIdentifiants(tiers)
   if (mots.length === 0) return false
-  const motsBanque = normaliser(libelleBanque).split(' ').filter((m) => m.length >= 5)
+  const motsBanque = normaliser(libelleBanque)
+    .split(' ')
+    .flatMap((m) => (PREFIXE_CARTE.test(m) ? [m, m.replace(PREFIXE_CARTE, '')] : [m]))
+    .filter((m) => m.length >= 5)
   if (motsBanque.length === 0) return false
   return mots.some((mot) => motsBanque.some((b) => b.startsWith(mot) || mot.startsWith(b)))
 }
@@ -113,6 +128,32 @@ function jourDe(iso: string): number {
   return Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) / 86_400_000
 }
 
+// L'égalité des montants au centime est le premier des trois signaux — sauf pour une pièce libellée
+// en devise étrangère, où elle ne peut JAMAIS être vraie : la facture dit 24,00 USD, la banque débite
+// 20,68 € à son propre cours, frais compris. Exiger l'égalité reviendrait à ne jamais rapprocher une
+// facture étrangère, donc à ne jamais connaître son montant réel.
+//
+// Elle est alors remplacée — pas supprimée — par une borne de vraisemblance autour de la conversion
+// provisoire (voir ECART_CHANGE_TOLERE). Trois signaux indépendants restent donc exigés, et c'est
+// délibéré : sur le relevé réel du dossier, la facture OpenAI d'août (20,60 € convertis) tombe à
+// 4,3 % d'un prélèvement d'assurance MACSF de 19,72 € daté de cinq jours plus tard. Montant
+// plausible, date dans la tolérance — seul le libellé l'écarte. La borne ne confirme rien à elle
+// seule, elle écarte l'absurde.
+//
+// Une pièce en devise qu'on n'a pas su convertir n'a pas d'ancre du tout : aucun montant ne peut
+// alors être jugé plausible, et la paire n'est pas formée ici. Elle se rapproche à la main, ce qui
+// est le bon niveau d'attention pour une pièce dont on ignore encore ce qu'elle vaut.
+function montantCompatible(piece: Piece, ligne: LigneBancaire): boolean {
+  // Une devise ÉTRANGÈRE EXPLICITE, jamais « tout ce qui n'est pas EUR » : une pièce dont le champ
+  // manque — requête qui ne l'a pas sélectionné, ligne construite à la main — vaudrait sinon devise
+  // étrangère, et TOUTES les pièces gagneraient silencieusement cinq pour cent de tolérance sur le
+  // montant. La règle stricte est celle par défaut ; l'assouplissement doit être demandé.
+  if (piece.devise && piece.devise !== DEVISE_PIVOT) {
+    return montantPlausiblePourDevise(piece.montant_ttc!, ligne.montant)
+  }
+  return Math.abs(Math.abs(piece.montant_ttc!) - Math.abs(ligne.montant)) <= 0.01
+}
+
 function sensCoherent(piece: Piece, ligne: LigneBancaire): boolean {
   // Une pièce à montant négatif est un avoir : il revient sur le compte, donc en crédit pour un achat.
   const montantPiece = piece.montant_ttc ?? 0
@@ -131,7 +172,7 @@ export function analyserAppariements(
   const paires: Appariement[] = []
   for (const piece of piecesUtiles) {
     for (const ligne of lignesUtiles) {
-      if (Math.abs(Math.abs(piece.montant_ttc!) - Math.abs(ligne.montant)) > 0.01) continue
+      if (!montantCompatible(piece, ligne)) continue
       const ecartJours = Math.abs(jourDe(piece.date_piece!) - jourDe(ligne.date))
       if (ecartJours > joursTolerance) continue
       paires.push({ piece, ligne, ecartJours })

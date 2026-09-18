@@ -105,3 +105,72 @@ export function libelleConversion(montantDevise: number, devise: string, taux: n
   const cours = taux.toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 6 })
   return `${montant} ${devise} au taux BCE du ${jour}/${mois}/${annee} (1 EUR = ${cours} ${devise})`
 }
+
+// Le taux réellement subi, déduit d'un rapprochement bancaire — et non demandé à la BCE.
+//
+// C'est la meilleure source possible, et pas seulement la plus pratique : en BNC, la dépense
+// déductible est ce qui a RÉELLEMENT quitté le compte. Le relevé porte ce montant en euros, spread de
+// la banque et frais de change compris, là où le taux BCE n'en est qu'une approximation à quelques
+// pourcents près. Le cours du jour cesse donc d'être nécessaire au chiffre définitif ; il ne sert plus
+// qu'à donner une valeur provisoire en attendant le relevé.
+export function tauxDepuisBanque(montantDevise: number, montantEuros: number): number | null {
+  if (montantEuros === 0) return null
+  return Math.abs(montantDevise) / Math.abs(montantEuros)
+}
+
+export interface MontantsRegles extends MontantsPiece {
+  taux_change: number
+}
+
+// Réécrit les trois montants d'une pièce en devise à partir du montant réellement débité.
+//
+// La PROPORTION de TVA est conservée telle que le document l'écrit — c'est elle qui est juste, et
+// elle ne dépend d'aucun taux de change. Seule l'échelle change. Le HT est ensuite déduit par
+// soustraction plutôt que mis à l'échelle lui aussi : deux arrondis indépendants laisseraient
+// HT + TVA ≠ TTC, et la pièce serait signalée comme une TVA impossible (voir lib/controles.ts) alors
+// que seul le rapprochement a bougé.
+//
+// Sans TVA lue sur le document, il n'y a rien à répartir : le TTC prend le montant réel et les deux
+// autres restent ce qu'ils sont. Inventer une ventilation à partir d'un taux supposé serait écrire un
+// chiffre que le document ne porte pas.
+export function reglerSurMontantReel(
+  montants: MontantsPiece,
+  montantDevise: number,
+  montantEuros: number,
+): MontantsRegles | null {
+  const taux = tauxDepuisBanque(montantDevise, montantEuros)
+  if (taux == null) return null
+
+  // Le sens reste celui de la pièce, pas celui de la ligne bancaire : un achat est positif sur la
+  // pièce et négatif au relevé, et un avoir l'inverse. Le rapprochement a déjà vérifié la cohérence
+  // des sens (voir appariementBanque.ts) ; la reprendre ici retournerait chaque montant.
+  const signe = Math.sign(montants.montant_ttc ?? montantDevise) || 1
+  const ttc = Math.round(Math.abs(montantEuros) * 100) / 100 * signe
+
+  const proportionTva = montants.montant_tva != null && montants.montant_ttc
+    ? montants.montant_tva / montants.montant_ttc
+    : null
+  if (proportionTva == null) {
+    return { montant_ht: montants.montant_ht, montant_tva: montants.montant_tva, montant_ttc: ttc, taux_change: taux }
+  }
+
+  const tva = Math.round(ttc * proportionTva * 100) / 100
+  return { montant_ht: Math.round((ttc - tva) * 100) / 100, montant_tva: tva, montant_ttc: ttc, taux_change: taux }
+}
+
+// Écart toléré entre le montant réellement débité et la conversion provisoire, quand on cherche à
+// savoir si un mouvement bancaire peut être CELUI de cette facture.
+//
+// Cinq pour cent : le spread d'une carte sur une opération en devise va couramment jusqu'à 3 %, et le
+// cours bouge encore de un ou deux points entre la date de la facture et celle du débit. C'est un
+// garde-fou de VRAISEMBLANCE, pas une mesure — il écarte un mouvement sans rapport avec la facture,
+// il ne prétend pas confirmer celui-ci. Ce sont la date et le libellé qui identifient le mouvement
+// (voir appariementBanque.ts) ; cette borne ne fait que remplacer l'égalité des montants, impossible
+// à exiger d'une pièce en devise.
+export const ECART_CHANGE_TOLERE = 0.05
+
+export function montantPlausiblePourDevise(ttcConverti: number, montantBanque: number): boolean {
+  if (ttcConverti === 0) return false
+  const ecart = Math.abs(Math.abs(montantBanque) - Math.abs(ttcConverti)) / Math.abs(ttcConverti)
+  return ecart <= ECART_CHANGE_TOLERE
+}

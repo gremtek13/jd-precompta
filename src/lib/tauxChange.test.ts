@@ -88,7 +88,7 @@ describe('montantsPourPiece', () => {
   it('convertit une facture en dollars et garde de quoi la justifier', async () => {
     expect(await montantsPourPiece(MONTANTS_USD, '2025-07-09')).toEqual({
       montant_ht: 17.10, montant_tva: 3.42, montant_ttc: 20.52,
-      devise: 'USD', montant_devise: 24, taux_change: 1.1698,
+      devise: 'USD', montant_devise: 24, taux_change: 1.1698, conversion_source: 'bce',
     })
   })
 
@@ -98,7 +98,7 @@ describe('montantsPourPiece', () => {
       '2025-10-01',
     )).toEqual({
       montant_ht: 21.08, montant_tva: 4.22, montant_ttc: 25.30,
-      devise: 'EUR', montant_devise: null, taux_change: null,
+      devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
     })
     expect(appels.cache + appels.fonction).toBe(0)
   })
@@ -111,7 +111,7 @@ describe('montantsPourPiece', () => {
     etat.reponseFonction = null
     expect(await montantsPourPiece(MONTANTS_USD, '2025-07-09')).toEqual({
       montant_ht: null, montant_tva: null, montant_ttc: null,
-      devise: 'USD', montant_devise: 24, taux_change: null,
+      devise: 'USD', montant_devise: 24, taux_change: null, conversion_source: null,
     })
   })
 
@@ -120,7 +120,7 @@ describe('montantsPourPiece', () => {
     // majorité, et supposer autre chose convertirait des montants déjà bons.
     expect(await montantsPourPiece({ montant_ttc: 120 }, '2026-03-10')).toEqual({
       montant_ht: null, montant_tva: null, montant_ttc: 120,
-      devise: 'EUR', montant_devise: null, taux_change: null,
+      devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
     })
   })
 })
