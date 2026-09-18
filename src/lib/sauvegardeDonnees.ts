@@ -2,9 +2,12 @@ import { supabase } from './supabase'
 import {
   clePrimaire,
   comptesRequis,
+  estLignePartagee,
+  identiteLigne,
   liensPerdus,
   parentsHorsPlan,
   planExportDossier,
+  planReinsertion,
   referencesExternes,
   tablesSansChemin,
   violationsOrdre,
@@ -220,4 +223,183 @@ export async function exporterDossier(
     },
     contenu,
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// La restauration.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Nombre de lignes écrites par aller-retour. Voir la double passe : ce nombre ne décide de rien. */
+export const TAILLE_LOT_ECRITURE = 200
+
+export interface ResultatRestauration {
+  lignesParTable: Record<string, number>
+  /** Lignes partagées trouvées déjà en base, laissées telles quelles plutôt que réécrites. */
+  partageesConservees: number
+  /** Liens auto-référencés reposés au second passage (les avoirs vers leur facture d'origine). */
+  liensReposes: number
+}
+
+/** Un écart entre ce que la sauvegarde contenait et ce que la base contient après restauration. */
+export interface EcartRestauration {
+  table: string
+  motif: 'ligne_absente' | 'ligne_en_trop' | 'lien_non_repose'
+  identite: string
+}
+
+async function ecrireParLots(table: string, lignes: Ligne[]): Promise<void> {
+  for (let i = 0; i < lignes.length; i += TAILLE_LOT_ECRITURE) {
+    const { error } = await supabase.from(table).insert(lignes.slice(i, i + TAILLE_LOT_ECRITURE))
+    // Jamais un `await` sans destructuration : `supabase.from(...)` ne lève pas, l'erreur se lit dans
+    // `{ error }`. Une restauration qui avale ses erreurs est une restauration qui rend une base
+    // amputée en se disant réussie — c'est précisément ce contre quoi tout ce chantier existe.
+    if (error) throw new Error(`Restauration interrompue sur « ${table} » : ${error.message}`)
+  }
+}
+
+// Remet une sauvegarde en base.
+//
+// Tout ce qui peut être refusé l'est AVANT la première écriture, et c'est le cœur du dessin. Une
+// restauration n'est pas atomique : quarante tables, des milliers de lignes, aucune transaction
+// englobante possible depuis un client REST. Un refus à mi-chemin laisse une base à moitié peuplée
+// qu'il faut vider à la main, de nuit, sans savoir ce qui est passé. Chaque contrôle déplacé en
+// amont est une nuit en moins.
+//
+// Ce qui n'est JAMAIS fait : écraser une ligne existante, et effacer un lien perdu pour que ça
+// passe. Les deux feraient aboutir la restauration, et les deux détruiraient du travail sans le dire.
+export async function restaurerSauvegarde(
+  sauvegarde: SauvegardeDossier,
+  onProgression?: (fait: number, total: number, table: string) => void,
+): Promise<ResultatRestauration> {
+  const { manifeste, contenu } = sauvegarde
+  const refus: string[] = []
+
+  if (manifeste.version > VERSION_SAUVEGARDE) {
+    refus.push(
+      `Cette sauvegarde est au format ${manifeste.version}, ce code n'en connaît que ${VERSION_SAUVEGARDE}. ` +
+        'Elle contient peut-être des tables que cette version ne saurait pas réinsérer.',
+    )
+  }
+
+  const plan = planReinsertion(contenu)
+  for (const table of plan.tablesIgnorees) {
+    refus.push(`La table « ${table} » est dans la sauvegarde mais pas dans l'ordre de restauration : elle ne serait écrite nulle part.`)
+  }
+
+  // Le refus qui compte le plus. Un lien perdu sur une colonne nullable peut être « corrigé » en y
+  // mettant NULL, et la restauration aboutit — en ayant défait le rapprochement bancaire ou orphelin
+  // les écritures, sans une alerte. On ne le fait pas, et on ne le propose pas.
+  for (const perdu of liensPerdus(contenu)) {
+    refus.push(
+      `${perdu.table}.${perdu.colonne} pointe ${perdu.parent} « ${perdu.valeur} », absent de la sauvegarde` +
+        (perdu.effacable ? ' (le lien pourrait être effacé pour passer — on ne le fera pas).' : '.'),
+    )
+  }
+
+  // Les lignes que la base d'arrivée doit déjà porter : on va VOIR si elles y sont, plutôt que de
+  // l'espérer. Sans cette lecture, l'absence du cabinet se découvrirait sur la première écriture.
+  for (const externe of referencesExternes(contenu)) {
+    const cle = clePrimaire(externe.parent)
+    if (cle.length !== 1) continue
+    // Par le même chemin paginé que tout le reste, et pas par un `select` nu : une lecture non
+    // paginée est plafonnée par PostgREST sans le dire. Ici le plafond ferait refuser une
+    // restauration parfaitement valide — l'erreur va du bon côté, mais un refus qu'on ne s'explique
+    // pas finit par être contourné, et c'est alors le contrôle entier qu'on perd.
+    const presentes = await lireToutesLesLignes(externe.parent, (r) => r.in(cle[0], externe.valeurs))
+    const presents = new Set(presentes.map((l) => String(l[cle[0]])))
+    for (const attendu of externe.valeurs) {
+      if (!presents.has(attendu)) {
+        refus.push(`${externe.parent} « ${attendu} » doit exister dans la base d'arrivée (pointé par ${externe.table}.${externe.colonne}) et n'y est pas.`)
+      }
+    }
+  }
+
+  // Ne jamais restaurer par-dessus. Un dossier déjà présent signifie soit qu'on se trompe de base,
+  // soit que quelqu'un a recréé le dossier entre-temps : dans les deux cas, écrire dessus détruirait
+  // ce qui existe, et c'est irréversible.
+  const { data: dejaLa, error: erreurDeja } = await supabase
+    .from('dossiers').select('id').eq('id', manifeste.dossierId).maybeSingle()
+  if (erreurDeja) throw erreurDeja
+  if (dejaLa) refus.push(`Le dossier « ${manifeste.dossierId} » existe déjà dans cette base. La restauration n'écrase jamais.`)
+
+  if (refus.length > 0) {
+    throw new Error(`Restauration refusée, rien n'a été écrit :\n- ${refus.join('\n- ')}`)
+  }
+
+  const resultat: ResultatRestauration = { lignesParTable: {}, partageesConservees: 0, liensReposes: 0 }
+  let fait = 0
+
+  for (const etape of plan.etapes) {
+    onProgression?.(fait, plan.etapes.length, etape.table)
+
+    // Une ligne partagée appartient à tout le cabinet : si elle est déjà là, on la laisse. Une
+    // catégorie renommée depuis la sauvegarde, ou dont le compte comptable a été corrigé, sert tous
+    // les dossiers — restaurer un client n'est pas une raison de la ramener en arrière pour eux.
+    const partagees = etape.lignes.filter((l) => estLignePartagee(etape.table, l))
+    let aEcrire = etape.lignes
+    if (partagees.length > 0) {
+      const dejaEnBase = await lireToutesLesLignes(etape.table, (r) => r.is('dossier_id', null))
+      const presentes = new Set(dejaEnBase.map((l) => identiteLigne(etape.table, l)))
+      const conservees = partagees.filter((l) => presentes.has(identiteLigne(etape.table, l)))
+      resultat.partageesConservees += conservees.length
+      aEcrire = etape.lignes.filter((l) => !presentes.has(identiteLigne(etape.table, l)))
+    }
+
+    await ecrireParLots(etape.table, aEcrire)
+    resultat.lignesParTable[etape.table] = aEcrire.length
+    fait += 1
+  }
+
+  // La seconde passe : les liens auto-référencés, reposés une fois toutes les lignes en place. Une
+  // mise à jour par ligne, et c'est assez — ces liens sont des avoirs, il y en a un par facture
+  // corrigée, pas un par facture.
+  for (const passe of plan.secondePasse) {
+    for (const { id, valeur } of passe.valeurs) {
+      const { error } = await supabase.from(passe.table).update({ [passe.colonne]: valeur }).eq('id', id)
+      if (error) throw new Error(`Seconde passe interrompue sur ${passe.table}.${passe.colonne} : ${error.message}`)
+      resultat.liensReposes += 1
+    }
+  }
+
+  onProgression?.(fait, plan.etapes.length, '')
+  return resultat
+}
+
+// Le verdict, et il n'est pas rendu par la restauration elle-même : on relit le dossier avec l'export,
+// puis on compare à la sauvegarde d'origine.
+//
+// Pourquoi ce détour plutôt qu'un compteur tenu pendant l'écriture : un compteur ne peut mesurer que
+// ce que le code croit avoir fait. Relire par le chemin d'export mesure ce que la base contient — et
+// c'est la même lecture qui servira à la prochaine sauvegarde, donc si elle se trompe, elle se
+// trompera là aussi et le dira.
+//
+// Le lien auto-référencé est comparé à part : c'est le seul que la première passe écrit à NULL, donc
+// le seul qu'une seconde passe oubliée laisserait vide sans que le compte de lignes bouge d'un iota.
+export async function verifierRestauration(
+  sauvegarde: SauvegardeDossier,
+): Promise<EcartRestauration[]> {
+  const relu = await exporterDossier(sauvegarde.manifeste.dossierId)
+  const ecarts: EcartRestauration[] = []
+  const auto = planReinsertion(sauvegarde.contenu).secondePasse
+
+  for (const table of Object.keys(sauvegarde.contenu)) {
+    const attendues = new Map(sauvegarde.contenu[table].map((l) => [identiteLigne(table, l), l]))
+    const trouvees = new Map((relu.contenu[table] ?? []).map((l) => [identiteLigne(table, l), l]))
+
+    for (const identite of attendues.keys()) {
+      if (!trouvees.has(identite)) ecarts.push({ table, motif: 'ligne_absente', identite })
+    }
+    for (const identite of trouvees.keys()) {
+      if (!attendues.has(identite)) ecarts.push({ table, motif: 'ligne_en_trop', identite })
+    }
+    for (const passe of auto.filter((p) => p.table === table)) {
+      for (const { id, valeur } of passe.valeurs) {
+        const ligne = trouvees.get(identiteLigne(table, { id }))
+        if (ligne && ligne[passe.colonne] !== valeur) {
+          ecarts.push({ table, motif: 'lien_non_repose', identite: id })
+        }
+      }
+    }
+  }
+  return ecarts
 }
