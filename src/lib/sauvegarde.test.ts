@@ -443,7 +443,7 @@ describe('lignes partagées entre tous les dossiers', () => {
     // `WHERE dossier_id = <le dossier>`, écarte les partagées sans le dire : en SQL, une comparaison
     // avec NULL n'est jamais vraie. Mesuré en production le 18/09/2026 — les 10 catégories et les
     // 8 natures du cabinet sont partagées, aucune n'appartient à un dossier : l'export en rendait
-    // ZÉRO, pendant que 76 pièces catégorisées sur 76 les pointaient.
+    // ZÉRO, pendant que les 28 pièces catégorisées du cabinet — toutes les 28 — les pointaient.
     expect(CHEMINS_DOSSIER.categories).toEqual({ acces: 'partage' })
     expect(CHEMINS_DOSSIER.natures_immobilisation).toEqual({ acces: 'partage' })
   })
