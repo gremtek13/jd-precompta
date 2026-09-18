@@ -361,6 +361,23 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
     la longueur minimale et les classes de caractères obligatoires, dans
     Authentication → Providers → Email (8 caractères minimum, chiffres +
     minuscules + majuscules + symboles).
+  - `anon_security_definer_function_executable` et
+    `authenticated_security_definer_function_executable` (WARN, 6 et 8 fonctions) — **vérifiés
+    bénins, par impersonation réelle et non par relecture.** Toutes les fonctions `SECURITY DEFINER`
+    du schéma sont exposées en RPC, ce que l'advisor signale à juste titre ; encore faut-il savoir ce
+    qu'elles font sans session. Deux seulement ÉCRIVENT (`enregistrer_facture`,
+    `prochain_numero_facture`) et toutes deux portent leur propre contrôle d'accès — c'est la
+    convention du projet sur les fonctions `SECURITY DEFINER`, et elle tient. Les autres sont des
+    lectures qui dépendent de `auth.uid()` : sans session elles rendent `false` ou `null`.
+    `set_cabinet_id_dossier` n'est pas exposée du tout (fonction de trigger, `EXECUTE` refusé à
+    `anon` comme à `authenticated`).
+    Le cas qui méritait la vérification est `prochain_numero_facture` : malgré son nom elle
+    **consomme** un numéro (upsert +1), et un appel anonyme réussi aurait creusé un trou dans une
+    suite annuelle qui n'en admet pas. Éprouvé sur le dossier réel — `anon` et un client authentifié
+    non-admin se font tous deux refuser, et `facture_numerotation` reste à 6. Ne pas repartir en
+    chasse à chaque audit : ce qui rendrait ces avertissements dangereux, c'est qu'une NOUVELLE
+    fonction `SECURITY DEFINER` écrive sans contrôle d'accès interne. C'est cela qu'il faut
+    revérifier, pas l'advisor lui-même.
   - `rls_enabled_no_policy` (INFO) sur `super_admins`, `superpdp_credentials`
     et `facture_numerotation` — **volontaire.** RLS activée sans aucune policy
     vaut refus total côté client : ces tables ne sont atteintes que par les
