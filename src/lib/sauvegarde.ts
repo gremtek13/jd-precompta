@@ -190,8 +190,13 @@ type Contenu = Record<string, Record<string, unknown>[]>
 // D'où `effacable`, qui ne dit pas « Postgres se taira » mais « ce lien-là peut être sacrifié pour que
 // la restauration passe » — c'est-à-dire : ne le sacrifie pas sans le savoir.
 //
-// `contenu` est la sauvegarde entière : un tableau de lignes par table. Chaque ligne est supposée
-// porter un `id` — c'est la clé primaire partout dans ce schéma.
+// `contenu` est la sauvegarde entière : un tableau de lignes par table.
+//
+// La comparaison se fait sur `id`, et c'est justifié mais pas évident : `id` n'est PAS la clé primaire
+// partout — six tables ont une autre clé, et aucune des six n'a même de colonne `id` (voir
+// CLES_PRIMAIRES). Ce qui rend la lecture correcte ici, c'est qu'une clé étrangère d'une seule colonne
+// ne peut viser qu'une clé primaire d'une seule colonne : toutes les tables PARENTES du graphe ont
+// donc `id`. Un test le vérifie, pour que le jour où ce ne serait plus vrai se voie ici.
 export function liensPerdus(contenu: Contenu): LienPerdu[] {
   const identifiants = new Map<string, Set<string>>()
   for (const [table, lignes] of Object.entries(contenu)) {
@@ -224,6 +229,45 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
     }
   }
   return perdus
+}
+
+// Les clés primaires qui ne sont pas `id`, lues de pg_constraint le 18/09/2026.
+//
+// Pourquoi les inscrire : deux mécanismes en dépendent, et tous deux échouaient dessus.
+//
+// La pagination d'abord. Lire une table par tranches sans ORDER BY laisse Postgres rendre les lignes
+// dans l'ordre qui l'arrange, et il peut changer d'une tranche à l'autre : on récupère alors des
+// doublons et des trous, sans la moindre erreur. Il faut donc trier sur un ordre TOTAL, c'est-à-dire
+// sur la clé primaire — et trier sur `id` casserait franchement ici, ces six tables n'ayant pas même
+// de colonne `id`.
+//
+// L'identité d'une ligne ensuite : savoir si une ligne existe déjà dans la base d'arrivée, ce dont
+// dépend la réinsertion des lignes partagées, ne peut se lire que sur sa vraie clé.
+//
+// Trois de ces six sont dans le plan d'export d'un dossier : `facture_numerotation`,
+// `previsionnels_bancaires` et `superpdp_credentials`. Elles sont petites par nature — une ligne par
+// dossier, ou par exercice — donc la pagination ne s'y déclenchera jamais en pratique. Ce n'est pas
+// une raison de les traiter à part : un mécanisme dont la justesse dépend de la petitesse des données
+// est un mécanisme qui tombera le jour où elles grandissent.
+export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
+  cabinet_admins: ['user_id'],
+  facture_numerotation: ['dossier_id', 'annee', 'type'],
+  previsionnels_bancaires: ['dossier_id'],
+  super_admins: ['user_id'],
+  superpdp_credentials: ['dossier_id'],
+  taux_change_bce: ['date', 'devise'],
+}
+
+/** La clé primaire d'une table — `id` sauf exception déclarée. */
+export function clePrimaire(table: string): readonly string[] {
+  return CLES_PRIMAIRES[table] ?? ['id']
+}
+
+// L'identité d'une ligne, sous une forme comparable : ce qui permet de dire « cette ligne-là est déjà
+// en base ». Les valeurs sont séparées par un caractère que n'emploie aucun identifiant du schéma,
+// sinon deux clés composites différentes pourraient se confondre en une seule chaîne.
+export function identiteLigne(table: string, ligne: Record<string, unknown>): string {
+  return clePrimaire(table).map((colonne) => String(ligne[colonne])).join('\u0000')
 }
 
 /** Une violation de l'ordre : un enfant placé avant son parent, ou une table absente de l'ordre. */
