@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import {
+  comptesRequis,
   liensPerdus,
   ordreSuppression,
   planExportDossier,
+  planReinsertion,
+  referencesExternes,
   tablesSansChemin,
   violationsOrdre,
   CHEMINS_DOSSIER,
   ORDRE_RESTAURATION,
+  PREREQUIS_AUTH,
   RELATIONS,
   TABLES_AUTO_REFERENCEES,
   type Relation,
@@ -157,37 +161,39 @@ describe('liens perdus après restauration', () => {
     })).toEqual([])
   })
 
-  it('attrape un rapprochement bancaire que la base laisserait passer en silence', () => {
-    // Le cas qui justifie tout ce fichier. `lignes_bancaires.piece_id` est en SET NULL : si la pièce
-    // manque, Postgres n'échoue pas, il écrit NULL. Le dossier restauré paraît intact, mais le
-    // rapprochement est défait — et personne ne le voit avant de rouvrir l'écran banque.
+  it('attrape un rapprochement bancaire qu’une restauration pourrait sacrifier', () => {
+    // Le cas qui justifie tout ce fichier. Contrairement à ce que ce commentaire affirmait d'abord,
+    // Postgres REFUSE l'insertion d'un mouvement dont la pièce manque, même sur une relation
+    // ON DELETE SET NULL — vérifié en base le 18/09/2026. Le danger n'est donc pas son silence mais
+    // le nôtre : `lignes_bancaires.piece_id` accepte NULL, donc y mettre NULL fait passer la
+    // restauration. Le dossier paraît alors intact et le rapprochement est défait.
     const perdus = liensPerdus({
       dossiers: [{ id: 'd1' }],
       pieces: [],
       lignes_bancaires: [{ id: 'l1', dossier_id: 'd1', piece_id: 'p-disparue' }],
     })
     expect(perdus).toEqual([
-      { table: 'lignes_bancaires', colonne: 'piece_id', parent: 'pieces', valeur: 'p-disparue', silencieux: true },
+      { table: 'lignes_bancaires', colonne: 'piece_id', parent: 'pieces', valeur: 'p-disparue', effacable: true },
     ])
   })
 
-  it('distingue un lien qui échouerait bruyamment d’un lien qui passerait en silence', () => {
-    // La distinction a une conséquence pratique : un lien « bruyant » fera échouer la restauration et
-    // sera donc vu ; un lien « silencieux » ne sera vu que par ce contrôle. Les confondre reviendrait
-    // à noyer les seconds parmi les premiers.
+  it('distingue le lien qu’on peut effacer pour passer de celui qui arrêtera tout', () => {
+    // La distinction a une conséquence pratique : un lien non effaçable arrête la restauration, donc
+    // il sera vu de toute façon ; un lien effaçable est celui sur lequel on sera tenté d'écrire NULL
+    // pour avancer. Les confondre reviendrait à noyer les seconds parmi les premiers.
     const perdus = liensPerdus({
       dossiers: [{ id: 'd1' }],
       categories: [],
       pieces: [{ id: 'p1', dossier_id: 'd1', categorie_id: 'c-disparue' }],
       lignes_bancaires: [{ id: 'l1', dossier_id: 'd1', piece_id: 'p-disparue' }],
     })
-    expect(perdus.find((p) => p.colonne === 'categorie_id')?.silencieux).toBe(false)
-    expect(perdus.find((p) => p.colonne === 'piece_id')?.silencieux).toBe(true)
+    expect(perdus.find((p) => p.colonne === 'categorie_id')?.effacable).toBe(false)
+    expect(perdus.find((p) => p.colonne === 'piece_id')?.effacable).toBe(true)
   })
 
   it('attrape une écriture comptable orpheline de sa pièce ET de son mouvement', () => {
-    // `ecritures_brouillon` porte deux liens en SET NULL. Une restauration incomplète peut donc rendre
-    // une écriture sans justificatif ni contrepartie bancaire, sans la moindre erreur.
+    // `ecritures_brouillon` porte deux liens nullables. Une restauration qui les efface tous les deux
+    // pour avancer rend une écriture sans justificatif NI contrepartie bancaire — et aboutit.
     const perdus = liensPerdus({
       dossiers: [{ id: 'd1' }],
       pieces: [],
@@ -195,7 +201,7 @@ describe('liens perdus après restauration', () => {
       ecritures_brouillon: [{ id: 'e1', dossier_id: 'd1', piece_id: 'p-disparue', ligne_bancaire_id: 'l-disparue' }],
     })
     expect(perdus.map((p) => p.colonne).sort()).toEqual(['ligne_bancaire_id', 'piece_id'])
-    expect(perdus.every((p) => p.silencieux)).toBe(true)
+    expect(perdus.every((p) => p.effacable)).toBe(true)
   })
 
   it('ne prend pas un lien vide pour un lien cassé', () => {
@@ -246,5 +252,183 @@ describe('liens perdus après restauration', () => {
       ],
     })
     expect(perdus.map((p) => p.valeur)).toEqual(['pa', 'pb', 'pc'])
+  })
+})
+
+describe('comptes utilisateurs exigés par une sauvegarde', () => {
+  it('sépare le compte sans lequel rien ne passe de celui qui coûte une trace', () => {
+    // La distinction entière : `memberships.user_id` est NOT NULL — sans ce compte, l'accès client
+    // ne se réinsère pas, point. `pieces.uploaded_by` accepte NULL — la pièce revient, on ne sait
+    // plus qui l'a déposée.
+    expect(comptesRequis({
+      memberships: [{ id: 'm1', user_id: 'u-client' }],
+      pieces: [{ id: 'p1', uploaded_by: 'u-cabinet' }],
+    })).toEqual({ obligatoires: ['u-client'], facultatifs: ['u-cabinet'] })
+  })
+
+  it('classe en obligatoire un compte qui figure aussi ailleurs en facultatif', () => {
+    // Le cas courant, et celui qui rendrait la liste trompeuse : le chef de cabinet a généré un pack
+    // (obligatoire) ET déposé des pièces (facultatif). Le compter deux fois laisserait croire qu'on
+    // peut restaurer sans lui en acceptant de perdre une trace.
+    const requis = comptesRequis({
+      packs: [{ id: 'k1', generated_by: 'u-chef' }],
+      pieces: [{ id: 'p1', uploaded_by: 'u-chef' }],
+    })
+    expect(requis.obligatoires).toEqual(['u-chef'])
+    expect(requis.facultatifs).toEqual([])
+  })
+
+  it('ne réclame aucun compte pour une sauvegarde qui n’en cite aucun', () => {
+    expect(comptesRequis({
+      dossiers: [{ id: 'd1' }],
+      pieces: [{ id: 'p1', uploaded_by: null }],
+    })).toEqual({ obligatoires: [], facultatifs: [] })
+  })
+
+  it('ne dédouble pas un compte cité par plusieurs lignes', () => {
+    const requis = comptesRequis({
+      pieces: [{ id: 'p1', uploaded_by: 'u1' }, { id: 'p2', uploaded_by: 'u1' }],
+    })
+    expect(requis.facultatifs).toEqual(['u1'])
+  })
+
+  it('garde les quatre tables du plan d’export qui exigent un compte', () => {
+    // Le fait opérationnel à ne pas perdre : restaurer un dossier dans une base dont les comptes ont
+    // disparu s'arrête sur ces quatre-là — direction du cabinet, affectations d'équipe, accès
+    // clients, historique des packs. Aucune ne peut être contournée en écrivant NULL.
+    const tablesDuPlan = new Set(planExportDossier().map((e) => e.table))
+    const bloquantes = PREREQUIS_AUTH.filter((p) => p.obligatoire && tablesDuPlan.has(p.table))
+    expect(bloquantes.map((p) => p.table).sort()).toEqual([
+      'cabinet_admins', 'dossier_assignations', 'memberships', 'packs',
+    ])
+  })
+
+  it('ne cite jamais deux fois la même colonne', () => {
+    const cles = PREREQUIS_AUTH.map((p) => `${p.table}.${p.colonne}`)
+    expect(cles.length).toBe(new Set(cles).size)
+  })
+
+  it('reste hors de RELATIONS, qui ne décrit que ce qui est restauré', () => {
+    // Les y mêler ferait croire que `auth.users` est sauvegardée — et l'ordre de restauration
+    // prétendrait la réinsérer.
+    const tablesDuGraphe = new Set(RELATIONS.flatMap((r) => [r.enfant, r.parent]))
+    expect(tablesDuGraphe.has('users')).toBe(false)
+    expect(ORDRE_RESTAURATION).not.toContain('users')
+  })
+})
+
+describe('lignes supposées déjà présentes dans la base d’arrivée', () => {
+  it('nomme le cabinet qu’un export de dossier ne contient pas', () => {
+    // Sans cette ligne, `dossiers.cabinet_id` échoue à la toute première table et rien d'autre n'est
+    // tenté. Le savoir avant vaut mieux que le lire dans un message d'erreur Postgres.
+    expect(referencesExternes({
+      dossiers: [{ id: 'd1', cabinet_id: 'cab-1' }],
+    })).toEqual([
+      { table: 'dossiers', colonne: 'cabinet_id', parent: 'cabinets', valeurs: ['cab-1'] },
+    ])
+  })
+
+  it('se tait dès que le parent est dans la sauvegarde', () => {
+    // Le parent présent relève de `liensPerdus` : le citer ici ferait deux contrôles sur le même
+    // lien, dont un toujours rouge.
+    expect(referencesExternes({
+      cabinets: [{ id: 'cab-1' }],
+      dossiers: [{ id: 'd1', cabinet_id: 'cab-1' }],
+    })).toEqual([])
+  })
+
+  it('partage exactement les relations avec liensPerdus, sans recouvrement ni oubli', () => {
+    // Le test qui donne sa valeur aux deux : ensemble ils couvrent CHAQUE lien non vide, et aucun
+    // n'est examiné deux fois. C'est ce qui permet de dire qu'un lien non signalé est un lien sûr.
+    const contenu = {
+      dossiers: [{ id: 'd1', cabinet_id: 'cab-1' }],
+      categories: [{ id: 'c1', dossier_id: 'd1' }],
+      pieces: [{ id: 'p1', dossier_id: 'd1', categorie_id: 'c-absente' }],
+    }
+    const perdus = liensPerdus(contenu).map((p) => `${p.table}.${p.colonne}`)
+    const externes = referencesExternes(contenu).map((e) => `${e.table}.${e.colonne}`)
+    expect(perdus).toEqual(['pieces.categorie_id'])
+    expect(externes).toEqual(['dossiers.cabinet_id'])
+    expect(perdus.filter((c) => externes.includes(c))).toEqual([])
+  })
+
+  it('dédoublonne et trie les identifiants attendus', () => {
+    expect(referencesExternes({
+      dossiers: [
+        { id: 'd2', cabinet_id: 'cab-b' },
+        { id: 'd1', cabinet_id: 'cab-a' },
+        { id: 'd3', cabinet_id: 'cab-a' },
+      ],
+    })[0].valeurs).toEqual(['cab-a', 'cab-b'])
+  })
+
+  it('ne réclame rien pour une colonne partout vide', () => {
+    expect(referencesExternes({
+      pieces: [{ id: 'p1', dossier_id: null, sous_dossier_id: null }],
+    })).toEqual([])
+  })
+})
+
+describe('plan de réinsertion', () => {
+  const avoir = { id: 'f2', dossier_id: 'd1', numero: 2, facture_origine_id: 'f1' }
+  const origine = { id: 'f1', dossier_id: 'd1', numero: 1, facture_origine_id: null }
+
+  it('fait partir la facture d’origine à NULL et la repose ensuite', () => {
+    // Le cœur de la double passe. La colonne part vide pour tout le monde, puis revient — de sorte
+    // que le résultat ne dépende plus de la taille des lots d'écriture.
+    const plan = planReinsertion({ factures_emises: [avoir, origine] })
+    const ecrites = plan.etapes.find((e) => e.table === 'factures_emises')!.lignes
+    expect(ecrites.map((l) => l.facture_origine_id)).toEqual([null, null])
+    expect(plan.secondePasse).toEqual([
+      { table: 'factures_emises', colonne: 'facture_origine_id', valeurs: [{ id: 'f2', valeur: 'f1' }] },
+    ])
+  })
+
+  it('ne touche pas la sauvegarde qu’on lui donne', () => {
+    // La sauvegarde reste exploitable après coup — `liensPerdus` doit encore pouvoir tourner dessus.
+    // Modifier les lignes en place effacerait justement le lien qu'on cherche à vérifier.
+    const sauvegarde = { factures_emises: [{ ...avoir }] }
+    planReinsertion(sauvegarde)
+    expect(sauvegarde.factures_emises[0].facture_origine_id).toBe('f1')
+  })
+
+  it('n’ouvre pas de seconde passe quand aucune facture n’en appelle une autre', () => {
+    // Le cas ordinaire : un dossier sans avoir. Une seconde passe vide ferait croire à un travail
+    // restant, et un appelant finirait par ne plus la regarder.
+    expect(planReinsertion({ factures_emises: [origine] }).secondePasse).toEqual([])
+  })
+
+  it('suit l’ordre de restauration et saute les tables vides', () => {
+    const plan = planReinsertion({
+      pieces: [{ id: 'p1', dossier_id: 'd1' }],
+      dossiers: [{ id: 'd1' }],
+      categories: [],
+    })
+    expect(plan.etapes.map((e) => e.table)).toEqual(['dossiers', 'pieces'])
+  })
+
+  it('signale une table qu’il ne saurait pas où écrire', () => {
+    // Une table ajoutée au schéma et sauvegardée, mais absente de l'ordre : le plan l'ignorerait
+    // sans un mot, et la restauration se dirait complète. C'est la panne que tout ce fichier combat.
+    const plan = planReinsertion({ dossiers: [{ id: 'd1' }], table_inconnue: [{ id: 'x1' }] })
+    expect(plan.tablesIgnorees).toEqual(['table_inconnue'])
+    expect(plan.etapes.map((e) => e.table)).toEqual(['dossiers'])
+  })
+
+  it('ne signale pas une table inconnue mais vide', () => {
+    // Rien à écrire, donc rien à perdre : la signaler ferait un avertissement sans conséquence, et
+    // c'est ainsi qu'on apprend à les ignorer.
+    expect(planReinsertion({ table_inconnue: [] }).tablesIgnorees).toEqual([])
+  })
+
+  it('couvre chaque table auto-référencée déclarée', () => {
+    // Le lien entre la constante et le plan : une auto-référence ajoutée à TABLES_AUTO_REFERENCEES
+    // sans que le plan sache la traiter donnerait une seconde passe muette.
+    for (const { table, colonne } of TABLES_AUTO_REFERENCEES) {
+      const plan = planReinsertion({ [table]: [{ id: 'a', [colonne]: 'b' }, { id: 'b' }] })
+      expect(plan.secondePasse).toContainEqual(
+        expect.objectContaining({ table, colonne, valeurs: [{ id: 'a', valeur: 'b' }] }),
+      )
+    }
   })
 })

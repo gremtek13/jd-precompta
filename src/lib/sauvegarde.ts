@@ -150,18 +150,32 @@ export interface LienPerdu {
   parent: string
   /** L'identifiant pointé, introuvable. */
   valeur: string
-  /** Vrai quand Postgres ACCEPTERA quand même la restauration, en écrivant NULL sans rien dire. */
-  silencieux: boolean
+  /**
+   * Vrai quand la colonne accepte NULL, donc quand la restauration PEUT aboutir en effaçant le lien
+   * au lieu de s'arrêter. C'est le cas dangereux — non parce que Postgres se tairait, mais parce que
+   * c'est nous qui serions tentés de le faire taire. Voir le commentaire de `liensPerdus`.
+   */
+  effacable: boolean
 }
 
 type Contenu = Record<string, Record<string, unknown>[]>
 
-// Le contrôle qui décide si une restauration est réellement complète.
+// Le contrôle qui décide si une sauvegarde est réellement complète — à exécuter AVANT de restaurer.
 //
-// Pourquoi il est indispensable, et pourquoi il ne peut pas être délégué à la base : treize relations
-// du schéma sont en SET NULL. Quand la ligne pointée manque, Postgres ne refuse RIEN — il écrit NULL
-// et la restauration se déroule sans une seule erreur. Or ces treize-là sont précisément les liens qui
-// portent le travail comptable :
+// La première version de ce commentaire affirmait que Postgres, sur une relation ON DELETE SET NULL,
+// accepte une ligne dont le parent manque et écrit NULL en silence. C'est FAUX, et l'essai en base l'a
+// montré (18/09/2026, schéma jetable, deux tables, une relation SET NULL) : à l'INSERT, Postgres refuse
+// par `foreign_key_violation`, exactement comme sur les autres. ON DELETE ne décrit que ce qui arrive à
+// la SUPPRESSION du parent ; il ne relâche rien à l'insertion.
+//
+// Le danger est réel, mais il est ailleurs, et il est pire :
+//
+//   1. Une restauration n'est pas atomique. Quarante tables insérées par lots successifs : l'échec
+//      arrive au milieu, sur une base déjà à moitié peuplée, et il faut décider à 3 h du matin ce
+//      qu'on fait des trente-neuf autres. Ce contrôle le dit AVANT que rien ne soit écrit.
+//   2. C'est NOUS qui produisons le silence. Face à un refus sur une colonne nullable, la correction
+//      qui vient à l'esprit est d'y mettre NULL pour que ça passe — et ça passe. Neuf relations du
+//      graphe métier le permettent, et ce sont précisément celles qui portent le travail comptable :
 //
 //   lignes_bancaires.piece_id      le rapprochement bancaire de chaque mouvement
 //   ecritures_brouillon.piece_id   la pièce justifiant chaque écriture
@@ -169,9 +183,12 @@ type Contenu = Record<string, Record<string, unknown>[]>
 //   immobilisations.piece_id       la facture d'achat de l'immobilisation
 //   supplements.facture_id         le rattachement d'un supplément à sa facture
 //
-// Une restauration qui perd des lignes rend donc un dossier d'apparence intacte, où le rapprochement
-// est défait et les écritures orphelines, sans qu'aucune alerte ne se déclenche. C'est exactement ce
-// qu'on découvre six mois plus tard. D'où ce contrôle, à exécuter APRÈS toute restauration.
+// Un dossier ainsi « restauré » paraît intact : toutes les pièces sont là, tous les mouvements aussi.
+// Seul le lien entre eux a disparu — le rapprochement est défait, les écritures sont orphelines, et
+// rien à l'écran ne le dit. C'est ce qu'on découvre six mois plus tard, en cherchant autre chose.
+//
+// D'où `effacable`, qui ne dit pas « Postgres se taira » mais « ce lien-là peut être sacrifié pour que
+// la restauration passe » — c'est-à-dire : ne le sacrifie pas sans le savoir.
 //
 // `contenu` est la sauvegarde entière : un tableau de lignes par table. Chaque ligne est supposée
 // porter un `id` — c'est la clé primaire partout dans ce schéma.
@@ -202,7 +219,7 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
         colonne: relation.colonne,
         parent: relation.parent,
         valeur: String(valeur),
-        silencieux: relation.aLaSuppression === 'met_a_null',
+        effacable: relation.aLaSuppression === 'met_a_null',
       })
     }
   }
@@ -380,4 +397,212 @@ export function tablesSansChemin(
 // ne serait vérifiée par personne.
 export function ordreSuppression(ordre: readonly string[] = ORDRE_RESTAURATION): string[] {
   return [...ordre].reverse()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Ce qu'une sauvegarde de données ne contient pas — et qu'il faudra pourtant pour la restaurer.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Une colonne qui pointe un compte utilisateur (`auth.users`), table que ce chemin ne sauvegarde pas. */
+export interface PrerequisCompte {
+  table: string
+  colonne: string
+  /**
+   * Vrai quand la colonne est NOT NULL. La distinction décide de tout : un prérequis facultatif se
+   * solde par une trace d'auteur perdue, un prérequis obligatoire empêche purement et simplement la
+   * ligne d'être réinsérée, et il n'existe aucun contournement — on ne met pas NULL dans une colonne
+   * qui le refuse.
+   */
+  obligatoire: boolean
+}
+
+// Les quatorze colonnes du schéma `public` qui pointent `auth.users`, lues de pg_constraint le
+// 18/09/2026 comme le reste de ce fichier.
+//
+// RELATIONS les exclut volontairement, et c'est justifié : `auth.users` n'appartient pas à
+// l'application, ce chemin ne la sauvegarde pas et ne la restaurera pas. Mais les taire entièrement
+// revient à laisser croire qu'un export de données suffit à remonter un dossier. Il ne suffit pas :
+// quatre tables du plan d'export portent un compte en NOT NULL — `cabinet_admins`,
+// `dossier_assignations`, `memberships` et `packs`. Une restauration dans une base dont les comptes
+// ont disparu s'arrête net sur elles : la direction du cabinet, les affectations d'équipe, les accès
+// clients et l'historique des packs.
+//
+// Autrement dit : la sauvegarde des données et celle des comptes sont deux sauvegardes, pas une. Les
+// lister ici, hors de RELATIONS, dit les deux choses à la fois — elles ne sont pas restaurées, et
+// elles sont exigées.
+export const PREREQUIS_AUTH: readonly PrerequisCompte[] = [
+  { table: 'agent_conversations', colonne: 'created_by', obligatoire: false },
+  { table: 'cabinet_admins', colonne: 'user_id', obligatoire: true },
+  { table: 'comptes_courants_associes', colonne: 'created_by', obligatoire: false },
+  { table: 'dossier_assignations', colonne: 'user_id', obligatoire: true },
+  { table: 'emails_envoyes', colonne: 'envoye_par', obligatoire: false },
+  { table: 'emprunts', colonne: 'created_by', obligatoire: false },
+  { table: 'memberships', colonne: 'user_id', obligatoire: true },
+  { table: 'mouvements_cca', colonne: 'created_by', obligatoire: false },
+  { table: 'packs', colonne: 'generated_by', obligatoire: true },
+  { table: 'piece_commentaires', colonne: 'auteur_id', obligatoire: false },
+  { table: 'pieces', colonne: 'uploaded_by', obligatoire: false },
+  { table: 'previsionnels_bancaires', colonne: 'updated_by', obligatoire: false },
+  { table: 'super_admins', colonne: 'user_id', obligatoire: true },
+  { table: 'supplements', colonne: 'created_by', obligatoire: false },
+]
+
+/** Les comptes utilisateurs dont une sauvegarde dépend, séparés selon ce que coûte leur absence. */
+export interface ComptesRequis {
+  /** Sans eux, la restauration s'arrête : la colonne refuse NULL. */
+  obligatoires: string[]
+  /** Sans eux, la restauration aboutit ; seule la trace de l'auteur est perdue. */
+  facultatifs: string[]
+}
+
+// Les comptes qu'il faudra avoir sous la main avant de restaurer cette sauvegarde-ci.
+//
+// À exécuter en même temps que `liensPerdus`, et pour la même raison : savoir avant d'écrire la
+// première ligne, plutôt que de le découvrir sur la trente-septième table.
+//
+// Un compte qui figure dans les deux colonnes est obligatoire — c'est le cas dès qu'un même
+// utilisateur a, par exemple, généré un pack et déposé une pièce.
+export function comptesRequis(contenu: Contenu): ComptesRequis {
+  const obligatoires = new Set<string>()
+  const facultatifs = new Set<string>()
+
+  for (const prerequis of PREREQUIS_AUTH) {
+    const lignes = contenu[prerequis.table]
+    if (!lignes) continue
+    for (const ligne of lignes) {
+      const valeur = ligne[prerequis.colonne]
+      if (valeur == null) continue
+      ;(prerequis.obligatoire ? obligatoires : facultatifs).add(String(valeur))
+    }
+  }
+
+  for (const compte of obligatoires) facultatifs.delete(compte)
+  return { obligatoires: [...obligatoires].sort(), facultatifs: [...facultatifs].sort() }
+}
+
+/** Une ligne que la sauvegarde suppose déjà présente dans la base d'arrivée. */
+export interface ReferenceExterne {
+  table: string
+  colonne: string
+  /** La table parente, absente de la sauvegarde. */
+  parent: string
+  /** Les identifiants attendus, sans doublon. */
+  valeurs: string[]
+}
+
+// L'envers exact de `liensPerdus` : ce que celui-ci ignore délibérément, celui-ci le nomme.
+//
+// `liensPerdus` passe son chemin quand la table parente est absente de la sauvegarde, et il a raison —
+// un export d'un seul dossier ne contient pas `cabinets`, ce n'est pas une faute. Mais le silence
+// laissait ces lignes-là sans statut : ni perdues, ni garanties. Or elles décident du succès de la
+// restauration tout autant que les autres, à ceci près qu'elles ne dépendent pas de la sauvegarde
+// mais de la base d'arrivée.
+//
+// Concrètement, sur un export de dossier : la ligne `cabinets` du cabinet propriétaire. Sans elle,
+// `dossiers.cabinet_id` échoue à la toute première table, et rien d'autre ne sera tenté.
+export function referencesExternes(contenu: Contenu): ReferenceExterne[] {
+  const externes: ReferenceExterne[] = []
+
+  for (const relation of RELATIONS) {
+    const lignes = contenu[relation.enfant]
+    if (!lignes) continue
+    // La table parente est là : ses liens relèvent de `liensPerdus`, pas d'ici.
+    if (contenu[relation.parent]) continue
+
+    const valeurs = new Set<string>()
+    for (const ligne of lignes) {
+      const valeur = ligne[relation.colonne]
+      if (valeur == null) continue
+      valeurs.add(String(valeur))
+    }
+    if (valeurs.size === 0) continue
+    externes.push({
+      table: relation.enfant,
+      colonne: relation.colonne,
+      parent: relation.parent,
+      valeurs: [...valeurs].sort(),
+    })
+  }
+  return externes
+}
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// Le plan de réinsertion : dans quel ordre écrire, et ce qu'il faut repasser ensuite.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** Une table à réinsérer, avec les lignes telles qu'elles doivent partir au PREMIER passage. */
+export interface EtapeReinsertion {
+  table: string
+  lignes: Record<string, unknown>[]
+}
+
+/** Les valeurs auto-référencées à reposer, une fois toutes les lignes de la table en place. */
+export interface SecondePasse {
+  table: string
+  colonne: string
+  valeurs: { id: string; valeur: unknown }[]
+}
+
+export interface PlanReinsertion {
+  etapes: EtapeReinsertion[]
+  secondePasse: SecondePasse[]
+  /**
+   * Les tables présentes dans la sauvegarde mais absentes de l'ordre de restauration. Elles ne
+   * seraient écrites nulle part : un appelant qui les ignore restaure moins qu'il ne croit.
+   */
+  tablesIgnorees: string[]
+}
+
+// Transforme une sauvegarde en la suite d'écritures qui la remet en base.
+//
+// Pourquoi la seconde passe, exactement : `factures_emises.facture_origine_id` pointe une autre
+// facture (un avoir désigne celle qu'il annule). L'essai en base du 18/09/2026 est plus précis que ce
+// qu'on croyait — Postgres ACCEPTE un avoir placé avant son origine tant que les deux lignes partent
+// dans la MÊME commande INSERT ; il le refuse dès qu'elles partent en deux commandes.
+//
+// Or une restauration découpe forcément ses écritures en lots : le lot est un paramètre technique, il
+// ne doit pas décider si la restauration aboutit. Sans seconde passe, une table restaurée d'un bloc
+// passerait et la même table restaurée en deux lots échouerait — le genre de panne qui n'apparaît
+// qu'en production, parce que seule la production est assez grosse pour franchir le seuil.
+//
+// D'où la règle : la colonne part à NULL pour tout le monde, puis on la repose. Le résultat ne dépend
+// alors plus d'aucune taille de lot.
+export function planReinsertion(
+  contenu: Contenu,
+  ordre: readonly string[] = ORDRE_RESTAURATION,
+): PlanReinsertion {
+  const etapes: EtapeReinsertion[] = []
+  const secondePasse: SecondePasse[] = []
+
+  for (const table of ordre) {
+    const lignes = contenu[table]
+    if (!lignes || lignes.length === 0) continue
+
+    const auto = TABLES_AUTO_REFERENCEES.filter((a) => a.table === table)
+    if (auto.length === 0) {
+      etapes.push({ table, lignes })
+      continue
+    }
+
+    // Copie plutôt que modification en place : la sauvegarde reçue doit rester intacte, ne serait-ce
+    // que pour que `liensPerdus` puisse encore être exécuté dessus après coup.
+    const premierePasse = lignes.map((ligne) => ({ ...ligne }))
+    for (const { colonne } of auto) {
+      const valeurs: { id: string; valeur: unknown }[] = []
+      for (const ligne of premierePasse) {
+        if (ligne[colonne] == null) continue
+        valeurs.push({ id: String(ligne.id), valeur: ligne[colonne] })
+        ligne[colonne] = null
+      }
+      if (valeurs.length > 0) secondePasse.push({ table, colonne, valeurs })
+    }
+    etapes.push({ table, lignes: premierePasse })
+  }
+
+  const connues = new Set(ordre)
+  const tablesIgnorees = Object.keys(contenu)
+    .filter((table) => !connues.has(table) && contenu[table].length > 0)
+    .sort()
+
+  return { etapes, secondePasse, tablesIgnorees }
 }
