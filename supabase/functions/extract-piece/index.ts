@@ -613,6 +613,113 @@ function lectureAppelCotisation(lignes: string[]): { echeances: { date: string; 
   }
 }
 
+// Le taux de TVA le plus élevé applicable en France. Au-delà, ce n'est pas une TVA : c'est une
+// lecture fausse. Sert d'arbitre quand deux lectures se contredisent — une seule des deux peut être
+// légale, et c'est celle-là qu'on retient.
+const TAUX_TVA_MAXIMAL = 0.2
+const TOLERANCE_CENTIME = 0.01
+
+type Redressement = "doublon_tva" | "arbitrage_soustraction" | "permutation_ht_tva"
+
+interface MontantsResolus {
+  montant_ht: number | null
+  montant_tva: number | null
+  montant_ttc: number | null
+  /** Ce qu'il a fallu redresser. Une lecture redressée est juste, mais elle n'est plus « lue ». */
+  redressement: Redressement | null
+  /** Les trois montants sont présents, bouclent, et le taux est légal. */
+  coherent: boolean
+}
+
+function arrondi(n: number): number {
+  return Math.round(n * 100) / 100
+}
+
+function tauxLegal(ht: number | null, tva: number | null): boolean {
+  if (ht == null || tva == null) return false
+  if (ht === 0) return tva === 0
+  if (Math.sign(tva) !== Math.sign(ht) && tva !== 0) return false
+  return Math.abs(tva) <= Math.abs(ht) * TAUX_TVA_MAXIMAL + TOLERANCE_CENTIME
+}
+
+// Reconstitue les trois montants d'une pièce à partir de ce que Textract a étiqueté, en refusant
+// d'écrire un triplet qui ne peut pas être vrai.
+//
+// Trois défauts constatés sur le corpus réel, chacun invisible pour qui ne regarde que la confiance
+// de lecture — Textract avait parfaitement lu les caractères dans les trois cas :
+//
+// 1. LE MÊME TOTAL DE TVA COMPTÉ PLUSIEURS FOIS. Textract émet un champ "TAX" par détection, et une
+//    facture imprime couramment son total de TVA deux ou trois fois (récapitulatif, pied de page,
+//    tableau de ventilation). Les additionner triplait le montant : sur une facture Apple réelle,
+//    79,84 € détecté 3 fois est devenu 239,52 € en base, en confiance « haute ».
+//
+// 2. UN SOUS-TOTAL LU À ZÉRO. Un HT à 0 sous un TTC non nul n'est pas une lecture, c'est un échec de
+//    lecture : il donne un taux infini. Le traiter comme absent fait retomber sur la soustraction,
+//    qui elle est juste (constaté sur une facture INPI : 0 / 188,81 au lieu de 178,64 / 10,17).
+//
+// 3. HT ET TVA PERMUTÉS. Le cas qu'aucun contrôle arithmétique ne peut voir : 69,60 + 480,40 = 550,00
+//    boucle parfaitement. Seule la LÉGALITÉ le trahit — 690 % de TVA n'existe pas, alors que la
+//    lecture inverse donne 14,5 %, taux normal pour une note de restaurant mêlant 10 % et 20 %.
+//
+// Règle d'arbitrage : quand le TOTAL et le SOUS-TOTAL sont tous deux lus, ils déterminent la TVA par
+// soustraction, et une TVA détectée qui les contredit est une troisième lecture contre deux. On
+// l'écarte — SAUF si la soustraction donne un taux illégal et la détection un taux légal, auquel cas
+// c'est le sous-total qui était mal lu.
+function resoudreMontants(
+  totalLu: number | null,
+  sousTotalLu: number | null,
+  taxesDetectees: number[],
+): MontantsResolus {
+  let redressement: Redressement | null = null
+
+  // Défaut 1 : on somme les montants DISTINCTS. Deux lignes de TVA réellement différentes (taux
+  // multiples) restent additionnées ; le même montant détecté plusieurs fois ne compte qu'une fois.
+  // Le cas perdant — deux lignes de TVA distinctes portant par coïncidence le même montant — est
+  // rattrapé juste après par la soustraction quand le sous-total est lu, et reste bien plus rare que
+  // le récapitulatif imprimé deux fois, qui est la norme.
+  const distinctes = [...new Set(taxesDetectees)]
+  if (distinctes.length < taxesDetectees.length) redressement = "doublon_tva"
+  const tvaDetectee = distinctes.length > 0 ? arrondi(distinctes.reduce((a, b) => a + b, 0)) : null
+
+  // Défaut 2 : un sous-total nul face à un total non nul est écarté, pas cru.
+  const sousTotal = sousTotalLu === 0 && totalLu != null && totalLu !== 0 ? null : sousTotalLu
+
+  let ht = sousTotal
+  let tva = tvaDetectee
+  const ttc = totalLu
+
+  if (ttc != null && sousTotal != null) {
+    const parSoustraction = arrondi(ttc - sousTotal)
+    if (tvaDetectee == null || Math.abs(tvaDetectee - parSoustraction) <= TOLERANCE_CENTIME) {
+      tva = parSoustraction
+    } else if (!tauxLegal(sousTotal, parSoustraction) && tauxLegal(arrondi(ttc - tvaDetectee), tvaDetectee)) {
+      // Le sous-total était la mauvaise lecture : on le refait à partir de la TVA détectée.
+      ht = arrondi(ttc - tvaDetectee)
+      tva = tvaDetectee
+      redressement = "arbitrage_soustraction"
+    } else {
+      tva = parSoustraction
+      redressement = "arbitrage_soustraction"
+    }
+  } else if (ttc != null && tva != null) {
+    ht = arrondi(ttc - tva)
+  }
+
+  // Défaut 3 : la permutation, que seule la légalité peut trahir.
+  if (ht != null && tva != null && !tauxLegal(ht, tva) && tauxLegal(tva, ht)) {
+    const permute = ht
+    ht = tva
+    tva = permute
+    redressement = "permutation_ht_tva"
+  }
+
+  const coherent = ttc != null && ht != null && tva != null
+    && Math.abs(ht + tva - ttc) <= TOLERANCE_CENTIME
+    && tauxLegal(ht, tva)
+
+  return { montant_ht: ht, montant_tva: tva, montant_ttc: ttc, redressement, coherent }
+}
+
 function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[] }) {
   const documents = result.ExpenseDocuments ?? []
   if (documents.length === 0) {
@@ -633,8 +740,12 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   const summary: Record<string, { text: string; confidence: number }> = {}
   // Une facture peut avoir plusieurs lignes de TVA (taux différents) — Textract renvoie alors
   // plusieurs champs de type "TAX" ; les garder tous dans un Record écraserait tout sauf le dernier,
-  // donc on les additionne à part plutôt que de les traiter comme les autres champs uniques.
-  let montantTva: number | null = null
+  // donc on les collecte à part plutôt que de les traiter comme les autres champs uniques.
+  //
+  // Collectés, et non additionnés au fil de l'eau : Textract émet aussi un champ par RÉPÉTITION du
+  // même total sur le document, et les additionner en aveugle multipliait la TVA par le nombre de
+  // fois qu'elle est imprimée. C'est resoudreMontants qui décide de ce qui s'additionne.
+  const taxesDetectees: number[] = []
   let taxConfidenceSum = 0
   let taxConfidenceCount = 0
   // Même raison que pour lignesOcr ci-dessus : la date/le fournisseur/le total peuvent être détectés
@@ -652,7 +763,7 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
       if (type === "TAX") {
         const amount = parseAmount(text)
         if (amount != null) {
-          montantTva = (montantTva ?? 0) + amount
+          taxesDetectees.push(amount)
           taxConfidenceSum += confidence
           taxConfidenceCount++
         }
@@ -670,19 +781,16 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   const montantTtc = parseAmount(total?.text)
   const montantHtDeclare = parseAmount(subtotal?.text)
 
-  // Certaines factures affichent clairement un montant HT et un montant TTC sans que Textract
-  // reconnaisse pour autant une ligne "TVA" dédiée (mention "TVA" absente ou mal isolée du reste du
-  // texte) — la TVA se déduit alors par différence plutôt que de rester vide à tort.
-  if (montantTva == null && montantTtc != null && montantHtDeclare != null) {
-    montantTva = Number((montantTtc - montantHtDeclare).toFixed(2))
-  }
+  // Reconstitution des trois montants, y compris la déduction de la TVA par différence quand une
+  // facture affiche un HT et un TTC sans que Textract isole de ligne "TVA" (voir resoudreMontants).
+  let montants = resoudreMontants(montantTtc, montantHtDeclare, taxesDetectees)
 
   // Dernier recours : tableau de ventilation TVA imprimé comme texte simple (tickets de caisse).
   // Diagnostic temporaire inclus tant que le motif n'est pas confirmé sur un cas réel.
   let lignesBrutesDiag: string[] | undefined
-  if (montantTva == null) {
+  if (montants.montant_tva == null) {
     const montant = tvaDepuisTexteBrut(lignes)
-    if (montant != null) montantTva = montant
+    if (montant != null) montants = resoudreMontants(montantTtc, montantHtDeclare, [montant])
     else lignesBrutesDiag = lignes
   }
 
@@ -708,13 +816,27 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
   if (taxConfidenceCount > 0) confidences.push(taxConfidenceSum / taxConfidenceCount)
   const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0
 
+  // La confiance rendue par Textract mesure la LISIBILITÉ, pas la justesse : elle dit qu'il a bien lu
+  // les caractères, pas qu'il a pris le bon nombre. Les onze pièces à TVA démontrablement fausse du
+  // corpus étaient TOUTES en « haute » — l'opérateur qui trie par confiance pour savoir quoi relire
+  // regardait précisément la mauvaise colonne.
+  //
+  // On la plafonne donc par ce que les montants disent d'eux-mêmes. Une pièce dont les trois montants
+  // ne bouclent pas, ou dont le taux est impossible, ne peut pas être annoncée comme sûre : c'est
+  // exactement celle qu'il faut rouvrir. Une pièce redressée est juste, mais elle n'a plus été lue —
+  // « moyenne » dit qu'on y a touché.
+  const lecture = avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const
+  const plafond = !montants.coherent ? "basse" as const : montants.redressement ? "moyenne" as const : "haute" as const
+  const rang = { basse: 0, moyenne: 1, haute: 2 }
+  const confiance = rang[lecture] <= rang[plafond] ? lecture : plafond
+
   return {
     tiers: vendor?.text ?? null,
     date_piece: datePiece,
-    montant_ttc: montantTtc,
-    montant_tva: montantTva,
-    montant_ht: montantHtDeclare ?? (montantTtc != null && montantTva != null ? Number((montantTtc - montantTva).toFixed(2)) : null),
-    confiance: avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const,
+    montant_ttc: montants.montant_ttc,
+    montant_tva: montants.montant_tva,
+    montant_ht: montants.montant_ht,
+    confiance,
     classification: classifieDocument(lignes),
     // Le texte lu, rendu tel quel. Il était jusqu'ici calculé puis jeté : il sert à classer le
     // document, à retrouver une date et à rattraper une TVA, mais rien n'en sortait. Or c'est
@@ -730,6 +852,9 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     ...(lignesBrutesDiag ? { _lignes_brutes: lignesBrutesDiag } : {}),
     ...(datesDiag ? { _diag_dates: datesDiag } : {}),
     ...(dateDeduite ? { _date_deduite: true } : {}),
+    // Ce qui a dû être redressé, pour que l'appelant puisse le dire plutôt que de présenter un
+    // montant reconstitué comme un montant lu — même raison que _date_deduite juste au-dessus.
+    ...(montants.redressement ? { _montants_redresses: montants.redressement } : {}),
   }
 }
 

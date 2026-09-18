@@ -106,6 +106,11 @@ export interface ExtractionResult {
   // plutôt que présentée comme lue — c'est ce qui permet de garder cette règle sans deviner en
   // silence.
   _date_deduite?: boolean
+  // Ce que la reconstitution des montants a dû redresser (voir resoudreMontants dans extract-piece).
+  // Présent uniquement quand il a fallu toucher à ce que Textract avait étiqueté : même TVA comptée
+  // plusieurs fois, sous-total contredit par le total, HT et TVA permutés. La pièce est alors juste
+  // mais n'a plus été simplement lue — d'où le plafonnement de `confiance` à « moyenne ».
+  _montants_redresses?: 'doublon_tva' | 'arbitrage_soustraction' | 'permutation_ht_tva'
 }
 
 // Textract n'accepte que JPEG/PNG/PDF(1 page)/TIFF. Une photo de téléphone peut être en HEIC en
