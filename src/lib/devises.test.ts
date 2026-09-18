@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { convertirMontants, deviseDuTexte, enEuros, libelleConversion, tauxApplicable } from './devises'
+import { convertirMontants, deviseDuTexte, enEuros, libelleConversion, montantPlausiblePourDevise, reglerSurMontantReel, tauxApplicable, tauxDepuisBanque } from './devises'
 
 // Les taux utilisés ici sont les vrais taux BCE des dates concernées, relevés sur le portail de la
 // banque : USD 1,1698 au 09/07/2025, 1,1648 au 08/08/2025. Les factures OpenAI du dossier portent
@@ -122,5 +122,94 @@ describe('libelleConversion', () => {
   it('dit tout ce qu’il faut pour refaire le calcul', () => {
     expect(libelleConversion(24, 'USD', 1.1698, '2025-07-09'))
       .toBe('24,00 USD au taux BCE du 09/07/2025 (1 EUR = 1,1698 USD)')
+  })
+})
+
+describe('règlement sur le montant réellement débité', () => {
+  // L'aboutissement : le cours du jour ne sert plus qu'à donner une valeur provisoire. Le chiffre
+  // définitif vient du relevé, et en BNC c'est lui qui est juste — la dépense déductible est ce qui a
+  // réellement quitté le compte, spread de la banque compris.
+  const provisoire = { montant_ht: 17.17, montant_tva: 3.43, montant_ttc: 20.60 }
+
+  it('déduit le taux réellement subi du rapprochement', () => {
+    expect(tauxDepuisBanque(24, -20.68)).toBeCloseTo(1.16054, 5)
+  })
+
+  it('ne déduit aucun taux d’un mouvement à zéro', () => {
+    expect(tauxDepuisBanque(24, 0)).toBeNull()
+  })
+
+  it('reprend le montant réel et conserve la proportion de TVA du document', () => {
+    const regle = reglerSurMontantReel(provisoire, 24, -20.68)!
+    expect(regle.montant_ttc).toBe(20.68)
+    // 3,43 / 20,60 = 16,65 % — la proportion vient du document et ne dépend d'aucun taux de change.
+    expect(regle.montant_tva).toBe(3.44)
+    expect(regle.montant_ht).toBe(17.24)
+    expect(regle.taux_change).toBeCloseTo(1.16054, 5)
+  })
+
+  it('rend des montants qui bouclent même si la pièce ne bouclait pas', () => {
+    // Le cas où mettre le HT à l'échelle, au lieu de le déduire, se voit vraiment : une pièce dont
+    // les trois montants ne s'additionnaient déjà pas (saisie à la main, extraction fausse — voir
+    // piecesTvaImpossible). Deux mises à l'échelle indépendantes reconduiraient l'incohérence, et la
+    // pièce resterait signalée après un rapprochement qui aurait dû la régler.
+    const bancal = { montant_ht: 17.00, montant_tva: 3.43, montant_ttc: 20.60 }
+    const regle = reglerSurMontantReel(bancal, 24, -20.68)!
+    expect(regle.montant_ht! + regle.montant_tva!).toBeCloseTo(regle.montant_ttc!, 10)
+    expect(regle.montant_ht).toBe(17.24)
+  })
+
+  it('rend des montants qui bouclent, toujours', () => {
+    // Mettre HT et TVA à l'échelle chacun de son côté laisserait HT + TVA ≠ TTC, et la pièce serait
+    // signalée comme une TVA impossible alors que seul le rapprochement a bougé. Le HT est donc
+    // déduit par soustraction.
+    for (const reel of [-20.68, -19.99, -21.37, -20.01, -18.5]) {
+      const r = reglerSurMontantReel(provisoire, 24, reel)!
+      expect(r.montant_ht! + r.montant_tva!).toBeCloseTo(r.montant_ttc!, 10)
+    }
+  })
+
+  it('garde le sens de la pièce, pas celui de la ligne bancaire', () => {
+    // Un achat est positif sur la pièce et négatif au relevé. Reprendre le signe de la banque
+    // retournerait chaque montant.
+    expect(reglerSurMontantReel(provisoire, 24, -20.68)!.montant_ttc).toBe(20.68)
+    const avoir = { montant_ht: -17.17, montant_tva: -3.43, montant_ttc: -20.60 }
+    expect(reglerSurMontantReel(avoir, 24, 20.68)!.montant_ttc).toBe(-20.68)
+  })
+
+  it('n’invente aucune ventilation quand le document n’en porte pas', () => {
+    // Sans TVA lue, répartir à partir d'un taux supposé écrirait un chiffre que le document ne dit
+    // pas. Le TTC prend le montant réel, le reste est laissé tel quel.
+    const sansTva = { montant_ht: null, montant_tva: null, montant_ttc: 20.60 }
+    const regle = reglerSurMontantReel(sansTva, 24, -20.68)!
+    expect(regle).toMatchObject({ montant_ht: null, montant_tva: null, montant_ttc: 20.68 })
+  })
+})
+
+describe('montantPlausiblePourDevise', () => {
+  it('accepte l’écart de change d’un débit réel', () => {
+    expect(montantPlausiblePourDevise(20.60, -20.68)).toBe(true)
+    expect(montantPlausiblePourDevise(20.60, -19.72)).toBe(true) // le prélèvement MACSF, à 4,3 %
+  })
+
+  it('écarte un mouvement sans rapport', () => {
+    expect(montantPlausiblePourDevise(20.60, -34.00)).toBe(false)
+    expect(montantPlausiblePourDevise(20.60, -5.00)).toBe(false)
+  })
+
+  it('tient une borne serrée, pas un simple ordre de grandeur', () => {
+    // Le spread d'une carte va jusqu'à 3 %, le cours bouge d'un ou deux points entre facture et
+    // débit : au-delà de cinq pour cent, ce n'est plus du change. Une borne large laisserait
+    // n'importe quel mouvement du même ordre de grandeur passer ce premier filtre.
+    expect(montantPlausiblePourDevise(20.60, -21.63)).toBe(true)  // 20,60 x 1,05, juste sur la borne
+    expect(montantPlausiblePourDevise(20.60, -21.65)).toBe(false) // juste au-delà
+    expect(montantPlausiblePourDevise(20.60, -22.50)).toBe(false) // +9,2 %, ce n'est plus du change
+  })
+
+  it('compare en valeur absolue, des deux côtés', () => {
+    // La pièce est positive, le débit négatif : comparer sans valeur absolue ne rapprocherait jamais
+    // un achat.
+    expect(montantPlausiblePourDevise(20.60, -20.60)).toBe(true)
+    expect(montantPlausiblePourDevise(-20.60, 20.60)).toBe(true)
   })
 })

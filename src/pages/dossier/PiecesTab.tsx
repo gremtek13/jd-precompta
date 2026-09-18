@@ -498,7 +498,12 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                     {p.devise !== DEVISE_PIVOT && (
                       <div className="muted" style={{ fontSize: '0.75rem' }}>
                         {p.montant_devise != null ? `${p.montant_devise.toFixed(2)} ${p.devise}` : p.devise}
-                        {p.taux_change == null && ' — à convertir'}
+                        {/* Provisoire tant que la banque n'a pas tranché : le taux BCE ignore le
+                            spread et les frais réellement appliqués. Le dire évite qu'un montant à
+                            quelques centimes près passe pour définitif. */}
+                        {p.taux_change == null
+                          ? ' — à convertir'
+                          : p.conversion_source === 'bce' && ' — provisoire'}
                       </div>
                     )}
                     {/* Sur la ligne, pas seulement dans un onglet de contrôle : c'est ici que la

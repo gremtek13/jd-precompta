@@ -64,6 +64,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [devise, setDevise] = useState(piece?.devise ?? DEVISE_PIVOT)
   const [montantDevise, setMontantDevise] = useState<number | null>(piece?.montant_devise ?? null)
   const [tauxChange, setTauxChange] = useState<number | null>(piece?.taux_change ?? null)
+  const [conversionSource, setConversionSource] = useState<'bce' | 'banque' | null>(piece?.conversion_source ?? null)
   const [dateTaux, setDateTaux] = useState<string | null>(null)
   const [conversionEnCours, setConversionEnCours] = useState(false)
   const [conversionErreur, setConversionErreur] = useState<string | null>(null)
@@ -168,6 +169,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       setMontantDevise(lue === DEVISE_PIVOT ? null : result.montant_ttc ?? null)
       setTauxChange(trouve?.taux ?? null)
       setDateTaux(trouve?.date ?? null)
+      setConversionSource(trouve ? 'bce' : null)
       if (lue !== DEVISE_PIVOT && !trouve) {
         setConversionErreur(`Document en ${lue}, mais aucun taux BCE n'a pu être obtenu — les montants restent à convertir.`)
       }
@@ -242,6 +244,9 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       setMontantTtc(converti.montant_ttc?.toFixed(2) ?? '')
       setTauxChange(trouve.taux)
       setDateTaux(trouve.date)
+      // Reconvertir à la BCE reprend une valeur provisoire, même si la pièce avait déjà été réglée
+      // sur la banque : c'est bien un retour en arrière, et le dire est le minimum.
+      setConversionSource('bce')
     } finally {
       setConversionEnCours(false)
     }
@@ -297,6 +302,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
         devise,
         montant_devise: devise === DEVISE_PIVOT ? null : montantDevise,
         taux_change: devise === DEVISE_PIVOT ? null : tauxChange,
+        conversion_source: devise === DEVISE_PIVOT || tauxChange == null ? null : conversionSource ?? 'bce',
         notes: notes || null,
         statut,
         confiance,
@@ -535,6 +541,9 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
                         <span className="muted">
                           {' — '}{libelleConversion(montantDevise, devise, tauxChange, dateTaux ?? datePiece)}.
                           {' '}Les montants ci-dessous sont le résultat de cette conversion, en euros.
+                          {' '}{conversionSource === 'banque'
+                            ? 'Montant DÉFINITIF : repris du mouvement bancaire qui a payé la pièce, frais de change compris.'
+                            : 'Montant PROVISOIRE : il sera remplacé par ce que la banque a réellement débité, au rapprochement.'}
                         </span>
                       ) : (
                         <span className="muted">

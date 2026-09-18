@@ -69,6 +69,7 @@ export interface MontantsPourPiece {
   devise: string
   montant_devise: number | null
   taux_change: number | null
+  conversion_source: 'bce' | 'banque' | null
 }
 
 interface MontantsLus {
@@ -105,7 +106,7 @@ export async function montantsPourPiece(lus: MontantsLus, datePiece: string | nu
   }
 
   if (devise === DEVISE_PIVOT || !/^[A-Z]{3}$/.test(devise)) {
-    return { ...montants, devise: DEVISE_PIVOT, montant_devise: null, taux_change: null }
+    return { ...montants, devise: DEVISE_PIVOT, montant_devise: null, taux_change: null, conversion_source: null }
   }
 
   // Sans date lue sur le document, le taux du jour : c'est la meilleure approximation disponible, et
@@ -116,7 +117,7 @@ export async function montantsPourPiece(lus: MontantsLus, datePiece: string | nu
   if (!trouve) {
     return {
       montant_ht: null, montant_tva: null, montant_ttc: null,
-      devise, montant_devise: montants.montant_ttc, taux_change: null,
+      devise, montant_devise: montants.montant_ttc, taux_change: null, conversion_source: null,
     }
   }
 
@@ -125,5 +126,8 @@ export async function montantsPourPiece(lus: MontantsLus, datePiece: string | nu
     devise,
     montant_devise: montants.montant_ttc,
     taux_change: trouve.taux,
+    // Provisoire, et marqué comme tel : le taux de référence ignore le spread que la banque
+    // appliquera. Le montant définitif viendra du mouvement bancaire (voir lib/reglementDevise.ts).
+    conversion_source: 'bce',
   }
 }

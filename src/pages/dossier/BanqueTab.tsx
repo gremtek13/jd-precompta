@@ -13,6 +13,7 @@ import { correspondALaRecherche } from '../../lib/recherche'
 import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
 import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
 import { analyserAppariements, libelleExploitable } from '../../lib/appariementBanque'
+import { reglerPieceSurBanque } from '../../lib/reglementDevise'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -208,7 +209,10 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId, cotisation_id: null }).eq('id', ligneId)
     if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return }
     const ligne = lignes.find((l) => l.id === ligneId)
-    const piece = pieces.find((p) => p.id === pieceId)
+    const pieceAvant = pieces.find((p) => p.id === pieceId)
+    // Le règlement AVANT la contrepartie : celle-ci reprend les montants de la pièce, et les
+    // écrirait donc avec la valeur provisoire si l'ordre était inversé (voir lib/reglementDevise.ts).
+    const piece = ligne && pieceAvant ? await reglerPieceSurBanque(pieceAvant, ligne) : pieceAvant
     // Le rapprochement est enregistré ; seule la contrepartie comptable a pu échouer. On le dit sans
     // annuler ce qui a réussi — la contrepartie se recréera au prochain passage, elle est idempotente.
     if (ligne && piece) {
@@ -367,7 +371,8 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         if (errLigne) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errLigne.message}`); continue }
 
         try {
-          await synchroniserContrepartieBanque(dossierId, a.piece, a.ligne)
+          const piece = await reglerPieceSurBanque(a.piece, a.ligne)
+          await synchroniserContrepartieBanque(dossierId, piece, a.ligne)
         } catch (err) {
           // La pièce est validée et le mouvement rapproché ; seule la contrepartie comptable manque.
           // On le dit plutôt que de laisser croire que tout est passé.
