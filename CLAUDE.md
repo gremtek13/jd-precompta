@@ -928,6 +928,26 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   il se **charge à la demande**, une pièce à la fois ; et il est **rendu tel
   quel**, sans filtrage ni troncature, sinon on ne peut plus diagnostiquer une
   extraction douteuse avec.
+- **Le texte OCR couvre les DOCUMENTS autant que les pièces — la première version s'arrêtait à
+  mi-chemin.** Textract tourne sur tous les fichiers déposés : le texte revenait donc aussi pour les
+  relevés bancaires, les appels de cotisation, les attestations et les relevés d'activité, et il
+  était jeté pour chacun. Soixante-sept documents en production, dont les SNIR qui portent les
+  honoraires de l'année — précisément le document qu'un cabinet veut pouvoir relire. Le même texte
+  qu'on venait de payer.
+  Pire : **déplacer une pièce vers Documents supprimait son texte en cascade**, la table étant
+  indexée sur `piece_id`. Les trois SNIR du dossier de test ont perdu le leur de cette façon.
+  La table garde son nom (`piece_textes_ocr`) pour ne pas casser le code, mais porte désormais
+  `piece_id` XOR `document_id`, comme `lignes_bancaires` porte `piece_id` XOR `cotisation_id`. Et
+  `convertirEnPiece` lit le texte AVANT de supprimer le document, sinon il le perdrait au moment même
+  où il redevient utile.
+  **Deux pièges de schéma évités, tous deux déjà connus du projet :** la clé primaire est devenue un
+  `id` de substitution (`piece_id` devant pouvoir être nul), donc `enregistrerTexteOcr` vise
+  explicitement sa colonne en `onConflict` — sans quoi l'upsert ne trouverait jamais de conflit et
+  empilerait un doublon par relecture. Et les contraintes uniques sont **totales**, pas partielles :
+  une contrainte unique sur une colonne nullable laisse passer autant de NULL qu'on veut tout en
+  dédoublonnant les valeurs réelles, là où un index partiel ne peut pas être visé par `ON CONFLICT`.
+  RLS vérifiée par impersonation : le client écrit sur un document de SON dossier, se fait refuser un
+  document d'un autre dossier annoncé sous le sien, et le CHECK refuse zéro comme deux cibles.
 - **Une relecture coûte un appel Textract facturé.** `relireDocuments`
   (lib/relectureDocuments.ts) comble la date ET le texte en UNE passe : les
   séparer paierait deux fois la même lecture. Elle ne relit que ce qui manque
@@ -944,7 +964,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 601 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 605 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

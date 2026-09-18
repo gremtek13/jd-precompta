@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeLocaleDe, formatDate } from '../../lib/format'
 import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
@@ -6,6 +6,7 @@ import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
+import { documentsAvecTexteOcr, enregistrerTexteOcr, texteOcrDuDocument } from '../../lib/texteOcr'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -29,6 +30,20 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   const [ajoutOuvert, setAjoutOuvert] = useState(false)
   const [recherche, setRecherche] = useState('')
 
+  // Documents dont on a le texte lu, et celui actuellement déplié. Les identifiants seuls : un texte
+  // OCR pèse des kilo-octets, et cette liste peut compter des dizaines de lignes.
+  const [avecTexteOcr, setAvecTexteOcr] = useState<Set<string>>(new Set())
+  const [ocrOuvert, setOcrOuvert] = useState<{ documentId: string; texte: string | null } | null>(null)
+
+  // Même comportement que dans PiecesTab : on ouvre en affichant « Chargement… » plutôt que de rester
+  // muet assez longtemps pour qu'on reclique.
+  async function basculerTexteOcr(documentId: string) {
+    if (ocrOuvert?.documentId === documentId) { setOcrOuvert(null); return }
+    setOcrOuvert({ documentId, texte: null })
+    const texte = await texteOcrDuDocument(documentId)
+    setOcrOuvert((actuel) => (actuel?.documentId === documentId ? { documentId, texte } : actuel))
+  }
+
   async function load() {
     setLoading(true)
     const [{ data: documentsData }, { data: sousDossiersData }] = await Promise.all([
@@ -37,6 +52,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     ])
     setDocuments(documentsData ?? [])
     setSousDossiers(sousDossiersData ?? [])
+    setAvecTexteOcr(await documentsAvecTexteOcr(dossierId))
     setLoading(false)
   }
 
@@ -123,7 +139,12 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // comme n'importe quelle autre pièce.
   async function convertirEnPiece(doc: DocumentDivers) {
     const { data: userData } = await supabase.auth.getUser()
-    const { error: insertError } = await supabase.from('pieces').insert({
+    // Le texte est lu AVANT toute suppression : il est rattaché au document, et la suppression de
+    // celui-ci l'emporterait en cascade. C'est précisément ce qui a fait perdre leur texte aux trois
+    // SNIR du dossier de test quand ils ont été déplacés vers Documents.
+    const texte = await texteOcrDuDocument(doc.id)
+
+    const { data: piece, error: insertError } = await supabase.from('pieces').insert({
       dossier_id: dossierId,
       uploaded_by: userData.user!.id,
       storage_path: doc.storage_path,
@@ -131,11 +152,15 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       sous_dossier_id: doc.sous_dossier_id,
       type_piece: 'achat',
       statut: 'a_valider',
-    })
-    if (insertError) {
-      setError(insertError.message)
+    }).select('id').single()
+    if (insertError || !piece) {
+      setError(insertError?.message ?? "La conversion n'a rien rendu.")
       return
     }
+
+    // Rattaché à la pièce avant que le document ne disparaisse — sinon le texte serait perdu au
+    // moment même où il redevient utile, sur une pièce qu'il faut justement arbitrer.
+    await enregistrerTexteOcr(dossierId, { type: 'piece', id: piece.id as string }, texte)
     await supabase.from('documents_divers').delete().eq('id', doc.id)
     load()
   }
@@ -215,13 +240,23 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
             </thead>
             <tbody>
               {filtered.map((d) => (
-                <tr key={d.id}>
+                <Fragment key={d.id}>
+                <tr>
                   <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(d.id)} onChange={() => toggleSelect(d.id)} />
                   </td>
                   <td>
                     <a href="#" onClick={(e) => { e.preventDefault(); voir(d.storage_path) }}>{d.nom_fichier}</a>
                     {d.attached_to_cotisation_id && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Rattaché à une échéance</span>}
+                    {avecTexteOcr.has(d.id) && (
+                      <button
+                        type="button"
+                        className="lien-texte-lu"
+                        onClick={(e) => { e.preventDefault(); basculerTexteOcr(d.id) }}
+                      >
+                        {ocrOuvert?.documentId === d.id ? '▾ texte lu' : '▸ texte lu'}
+                      </button>
+                    )}
                   </td>
                   <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <select
@@ -241,6 +276,26 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                     <button className="btn btn-danger btn-sm" onClick={() => supprimer(d)}>Supprimer</button>
                   </td>
                 </tr>
+                {ocrOuvert?.documentId === d.id && (
+                  <tr>
+                    <td colSpan={6} style={{ background: 'var(--color-surface-2)' }}>
+                      <div className="texte-lu">
+                        <div className="texte-lu-entete">
+                          <strong>Texte lu sur le document</strong>
+                          <span className="muted">
+                            Tel que la reconnaissance automatique l'a lu, sans correction. Sur un
+                            relevé SNIR ou un appel de cotisation, c'est ce qui permet de retrouver un
+                            montant sans rouvrir le PDF.
+                          </span>
+                        </div>
+                        {ocrOuvert.texte === null
+                          ? <p className="muted" style={{ margin: 0 }}>Chargement…</p>
+                          : <pre className="texte-lu-corps">{ocrOuvert.texte}</pre>}
+                      </div>
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               ))}
             </tbody>
           </table>

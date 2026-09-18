@@ -81,7 +81,7 @@ export async function relireDocuments(
       // indatable repartirait aussi sans texte — alors que c'est justement celle dont l'opérateur a
       // le plus besoin de savoir ce qu'elle contient.
       if (texteOcrExploitable(extraction.texte_ocr)) {
-        await enregistrerTexteOcr(piece.dossier_id, piece.id, extraction.texte_ocr)
+        await enregistrerTexteOcr(piece.dossier_id, { type: 'piece', id: piece.id }, extraction.texte_ocr)
         resultat.textesArchives.push(piece.nom_fichier)
       }
 

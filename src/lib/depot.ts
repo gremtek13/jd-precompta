@@ -91,6 +91,10 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
         dossier_id: dossierId, storage_path: path, storage_hash: hash, nom_fichier: file.name,
         categorie: orientation.categorie,
       })
+      // Le texte lu vaut pour un document autant que pour une pièce : Textract a déjà tourné, il est
+      // déjà payé. Le jeter ici rendait illisible tout ce qui part en archive — relevés, cotisations,
+      // et les SNIR qui portent les honoraires de l'année.
+      await enregistrerTexteOcr(dossierId, { type: 'document', id }, extraction?.texte_ocr)
       return { statut: 'ok', cible: { type: 'document', id } }
     } else {
       const { data: userData } = await supabase.auth.getUser()
@@ -107,7 +111,7 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
       // Après l'insertion, jamais avant : la policy exige que la pièce existe déjà. N'échoue jamais
       // le dépôt — ce texte est un confort de relecture, et perdre le document du client pour ça
       // serait sans commune mesure (voir lib/texteOcr.ts).
-      await enregistrerTexteOcr(dossierId, id, extraction?.texte_ocr)
+      await enregistrerTexteOcr(dossierId, { type: 'piece', id }, extraction?.texte_ocr)
       return { statut: 'ok', cible: { type: 'piece', id } }
     }
   } catch (err) {

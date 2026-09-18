@@ -9,12 +9,14 @@ const reponses = {
   upsert: { error: null as { message: string } | null },
 }
 let upsert: Record<string, unknown> | null = null
+let onConflict: string | undefined
 
 vi.mock('./supabase', () => ({
   supabase: {
     from: () => ({
-      upsert: (ligne: Record<string, unknown>) => {
+      upsert: (ligne: Record<string, unknown>, opts?: { onConflict?: string }) => {
         upsert = ligne
+        onConflict = opts?.onConflict
         return Promise.resolve(reponses.upsert)
       },
       select: () => {
@@ -34,6 +36,7 @@ const { enregistrerTexteOcr, piecesAvecTexteOcr, texteOcrDeLaPiece, texteOcrExpl
 
 beforeEach(() => {
   upsert = null
+  onConflict = undefined
   reponses.select = { data: [] }
   reponses.single = { data: null }
   reponses.upsert = { error: null }
@@ -64,29 +67,49 @@ describe('texteOcrExploitable — rien lu n’est pas « rien dessus »', () => 
 
 describe('enregistrerTexteOcr', () => {
   it('archive le texte sous la pièce et son dossier', () => {
-    return enregistrerTexteOcr('d1', 'p1', 'FOUR MICRO-ONDES').then(() => {
+    return enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, 'FOUR MICRO-ONDES').then(() => {
       expect(upsert).toMatchObject({ dossier_id: 'd1', piece_id: 'p1', texte: 'FOUR MICRO-ONDES' })
     })
   })
 
   it('nettoie le texte avant de l’archiver', () => {
-    return enregistrerTexteOcr('d1', 'p1', '  FOUR MICRO-ONDES  ').then(() => {
+    return enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, '  FOUR MICRO-ONDES  ').then(() => {
       expect(upsert).toMatchObject({ texte: 'FOUR MICRO-ONDES' })
     })
   })
 
   it('n’écrit rien quand la lecture n’a rien donné', () => {
-    return enregistrerTexteOcr('d1', 'p1', '   ')
+    return enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, '   ')
       .then(() => { expect(upsert).toBeNull() })
-      .then(() => enregistrerTexteOcr('d1', 'p1', undefined))
+      .then(() => enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, undefined))
       .then(() => { expect(upsert).toBeNull() })
+  })
+
+  it('archive aussi le texte d’un DOCUMENT, pas seulement celui d’une pièce', () => {
+    // Le défaut corrigé : Textract tournait sur tous les fichiers, mais seul le texte des pièces
+    // était conservé. Relevés, cotisations, attestations et SNIR perdaient le leur — après l'avoir
+    // payé. Soixante-sept documents en production.
+    return enregistrerTexteOcr('d1', { type: 'document', id: 'doc1' }, 'RELEVE SNIR 2025').then(() => {
+      expect(upsert).toMatchObject({ dossier_id: 'd1', document_id: 'doc1', texte: 'RELEVE SNIR 2025' })
+      expect(upsert).not.toHaveProperty('piece_id')
+    })
+  })
+
+  it('vise explicitement la bonne colonne en conflit', () => {
+    // Sans `onConflict`, l'upsert porterait sur la clé primaire — devenue un `id` de substitution,
+    // puisque `piece_id` doit pouvoir être nul. Il ne trouverait donc jamais de conflit et empilerait
+    // un doublon à chaque relecture. C'est la panne silencieuse que ce projet connaît déjà.
+    return enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, 'X')
+      .then(() => { expect(onConflict).toBe('piece_id') })
+      .then(() => enregistrerTexteOcr('d1', { type: 'document', id: 'doc1' }, 'X'))
+      .then(() => { expect(onConflict).toBe('document_id') })
   })
 
   it('ne fait pas échouer l’appelant quand la base refuse', () => {
     // Ce texte est un confort de relecture, pas une donnée comptable. Un dépôt qui échouerait parce
     // que l'OCR n'a pas pu être archivé ferait perdre au client son document — sans commune mesure.
     reponses.upsert = { error: { message: 'new row violates row-level security policy' } }
-    return expect(enregistrerTexteOcr('d1', 'p1', 'FOUR')).resolves.toBeUndefined()
+    return expect(enregistrerTexteOcr('d1', { type: 'piece', id: 'p1' }, 'FOUR')).resolves.toBeUndefined()
   })
 })
 

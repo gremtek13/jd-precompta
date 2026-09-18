@@ -42,10 +42,11 @@ vi.mock('./supabase', () => {
             }),
           }
         },
-        // Archivage du texte lu — sans effet sur les assertions de ce fichier, mais le faux client
-        // doit le porter, sinon l'import échouerait sur un `upsert` absent.
+        // Archivage du texte lu. La cible lit `document_id` autant que `piece_id` : le texte est
+        // désormais conservé pour les deux, et un faux client qui n'en connaîtrait qu'un rendrait le
+        // test aveugle à la moitié du comportement.
         upsert: (ligne: Record<string, unknown>) => {
-          journal.push({ action: `upsert:${table}`, cible: String(ligne.piece_id ?? '') })
+          journal.push({ action: `upsert:${table}`, cible: String(ligne.piece_id ?? ligne.document_id ?? '') })
           return Promise.resolve({ error: null })
         },
       }),
@@ -135,6 +136,15 @@ describe('importerFichierDossier', () => {
     etat.extraction = { classification: 'releve_bancaire' }
     await importer('releve.pdf')
     expect(journal.map((j) => j.action)).toContain('insert:documents_divers')
+  })
+
+  it('archive le texte lu d’un DOCUMENT, pas seulement celui d’une pièce', async () => {
+    // Même règle que côté client (lib/depot.test.ts) : les deux pipelines sont jumeaux, et c'est par
+    // l'import en masse que 67 documents sont arrivés en perdant chacun son texte.
+    etat.extraction = { classification: 'releve_bancaire', texte_ocr: 'RELEVE SNIR 2025' }
+    const resultat = await importer('snir.pdf')
+    expect(resultat.statut).toBe('ok')
+    expect(journal.find((j) => j.action === 'upsert:piece_textes_ocr')?.cible).toBe('id-documents_divers')
   })
 
   it('range un justificatif de recette dans Pièces, en vente', async () => {
