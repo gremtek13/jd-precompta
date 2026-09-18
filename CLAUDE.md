@@ -824,6 +824,17 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   était la seule classification restant en Pièces ; le premier justificatif de recette la rendait
   fausse **des deux côtés à la fois**. Une répartition exhaustive, à un seul endroit, ne peut plus
   diverger — et une classification ajoutée sans être traitée ne compile pas.
+  **Il y en avait une TROISIÈME, et elle a été oubliée le jour même.** `receive-email` (Edge
+  Function, donc auto-portée : elle ne peut rien importer de `src/`) portait sa propre version du
+  test binaire `classification === "facture"`. Un bordereau reçu par e-mail partait donc vers
+  `documents_divers` avec `categorie: "facture_vente"`, valeur que le CHECK de la table refuse :
+  insertion en échec, pièce jointe **perdue**, fichier orphelin dans le stockage, et pour seule
+  trace un `console.error`. Son union de classifications mentait aussi — restée à quatre valeurs
+  quand la classification en rendait six. Corrigé, et surtout **gardé par un test**
+  (`receiveEmailOrientation.test.ts`) qui lit la vraie source déployée et compare sa copie à
+  `orientationDe` sur chaque classification, dont qu'aucune ne produise une catégorie que le CHECK
+  refuserait. Règle qui en découle : **chercher toutes les copies avant de corriger la première**,
+  Edge Functions comprises — `grep` sur la valeur, pas sur le nom de la fonction.
 - **Le « pourquoi » d'une dépense ne s'extrait pas, il se demande.** L'OCR lit
   « BOULANGER MARSEILLE, 199,99 € » et s'arrête là : il ne dira jamais si c'est le
   four de la salle d'attente ou un cadeau, et c'est pourtant ce qui décide de la
@@ -872,7 +883,7 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 576 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 580 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,

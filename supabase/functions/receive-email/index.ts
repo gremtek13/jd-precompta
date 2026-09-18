@@ -39,14 +39,44 @@ async function hashBytes(bytes: Uint8Array): Promise<string> {
   return Array.from(new Uint8Array(digest)).map((b) => b.toString(16).padStart(2, "0")).join("")
 }
 
+// Doit lister TOUTES les classifications que rend `extract-piece`, y compris celles ajoutées après
+// coup : cette union était restée à quatre valeurs alors que la classification en rendait six, et un
+// type qui ment ne protège de rien — c'est ce qui a laissé passer le défaut corrigé plus bas.
 interface ExtractionPiece {
-  classification: "releve_bancaire" | "cotisation" | "attestation" | "facture"
+  classification: "releve_bancaire" | "cotisation" | "attestation" | "autre" | "facture" | "facture_vente"
   date_piece: string | null
   tiers: string | null
   montant_ht: number | null
   montant_tva: number | null
   montant_ttc: number | null
   confiance: "haute" | "moyenne" | "basse"
+}
+
+// Où va un document une fois classé, et sous quelle forme. Copie assumée de `orientationDe`
+// (src/lib/extraction.ts) : cette fonction est auto-portée, elle ne peut rien importer de src/.
+//
+// **C'est la troisième copie de cette règle, et celle qui a été oubliée.** `depot.ts` et
+// `importFichiers.ts` ont été unifiés derrière `orientationDe` quand les bordereaux de
+// télétransmission sont devenus des recettes ; ce chemin-ci, lui, est resté sur son test binaire
+// `classification === "facture"`. Conséquence en production : un bordereau reçu par e-mail tombait
+// dans la branche « Documents » avec `categorie: "facture_vente"`, une valeur que le CHECK de
+// `documents_divers` refuse — l'insertion échouait, la pièce jointe était perdue et le fichier restait
+// orphelin dans le stockage. Le client envoyait son bordereau, rien n'arrivait, et seul un
+// `console.error` en gardait trace.
+//
+// La leçon tient en une ligne : une règle dupliquée se corrige dans TOUTES ses copies le même jour.
+// `receiveEmailOrientation.test.ts` lit désormais cette source-ci et la source de `src/lib` pour
+// vérifier qu'elles rendent la même chose sur toutes les classifications.
+type ClassificationDocument = ExtractionPiece["classification"]
+type CategorieDocument = "releve_bancaire" | "cotisation" | "attestation" | "autre"
+type Orientation =
+  | { destination: "pieces"; type_piece: "achat" | "vente" }
+  | { destination: "documents"; categorie: CategorieDocument }
+
+function orientationDe(classification: ClassificationDocument): Orientation {
+  if (classification === "facture") return { destination: "pieces", type_piece: "achat" }
+  if (classification === "facture_vente") return { destination: "pieces", type_piece: "vente" }
+  return { destination: "documents", categorie: classification }
 }
 
 // Même appel que celui que fait le navigateur (lib/extraction.ts côté client) mais depuis le serveur —
@@ -188,21 +218,20 @@ Deno.serve(async (req: Request) => {
 
       // Un CSV n'est jamais envoyé à Textract (relevés/factures en PDF ou image uniquement) — classé
       // directement en relevé bancaire sur son extension, comme les autres points d'entrée. Les autres
-      // formats passent par la même extraction/classification que l'import manuel ou en masse : une
-      // facture (ou une extraction en échec) atterrit dans Pièces à compléter/vérifier, le reste
-      // (relevé, cotisation, attestation) dans Documents.
+      // formats passent par la même extraction/classification que l'import manuel ou en masse.
       const estCsv = nomFichier.toLowerCase().endsWith(".csv")
       const extraction = estCsv ? null : await classifierEtExtraire(bytes, supabaseUrl, serviceRoleKey)
       const classification = estCsv ? "releve_bancaire" : (extraction?.classification ?? "facture")
+      const orientation = orientationDe(classification)
 
-      const insertError = classification === "facture"
+      const insertError = orientation.destination === "pieces"
         ? (await supabase.from("pieces").insert({
             dossier_id: dossier.id,
             source: "email",
             storage_path: path,
             storage_hash: hash,
             nom_fichier: nomFichier,
-            type_piece: "achat",
+            type_piece: orientation.type_piece,
             statut: "a_valider",
             date_piece: extraction?.date_piece ?? null,
             tiers: extraction?.tiers ?? null,
@@ -216,11 +245,16 @@ Deno.serve(async (req: Request) => {
             storage_path: path,
             storage_hash: hash,
             nom_fichier: nomFichier,
-            categorie: classification,
+            categorie: orientation.categorie,
           })).error
 
       if (insertError) {
+        // Le fichier est dans le stockage mais rien ne pointe dessus : on le retire avant de passer à
+        // la pièce jointe suivante. Sans ça il y reste orphelin, invisible de tout écran, et seule la
+        // suppression du dossier entier l'aurait nettoyé — même règle que `depot.ts` et
+        // `importFichiers.ts`, qui la portent depuis longtemps.
         console.error("Insertion échouée:", fichier.id, insertError)
+        await supabase.storage.from("pieces").remove([path])
         continue
       }
 
