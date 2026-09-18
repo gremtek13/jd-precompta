@@ -331,8 +331,11 @@ export function violationsOrdre(
 //
 // Ce qu'il coûtait ici, mesuré en production le 18/09/2026 : les DIX catégories et les HUIT natures
 // d'immobilisation du cabinet sont partagées, aucune n'appartient à un dossier. Un export « direct »
-// rendait donc zéro ligne pour ces deux tables, pendant que 76 pièces catégorisées sur 76 et une
-// immobilisation sur deux les pointaient. Et `pieces.categorie_id` comme `immobilisations.nature_id`
+// rendait donc zéro ligne pour ces deux tables, pendant que les 28 pièces catégorisées du cabinet —
+// toutes les 28 — et une immobilisation sur deux les pointaient. (Un premier comptage annonçait 76 :
+// il additionnait les pièces SANS catégorie, qu'une jointure externe range du même côté que celles
+// sur catégorie partagée. Le fait ne change pas, le chiffre si.)
+// Et `pieces.categorie_id` comme `immobilisations.nature_id`
 // sont en NO ACTION : la restauration se serait arrêtée net sur `pieces`, la plus grosse table de la
 // chaîne, sans que rien en aval ne soit tenté. D'où `partage`, qui lit les deux.
 //
