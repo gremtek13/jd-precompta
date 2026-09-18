@@ -403,3 +403,27 @@ export async function verifierRestauration(
   }
   return ecarts
 }
+
+// Fait sortir la sauvegarde de la plateforme : un fichier sur la machine de qui la déclenche.
+//
+// C'est la partie la plus simple du chantier et la seule qui compte vraiment le jour venu. Une
+// sauvegarde qui reste chez l'hébergeur ne protège que d'une erreur de manipulation ; elle ne protège
+// ni d'un compte fermé, ni d'un projet supprimé, ni d'un prestataire qui disparaît. Où le fichier va
+// ensuite — disque externe, coffre, service tiers — est une décision du cabinet, pas de l'application.
+//
+// Rend le nom du fichier écrit, pour que l'écran puisse le dire : une sauvegarde dont on ne sait pas
+// où elle est atterri n'en est pas tout à fait une.
+export async function telechargerSauvegarde(sauvegarde: SauvegardeDossier): Promise<string> {
+  const { nomFichierSauvegarde, serialiserSauvegarde } = await import('./sauvegardeFichier')
+  const nom = nomFichierSauvegarde(sauvegarde.manifeste)
+  const blob = new Blob([await serialiserSauvegarde(sauvegarde)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = nom
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  return nom
+}
