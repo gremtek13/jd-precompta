@@ -278,17 +278,45 @@ export function violationsOrdre(
 // les lignes de facture et tous les mouvements de compte courant perdus, en silence. C'est la même
 // classe de panne que les liens en SET NULL plus haut, et elle mérite la même méfiance.
 //
-// Trois tables, enfin, n'appartiennent à aucun dossier : le référentiel des taux de change, la liste
-// des super-administrateurs et les cabinets eux-mêmes. Les inclure dans l'export d'un dossier serait
-// faux — on restaurerait un référentiel mondial en croyant restaurer un client.
+// Le piège suivant, découvert en écrivant l'export réel, et bien plus coûteux : `dossier_id` est
+// NULLABLE sur deux tables — `categories` et `natures_immobilisation`. Elles mélangent les lignes
+// propres à un dossier et des lignes PARTAGÉES par tous, marquées d'un `dossier_id` nul. Or en SQL une
+// comparaison avec NULL n'est jamais vraie : `WHERE dossier_id = <le dossier>` écarte les lignes
+// partagées sans le dire. C'est mot pour mot le défaut du filtre de période sur les pièces sans date,
+// revenu sur une autre colonne.
+//
+// Ce qu'il coûtait ici, mesuré en production le 18/09/2026 : les DIX catégories et les HUIT natures
+// d'immobilisation du cabinet sont partagées, aucune n'appartient à un dossier. Un export « direct »
+// rendait donc zéro ligne pour ces deux tables, pendant que 76 pièces catégorisées sur 76 et une
+// immobilisation sur deux les pointaient. Et `pieces.categorie_id` comme `immobilisations.nature_id`
+// sont en NO ACTION : la restauration se serait arrêtée net sur `pieces`, la plus grosse table de la
+// chaîne, sans que rien en aval ne soit tenté. D'où `partage`, qui lit les deux.
+//
+// Ce qui reste dehors, et la règle qui le décide : une table est exclue de l'export d'un dossier
+// uniquement si RIEN dans l'export ne la pointe. Les taux de change, les super-administrateurs et les
+// cabinets eux-mêmes remplissent cette condition — sauf `cabinets`, que `dossiers.cabinet_id` pointe,
+// et qui est donc un prérequis explicite de la base d'arrivée (voir `referencesExternes`). Les tables
+// de niveau cabinet sont dehors pour une raison de sens, pas de graphe : elles décrivent qui dirige le
+// cabinet et quelles règles il partage, pas ce que contient un dossier. Les embarquer ferait
+// réinsérer, en restaurant un client, la liste des administrateurs du cabinet.
+//
+// Cette règle n'est pas une intention : `parentsHorsPlan` la vérifie à chaque exécution des tests.
 export type CheminDossier =
-  /** La table porte `dossier_id` : lecture directe. */
+  /** La ligne `dossiers` elle-même : c'est ce qu'on restaure, tout le reste y pend. */
+  | { acces: 'le_dossier' }
+  /** `dossier_id` NOT NULL : toutes les lignes du dossier, et rien d'autre. */
   | { acces: 'direct' }
+  /**
+   * `dossier_id` NULLABLE : la table mélange les lignes d'un dossier et des lignes PARTAGÉES entre
+   * tous (`dossier_id` nul). Les deux doivent être lues — voir le commentaire ci-dessous, c'est le
+   * piège qui rendait cet export inexploitable.
+   */
+  | { acces: 'partage' }
   /** Pas de `dossier_id` : les lignes se prennent par les identifiants déjà lus dans `parent`. */
   | { acces: 'par_parent'; parent: string; colonne: string }
-  /** Table de niveau cabinet : elle suit le cabinet, pas le dossier. */
+  /** Table de niveau cabinet : elle décrit le cabinet, pas le dossier — hors de cet export. */
   | { acces: 'cabinet' }
-  /** Référentiel partagé, qui n'appartient à aucun dossier ni à aucun cabinet. */
+  /** Référentiel que rien dans l'export ne pointe : hors de cet export lui aussi. */
   | { acces: 'global' }
 
 export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
@@ -296,15 +324,17 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   super_admins: { acces: 'global' },
   taux_change_bce: { acces: 'global' },
 
-  dossiers: { acces: 'cabinet' },
+  dossiers: { acces: 'le_dossier' },
   cabinet_admins: { acces: 'cabinet' },
   tiers_categories_cabinet: { acces: 'cabinet' },
+
+  categories: { acces: 'partage' },
+  natures_immobilisation: { acces: 'partage' },
 
   facture_lignes: { acces: 'par_parent', parent: 'factures_emises', colonne: 'facture_id' },
   mouvements_cca: { acces: 'par_parent', parent: 'comptes_courants_associes', colonne: 'compte_id' },
 
   agent_conversations: { acces: 'direct' },
-  categories: { acces: 'direct' },
   comptes_courants_associes: { acces: 'direct' },
   controles_releves_bancaires: { acces: 'direct' },
   cotisations_declarees: { acces: 'direct' },
@@ -321,7 +351,6 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   informations_dossier: { acces: 'direct' },
   lignes_bancaires: { acces: 'direct' },
   memberships: { acces: 'direct' },
-  natures_immobilisation: { acces: 'direct' },
   packs: { acces: 'direct' },
   piece_commentaires: { acces: 'direct' },
   piece_textes_ocr: { acces: 'direct' },
@@ -350,13 +379,30 @@ export interface EtapeExport {
 // L'ordre de restauration convient tel quel, puisqu'un parent y précède toujours ses enfants ; on le
 // réutilise plutôt que d'en tenir un second, qui finirait par diverger.
 //
-// Les tables globales sont exclues : un export de dossier qui embarquerait le référentiel des taux de
-// change laisserait croire, à la restauration, qu'on rétablit un client alors qu'on écrase un
-// référentiel partagé par tous.
-export function planExportDossier(ordre: readonly string[] = ORDRE_RESTAURATION): EtapeExport[] {
+// Sont exclues les tables que rien dans l'export ne pointe (`global`) et celles qui décrivent le
+// cabinet plutôt que le dossier (`cabinet`). Attention à ne pas confondre avec `partage` : une ligne
+// partagée est bien dans l'export, parce que les pièces du dossier la pointent — ce qui la distingue
+// d'un référentiel, c'est qu'elle sera réinsérée seulement si elle manque (voir `estLignePartagee`).
+export function planExportDossier(
+  ordre: readonly string[] = ORDRE_RESTAURATION,
+  chemins: Readonly<Record<string, CheminDossier>> = CHEMINS_DOSSIER,
+): EtapeExport[] {
   return ordre
-    .map((table) => ({ table, chemin: CHEMINS_DOSSIER[table] }))
-    .filter((e): e is EtapeExport => e.chemin != null && e.chemin.acces !== 'global')
+    .map((table) => ({ table, chemin: chemins[table] }))
+    .filter((e): e is EtapeExport => e.chemin != null && e.chemin.acces !== 'global' && e.chemin.acces !== 'cabinet')
+}
+
+// Vrai quand la ligne appartient à tout le cabinet plutôt qu'au dossier exporté.
+//
+// Se lit dans la donnée elle-même (`dossier_id` nul) plutôt que dans une déclaration à tenir à jour à
+// côté : une seconde liste finirait par diverger de la première, et rien ne le dirait.
+//
+// La conséquence est au moment de la restauration : une ligne partagée est réinsérée SEULEMENT si elle
+// manque. Elle ne se réécrit jamais — une catégorie renommée depuis la sauvegarde, ou dont le compte
+// comptable a été corrigé, appartient à tous les dossiers du cabinet, et restaurer un client n'est pas
+// une raison de la ramener en arrière pour les autres.
+export function estLignePartagee(table: string, ligne: Record<string, unknown>): boolean {
+  return CHEMINS_DOSSIER[table]?.acces === 'partage' && ligne.dossier_id == null
 }
 
 /** Une table dont on ne saurait pas lire les lignes : elle serait absente de tout export, en silence. */
@@ -390,6 +436,57 @@ export function tablesSansChemin(
     }
   }
   return problemes
+}
+
+/** Une table que l'export pointe sans la lire : la restauration s'arrêtera dessus. */
+export interface ParentHorsPlan {
+  parent: string
+  /** Les tables du plan qui la pointent. */
+  pointeePar: string[]
+  /** Vrai quand le lien accepte NULL : la restauration pourrait passer en sacrifiant le lien. */
+  effacable: boolean
+}
+
+// L'invariant qui aurait évité le défaut des lignes partagées, et qui l'évitera la prochaine fois.
+//
+// La règle est simple et se vérifie toute seule : si une table du plan pointe une table absente du
+// plan, alors la restauration butera dessus — soit Postgres refuse (NO ACTION), soit il faut sacrifier
+// le lien. Une seule exception est légitime, et elle doit être VOULUE, pas subie : `cabinets`, qu'un
+// export de dossier ne contient délibérément pas et que la base d'arrivée doit déjà porter.
+//
+// Écrit après coup : `categories` et `natures_immobilisation` étaient lues avec un filtre qui rendait
+// zéro ligne, donc absentes de fait de tout export, pendant que les pièces et les immobilisations les
+// pointaient. Ce contrôle-là l'aurait dit dès la première exécution des tests.
+export function parentsHorsPlan(
+  ordre: readonly string[] = ORDRE_RESTAURATION,
+  chemins: Readonly<Record<string, CheminDossier>> = CHEMINS_DOSSIER,
+): ParentHorsPlan[] {
+  const dansLePlan = new Set(planExportDossier(ordre, chemins).map((e) => e.table))
+  const parTable = new Map<string, ParentHorsPlan>()
+
+  for (const relation of RELATIONS) {
+    if (!dansLePlan.has(relation.enfant)) continue
+    if (dansLePlan.has(relation.parent)) continue
+    // Une table sans chemin déclaré relève de `tablesSansChemin`, qui le dit mieux : la compter ici
+    // aussi ferait deux alertes pour un seul défaut.
+    if (chemins[relation.parent] == null) continue
+
+    const deja = parTable.get(relation.parent)
+    if (deja) {
+      if (!deja.pointeePar.includes(relation.enfant)) deja.pointeePar.push(relation.enfant)
+      // Un parent pointé par plusieurs liens n'est effaçable que si TOUS le sont : il suffit d'un
+      // lien obligatoire pour que la restauration s'arrête.
+      deja.effacable = deja.effacable && relation.aLaSuppression === 'met_a_null'
+      continue
+    }
+    parTable.set(relation.parent, {
+      parent: relation.parent,
+      pointeePar: [relation.enfant],
+      effacable: relation.aLaSuppression === 'met_a_null',
+    })
+  }
+
+  return [...parTable.values()].sort((a, b) => a.parent.localeCompare(b.parent))
 }
 
 // L'ordre de SUPPRESSION est l'inverse exact de l'ordre de restauration : on retire les enfants avant
