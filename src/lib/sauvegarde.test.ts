@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   comptesRequis,
+  estLignePartagee,
+  parentsHorsPlan,
   liensPerdus,
   ordreSuppression,
   planExportDossier,
@@ -147,7 +149,9 @@ describe('chemins d’accès aux lignes d’un dossier', () => {
 
   it('ordonne le plan comme la restauration', () => {
     const plan = planExportDossier().map((e) => e.table)
-    const attendu = ORDRE_RESTAURATION.filter((t) => CHEMINS_DOSSIER[t]?.acces !== 'global')
+    const attendu = ORDRE_RESTAURATION.filter(
+      (t) => CHEMINS_DOSSIER[t]?.acces !== 'global' && CHEMINS_DOSSIER[t]?.acces !== 'cabinet',
+    )
     expect(plan).toEqual([...attendu])
   })
 })
@@ -292,15 +296,14 @@ describe('comptes utilisateurs exigés par une sauvegarde', () => {
     expect(requis.facultatifs).toEqual(['u1'])
   })
 
-  it('garde les quatre tables du plan d’export qui exigent un compte', () => {
+  it('garde les trois tables du plan d’export qui exigent un compte', () => {
     // Le fait opérationnel à ne pas perdre : restaurer un dossier dans une base dont les comptes ont
-    // disparu s'arrête sur ces quatre-là — direction du cabinet, affectations d'équipe, accès
-    // clients, historique des packs. Aucune ne peut être contournée en écrivant NULL.
+    // disparu s'arrête sur ces trois-là — affectations d'équipe, accès clients, historique des packs.
+    // Aucune ne peut être contournée en écrivant NULL. (`cabinet_admins` en porte un aussi mais
+    // décrit le cabinet, pas le dossier : elle est hors du plan.)
     const tablesDuPlan = new Set(planExportDossier().map((e) => e.table))
     const bloquantes = PREREQUIS_AUTH.filter((p) => p.obligatoire && tablesDuPlan.has(p.table))
-    expect(bloquantes.map((p) => p.table).sort()).toEqual([
-      'cabinet_admins', 'dossier_assignations', 'memberships', 'packs',
-    ])
+    expect(bloquantes.map((p) => p.table).sort()).toEqual(['dossier_assignations', 'memberships', 'packs'])
   })
 
   it('ne cite jamais deux fois la même colonne', () => {
@@ -430,5 +433,98 @@ describe('plan de réinsertion', () => {
         expect.objectContaining({ table, colonne, valeurs: [{ id: 'a', valeur: 'b' }] }),
       )
     }
+  })
+})
+
+describe('lignes partagées entre tous les dossiers', () => {
+  it('lit les deux tables dont le dossier_id accepte NULL autrement que les autres', () => {
+    // Le défaut que ce chemin corrige. `categories` et `natures_immobilisation` mélangent les lignes
+    // d'un dossier et des lignes partagées (`dossier_id` nul). Les lire en « direct », donc avec
+    // `WHERE dossier_id = <le dossier>`, écarte les partagées sans le dire : en SQL, une comparaison
+    // avec NULL n'est jamais vraie. Mesuré en production le 18/09/2026 — les 10 catégories et les
+    // 8 natures du cabinet sont partagées, aucune n'appartient à un dossier : l'export en rendait
+    // ZÉRO, pendant que 76 pièces catégorisées sur 76 les pointaient.
+    expect(CHEMINS_DOSSIER.categories).toEqual({ acces: 'partage' })
+    expect(CHEMINS_DOSSIER.natures_immobilisation).toEqual({ acces: 'partage' })
+  })
+
+  it('garde ces deux tables dans le plan d’export', () => {
+    // Sans elles, `pieces.categorie_id` et `immobilisations.nature_id` — tous deux en NO ACTION —
+    // arrêtent la restauration sur `pieces`, la plus grosse table de la chaîne.
+    const plan = planExportDossier().map((e) => e.table)
+    expect(plan).toContain('categories')
+    expect(plan).toContain('natures_immobilisation')
+  })
+
+  it('laisse dehors ce qui décrit le cabinet et non le dossier', () => {
+    // Restaurer un client n'a pas à réinsérer la liste des administrateurs du cabinet ni les règles
+    // que celui-ci partage entre tous ses dossiers.
+    const plan = planExportDossier().map((e) => e.table)
+    expect(plan).not.toContain('cabinet_admins')
+    expect(plan).not.toContain('tiers_categories_cabinet')
+  })
+
+  it('reconnaît une ligne partagée à son dossier_id vide, pas à une liste tenue à côté', () => {
+    expect(estLignePartagee('categories', { id: 'c1', dossier_id: null })).toBe(true)
+    expect(estLignePartagee('categories', { id: 'c2', dossier_id: 'd1' })).toBe(false)
+  })
+
+  it('ne prend pas pour partagée une ligne d’une table qui ne l’est pas', () => {
+    // `pieces` n'a pas de lignes partagées — son `dossier_id` est NOT NULL. Si une ligne en arrivait
+    // sans dossier, la traiter comme partagée la ferait échapper à la réinsertion sans un mot.
+    expect(estLignePartagee('pieces', { id: 'p1', dossier_id: null })).toBe(false)
+  })
+})
+
+describe('tables pointées mais absentes du plan', () => {
+  it('ne laisse qu’une seule exception, et c’est une exception voulue', () => {
+    // L'invariant qui aurait dit le défaut ci-dessus dès la première exécution des tests : une table
+    // du plan qui en pointe une hors du plan fera buter la restauration. `cabinets` est la seule
+    // admise — un export de dossier ne la contient délibérément pas, la base d'arrivée doit la porter.
+    expect(parentsHorsPlan()).toEqual([
+      { parent: 'cabinets', pointeePar: ['dossiers'], effacable: false },
+    ])
+  })
+
+  it('signale une table pointée qu’on aurait sortie du plan', () => {
+    // La preuve que le contrôle détecte quelque chose : le plan d'hier, où `categories` rendait zéro
+    // ligne pendant que les pièces la pointaient.
+    const trouve = parentsHorsPlan(['dossiers', 'pieces', 'categories'], {
+      dossiers: { acces: 'le_dossier' },
+      pieces: { acces: 'direct' },
+      categories: { acces: 'global' },
+    })
+    expect(trouve).toEqual([{ parent: 'categories', pointeePar: ['pieces'], effacable: false }])
+  })
+
+  it('ne dit effaçable qu’un parent dont AUCUN lien n’est obligatoire', () => {
+    // `pieces` est pointée par des liens nullables (le rapprochement bancaire) et par des liens
+    // obligatoires (le texte OCR, en cascade). Il suffit d'un seul obligatoire pour que la
+    // restauration s'arrête : annoncer « effaçable » ferait croire qu'on peut passer outre.
+    const trouve = parentsHorsPlan(['dossiers', 'lignes_bancaires', 'piece_textes_ocr'], {
+      dossiers: { acces: 'le_dossier' },
+      lignes_bancaires: { acces: 'direct' },
+      piece_textes_ocr: { acces: 'direct' },
+      pieces: { acces: 'direct' },
+    })
+    expect(trouve).toEqual([
+      { parent: 'pieces', pointeePar: ['lignes_bancaires', 'piece_textes_ocr'], effacable: false },
+    ])
+  })
+
+  it('dit effaçable un parent dont tous les liens acceptent NULL', () => {
+    const trouve = parentsHorsPlan(['dossiers', 'lignes_bancaires'], {
+      dossiers: { acces: 'le_dossier' },
+      lignes_bancaires: { acces: 'direct' },
+      pieces: { acces: 'direct' },
+    })
+    expect(trouve).toEqual([{ parent: 'pieces', pointeePar: ['lignes_bancaires'], effacable: true }])
+  })
+
+  it('laisse tablesSansChemin dire seule ce qu’elle dit déjà', () => {
+    // Une table sans chemin déclaré est un défaut, mais `tablesSansChemin` le nomme mieux. La compter
+    // ici aussi ferait deux alertes rouges pour un seul défaut, et on apprendrait à en ignorer une.
+    expect(parentsHorsPlan(['pieces'], { pieces: { acces: 'direct' } })).toEqual([])
+    expect(tablesSansChemin(['pieces'], { pieces: { acces: 'direct' } })).toEqual([])
   })
 })
