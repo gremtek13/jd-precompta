@@ -2,7 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   liensPerdus,
   ordreSuppression,
+  planExportDossier,
+  tablesSansChemin,
   violationsOrdre,
+  CHEMINS_DOSSIER,
   ORDRE_RESTAURATION,
   RELATIONS,
   TABLES_AUTO_REFERENCEES,
@@ -88,6 +91,60 @@ describe('ordre de restauration', () => {
     ordreSuppression()
     ordreSuppression()
     expect([...ORDRE_RESTAURATION]).toEqual(avant)
+  })
+})
+
+describe('chemins d’accès aux lignes d’un dossier', () => {
+  it('déclare un chemin pour chaque table de l’ordre de restauration', () => {
+    // Le garde-fou qui compte : une table ajoutée au schéma sans chemin déclaré sortirait de tout
+    // export sans un mot, et sa disparition ne se verrait qu'à la restauration, sur un écran vide.
+    expect(tablesSansChemin()).toEqual([])
+  })
+
+  it('lit toujours une table indirecte après le parent dont elle dépend', () => {
+    // `facture_lignes` se lit par les identifiants de `factures_emises`. Inversée, la lecture se
+    // ferait avec une liste vide : zéro ligne, aucune erreur, toutes les lignes de facture perdues.
+    const chemins = {
+      facture_lignes: { acces: 'par_parent', parent: 'factures_emises', colonne: 'facture_id' },
+      factures_emises: { acces: 'direct' },
+    } as const
+    expect(tablesSansChemin(['facture_lignes', 'factures_emises'], chemins)).toEqual([
+      { table: 'facture_lignes', motif: 'parent_lu_trop_tard' },
+    ])
+    expect(tablesSansChemin(['factures_emises', 'facture_lignes'], chemins)).toEqual([])
+  })
+
+  it('signale une table sans chemin déclaré', () => {
+    expect(tablesSansChemin(['pieces'], {})).toEqual([{ table: 'pieces', motif: 'chemin_non_declare' }])
+  })
+
+  it('n’oublie pas les deux tables qui n’ont pas de dossier_id', () => {
+    // Le piège central de cet export : trente-deux tables portent `dossier_id`, deux non. Les traiter
+    // comme les autres rendrait zéro ligne pour elles — toutes les lignes de facture et tous les
+    // mouvements de compte courant, perdus en silence.
+    expect(CHEMINS_DOSSIER.facture_lignes).toEqual({ acces: 'par_parent', parent: 'factures_emises', colonne: 'facture_id' })
+    expect(CHEMINS_DOSSIER.mouvements_cca).toEqual({ acces: 'par_parent', parent: 'comptes_courants_associes', colonne: 'compte_id' })
+  })
+
+  it('exclut du plan les référentiels qui n’appartiennent à aucun dossier', () => {
+    // Embarquer les taux de change dans l'export d'un client laisserait croire, à la restauration,
+    // qu'on rétablit ce client — alors qu'on écraserait un référentiel partagé par tous les dossiers.
+    const plan = planExportDossier()
+    expect(plan.map((e) => e.table)).not.toContain('taux_change_bce')
+    expect(plan.map((e) => e.table)).not.toContain('cabinets')
+    expect(plan.map((e) => e.table)).not.toContain('super_admins')
+  })
+
+  it('garde le dossier lui-même dans le plan', () => {
+    // `dossiers` est de niveau cabinet, mais c'est la ligne qu'on restaure : l'exclure rendrait
+    // l'export inutilisable, puisque tout le reste y pend.
+    expect(planExportDossier().map((e) => e.table)).toContain('dossiers')
+  })
+
+  it('ordonne le plan comme la restauration', () => {
+    const plan = planExportDossier().map((e) => e.table)
+    const attendu = ORDRE_RESTAURATION.filter((t) => CHEMINS_DOSSIER[t]?.acces !== 'global')
+    expect(plan).toEqual([...attendu])
   })
 })
 

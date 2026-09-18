@@ -252,6 +252,129 @@ export function violationsOrdre(
   return violations
 }
 
+// Comment atteindre, pour chaque table, les lignes qui appartiennent à UN dossier.
+//
+// Le piège que ça ferme : trente-deux des quarante tables portent une colonne `dossier_id`, et on
+// serait tenté d'écrire « pour chaque table, WHERE dossier_id = ? ». Deux tables n'en ont pas et ne
+// sont atteignables que par leur parent — `facture_lignes` par sa facture, `mouvements_cca` par son
+// compte courant. Un export naïf rendrait zéro ligne pour ces deux-là, sans la moindre erreur : toutes
+// les lignes de facture et tous les mouvements de compte courant perdus, en silence. C'est la même
+// classe de panne que les liens en SET NULL plus haut, et elle mérite la même méfiance.
+//
+// Trois tables, enfin, n'appartiennent à aucun dossier : le référentiel des taux de change, la liste
+// des super-administrateurs et les cabinets eux-mêmes. Les inclure dans l'export d'un dossier serait
+// faux — on restaurerait un référentiel mondial en croyant restaurer un client.
+export type CheminDossier =
+  /** La table porte `dossier_id` : lecture directe. */
+  | { acces: 'direct' }
+  /** Pas de `dossier_id` : les lignes se prennent par les identifiants déjà lus dans `parent`. */
+  | { acces: 'par_parent'; parent: string; colonne: string }
+  /** Table de niveau cabinet : elle suit le cabinet, pas le dossier. */
+  | { acces: 'cabinet' }
+  /** Référentiel partagé, qui n'appartient à aucun dossier ni à aucun cabinet. */
+  | { acces: 'global' }
+
+export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
+  cabinets: { acces: 'global' },
+  super_admins: { acces: 'global' },
+  taux_change_bce: { acces: 'global' },
+
+  dossiers: { acces: 'cabinet' },
+  cabinet_admins: { acces: 'cabinet' },
+  tiers_categories_cabinet: { acces: 'cabinet' },
+
+  facture_lignes: { acces: 'par_parent', parent: 'factures_emises', colonne: 'facture_id' },
+  mouvements_cca: { acces: 'par_parent', parent: 'comptes_courants_associes', colonne: 'compte_id' },
+
+  agent_conversations: { acces: 'direct' },
+  categories: { acces: 'direct' },
+  comptes_courants_associes: { acces: 'direct' },
+  controles_releves_bancaires: { acces: 'direct' },
+  cotisations_declarees: { acces: 'direct' },
+  declarations_tva: { acces: 'direct' },
+  documents_divers: { acces: 'direct' },
+  dossier_assignations: { acces: 'direct' },
+  ecritures_brouillon: { acces: 'direct' },
+  emails_envoyes: { acces: 'direct' },
+  emprunts: { acces: 'direct' },
+  facture_numerotation: { acces: 'direct' },
+  facture_superpdp_events: { acces: 'direct' },
+  factures_emises: { acces: 'direct' },
+  immobilisations: { acces: 'direct' },
+  informations_dossier: { acces: 'direct' },
+  lignes_bancaires: { acces: 'direct' },
+  memberships: { acces: 'direct' },
+  natures_immobilisation: { acces: 'direct' },
+  packs: { acces: 'direct' },
+  piece_commentaires: { acces: 'direct' },
+  piece_textes_ocr: { acces: 'direct' },
+  pieces: { acces: 'direct' },
+  previsionnels_bancaires: { acces: 'direct' },
+  references_annuelles: { acces: 'direct' },
+  references_postes_annuels: { acces: 'direct' },
+  regles_bancaires_ignorees: { acces: 'direct' },
+  sous_dossiers: { acces: 'direct' },
+  superpdp_credentials: { acces: 'direct' },
+  supplements: { acces: 'direct' },
+  tiers_categories: { acces: 'direct' },
+  vehicules: { acces: 'direct' },
+}
+
+/** Une étape du plan de lecture d'un dossier, dans l'ordre où elle doit être exécutée. */
+export interface EtapeExport {
+  table: string
+  chemin: CheminDossier
+}
+
+// Le plan de lecture d'un dossier : les tables à lire, dans un ordre où chaque table atteignable
+// seulement par son parent vient APRÈS lui — sans quoi on n'aurait pas encore les identifiants
+// nécessaires pour la lire.
+//
+// L'ordre de restauration convient tel quel, puisqu'un parent y précède toujours ses enfants ; on le
+// réutilise plutôt que d'en tenir un second, qui finirait par diverger.
+//
+// Les tables globales sont exclues : un export de dossier qui embarquerait le référentiel des taux de
+// change laisserait croire, à la restauration, qu'on rétablit un client alors qu'on écrase un
+// référentiel partagé par tous.
+export function planExportDossier(ordre: readonly string[] = ORDRE_RESTAURATION): EtapeExport[] {
+  return ordre
+    .map((table) => ({ table, chemin: CHEMINS_DOSSIER[table] }))
+    .filter((e): e is EtapeExport => e.chemin != null && e.chemin.acces !== 'global')
+}
+
+/** Une table dont on ne saurait pas lire les lignes : elle serait absente de tout export, en silence. */
+export interface TableSansChemin {
+  table: string
+  motif: 'chemin_non_declare' | 'parent_lu_trop_tard'
+}
+
+// Le garde-fou permanent sur la carte ci-dessus.
+//
+// Deux façons de perdre une table sans s'en apercevoir : ne pas déclarer son chemin du tout — elle
+// sort alors de l'export sans un mot — ou déclarer un parent lu APRÈS elle, auquel cas on chercherait
+// ses lignes avec une liste d'identifiants encore vide, ce qui rend zéro ligne et aucune erreur.
+export function tablesSansChemin(
+  ordre: readonly string[] = ORDRE_RESTAURATION,
+  chemins: Readonly<Record<string, CheminDossier>> = CHEMINS_DOSSIER,
+): TableSansChemin[] {
+  const rang = new Map(ordre.map((table, i) => [table, i]))
+  const problemes: TableSansChemin[] = []
+
+  for (const table of ordre) {
+    const chemin = chemins[table]
+    if (!chemin) {
+      problemes.push({ table, motif: 'chemin_non_declare' })
+      continue
+    }
+    if (chemin.acces !== 'par_parent') continue
+    const rangParent = rang.get(chemin.parent)
+    if (rangParent === undefined || rangParent >= rang.get(table)!) {
+      problemes.push({ table, motif: 'parent_lu_trop_tard' })
+    }
+  }
+  return problemes
+}
+
 // L'ordre de SUPPRESSION est l'inverse exact de l'ordre de restauration : on retire les enfants avant
 // les parents. Déduit plutôt que réécrit — deux listes à tenir finiraient par diverger, et la seconde
 // ne serait vérifiée par personne.
