@@ -100,7 +100,16 @@ src/
 supabase/
   functions/      une Edge Function par sous-dossier, chacune auto-portante
                   (voir "Décisions techniques").
+  essais/         essais SQL à REJOUER, pas à lire (supabase/essais/restauration.sql :
+                  restaure un dossier réel dans un schéma jetable portant les vraies
+                  contraintes, compare par empreinte, puis se supprime).
+  schema/         export du schéma, une migration par fichier — voir PLAN_DE_REPRISE.md.
+                  Ce n'est PAS la source de vérité : la base l'est, et les migrations
+                  continuent de s'appliquer par l'outil MCP.
 public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
+PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dépôt Git et
+                  pas dans Notion ni dans l'application : un plan de reprise hébergé sur
+                  ce dont il faut se passer n'est pas un plan de reprise.
 .github/workflows/deploy.yml   déploiement continu sur push vers main.
 ```
 
@@ -326,6 +335,13 @@ public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
   `agent-comptable`).
 - Export de pack (ZIP + Excel récapitulatif) à la demande, export global
   d'un cabinet, export de sauvegarde avant suppression d'un dossier/cabinet.
+- Sauvegarde et restauration d'un dossier (`lib/sauvegarde.ts` pour le socle pur,
+  `lib/sauvegardeDonnees.ts` pour les lectures/écritures, `lib/sauvegardeFichier.ts`
+  pour le fichier). Téléchargement depuis l'onglet Informations d'un dossier,
+  restauration depuis l'écran super-admin. **À ne pas confondre avec un pack** : un
+  pack contient les FICHIERS, une sauvegarde contient les LIGNES qui les relient ; il
+  faut les deux pour repartir de zéro, et c'est la confusion la plus coûteuse à laisser
+  s'installer. Voir PLAN_DE_REPRISE.md.
 - Ergonomie issue d'un audit comparatif avec un logiciel concurrent (MEG,
   utilisé par l'expert-comptable de l'utilisateur) : fiche pièce en deux
   colonnes avec pied de formulaire fixe ; exercice unifié en en-tête du
@@ -981,6 +997,49 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   cette règle qui la rend sûre à lancer sur un dossier entier de pièces déjà
   validées et corrigées à la main.
 
+- **`ON DELETE SET NULL` ne relâche RIEN à l'insertion.** Le socle de sauvegarde affirmait qu'une
+  ligne dont le parent manque est acceptée et le lien mis à NULL en silence. Faux, vérifié en base
+  (schéma jetable, une relation SET NULL) : Postgres refuse par `foreign_key_violation`, exactement
+  comme sur les autres. `ON DELETE` ne décrit que la suppression du parent. Le danger est ailleurs et
+  il est pire — c'est NOUS qui produisons le silence : face à un refus sur une colonne nullable, la
+  correction qui vient à l'esprit est d'y écrire NULL pour que ça passe, et ça passe. Neuf relations
+  du graphe le permettent, et ce sont celles qui portent le rapprochement bancaire et le lien entre
+  une écriture et sa pièce. D'où `LienPerdu.effacable`, qui ne dit pas « Postgres se taira » mais
+  « ce lien peut être sacrifié pour que la restauration passe » — donc : ne le sacrifie pas sans le
+  savoir. Et `restaurerSauvegarde` refuse plutôt que de le faire.
+- **Un `dossier_id` NULLABLE transforme `WHERE dossier_id = ?` en perte silencieuse.** Deux tables
+  seulement sont concernées — `categories` et `natures_immobilisation` — et elles mélangent les
+  lignes d'un dossier avec des lignes PARTAGÉES par tout le cabinet (`dossier_id` nul). En SQL une
+  comparaison avec NULL n'est jamais vraie : le filtre les écarte sans le dire. Mesuré en production :
+  les 10 catégories et les 8 natures du cabinet sont partagées, aucune n'appartient à un dossier —
+  l'export en rendait donc ZÉRO, pendant que les 28 pièces catégorisées, une immobilisation sur deux
+  et les 7 règles tiers les pointaient. `pieces.categorie_id` étant en NO ACTION, la restauration
+  s'arrêtait net sur `pieces`. C'est mot pour mot le défaut du filtre de période sur les pièces sans
+  date, revenu sur une autre colonne — et revenu dans le fichier dont l'en-tête met en garde contre
+  « pour chaque table, WHERE dossier_id = ? ». **Savoir qu'un piège existe ne suffit pas à ne pas y
+  tomber ; seul un contrôle qui tourne y suffit** (`parentsHorsPlan`).
+- **`id` n'est pas la clé primaire partout.** Six tables ont une autre clé et aucune des six n'a même
+  de colonne `id` : `cabinet_admins`, `super_admins`, `taux_change_bce`, et surtout trois du plan
+  d'export d'un dossier — `facture_numerotation` (dossier_id, annee, type), `previsionnels_bancaires`
+  et `superpdp_credentials` (dossier_id). Conséquence : une lecture paginée triée sur `id` échoue
+  franchement sur elles, et une lecture NON triée rend des doublons et des trous sans erreur, Postgres
+  n'étant pas tenu de garder le même ordre d'une tranche à l'autre. D'où `CLES_PRIMAIRES`. Ces trois
+  tables sont minuscules par nature, donc la pagination ne s'y déclenchera jamais en pratique —
+  raison de plus de ne pas les traiter à part : **un mécanisme dont la justesse dépend de la petitesse
+  des données tombera le jour où elles grandissent.**
+- **Une table auto-référencée passe dans UN lot et échoue en DEUX.** Vérifié sur la vraie définition
+  de `factures_emises` : Postgres accepte un avoir placé avant sa facture d'origine tant que les deux
+  lignes partent dans la MÊME commande INSERT, et refuse dès qu'elles partent en deux commandes. Or
+  toute réinsertion découpe ses écritures en lots. Sans double passe (colonne à NULL puis reposée),
+  une table restaurée d'un bloc passerait et la même en deux lots échouerait — une panne qui
+  n'apparaît qu'en production, seule assez grosse pour franchir le seuil.
+- **Le plan Supabase `free` ne fournit AUCUNE sauvegarde automatique** — ni quotidienne, ni PITR, ce
+  sont des fonctions du plan Pro (`get_organization` sur `dloewvpmposfbvdwtqfz`). La sauvegarde de
+  l'application n'est donc pas une ceinture en plus des bretelles de l'hébergeur : il n'y a pas de
+  bretelles, et elle ne part pas toute seule. Voir PLAN_DE_REPRISE.md, qui liste aussi ce qui n'est
+  PAS sauvegardé et qu'on découvrirait sinon en pleine reprise — au premier rang les comptes
+  `auth.users`, qu'il faut recréer AVEC leurs UUID d'origine, quatre colonnes du schéma les exigeant
+  en NOT NULL sans contournement possible.
 - **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
   composants, les policies RLS et les Edge Functions restent vérifiés par la
   relecture de code, les advisors Supabase et des tests manuels réels (y
@@ -989,12 +1048,13 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 704 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 775 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
 `relevePdf.ts` pour le PDF), la génération des packs et l'export d'un cabinet
-(`packGenerator.ts`, `exportCabinet.ts`) et le dépôt de fichiers côté client
+(`packGenerator.ts`, `exportCabinet.ts`), la sauvegarde et la restauration d'un dossier
+(`sauvegarde.ts`, `sauvegardeDonnees.ts`, `sauvegardeFichier.ts`) et le dépôt de fichiers côté client
 (`depot.ts`) comme côté cabinet (`importFichiers.ts`), et le moteur de recherche partagé
 par tous les écrans (`recherche.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
