@@ -1,0 +1,13 @@
+-- `pack_pieces` (pack_id, piece_id) devait tracer la composition de chaque pack livré au
+-- comptable. Le générateur ne l'a jamais écrite : il enregistre `packs.nb_pieces` (un compteur)
+-- et les chemins du ZIP et de l'Excel, la composition réelle vivant dans les fichiers livrés.
+--
+-- Vérifié avant suppression, en base et dans le code : 0 ligne alors qu'un pack a réellement été
+-- généré (26/08/2026, 1 pièce) — donc contournée, pas « pas encore utilisée » ; 0 clé étrangère
+-- entrante, 0 vue dépendante, 0 trigger, 0 fonction la mentionnant, 0 référence dans le front
+-- comme dans les Edge Functions.
+--
+-- Elle laissait une policy RLS à maintenir et une table de plus à comprendre pour rien. Si le
+-- besoin de savoir « quelles pièces dans le pack X » revient un jour, il se reconstruit depuis la
+-- période du pack et le statut des pièces, ou justifiera une table réellement alimentée.
+drop table public.pack_pieces;

@@ -74,11 +74,12 @@ découvre avant.
 3. **Les secrets de fonctions** : `RESEND_API_KEY`, les identifiants Bedrock. À reposer dans les
    secrets Supabase.
 4. **Le domaine d'envoi et de réception** `precompta.jdarnis.fr` chez Resend (vérification DNS).
-5. **Le schéma lui-même.** Les migrations sont appliquées via l'outil MCP Supabase et il n'y a pas de
-   dossier `supabase/migrations` local — c'est une faiblesse connue de ce plan de reprise. Sur une
-   base entièrement neuve, le schéma est à reconstruire depuis l'historique des migrations du projet
-   Supabase, qui disparaît avec lui. **Si une seule chose doit être améliorée dans ce document, c'est
-   celle-là** : exporter le schéma (`pg_dump --schema-only`) à côté des sauvegardes de données.
+5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan, elle est fermée.**
+   Les 54 migrations du projet sont désormais exportées dans `supabase/schema/`, une par fichier,
+   telles que la base les a enregistrées, et vérifiées une à une par empreinte. Elles restent un
+   EXPORT : la source de vérité est la base, les migrations continuent de s'appliquer par l'outil
+   MCP, et l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie
+   en une ligne — à rejouer avant de compter dessus, et après toute nouvelle migration.
 
 ---
 
@@ -88,7 +89,10 @@ Chaque étape suppose la précédente. Les sauter, c'est buter sur une erreur de
 incompréhensible trois étapes plus loin.
 
 1. **Le projet Supabase** — recréer, région `eu-west-1` (RGPD, et c'est là que tourne Bedrock).
-2. **Le schéma** — voir la faiblesse ci-dessus. Sans lui, rien d'autre n'est possible.
+2. **Le schéma** — appliquer les 54 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
+   un (`apply_migration`). Ils se suivent : plusieurs suppriment et recréent ce que les précédentes
+   ont posé, les rejouer dans le désordre ne donne pas le même schéma. Sans lui, rien d'autre n'est
+   possible.
 3. **Les comptes utilisateurs**, avec leurs UUID d'origine (§3.1).
 4. **Le cabinet** — la ligne `cabinets`, et sa charte graphique.
 5. **Les dossiers, un par un** — écran super-admin → « Restaurer une sauvegarde ». L'écran lit le
