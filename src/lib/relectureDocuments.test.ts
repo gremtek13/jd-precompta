@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Piece } from './types'
+import type { DocumentDivers, Piece } from './types'
 
 // Client Supabase et extraction simulés (même motif que depot.test.ts). Le journal enregistre ce qui
 // part réellement en base : c'est le seul moyen de vérifier la garantie qui rend cette action sûre —
@@ -27,7 +27,11 @@ vi.mock('./supabase', () => ({
       // Le texte OCR s'archive par upsert sur `piece_textes_ocr` (clé primaire piece_id) : une pièce
       // relue remplace son texte au lieu d'en accumuler un second.
       upsert: (ligne: Record<string, unknown>) => {
-        journal.push({ action: `upsert:${table}`, cible: String(ligne.piece_id), charge: ligne })
+        // La cible est `piece_id` OU `document_id` (la table porte l'un XOR l'autre) : la journaliser
+        // telle qu'elle vient, sinon un texte de document s'enregistrerait sous « undefined » et le
+        // test le laisserait passer.
+        const cible = String(ligne.piece_id ?? ligne.document_id)
+        journal.push({ action: `upsert:${table}`, cible, charge: ligne })
         return Promise.resolve({ error: null })
       },
     }),
@@ -66,7 +70,8 @@ vi.mock('./extraction', async (importOriginal) => {
   }
 })
 
-const { relireDocuments, piecesADater, piecesARelire } = await import('./relectureDocuments')
+const { relireDocuments, piecesADater, piecesARelire, documentsARelire, relireTextesDocuments } =
+  await import('./relectureDocuments')
 
 // Aucune pièce n'a de texte archivé, sauf mention contraire : c'est l'état d'un dossier existant au
 // moment où ce texte commence à être conservé.
@@ -309,5 +314,106 @@ describe('texte lu — ce qui manquait à l’arbitrage', () => {
     )
     expect(r.textesArchives).toEqual([])
     expect(r.datees).toHaveLength(1)
+  })
+})
+
+
+const document = (o: Partial<DocumentDivers> = {}): DocumentDivers => ({
+  id: 'd1', dossier_id: 'dos1', sous_dossier_id: null, storage_path: 'dos1/snir.pdf',
+  storage_hash: null, nom_fichier: 'snir.pdf', categorie: 'autre', attached_to_cotisation_id: null,
+  notes: null, created_at: '2026-01-01T00:00:00Z', ...o,
+} as DocumentDivers)
+
+describe('documentsARelire — ne repayer Textract que pour ce qui manque', () => {
+  it("retient les documents sans texte, écarte ceux qui en ont un", () => {
+    const retenus = documentsARelire(
+      [document({ id: 'a' }), document({ id: 'b' }), document({ id: 'c' })],
+      new Set(['b']),
+    )
+    expect(retenus.map((d) => d.id)).toEqual(['a', 'c'])
+  })
+
+  it("écarte un document sans chemin de stockage — il n'y a rien à relire", () => {
+    expect(documentsARelire([document({ id: 'a', storage_path: '' })], new Set())).toEqual([])
+  })
+})
+
+describe('relireTextesDocuments', () => {
+  it("archive le texte lu sous document_id, jamais sous piece_id", () => {
+    // La table porte piece_id XOR document_id : viser la mauvaise colonne ferait échouer le CHECK,
+    // ou pire, rattacherait le texte d'un document à une pièce.
+    etat.extractions.set('snir.pdf', { texte_ocr: 'RELEVÉ SNIR 2025\nHonoraires 92 340 €' })
+    return relireTextesDocuments([document({ id: 'doc-9', nom_fichier: 'snir.pdf' })], new Set()).then((r) => {
+      expect(r.textesArchives).toEqual(['snir.pdf'])
+      const upsert = journal.find((e) => e.action === 'upsert:piece_textes_ocr')
+      expect(upsert?.cible).toBe('doc-9')
+      expect(upsert?.charge?.document_id).toBe('doc-9')
+      expect(upsert?.charge?.piece_id).toBeUndefined()
+    })
+  })
+
+  it("n'écrit RIEN d'autre que le texte", async () => {
+    // Un document n'a ni date, ni tiers, ni montant, ni statut en base. Cette fonction ne doit donc
+    // produire aucun `update` — c'est ce qui la rend sûre à lancer sur un dossier entier.
+    etat.extractions.set('attestation.pdf', { texte_ocr: 'ATTESTATION', date_piece: '2025-03-01', tiers: 'URSSAF' })
+    await relireTextesDocuments([document({ nom_fichier: 'attestation.pdf' })], new Set())
+    expect(journal.filter((e) => e.action === 'update')).toEqual([])
+  })
+
+  it("distingue « Textract n'a rien lu » d'un échec", async () => {
+    // L'appel a bien eu lieu et a bien été facturé : le redire en « échec » ferait relancer
+    // indéfiniment la relecture sur les mêmes fichiers muets.
+    etat.extractions.set('scan-vide.pdf', { texte_ocr: '   ' })
+    const r = await relireTextesDocuments([document({ nom_fichier: 'scan-vide.pdf' })], new Set())
+    expect(r.sansTexte).toEqual(['scan-vide.pdf'])
+    expect(r.textesArchives).toEqual([])
+    expect(r.echecs).toEqual([])
+  })
+
+  it("un échec n'interrompt pas le lot", async () => {
+    etat.telechargementsEnEchec.add('dos1/perdu.pdf')
+    etat.extractions.set('suivant.pdf', { texte_ocr: 'lisible' })
+    const r = await relireTextesDocuments(
+      [
+        document({ id: 'a', nom_fichier: 'perdu.pdf', storage_path: 'dos1/perdu.pdf' }),
+        document({ id: 'b', nom_fichier: 'suivant.pdf', storage_path: 'dos1/suivant.pdf' }),
+      ],
+      new Set(),
+    )
+    expect(r.echecs.map((e) => e.nomFichier)).toEqual(['perdu.pdf'])
+    expect(r.textesArchives).toEqual(['suivant.pdf'])
+  })
+
+  it('ne relit pas un document dont le texte est déjà en base', async () => {
+    const r = await relireTextesDocuments([document({ id: 'deja' })], new Set(['deja']))
+    expect(journal.filter((e) => e.action === 'extract')).toEqual([])
+    expect(r).toEqual({ textesArchives: [], sansTexte: [], echecs: [] })
+  })
+
+  it('reste séquentiel — jamais deux analyses Textract en vol', async () => {
+    etat.delaiMs = 5
+    etat.extractions.set('a.pdf', { texte_ocr: 'a' })
+    etat.extractions.set('b.pdf', { texte_ocr: 'b' })
+    etat.extractions.set('c.pdf', { texte_ocr: 'c' })
+    await relireTextesDocuments(
+      [
+        document({ id: 'a', nom_fichier: 'a.pdf', storage_path: 'dos1/a.pdf' }),
+        document({ id: 'b', nom_fichier: 'b.pdf', storage_path: 'dos1/b.pdf' }),
+        document({ id: 'c', nom_fichier: 'c.pdf', storage_path: 'dos1/c.pdf' }),
+      ],
+      new Set(),
+    )
+    expect(etat.maxEnVol).toBe(1)
+  })
+
+  it('remonte la progression, dernier appel compris', async () => {
+    etat.extractions.set('a.pdf', { texte_ocr: 'a' })
+    const vues: [number, number][] = []
+    await relireTextesDocuments(
+      [document({ nom_fichier: 'a.pdf', storage_path: 'dos1/a.pdf' })],
+      new Set(),
+      (fait, total) => vues.push([fait, total]),
+    )
+    expect(vues).toEqual([[0, 1], [1, 1]])
   })
 })

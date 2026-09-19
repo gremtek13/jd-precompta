@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeLocaleDe, formatDate } from '../../lib/format'
 import type { CategorieDocument, DocumentDivers, SousDossier } from '../../lib/types'
@@ -7,6 +7,7 @@ import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 import { documentsAvecTexteOcr, enregistrerTexteOcr, texteOcrDuDocument } from '../../lib/texteOcr'
+import { documentsARelire, relireTextesDocuments } from '../../lib/relectureDocuments'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -34,6 +35,12 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // OCR pèse des kilo-octets, et cette liste peut compter des dizaines de lignes.
   const [avecTexteOcr, setAvecTexteOcr] = useState<Set<string>>(new Set())
   const [ocrOuvert, setOcrOuvert] = useState<{ documentId: string; texte: string | null } | null>(null)
+  const [relecture, setRelecture] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
+  // Le verrou est un ref, jamais l'état ci-dessus : `setRelecture` ne prend effet qu'au rendu
+  // suivant, donc `disabled` laisse passer deux clics rapprochés et les deux entrent dans la
+  // boucle. Ici chaque passage est un appel Textract FACTURÉ sur les mêmes documents — deux
+  // boucles parallèles paieraient donc deux fois la même lecture, sans que rien ne le signale.
+  const relectureEnCours = useRef(false)
 
   // Même comportement que dans PiecesTab : on ouvre en affichant « Chargement… » plutôt que de rester
   // muet assez longtemps pour qu'on reclique.
@@ -57,6 +64,59 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   }
 
   useEffect(() => { load() }, [dossierId])
+
+  // Documents du dossier ENTIER, pas seulement ceux du filtre affiché : un texte manquant ne dépend
+  // ni de la catégorie regardée ni de l'année, et le bouton annonce son nombre — ce qu'il va traiter
+  // reste donc explicite malgré tout.
+  const documentsSansTexte = documentsARelire(documents, avecTexteOcr)
+
+  // Rattrape le texte lu par l'OCR sur les documents déposés avant qu'on le conserve. Textract
+  // tournait déjà sur chacun d'eux et son texte était jeté : c'est une lecture déjà payée une fois,
+  // et qu'il faut repayer faute de l'avoir gardée.
+  //
+  // **Elle n'écrit QUE le texte** — un document n'a ni date, ni tiers, ni montant, ni statut en base,
+  // donc il n'y a rien d'autre à écrire et rien à détruire (voir lib/relectureDocuments.ts).
+  async function relireDocumentsSansTexte() {
+    if (documentsSansTexte.length === 0 || relectureEnCours.current) return
+    if (!window.confirm(
+      `Relancer la lecture automatique sur ${documentsSansTexte.length} document(s) ?\n\n` +
+      `Elle archive le texte lu, pour l'afficher ensuite sous « texte lu » sur chaque ligne.\n` +
+      `Rien d'autre n'est modifié — un document n'a ni date, ni montant, ni statut.\n` +
+      `Chaque document repasse par l'analyse, comptez quelques secondes par fichier.`,
+    )) return
+
+    // Posé AVANT le premier `await`, sinon le verrou arrive trop tard pour servir à quelque chose.
+    relectureEnCours.current = true
+    setRelecture({ fait: 0, total: documentsSansTexte.length, nomFichier: '' })
+    let resultat
+    try {
+      resultat = await relireTextesDocuments(documents, avecTexteOcr, (fait, total, nomFichier) =>
+        setRelecture({ fait, total, nomFichier }),
+      )
+    } finally {
+      relectureEnCours.current = false
+      setRelecture(null)
+    }
+    load()
+
+    const lignes = [`${resultat.textesArchives.length} texte(s) archivé(s) — visibles sous « texte lu » sur chaque ligne.`]
+    // Dit à part d'un échec : l'analyse a bien eu lieu et a bien été facturée, il n'y avait
+    // simplement rien à lire. Les confondre ferait relancer indéfiniment sur les mêmes fichiers.
+    if (resultat.sansTexte.length > 0) {
+      lignes.push(
+        `\n${resultat.sansTexte.length} document(s) sans texte lisible (page blanche, photo illisible) :\n` +
+        resultat.sansTexte.slice(0, 5).map((n) => `• ${n}`).join('\n') +
+        (resultat.sansTexte.length > 5 ? `\n… et ${resultat.sansTexte.length - 5} autre(s)` : ''),
+      )
+    }
+    if (resultat.echecs.length > 0) {
+      lignes.push(
+        `\n${resultat.echecs.length} en échec :\n` +
+        resultat.echecs.slice(0, 5).map((e) => `• ${e.nomFichier} : ${e.message}`).join('\n'),
+      )
+    }
+    window.alert(lignes.join('\n'))
+  }
 
   // Pas de date propre au document (juste sa date d'ajout dans l'appli) — l'onglet Année filtre donc
   // sur created_at, pas sur la période réelle du document (un vieux relevé déposé aujourd'hui atterrit
@@ -208,6 +268,18 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
+          {documentsSansTexte.length > 0 && (
+            <button
+              className="btn btn-outline btn-sm"
+              disabled={relecture !== null}
+              onClick={relireDocumentsSansTexte}
+              title="Relance la lecture automatique pour archiver le texte lu sur ces documents et pouvoir le relire ici. Rien d'autre n'est modifié."
+            >
+              {relecture
+                ? `Lecture… ${relecture.fait}/${relecture.total}${relecture.nomFichier ? ` — ${relecture.nomFichier}` : ''}`
+                : `Retrouver le texte lu (${documentsSansTexte.length})`}
+            </button>
+          )}
           {selected.size > 0 && (
             <button className="btn btn-danger btn-sm" onClick={deleteSelection}>
               Supprimer la sélection ({selected.size})
