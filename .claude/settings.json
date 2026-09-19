@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
+      "Read",
       "Edit",
+      "Skill",
+      "ToolSearch",
+      "Bash(cd /home/user/jd-precompta && *)",
       "Bash(npm run *)",
       "Bash(npm test*)",
       "Bash(npm ci*)",
@@ -27,6 +31,9 @@
       "Bash(mv *)",
       "Bash(touch *)",
       "Bash(chmod *)",
+      "mcp__Supabase",
+      "mcp__Notion",
+      "mcp__c03fbb34-0dd1-4eb4-bbb2-4da37a0adbc2",
       "mcp__Supabase__execute_sql",
       "mcp__Supabase__apply_migration",
       "mcp__Supabase__deploy_edge_function",
