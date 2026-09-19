@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, cleFournisseur, comptesParMois, dateLocaleDe, dernierJourDuMois, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
+import { ajouterJours, ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, cleFournisseur, comptesParMois, dateLocaleDe, dernierJourDuMois, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -234,5 +234,34 @@ describe('cleFournisseur — sigles pointés', () => {
     // cette règle — documenté ici pour que le jour où on l'abaisse, le cas soit déjà écrit.
     expect(cleFournisseur('E.D.F.')).toBeNull()
     expect(cleFournisseur('EDF')).toBeNull()
+  })
+})
+
+describe('ajouterJours', () => {
+  it('franchit une fin de mois et une fin d’année', () => {
+    expect(ajouterJours('2026-01-31', 1)).toBe('2026-02-01')
+    expect(ajouterJours('2026-12-31', 1)).toBe('2027-01-01')
+  })
+
+  it('recule aussi bien qu’il avance', () => {
+    expect(ajouterJours('2026-03-01', -1)).toBe('2026-02-28')
+    expect(ajouterJours('2026-01-01', -1)).toBe('2025-12-31')
+  })
+
+  it('connaît le 29 février', () => {
+    expect(ajouterJours('2028-02-28', 1)).toBe('2028-02-29')
+    expect(ajouterJours('2026-02-28', 1)).toBe('2026-03-01')
+  })
+
+  it('ne décale pas d’un jour au passage à l’heure d’été', () => {
+    // Le piège que ce dépôt a déjà payé trois fois : `new Date('2026-03-28')` + 1 jour converti par
+    // `toISOString()` rend le 28 en Europe/Paris, la nuit du changement d'heure ne faisant que
+    // 23 heures. L'arithmétique en UTC y est insensible, et la suite tourne sous quatre fuseaux.
+    expect(ajouterJours('2026-03-28', 1)).toBe('2026-03-29')
+    expect(ajouterJours('2026-10-24', 1)).toBe('2026-10-25')
+  })
+
+  it('rend la date inchangée pour zéro jour', () => {
+    expect(ajouterJours('2026-07-14', 0)).toBe('2026-07-14')
   })
 })

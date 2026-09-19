@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
@@ -146,6 +146,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const catSansPoste = categoriesSansPoste(categories, pieces)
   const sansTva = piecesSansTva(pieces, assujettiTva)
   const sansCategorie = piecesValideesSansCategorie(pieces)
+  // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
+  // absente de Clôture, de la 2035 et de la Balance sans être comptée nulle part comme manquante.
+  const dateImpossible = piecesADateImpossible(pieces)
   // Sur les deux piles, validées comme à valider : une TVA arithmétiquement impossible l'est à tout
   // stade, et c'est avant la validation qu'il faut la voir — après, le chiffre est figé dans
   // l'écriture. Sans filtre sur l'assujettissement non plus : un montant impossible signale une
@@ -187,6 +190,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // « Erreur » et non « attention » : ce n'est pas une TVA douteuse, c'est une TVA dont le calcul
     // démontre qu'elle est fausse. Elle part telle quelle en TVA déductible et dans la charge.
     { id: 'tva-impossible', label: 'pièce(s) dont la TVA est arithmétiquement impossible', action: 'Corriger ces montants', nb: tvaImpossible.length, cible: 'pieces', severite: 'erreur' },
+    { id: 'date-impossible', label: 'pièce(s) datée(s) après leur dépôt — rangées dans le mauvais exercice', action: 'Corriger ces dates', nb: dateImpossible.length, cible: 'pieces', severite: 'erreur' },
     // En « erreur » : la pièce n'a AUCUN montant en euros tant que le taux manque, donc elle ne
     // compte nulle part — ni en charge, ni en TVA, ni dans la 2035. Exactement l'effet d'une pièce
     // sans catégorie, par un autre chemin.

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { categoriesSansCompte, categoriesSansPoste, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
+import { categoriesSansCompte, categoriesSansPoste, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
+import { aujourdHuiSql, ajouterJours, dateLocaleDe } from './format'
 import type { Categorie, Piece } from './types'
 
 const categorie = (o: Partial<Categorie>): Categorie =>
@@ -193,5 +194,73 @@ describe('piecesDeviseNonConvertie', () => {
 
   it('ne dit rien des pièces en euros, qui n’ont pas de taux par construction', () => {
     expect(piecesDeviseNonConvertie([piece({}), piece({ id: 'b', taux_change: null })])).toEqual([])
+  })
+})
+
+describe('piecesADateImpossible', () => {
+  // Le dépôt sert de borne. `dateLocaleDe` le lit dans le fuseau d'exécution, donc les cas se
+  // construisent à partir de CETTE valeur plutôt que d'une chaîne figée : la suite tourne sous
+  // quatre fuseaux, et un test qui coderait « 2026-09-16 » en dur passerait ici et tomberait là-bas.
+  const depot = '2026-09-16T10:00:00Z'
+  const jourDuDepot = dateLocaleDe(depot)
+
+  it('signale le cas réel trouvé en production', () => {
+    // Une pièce datée du 27/09/2028, déposée le 16/09/2026, sans tiers ni montant, confiance basse.
+    // Elle part dans un exercice qui n'existe pas encore : absente de Clôture, de la 2035 et de la
+    // Balance de l'année en cours, sans qu'aucun écran ne la compte comme manquante.
+    const p = piece({ id: 'p-future', date_piece: '2028-09-27', created_at: depot, statut: 'a_valider' })
+    expect(piecesADateImpossible([p])).toEqual([
+      { piece: p, date: '2028-09-27', borne: jourDuDepot },
+    ])
+  })
+
+  it('accepte une pièce datée du jour de son dépôt', () => {
+    expect(piecesADateImpossible([piece({ date_piece: jourDuDepot, created_at: depot })])).toEqual([])
+  })
+
+  it('tolère un jour, et un seul', () => {
+    // La marge existe pour l'écart de fuseau : à l'ouest de Paris, le jour local du dépôt peut
+    // apparaître une journée plus tôt que celui où la pièce est réellement arrivée. Deux jours ne
+    // s'expliquent plus par aucun fuseau — c'est la borne qui distingue une marge d'un trou.
+    const lendemain = ajouterJours(jourDuDepot, 1)
+    const surlendemain = ajouterJours(jourDuDepot, 2)
+    expect(piecesADateImpossible([piece({ date_piece: lendemain, created_at: depot })])).toEqual([])
+    expect(piecesADateImpossible([piece({ date_piece: surlendemain, created_at: depot })])).toHaveLength(1)
+  })
+
+  it('borne au DÉPÔT et non à aujourd’hui, ce qui est plus strict', () => {
+    // Une pièce déposée en septembre et datée de décembre est tout aussi impossible — mais
+    // « postérieure à aujourd'hui » cesserait de la voir dès décembre venu, c'est-à-dire juste avant
+    // la clôture, au moment précis où elle fausse un exercice.
+    expect(piecesADateImpossible([piece({ date_piece: '2026-12-31', created_at: depot })])).toHaveLength(1)
+  })
+
+  it('ne signale pas une pièce ancienne, même absurdement', () => {
+    // Un ticket daté de 2012 au lieu de 2025 est probablement faux, mais rien ne le PROUVE : un
+    // cabinet peut légitimement traiter une pièce ancienne. Ce contrôle ne signale que l'impossible,
+    // jamais l'improbable — un contrôle qui se trompe finit par ne plus être lu.
+    expect(piecesADateImpossible([piece({ date_piece: '2012-01-05', created_at: depot })])).toEqual([])
+  })
+
+  it('ignore une pièce sans date', () => {
+    // Une pièce sans date est le sujet d'un autre contrôle (voir les packs) : la compter ici la
+    // ferait apparaître deux fois pour deux raisons différentes.
+    expect(piecesADateImpossible([piece({ date_piece: null, created_at: depot })])).toEqual([])
+  })
+
+  it('retombe sur aujourd’hui quand le dépôt n’est pas horodaté', () => {
+    // La colonne est NOT NULL en base, mais le type la déclare facultative : un appelant qui
+    // construit une pièce partielle (un aperçu d'import, une pièce en cours de saisie) n'a pas
+    // d'horodatage. La seule borne défendable reste alors le jour même — une pièce ne peut pas être
+    // datée de demain, quelle que soit la date à laquelle elle est arrivée.
+    const apresDemain = ajouterJours(aujourdHuiSql(), 2)
+    expect(piecesADateImpossible([piece({ date_piece: apresDemain, created_at: undefined })])).toHaveLength(1)
+    expect(piecesADateImpossible([piece({ date_piece: aujourdHuiSql(), created_at: undefined })])).toEqual([])
+  })
+
+  it('rend les pièces fautives dans l’ordre reçu, et rien d’autre', () => {
+    const saine = piece({ id: 'ok', date_piece: '2026-01-05', created_at: depot })
+    const fautive = piece({ id: 'ko', date_piece: '2030-01-05', created_at: depot })
+    expect(piecesADateImpossible([saine, fautive, saine]).map((d) => d.piece.id)).toEqual(['ko'])
   })
 })
