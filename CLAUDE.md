@@ -1347,9 +1347,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   code, les advisors Supabase et des tests manuels réels (y compris, pour Super PDP, par
   l'utilisateur lui-même puisque cet environnement ne peut pas atteindre
   `api.superpdp.tech`). Depuis le 19/09/2026 un projet Vitest « écrans » existe (jsdom +
-  Testing Library) et couvre deux composants : les verrous d'exécution de `VehiculesCard` et
-  d'`ImportDossierModal`, plus le refus de saisir sans exercice choisi. C'est un premier fil,
-  pas une couverture : les douze autres onglets n'ont toujours aucun test de rendu.
+  Testing Library) et couvre trois composants : les verrous d'exécution de `VehiculesCard` et
+  d'`ImportDossierModal`, le refus de saisir sans exercice choisi, et la séparation
+  recherche / totaux de la Balance des comptes. C'est un premier fil, pas une couverture :
+  les douze autres onglets n'ont toujours aucun test de rendu.
   Nuance à garder : les Edge
   Functions ne sont pas SANS filet — plusieurs tests lisent leur vraie source déployée pour
   en extraire une fonction et l'exécuter (montants, dates, classification, orientation,
@@ -1364,7 +1365,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 885 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 886 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -1381,8 +1382,9 @@ posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 (`src/**/*.test.ts`, environnement `node`, rien à charger) et « écrans » (`src/**/*.test.tsx`,
 plugin React + `jsdom` + Testing Library). Un test d'écran ne remplace aucun test de `src/lib` :
 il vise ce qu'aucun calcul pur ne peut voir — le verrou d'exécution, le câblage d'un contrôle sur
-le mauvais sous-ensemble, un bouton affiché quand il ne devrait pas l'être. Dans le défaut
-d'origine (141 lignes importées pour 78 fichiers), toute la logique appelée derrière était juste.
+le mauvais sous-ensemble, un bouton affiché quand il ne devrait pas l'être, un total recalculé sur
+les lignes qu'une recherche a retenues. Dans le défaut d'origine (141 lignes importées pour 78
+fichiers), toute la logique appelée derrière était juste.
 `src/test/ecrans.ts` pose le démontage automatique entre deux tests (`afterEach(cleanup)`), qui ne
 s'installe pas tout seul tant que `globals` reste à false.
 
