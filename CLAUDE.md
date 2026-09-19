@@ -881,15 +881,24 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   les trois OpenAI → MACSF sont exactement le faux positif que la tolérance de change annonce, et
   « DARNIS JEREMY » → TRANSMEDICAL le cas d'origine. Le moteur ne sous-performe pas.
   Mais les deux derniers doutes, « plusieurs pièces possibles », ne venaient pas d'une ambiguïté :
-  `mai.pdf` (Transmedical, 38,40 €) porte la date du **01/06/2025**. Juin compte deux échéances, mai
-  zéro. Trois conséquences en cascade, qu'aucun écran ne reliait : la charge de mai part dans le mois
-  de juin (sur un exercice à cheval, la mauvaise année) ; le prélèvement réel du 05/05 ne trouve plus
-  de pièce et reste non rapproché ; et les deux pièces de juin se disputent celui du 05/06, donc un
-  appariement certain devient un arbitrage. **Le rapprochement ne pouvait pas dire mieux** — il ne
-  voit que la collision, jamais la date fausse qui la produit.
-  `moisEnDoubleSurAbonnement` (lib/controles.ts) la nomme : pour un (fournisseur, montant) qui revient
-  sur au moins trois mois, un mois à deux échéances **avec un mois voisin VIDE** est une date mal lue,
-  et le mois vide dit laquelle. Trois décisions le rendent lisible plutôt que bavard : le mois vide est
+  `mai.pdf` et `juin.pdf` (Transmedical, 38,40 €) portent tous deux la date du **01/06/2025**. Juin
+  compte deux échéances, mai zéro. Trois conséquences en cascade, qu'aucun écran ne reliait : une
+  échéance de plus part dans le mois de juin (sur un exercice à cheval, la mauvaise année) ; le
+  prélèvement réel du 05/05 ne trouve plus de pièce et reste non rapproché ; et les deux pièces de
+  juin se disputent celui du 05/06, donc un appariement certain devient un arbitrage. **Le
+  rapprochement ne pouvait pas dire mieux** — il ne voit que la collision, jamais ce qui la produit.
+  **ET CE QUI LA PRODUIT N'ÉTAIT PAS UNE DATE MAL LUE.** Première hypothèse, écrite puis démentie par
+  la mesure suivante : les deux fichiers ont **exactement le même texte OCR** (même empreinte md5,
+  1 400 caractères tous les deux), et ce texte dit « 1 juin 2025 ». L'extraction avait donc raison
+  sur les deux. C'est le MÊME document déposé deux fois, sous deux noms — et la facture de mai, elle,
+  n'a jamais été déposée. Le contrôle ci-dessous reste juste (un mois doublé à côté d'un mois vide est
+  une anomalie), mais il ne sait pas dire laquelle des deux causes : c'est `doublonsDeTexte` qui la
+  nomme. **La leçon vaut plus que le cas** : une hypothèse plausible, cohérente avec tous les indices
+  de premier tour, et fausse — seule la mesure d'après l'a montré.
+  `moisEnDoubleSurAbonnement` (lib/controles.ts) la signale : pour un (fournisseur, montant) qui
+  revient sur au moins trois mois, un mois à deux échéances **avec un mois voisin VIDE** est une
+  anomalie démontrée — ou bien une date a été mal lue, ou bien une pièce est en double et une autre
+  manque. Le contrôle dit le mois vide ; il ne prétend pas savoir laquelle des deux. Trois décisions le rendent lisible plutôt que bavard : le mois vide est
   **exigé** (un fournisseur peut facturer deux fois dans le mois — c'est le trou qui rend la lecture
   certaine, et sur les 41 pièces réelles : une trouvaille, zéro fausse alerte) ; le voisin doit tomber
   DANS la plage observée, sinon le premier mois d'un abonnement signalerait toujours le mois d'avant ;
