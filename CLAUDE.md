@@ -1094,15 +1094,23 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   PAS sauvegardé et qu'on découvrirait sinon en pleine reprise — au premier rang les comptes
   `auth.users`, qu'il faut recréer AVEC leurs UUID d'origine, quatre colonnes du schéma les exigeant
   en NOT NULL sans contournement possible.
-- **La couverture de tests s'arrête à `src/lib`** (voir "Tests") : les
-  composants, les policies RLS et les Edge Functions restent vérifiés par la
-  relecture de code, les advisors Supabase et des tests manuels réels (y
-  compris, pour Super PDP, par l'utilisateur lui-même puisque cet
-  environnement ne peut pas atteindre `api.superpdp.tech`).
+- **La couverture Vitest s'arrête à `src/lib`** (voir "Tests") : les composants et les
+  Edge Functions restent vérifiés par la relecture de code, les advisors Supabase et des
+  tests manuels réels (y compris, pour Super PDP, par l'utilisateur lui-même puisque cet
+  environnement ne peut pas atteindre `api.superpdp.tech`). Nuance à garder : les Edge
+  Functions ne sont pas SANS filet — plusieurs tests lisent leur vraie source déployée pour
+  en extraire une fonction et l'exécuter (montants, dates, classification, orientation,
+  régions AWS) ; ce qu'aucun test ne fait, c'est les appeler en HTTP, avec leur
+  authentification et leurs erreurs.
+  **Les policies RLS sont sorties de cette liste** : `supabase/essais/rls.sql` les rejoue
+  (voir "Décisions techniques"). Mais il se lance à la main, par l'outil MCP — la CI n'a pas
+  d'accès à la base — donc la garantie tient à une règle écrite, pas à un automatisme. Et
+  elle s'arrête aux tables du schéma `public` : les policies du STOCKAGE restent vérifiées
+  par relecture, alors que c'est précisément là que vivent les données identifiantes.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 775 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 791 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
