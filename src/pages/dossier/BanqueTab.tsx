@@ -12,7 +12,7 @@ import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
 import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
-import { analyserAppariements, libelleExploitable } from '../../lib/appariementBanque'
+import { analyserAppariements, libelleExploitable, piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementDevise'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
@@ -116,6 +116,14 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const piecesValidees = useMemo(() => pieces.filter((p) => p.statut === 'validee'), [pieces])
   const piecesRapprochees = useMemo(() => new Set(lignes.filter((l) => l.piece_id).map((l) => l.piece_id)), [lignes])
   const piecesSansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id))
+  // Sous-ensemble plus grave que la simple absence de rapprochement : un montant qui n'apparaît nulle
+  // part dans le relevé, à AUCUNE date, signale soit un relevé incomplet soit un montant faux — voir
+  // lib/appariementBanque.ts. Calculé sur TOUTES les lignes importées, pas seulement les non
+  // rapprochées : le contrôle porte sur l'existence du montant dans le fichier, pas sur sa disponibilité.
+  const piecesMontantSuspect = useMemo(
+    () => piecesMontantIntrouvableEnBanque(piecesSansMouvement, lignes),
+    [piecesSansMouvement, lignes],
+  )
   const cotisationsRapprochees = useMemo(() => new Set(lignes.filter((l) => l.cotisation_id).map((l) => l.cotisation_id)), [lignes])
   const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
 
@@ -464,6 +472,32 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                 {' — écart de '}<strong>{formatMoney(Math.abs(c.ecart))}</strong>
                 {' : '}{formatMoney(c.solde_initial)} + {formatMoney(c.somme_mouvements)} ={' '}
                 {formatMoney(c.solde_initial + c.somme_mouvements)}, alors que la clôture indique {formatMoney(c.solde_final)}.
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {piecesMontantSuspect.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            {piecesMontantSuspect.length === 1
+              ? 'Un montant ne correspond à aucun mouvement bancaire'
+              : `${piecesMontantSuspect.length} montants ne correspondent à aucun mouvement bancaire`}
+            <span className="badge badge-danger">à vérifier</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ce montant n'apparaît nulle part dans le relevé importé, à aucune date. Deux causes
+            possibles, qu'aucune règle ne peut départager à votre place : soit le relevé est incomplet
+            (l'opération n'a jamais été déposée sur ce compte), soit le montant lu sur la pièce est
+            faux — l'extraction a pu prendre un sous-total, un solde antérieur ou un montant déjà réglé
+            au lieu du total du document.
+          </p>
+          <ul style={{ margin: 0, paddingLeft: 20 }}>
+            {piecesMontantSuspect.map((p) => (
+              <li key={p.id} style={{ marginBottom: 4 }}>
+                {p.tiers ?? 'Fournisseur non lu'} — {formatMoney(p.montant_ttc ?? 0)}
+                {p.date_piece ? ` (${formatDate(p.date_piece)})` : ''}
               </li>
             ))}
           </ul>

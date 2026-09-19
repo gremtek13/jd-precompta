@@ -4,6 +4,7 @@ import {
   analyserAppariements,
   libelleExploitable,
   motsIdentifiants,
+  piecesMontantIntrouvableEnBanque,
   tiersConfirmeParBanque,
 } from './appariementBanque'
 import type { LigneBancaire, Piece } from './types'
@@ -341,5 +342,46 @@ describe('tolérance de date', () => {
     const { certains, aArbitrer } = analyserAppariements([facture], [moisSuivant])
     expect(certains).toEqual([])
     expect(aArbitrer).toEqual([])
+  })
+})
+
+describe('piecesMontantIntrouvableEnBanque', () => {
+  it('signale une pièce dont le montant n’apparaît à aucune date du relevé', () => {
+    // Le cas réel qui motive ce contrôle : un montant qui ne figure nulle part, à aucune date, dans
+    // le relevé importé — signe soit d'un relevé incomplet, soit d'un mauvais total lu par l'OCR.
+    const suspecte = piece({ id: 'suspecte', montant_ttc: 250 })
+    const lignes = [ligne({ date: '2025-01-01', montant: -38.4 }), ligne({ date: '2025-12-31', montant: 900 })]
+    expect(piecesMontantIntrouvableEnBanque([suspecte], lignes)).toEqual([suspecte])
+  })
+
+  it('ne signale rien quand le montant existe, même très loin dans le temps', () => {
+    // Volontairement SANS tolérance de date : la question posée est « ce montant existe-t-il
+    // quelque part dans ce qui a été importé », pas « à cette date précise » — c'est le rôle
+    // d'analyserAppariements. Une date éloignée ne doit donc rien changer.
+    const piece38 = piece({ montant_ttc: 38.4, date_piece: '2025-06-01' })
+    const ligneLointaine = ligne({ date: '2020-01-01', montant: -38.4 })
+    expect(piecesMontantIntrouvableEnBanque([piece38], [ligneLointaine])).toEqual([])
+  })
+
+  it('ignore le signe du montant, une facture pouvant être un achat ou un avoir', () => {
+    const avoir = piece({ montant_ttc: -38.4 })
+    expect(piecesMontantIntrouvableEnBanque([avoir], [ligne({ montant: 38.4 })])).toEqual([])
+  })
+
+  it('ignore une pièce sans montant', () => {
+    expect(piecesMontantIntrouvableEnBanque([piece({ montant_ttc: null })], [ligne({})])).toEqual([])
+  })
+
+  it('ignore une pièce en devise étrangère — sa conversion en euros n’a pas à figurer sur le relevé', () => {
+    // Le montant en euros d'une pièce en devise est une conversion provisoire au taux du jour du
+    // dépôt (voir lib/tauxChange.ts) : le débit réel diffère toujours, au cours et aux frais de la
+    // banque près. L'absence d'égalité au centime n'y signale donc jamais un montant faux.
+    const enUsd = piece({ montant_ttc: 20.60, devise: 'USD', montant_devise: 24, taux_change: 1.1648 })
+    expect(piecesMontantIntrouvableEnBanque([enUsd], [ligne({ montant: -38.4 })])).toEqual([])
+  })
+
+  it('tient compte des centimes, pas d’un arrondi à l’euro', () => {
+    const piece38 = piece({ montant_ttc: 38.4 })
+    expect(piecesMontantIntrouvableEnBanque([piece38], [ligne({ montant: -38.42 })])).toEqual([piece38])
   })
 })

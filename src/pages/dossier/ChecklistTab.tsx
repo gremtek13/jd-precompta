@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte, categoriesSansPoste, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
+import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import type { ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
@@ -160,6 +161,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // écritures) : un mouvement bancaire importé mais jamais rattaché à une pièce, une cotisation, ou
   // marqué personnel/à ignorer — le seul cycle du dossier qui manquait encore à ce tableau de bord.
   const lignesNonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
+  // Signal plus grave que « en attente de rapprochement » : un montant qui n'apparaît nulle part dans
+  // le relevé importé, à aucune date, révèle soit un relevé incomplet soit un montant faux — voir
+  // lib/appariementBanque.ts. Ne porte que sur les pièces jamais rattachées à un mouvement, comme
+  // BanqueTab.
+  const piecesRapprocheesIds = new Set(lignes.filter((l) => l.piece_id).map((l) => l.piece_id))
+  const montantSuspect = piecesMontantIntrouvableEnBanque(pieces.filter((p) => !piecesRapprocheesIds.has(p.id)), lignes)
 
   // "action" : le libellé du bouton, propre à chaque point plutôt qu'un "Aller à l'onglet" générique
   // répété sur toute la liste — dit ce que l'onglet cible va permettre de faire, pas juste où il est.
@@ -172,6 +179,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // rapprochement, les totaux et la clôture. Corriger en aval ce qui vient d'une source amputée
     // revient à bâtir sur du sable.
     { id: 'releve-incoherent', label: 'relevé(s) bancaire(s) qui ne bouclent pas — mouvements manquants', action: 'Voir les relevés en écart', nb: relevesIncoherents.length, cible: 'banque', severite: 'erreur' },
+    // Un montant qui n'apparaît nulle part dans le relevé, à aucune date : relevé incomplet ou montant
+    // faux, deux causes qu'aucune règle interne au document ne peut départager (voir CLAUDE.md,
+    // « Fiabilité de l'extraction OCR sur les montants »).
+    { id: 'montant-suspect', label: 'pièce(s) validée(s) dont le montant ne correspond à aucun mouvement bancaire', action: 'Voir ces montants', nb: montantSuspect.length, cible: 'banque', severite: 'erreur' },
     { id: 'sans-categorie', label: 'pièce(s) validée(s) sans catégorie — invisibles en compta', action: 'Catégoriser ces pièces', nb: sansCategorie.length, cible: 'pieces', severite: 'erreur' },
     // « Erreur » et non « attention » : ce n'est pas une TVA douteuse, c'est une TVA dont le calcul
     // démontre qu'elle est fausse. Elle part telle quelle en TVA déductible et dans la charge.

@@ -181,6 +181,32 @@ function sensCoherent(piece: Piece, ligne: LigneBancaire): boolean {
   return attenduPositif ? ligne.montant > 0 : ligne.montant < 0
 }
 
+// Un montant qui n'apparaît nulle part dans le relevé importé, à AUCUNE date, est un signal plus
+// grave qu'une simple absence de rapprochement : deux causes possibles, qu'aucune règle interne au
+// document ne peut départager. Soit le relevé est incomplet (l'opération n'a jamais été déposée sur
+// ce compte) — soit le montant lu sur la pièce est FAUX, l'extraction ayant pris le mauvais total
+// d'un document qui en porte plusieurs (sous-total de ligne, solde antérieur, montant déjà réglé). Ces
+// trois montants bouclent alors entre eux (HT + TVA = TTC) sans que rien à l'intérieur du document ne
+// les contredise — `piecesTvaImpossible` ne voit rien. Seule une source EXTÉRIEURE au document, le
+// relevé bancaire, peut lever le doute : d'où la dépendance de ce contrôle au rapprochement plutôt
+// qu'à l'OCR.
+//
+// Ignore les pièces en devise étrangère : leur montant en euros est une conversion au taux du jour du
+// dépôt (voir lib/tauxChange.ts), jamais le montant qui doit apparaître tel quel sur le relevé — c'est
+// `montantCompatible` qui gère déjà leur cas avec une tolérance dédiée.
+//
+// Ne regarde que le MONTANT, sans tolérance de date ni de tiers : c'est délibéré. La question posée
+// ici n'est pas « ce mouvement est-il celui de cette pièce » (le travail d'`analyserAppariements`),
+// mais « ce montant existe-t-il quelque part dans ce qui a été importé ». Élargir la date la
+// rendrait aveugle à un relevé qui ne couvre simplement pas la bonne période.
+export function piecesMontantIntrouvableEnBanque(pieces: Piece[], lignes: LigneBancaire[]): Piece[] {
+  return pieces.filter((piece) => {
+    if (piece.montant_ttc == null) return false
+    if (piece.devise && piece.devise !== DEVISE_PIVOT) return false
+    return !lignes.some((ligne) => Math.abs(Math.abs(piece.montant_ttc!) - Math.abs(ligne.montant)) <= 0.01)
+  })
+}
+
 export function analyserAppariements(
   pieces: Piece[],
   lignes: LigneBancaire[],
