@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
-import { LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
+import { LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesTvaImpossible } from '../../lib/controles'
 import { DEVISE_PIVOT } from '../../lib/devises'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
 import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
@@ -142,6 +142,17 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // et le montant reste faux quel que soit l'exercice qu'on regarde (voir lib/controles.ts).
   const motifTvaParPiece = new Map(piecesTvaImpossible(pieces).map(({ piece, motif }) => [piece.id, motif]))
 
+  // Deux échéances d'un même abonnement dans le même mois, avec un mois voisin vide : l'une des deux
+  // porte une date mal lue (voir lib/controles.ts). Sur la LIGNE, comme la TVA impossible, parce que
+  // c'est ici que la pièce se corrige — et parce que l'autre écran qui en souffre, le rapprochement
+  // bancaire, ne sait dire que « plusieurs pièces possibles », c'est-à-dire le symptôme.
+  const moisSuspectParPiece = new Map<string, string>()
+  for (const trouve of moisEnDoubleSurAbonnement(pieces)) {
+    for (const piece of trouve.pieces) {
+      moisSuspectParPiece.set(piece.id, `Deux échéances « ${trouve.tiers.replace(/\n/g, ' ')} » de ${formatMoney(trouve.montant)} en ${trouve.mois}, aucune en ${trouve.moisProbable} — l'une des deux est probablement de ${trouve.moisProbable}.`)
+    }
+  }
+
   // "À valider" seulement : les pièces à faible confiance d'extraction remontent en premier — ce sont
   // celles qui ont le plus de chances d'avoir un champ faux, donc celles qui méritent d'être regardées
   // avant les autres plutôt que de tout revérifier au même niveau d'attention (voir Piece.confiance).
@@ -152,7 +163,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // problème — là où l'impossibilité est démontrée. Un doute ne prime pas sur une certitude.
   const PRIORITE_CONFIANCE: Record<string, number> = { basse: 0, moyenne: 1, haute: 2 }
   const prioriteDe = (p: Piece) =>
-    motifTvaParPiece.has(p.id) ? -1 : (PRIORITE_CONFIANCE[p.confiance ?? ''] ?? 3)
+    // Même rang que la TVA impossible, et pour la même raison : ce n'est pas un pronostic mais une
+    // impossibilité démontrée — un abonnement mensuel ne facture pas deux fois le même mois en
+    // laissant le mois d'à côté vide.
+    motifTvaParPiece.has(p.id) || moisSuspectParPiece.has(p.id) ? -1 : (PRIORITE_CONFIANCE[p.confiance ?? ''] ?? 3)
   const trie = statutFilter === 'a_valider'
     ? [...filteredBase].sort((a, b) => prioriteDe(a) - prioriteDe(b))
     : filteredBase
@@ -525,6 +539,13 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                       <div style={{ marginTop: 4 }}>
                         <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={`TVA lue : ${formatMoney(p.montant_tva)} — ${LIBELLE_MOTIF_TVA[motifTvaParPiece.get(p.id)!]}`}>
                           TVA impossible
+                        </span>
+                      </div>
+                    )}
+                    {moisSuspectParPiece.has(p.id) && (
+                      <div style={{ marginTop: 4 }}>
+                        <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={moisSuspectParPiece.get(p.id)}>
+                          Mois à vérifier
                         </span>
                       </div>
                     )}
