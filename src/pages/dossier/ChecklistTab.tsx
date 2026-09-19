@@ -4,6 +4,7 @@ import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte, categoriesSansPoste, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
+import { rupturesPisteAudit } from '../../lib/pisteAudit'
 import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import type { ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
@@ -141,6 +142,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     (p) => p.montant_ttc != null && !!categorieById(p.categorie_id)?.compte_comptable && !immobilisationPieceIds.has(p.id),
   )
   const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, piecesEligiblesEcritures)
+  const ruptures = rupturesPisteAudit(ecritures)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
   const catSansCompte = categoriesSansCompte(categories, pieces)
   const catSansPoste = categoriesSansPoste(categories, pieces)
@@ -186,6 +188,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // faux, deux causes qu'aucune règle interne au document ne peut départager (voir CLAUDE.md,
     // « Fiabilité de l'extraction OCR sur les montants »).
     { id: 'montant-suspect', label: 'pièce(s) validée(s) dont le montant ne correspond à aucun mouvement bancaire', action: 'Voir ces montants', nb: montantSuspect.length, cible: 'banque', severite: 'erreur' },
+    { id: 'piste-rompue', label: "écriture(s) sans justificatif ou sans mouvement — piste d'audit rompue", action: 'Voir les écritures concernées', nb: ruptures.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'sans-categorie', label: 'pièce(s) validée(s) sans catégorie — invisibles en compta', action: 'Catégoriser ces pièces', nb: sansCategorie.length, cible: 'pieces', severite: 'erreur' },
     // « Erreur » et non « attention » : ce n'est pas une TVA douteuse, c'est une TVA dont le calcul
     // démontre qu'elle est fausse. Elle part telle quelle en TVA déductible et dans la charge.

@@ -6,6 +6,7 @@ import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPour
 import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
+import { absenceFec, rupturesPisteAudit } from '../../lib/pisteAudit'
 import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -141,6 +142,13 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
   const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, piecesEligibles)
+
+  // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
+  // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
+  // ne doit pas disparaître de la vue parce que l'onglet Année est positionné ailleurs.
+  const ruptures = rupturesPisteAudit(ecritures)
+  // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé.
+  const horsFec = absenceFec(ecrituresFiltrees)
   const pieceById = (id: string) => pieces.find((p) => p.id === id) ?? null
 
   // Reprend les lignes charge/produit + TVA d'une pièce d'après ses montants actuels — jamais
@@ -294,6 +302,39 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
                     <button className="btn btn-outline btn-sm" disabled={regenerating === p.id} onClick={() => regenererEcriture(p)}>
                       {regenerating === p.id ? 'Régénération…' : 'Régénérer'}
                     </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {ruptures.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Piste d'audit rompue <span className="badge badge-danger">bloquant</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces écritures ne peuvent plus être reliées à ce qui les justifie. C'est la première chose
+            qu'un contrôleur demande : montrez-moi la pièce de cette charge. Elles restent comptées
+            dans la Balance des comptes mais <strong>sortent du FEC</strong> — le fichier fiscal et la
+            balance ne disent donc pas le même résultat. Cause habituelle : la pièce ou le relevé
+            bancaire a été supprimé après la génération de l'écriture.
+          </p>
+          <table>
+            <thead><tr><th>Date</th><th>Compte</th><th>Libellé</th><th>Montant</th><th>Ce qui manque</th></tr></thead>
+            <tbody>
+              {ruptures.map((r, i) => (
+                <tr key={`${r.ecriture.id}-${r.motif}-${i}`}>
+                  <td>{formatDate(r.ecriture.date)}</td>
+                  <td>{r.ecriture.compte}</td>
+                  <td>{r.ecriture.libelle}</td>
+                  <td>{formatMoney(r.ecriture.sens === 'debit' ? r.ecriture.montant : -r.ecriture.montant)}</td>
+                  <td>
+                    {r.motif === 'sans_justificatif'
+                      ? 'aucun justificatif'
+                      : 'aucun mouvement bancaire'}
                   </td>
                 </tr>
               ))}
@@ -465,7 +506,13 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
 
       {error && <p className="error-text">{error}</p>}
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+        {horsFec.nb > 0 && (
+          <span className="badge badge-danger" title="Le format FEC n'a pas de place pour le dire : c'est ici ou nulle part.">
+            {horsFec.nb} écriture{horsFec.nb > 1 ? 's' : ''} ne sera{horsFec.nb > 1 ? 'ont' : ''} pas dans ce FEC
+            {' '}({formatMoney(horsFec.debit - horsFec.credit)})
+          </span>
+        )}
         <button
           className="btn btn-outline btn-sm"
           disabled={typeof anneeFilter !== 'number' || ecrituresFiltrees.length === 0}
