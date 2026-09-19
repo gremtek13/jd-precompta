@@ -72,6 +72,21 @@ Deux précisions qui comptent :
 
 ## 4. Ce que la base contient réellement
 
+> **Précision décisive, ajoutée le 19/09/2026 : la base ne contient aujourd'hui que des données
+> FICTIVES.** Aucun patient réel, aucun praticien réel. Un seul dossier est vivant (`test`), les
+> trois autres sont d'anciens bacs à sable.
+>
+> Ce que les chiffres ci-dessous décrivent est donc la **forme** de ce que l'application stocke —
+> quel type de contenu entre en base, par quel chemin, et où il se loge — pas une exposition
+> constatée. La conclusion du §4 (« les données de patients sont dans les FICHIERS, pas dans les
+> tables ») reste valable comme propriété de l'ARCHITECTURE, et c'est bien ainsi qu'elle gouverne
+> les §5 à §8.
+>
+> **Ce registre devra être remesuré au premier dossier réel**, et c'est à ce moment-là seulement
+> qu'il décrira un traitement de données personnelles au sens du RGPD. D'ici là il documente une
+> conception, ce qui est le bon moment pour le faire : la protection des données par conception
+> (art. 25) se décide avant les données, pas après.
+
 Mesuré le 19/09/2026, en comptant sans jamais extraire :
 
 - **2 comptes** utilisateurs, **4 dossiers**, **1 cabinet**.

@@ -17,6 +17,26 @@ Client historique : JD Consult (cabinet `jeremy.darnis@gmail.com`), mais
 l'appli est conçue multi-cabinets dès l'origine (voir `cabinets`,
 `cabinet_admins`).
 
+## État des données (19/09/2026) — à lire avant tout chiffre de ce fichier
+
+**La base ne contient aujourd'hui que des données FICTIVES**, et un seul dossier est vivant :
+
+| Dossier | Créé | État |
+|---|---|---|
+| `test` (`001c7ed7`) | 16/09/2026 | **le seul qui compte** — 41 pièces, 385 lignes bancaires, 37 documents |
+| `deltasoins 10`, `2023`, `DARNIS` | 08-09/2026 | anciens, abandonnés — ne pas s'appuyer dessus |
+
+Conséquences pratiques :
+
+- **Mesurer sur `test`, pas sur l'ensemble des dossiers.** Un chiffre agrégé mélange le dossier
+  vivant avec trois bacs à sable abandonnés et ne décrit rien. Plusieurs constats de ce fichier
+  datent d'avant cette règle et portent la mention du dossier concerné quand elle est connue.
+- **Un défaut trouvé dans un ancien dossier reste un défaut du CODE** — c'est ce qui l'a rendu
+  possible qui compte, pas la valeur des données. Mais il ne se raconte pas comme un préjudice
+  comptable, et l'urgence qu'on lui prête doit suivre.
+- **RGPD.md décrit une exposition à venir, pas constatée** (voir son §4) : tant que les données sont
+  fictives, ce registre dit la FORME de ce que l'application stockera, pas ce qu'elle stocke.
+
 ## Architecture actuelle
 
 - SPA React consommant directement Supabase (Postgres + Auth + Storage +
@@ -335,10 +355,12 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   usage), jamais exposés au bundle client. `superpdp_credentials` contient un
   `client_secret` par dossier — à traiter comme une donnée sensible standard,
   jamais loguée en clair.
-- Les données de dossiers sont des données comptables de clients réels
-  (professions de santé notamment) : traiter toute pièce, e-mail ou export
-  comme potentiellement identifiant, ne jamais les faire transiter par un
-  service tiers non prévu dans cette liste.
+- Les données de dossiers **seront** des données comptables de clients réels (professions de santé
+  notamment) ; elles sont fictives aujourd'hui (voir « État des données »). La règle ne change pas
+  pour autant, et c'est délibéré : traiter dès maintenant toute pièce, e-mail ou export comme
+  potentiellement identifiant, et ne jamais les faire transiter par un service tiers absent de cette
+  liste. Une habitude prise sur des données fictives est la seule qui tiendra le jour où elles ne le
+  seront plus.
 
 ## Fonctionnalités déjà implémentées
 
@@ -713,10 +735,13 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   PIÈCE — sa boucle commence par `if (!e.piece_id) continue` — et ne voit donc pas l'écriture sans
   pièce. Les trois contrôles du brouillon sont aveugles au même objet, en même temps, parce qu'ils
   partagent ce regroupement.
-  **Mesuré en production** : une écriture de 199,99 € (606100, « BOULANGER MARSEILLE ») n'a plus de
+  **Observé en base** : une écriture de 199,99 € (606100, « BOULANGER MARSEILLE ») n'a plus de
   `piece_id`. Deux pièces du même fournisseur existaient, une a été supprimée — et les deux clés
   étrangères d'`ecritures_brouillon` sont en `ON DELETE SET NULL`, donc Postgres a effacé le lien
-  sans un mot. Le projet CONNAISSAIT ce piège (voir la règle `ON DELETE SET NULL` plus bas, écrite
+  sans un mot. **Ce cas est dans `deltasoins 10`, un dossier abandonné, sur des données fictives**
+  (voir « État des données » plus haut) : ce qu'il démontre est le MÉCANISME, pas un préjudice
+  comptable. Le dossier `test` ne porte aucune écriture, donc aucune rupture — un contrôle qui ne
+  trouve rien là où il n'y a rien fait exactement son travail. Le projet CONNAISSAIT ce piège (voir la règle `ON DELETE SET NULL` plus bas, écrite
   pour la sauvegarde) ; il ne l'avait pas vu se réaliser dans la comptabilité.
   **La conséquence est une incohérence entre deux livrables** : `calculerBalance` regroupe par COMPTE
   et compte donc cette charge ; `genererFec` fait le même `if (!e.piece_id) continue` et l'exclut —
