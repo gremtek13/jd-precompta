@@ -41,9 +41,13 @@ l'appli est conçue multi-cabinets dès l'origine (voir `cabinets`,
   région eu-west-1 — séparé du projet `jd-factu` (autre application du même
   utilisateur, ne pas confondre).
 - **Migrations** : gérées uniquement via l'outil MCP Supabase
-  (`apply_migration` / `list_migrations`), il n'y a pas de dossier
-  `supabase/migrations` local dans ce dépôt — toujours consulter l'état réel
-  du schéma en base (`list_tables`, `execute_sql`) plutôt que de supposer.
+  (`apply_migration` / `list_migrations`) — toujours consulter l'état réel du
+  schéma en base (`list_tables`, `execute_sql`) plutôt que de supposer. Le
+  dossier `supabase/schema/` en porte un EXPORT (une migration par fichier,
+  vérifié par empreinte), pour qu'un schéma reste reconstructible si le projet
+  Supabase disparaît : ce n'est pas la source de vérité et il ne s'applique
+  pas tout seul. Après toute nouvelle migration, y ajouter le fichier
+  correspondant et rejouer le contrôle de dérive de `supabase/schema/README.md`.
 - **Edge Functions** (`supabase/functions/`, Deno, un dossier = une
   fonction, déployées via MCP `deploy_edge_function`) :
   - `agent-comptable` — assistant IA (Bedrock/Claude) par dossier, avec
