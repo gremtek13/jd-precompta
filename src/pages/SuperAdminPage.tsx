@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { estimerCoutUsd, formatUsd } from '../lib/coutsApi'
 import { genererExportCabinet } from '../lib/exportCabinet'
 import ConfirmationSuppression from '../components/ConfirmationSuppression'
+import RestaurationCard from './RestaurationCard'
 import { extraireErreurFonction } from '../lib/invokeErreur'
 
 interface CabinetApercu {
@@ -350,6 +351,12 @@ export default function SuperAdminPage() {
           </table>
         )}
       </div>
+
+      {/* La restauration vit ici parce qu'on restaure un dossier qui n'existe PLUS : il n'y a aucun
+          écran de dossier où mettre ce bouton. Et parce que c'est la seule action de l'application
+          qui écrive des milliers de lignes d'un coup, dans une base dont on n'a pas forcément
+          vérifié que c'est la bonne. */}
+      <RestaurationCard />
 
       {ajout && (
         <div style={overlayStyle}>
