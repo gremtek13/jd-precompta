@@ -406,6 +406,10 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 - Immobilisations, Cotisations sociales (avec lecture best-effort d'avis
   d'appel URSSAF/CARPIMKO), Clôture, Estimation (aide à la déclaration 2035),
   Statistiques (balance tous comptes), Virements, Accès client, Équipe.
+- Piste d'audit fiable : contrôle des ruptures (écriture sans justificatif,
+  contrepartie sans mouvement) dans Écritures et en tête de Checklist, chiffrage
+  de ce que le FEC ne contiendra pas, et **export CSV de la piste elle-même** par
+  exercice — voir `src/lib/pisteAudit.ts` et la règle détaillée plus bas.
 - Un client avec plusieurs sociétés (plusieurs dossiers rattachés au même
   compte, une ligne `memberships` par dossier) peut basculer entre elles via
   un sélecteur dans son espace (`AuthContext.mesSocietes`/`dossierActifId`,
@@ -755,6 +759,39 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   absente du jeu fourni ». `EcrituresTab` ne charge que les pièces VALIDÉES, donc une pièce repassée
   « à valider » ferait crier au loup sur un artefact de filtrage. Seul `piece_id` nul est retenu,
   parce qu'il ne dépend d'aucun jeu de données à côté.
+- **Une piste d'audit se PRODUIT, elle ne se contrôle pas seulement.** Les contrôles ci-dessus disent
+  qu'il y a une rupture ; ce qu'un vérificateur demande est un fichier : chaque écriture avec son
+  justificatif (tiers, date, montant, nom du fichier, empreinte SHA-256) et l'opération bancaire
+  réelle, de façon continue et chronologique. `pisteAudit` + `genererPisteAuditCsv`
+  (lib/pisteAudit.ts), exporté depuis Écritures à côté du FEC. Cinq décisions le rendent utilisable :
+  - **Une seule table, les deux sens dedans** — une ligne par écriture, PLUS une ligne par
+    justificatif validé qu'aucune écriture ne cite (`manque: ['écriture']`). Deux listes séparées ne
+    se recoupent jamais ; c'est la leçon du contrôle qui ne voit qu'un côté d'une relation, appliquée
+    au livrable cette fois.
+  - **L'empreinte est la preuve, pas le nom du fichier.** Un nom se change, un SHA-256 non. Nul sur
+    les pièces d'avant le champ — la colonne est alors VIDE, jamais remplacée par le nom du fichier :
+    ce serait laisser croire à une preuve d'intégrité qui n'existe pas.
+  - **Une colonne vide ne s'explique pas toute seule** : la colonne `manque` nomme le trou en clair,
+    et distingue « le lien est nul » (rupture comptable) de « hors du jeu chargé » (filtre de
+    l'appelant). Confondre les deux ferait passer un artefact de chargement pour une charge sans
+    justificatif — l'erreur qui rend un avertissement inécoutable.
+  - **Une pièce sans date apparaît dans l'export de CHAQUE exercice**, avec `date` dans `manque` :
+    elle n'appartient à aucun, l'attacher à un seul serait faux et la taire serait pire (même
+    arbitrage que la feuille « Pièces sans date » d'un pack).
+  - **L'export relit les mouvements bancaires en entier sur ce clic.** `EcrituresTab` garde en état
+    un jeu restreint (rapprochées, portant une pièce) dont la génération a besoin ; une piste bâtie
+    dessus annoncerait manquants des mouvements qui existent.
+  Mesuré sur le dossier `test` le 19/09/2026 : 11 justificatifs validés pour 1 387,15 € que rien ne
+  comptabilise, tous porteurs de leur empreinte, dont 10 sans catégorie — l'export ne découvre donc
+  pas un défaut de plus, il pointe la porte 1 déjà connue, ce qui est le signe qu'il dit vrai.
+- **Le premier export CSV de l'application pose deux règles pour les suivants.** Un BOM UTF-8 en
+  tête, sans quoi Excel en français ouvre le fichier en CP1252 et « Libellé » devient « LibellÃ© » —
+  sur un fichier qu'un vérificateur relit, un accent cassé à chaque ligne jette le doute sur le
+  reste. Et tout champ passe par `champCsv` : sauts de ligne aplatis, guillemets doublés,
+  point-virgule protégé. Un libellé OCR porte les trois, et un seul `;` non protégé décale toutes
+  les colonnes suivantes sans que rien ne le signale (même piège que le FEC). Un test vérifie que
+  chaque ligne du fichier porte exactement autant de colonnes que l'en-tête, avec un découpage qui
+  respecte les guillemets — pas le même `split(';')` que celui qu'on cherche à mettre en défaut.
 - **Une valeur par défaut connue s'applique, elle ne s'affiche pas en attendant un clic.**
   `SUGGESTIONS_COMPTE_PAR_CODE` (lib/ecritures.ts) portait depuis le début les bons comptes PCG et
   postes 2035, mais seulement comme pré-remplissage d'un champ à valider catégorie par catégorie.
@@ -1192,10 +1229,11 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 807 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 829 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
-(`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
+(`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
+l'import de relevés (`csv.ts` pour le CSV,
 `relevePdf.ts` pour le PDF), la génération des packs et l'export d'un cabinet
 (`packGenerator.ts`, `exportCabinet.ts`), la sauvegarde et la restauration d'un dossier
 (`sauvegarde.ts`, `sauvegardeDonnees.ts`, `sauvegardeFichier.ts`) et le dépôt de fichiers côté client
