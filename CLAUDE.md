@@ -222,6 +222,21 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   exactement au succès. Sept mutations (contrôles rejoués sous le super-admin,
   liste d'exceptions retirée) doivent virer au rouge ; un contrôle qui reste vert
   est un contrôle à reprendre, même quand les invariants sont tous verts.
+- **Dans le stockage, le premier segment du chemin EST le dossier.** Les policies de
+  `storage.objects` font toutes `(storage.foldername(name))[1]::uuid` et passent ce
+  résultat à `admin_du_dossier` ou le comparent aux `memberships`. Conséquence peu
+  intuitive : un chemin dont le premier segment n'est pas un UUID ne masque pas une
+  ligne, **il fait lever le cast** — donc casse la lecture du seau pour tout le monde,
+  d'un coup. C'est le contrôle S6 de `rls.sql`, qui a l'air de ne rien vérifier.
+- **Une suppression de fichier ne se teste PAS en SQL.** Le trigger
+  `protect_objects_delete` (BEFORE DELETE → `storage.protect_delete`) refuse toute
+  suppression SQL directe, pour TOUT LE MONDE, *et avec le SQLSTATE 42501* — celui d'un
+  refus de policy. Un essai de suppression est donc indiscernable d'un refus RLS : il
+  passerait au vert avec une policy grande ouverte. C'est le test de MUTATION qui l'a
+  démasqué, le contrôle étant vert alors que sa mutation refusait de mordre. Ce qui est
+  gardé à la place est une lecture du catalogue (la policy existe-t-elle encore, avec son
+  prédicat), plus faible et annoncée comme telle ; le vrai chemin passe par l'API Storage,
+  qu'un script SQL ne peut pas appeler. Voir RGPD.md §8.6.
 - **Une table que le CLIENT écrit sort de la convention `FOR ALL`.** Le client
   a un `membership`, pas `admin_du_dossier` : la policy doit donc lister ses
   droits un par un, et surtout pas lui ouvrir la table entière. `piece_commentaires`
@@ -303,10 +318,12 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   gardée, l'autre est une vérification humaine (voir RGPD.md §8.1).
 
 - **Qui voit quoi, c'est un essai rejouable qui le dit** — `supabase/essais/rls.sql`, par
-  impersonation réelle des trois profils sur les 40 tables du schéma. Il a trouvé, à sa première
-  exécution, ce qu'aucune relecture n'avait vu : un visiteur anonyme lisait les catégories et les
-  natures d'immobilisation du cabinet (voir « Décisions techniques »). Ce qu'il ne couvre PAS : les
-  policies du stockage et les Edge Functions, restées vérifiées par relecture et essais manuels.
+  impersonation réelle des trois profils sur les 40 tables du schéma **et sur les trois seaux de
+  stockage**, qui sont le vrai enjeu : les données de patients sont dans les FICHIERS, pas dans les
+  tables (RGPD.md §4). Il a trouvé, à sa première exécution, ce qu'aucune relecture n'avait vu : un
+  visiteur anonyme lisait les catégories et les natures d'immobilisation du cabinet (voir
+  « Décisions techniques »). Ce qu'il ne couvre PAS : les Edge Functions en HTTP, et la suppression
+  d'un fichier (RGPD.md §8.6).
 - Toutes les tables métier ont RLS activé (`rls_enabled: true` sur
   l'intégralité du schéma `public`) — aucune table de données cabinet/dossier
   ne doit être créée sans policy correspondante.
@@ -1102,11 +1119,12 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   en extraire une fonction et l'exécuter (montants, dates, classification, orientation,
   régions AWS) ; ce qu'aucun test ne fait, c'est les appeler en HTTP, avec leur
   authentification et leurs erreurs.
-  **Les policies RLS sont sorties de cette liste** : `supabase/essais/rls.sql` les rejoue
-  (voir "Décisions techniques"). Mais il se lance à la main, par l'outil MCP — la CI n'a pas
-  d'accès à la base — donc la garantie tient à une règle écrite, pas à un automatisme. Et
-  elle s'arrête aux tables du schéma `public` : les policies du STOCKAGE restent vérifiées
-  par relecture, alors que c'est précisément là que vivent les données identifiantes.
+  **Les policies RLS sont sorties de cette liste** : `supabase/essais/rls.sql` les rejoue,
+  tables du schéma `public` ET stockage (voir "Décisions techniques"). Deux limites à garder :
+  il se lance à la main, par l'outil MCP — la CI n'a pas d'accès à la base — donc la garantie
+  tient à une règle écrite et non à un automatisme ; et la SUPPRESSION d'un fichier n'est pas
+  démontrable en SQL (voir RGPD.md §8.6), elle est gardée par une lecture du catalogue, plus
+  faible et annoncée comme telle.
 
 ## Tests
 

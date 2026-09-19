@@ -17,6 +17,10 @@
 --   4. Un client ne peut pas écrire ce qui appartient au cabinet.
 --   5. `prochain_numero_facture` refuse l'anonyme. Malgré son nom elle CONSOMME un numéro : un appel
 --      anonyme réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
+--   6. Et les mêmes questions sur le STOCKAGE (section S), qui est l'endroit où vivent réellement
+--      les données identifiantes de ce projet — plus un contrôle POSITIF (S3bis : le client voit
+--      bien ses propres fichiers), sans lequel un bucket devenu illisible à tous passerait pour un
+--      succès sur toute la section.
 --
 -- Les écritures d'essai sont annulées par le mécanisme de sous-transaction de PL/pgSQL : un bloc
 -- `BEGIN ... EXCEPTION` est un point de reprise implicite, donc lever volontairement une exception à
@@ -38,7 +42,8 @@
 -- À lancer par l'outil MCP Supabase (`execute_sql`). Les identifiants ci-dessous sont ceux du projet
 -- réel ; sur un autre jeu de données, les remplacer par un client et un chef existants.
 --
--- Dernier passage : 19/09/2026 — 40 tables, 3 profils, 0 en faute, 7 mutations sur 7 détectées.
+-- Dernier passage : 19/09/2026 — 16 lignes de verdict (40 tables du schéma + 3 buckets, 3 profils),
+-- 0 en faute, et 12 mutations sur 12 qui mordent.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -181,6 +186,127 @@ begin
 end $$;
 
 
+-- ═══ Le stockage ═══════════════════════════════════════════════════════════════════════════════
+--
+-- C'est ici que vivent les données identifiantes. RGPD.md §4 le mesure : les noms de patients sont
+-- dans les FICHIERS, pas dans les tables — une ligne de pièce ne porte qu'un chemin, un montant et
+-- une date. Les policies de `storage.objects` sont donc les plus importantes du projet, et étaient
+-- les dernières à n'être vérifiées que par relecture.
+--
+-- Leur mécanique tient en une ligne : le premier segment du chemin EST le dossier
+-- (`storage.foldername(name)[1]`, casté en uuid), et c'est lui qui est passé à `admin_du_dossier`
+-- ou comparé aux `memberships`. D'où le contrôle S6, qui n'a l'air de rien : un chemin dont le
+-- premier segment n'est pas un UUID ne masque pas une ligne, il fait LEVER le cast — donc casse
+-- la lecture du bucket pour tout le monde, d'un coup.
+--
+-- Comme les policies de tables, toutes portent `roles = public`. Ici les prédicats sauvent la mise
+-- (`auth.uid()` est nul sans session, donc aucune branche n'est vraie), mais c'est la même forme
+-- que la fuite trouvée sur `categories` : ce qui protège est le prédicat, pas le rôle.
+
+do $$
+declare
+  inconnu uuid := gen_random_uuid();
+  client  uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  autre_dossier uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
+  n bigint; hors bigint; sien bigint; total_sien bigint;
+  accepte boolean; motif text; mauvais bigint;
+begin
+  -- S1. L'anonyme ne voit aucun fichier des buckets privés.
+  set local role anon;
+  perform set_config('request.jwt.claims', json_build_object('role','anon')::text, true);
+  select count(*) into n from storage.objects where bucket_id in ('pieces','packs');
+  reset role;
+  insert into rls_verdict values ('S1. anonyme ne voit aucun fichier privé', 'pieces + packs', n::text, n = 0);
+
+  -- S1bis. Les logos SONT publics, et c'est voulu : ils s'affichent sur l'écran de connexion,
+  -- avant toute session. Écrit ici pour que ce soit une décision constatée et non un oubli — et
+  -- le contrôle exige qu'ils soient VISIBLES, donc il tombe aussi si on les ferme par mégarde.
+  set local role anon;
+  perform set_config('request.jwt.claims', json_build_object('role','anon')::text, true);
+  select count(*) into n from storage.objects where bucket_id = 'cabinet-logos';
+  reset role;
+  insert into rls_verdict values ('S1bis. les logos restent publics, volontairement', 'cabinet-logos',
+    n::text || ' visibles', n > 0);
+
+  -- S2. Un authentifié rattaché à rien ne voit aucun fichier privé.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', inconnu, 'role','authenticated')::text, true);
+  select count(*) into n from storage.objects where bucket_id in ('pieces','packs');
+  reset role;
+  insert into rls_verdict values ('S2. inconnu authentifié ne voit aucun fichier privé', 'pieces + packs', n::text, n = 0);
+
+  -- S3. Le client ne voit aucun fichier hors de SES dossiers.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+  select count(*) into hors from storage.objects o
+   where o.bucket_id in ('pieces','packs')
+     and ((storage.foldername(o.name))[1])::uuid not in (select m.dossier_id from memberships m where m.user_id = client);
+  select count(*) into sien from storage.objects o
+   where o.bucket_id = 'pieces'
+     and ((storage.foldername(o.name))[1])::uuid in (select m.dossier_id from memberships m where m.user_id = client);
+  reset role;
+  insert into rls_verdict values ('S3. client ne voit aucun fichier d''un autre dossier', 'storage.objects', hors::text, hors = 0);
+
+  -- S3bis. Contrôle POSITIF, et il est indispensable : sans lui, un bucket devenu illisible à tous
+  -- passerait pour un succès sur toute la section ci-dessus. Le total de référence porte sur TOUS
+  -- les dossiers du client — il en a plusieurs (voir le sélecteur multi-sociétés) — et non sur un
+  -- seul : comparé à un dossier unique, ce contrôle annonçait « 61 vus sur 2 existants » et
+  -- accusait à tort une policy qui faisait exactement son travail.
+  select count(*) into total_sien from storage.objects o
+   where o.bucket_id = 'pieces'
+     and ((storage.foldername(o.name))[1])::uuid in (select m.dossier_id from memberships m where m.user_id = client);
+  insert into rls_verdict values ('S3bis. le client voit BIEN ses propres fichiers', 'pieces (ses dossiers)',
+    sien::text || ' vus sur ' || total_sien::text, sien = total_sien and total_sien > 0);
+
+  -- S4. Le client ne dépose pas dans le dossier d'un autre.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', client, 'role','authenticated')::text, true);
+  accepte := false; motif := null;
+  begin
+    insert into storage.objects (bucket_id, name, owner_id)
+    values ('pieces', autre_dossier::text || '/essai-rls.pdf', client::text);
+    accepte := true;
+    raise exception 'ANNULATION_ESSAI';
+  exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate; end;
+  reset role;
+  insert into rls_verdict values ('S4. client ne dépose pas chez un autre', 'pieces (insert)',
+    case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif,'?') end,
+    (not accepte) and motif = '42501');
+
+  -- S5. La suppression ne se teste PAS en SQL, et c'est une limite à connaître, pas un oubli.
+  --
+  -- Un trigger de la plateforme, `protect_objects_delete` (BEFORE DELETE → `storage.protect_delete`),
+  -- refuse toute suppression SQL directe : « Direct deletion from storage tables is not allowed.
+  -- Use the Storage API instead. » Il refuse pour TOUT LE MONDE, et il refuse avec le SQLSTATE
+  -- **42501** — exactement celui d'un refus de policy.
+  --
+  -- Un essai de suppression est donc indiscernable d'un refus RLS : il passerait au vert avec une
+  -- policy grande ouverte. C'est la version « stockage » du piège 42501/42703 du haut de ce fichier,
+  -- et c'est le test de MUTATION qui l'a révélée — le contrôle avait d'abord été écrit comme les
+  -- autres, il était vert, et sa mutation (le même essai sous le super-admin, à qui la suppression
+  -- est permise) refusait de mordre. Un contrôle vert dont la mutation ne mord pas ne prouve rien.
+  --
+  -- Ce qui reste démontrable est plus faible, et dit comme tel : la policy porte-t-elle encore son
+  -- prédicat ? C'est une lecture du catalogue, pas une exécution — ça n'atteste pas que Postgres
+  -- l'applique, seulement qu'une migration ne l'a ni supprimée ni élargie. Le vrai chemin passe par
+  -- l'API Storage, qu'un script SQL ne peut pas appeler : c'est un essai manuel (cf. RGPD.md §8.6).
+  select count(*) into n from pg_policy
+   where polrelid = 'storage.objects'::regclass
+     and polname = 'pieces_storage_delete'
+     and polcmd = 'd'
+     and pg_get_expr(polqual, polrelid) like '%admin\_du\_dossier%';
+  insert into rls_verdict values ('S5. la policy de suppression garde son prédicat (lecture du catalogue)',
+    'pieces_storage_delete', case when n = 1 then 'présente, admin_du_dossier' else 'ABSENTE OU ÉLARGIE' end, n = 1);
+
+  -- S6. Tout chemin commence par un UUID (voir l'en-tête de section : un chemin mal formé ne
+  -- masque pas une ligne, il casse la lecture du bucket pour tout le monde).
+  select count(*) into mauvais from storage.objects
+   where (storage.foldername(name))[1] !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$';
+  insert into rls_verdict values ('S6. tout chemin de fichier commence par un UUID', 'storage.objects',
+    mauvais::text || ' mal formé(s)', mauvais = 0);
+end $$;
+
+
 -- ═══ Test de mutation du harnais ═══════════════════════════════════════════════════════════════
 --
 -- Chaque contrôle est rejoué sous le CHEF (super-admin, à qui tout est permis) ou sans sa liste
@@ -291,6 +417,66 @@ begin
   select count(*) into restes from facture_numerotation where annee = 2099;
   insert into rls_mutation values ('M5bis — l''annulation efface la consommation', '0 ligne 2099, compteur inchangé',
     restes || ' ligne(s) 2099, ' || numero_avant || ' -> ' || numero_apres, restes = 0 and numero_avant = numero_apres);
+end $$;
+
+-- Mutations de la section stockage. MS2 mérite un mot : le contrôle positif S3bis est le seul du
+-- fichier qui exige de VOIR quelque chose, donc sa mutation est l'inverse des autres — on le rejoue
+-- sous un inconnu, qui ne doit rien voir, et S3bis doit alors tomber.
+do $$
+declare
+  client  uuid := '797fe440-df8d-4b8e-828b-d148927bfd60';
+  chef    uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
+  autre_dossier uuid := '001c7ed7-c23b-4590-901e-693489f8af24';
+  n bigint; hors bigint; accepte boolean; motif text;
+begin
+  -- MS1 : S1 joué sous le chef, qui voit les fichiers de ses dossiers.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+  select count(*) into n from storage.objects where bucket_id in ('pieces','packs');
+  reset role;
+  insert into rls_mutation values ('MS1 — S1 joué sous le chef', 'des fichiers visibles', n || ' fichiers', n > 0);
+
+  -- MS2 : S3bis joué sous un inconnu. Le contrôle positif doit tomber.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', gen_random_uuid(), 'role','authenticated')::text, true);
+  select count(*) into n from storage.objects o
+   where o.bucket_id = 'pieces'
+     and ((storage.foldername(o.name))[1])::uuid in (select m.dossier_id from memberships m where m.user_id = client);
+  reset role;
+  insert into rls_mutation values ('MS2 — S3bis joué sous un inconnu', '0 fichier vu', n || ' fichiers', n = 0);
+
+  -- MS3 : S3 joué sous le chef.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+  select count(*) into hors from storage.objects o
+   where o.bucket_id in ('pieces','packs')
+     and ((storage.foldername(o.name))[1])::uuid not in (select m.dossier_id from memberships m where m.user_id = client);
+  reset role;
+  insert into rls_mutation values ('MS3 — S3 joué sous le chef', 'des fichiers hors de ses dossiers', hors || ' fichiers', hors > 0);
+
+  -- MS4 : le dépôt chez un autre, tenté par le chef.
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+  accepte := false; motif := null;
+  begin
+    insert into storage.objects (bucket_id, name, owner_id)
+    values ('pieces', autre_dossier::text || '/essai-mutation.pdf', chef::text);
+    accepte := true;
+    raise exception 'ANNULATION_ESSAI';
+  exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate; end;
+  reset role;
+  insert into rls_mutation values ('MS4 — dépôt chez un autre sous le chef', 'ACCEPTÉ',
+    case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif,'?') end, accepte);
+
+  -- MS5 : la mutation de S5, qui est un contrôle d'une autre nature (lecture du catalogue). Le
+  -- risque qu'il couvre est qu'une migration supprime ou élargisse la policy : on vérifie donc que
+  -- le contrôle sait dire « absente » en le posant sur un nom de policy qui n'existe pas.
+  select count(*) into n from pg_policy
+   where polrelid = 'storage.objects'::regclass
+     and polname = 'policy_qui_n_existe_pas'
+     and polcmd = 'd'
+     and pg_get_expr(polqual, polrelid) like '%admin\_du\_dossier%';
+  insert into rls_mutation values ('MS5 — S5 posé sur une policy inexistante', '0 trouvée', n || ' trouvée(s)', n = 0);
 end $$;
 
 -- Le verdict, les deux moitiés dans UN seul tableau. Ce n'est pas une coquetterie de présentation :

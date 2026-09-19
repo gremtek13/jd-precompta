@@ -162,7 +162,13 @@ Ce qui est **prouvé**, pas seulement affirmé :
   `facture_numerotation`).
 - **Isolation des fichiers entre cabinets**, corrigée après audit : les policies du stockage
   vérifient le dossier propriétaire et non plus « est admin d'un cabinet quelconque »
-  (migration `storage_pieces_packs_isolation_cabinet`).
+  (migration `storage_pieces_packs_isolation_cabinet`) — et **rejouée** depuis le 19/09/2026 par la
+  section S de `supabase/essais/rls.sql`, qui est la seule partie de ce registre à porter sur les
+  fichiers eux-mêmes plutôt que sur les lignes qui les décrivent. Mesuré : un anonyme et un
+  authentifié rattaché à rien voient 0 des 146 fichiers privés ; le client en voit 61, exactement
+  les siens, et aucun des 85 autres ; il ne peut pas déposer dans le dossier d'un tiers.
+  Un contrôle POSITIF accompagne les autres — le client doit voir ses propres fichiers — sans quoi
+  un bucket devenu illisible à tous passerait pour un succès.
 - **Inférence IA en Europe** : Bedrock `eu-west-1`, choix explicite et commenté dans le code.
 - **Secrets hors du bundle client** : clés Resend et Bedrock en secrets de fonctions,
   identifiants Super PDP dans une table sans aucune policy, atteinte uniquement par la clé de
@@ -182,8 +188,10 @@ Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître 
 
 - **Le plan Supabase est `free`** : aucune sauvegarde automatique côté hébergeur, et le contrôle
   des mots de passe contre les fuites connues est réservé au plan Pro. Voir PLAN_DE_REPRISE.md §1.
-- **Les Edge Functions et le stockage** restent vérifiés par relecture, advisors et essais manuels :
-  le harnais ci-dessus ne couvre que les policies de tables du schéma `public`.
+- **Les Edge Functions** restent vérifiées par relecture, advisors et essais manuels : aucun test ne
+  les appelle en HTTP, avec leur authentification et leurs erreurs.
+- **La SUPPRESSION d'un fichier n'est pas démontrée**, et c'est une limite nommée plutôt qu'un
+  oubli — voir §8.6.
 
 ---
 
@@ -245,3 +253,27 @@ fallait l'exécuter pour la voir.
 **Reste à faire** : le rejouer après chaque migration qui touche une policy. Ce n'est pas automatisé
 — le harnais vit dans `supabase/essais/`, qui se rejoue à la main par l'outil MCP, comme la
 restauration. L'automatiser supposerait un accès à la base depuis la CI, que ce dépôt n'a pas.
+
+### 8.6 — La suppression d'un fichier reste un essai manuel *(limite assumée)*
+
+Le harnais couvre la lecture et le dépôt des fichiers. Il ne couvre **pas** la suppression, et la
+raison mérite d'être écrite parce qu'elle piège :
+
+Un trigger de la plateforme, `protect_objects_delete` (BEFORE DELETE → `storage.protect_delete`),
+refuse toute suppression SQL directe sur `storage.objects` — *« Direct deletion from storage tables
+is not allowed. Use the Storage API instead. »* Il refuse pour **tout le monde**, et il refuse avec
+le SQLSTATE **42501**, celui-là même qu'utilise un refus de policy.
+
+Un essai de suppression est donc indiscernable d'un refus RLS : il **passerait au vert avec une
+policy grande ouverte**. C'est ce qui s'est produit — le contrôle avait d'abord été écrit comme les
+autres et il était vert. C'est sa MUTATION qui l'a démasqué : rejoué sous le super-admin, à qui la
+suppression est permise, il refusait de mordre. Un contrôle vert dont la mutation ne mord pas ne
+prouve rien.
+
+Ce qui est gardé à la place est plus faible et dit comme tel : le harnais lit le catalogue et vérifie
+que `pieces_storage_delete` existe toujours et porte encore `admin_du_dossier`. Cela ne prouve pas
+que Postgres l'applique — seulement qu'aucune migration ne l'a supprimée ni élargie.
+
+**Pour le démontrer vraiment, il faut passer par l'API Storage**, qu'un script SQL ne peut pas
+appeler : c'est un essai manuel, depuis un client authentifié. À faire une fois, et à refaire le jour
+où les policies du stockage changent.
