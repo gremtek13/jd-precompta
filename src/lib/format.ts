@@ -29,10 +29,37 @@ export function normalizeTiers(input: string): string {
 // Mots qui n'identifient personne : formes juridiques, qualificatifs de lieu, et le bruit que l'OCR
 // ramasse autour d'un nom sur une facture. « Restaurant DALLOYAU » et « DALLOYAU » sont le même
 // fournisseur ; « CARTE BANCAIRE » n'est pas un fournisseur du tout.
+// Mots qui ne désignent JAMAIS une partie : une catégorie d'entité, une forme juridique, un lieu,
+// un produit ou un mot de liaison. Le critère d'entrée dans cette liste est toujours le même — si ce
+// mot était retenu comme clé, deux tiers sans rapport se confondraient sous lui.
+//
+// Les dix derniers ont été ajoutés le 19/09/2026 après avoir fait tourner la vraie fonction sur les
+// seize tiers réels du dossier `test` : trois d'entre eux rendaient une clé FAUSSE, c'est-à-dire le
+// cas le plus coûteux (pire qu'une absence de clé — voir l'en-tête de `cleFournisseur`).
 const MOTS_SANS_IDENTITE = new Set([
+  // Formes juridiques et catégories d'entité.
   'sarl', 'sasu', 'eurl', 'selarl', 'societe', 'entreprise', 'cabinet', 'groupe', 'siege',
-  'monsieur', 'madame', 'france', 'paris', 'carte', 'bancaire', 'restaurant', 'client', 'compte',
-  'service', 'services', 'facture', 'pour', 'avec', 'dont', 'les', 'des', 'sur',
+  // « Institut » est de cette famille, au même titre que « cabinet » ou « société » : il dit ce
+  // qu'est l'organisme, pas lequel. Sans lui, « Siège Institut national de la propriété
+  // industrielle » rendait « institut » — clé sous laquelle tout autre institut se serait rangé.
+  // (« Institut Pasteur » donne bien « pasteur », qui est la vraie identité.)
+  'institut',
+  // Lieux et portées géographiques.
+  'monsieur', 'madame', 'france', 'paris',
+  'national', 'nationale',
+  // Catégories d'établissement. « Villa Estello » rendait « villa », qui ne désigne personne —
+  // deux villas différentes se seraient confondues ; la clé utile est « estello ».
+  'restaurant', 'villa',
+  // Vocabulaire commercial et bancaire générique.
+  'carte', 'bancaire', 'client', 'compte', 'service', 'services', 'facture',
+  // Vocabulaire de produit d'assurance. « RESPONSABILITÉ CIVILE PROFESSIONNELLE / PROTECTION /
+  // JURIDIQUE » n'est pas un fournisseur du tout : c'est l'intitulé d'une garantie, et tout contrat
+  // RC Pro le porterait quel que soit l'assureur. Aucun de ces mots ne nomme la compagnie.
+  'responsabilite', 'civile', 'professionnelle', 'professionnel', 'protection', 'juridique',
+  // Mots de domaine, sans valeur d'identité (« Propriété Dupont » donne « dupont »).
+  'propriete', 'industrielle', 'industriel',
+  // Liaisons de quatre caractères ou plus — en dessous, le seuil de `cleFournisseur` suffit.
+  'pour', 'avec', 'dont', 'les', 'des', 'sur',
 ])
 
 // Recolle les sigles pointés : « C.P.A.M. » devient « cpam », « S.A.R.L. » devient « sarl ».
@@ -54,8 +81,13 @@ const SIGLE_POINTE = /(?:[a-z]\.){2,}[a-z]?/g
 // C'est ce qui permet de reconnaître un même fournisseur à travers les graphies que l'OCR produit.
 // Sur un import réel, « Transmedical », « Transmedical / et redevient » et « Transmedical / et
 // soigner redevient » — des bouts de slogan recopiés avec le nom — donnaient trois tiers distincts,
-// donc trois arbitrages pour dix-sept pièces du même fournisseur. Idem pour « Siège Institut national
-// de la propriété industrielle » avec et sans virgule finale.
+// donc trois arbitrages pour dix-sept pièces du même fournisseur.
+//
+// Rendre une clé FAUSSE est pire que n'en rendre aucune, et c'est le principal risque de cette
+// fonction : sous une clé fausse, deux tiers sans rapport deviennent le même fournisseur et héritent
+// de la même catégorie. « Siège Institut national de la propriété industrielle » est le cas limite —
+// aucun de ses mots ne désigne quelqu'un en particulier, donc la bonne réponse est `null` et la pièce
+// est traitée isolément. Un faux négatif coûte un clic ; une clé fausse inscrit une catégorie fausse.
 //
 // Quatre caractères au minimum : en dessous un fragment ne désigne rien (« m », « sa »), mais
 // descendre plus bas ferait perdre des fournisseurs réels comme « ulys ».
