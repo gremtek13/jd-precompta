@@ -22,7 +22,7 @@ import { useAnnee } from '../../context/AnneeContext'
 // une fois l'année sélectionnée et le brouillon jugé complet.
 export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva }: { dossierId: string; dossierNom: string; dossierSiret: string | null; assujettiTva: boolean }) {
   const [categories, setCategories] = useState<Categorie[]>([])
-  const [pieces, setPieces] = useState<Piece[]>([])
+  const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
   const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
@@ -45,7 +45,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesData }, { data: ecrituresData }, { data: immobilisationsData }, { data: lignesData }, { data: declarationsData }] = await Promise.all([
+    const [{ data: categoriesData }, { data: piecesValideesData }, { data: ecrituresData }, { data: immobilisationsData }, { data: lignesData }, { data: declarationsData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
       supabase.from('ecritures_brouillon').select('*').eq('dossier_id', dossierId).order('date', { ascending: false }),
@@ -55,7 +55,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     ])
     setLignesBancaires(lignesData ?? [])
     setCategories(categoriesData ?? [])
-    setPieces(piecesData ?? [])
+    setPiecesValidees(piecesValideesData ?? [])
     setEcritures(ecrituresData ?? [])
     setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
     setDeclarationsTva(declarationsData ?? [])
@@ -68,7 +68,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   // Catégories utilisées par au moins une pièce validée mais sans compte associé — impossible de
   // générer l'écriture correspondante tant que ce n'est pas renseigné (voir lib/controles.ts).
-  const categoriesSansCompte = calculerCategoriesSansCompte(categories, pieces)
+  const categoriesSansCompte = calculerCategoriesSansCompte(categories, piecesValidees)
 
   // Valeur affichée dans le champ tant que le cabinet n'a rien tapé : la suggestion connue pour ce
   // code de catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -91,7 +91,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Une pièce enregistrée comme immobilisation (onglet Immobilisations) est un actif, pas une charge
   // courante — elle ne doit pas aussi générer une écriture de charge ici, sous peine de compter la
   // dépense deux fois dans le brouillon.
-  const piecesEligibles = pieces.filter(
+  const piecesEligibles = piecesValidees.filter(
     (p) => p.montant_ttc != null && !!categorieById(p.categorie_id)?.compte_comptable && !immobilisationPieceIds.has(p.id),
   )
   const enAttente = piecesEligibles.filter((p) => !ecritures.some((e) => e.piece_id === p.id))
@@ -150,7 +150,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const ruptures = rupturesPisteAudit(ecritures)
   // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé.
   const horsFec = absenceFec(ecrituresFiltrees)
-  const pieceById = (id: string) => pieces.find((p) => p.id === id) ?? null
+  const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
   // Export de la piste d'audit de l'exercice (voir lib/pisteAudit.ts) : depuis chaque écriture, le
   // justificatif et l'opération bancaire réelle, et dans l'autre sens les justificatifs validés que
@@ -173,7 +173,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       if (readError) throw readError
       // Les pièces sans date n'appartiennent à aucun exercice : elles sont jointes à chacun, et la
       // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de les taire.
-      const piecesExercice = pieces.filter((p) => !p.date_piece || anneeDe(p.date_piece) === anneeFilter)
+      const piecesExercice = piecesValidees.filter((p) => !p.date_piece || anneeDe(p.date_piece) === anneeFilter)
       const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, data ?? []))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {
@@ -204,12 +204,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     }
   }
 
-  const piecesSansTva = calculerPiecesSansTva(pieces, assujettiTva)
-  const piecesSansCategorie = piecesValideesSansCategorie(pieces)
+  const piecesSansTva = calculerPiecesSansTva(piecesValidees, assujettiTva)
+  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees)
   // Cet onglet ne charge que les pièces VALIDÉES : ce sont donc les TVA fausses déjà figées dans une
   // écriture et parties en déduction. Les autres se voient en amont, dans Justificatifs, là où on
   // peut encore les corriger avant de valider.
-  const tvaImpossible = piecesTvaImpossible(pieces)
+  const tvaImpossible = piecesTvaImpossible(piecesValidees)
 
   async function enregistrerDeclaration(e: FormEvent) {
     e.preventDefault()
@@ -551,7 +551,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           title={typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice." : undefined}
           onClick={() => {
             if (typeof anneeFilter !== 'number') return
-            const contenu = genererFec(ecrituresFiltrees, pieces, categories)
+            const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories)
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
         >

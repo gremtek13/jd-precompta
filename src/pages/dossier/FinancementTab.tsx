@@ -20,7 +20,7 @@ interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number 
 // tableau brut par compte.
 export default function FinancementTab({ dossierId }: { dossierId: string }) {
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
-  const [pieces, setPieces] = useState<Piece[]>([])
+  const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
@@ -38,7 +38,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
     setLoading(true)
     const [
       { data: empruntsData },
-      { data: piecesData },
+      { data: piecesValideesData },
       { data: categoriesData },
       { data: immobilisationsData },
       { data: cotisationsData },
@@ -57,7 +57,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       supabase.from('previsionnels_bancaires').select('*').eq('dossier_id', dossierId).maybeSingle(),
     ])
     setEmprunts((empruntsData ?? []) as Emprunt[])
-    setPieces((piecesData ?? []) as Piece[])
+    setPiecesValidees((piecesValideesData ?? []) as Piece[])
     setCategories((categoriesData ?? []) as Categorie[])
     setImmobilisations((immobilisationsData ?? []) as Immobilisation[])
     setCotisations((cotisationsData ?? []) as CotisationDeclaree[])
@@ -203,7 +203,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
 
       {situationOuverte && (
         <SituationIntermediaireModal
-          pieces={pieces}
+          piecesValidees={piecesValidees}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -224,7 +224,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
 
       {dettesOuvertes && (
         <DettesRatiosModal
-          pieces={pieces}
+          piecesValidees={piecesValidees}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -240,7 +240,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
         <PrevisionnelModal
           dossierId={dossierId}
           previsionnel={previsionnel}
-          pieces={pieces}
+          piecesValidees={piecesValidees}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -252,15 +252,15 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   )
 }
 
-function DettesRatiosModal({ pieces, categories, immobilisations, cotisations, emprunts, lignesBanque, capitalRestantTotal, mensualiteTotale, onClose }: {
-  pieces: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+function DettesRatiosModal({ piecesValidees, categories, immobilisations, cotisations, emprunts, lignesBanque, capitalRestantTotal, mensualiteTotale, onClose }: {
+  piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   emprunts: Emprunt[]; lignesBanque: LigneBanque[]; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
 }) {
   const aujourdHui = aujourdHuiSql()
   const debutAnnee = `${new Date().getFullYear()}-01-01`
   const moisEcoules = new Date().getMonth() + 1
 
-  const situationAnnee = calculerSituationIntermediaire(pieces, categories, immobilisations, cotisations, debutAnnee, aujourdHui)
+  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui)
   // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
   // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
   const plan = calculerPlanTresorerie(lignesBanque, 0, 6, 1)
@@ -423,14 +423,14 @@ function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations,
   )
 }
 
-function SituationIntermediaireModal({ pieces, categories, immobilisations, cotisations, lignesBanque, onClose }: {
-  pieces: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+function SituationIntermediaireModal({ piecesValidees, categories, immobilisations, cotisations, lignesBanque, onClose }: {
+  piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lignesBanque: LigneBanque[]; onClose: () => void
 }) {
   const [dateFin, setDateFin] = useState(aujourdHuiSql())
   const periodeDebut = `${anneeDe(dateFin)}-01-01`
 
-  const situation = calculerSituationIntermediaire(pieces, categories, immobilisations, cotisations, periodeDebut, dateFin)
+  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin)
   const tresorerieADate = Math.round(
     lignesBanque.filter((l) => l.date <= dateFin).reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0) * 100,
   ) / 100
@@ -493,9 +493,9 @@ function SituationIntermediaireModal({ pieces, categories, immobilisations, coti
   )
 }
 
-function PrevisionnelModal({ dossierId, previsionnel, pieces, categories, immobilisations, cotisations, onClose, onSaved }: {
+function PrevisionnelModal({ dossierId, previsionnel, piecesValidees, categories, immobilisations, cotisations, onClose, onSaved }: {
   dossierId: string; previsionnel: PrevisionnelBancaire | null
-  pieces: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+  piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   onClose: () => void; onSaved: () => void
 }) {
   const anneeParDefaut = new Date().getFullYear() - 1
@@ -512,7 +512,7 @@ function PrevisionnelModal({ dossierId, previsionnel, pieces, categories, immobi
   // intermédiaire (voir plus haut) sur une année civile complète, pour préremplir CA et charges de
   // référence sans resaisir depuis Clôture. Le cabinet reste libre d'ajuster avant d'enregistrer.
   function precharger() {
-    const situation = calculerSituationIntermediaire(pieces, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`)
+    const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`)
     setCaReference(String(situation.recettes))
     setChargesReference(String(situation.charges))
   }

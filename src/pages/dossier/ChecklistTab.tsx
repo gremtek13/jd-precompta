@@ -38,7 +38,12 @@ interface ItemChecklist {
 // Les points qui ne se détectent pas de façon fiable (justificatif titres-restaurant reçu...) sont de
 // simples cases à cocher manuellement, pas un faux positif automatique.
 export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { dossierId: string; assujettiTva: boolean; onNavigate: (tab: DossierTab) => void }) {
-  const [pieces, setPieces] = useState<Piece[]>([])
+  // Le nom dit le filtre, et ce n'est pas cosmétique : cet état s'appelait `pieces` alors qu'il ne
+  // porte QUE les validées. Un contrôle branché dessus par réflexe devient muet sur tout ce qui est
+  // encore à valider — c'est arrivé, sur `moisEnDoubleSurAbonnement`, dont les deux pièces du cas
+  // réel sont justement « à valider ». Un piège qu'un nom honnête supprime vaut mieux qu'un piège
+  // gardé par un contrôle.
+  const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [piecesAValider, setPiecesAValider] = useState<Piece[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
@@ -55,7 +60,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   async function load() {
     setLoading(true)
     const [
-      { data: piecesData },
+      { data: piecesValideesData },
       { data: piecesAValiderData },
       { data: cotisationsData },
       { data: lignesData },
@@ -88,7 +93,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       console.error(err)
       return [] as DoublonDeTexte[]
     }))
-    setPieces(piecesData ?? [])
+    setPiecesValidees(piecesValideesData ?? [])
     setPiecesAValider(piecesAValiderData ?? [])
     setCotisations(cotisationsData ?? [])
     setLignes(lignesData ?? [])
@@ -135,7 +140,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // envoyé quelque chose, pas que le cabinet a fini de le vérifier (ce serait plutôt "confiance-basse"
   // ci-dessus) — se limiter aux pièces validées faisait dire "aucune pièce déposée" alors que des
   // pièces fraîchement importées, encore à valider, étaient déjà bien là.
-  const piecesAnnee = [...pieces, ...piecesAValider].filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
+  const piecesAnnee = [...piecesValidees, ...piecesAValider].filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
 
   // "Points à traiter" — regroupe en un seul endroit les anomalies déjà détectées séparément dans
   // Pièces (confiance basse), Écritures (comptes manquants, TVA, désynchronisation, déséquilibre) et
@@ -144,32 +149,32 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // recalculé différemment ici, juste rassemblé.
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
-  const piecesEligiblesEcritures = pieces.filter(
+  const piecesEligiblesEcritures = piecesValidees.filter(
     (p) => p.montant_ttc != null && !!categorieById(p.categorie_id)?.compte_comptable && !immobilisationPieceIds.has(p.id),
   )
   const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, piecesEligiblesEcritures)
   const ruptures = rupturesPisteAudit(ecritures)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
-  const catSansCompte = categoriesSansCompte(categories, pieces)
-  const catSansPoste = categoriesSansPoste(categories, pieces)
-  const sansTva = piecesSansTva(pieces, assujettiTva)
-  const sansCategorie = piecesValideesSansCategorie(pieces)
+  const catSansCompte = categoriesSansCompte(categories, piecesValidees)
+  const catSansPoste = categoriesSansPoste(categories, piecesValidees)
+  const sansTva = piecesSansTva(piecesValidees, assujettiTva)
+  const sansCategorie = piecesValideesSansCategorie(piecesValidees)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
   // absente de Clôture, de la 2035 et de la Balance sans être comptée nulle part comme manquante.
-  const dateImpossible = piecesADateImpossible(pieces)
-  // Sur TOUTES les pièces, validées ET à valider — et ce n'est pas un détail : `pieces` ne porte ici
+  const dateImpossible = piecesADateImpossible(piecesValidees)
+  // Sur TOUTES les pièces, validées ET à valider — et ce n'est pas un détail : `piecesValidees` ne porte ici
   // que les validées. Les deux pièces qui ont fait naître ce contrôle sont toutes deux « à valider »,
-  // donc le brancher sur `pieces` seul le rendrait muet sur le cas même qu'il est fait pour voir.
+  // donc le brancher sur `piecesValidees` seul le rendrait muet sur le cas même qu'il est fait pour voir.
   // Une date fausse se corrige d'autant mieux qu'on la voit AVANT la validation ; après, plus
   // personne ne regarde la pièce.
-  const moisEnDouble = moisEnDoubleSurAbonnement([...pieces, ...piecesAValider])
+  const moisEnDouble = moisEnDoubleSurAbonnement([...piecesValidees, ...piecesAValider])
   // Sur les deux piles, validées comme à valider : une TVA arithmétiquement impossible l'est à tout
   // stade, et c'est avant la validation qu'il faut la voir — après, le chiffre est figé dans
   // l'écriture. Sans filtre sur l'assujettissement non plus : un montant impossible signale une
   // lecture ratée du document, et sur un dossier non assujetti c'est le TTC — donc la charge — qui
   // peut être faux (voir lib/controles.ts).
-  const tvaImpossible = piecesTvaImpossible([...pieces, ...piecesAValider])
-  const deviseNonConvertie = piecesDeviseNonConvertie([...pieces, ...piecesAValider])
+  const tvaImpossible = piecesTvaImpossible([...piecesValidees, ...piecesAValider])
+  const deviseNonConvertie = piecesDeviseNonConvertie([...piecesValidees, ...piecesAValider])
   // Même tolérance qu'EcrituresTab (1 € : une CA3 se dépose en euros arrondis).
   const declarationsEnEcart = declarationsTva.filter(
     (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)) > 1,

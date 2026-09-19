@@ -17,7 +17,7 @@ export default function ClientSimulation() {
   const { dossierActifId } = useAuth()
   const dossierId = dossierActifId
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
-  const [pieces, setPieces] = useState<Piece[]>([])
+  const [recettesValidees, setRecettesValidees] = useState<Piece[]>([])
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
   const [referencesPostes, setReferencesPostes] = useState<ReferencePosteAnnuel[]>([])
   const [loading, setLoading] = useState(true)
@@ -25,14 +25,14 @@ export default function ClientSimulation() {
   useEffect(() => {
     if (!dossierId) return
     async function load() {
-      const [{ data: cotisationsData }, { data: piecesData }, { data: referencesData }, { data: referencesPostesData }] = await Promise.all([
+      const [{ data: cotisationsData }, { data: recettesValideesData }, { data: referencesData }, { data: referencesPostesData }] = await Promise.all([
         supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
         supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee').eq('type_piece', 'vente'),
         supabase.from('references_annuelles').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }),
         supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
       ])
       setCotisations(cotisationsData ?? [])
-      setPieces(piecesData ?? [])
+      setRecettesValidees(recettesValideesData ?? [])
       setReferences(referencesData ?? [])
       setReferencesPostes(referencesPostesData ?? [])
       setLoading(false)
@@ -46,7 +46,7 @@ export default function ClientSimulation() {
   if (loading) return <p className="muted">Chargement…</p>
 
   const moisEcoules = new Date().getMonth() + 1
-  const { ca: caAnneeEnCours, cotis: cotisationsAnneeEnCours } = totauxPourAnnee(pieces, cotisations, ANNEE_COURANTE)
+  const { ca: caAnneeEnCours, cotis: cotisationsAnneeEnCours } = totauxPourAnnee(recettesValidees, cotisations, ANNEE_COURANTE)
   const caProjete = (caAnneeEnCours * 12) / moisEcoules
   const cotisationsProjetees = (cotisationsAnneeEnCours * 12) / moisEcoules
   const referenceN1 = references.find((r) => r.annee === ANNEE_COURANTE - 1) ?? null
