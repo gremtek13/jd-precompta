@@ -237,6 +237,52 @@ describe('cleFournisseur — sigles pointés', () => {
   })
 })
 
+describe('cleFournisseur — clés fausses', () => {
+  // Une clé FAUSSE est le pire cas de cette fonction : deux tiers sans rapport deviennent le même
+  // fournisseur et héritent de la même catégorie. Les trois cas ci-dessous ont été trouvés en
+  // exécutant la vraie fonction sur les seize tiers réels du dossier `test` — pas imaginés.
+
+  it("ne retient pas « villa », qui ne désigne personne", () => {
+    // Rendait « villa » : deux villas différentes se seraient confondues.
+    expect(cleFournisseur('VILLA ESTELLO')).toBe('estello')
+  })
+
+  it("rend null sur un nom dont AUCUN mot ne désigne quelqu'un", () => {
+    // Rendait « institut », clé sous laquelle tout autre institut se serait rangé. Ici aucun mot
+    // n'identifie l'organisme en particulier : null est la bonne réponse, et la pièce est traitée
+    // isolément. Un faux négatif coûte un clic, une clé fausse inscrit une catégorie fausse.
+    expect(cleFournisseur('Siège Institut national de la propriété industrielle')).toBeNull()
+    // La virgule finale de l'OCR ne change rien — les deux graphies restent équivalentes.
+    expect(cleFournisseur('Siège Institut national de la propriété industrielle,')).toBeNull()
+  })
+
+  it("rend null sur un intitulé de GARANTIE, qui n'est pas un fournisseur", () => {
+    // Rendait « responsabilite ». Tout contrat RC Pro porte cet intitulé, quel que soit l'assureur :
+    // la clé aurait regroupé des compagnies différentes sous un nom de produit.
+    expect(cleFournisseur('RESPONSABILITÉ CIVILE PROFESSIONNELLE/PROTECTION / JURIDIQUE')).toBeNull()
+  })
+
+  it('ne mange pas les identités réelles qui suivent ces mots', () => {
+    // Le risque symétrique : à force d'élargir la liste, perdre de vrais fournisseurs. Ces mots
+    // sont écartés en tant que MOT, pas en tant que nom — ce qui les suit reste la clé.
+    expect(cleFournisseur('Institut Pasteur')).toBe('pasteur')
+    expect(cleFournisseur('Villa Schweppes')).toBe('schweppes')
+    expect(cleFournisseur('Propriété Dupont')).toBe('dupont')
+    expect(cleFournisseur('Société Nationale Martin')).toBe('martin')
+  })
+
+  it('laisse intacts les treize autres tiers réels du dossier', () => {
+    // Non-régression mesurée : seules trois clés sur seize devaient changer.
+    expect(cleFournisseur('Apple Marseille')).toBe('apple')
+    expect(cleFournisseur('Restaurant DALLOYAU')).toBe('dalloyau')
+    expect(cleFournisseur('Les 3 Brasseurs')).toBe('brasseurs')
+    expect(cleFournisseur('OpenAI, LLC')).toBe('openai')
+    expect(cleFournisseur('MACSF')).toBe('macsf')
+    expect(cleFournisseur('ulys')).toBe('ulys')
+    expect(cleFournisseur('Transmedical\net soigner redevient')).toBe('transmedical')
+  })
+})
+
 describe('ajouterJours', () => {
   it('franchit une fin de mois et une fin d’année', () => {
     expect(ajouterJours('2026-01-31', 1)).toBe('2026-02-01')

@@ -915,6 +915,22 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   immédiatement, avec au moins deux groupes et un point final facultatif (l'OCR le perd souvent) :
   ni « www.edf.fr » ni « Cabinet X. Y. Martin » ne sont touchés. Le seuil des quatre caractères reste
   entier et le déborde : « E.D.F. » devient « edf », donc rejeté comme l'était « EDF ».
+  **Le critère d'entrée dans `MOTS_SANS_IDENTITE` est toujours le même** : si ce mot était retenu
+  comme clé, deux tiers sans rapport se confondraient sous lui. Une clé FAUSSE est le pire cas de
+  cette fonction — bien pire qu'une absence de clé, qui ne coûte qu'un clic, là où une clé fausse
+  inscrit une catégorie fausse. Trois cas trouvés le 19/09/2026 **en exécutant la vraie fonction sur
+  les seize tiers réels du dossier `test`**, jamais devinés :
+  « VILLA ESTELLO » rendait `villa` (la clé utile est `estello`) ; « Siège Institut national de la
+  propriété industrielle » rendait `institut`, sous lequel tout autre institut se serait rangé ; et
+  « RESPONSABILITÉ CIVILE PROFESSIONNELLE / PROTECTION / JURIDIQUE » rendait `responsabilite` alors
+  que ce n'est pas un fournisseur du tout mais l'intitulé d'une garantie, que tout contrat RC Pro
+  porte quel que soit l'assureur.
+  Les deux derniers rendent désormais **`null`** : aucun de leurs mots ne désigne quelqu'un en
+  particulier, donc la pièce est traitée isolément. **Le risque symétrique est gardé par un test** —
+  à force d'élargir la liste on finirait par manger de vrais fournisseurs, donc « Institut Pasteur »
+  doit continuer de rendre `pasteur` et « Villa Schweppes » `schweppes` : ces mots sont écartés en
+  tant que MOT, pas en tant que nom. Vérifié aussi en base avant de livrer : aucune règle déjà
+  apprise ne devient morte, aucune pièce déjà catégorisée n'est touchée.
 - **`suggererCategorie` cherche dans cet ordre : nom exact, puis clé d'identité.** L'ordre porte une
   règle métier — un arbitrage posé sur « Apple Marseille » doit primer sur un arbitrage posé sur
   « Apple ». L'essai sur le nom exact garde aussi les règles d'avant, enregistrées sous le nom
@@ -1176,7 +1192,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 802 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 807 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
