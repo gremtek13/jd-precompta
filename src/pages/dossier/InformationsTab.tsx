@@ -8,6 +8,7 @@ import { supprimerDossierDefinitivement } from '../../lib/suppressionDossier'
 import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
 import VehiculesCard from './VehiculesCard'
+import SauvegardeCard from './SauvegardeCard'
 
 // Informations déclaratives saisies une fois par le cabinet (ou récupérées auprès du client) plutôt
 // que déduites d'un document — un type de véhicule ou l'existence de tickets-restaurant ne se lit pas
@@ -263,6 +264,11 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
 
     {/* Cadre 7 du 2035-B : sans le kilométrage, la case BJ (frais de véhicules) reste vide. */}
     <VehiculesCard dossierId={dossierId} />
+
+    {/* Juste avant la zone dangereuse, et pas dedans : sauvegarder n'est pas un geste de dernière
+        minute avant une suppression, c'est ce qu'on fait régulièrement pour n'avoir jamais à le
+        regretter. Le voisinage suffit à rappeler l'un quand on vient pour l'autre. */}
+    <SauvegardeCard dossierId={dossierId} dossierNom={dossierNom} />
 
     <div className="card" style={{ maxWidth: 640, marginTop: 20 }}>
       <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
