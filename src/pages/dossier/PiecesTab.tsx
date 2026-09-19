@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
@@ -54,6 +54,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // pièce par pièce : chaque PDF repasse par Textract, donc l'opération dure des dizaines de secondes
   // sur un lot, et un bouton qui semble figé pousserait à recharger la page en plein traitement.
   const [reextraction, setReextraction] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
+  // Verrou en ref et non dans l'état ci-dessus : `disabled={reextraction !== null}` ne prend effet
+  // qu'au rendu suivant et laisse donc passer deux clics rapprochés — chacun repartant avec son
+  // propre jeu de pièces à relire, donc payant deux fois les mêmes appels Textract. Même famille que
+  // le double import en masse (141 lignes pour 78 fichiers).
+  const relectureEnCours = useRef(false)
   const [recherche, setRecherche] = useState('')
   // Précisions déposées par le client (et notes du cabinet) sur les pièces — voir lib/commentaires.ts.
   const [commentaires, setCommentaires] = useState<PieceCommentaire[]>([])
@@ -271,7 +276,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // une seule passe — chaque relecture est un appel Textract facturé, les séparer paierait deux fois
   // la même lecture.
   async function relirePiecesIncompletes() {
-    if (piecesIncompletes.length === 0) return
+    if (piecesIncompletes.length === 0 || relectureEnCours.current) return
     if (!window.confirm(
       `Relancer la lecture automatique sur ${piecesIncompletes.length} pièce(s) ?\n\n` +
       `Cela renseigne la date quand elle manque, et archive le texte lu sur le document pour l'afficher ici.\n` +
@@ -279,11 +284,18 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
       `Chaque pièce repasse par l'analyse, compte quelques secondes par document.`,
     )) return
 
+    // Posé AVANT le premier `await` — un verrou posé après ne verrouille rien.
+    relectureEnCours.current = true
     setReextraction({ fait: 0, total: piecesIncompletes.length, nomFichier: '' })
-    const resultat = await relireDocuments(pieces, avecTexteOcr, (fait, total, nomFichier) =>
-      setReextraction({ fait, total, nomFichier }),
-    )
-    setReextraction(null)
+    let resultat
+    try {
+      resultat = await relireDocuments(pieces, avecTexteOcr, (fait, total, nomFichier) =>
+        setReextraction({ fait, total, nomFichier }),
+      )
+    } finally {
+      relectureEnCours.current = false
+      setReextraction(null)
+    }
     load()
 
     const deduites = resultat.datees.filter((d) => d.deduite)

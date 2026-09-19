@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { extractPiece } from './extraction'
 import { enregistrerTexteOcr, texteOcrExploitable } from './texteOcr'
-import type { Piece } from './types'
+import type { DocumentDivers, Piece } from './types'
 
 // Rejoue l'extraction sur des pièces déjà enregistrées, pour combler ce qui leur manque : la date, et
 // le texte lu par l'OCR.
@@ -110,6 +110,87 @@ export async function relireDocuments(
     } catch (err) {
       resultat.echecs.push({
         nomFichier: piece.nom_fichier,
+        message: err instanceof Error ? err.message : "l'extraction a échoué",
+      })
+    } finally {
+      fait += 1
+    }
+  }
+
+  onProgression?.(fait, aTraiter.length, '')
+  return resultat
+}
+
+// ═══ Le pendant côté DOCUMENTS ══════════════════════════════════════════════════════════════════
+//
+// Textract tourne sur TOUS les fichiers déposés, pièces comme documents — relevés bancaires, appels
+// de cotisation, attestations, relevés d'activité. Le texte revenait donc pour chacun d'eux, et il
+// était jeté : la table a bien reçu sa colonne `document_id` et l'écran sait afficher « texte lu »,
+// mais RIEN ne l'a jamais rempli pour un document déjà en base. Mesuré le 19/09/2026 sur le dossier
+// `test` : 37 documents sur 37 sans texte, dont les SNIR qui portent les honoraires de l'année —
+// précisément le document qu'un cabinet veut pouvoir relire. Un chemin d'écriture qui n'existe pour
+// aucun appelant est une fonctionnalité à moitié livrée, et rien ne le signale : la colonne est là,
+// l'affichage est là, et l'écran reste muet parce qu'il n'y a rien à afficher.
+//
+// **Elle n'écrit QUE le texte**, et c'est plus fort encore que du côté des pièces : un document n'a
+// ni date, ni tiers, ni montant, ni statut en base (voir `documents_divers`). Il n'y a donc
+// littéralement rien d'autre à écrire — et cette fonction ne doit jamais devenir l'endroit où on
+// commencerait à en déduire.
+
+export interface ResultatRelectureDocuments {
+  // Documents dont le texte lu a été archivé.
+  textesArchives: string[]
+  // Extraction réussie mais Textract n'a rien lu (page blanche, photo illisible). Distinct d'un
+  // échec : l'appel a bien eu lieu et a bien été facturé, il n'y avait simplement rien à garder.
+  // Le dire évite de relancer indéfiniment la relecture sur les mêmes fichiers muets.
+  sansTexte: string[]
+  echecs: { nomFichier: string; message: string }[]
+}
+
+// Les documents qu'une relecture ferait progresser : ceux dont on n'a pas le texte. Sans
+// `avecTexteOcr` (voir texteOcr.documentsAvecTexteOcr) on relirait tout le dossier à chaque
+// lancement, en repayant Textract pour du texte déjà en base.
+export function documentsARelire(documents: DocumentDivers[], avecTexteOcr: Set<string>): DocumentDivers[] {
+  return documents.filter((d) => !!d.storage_path && !avecTexteOcr.has(d.id))
+}
+
+export async function relireTextesDocuments(
+  documents: DocumentDivers[],
+  avecTexteOcr: Set<string>,
+  onProgression?: (fait: number, total: number, nomFichier: string) => void,
+): Promise<ResultatRelectureDocuments> {
+  const aTraiter = documentsARelire(documents, avecTexteOcr)
+  const resultat: ResultatRelectureDocuments = { textesArchives: [], sansTexte: [], echecs: [] }
+
+  // Séquentiel pour la même raison que côté pièces : chaque PDF passe par le chemin asynchrone de
+  // Textract (dépôt S3 puis sondage jusqu'à 50 s), et lancer trente analyses d'un coup multiplie le
+  // coût au même instant pour un gain nul sur une action qu'on ne lance qu'une fois.
+  let fait = 0
+  for (const document of aTraiter) {
+    onProgression?.(fait, aTraiter.length, document.nom_fichier)
+    try {
+      const { data: fichier, error: erreurTelechargement } = await supabase.storage
+        .from('pieces')
+        .download(document.storage_path)
+      if (erreurTelechargement || !fichier) {
+        throw new Error(erreurTelechargement?.message ?? 'fichier introuvable dans le stockage')
+      }
+
+      const extraction = await extractPiece(fichier, document.nom_fichier)
+      if (!texteOcrExploitable(extraction.texte_ocr)) {
+        resultat.sansTexte.push(document.nom_fichier)
+        continue
+      }
+
+      await enregistrerTexteOcr(
+        document.dossier_id,
+        { type: 'document', id: document.id },
+        extraction.texte_ocr,
+      )
+      resultat.textesArchives.push(document.nom_fichier)
+    } catch (err) {
+      resultat.echecs.push({
+        nomFichier: document.nom_fichier,
         message: err instanceof Error ? err.message : "l'extraction a échoué",
       })
     } finally {

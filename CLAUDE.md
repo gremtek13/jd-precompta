@@ -807,6 +807,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   fichiers**, le dédoublonnage ne rattrapant que les paires où le minutage jouait en sa faveur.
   Poser le verrou dans un ref, **avant le premier `await`**. Même famille que la réservation
   avant `await` du dépôt parallèle.
+  **Les deux relectures OCR portaient le même défaut** (PiecesTab et DocumentsTab), et là le double
+  clic ne duplique pas des lignes : il paie deux fois les mêmes appels Textract sur les mêmes
+  fichiers. Corrigé des deux côtés le 19/09/2026 — chercher toutes les copies avant de corriger la
+  première, c'est la règle qui vaut ici aussi.
 - **Une date de pièce postérieure à aujourd'hui est impossible, pas improbable.** Ce qu'on lit
   alors est une validité, une échéance ou une fin de droits. Le refus vit dans `toIsoDate`
   (extract-piece), avec un jour de marge pour l'écart UTC/Paris. Le placer là et non dans la règle
@@ -1168,6 +1172,18 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   montants, jamais le statut, et la date seulement si elle était vide. C'est
   cette règle qui la rend sûre à lancer sur un dossier entier de pièces déjà
   validées et corrigées à la main.
+- **Une colonne, un affichage, et aucun chemin d'écriture : la moitié d'une fonctionnalité ne se
+  voit pas.** `piece_textes_ocr` avait reçu son `document_id`, `DocumentsTab` savait déjà déplier
+  « texte lu » — et RIEN ne l'a jamais rempli pour un document déjà en base, aucun appelant
+  n'existant. L'écran restait donc muet, non par défaut mais faute de matière, ce qui est
+  exactement ce qu'on n'a aucune raison d'aller vérifier. Mesuré le 19/09/2026 sur le dossier
+  `test` : **37 documents sur 37 sans texte**, dont les SNIR qui portent les honoraires de l'année.
+  `relireTextesDocuments` + `documentsARelire` ferment le chemin, avec le bouton « Retrouver le
+  texte lu » dans Documents. Elle n'écrit QUE le texte, et c'est plus fort que côté pièces : un
+  document n'a ni date, ni tiers, ni montant, ni statut en base — il n'y a littéralement rien
+  d'autre à écrire, et cette fonction ne doit jamais devenir l'endroit où on commencerait à en
+  déduire. « Textract n'a rien lu » est dit à part d'un échec : l'appel a bien eu lieu et a bien
+  été facturé, les confondre ferait relancer indéfiniment sur les mêmes fichiers muets.
 
 - **`ON DELETE SET NULL` ne relâche RIEN à l'insertion.** Le socle de sauvegarde affirmait qu'une
   ligne dont le parent manque est acceptée et le lien mis à NULL en silence. Faux, vérifié en base
@@ -1229,7 +1245,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 829 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 838 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
