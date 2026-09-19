@@ -640,6 +640,21 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   il écarte les lignes d'échéance ou de règlement, refuse de trancher entre plusieurs dates sans
   libellé, et rend un diagnostic plutôt qu'une valeur plausible — une pièce datée à tort part dans
   le mauvais mois, parfois dans le mauvais exercice, sans que rien ne le signale.
+- **Un contrôle qui ne peut se déclencher que sur une correction humaine est un contrôle à
+  l'envers — celui-là ne sera donc pas construit.** « Le montant stocké n'apparaît pas dans le texte
+  OCR » semble être le contrôle de cohérence qui manque ; il est en réalité tautologique, puisqu'un
+  montant extrait VIENT du texte et s'y trouve par construction. **Mesuré le 19/09/2026 sur le
+  dossier `test`** : 39 pièces sur 39 portant un montant l'ont écrit mot pour mot dans leur propre
+  texte, zéro absent. Le seul cas où il se déclencherait est celui d'un montant corrigé à la main par
+  le cabinet — précisément celui où l'humain a raison et l'OCR avait tort. Il ne signalerait donc que
+  le travail bien fait, et un avertissement qui se trompe toujours finit par emporter dans son
+  discrédit les avertissements voisins qui, eux, disent vrai.
+  **Le piège était dans la requête, pas dans les données** : comparer `montant_ttc` (en euros) au
+  texte des factures en dollars faisait apparaître quatre manquants — c'est `montant_devise` qu'une
+  pièce en devise écrit sur son document. Un premier comptage rendait donc 35 sur 39, et la
+  conclusion aurait été juste pour une raison fausse.
+  Ce qui reste la bonne piste est inchangé : une source EXTÉRIEURE au document (le relevé bancaire,
+  `piecesMontantIntrouvableEnBanque`), pas une cohérence interne de plus.
 - **Une liste plafonnée dit qu'elle l'est.** Les outils de l'agent comptable rendaient leur
   tableau tronqué tel quel, indiscernable d'une liste complète : le modèle en tirait un total
   qu'il annonçait au comptable, alors même que le prompt lui demande des montants exacts et de
