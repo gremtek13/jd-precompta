@@ -71,18 +71,42 @@ export async function enregistrerTexteOcr(
   if (error) console.error('Enregistrement du texte OCR échoué:', error)
 }
 
+// Qui, dans ce dossier, a déjà un texte lu — et si on a pu le savoir.
+//
+// **L'erreur est rendue, et ce n'est pas du zèle.** Une lecture qui échoue donnerait un ensemble
+// VIDE, indiscernable de « aucun texte en base » : l'écran proposerait alors « Retrouver le texte
+// lu (N) » sur tout le dossier, et chaque relecture est un appel Textract FACTURÉ sur des documents
+// dont le texte est peut-être déjà là. C'est la famille de panne que ce projet connaît — une lecture
+// dont l'échec ressemble à un résultat vide — appliquée à la seule liste dont dépend une dépense.
+export interface PresenceTexteOcr {
+  avecTexte: Set<string>
+  erreur: string | null
+}
+
 // Les pièces d'un dossier dont on a le texte. Volontairement les identifiants SEULS : c'est ce qui
 // permet à la liste d'afficher « voir le texte lu » sans rapatrier les textes eux-mêmes.
-export async function piecesAvecTexteOcr(dossierId: string): Promise<Set<string>> {
-  const { data } = await supabase.from('piece_textes_ocr').select('piece_id').eq('dossier_id', dossierId)
-  return new Set((data ?? []).map((l) => l.piece_id as string | null).filter((id): id is string => !!id))
+export async function piecesAvecTexteOcr(dossierId: string): Promise<PresenceTexteOcr> {
+  return presenceTexteOcr(dossierId, 'piece_id')
 }
 
 // Le pendant côté Documents — même usage : savoir quelles lignes peuvent proposer « voir le texte
 // lu » sans rapatrier les textes eux-mêmes.
-export async function documentsAvecTexteOcr(dossierId: string): Promise<Set<string>> {
-  const { data } = await supabase.from('piece_textes_ocr').select('document_id').eq('dossier_id', dossierId)
-  return new Set((data ?? []).map((l) => l.document_id as string | null).filter((id): id is string => !!id))
+export async function documentsAvecTexteOcr(dossierId: string): Promise<PresenceTexteOcr> {
+  return presenceTexteOcr(dossierId, 'document_id')
+}
+
+async function presenceTexteOcr(
+  dossierId: string,
+  colonne: 'piece_id' | 'document_id',
+): Promise<PresenceTexteOcr> {
+  const { data, error } = await supabase.from('piece_textes_ocr').select(colonne).eq('dossier_id', dossierId)
+  const lignes = (data ?? []) as Record<string, unknown>[]
+  return {
+    avecTexte: new Set(
+      lignes.map((l) => l[colonne] as string | null).filter((id): id is string => !!id),
+    ),
+    erreur: error?.message ?? null,
+  }
 }
 
 // Le texte d'une seule pièce, chargé à la demande. Null quand il n'a jamais été enregistré — cas

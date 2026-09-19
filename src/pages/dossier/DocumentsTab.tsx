@@ -34,6 +34,10 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // Documents dont on a le texte lu, et celui actuellement déplié. Les identifiants seuls : un texte
   // OCR pèse des kilo-octets, et cette liste peut compter des dizaines de lignes.
   const [avecTexteOcr, setAvecTexteOcr] = useState<Set<string>>(new Set())
+  // Non nul quand la liste ci-dessus n'a PAS pu être lue. Un ensemble vide veut alors dire « je ne
+  // sais pas », et surtout pas « aucun texte » : proposer « Retrouver le texte lu » sur cette base
+  // paierait Textract une seconde fois sur des documents déjà lus (voir lib/texteOcr.ts).
+  const [presenceTexteIncertaine, setPresenceTexteIncertaine] = useState<string | null>(null)
   const [ocrOuvert, setOcrOuvert] = useState<{ documentId: string; texte: string | null } | null>(null)
   const [relecture, setRelecture] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
   // Le verrou est un ref, jamais l'état ci-dessus : `setRelecture` ne prend effet qu'au rendu
@@ -66,7 +70,9 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     ])
     setDocuments(documentsData ?? [])
     setSousDossiers(sousDossiersData ?? [])
-    setAvecTexteOcr(await documentsAvecTexteOcr(dossierId))
+    const presence = await documentsAvecTexteOcr(dossierId)
+    setAvecTexteOcr(presence.avecTexte)
+    setPresenceTexteIncertaine(presence.erreur)
     setLoading(false)
   }
 
@@ -84,7 +90,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // **Elle n'écrit QUE le texte** — un document n'a ni date, ni tiers, ni montant, ni statut en base,
   // donc il n'y a rien d'autre à écrire et rien à détruire (voir lib/relectureDocuments.ts).
   async function relireDocumentsSansTexte() {
-    if (documentsSansTexte.length === 0 || relectureEnCours.current) return
+    if (documentsSansTexte.length === 0 || relectureEnCours.current || presenceTexteIncertaine) return
     if (!window.confirm(
       `Relancer la lecture automatique sur ${documentsSansTexte.length} document(s) ?\n\n` +
       `Elle archive le texte lu, pour l'afficher ensuite sous « texte lu » sur chaque ligne.\n` +
@@ -303,7 +309,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           )}
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
-          {documentsSansTexte.length > 0 && (
+          {documentsSansTexte.length > 0 && !presenceTexteIncertaine && (
             <button
               className="btn btn-outline btn-sm"
               disabled={relecture !== null}
@@ -323,6 +329,15 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           <button className="btn btn-primary btn-sm" onClick={() => setAjoutOuvert(true)}>+ Ajouter des documents</button>
         </div>
       </div>
+
+      {presenceTexteIncertaine && (
+        // Dit pourquoi le bouton a disparu, plutôt que de le laisser manquer sans raison visible.
+        <p className="error-text">
+          La liste des textes déjà lus n'a pas pu être chargée ({presenceTexteIncertaine}) —
+          « Retrouver le texte lu » est masqué : relancer la lecture repaierait Textract sur des
+          documents dont le texte est peut-être déjà archivé.
+        </p>
+      )}
 
       {error && <p className="error-text">{error}</p>}
 

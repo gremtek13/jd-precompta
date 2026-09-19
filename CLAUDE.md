@@ -1284,6 +1284,14 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   montants, jamais le statut, et la date seulement si elle était vide. C'est
   cette règle qui la rend sûre à lancer sur un dossier entier de pièces déjà
   validées et corrigées à la main.
+  **Et la liste « qui a déjà un texte » DIT si elle a pu être lue** (`PresenceTexteOcr`, lib/texteOcr.ts).
+  C'est ce qui décide de la dépense : une lecture refusée rendait un ensemble VIDE, indiscernable de
+  « aucun texte en base », et les deux écrans proposaient alors « Retrouver le texte lu (N) » sur le
+  dossier entier — soit N appels Textract facturés sur des documents dont le texte est peut-être déjà
+  archivé. Le bouton disparaît donc quand la liste est illisible, en disant pourquoi : un bouton qui
+  manque sans raison visible est le début d'un ticket, et ici sa présence coûte de l'argent. Famille
+  déjà connue (« une lecture dont l'échec ressemble à un résultat vide »), appliquée cette fois à la
+  seule liste dont dépend une facture.
 - **Une colonne, un affichage, et aucun chemin d'écriture : la moitié d'une fonctionnalité ne se
   voit pas.** `piece_textes_ocr` avait reçu son `document_id`, `DocumentsTab` savait déjà déplier
   « texte lu » — et RIEN ne l'a jamais rempli pour un document déjà en base, aucun appelant
@@ -1388,7 +1396,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 889 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 892 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

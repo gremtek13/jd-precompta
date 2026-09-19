@@ -66,6 +66,9 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // Identifiants SEULS des pièces dont on a le texte lu : de quoi savoir où proposer « texte lu »
   // sans rapatrier les textes, qui pèsent des kilo-octets chacun (voir lib/texteOcr.ts).
   const [avecTexteOcr, setAvecTexteOcr] = useState<Set<string>>(new Set())
+  // Même garde que dans DocumentsTab : une liste qu'on n'a pas pu lire ne vaut pas « aucun texte ».
+  // Relancer la lecture sur cette base paierait Textract sur des pièces déjà lues.
+  const [presenceTexteIncertaine, setPresenceTexteIncertaine] = useState<string | null>(null)
   const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[]>([])
   // Le texte de la pièce dépliée, chargé à la demande. Une seule à la fois : c'est une consultation
   // ponctuelle pour lever un doute, pas une colonne du tableau.
@@ -112,7 +115,9 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     // dossier, et passées à la ligne : c'est le seul endroit où elles servent vraiment, au moment où
     // l'opérateur choisit une catégorie sans savoir ce qu'est « BOULANGER MARSEILLE ».
     setCommentaires(await chargerCommentaires(dossierId))
-    setAvecTexteOcr(await piecesAvecTexteOcr(dossierId))
+    const presence = await piecesAvecTexteOcr(dossierId)
+    setAvecTexteOcr(presence.avecTexte)
+    setPresenceTexteIncertaine(presence.erreur)
     // Best-effort, comme les relevés incohérents de la Checklist : l'échec est journalisé, jamais lu
     // comme « aucun doublon » — un écran qui affiche « rien à signaler » sur une lecture refusée dit
     // le contraire de ce qu'il sait.
@@ -307,7 +312,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // une seule passe — chaque relecture est un appel Textract facturé, les séparer paierait deux fois
   // la même lecture.
   async function relirePiecesIncompletes() {
-    if (piecesIncompletes.length === 0 || relectureEnCours.current) return
+    if (piecesIncompletes.length === 0 || relectureEnCours.current || presenceTexteIncertaine) return
     if (!window.confirm(
       `Relancer la lecture automatique sur ${piecesIncompletes.length} pièce(s) ?\n\n` +
       `Cela renseigne la date quand elle manque, et archive le texte lu sur le document pour l'afficher ici.\n` +
@@ -431,7 +436,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
               Catégoriser par fournisseur ({groupesACategoriser.length})
             </button>
           )}
-          {piecesIncompletes.length > 0 && (
+          {piecesIncompletes.length > 0 && !presenceTexteIncertaine && (
             <button
               className="btn btn-outline btn-sm"
               disabled={reextraction !== null}
@@ -460,6 +465,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           <button className="btn btn-primary btn-sm" onClick={() => setAjoutOuvert(true)}>+ Ajouter des documents</button>
         </div>
       </div>
+
+      {presenceTexteIncertaine && (
+        // Dit pourquoi le bouton a disparu, plutôt que de le laisser manquer sans raison visible.
+        <p className="error-text">
+          La liste des textes déjà lus n'a pas pu être chargée ({presenceTexteIncertaine}) —
+          « Relire les documents » est masqué : relancer la lecture repaierait Textract sur des
+          pièces dont le texte est peut-être déjà archivé.
+        </p>
+      )}
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (

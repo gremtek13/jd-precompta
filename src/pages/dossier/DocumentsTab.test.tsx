@@ -11,6 +11,8 @@ const faux = vi.hoisted(() => ({
   documents: [] as Record<string, unknown>[],
   // Programmé par test : ce que rendent la lecture du texte et la suppression du document.
   lectureTexte: { data: null as unknown, error: null as { message: string } | null },
+  // La liste « qui a déjà un texte », lue en une fois au chargement.
+  presence: { data: [] as unknown[], error: null as { message: string } | null },
   suppression: { error: null as { message: string } | null },
   inserts: [] as Record<string, unknown>[],
   suppressions: 0,
@@ -34,7 +36,7 @@ vi.mock('../../lib/supabase', () => {
       if (table === 'piece_textes_ocr') {
         return mode === 'unique'
           ? Promise.resolve({ data: faux.lectureTexte.data, error: faux.lectureTexte.error })
-          : Promise.resolve({ data: [], error: null })
+          : Promise.resolve({ data: faux.presence.data, error: faux.presence.error })
       }
       if (table === 'pieces' && operation === 'insert') {
         return new Promise((resoudre) => {
@@ -74,6 +76,7 @@ function documentDeTest() {
 function reinitialiser() {
   faux.documents = [documentDeTest()]
   faux.lectureTexte = { data: { texte: 'FOUR MICRO-ONDES' }, error: null }
+  faux.presence = { data: [], error: null }
   faux.suppression = { error: null }
   faux.inserts = []
   faux.suppressions = 0
@@ -117,6 +120,27 @@ describe('DocumentsTab — « C\'est une facture »', () => {
     expect(faux.inserts).toHaveLength(0)
     expect(faux.suppressions).toBe(0)
     expect(screen.getByText(/conversion annulée pour ne pas le perdre/)).toBeDefined()
+  })
+
+  it('ne propose pas de relecture facturée quand la liste des textes déjà lus est illisible', async () => {
+    reinitialiser()
+    // Une liste vide et une liste illisible rendent le même ensemble vide, et veulent dire le
+    // contraire l'une de l'autre. Sur la seconde, « Retrouver le texte lu » relancerait Textract —
+    // facturé — sur des documents dont le texte est peut-être déjà archivé.
+    faux.presence = { data: [], error: { message: 'permission denied for table piece_textes_ocr' } }
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+    await screen.findByText(/relancer la lecture repaierait Textract/)
+
+    expect(screen.queryByRole('button', { name: /Retrouver le texte lu/ })).toBeNull()
+  })
+
+  it('propose la relecture quand la liste, elle, a bien été lue', async () => {
+    reinitialiser()
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+
+    // Le même écran, à la seule différence de l'erreur de lecture : sans ce contre-exemple, le test
+    // ci-dessus passerait aussi sur un bouton supprimé pour de bon.
+    expect(await screen.findByRole('button', { name: /Retrouver le texte lu \(1\)/ })).toBeDefined()
   })
 
   it('dit que le document est resté ici quand sa suppression échoue', async () => {

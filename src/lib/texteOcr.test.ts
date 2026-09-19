@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // des appels à la base, et ce qui se vérifie ici c'est la ligne envoyée — et surtout ce qui n'est
 // PAS envoyé quand il n'y a rien à archiver.
 const reponses = {
-  select: { data: [] as { piece_id: string }[] | null },
+  select: { data: [] as { piece_id: string }[] | null, error: null as { message: string } | null },
   single: { data: null as { texte: string } | null },
   upsert: { error: null as { message: string } | null },
 }
@@ -37,7 +37,7 @@ const { enregistrerTexteOcr, piecesAvecTexteOcr, texteOcrDeLaPiece, texteOcrExpl
 beforeEach(() => {
   upsert = null
   onConflict = undefined
-  reponses.select = { data: [] }
+  reponses.select = { data: [], error: null }
   reponses.single = { data: null }
   reponses.upsert = { error: null }
 })
@@ -117,15 +117,31 @@ describe('lecture', () => {
   it('rend les seuls identifiants des pièces dont on a le texte', () => {
     // Volontairement pas les textes : ils pèsent des kilo-octets chacun, et la liste n'a besoin que
     // de savoir où proposer « texte lu ».
-    reponses.select = { data: [{ piece_id: 'a' }, { piece_id: 'b' }] }
-    return piecesAvecTexteOcr('d1').then((ids) => {
-      expect([...ids].sort()).toEqual(['a', 'b'])
+    reponses.select = { data: [{ piece_id: 'a' }, { piece_id: 'b' }], error: null }
+    return piecesAvecTexteOcr('d1').then(({ avecTexte, erreur }) => {
+      expect([...avecTexte].sort()).toEqual(['a', 'b'])
+      expect(erreur).toBeNull()
     })
   })
 
   it('rend un ensemble vide plutôt que null quand la base ne rend rien', () => {
-    reponses.select = { data: null }
-    return piecesAvecTexteOcr('d1').then((ids) => { expect(ids.size).toBe(0) })
+    reponses.select = { data: null, error: null }
+    return piecesAvecTexteOcr('d1').then(({ avecTexte, erreur }) => {
+      expect(avecTexte.size).toBe(0)
+      expect(erreur).toBeNull()
+    })
+  })
+
+  it('DIT que la lecture a échoué, au lieu de rendre un ensemble vide muet', () => {
+    // Les deux cas rendent un ensemble vide et veulent dire le contraire l'un de l'autre : « aucun
+    // texte en base » invite à relancer la lecture, « je n'ai pas pu savoir » l'interdit — chaque
+    // relecture est un appel Textract facturé sur des documents peut-être déjà lus. L'appelant ne
+    // peut faire la différence que si elle lui est dite.
+    reponses.select = { data: null, error: { message: 'permission denied for table piece_textes_ocr' } }
+    return piecesAvecTexteOcr('d1').then(({ avecTexte, erreur }) => {
+      expect(avecTexte.size).toBe(0)
+      expect(erreur).toContain('permission denied')
+    })
   })
 
   it('rend le texte d’une pièce', () => {
