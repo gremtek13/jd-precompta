@@ -1348,10 +1348,9 @@ Vitest sur la logique métier pure de `src/lib` — 882 tests couvrant les dates
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
-l'import de relevés (`csv.ts` pour le CSV,
-`relevePdf.ts` pour le PDF) et la lecture d'une balance venue d'un autre logiciel
-(`balanceImport.ts`), (
-`relevePdf.ts` pour le PDF), la génération des packs et l'export d'un cabinet
+l'import de relevés (`csv.ts` pour le CSV, `relevePdf.ts` pour le PDF), la lecture
+d'une balance venue d'un autre logiciel (`balanceImport.ts`),
+la génération des packs et l'export d'un cabinet
 (`packGenerator.ts`, `exportCabinet.ts`), la sauvegarde et la restauration d'un dossier
 (`sauvegarde.ts`, `sauvegardeDonnees.ts`, `sauvegardeFichier.ts`) et le dépôt de fichiers côté client
 (`depot.ts`) comme côté cabinet (`importFichiers.ts`), et le moteur de recherche partagé
