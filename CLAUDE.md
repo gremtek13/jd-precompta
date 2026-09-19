@@ -1342,10 +1342,15 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   PAS sauvegardé et qu'on découvrirait sinon en pleine reprise — au premier rang les comptes
   `auth.users`, qu'il faut recréer AVEC leurs UUID d'origine, quatre colonnes du schéma les exigeant
   en NOT NULL sans contournement possible.
-- **La couverture Vitest s'arrête à `src/lib`** (voir "Tests") : les composants et les
-  Edge Functions restent vérifiés par la relecture de code, les advisors Supabase et des
-  tests manuels réels (y compris, pour Super PDP, par l'utilisateur lui-même puisque cet
-  environnement ne peut pas atteindre `api.superpdp.tech`). Nuance à garder : les Edge
+- **La couverture Vitest s'arrête à `src/lib`, À DEUX ÉCRANS PRÈS** (voir "Tests") : les
+  composants et les Edge Functions restent, pour l'essentiel, vérifiés par la relecture de
+  code, les advisors Supabase et des tests manuels réels (y compris, pour Super PDP, par
+  l'utilisateur lui-même puisque cet environnement ne peut pas atteindre
+  `api.superpdp.tech`). Depuis le 19/09/2026 un projet Vitest « écrans » existe (jsdom +
+  Testing Library) et couvre deux composants : les verrous d'exécution de `VehiculesCard` et
+  d'`ImportDossierModal`, plus le refus de saisir sans exercice choisi. C'est un premier fil,
+  pas une couverture : les douze autres onglets n'ont toujours aucun test de rendu.
+  Nuance à garder : les Edge
   Functions ne sont pas SANS filet — plusieurs tests lisent leur vraie source déployée pour
   en extraire une fonction et l'exécuter (montants, dates, classification, orientation,
   régions AWS) ; ce qu'aucun test ne fait, c'est les appeler en HTTP, avec leur
@@ -1359,7 +1364,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 882 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 885 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -1371,6 +1376,23 @@ la génération des packs et l'export d'un cabinet
 (`depot.ts`) comme côté cabinet (`importFichiers.ts`), et le moteur de recherche partagé
 par tous les écrans (`recherche.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
+
+**Deux projets Vitest, et la séparation porte une règle** (`vitest.config.ts`) : « logique »
+(`src/**/*.test.ts`, environnement `node`, rien à charger) et « écrans » (`src/**/*.test.tsx`,
+plugin React + `jsdom` + Testing Library). Un test d'écran ne remplace aucun test de `src/lib` :
+il vise ce qu'aucun calcul pur ne peut voir — le verrou d'exécution, le câblage d'un contrôle sur
+le mauvais sous-ensemble, un bouton affiché quand il ne devrait pas l'être. Dans le défaut
+d'origine (141 lignes importées pour 78 fichiers), toute la logique appelée derrière était juste.
+`src/test/ecrans.ts` pose le démontage automatique entre deux tests (`afterEach(cleanup)`), qui ne
+s'installe pas tout seul tant que `globals` reste à false.
+
+**Deux `fireEvent.click` de suite ne sont PAS un double clic.** Chacun ouvre son propre `act`, qui
+rend le composant en sortant : le second clic tombe donc sur un bouton déjà re-rendu, avec l'état à
+jour. Écrit ainsi, le tout premier test d'écran du dépôt restait VERT en remettant le verrou dans un
+`useState`, c'est-à-dire avec le défaut de production réinstallé. Les deux clics partent donc dans le
+MÊME `act` (`await act(async () => { bouton.click(); bouton.click() })`), qui est la séquence réelle.
+Trouvé par mutation, pas par relecture — un harnais qui ment est pire qu'un harnais absent, et
+celui-là mentait sur le seul défaut qu'il prétendait garder.
 
 - `npm test` — la suite, dans le fuseau des utilisateurs.
 - `npm run test:watch` — en continu pendant le développement.
