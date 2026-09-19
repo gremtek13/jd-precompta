@@ -17,7 +17,7 @@ import { useAnnee } from '../../context/AnneeContext'
 // exercice de rattachement) que ce brouillon ne prétend pas maîtriser — voir le bandeau.
 export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const [categories, setCategories] = useState<Categorie[]>([])
-  const [pieces, setPieces] = useState<Piece[]>([])
+  const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Cadre 7 du 2035-B : le total des indemnités kilométriques alimente la case BJ, ligne 23.
@@ -38,7 +38,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesData }, { data: immobilisationsData }, { data: cotisationsData }, { data: vehiculesData }, { data: dossierData }] = await Promise.all([
+    const [{ data: categoriesData }, { data: piecesValideesData }, { data: immobilisationsData }, { data: cotisationsData }, { data: vehiculesData }, { data: dossierData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
@@ -50,7 +50,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     setDossier(dossierData ?? null)
     setVehicules(vehiculesData ?? [])
     setCategories(categoriesData ?? [])
-    setPieces(piecesData ?? [])
+    setPiecesValidees(piecesValideesData ?? [])
     setImmobilisations(immobilisationsData ?? [])
     setCotisations(cotisationsData ?? [])
     setLoading(false)
@@ -61,10 +61,10 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 
   // Catégories utilisées par une pièce validée mais sans poste 2035 associé — le regroupement par
   // poste ignorera ces pièces tant que ce n'est pas renseigné (voir lib/controles.ts).
-  const categoriesSansPoste = calculerCategoriesSansPoste(categories, pieces)
+  const categoriesSansPoste = calculerCategoriesSansPoste(categories, piecesValidees)
   // Même famille que « Postes manquants », un cran plus tôt dans la chaîne : sans catégorie du tout,
   // le montant n'atteint même pas la question du poste (voir lib/controles.ts).
-  const piecesSansCategorie = piecesValideesSansCategorie(pieces)
+  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees)
 
   // Valeur affichée tant que le cabinet n'a rien tapé : la suggestion connue pour ce code de
   // catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -88,7 +88,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // exercices dans un seul total par poste — pas ce qu'on attend d'une clôture. "Toutes années" reste
   // disponible (utile pour un premier tour d'horizon) mais affiche un avertissement explicite.
   const anneesDisponibles = [...new Set([
-    ...pieces.filter((p) => p.date_piece).map((p) => anneeDe(p.date_piece!)),
+    ...piecesValidees.filter((p) => p.date_piece).map((p) => anneeDe(p.date_piece!)),
     ...cotisations.map((c) => anneeDe(c.echeance)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
@@ -103,7 +103,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, pieces, categories, immobilisations, cotisations, vehicules),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans

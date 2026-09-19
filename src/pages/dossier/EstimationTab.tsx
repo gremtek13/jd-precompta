@@ -14,8 +14,12 @@ const ANNEE_COURANTE = new Date().getFullYear()
 // brouillon de précomptabilité. Simulateur officiel des impôts déjà disponible pour ce volet.
 export default function EstimationTab({ dossierId }: { dossierId: string }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
-  const [pieces, setPieces] = useState<Piece[]>([])
-  const [piecesToutes, setPiecesToutes] = useState<Piece[]>([])
+  // Deux jeux, deux filtres, et les noms le disent désormais. `recettesValidees` est restreint aux
+  // pièces de VENTE validées, `piecesValidees` à toutes les validées. Le second s'appelait
+  // `piecesToutes` — un nom qui affirmait le contraire de ce que la requête demande, puisqu'il
+  // exclut tout ce qui est encore à valider.
+  const [recettesValidees, setRecettesValidees] = useState<Piece[]>([])
+  const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
@@ -44,8 +48,8 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setLoading(true)
     const [
       { data: cotisationsData },
-      { data: piecesData },
-      { data: piecesToutesData },
+      { data: recettesValideesData },
+      { data: piecesValideesData },
       { data: categoriesData },
       { data: immobilisationsData },
       { data: referencesData },
@@ -60,8 +64,8 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
       supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
     ])
     setCotisations(cotisationsData ?? [])
-    setPieces(piecesData ?? [])
-    setPiecesToutes(piecesToutesData ?? [])
+    setRecettesValidees(recettesValideesData ?? [])
+    setPiecesValidees(piecesValideesData ?? [])
     setCategories(categoriesData ?? [])
     setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
     setReferences(referencesData ?? [])
@@ -75,7 +79,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   // entamés. Pas de lissage saisonnier ni de logique de régularisation URSSAF (calcul provisionnel
   // réel bien plus complexe) — juste un repère pour anticiper, pas un calcul officiel.
   const moisEcoules = new Date().getMonth() + 1
-  const { ca: caAnneeEnCours, cotis: cotisationsAnneeEnCours } = totauxPourAnnee(pieces, cotisations, ANNEE_COURANTE)
+  const { ca: caAnneeEnCours, cotis: cotisationsAnneeEnCours } = totauxPourAnnee(recettesValidees, cotisations, ANNEE_COURANTE)
   const caProjete = (caAnneeEnCours * 12) / moisEcoules
   const cotisationsProjetees = (cotisationsAnneeEnCours * 12) / moisEcoules
 
@@ -147,7 +151,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(pieces, cotisations, annee)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -180,7 +184,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   function totauxParPostePourAnnee(annee: number): Map<string, number> {
     const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
     const totaux = new Map<string, number>()
-    for (const p of piecesToutes) {
+    for (const p of piecesValidees) {
       if (!p.date_piece?.startsWith(String(annee))) continue
       if (immobilisationPieceIds.has(p.id)) continue
       const cat = categorieById(p.categorie_id)

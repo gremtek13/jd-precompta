@@ -801,6 +801,19 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   vise un cabinet qui veut réduire sa saisie : ce qui est connu est appliqué, l'utilisateur vérifie
   et corrige. Un champ vide qui fait disparaître des pièces en silence est pire qu'un défaut
   modifiable — c'est pour ça que « Autre » a aussi reçu un compte (628000 / Divers).
+- **Un nom qui ment sur son filtre est un piège qu'aucun contrôle ne rattrape.** Six écrans
+  déclaraient un état `pieces` qui ne portait QUE les pièces validées (`.eq('statut', 'validee')`),
+  pendant que six autres en déclaraient un, du même nom, qui portait tout. Le même identifiant
+  signifiait donc deux choses selon le fichier, et rien ne le disait. **Vécu le 19/09/2026** :
+  `moisEnDoubleSurAbonnement` a été branché sur `pieces` dans `ChecklistTab` par réflexe — or les
+  deux pièces du cas réel sont « à valider », donc le contrôle serait resté muet sur le cas même
+  qu'il est fait pour voir. Rattrapé par hasard, en relisant le chargement.
+  Les six portent désormais `piecesValidees`, et les deux écrans qui restreignent en plus au type
+  vente portent `recettesValidees` (Estimation, simulation client). Le pire était
+  `EstimationTab.piecesToutes`, dont le nom affirmait l'inverse de sa requête.
+  **Un piège qu'un nom supprime vaut mieux qu'un piège gardé par un contrôle** : le compilateur
+  vérifie un renommage de façon exhaustive, là où un contrôle ne voit que ce qu'on a pensé à lui
+  montrer. Règle qui en découle : un état qui porte un sous-ensemble dit lequel dans son nom.
 - **Un verrou d'exécution est un `useRef`, jamais un état React.** `setRunning(true)` ne prend
   effet qu'au rendu suivant : `disabled={running}` laisse donc passer deux clics rapprochés, et
   les deux entrent dans le traitement. Sur l'import en masse, chacun repartait avec **son propre**
