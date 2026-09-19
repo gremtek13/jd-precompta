@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -151,6 +151,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
   // absente de Clôture, de la 2035 et de la Balance sans être comptée nulle part comme manquante.
   const dateImpossible = piecesADateImpossible(pieces)
+  // Sur TOUTES les pièces, validées ET à valider — et ce n'est pas un détail : `pieces` ne porte ici
+  // que les validées. Les deux pièces qui ont fait naître ce contrôle sont toutes deux « à valider »,
+  // donc le brancher sur `pieces` seul le rendrait muet sur le cas même qu'il est fait pour voir.
+  // Une date fausse se corrige d'autant mieux qu'on la voit AVANT la validation ; après, plus
+  // personne ne regarde la pièce.
+  const moisEnDouble = moisEnDoubleSurAbonnement([...pieces, ...piecesAValider])
   // Sur les deux piles, validées comme à valider : une TVA arithmétiquement impossible l'est à tout
   // stade, et c'est avant la validation qu'il faut la voir — après, le chiffre est figé dans
   // l'écriture. Sans filtre sur l'assujettissement non plus : un montant impossible signale une
@@ -194,6 +200,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // démontre qu'elle est fausse. Elle part telle quelle en TVA déductible et dans la charge.
     { id: 'tva-impossible', label: 'pièce(s) dont la TVA est arithmétiquement impossible', action: 'Corriger ces montants', nb: tvaImpossible.length, cible: 'pieces', severite: 'erreur' },
     { id: 'date-impossible', label: 'pièce(s) datée(s) après leur dépôt — rangées dans le mauvais exercice', action: 'Corriger ces dates', nb: dateImpossible.length, cible: 'pieces', severite: 'erreur' },
+    // « Erreur » comme la date impossible, et pour la même raison : la pièce part dans le mauvais
+    // mois, parfois le mauvais exercice. En prime elle bloque un rapprochement bancaire qui était
+    // certain (voir lib/controles.ts) — le rapprochement, lui, n'annonce qu'un doute.
+    { id: 'mois-en-double', label: "mois d'abonnement en double, avec un mois voisin vide — une date mal lue", action: 'Corriger le mois de ces pièces', nb: moisEnDouble.length, cible: 'pieces', severite: 'erreur' },
     // En « erreur » : la pièce n'a AUCUN montant en euros tant que le taux manque, donc elle ne
     // compte nulle part — ni en charge, ni en TVA, ni dans la 2035. Exactement l'effet d'une pièce
     // sans catégorie, par un autre chemin.

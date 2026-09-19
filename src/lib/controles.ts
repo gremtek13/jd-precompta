@@ -1,4 +1,4 @@
-import { ajouterJours, aujourdHuiSql, dateLocaleDe } from './format'
+import { ajouterJours, aujourdHuiSql, cleFournisseur, dateLocaleDe } from './format'
 import type { Categorie, Piece } from './types'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
@@ -187,4 +187,111 @@ export function piecesADateImpossible(pieces: Piece[]): PieceDateImpossible[] {
     }
   }
   return impossibles
+}
+
+/** Un mois qui porte deux échéances d'un même abonnement, alors qu'un mois voisin n'en porte aucune. */
+export interface MoisEnDoubleSurAbonnement {
+  /** Le fournisseur, tel qu'il est écrit sur la première pièce du groupe — c'est ce que l'écran montre. */
+  tiers: string
+  /** Le montant qui se répète, en euros. */
+  montant: number
+  /** Le mois (AAAA-MM) qui en porte plusieurs. */
+  mois: string
+  /** Les pièces rangées dans ce mois-là. L'une d'elles est mal datée ; laquelle est un arbitrage. */
+  pieces: Piece[]
+  /** Le mois voisin resté vide, où l'une de ces pièces a presque sûrement sa place. */
+  moisProbable: string
+}
+
+// Nombre de mois distincts en dessous duquel on ne parle pas d'abonnement. À deux mois, deux factures
+// du même montant sont une coïncidence banale ; à trois, c'est une série, et un trou dans une série
+// se voit.
+const MOIS_MINIMUM_ABONNEMENT = 3
+
+// Un abonnement mensuel facture une fois par mois. Deux échéances dans le même mois avec un mois
+// voisin VIDE n'est donc pas « deux factures » : c'est une date mal lue, et le mois vide dit laquelle.
+//
+// CE QUE ÇA COÛTE, mesuré sur le dossier `test` le 19/09/2026. `mai.pdf` (Transmedical, 38,40 €) porte
+// la date du 01/06/2025 : juin en compte deux, mai zéro. Trois conséquences en cascade, et aucun écran
+// ne les reliait :
+//   - la charge de mai part dans l'exercice de juin — sur un exercice à cheval, c'est la mauvaise année ;
+//   - le prélèvement bancaire réel du 05/05 ne trouve plus de pièce en face et reste non rapproché ;
+//   - les DEUX pièces de juin se disputent le prélèvement du 05/06, donc `analyserAppariements` rend
+//     « plusieurs pièces possibles » et refuse un appariement qui était certain. Le rapprochement
+//     annonce un doute là où il y a une erreur de date : le symptôme, jamais la cause.
+//
+// POURQUOI LE MOIS VIDE EST EXIGÉ, et pas seulement le doublon. Un fournisseur peut légitimement
+// facturer deux fois dans le mois. C'est le TROU voisin qui rend la lecture certaine — sans lui, le
+// contrôle crierait au loup sur des séries parfaitement normales, et un avertissement qui se trompe
+// souvent finit par ne plus être lu. Sur les 41 pièces réelles du dossier : une trouvaille, zéro
+// fausse alerte.
+//
+// Le voisin doit tomber DANS la plage observée de la série : sinon le premier mois d'un abonnement
+// signalerait toujours le mois d'avant, où il n'y avait simplement encore rien.
+//
+// **Il ne corrige jamais rien.** Il dit quel mois est vide ; choisir laquelle des deux pièces y
+// appartient demande de regarder les documents, et c'est l'arbitrage du cabinet.
+export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonnement[] {
+  const groupes = new Map<string, Piece[]>()
+  for (const piece of pieces) {
+    if (!piece.date_piece || piece.montant_ttc == null) continue
+    // La clé d'identité et non le nom exact : l'OCR recopie du bruit autour du nom, et « Transmedical »
+    // / « Transmedical / et redevient » sont le même abonnement (voir cleFournisseur). Sans clé
+    // identifiable, la pièce est traitée isolément — regrouper sur le seul montant confondrait des
+    // fournisseurs sans rapport.
+    const cle = cleFournisseur(piece.tiers)
+    if (!cle) continue
+    const cleGroupe = `${cle}|${piece.montant_ttc}`
+    const groupe = groupes.get(cleGroupe)
+    if (groupe) groupe.push(piece)
+    else groupes.set(cleGroupe, [piece])
+  }
+
+  const trouves: MoisEnDoubleSurAbonnement[] = []
+  for (const groupe of groupes.values()) {
+    // Index de mois absolu (année × 12 + mois) : toute l'arithmétique reste sur le calendrier civil,
+    // sans jamais passer par un Date, donc insensible au fuseau de qui regarde.
+    const parMois = new Map<number, Piece[]>()
+    for (const piece of groupe) {
+      const index = indexMois(piece.date_piece!)
+      const mois = parMois.get(index)
+      if (mois) mois.push(piece)
+      else parMois.set(index, [piece])
+    }
+    if (parMois.size < MOIS_MINIMUM_ABONNEMENT) continue
+
+    const indexes = [...parMois.keys()]
+    const premier = Math.min(...indexes)
+    const dernier = Math.max(...indexes)
+
+    for (const [index, piecesDuMois] of parMois) {
+      if (piecesDuMois.length < 2) continue
+      // Le mois PRÉCÉDENT d'abord : quand une date est mal lue, ce qui a été pris pour elle est
+      // presque toujours postérieur — une échéance, une fin de période, une date de règlement. Le
+      // mois manquant est donc plus souvent celui d'avant.
+      const vide = [index - 1, index + 1].find(
+        (voisin) => voisin >= premier && voisin <= dernier && !parMois.has(voisin),
+      )
+      if (vide === undefined) continue
+      trouves.push({
+        tiers: piecesDuMois[0].tiers ?? '',
+        montant: piecesDuMois[0].montant_ttc!,
+        mois: moisDeIndex(index),
+        pieces: piecesDuMois,
+        moisProbable: moisDeIndex(vide),
+      })
+    }
+  }
+
+  return trouves.sort((a, b) => a.mois.localeCompare(b.mois) || a.tiers.localeCompare(b.tiers))
+}
+
+function indexMois(dateSql: string): number {
+  return Number(dateSql.slice(0, 4)) * 12 + Number(dateSql.slice(5, 7)) - 1
+}
+
+function moisDeIndex(index: number): string {
+  const annee = Math.floor(index / 12)
+  const mois = (index % 12) + 1
+  return `${annee}-${String(mois).padStart(2, '0')}`
 }

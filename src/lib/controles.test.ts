@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriesSansCompte, categoriesSansPoste, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
+import { categoriesSansCompte, categoriesSansPoste, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import { aujourdHuiSql, ajouterJours, dateLocaleDe } from './format'
 import type { Categorie, Piece } from './types'
 
@@ -262,5 +262,115 @@ describe('piecesADateImpossible', () => {
     const saine = piece({ id: 'ok', date_piece: '2026-01-05', created_at: depot })
     const fautive = piece({ id: 'ko', date_piece: '2030-01-05', created_at: depot })
     expect(piecesADateImpossible([saine, fautive, saine]).map((d) => d.piece.id)).toEqual(['ko'])
+  })
+})
+
+
+describe('moisEnDoubleSurAbonnement', () => {
+  // Un abonnement mensuel : une pièce par mois, même fournisseur, même montant.
+  const abonnement = (mois: string[], o: Partial<Piece> = {}) =>
+    mois.map((m, i) =>
+      piece({ id: `p${i}`, nom_fichier: `${m}.pdf`, tiers: 'Transmedical', montant_ttc: 38.4, date_piece: `${m}-01`, ...o }),
+    )
+
+  it('signale le mois qui en porte deux quand un mois voisin est vide', () => {
+    // Le cas réel : mai.pdf daté du 01/06. Juin en compte deux, mai zéro.
+    const pieces = abonnement(['2025-03', '2025-04', '2025-06', '2025-06', '2025-07'])
+    const trouves = moisEnDoubleSurAbonnement(pieces)
+    expect(trouves).toHaveLength(1)
+    expect(trouves[0]).toMatchObject({ tiers: 'Transmedical', montant: 38.4, mois: '2025-06', moisProbable: '2025-05' })
+    expect(trouves[0].pieces).toHaveLength(2)
+  })
+
+  it("ne signale RIEN quand aucun mois voisin n'est vide", () => {
+    // Un fournisseur peut facturer deux fois dans le mois. Sans trou à côté, rien ne prouve une
+    // erreur — et un avertissement qui se trompe souvent finit par ne plus être lu.
+    expect(moisEnDoubleSurAbonnement(abonnement(['2025-03', '2025-04', '2025-05', '2025-05', '2025-06']))).toEqual([])
+  })
+
+  it('préfère le mois PRÉCÉDENT quand les deux voisins sont vides', () => {
+    // Une date mal lue est presque toujours POSTÉRIEURE à la vraie — une échéance, une fin de
+    // période, une date de règlement. Le mois manquant est donc plus souvent celui d'avant.
+    const pieces = abonnement(['2025-01', '2025-02', '2025-05', '2025-05', '2025-08'])
+    expect(moisEnDoubleSurAbonnement(pieces)[0].moisProbable).toBe('2025-04')
+  })
+
+  it("ne propose pas un mois situé hors de la série observée", () => {
+    // Le doublon est sur le PREMIER mois : le mois d'avant est vide parce que l'abonnement n'avait
+    // pas commencé, pas parce qu'une pièce y manque. C'est le mois suivant qui est proposé.
+    const pieces = abonnement(['2025-03', '2025-03', '2025-05', '2025-06'])
+    expect(moisEnDoubleSurAbonnement(pieces)[0].moisProbable).toBe('2025-04')
+  })
+
+  it("se tait quand le doublon est au bord et que le seul voisin interne est pris", () => {
+    const pieces = abonnement(['2025-03', '2025-03', '2025-04', '2025-05'])
+    expect(moisEnDoubleSurAbonnement(pieces)).toEqual([])
+  })
+
+  it("exige une vraie série : deux mois ne font pas un abonnement", () => {
+    // Deux factures du même montant le même mois, plus une autre : c'est une coïncidence banale,
+    // pas une série dont on saurait lire le trou.
+    expect(moisEnDoubleSurAbonnement(abonnement(['2025-03', '2025-05', '2025-05']))).toEqual([])
+  })
+
+  it('regroupe sur la clé d\'identité, pas sur le nom exact', () => {
+    // L'OCR recopie du bruit autour du nom : « Transmedical », « Transmedical / et redevient » et
+    // « Transmedical / et soigner redevient » sont le même abonnement (cas réel du dossier).
+    const pieces = [
+      piece({ id: 'a', tiers: 'Transmedical', montant_ttc: 38.4, date_piece: '2025-03-01' }),
+      piece({ id: 'b', tiers: 'Transmedical\net redevient', montant_ttc: 38.4, date_piece: '2025-04-01' }),
+      piece({ id: 'c', tiers: 'Transmedical\net soigner redevient', montant_ttc: 38.4, date_piece: '2025-06-01' }),
+      piece({ id: 'd', tiers: 'Transmedical', montant_ttc: 38.4, date_piece: '2025-06-15' }),
+      piece({ id: 'e', tiers: 'Transmedical', montant_ttc: 38.4, date_piece: '2025-07-01' }),
+    ]
+    const trouves = moisEnDoubleSurAbonnement(pieces)
+    expect(trouves).toHaveLength(1)
+    expect(trouves[0]).toMatchObject({ mois: '2025-06', moisProbable: '2025-05' })
+  })
+
+  it('ne confond pas deux fournisseurs au même montant', () => {
+    // Sans le fournisseur dans la clé, deux abonnements différents à 38,40 € formeraient une seule
+    // série, et leurs mois se combleraient l'un l'autre.
+    const pieces = [
+      ...abonnement(['2025-03', '2025-04', '2025-06', '2025-06']),
+      ...abonnement(['2025-05'], { tiers: 'Estello SARL' }),
+    ]
+    const trouves = moisEnDoubleSurAbonnement(pieces)
+    expect(trouves).toHaveLength(1)
+    expect(trouves[0].moisProbable).toBe('2025-05')
+  })
+
+  it("ignore une pièce dont aucun mot n'identifie un fournisseur", () => {
+    // « CARTE BANCAIRE » ne désigne personne : regrouper dessus mélangerait des achats sans rapport.
+    const pieces = abonnement(['2025-03', '2025-04', '2025-06', '2025-06', '2025-07'], { tiers: 'CARTE BANCAIRE' })
+    expect(moisEnDoubleSurAbonnement(pieces)).toEqual([])
+  })
+
+  it("n'invente pas une série à partir de pièces SANS montant", () => {
+    // Sans montant, rien ne dit que ces pièces sont la même échéance répétée — et la trouvaille
+    // porterait un montant nul là où son type promet un nombre. Le garde sur `montant_ttc` est ce
+    // qui l'empêche ; c'est la seule mutation de ce contrôle qu'aucun autre test ne tue.
+    const sansMontant = abonnement(['2025-03', '2025-04', '2025-06', '2025-06', '2025-07'], { montant_ttc: null })
+    expect(moisEnDoubleSurAbonnement(sansMontant)).toEqual([])
+  })
+
+  it('ignore une pièce sans date ou sans montant', () => {
+    const pieces = [
+      ...abonnement(['2025-03', '2025-04', '2025-06', '2025-06', '2025-07']),
+      piece({ id: 'sans-date', tiers: 'Transmedical', montant_ttc: 38.4, date_piece: null }),
+      piece({ id: 'sans-montant', tiers: 'Transmedical', montant_ttc: null, date_piece: '2025-05-01' }),
+    ]
+    // La pièce sans montant ne doit PAS combler le trou de mai : elle n'appartient à aucune série.
+    expect(moisEnDoubleSurAbonnement(pieces)[0].moisProbable).toBe('2025-05')
+  })
+
+  it('franchit une fin d\'année sans se tromper de mois', () => {
+    // L'arithmétique passe par un index absolu (année × 12 + mois) : décembre → janvier doit marcher.
+    const pieces = abonnement(['2025-10', '2025-11', '2026-01', '2026-01', '2026-02'])
+    expect(moisEnDoubleSurAbonnement(pieces)[0]).toMatchObject({ mois: '2026-01', moisProbable: '2025-12' })
+  })
+
+  it('rend une liste vide sur un abonnement sain', () => {
+    expect(moisEnDoubleSurAbonnement(abonnement(['2025-03', '2025-04', '2025-05', '2025-06']))).toEqual([])
   })
 })

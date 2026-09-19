@@ -875,6 +875,31 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   candidat en face — avec un tiers lu « DARNIS JEREMY », le nom du client lui-même, là où la banque
   disait « PRLV SEPA TRANSMEDICAL ». Un faux négatif coûte un clic ; un faux positif inscrit une
   donnée fausse comme vérifiée par le cabinet.
+- **Un rapprochement qui hésite dit un symptôme, pas une cause.** `analyserAppariements` a été exécuté
+  sur les données réelles du dossier `test` (41 pièces, les 26 mouvements non rapprochés qui pouvaient
+  former une paire) : 6 appariements certains, 6 à arbitrer, et **chacun des six refus est juste** —
+  les trois OpenAI → MACSF sont exactement le faux positif que la tolérance de change annonce, et
+  « DARNIS JEREMY » → TRANSMEDICAL le cas d'origine. Le moteur ne sous-performe pas.
+  Mais les deux derniers doutes, « plusieurs pièces possibles », ne venaient pas d'une ambiguïté :
+  `mai.pdf` (Transmedical, 38,40 €) porte la date du **01/06/2025**. Juin compte deux échéances, mai
+  zéro. Trois conséquences en cascade, qu'aucun écran ne reliait : la charge de mai part dans le mois
+  de juin (sur un exercice à cheval, la mauvaise année) ; le prélèvement réel du 05/05 ne trouve plus
+  de pièce et reste non rapproché ; et les deux pièces de juin se disputent celui du 05/06, donc un
+  appariement certain devient un arbitrage. **Le rapprochement ne pouvait pas dire mieux** — il ne
+  voit que la collision, jamais la date fausse qui la produit.
+  `moisEnDoubleSurAbonnement` (lib/controles.ts) la nomme : pour un (fournisseur, montant) qui revient
+  sur au moins trois mois, un mois à deux échéances **avec un mois voisin VIDE** est une date mal lue,
+  et le mois vide dit laquelle. Trois décisions le rendent lisible plutôt que bavard : le mois vide est
+  **exigé** (un fournisseur peut facturer deux fois dans le mois — c'est le trou qui rend la lecture
+  certaine, et sur les 41 pièces réelles : une trouvaille, zéro fausse alerte) ; le voisin doit tomber
+  DANS la plage observée, sinon le premier mois d'un abonnement signalerait toujours le mois d'avant ;
+  et à voisins également vides c'est le **précédent** qui est proposé, une date mal lue étant presque
+  toujours postérieure à la vraie (échéance, fin de période, date de règlement). Il ne corrige jamais
+  rien : choisir laquelle des deux pièces déplacer demande d'ouvrir les documents.
+  **Il est branché sur les pièces à valider AUTANT que sur les validées**, et c'est le piège de câblage
+  de ce contrôle : dans `ChecklistTab`, `pieces` ne porte que les validées, or les deux pièces qui ont
+  fait naître ce contrôle sont toutes deux « à valider » — le brancher là aurait produit un contrôle
+  muet sur le cas même qu'il est fait pour voir.
 - **Comparer deux noms se fait mot à mot, jamais par sous-chaîne.** `libelle.includes(mot)` sur le
   libellé entier confirmait « Medical Service » avec « Transmedical » : la suite de lettres est
   bien là, à l'intérieur d'un autre mot. Au centime et au jour près, ça validait le prélèvement d'un
@@ -1245,7 +1270,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 838 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 851 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
