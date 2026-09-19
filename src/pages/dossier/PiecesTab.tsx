@@ -6,6 +6,7 @@ import { LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesTvaImpossible } fro
 import { DEVISE_PIVOT } from '../../lib/devises'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
 import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
+import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { grouperParTiers } from '../../lib/suggestionTiers'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -65,6 +66,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // Identifiants SEULS des pièces dont on a le texte lu : de quoi savoir où proposer « texte lu »
   // sans rapatrier les textes, qui pèsent des kilo-octets chacun (voir lib/texteOcr.ts).
   const [avecTexteOcr, setAvecTexteOcr] = useState<Set<string>>(new Set())
+  const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[]>([])
   // Le texte de la pièce dépliée, chargé à la demande. Une seule à la fois : c'est une consultation
   // ponctuelle pour lever un doute, pas une colonne du tableau.
   const [ocrOuvert, setOcrOuvert] = useState<{ pieceId: string; texte: string | null } | null>(null)
@@ -111,6 +113,13 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     // l'opérateur choisit une catégorie sans savoir ce qu'est « BOULANGER MARSEILLE ».
     setCommentaires(await chargerCommentaires(dossierId))
     setAvecTexteOcr(await piecesAvecTexteOcr(dossierId))
+    // Best-effort, comme les relevés incohérents de la Checklist : l'échec est journalisé, jamais lu
+    // comme « aucun doublon » — un écran qui affiche « rien à signaler » sur une lecture refusée dit
+    // le contraire de ce qu'il sait.
+    setDoublonsTexte(await chargerDoublonsDeTexte(dossierId).catch((err) => {
+      console.error(err)
+      return [] as DoublonDeTexte[]
+    }))
 
     setPieces(piecesData ?? [])
     setCategories(categoriesData ?? [])
@@ -146,6 +155,14 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // porte une date mal lue (voir lib/controles.ts). Sur la LIGNE, comme la TVA impossible, parce que
   // c'est ici que la pièce se corrige — et parce que l'autre écran qui en souffre, le rapprochement
   // bancaire, ne sait dire que « plusieurs pièces possibles », c'est-à-dire le symptôme.
+  // Le même document déposé deux fois sous deux fichiers différents — ce que l'empreinte du FICHIER
+  // ne peut pas voir (voir lib/doublonsTexte.ts). Sur la ligne, comme les deux autres badges : c'est
+  // ici qu'on ouvre les deux pièces pour décider laquelle supprimer.
+  const doublonParPiece = new Map<string, number>()
+  for (const doublon of doublonsTexte) {
+    for (const id of doublon.pieceIds) doublonParPiece.set(id, doublon.pieceIds.length + doublon.documentIds.length)
+  }
+
   const moisSuspectParPiece = new Map<string, string>()
   for (const trouve of moisEnDoubleSurAbonnement(pieces)) {
     for (const piece of trouve.pieces) {
@@ -166,7 +183,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     // Même rang que la TVA impossible, et pour la même raison : ce n'est pas un pronostic mais une
     // impossibilité démontrée — un abonnement mensuel ne facture pas deux fois le même mois en
     // laissant le mois d'à côté vide.
-    motifTvaParPiece.has(p.id) || moisSuspectParPiece.has(p.id) ? -1 : (PRIORITE_CONFIANCE[p.confiance ?? ''] ?? 3)
+    motifTvaParPiece.has(p.id) || moisSuspectParPiece.has(p.id) || doublonParPiece.has(p.id) ? -1 : (PRIORITE_CONFIANCE[p.confiance ?? ''] ?? 3)
   const trie = statutFilter === 'a_valider'
     ? [...filteredBase].sort((a, b) => prioriteDe(a) - prioriteDe(b))
     : filteredBase
@@ -546,6 +563,17 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                       <div style={{ marginTop: 4 }}>
                         <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={moisSuspectParPiece.get(p.id)}>
                           Mois à vérifier
+                        </span>
+                      </div>
+                    )}
+                    {doublonParPiece.has(p.id) && (
+                      <div style={{ marginTop: 4 }}>
+                        <span
+                          className="badge badge-danger"
+                          style={{ fontSize: '0.7rem' }}
+                          title={`${doublonParPiece.get(p.id)} pièces/documents de ce dossier ont exactement le même texte lu — c'est le même document déposé plusieurs fois, sous des fichiers différents. L'empreinte du fichier ne peut pas le voir.`}
+                        >
+                          Doublon de contenu
                         </span>
                       </div>
                     )}

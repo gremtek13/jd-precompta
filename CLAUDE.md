@@ -191,7 +191,9 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   facture — jamais une modification en place.
 - **Détection de doublons par hash de contenu** (SHA-256 du fichier, pas du
   nom) avant tout dépôt de pièce/document, pour repérer un même fichier
-  déposé deux fois.
+  déposé deux fois. **Elle a un angle mort, par construction** : deux EXPORTS
+  du même document ont des octets différents — voir la règle sur
+  `doublonsTexte` plus bas, et l'empreinte du TEXTE qui la ferme.
 - Style de code des Edge Functions : fichiers plats, une fonction
   `Deno.serve`, helpers locaux au fichier (voir "auto-porteur" ci-dessous).
 
@@ -1219,6 +1221,30 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déduire. « Textract n'a rien lu » est dit à part d'un échec : l'appel a bien eu lieu et a bien
   été facturé, les confondre ferait relancer indéfiniment sur les mêmes fichiers muets.
 
+- **L'empreinte du FICHIER ne voit pas le même document exporté deux fois.** Le dédoublonnage du
+  projet repose entièrement sur le SHA-256 du fichier, et c'est la bonne base : elle attrape le cas
+  le plus fréquent, le même fichier redéposé. Mais un document repris d'un portail fournisseur,
+  réimprimé en PDF, rescanné ou simplement renommé a des octets différents et la même substance.
+  **Mesuré le 19/09/2026 sur le dossier `test`** : « mai.pdf » et « juin.pdf » (Transmedical, 38,40 €)
+  portent deux empreintes de fichier distinctes et **exactement le même texte OCR**. Et c'est le seul
+  cas du dossier — les 40 autres textes sont uniques.
+  Ce que ça coûte, en chaîne : une échéance de trop dans le mois (donc la même charge comptée deux
+  fois si les deux sont validées et catégorisées, en 2035 comme en balance) ; le prélèvement du mois
+  réellement manquant sans pièce en face ; et deux pièces qui se disputent le même mouvement, donc un
+  appariement certain refusé en « plusieurs pièces possibles ».
+  `piece_textes_ocr.texte_md5` ferme l'angle mort, et trois décisions le rendent fiable :
+  - **Colonne GÉNÉRÉE**, jamais écrite par l'application. Une empreinte qu'un appelant pourrait
+    oublier de mettre à jour finirait par désigner un texte qui n'existe plus ; Postgres la recalcule
+    à chaque écriture, donc elle ne peut pas dériver.
+  - **Espaces normalisés avant le calcul** : l'OCR ne recolle pas toujours les blancs de la même
+    façon, et deux lectures du même document ne doivent pas différer pour un saut de ligne.
+  - **La lecture ne rapatrie QUE les empreintes** (`chargerEmpreintesTexte`), jamais les textes —
+    c'est tout l'intérêt d'avoir l'empreinte en base plutôt que calculée côté client, la liste
+    couvrant le dossier entier et un texte OCR pesant des kilo-octets.
+  Comparé **à l'intérieur d'un dossier seulement** : deux cabinets peuvent parfaitement recevoir la
+  même facture du même opérateur, ce ne serait pas un doublon. Badge « Doublon de contenu » sur la
+  ligne de Pièces et point « erreur » en Checklist ; rien n'est jamais supprimé automatiquement —
+  choisir laquelle des deux pièces retirer est un arbitrage.
 - **`ON DELETE SET NULL` ne relâche RIEN à l'insertion.** Le socle de sauvegarde affirmait qu'une
   ligne dont le parent manque est acceptée et le lien mis à NULL en silence. Faux, vérifié en base
   (schéma jetable, une relation SET NULL) : Postgres refuse par `foreign_key_violation`, exactement
@@ -1279,7 +1305,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 851 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 862 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
