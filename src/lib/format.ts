@@ -201,6 +201,15 @@ export function ajouterMois(dateSql: string, n: number): string {
   return `${anneeCible}-${String(moisCible + 1).padStart(2, '0')}-${String(jourCible).padStart(2, '0')}`
 }
 
+// Ajoute `n` jours (négatif accepté) à une date SQL. Même discipline qu'`ajouterMois` : l'arithmétique
+// se fait en UTC, donc ni le fuseau ni le passage à l'heure d'été ne peuvent décaler le résultat d'un
+// jour — c'est précisément le genre d'écart d'un jour que ce dépôt a déjà payé trois fois.
+export function ajouterJours(dateSql: string, n: number): string {
+  const [annee, mois, jour] = dateSql.slice(0, 10).split('-').map(Number)
+  const d = new Date(Date.UTC(annee, mois - 1, jour + n))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+}
+
 // Nombre de dépôts par mois sur les `nbMois` derniers mois (le dernier = mois en cours), dans l'ordre
 // chronologique — alimente les tendances des tuiles chiffrées.
 export function comptesParMois(datesIso: string[], nbMois: number): number[] {

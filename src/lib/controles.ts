@@ -1,3 +1,4 @@
+import { ajouterJours, aujourdHuiSql, dateLocaleDe } from './format'
 import type { Categorie, Piece } from './types'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
@@ -137,4 +138,53 @@ export function piecesTvaImpossible(pieces: Piece[]): PieceTvaImpossible[] {
 // dollars (voir lib/tauxChange.ts) — et ce contrôle est ce qui rend cette absence visible.
 export function piecesDeviseNonConvertie(pieces: Piece[]): Piece[] {
   return pieces.filter((p) => p.devise !== 'EUR' && p.taux_change == null)
+}
+
+/** Une pièce dont la date lue ne peut pas être vraie. */
+export interface PieceDateImpossible {
+  piece: Piece
+  /** La date portée par la pièce. */
+  date: string
+  /** Le jour du dépôt : la borne qu'une date de pièce ne peut pas dépasser. */
+  borne: string
+}
+
+// Une pièce datée APRÈS le jour où elle a été déposée. On ne photographie pas une facture qui
+// n'existe pas encore : ce qui a été lu est autre chose — une date de validité, une échéance, une
+// fin de droits, ou un chiffre mal reconnu.
+//
+// Pourquoi ce contrôle existe alors qu'`extract-piece` refuse déjà les dates futures (`toIsoDate`) :
+// **ce garde-fou ne garde que la porte d'entrée**. Il ne couvre ni la saisie manuelle dans la fiche
+// pièce, ni les corrections faites à la main, ni — surtout — ce qui est DÉJÀ en base, entré avant sa
+// pose. Constaté en production : une pièce datée du 27/09/2028, déposée le 16/09/2026, sans tiers ni
+// montant, confiance « basse ». Un contrôle posé à l'entrée ne dit jamais rien de ce qui est entré
+// avant lui.
+//
+// Ce que ça coûte quand personne ne le voit : la pièce part dans un exercice qui n'existe pas encore.
+// Elle disparaît de tous les totaux de l'année en cours — Clôture, 2035, Balance — sans qu'aucun
+// écran ne la compte comme manquante. Elle n'est pas « en attente », elle est ailleurs.
+//
+// La borne est le jour du DÉPÔT, pas « aujourd'hui », et c'est plus strict : une pièce déposée en
+// septembre et datée de décembre est tout aussi impossible, alors qu'« après aujourd'hui » cesserait
+// de la voir en décembre. `created_at` est un instant, donc lu dans le fuseau de qui regarde
+// (`dateLocaleDe`), avec un jour de marge — la même que `toIsoDate`, et pour la même raison : à
+// l'ouest de Paris, le jour local du dépôt peut apparaître une journée plus tôt que celui où la
+// pièce a réellement été reçue.
+export function piecesADateImpossible(pieces: Piece[]): PieceDateImpossible[] {
+  const impossibles: PieceDateImpossible[] = []
+  for (const piece of pieces) {
+    // Ce garde a l'air redondant — `null > '2026-09-17'` est déjà faux en JavaScript, donc une pièce
+    // sans date ne serait pas signalée de toute façon. Il ne l'est pas : sans lui, `date` ci-dessous
+    // vaut `string | null` et `tsc -b` refuse. Le retirer est la seule mutation de ce contrôle
+    // qu'aucun test ne tue ; c'est le compilateur qui s'en charge, et il faut le savoir avant de
+    // « simplifier ».
+    if (!piece.date_piece) continue
+    // Sans horodatage de dépôt, la seule borne défendable reste le jour même : une pièce ne peut pas
+    // être datée de demain, quelle que soit la date à laquelle elle est arrivée.
+    const borne = piece.created_at ? dateLocaleDe(piece.created_at) : aujourdHuiSql()
+    if (piece.date_piece > ajouterJours(borne, 1)) {
+      impossibles.push({ piece, date: piece.date_piece, borne })
+    }
+  }
+  return impossibles
 }
