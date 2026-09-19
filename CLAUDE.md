@@ -257,6 +257,19 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 
 ## Contraintes de sécurité et RGPD
 
+- **Le registre RGPD vit dans `RGPD.md`** — traitements, sous-traitants et régions, durées de
+  conservation, droits des personnes, et ce qui reste à décider. Trois faits mesurés qui gouvernent
+  le reste : les données de patients sont dans les FICHIERS, pas dans les tables (sur 41 textes OCR
+  conservés, zéro NIR et zéro date de naissance) ; le texte OCR est une copie dérivée SANS durée
+  légale propre, donc le seul levier de minimisation réellement disponible ; et aucune pièce n'a
+  encore dépassé l'obligation de 10 ans, la première purge possible n'étant pas avant 2033.
+- **Où partent les données quand elles quittent Supabase, c'est un test qui le dit.**
+  `edgeFunctionsRegions.test.ts` lit la vraie source des Edge Functions et refuse toute région AWS
+  hors UE — Textract comme Bedrock — et exige que les deux clients Textract d'`extract-piece`
+  partagent la même région. Ce que ce test NE peut pas garder : le secret `AWS_REGION`, qui l'emporte
+  sur le repli du code et qu'aucun fichier du dépôt ne connaît. La moitié gouvernée par le code est
+  gardée, l'autre est une vérification humaine (voir RGPD.md §8.1).
+
 - Toutes les tables métier ont RLS activé (`rls_enabled: true` sur
   l'intégralité du schéma `public`) — aucune table de données cabinet/dossier
   ne doit être créée sans policy correspondante.
