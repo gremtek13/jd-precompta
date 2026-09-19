@@ -4,6 +4,7 @@ import { analyserEcritures, tvaNettePourPeriode } from '../../lib/ecritures'
 import { categoriesSansCompte, categoriesSansPoste, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
+import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import type { ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
@@ -42,6 +43,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [relevesIncoherents, setRelevesIncoherents] = useState<ControleReleveBancaire[]>([])
+  const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[]>([])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
@@ -81,6 +83,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       return [] as ControleReleveBancaire[]
     })
     setRelevesIncoherents(controles)
+    // Même posture best-effort : journalisé, jamais lu comme « aucun doublon ».
+    setDoublonsTexte(await chargerDoublonsDeTexte(dossierId).catch((err) => {
+      console.error(err)
+      return [] as DoublonDeTexte[]
+    }))
     setPieces(piecesData ?? [])
     setPiecesAValider(piecesAValiderData ?? [])
     setCotisations(cotisationsData ?? [])
@@ -192,7 +199,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // « Erreur » comme la date impossible, et pour la même raison : la pièce part dans le mauvais
     // mois, parfois le mauvais exercice. En prime elle bloque un rapprochement bancaire qui était
     // certain (voir lib/controles.ts) — le rapprochement, lui, n'annonce qu'un doute.
-    { id: 'mois-en-double', label: "mois d'abonnement en double, avec un mois voisin vide — une date mal lue", action: 'Corriger le mois de ces pièces', nb: moisEnDouble.length, cible: 'pieces', severite: 'erreur' },
+    { id: 'mois-en-double', label: "mois d'abonnement en double, avec un mois voisin vide — une pièce mal datée ou en double", action: 'Vérifier ces pièces', nb: moisEnDouble.length, cible: 'pieces', severite: 'erreur' },
+    // « Erreur » : si les deux sont validées et catégorisées, la même charge est comptée deux fois —
+    // dans la 2035 comme dans la balance. Et l'empreinte du FICHIER ne peut pas le voir (voir
+    // lib/doublonsTexte.ts), donc aucun autre écran ne le signale.
+    { id: 'doublon-texte', label: 'document(s) déposé(s) plusieurs fois sous des fichiers différents', action: 'Voir les doublons', nb: doublonsTexte.length, cible: 'pieces', severite: 'erreur' },
     // En « erreur » : la pièce n'a AUCUN montant en euros tant que le taux manque, donc elle ne
     // compte nulle part — ni en charge, ni en TVA, ni dans la 2035. Exactement l'effet d'une pièce
     // sans catégorie, par un autre chemin.
