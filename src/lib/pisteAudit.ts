@@ -1,5 +1,5 @@
 import { COMPTE_BANQUE } from './comptes'
-import type { EcritureBrouillon } from './types'
+import type { EcritureBrouillon, LigneBancaire, Piece } from './types'
 
 // Piste d'audit fiable — les ruptures de la chaîne « écriture → justificatif → opération réelle ».
 //
@@ -75,4 +75,171 @@ export function absenceFec(ecritures: EcritureBrouillon[]): AbsenceFec {
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
     credit: horsFec.filter((e) => e.sens === 'credit').reduce((somme, e) => somme + e.montant, 0),
   }
+}
+
+// ═══ L'export de la piste ═══════════════════════════════════════════════════════════════════════
+//
+// Ce que la loi demande n'est pas un contrôle mais une PRODUCTION : depuis chaque écriture, remonter
+// au justificatif et à l'opération réelle, et redescendre dans l'autre sens, de façon continue et
+// chronologique. Les trois maillons existaient déjà en base ; ce qui manquait était de pouvoir les
+// poser sur une table, ce qu'un vérificateur demande à voir.
+//
+// UNE SEULE TABLE, LES DEUX SENS DEDANS. Une ligne par écriture, plus une ligne par justificatif
+// validé qu'aucune écriture ne cite. Tout tient donc dans un seul tableau chronologique, et chaque
+// trou se lit dans la même colonne `manque` — plutôt qu'en deux listes que personne ne recoupe.
+// C'est la même discipline que la feuille « Pièces manquantes » d'un pack : un livrable incomplet le
+// dit, il ne se contente pas d'être incomplet.
+//
+// L'EMPREINTE EST LA PREUVE, PAS LE NOM DU FICHIER. `storage_hash` (SHA-256 du contenu) est ce qui
+// atteste qu'on parle bien du même justificatif que le jour de la saisie : un nom de fichier se
+// change, une empreinte non. Elle est nulle sur les pièces déposées avant l'introduction du champ,
+// et la colonne le montre alors vide plutôt que de laisser croire à une preuve qui n'existe pas.
+
+export interface LignePisteAudit {
+  // L'écriture. Nuls/vides sur une ligne qui part d'un justificatif non comptabilisé.
+  ecritureId: string | null
+  date: string
+  compte: string
+  libelle: string
+  debit: number
+  credit: number
+  // Le justificatif.
+  pieceId: string | null
+  pieceTiers: string | null
+  pieceDate: string | null
+  pieceMontantTtc: number | null
+  pieceFichier: string | null
+  pieceEmpreinte: string | null
+  // L'opération réelle.
+  mouvementDate: string | null
+  mouvementLibelle: string | null
+  mouvementMontant: number | null
+  // Ce qui manque sur CETTE ligne, en clair. Vide quand la chaîne est complète.
+  manque: string[]
+}
+
+// `pieces` doit contenir les pièces VALIDÉES du dossier : ce sont les seules dont l'absence
+// d'écriture est une information (une pièce « à valider » est la corbeille d'arrivée, la signaler
+// noierait le signal — même raison que `piecesValideesSansCategorie` dans controles.ts).
+export function pisteAudit(
+  ecritures: EcritureBrouillon[],
+  pieces: Piece[],
+  lignesBancaires: LigneBancaire[],
+): LignePisteAudit[] {
+  const pieceParId = new Map(pieces.map((p) => [p.id, p]))
+  const ligneParId = new Map(lignesBancaires.map((l) => [l.id, l]))
+  const piecesCitees = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
+
+  const depuisEcritures = ecritures.map((e): LignePisteAudit => {
+    const piece = e.piece_id ? pieceParId.get(e.piece_id) ?? null : null
+    const mouvement = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
+    const manque: string[] = []
+    if (!e.piece_id) manque.push('justificatif')
+    // Distinguer « le lien est nul » de « le lien pointe une ligne absente du jeu fourni » : la
+    // seconde n'est pas une rupture, c'est un filtre de l'appelant. Le dire autrement ferait passer
+    // un artefact de chargement pour un défaut comptable.
+    else if (!piece) manque.push('justificatif hors du jeu chargé')
+    if (e.compte === COMPTE_BANQUE && !e.ligne_bancaire_id) manque.push('mouvement bancaire')
+    // Même distinction côté banque. Avec `ON DELETE SET NULL` sur les deux clés, un mouvement
+    // supprimé met le lien à NULL et tombe dans la branche précédente : ce cas-ci ne peut donc venir
+    // que d'un jeu de lignes restreint par l'appelant. Le dire plutôt que de laisser trois colonnes
+    // vides s'expliquer toutes seules — une colonne vide non commentée se lit comme une absence de
+    // preuve, ce qui est exactement ce qu'un export de piste d'audit ne doit pas laisser croire.
+    else if (e.ligne_bancaire_id && !mouvement) manque.push('mouvement hors du jeu chargé')
+
+    return {
+      ecritureId: e.id,
+      date: e.date,
+      compte: e.compte,
+      libelle: e.libelle,
+      debit: e.sens === 'debit' ? e.montant : 0,
+      credit: e.sens === 'credit' ? e.montant : 0,
+      pieceId: piece?.id ?? null,
+      pieceTiers: piece?.tiers ?? null,
+      pieceDate: piece?.date_piece ?? null,
+      pieceMontantTtc: piece?.montant_ttc ?? null,
+      pieceFichier: piece?.nom_fichier ?? null,
+      pieceEmpreinte: piece?.storage_hash ?? null,
+      mouvementDate: mouvement?.date ?? null,
+      mouvementLibelle: mouvement?.libelle ?? null,
+      mouvementMontant: mouvement?.montant ?? null,
+      manque,
+    }
+  })
+
+  // L'autre sens : un justificatif validé que rien ne comptabilise. Sa ligne porte la pièce et rien
+  // de l'écriture — c'est justement ce qui manque.
+  const depuisPieces = pieces
+    .filter((p) => !piecesCitees.has(p.id))
+    .map((p): LignePisteAudit => ({
+      ecritureId: null,
+      date: p.date_piece ?? '',
+      compte: '',
+      libelle: p.tiers ?? p.nom_fichier,
+      debit: 0,
+      credit: 0,
+      pieceId: p.id,
+      pieceTiers: p.tiers,
+      pieceDate: p.date_piece,
+      pieceMontantTtc: p.montant_ttc,
+      pieceFichier: p.nom_fichier,
+      pieceEmpreinte: p.storage_hash,
+      mouvementDate: null,
+      mouvementLibelle: null,
+      mouvementMontant: null,
+      // Une pièce sans date n'appartient à aucun exercice : elle apparaîtra donc dans l'export de
+      // CHACUN d'eux (l'appelant ne peut pas la rattacher à l'un sans la retirer des autres, et la
+      // taire serait pire — c'est la règle de la feuille « Pièces sans date » d'un pack). Le manque
+      // est nommé pour que sa présence ne se lise jamais comme « elle est de cet exercice-là ».
+      manque: p.date_piece ? ['écriture'] : ['écriture', 'date'],
+    }))
+
+  // Chronologique, comme l'exige une piste d'audit. Les lignes sans date (justificatif dont la date
+  // n'a pas été lue) remontent en tête plutôt que de se perdre au milieu : une date absente est
+  // précisément ce qu'il faut voir. `compte` puis `ecritureId` départagent à date égale, pour que
+  // deux exports du même brouillon soient identiques — l'ordre de retour d'une requête ne l'est pas.
+  return [...depuisEcritures, ...depuisPieces].sort(
+    (a, b) =>
+      a.date.localeCompare(b.date) ||
+      a.compte.localeCompare(b.compte) ||
+      (a.ecritureId ?? a.pieceId ?? '').localeCompare(b.ecritureId ?? b.pieceId ?? ''),
+  )
+}
+
+const COLONNES_PISTE = [
+  'Date', 'Compte', 'Libellé écriture', 'Débit', 'Crédit',
+  'Tiers', 'Date pièce', 'Montant pièce', 'Fichier justificatif', 'Empreinte SHA-256',
+  'Date mouvement', 'Libellé bancaire', 'Montant mouvement', 'Ce qui manque',
+]
+
+// Le séparateur point-virgule et la virgule décimale sont la convention française d'Excel — un
+// tableur qui ouvre ce fichier doit montrer des colonnes, pas une seule colonne de texte.
+function champCsv(valeur: string): string {
+  // Un libellé venu de l'OCR contient des sauts de ligne et des guillemets ; sans neutralisation ils
+  // coupent la ligne en deux et le fichier devient structurellement faux (même piège que le FEC).
+  const propre = valeur.replace(/[\r\n]+/g, ' ').trim()
+  return propre.includes(';') || propre.includes('"') ? `"${propre.replace(/"/g, '""')}"` : propre
+}
+
+const montantCsv = (v: number | null): string => (v === null ? '' : v.toFixed(2).replace('.', ','))
+
+export function genererPisteAuditCsv(lignes: LignePisteAudit[]): string {
+  const corps = lignes.map((l) =>
+    [
+      l.date, l.compte, champCsv(l.libelle), montantCsv(l.debit), montantCsv(l.credit),
+      champCsv(l.pieceTiers ?? ''), l.pieceDate ?? '', montantCsv(l.pieceMontantTtc),
+      champCsv(l.pieceFichier ?? ''), l.pieceEmpreinte ?? '',
+      l.mouvementDate ?? '', champCsv(l.mouvementLibelle ?? ''), montantCsv(l.mouvementMontant),
+      champCsv(l.manque.join(' + ')),
+    ].join(';'),
+  )
+  // BOM UTF-8. Sans lui, Excel en français ouvre le fichier en CP1252 et « Libellé » devient
+  // « LibellÃ© » — sur un export destiné à être relu par un vérificateur, un accent cassé sur chaque
+  // ligne jette le doute sur le reste. C'est le premier export CSV de l'application ; la règle est
+  // donc posée ici.
+  return '\uFEFF' + [COLONNES_PISTE.join(';'), ...corps].join('\r\n')
+}
+
+export function nomFichierPisteAudit(nomDossier: string, annee: number): string {
+  return `piste-audit-${nomDossier.replace(/[^a-zA-Z0-9]+/g, '-').replace(/^-|-$/g, '').toLowerCase()}-${annee}.csv`
 }

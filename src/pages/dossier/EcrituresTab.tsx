@@ -6,7 +6,7 @@ import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPour
 import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
-import { absenceFec, rupturesPisteAudit } from '../../lib/pisteAudit'
+import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
 import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -20,7 +20,7 @@ import { useAnnee } from '../../context/AnneeContext'
 // moment de la génération, ou plus tard depuis Banque sinon. L'export FEC (voir lib/fec.ts) permet au
 // cabinet de récupérer un fichier directement importable dans son propre logiciel de comptabilité,
 // une fois l'année sélectionnée et le brouillon jugé complet.
-export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: { dossierId: string; dossierSiret: string | null; assujettiTva: boolean }) {
+export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva }: { dossierId: string; dossierNom: string; dossierSiret: string | null; assujettiTva: boolean }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
@@ -41,6 +41,7 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   const [tvaDeclaree, setTvaDeclaree] = useState('')
   const [dateDeclaration, setDateDeclaration] = useState('')
   const [savingDeclaration, setSavingDeclaration] = useState(false)
+  const [exportPiste, setExportPiste] = useState(false)
 
   async function load() {
     setLoading(true)
@@ -150,6 +151,37 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
   // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé.
   const horsFec = absenceFec(ecrituresFiltrees)
   const pieceById = (id: string) => pieces.find((p) => p.id === id) ?? null
+
+  // Export de la piste d'audit de l'exercice (voir lib/pisteAudit.ts) : depuis chaque écriture, le
+  // justificatif et l'opération bancaire réelle, et dans l'autre sens les justificatifs validés que
+  // rien ne comptabilise. C'est ce qu'un vérificateur demande à produire, et c'est un fichier — pas
+  // un écran : il part par e-mail, il se relit hors de l'application.
+  //
+  // Il relit les mouvements bancaires en entier à ce moment-là, sur ce clic : `lignesBancaires`
+  // ci-dessus est volontairement restreint aux lignes rapprochées portant une pièce (c'est ce dont la
+  // génération a besoin), et une piste d'audit bâtie sur un jeu restreint annoncerait des mouvements
+  // manquants qui existent.
+  async function exporterPisteAudit() {
+    if (typeof anneeFilter !== 'number') return
+    setExportPiste(true)
+    setError(null)
+    try {
+      // Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture : sans
+      // ce contrôle, un refus RLS produirait un export où CHAQUE contrepartie annonce un mouvement
+      // absent — un fichier faux, et qui a l'air complet.
+      const { data, error: readError } = await supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId)
+      if (readError) throw readError
+      // Les pièces sans date n'appartiennent à aucun exercice : elles sont jointes à chacun, et la
+      // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de les taire.
+      const piecesExercice = pieces.filter((p) => !p.date_piece || anneeDe(p.date_piece) === anneeFilter)
+      const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, data ?? []))
+      telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "L'export de la piste d'audit a échoué.")
+    } finally {
+      setExportPiste(false)
+    }
+  }
 
   // Reprend les lignes charge/produit + TVA d'une pièce d'après ses montants actuels — jamais
   // automatique, seulement sur ce clic explicite. Ne touche pas à la contrepartie banque (montant du
@@ -524,6 +556,18 @@ export default function EcrituresTab({ dossierId, dossierSiret, assujettiTva }: 
           }}
         >
           Exporter FEC {typeof anneeFilter === 'number' ? anneeFilter : ''}
+        </button>
+        <button
+          className="btn btn-outline btn-sm"
+          disabled={typeof anneeFilter !== 'number' || exportPiste}
+          title={
+            typeof anneeFilter !== 'number'
+              ? "Sélectionne une année ci-dessus — une piste d'audit se produit par exercice."
+              : "Chaque écriture avec son justificatif (tiers, date, montant, fichier, empreinte SHA-256) et l'opération bancaire réelle, plus les justificatifs validés que rien ne comptabilise."
+          }
+          onClick={exporterPisteAudit}
+        >
+          {exportPiste ? 'Export…' : `Exporter la piste d'audit ${typeof anneeFilter === 'number' ? anneeFilter : ''}`}
         </button>
       </div>
 
