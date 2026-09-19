@@ -841,6 +841,28 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   clic ne duplique pas des lignes : il paie deux fois les mêmes appels Textract sur les mêmes
   fichiers. Corrigé des deux côtés le 19/09/2026 — chercher toutes les copies avant de corriger la
   première, c'est la règle qui vaut ici aussi.
+  **Le verrou se pose AVANT le `try`, jamais dedans**, et il faut TROIS clics pour le voir. Placé
+  dans le `try`, le refus du deuxième clic sort par son `return`, donc par le `finally` — qui
+  relâche le verrou du PREMIER, encore en cours. Le troisième passe alors, et le défaut revient
+  entier. Avec deux clics la version fautive paraît correcte : c'est une mutation qui a survécu au
+  premier jeu de tests, pas une relecture, qui l'a montré.
+  **Un troisième porteur a été trouvé le 19/09/2026 : « C'est une facture » (DocumentsTab), qui
+  n'avait AUCUN verrou.** Il recrée une pièce à partir d'un document déjà en stockage puis supprime
+  le document ; deux clics créaient donc deux pièces sur le même fichier. Et rien ne les rattrapait :
+  **le dédoublonnage par empreinte porte sur un fichier DÉPOSÉ**, or ici aucun fichier n'est envoyé —
+  la pièce reprend le `storage_path` du document. Un fichier qui change de table échappe à toute la
+  chaîne anti-doublon du dépôt ; seule l'empreinte du TEXTE finirait par le signaler, après coup.
+  Le verrou y est **par document** et non global : convertir deux documents à la suite est un geste
+  normal, et un verrou global aurait transformé le second clic en silence.
+  Deux autres défauts dormaient dans la même fonction, tous deux de familles déjà connues du projet.
+  La **suppression du document n'était pas vérifiée** alors que la pièce, elle, est déjà créée : en
+  cas d'échec le même fichier vivait des deux côtés, et le réflexe — recliquer — ajoutait une pièce
+  à chaque fois. Elle se dit maintenant, en nommant ce qui est fait et ce qui reste à faire à la
+  main. Et la **lecture du texte OCR ravalait son erreur** : « ce document n'a pas de texte » et
+  « la lecture a été refusée » rendent tous deux `null`, alors que le second veut dire qu'un texte
+  existe peut-être et qu'on s'apprête à l'effacer — dans la fonction même dont le commentaire
+  rappelle qu'elle lit le texte AVANT de supprimer pour ne pas le perdre. D'où
+  `lireTexteOcrDuDocument`, qui rend l'erreur, et le refus de convertir tant qu'on n'a pas pu lire.
 - **Une date de pièce postérieure à aujourd'hui est impossible, pas improbable.** Ce qu'on lit
   alors est une validité, une échéance ou une fin de droits. Le refus vit dans `toIsoDate`
   (extract-piece), avec un jour de marge pour l'écart UTC/Paris. Le placer là et non dans la règle
@@ -1347,10 +1369,11 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   code, les advisors Supabase et des tests manuels réels (y compris, pour Super PDP, par
   l'utilisateur lui-même puisque cet environnement ne peut pas atteindre
   `api.superpdp.tech`). Depuis le 19/09/2026 un projet Vitest « écrans » existe (jsdom +
-  Testing Library) et couvre trois composants : les verrous d'exécution de `VehiculesCard` et
-  d'`ImportDossierModal`, le refus de saisir sans exercice choisi, et la séparation
-  recherche / totaux de la Balance des comptes. C'est un premier fil, pas une couverture :
-  les douze autres onglets n'ont toujours aucun test de rendu.
+  Testing Library) et couvre quatre composants : les verrous d'exécution de `VehiculesCard`,
+  d'`ImportDossierModal` et de la conversion document → pièce (`DocumentsTab`), le refus de
+  saisir sans exercice choisi, et la séparation recherche / totaux de la Balance des comptes.
+  C'est un premier fil, pas une couverture : les onze autres onglets n'ont toujours aucun test
+  de rendu.
   Nuance à garder : les Edge
   Functions ne sont pas SANS filet — plusieurs tests lisent leur vraie source déployée pour
   en extraire une fonction et l'exécuter (montants, dates, classification, orientation,
@@ -1365,7 +1388,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 886 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 889 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

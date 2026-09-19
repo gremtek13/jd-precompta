@@ -92,7 +92,23 @@ export async function texteOcrDeLaPiece(pieceId: string): Promise<string | null>
 }
 
 export async function texteOcrDuDocument(documentId: string): Promise<string | null> {
-  return texteOcrDe({ type: 'document', id: documentId })
+  return (await lireTexteOcrDuDocument(documentId)).texte
+}
+
+// Même lecture, mais qui DIT si elle a échoué. Les deux cas rendent `texte: null` et sont pourtant
+// opposés : « ce document n'a pas de texte » est normal, « la lecture a été refusée » veut dire que
+// le texte existe peut-être et qu'on ne l'a pas. L'appelant qui s'apprête à SUPPRIMER le document
+// (voir DocumentsTab.convertirEnPiece) doit pouvoir faire la différence : confondre les deux
+// détruirait le texte au moment précis où le code prend soin de ne pas le perdre.
+export async function lireTexteOcrDuDocument(
+  documentId: string,
+): Promise<{ texte: string | null; erreur: string | null }> {
+  const { data, error } = await supabase
+    .from('piece_textes_ocr')
+    .select('texte')
+    .eq('document_id', documentId)
+    .maybeSingle()
+  return { texte: texteOcrExploitable(data?.texte), erreur: error?.message ?? null }
 }
 
 async function texteOcrDe(cible: CibleTexteOcr): Promise<string | null> {

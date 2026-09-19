@@ -6,7 +6,7 @@ import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
-import { documentsAvecTexteOcr, enregistrerTexteOcr, texteOcrDuDocument } from '../../lib/texteOcr'
+import { documentsAvecTexteOcr, enregistrerTexteOcr, lireTexteOcrDuDocument, texteOcrDuDocument } from '../../lib/texteOcr'
 import { documentsARelire, relireTextesDocuments } from '../../lib/relectureDocuments'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
@@ -41,6 +41,13 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // boucle. Ici chaque passage est un appel Textract FACTURÉ sur les mêmes documents — deux
   // boucles parallèles paieraient donc deux fois la même lecture, sans que rien ne le signale.
   const relectureEnCours = useRef(false)
+
+  // Verrou de la conversion document → pièce, PAR DOCUMENT et non global : convertir deux documents
+  // à la suite est un geste normal, les bloquer l'un l'autre transformerait le second clic en
+  // silence. Deux clics sur LE MÊME document, eux, créeraient deux pièces à partir du même fichier —
+  // et rien ne les rattraperait : la détection de doublon porte sur l'empreinte d'un fichier DÉPOSÉ,
+  // or ici aucun fichier n'est envoyé, la pièce reprend le chemin de stockage du document.
+  const conversionsEnCours = useRef(new Set<string>())
 
   // Même comportement que dans PiecesTab : on ouvre en affichant « Chargement… » plutôt que de rester
   // muet assez longtemps pour qu'on reclique.
@@ -198,31 +205,59 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // divers) — recrée une pièce à partir du même fichier déjà en storage, à compléter/extraire ensuite
   // comme n'importe quelle autre pièce.
   async function convertirEnPiece(doc: DocumentDivers) {
-    const { data: userData } = await supabase.auth.getUser()
-    // Le texte est lu AVANT toute suppression : il est rattaché au document, et la suppression de
-    // celui-ci l'emporterait en cascade. C'est précisément ce qui a fait perdre leur texte aux trois
-    // SNIR du dossier de test quand ils ont été déplacés vers Documents.
-    const texte = await texteOcrDuDocument(doc.id)
+    // Posé AVANT le premier `await` — un verrou posé après ne verrouille rien.
+    if (conversionsEnCours.current.has(doc.id)) return
+    conversionsEnCours.current.add(doc.id)
+    try {
+      const { data: userData } = await supabase.auth.getUser()
+      // Le texte est lu AVANT toute suppression : il est rattaché au document, et la suppression de
+      // celui-ci l'emporterait en cascade. C'est précisément ce qui a fait perdre leur texte aux trois
+      // SNIR du dossier de test quand ils ont été déplacés vers Documents.
+      //
+      // Et la lecture doit DIRE si elle a échoué : « pas de texte » et « lecture refusée » rendent
+      // tous deux null, mais le second veut dire qu'un texte existe peut-être et qu'on s'apprête à
+      // l'effacer. Dans le doute, on ne convertit pas — rien n'est encore créé à cet instant, donc
+      // renoncer ici ne laisse rien à moitié fait.
+      const { texte, erreur } = await lireTexteOcrDuDocument(doc.id)
+      if (erreur) {
+        setError(`Le texte lu de ce document n'a pas pu être relu (${erreur}) — conversion annulée pour ne pas le perdre.`)
+        return
+      }
 
-    const { data: piece, error: insertError } = await supabase.from('pieces').insert({
-      dossier_id: dossierId,
-      uploaded_by: userData.user!.id,
-      storage_path: doc.storage_path,
-      nom_fichier: doc.nom_fichier,
-      sous_dossier_id: doc.sous_dossier_id,
-      type_piece: 'achat',
-      statut: 'a_valider',
-    }).select('id').single()
-    if (insertError || !piece) {
-      setError(insertError?.message ?? "La conversion n'a rien rendu.")
-      return
+      const { data: piece, error: insertError } = await supabase.from('pieces').insert({
+        dossier_id: dossierId,
+        uploaded_by: userData.user!.id,
+        storage_path: doc.storage_path,
+        nom_fichier: doc.nom_fichier,
+        sous_dossier_id: doc.sous_dossier_id,
+        type_piece: 'achat',
+        statut: 'a_valider',
+      }).select('id').single()
+      if (insertError || !piece) {
+        setError(insertError?.message ?? "La conversion n'a rien rendu.")
+        return
+      }
+
+      // Rattaché à la pièce avant que le document ne disparaisse — sinon le texte serait perdu au
+      // moment même où il redevient utile, sur une pièce qu'il faut justement arbitrer.
+      await enregistrerTexteOcr(dossierId, { type: 'piece', id: piece.id as string }, texte)
+
+      // La suppression est vérifiée, et son échec se DIT : la pièce, elle, est déjà créée. Passé
+      // sous silence, le même fichier vivrait des deux côtés, et le réflexe — recliquer — créerait
+      // une pièce de plus à chaque fois.
+      const { error: deleteError } = await supabase.from('documents_divers').delete().eq('id', doc.id)
+      if (deleteError) {
+        setError(
+          `La pièce a bien été créée dans Justificatifs, mais le document n'a pas pu être retiré d'ici ` +
+          `(${deleteError.message}). Retire-le à la main, sinon le même fichier existe en double.`,
+        )
+      } else {
+        setError(null)
+      }
+      load()
+    } finally {
+      conversionsEnCours.current.delete(doc.id)
     }
-
-    // Rattaché à la pièce avant que le document ne disparaisse — sinon le texte serait perdu au
-    // moment même où il redevient utile, sur une pièce qu'il faut justement arbitrer.
-    await enregistrerTexteOcr(dossierId, { type: 'piece', id: piece.id as string }, texte)
-    await supabase.from('documents_divers').delete().eq('id', doc.id)
-    load()
   }
 
   return (
