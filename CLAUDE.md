@@ -707,6 +707,29 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   « validée » dessus, donc plus personne ne la regarde. Le contrôle ne vise QUE les validées : une
   pièce « à valider » sans catégorie est la corbeille d'arrivée, et le même dossier en portait 30
   face à 10 — les signaler noierait le signal.
+- **Un contrôle qui part d'un côté d'une relation ne voit pas ce qui manque de l'autre.** C'est
+  désormais la TROISIÈME fois que ce motif frappe, toujours de la même façon : `categoriesSansCompte`
+  partait de la catégorie et ne voyait pas la pièce sans catégorie ; `analyserEcritures` part de la
+  PIÈCE — sa boucle commence par `if (!e.piece_id) continue` — et ne voit donc pas l'écriture sans
+  pièce. Les trois contrôles du brouillon sont aveugles au même objet, en même temps, parce qu'ils
+  partagent ce regroupement.
+  **Mesuré en production** : une écriture de 199,99 € (606100, « BOULANGER MARSEILLE ») n'a plus de
+  `piece_id`. Deux pièces du même fournisseur existaient, une a été supprimée — et les deux clés
+  étrangères d'`ecritures_brouillon` sont en `ON DELETE SET NULL`, donc Postgres a effacé le lien
+  sans un mot. Le projet CONNAISSAIT ce piège (voir la règle `ON DELETE SET NULL` plus bas, écrite
+  pour la sauvegarde) ; il ne l'avait pas vu se réaliser dans la comptabilité.
+  **La conséquence est une incohérence entre deux livrables** : `calculerBalance` regroupe par COMPTE
+  et compte donc cette charge ; `genererFec` fait le même `if (!e.piece_id) continue` et l'exclut —
+  ce qui est le bon choix, inventer une référence de pièce serait pire. La Balance des comptes et le
+  fichier fiscal annoncent donc deux résultats différents, sans que rien le dise.
+  `rupturesPisteAudit` (lib/pisteAudit.ts) ferme l'angle mort en partant de l'ÉCRITURE, et
+  `absenceFec` chiffre exactement ce que le FEC ne contiendra pas. Le format FEC étant rigide, ce
+  livrable incomplet ne peut se déclarer que sur l'écran qui l'engendre — pas dans le fichier, à la
+  différence du pack Excel et de sa feuille « Pièces manquantes ».
+  **Ce que ce contrôle ne fait PAS, délibérément** : il ne signale pas « l'écriture désigne une pièce
+  absente du jeu fourni ». `EcrituresTab` ne charge que les pièces VALIDÉES, donc une pièce repassée
+  « à valider » ferait crier au loup sur un artefact de filtrage. Seul `piece_id` nul est retenu,
+  parce qu'il ne dépend d'aucun jeu de données à côté.
 - **Une valeur par défaut connue s'applique, elle ne s'affiche pas en attendant un clic.**
   `SUGGESTIONS_COMPTE_PAR_CODE` (lib/ecritures.ts) portait depuis le début les bons comptes PCG et
   postes 2035, mais seulement comme pré-remplissage d'un champ à valider catégorie par catégorie.
@@ -1128,7 +1151,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 791 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 802 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC, l'import de relevés (`csv.ts` pour le CSV,
