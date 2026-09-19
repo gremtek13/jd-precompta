@@ -209,12 +209,16 @@ export interface MoisEnDoubleSurAbonnement {
 const MOIS_MINIMUM_ABONNEMENT = 3
 
 // Un abonnement mensuel facture une fois par mois. Deux échéances dans le même mois avec un mois
-// voisin VIDE n'est donc pas « deux factures » : c'est une date mal lue, et le mois vide dit laquelle.
+// voisin VIDE n'est donc pas « deux factures » : c'est une anomalie démontrée. Deux causes possibles,
+// et ce contrôle ne sait PAS les distinguer — une date mal lue, ou une pièce déposée deux fois pendant
+// que celle du mois vide manque. Sur le seul cas réel c'était la seconde (voir `doublonsDeTexte`), et
+// l'hypothèse « date mal lue » avait d'abord été écrite comme la conclusion. Ce contrôle dit donc le
+// mois vide, jamais la cause.
 //
-// CE QUE ÇA COÛTE, mesuré sur le dossier `test` le 19/09/2026. `mai.pdf` (Transmedical, 38,40 €) porte
-// la date du 01/06/2025 : juin en compte deux, mai zéro. Trois conséquences en cascade, et aucun écran
-// ne les reliait :
-//   - la charge de mai part dans l'exercice de juin — sur un exercice à cheval, c'est la mauvaise année ;
+// CE QUE ÇA COÛTE, mesuré sur le dossier `test` le 19/09/2026. `mai.pdf` et `juin.pdf` (Transmedical,
+// 38,40 €) portent tous deux la date du 01/06/2025 : juin en compte deux, mai zéro. Trois conséquences
+// en cascade, et aucun écran ne les reliait :
+//   - une échéance de plus part dans l'exercice de juin — sur un exercice à cheval, la mauvaise année ;
 //   - le prélèvement bancaire réel du 05/05 ne trouve plus de pièce en face et reste non rapproché ;
 //   - les DEUX pièces de juin se disputent le prélèvement du 05/06, donc `analyserAppariements` rend
 //     « plusieurs pièces possibles » et refuse un appariement qui était certain. Le rapprochement
