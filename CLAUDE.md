@@ -943,6 +943,32 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   ligne du fichier ; `libelleExploitable` (lib/appariementBanque.ts) y retombe pour les lignes
   importées avant cette correction.
 
+- **Une balance se reconnaît à une STRUCTURE, pas à une mise en page.** `lireBalance`
+  (lib/balanceImport.ts) est la première brique de la reprise d'un dossier venu d'un autre logiciel,
+  et elle ne parie sur aucune convention d'éditeur : la colonne des comptes est celle dont les
+  valeurs sont des **numéros du PCG** (classe 1 à 8, au moins trois chiffres), ce qui est un
+  invariant du plan comptable et non un usage. Même démarche que `lignesDeSolde`, qui reconnaît une
+  ligne de solde à sa largeur plutôt qu'à son libellé.
+  Quatre décisions, et chacune répare une façon de se tromper en silence :
+  - **La colonne des comptes est celle qui en porte le PLUS**, pas la première qui en porte un : une
+    colonne « numéro de pièce » peut en imiter un par hasard, jamais sur toutes les lignes.
+  - **Un en-tête reconnu l'emporte sur la position.** Deux colonnes de nombres positifs de même
+    nature ne se distinguent par AUCUN autre signal ; certains exports présentent crédit avant
+    débit, et seul le mot le dit. La position (débit puis crédit, convention française) sert de
+    repli, et l'en-tête n'est cherché que dans les **cinq premières lignes** — un pied de section qui
+    réécrit « Crédit »/« Débit » plus bas inverserait sinon toute la balance.
+  - **La ligne « TOTAUX » est écartée** parce qu'elle n'a pas de numéro de compte : l'inclure
+    doublerait la balance et ferait passer un fichier parfait pour un fichier en écart.
+  - **« Ce fichier n'est pas une balance » n'est pas « balance vide »** : un relevé bancaire déposé
+    par erreur rend `colonnes: null` et la raison de chaque ligne écartée, jamais une liste vide.
+  **Et le contrôle qui rend tout le reste utilisable** : `controlerBalance` vérifie que la somme des
+  débits égale celle des crédits. C'est la définition même d'une balance, tout ayant été passé en
+  partie double — un écart ne se discute donc pas, il dit que le fichier est amputé, et le cabinet
+  doit l'apprendre AVANT d'y adosser une comptabilité. Mot pour mot le contrôle du relevé bancaire,
+  sur un autre document. Les totaux sont arrondis au centime **avant** comparaison : sur plusieurs
+  centaines de lignes, la dérive des flottants afficherait un écart qui n'est qu'un artefact de
+  représentation. La tolérance d'un centime absorbe les arrondis de présentation et rien d'autre —
+  deux lignes manquantes ne font pas un centime.
 - **Un relevé ne contient pas que des opérations.** Il porte aussi le solde d'ouverture et le solde
   de clôture. Importées comme des mouvements, ces deux lignes faussent tous les totaux bancaires
   (28 294,39 € de mouvements inexistants sur le premier relevé réel) et ne peuvent jamais être
@@ -1318,11 +1344,13 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 862 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 882 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
 l'import de relevés (`csv.ts` pour le CSV,
+`relevePdf.ts` pour le PDF) et la lecture d'une balance venue d'un autre logiciel
+(`balanceImport.ts`), (
 `relevePdf.ts` pour le PDF), la génération des packs et l'export d'un cabinet
 (`packGenerator.ts`, `exportCabinet.ts`), la sauvegarde et la restauration d'un dossier
 (`sauvegarde.ts`, `sauvegardeDonnees.ts`, `sauvegardeFichier.ts`) et le dépôt de fichiers côté client
