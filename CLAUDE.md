@@ -104,9 +104,11 @@ src/
 supabase/
   functions/      une Edge Function par sous-dossier, chacune auto-portante
                   (voir "Décisions techniques").
-  essais/         essais SQL à REJOUER, pas à lire (supabase/essais/restauration.sql :
-                  restaure un dossier réel dans un schéma jetable portant les vraies
-                  contraintes, compare par empreinte, puis se supprime).
+  essais/         essais SQL à REJOUER, pas à lire. restauration.sql : restaure un
+                  dossier réel dans un schéma jetable portant les vraies contraintes,
+                  compare par empreinte, puis se supprime. rls.sql : rejoue les policies
+                  par impersonation des trois profils sur TOUTES les tables du schéma,
+                  puis se mute lui-même pour prouver qu'il sait encore échouer.
   schema/         export du schéma, une migration par fichier — voir PLAN_DE_REPRISE.md.
                   Ce n'est PAS la source de vérité : la base l'est, et les migrations
                   continuent de s'appliquer par l'outil MCP.
@@ -190,6 +192,36 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   Exemple vivant : `mouvements_cca` sous `comptes_courants_associes`. (Ce
   motif venait à l'origine de `pack_pieces`, supprimée depuis — voir
   "Problèmes connus".)
+- **Une policy sans clause `to` s'applique à `public`, donc à `anon`.** C'est la
+  règle la plus coûteuse à ignorer du schéma, parce qu'elle ne se voit pas en
+  relisant : `using (dossier_id is null or admin_du_dossier(dossier_id))` a l'air
+  de dire « partagé par tout le cabinet » et dit en réalité « lisible par tout
+  Internet muni de la clé publique ». Deux policies l'écrivaient — `categories` et
+  `natures_immobilisation` — et un visiteur non connecté lisait les 10 catégories
+  comptables et les 8 natures du cabinet. Relues plusieurs fois sans que personne
+  ne voie la clause manquante ; il a fallu l'EXÉCUTER pour la voir (migration
+  `categories_et_natures_reservees_aux_connectes`). Toute policy porte donc
+  désormais son `to authenticated` explicite, et `supabase/essais/rls.sql` le
+  vérifie sur l'intégralité du schéma.
+- **Les policies se REJOUENT, elles ne se vérifient pas une fois pour toutes.**
+  Chaque policy était éprouvée par impersonation à sa création, puis plus rien :
+  une migration pouvait en défaire une sans qu'aucun signal n'existe.
+  `supabase/essais/rls.sql` rejoue les trois profils (anonyme, authentifié
+  rattaché à rien, client) sur toutes les tables, plus cinq tentatives d'écriture.
+  Trois choix le rendent utile plutôt que décoratif : la boucle part de `pg_class`
+  et non d'une liste tenue à la main, donc **une table ajoutée demain sans policy
+  est attrapée sans que personne ait à y penser** ; les écritures d'essai sont
+  annulées par sous-transaction PL/pgSQL (`raise exception` dans un bloc
+  `BEGIN … EXCEPTION`, qui défait l'écriture mais laisse les VARIABLES intactes),
+  donc il tourne sur la base réelle sans y laisser de trace ; et un refus doit
+  porter le SQLSTATE `42501` nommément, sinon une colonne mal orthographiée
+  échouerait en `42703` et passerait pour un refus de policy.
+  **Le harnais est lui-même testé par mutation**, et ce n'est pas du zèle : si
+  `set local role` ne prenait pas, tous les comptes rendraient zéro et le fichier
+  afficherait « 0 en faute » sur une base grande ouverte — la panne qui ressemble
+  exactement au succès. Sept mutations (contrôles rejoués sous le super-admin,
+  liste d'exceptions retirée) doivent virer au rouge ; un contrôle qui reste vert
+  est un contrôle à reprendre, même quand les invariants sont tous verts.
 - **Une table que le CLIENT écrit sort de la convention `FOR ALL`.** Le client
   a un `membership`, pas `admin_du_dossier` : la policy doit donc lister ses
   droits un par un, et surtout pas lui ouvrir la table entière. `piece_commentaires`
@@ -270,6 +302,11 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   sur le repli du code et qu'aucun fichier du dépôt ne connaît. La moitié gouvernée par le code est
   gardée, l'autre est une vérification humaine (voir RGPD.md §8.1).
 
+- **Qui voit quoi, c'est un essai rejouable qui le dit** — `supabase/essais/rls.sql`, par
+  impersonation réelle des trois profils sur les 40 tables du schéma. Il a trouvé, à sa première
+  exécution, ce qu'aucune relecture n'avait vu : un visiteur anonyme lisait les catégories et les
+  natures d'immobilisation du cabinet (voir « Décisions techniques »). Ce qu'il ne couvre PAS : les
+  policies du stockage et les Edge Functions, restées vérifiées par relecture et essais manuels.
 - Toutes les tables métier ont RLS activé (`rls_enabled: true` sur
   l'intégralité du schéma `public`) — aucune table de données cabinet/dossier
   ne doit être créée sans policy correspondante.
@@ -1136,6 +1173,12 @@ pas de Supabase CLI configurée dans ce dépôt.
 - Toute nouvelle table métier rattachée à un dossier suit la convention RLS
   `admin_du_dossier(dossier_id)` et doit être vérifiée par impersonation
   réelle avant d'être considérée fiable.
+- Toute policy RLS porte une clause `to` explicite (`to authenticated` en
+  pratique) : sans elle, elle s'applique à `public`, donc à `anon`.
+- Après toute migration touchant une policy, rejouer `supabase/essais/rls.sql`
+  par `execute_sql` et vérifier que les INVARIANTS sont à 0 en faute **et** que
+  les sept MUTATIONS mordent toujours. Ce n'est pas automatisé : la CI n'a pas
+  d'accès à la base.
 - Toute nouvelle Edge Function reste auto-porteuse (pas d'import `src/`).
 - Tout nouvel appel à `supabase.functions.invoke()` doit gérer l'erreur via
   `extraireErreurFonction()`.

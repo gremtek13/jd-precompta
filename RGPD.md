@@ -168,15 +168,22 @@ Ce qui est **prouvé**, pas seulement affirmé :
   identifiants Super PDP dans une table sans aucune policy, atteinte uniquement par la clé de
   service.
 - **Une restauration éprouvée** contre Postgres, avec son plan de reprise (`PLAN_DE_REPRISE.md`).
+- **Les policies RLS rejouées en bloc**, par impersonation réelle des trois profils
+  (`supabase/essais/rls.sql`) : 40 tables, 32 d'entre elles portant un `dossier_id`, plus cinq
+  tentatives d'écriture. Dernier passage le 19/09/2026, 0 en faute. La boucle part de `pg_class` et
+  non d'une liste tenue à la main, donc une table ajoutée demain sans policy est attrapée sans que
+  personne ait eu à y penser.
+  **Et le harnais est lui-même éprouvé** : sept mutations délibérées (contrôles rejoués sous le
+  super-admin, liste d'exceptions retirée) doivent toutes virer au rouge, et elles le font. Sans
+  cela, une impersonation qui échouerait silencieusement rendrait zéro partout et afficherait « 0 en
+  faute » sur une base grande ouverte — la panne qui ressemble exactement au succès.
 
 Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître :
 
-- Les policies RLS sont vérifiées **par impersonation réelle au cas par cas**, à leur création.
-  Rien ne les rejoue après une migration. C'est le chantier 23 de la feuille de route, et c'est la
-  faiblesse la plus sérieuse de cette section : une migration peut défaire une policy sans que rien
-  ne le signale.
 - **Le plan Supabase est `free`** : aucune sauvegarde automatique côté hébergeur, et le contrôle
   des mots de passe contre les fuites connues est réservé au plan Pro. Voir PLAN_DE_REPRISE.md §1.
+- **Les Edge Functions et le stockage** restent vérifiés par relecture, advisors et essais manuels :
+  le harnais ci-dessus ne couvre que les policies de tables du schéma `public`.
 
 ---
 
@@ -217,8 +224,24 @@ Aucun contrat n'existe aujourd'hui, et c'est cohérent : JD Consult est à la fo
 l'éditeur. Le jour où un cabinet tiers arrive, il faut un contrat de sous-traitance éditeur/cabinet
 et la liste des sous-traitants ultérieurs (§3) annexée.
 
-### 8.5 — Rejouer les policies RLS après chaque migration *(chantier 23)*
+### 8.5 — Rejouer les policies RLS après chaque migration *(fait le 19/09/2026)*
 
-Le patron existe déjà : `supabase/essais/restauration.sql` prouve une restauration contre les vraies
-contraintes. Le même procédé appliqué à l'impersonation ferait de la section 7 une section
-**démontrée** au lieu d'une section affirmée.
+`supabase/essais/rls.sql` le fait, et la section 7 est passée de « affirmée » à « démontrée ».
+
+**Ce qu'il a trouvé à sa première exécution justifie à lui seul le chantier** : un visiteur
+**anonyme** — non connecté, muni de la seule clé publique de l'application — lisait les 10 catégories
+comptables et les 8 natures d'immobilisation du cabinet. Les deux policies disaient
+`using (dossier_id is null or ...)` sans clause `to`, or une policy sans `to` s'applique au rôle
+`public`, donc à `anon`. La branche « dossier_id is null » voulait dire « partagé par tout le
+cabinet » ; elle disait en fait « lisible par tout Internet ». Corrigé par la migration
+`categories_et_natures_reservees_aux_connectes`.
+
+Aucune donnée personnelle n'était exposée, aucune donnée de dossier — la configuration comptable du
+cabinet seulement. Ce qui compte ici n'est pas le contenu mais la **forme du défaut** : une porte
+qui s'élargit toute seule, le jour où une ligne partagée porte autre chose. Et surtout : ces deux
+policies avaient été relues, plusieurs fois, sans que personne ne voie la clause manquante. Il
+fallait l'exécuter pour la voir.
+
+**Reste à faire** : le rejouer après chaque migration qui touche une policy. Ce n'est pas automatisé
+— le harnais vit dans `supabase/essais/`, qui se rejoue à la main par l'outil MCP, comme la
+restauration. L'automatiser supposerait un accès à la base depuis la CI, que ce dépôt n'a pas.
