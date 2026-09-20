@@ -671,6 +671,36 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   d'échouer.
 - **Les API paginées de Storage sont paginées explicitement.** `list()` plafonne à 100 entrées
   sans le signaler : la suppression d'un dossier laissait tout le reste orphelin au-delà.
+- **Et la TABLE se pagine aussi : PostgREST plafonne le nombre de lignes rendues.** C'est le
+  réglage « Max rows » du projet (1 000 par défaut), et il ne se signale pas — la réponse est une
+  liste valide, simplement plus courte que la réalité. Un `select('*').eq('dossier_id', …)` rend
+  donc un sous-ensemble sans le dire, et ce qu'on en calcule (balance, FEC, piste d'audit) est faux
+  sans qu'aucune alerte ne paraisse. **Mesuré le 20/09/2026** : `lignes_bancaires` porte 954 lignes
+  pour le cabinet, 385 sur le dossier vivant — personne n'a encore franchi le plafond, et le
+  prochain relevé importé peut le faire. Ce réglage n'est pas lisible depuis cette base
+  (`pg_db_role_setting` ne porte aucun `pgrst.*` : il vit dans la configuration de la plateforme),
+  donc le code ne doit dépendre d'AUCUNE valeur supposée.
+  `lireTout` (lib/lectureComplete.ts) lit par tranches et rend `{ lignes, complete, motif }`. Trois
+  décisions :
+  - **On avance de ce qui a été RENDU, pas de la taille demandée.** Si le plafond du serveur est
+    plus petit que la tranche, une tranche « courte » n'est pas la fin de la table — s'en servir
+    comme condition d'arrêt perdrait tout le reste. C'est la limite de la pagination du socle de
+    sauvegarde (`sauvegardeDonnees.ts`), qui s'arrête sur une tranche courte et se rattrape en
+    REFUSANT — elle peut se le permettre, une sauvegarde incomplète ne vaut rien ; un écran, lui,
+    doit continuer.
+  - **Le compte annoncé fait foi** (`count: 'exact'`, qui ne rapatrie aucune ligne) : sans lui,
+    « rien de plus à lire » et « le serveur ne rend plus rien » sont indiscernables. Une lecture
+    sans compte annoncé se déclare donc INCOMPLÈTE, et l'arrêt sur tranche vide est ce qui empêche
+    un compte trop grand de faire boucler indéfiniment.
+  - **Le tri doit être TOTAL.** `date` n'est pas unique : sans clé de départage (`.order('id')`),
+    deux tranches se recouvrent ou sautent des lignes, et rien ne le signale — c'est le même piège
+    que `CLES_PRIMAIRES` côté sauvegarde.
+  Premier branchement, sur les livrables fiscaux : `EcrituresTab` lit le brouillon ainsi, et **refuse**
+  d'exporter le FEC ou la piste d'audit sur une lecture incomplète (le format FEC est rigide, il ne
+  peut pas porter l'avertissement — à la différence d'un pack et de sa feuille « Pièces manquantes »).
+  **Les autres écrans ne sont PAS encore portés** : une trentaine de lectures de collection entière
+  restent en `select('*')` nu, et c'est à faire écran par écran, en commençant par ce qui produit un
+  chiffre ou un fichier.
 - **Un filtre de période écarte les NULL sans le dire.** En SQL, une comparaison avec NULL n'est
   jamais vraie : `gte`/`lte` sur `date_piece` excluait donc les pièces validées sans date de
   *toutes* les périodes à la fois — absentes du ZIP, du récapitulatif et du total de chaque pack,
@@ -1396,11 +1426,12 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 892 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 899 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
 l'import de relevés (`csv.ts` pour le CSV, `relevePdf.ts` pour le PDF), la lecture
+complète d'une collection malgré le plafond de PostgREST (`lectureComplete.ts`), la lecture
 d'une balance venue d'un autre logiciel (`balanceImport.ts`),
 la génération des packs et l'export d'un cabinet
 (`packGenerator.ts`, `exportCabinet.ts`), la sauvegarde et la restauration d'un dossier

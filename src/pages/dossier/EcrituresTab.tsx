@@ -6,6 +6,7 @@ import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPour
 import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
+import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
 import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -42,13 +43,25 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const [dateDeclaration, setDateDeclaration] = useState('')
   const [savingDeclaration, setSavingDeclaration] = useState(false)
   const [exportPiste, setExportPiste] = useState(false)
+  // Non nul quand le brouillon n'a PAS pu être lu en entier (voir lib/lectureComplete.ts). PostgREST
+  // plafonne le nombre de lignes rendues par requête sans le signaler : au-delà, cet écran
+  // afficherait un sous-ensemble, et le FEC comme la piste d'audit partiraient amputés sans qu'un
+  // seul signal ne paraisse. Le format FEC étant rigide, il ne peut pas porter l'avertissement —
+  // l'export se refuse donc, plutôt que de produire un fichier fiscal faux.
+  const [brouillonIncomplet, setBrouillonIncomplet] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesValideesData }, { data: ecrituresData }, { data: immobilisationsData }, { data: lignesData }, { data: declarationsData }] = await Promise.all([
+    const [{ data: categoriesData }, { data: piecesValideesData }, brouillon, { data: immobilisationsData }, { data: lignesData }, { data: declarationsData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
       supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
-      supabase.from('ecritures_brouillon').select('*').eq('dossier_id', dossierId).order('date', { ascending: false }),
+      // Lue par tranches, et triée sur un ordre TOTAL (`date` n'est pas unique) : sans clé de
+      // départage, deux tranches successives peuvent se recouvrir ou sauter des lignes, et rien ne
+      // le signale.
+      lireTout<EcritureBrouillon>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date', { ascending: false }).order('id').range(debut, fin),
+      ),
       supabase.from('immobilisations').select('piece_id').eq('dossier_id', dossierId),
       supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null),
       supabase.from('declarations_tva').select('*').eq('dossier_id', dossierId).order('periode_debut', { ascending: false }),
@@ -56,7 +69,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setLignesBancaires(lignesData ?? [])
     setCategories(categoriesData ?? [])
     setPiecesValidees(piecesValideesData ?? [])
-    setEcritures(ecrituresData ?? [])
+    setEcritures(brouillon.lignes)
+    setBrouillonIncomplet(brouillon.complete ? null : brouillon.motif)
     setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
     setDeclarationsTva(declarationsData ?? [])
     setLoading(false)
@@ -169,12 +183,21 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       // Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture : sans
       // ce contrôle, un refus RLS produirait un export où CHAQUE contrepartie annonce un mouvement
       // absent — un fichier faux, et qui a l'air complet.
-      const { data, error: readError } = await supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId)
-      if (readError) throw readError
+      const mouvements = await lireTout<LigneBancaire>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
+      )
+      if (!mouvements.complete) {
+        throw new Error(
+          `Les mouvements bancaires n'ont pas pu être lus en entier (${mouvements.motif}). ` +
+          "L'export est annulé : une piste d'audit bâtie sur une lecture partielle annoncerait " +
+          'manquants des mouvements qui existent.',
+        )
+      }
       // Les pièces sans date n'appartiennent à aucun exercice : elles sont jointes à chacun, et la
       // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de les taire.
       const piecesExercice = piecesValidees.filter((p) => !p.date_piece || anneeDe(p.date_piece) === anneeFilter)
-      const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, data ?? []))
+      const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, mouvements.lignes))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {
       setError(err instanceof Error ? err.message : "L'export de la piste d'audit a échoué.")
@@ -536,6 +559,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </button>
       </div>
 
+      {brouillonIncomplet && (
+        // Dit en clair ce que les deux boutons grisés ne peuvent qu'insinuer : les totaux affichés
+        // eux-mêmes portent sur une lecture partielle.
+        <p className="error-text">
+          Le brouillon n'a pas pu être lu en entier ({brouillonIncomplet}). Les totaux ci-dessous
+          portent donc sur une partie des écritures, et les exports FEC et piste d'audit sont
+          bloqués — un fichier fiscal amputé ne peut pas dire qu'il l'est.
+        </p>
+      )}
+
       {error && <p className="error-text">{error}</p>}
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 14 }}>
@@ -547,8 +580,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         )}
         <button
           className="btn btn-outline btn-sm"
-          disabled={typeof anneeFilter !== 'number' || ecrituresFiltrees.length === 0}
-          title={typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice." : undefined}
+          disabled={typeof anneeFilter !== 'number' || ecrituresFiltrees.length === 0 || brouillonIncomplet !== null}
+          title={
+            brouillonIncomplet
+              ? `Brouillon lu incomplètement (${brouillonIncomplet}) — un FEC amputé ne peut pas le dire, le format n'a pas de place pour ça.`
+              : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice." : undefined
+          }
           onClick={() => {
             if (typeof anneeFilter !== 'number') return
             const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories)
@@ -559,9 +596,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </button>
         <button
           className="btn btn-outline btn-sm"
-          disabled={typeof anneeFilter !== 'number' || exportPiste}
+          disabled={typeof anneeFilter !== 'number' || exportPiste || brouillonIncomplet !== null}
           title={
-            typeof anneeFilter !== 'number'
+            brouillonIncomplet
+              ? `Brouillon lu incomplètement (${brouillonIncomplet}) — une piste d'audit partielle est pire qu'absente.`
+              : typeof anneeFilter !== 'number'
               ? "Sélectionne une année ci-dessus — une piste d'audit se produit par exercice."
               : "Chaque écriture avec son justificatif (tiers, date, montant, fichier, empreinte SHA-256) et l'opération bancaire réelle, plus les justificatifs validés que rien ne comptabilise."
           }
