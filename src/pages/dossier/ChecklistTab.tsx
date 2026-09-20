@@ -202,7 +202,20 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const sansCategorie = piecesValideesSansCategorie(piecesValidees)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
   // absente de Clôture, de la 2035 et de la Balance sans être comptée nulle part comme manquante.
-  const dateImpossible = piecesADateImpossible(piecesValidees)
+  //
+  // SUR LES DEUX PILES, comme ses trois voisins ci-dessous — et il était le seul des quatre à ne pas
+  // l'être. Ce n'était pas un arbitrage, c'était un oubli, et il rendait le contrôle AVEUGLE en
+  // production : la seule pièce de la base à porter une date impossible (27/09/2028, déposée le
+  // 16/09/2026, sans tiers ni montant, confiance basse) est « à valider » — c'est-à-dire le cas même
+  // qui a fait écrire ce contrôle, cité dans son propre commentaire.
+  //
+  // La règle qui départage les contrôles de cet écran, et qu'il faut appliquer au prochain :
+  // un contrôle qui signale une donnée ABSENTE ne vise que les validées (l'absence est normale dans
+  // la corbeille d'arrivée, et les signaler noierait le signal) ; un contrôle qui signale une donnée
+  // DÉMONTRÉE FAUSSE vise les deux piles, parce qu'une donnée fausse n'est jamais normale et qu'elle
+  // se corrige d'autant mieux qu'on la voit avant la validation. Une date postérieure au dépôt est
+  // démontrée fausse.
+  const dateImpossible = piecesADateImpossible([...piecesValidees, ...piecesAValider])
   // Sur TOUTES les pièces, validées ET à valider — et ce n'est pas un détail : `piecesValidees` ne porte ici
   // que les validées. Les deux pièces qui ont fait naître ce contrôle sont toutes deux « à valider »,
   // donc le brancher sur `piecesValidees` seul le rendrait muet sur le cas même qu'il est fait pour voir.

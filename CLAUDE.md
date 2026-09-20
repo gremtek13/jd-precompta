@@ -1277,6 +1277,27 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   de ce contrôle : dans `ChecklistTab`, `pieces` ne porte que les validées, or les deux pièces qui ont
   fait naître ce contrôle sont toutes deux « à valider » — le brancher là aurait produit un contrôle
   muet sur le cas même qu'il est fait pour voir.
+  **ET LE PIÈGE S'EST REFERMÉ UNE SECONDE FOIS, SUR UN AUTRE CONTRÔLE** (20/09/2026).
+  `piecesADateImpossible` ne tournait que sur les validées, alors que ses TROIS voisins immédiats
+  dans le même fichier (`moisEnDouble`, `tvaImpossible`, `deviseNonConvertie`) tournent sur les deux
+  piles, chacun avec un commentaire qui l'explique. Il n'avait, lui, aucune justification de sa
+  restriction : un oubli, pas un arbitrage.
+  **Mesuré en base** : la seule pièce de tout le schéma à porter une date impossible — 27/09/2028,
+  déposée le 16/09/2026, sans tiers ni montant, confiance basse — est « à valider ». Le contrôle
+  était donc AVEUGLE À 100 % en production, sur le cas que son propre commentaire cite comme
+  origine. La première occurrence avait été « rattrapée par hasard, en relisant le chargement » ;
+  celle-ci ne l'a pas été, et c'est ce qui décide : un piège connu mais gardé par la vigilance
+  revient.
+  **La règle qui départage, et qu'il faut appliquer au prochain contrôle de cet écran** : un
+  contrôle qui signale une donnée ABSENTE ne vise que les validées — l'absence est normale dans la
+  corbeille d'arrivée, et les signaler noierait le signal (30 pièces à valider sans catégorie face à
+  10 validées). Un contrôle qui signale une donnée DÉMONTRÉE FAUSSE vise les DEUX piles : une donnée
+  fausse n'est jamais normale, et elle se corrige d'autant mieux qu'on la voit avant la validation —
+  après, plus personne ne regarde la pièce. Les six autres contrôles de `ChecklistTab` ont été
+  confrontés à ce critère : tous corrects, `piecesADateImpossible` était le seul déplacé.
+  **Un test d'écran le garde désormais** (`ChecklistTab.test.tsx`), parce qu'aucun test de `src/lib`
+  ne le peut : la fonction est juste, c'est le câblage qui ment. Deux mutations mordent, dans les
+  deux sens — rebrancher sur les seules validées (le défaut d'origine) et sur les seules à valider.
 - **Comparer deux noms se fait mot à mot, jamais par sous-chaîne.** `libelle.includes(mot)` sur le
   libellé entier confirmait « Medical Service » avec « Transmedical » : la suite de lettres est
   bien là, à l'intérieur d'un autre mot. Au centime et au jour près, ça validait le prélèvement d'un
@@ -1724,7 +1745,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   PAS sauvegardé et qu'on découvrirait sinon en pleine reprise — au premier rang les comptes
   `auth.users`, qu'il faut recréer AVEC leurs UUID d'origine, quatre colonnes du schéma les exigeant
   en NOT NULL sans contournement possible.
-- **La couverture Vitest s'arrête à `src/lib`, À CINQ ONGLETS PRÈS** (voir "Tests") : les
+- **La couverture Vitest s'arrête à `src/lib`, À SIX ONGLETS PRÈS** (voir "Tests") : les
   composants et les Edge Functions restent, pour l'essentiel, vérifiés par la relecture de
   code, les advisors Supabase et des tests manuels réels (y compris, pour Super PDP, par
   l'utilisateur lui-même puisque cet environnement ne peut pas atteindre
@@ -1779,10 +1800,17 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   `lib/remplir2035`, qui importe `pdfjs-dist/...?url` et touche au navigateur DÈS L'IMPORT. Même
   famille que `pdfText.ts`, et la doublure est honnête ici : le test vérifie précisément que la
   génération est REFUSÉE.
+  **`ChecklistTab` a suivi**, et c'est l'écran dont le silence est le plus dangereux : il prétend
+  dire ce qui MANQUE, donc se taire est exactement ce qu'on attend de lui quand tout va bien. Son
+  test garde un CÂBLAGE et pas un calcul — voir le piège refermé une seconde fois plus haut. Piège
+  du test lui-même, à connaître pour le prochain : vérifier une ABSENCE demande de s'ancrer sur
+  autre chose qui, lui, est présent, sinon un écran encore en chargement rend le test vert pour une
+  raison fausse. L'ancre retenue est un AUTRE point de la même liste, que le jeu de données
+  déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 5 testés** — banque,
-  documents, statistiques, écritures, clôture — donc **12 sans aucun test de rendu**. Un chiffre
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 6 testés** — banque,
+  documents, statistiques, écritures, clôture, checklist — donc **11 sans aucun test de rendu**. Un chiffre
   qu'on recopie sans le recompter dérive à chaque ajout ; celui-ci se remesure en une commande.
   **`BanqueTab` portait le même défaut que les trois précédents** : `rapprocherTout` (le lot
   automatique, à distinguer de `validerEtRapprocherLot` juste au-dessus dans le fichier, qui
