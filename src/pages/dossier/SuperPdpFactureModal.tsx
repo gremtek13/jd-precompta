@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
@@ -34,13 +34,21 @@ export default function SuperPdpFactureModal({ dossierId, facture, onClose, onUp
   }
   useEffect(() => { charger() }, [facture.id])
 
+  // Verrou en `useRef` : `enCours` est un état React, donc `disabled={enCours}` ne ferme rien
+  // contre deux clics dans le même rendu (voir CLAUDE.md). Ici le doublon ne crée pas une ligne —
+  // il TRANSMET deux fois la même facture à une plateforme de dématérialisation agréée DGFiP.
+  const appelEnCours = useRef(false)
+
   async function appeler(action: 'envoyer' | 'actualiser') {
+    if (appelEnCours.current) return
+    appelEnCours.current = true
     setEnCours(true)
     setErreur(null)
     const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('superpdp-emit', {
       body: { dossierId, factureId: facture.id, action },
     })
     setEnCours(false)
+    appelEnCours.current = false
     if (data?.error || invokeError) {
       setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'appel à Super PDP."))
       return

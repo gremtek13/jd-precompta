@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
@@ -263,7 +263,20 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     montant_ttc: nombreOuNull(montantTtc),
   } as Piece])[0]?.motif ?? null
 
+  // Verrou en `useRef`, POSÉ AVANT LE `try`. Deux raisons, et la seconde est celle qu'on oublie :
+  // `saving` est un état React, donc `disabled={saving}` ne ferme rien contre deux clics dans le
+  // même rendu ; et placé DANS le `try`, le `return` du deuxième clic sortirait par le `finally`,
+  // qui relâcherait le verrou du PREMIER, encore en cours — il faut trois clics pour le voir
+  // (CLAUDE.md).
+  //
+  // Le doublon crée une PIÈCE de plus sur le même justificatif, et une pièce en double est une
+  // charge comptée deux fois — en 2035 comme en balance. Même famille que l'import en masse qui
+  // écrivait 141 lignes pour 78 fichiers, sur le chemin à l'unité cette fois.
+  const enregistrementEnCours = useRef(false)
+
   async function save(statut: 'a_valider' | 'validee') {
+    if (enregistrementEnCours.current) return
+    enregistrementEnCours.current = true
     setSaving(true)
     setError(null)
     try {
@@ -353,6 +366,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
+      enregistrementEnCours.current = false
       setSaving(false)
     }
   }

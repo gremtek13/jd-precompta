@@ -1,4 +1,4 @@
-import { useState, type CSSProperties, type FormEvent } from 'react'
+import { useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { extraireErreurFonction } from '../lib/invokeErreur'
 
@@ -25,14 +25,28 @@ export default function EnvoyerEmailModal({ dossierId, type, destinataireInitial
   const [erreur, setErreur] = useState<string | null>(null)
   const [envoye, setEnvoye] = useState(false)
 
+  // Verrou d'exécution en `useRef` et non en état React : `setEnvoi(true)` ne prend effet qu'au
+  // rendu suivant, donc `disabled={envoi}` laisse passer deux soumissions rapprochées. Sur un
+  // FORMULAIRE le déclencheur n'est même pas le double clic mais deux « Entrée », geste banal.
+  //
+  // C'est le porteur le plus coûteux du motif : les autres dupliquent une LIGNE, qu'on peut
+  // supprimer. Celui-ci envoie deux fois le même e-mail au client — une facture ou une relance en
+  // double dans sa boîte, que rien ne peut retirer. Posé AVANT le premier `await`, et avant tout
+  // `try` (voir CLAUDE.md : placé dans le `try`, le refus du deuxième clic relâcherait par son
+  // `finally` le verrou du premier).
+  const envoiEnCours = useRef(false)
+
   async function envoyer(e: FormEvent) {
     e.preventDefault()
+    if (envoiEnCours.current) return
+    envoiEnCours.current = true
     setEnvoi(true)
     setErreur(null)
     const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('send-email', {
       body: { dossierId, type, destinataire: destinataire.trim(), message: message.trim() || undefined, factureId },
     })
     setEnvoi(false)
+    envoiEnCours.current = false
     if (data?.error || invokeError) {
       setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'envoi."))
       return

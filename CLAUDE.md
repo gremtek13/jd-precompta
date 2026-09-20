@@ -909,9 +909,25 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   en parallèle le 20/09/2026 ont écrit « troisième » et « cinquième » pour ce motif dans ce fichier.
   Un rang inscrit au fil du texte oblige à recompter à chaque ajout, sur des paragraphes que
   personne ne relit ensemble : la liste vit donc en un seul endroit, celui-ci.
-  **Cinq fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
-  (`PiecesTab` et `DocumentsTab`), « C'est une facture » (`DocumentsTab`, qui n'avait aucun verrou)
-  et « Tout rapprocher automatiquement » (`BanqueTab`, 20/09/2026).
+  **Neuf fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
+  (`PiecesTab` et `DocumentsTab`), « C'est une facture » (`DocumentsTab`, qui n'avait aucun verrou),
+  « Tout rapprocher automatiquement » (`BanqueTab`), puis quatre trouvés d'un coup par l'audit
+  ci-dessous (20/09/2026) : `EnvoyerEmailModal.envoyer`, `SuperPdpFactureModal.appeler`,
+  `FactureAvoirModal.creerAvoir` et `PieceFormModal.save`.
+  **CE MOTIF SE CHERCHE, IL NE S'ATTEND PAS.** Les cinq premiers ont été trouvés un par un, en
+  travaillant sur autre chose. Un balayage a rendu les quatre suivants en une fois, et la requête
+  vaut plus que la prise — à rejouer avant de croire le motif épuisé : les gestionnaires `async` qui
+  **dupliquent** quelque chose (`.insert(`, `functions.invoke`, `storage…upload`) et ne portent
+  aucun `.current`. Écarter `.update(`/`.delete(` est ce qui rend la liste lisible : une mise à jour
+  idempotente suivie d'un `load()` ne coûte rien en double, et les signaler tous noierait le signal.
+  Le balayage rend **36 candidats**, dont ces quatre. **Les 32 autres ne sont pas corrigés**, et
+  c'est un choix, pas un oubli : leur doublon crée une LIGNE, qu'un cabinet voit et supprime. Les
+  quatre retenus sont ceux dont le doublon ne se rattrape pas — un e-mail parti chez le client, une
+  facture transmise deux fois à une plateforme agréée DGFiP, un numéro consommé dans une suite
+  légale qui n'admet ni trou ni doublon, et une pièce en double, c'est-à-dire une charge comptée
+  deux fois en 2035 comme en balance.
+  **Et le formulaire est le pire déclencheur, pas le double clic.** `EnvoyerEmailModal` soumet un
+  `<form>` : deux « Entrée » rapprochés suffisent, geste bien plus banal que deux clics.
   **Et porter un verrou n'est pas la même chose qu'avoir porté le défaut** — c'est ce qui a fait
   écrire « six » à la première tentative de ce recensement. Onze `useRef` de verrouillage existent
   dans `src`, et six sont nés corrects avec leur fonctionnalité (`VehiculesCard`, `ClotureTab`,
@@ -1514,6 +1530,12 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   d'`ImportDossierModal`, de la conversion document → pièce (`DocumentsTab`) et — depuis le
   20/09/2026 — du bouton « Tout rapprocher automatiquement » de `BanqueTab`, le refus de
   saisir sans exercice choisi, et la séparation recherche / totaux de la Balance des comptes.
+  Depuis le 20/09/2026 s'y ajoute `EnvoyerEmailModal`, dont le verrou est le seul du projet à garder
+  quelque chose qui SORT de l'application. Ses trois mutations mordent (verrou remis en état React,
+  verrou jamais relâché, verrou posé après le `await`) — mais une quatrième, écrite d'abord, a
+  SURVÉCU : « poser le verrou après `setEnvoi(true)` » ne déplace rien, `setEnvoi` étant synchrone.
+  **Une mutation qui ne mord pas accuse d'abord la mutation, pas le test** ; réécrite en déplaçant
+  l'affectation derrière le vrai `await`, elle mord.
   C'est un premier fil, pas une couverture : dix onglets n'ont toujours aucun test de rendu.
   **`BanqueTab` portait le même défaut que les trois précédents** : `rapprocherTout` (le lot
   automatique, à distinguer de `validerEtRapprocherLot` juste au-dessus dans le fichier, qui

@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react'
+import { useEffect, useRef, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
 import { attribuerNumeroFacture, calculerLigne, calculerTotaux } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
@@ -74,11 +74,22 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
   const totaux = calculerTotaux(lignesNumeriques)
   const lignesValides = lignesNumeriques.filter((l) => l.designation.trim() && l.quantite > 0)
 
+  // Verrou en `useRef`, et POSÉ AVANT LE `try` : dans le `try`, le `return` du deuxième clic
+  // sortirait par le `finally`, qui relâcherait le verrou du PREMIER, encore en cours — il faut
+  // trois clics pour le voir, et deux suffisent à croire la version fautive correcte (CLAUDE.md).
+  //
+  // Le doublon ne coûte pas une ligne de trop : `attribuerNumeroFacture` CONSOMME un numéro de la
+  // suite annuelle (upsert +1), qui n'admet ni trou ni doublon. Deux clics, c'est soit deux avoirs
+  // sur la même facture, soit un numéro consommé pour rien.
+  const creationEnCours = useRef(false)
+
   async function creerAvoir() {
     if (lignesValides.length === 0) {
       setError('Au moins une ligne avec une quantité doit rester à créditer.')
       return
     }
+    if (creationEnCours.current) return
+    creationEnCours.current = true
     setSaving(true)
     setError(null)
     try {
@@ -122,6 +133,7 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
     } finally {
+      creationEnCours.current = false
       setSaving(false)
     }
   }
