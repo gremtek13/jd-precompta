@@ -1301,6 +1301,38 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   tapé. La Balance des comptes violait la règle : ses totaux débit/crédit portaient sur les
   lignes trouvées, donc taper « 606 » affichait le badge rouge « écart … », celui qui signale
   normalement un brouillon cassé. Une recherche ne doit jamais fabriquer une alerte.
+  **ET ELLE A ÉTÉ VIOLÉE UNE SECONDE FOIS, DANS L'AUTRE SENS** (20/09/2026) — sur la liste des
+  dossiers, le seul écran du projet à porter sur tout le cabinet. `nbAvecAlerte` était calculé sur
+  l'ensemble d'APRÈS-recherche et servait trois chiffres rendus AU-DESSUS de la liste : la tuile
+  « À régler », qui passait au vert avec « aucun point ouvert » sur une recherche sans résultat ; la
+  tuile « À jour », valant `dossiers.length - nbAvecAlerte`, donc un MÉLANGE des deux ensembles — si
+  bien que plus la recherche restreignait, plus ce chiffre MONTAIT ; et le sous-titre des priorités,
+  qui listait cinq dossiers en annonçant « 0 dossier(s) avec un point ouvert ».
+  **Ce qui le rendait invisible** : « À régler » et « À jour » totalisaient toujours « Dossiers
+  suivis ». Les deux tuiles restaient cohérentes ENTRE ELLES tout en étant fausses toutes les deux.
+  Et là où la Balance fabriquait une ALERTE, celui-ci fabriquait une BONNE NOUVELLE — c'est le pire
+  des deux, personne n'allant vérifier une bonne nouvelle.
+  **LA RÈGLE NE RESTE PLUS DANS CE FICHIER : elle est devenue un test** (`recherchesEtTotaux.test.ts`).
+  Il part de `correspondALaRecherche(`, lie chaque appel au `.filter(` qui l'ENFERME par comptage de
+  parenthèses, et interdit trois formes sur l'ensemble ainsi lié : `X.reduce(`, `X.filter(…).length`
+  et `total={X.length}`. Ce qui reste légitime passe — `X.map(…)`, `X.length === 0`, `[...X].sort(…)`
+  et surtout `affiches={X.length}`, qui DOIT suivre la recherche. Deux décisions à ne pas défaire :
+  - **Il ne part PAS de `BarreRecherche`.** Première version envisagée : lire `affiches={X.length}`,
+    l'écran DÉCLARANT ainsi son ensemble d'après-recherche. Simple, exacte, et elle aurait manqué le
+    seul défaut réel du dépôt — la liste des dossiers porte un `<input>` à elle, pas le composant
+    partagé. Un scanner qui rate la prise qui l'a fait naître est la panne déjà connue ici.
+  - **Une forme non reconnue le fait ÉCHOUER, jamais passer.** Sans quoi « zéro faute » et
+    « aveugle » redeviennent indiscernables.
+  Le comptage de parenthèses n'est pas du zèle : un `const` local DANS le corps du filtre
+  (`ClientUpload` en porte un) met en défaut la version naïve qui remonte au `const` le plus proche.
+  **Sa mutation a pourtant SURVÉCU d'abord**, et c'est le jeu d'essai qu'il fallait accuser, pas le
+  code : le cas « forme non reconnue » était un one-liner sans rien au-dessus, donc sans rien de faux
+  à attraper. Remis dans la forme qui l'aveugle — un `.filter` sans rapport juste avant — il mord.
+  **Balayage complet du 20/09/2026, résultat à garder** : onze écrans portent une recherche, un seul
+  était en faute ; les dix autres calculent bien leurs totaux sur l'ensemble d'avant.
+  **Et un scanner de source ne prouve que la FORME** : `valeur={filtered.length - nbAvecAlerte}` lui
+  échapperait, `filtered.length` étant par ailleurs légitime. D'où `DossiersList.test.tsx`, qui tape
+  un nom et vérifie que le tableau de bord ne bouge pas — quatre mutations mordent, dont celle-là.
 - **Le compteur « N sur M » compare ce qui est comparable.** `M` est l'ensemble après les
   filtres de l'écran (statut, année, mois) et avant la recherche — pas la liste brute, sinon le
   compteur annonce un écart dû au filtre Année et non à la recherche.
@@ -1978,6 +2010,9 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires` et `BalanceCard` (20/09/2026). Un onglet n'est donc pas « testé » parce qu'une
   de ses cartes l'est — Informations reste dans les dix.
+  **La liste des dossiers a rejoint les écrans testés le 20/09/2026** (`DossiersList.test.tsx`) :
+  ni un onglet ni une carte mais une PAGE, donc le compte des 17 onglets ne bouge pas. Elle y est
+  entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre l'affichage » plus haut.
   **Deux doublures à connaître avant d'écrire le prochain test d'écran** : `PiecesTab` lit
   `monCabinetId` d'`AuthContext` (monter un `AuthProvider` complet ferait dépendre le test d'une
   session Supabase), et `piecesAvecTexteOcr` doit rendre sa forme EXACTE
@@ -2007,7 +2042,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1006 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1013 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
