@@ -25,11 +25,21 @@ vi.mock('./supabase', () => ({
         etat.appels.push({ methode: 'insert', table, ligne })
         return Promise.resolve({ error: etat.erreurEcriture })
       },
+      // La lecture passe par `lireTout` (voir lib/lectureComplete.ts) : le faux client doit donc
+      // honorer `range` et ANNONCER un `count`. Sans compte annoncé, toute lecture se déclarerait
+      // incomplète et le test vérifierait autre chose que ce qu'il croit.
       select: () => {
-        const chaine = {
+        const chaine: Record<string, unknown> = {}
+        Object.assign(chaine, {
           eq: () => chaine,
-          order: () => Promise.resolve({ data: etat.erreurLecture ? null : etat.lignes, error: etat.erreurLecture }),
-        }
+          order: () => chaine,
+          range: () => chaine,
+          then: (suite: (r: unknown) => unknown) => Promise.resolve(
+            etat.erreurLecture
+              ? { data: null, error: etat.erreurLecture, count: null }
+              : { data: etat.lignes, error: null, count: etat.lignes.length },
+          ).then(suite),
+        })
         return chaine
       },
     }),
@@ -103,6 +113,10 @@ describe('chargerRelevesIncoherents', () => {
     // trouvé ». Rendre une liste vide ferait passer une lecture refusée pour un dossier sain — soit
     // exactement le silence que ce contrôle existe pour rompre.
     etat.erreurLecture = { message: 'permission denied' }
-    await expect(chargerRelevesIncoherents('d1')).rejects.toThrow('Lecture des contrôles de relevé impossible')
+    // Le message porte désormais le motif rendu par `lireTout`, et il doit continuer de citer la
+    // cause réelle : un refus RLS qui ressort en « lecture incomplète » sans dire pourquoi
+    // n'apprendrait rien à qui le lit.
+    await expect(chargerRelevesIncoherents('d1')).rejects.toThrow('Lecture des contrôles de relevé incomplète')
+    await expect(chargerRelevesIncoherents('d1')).rejects.toThrow('permission denied')
   })
 })

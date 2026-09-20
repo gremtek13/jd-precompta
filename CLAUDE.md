@@ -807,20 +807,46 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   symétriques (une lecture correcte dont un commentaire coupe la chaîne, une écriture) pour qu'il
   ne se mette pas à crier au loup.
   Cinq mutations mordent, dont celle qui avait SURVÉCU avant correction et celle qui retire la
-  borne au `.from(` suivant.
+  borne au `.from(` suivant. Cinq autres gardent le portage lui-même : une lecture repassée en
+  `select` nu, une exception retirée, une exception INVENTÉE (qui ne correspond à aucune lecture
+  réelle — sans quoi la liste se remplirait de raisons mortes), et les deux refus sur lecture
+  partielle de l'export de cabinet et des contrôles de relevé.
+  **Deux faux clients de tests existants ont dû être alignés** (`exportCabinet`, `controlesReleves`,
+  plus `VehiculesCard` côté écrans) : un faux client qui ignore `range` casse la chaîne, et un qui
+  n'annonce pas de `count` fait déclarer INCOMPLÈTE toute lecture — le test passerait alors pour une
+  raison fausse. C'est le coût récurrent de `lireTout`, et il se paie une fois par faux client.
   **Les deux défauts trouvés valaient le détour**, et le second est le plus vicieux du portage :
   l'aperçu d'un pack annonçait un total tronqué sans le dire, alors que `packGenerator` REFUSE de
   produire un pack sur une lecture incomplète — l'écran était donc plus optimiste que le générateur
   qui allait refuser juste après. Et il ne comptait pas non plus les pièces validées SANS DATE, que
   `gte`/`lte` écarte de toute période : l'opérateur lisait « 4 pièces », générait, et apprenait
   seulement alors qu'il en existait dix-huit autres. Les deux se disent maintenant à l'aperçu.
-  **LA LISTE DES TABLES SURVEILLÉES N'EST PAS CELLE DES GROSSES TABLES, C'EST CELLE DONT UN
-  LIVRABLE DÉPEND** (élargie le 20/09/2026). Elle s'arrêtait aux six collections volumineuses.
-  Cinq l'ont rejointe — `categories`, `cotisations_declarees`, `immobilisations`, `vehicules`,
-  `natures_immobilisation` — et elles sont toutes MINUSCULES (43, 10, 2, 1, 8 lignes) : c'est
-  exactement ce qui rendait leur absence confortable.
-  Ce qui a tranché : `ClotureTab` refusait de remplir la 2035 sur une lecture partielle **en
-  n'ayant vérifié QUE les pièces**, soit une entrée sur cinq. Le garde-fou promettait donc « ce
+  **IL N'Y A PLUS DE LISTE DE TABLES À SURVEILLER : LE TEST LES SURVEILLE TOUTES** (20/09/2026).
+  Elle s'arrêtait aux six collections volumineuses ; cinq l'ont d'abord rejointe — `categories`,
+  `cotisations_declarees`, `immobilisations`, `vehicules`, `natures_immobilisation` — toutes
+  MINUSCULES (43, 10, 2, 1, 8 lignes), ce qui est exactement ce qui rendait leur absence
+  confortable. **Le balayage suivant a montré qu'il restait VINGT-TROIS tables dehors**, dont
+  `dossiers` — que ce fichier désignait NOMMÉMENT comme « la première qui touchera le plafond » et
+  dont la lecture n'avait jamais été portée, alors que les trois lectures SATELLITES du même écran
+  l'avaient été. Le portage s'était fait autour de la chose qu'il prétendait protéger.
+  **Une liste d'INCLUSION tenue à la main reproduit toujours la même panne** : elle ne contient que
+  ce à quoi quelqu'un a pensé, et son silence est indiscernable d'un dépôt sain. Le test part donc
+  de TOUTE lecture de collection, comme `rls.sql` part de `pg_class` — une table ajoutée demain est
+  attrapée sans que personne ait à y penser. Il n'admet que des EXCEPTIONS écrites, chacune portant
+  **la raison qui borne sa taille** : huit à ce jour, et toutes tiennent devant la question « et si
+  ce cabinet en avait mille ? » — les lignes d'UNE facture, les événements d'UNE transmission, les
+  sociétés d'UN utilisateur, le cours d'UNE devise à UNE date.
+  **Vingt-neuf lectures portées d'un coup**, dans seize fichiers. Les plus coûteuses si elles
+  étaient tronquées : `agent_conversations` sur l'écran super-admin (elle grandit d'une ligne par
+  message, donc plus vite que tout le reste — tronquée, elle ne vide pas le compteur de coût IA,
+  elle le SOUS-ESTIME, ce qui est la façon exacte dont un plafond cesse de protéger) ;
+  `tiers_categories` et `tiers_categories_cabinet` dans Pièces (les règles apprises cessent
+  simplement de s'appliquer, sans un signal, et l'opérateur recatégorise à la main un fournisseur
+  déjà arbitré dix fois) ; `mouvements_cca` (le solde d'un compte courant est TOUJOURS recalculé
+  depuis son historique complet — tronqué, c'est un solde faux, pas un historique plus court) ; et
+  l'export de cabinet, qui REFUSE désormais plutôt que de produire une archive amputée.
+  Ce qui avait tranché au départ : `ClotureTab` refusait de remplir la 2035 sur une lecture
+  partielle **en n'ayant vérifié QUE les pièces**, soit une entrée sur cinq. Le garde-fou promettait donc « ce
   formulaire est bâti sur tout » sans pouvoir le tenir, et une cotisation manquante donne une
   déclaration tout aussi plausible, fausse et SIGNÉE. Son drapeau s'appelle désormais
   `lectureIncomplete` et non `piecesIncompletes` : le nom mentait sur ce qu'il couvrait, et c'est
@@ -830,9 +856,11 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   `EcrituresTab` y gagne la sienne sur `immobilisations`, qui décide quelles pièces ne doivent PAS
   produire d'écriture : tronquée, elle générait une charge sur une immobilisation — le défaut même
   que `ecrituresSansObjet` signale, mais produit par la lecture au lieu d'un geste.
-  **Aucune de ces cinq tables n'est bornée par le modèle**, à la différence des écritures d'UNE
-  pièce : la règle du projet s'applique donc telle quelle — un mécanisme dont la justesse dépend de
-  la petitesse des données tombera le jour où elles grandissent.
+  **Le critère est toujours le même, et il ne regarde pas le nombre de lignes d'aujourd'hui** :
+  cette collection peut-elle grandir ? Les écritures d'UNE pièce, non — la partie double en produit
+  deux ou trois. Les 43 cotisations d'un dossier, si : rien dans le modèle ne les borne. Un
+  mécanisme dont la justesse dépend de la petitesse des données tombera le jour où elles
+  grandissent, et c'est pour ça qu'une exception doit porter une RAISON et pas un comptage.
 
   **Le motif « filtre de période sur une colonne NULLABLE » est désormais borné par le SCHÉMA et
   non par un grep** : sur les quatre colonnes filtrées en `gte`/`lte` dans le code (`date_piece`,

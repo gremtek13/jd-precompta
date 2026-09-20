@@ -7,6 +7,7 @@ import {
 import {
   LABEL_TYPE_MOUVEMENT_CCA, soldeCca, type CompteCourantAssocie, type MouvementCca, type TypeMouvementCca,
 } from '../../lib/cca'
+import { lireTout } from '../../lib/lectureComplete'
 
 interface FactureOption { id: string; numero: string | null; tiers_nom: string }
 
@@ -28,20 +29,34 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: sup }, { data: cptes }, { data: fact }] = await Promise.all([
-      supabase.from('supplements').select('*').eq('dossier_id', dossierId).order('date_demande', { ascending: false }),
-      supabase.from('comptes_courants_associes').select('*').eq('dossier_id', dossierId).order('nom_associe'),
-      supabase.from('factures_emises').select('id, numero, tiers_nom').eq('dossier_id', dossierId).order('date_emission', { ascending: false }),
+    const [lectureSupplements, lectureComptes, lectureFactures] = await Promise.all([
+      lireTout<Supplement>((debut, fin) =>
+        supabase.from('supplements').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date_demande', { ascending: false }).order('id').range(debut, fin),
+      ),
+      lireTout<CompteCourantAssocie>((debut, fin) =>
+        supabase.from('comptes_courants_associes').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('nom_associe').order('id').range(debut, fin),
+      ),
+      lireTout<FactureOption>((debut, fin) =>
+        supabase.from('factures_emises').select('id, numero, tiers_nom', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date_emission', { ascending: false }).order('id').range(debut, fin),
+      ),
     ])
-    setSupplements((sup ?? []) as Supplement[])
-    setComptes((cptes ?? []) as CompteCourantAssocie[])
-    setFacturesDispo((fact ?? []) as FactureOption[])
+    setSupplements(lectureSupplements.lignes)
+    setComptes(lectureComptes.lignes)
+    setFacturesDispo(lectureFactures.lignes)
     // Mouvements de tous les comptes du dossier chargés en une fois (plutôt qu'à l'ouverture de
     // chaque modale) pour pouvoir afficher un solde par compte directement dans la liste de cartes.
-    const comptesIds = (cptes ?? []).map((c) => c.id)
+    const comptesIds = lectureComptes.lignes.map((c) => c.id)
     if (comptesIds.length > 0) {
-      const { data: mvts } = await supabase.from('mouvements_cca').select('*').in('compte_id', comptesIds).order('date', { ascending: false })
-      setMouvements((mvts ?? []) as MouvementCca[])
+      // Le solde d'un compte courant est TOUJOURS recalculé depuis son historique complet (voir
+      // lib/cca.ts) : une lecture tronquée donnerait un solde faux, pas un historique plus court.
+      const lectureMouvements = await lireTout<MouvementCca>((debut, fin) =>
+        supabase.from('mouvements_cca').select('*', { count: 'exact' })
+          .in('compte_id', comptesIds).order('date', { ascending: false }).order('id').range(debut, fin),
+      )
+      setMouvements(lectureMouvements.lignes)
     } else {
       setMouvements([])
     }

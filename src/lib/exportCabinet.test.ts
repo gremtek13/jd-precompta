@@ -14,11 +14,20 @@ let blobTelecharge: Blob | null = null
 let nomTelecharge = ''
 
 vi.mock('./supabase', () => {
-  const chaine = {
+  // `range` et le `count` annoncé sont requis depuis que la liste des dossiers est lue par tranches
+  // (voir lib/lectureComplete.ts) : sans compte annoncé, la lecture se déclarerait incomplète et
+  // l'export refuserait — le test passerait pour une raison fausse.
+  const chaine: Record<string, unknown> = {}
+  Object.assign(chaine, {
     select: () => chaine,
     eq: () => chaine,
-    order: () => Promise.resolve(etat.dossiers),
-  }
+    order: () => chaine,
+    range: () => chaine,
+    then: (suite: (r: unknown) => unknown) => Promise.resolve({
+      ...etat.dossiers,
+      count: etat.dossiers.error ? null : (etat.dossiers.data ?? []).length,
+    }).then(suite),
+  })
   return { supabase: { from: () => chaine } }
 })
 

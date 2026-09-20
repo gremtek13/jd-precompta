@@ -38,7 +38,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   async function load() {
     setLoading(true)
     const [
-      { data: empruntsData },
+      lectureEmprunts,
       lecturePieces,
       lectureCategories,
       lectureImmobilisations,
@@ -46,7 +46,10 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       lectureBanque,
       { data: previsionnelData },
     ] = await Promise.all([
-      supabase.from('emprunts').select('*').eq('dossier_id', dossierId).order('date_debut', { ascending: false }),
+      lireTout<Emprunt>((debut, fin) =>
+        supabase.from('emprunts').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date_debut', { ascending: false }).order('id').range(debut, fin),
+      ),
       // Lues par tranches (voir lib/lectureComplete.ts) : recettes et charges font la situation
       // intermédiaire, les ratios bancaires et le plan de trésorerie — trois chiffres qu'un banquier
       // regarde.
@@ -75,7 +78,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       ),
       supabase.from('previsionnels_bancaires').select('*').eq('dossier_id', dossierId).maybeSingle(),
     ])
-    setEmprunts((empruntsData ?? []) as Emprunt[])
+    setEmprunts(lectureEmprunts.lignes)
     setPiecesValidees(lecturePieces.lignes)
     setCategories(lectureCategories.lignes)
     setImmobilisations(lectureImmobilisations.lignes)

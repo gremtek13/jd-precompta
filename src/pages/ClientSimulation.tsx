@@ -26,7 +26,7 @@ export default function ClientSimulation() {
   useEffect(() => {
     if (!dossierId) return
     async function load() {
-      const [lectureCotisations, lectureRecettes, { data: referencesData }, { data: referencesPostesData }] = await Promise.all([
+      const [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes] = await Promise.all([
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -38,13 +38,19 @@ export default function ClientSimulation() {
             .eq('dossier_id', dossierId).eq('statut', 'validee').eq('type_piece', 'vente')
             .order('id').range(debut, fin),
         ),
-        supabase.from('references_annuelles').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }),
-        supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
+        lireTout<ReferenceAnnuelle>((debut, fin) =>
+        supabase.from('references_annuelles').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('id').range(debut, fin),
+      ),
+        lireTout<ReferencePosteAnnuel>((debut, fin) =>
+        supabase.from('references_postes_annuels').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
+      ),
       ])
       setCotisations(lectureCotisations.lignes)
       setRecettesValidees(lectureRecettes.lignes)
-      setReferences(referencesData ?? [])
-      setReferencesPostes(referencesPostesData ?? [])
+      setReferences(lectureReferences.lignes)
+      setReferencesPostes(lectureReferencesPostes.lignes)
       setLoading(false)
     }
     load()

@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { formatDate } from '../../lib/format'
 import { formatUsd } from '../../lib/coutsApi'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
+import { lireTout } from '../../lib/lectureComplete'
 
 interface MessageBrut {
   conversation_id: string
@@ -54,12 +55,14 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
 
   async function charger() {
     setChargement(true)
-    const { data } = await supabase
-      .from('agent_conversations')
-      .select('conversation_id, role, texte, outils_utilises, created_at')
-      .eq('dossier_id', dossierId)
-      .order('created_at', { ascending: true })
-    const lignes = data ?? []
+    // Une ligne par message : c'est la table qui grandit le plus vite du projet. Tronquée, le fil
+    // repris perd ses premiers échanges — donc le contexte même que l'assistant relit.
+    // Tri TOTAL : `created_at` n'est pas unique, deux messages peuvent partager la milliseconde.
+    const lecture = await lireTout<MessageBrut>((debut, fin) =>
+      supabase.from('agent_conversations').select('conversation_id, role, texte, outils_utilises, created_at, id', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('created_at', { ascending: true }).order('id').range(debut, fin),
+    )
+    const lignes = lecture.lignes
     setTous(lignes)
     // Seulement au tout premier chargement (conversationId encore null) : ouvre le fil le plus récent
     // s'il y en a un, sinon un fil neuf — un rechargement après l'envoi d'un message ne doit pas

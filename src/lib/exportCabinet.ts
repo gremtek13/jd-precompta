@@ -2,6 +2,7 @@ import JSZip from 'jszip'
 import { supabase } from './supabase'
 import { aujourdHuiSql, nomUnique, slugify } from './format'
 import { remplirZipDossier } from './packGenerator'
+import { lireTout } from './lectureComplete'
 
 function telechargerBlob(nomFichier: string, blob: Blob) {
   const url = URL.createObjectURL(blob)
@@ -34,13 +35,17 @@ export async function genererExportCabinet(
   cabinetNom: string,
   onProgression?: (fait: number, total: number, dossierNom: string) => void,
 ): Promise<ResultatExportCabinet> {
-  const { data: dossiersData, error: dossiersError } = await supabase
-    .from('dossiers')
-    .select('id, nom')
-    .eq('cabinet_id', cabinetId)
-    .order('nom')
-  if (dossiersError) throw dossiersError
-  const dossiers = (dossiersData ?? []) as { id: string; nom: string }[]
+  // Cet export produit une ARCHIVE du cabinet entier : tronquée, elle serait cohérente avec
+  // elle-même et amputée de quelques clients, sans que rien le dise. Tri TOTAL, `nom` n'étant pas
+  // unique — deux clients homonymes existent.
+  const lectureDossiers = await lireTout<{ id: string; nom: string }>((debut, fin) =>
+    supabase.from('dossiers').select('id, nom', { count: 'exact' })
+      .eq('cabinet_id', cabinetId).order('nom').order('id').range(debut, fin),
+  )
+  if (!lectureDossiers.complete) {
+    throw new Error(`La liste des dossiers du cabinet n'a pas pu être lue en entier (${lectureDossiers.motif}). L'export est annulé : une archive amputée est indiscernable d'une archive complète.`)
+  }
+  const dossiers = lectureDossiers.lignes
 
   const zip = new JSZip()
   const periodeDebut = '2000-01-01'

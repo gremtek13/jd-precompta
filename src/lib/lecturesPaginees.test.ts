@@ -16,26 +16,46 @@ import { describe, expect, it } from 'vitest'
 // Une vérification qui doit être « rejouée à la main » et dont personne ne peut voir qu'elle est
 // fausse ne vaut rien. Elle tourne donc ici, à chaque `npm test` et à chaque CI.
 
-// LA LISTE N'EST PAS CELLE DES GROSSES TABLES, C'EST CELLE DONT UN LIVRABLE DÉPEND.
-// Les six premières sont les collections volumineuses du projet. Les cinq suivantes ont rejoint la
-// liste le 20/09/2026 et elles sont toutes MINUSCULES aujourd'hui (43 cotisations, 10 catégories,
-// 2 immobilisations, 1 véhicule, 8 natures) : c'est précisément ce qui rendait leur absence
-// confortable. Or `ClotureTab` refusait de remplir la 2035 sur une lecture partielle en n'ayant
-// vérifié QUE les pièces — une entrée sur cinq. Le garde-fou promettait donc « ce formulaire est
-// bâti sur tout » et ne pouvait pas le tenir ; un garde-fou qui ment est pire qu'un garde-fou
-// absent, parce qu'on cesse d'aller voir.
-// Règle du projet appliquée : un mécanisme dont la justesse dépend de la PETITESSE des données
-// tombera le jour où elles grandissent. Aucune de ces cinq tables n'est bornée par le modèle.
-const TABLES = ['pieces', 'lignes_bancaires', 'ecritures_brouillon', 'documents_divers',
-                'piece_textes_ocr', 'piece_commentaires',
-                'categories', 'cotisations_declarees', 'immobilisations', 'vehicules',
-                'natures_immobilisation']
+// CE TEST NE TIENT PLUS DE LISTE DE TABLES À SURVEILLER — IL LES SURVEILLE TOUTES.
+//
+// Il a commencé avec six tables, « les grosses ». Le 20/09/2026 cinq l'ont rejointe parce qu'un
+// garde-fou de la 2035 en dépendait, toutes minuscules (43, 10, 2, 1, 8 lignes) : c'est précisément
+// leur petitesse qui rendait leur absence confortable. Le balayage suivant a montré qu'il restait
+// vingt-trois tables dehors, dont `dossiers` — que CLAUDE.md désignait NOMMÉMENT comme « la première
+// qui touchera le plafond », et dont la lecture n'avait jamais été portée alors que les lectures
+// satellites du même écran l'avaient été.
+//
+// Une liste d'INCLUSION tenue à la main reproduit à chaque fois la même panne : elle ne contient que
+// ce à quoi quelqu'un a pensé, et son silence est indiscernable d'un dépôt sain. C'est la leçon de
+// `supabase/essais/rls.sql`, dont la boucle part de `pg_class` et non d'une liste — une table
+// ajoutée demain y est attrapée sans que personne ait à y penser.
+//
+// Le test part donc de TOUTE lecture de collection, et n'admet que des EXCEPTIONS écrites, chacune
+// portant la raison qui BORNE sa taille. Ajouter une exception reste un acte délibéré ; ne rien
+// faire ne l'est pas.
 
-// Les lectures dont la petitesse est garantie par le MODÈLE et non par la chance. Chaque entrée
-// porte sa raison : c'est ce qui fait de l'ajout d'une exception un acte délibéré plutôt qu'un
-// moyen de faire taire le test.
+// Clé : `chemin [table]`. La valeur n'est pas un commentaire décoratif — c'est la raison pour
+// laquelle cette collection ne peut PAS grandir, et elle doit tenir devant la question : « et si ce
+// cabinet en avait mille ? »
 const EXCEPTIONS: Record<string, string> = {
-  'src/lib/contrepartieBanque.ts': "les écritures d'UNE pièce — la partie double en produit deux ou trois, jamais mille",
+  "src/lib/contrepartieBanque.ts [ecritures_brouillon]":
+    "les écritures d'UNE pièce — la partie double en produit deux ou trois, jamais mille",
+  "src/pages/dossier/FactureApercu.tsx [facture_lignes]":
+    "les lignes d'UNE facture, saisies une par une par qui la rédige",
+  "src/pages/dossier/FactureAvoirModal.tsx [facture_lignes]":
+    "les lignes d'UNE facture d'origine, même borne",
+  "src/pages/dossier/FactureFormModal.tsx [facture_lignes]":
+    "les lignes d'UNE facture en cours de modification, même borne",
+  "src/pages/dossier/SuperPdpFactureModal.tsx [facture_superpdp_events]":
+    "les événements de transmission d'UNE facture — soumission, validation, accusé",
+  "src/lib/tauxChange.ts [taux_change_bce]":
+    "le cours d'UNE devise sur une fenêtre de quelques jours : la requête fixe les deux bornes",
+  "src/context/AuthContext.tsx [memberships]":
+    "les sociétés d'UN utilisateur — un client en a une, exceptionnellement quelques-unes",
+  "src/context/AuthContext.tsx [dossiers]":
+    "les dossiers de CES memberships-là (`.in('id', ids)`), donc la même borne",
+  "src/pages/dossier/AccesTab.tsx [memberships]":
+    "les accès client d'UN dossier : une poignée de personnes, pas une base d'utilisateurs",
 }
 
 function fichiersSource(dossier: string): string[] {
@@ -68,7 +88,6 @@ export function lecturesNonPagineesDe(fichier: string, source: string): LectureT
   const departs = [...source.matchAll(/\.from\('([a-z_]+)'\)/g)]
   const trouves: LectureTrouvee[] = []
   for (const [i, depart] of departs.entries()) {
-    if (!TABLES.includes(depart[1])) continue
     const debut = depart.index + depart[0].length
     const prochainFrom = departs[i + 1]?.index ?? source.length
     const reste = source.slice(debut, prochainFrom)
@@ -92,7 +111,7 @@ export function lecturesNonPaginees(): LectureTrouvee[] {
 
 describe('plafond PostgREST — aucune collection lue sans compte annoncé', () => {
   it('ne laisse passer que les exceptions déclarées, avec leur raison', () => {
-    const restants = lecturesNonPaginees().filter((l) => !(l.fichier in EXCEPTIONS))
+    const restants = lecturesNonPaginees().filter((l) => !(`${l.fichier} [${l.table}]` in EXCEPTIONS))
     expect(
       restants.map((l) => `${l.fichier} [${l.table}] ${l.extrait}`),
       'Lecture de collection sans `count: \'exact\'` : passe par `lireTout` (lib/lectureComplete.ts), ' +
@@ -141,8 +160,8 @@ describe('plafond PostgREST — aucune collection lue sans compte annoncé', () 
   })
 
   it('garde ses exceptions alignées sur des lectures réelles', () => {
-    const toutes = lecturesNonPaginees()
-    expect(Object.keys(EXCEPTIONS).every((f) => toutes.some((l) => l.fichier === f)),
-      'une exception déclarée ne correspond à aucune lecture réelle — à retirer').toBe(true)
+    const reelles = new Set(lecturesNonPaginees().map((l) => `${l.fichier} [${l.table}]`))
+    expect(Object.keys(EXCEPTIONS).filter((cle) => !reelles.has(cle)),
+      'exception déclarée ne correspondant à aucune lecture réelle — à retirer').toEqual([])
   })
 })

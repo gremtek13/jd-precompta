@@ -11,6 +11,7 @@ import FactureApercu from './FactureApercu'
 import SuperPdpFactureModal from './SuperPdpFactureModal'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
+import { lireTout } from '../../lib/lectureComplete'
 
 interface Props {
   dossierId: string
@@ -39,8 +40,14 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('factures_emises').select('*').eq('dossier_id', dossierId).order('date_emission', { ascending: false })
-    setFactures(data ?? [])
+    // La suite des factures émises est LÉGALE : elle n'admet ni trou ni doublon, et une liste
+    // tronquée ferait croire à un trou là où il n'y en a pas. Tri TOTAL, `date_emission` n'étant
+    // pas unique — plusieurs factures partent le même jour.
+    const lecture = await lireTout<FactureEmise>((debut, fin) =>
+      supabase.from('factures_emises').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('date_emission', { ascending: false }).order('id').range(debut, fin),
+    )
+    setFactures(lecture.lignes)
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])

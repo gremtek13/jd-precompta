@@ -5,6 +5,7 @@ import { genererExportCabinet } from '../lib/exportCabinet'
 import ConfirmationSuppression from '../components/ConfirmationSuppression'
 import RestaurationCard from './RestaurationCard'
 import { extraireErreurFonction } from '../lib/invokeErreur'
+import { lireTout } from '../lib/lectureComplete'
 
 interface CabinetApercu {
   id: string
@@ -66,32 +67,50 @@ export default function SuperAdminPage() {
 
   async function load() {
     setLoading(true)
-    const [{ data: cabinetsData }, { data: dossiersData }, { data: adminsData }, { data: membershipsData }, { data: usageData }] = await Promise.all([
-      supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at, limite_ia_alerte_usd, limite_ia_blocage_usd').order('created_at'),
-      supabase.from('dossiers').select('id, cabinet_id'),
-      supabase.from('cabinet_admins').select('cabinet_id'),
-      supabase.from('memberships').select('dossier_id'),
+    // CET ÉCRAN LIT TOUT LE PARC, tous cabinets confondus : c'est la lecture la plus large du
+    // projet, et `agent_conversations` grandit d'une ligne à chaque message de l'assistant — donc
+    // plus vite que tout le reste. Tronquée, elle ne vide pas le compteur de coût IA, elle le
+    // SOUS-ESTIME, ce qui est précisément la façon dont un plafond cesse de protéger.
+    // `cabinet_admins` et `memberships` n'ont pas toutes deux de colonne `id` : on trie sur une
+    // colonne réellement présente, et `id` là où elle existe (voir CLES_PRIMAIRES).
+    const [lectureCabinets, lectureDossiers, lectureAdmins, lectureMemberships, lectureUsage] = await Promise.all([
+      lireTout<{ id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string; limite_ia_alerte_usd: number | null; limite_ia_blocage_usd: number | null }>((debut, fin) =>
+        supabase.from('cabinets').select('id, nom, couleur_primaire, logo_storage_path, created_at, limite_ia_alerte_usd, limite_ia_blocage_usd', { count: 'exact' })
+          .order('created_at').order('id').range(debut, fin),
+      ),
+      lireTout<{ id: string; cabinet_id: string }>((debut, fin) =>
+        supabase.from('dossiers').select('id, cabinet_id', { count: 'exact' }).order('id').range(debut, fin),
+      ),
+      lireTout<{ cabinet_id: string }>((debut, fin) =>
+        supabase.from('cabinet_admins').select('cabinet_id, user_id', { count: 'exact' }).order('user_id').range(debut, fin),
+      ),
+      lireTout<{ dossier_id: string }>((debut, fin) =>
+        supabase.from('memberships').select('dossier_id, id', { count: 'exact' }).order('id').range(debut, fin),
+      ),
       // Uniquement les messages assistant (voir AssistantTab.enregistrer) : seuls eux déclenchent un
       // appel Bedrock facturé, un message user n'a jamais de tokens_entree/tokens_sortie renseignés.
       // created_at sert à isoler le mois calendaire en cours (voir tokensEntreeMois plus bas), en plus
       // du cumul depuis toujours déjà affiché.
-      supabase.from('agent_conversations').select('dossier_id, tokens_entree, tokens_sortie, created_at').eq('role', 'assistant'),
+      lireTout<{ dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null; created_at: string }>((debut, fin) =>
+        supabase.from('agent_conversations').select('dossier_id, tokens_entree, tokens_sortie, created_at, id', { count: 'exact' })
+          .eq('role', 'assistant').order('id').range(debut, fin),
+      ),
     ])
 
-    const cabinetParDossier = new Map(((dossiersData ?? []) as { id: string; cabinet_id: string }[]).map((d) => [d.id, d.cabinet_id]))
+    const cabinetParDossier = new Map((lectureDossiers.lignes as { id: string; cabinet_id: string }[]).map((d) => [d.id, d.cabinet_id]))
 
     const nbDossiers = new Map<string, number>()
-    for (const d of (dossiersData ?? []) as { cabinet_id: string }[]) {
+    for (const d of lectureDossiers.lignes as { cabinet_id: string }[]) {
       nbDossiers.set(d.cabinet_id, (nbDossiers.get(d.cabinet_id) ?? 0) + 1)
     }
     const nbAdmins = new Map<string, number>()
-    for (const a of (adminsData ?? []) as { cabinet_id: string }[]) {
+    for (const a of lectureAdmins.lignes as { cabinet_id: string }[]) {
       nbAdmins.set(a.cabinet_id, (nbAdmins.get(a.cabinet_id) ?? 0) + 1)
     }
     // Un client est rattaché à un dossier, pas directement à un cabinet — on passe par la carte
     // dossier → cabinet construite ci-dessus pour les compter au bon endroit.
     const nbClients = new Map<string, number>()
-    for (const m of (membershipsData ?? []) as { dossier_id: string }[]) {
+    for (const m of lectureMemberships.lignes as { dossier_id: string }[]) {
       const cabinetId = cabinetParDossier.get(m.dossier_id)
       if (cabinetId) nbClients.set(cabinetId, (nbClients.get(cabinetId) ?? 0) + 1)
     }
@@ -106,7 +125,7 @@ export default function SuperAdminPage() {
     const tokensSortie = new Map<string, number>()
     const tokensEntreeMois = new Map<string, number>()
     const tokensSortieMois = new Map<string, number>()
-    for (const u of (usageData ?? []) as { dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null; created_at: string }[]) {
+    for (const u of lectureUsage.lignes as { dossier_id: string; tokens_entree: number | null; tokens_sortie: number | null; created_at: string }[]) {
       const cabinetId = cabinetParDossier.get(u.dossier_id)
       if (!cabinetId) continue
       tokensEntree.set(cabinetId, (tokensEntree.get(cabinetId) ?? 0) + (u.tokens_entree ?? 0))
@@ -117,7 +136,7 @@ export default function SuperAdminPage() {
       }
     }
 
-    setCabinets(((cabinetsData ?? []) as {
+    setCabinets((lectureCabinets.lignes as {
       id: string; nom: string; couleur_primaire: string | null; logo_storage_path: string | null; created_at: string
       limite_ia_alerte_usd: number | null; limite_ia_blocage_usd: number | null
     }[]).map((c) => ({

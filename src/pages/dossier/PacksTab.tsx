@@ -32,8 +32,11 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   const [error, setError] = useState<string | null>(null)
 
   async function loadPacks() {
-    const { data } = await supabase.from('packs').select('*').eq('dossier_id', dossierId).order('generated_at', { ascending: false })
-    setPacks(data ?? [])
+    const lecture = await lireTout<Pack>((debut, fin) =>
+      supabase.from('packs').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('generated_at', { ascending: false }).order('id').range(debut, fin),
+    )
+    setPacks(lecture.lignes)
   }
 
   async function loadPreview() {

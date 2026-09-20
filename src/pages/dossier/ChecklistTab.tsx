@@ -74,7 +74,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       lectureNatures,
       lectureCategories,
       lectureEcritures,
-      { data: declarationsData },
+      lectureDeclarations,
       { data: infoData },
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
@@ -114,7 +114,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      supabase.from('declarations_tva').select('*').eq('dossier_id', dossierId),
+      lireTout<DeclarationTva>((debut, fin) =>
+        supabase.from('declarations_tva').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       supabase.from('informations_dossier').select('*').eq('dossier_id', dossierId).maybeSingle(),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
@@ -139,7 +142,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     setNatures(lectureNatures.lignes)
     setCategories(lectureCategories.lignes)
     setEcritures(lectureEcritures.lignes)
-    setDeclarationsTva(declarationsData ?? [])
+    setDeclarationsTva(lectureDeclarations.lignes)
     setInfo(infoData ?? null)
     setLoading(false)
   }

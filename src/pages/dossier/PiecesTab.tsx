@@ -105,21 +105,25 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
     )
 
-    const { data: sousDossiersData } = await supabase
-      .from('sous_dossiers')
-      .select('*')
-      .eq('dossier_id', dossierId)
-      .order('ordre')
-      .order('nom')
+    const lectureSousDossiers = await lireTout<SousDossier>((debut, fin) =>
+      supabase.from('sous_dossiers').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('ordre').order('nom').order('id').range(debut, fin),
+    )
 
-    const { data: tiersCategoriesData } = await supabase
-      .from('tiers_categories')
-      .select('*')
-      .eq('dossier_id', dossierId)
+    // LES RÈGLES APPRISES. Une ligne par arbitrage posé, donc une liste qui ne fait que grandir —
+    // et tronquée, elle ne se signale pas : les règles absentes cessent simplement de s'appliquer,
+    // et l'opérateur recatégorise à la main un fournisseur qu'il a déjà arbitré dix fois.
+    const lectureTiersCategories = await lireTout<TiersCategorie>((debut, fin) =>
+      supabase.from('tiers_categories').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    )
 
-    const { data: tiersCategoriesCabinetData } = await supabase
-      .from('tiers_categories_cabinet')
-      .select('*')
+    // Même raisonnement, à l'échelle du cabinet : c'est la table qui porte le travail partagé
+    // entre dossiers, donc la première des deux à grandir.
+    const lectureTiersCabinet = await lireTout<TiersCategorieCabinet>((debut, fin) =>
+      supabase.from('tiers_categories_cabinet').select('*', { count: 'exact' })
+        .order('id').range(debut, fin),
+    )
 
     // Les précisions portées par le client sur ses dépôts. Chargées ici, en une requête pour tout le
     // dossier, et passées à la ligne : c'est le seul endroit où elles servent vraiment, au moment où
@@ -138,9 +142,9 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
     setPieces(piecesData ?? [])
     setCategories(lectureCategories.lignes)
-    setSousDossiers(sousDossiersData ?? [])
-    setTiersCategories(tiersCategoriesData ?? [])
-    setTiersCategoriesCabinet(tiersCategoriesCabinetData ?? [])
+    setSousDossiers(lectureSousDossiers.lignes)
+    setTiersCategories(lectureTiersCategories.lignes)
+    setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
     setPiecesRapprochees(new Set((lignesBancairesData ?? []).map((l) => l.piece_id as string)))
     setLoading(false)
   }

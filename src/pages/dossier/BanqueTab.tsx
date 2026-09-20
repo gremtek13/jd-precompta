@@ -104,11 +104,12 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     )
 
-    const { data: reglesData } = await supabase
-      .from('regles_bancaires_ignorees')
-      .select('*')
-      .eq('dossier_id', dossierId)
-      .order('motif')
+    // Une règle par motif ajouté à la main : la liste ne se vide jamais et grandit à chaque
+    // import. Tri TOTAL — `motif` est saisi, donc pas unique.
+    const lectureRegles = await lireTout<RegleBancaireIgnoree>((debut, fin) =>
+      supabase.from('regles_bancaires_ignorees').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('motif').order('id').range(debut, fin),
+    )
 
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
@@ -120,7 +121,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     setLignes(lignesData)
     setPieces(piecesData ?? [])
     setCotisations(lectureCotisations.lignes)
-    setRegles(reglesData ?? [])
+    setRegles(lectureRegles.lignes)
     setRelevesIncoherents(controles)
     setLoading(false)
   }

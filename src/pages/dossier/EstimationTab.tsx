@@ -57,8 +57,8 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
       lecturePieces,
       lectureCategories,
       lectureImmobilisations,
-      { data: referencesData },
-      { data: referencesPostesData },
+      lectureReferences,
+      lectureReferencesPostes,
     ] = await Promise.all([
       lireTout<CotisationDeclaree>((debut, fin) =>
         supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -83,8 +83,14 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
         supabase.from('immobilisations').select('piece_id, id', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      supabase.from('references_annuelles').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }),
-      supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
+      lireTout<ReferenceAnnuelle>((debut, fin) =>
+        supabase.from('references_annuelles').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('id').range(debut, fin),
+      ),
+      lireTout<ReferencePosteAnnuel>((debut, fin) =>
+        supabase.from('references_postes_annuels').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
+      ),
     ])
     setCotisations(lectureCotisations.lignes)
     setRecettesValidees(lectureRecettes.lignes)
@@ -92,8 +98,8 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setLectureIncomplete(lectureRecettes.motif ?? lecturePieces.motif)
     setCategories(lectureCategories.lignes)
     setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
-    setReferences(referencesData ?? [])
-    setReferencesPostes(referencesPostesData ?? [])
+    setReferences(lectureReferences.lignes)
+    setReferencesPostes(lectureReferencesPostes.lignes)
     setLoading(false)
   }
 

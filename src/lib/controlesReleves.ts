@@ -1,6 +1,7 @@
 import { supabase } from './supabase'
 import type { ControleSolde } from './soldeReleve'
 import type { ControleReleveBancaire } from './types'
+import { lireTout } from './lectureComplete'
 
 // Conservation du contrôle de cohérence d'un relevé bancaire.
 //
@@ -58,13 +59,15 @@ export async function enregistrerControleReleve(
 // « aucun écart », et c'est exactement ce genre de confusion qui a déjà fait passer une lecture
 // refusée pour un résultat rassurant ailleurs dans ce projet.
 export async function chargerRelevesIncoherents(dossierId: string): Promise<ControleReleveBancaire[]> {
-  const { data, error } = await supabase
-    .from('controles_releves_bancaires')
-    .select('*')
-    .eq('dossier_id', dossierId)
-    .eq('coherent', false)
-    .order('periode_fin', { ascending: false, nullsFirst: false })
-
-  if (error) throw new Error(`Lecture des contrôles de relevé impossible : ${error.message}`)
-  return data ?? []
+  // Un relevé importé = une ligne, et un dossier en accumule autant qu'il a de mois d'historique.
+  // Tri TOTAL (`id` en départage) : `periode_fin` n'est pas unique et peut être nulle.
+  const lecture = await lireTout<ControleReleveBancaire>((debut, fin) =>
+    supabase.from('controles_releves_bancaires').select('*', { count: 'exact' })
+      .eq('dossier_id', dossierId).eq('coherent', false)
+      .order('periode_fin', { ascending: false, nullsFirst: false }).order('id').range(debut, fin),
+  )
+  // Une lecture partielle se traite comme un refus : ce contrôle dit ce qui NE BOUCLE PAS, et un
+  // relevé amputé qu'on ne voit pas est exactement le silence qu'il est fait pour rompre.
+  if (!lecture.complete) throw new Error(`Lecture des contrôles de relevé incomplète : ${lecture.motif}`)
+  return lecture.lignes
 }

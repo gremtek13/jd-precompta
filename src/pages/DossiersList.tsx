@@ -80,7 +80,13 @@ export default function DossiersList() {
     const debutTendance = new Date(debutSemaine(new Date()).getTime() - (NB_SEMAINES_TENDANCE - 1) * 7 * 24 * 3600 * 1000).toISOString()
 
     const [dossiersRes, piecesRes, lignesRes, cotisationsRes, depotsRes] = await Promise.all([
-      supabase.from('dossiers').select('*').eq('archive', false).order('nom'),
+      // LA LISTE ELLE-MÊME, qui manquait : les trois lectures satellites ci-dessous avaient été
+      // portées, pas celle-ci — alors que c'est elle que CLAUDE.md désignait comme « la première
+      // qui touchera le plafond ». Tri TOTAL : `nom` n'est unique que par hasard.
+      lireTout<Dossier>((debut, fin) =>
+        supabase.from('dossiers').select('*', { count: 'exact' })
+          .eq('archive', false).order('nom').order('id').range(debut, fin),
+      ),
       // Ces trois lectures sont les seules du projet à porter sur TOUT LE CABINET, dossiers
       // confondus : c'est donc ici que le plafond de PostgREST (voir lib/lectureComplete.ts) sera
       // franchi le premier — dix clients à mille mouvements par an y suffisent. Tronquées, elles ne
@@ -104,14 +110,13 @@ export default function DossiersList() {
       ),
     ])
 
-    if (dossiersRes.error) {
-      setErreurChargement(dossiersRes.error.message)
-      setDossiers([])
-      setLoading(false)
-      return
-    }
     // Une lecture incomplète mène au MÊME avertissement qu'une lecture en échec : dans les deux cas
     // les chiffres affichés sont partiels, et c'est la seule chose que le cabinet doit savoir.
+    // La liste des DOSSIERS y est désormais incluse — et c'est le cas le plus grave des cinq :
+    // tronquée, elle ne fausse pas un compteur, elle fait DISPARAÎTRE des clients de l'écran.
+    if (!dossiersRes.complete) {
+      setErreurChargement(`La liste des dossiers n'a pas pu être lue en entier (${dossiersRes.motif}). Des clients peuvent manquer ci-dessous.`)
+    }
     if (![piecesRes, lignesRes, cotisationsRes, depotsRes].every((r) => r.complete)) {
       setErreurIndicateurs(true)
     }
@@ -130,7 +135,7 @@ export default function DossiersList() {
     for (const c of cotisationsRes.lignes) cotisationsOk.add(c.dossier_id)
 
     setDossiers(
-      (dossiersRes.data ?? []).map((d) => ({
+      dossiersRes.lignes.map((d) => ({
         ...d,
         nbAValider: aValider.get(d.id) ?? 0,
         moisPresents: moisParDossier.get(d.id)?.size ?? 0,

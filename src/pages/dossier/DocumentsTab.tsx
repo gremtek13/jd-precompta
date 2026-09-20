@@ -80,7 +80,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [lectureDocuments, { data: sousDossiersData }] = await Promise.all([
+    const [lectureDocuments, lectureSousDossiers] = await Promise.all([
       // Lue par tranches, triée sur un ordre TOTAL (voir lib/lectureComplete.ts) : un dossier
       // accumule un relevé par mois et par compte, plus les attestations — cette table grandit
       // toute seule, et le bouton « Retrouver le texte lu » compte ce qu'elle rend.
@@ -88,11 +88,14 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
         supabase.from('documents_divers').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
       ),
-      supabase.from('sous_dossiers').select('*').eq('dossier_id', dossierId).order('ordre').order('nom'),
+      lireTout<SousDossier>((debut, fin) =>
+        supabase.from('sous_dossiers').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('ordre').order('nom').order('id').range(debut, fin),
+      ),
     ])
     setDocuments(lectureDocuments.lignes)
     setLectureIncomplete(lectureDocuments.complete ? null : lectureDocuments.motif)
-    setSousDossiers(sousDossiersData ?? [])
+    setSousDossiers(lectureSousDossiers.lignes)
     const presence = await documentsAvecTexteOcr(dossierId)
     setAvecTexteOcr(presence.avecTexte)
     setPresenceTexteIncertaine(presence.erreur)

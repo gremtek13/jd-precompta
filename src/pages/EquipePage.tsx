@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { extraireErreurFonction } from '../lib/invokeErreur'
 import type { CabinetAdmin, Dossier, DossierAssignation, RoleCabinetAdmin } from '../lib/types'
+import { lireTout } from '../lib/lectureComplete'
 
 const LABEL_ROLE: Record<RoleCabinetAdmin, string> = {
   comptable_en_chef: 'Comptable en chef',
@@ -35,14 +36,26 @@ export default function EquipePage() {
   async function load() {
     if (!monCabinetId) return
     setLoading(true)
-    const [{ data: membresData }, { data: dossiersData }, { data: assignationsData }] = await Promise.all([
-      supabase.from('cabinet_admins').select('user_id, cabinet_id, role, email').eq('cabinet_id', monCabinetId),
-      supabase.from('dossiers').select('*').eq('cabinet_id', monCabinetId).order('nom'),
-      supabase.from('dossier_assignations').select('*'),
+    // Les trois grandissent avec le cabinet : membres, clients, et le produit des deux pour les
+    // assignations. Tri TOTAL partout — `cabinet_admins` n'a pas de colonne `id` (sa clé est
+    // (user_id, cabinet_id), voir CLES_PRIMAIRES), donc on trie sur `user_id`.
+    const [lectureMembres, lectureDossiers, lectureAssignations] = await Promise.all([
+      lireTout<CabinetAdmin>((debut, fin) =>
+        supabase.from('cabinet_admins').select('user_id, cabinet_id, role, email', { count: 'exact' })
+          .eq('cabinet_id', monCabinetId).order('user_id').range(debut, fin),
+      ),
+      lireTout<Dossier>((debut, fin) =>
+        supabase.from('dossiers').select('*', { count: 'exact' })
+          .eq('cabinet_id', monCabinetId).order('nom').order('id').range(debut, fin),
+      ),
+      lireTout<DossierAssignation>((debut, fin) =>
+        supabase.from('dossier_assignations').select('*', { count: 'exact' })
+          .order('id').range(debut, fin),
+      ),
     ])
-    setMembres((membresData ?? []) as CabinetAdmin[])
-    setDossiers(dossiersData ?? [])
-    setAssignations(assignationsData ?? [])
+    setMembres(lectureMembres.lignes)
+    setDossiers(lectureDossiers.lignes)
+    setAssignations(lectureAssignations.lignes)
     setLoading(false)
   }
 
