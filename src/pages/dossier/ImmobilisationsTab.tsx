@@ -20,7 +20,7 @@ const DUREE_DEFAUT_ANNEES = 5
 // usuelle — toujours modifiable, l'arbitrage réel restant à l'expert-comptable. La dotation annuelle
 // affichée est un calcul linéaire simple, sans prorata temporis — voir le bandeau.
 export default function ImmobilisationsTab({ dossierId }: { dossierId: string }) {
-  const [pieces, setPieces] = useState<Piece[]>([])
+  const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
   const [loading, setLoading] = useState(true)
@@ -36,6 +36,10 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
     const [lecturePieces, { data: immobilisationsData }, { data: naturesData }] = await Promise.all([
       // Lue par tranches (voir lib/lectureComplete.ts) : c'est parmi ces pièces qu'on choisit celle
       // à immobiliser, et une liste tronquée ne paraît pas tronquée.
+      // `piecesValidees` et non `pieces` : la lecture ne rend QUE les validées, et le filtre est
+      // juste — on immobilise une facture vérifiée, pas une pièce en attente d'arbitrage. C'est le
+      // NOM qui mentait. Cet écran est le seul des sept à avoir échappé au renommage de 2026 (voir
+      // CLAUDE.md, « un nom qui ment sur son filtre »).
       lireTout<Piece>((debut, fin) =>
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
@@ -43,7 +47,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId).order('date_acquisition', { ascending: false }),
       supabase.from('natures_immobilisation').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
     ])
-    setPieces(lecturePieces.lignes)
+    setPiecesValidees(lecturePieces.lignes)
     setImmobilisations(immobilisationsData ?? [])
     setNatures(naturesData ?? [])
     setLoading(false)
@@ -52,7 +56,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
   useEffect(() => { load() }, [dossierId])
 
   const dejaEnregistrees = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
-  const candidates = pieces.filter(
+  const candidates = piecesValidees.filter(
     (p) => p.montant_ttc != null && p.montant_ttc >= SEUIL_IMMOBILISATION && !dejaEnregistrees.has(p.id),
   )
   const natureLabel = (id: string | null) => natures.find((n) => n.id === id)?.libelle ?? '—'

@@ -974,6 +974,18 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Un piège qu'un nom supprime vaut mieux qu'un piège gardé par un contrôle** : le compilateur
   vérifie un renommage de façon exhaustive, là où un contrôle ne voit que ce qu'on a pensé à lui
   montrer. Règle qui en découle : un état qui porte un sous-ensemble dit lequel dans son nom.
+  **UN SEPTIÈME ÉCRAN AVAIT ÉCHAPPÉ AU RENOMMAGE** (trouvé et corrigé le 20/09/2026, par balayage).
+  `ImmobilisationsTab` déclarait `pieces` sur une lecture `.eq('statut', 'validee')`, et cette liste
+  sert à choisir les CANDIDATES à immobiliser. Le filtre est juste — on immobilise une facture
+  vérifiée, pas une pièce en attente d'arbitrage — c'est le nom qui mentait, et il aurait menti au
+  prochain contrôle qu'on y aurait branché.
+  **Le balayage vaut plus que la prise, et il est simple** : toute lecture portant `.eq('statut', …)`
+  ou `.in('statut', …)`, confrontée au nom de l'état qu'elle alimente. Douze lectures dans le code,
+  une seule en faute ; les onze autres portent `piecesValidees`, `piecesAValider`, `recettesValidees`
+  ou `piecesRapprochees`. À rejouer avant de croire le motif épuisé — et à ne PAS élargir aux filtres
+  `dossier_id`/`cabinet_id`, qui sont le cadrage d'un écran et non une restriction : les signaler
+  tous noierait le signal (la première version du balayage le faisait, et rendait quatorze lignes
+  dont aucune n'était un défaut).
 - **Un verrou d'exécution est un `useRef`, jamais un état React.** `setRunning(true)` ne prend
   effet qu'au rendu suivant : `disabled={running}` laisse donc passer deux clics rapprochés, et
   les deux entrent dans le traitement. Sur l'import en masse, chacun repartait avec **son propre**
