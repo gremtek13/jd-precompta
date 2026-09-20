@@ -1298,6 +1298,21 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Un test d'écran le garde désormais** (`ChecklistTab.test.tsx`), parce qu'aucun test de `src/lib`
   ne le peut : la fonction est juste, c'est le câblage qui ment. Deux mutations mordent, dans les
   deux sens — rebrancher sur les seules validées (le défaut d'origine) et sur les seules à valider.
+  **ET LE MÊME BALAYAGE A MONTRÉ QUE DEUX DE CES CONTRÔLES NE MARQUAIENT RIEN.** Cinq contrôles de
+  la famille « donnée démontrée fausse » renvoient l'opérateur vers Justificatifs depuis la
+  Checklist (`cible: 'pieces'`) ; trois seulement posaient un badge sur la LIGNE. « Date impossible »
+  et « Devise non convertie » annonçaient donc « 1 pièce, corrigez-la » puis menaient vers une liste
+  où rien ne la désigne — le défaut déjà nommé pour `doublon-texte` : un point qui compte sans
+  pouvoir montrer se paie en crédit, et l'opérateur cesse de croire le suivant. Les deux badges
+  existent maintenant, calculés sur le dossier entier comme leurs voisins.
+  **Le badge ne suffisait PAS pour la date, et c'est une mutation ratée qui l'a montré.** Une pièce
+  datée après son dépôt est par définition dans un exercice futur, donc écartée par le sélecteur
+  d'exercice de l'en-tête — qui s'ouvre toujours sur une année PRÉCISE (`calculerAnneeParDefaut` ne
+  rend « toutes » que sur un dossier vide). La ligne n'est pas seulement non marquée : elle est
+  ABSENTE. `PointATraiter` a donc reçu un champ `detail`, rendu sous le libellé (le style
+  `check-ligne-detail` existait déjà pour la liste voisine), et ce point-là dit d'ouvrir
+  « toutes les années ». À retenir pour le prochain contrôle : **un point de Checklist doit vérifier
+  que sa cible peut MONTRER ce qu'il compte**, pas seulement qu'elle est le bon onglet.
 - **Comparer deux noms se fait mot à mot, jamais par sous-chaîne.** `libelle.includes(mot)` sur le
   libellé entier confirmait « Medical Service » avec « Transmedical » : la suite de lettres est
   bien là, à l'intérieur d'un autre mot. Au centime et au jour près, ça validait le prélèvement d'un
@@ -1745,7 +1760,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   PAS sauvegardé et qu'on découvrirait sinon en pleine reprise — au premier rang les comptes
   `auth.users`, qu'il faut recréer AVEC leurs UUID d'origine, quatre colonnes du schéma les exigeant
   en NOT NULL sans contournement possible.
-- **La couverture Vitest s'arrête à `src/lib`, À SIX ONGLETS PRÈS** (voir "Tests") : les
+- **La couverture Vitest s'arrête à `src/lib`, À SEPT ONGLETS PRÈS** (voir "Tests") : les
   composants et les Edge Functions restent, pour l'essentiel, vérifiés par la relecture de
   code, les advisors Supabase et des tests manuels réels (y compris, pour Super PDP, par
   l'utilisateur lui-même puisque cet environnement ne peut pas atteindre
@@ -1809,8 +1824,14 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 6 testés** — banque,
-  documents, statistiques, écritures, clôture, checklist — donc **11 sans aucun test de rendu**. Un chiffre
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 7 testés** — banque,
+  documents, statistiques, écritures, clôture, checklist, justificatifs — donc **10 sans aucun test
+  de rendu**.
+  **Deux doublures à connaître avant d'écrire le prochain test d'écran** : `PiecesTab` lit
+  `monCabinetId` d'`AuthContext` (monter un `AuthProvider` complet ferait dépendre le test d'une
+  session Supabase), et `piecesAvecTexteOcr` doit rendre sa forme EXACTE
+  (`{ avecTexte: Set, erreur: string | null }`) — une doublure qui invente ses champs fait planter
+  l'écran avant le premier test, et l'erreur ne dit pas d'où elle vient. Un chiffre
   qu'on recopie sans le recompter dérive à chaque ajout ; celui-ci se remesure en une commande.
   **`BanqueTab` portait le même défaut que les trois précédents** : `rapprocherTout` (le lot
   automatique, à distinguer de `validerEtRapprocherLot` juste au-dessus dans le fichier, qui

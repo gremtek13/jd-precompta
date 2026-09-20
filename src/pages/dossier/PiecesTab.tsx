@@ -2,7 +2,7 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
-import { LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesTvaImpossible } from '../../lib/controles'
+import { LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesTvaImpossible } from '../../lib/controles'
 import { DEVISE_PIVOT } from '../../lib/devises'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
 import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
@@ -181,6 +181,19 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   for (const doublon of doublonsTexte) {
     for (const id of doublon.pieceIds) doublonParPiece.set(id, doublon.pieceIds.length + doublon.documentIds.length)
   }
+
+  // LES DEUX BADGES QUI MANQUAIENT. Cinq contrôles de la famille « donnée démontrée fausse »
+  // envoient l'opérateur ici depuis la Checklist (`cible: 'pieces'`), et trois seulement marquaient
+  // la ligne. Les deux autres — date postérieure au dépôt, devise non convertie — annonçaient donc
+  // « 1 pièce, corrigez-la » puis renvoyaient vers une liste où RIEN ne la désigne. C'est le défaut
+  // déjà nommé pour `doublon-texte` : un point qui compte et ne montre pas se paie en crédit, et
+  // l'opérateur cesse de croire le suivant.
+  // Sur le dossier entier comme ses voisins, jamais sur le filtre affiché : une date fausse range
+  // justement la pièce dans un exercice où on ne la cherche pas.
+  const dateImpossibleParPiece = new Map(
+    piecesADateImpossible(pieces).map(({ piece, date, borne }) => [piece.id, { date, borne }]),
+  )
+  const deviseNonConvertieIds = new Set(piecesDeviseNonConvertie(pieces).map((piece) => piece.id))
 
   const moisSuspectParPiece = new Map<string, string>()
   for (const trouve of moisEnDoubleSurAbonnement(pieces)) {
@@ -600,6 +613,28 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                       <div style={{ marginTop: 4 }}>
                         <span className="badge badge-danger" style={{ fontSize: '0.7rem' }} title={moisSuspectParPiece.get(p.id)}>
                           Mois à vérifier
+                        </span>
+                      </div>
+                    )}
+                    {dateImpossibleParPiece.has(p.id) && (
+                      <div style={{ marginTop: 4 }}>
+                        <span
+                          className="badge badge-danger"
+                          style={{ fontSize: '0.7rem' }}
+                          title={`Datée du ${formatDate(dateImpossibleParPiece.get(p.id)!.date)}, déposée le ${formatDate(dateImpossibleParPiece.get(p.id)!.borne)} : on ne photographie pas une facture qui n'existe pas encore. Ce qui a été lu est autre chose — une validité, une échéance, ou un chiffre mal reconnu. Telle quelle, la pièce part dans un exercice où personne ne la compte comme manquante.`}
+                        >
+                          Date impossible
+                        </span>
+                      </div>
+                    )}
+                    {deviseNonConvertieIds.has(p.id) && (
+                      <div style={{ marginTop: 4 }}>
+                        <span
+                          className="badge badge-danger"
+                          style={{ fontSize: '0.7rem' }}
+                          title={`Montant en ${p.devise} sans taux de change : ce qui entre en comptabilité est la valeur en devise prise pour des euros. Le montant définitif se lit sur le relevé bancaire, pas sur un cours de référence.`}
+                        >
+                          Devise non convertie
                         </span>
                       </div>
                     )}

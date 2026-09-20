@@ -249,7 +249,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
 
   // "action" : le libellé du bouton, propre à chaque point plutôt qu'un "Aller à l'onglet" générique
   // répété sur toute la liste — dit ce que l'onglet cible va permettre de faire, pas juste où il est.
-  interface PointATraiter { id: string; label: string; action: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention' }
+  // `detail` : une ligne d'instruction sous le libellé, pour les points dont le bouton ne suffit pas
+  // à trouver ce qu'ils annoncent. Le cas qui l'a rendu nécessaire est `date-impossible` — voir
+  // plus bas. La liste voisine (Paramétrage du dossier) portait déjà ce champ et son style.
+  interface PointATraiter { id: string; label: string; action: string; nb: number; cible: DossierTab; severite: 'erreur' | 'attention'; detail?: string }
   const tousLesPointsATraiter: PointATraiter[] = [
     // En tête, et en « erreur » : c'est le seul point de cette liste qui ne se voit nulle part
     // ailleurs. Une pièce validée sans catégorie a l'air traitée — elle ne produit pourtant ni
@@ -267,7 +270,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // « Erreur » et non « attention » : ce n'est pas une TVA douteuse, c'est une TVA dont le calcul
     // démontre qu'elle est fausse. Elle part telle quelle en TVA déductible et dans la charge.
     { id: 'tva-impossible', label: 'pièce(s) dont la TVA est arithmétiquement impossible', action: 'Corriger ces montants', nb: tvaImpossible.length, cible: 'pieces', severite: 'erreur' },
-    { id: 'date-impossible', label: 'pièce(s) datée(s) après leur dépôt — rangées dans le mauvais exercice', action: 'Corriger ces dates', nb: dateImpossible.length, cible: 'pieces', severite: 'erreur' },
+    // Le seul point de cette liste dont le bouton ne suffit PAS à trouver la pièce : elle est par
+    // définition dans un exercice futur, donc écartée par le sélecteur d'exercice de l'en-tête, qui
+    // s'ouvre toujours sur une année précise. « Corrigez ces dates » menait donc vers une liste où
+    // la pièce n'apparaît même pas — et un point qui compte sans pouvoir montrer se paie en crédit.
+    { id: 'date-impossible', label: 'pièce(s) datée(s) après leur dépôt — rangées dans le mauvais exercice', action: 'Corriger ces dates', nb: dateImpossible.length, cible: 'pieces', severite: 'erreur', detail: "Choisir « toutes les années » dans l'en-tête du dossier pour les voir : elles portent le badge « Date impossible »." },
     // « Erreur » comme la date impossible, et pour la même raison : la pièce part dans le mauvais
     // mois, parfois le mauvais exercice. En prime elle bloque un rapprochement bancaire qui était
     // certain (voir lib/controles.ts) — le rapprochement, lui, n'annonce qu'un doute.
@@ -413,6 +420,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
             <span className={`check-dot ${p.severite === 'erreur' ? 'check-manque' : 'check-attention'}`} />
             <div className="check-ligne-corps">
               <div className="check-ligne-libelle">{p.nb} {p.label}</div>
+              {p.detail && <div className="check-ligne-detail">{p.detail}</div>}
             </div>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => onNavigate(p.cible)}>
               {p.action}

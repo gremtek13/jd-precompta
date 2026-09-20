@@ -85,6 +85,12 @@ describe('ChecklistTab — une date impossible se voit AVANT la validation', () 
 
     const ligne = await screen.findByText(LIBELLE)
     expect(ligne.textContent).toMatch(/^1 /)
+
+    // ET IL DIT COMMENT LA TROUVER. C'est le seul point de la liste dont le bouton ne suffit pas :
+    // la pièce est par définition dans un exercice futur, donc écartée par le sélecteur d'exercice
+    // de l'en-tête, qui s'ouvre toujours sur une année précise. Sans cette ligne, « Corrigez ces
+    // dates » menait vers une liste où la pièce n'apparaît même pas.
+    expect(screen.getByText(/toutes les années/)).toBeDefined()
   })
 
   it('signale aussi une pièce VALIDÉE datée après son dépôt', async () => {
