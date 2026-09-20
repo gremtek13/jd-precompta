@@ -214,7 +214,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // lib/appariementBanque.ts. Ne porte que sur les pièces jamais rattachées à un mouvement, comme
   // BanqueTab.
   const piecesRapprocheesIds = new Set(lignes.filter((l) => l.piece_id).map((l) => l.piece_id))
-  const montantSuspect = piecesMontantIntrouvableEnBanque(pieces.filter((p) => !piecesRapprocheesIds.has(p.id)), lignes)
+  // `piecesValidees` et non `pieces` : ce contrôle ne vise que les pièces VALIDÉES, et son libellé le
+  // dit. L'état s'appelait `pieces` quand ce point a été écrit, alors qu'il ne portait déjà que les
+  // validées — c'est exactement le nom trompeur que le renommage a supprimé.
+  const montantSuspect = piecesMontantIntrouvableEnBanque(piecesValidees.filter((p) => !piecesRapprocheesIds.has(p.id)), lignes)
 
   // "action" : le libellé du bouton, propre à chaque point plutôt qu'un "Aller à l'onglet" générique
   // répété sur toute la liste — dit ce que l'onglet cible va permettre de faire, pas juste où il est.
