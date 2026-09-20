@@ -85,6 +85,20 @@ describe('verifierCitations — le modèle cite, le code vérifie', () => {
     expect(rejetees).toEqual([{ champ: 'tiers', citation: '   ', motif: 'citation vide' }])
   })
 
+  it('cite la devise — le cas que la mesure sur les 41 pièces réelles a imposé', () => {
+    // Quatre factures du dossier portent « 24.00 » en DOLLARS, et la base y stocke la conversion
+    // BCE du jour. Sans ce champ, l'appelant écrit 24 dans `montant_ttc` au lieu de
+    // `montant_devise` : 16 % d'erreur sur chaque facture étrangère, en silence.
+    const enDollars = ['CLOUD SERVICES LLC', 'Invoice date: 9 July 2025', 'Total $24.00'].join('\n')
+    const { retenues } = verifierCitations({ devise: '$', totalTtc: '$24.00' }, enDollars)
+    expect(retenues.devise).toBe('$')
+    expect(retenues.totalTtc).toBe('$24.00')
+  })
+
+  it('le prompt réclame la devise, sans quoi un montant étranger part en euros', () => {
+    expect(PROMPT_EXTRACTION).toMatch(/devise/)
+  })
+
   it('le prompt exige de recopier et autorise explicitement null', () => {
     // Garde faible et assumée — on ne teste pas un texte, on empêche qu'une réécriture retire les
     // deux instructions dont dépend tout le reste du module.

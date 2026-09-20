@@ -29,9 +29,19 @@
 // VÉRIFICATION ; l'appel au modèle et l'analyse des citations retenues vivent chez l'appelant.
 
 /** Les champs que le modèle a le droit de citer. Rien d'autre ne lui est demandé. */
-export type ChampCite = 'tiers' | 'date' | 'totalTtc' | 'totalHt' | 'totalTva'
+export type ChampCite = 'tiers' | 'date' | 'devise' | 'totalTtc' | 'totalHt' | 'totalTva'
 
-export const CHAMPS_CITES: readonly ChampCite[] = ['tiers', 'date', 'totalTtc', 'totalHt', 'totalTva']
+export const CHAMPS_CITES: readonly ChampCite[] = ['tiers', 'date', 'devise', 'totalTtc', 'totalHt', 'totalTva']
+
+// LA DEVISE EST UN CHAMP, PAS UN DÉTAIL — et c'est la mesure sur les 41 pièces réelles qui l'a
+// imposé, pas la relecture. Quatre factures du dossier portent « 24.00 » en DOLLARS ; la base y
+// stocke 20,68 / 20,60 / 20,52 / 20,44 €, quatre conversions au taux BCE du jour. Le modèle citait
+// 24,00 — ce qui est juste, c'est ce qui est imprimé — et sans la devise l'appelant aurait écrit
+// 24 dans `montant_ttc` au lieu de `montant_devise` : 16 % d'erreur sur chaque facture étrangère,
+// en silence, sur des charges qui partent en 2035.
+// Son contrôle verbatim est FAIBLE, et il faut le savoir : « € » figure dans presque tous les
+// textes. Il garantit que le symbole est présent, rien de plus. La vraie protection est ailleurs —
+// l'appelant confronte la devise citée aux colonnes `devise`/`montant_devise` déjà prévues.
 
 // Les trois champs dont la citation est un NOMBRE. Ils bénéficient d'une seconde passe plus
 // tolérante (voir `verifierCitations`) ; `tiers` et `date` non.
@@ -120,7 +130,7 @@ export function verifierCitations(citations: CitationsChamps, texte: string): Ve
 //     envoie une pièce dans le mauvais exercice sans que rien ne le signale ;
 //   - **la date d'ÉMISSION** — une facture imprime aussi son échéance, ses conditions de règlement
 //     et ses mentions légales ; c'est le piège qui a coûté le plus cher à l'extraction actuelle.
-export const PROMPT_EXTRACTION = `Tu lis le texte OCR d'un document comptable français et tu en extrais cinq champs.
+export const PROMPT_EXTRACTION = `Tu lis le texte OCR d'un document comptable français et tu en extrais six champs.
 
 RÈGLE ABSOLUE : tu RECOPIES des extraits du texte, tu ne calcules ni ne reformules jamais.
 Rends chaque champ exactement tel qu'il est imprimé, espaces et symboles compris ("1 234,56 €",
@@ -132,8 +142,10 @@ se corrige à la main, une valeur inventée passe inaperçue et fausse une décl
 - tiers : la raison sociale de l'ÉMETTEUR du document (le fournisseur), pas le destinataire.
 - date : la date d'ÉMISSION du document. Pas l'échéance, pas la date de règlement, pas une période
   de validité, pas une date de mention légale.
+- devise : le symbole ou le code monétaire tel qu'il accompagne les montants ("€", "EUR", "$",
+  "USD"). Si le document n'en porte aucun, rends null.
 - totalTtc : le montant total toutes taxes comprises.
 - totalHt : le total hors taxes.
 - totalTva : le montant de TVA. S'il y a plusieurs taux, rends null — le total sera recalculé.
 
-Réponds uniquement par un objet JSON avec ces cinq clés.`
+Réponds uniquement par un objet JSON avec ces six clés.`

@@ -45,6 +45,18 @@ describe('régions des Edge Functions qui sortent de Supabase', () => {
     expect(new Set(replis).size).toBe(1)
   })
 
+  it('fait tourner l’essai de mesure d’extraction en Europe', () => {
+    // `evaluer-extraction` envoie le TEXTE OCR intégral de chaque pièce au modèle — donc, sur un
+    // dossier de santé, des noms de patients. Un essai n'est pas une excuse : il fait sortir les
+    // mêmes données que la production, et il doit les faire sortir au même endroit.
+    const source = sourceDe('evaluer-extraction')
+    const regions = [...source.matchAll(/awsRegion:\s*REGION|const REGION = "(eu-[^"]+)"/g)]
+      .map((m) => m[1])
+      .filter(Boolean)
+    expect(regions.length, "aucune région trouvée dans evaluer-extraction — le garde-fou doit être remis à jour").toBeGreaterThan(0)
+    for (const region of regions) expect(REGIONS_UE).toContain(region)
+  })
+
   it('fait tourner l’assistant comptable en Europe', () => {
     // Le contenu d'un dossier part au modèle : même enjeu, même exigence. La région est écrite en
     // clair dans agent-comptable (pas de secret), donc ce test-là garde tout.
