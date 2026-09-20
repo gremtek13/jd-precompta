@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import { exporterDossier, telechargerSauvegarde, type SauvegardeDossier } from '../../lib/sauvegardeDonnees'
+import { messageErreur } from '../../lib/messageErreur'
 
 // La sauvegarde des données d'un dossier, sous forme de fichier qui QUITTE la plateforme.
 //
@@ -30,7 +31,7 @@ export default function SauvegardeCard({ dossierId, dossierNom }: { dossierId: s
       const nom = await telechargerSauvegarde(sauvegarde)
       setResultat({ nom, sauvegarde })
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : 'La sauvegarde a échoué.')
+      setErreur(messageErreur(err, 'La sauvegarde a échoué.'))
     } finally {
       verrou.current = false
       setEnCours(false)

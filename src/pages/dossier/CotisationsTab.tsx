@@ -8,6 +8,7 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { messageErreur } from '../../lib/messageErreur'
 
 // Taux CSG-CRDS en vigueur pour les indépendants/professions libérales : 9,70 % au total, dont
 // 6,80 points déductibles du revenu imposable et 2,90 points non déductibles. Source : barèmes
@@ -84,7 +85,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
       setPrevisionnel(false)
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSaving(false)
     }
@@ -152,7 +153,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         })
         .finally(() => setAnalyseEnCours(false))
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setUploading(false)
       e.target.value = ''
@@ -198,7 +199,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         window.alert(`${aInserer.length + aMettreAJour.length} échéance(s) prise(s) en compte, ${ignorees} déjà à jour (ignorée(s)).`)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setCreantEcheances(false)
     }

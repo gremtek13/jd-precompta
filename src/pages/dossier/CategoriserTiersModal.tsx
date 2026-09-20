@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
 import { grouperParTiers, piecesSansTiers, type GroupeTiers } from '../../lib/suggestionTiers'
 import type { Categorie, Piece, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
+import { messageErreur } from '../../lib/messageErreur'
 
 // Catégorisation en masse, un arbitrage par fournisseur plutôt qu'un par pièce. Sur un import réel,
 // 58 pièces à catégoriser ne portaient que 28 tiers distincts — c'est ce rapport que cet écran
@@ -89,7 +90,7 @@ export default function CategoriserTiersModal({
       onApplied()
       onClose()
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setErreur(messageErreur(err))
     } finally {
       setEnCours(false)
     }

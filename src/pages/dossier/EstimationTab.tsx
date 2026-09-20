@@ -6,6 +6,7 @@ import { ecartPct, totauxPourAnnee } from '../../lib/estimation'
 import type { Categorie, CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { messageErreur } from '../../lib/messageErreur'
 
 const ANNEE_COURANTE = new Date().getFullYear()
 
@@ -140,7 +141,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
       // diagnostic ci-dessous sert justement à identifier la bonne avant d'écrire le motif définitif.
       if (_diag_resultat) setDiagResultat(_diag_resultat)
     } catch (err) {
-      setLecture2035Error(err instanceof Error ? err.message : "L'extraction a échoué — saisis les montants à la main.")
+      setLecture2035Error(messageErreur(err, "L'extraction a échoué — saisis les montants à la main."))
     } finally {
       setLecture2035Loading(false)
       e.target.value = ''
@@ -169,7 +170,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
       setCotisationsSaisies('')
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSaving(false)
     }
@@ -195,7 +196,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
       if (upsertError) throw upsertError
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setCalculating(false)
     }
@@ -246,7 +247,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
       }
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setCalculatingPostes(false)
     }
@@ -272,7 +273,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
       setMontantPoste('')
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSavingPoste(false)
     }

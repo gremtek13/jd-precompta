@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import type { VehiculeType } from '../lib/types'
+import { messageErreur } from '../lib/messageErreur'
 
 // Version client du même formulaire que InformationsTab (cabinet) — mêmes champs, même table
 // (informations_dossier, upsert sur dossier_id), juste un texte adapté à quelqu'un qui n'est pas
@@ -61,7 +62,7 @@ export default function ClientInformations() {
       setSaved(true)
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSaving(false)
     }

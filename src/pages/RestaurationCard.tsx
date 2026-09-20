@@ -1,6 +1,7 @@
 import { useRef, useState, type ChangeEvent } from 'react'
 import { restaurerSauvegarde, verifierRestauration, type SauvegardeDossier } from '../lib/sauvegardeDonnees'
 import { lireSauvegarde } from '../lib/sauvegardeFichier'
+import { messageErreur } from '../lib/messageErreur'
 
 // La restauration d'une sauvegarde, réservée au super-admin.
 //
@@ -30,7 +31,7 @@ export default function RestaurationCard() {
     try {
       setSauvegarde(await lireSauvegarde(await fichier.text()))
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : 'Ce fichier ne peut pas être lu.')
+      setErreur(messageErreur(err, 'Ce fichier ne peut pas être lu.'))
     }
   }
 
@@ -58,7 +59,7 @@ export default function RestaurationCard() {
         )
       }
     } catch (err) {
-      setErreur(err instanceof Error ? err.message : 'La restauration a échoué.')
+      setErreur(messageErreur(err, 'La restauration a échoué.'))
     } finally {
       verrou.current = false
       setEnCours(false)

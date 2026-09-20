@@ -5,6 +5,7 @@ import { generatePack } from '../../lib/packGenerator'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import type { Pack, Piece } from '../../lib/types'
+import { messageErreur } from '../../lib/messageErreur'
 
 // Période proposée par défaut : le mois précédent en entier. Calculée sur le calendrier civil plutôt
 // que via `Date.toISOString()`, qui rendait la veille du bon jour à Paris (minuit local = 22 h UTC la
@@ -105,7 +106,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
       if (avertissements.length > 0) setError(`Pack généré, mais : ${avertissements.join(' ')}`)
       loadPacks()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'La génération a échoué.')
+      setError(messageErreur(err, 'La génération a échoué.'))
     } finally {
       setGenerating(false)
     }

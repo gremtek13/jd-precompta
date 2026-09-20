@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { calculerLigne, calculerTotaux, enregistrerFacture, mentionsLegalesParDefaut } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
+import { messageErreur } from '../../lib/messageErreur'
 
 interface LigneEdit {
   id?: string // absent = ligne pas encore enregistrée
@@ -125,7 +126,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
       onSaved()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSaving(null)
     }

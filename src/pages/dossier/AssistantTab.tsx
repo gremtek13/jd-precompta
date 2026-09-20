@@ -5,6 +5,7 @@ import { formatDate } from '../../lib/format'
 import { formatUsd } from '../../lib/coutsApi'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { lireTout } from '../../lib/lectureComplete'
+import { messageErreur } from '../../lib/messageErreur'
 
 interface MessageBrut {
   conversation_id: string
@@ -155,7 +156,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
       enregistrer('assistant', reponseTexte, data.outils_utilises, data.usage)
       setAlerteCout(data.alerte_cout ? { coutMoisUsd: data.cout_mois_usd ?? 0, limiteAlerteUsd: data.limite_alerte_usd ?? 0 } : null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setLoading(false)
       zoneRef.current?.focus()

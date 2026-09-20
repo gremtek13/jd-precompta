@@ -4,6 +4,7 @@ import { slugify } from './format'
 import type { CibleCommentaire } from './commentaires'
 import { enregistrerTexteOcr } from './texteOcr'
 import { montantsPourPiece } from './tauxChange'
+import { messageErreur } from './messageErreur'
 
 // En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
 // d'y ajouter une précision tout de suite, au seul moment où il sait encore pourquoi la dépense a été
@@ -124,7 +125,7 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
     }
   } catch (err) {
     hashsDuLot.delete(hash)
-    return { statut: 'erreur', message: err instanceof Error ? err.message : "l'envoi a échoué" }
+    return { statut: 'erreur', message: messageErreur(err, "l'envoi a échoué")}
   }
 }
 

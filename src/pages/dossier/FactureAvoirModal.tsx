@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { attribuerNumeroFacture, calculerLigne, calculerTotaux } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
+import { messageErreur } from '../../lib/messageErreur'
 
 interface LigneAvoirEdit {
   designation: string
@@ -131,7 +132,7 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
       onCreated()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       creationEnCours.current = false
       setSaving(false)

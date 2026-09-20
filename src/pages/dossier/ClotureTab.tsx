@@ -11,6 +11,7 @@ import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDoss
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
 import { lireTout } from '../../lib/lectureComplete'
+import { messageErreur } from '../../lib/messageErreur'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer de
@@ -202,7 +203,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
       URL.revokeObjectURL(url)
       setGenere(annee)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Génération du formulaire impossible')
+      setError(messageErreur(e, 'Génération du formulaire impossible'))
     } finally {
       generationEnCours.current = false
     }

@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
+import { messageErreur } from '../../lib/messageErreur'
 
 interface MembershipRow {
   id: string
@@ -55,7 +56,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
       setPassword('')
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setInviting(false)
     }

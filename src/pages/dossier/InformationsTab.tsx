@@ -9,6 +9,7 @@ import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
 import VehiculesCard from './VehiculesCard'
 import SauvegardeCard from './SauvegardeCard'
+import { messageErreur } from '../../lib/messageErreur'
 
 // Informations déclaratives saisies une fois par le cabinet (ou récupérées auprès du client) plutôt
 // que déduites d'un document — un type de véhicule ou l'existence de tickets-restaurant ne se lit pas
@@ -115,7 +116,7 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
       setSaved(true)
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSaving(false)
     }
@@ -155,7 +156,7 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
       const { data: signed } = await supabase.storage.from('packs').createSignedUrl(storagePathZip, 60)
       if (signed) window.open(signed.signedUrl, '_blank')
     } catch (err) {
-      setExportErreur(err instanceof Error ? err.message : "L'export a échoué.")
+      setExportErreur(messageErreur(err, "L'export a échoué."))
     } finally {
       setExportEnCours(false)
     }
@@ -168,7 +169,7 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
       await supprimerDossierDefinitivement(dossierId)
       navigate('/dossiers')
     } catch (err) {
-      setSuppressionErreur(err instanceof Error ? err.message : 'La suppression a échoué.')
+      setSuppressionErreur(messageErreur(err, 'La suppression a échoué.'))
       setSuppressionEnCours(false)
     }
   }

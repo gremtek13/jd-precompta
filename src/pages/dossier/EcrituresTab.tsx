@@ -14,6 +14,7 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { useAnnee } from '../../context/AnneeContext'
+import { messageErreur } from '../../lib/messageErreur'
 
 // Ce qui a changé sur la pièce, et ce que le cabinet doit faire — jamais corrigé d'office :
 // retirer une écriture est un arbitrage comptable, et les trois derniers motifs se réparent en
@@ -176,7 +177,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       )
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setGenerating(false)
     }
@@ -249,7 +250,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, mouvements.lignes))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {
-      setError(err instanceof Error ? err.message : "L'export de la piste d'audit a échoué.")
+      setError(messageErreur(err, "L'export de la piste d'audit a échoué."))
     } finally {
       setExportPiste(false)
     }
@@ -270,7 +271,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       if (insertError) throw insertError
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setRegenerating(null)
     }
@@ -303,7 +304,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       setDateDeclaration('')
       load()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSavingDeclaration(false)
     }

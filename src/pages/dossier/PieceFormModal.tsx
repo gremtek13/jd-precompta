@@ -9,6 +9,7 @@ import { tauxBce } from '../../lib/tauxChange'
 import { useAuth } from '../../context/AuthContext'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
 import FilCommentaires from '../../components/FilCommentaires'
+import { messageErreur } from '../../lib/messageErreur'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -201,7 +202,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
         setSuggestionAutre(`Ce document ressemble plutôt à ${labels[classification]} qu'à une facture — l'onglet Documents serait peut-être plus adapté.`)
       }
     } catch (err) {
-      setExtractionError(err instanceof Error ? err.message : "L'extraction automatique a échoué — remplis le formulaire à la main.")
+      setExtractionError(messageErreur(err, "L'extraction automatique a échoué — remplis le formulaire à la main."))
     } finally {
       setExtracting(false)
     }
@@ -365,7 +366,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       onSaved()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       enregistrementEnCours.current = false
       setSaving(false)
@@ -404,7 +405,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       onSaved()
       onClose()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setDeleting(false)
     }

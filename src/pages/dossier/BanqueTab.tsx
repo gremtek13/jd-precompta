@@ -16,6 +16,7 @@ import { analyserAppariements, libelleExploitable, piecesMontantIntrouvableEnBan
 import { reglerPieceSurBanque } from '../../lib/reglementDevise'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { messageErreur } from '../../lib/messageErreur'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -247,7 +248,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       try {
         await synchroniserContrepartieBanque(dossierId, piece, ligne)
       } catch (err) {
-        window.alert(`Le rapprochement est enregistré, mais l'écriture de contrepartie banque n'a pas pu être créée : ${err instanceof Error ? err.message : err}`)
+        window.alert(`Le rapprochement est enregistré, mais l'écriture de contrepartie banque n'a pas pu être créée : ${messageErreur(err, 'raison inconnue')}`)
       }
     }
     load()
@@ -271,7 +272,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       try {
         await retirerContrepartieBanque(ancienPieceId)
       } catch (err) {
-        window.alert(`Le rapprochement est annulé, mais l'écriture de contrepartie banque n'a pas pu être retirée : ${err instanceof Error ? err.message : err}\n\nElle reste dans le brouillon d'écritures.`)
+        window.alert(`Le rapprochement est annulé, mais l'écriture de contrepartie banque n'a pas pu être retirée : ${messageErreur(err, 'raison inconnue')}\n\nElle reste dans le brouillon d'écritures.`)
       }
     }
     load()
@@ -404,7 +405,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         } catch (err) {
           // La pièce est validée et le mouvement rapproché ; seule la contrepartie comptable manque.
           // On le dit plutôt que de laisser croire que tout est passé.
-          echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : contrepartie banque non créée (${err instanceof Error ? err.message : err})`)
+          echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : contrepartie banque non créée (${messageErreur(err, 'raison inconnue')})`)
         }
       }
       if (echecs.length > 0) {
@@ -470,7 +471,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       if (contrepartiesEnEchec.length > 0) {
         const premier = contrepartiesEnEchec[0] as PromiseRejectedResult
         window.alert(
-          `${contrepartiesEnEchec.length} écriture${contrepartiesEnEchec.length > 1 ? 's' : ''} de contrepartie banque n'${contrepartiesEnEchec.length > 1 ? 'ont' : 'a'} pas pu être créée${contrepartiesEnEchec.length > 1 ? 's' : ''} (${premier.reason instanceof Error ? premier.reason.message : premier.reason}) — les rapprochements, eux, sont enregistrés.`,
+          `${contrepartiesEnEchec.length} écriture${contrepartiesEnEchec.length > 1 ? 's' : ''} de contrepartie banque n'${contrepartiesEnEchec.length > 1 ? 'ont' : 'a'} pas pu être créée${contrepartiesEnEchec.length > 1 ? 's' : ''} (${messageErreur(premier.reason, 'raison inconnue')}) — les rapprochements, eux, sont enregistrés.`,
         )
       }
     } finally {
@@ -1055,7 +1056,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
       setPdfLignes(lignes)
       setPdfRows(extraites)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Lecture du PDF impossible.')
+      setError(messageErreur(err, 'Lecture du PDF impossible.'))
     } finally {
       setPdfExtracting(false)
     }
@@ -1161,7 +1162,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
         window.alert(`${aInserer.length} ligne(s) importée(s)${doublons > 0 ? `, ${doublons} déjà présente(s) ignorée(s)` : ''}${soldesDesignes.length > 0 ? `, ${soldesDesignes.length} ligne(s) de solde écartée(s)` : ''}.${alertePdf}`)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "L'import a échoué.")
+      setError(messageErreur(err, "L'import a échoué."))
     } finally {
       setImporting(false)
     }
@@ -1258,7 +1259,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
         window.alert(messages.join(', ') + '.' + alerte)
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "L'import a échoué.")
+      setError(messageErreur(err, "L'import a échoué."))
     } finally {
       setImporting(false)
     }

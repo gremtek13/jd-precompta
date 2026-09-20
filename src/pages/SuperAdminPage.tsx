@@ -6,6 +6,7 @@ import ConfirmationSuppression from '../components/ConfirmationSuppression'
 import RestaurationCard from './RestaurationCard'
 import { extraireErreurFonction } from '../lib/invokeErreur'
 import { lireTout } from '../lib/lectureComplete'
+import { messageErreur } from '../lib/messageErreur'
 
 interface CabinetApercu {
   id: string
@@ -248,7 +249,7 @@ export default function SuperAdminPage() {
         setExportErreur(`Export de "${c.nom}" terminé, mais ${manquantes.length} fichier(s) manquent à l'archive : ${manquantes.slice(0, 3).join(', ')}${manquantes.length > 3 ? '…' : ''}. Chaque récapitulatif concerné les liste dans son onglet « Pièces manquantes ».`)
       }
     } catch (err) {
-      setExportErreur(`Export de "${c.nom}" : ${err instanceof Error ? err.message : 'échec.'}`)
+      setExportErreur(`Export de "${c.nom}" : ${messageErreur(err, 'échec.')}`)
     } finally {
       setExportEnCours(null)
       setExportProgression(null)

@@ -7,6 +7,7 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { messageErreur } from '../../lib/messageErreur'
 
 // Seuil au-delà duquel une dépense est candidate à l'immobilisation plutôt qu'à la charge courante.
 // Valeur usuelle citée dans le document d'architecture — pas encore configurable par dossier, cette
@@ -140,7 +141,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
         load()
         return
       }
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSaving(null)
     }

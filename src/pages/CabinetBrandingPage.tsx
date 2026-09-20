@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { eclaircir, estCouleurHexValide } from '../lib/colors'
 import { signalerMajBranding } from '../lib/branding'
 import type { Cabinet } from '../lib/types'
+import { messageErreur } from '../lib/messageErreur'
 
 // Polices proposées, pas de champ libre : un nom de police Google Fonts mal orthographié ne casse
 // rien (repli silencieux sur Inter dans le navigateur) mais ne sert à rien non plus — autant garantir
@@ -112,7 +113,7 @@ export default function CabinetBrandingPage() {
       await charger()
       signalerMajBranding() // sans ça, la sidebar (déjà montée) ne voyait le changement qu'au rechargement de la page
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSaving(false)
     }
@@ -131,7 +132,7 @@ export default function CabinetBrandingPage() {
       await charger()
       signalerMajBranding()
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Une erreur est survenue.')
+      setError(messageErreur(err))
     } finally {
       setSaving(false)
     }

@@ -2,6 +2,7 @@ import { useState, type ChangeEvent, type CSSProperties, type DragEvent } from '
 import { supabase } from '../../lib/supabase'
 import { chargerHashsExistants, estFichierSupporte, importerFichierDossier } from '../../lib/importFichiers'
 import type { SousDossier } from '../../lib/types'
+import { messageErreur } from '../../lib/messageErreur'
 
 type StatutFichier = 'attente' | 'upload' | 'extraction' | 'ok' | 'doublon' | 'erreur'
 
@@ -81,7 +82,7 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
           })
           setStatutFichier(i, resultat.statut, resultat.message)
         } catch (err) {
-          setStatutFichier(i, 'erreur', err instanceof Error ? err.message : "Échec de l'import")
+          setStatutFichier(i, 'erreur', messageErreur(err, "Échec de l'import"))
         }
       }
     } finally {

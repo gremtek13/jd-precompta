@@ -2,6 +2,7 @@ import { supabase } from './supabase'
 import { extractPiece, textractPeutLire } from './extraction'
 import { enregistrerTexteOcr, texteOcrExploitable } from './texteOcr'
 import type { DocumentDivers, Piece } from './types'
+import { messageErreur } from './messageErreur'
 
 // Rejoue l'extraction sur des pièces déjà enregistrées, pour combler ce qui leur manque : la date, et
 // le texte lu par l'OCR.
@@ -117,7 +118,7 @@ export async function relireDocuments(
     } catch (err) {
       resultat.echecs.push({
         nomFichier: piece.nom_fichier,
-        message: err instanceof Error ? err.message : "l'extraction a échoué",
+        message: messageErreur(err, "l'extraction a échoué"),
       })
     } finally {
       fait += 1
@@ -202,7 +203,7 @@ export async function relireTextesDocuments(
     } catch (err) {
       resultat.echecs.push({
         nomFichier: document.nom_fichier,
-        message: err instanceof Error ? err.message : "l'extraction a échoué",
+        message: messageErreur(err, "l'extraction a échoué"),
       })
     } finally {
       fait += 1
