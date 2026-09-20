@@ -299,6 +299,42 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   « Edge Function returned a non-2xx status code ».
   `invokeErreur.ts` n'important pas `supabase.ts`, il se teste sans faux client, avec de vraies
   `Response` — l'exception qui confirme la règle du module de calcul découplé.
+- **ET LE MÊME DÉFAUT VIVAIT SUR L'AUTRE PORTE, QUARANTE-CINQ FOIS** (`src/lib/messageErreur.ts`,
+  20/09/2026). **Une erreur Postgrest n'est PAS une instance d'`Error`.** Le fait est dans la source
+  de `@supabase/postgrest-js` et nulle part ailleurs : sur le chemin NON levant — celui qu'utilise
+  tout ce dépôt, `const { error } = await supabase…` — la bibliothèque fait `error = JSON.parse(body)`.
+  Ce qu'on reçoit est un OBJET NU `{ message, details, hint, code }`. La classe
+  `PostgrestError extends Error` existe bel et bien, ce qui rend le piège parfait, mais elle n'est
+  construite que sur les branches `shouldThrowOnError`, que ce dépôt n'active nulle part.
+  Donc `catch (err) { err instanceof Error ? err.message : repli }` — quarante-cinq sites, vingt-trois
+  fichiers — jetait systématiquement la raison. « new row violates row-level security policy »,
+  « duplicate key value violates unique constraint », « violates foreign key constraint » : rien de
+  tout cela n'est jamais arrivé sous les yeux d'un opérateur, qui lisait « Une erreur est survenue. »
+  sans pouvoir savoir s'il devait corriger une saisie, appeler l'administrateur ou réessayer.
+  C'est MOT POUR MOT le défaut qu'`extraireErreurFonction` avait corrigé au-dessus, revenu par
+  l'autre porte, et invisible pour la même raison : **une régression n'y casse rien de visible**,
+  elle fait retomber chaque écran sur un repli plausible.
+  `messageErreur(erreur, repli)` regarde ce que la valeur PORTE et non ce dont elle hérite, donc
+  traite les deux formes par une seule branche — `message` est une propriété propre d'une `Error`
+  comme d'un objet nu, et les distinguer par `instanceof` est précisément l'erreur qu'on corrige.
+  Il vérifie le type (`{ message: 42 }` retombe sur le repli) et refuse un message vide.
+  `details`/`hint` ne sont PAS repris : décision écrite comme à rouvrir si un message de contrainte
+  se révèle indéchiffrable sans eux, pas avant.
+  **Trouvé en écrivant un test d'écran, pas en relisant** — et le premier réflexe était FAUX : j'ai
+  cru le faux client infidèle parce qu'il rendait un objet nu. C'est la source de la bibliothèque qui
+  a tranché, contre le code de production.
+  **ET LA RÈGLE NE RESTE PAS ICI : elle est devenue un test.** `erreursSupabase.test.ts` interdit le
+  ternaire fautif dans TOUTE source de production, **sans aucune exception** — il n'existe pas de cas
+  où cette forme soit correcte. `if (err instanceof Error)` reste permis ; ce qui est interdit, c'est
+  de faire dépendre le MESSAGE AFFICHÉ de l'héritage. Son auto-contrôle est un défaut PLANTÉ dans une
+  source synthétique, avec deux cas voisins qu'il ne doit PAS attraper — « le scanner rend zéro » et
+  « le scanner est aveugle » se ressemblent trop, c'est la panne qui a laissé passer trois versions
+  du scanner de lectures paginées. Il a d'ailleurs attrapé une vraie régression dans la foulée : un
+  `git checkout --` destiné à défaire une mutation avait aussi défait le correctif non commité du
+  même fichier.
+  Cinq mutations mordent sur le module, trois sur le scanner. La première est le défaut d'origine
+  replanté (exiger `instanceof Error`) : **un test qui n'aurait posé que de vraies `Error` serait
+  resté vert avec le défaut entier**, et c'est exactement ce qui l'a laissé vivre depuis le début.
 - **Le balayage des paramètres par défaut a rendu un résultat NÉGATIF pour tous les autres**
   (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
   `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
@@ -449,6 +485,11 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `agent-comptable`).
 - Export de pack (ZIP + Excel récapitulatif) à la demande, export global
   d'un cabinet, export de sauvegarde avant suppression d'un dossier/cabinet.
+- Reprise d'un dossier venu d'un autre logiciel, première brique : lecture et
+  CONTRÔLE d'une balance générale (`BalanceCard`, onglet Informations) — colonnes
+  reconnues à leur contenu, contrôle débit = crédit, lignes écartées avec leur
+  motif. Rien n'est enregistré, et l'écran le dit : aucune table ne porte encore
+  de balance reprise.
 - Sauvegarde et restauration d'un dossier (`lib/sauvegarde.ts` pour le socle pur,
   `lib/sauvegardeDonnees.ts` pour les lectures/écritures, `lib/sauvegardeFichier.ts`
   pour le fichier). Téléchargement depuis l'onglet Informations d'un dossier,
@@ -1006,6 +1047,33 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   catégorie retirée, catégorie sans compte, montant effacé — parce que l'action n'est pas la même
   (les trois derniers se réparent en amont puis « Régénérer » ; le premier demande de retirer
   l'écriture, et « Régénérer » y serait activement FAUX, il réécrirait la charge).
+  **ET CE GESTE-LÀ N'EXISTAIT PAS** — corrigé le 20/09/2026. Le panneau NOMMAIT l'action, « Retirer
+  l'écriture », et aucun écran de l'application ne pouvait la faire : il montrait une incohérence
+  entre le FEC, la balance et la 2035 en laissant l'opérateur sans moyen de la lever.
+  **Le retrait emporte TOUTES les lignes de la pièce, contrepartie banque comprise, et c'est la
+  seule forme correcte.** N'ôter que la charge — en copiant le `.neq('compte', COMPTE_BANQUE)` de
+  `regenererEcriture`, qui est juste POUR LUI — laisserait la ligne banque SEULE dans son groupe :
+  un groupe qui porte bien une contrepartie et dont le solde ne vaut pas zéro, c'est-à-dire
+  exactement ce que `groupesDesequilibres` signale, et que plus aucun geste ne pourrait éteindre. On
+  échangerait une alerte vraie contre une alerte fausse et DÉFINITIVE. Vérifié en posant la mutation,
+  pas déduit : le panneau « Écritures déséquilibrées » apparaît bel et bien.
+  **Réservé au motif `immobilisee`**, délibérément : pour les trois autres, l'écriture DOIT revenir
+  une fois la pièce corrigée en amont, et un bouton « Retirer » y ferait disparaître une charge
+  réelle d'un clic, sans trace — que personne ne chercherait, le panneau étant alors vide.
+  **Ce que le retrait laisse, et qui est écrit plutôt que tu** : l'application ne modélise AUCUNE
+  écriture d'acquisition (aucun compte de classe 2 sur `natures_immobilisation`, vérifié en base),
+  donc le FEC ne portera pas cet achat. C'est un manque pré-existant, et il est moins faux que la
+  charge : après retrait, le FEC, la balance et la 2035 écartent tous les trois la pièce et disent
+  enfin la même chose, la dépense restant comptée par l'amortissement. La piste d'audit, elle,
+  continue de la voir — en justificatif validé que rien ne comptabilise, ce qui est la vérité.
+  Pas de verrou `useRef` : une suppression est idempotente, deux clics retirent les mêmes lignes.
+  **Le faux client du test SUPPRIME vraiment**, donc le `load()` qui suit relit un jeu réellement
+  amputé : les assertions portent sur ce que l'écran montre APRÈS, pas sur la méthode appelée — c'est
+  ce qui permet de voir qu'une ligne oubliée en allume une autre ailleurs. Quatre mutations mordent.
+  **Piège d'assertion à connaître pour le prochain test d'écran** : `queryByText` LÈVE quand
+  plusieurs éléments correspondent, au lieu de rendre `null`. Une absence qui pourrait être multiple
+  se vérifie donc par `queryAllByText(...).toHaveLength(0)` — sinon l'échec s'affiche en « Found
+  multiple elements », qui ne ressemble pas au défaut gardé.
   **ET LE MÊME BALAYAGE EN A SORTI UN SECOND, PLUS PROBABLE** : `piecesDesynchronisees` ne comparait
   que le MONTANT. Recatégoriser une pièce déjà validée est un geste courant, et rien ne réécrit son
   écriture : elle reste sur l'ancien compte. Or le total ne bouge pas d'un centime — le contrôle
@@ -1685,18 +1753,30 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   dont vingt-quatre sont exportées uniquement pour être testées à l'unité — motif légitime et
   courant ici. **Huit n'ont littéralement aucun usage hors de leurs tests**, et il a fallu les
   regarder une par une : « personne ne l'appelle » a plusieurs causes, et une seule est un défaut.
-  **Deux sont de vraies moitiés de fonctionnalité** :
-  - **`balanceImport.ts` en entier** — `lireBalance`, `controlerBalance`, `classeDuCompte`. Le
-    module est écrit, testé, et décrit longuement dans ce fichier comme « la première brique de la
-    reprise d'un dossier venu d'un autre logiciel », avec ses quatre décisions et son contrôle
-    d'équilibre. **Rien dans l'application ne l'importe** : aucun écran ne permet de déposer une
-    balance. Il n'est pas non plus listé dans « Fonctionnalités actuellement en cours ». C'est donc
-    une brique en attente de son écran, et il vaut mieux que ce soit écrit ici que découvert par
-    quelqu'un qui cherche pourquoi ce module ne sert à rien.
-  - **`supprimerCommentaire`** — la fonction existe, la policy RLS `piece_commentaires_delete`
-    existe, et ce fichier décrit la capacité (« La suppression reste au cabinet, pour retirer un
-    hors-sujet »). `FilCommentaires` n'a **aucun bouton** de suppression. La règle est décidée et le
-    chemin technique est ouvert des deux côtés ; il manque les dix lignes d'écran.
+  **Deux étaient de vraies moitiés de fonctionnalité — LES DEUX SONT LIVRÉES** (20/09/2026), et
+  c'est le balayage qui les a fait exister : aucune des deux ne se serait vue autrement, chacune
+  étant complète de son côté base et de son côté logique.
+  - **`balanceImport.ts` en entier** — `lireBalance`, `controlerBalance`, `classeDuCompte`. Écrit,
+    testé, décrit longuement ici comme « la première brique de la reprise d'un dossier venu d'un
+    autre logiciel », et **importé par rien**. `BalanceCard` (onglet Informations, à côté de la
+    sauvegarde) ferme le chemin. Périmètre délibérément borné à la LECTURE et au CONTRÔLE : vérifié
+    en base, aucune table ne porte de balance reprise, et en inventer une sans savoir ce qu'elle
+    doit alimenter — des à-nouveaux ? une comparaison avec la balance de l'application ? — serait
+    deviner un choix produit. L'usage reste complet tel quel (« cet export est-il entier ? »), et
+    l'écran DIT que rien n'est enregistré plutôt que de laisser croire à une reprise.
+    **Le défaut que le module ne pouvait pas voir, parce qu'il reçoit déjà du texte** : un export
+    comptable français sort souvent en CP1252, et « Charges à payer » décodé en UTF-8 indulgent
+    devient « Charges Ã  payer » — or les libellés SONT les noms de comptes. On décode en UTF-8
+    STRICT (qui LÈVE sur une séquence invalide) avec repli windows-1252, plutôt que de renifler un
+    U+FFFD après coup. Les chiffres étant de l'ASCII dans les deux cas, le contrôle d'équilibre
+    reste juste même si ce repli se trompait.
+  - **`supprimerCommentaire`** — la fonction existait, la policy RLS `piece_commentaires_delete`
+    existait, ce fichier décrivait la capacité, et `FilCommentaires` n'avait **aucun bouton**.
+    Livré, avec une garantie portée par le TYPE et non par une relecture : les props du composant
+    sont une union discriminée où `estCabinet: true` EXIGE `onSuppression`, et le côté client
+    l'interdit. L'écran parent détient la liste et affiche la dernière précision sur la ligne
+    d'arbitrage — un bouton dont il n'apprendrait rien laisserait ce résumé désigner un commentaire
+    disparu. Les deux mutations mordent à la compilation.
   **Quatre sont des faux positifs instructifs, à ne pas « nettoyer » sans lire** :
   - `soldesDuPdf` (relevePdf) — le comportement qu'il porte EST livré, mais autrement : le drapeau
     `estSolde` vit sur la LIGNE et `BanqueTab` s'en sert. C'est l'ancienne conception que le drapeau
@@ -1858,7 +1938,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
   (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 7 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs — donc **10 sans aucun test
-  de rendu**.
+  de rendu**. Cinq CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
+  `FilCommentaires` et `BalanceCard` (20/09/2026). Un onglet n'est donc pas « testé » parce qu'une
+  de ses cartes l'est — Informations reste dans les dix.
   **Deux doublures à connaître avant d'écrire le prochain test d'écran** : `PiecesTab` lit
   `monCabinetId` d'`AuthContext` (monter un `AuthProvider` complet ferait dépendre le test d'une
   session Supabase), et `piecesAvecTexteOcr` doit rendre sa forme EXACTE
@@ -1888,7 +1971,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 941 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 989 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -1989,6 +2072,10 @@ pas de Supabase CLI configurée dans ce dépôt.
 - Toute nouvelle Edge Function reste auto-porteuse (pas d'import `src/`).
 - Tout nouvel appel à `supabase.functions.invoke()` doit gérer l'erreur via
   `extraireErreurFonction()`.
+- Tout message d'erreur issu d'un `{ error }` Supabase passe par `messageErreur()` —
+  jamais `err instanceof Error ? err.message : repli`, qui jette la raison rendue
+  par Postgres (voir « Décisions techniques »). `erreursSupabase.test.ts` le vérifie
+  sur toute source de production, sans exception.
 - Tout nouvel onglet de dossier doit être ajouté à `TABS_VALIDES` dans
   `DossierDetail.tsx` et à `DossierParcours.tsx` pour être routable.
 - Ne jamais rendre une action réseau externe (API tierce, IA, Super PDP)
