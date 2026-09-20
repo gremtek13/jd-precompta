@@ -1680,6 +1680,38 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   contenu. Le seul groupe reste `mai.pdf` / `juin.pdf`, déjà connu. La question qui motivait la mesure
   — « un même relevé est-il classé une fois en Pièces et une fois en Documents ? » — a donc une
   réponse, et c'est non. Elle ne se redemande pas à chaque session.
+- **CE MOTIF SE BALAIE, ET LE BALAYAGE EST MÉCANIQUE** (20/09/2026) : toute fonction exportée de
+  `src/lib` dont le nom n'apparaît dans AUCUN autre fichier de production. Trente-deux candidates,
+  dont vingt-quatre sont exportées uniquement pour être testées à l'unité — motif légitime et
+  courant ici. **Huit n'ont littéralement aucun usage hors de leurs tests**, et il a fallu les
+  regarder une par une : « personne ne l'appelle » a plusieurs causes, et une seule est un défaut.
+  **Deux sont de vraies moitiés de fonctionnalité** :
+  - **`balanceImport.ts` en entier** — `lireBalance`, `controlerBalance`, `classeDuCompte`. Le
+    module est écrit, testé, et décrit longuement dans ce fichier comme « la première brique de la
+    reprise d'un dossier venu d'un autre logiciel », avec ses quatre décisions et son contrôle
+    d'équilibre. **Rien dans l'application ne l'importe** : aucun écran ne permet de déposer une
+    balance. Il n'est pas non plus listé dans « Fonctionnalités actuellement en cours ». C'est donc
+    une brique en attente de son écran, et il vaut mieux que ce soit écrit ici que découvert par
+    quelqu'un qui cherche pourquoi ce module ne sert à rien.
+  - **`supprimerCommentaire`** — la fonction existe, la policy RLS `piece_commentaires_delete`
+    existe, et ce fichier décrit la capacité (« La suppression reste au cabinet, pour retirer un
+    hors-sujet »). `FilCommentaires` n'a **aucun bouton** de suppression. La règle est décidée et le
+    chemin technique est ouvert des deux côtés ; il manque les dix lignes d'écran.
+  **Quatre sont des faux positifs instructifs, à ne pas « nettoyer » sans lire** :
+  - `soldesDuPdf` (relevePdf) — le comportement qu'il porte EST livré, mais autrement : le drapeau
+    `estSolde` vit sur la LIGNE et `BanqueTab` s'en sert. C'est l'ancienne conception que le drapeau
+    a remplacée. Son test, lui, ne garde pas un appelant : il fige une heuristique ÉCARTÉE SUR
+    PREUVE (celle qui aurait supprimé 32 encaissements CPAM). Le supprimer perdrait cette preuve.
+  - `ordreSuppression` (sauvegarde) — la suppression réelle s'appuie sur la cascade Postgres depuis
+    `dossiers` (voir `suppressionDossier.ts`), donc aucun ordre n'est à calculer.
+  - `piecesADater` (relectureDocuments) — remplacée par `piecesARelire`, qui comble la date ET le
+    texte en une passe.
+  - `trierLignes` (factures) — déclarée en avance, et son commentaire le DIT (« ex. un futur
+    export »). Une fonction qui annonce qu'elle attend son appelant n'est pas la même chose qu'une
+    fonction qu'on a oublié de brancher.
+  **La leçon du balayage** : « zéro appelant » n'est pas un verdict, c'est une question. Sur huit,
+  deux étaient des fonctionnalités à moitié livrées, quatre des restes explicables, et aucune ne se
+  supprime sans avoir lu pourquoi elle est là.
 - **Une colonne, un affichage, et aucun chemin d'écriture : la moitié d'une fonctionnalité ne se
   voit pas.** `piece_textes_ocr` avait reçu son `document_id`, `DocumentsTab` savait déjà déplier
   « texte lu » — et RIEN ne l'a jamais rempli pour un document déjà en base, aucun appelant
