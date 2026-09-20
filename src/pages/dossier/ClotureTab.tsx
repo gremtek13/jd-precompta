@@ -10,6 +10,7 @@ import { remplir2035 } from '../../lib/remplir2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
+import { lireTout } from '../../lib/lectureComplete'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer de
@@ -18,6 +19,10 @@ import { useAnnee } from '../../context/AnneeContext'
 export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
+  // Non nul quand les pièces n'ont PAS pu être lues en entier. Cet écran produit une déclaration :
+  // une 2035 calculée sur une partie des pièces est plausible, fausse, et signée — le formulaire
+  // n'a nulle part où dire qu'il est amputé, donc le remplissage se refuse.
+  const [piecesIncompletes, setPiecesIncompletes] = useState<string | null>(null)
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Cadre 7 du 2035-B : le total des indemnités kilométriques alimente la case BJ, ligne 23.
@@ -38,9 +43,15 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesValideesData }, { data: immobilisationsData }, { data: cotisationsData }, { data: vehiculesData }, { data: dossierData }] = await Promise.all([
+    const [{ data: categoriesData }, lecturePieces, { data: immobilisationsData }, { data: cotisationsData }, { data: vehiculesData }, { data: dossierData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
+      // Lue par tranches, triée sur un ordre TOTAL : PostgREST plafonne le nombre de lignes rendues
+      // sans le signaler (voir lib/lectureComplete.ts), et cet écran produit une DÉCLARATION —
+      // une 2035 bâtie sur une partie des pièces est plausible, fausse, et signée.
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+      ),
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
       // Tous exercices : c'est le moteur qui filtre sur l'année, comme pour les cotisations.
@@ -50,7 +61,8 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     setDossier(dossierData ?? null)
     setVehicules(vehiculesData ?? [])
     setCategories(categoriesData ?? [])
-    setPiecesValidees(piecesValideesData ?? [])
+    setPiecesValidees(lecturePieces.lignes)
+    setPiecesIncompletes(lecturePieces.complete ? null : lecturePieces.motif)
     setImmobilisations(immobilisationsData ?? [])
     setCotisations(cotisationsData ?? [])
     setLoading(false)
@@ -144,7 +156,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const generationEnCours = useRef(false)
 
   async function telechargerFormulaire(annee: number, valeurs: Map<string, number>) {
-    if (generationEnCours.current) return
+    if (generationEnCours.current || piecesIncompletes) return
     generationEnCours.current = true
     setError(null)
     try {
@@ -412,6 +424,14 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
+      {piecesIncompletes && (
+        <p className="error-text">
+          Les pièces validées n'ont pas pu être lues en entier ({piecesIncompletes}). Les montants
+          ci-dessous portent donc sur une partie du dossier, et le remplissage du formulaire est
+          bloqué — une 2035 calculée sur une lecture partielle est plausible, fausse, et signée.
+        </p>
+      )}
+
       {error && <p className="error-text">{error}</p>}
 
       {loading ? (
@@ -426,6 +446,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
             valeurs={f.valeurs}
             genere={genere === f.declaration.annee}
             onTelecharger={() => telechargerFormulaire(f.declaration.annee, f.valeurs)}
+            blocage={piecesIncompletes}
           />
         ))
       )}
@@ -436,11 +457,14 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 // Un exercice rendu dans la forme du formulaire : une ligne par case, dans l'ordre imprimé, avec son
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
-function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger }: {
+function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage }: {
   annee: number
   valeurs: Map<string, number>
   genere: boolean
   onTelecharger: () => void
+  // Non nul quand la lecture des pièces n'a pas pu se dire complète : le bouton est alors grisé et
+  // dit pourquoi, plutôt que de produire un formulaire qu'on croirait complet.
+  blocage: string | null
 }) {
   // Une case à zéro que personne n'a alimentée n'apprend rien et noie le reste : on ne montre que
   // les cases qui portent un montant, plus les totaux, toujours affichés parce que c'est sur eux que
@@ -456,7 +480,12 @@ function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger }: {
             2035-A-SD et 2035-B-SD — à relire case par case avant dépôt
           </span>
         </div>
-        <button className="btn btn-primary btn-sm" onClick={onTelecharger}>
+        <button
+          className="btn btn-primary btn-sm"
+          onClick={onTelecharger}
+          disabled={blocage !== null}
+          title={blocage ? `Lecture partielle des pièces (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.` : undefined}
+        >
           {genere ? '↻ Regénérer le formulaire' : '⬇ Remplir le formulaire officiel'}
         </button>
       </div>

@@ -695,12 +695,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   - **Le tri doit être TOTAL.** `date` n'est pas unique : sans clé de départage (`.order('id')`),
     deux tranches se recouvrent ou sautent des lignes, et rien ne le signale — c'est le même piège
     que `CLES_PRIMAIRES` côté sauvegarde.
-  Premier branchement, sur les livrables fiscaux : `EcrituresTab` lit le brouillon ainsi, et **refuse**
-  d'exporter le FEC ou la piste d'audit sur une lecture incomplète (le format FEC est rigide, il ne
-  peut pas porter l'avertissement — à la différence d'un pack et de sa feuille « Pièces manquantes »).
-  **Les autres écrans ne sont PAS encore portés** : une trentaine de lectures de collection entière
-  restent en `select('*')` nu, et c'est à faire écran par écran, en commençant par ce qui produit un
-  chiffre ou un fichier.
+  **Branchés d'abord : ce qui produit un fichier qu'on envoie ou qu'on signe.** `EcrituresTab` lit le
+  brouillon ainsi et refuse d'exporter le FEC ou la piste d'audit sur une lecture incomplète (le
+  format FEC est rigide : il ne peut pas porter l'avertissement). `packGenerator` refuse de produire
+  le pack — et c'est le cas le plus net : un pack amputé serait cohérent avec lui-même, ZIP,
+  récapitulatif et total d'accord et faux tous les trois, et on ne peut même pas recenser ce qui
+  manque comme on le fait pour les pièces sans date, puisqu'on ignore ce qu'on n'a pas lu.
+  `ClotureTab` grise le remplissage du formulaire : une 2035 calculée sur une partie des pièces est
+  plausible, fausse, et **signée**.
+  Dans les trois cas l'écran DIT que sa lecture est partielle, plutôt que de laisser un bouton grisé
+  sans raison visible.
+  **Les autres écrans ne sont PAS encore portés** : une vingtaine de lectures de collection entière
+  restent en `select('*')` nu (Banque, Pièces, Balance, Checklist, les trois écrans client, et la
+  liste des dossiers — celle-ci lit à l'échelle du cabinet, donc c'est elle qui touchera le plafond
+  la première). Ce chantier n'est pas difficile, il est ÉTENDU : le risque est d'en oublier un.
 - **Un filtre de période écarte les NULL sans le dire.** En SQL, une comparaison avec NULL n'est
   jamais vraie : `gte`/`lte` sur `date_piece` excluait donc les pièces validées sans date de
   *toutes* les périodes à la fois — absentes du ZIP, du récapitulatif et du total de chaque pack,
@@ -1426,7 +1434,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 899 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 901 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

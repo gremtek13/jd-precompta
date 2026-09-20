@@ -15,6 +15,13 @@ const etat = {
   sansDate: { data: [] as Piece[], error: null as { message: string } | null },
   categories: { data: [] as Categorie[], error: null as { message: string } | null },
   telechargementsEnEchec: new Set<string>(),
+  // Plafond du serveur : nombre maximum de lignes rendues par requête, quoi qu'on demande. C'est
+  // le « Max rows » de PostgREST, qui ne se signale pas (voir lib/lectureComplete.ts). Par défaut
+  // aucun, donc une seule tranche suffit.
+  plafond: null as number | null,
+  // Total annoncé par la base, quand le test veut le faire mentir : une base qui annonce plus que
+  // ce qu'elle rend est exactement ce qui produisait un pack amputé en silence.
+  compteAnnonce: null as number | null,
 }
 
 vi.mock('./supabase', () => {
@@ -22,14 +29,30 @@ vi.mock('./supabase', () => {
     // `.is(...)` n'apparaît que dans la requête des pièces sans date : le faux client s'en sert pour
     // distinguer les deux lectures de `pieces`, faute de pouvoir inspecter les filtres accumulés.
     let source: 'pieces' | 'categories' | 'sansDate' = table
+    // Le faux client honore `range` et annonce un `count` : sans cela, la lecture par tranches
+    // tournerait à vide ou boucherait — et surtout le test ne prouverait rien de ce qu'elle garde.
+    let debut = 0
+    let fin = Number.MAX_SAFE_INTEGER
     const chaine = {
       select: () => chaine,
       eq: () => chaine,
       gte: () => chaine,
       lte: () => chaine,
       or: () => chaine,
+      order: () => chaine,
+      range: (d: number, f: number) => { debut = d; fin = f; return chaine },
       is: () => { source = 'sansDate'; return chaine },
-      then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(etat[source])),
+      then: (resoudre: (v: unknown) => unknown) => {
+        const src = etat[source]
+        if (src.error) return Promise.resolve(resoudre({ data: null, error: src.error, count: null }))
+        const demande = fin - debut + 1
+        const taille = etat.plafond == null ? demande : Math.min(demande, etat.plafond)
+        return Promise.resolve(resoudre({
+          data: src.data.slice(debut, debut + taille),
+          error: null,
+          count: etat.compteAnnonce ?? src.data.length,
+        }))
+      },
     }
     return chaine
   }
@@ -85,6 +108,8 @@ beforeEach(() => {
   etat.sansDate = { data: [], error: null }
   etat.categories = { data: CATEGORIES, error: null }
   etat.telechargementsEnEchec = new Set()
+  etat.plafond = null
+  etat.compteAnnonce = null
 })
 
 describe('remplirZipDossier', () => {
@@ -154,16 +179,16 @@ describe('remplirZipDossier', () => {
     // n'aurait plus qu'une entrée : un classement silencieusement vidé, envoyé tel quel.
     etat.pieces.data = [piece({ id: 'ok', storage_path: 'd1/ok.pdf' })]
     etat.categories = { data: [], error: { message: 'permission denied' } }
-    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')).rejects.toMatchObject({
-      message: 'permission denied',
-    })
+    // Le refus NOMME ce qui manquait et garde la cause : « permission denied » seul n'aurait dit ni
+    // ce qu'on lisait, ni pourquoi un pack ne peut pas sortir quand même.
+    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31'))
+      .rejects.toThrow(/Pack non généré : les catégories.*permission denied/s)
   })
 
   it('lève si les pièces ne peuvent pas être lues', async () => {
     etat.pieces = { data: [], error: { message: 'permission denied' } }
-    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')).rejects.toMatchObject({
-      message: 'permission denied',
-    })
+    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31'))
+      .rejects.toThrow(/Pack non généré : les pièces de la période.*permission denied/s)
   })
 
   it('garde les deux fichiers quand deux pièces porteraient le même nom', async () => {
@@ -251,13 +276,43 @@ describe('pièces validées sans date', () => {
     expect((await feuilles(resultat.excelBlob))['Pièces sans date']).toBeUndefined()
   })
 
+  it('recolle les tranches quand le serveur plafonne le nombre de lignes rendues', async () => {
+    // PostgREST plafonne sans le signaler : la réponse est une liste valide, simplement plus courte.
+    // Ici le serveur ne rend que deux pièces à la fois — les trois doivent malgré tout être dans le
+    // ZIP et dans le récapitulatif.
+    etat.plafond = 2
+    etat.pieces.data = [
+      piece({ id: 'a', storage_path: 'd1/a.pdf', nom_fichier: 'a.pdf', tiers: 'A' }),
+      piece({ id: 'b', storage_path: 'd1/b.pdf', nom_fichier: 'b.pdf', tiers: 'B' }),
+      piece({ id: 'c', storage_path: 'd1/c.pdf', nom_fichier: 'c.pdf', tiers: 'C' }),
+    ]
+    const zip = new JSZip()
+    const resultat = await remplirZipDossier(zip, 'd1', '2026-01-01', '2026-12-31')
+    expect(resultat.nbPieces).toBe(3)
+    expect(Object.keys(zip.files).filter((f) => f.endsWith('.pdf'))).toHaveLength(3)
+  })
+
+  it('REFUSE de produire un pack sur une lecture qui ne peut pas se dire complète', async () => {
+    // La base annonce cinq pièces et n'en rend que deux, puis plus rien. Un pack construit là-dessus
+    // serait cohérent avec lui-même — ZIP, récapitulatif et total d'accord — et faux tous les trois.
+    // On ne peut même pas recenser ce qui manque, comme on le fait pour les pièces sans date : on
+    // ignore ce qu'on n'a pas lu.
+    etat.plafond = 2
+    etat.compteAnnonce = 5
+    etat.pieces.data = [
+      piece({ id: 'a', storage_path: 'd1/a.pdf', nom_fichier: 'a.pdf' }),
+      piece({ id: 'b', storage_path: 'd1/b.pdf', nom_fichier: 'b.pdf' }),
+    ]
+    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31'))
+      .rejects.toThrow(/Pack non généré.*2 ligne\(s\) lue\(s\) sur 5/s)
+  })
+
   it('lève si cette lecture échoue, plutôt que d’annoncer « aucune »', async () => {
     // Même piège que partout ailleurs : un tableau vide veut dire « rien à signaler », donc une
     // lecture refusée aurait rétabli exactement le silence qu'on vient de supprimer.
     etat.pieces.data = [piece({ id: 'ok', storage_path: 'd1/ok.pdf' })]
     etat.sansDate = { data: [], error: { message: 'permission denied' } }
-    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31')).rejects.toMatchObject({
-      message: 'permission denied',
-    })
+    await expect(remplirZipDossier(new JSZip(), 'd1', '2026-01-01', '2026-12-31'))
+      .rejects.toThrow(/Pack non généré : les pièces sans date.*permission denied/s)
   })
 })

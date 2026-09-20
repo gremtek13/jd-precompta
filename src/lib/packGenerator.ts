@@ -1,6 +1,7 @@
 import JSZip from 'jszip'
 import ExcelJS from 'exceljs'
 import { supabase } from './supabase'
+import { lireTout } from './lectureComplete'
 import { nomUnique, slugify } from './format'
 import type { Categorie, Piece } from './types'
 
@@ -71,30 +72,44 @@ interface RemplissageResult {
 // récapitulatif — extrait de generatePack pour être réutilisé tel quel par l'export multi-dossiers
 // d'un cabinet entier (voir lib/exportCabinet.ts), qui répète juste cet appel une fois par dossier
 // dans un sous-dossier du même zip plutôt que de générer un pack séparé par dossier.
+// Un seul libellé pour les trois lectures : ce qui manquait, et pourquoi on n'a pas produit un pack
+// quand même. Le refus est délibéré — voir le commentaire de la première lecture.
+function refusLecture(quoi: string, motif: string | null): string {
+  return `Pack non généré : ${quoi} n'ont pas pu être lues en entier (${motif}). ` +
+    'Un pack amputé serait cohérent avec lui-même et faux — ZIP, récapitulatif et total ensemble. Relancer la génération.'
+}
+
 async function remplirZipDossier(
   destination: JSZip,
   dossierId: string,
   periodeDebut: string,
   periodeFin: string,
 ): Promise<RemplissageResult> {
-  const { data: piecesData, error: piecesError } = await supabase
-    .from('pieces')
-    .select('*')
-    .eq('dossier_id', dossierId)
-    .gte('date_piece', periodeDebut)
-    .lte('date_piece', periodeFin)
-  if (piecesError) throw piecesError
+  // Lecture PAR TRANCHES, et refusée si elle ne peut pas se dire complète : PostgREST plafonne le
+  // nombre de lignes rendues par requête sans le signaler (voir lib/lectureComplete.ts). Un pack est
+  // envoyé au comptable — s'il manque un tiers des pièces, le ZIP, le récapitulatif et le total
+  // seront cohérents ENTRE EUX et faux tous les trois, ce que personne ne peut voir. On ne peut même
+  // pas les recenser comme les pièces sans date : on ignore ce qu'on n'a pas lu. D'où le refus.
+  const lecturePieces = await lireTout<Piece>((debut, fin) =>
+    supabase.from('pieces').select('*', { count: 'exact' })
+      .eq('dossier_id', dossierId)
+      .gte('date_piece', periodeDebut)
+      .lte('date_piece', periodeFin)
+      .order('id').range(debut, fin),
+  )
+  if (!lecturePieces.complete) throw new Error(refusLecture('les pièces de la période', lecturePieces.motif))
 
   // Erreur vérifiée : sans catégories, `categorieLabel` retomberait sur « — » pour toutes les lignes
   // et le résumé par catégorie n'aurait plus qu'une seule entrée — un récapitulatif silencieusement
   // vidé de son classement, envoyé tel quel au comptable.
-  const { data: categoriesData, error: categoriesError } = await supabase
-    .from('categories')
-    .select('*')
-    .or(`dossier_id.eq.${dossierId},dossier_id.is.null`)
-  if (categoriesError) throw categoriesError
+  const lectureCategories = await lireTout<Categorie>((debut, fin) =>
+    supabase.from('categories').select('*', { count: 'exact' })
+      .or(`dossier_id.eq.${dossierId},dossier_id.is.null`)
+      .order('id').range(debut, fin),
+  )
+  if (!lectureCategories.complete) throw new Error(refusLecture('les catégories', lectureCategories.motif))
 
-  const categories = (categoriesData ?? []) as Categorie[]
+  const categories = lectureCategories.lignes
   const categorieLabel = (id: string | null) => categories.find((c) => c.id === id)?.libelle ?? '—'
 
   // Une pièce validée sans date n'appartient à aucune période : le filtre `gte`/`lte` ci-dessus
@@ -103,16 +118,17 @@ async function remplirZipDossier(
   // dossier réel en comptait 18 sur 22, pour 1 697,39 €, invisibles à la génération comme au
   // comptable qui la reçoit. On ne peut pas la rattacher à cette période pour autant : elle est
   // recensée à part, pour que le manque soit dit et qu'on puisse lui donner une date.
-  const { data: sansDateData, error: sansDateError } = await supabase
-    .from('pieces')
-    .select('*')
-    .eq('dossier_id', dossierId)
-    .eq('statut', 'validee')
-    .is('date_piece', null)
-  if (sansDateError) throw sansDateError
-  const sansDate = (sansDateData ?? []) as Piece[]
+  const lectureSansDate = await lireTout<Piece>((debut, fin) =>
+    supabase.from('pieces').select('*', { count: 'exact' })
+      .eq('dossier_id', dossierId)
+      .eq('statut', 'validee')
+      .is('date_piece', null)
+      .order('id').range(debut, fin),
+  )
+  if (!lectureSansDate.complete) throw new Error(refusLecture('les pièces sans date', lectureSansDate.motif))
+  const sansDate = lectureSansDate.lignes
 
-  const allPieces = (piecesData ?? []) as Piece[]
+  const allPieces = lecturePieces.lignes
   const included = allPieces.filter((p) => p.statut === 'validee')
   const pending = allPieces.filter((p) => p.statut === 'a_valider')
 
