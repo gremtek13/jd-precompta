@@ -710,6 +710,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           onClose={() => setEditing(null)}
           onSaved={load}
           onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
+          onCommentaireSupprime={(id) => setCommentaires((prev) => prev.filter((c) => c.id !== id))}
         />
       )}
 

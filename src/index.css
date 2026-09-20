@@ -1106,6 +1106,25 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .fil-commentaire-entete { display: flex; align-items: center; gap: 8px; font-size: 0.78rem; margin-bottom: 4px; }
 .fil-commentaire-texte { margin: 0; font-size: 0.9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
 
+/* Retirer un hors-sujet, réservé au cabinet (policy `piece_commentaires_delete`). Volontairement
+   discret : c'est une exception, pas le geste courant — celui-ci est d'ajouter un commentaire de
+   plus. Il ne prend sa couleur d'alerte qu'au survol, pour ne pas peindre le fil en rouge. */
+.fil-commentaire-retirer {
+  margin-left: auto;
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--color-text-light);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  transition: color var(--duree) var(--ease);
+}
+.fil-commentaire-retirer:hover:not(:disabled) { color: var(--color-danger); }
+.fil-commentaire-retirer:disabled { cursor: default; opacity: 0.6; }
+
 .fil-commentaires-saisie {
   width: 100%;
   border: 1px solid var(--color-border);

@@ -41,9 +41,10 @@ interface Props {
   // Remonté à l'écran appelant : une précision ajoutée ici doit apparaître sur la ligne d'arbitrage
   // même si la fiche est fermée sans être enregistrée. Commenter n'est pas modifier la pièce.
   onCommentaireAjoute: (commentaire: PieceCommentaire) => void
+  onCommentaireSupprime: (id: string) => void
 }
 
-export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute }: Props) {
+export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime }: Props) {
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
   // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
@@ -605,6 +606,10 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
                       commentaires={commentaires}
                       estCabinet
                       onAjout={(c) => { setCommentaires((prev) => [...prev, c]); onCommentaireAjoute(c) }}
+                      onSuppression={(id) => {
+                        setCommentaires((prev) => prev.filter((c) => c.id !== id))
+                        onCommentaireSupprime(id)
+                      }}
                     />
                   </div>
                 )}
