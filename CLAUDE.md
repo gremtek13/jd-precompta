@@ -828,6 +828,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 - **Un type de `types.ts` décrit la table, colonnes NOT NULL comprises.** `TiersCategorieCabinet`
   omettait `cabinet_id` : le compilateur validait donc un payload que Postgres rejetait. Vérifier
   la table (`information_schema.columns`, `pg_constraint`) avant d'écrire le type, pas après.
+  **ET LES TRIGGERS — ces deux catalogues ne suffisent pas.** Balayage du 20/09/2026, confrontant
+  les 29 interfaces de `types.ts` aux colonnes NOT NULL sans valeur par défaut : **zéro défaut**,
+  mais la première passe en annonçait un, et la prémisse était fausse. « NOT NULL sans `DEFAULT` »
+  ne veut pas dire « l'appelant doit l'envoyer » : un trigger BEFORE INSERT est une TROISIÈME source
+  de valeur, et `information_schema.columns` ne la montre pas.
+  `dossiers` est la seule table du schéma à en porter, et ils remplissent exactement les deux
+  colonnes concernées : `set_cabinet_id_dossier` (depuis `mon_cabinet_id()`) et
+  `generate_code_email`. Tous deux écrivent **si et seulement si la valeur est nulle** — ils
+  remplissent, ils n'écrasent pas, et c'est ce qui permet à une restauration de rendre un dossier à
+  SON cabinet d'origine plutôt qu'à celui qui restaure. Un contrôle type ↔ schéma qui ne lit pas
+  `pg_trigger` rend donc deux faux positifs, et la « correction » qu'il suggère serait une erreur.
+  `Dossier` porte désormais `cabinet_id` : le type décrit la LIGNE, toute ligne le porte, et
+  `sauvegardeDonnees` le lit explicitement — en l'omettant, le type faisait croire qu'un dossier
+  n'appartient à personne.
 - **Déployer une Edge Function via l'outil MCP décode les échappements `\uXXXX`.** La source
   envoyée passe par une couche JSON : `̀` arrive dans le fichier déployé sous forme du
   caractère réel. Le fichier du dépôt et la copie déployée diffèrent donc textuellement partout où

@@ -5,6 +5,14 @@ export type Source = 'upload' | 'email' | 'superpdp'
 export interface Dossier {
   id: string
   nom: string
+  // NOT NULL en base, mais JAMAIS envoyé à l'insertion : un trigger BEFORE INSERT
+  // (`set_cabinet_id_dossier`) le remplit depuis `mon_cabinet_id()`. Il est ici parce que ce type
+  // décrit la LIGNE, que toute ligne le porte, et que la sauvegarde le lit explicitement — en
+  // l'omettant, le type faisait croire qu'un dossier n'appartient à personne.
+  // Le trigger ne fait que REMPLIR (`if new.cabinet_id is null`), il n'écrase pas : c'est ce qui
+  // permet à une restauration de rendre un dossier à SON cabinet d'origine et non à celui qui
+  // restaure. Même mécanique pour `code_email` (`generate_code_email`), déjà présent plus bas.
+  cabinet_id: string
   siret: string | null
   contact_nom: string | null
   contact_email: string | null
