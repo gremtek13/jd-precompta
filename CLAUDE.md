@@ -335,6 +335,38 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   Cinq mutations mordent sur le module, trois sur le scanner. La première est le défaut d'origine
   replanté (exiger `instanceof Error`) : **un test qui n'aurait posé que de vraies `Error` serait
   resté vert avec le défaut entier**, et c'est exactement ce qui l'a laissé vivre depuis le début.
+- **Extraction de champs : le modèle CITE, il ne calcule jamais** (`src/lib/extractionChamps.ts`,
+  20/09/2026, chantier EN COURS). `AnalyzeExpense` coûte 10 $/1000 pages et fait deux choses : lire
+  le texte, et ÉTIQUETER des champs. La seconde est si irrégulière — `INVOICE_RECEIPT_DATE` sur
+  4 factures sur 22 d'un même fournisseur — que chaque champ a dû recevoir un repli sur texte brut,
+  et c'est ce repli qui travaille. `DetectDocumentText` (OCR seul) coûte ~1,50 $/1000 pages.
+  Le contrat : le modèle rend la chaîne TELLE QU'IMPRIMÉE (`"1 234,56 €"`), jamais une valeur
+  composée. Le code vérifie qu'elle figure dans le texte source, puis la passe aux analyseurs déjà
+  éprouvés. Une valeur inventée n'est nulle part dans le texte, donc rejetée — et le fondement est
+  une mesure : 39 pièces sur 39 portant un montant l'écrivent mot pour mot dans leur propre texte.
+  **L'asymétrie des deux passes de vérification est le cœur du module** : blancs normalisés et casse
+  ignorée partout (le modèle recopie avec une espace ordinaire ce que la facture imprime en
+  insécable) ; blancs ENTIÈREMENT retirés pour les seuls montants (un séparateur de milliers est de
+  la présentation, et les chiffres restent tous présents et dans l'ordre) ; jamais sur le tiers, où
+  la soudure de deux mots fabriquerait une raison sociale absente. Les accents ne sont jamais
+  aplatis — c'est la frontière entre « recopier » et « ressembler ».
+  **MESURÉ SUR LES 41 TEXTES RÉELS** (`supabase/functions/evaluer-extraction`, Edge Function parce
+  que ces textes portent des noms de patients et ne doivent pas remonter dans une conversation) :
+  209 citations, **zéro invention**, zéro erreur de montant. Les 3 désaccords de date sont
+  l'extraction ACTUELLE qui se trompe — sur deux pièces la date stockée est ABSENTE du document ;
+  sur la troisième le document porte 2024 ET 2028, et l'extraction a retenu l'impossible.
+  **ET LA MESURE A TROUVÉ UN DÉFAUT DANS LE PROMPT LUI-MÊME** : sans champ `devise`, les quatre
+  factures en dollars du dossier auraient écrit 24 dans `montant_ttc` au lieu de `montant_devise`,
+  soit 16 % d'erreur en silence sur des charges qui partent en 2035. Les colonnes existaient, le
+  contrat les ignorait.
+  **Le garde-fou de duplication a échoué d'abord, et c'est la leçon à retenir** : `devise` ajoutée
+  d'un seul côté a laissé le test VERT, sa batterie étant écrite à la main et ne portant aucun cas
+  avec cette clé. Les deux copies « étaient d'accord » sur des questions qu'on ne leur posait pas —
+  la panne que ce dépôt connaît déjà sous un autre nom. Le garde compare désormais les deux listes
+  de champs et DÉRIVE ses cas de `CHAMPS_CITES`.
+  **Ce qui reste** : brancher `DetectDocumentText` + ce contrat dans `extract-piece`. La bascule
+  n'est pas vérifiable depuis cet environnement (règle permanente : aucun appel Textract ni
+  `extract-piece`) — elle demandera un dépôt réel de l'utilisateur, comme pour Super PDP.
 - **Le balayage des paramètres par défaut a rendu un résultat NÉGATIF pour tous les autres**
   (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
   `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
@@ -512,6 +544,10 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 
 ## Fonctionnalités actuellement en cours
 
+- **Marche 1 de la réduction du coût d'extraction** : remplacer `AnalyzeExpense` par
+  `DetectDocumentText` (OCR seul, ~7× moins cher) plus un modèle qui lit le texte et CITE les
+  champs. Socle et mesure livrés (voir « Décisions techniques ») ; le branchement dans
+  `extract-piece` reste à faire. Marche 2 prévue : OCR local (PaddleOCR) avec débordement AWS.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -1971,7 +2007,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 989 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1006 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
