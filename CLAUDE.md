@@ -590,6 +590,23 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **rien ne recharge** — une écriture d'effet de bord, une suppression suivie d'un retrait
   optimiste de l'état local, ou un `delete` dont dépend l'`insert` suivant (c'est ce dernier
   motif qui dupliquait les lignes d'une facture modifiée).
+- **Ce motif aussi se balaie, et il s'est avéré en bien meilleur état que celui du verrou.** Balayage
+  du 20/09/2026 : les `await supabase…` dont le résultat n'est pas destructuré, croisés avec la
+  question qui décide — *quelque chose recharge-t-il derrière ?* Trente sites, et **deux seulement**
+  étaient de vrais défauts, tous deux dans `SuperPdpModal` : `retirer()` ignorait entièrement le
+  résultat d'une action DESTRUCTRICE que l'utilisateur venait de confirmer (l'échec rafraîchissait un
+  statut inchangé, sans un mot — et le réflexe, recliquer, rendait le même silence), et
+  `chargerStatut()` affichait un message générique là où `extraireErreurFonction` en avait un vrai.
+  Tout le reste est suivi d'un `load()`, donc l'échec se voit : la ligne supprimée réapparaît.
+  **Deux résultats négatifs à garder, pour ne pas les rechercher à chaque audit :**
+  - Le cas que ce fichier désignait comme prioritaire — une suppression suivie d'un **retrait
+    optimiste de l'état local** — n'existe nulle part dans le code. Aucun `delete()` n'est suivi d'un
+    `filter()` sur l'état ; tous rechargent.
+  - `tauxChange.tauxBce` lit bien `{ data, error }` sans passer par `extraireErreurFonction`, et
+    c'est **légitime** : il ne montre aucun message, il journalise (`console.error` avec la devise,
+    la date et la réponse) puis rend `null`, l'appelant décidant de la suite. La règle « tout
+    `invoke()` passe par `extraireErreurFonction` » vise l'affichage d'un message à l'utilisateur —
+    un best-effort journalisé la satisfait autrement. Sur treize appels, c'est la seule exception.
 - **Ce qui doit être tout ou rien vit dans une fonction SQL.** Une facture s'enregistre en un
   seul appel (`enregistrer_facture`) : en-tête, remplacement des lignes, numéro et validation
   dans la même transaction. En trois à cinq allers-retours, un échec au milieu laissait la

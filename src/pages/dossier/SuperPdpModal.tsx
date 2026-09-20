@@ -33,7 +33,12 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
       body: { dossierId, action: 'status' },
     })
     if (invokeError || !data) {
-      setError("Impossible de vérifier la configuration Super PDP.")
+      // `extraireErreurFonction` et non un message générique : `invoke()` lève avant d'avoir lu le
+      // corps, donc `data` est nul et seul `error.context` porte ce que la fonction a répondu
+      // (voir lib/invokeErreur.ts). Un « Impossible de vérifier » écrase un motif précis — or le
+      // diagnostic Super PDP passe déjà par les logs de production faute de pouvoir appeler l'API
+      // d'ici, et masquer le message côté écran rallonge exactement ce chemin-là.
+      setError(await extraireErreurFonction(invokeError, "Impossible de vérifier la configuration Super PDP."))
       return
     }
     setStatut(data)
@@ -62,7 +67,18 @@ export default function SuperPdpModal({ dossierId, onClose, onImported }: { doss
 
   async function retirer() {
     if (!window.confirm("Retirer les identifiants Super PDP de ce dossier ? La synchronisation ne sera plus possible tant qu'ils ne seront pas reconfigurés.")) return
-    await supabase.functions.invoke('superpdp-credentials', { body: { dossierId, action: 'remove' } })
+    // Le résultat était ignoré : un échec laissait l'écran rafraîchir un statut INCHANGÉ, sans un
+    // mot. Le réflexe est alors de recliquer, et d'obtenir le même silence. « Une écriture est
+    // vérifiée, jamais supposée réussie » (CLAUDE.md) — et c'est plus vrai encore sur une action
+    // destructrice confirmée par l'utilisateur, qui croit l'avoir faite.
+    const { error: invokeError } = await supabase.functions.invoke('superpdp-credentials', {
+      body: { dossierId, action: 'remove' },
+    })
+    if (invokeError) {
+      setError(await extraireErreurFonction(invokeError, "Le retrait des identifiants a échoué."))
+      return
+    }
+    setError(null)
     setResultat(null)
     chargerStatut()
   }
