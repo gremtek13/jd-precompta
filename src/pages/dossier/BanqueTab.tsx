@@ -408,12 +408,22 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   }
 
 
+  // Verrou posé avant tout `await`, comme pour `validerEtRapprocherLot` juste au-dessus : ce bouton
+  // ne portait que `rapprochementAuto`, un ÉTAT React, pour se désactiver — or un état ne prend effet
+  // qu'au rendu suivant, donc un double clic passait les deux dans le même rendu et enverrait deux
+  // fois les mêmes écritures de contrepartie. Même défaut que VehiculesCard, ImportDossierModal et
+  // « C'est une facture » (DocumentsTab) — un cinquième porteur du même motif, trouvé en écrivant le
+  // test de cet onglet plutôt qu'en le relisant.
+  const rapprochementEnCours = useRef(false)
+
   // Applique en une fois tous les rapprochements sûrs (montant + date proches, un seul candidat
   // disponible) — rien n'est écrit sans ce clic explicite, et le tableau reste modifiable/annulable
   // ligne par ligne ensuite comme n'importe quel rapprochement.
   async function rapprocherTout() {
+    if (rapprochementEnCours.current) return
     const maj = rapprochementsAutomatiques()
     if (maj.length === 0) return
+    rapprochementEnCours.current = true
     setRapprochementAuto(true)
     try {
       const resultats = await Promise.all(
@@ -454,6 +464,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         )
       }
     } finally {
+      rapprochementEnCours.current = false
       setRapprochementAuto(false)
       load()
     }

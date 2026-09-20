@@ -1436,11 +1436,19 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   code, les advisors Supabase et des tests manuels réels (y compris, pour Super PDP, par
   l'utilisateur lui-même puisque cet environnement ne peut pas atteindre
   `api.superpdp.tech`). Depuis le 19/09/2026 un projet Vitest « écrans » existe (jsdom +
-  Testing Library) et couvre quatre composants : les verrous d'exécution de `VehiculesCard`,
-  d'`ImportDossierModal` et de la conversion document → pièce (`DocumentsTab`), le refus de
+  Testing Library) et couvre cinq composants : les verrous d'exécution de `VehiculesCard`,
+  d'`ImportDossierModal`, de la conversion document → pièce (`DocumentsTab`) et — depuis le
+  20/09/2026 — du bouton « Tout rapprocher automatiquement » de `BanqueTab`, le refus de
   saisir sans exercice choisi, et la séparation recherche / totaux de la Balance des comptes.
-  C'est un premier fil, pas une couverture : les onze autres onglets n'ont toujours aucun test
-  de rendu.
+  C'est un premier fil, pas une couverture : dix onglets n'ont toujours aucun test de rendu.
+  **`BanqueTab` portait le même défaut que les trois précédents** : `rapprocherTout` (le lot
+  automatique, à distinguer de `validerEtRapprocherLot` juste au-dessus dans le fichier, qui
+  lui portait déjà son verrou `useRef`) ne se désactivait que via `rapprochementAuto`, un ÉTAT
+  React — donc inopérant contre un double clic dans le même rendu. Cinquième porteur du même
+  motif (« Un verrou d'exécution est un `useRef`, jamais un état React », plus haut), trouvé en
+  écrivant le test de l'écran plutôt qu'en relisant le code : mutation confirmée, le double clic
+  envoyait deux fois le lot avant le correctif. Corrigé par le même `useRef` posé avant le `try`
+  et relâché dans le `finally`, comme son voisin.
   Nuance à garder : les Edge
   Functions ne sont pas SANS filet — plusieurs tests lisent leur vraie source déployée pour
   en extraire une fonction et l'exécuter (montants, dates, classification, orientation,
@@ -1455,7 +1463,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 913 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 902 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

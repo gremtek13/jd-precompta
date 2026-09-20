@@ -1,0 +1,125 @@
+import { act, render, screen, waitFor } from '@testing-library/react'
+import { describe, expect, it, vi } from 'vitest'
+import { AnneeProvider } from '../../context/AnneeContext'
+import BanqueTab from './BanqueTab'
+
+// « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
+// `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
+// `rapprochementAuto`, un ÉTAT React qui ne prend effet qu'au rendu suivant. Un double clic partait
+// donc deux fois dans le même lot — même défaut que VehiculesCard, ImportDossierModal et « C'est une
+// facture » (DocumentsTab), retrouvé ici en écrivant le test plutôt qu'en relisant le code.
+const faux = vi.hoisted(() => ({
+  lignes: [] as Record<string, unknown>[],
+  pieces: [] as Record<string, unknown>[],
+  updatesLignes: [] as Record<string, unknown>[],
+  // La promesse de la première mise à jour de ligne bancaire est gardée en attente : c'est la
+  // fenêtre réelle pendant laquelle un second clic arrive. La résoudre tout de suite supprimerait
+  // la fenêtre même que le verrou est censé fermer.
+  resoudreUpdateLigne: null as null | (() => void),
+}))
+
+// BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
+// DOM dès l'import (voir CLAUDE.md, « Même règle pour les dépendances navigateur ») et lève sous
+// jsdom faute de `DOMMatrix`. Aucune fonctionnalité PDF n'est exercée par ce test : le module est
+// donc remplacé, exactement comme `lib/supabase` l'est ci-dessous pour ce qui parle à la base.
+vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => [] }))
+
+vi.mock('../../lib/supabase', () => {
+  function chaine(table: string) {
+    let operation = 'select'
+    let idFiltre: unknown = null
+    let valeurMaj: Record<string, unknown> = {}
+    const c: Record<string, unknown> = {}
+    Object.assign(c, {
+      select: () => c,
+      eq: (colonne: string, valeur: unknown) => {
+        if (colonne === 'id') idFiltre = valeur
+        return c
+      },
+      order: () => c,
+      in: () => c,
+      update: (valeur: Record<string, unknown>) => {
+        operation = 'update'
+        valeurMaj = valeur
+        if (table === 'lignes_bancaires') faux.updatesLignes.push(valeur)
+        return c
+      },
+      range: () => c,
+      then: (suite: (r: unknown) => unknown) => {
+        if (table === 'lignes_bancaires' && operation === 'update') {
+          // La mise à jour reste en attente jusqu'à `resoudreUpdateLigne` : c'est la fenêtre
+          // réseau réelle pendant laquelle un second clic arriverait. Une fois « résolue », elle
+          // applique réellement la valeur — sinon le rechargement suivant verrait une ligne encore
+          // "non_rapprochee" et le bouton réapparaîtrait à tort.
+          return new Promise((resoudre) => {
+            faux.resoudreUpdateLigne = () => {
+              faux.lignes = faux.lignes.map((l) => (l.id === idFiltre ? { ...l, ...valeurMaj } : l))
+              resoudre({ data: null, error: null })
+            }
+          }).then(suite)
+        }
+        if (table === 'lignes_bancaires') {
+          return Promise.resolve({ data: faux.lignes, error: null, count: faux.lignes.length }).then(suite)
+        }
+        if (table === 'pieces') {
+          return Promise.resolve({ data: faux.pieces, error: null }).then(suite)
+        }
+        // cotisations_declarees, regles_bancaires_ignorees, controles_releves_bancaires,
+        // ecritures_brouillon (lu avant contrepartie — vide fait renoncer à l'insertion, ce qui
+        // évite d'avoir à modéliser aussi cette écriture ici) : rien de tout ça n'intervient dans
+        // ce que ce test vérifie.
+        return Promise.resolve({ data: [], error: null }).then(suite)
+      },
+    })
+    return c
+  }
+  return { supabase: { from: (table: string) => chaine(table) } }
+})
+
+function ligneDeTest() {
+  return {
+    id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -100,
+    libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
+    piece_id: null, cotisation_id: null, prelevement_personnel: false, source_fichier: null,
+  }
+}
+
+function pieceDeTest() {
+  return {
+    id: 'piece-1', dossier_id: 'dossier-de-test', statut: 'validee', montant_ttc: 100,
+    date_piece: '2025-06-01', tiers: 'Fournisseur', type_piece: 'achat', devise: null,
+    nom_fichier: 'facture.pdf', storage_path: 'dossier/facture.pdf',
+  }
+}
+
+function reinitialiser() {
+  faux.lignes = [ligneDeTest()]
+  faux.pieces = [pieceDeTest()]
+  faux.updatesLignes = []
+  faux.resoudreUpdateLigne = null
+}
+
+describe('BanqueTab — Tout rapprocher automatiquement', () => {
+  it('ne rapproche le lot qu\'une fois quand le bouton est cliqué deux fois de suite', async () => {
+    reinitialiser()
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+
+    // Les deux clics partent dans le MÊME `act` : deux `fireEvent.click` de suite ne reproduisent
+    // PAS un double clic, chacun ouvre son propre `act` qui re-rend le composant avant le suivant.
+    await act(async () => {
+      bouton.click()
+      bouton.click()
+    })
+
+    expect(faux.updatesLignes).toHaveLength(1)
+    expect(faux.updatesLignes[0]).toMatchObject({ statut: 'rapprochee', piece_id: 'piece-1' })
+
+    await act(async () => { faux.resoudreUpdateLigne?.() })
+    await waitFor(() => expect(screen.queryByRole('button', { name: /Tout rapprocher automatiquement/ })).toBeNull())
+  })
+})
