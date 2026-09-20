@@ -9,6 +9,7 @@ import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
 import VehiculesCard from './VehiculesCard'
 import SauvegardeCard from './SauvegardeCard'
+import BalanceCard from './BalanceCard'
 import { messageErreur } from '../../lib/messageErreur'
 
 // Informations déclaratives saisies une fois par le cabinet (ou récupérées auprès du client) plutôt
@@ -270,6 +271,10 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
         minute avant une suppression, c'est ce qu'on fait régulièrement pour n'avoir jamais à le
         regretter. Le voisinage suffit à rappeler l'un quand on vient pour l'autre. */}
     <SauvegardeCard dossierId={dossierId} dossierNom={dossierNom} />
+
+    {/* La reprise d'un dossier venu d'un autre logiciel commence ici, à côté de la sauvegarde : ce
+        sont les deux moments où des données ENTRENT et SORTENT de la plateforme en bloc. */}
+    <BalanceCard />
 
     <div className="card" style={{ maxWidth: 640, marginTop: 20 }}>
       <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
