@@ -22,6 +22,10 @@ const faux = vi.hoisted(() => ({
   // d'annoncer le vrai total. C'est LE cas qui produit une lecture incomplète : la boucle s'arrête
   // sur une tranche vide, et le compte annoncé fait foi.
   muetApres: null as number | null,
+  // Une suppression refusée par la base. Le faux client rend alors l'erreur SANS rien retirer, ce
+  // qui est le comportement réel : `supabase.from(...).delete()` ne lève pas, l'échec se lit dans
+  // `{ error }`.
+  refusSuppression: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -30,15 +34,32 @@ vi.mock('../../lib/supabase', () => ({
       const chaine: Record<string, unknown> = {}
       let debut = 0
       let fin = Number.MAX_SAFE_INTEGER
+      // La suppression MORD vraiment sur la table du faux : après elle, le `load()` de l'écran relit
+      // un jeu réellement amputé. C'est ce qui rend les assertions de bout en bout — « le panneau
+      // disparaît » plutôt que « la bonne méthode a été appelée » — et ce qui permet de voir qu'une
+      // ligne oubliée en produit une autre, ailleurs.
+      let suppression = false
+      const filtres: [string, unknown][] = []
       Object.assign(chaine, {
         select: () => chaine,
-        eq: () => chaine,
+        delete: () => { suppression = true; return chaine },
+        eq: (colonne: string, valeur: unknown) => { filtres.push([colonne, valeur]); return chaine },
+        neq: (colonne: string, valeur: unknown) => { filtres.push([`!${colonne}`, valeur]); return chaine },
         is: () => chaine,
         not: () => chaine,
         or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+        then: (suite: (r: { data: unknown[] | null; error: unknown; count: number }) => unknown) => {
+          if (suppression) {
+            if (faux.refusSuppression) {
+              return Promise.resolve({ data: null, error: { message: faux.refusSuppression }, count: 0 }).then(suite)
+            }
+            const garde = (ligne: Record<string, unknown>) => !filtres.every(([colonne, valeur]) =>
+              colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
+            faux.parTable[table] = (faux.parTable[table] ?? []).filter((l) => garde(l as Record<string, unknown>))
+            return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
+          }
           const toutes = faux.parTable[table] ?? []
           const demande = fin - debut + 1
           const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
@@ -47,6 +68,7 @@ vi.mock('../../lib/supabase', () => ({
             : toutes.slice(debut, Math.min(debut + taille, faux.muetApres))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         },
+        maybeSingle: () => Promise.resolve({ data: null, error: null }),
       })
       return chaine
     },
@@ -88,6 +110,7 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   telecharge.fichiers = []
   faux.plafond = null
   faux.muetApres = null
+  faux.refusSuppression = null
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
     immobilisations: [], lignes_bancaires: [], declarations_tva: [],
@@ -135,7 +158,7 @@ describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
     // silence — `queryByText` lit le TEXTE rendu, jamais le balisage.
     expect(screen.queryByText('Écritures à régénérer')).toBeNull()
     expect(screen.queryByText(/à régénérer$/)).toBeNull()
-    expect(screen.queryByText(/déséquilibrée/)).toBeNull()
+    expect(screen.queryAllByText(/déséquilibrée/)).toHaveLength(0)
     expect(screen.queryByText(/en attente de rapprochement bancaire/)).toBeNull()
   })
 
@@ -192,5 +215,99 @@ describe('EcrituresTab — un export se refuse sur une lecture partielle', () =>
     await screen.findByText(/Le brouillon n'a pas pu être lu en entier/)
     expect(screen.getByRole('button', { name: /Exporter FEC/ }).hasAttribute('disabled')).toBe(true)
     expect(screen.getByRole('button', { name: /Exporter la piste d'audit/ }).hasAttribute('disabled')).toBe(true)
+  })
+})
+
+describe("EcrituresTab — retrait d'une écriture sans objet", () => {
+  // Le SEUL geste destructeur de cet onglet, et le seul dont l'absence rendait le panneau ci-dessus
+  // purement déclaratif : il nommait l'action (« Retirer l'écriture ») sans que rien ne puisse la
+  // faire. Ce que ces tests gardent est la FORME du retrait, qu'aucun test de lib ne peut voir —
+  // le module ne supprime rien, c'est l'écran qui parle à la base.
+
+  function poserImmobilisee() {
+    poser({
+      pieces: [piece()],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', compte: '606100', sens: 'debit', montant: 120 }),
+        ecriture({ id: 'e2', compte: '512000', sens: 'credit', montant: 120, ligne_bancaire_id: 'l1' }),
+      ],
+      immobilisations: [{ id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1' }],
+      lignes_bancaires: [{
+        id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-10', libelle: 'ACHAT',
+        montant: -120, piece_id: 'p1', cotisation_id: null, ignoree: false,
+        libelle_brut: null, created_at: '2025-03-10T09:00:00Z',
+      }],
+    })
+  }
+
+  it('retire TOUTES les lignes, contrepartie banque comprise — sans allumer une autre alerte', async () => {
+    // LE point du test. N'ôter que la charge (comme le fait `regenererEcriture`, dont le `.neq` est
+    // juste POUR LUI) laisserait la ligne banque seule dans son groupe : un groupe qui porte une
+    // contrepartie et dont le solde vaut −120, c'est-à-dire exactement ce que `groupesDesequilibres`
+    // signale — et qu'aucun geste ne pourrait plus éteindre. On aurait échangé une alerte vraie
+    // contre une alerte fausse et définitive.
+    vi.stubGlobal('confirm', () => true)
+    poserImmobilisee()
+    monter()
+
+    await screen.findByText('Écritures que la pièce ne justifie plus')
+    await act(async () => { screen.getByRole('button', { name: /Retirer l'écriture/ }).click() })
+
+    expect(screen.queryByText('Écritures que la pièce ne justifie plus')).toBeNull()
+    expect(faux.parTable.ecritures_brouillon).toEqual([])
+    // La seconde moitié, celle qui mord sur le `.neq` : aucune alerte n'a pris la place de l'autre.
+    expect(screen.queryAllByText(/déséquilibrée/)).toHaveLength(0)
+    vi.unstubAllGlobals()
+  })
+
+  it("n'offre ce bouton qu'à une pièce immobilisée, jamais aux trois autres motifs", async () => {
+    // Pour « catégorie retirée », « catégorie sans compte » et « montant effacé », l'écriture DOIT
+    // revenir une fois la pièce corrigée en amont. Un bouton « Retirer » y ferait disparaître une
+    // charge réelle d'un clic, sans trace — et personne ne la chercherait, le panneau étant vide.
+    poser({
+      pieces: [piece({ categorie_id: null })],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', compte: '606100', sens: 'debit', montant: 120 }),
+        ecriture({ id: 'e2', compte: '512000', sens: 'credit', montant: 120 }),
+      ],
+    })
+    monter()
+
+    // L'ancre : le panneau est bien là, avec SON motif. Sans elle, un écran encore en chargement
+    // rendrait ce test vert pour une raison fausse.
+    await screen.findByText('Écritures que la pièce ne justifie plus')
+    expect(screen.getByText(/La catégorie a été retirée/)).toBeDefined()
+    expect(screen.queryByRole('button', { name: /Retirer l'écriture/ })).toBeNull()
+  })
+
+  it('un refus de la base se dit, et les lignes restent en place', async () => {
+    // Le défaut de `SuperPdpModal.retirer()`, transposé : muette, une suppression refusée laisse le
+    // panneau tel quel — donc indiscernable d'un bouton qui n'a rien fait, et le réflexe (recliquer)
+    // rend le même silence. Ici il faut en plus que les lignes soient TOUJOURS là : un écran qui
+    // afficherait l'erreur mais aurait vidé sa liste mentirait deux fois.
+    vi.stubGlobal('confirm', () => true)
+    poserImmobilisee()
+    faux.refusSuppression = 'permission denied for table ecritures_brouillon'
+    monter()
+
+    await screen.findByText('Écritures que la pièce ne justifie plus')
+    await act(async () => { screen.getByRole('button', { name: /Retirer l'écriture/ }).click() })
+
+    expect(screen.getByText(/permission denied for table ecritures_brouillon/)).toBeDefined()
+    expect(faux.parTable.ecritures_brouillon).toHaveLength(2)
+    expect(screen.getByText('Écritures que la pièce ne justifie plus')).toBeDefined()
+    vi.unstubAllGlobals()
+  })
+
+  it("une confirmation refusée ne supprime rien", async () => {
+    vi.stubGlobal('confirm', () => false)
+    poserImmobilisee()
+    monter()
+
+    await screen.findByText('Écritures que la pièce ne justifie plus')
+    await act(async () => { screen.getByRole('button', { name: /Retirer l'écriture/ }).click() })
+
+    expect(faux.parTable.ecritures_brouillon).toHaveLength(2)
+    vi.unstubAllGlobals()
   })
 })

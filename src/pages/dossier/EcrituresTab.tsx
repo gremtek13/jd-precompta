@@ -27,7 +27,7 @@ const LIBELLE_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
 }
 
 const ACTION_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
-  immobilisee: "Le FEC et la balance portent la charge entière, la 2035 la remplace par la dotation : les deux ne se recoupent plus. Retirer l'écriture, ou l'immobilisation si c'en est une par erreur.",
+  immobilisee: "Le FEC et la balance portent la charge entière, la 2035 la remplace par la dotation : les deux ne se recoupent plus. Retirer l'écriture ci-contre — ou l'immobilisation, depuis son onglet, si c'en est une par erreur.",
   sans_categorie: "Redonner une catégorie à la pièce depuis Justificatifs, puis régénérer l'écriture.",
   categorie_sans_compte: 'Renseigner le compte de la catégorie ci-dessous, puis régénérer.',
   sans_montant: 'Remettre le montant TTC de la pièce depuis Justificatifs, puis régénérer.',
@@ -55,6 +55,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
   const [regenerating, setRegenerating] = useState<string | null>(null)
+  const [retrait, setRetrait] = useState<string | null>(null)
   const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
   const [periodeDebut, setPeriodeDebut] = useState('')
   const [periodeFin, setPeriodeFin] = useState('')
@@ -277,6 +278,45 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     }
   }
 
+  // Retire du brouillon TOUTES les lignes d'une pièce, contrepartie banque comprise — et c'est la
+  // seule forme correcte. N'ôter que la charge laisserait la ligne banque SEULE dans son groupe,
+  // c'est-à-dire un groupe qui porte bien une contrepartie et dont le solde n'est pas nul : très
+  // exactement ce que `groupesDesequilibres` signale, et que plus aucun geste ne pourrait éteindre.
+  // On échangerait une alerte vraie contre une alerte fausse et définitive.
+  //
+  // Réservé au motif `immobilisee`, délibérément. Pour les trois autres, l'écriture DOIT exister une
+  // fois la pièce corrigée en amont : y offrir « Retirer » permettrait de faire disparaître une
+  // charge réelle d'un clic, sans trace. Inversement « Régénérer » est activement faux ici — il
+  // réécrirait la charge qu'on vient d'ôter.
+  //
+  // Ce que ce retrait laisse, et qu'il faut savoir : l'application ne modélise aucune écriture
+  // d'acquisition (pas de compte de classe 2 sur `natures_immobilisation`), donc le FEC ne portera
+  // pas cet achat. C'est un manque pré-existant, et il est moins faux que la charge : après retrait,
+  // le FEC, la balance et la 2035 écartent tous les trois la pièce et disent enfin la même chose.
+  // La dépense reste comptée, par l'amortissement, depuis l'onglet Immobilisations.
+  //
+  // Pas de verrou `useRef` ici, contrairement aux gestes qui DUPLIQUENT : une suppression est
+  // idempotente, deux clics retirent les mêmes lignes. `retrait` n'est qu'un état d'affichage.
+  async function retirerEcriture(piece: Piece) {
+    if (!window.confirm(
+      `Retirer du brouillon l'écriture de « ${piece.tiers ?? piece.nom_fichier} » ? `
+      + 'Sa ligne de charge, sa TVA et sa contrepartie banque partent ensemble. La pièce, son '
+      + "rapprochement bancaire et l'immobilisation ne bougent pas : la dépense reste comptée par "
+      + "l'amortissement.",
+    )) return
+    setRetrait(piece.id)
+    setError(null)
+    try {
+      const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
+      if (deleteError) throw deleteError
+      load()
+    } catch (err) {
+      setError(messageErreur(err))
+    } finally {
+      setRetrait(null)
+    }
+  }
+
   const piecesSansTva = calculerPiecesSansTva(piecesValidees, assujettiTva)
   const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees)
   // Cet onglet ne charge que les pièces VALIDÉES : ce sont donc les TVA fausses déjà figées dans une
@@ -343,7 +383,23 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                   <td>{o.piece.tiers ?? o.piece.nom_fichier}</td>
                   <td>{formatMoney(o.montant)} <span className="muted">({o.nbLignes} ligne{o.nbLignes > 1 ? 's' : ''})</span></td>
                   <td>{LIBELLE_MOTIF_SANS_OBJET[o.motif]}</td>
-                  <td className="muted">{ACTION_MOTIF_SANS_OBJET[o.motif]}</td>
+                  <td className="muted">
+                    {ACTION_MOTIF_SANS_OBJET[o.motif]}
+                    {/* Le bouton n'existe QUE pour une pièce immobilisée. Les trois autres motifs se
+                        réparent en amont puis se régénèrent : l'écriture doit y revenir, pas
+                        disparaître. */}
+                    {o.motif === 'immobilisee' && (
+                      <div style={{ marginTop: 8 }}>
+                        <button
+                          className="btn btn-danger btn-sm"
+                          disabled={retrait === o.piece.id}
+                          onClick={() => retirerEcriture(o.piece)}
+                        >
+                          {retrait === o.piece.id ? 'Retrait…' : "Retirer l'écriture"}
+                        </button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>
