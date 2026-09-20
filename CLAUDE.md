@@ -744,9 +744,31 @@ ont été découverts, en cherchant à apparier une facture en dollars.
     qui en manque sans le dire vaut moins que pas de détecteur.
   Et `PresenceTexteOcr` traite une lecture INCOMPLÈTE exactement comme un refus, pour la même raison
   qu'au-dessus : ne pas savoir interdit de relancer une lecture facturée.
-  **Ce que ce portage NE garantit pas** : qu'une lecture ajoutée demain y pense. Le grep qui l'a
-  guidé (`from('<table>')` + `select(` sans `count: 'exact'`) rend zéro aujourd'hui, et c'est ce
-  qu'il faut rejouer avant de croire qu'une table est couverte.
+  **CE GREP ÉTAIT FAUX, ET IL RENDAIT ZÉRO POUR UNE RAISON FAUSSE** (corrigé le 20/09/2026). Le
+  portage s'était appuyé sur `from('<table>')` + `select(` sans `count: 'exact'`, annoncé ici même
+  comme rendant zéro et « à rejouer avant de croire qu'une table est couverte ». Mais un grep
+  travaille LIGNE À LIGNE, or le formatage normal du dépôt coupe la chaîne Supabase sur plusieurs
+  lignes : `.from('pieces')` sur l'une, `.select(…)` sur la suivante. Rejoué en tenant compte des
+  retours à la ligne, il rend **trois** lectures non paginées — l'aperçu d'un pack (`PacksTab`), la
+  liste des pièces à rapprocher (`BanqueTab`) et une lecture bornée par le modèle.
+  **Une vérification qu'il faut « penser à rejouer », et dont personne ne peut voir qu'elle est
+  fausse, ne vaut rien.** Elle est donc devenue un TEST (`lecturesPaginees.test.ts`) : il parcourt
+  les sources, refuse toute lecture de collection sans compte annoncé, et n'admet d'exception
+  qu'inscrite avec **la raison qui borne sa taille** — une seule à ce jour, les écritures d'UNE
+  pièce, que la partie double limite à deux ou trois. Il porte aussi son propre contrôle de
+  mutation : un test qui vérifie qu'il sait ENCORE voir, sans quoi une regex devenue inopérante
+  afficherait zéro exactement comme un dépôt sain.
+  **Les deux défauts trouvés valaient le détour**, et le second est le plus vicieux du portage :
+  l'aperçu d'un pack annonçait un total tronqué sans le dire, alors que `packGenerator` REFUSE de
+  produire un pack sur une lecture incomplète — l'écran était donc plus optimiste que le générateur
+  qui allait refuser juste après. Et il ne comptait pas non plus les pièces validées SANS DATE, que
+  `gte`/`lte` écarte de toute période : l'opérateur lisait « 4 pièces », générait, et apprenait
+  seulement alors qu'il en existait dix-huit autres. Les deux se disent maintenant à l'aperçu.
+  **Le motif « filtre de période sur une colonne NULLABLE » est désormais borné par le SCHÉMA et
+  non par un grep** : sur les quatre colonnes filtrées en `gte`/`lte` dans le code (`date_piece`,
+  `date`, `echeance`, `created_at`), `pieces.date_piece` est la SEULE nullable — toutes les autres
+  sont NOT NULL (vérifié dans `information_schema.columns`). Il n'y a donc que deux sites possibles,
+  et tous deux sont traités.
 - **Un filtre de période écarte les NULL sans le dire.** En SQL, une comparaison avec NULL n'est
   jamais vraie : `gte`/`lte` sur `date_piece` excluait donc les pièces validées sans date de
   *toutes* les périodes à la fois — absentes du ZIP, du récapitulatif et du total de chaque pack,
@@ -1577,7 +1599,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 913 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 915 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

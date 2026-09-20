@@ -43,6 +43,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   // Non nul quand le relevé n'a pas pu être lu en entier — voir lib/lectureComplete.ts.
   const [lignesIncompletes, setLignesIncompletes] = useState<string | null>(null)
+  // Les PIÈCES sont l'autre moitié du rapprochement, et leur lecture était restée en `select('*')`
+  // nu quand celle des mouvements est passée par `lireTout` — la copie oubliée du portage.
+  const [piecesIncompletes, setPiecesIncompletes] = useState<string | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
@@ -84,11 +87,17 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     // l'appariement certain (voir lib/appariementBanque.ts), qui sert à les valider plutôt qu'à
     // attendre qu'elles le soient. Les propositions ligne à ligne existantes restent, elles,
     // limitées aux pièces déjà validées — voir `piecesValidees`.
-    const { data: piecesData } = await supabase
-      .from('pieces')
-      .select('*')
-      .eq('dossier_id', dossierId)
-      .in('statut', ['a_valider', 'validee'])
+    // Lue par tranches, triée sur un ordre TOTAL (voir lib/lectureComplete.ts). Tronquée, cette
+    // liste ne rend pas « moins de pièces » : elle retire des CANDIDATS au rapprochement, donc des
+    // mouvements restent sans pièce en face alors que la pièce existe — et l'écran ne dit rien,
+    // parce qu'un mouvement non rapproché est exactement ce qu'il affiche quand tout va bien.
+    const lecturePieces = await lireTout<Piece>((debut, fin) =>
+      supabase.from('pieces').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).in('statut', ['a_valider', 'validee'])
+        .order('id').range(debut, fin),
+    )
+    const piecesData = lecturePieces.lignes
+    setPiecesIncompletes(lecturePieces.complete ? null : lecturePieces.motif)
 
     const { data: cotisationsData } = await supabase
       .from('cotisations_declarees')
@@ -478,6 +487,17 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         consequence={
           'Les totaux, le contrôle de solde et le rapprochement ci-dessous portent donc sur une ' +
           'partie du relevé. Recharge la page avant de t’appuyer dessus.'
+        }
+      />
+
+      {/* Deux bandeaux et non un seul : la `consequence` est ce qui distingue « lecture partielle »
+          d'un avertissement utile, et les deux manques ne produisent pas la même erreur. */}
+      <BandeauLecturePartielle
+        quoi="Les pièces à rapprocher"
+        motif={piecesIncompletes}
+        consequence={
+          'Des justificatifs manquent donc dans les candidats au rapprochement : un mouvement peut ' +
+          'ressortir « sans pièce » alors que la pièce existe. Recharge la page avant d’arbitrer.'
         }
       />
 

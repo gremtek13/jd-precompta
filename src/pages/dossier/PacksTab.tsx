@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { ajouterMois, dernierJourDuMois, formatDate, formatMoney, premierJourDuMoisCourant } from '../../lib/format'
 import { generatePack } from '../../lib/packGenerator'
+import { lireTout } from '../../lib/lectureComplete'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import type { Pack, Piece } from '../../lib/types'
 
 // Période proposée par défaut : le mois précédent en entier. Calculée sur le calendrier civil plutôt
@@ -19,7 +21,13 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   const [packs, setPacks] = useState<Pack[]>([])
   const [periodeDebut, setPeriodeDebut] = useState(premierJourMoisPrecedent())
   const [periodeFin, setPeriodeFin] = useState(dernierJourMoisPrecedent())
-  const [preview, setPreview] = useState<{ nbValidees: number; nbAValider: number; total: number } | null>(null)
+  // `sansDate` est compté À PART et jamais fondu dans les autres : une pièce sans date n'appartient
+  // à AUCUNE période (`gte`/`lte` écarte les NULL), donc la rattacher à celle-ci serait la compter
+  // dans chaque pack. Elle n'était simplement pas comptée du tout ici — alors que le générateur, lui,
+  // la recense déjà et la remonte après coup. L'opérateur choisissait donc une période, lisait
+  // « 4 pièces », et apprenait après génération qu'il en existait 18 autres.
+  const [preview, setPreview] = useState<{ nbValidees: number; nbAValider: number; total: number; sansDate: number } | null>(null)
+  const [previewIncomplet, setPreviewIncomplet] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -29,17 +37,31 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   }
 
   async function loadPreview() {
-    const { data } = await supabase
-      .from('pieces')
-      .select('statut, montant_ttc')
-      .eq('dossier_id', dossierId)
-      .gte('date_piece', periodeDebut)
-      .lte('date_piece', periodeFin)
-    const rows = (data ?? []) as Pick<Piece, 'statut' | 'montant_ttc'>[]
+    // Lue par tranches : l'aperçu annonce ce que contiendra un livrable envoyé au comptable, et
+    // `packGenerator` REFUSE déjà de produire un pack sur une lecture incomplète. L'aperçu, lui,
+    // affichait un total tronqué sans le dire — donc plus optimiste que le générateur qui allait
+    // refuser juste après.
+    const lecture = await lireTout<Pick<Piece, 'statut' | 'montant_ttc'>>((debut, fin) =>
+      supabase.from('pieces').select('statut, montant_ttc', { count: 'exact' })
+        .eq('dossier_id', dossierId)
+        .gte('date_piece', periodeDebut).lte('date_piece', periodeFin)
+        .order('id').range(debut, fin),
+    )
+    // Les pièces sans date, par une requête à part : `gte`/`lte` ne les rend jamais, une comparaison
+    // avec NULL n'étant jamais vraie en SQL. Même lecture que `packGenerator`, pour que l'écran et
+    // le livrable disent la même chose au même moment.
+    const sansDate = await lireTout<{ id: string }>((debut, fin) =>
+      supabase.from('pieces').select('id', { count: 'exact' })
+        .eq('dossier_id', dossierId).eq('statut', 'validee').is('date_piece', null)
+        .order('id').range(debut, fin),
+    )
+    const rows = lecture.lignes
+    setPreviewIncomplet(lecture.complete && sansDate.complete ? null : (lecture.motif ?? sansDate.motif))
     setPreview({
       nbValidees: rows.filter((r) => r.statut === 'validee').length,
       nbAValider: rows.filter((r) => r.statut === 'a_valider').length,
       total: rows.filter((r) => r.statut === 'validee').reduce((s, r) => s + (r.montant_ttc ?? 0), 0),
+      sansDate: sansDate.lignes.length,
     })
   }
 
@@ -113,8 +135,23 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
             {preview.nbAValider > 0 && (
               <span style={{ color: 'var(--color-warning)' }}> · {preview.nbAValider} pièce(s) encore à valider dans cette période, non incluses</span>
             )}
+            {preview.sansDate > 0 && (
+              <span style={{ color: 'var(--color-warning)' }}>
+                {' '}· {preview.sansDate} pièce(s) validée(s) sans date — elles n’entrent dans AUCUNE
+                période et seront recensées à part dans le récapitulatif
+              </span>
+            )}
           </p>
         )}
+
+        <BandeauLecturePartielle
+          quoi="Les pièces de la période"
+          motif={previewIncomplet}
+          consequence={
+            'Le compte et le total ci-dessus portent donc sur une partie des pièces. La génération ' +
+            'du pack refusera de toute façon tant que la lecture est partielle.'
+          }
+        />
 
         {error && <p className="error-text">{error}</p>}
 
