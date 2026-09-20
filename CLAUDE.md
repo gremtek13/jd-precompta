@@ -642,6 +642,24 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   vaut mieux qu'une copie qui dérive en silence. Même harnais pour `dateDepuisTexteBrut`
   (`extractPieceDate.test.ts`) et pour `classifieDocument`
   (`extractPieceClassification.test.ts`).
+  **La duplication la plus coûteuse n'était gardée par AUCUN d'eux** (corrigé le 20/09/2026).
+  `superpdp-emit` redéclare le calcul des montants d'une ligne de facture — cette section le nommait
+  depuis le début (« ex. calcul de montants de ligne de facture ») — et les huit tests-garde du
+  dépôt couvraient `extract-piece` et `receive-email`, pas celui-là. Ce qu'une dérive coûterait :
+  la copie de `src/lib` décide de ce qui est ENREGISTRÉ, celle de l'Edge Function de ce qui est
+  TRANSMIS à une plateforme agréée DGFiP — deux arrondis différents, et la facture que le cabinet a
+  sous les yeux n'est plus celle que l'administration reçoit, sur un document légal, sans qu'aucun
+  écran ne puisse le voir. `superpdpMontants.test.ts` compare les deux sur une batterie de bornes
+  d'arrondi, quantités négatives (les avoirs) comprises.
+  **La paire ne se trouve pas par son nom** : `calculerLigne` d'un côté, `calculerLigneMontants` de
+  l'autre, formes de retour différentes. C'est « chercher la VALEUR, pas le nom de la fonction »
+  appliqué à la lettre — un grep sur le nom les aurait ratées.
+  **Et le premier jeu de cas NE PROUVAIT PAS ce qu'il annonçait.** Le test disait figer « la TVA
+  s'arrondit sur le HT DÉJÀ arrondi » ; la mutation correspondante a SURVÉCU, parce que l'arrondi du
+  HT ne déplace la TVA que de 0,001 au plus — invisible au centime, sauf quand il fait franchir un
+  demi-centime. Les cas distinctifs (`1 × 0,175 € à 20 %` rend 0,04 contre 0,03) ont été trouvés par
+  recherche exhaustive sur les quatre taux français et les prix au millième, pas devinés. Le test
+  vérifie d'ailleurs que chacun **distingue** bien les deux formules, sinon il ne prouverait rien.
   **Les textes de ces tests sont reconstruits, jamais copiés d'un document réel** : les bordereaux
   et feuilles de soins portent des noms de patients, des dates de naissance et des numéros de
   sécurité sociale, qui n'ont rien à faire dans un dépôt Git. Seules la structure et les mentions
@@ -1628,7 +1646,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 925 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 928 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
