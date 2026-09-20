@@ -288,16 +288,69 @@ describe('extract-piece / date étiquetée par Textract (parseDate)', () => {
     expect(parseDate('2024-06-05')).toBe('2024-06-05')
   })
 
-  it('ne sait pas lire un mois écrit en toutes lettres en français', () => {
-    // Constat, pas un souhait. Le dernier recours de `parseDate` délègue à `new Date()`, qui ne
-    // connaît que les mois anglais — d'où `null` sur « 30 juin 2025 ». Les dates françaises en
-    // toutes lettres sont bien lues, mais par l'autre chemin (DATE_TEXTUELLE_REGEX + MOIS_PAR_NOM
-    // dans le repli sur texte brut), jamais par celui-ci.
-    //
-    // Ce même recours a un second défaut, volontairement non corrigé ici pour ne pas élargir : il
-    // fait `new Date(texte).toISOString()`, soit minuit LOCAL relu en UTC. À l'est de Greenwich la
-    // date recule d'un jour. À reprendre à part, avec les tests multi-fuseaux qui vont avec.
-    expect(parseDate('30 juin 2025')).toBeNull()
+  // LES DOUZE MOIS, et pas seulement celui du cas d'origine. Avant correction, `parseDate` déléguait
+  // à `new Date()`, qui reconnaît un mois à ses TROIS premières lettres EN ANGLAIS : cinq mois
+  // français tombaient donc juste par collision (janvier→jan, mars→mar, septembre→sep, octobre→oct,
+  // novembre→nov) et les sept autres rendaient `null`. Mesuré, pas déduit.
+  //
+  // C'est ce qui rend le test exhaustif nécessaire : un test sur « 30 juin 2025 » seul aurait été
+  // vert avec une correction qui ne traiterait que juin, et un test sur « mars » aurait été vert
+  // AVANT toute correction.
+  it('lit les douze mois français en toutes lettres', () => {
+    const MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin',
+                  'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
+    MOIS.forEach((nom, i) => {
+      const attendu = `2024-${String(i + 1).padStart(2, '0')}-15`
+      expect(parseDate(`15 ${nom} 2024`), nom).toBe(attendu)
+    })
+  })
+
+  // L'ACCENT SUFFISAIT À FAIRE BASCULER LE RÉSULTAT : « decembre » était lu (dec→December),
+  // « décembre » perdu. L'OCR rend tantôt l'un tantôt l'autre, donc les deux doivent valoir.
+  it('lit un mois accentué comme son équivalent sans accent', () => {
+    expect(parseDate('15 décembre 2024')).toBe('2024-12-15')
+    expect(parseDate('15 decembre 2024')).toBe('2024-12-15')
+    expect(parseDate('15 février 2024')).toBe('2024-02-15')
+    expect(parseDate('15 fevrier 2024')).toBe('2024-02-15')
+    expect(parseDate('1er août 2024')).toBe('2024-08-01')
+  })
+
+  // LE SECOND DÉFAUT DU DERNIER RECOURS, et celui-là ne se voit QUE hors UTC. `new Date("27 August
+  // 2026")` rend minuit LOCAL, que `toISOString()` reconvertissait en UTC : un jour en arrière à
+  // l'est de Greenwich. Mesuré avant correction — 2026-08-26 sous Europe/Paris et Pacific/Auckland,
+  // 2026-08-27 sous UTC et America/New_York. Ce test ne prouve donc quelque chose que parce que
+  // `npm run test:fuseaux` le rejoue sous les quatre fuseaux.
+  it('lit une date anglaise sur le calendrier civil, sans reculer d’un jour', () => {
+    expect(parseDate('27 August 2026')).toBe('2026-08-27')
+    expect(parseDate('August 27, 2026')).toBe('2026-08-27')
+    // Le 1er du mois est le cas qui coûte cher : reculé d'un jour, il change de MOIS, et au 1er
+    // janvier il change d'EXERCICE.
+    expect(parseDate('1 March 2024')).toBe('2024-03-01')
+    expect(parseDate('1 janvier 2024')).toBe('2024-01-01')
+  })
+
+  it('refuse toujours ce qui ne ressemble à aucune date', () => {
+    // Un mot qui n'est pas un mois ne doit pas être lu comme tel — sinon la nouvelle branche
+    // française rendrait une date sur n'importe quelle ligne « <nombre> <mot> <année> ».
+    expect(parseDate('15 brumaire 2024')).toBeNull()
+  })
+
+  // TROUVÉ PAR LE TEST CI-DESSUS, pas cherché. `new Date()` lit « facture 12345 » comme le 1er
+  // janvier de l'an 12345 — et le refus du futur ne l'arrêtait pas, parce qu'il compare des CHAÎNES :
+  // « 12345-01-01 » passe pour INFÉRIEUR à « 2026-09-21 », le premier caractère décidant ('1' < '2').
+  // Avant correction, ce numéro de facture ressortait donc en « +012345-01 » : la forme ISO à année
+  // étendue de `toISOString()`, tronquée à dix caractères, c'est-à-dire une chaîne qui n'est plus
+  // une date, écrite telle quelle dans `pieces.date_piece`.
+  // Le garde-fou vit dans `toIsoDate` et non dans cette branche, pour que les trois chemins et
+  // `datesDeLaLigne` en héritent d'un coup.
+  it('refuse une année hors du format à quatre chiffres, que le refus du futur laissait passer', () => {
+    expect(parseDate('facture 12345')).toBeNull()
+    expect(parseDate('12345-01-01')).toBeNull()
+    // La borne basse ferme le symétrique : une année à trois chiffres se comparerait elle aussi de
+    // travers, et aucune pièce comptable n'est datée de l'an 999.
+    expect(parseDate('0999-01-01')).toBeNull()
+    // Et ce qui est légitime passe toujours.
+    expect(parseDate('2024-06-05')).toBe('2024-06-05')
   })
 
   it('refuse toujours une date qui n’existe pas au calendrier', () => {

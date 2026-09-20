@@ -941,11 +941,36 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   de repli est délibéré : la date fautive venait du champ étiqueté par Textract, qui rejoint
   `parseDate` **sans** passer par la fenêtre `a > anneeReference + 1` de `datesDeLaLigne`. Deux
   chemins mènent à une date, un seul contrôle les couvre tous les deux.
-- **Le dernier recours de `parseDate` a deux défauts connus, non corrigés.** Il délègue à
-  `new Date()`, qui ignore les mois français (« 30 juin 2025 » rend `null` — les dates françaises
-  en toutes lettres sont lues par l'autre chemin, `DATE_TEXTUELLE_REGEX` + `MOIS_PAR_NOM`), et il
-  fait `new Date(texte).toISOString()`, soit minuit **local** relu en UTC : à l'est de Greenwich
-  la date recule d'un jour. À reprendre avec les tests multi-fuseaux qui vont avec.
+- **Le dernier recours de `parseDate` est corrigé (20/09/2026), et il ne « ignorait » pas les mois
+  français — il en lisait CINQ.** `new Date()` reconnaît un mois à ses trois premières lettres en
+  ANGLAIS : janvier→jan, mars→mar, septembre→sep, octobre→oct, novembre→nov tombaient donc juste par
+  collision, et les sept autres rendaient `null`. **L'accent suffisait à faire basculer** :
+  « decembre » était lu, « décembre » perdu. Une lecture juste cinq fois sur douze selon une règle
+  que personne ne peut deviner est pire qu'une qui échoue toujours — elle n'a pas l'air cassée. D'où
+  un test sur les DOUZE mois : un test sur le seul « 30 juin 2025 » du cas d'origine serait passé au
+  vert avec une correction ne traitant que juin, et un test sur « mars » était vert AVANT correction.
+  Ce chemin compte plus que son nom ne le dit : c'est celui de la date **étiquetée par Textract**,
+  donc le signal le plus fiable. Rendre `null` ne perdait pas toujours la date (le repli sur texte
+  brut la retrouve souvent) mais la rétrogradait en déduction « à vérifier », ou la perdait pour de
+  bon quand le repli hésitait entre plusieurs candidats.
+  Second défaut, corrigé aussi : `new Date(texte).toISOString()` lisait minuit **local** en UTC, donc
+  reculait d'un jour à l'est de Greenwich. Mesuré : « 27 August 2026 » rendait 2026-08-26 sous
+  Europe/Paris et Pacific/Auckland, 2026-08-27 sous UTC et America/New_York. La date se relit
+  maintenant sur le calendrier civil (`getFullYear`/`getMonth`/`getDate`) via `toIsoDate`.
+  **Et la mutation de ce second défaut est INVISIBLE sous UTC** — donc invisible pour un runner
+  GitHub, qui est en UTC. Vérifié en la posant : verte sous UTC et America/New_York, rouge sous
+  Europe/Paris et Pacific/Auckland. C'est `npm run test:fuseaux` (que `tests.yml` lance, et pas
+  `npm test`) qui porte seul cette garantie.
+- **`dateFuture` compare des CHAÎNES, donc `toIsoDate` doit garantir une année à quatre chiffres.**
+  Trouvé en écrivant le test ci-dessus, pas cherché : `new Date()` lit « facture 12345 » comme le
+  1er janvier de l'an 12345, et le refus du futur ne l'arrêtait pas — `'12345-01-01' > '2026-09-21'`
+  est **faux**, le premier caractère décidant ('1' < '2'). Un numéro de facture ressortait donc en
+  `+012345-01` : la forme ISO à année étendue de `toISOString()`, tronquée à dix caractères,
+  c'est-à-dire une chaîne qui n'est plus une date, écrite telle quelle dans `pieces.date_piece`.
+  Le garde-fou vit dans `toIsoDate` et non dans la branche qui l'a révélé, parce que les trois
+  chemins de `parseDate` ET `datesDeLaLigne` y passent tous — le posant ailleurs, les autres
+  resteraient ouverts. C'est la même leçon que « deux chemins mènent à une date, un seul contrôle
+  les couvre tous les deux », appliquée une fois de plus.
 - **Une recherche filtre l'affichage, jamais un total.** Une barre de recherche réduit les
   lignes visibles ; les montants calculés à côté (TVA déductible/collectée, total appelé/versé,
   total prélevé) restent sur l'ensemble filtré par l'exercice, et un export (FEC) reste sur cet
@@ -1513,7 +1538,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 909 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 913 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

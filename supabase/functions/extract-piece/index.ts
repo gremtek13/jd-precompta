@@ -105,6 +105,18 @@ function parseAmount(raw?: string): number | null {
 // n'importe où. Même contrôle que `dateExiste` dans src/lib/csv.ts — jour 0 du mois suivant = dernier
 // jour du mois visé, en UTC donc insensible au fuseau.
 function toIsoDate(year: number, month: number, day: number): string | null {
+  // L'ANNÉE DOIT TENIR SUR QUATRE CHIFFRES, et ce n'est pas une coquetterie de format : c'est la
+  // précondition dont `dateFuture` a besoin. Celui-ci compare des CHAÎNES (`iso > limite`), ce qui
+  // n'ordonne correctement que des années de même longueur — « 12345-01-01 » se compare comme
+  // inférieur à « 2026-09-21 » parce que '1' < '2', donc une année à cinq chiffres traversait le
+  // refus du futur sans être vue.
+  // Ce n'est pas théorique : `new Date()` lit « facture 12345 » comme le 1er janvier de l'an 12345,
+  // et le dernier recours de `parseDate` le lui donne. Avant ce garde-fou, il en ressortait
+  // « +012345-01 » — la forme ISO à année étendue, tronquée à dix caractères, c'est-à-dire une
+  // chaîne qui n'est plus une date du tout, écrite telle quelle dans `pieces.date_piece`.
+  // Le contrôle vit ICI parce que les trois branches de `parseDate` et `datesDeLaLigne` y passent
+  // toutes : en le posant dans l'une d'elles, les autres resteraient ouvertes.
+  if (!Number.isInteger(year) || year < 1000 || year > 9999) return null
   if (month < 1 || month > 12 || day < 1) return null
   if (day > new Date(Date.UTC(year, month, 0)).getUTCDate()) return null
   const iso = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`
@@ -149,12 +161,35 @@ function parseDate(raw?: string): string | null {
     return toIsoDate(year, +m[2], +m[1])
   }
 
+  // Mois français en toutes lettres (« 30 juin 2025 »), AVANT de déléguer à `new Date()`.
+  //
+  // Ce que `new Date()` en faisait n'était pas « rien » : V8 reconnaît un mois à ses TROIS premières
+  // lettres en anglais, si bien que cinq mois français tombaient juste par collision — janvier→jan,
+  // mars→mar, septembre→sep, octobre→oct, novembre→nov — et les sept autres rendaient `null`.
+  // L'accent suffisait à faire basculer : « decembre » était lu, « décembre » perdu. Une lecture qui
+  // marche cinq fois sur douze selon une règle que personne ne peut deviner est pire qu'une qui ne
+  // marche jamais : elle n'a pas l'air cassée.
+  //
+  // Même table que le repli sur texte brut (`MOIS_PAR_NOM`), pour qu'un mois lu ici et là-bas soit le
+  // même. Ancré comme les deux branches au-dessus : Textract rend la VALEUR du champ, pas la ligne.
+  const mFr = sansAccents(trimmed.toLowerCase()).match(/^(\d{1,2})(?:er)?\s+([a-z]+)\.?\s+(\d{4})\b/)
+  if (mFr) {
+    const mois = MOIS_PAR_NOM[mFr[2]]
+    if (mois) return toIsoDate(+mFr[3], mois, +mFr[1])
+  }
+
   // Dernier recours pour les formats textuels (ex. "27 August 2026") que Date sait parfois lire.
-  // Repasse par le même refus du futur que toIsoDate — sinon ce chemin le contournerait.
+  //
+  // La date se relit sur le CALENDRIER CIVIL, jamais par `toISOString()` : `new Date("27 August
+  // 2026")` rend minuit LOCAL, que `toISOString()` reconvertit en UTC — donc un jour EN ARRIÈRE
+  // partout à l'est de Greenwich. Mesuré : « 27 August 2026 » rendait 2026-08-26 sous Europe/Paris
+  // comme sous Pacific/Auckland, et 2026-08-27 sous UTC et America/New_York. Une pièce datée de la
+  // veille part dans le mauvais mois, et un 1er du mois dans le mauvais exercice.
+  // `toIsoDate` porte au passage le refus du futur et la validité du calendrier — le chemin est donc
+  // le même que pour les deux branches au-dessus, au lieu de le refaire ici.
   const d = new Date(trimmed)
   if (Number.isNaN(d.getTime())) return null
-  const iso = d.toISOString().slice(0, 10)
-  return dateFuture(iso) ? null : iso
+  return toIsoDate(d.getFullYear(), d.getMonth() + 1, d.getDate())
 }
 
 // Repli de lecture de la date sur le texte OCR brut, quand Textract n'a étiqueté aucun champ
