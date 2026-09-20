@@ -905,8 +905,21 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   relâche le verrou du PREMIER, encore en cours. Le troisième passe alors, et le défaut revient
   entier. Avec deux clics la version fautive paraît correcte : c'est une mutation qui a survécu au
   premier jeu de tests, pas une relecture, qui l'a montré.
-  **Un troisième porteur a été trouvé le 19/09/2026 : « C'est une facture » (DocumentsTab), qui
-  n'avait AUCUN verrou.** Il recrée une pièce à partir d'un document déjà en stockage puis supprime
+  **Les porteurs se recensent ici, et un ordinal dispersé ne tient pas.** Deux sessions travaillant
+  en parallèle le 20/09/2026 ont écrit « troisième » et « cinquième » pour ce motif dans ce fichier.
+  Un rang inscrit au fil du texte oblige à recompter à chaque ajout, sur des paragraphes que
+  personne ne relit ensemble : la liste vit donc en un seul endroit, celui-ci.
+  **Cinq fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
+  (`PiecesTab` et `DocumentsTab`), « C'est une facture » (`DocumentsTab`, qui n'avait aucun verrou)
+  et « Tout rapprocher automatiquement » (`BanqueTab`, 20/09/2026).
+  **Et porter un verrou n'est pas la même chose qu'avoir porté le défaut** — c'est ce qui a fait
+  écrire « six » à la première tentative de ce recensement. Onze `useRef` de verrouillage existent
+  dans `src`, et six sont nés corrects avec leur fonctionnalité (`VehiculesCard`, `ClotureTab`,
+  `SauvegardeCard`, `RestaurationCard`, `FilCommentaires`, et le `validerEtRapprocherLot` de
+  `BanqueTab` — vérifié par `git log -S` sur chaque fichier, pas par relecture). Compter les verrous
+  surestime donc le défaut ; c'est la liste ci-dessus qui fait foi. Le motif n'est pas épuisé pour
+  autant : chercher toutes les copies avant de corriger la première vaut aussi pour celui-là.
+  **« C'est une facture » (DocumentsTab) n'avait, lui, AUCUN verrou.** Il recrée une pièce à partir d'un document déjà en stockage puis supprime
   le document ; deux clics créaient donc deux pièces sur le même fichier. Et rien ne les rattrapait :
   **le dédoublonnage par empreinte porte sur un fichier DÉPOSÉ**, or ici aucun fichier n'est envoyé —
   la pièce reprend le `storage_path` du document. Un fichier qui change de table échappe à toute la
@@ -1480,8 +1493,9 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **`BanqueTab` portait le même défaut que les trois précédents** : `rapprocherTout` (le lot
   automatique, à distinguer de `validerEtRapprocherLot` juste au-dessus dans le fichier, qui
   lui portait déjà son verrou `useRef`) ne se désactivait que via `rapprochementAuto`, un ÉTAT
-  React — donc inopérant contre un double clic dans le même rendu. Cinquième porteur du même
-  motif (« Un verrou d'exécution est un `useRef`, jamais un état React », plus haut), trouvé en
+  React — donc inopérant contre un double clic dans le même rendu. Encore le même motif
+  (« Un verrou d'exécution est un `useRef`, jamais un état React », plus haut, qui en tient la
+  liste), trouvé en
   écrivant le test de l'écran plutôt qu'en relisant le code : mutation confirmée, le double clic
   envoyait deux fois le lot avant le correctif. Corrigé par le même `useRef` posé avant le `try`
   et relâché dans le `finally`, comme son voisin.
@@ -1499,7 +1513,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — NNN tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 909 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
