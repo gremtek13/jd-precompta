@@ -162,7 +162,15 @@ export default function DossiersList() {
   // liste pour repérer ce qui a besoin d'attention.
   const alerte = (d: DossierRow) => d.nbAValider > 0 || d.moisPresents < d.moisEcoules || !d.cotisationsOk
   const trie = [...filtered].sort((a, b) => Number(alerte(b)) - Number(alerte(a)) || a.nom.localeCompare(b.nom))
-  const nbAvecAlerte = filtered.filter(alerte).length
+  // Sur `dossiers` et NON sur `filtered` : ce compte alimente trois chiffres qui décrivent le
+  // CABINET — les tuiles « À régler » et « À jour », et le sous-titre des priorités — tous rendus
+  // au-dessus de la liste, donc au-dessus de sa recherche. Branché sur l'ensemble cherché, il
+  // mentait dans le sens le plus dangereux : « À jour » valant `dossiers.length - nbAvecAlerte`,
+  // une recherche sans résultat affichait TOUS les dossiers à jour, et le widget des priorités en
+  // listait cinq sous un sous-titre annonçant « 0 dossier(s) avec un point ouvert ». Les deux
+  // tuiles totalisaient pourtant toujours « Dossiers suivis » : cohérentes entre elles, fausses
+  // toutes les deux — et personne ne va vérifier une bonne nouvelle.
+  const nbAvecAlerte = dossiers.filter(alerte).length
   const totalAValider = dossiers.reduce((s, d) => s + d.nbAValider, 0)
 
   // Priorités : les dossiers en alerte, les plus chargés d'abord (pièces à valider, puis mois manquants).
