@@ -26,7 +26,7 @@ const LIBELLE_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
 }
 
 const ACTION_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
-  immobilisee: "La charge est comptée deux fois (ici et à l'amortissement) : retirer l'écriture, ou retirer l'immobilisation si c'en est une par erreur.",
+  immobilisee: "Le FEC et la balance portent la charge entière, la 2035 la remplace par la dotation : les deux ne se recoupent plus. Retirer l'écriture, ou l'immobilisation si c'en est une par erreur.",
   sans_categorie: "Redonner une catégorie à la pièce depuis Justificatifs, puis régénérer l'écriture.",
   categorie_sans_compte: 'Renseigner le compte de la catégorie ci-dessous, puis régénérer.',
   sans_montant: 'Remettre le montant TTC de la pièce depuis Justificatifs, puis régénérer.',
@@ -314,9 +314,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           </h3>
           <p className="muted" style={{ marginTop: -8 }}>
             Ces écritures ont été générées, puis la pièce a changé de nature — rien ne les a retirées.
-            Elles comptent encore dans le FEC, dans la Balance des comptes et dans la 2035, et aucun
-            autre contrôle ne peut les voir : les trois autres partent de la pièce, celui-ci part de
-            l'écriture.
+            Elles comptent encore dans le FEC et dans la Balance des comptes, qui se calculent sur le
+            brouillon, alors que la 2035 se calcule sur les pièces et les écarte : les deux livrables
+            ne disent plus la même chose. Aucun autre contrôle ne peut les voir — les trois autres
+            partent de la pièce, celui-ci part de l'écriture.
           </p>
           <table>
             <thead><tr><th>Pièce</th><th>Compté au brouillon</th><th>Ce qui a changé</th><th>Ce qu'il faut faire</th></tr></thead>

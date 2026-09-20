@@ -929,8 +929,14 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   bien la pièce, mais en partant de la liste ÉLIGIBLE — dont elle vient précisément de sortir.
   Le chemin naturel des gestes l'amène : on valide, on catégorise, on génère, PUIS on découvre en
   ouvrant Immobilisations que cet achat est un actif. Rien ne retire l'écriture (aucun code du dépôt
-  n'écrit dans `ecritures_brouillon` hors `EcrituresTab` et `contrepartieBanque`), donc la dépense
-  part en charge ET en amortissement : le même euro deux fois, en FEC, en balance comme en 2035.
+  n'écrit dans `ecritures_brouillon` hors `EcrituresTab` et `contrepartieBanque`).
+  **Et le dégât exact n'est PAS celui qu'on croit d'abord** — écrit faux au premier jet, vérifié
+  ensuite : la 2035 se calcule sur les PIÈCES et exclut déjà les immobilisées
+  (`declaration2035.ts`), elle est donc juste. Ce sont le FEC et la Balance des comptes, calculés
+  sur le BROUILLON, qui portent la charge entière. Les deux livrables décrivent alors deux résultats
+  différents pour le même euro, et rien ne le dit — exactement l'incohérence que le cas `piece_id`
+  nul a déjà coûtée. Annoncer « compté deux fois dans la 2035 » aurait envoyé chercher un défaut qui
+  n'existe pas.
   `ecrituresSansObjet` (lib/ecritures.ts) part de l'ÉCRITURE et nomme le motif — immobilisée,
   catégorie retirée, catégorie sans compte, montant effacé — parce que l'action n'est pas la même
   (les trois derniers se réparent en amont puis « Régénérer » ; le premier demande de retirer

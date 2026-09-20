@@ -160,8 +160,12 @@ function motifSansObjet(
 // formé ; et le troisième juge bien la pièce, mais en partant de la liste éligible — dont celle-ci
 // vient précisément de sortir. Rien ne supprime une écriture quand sa pièce est enregistrée en
 // immobilisation — et c'est l'ordre naturel des gestes, puisqu'on découvre qu'un achat est un actif
-// en ouvrant l'onglet Immobilisations, donc après avoir généré. La dépense part alors en charge ET
-// en amortissement : le même euro deux fois, en FEC comme en 2035, sans un signal.
+// en ouvrant l'onglet Immobilisations, donc après avoir généré.
+// CE QUE ÇA COÛTE EXACTEMENT, et la nuance vaut d'être écrite : la 2035 se calcule sur les PIÈCES et
+// exclut déjà les immobilisées (voir declaration2035.ts) — elle est donc juste. Le FEC et la balance
+// se calculent sur le BROUILLON et portent la charge entière. Les deux livrables décrivent alors
+// deux résultats différents pour le même euro, et rien ne le dit : exactement l'incohérence que le
+// cas `piece_id` nul a déjà coûtée une fois.
 // C'est la même famille que `rupturesPisteAudit` (voir lib/pisteAudit.ts), appliquée à l'autre bout
 // de la même relation.
 export function ecrituresSansObjet(

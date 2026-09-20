@@ -129,7 +129,7 @@ describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
 
     await screen.findByText('Écritures que la pièce ne justifie plus')
     expect(screen.getByText(/Enregistrée en immobilisation/)).toBeDefined()
-    expect(screen.getByText(/La charge est comptée deux fois/)).toBeDefined()
+    expect(screen.getByText(/Le FEC et la balance portent la charge entière/)).toBeDefined()
     // Et les trois contrôles qui partent de la pièce ne disent rien : c'est bien lui, et lui seul
     // qui voit cette charge. Les badges du pied de page sont le signal le plus court de leur
     // silence — `queryByText` lit le TEXTE rendu, jamais le balisage.
