@@ -2,7 +2,8 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
-import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, lignesChargeProduitPourPiece, soldeCompte, tvaNettePourPeriode } from '../../lib/ecritures'
+import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte, tvaNettePourPeriode } from '../../lib/ecritures'
+import type { MotifSansObjet } from '../../lib/ecritures'
 import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
@@ -13,6 +14,23 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { useAnnee } from '../../context/AnneeContext'
+
+// Ce qui a changé sur la pièce, et ce que le cabinet doit faire — jamais corrigé d'office :
+// retirer une écriture est un arbitrage comptable, et les trois derniers motifs se réparent en
+// AMONT (sur la pièce), après quoi « Régénérer » reprend la bonne écriture.
+const LIBELLE_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
+  immobilisee: "Enregistrée en immobilisation : c'est un actif qui s'amortit",
+  sans_categorie: 'La catégorie a été retirée',
+  categorie_sans_compte: "La catégorie n'a plus de compte comptable",
+  sans_montant: 'Le montant TTC a été effacé',
+}
+
+const ACTION_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
+  immobilisee: "La charge est comptée deux fois (ici et à l'amortissement) : retirer l'écriture, ou retirer l'immobilisation si c'en est une par erreur.",
+  sans_categorie: "Redonner une catégorie à la pièce depuis Justificatifs, puis régénérer l'écriture.",
+  categorie_sans_compte: 'Renseigner le compte de la catégorie ci-dessous, puis régénérer.',
+  sans_montant: 'Remettre le montant TTC de la pièce depuis Justificatifs, puis régénérer.',
+}
 
 // Palier 5 — brouillon comptable, brique 1 (journal). Génère une proposition d'écriture pour
 // chaque pièce validée dont la catégorie a un compte associé — la ligne charge/produit, puis la
@@ -113,20 +131,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     load()
   }
 
-  // Une pièce enregistrée comme immobilisation (onglet Immobilisations) est un actif, pas une charge
-  // courante — elle ne doit pas aussi générer une écriture de charge ici, sous peine de compter la
-  // dépense deux fois dans le brouillon.
-  const piecesEligibles = piecesValidees.filter(
-    (p) => p.montant_ttc != null && !!categorieById(p.categorie_id)?.compte_comptable && !immobilisationPieceIds.has(p.id),
-  )
-  const enAttente = piecesEligibles.filter((p) => !ecritures.some((e) => e.piece_id === p.id))
+  // Ce que chaque pièce validée doit produire, et sur quel compte — règle unique, partagée avec la
+  // Checklist (voir lib/ecritures.ts). Une pièce enregistrée comme immobilisation en est exclue :
+  // c'est un actif qui s'amortit, pas une charge courante, et l'y laisser compterait la dépense
+  // deux fois.
+  const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, immobilisationPieceIds)
+  const enAttente = aComptabiliser
+    .filter(({ piece }) => !ecritures.some((e) => e.piece_id === piece.id))
+    .map(({ piece }) => piece)
 
   async function genererEcritures() {
     if (enAttente.length === 0) return
     setGenerating(true)
     setError(null)
     try {
-      const rows = enAttente.flatMap((p) => lignesChargeProduitPourPiece(dossierId, p, categorieById(p.categorie_id)!.compte_comptable!))
+      const comptes = new Map(aComptabiliser.map(({ piece, compte }) => [piece.id, compte]))
+      const rows = enAttente.flatMap((p) => lignesChargeProduitPourPiece(dossierId, p, comptes.get(p.id)!))
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
 
@@ -167,7 +187,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, piecesEligibles)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser)
+  // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
+  // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
+  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
 
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
@@ -280,6 +303,36 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   return (
     <>
       <BrouillonBanner />
+
+      {/* EN PREMIER, avant même « sans catégorie » : celles-là ne produisent RIEN, celle-ci produit
+          quelque chose de FAUX. Un total manquant finit par se remarquer ; un total juste en
+          apparence et compté deux fois, non. */}
+      {sansObjet.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Écritures que la pièce ne justifie plus <span className="badge badge-danger">bloquant</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces écritures ont été générées, puis la pièce a changé de nature — rien ne les a retirées.
+            Elles comptent encore dans le FEC, dans la Balance des comptes et dans la 2035, et aucun
+            autre contrôle ne peut les voir : les trois autres partent de la pièce, celui-ci part de
+            l'écriture.
+          </p>
+          <table>
+            <thead><tr><th>Pièce</th><th>Compté au brouillon</th><th>Ce qui a changé</th><th>Ce qu'il faut faire</th></tr></thead>
+            <tbody>
+              {sansObjet.map((o) => (
+                <tr key={o.piece.id}>
+                  <td>{o.piece.tiers ?? o.piece.nom_fichier}</td>
+                  <td>{formatMoney(o.montant)} <span className="muted">({o.nbLignes} ligne{o.nbLignes > 1 ? 's' : ''})</span></td>
+                  <td>{LIBELLE_MOTIF_SANS_OBJET[o.motif]}</td>
+                  <td className="muted">{ACTION_MOTIF_SANS_OBJET[o.motif]}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       {/* Avant « Pièces sans TVA » : une pièce sans catégorie ne produit RIEN, là où une TVA manquante
           ne fausse qu'une ligne. Le contrôle le plus bloquant se lit en premier. */}

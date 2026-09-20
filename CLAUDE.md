@@ -921,6 +921,40 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   absente du jeu fourni ». `EcrituresTab` ne charge que les pièces VALIDÉES, donc une pièce repassée
   « à valider » ferait crier au loup sur un artefact de filtrage. Seul `piece_id` nul est retenu,
   parce qu'il ne dépend d'aucun jeu de données à côté.
+  **QUATRIÈME FRAPPE, LE 20/09/2026, ET PAR UN AUTRE MÉCANISME** — trouvée en ouvrant `EcrituresTab`
+  pour lui écrire un test de rendu, pas en cherchant ce motif. Une écriture peut rester
+  PARFAITEMENT FORMÉE alors que sa pièce ne la justifie plus, et les trois contrôles la manquent
+  alors chacun pour sa propre raison : les deux premiers ne jugent que la FORME du groupe
+  (contrepartie présente, solde nul), et ce groupe-là est complet et équilibré ; le troisième juge
+  bien la pièce, mais en partant de la liste ÉLIGIBLE — dont elle vient précisément de sortir.
+  Le chemin naturel des gestes l'amène : on valide, on catégorise, on génère, PUIS on découvre en
+  ouvrant Immobilisations que cet achat est un actif. Rien ne retire l'écriture (aucun code du dépôt
+  n'écrit dans `ecritures_brouillon` hors `EcrituresTab` et `contrepartieBanque`), donc la dépense
+  part en charge ET en amortissement : le même euro deux fois, en FEC, en balance comme en 2035.
+  `ecrituresSansObjet` (lib/ecritures.ts) part de l'ÉCRITURE et nomme le motif — immobilisée,
+  catégorie retirée, catégorie sans compte, montant effacé — parce que l'action n'est pas la même
+  (les trois derniers se réparent en amont puis « Régénérer » ; le premier demande de retirer
+  l'écriture, et « Régénérer » y serait activement FAUX, il réécrirait la charge).
+  **ET LE MÊME BALAYAGE EN A SORTI UN SECOND, PLUS PROBABLE** : `piecesDesynchronisees` ne comparait
+  que le MONTANT. Recatégoriser une pièce déjà validée est un geste courant, et rien ne réécrit son
+  écriture : elle reste sur l'ancien compte. Or le total ne bouge pas d'un centime — le contrôle
+  déclarait donc « synchronisée » une écriture qui part en FEC sur un compte que la pièce ne désigne
+  plus, pendant que Clôture et la 2035 lisent le `poste_2035` de la catégorie ACTUELLE. Deux
+  livrables, deux réponses, aucun signal : exactement l'incohérence que le cas `piece_id` nul avait
+  déjà coûtée. Les comptes de TVA sont exclus de la comparaison, sinon toute facture au taux normal
+  serait signalée dès la première.
+  **Les deux sont LATENTS, mesuré le 20/09/2026, et c'est un résultat à garder** : deux
+  immobilisations en base, aucune ne portant d'écriture de charge ; et zéro écriture sur un compte
+  différent de celui de la catégorie actuelle de sa pièce. Ce qui les rend dignes d'être corrigés
+  n'est donc pas un préjudice constaté, c'est qu'aucun des deux ne PEUT se voir une fois arrivé.
+  **La règle d'éligibilité était écrite DEUX FOIS, à l'identique**, dans `EcrituresTab` et
+  `ChecklistTab` — elle remonte dans `piecesAComptabiliser`, qui rend aussi le compte attendu. Une
+  règle recopiée deux fois n'attend pas de diverger, elle attend un troisième appelant.
+  **Et ma propre explication du défaut était fausse au premier jet** : j'avais écrit que « les trois
+  contrôles partent de la pièce éligible ». C'est le TEST D'ÉCRAN qui l'a démenti, en échouant sur
+  un badge que je croyais muet — `nbSansContrepartie` et `groupesDesequilibres` partent des
+  écritures, pas de la liste éligible. La conclusion tenait, la cause non ; seule une exécution l'a
+  montré.
 - **Une piste d'audit se PRODUIT, elle ne se contrôle pas seulement.** Les contrôles ci-dessus disent
   qu'il y a une rupture ; ce qu'un vérificateur demande est un fichier : chaque écriture avec son
   justificatif (tiers, date, montant, nom du fichier, empreinte SHA-256) et l'opération bancaire
@@ -1619,7 +1653,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   PAS sauvegardé et qu'on découvrirait sinon en pleine reprise — au premier rang les comptes
   `auth.users`, qu'il faut recréer AVEC leurs UUID d'origine, quatre colonnes du schéma les exigeant
   en NOT NULL sans contournement possible.
-- **La couverture Vitest s'arrête à `src/lib`, À DEUX ÉCRANS PRÈS** (voir "Tests") : les
+- **La couverture Vitest s'arrête à `src/lib`, À QUATRE ONGLETS PRÈS** (voir "Tests") : les
   composants et les Edge Functions restent, pour l'essentiel, vérifiés par la relecture de
   code, les advisors Supabase et des tests manuels réels (y compris, pour Super PDP, par
   l'utilisateur lui-même puisque cet environnement ne peut pas atteindre
@@ -1644,9 +1678,31 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   mutations tuées avant de committer : retirer la garde fait échouer 2 des 3 tests, et la déplacer
   dans le `try` — le bug documenté plus haut sur d'autres modales — ne fait échouer QUE le test à
   trois clics, exactement la discrimination qu'il est censé apporter.
-  C'est un premier fil, pas une couverture : dix onglets n'ont toujours aucun test de rendu, et deux
-  des quatre verrous corrigés le 20/09 (`SuperPdpFactureModal.appeler`, `PieceFormModal.save`)
-  restent eux aussi sans test d'écran.
+  **Deux des quatre verrous corrigés le 20/09 restent sans test d'écran** :
+  `SuperPdpFactureModal.appeler` et `PieceFormModal.save`.
+  **`EcrituresTab` a rejoint la liste le 20/09/2026**, et c'est l'onglet qui le méritait le plus :
+  il produit les deux seuls fichiers officiels du projet, le FEC et la piste d'audit. Quatre tests,
+  cinq mutations, toutes mordent — dont celle qui compte vraiment : rebrancher `ecrituresSansObjet`
+  sur le sous-ensemble COMPTABILISABLE au lieu de toutes les pièces validées, ce qui le rendrait
+  muet pour toujours puisque la pièce vient d'en sortir. C'est mot pour mot le piège de câblage de
+  `moisEnDoubleSurAbonnement`, et aucun test de `src/lib` ne peut le voir : la fonction, elle, est
+  juste. Les trois autres mutations visent le contenu du FEC exporté (`ecrituresFiltrees` et non
+  `ecrituresAffichees` — une recherche ne doit pas amputer un fichier fiscal) et le refus des deux
+  exports sur une lecture partielle.
+  **Le faux client a eu besoin d'un second réglage pour produire une lecture INCOMPLÈTE.** Plafonner
+  la taille des tranches ne suffit pas : `lireTout` recolle et rend `complete: true`, ce qui est
+  précisément ce qu'il doit faire. Ce qui produit l'incomplétude est un serveur qui CESSE de rendre
+  tout en continuant d'annoncer le vrai total (`muetApres`) — la boucle s'arrête sur une tranche
+  vide et le compte annoncé fait foi.
+  **Et une assertion de ce test ne pouvait pas se déclencher** : une regex contenant du balisage
+  (`/à régénérer<\/span>/`) passée à `queryByText`, qui lit le TEXTE rendu et jamais le HTML. Elle
+  était verte et ne gardait rien — la même famille que « un harnais qui ment est pire qu'un harnais
+  absent », en plus discret, puisque rien ne la distingue d'une assertion qui passe.
+  C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
+  annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 4 testés** — banque,
+  documents, statistiques, écritures — donc **13 sans aucun test de rendu**. Un chiffre qu'on
+  recopie sans le recompter dérive à chaque ajout ; celui-ci se remesure en une commande.
   **`BanqueTab` portait le même défaut que les trois précédents** : `rapprocherTout` (le lot
   automatique, à distinguer de `validerEtRapprocherLot` juste au-dessus dans le fichier, qui
   lui portait déjà son verrou `useRef`) ne se désactivait que via `rapprochementAuto`, un ÉTAT
@@ -1670,7 +1726,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 928 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 938 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

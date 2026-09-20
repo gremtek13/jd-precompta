@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyserEcritures, calculerBalance, lignesChargeProduitPourPiece, soldeCompte, tvaNettePourPeriode } from './ecritures'
+import { analyserEcritures, calculerBalance, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte, tvaNettePourPeriode } from './ecritures'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 import type { Categorie, EcritureBrouillon, Piece } from './types'
 
@@ -132,7 +132,7 @@ describe('analyserEcritures', () => {
   it('repère une pièce dont le montant ne correspond plus à son écriture', () => {
     const p = piece({ id: 'maj', montant_ttc: 200 })
     const lignes = [ecriture({ piece_id: 'maj', compte: ACHATS, sens: 'debit', montant: 120 })]
-    expect(analyserEcritures(lignes, [p]).piecesDesynchronisees).toEqual([p])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([p])
   })
 
   it('ne déclare pas désynchronisée une pièce à montant négatif correctement enregistrée', () => {
@@ -140,11 +140,11 @@ describe('analyserEcritures', () => {
     // conclurait à tort à un écart.
     const avoir = piece({ id: 'avoir', montant_ttc: -50 })
     const lignes = [ecriture({ piece_id: 'avoir', compte: ACHATS, sens: 'credit', montant: 50 })]
-    expect(analyserEcritures(lignes, [avoir]).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, [{ piece: avoir, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
   })
 
   it('ne déclare pas désynchronisée une pièce sans écriture encore générée', () => {
-    expect(analyserEcritures([], [piece({ id: 'vierge' })]).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures([], [{ piece: piece({ id: 'vierge' }), compte: ACHATS }]).piecesDesynchronisees).toEqual([])
   })
 })
 
@@ -169,5 +169,122 @@ describe('calculerBalance', () => {
     )
     // Trié par numéro de compte : 512000 (Banque) avant 606100 (Achats) avant 999999.
     expect(balance.map((l) => l.libelle)).toEqual(['Banque', 'Achats fournisseurs', '—'])
+  })
+})
+
+const categorie = (o: Partial<Categorie> = {}): Categorie => ({
+  id: 'c1', dossier_id: null, code: 'achats_fournisseurs', libelle: 'Achats', ordre: 1,
+  compte_comptable: ACHATS, poste_2035: 'Achats', ...o,
+} as Categorie)
+
+describe('piecesAComptabiliser', () => {
+  const cats = [categorie(), categorie({ id: 'c2', compte_comptable: null })]
+
+  it('rend le compte de la catégorie de chaque pièce', () => {
+    expect(piecesAComptabiliser([piece()], cats, new Set())).toEqual([{ piece: piece(), compte: ACHATS }])
+  })
+
+  it('écarte les trois portes de la chaîne comptable', () => {
+    const ecartees = [
+      piece({ id: 'sans-cat', categorie_id: null }),
+      piece({ id: 'cat-sans-compte', categorie_id: 'c2' }),
+      piece({ id: 'sans-montant', montant_ttc: null }),
+    ]
+    expect(piecesAComptabiliser(ecartees, cats, new Set())).toEqual([])
+  })
+
+  it("écarte une pièce enregistrée en immobilisation — c'est un actif, pas une charge", () => {
+    expect(piecesAComptabiliser([piece({ id: 'immo' })], cats, new Set(['immo']))).toEqual([])
+  })
+})
+
+describe('piecesDesynchronisees — le compte autant que le montant', () => {
+  const p = piece({ id: 'recat', montant_ttc: 120 })
+
+  it('signale une pièce recatégorisée, dont le montant n’a pourtant pas bougé', () => {
+    // LE CAS QUI NE DÉPLACE AUCUN TOTAL. L'écriture reste sur l'ancien compte, le montant est le
+    // même au centime près : un contrôle qui ne compare que le montant la déclare synchronisée,
+    // et le FEC part sur un compte que la pièce ne désigne plus.
+    const lignes = [ecriture({ piece_id: 'recat', compte: ACHATS, sens: 'debit', montant: 120 })]
+    expect(analyserEcritures(lignes, [{ piece: p, compte: '613200' }]).piecesDesynchronisees).toEqual([p])
+    // Et le même jeu sur le bon compte ne bouge pas : c'est ce qui rend le cas ci-dessus distinctif.
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+  })
+
+  it('ne prend pas les comptes de TVA pour un autre compte', () => {
+    // Sinon TOUTE pièce portant de la TVA serait déclarée désynchronisée, et le contrôle
+    // deviendrait inécoutable dès la première facture au taux normal.
+    const avecTva = [
+      ecriture({ piece_id: 'recat', compte: ACHATS, sens: 'debit', montant: 100 }),
+      ecriture({ piece_id: 'recat', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
+    ]
+    expect(analyserEcritures(avecTva, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+  })
+
+  it('ne regarde pas la contrepartie banque, qui vit sur son propre compte', () => {
+    const complete = [
+      ecriture({ piece_id: 'recat', compte: ACHATS, sens: 'debit', montant: 120 }),
+      ecriture({ piece_id: 'recat', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
+    ]
+    expect(analyserEcritures(complete, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+  })
+})
+
+describe('ecrituresSansObjet', () => {
+  const cats = [categorie(), categorie({ id: 'c2', compte_comptable: null })]
+
+  it('voit la charge qu’une pièce devenue immobilisation continue de compter', () => {
+    // L'ordre naturel des gestes : générer, puis découvrir en ouvrant Immobilisations que cet achat
+    // est un actif. Rien ne retire l'écriture, et les trois autres contrôles partent de la pièce
+    // ÉLIGIBLE — dont celle-ci vient précisément de sortir.
+    const lignes = [
+      ecriture({ piece_id: 'immo', compte: ACHATS, sens: 'debit', montant: 100 }),
+      ecriture({ piece_id: 'immo', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
+      ecriture({ piece_id: 'immo', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
+    ]
+    const p = piece({ id: 'immo' })
+    expect(ecrituresSansObjet(lignes, [p], cats, new Set(['immo']))).toEqual([
+      // La contrepartie banque est exclue : elle reflète un mouvement RÉEL, qui a bien eu lieu.
+      { piece: p, motif: 'immobilisee', nbLignes: 2, montant: 120 },
+    ])
+    // Les trois contrôles qui partent de la pièce n'en voient rien.
+    const analyse = analyserEcritures(lignes, piecesAComptabiliser([p], cats, new Set(['immo'])))
+    expect(analyse.piecesDesynchronisees).toEqual([])
+    expect(analyse.groupesDesequilibres).toEqual([])
+    expect(analyse.nbSansContrepartie).toBe(0)
+  })
+
+  it('nomme le motif plutôt que de laisser deviner', () => {
+    const cas: [Partial<Piece>, string][] = [
+      [{ id: 'a', categorie_id: null }, 'sans_categorie'],
+      [{ id: 'b', categorie_id: 'c2' }, 'categorie_sans_compte'],
+      [{ id: 'c', montant_ttc: null }, 'sans_montant'],
+    ]
+    for (const [modif, motif] of cas) {
+      const p = piece(modif)
+      const lignes = [ecriture({ piece_id: p.id, compte: ACHATS })]
+      expect(ecrituresSansObjet(lignes, [p], cats, new Set())[0]?.motif, motif).toBe(motif)
+    }
+  })
+
+  it('se tait quand la pièce est introuvable — filtrage ou lien nul, jamais une rupture d’ici', () => {
+    // Les deux entrées passent par le MÊME garde-fou (`piece` introuvable), et c'est pour ça
+    // qu'elles sont dans un seul test : une mutation retirant le test de `piece_id` nul survit,
+    // puisque la clé de regroupement devient alors `null` et qu'aucune pièce ne porte cet id. Ce
+    // test-là ne garde donc pas deux choses, il garde une entrée de plus sur le même chemin.
+    //
+    // - « ailleurs » : l'appelant ne charge que les pièces VALIDÉES, donc une pièce repassée « à
+    //   valider » tomberait ici. Crier au loup dessus rendrait les avertissements voisins
+    //   inécoutables — c'est un artefact de chargement, pas un défaut comptable.
+    // - `piece_id` nul : le lien a été effacé par un ON DELETE SET NULL, et c'est le domaine de
+    //   rupturesPisteAudit (lib/pisteAudit.ts). Le dire deux fois ferait compter le même défaut
+    //   deux fois en Checklist.
+    expect(ecrituresSansObjet([ecriture({ piece_id: 'ailleurs', compte: ACHATS })], [], cats, new Set())).toEqual([])
+    expect(ecrituresSansObjet([ecriture({ piece_id: null, compte: ACHATS })], [piece()], cats, new Set())).toEqual([])
+  })
+
+  it('se tait sur une pièce parfaitement comptabilisable', () => {
+    const p = piece()
+    expect(ecrituresSansObjet([ecriture({ piece_id: p.id })], [p], cats, new Set())).toEqual([])
   })
 })
