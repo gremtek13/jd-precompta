@@ -705,10 +705,19 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   plausible, fausse, et **signée**.
   Dans les trois cas l'écran DIT que sa lecture est partielle, plutôt que de laisser un bouton grisé
   sans raison visible.
-  **Les autres écrans ne sont PAS encore portés** : une vingtaine de lectures de collection entière
-  restent en `select('*')` nu (Banque, Pièces, Balance, Checklist, les trois écrans client, et la
-  liste des dossiers — celle-ci lit à l'échelle du cabinet, donc c'est elle qui touchera le plafond
-  la première). Ce chantier n'est pas difficile, il est ÉTENDU : le risque est d'en oublier un.
+  **Puis les écrans dont un CHIFFRE dépend** : Banque (la plus grosse table du projet), la Balance
+  des comptes, la Checklist — celle-ci est le cas le plus retors, puisqu'elle prétend dire ce qui
+  MANQUE : un contrôle qui ne voit qu'une partie du dossier se tait sur le reste, et se taire est
+  exactement ce qu'on attend de lui quand tout va bien. Et la **liste des dossiers**, seule lecture
+  du projet à porter sur tout le cabinet, donc la première qui touchera le plafond : tronquée, elle
+  ne vide pas un compteur, elle en fausse quelques-uns — ceux des dossiers qui tombent au-delà de la
+  coupure, ce qui est bien plus difficile à voir.
+  `BandeauLecturePartielle` (src/components) porte le message : un seul composant, parce que ce qui
+  doit être dit partout finit par n'être dit nulle part quand chaque écran le réécrit. Seule varie
+  la `consequence` — ce que le cabinet a sous les yeux et qui est devenu faux ; « lecture partielle »
+  tout seul ne dit pas si c'est grave.
+  **Ce qui reste** : les trois écrans client, Pièces, Documents, Estimation, Immobilisations,
+  Financement. Chantier non pas difficile mais ÉTENDU — le risque est d'en oublier un.
 - **Un filtre de période écarte les NULL sans le dire.** En SQL, une comparaison avec NULL n'est
   jamais vraie : `gte`/`lte` sur `date_piece` excluait donc les pièces validées sans date de
   *toutes* les périodes à la fois — absentes du ZIP, du récapitulatif et du total de chaque pack,
@@ -1434,7 +1443,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 901 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 902 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

@@ -10,6 +10,8 @@ import type { DossierTab } from '../../components/DossierParcours'
 import MonthlyBars from '../../components/widgets/MonthlyBars'
 import ProgressRing from '../../components/widgets/ProgressRing'
 import BarreRecherche from '../../components/BarreRecherche'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { lireTout } from '../../lib/lectureComplete'
 
 const NB_MOIS_EVOLUTION = 6
 
@@ -26,6 +28,9 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
   const [categories, setCategories] = useState<Categorie[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
   const [loading, setLoading] = useState(true)
+  // Non nul quand le brouillon ou les pièces n'ont pas pu être lus en entier — les totaux affichés
+  // portent alors sur une partie du dossier (voir lib/lectureComplete.ts).
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   // Exercice partagé avec Pièces/Banque/Écritures/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
@@ -34,13 +39,24 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
   useEffect(() => {
     setLoading(true)
     Promise.all([
-      supabase.from('ecritures_brouillon').select('*').eq('dossier_id', dossierId),
+      // Lues par tranches, triées sur un ordre TOTAL : PostgREST plafonne le nombre de lignes
+      // rendues sans le signaler, et cet écran affiche des TOTAUX (voir lib/lectureComplete.ts).
+      // Une balance calculée sur une partie du brouillon serait déséquilibrée sans raison visible —
+      // exactement le badge rouge « écart … » qu'on a déjà appris à ne pas fabriquer par accident.
+      lireTout<EcritureBrouillon>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId),
-    ]).then(([{ data: ecrituresData }, { data: categoriesData }, { data: piecesData }]) => {
-      setEcritures(ecrituresData ?? [])
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+    ]).then(([brouillon, { data: categoriesData }, lecturePieces]) => {
+      setEcritures(brouillon.lignes)
       setCategories(categoriesData ?? [])
-      setPieces(piecesData ?? [])
+      setPieces(lecturePieces.lignes)
+      setLectureIncomplete(brouillon.motif ?? lecturePieces.motif)
       setLoading(false)
     })
   }, [dossierId])
@@ -76,6 +92,15 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les écritures du brouillon"
+        motif={lectureIncomplete}
+        consequence={
+          'Les totaux débit/crédit et le badge d’équilibre ci-dessous portent donc sur une partie ' +
+          'des écritures : un écart affiché ici ne prouverait rien.'
+        }
+      />
+
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
         Balance de tous les comptes utilisés dans le brouillon d'écritures — même donnée que l'onglet
         Écritures, regroupée par compte plutôt que par pièce. Solde positif = débiteur, négatif =

@@ -9,6 +9,7 @@ import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
 import Avatar from '../components/widgets/Avatar'
 import { IconChevron, IconPieces } from '../components/icons'
+import { lireTout } from '../lib/lectureComplete'
 
 interface DossierRow extends Dossier {
   nbAValider: number
@@ -80,10 +81,27 @@ export default function DossiersList() {
 
     const [dossiersRes, piecesRes, lignesRes, cotisationsRes, depotsRes] = await Promise.all([
       supabase.from('dossiers').select('*').eq('archive', false).order('nom'),
-      supabase.from('pieces').select('dossier_id').eq('statut', 'a_valider'),
-      supabase.from('lignes_bancaires').select('dossier_id, date').gte('date', debutAnnee),
-      supabase.from('cotisations_declarees').select('dossier_id, echeance').gte('echeance', debutAnnee),
-      supabase.from('pieces').select('dossier_id, nom_fichier, created_at, statut').gte('created_at', debutTendance).order('created_at', { ascending: false }),
+      // Ces trois lectures sont les seules du projet à porter sur TOUT LE CABINET, dossiers
+      // confondus : c'est donc ici que le plafond de PostgREST (voir lib/lectureComplete.ts) sera
+      // franchi le premier — dix clients à mille mouvements par an y suffisent. Tronquées, elles ne
+      // vident pas un compteur : elles en faussent quelques-uns, ceux des dossiers qui tombent
+      // au-delà de la coupure, ce qui est bien plus difficile à voir.
+      lireTout<{ dossier_id: string }>((debut, fin) =>
+        supabase.from('pieces').select('dossier_id', { count: 'exact' })
+          .eq('statut', 'a_valider').order('id').range(debut, fin),
+      ),
+      lireTout<{ dossier_id: string; date: string }>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('dossier_id, date', { count: 'exact' })
+          .gte('date', debutAnnee).order('id').range(debut, fin),
+      ),
+      lireTout<{ dossier_id: string }>((debut, fin) =>
+        supabase.from('cotisations_declarees').select('dossier_id, echeance', { count: 'exact' })
+          .gte('echeance', debutAnnee).order('id').range(debut, fin),
+      ),
+      lireTout<DepotRecent>((debut, fin) =>
+        supabase.from('pieces').select('dossier_id, nom_fichier, created_at, statut', { count: 'exact' })
+          .gte('created_at', debutTendance).order('created_at', { ascending: false }).order('id').range(debut, fin),
+      ),
     ])
 
     if (dossiersRes.error) {
@@ -92,22 +110,24 @@ export default function DossiersList() {
       setLoading(false)
       return
     }
-    if (piecesRes.error || lignesRes.error || cotisationsRes.error || depotsRes.error) {
+    // Une lecture incomplète mène au MÊME avertissement qu'une lecture en échec : dans les deux cas
+    // les chiffres affichés sont partiels, et c'est la seule chose que le cabinet doit savoir.
+    if (![piecesRes, lignesRes, cotisationsRes, depotsRes].every((r) => r.complete)) {
       setErreurIndicateurs(true)
     }
 
     const aValider = new Map<string, number>()
-    for (const p of piecesRes.data ?? []) aValider.set(p.dossier_id, (aValider.get(p.dossier_id) ?? 0) + 1)
+    for (const p of piecesRes.lignes) aValider.set(p.dossier_id, (aValider.get(p.dossier_id) ?? 0) + 1)
 
     const moisParDossier = new Map<string, Set<number>>()
-    for (const l of lignesRes.data ?? []) {
+    for (const l of lignesRes.lignes) {
       const set = moisParDossier.get(l.dossier_id) ?? new Set<number>()
       set.add(moisDe(l.date))
       moisParDossier.set(l.dossier_id, set)
     }
 
     const cotisationsOk = new Set<string>()
-    for (const c of cotisationsRes.data ?? []) cotisationsOk.add(c.dossier_id)
+    for (const c of cotisationsRes.lignes) cotisationsOk.add(c.dossier_id)
 
     setDossiers(
       (dossiersRes.data ?? []).map((d) => ({
@@ -118,7 +138,7 @@ export default function DossiersList() {
         cotisationsOk: cotisationsOk.has(d.id),
       })),
     )
-    setDepotsRecents(depotsRes.data ?? [])
+    setDepotsRecents(depotsRes.lignes)
     setLoading(false)
   }
 

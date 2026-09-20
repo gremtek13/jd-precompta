@@ -14,6 +14,8 @@ import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
 import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
 import { analyserAppariements, libelleExploitable, piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementDevise'
+import { lireTout } from '../../lib/lectureComplete'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -39,6 +41,8 @@ function scoreCorrespondance(montantRef: number | null, dateRef: string | null, 
 
 export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
+  // Non nul quand le relevé n'a pas pu être lu en entier — voir lib/lectureComplete.ts.
+  const [lignesIncompletes, setLignesIncompletes] = useState<string | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
@@ -64,11 +68,17 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const { data: lignesData } = await supabase
-      .from('lignes_bancaires')
-      .select('*')
-      .eq('dossier_id', dossierId)
-      .order('date', { ascending: false })
+    // Lue par tranches, triée sur un ordre TOTAL (`date` n'est pas unique) : PostgREST plafonne le
+    // nombre de lignes rendues sans le signaler, et c'est la plus grosse table du projet — le total
+    // non rapproché, le contrôle de solde et tout le rapprochement porteraient alors sur une partie
+    // du relevé (voir lib/lectureComplete.ts).
+    const lecture = await lireTout<LigneBancaire>((debut, fin) =>
+      supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId)
+        .order('date', { ascending: false }).order('id').range(debut, fin),
+    )
+    const lignesData = lecture.lignes
+    setLignesIncompletes(lecture.complete ? null : lecture.motif)
 
     // Les pièces encore à valider sont chargées elles aussi : c'est justement sur elles que porte
     // l'appariement certain (voir lib/appariementBanque.ts), qui sert à les valider plutôt qu'à
@@ -98,7 +108,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       return [] as ControleReleveBancaire[]
     })
 
-    setLignes(lignesData ?? [])
+    setLignes(lignesData)
     setPieces(piecesData ?? [])
     setCotisations(cotisationsData ?? [])
     setRegles(reglesData ?? [])
@@ -451,6 +461,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les mouvements bancaires"
+        motif={lignesIncompletes}
+        consequence={
+          'Les totaux, le contrôle de solde et le rapprochement ci-dessous portent donc sur une ' +
+          'partie du relevé. Recharge la page avant de t’appuyer dessus.'
+        }
+      />
+
       <ImportCsv dossierId={dossierId} onImported={load} regles={regles} lignesExistantes={lignes} />
 
       {relevesIncoherents.length > 0 && (

@@ -12,18 +12,35 @@ import StatistiquesTab from './StatistiquesTab'
 // règle (moins de lignes, mêmes totaux).
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
+  // Plafond du serveur : nombre maximum de lignes rendues par requête, quoi qu'on demande. C'est le
+  // « Max rows » de PostgREST, qui ne se signale pas (voir lib/lectureComplete.ts).
+  plafond: null as number | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
+      // Le faux client honore `range` et annonce un `count` : la lecture par tranches ne prouverait
+      // rien contre un serveur qui rend tout d'un coup quoi qu'on lui demande.
+      let debut = 0
+      let fin = Number.MAX_SAFE_INTEGER
       Object.assign(chaine, {
         select: () => chaine,
         eq: () => chaine,
         or: () => chaine,
-        then: (suite: (r: { data: unknown[]; error: null }) => unknown) =>
-          Promise.resolve({ data: faux.parTable[table] ?? [], error: null }).then(suite),
+        order: () => chaine,
+        range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+          const toutes = faux.parTable[table] ?? []
+          const demande = fin - debut + 1
+          const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
+          return Promise.resolve({
+            data: toutes.slice(debut, debut + taille),
+            error: null,
+            count: toutes.length,
+          }).then(suite)
+        },
       })
       return chaine
     },
@@ -45,7 +62,32 @@ function piedDuTableau(): HTMLTableRowElement {
 }
 
 describe('StatistiquesTab — Balance des comptes', () => {
+  it("recolle les tranches quand le serveur plafonne, sans fabriquer d'écart", async () => {
+    // Le serveur ne rend qu'une écriture à la fois. Lue en une seule requête, la balance n'aurait
+    // que le débit — donc le badge rouge « écart », celui qui signale un brouillon cassé. C'est le
+    // plafond de PostgREST, qui ne se signale pas.
+    faux.plafond = 1
+    faux.parTable.ecritures_brouillon = [
+      ecriture('606100', 'debit', 120),
+      ecriture('512000', 'credit', 120),
+    ]
+    faux.parTable.categories = []
+    faux.parTable.pieces = []
+
+    render(
+      <AnneeProvider defaut="toutes">
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} />
+      </AnneeProvider>,
+    )
+
+    await screen.findByText('606100')
+    expect(screen.getByText('512000')).toBeDefined()
+    expect(piedDuTableau().children[3].textContent).toContain('équilibré')
+    expect(screen.queryByText(/lecture partielle|n'ont pas pu être lues/)).toBeNull()
+  })
+
   it('réduit les lignes affichées sans toucher aux totaux ni fabriquer un écart', async () => {
+    faux.plafond = null
     faux.parTable.ecritures_brouillon = [
       ecriture('606100', 'debit', 120),
       ecriture('512000', 'credit', 120),

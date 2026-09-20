@@ -14,6 +14,8 @@ import KpiTile from '../../components/widgets/KpiTile'
 import Widget from '../../components/widgets/Widget'
 import ProgressRing from '../../components/widgets/ProgressRing'
 import MonthlyBars from '../../components/widgets/MonthlyBars'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { lireTout } from '../../lib/lectureComplete'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -57,29 +59,49 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   const [loading, setLoading] = useState(true)
+  // Non nul quand l'une des grosses collections n'a pas pu être lue en entier : les points ci-dessous
+  // portent alors sur une partie du dossier, et leur SILENCE ne prouve plus rien.
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
     const [
-      { data: piecesValideesData },
-      { data: piecesAValiderData },
+      lectureValidees,
+      lectureAValider,
       { data: cotisationsData },
-      { data: lignesData },
+      lectureLignes,
       { data: immobilisationsData },
       { data: naturesData },
       { data: categoriesData },
-      { data: ecrituresData },
+      lectureEcritures,
       { data: declarationsData },
       { data: infoData },
     ] = await Promise.all([
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'a_valider'),
+      // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
+      // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
+      // précisément celui qui prétend dire ce qui MANQUE. Un contrôle qui ne voit qu'une partie du
+      // dossier se tait sur le reste — et se taire est exactement ce qu'on attend de lui quand tout
+      // va bien : la panne est indiscernable du succès.
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+      ),
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'a_valider').order('id').range(debut, fin),
+      ),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
-      supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId),
+      lireTout<LigneBancaire>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
       supabase.from('natures_immobilisation').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
-      supabase.from('ecritures_brouillon').select('*').eq('dossier_id', dossierId),
+      lireTout<EcritureBrouillon>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       supabase.from('declarations_tva').select('*').eq('dossier_id', dossierId),
       supabase.from('informations_dossier').select('*').eq('dossier_id', dossierId).maybeSingle(),
     ])
@@ -94,14 +116,17 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       console.error(err)
       return [] as DoublonDeTexte[]
     }))
-    setPiecesValidees(piecesValideesData ?? [])
-    setPiecesAValider(piecesAValiderData ?? [])
+    setPiecesValidees(lectureValidees.lignes)
+    setPiecesAValider(lectureAValider.lignes)
     setCotisations(cotisationsData ?? [])
-    setLignes(lignesData ?? [])
+    setLignes(lectureLignes.lignes)
+    setLectureIncomplete(
+      [lectureValidees, lectureAValider, lectureLignes, lectureEcritures].find((l) => !l.complete)?.motif ?? null,
+    )
     setImmobilisations(immobilisationsData ?? [])
     setNatures(naturesData ?? [])
     setCategories(categoriesData ?? [])
-    setEcritures(ecrituresData ?? [])
+    setEcritures(lectureEcritures.lignes)
     setDeclarationsTva(declarationsData ?? [])
     setInfo(infoData ?? null)
     setLoading(false)
@@ -360,6 +385,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les pièces, les mouvements ou les écritures"
+        motif={lectureIncomplete}
+        consequence={
+          'Les points ci-dessous portent donc sur une partie du dossier : leur SILENCE ne prouve ' +
+          'plus rien. Recharge la page avant de t’y fier.'
+        }
+      />
       <div className="bento">
         <div className="span-3">
           <KpiTile
