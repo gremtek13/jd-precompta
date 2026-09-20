@@ -288,6 +288,21 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `extraireErreurFonction(error, repli)` pour afficher le vrai message
   d'erreur à l'utilisateur — ne jamais supposer que `data?.error` sera
   peuplé en cas d'échec.
+- **Et cette fonction-là n'avait AUCUN test**, corrigé le 20/09/2026. C'est le point de passage
+  unique de tous les messages d'erreur d'Edge Function — treize appels y mènent — et son absence de
+  couverture était coûteuse pour une raison précise : **une régression n'y casse rien de visible**.
+  Elle fait retomber chaque écran sur son repli, qui est plausible. C'est mot pour mot le défaut
+  qu'elle a été écrite pour corriger, et qui avait vécu depuis le début du projet sans être vu.
+  Dix tests, six mutations tuées, dont deux cas que la relecture ne suggère pas : une `Response` ne
+  se lit QU'UNE FOIS (déjà consommée, `.json()` lève — c'est ce que le `catch` doit absorber), et le
+  corps doit primer sur le message de l'`Error` qui le porte, `FunctionsHttpError` n'annonçant que
+  « Edge Function returned a non-2xx status code ».
+  `invokeErreur.ts` n'important pas `supabase.ts`, il se teste sans faux client, avec de vraies
+  `Response` — l'exception qui confirme la règle du module de calcul découplé.
+- **Le balayage des paramètres par défaut a rendu un résultat NÉGATIF pour tous les autres**
+  (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
+  `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
+  `extraireErreurFonction` était à découvert, et pas seulement sur son défaut : sur tout.
 - **N° de TVA intracommunautaire français** calculé déterministiquement à
   partir du SIREN (formule CGI art. 286 ter : `clé = (12 + 3×(SIREN mod 97))
   mod 97`, puis `FR` + clé 2 chiffres + SIREN) plutôt que demandé comme champ
@@ -1599,7 +1614,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 915 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 925 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
