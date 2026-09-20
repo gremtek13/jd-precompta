@@ -247,7 +247,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // « Erreur » : si les deux sont validées et catégorisées, la même charge est comptée deux fois —
     // dans la 2035 comme dans la balance. Et l'empreinte du FICHIER ne peut pas le voir (voir
     // lib/doublonsTexte.ts), donc aucun autre écran ne le signale.
-    { id: 'doublon-texte', label: 'document(s) déposé(s) plusieurs fois sous des fichiers différents', action: 'Voir les doublons', nb: doublonsTexte.length, cible: 'pieces', severite: 'erreur' },
+    //
+    // La destination suit le doublon, elle n'est pas écrite en dur. `cible: 'pieces'` était juste
+    // tant que seules les pièces portaient un texte OCR ; depuis que les documents en ont un
+    // (20/09/2026), un groupe peut n'être fait que de documents — et l'onglet Pièces n'a alors
+    // aucune ligne à montrer. Un point qui annonce « 1 » et renvoie vers un écran vide est pire
+    // qu'un point absent : l'opérateur cherche, ne trouve pas, et cesse de croire le suivant.
+    { id: 'doublon-texte', label: 'document(s) déposé(s) plusieurs fois sous des fichiers différents', action: 'Voir les doublons', nb: doublonsTexte.length, cible: doublonsTexte.some((d) => d.pieceIds.length > 0) ? 'pieces' : 'documents', severite: 'erreur' },
     // En « erreur » : la pièce n'a AUCUN montant en euros tant que le taux manque, donc elle ne
     // compte nulle part — ni en charge, ni en TVA, ni dans la 2035. Exactement l'effet d'une pièce
     // sans catégorie, par un autre chemin.

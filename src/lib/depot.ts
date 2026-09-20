@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { ACHAT_PAR_DEFAUT, extractPiece, fichierDejaPresent, hashFichier, orientationDe, type ExtractionResult } from './extraction'
+import { ACHAT_PAR_DEFAUT, extractPiece, fichierDejaPresent, hashFichier, orientationDe, textractPeutLire, type ExtractionResult } from './extraction'
 import { slugify } from './format'
 import type { CibleCommentaire } from './commentaires'
 import { enregistrerTexteOcr } from './texteOcr'
@@ -78,11 +78,17 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
       return { statut: 'ok', cible: { type: 'document', id } }
     }
 
+    // Un format que Textract ne lit pas n'est pas envoyé : il rendrait un 400 et l'on retomberait de
+    // toute façon sur `ACHAT_PAR_DEFAUT` ci-dessous. Même issue, un aller-retour en moins — et
+    // surtout la règle est désormais NOMMÉE (voir `textractPeutLire`) au lieu d'être un `.csv` écrit
+    // en dur ici et dans `importFichiers.ts`, que la relecture n'avait pas hérité.
     let extraction: ExtractionResult | null = null
-    try {
-      extraction = await extractPiece(file, file.name)
-    } catch {
-      extraction = null // best-effort : atterrit en Pièces à compléter par le cabinet si l'extraction échoue
+    if (textractPeutLire(file.name)) {
+      try {
+        extraction = await extractPiece(file, file.name)
+      } catch {
+        extraction = null // best-effort : atterrit en Pièces à compléter par le cabinet si l'extraction échoue
+      }
     }
 
     const orientation = extraction ? orientationDe(extraction.classification) : ACHAT_PAR_DEFAUT

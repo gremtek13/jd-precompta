@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { extractPiece } from './extraction'
+import { extractPiece, textractPeutLire } from './extraction'
 import { enregistrerTexteOcr, texteOcrExploitable } from './texteOcr'
 import type { DocumentDivers, Piece } from './types'
 
@@ -48,8 +48,15 @@ export function piecesADater(pieces: Piece[]): Piece[] {
 // Les pièces qu'une relecture ferait progresser : celles sans date, et celles dont on n'a pas le
 // texte lu. `avecTexteOcr` vient de la base (voir texteOcr.piecesAvecTexteOcr) — sans lui, on
 // relirait tout le dossier à chaque lancement, en repayant Textract pour rien.
+//
+// « Progresser » exclut ce que Textract ne sait pas lire (voir `textractPeutLire`) : un CSV ou un
+// texte brut n'obtiendra jamais de texte, donc il resterait éligible à chaque lancement — un résidu
+// qui ne se résorbe pas et qui se présente à l'écran comme un échec, c'est-à-dire comme quelque
+// chose à réessayer.
 export function piecesARelire(pieces: Piece[], avecTexteOcr: Set<string>): Piece[] {
-  return pieces.filter((p) => !!p.storage_path && (!p.date_piece || !avecTexteOcr.has(p.id)))
+  return pieces.filter(
+    (p) => !!p.storage_path && textractPeutLire(p.nom_fichier) && (!p.date_piece || !avecTexteOcr.has(p.id)),
+  )
 }
 
 export async function relireDocuments(
@@ -150,8 +157,12 @@ export interface ResultatRelectureDocuments {
 // Les documents qu'une relecture ferait progresser : ceux dont on n'a pas le texte. Sans
 // `avecTexteOcr` (voir texteOcr.documentsAvecTexteOcr) on relirait tout le dossier à chaque
 // lancement, en repayant Textract pour du texte déjà en base.
+//
+// Et sans `textractPeutLire`, on le relancerait indéfiniment sur ce qu'il ne lira jamais : les
+// relevés bancaires CSV, que le dépôt écarte déjà de l'extraction, sont dans cette table comme les
+// autres documents. C'est ici que ça se voit, le compte s'affichant sur le bouton.
 export function documentsARelire(documents: DocumentDivers[], avecTexteOcr: Set<string>): DocumentDivers[] {
-  return documents.filter((d) => !!d.storage_path && !avecTexteOcr.has(d.id))
+  return documents.filter((d) => !!d.storage_path && textractPeutLire(d.nom_fichier) && !avecTexteOcr.has(d.id))
 }
 
 export async function relireTextesDocuments(

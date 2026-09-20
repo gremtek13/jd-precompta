@@ -263,6 +263,16 @@ describe('piecesARelire — ne repayer Textract que pour ce qui manque', () => {
     // deux fois la même lecture.
     expect(piecesARelire([piece({ id: 'a', date_piece: '2023-01-31' })], new Set(['a']))).toEqual([])
   })
+
+  // Une pièce dans un format que Textract refuse n'obtiendra JAMAIS de texte : sans ce filtre elle
+  // reste éligible à chaque lancement, et le compte affiché sur le bouton ne descend jamais.
+  it("écarte un format que Textract ne sait pas lire, qui resterait éligible à vie", () => {
+    const retenues = piecesARelire([
+      piece({ id: 'lisible', nom_fichier: 'facture.pdf', date_piece: '2023-01-31' }),
+      piece({ id: 'csv', nom_fichier: 'releve.csv', date_piece: '2023-01-31' }),
+    ], AUCUN_TEXTE)
+    expect(retenues.map((p) => p.id)).toEqual(['lisible'])
+  })
 })
 
 describe('texte lu — ce qui manquait à l’arbitrage', () => {
@@ -335,6 +345,18 @@ describe('documentsARelire — ne repayer Textract que pour ce qui manque', () =
 
   it("écarte un document sans chemin de stockage — il n'y a rien à relire", () => {
     expect(documentsARelire([document({ id: 'a', storage_path: '' })], new Set())).toEqual([])
+  })
+
+  // LE CAS RÉEL, mesuré le 20/09/2026 sur le dossier `test` : 37 documents relus, 36 textes archivés
+  // et un relevé bancaire CSV qui rend `UnsupportedDocumentException` (HTTP 400). N'ayant jamais de
+  // texte, il repartait à chaque clic — le bouton annonçait « (1) » indéfiniment, et l'écran « 1
+  // échec », c'est-à-dire un incident à réessayer.
+  it("écarte le relevé CSV, que Textract refuse et qui revenait à chaque relecture", () => {
+    const retenus = documentsARelire([
+      document({ id: 'snir', nom_fichier: 'snir.pdf' }),
+      document({ id: 'releve', nom_fichier: 'T_cpte_02871_du_01-01-2025_au_31-12-2025.csv' }),
+    ], new Set())
+    expect(retenus.map((d) => d.id)).toEqual(['snir'])
   })
 })
 

@@ -142,6 +142,41 @@ export async function normalizeForExtraction(source: Blob, name: string): Promis
   }
 }
 
+// Ce que Textract sait lire — la PRÉCONDITION d'`extractPiece`, nommée une fois pour toutes.
+//
+// À ne pas confondre avec `EXTENSIONS_SUPPORTEES` (importFichiers.ts), qui répond à une tout autre
+// question : « l'application accepte-t-elle ce fichier ? ». Un CSV y figure, et à juste titre — c'est
+// un relevé bancaire parfaitement légitime. Mais Textract ne lit ni CSV ni texte brut : il répond
+// `UnsupportedDocumentException` (HTTP 400). Les deux questions se ressemblent assez pour qu'on
+// prenne l'une pour l'autre, et c'est exactement ce qui s'est produit.
+//
+// LA RÈGLE EXISTAIT DÉJÀ, ÉCRITE DEUX FOIS ET EN DUR. `depot.ts` et `importFichiers.ts` court-circuitent
+// tous deux le `.csv` avant d'appeler l'extraction — d'où un relevé bancaire déposé sans jamais coûter
+// un appel. La relecture (`relectureDocuments.ts`), arrivée après, ne l'a pas héritée : elle ne filtre
+// que sur `storage_path`. Mesuré le 20/09/2026 sur le dossier `test` — sur les 37 documents relus,
+// 36 ont reçu leur texte et le 37e est le relevé CSV, qui a rendu son 400. Il le rendra à CHAQUE
+// clic : n'ayant jamais de texte, il reste éligible pour toujours. Le bouton annonce donc « (1) »
+// indéfiniment et l'écran affiche « 1 échec », qui se lit comme un incident passager à réessayer.
+//
+// LISTE BLANCHE, JAMAIS LISTE NOIRE. Interdire `csv` et `txt` laisserait passer le premier `.xlsx`,
+// `.zip` ou `.docx` déposé, avec exactement le même symptôme. On énumère donc ce que Textract lit
+// (JPEG, PNG, PDF, TIFF) et rien d'autre.
+//
+// UN FICHIER SANS EXTENSION EST ENVOYÉ QUAND MÊME, et c'est délibéré : on ne sait pas ce qu'il
+// contient, et refuser de l'essayer ferait taire l'extraction sur un PDF valide simplement renommé —
+// c'est précisément le cas que `sniffeSignature` protège à l'import. Le coût des deux erreurs n'est
+// pas le même : ne pas extraire un fichier lisible se perd en silence, tandis qu'un résidu dans la
+// relecture reste sous les yeux de l'opérateur, qui peut en faire quelque chose.
+const FORMATS_TEXTRACT = ['pdf', 'jpg', 'jpeg', 'png', 'tif', 'tiff']
+
+export function textractPeutLire(nomFichier: string): boolean {
+  // `split('.').pop()` rend le nom entier quand il n'y a pas de point : on distingue donc l'absence
+  // d'extension (envoyé, voir ci-dessus) d'une extension présente mais illisible (écarté).
+  const point = nomFichier.lastIndexOf('.')
+  if (point <= 0 || point === nomFichier.length - 1) return true
+  return FORMATS_TEXTRACT.includes(nomFichier.slice(point + 1).toLowerCase())
+}
+
 // Point d'entrée partagé entre la saisie d'une pièce (PieceFormModal) et l'import en masse d'un
 // dossier de fichiers (ImportDossierModal) — même normalisation, même appel à la fonction Edge.
 export async function extractPiece(source: Blob, name: string): Promise<ExtractionResult> {

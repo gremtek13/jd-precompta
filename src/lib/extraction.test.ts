@@ -21,7 +21,7 @@ vi.mock('./supabase', () => ({
   },
 }))
 
-const { fichierDejaPresent } = await import('./extraction')
+const { fichierDejaPresent, textractPeutLire } = await import('./extraction')
 
 beforeEach(() => {
   reponses.pieces = { count: 0, error: null }
@@ -82,5 +82,43 @@ describe('orientationDe', () => {
     // Le repli partagé par les deux pipelines : sans extraction on ne sait rien, et une pièce à
     // vérifier vaut mieux qu'un fichier rangé dans une archive que personne ne relit.
     expect(ACHAT_PAR_DEFAUT).toEqual({ destination: 'pieces', type_piece: 'achat' })
+  })
+})
+
+describe('textractPeutLire', () => {
+  it('accepte les formats que Textract lit réellement', () => {
+    for (const nom of ['facture.pdf', 'scan.JPG', 'photo.jpeg', 'recu.png', 'archive.tif', 'archive.TIFF']) {
+      expect(textractPeutLire(nom), nom).toBe(true)
+    }
+  })
+
+  // Le cas d'origine : un relevé bancaire CSV, écarté de l'extraction au dépôt mais repris
+  // indéfiniment par la relecture, qui ne filtrait que sur `storage_path`.
+  it('écarte le CSV et le texte brut, que Textract refuse par un 400', () => {
+    expect(textractPeutLire('T_cpte_02871_du_01-01-2025_au_31-12-2025.csv')).toBe(false)
+    expect(textractPeutLire('notes.txt')).toBe(false)
+  })
+
+  // CE TEST EST LA DIFFÉRENCE ENTRE UNE LISTE BLANCHE ET UNE LISTE NOIRE. Une liste noire
+  // `['csv', 'txt']` ferait passer les trois lignes ci-dessous et rendrait le même défaut, en
+  // silence, au premier tableur ou document bureautique déposé.
+  it('écarte tout autre format bureautique, sans avoir eu à le prévoir', () => {
+    expect(textractPeutLire('balance.xlsx')).toBe(false)
+    expect(textractPeutLire('courrier.docx')).toBe(false)
+    expect(textractPeutLire('pieces.zip')).toBe(false)
+  })
+
+  // Choix assumé : sans extension on ne sait rien, et refuser d'essayer ferait taire l'extraction sur
+  // un PDF valide simplement renommé — l'erreur coûteuse, parce qu'elle se perd en silence.
+  it('envoie quand même un fichier sans extension', () => {
+    expect(textractPeutLire('facture')).toBe(true)
+    expect(textractPeutLire('facture.')).toBe(true)
+    expect(textractPeutLire('.gitignore')).toBe(true)
+  })
+
+  // Un nom à plusieurs points se juge sur le DERNIER : « releve.pdf.csv » est un CSV.
+  it("se fie au dernier point, pas au premier", () => {
+    expect(textractPeutLire('releve.pdf.csv')).toBe(false)
+    expect(textractPeutLire('facture.2025.pdf')).toBe(true)
   })
 })

@@ -1,7 +1,7 @@
 import { supabase } from './supabase'
 import { lireTout } from './lectureComplete'
 import { slugify } from './format'
-import { ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orientationDe } from './extraction'
+import { ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orientationDe, textractPeutLire } from './extraction'
 import { enregistrerTexteOcr } from './texteOcr'
 import { montantsPourPiece } from './tauxChange'
 
@@ -134,7 +134,9 @@ export async function importerFichierDossier(params: {
   // l'import : le fichier est quand même archivé, à compléter à la main ensuite. Sans extraction, on
   // ne peut pas savoir si c'est une facture ou autre chose — on part du principe que c'en est une
   // (même repli par défaut que côté extract-piece).
-  const extraction = await extractPiece(file, file.name).catch(() => null)
+  // Un format que Textract ne lit pas n'est pas envoyé du tout : le `.catch` l'aurait ramené ici avec
+  // la même valeur, après un aller-retour et un 400 (voir `textractPeutLire`).
+  const extraction = textractPeutLire(file.name) ? await extractPiece(file, file.name).catch(() => null) : null
 
   const orientation = extraction ? orientationDe(extraction.classification) : ACHAT_PAR_DEFAUT
 

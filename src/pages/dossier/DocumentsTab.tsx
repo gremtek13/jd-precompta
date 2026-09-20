@@ -10,6 +10,7 @@ import { documentsAvecTexteOcr, enregistrerTexteOcr, lireTexteOcrDuDocument, tex
 import { documentsARelire, relireTextesDocuments } from '../../lib/relectureDocuments'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { chargerDoublonsDeTexte } from '../../lib/doublonsTexte'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -66,6 +67,17 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     setOcrOuvert((actuel) => (actuel?.documentId === documentId ? { documentId, texte } : actuel))
   }
 
+  // Documents dont le texte lu est identique à celui d'une autre pièce ou d'un autre document du
+  // dossier. Le compte porte sur le GROUPE entier (pièces + documents) : ce qui intéresse
+  // l'opérateur est « combien d'exemplaires de ce document existent », pas « combien du même côté ».
+  //
+  // Cet écran ne pouvait PAS porter ce badge jusqu'au 20/09/2026, et pas par oubli : aucun document
+  // n'avait de texte, donc aucun groupe ne pouvait en contenir un. `relireTextesDocuments` a changé
+  // ça — 36 documents lus sur le dossier `test` — et a rendu joignable un cas que seule la Checklist
+  // savait compter, en renvoyant vers l'onglet Pièces où un doublon purement documentaire n'a aucune
+  // ligne à afficher. Un point qui annonce « 1 » et une destination vide.
+  const [doublonParDocument, setDoublonParDocument] = useState<Map<string, number>>(new Map())
+
   async function load() {
     setLoading(true)
     const [lectureDocuments, { data: sousDossiersData }] = await Promise.all([
@@ -84,6 +96,17 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     const presence = await documentsAvecTexteOcr(dossierId)
     setAvecTexteOcr(presence.avecTexte)
     setPresenceTexteIncertaine(presence.erreur)
+    // Best-effort, et journalisé : un doublon non signalé laisse l'écran dans son état d'avant, il
+    // ne rend rien de faux. Faire échouer tout l'onglet Documents pour ça serait disproportionné.
+    const doublons = await chargerDoublonsDeTexte(dossierId).catch((err) => {
+      console.error('Doublons de contenu illisibles :', err)
+      return []
+    })
+    const parDocument = new Map<string, number>()
+    for (const doublon of doublons) {
+      for (const id of doublon.documentIds) parDocument.set(id, doublon.pieceIds.length + doublon.documentIds.length)
+    }
+    setDoublonParDocument(parDocument)
     setLoading(false)
   }
 
@@ -387,6 +410,15 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
                   <td>
                     <a href="#" onClick={(e) => { e.preventDefault(); voir(d.storage_path) }}>{d.nom_fichier}</a>
                     {d.attached_to_cotisation_id && <span className="badge badge-ok" style={{ marginLeft: 8 }}>Rattaché à une échéance</span>}
+                    {doublonParDocument.has(d.id) && (
+                      <span
+                        className="badge badge-danger"
+                        style={{ marginLeft: 8, fontSize: '0.7rem' }}
+                        title={`${doublonParDocument.get(d.id)} pièces/documents de ce dossier ont exactement le même texte lu — c'est le même document déposé plusieurs fois, sous des fichiers différents. L'empreinte du fichier ne peut pas le voir.`}
+                      >
+                        Doublon de contenu
+                      </span>
+                    )}
                     {avecTexteOcr.has(d.id) && (
                       <button
                         type="button"

@@ -1351,6 +1351,42 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   manque sans raison visible est le début d'un ticket, et ici sa présence coûte de l'argent. Famille
   déjà connue (« une lecture dont l'échec ressemble à un résultat vide »), appliquée cette fois à la
   seule liste dont dépend une facture.
+- **« L'application accepte ce fichier » et « Textract sait le lire » sont DEUX questions.** La
+  première est `EXTENSIONS_SUPPORTEES` (importFichiers.ts) et inclut le CSV, à juste titre : un relevé
+  bancaire CSV est parfaitement légitime. La seconde est `textractPeutLire` (lib/extraction.ts) et
+  l'exclut : Textract répond `UnsupportedDocumentException` (HTTP 400) sur un CSV comme sur un texte
+  brut. Les deux listes se ressemblent assez pour qu'on prenne l'une pour l'autre.
+  La règle EXISTAIT, écrite deux fois et en dur : `depot.ts` et `importFichiers.ts` court-circuitaient
+  tous deux le `.csv` avant d'appeler l'extraction. `relectureDocuments.ts`, arrivée après, ne l'a pas
+  héritée — elle ne filtrait que sur `storage_path`. **Mesuré le 20/09/2026 sur le dossier `test`** :
+  des 37 documents relus, 36 ont reçu leur texte et le 37e est le relevé CSV, qui a rendu son 400 (vu
+  dans `function_logs`). N'ayant jamais de texte, il restait éligible **à chaque clic** : le bouton
+  annonçait « (1) » indéfiniment et l'écran « 1 échec », c'est-à-dire un incident à réessayer. Huit
+  fichiers de la base sont dans ce cas (6 `.txt`, 2 `.csv`).
+  C'est le motif déjà connu — **chercher toutes les copies avant de corriger la première** — pris par
+  l'autre bout : ici la règle était juste aux deux endroits où elle était écrite, et c'est le
+  NOUVEAU caller qui ne l'a pas reçue. Une règle recopiée deux fois n'attend pas de diverger ; elle
+  attend un troisième appelant.
+  Deux décisions la rendent durable : **liste blanche et jamais liste noire** (interdire `csv`/`txt`
+  laisserait passer le premier `.xlsx` ou `.zip` avec exactement le même symptôme — un test le fige) ;
+  et **un fichier sans extension est envoyé quand même**, parce que refuser d'essayer ferait taire
+  l'extraction sur un PDF valide simplement renommé. Le coût des deux erreurs n'est pas le même : ne
+  pas extraire un fichier lisible se perd en silence, un résidu dans la relecture reste sous les yeux
+  de l'opérateur.
+- **Un point de Checklist choisit sa destination, il ne l'écrit pas en dur.** `doublon-texte` portait
+  `cible: 'pieces'`, ce qui était juste tant que seules les pièces avaient un texte OCR. Depuis que les
+  documents en ont un (20/09/2026), un groupe de doublons peut n'être fait que de DOCUMENTS — et
+  l'onglet Pièces n'a alors aucune ligne à montrer. Un point qui annonce « 1 » et renvoie vers un écran
+  vide est pire qu'un point absent : l'opérateur cherche, ne trouve pas, et cesse de croire le suivant.
+  La destination suit donc le contenu du groupe, et `DocumentsTab` porte le même badge « Doublon de
+  contenu » que `PiecesTab`. **Le module n'avait pas ce défaut** : `DoublonDeTexte` portait
+  `pieceIds` ET `documentIds` depuis le début — seuls les écrans s'arrêtaient à mi-chemin, faute de
+  pouvoir être exercés tant qu'aucun document n'avait de texte.
+- **Mesuré le 20/09/2026, résultat négatif à garder** : sur les 77 textes du dossier `test` (41 pièces
+  + 36 documents), les 36 documents fraîchement lus n'introduisent **aucun** nouveau doublon de
+  contenu. Le seul groupe reste `mai.pdf` / `juin.pdf`, déjà connu. La question qui motivait la mesure
+  — « un même relevé est-il classé une fois en Pièces et une fois en Documents ? » — a donc une
+  réponse, et c'est non. Elle ne se redemande pas à chaque session.
 - **Une colonne, un affichage, et aucun chemin d'écriture : la moitié d'une fonctionnalité ne se
   voit pas.** `piece_textes_ocr` avait reçu son `document_id`, `DocumentsTab` savait déjà déplier
   « texte lu » — et RIEN ne l'a jamais rempli pour un document déjà en base, aucun appelant
@@ -1463,7 +1499,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 902 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — NNN tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
