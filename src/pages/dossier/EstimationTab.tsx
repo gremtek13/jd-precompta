@@ -52,15 +52,18 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   async function load() {
     setLoading(true)
     const [
-      { data: cotisationsData },
+      lectureCotisations,
       lectureRecettes,
       lecturePieces,
-      { data: categoriesData },
-      { data: immobilisationsData },
+      lectureCategories,
+      lectureImmobilisations,
       { data: referencesData },
       { data: referencesPostesData },
     ] = await Promise.all([
-      supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      lireTout<CotisationDeclaree>((debut, fin) =>
+        supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       // Lues par tranches (voir lib/lectureComplete.ts) : recettes et dépenses FONT le résultat
       // estimé, donc l'assiette des cotisations. Tronquées, elles rendent une estimation plausible.
       lireTout<Piece>((debut, fin) =>
@@ -72,17 +75,23 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
       ),
-      supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
-      supabase.from('immobilisations').select('piece_id').eq('dossier_id', dossierId),
+      lireTout<Categorie>((debut, fin) =>
+        supabase.from('categories').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
+      ),
+      lireTout<{ piece_id: string | null }>((debut, fin) =>
+        supabase.from('immobilisations').select('piece_id, id', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       supabase.from('references_annuelles').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }),
       supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
     ])
-    setCotisations(cotisationsData ?? [])
+    setCotisations(lectureCotisations.lignes)
     setRecettesValidees(lectureRecettes.lignes)
     setPiecesValidees(lecturePieces.lignes)
     setLectureIncomplete(lectureRecettes.motif ?? lecturePieces.motif)
-    setCategories(categoriesData ?? [])
-    setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
+    setCategories(lectureCategories.lignes)
+    setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
     setReferences(referencesData ?? [])
     setReferencesPostes(referencesPostesData ?? [])
     setLoading(false)

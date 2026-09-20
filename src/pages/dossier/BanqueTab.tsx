@@ -99,10 +99,10 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     const piecesData = lecturePieces.lignes
     setPiecesIncompletes(lecturePieces.complete ? null : lecturePieces.motif)
 
-    const { data: cotisationsData } = await supabase
-      .from('cotisations_declarees')
-      .select('*')
-      .eq('dossier_id', dossierId)
+    const lectureCotisations = await lireTout<CotisationDeclaree>((debut, fin) =>
+      supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    )
 
     const { data: reglesData } = await supabase
       .from('regles_bancaires_ignorees')
@@ -119,7 +119,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
     setLignes(lignesData)
     setPieces(piecesData ?? [])
-    setCotisations(cotisationsData ?? [])
+    setCotisations(lectureCotisations.lignes)
     setRegles(reglesData ?? [])
     setRelevesIncoherents(controles)
     setLoading(false)

@@ -42,8 +42,13 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data }, lectureDocuments] = await Promise.all([
-      supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId).order('echeance', { ascending: false }),
+    const [lectureCotisations, lectureDocuments] = await Promise.all([
+      // Tri TOTAL : `echeance` n'est pas unique, donc `id` départage — sans lui, deux tranches
+      // se recouvrent ou sautent des lignes, et rien ne le signale.
+      lireTout<CotisationDeclaree>((debut, fin) =>
+        supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('echeance', { ascending: false }).order('id').range(debut, fin),
+      ),
       // Uniquement les appels de cotisation classés dans l'archive Documents (voir DocumentsTab) — le
       // rattachement se fait ici, pas là-bas, pour rester à côté du montant qu'ils justifient.
       lireTout<DocumentDivers>((debut, fin) =>
@@ -51,7 +56,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
           .eq('dossier_id', dossierId).eq('categorie', 'cotisation').order('id').range(debut, fin),
       ),
     ])
-    setCotisations(data ?? [])
+    setCotisations(lectureCotisations.lignes)
     setDocumentsCotisation(lectureDocuments.lignes)
     setLoading(false)
   }

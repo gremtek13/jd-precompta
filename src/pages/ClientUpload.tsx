@@ -70,7 +70,7 @@ export default function ClientUpload() {
 
   async function load() {
     if (!dossierId) return
-    const [lecturePieces, lectureDocuments, lectureLignes, { data: cotisationsData }, commentairesData] = await Promise.all([
+    const [lecturePieces, lectureDocuments, lectureLignes, lectureCotisations, commentairesData] = await Promise.all([
       // Lues par tranches : le plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts),
       // et c'est sur ces deux collections que repose « ce qu'il reste à envoyer ». Tronquées, elles
       // demanderaient au client des documents qu'il a déjà envoyés.
@@ -86,14 +86,17 @@ export default function ClientUpload() {
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      lireTout<CotisationDeclaree>((debut, fin) =>
+        supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       chargerCommentaires(dossierId),
     ])
     setPieces(lecturePieces.lignes)
     setDocuments(lectureDocuments.lignes)
     setLignes(lectureLignes.lignes)
     setLectureIncomplete(lecturePieces.motif ?? lectureLignes.motif)
-    setCotisations(cotisationsData ?? [])
+    setCotisations(lectureCotisations.lignes)
     setCommentaires(commentairesData)
   }
 

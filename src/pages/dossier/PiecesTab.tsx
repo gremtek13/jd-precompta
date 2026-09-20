@@ -100,11 +100,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     )
     const lignesBancairesData = lectureRapprochees.lignes
 
-    const { data: categoriesData } = await supabase
-      .from('categories')
-      .select('*')
-      .or(`dossier_id.eq.${dossierId},dossier_id.is.null`)
-      .order('ordre')
+    const lectureCategories = await lireTout<Categorie>((debut, fin) =>
+      supabase.from('categories').select('*', { count: 'exact' })
+        .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
+    )
 
     const { data: sousDossiersData } = await supabase
       .from('sous_dossiers')
@@ -138,7 +137,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     }))
 
     setPieces(piecesData ?? [])
-    setCategories(categoriesData ?? [])
+    setCategories(lectureCategories.lignes)
     setSousDossiers(sousDossiersData ?? [])
     setTiersCategories(tiersCategoriesData ?? [])
     setTiersCategoriesCabinet(tiersCategoriesCabinetData ?? [])

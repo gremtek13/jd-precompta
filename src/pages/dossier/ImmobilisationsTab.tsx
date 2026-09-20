@@ -33,7 +33,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
 
   async function load() {
     setLoading(true)
-    const [lecturePieces, { data: immobilisationsData }, { data: naturesData }] = await Promise.all([
+    const [lecturePieces, lectureImmobilisations, lectureNatures] = await Promise.all([
       // Lue par tranches (voir lib/lectureComplete.ts) : c'est parmi ces pièces qu'on choisit celle
       // à immobiliser, et une liste tronquée ne paraît pas tronquée.
       // `piecesValidees` et non `pieces` : la lecture ne rend QUE les validées, et le filtre est
@@ -44,12 +44,18 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
       ),
-      supabase.from('immobilisations').select('*').eq('dossier_id', dossierId).order('date_acquisition', { ascending: false }),
-      supabase.from('natures_immobilisation').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
+      lireTout<Immobilisation>((debut, fin) =>
+        supabase.from('immobilisations').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date_acquisition', { ascending: false }).order('id').range(debut, fin),
+      ),
+      lireTout<NatureImmobilisation>((debut, fin) =>
+        supabase.from('natures_immobilisation').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
+      ),
     ])
     setPiecesValidees(lecturePieces.lignes)
-    setImmobilisations(immobilisationsData ?? [])
-    setNatures(naturesData ?? [])
+    setImmobilisations(lectureImmobilisations.lignes)
+    setNatures(lectureNatures.lignes)
     setLoading(false)
   }
 

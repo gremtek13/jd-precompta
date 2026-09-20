@@ -26,8 +26,11 @@ export default function ClientSimulation() {
   useEffect(() => {
     if (!dossierId) return
     async function load() {
-      const [{ data: cotisationsData }, lectureRecettes, { data: referencesData }, { data: referencesPostesData }] = await Promise.all([
-        supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      const [lectureCotisations, lectureRecettes, { data: referencesData }, { data: referencesPostesData }] = await Promise.all([
+        lireTout<CotisationDeclaree>((debut, fin) =>
+          supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        ),
         // Lues par tranches : ces recettes FONT le chiffre d'affaires simulé (voir
         // lib/lectureComplete.ts). Tronquées, elles produisent une simulation plausible et basse.
         lireTout<Piece>((debut, fin) =>
@@ -38,7 +41,7 @@ export default function ClientSimulation() {
         supabase.from('references_annuelles').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }),
         supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
       ])
-      setCotisations(cotisationsData ?? [])
+      setCotisations(lectureCotisations.lignes)
       setRecettesValidees(lectureRecettes.lignes)
       setReferences(referencesData ?? [])
       setReferencesPostes(referencesPostesData ?? [])

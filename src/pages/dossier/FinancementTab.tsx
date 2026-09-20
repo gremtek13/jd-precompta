@@ -40,9 +40,9 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
     const [
       { data: empruntsData },
       lecturePieces,
-      { data: categoriesData },
-      { data: immobilisationsData },
-      { data: cotisationsData },
+      lectureCategories,
+      lectureImmobilisations,
+      lectureCotisations,
       lectureBanque,
       { data: previsionnelData },
     ] = await Promise.all([
@@ -54,9 +54,18 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
       ),
-      supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
-      supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
-      supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      lireTout<Categorie>((debut, fin) =>
+        supabase.from('categories').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
+      ),
+      lireTout<Immobilisation>((debut, fin) =>
+        supabase.from('immobilisations').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+      lireTout<CotisationDeclaree>((debut, fin) =>
+        supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       // Solde de trésorerie recalculé depuis le détail (pas juste l'agrégat "aujourd'hui") pour
       // pouvoir aussi répondre "à telle date" dans la situation intermédiaire ci-dessous — sur tout
       // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours.
@@ -68,9 +77,9 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
     ])
     setEmprunts((empruntsData ?? []) as Emprunt[])
     setPiecesValidees(lecturePieces.lignes)
-    setCategories((categoriesData ?? []) as Categorie[])
-    setImmobilisations((immobilisationsData ?? []) as Immobilisation[])
-    setCotisations((cotisationsData ?? []) as CotisationDeclaree[])
+    setCategories(lectureCategories.lignes)
+    setImmobilisations(lectureImmobilisations.lignes)
+    setCotisations(lectureCotisations.lignes)
     setLignesBanque(lectureBanque.lignes as LigneBanque[])
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
     setLoading(false)

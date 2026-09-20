@@ -68,11 +68,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     const [
       lectureValidees,
       lectureAValider,
-      { data: cotisationsData },
+      lectureCotisations,
       lectureLignes,
-      { data: immobilisationsData },
-      { data: naturesData },
-      { data: categoriesData },
+      lectureImmobilisations,
+      lectureNatures,
+      lectureCategories,
       lectureEcritures,
       { data: declarationsData },
       { data: infoData },
@@ -90,14 +90,26 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'a_valider').order('id').range(debut, fin),
       ),
-      supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      lireTout<CotisationDeclaree>((debut, fin) =>
+        supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
-      supabase.from('natures_immobilisation').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
-      supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
+      lireTout<Immobilisation>((debut, fin) =>
+        supabase.from('immobilisations').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+      lireTout<NatureImmobilisation>((debut, fin) =>
+        supabase.from('natures_immobilisation').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
+      ),
+      lireTout<Categorie>((debut, fin) =>
+        supabase.from('categories').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
+      ),
       lireTout<EcritureBrouillon>((debut, fin) =>
         supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -118,14 +130,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     }))
     setPiecesValidees(lectureValidees.lignes)
     setPiecesAValider(lectureAValider.lignes)
-    setCotisations(cotisationsData ?? [])
+    setCotisations(lectureCotisations.lignes)
     setLignes(lectureLignes.lignes)
     setLectureIncomplete(
       [lectureValidees, lectureAValider, lectureLignes, lectureEcritures].find((l) => !l.complete)?.motif ?? null,
     )
-    setImmobilisations(immobilisationsData ?? [])
-    setNatures(naturesData ?? [])
-    setCategories(categoriesData ?? [])
+    setImmobilisations(lectureImmobilisations.lignes)
+    setNatures(lectureNatures.lignes)
+    setCategories(lectureCategories.lignes)
     setEcritures(lectureEcritures.lignes)
     setDeclarationsTva(declarationsData ?? [])
     setInfo(infoData ?? null)

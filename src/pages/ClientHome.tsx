@@ -60,7 +60,7 @@ export default function ClientHome() {
   async function load() {
     if (!dossierId) return
     setChargement(true)
-    const [{ data: dossierData }, lecturePieces, lectureDocuments, lectureLignes, { data: cotisationsData }] =
+    const [{ data: dossierData }, lecturePieces, lectureDocuments, lectureLignes, lectureCotisations] =
       await Promise.all([
         supabase.from('dossiers').select('*').eq('id', dossierId).maybeSingle(),
         // Lues par tranches (voir lib/lectureComplete.ts) : ces deux collections portent les
@@ -78,14 +78,17 @@ export default function ClientHome() {
           supabase.from('lignes_bancaires').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
         ),
-        supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+        lireTout<CotisationDeclaree>((debut, fin) =>
+          supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        ),
       ])
     setDossier(dossierData ?? null)
     setPieces(lecturePieces.lignes)
     setDocuments(lectureDocuments.lignes)
     setLignes(lectureLignes.lignes)
     setLectureIncomplete(lecturePieces.motif ?? lectureLignes.motif)
-    setCotisations(cotisationsData ?? [])
+    setCotisations(lectureCotisations.lignes)
     setChargement(false)
   }
 

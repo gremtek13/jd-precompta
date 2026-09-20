@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { lireTout } from '../../lib/lectureComplete'
 import { formatMoney } from '../../lib/format'
 import {
   carburantApplicable, completerModificationVehicule, exercicesProposables,
@@ -56,11 +57,13 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
   // façon proposer.
   async function charger() {
     setChargement(true)
-    const { data, error } = await supabase
-      .from('vehicules').select('*').eq('dossier_id', dossierId)
-      .order('annee', { ascending: false }).order('created_at')
-    if (error) setErreur(error.message)
-    setVehicules(data ?? [])
+    // Tri TOTAL : ni `annee` ni `created_at` ne sont uniques, donc `id` départage.
+    const lecture = await lireTout<VehiculeDossier>((debut, fin) =>
+      supabase.from('vehicules').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('created_at').order('id').range(debut, fin),
+    )
+    if (!lecture.complete) setErreur(`Liste des véhicules incomplète : ${lecture.motif}`)
+    setVehicules(lecture.lignes)
     setChargement(false)
   }
 

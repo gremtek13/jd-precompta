@@ -788,15 +788,52 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   fausse, ne vaut rien.** Elle est donc devenue un TEST (`lecturesPaginees.test.ts`) : il parcourt
   les sources, refuse toute lecture de collection sans compte annoncé, et n'admet d'exception
   qu'inscrite avec **la raison qui borne sa taille** — une seule à ce jour, les écritures d'UNE
-  pièce, que la partie double limite à deux ou trois. Il porte aussi son propre contrôle de
-  mutation : un test qui vérifie qu'il sait ENCORE voir, sans quoi une regex devenue inopérante
-  afficherait zéro exactement comme un dépôt sain.
+  pièce, que la partie double limite à deux ou trois.
+  **ET CE TEST-LÀ ÉTAIT FAUX À SON TOUR, POUR LA TROISIÈME FOIS SUR CETTE MÊME VÉRIFICATION**
+  (corrigé le 20/09/2026). Sa première version délimitait le corps d'une chaîne par `[^;]*?` suivi
+  d'un lookahead. Or **ce dépôt n'écrit pas de point-virgule**, et presque toutes les lectures
+  vivent dans un `Promise.all([...])` dont les entrées se terminent par une VIRGULE : le corps
+  grossissait donc jusqu'au commentaire suivant, **en avalant les `.from(...)` voisins au passage**.
+  Le moteur reprenait après eux, et ces lectures-là n'étaient jamais examinées.
+  La borne qui répare est simple et vérifiable : **un corps s'arrête au `.from(` SUIVANT**, quelle
+  que soit sa table — un `.from(` ne peut pas appartenir à la chaîne en cours, donc on ne peut plus
+  en sauter un. Les autres bornes ne font que RACCOURCIR le corps, ce qui est le sens sûr : un corps
+  trop court se signale, un corps trop long se tait. Le commentaire n'est PAS une borne, sinon une
+  chaîne qui en porte un avant son `.select(` passerait pour une écriture.
+  **Son contrôle de mutation est devenu un défaut PLANTÉ, et c'est ce qui change tout.** « Le
+  scanner voit-il encore quelque chose ? » était vrai par accident, l'unique exception déclarée
+  suffisant à le satisfaire. Il lui est maintenant donné une source SYNTHÉTIQUE portant une lecture
+  nue coincée entre deux lectures paginées, dans la forme exacte qui l'aveuglait — plus deux cas
+  symétriques (une lecture correcte dont un commentaire coupe la chaîne, une écriture) pour qu'il
+  ne se mette pas à crier au loup.
+  Cinq mutations mordent, dont celle qui avait SURVÉCU avant correction et celle qui retire la
+  borne au `.from(` suivant.
   **Les deux défauts trouvés valaient le détour**, et le second est le plus vicieux du portage :
   l'aperçu d'un pack annonçait un total tronqué sans le dire, alors que `packGenerator` REFUSE de
   produire un pack sur une lecture incomplète — l'écran était donc plus optimiste que le générateur
   qui allait refuser juste après. Et il ne comptait pas non plus les pièces validées SANS DATE, que
   `gte`/`lte` écarte de toute période : l'opérateur lisait « 4 pièces », générait, et apprenait
   seulement alors qu'il en existait dix-huit autres. Les deux se disent maintenant à l'aperçu.
+  **LA LISTE DES TABLES SURVEILLÉES N'EST PAS CELLE DES GROSSES TABLES, C'EST CELLE DONT UN
+  LIVRABLE DÉPEND** (élargie le 20/09/2026). Elle s'arrêtait aux six collections volumineuses.
+  Cinq l'ont rejointe — `categories`, `cotisations_declarees`, `immobilisations`, `vehicules`,
+  `natures_immobilisation` — et elles sont toutes MINUSCULES (43, 10, 2, 1, 8 lignes) : c'est
+  exactement ce qui rendait leur absence confortable.
+  Ce qui a tranché : `ClotureTab` refusait de remplir la 2035 sur une lecture partielle **en
+  n'ayant vérifié QUE les pièces**, soit une entrée sur cinq. Le garde-fou promettait donc « ce
+  formulaire est bâti sur tout » sans pouvoir le tenir, et une cotisation manquante donne une
+  déclaration tout aussi plausible, fausse et SIGNÉE. Son drapeau s'appelle désormais
+  `lectureIncomplete` et non `piecesIncompletes` : le nom mentait sur ce qu'il couvrait, et c'est
+  le piège que ce fichier nomme déjà ailleurs.
+  Quinze lectures portées, dans douze fichiers — dont **cinq que l'ancien scanner cachait**, quatre
+  dans `ChecklistTab` (l'écran qui prétend dire ce qui MANQUE) et une dans la Balance des comptes.
+  `EcrituresTab` y gagne la sienne sur `immobilisations`, qui décide quelles pièces ne doivent PAS
+  produire d'écriture : tronquée, elle générait une charge sur une immobilisation — le défaut même
+  que `ecrituresSansObjet` signale, mais produit par la lecture au lieu d'un geste.
+  **Aucune de ces cinq tables n'est bornée par le modèle**, à la différence des écritures d'UNE
+  pièce : la règle du projet s'applique donc telle quelle — un mécanisme dont la justesse dépend de
+  la petitesse des données tombera le jour où elles grandissent.
+
   **Le motif « filtre de période sur une colonne NULLABLE » est désormais borné par le SCHÉMA et
   non par un grep** : sur les quatre colonnes filtrées en `gte`/`lte` dans le code (`date_piece`,
   `date`, `echeance`, `created_at`), `pieces.date_piece` est la SEULE nullable — toutes les autres
@@ -1659,7 +1696,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   PAS sauvegardé et qu'on découvrirait sinon en pleine reprise — au premier rang les comptes
   `auth.users`, qu'il faut recréer AVEC leurs UUID d'origine, quatre colonnes du schéma les exigeant
   en NOT NULL sans contournement possible.
-- **La couverture Vitest s'arrête à `src/lib`, À QUATRE ONGLETS PRÈS** (voir "Tests") : les
+- **La couverture Vitest s'arrête à `src/lib`, À CINQ ONGLETS PRÈS** (voir "Tests") : les
   composants et les Edge Functions restent, pour l'essentiel, vérifiés par la relecture de
   code, les advisors Supabase et des tests manuels réels (y compris, pour Super PDP, par
   l'utilisateur lui-même puisque cet environnement ne peut pas atteindre
@@ -1704,11 +1741,21 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   (`/à régénérer<\/span>/`) passée à `queryByText`, qui lit le TEXTE rendu et jamais le HTML. Elle
   était verte et ne gardait rien — la même famille que « un harnais qui ment est pire qu'un harnais
   absent », en plus discret, puisque rien ne la distingue d'une assertion qui passe.
+  **`ClotureTab` a suivi le jour même**, et c'est l'onglet qui produit le seul document que le
+  cabinet SIGNE. Deux tests, et le premier porte tout : une lecture incomplète sur les COTISATIONS,
+  pièces intactes — un garde-fou qui ne regarde que les pièces laisse alors passer, et la 2035 part
+  avec une cotisation de moins. Deux mutations sur trois mordent ; la troisième (retirer le refus
+  côté gestionnaire) **survit à juste titre**, c'est une seconde ceinture qu'aucun clic ne peut
+  atteindre puisque le bouton est déjà grisé — la dire mordante serait faux.
+  Piège de montage à connaître : `ClotureTab` ne se rend pas sous jsdom sans doubler
+  `lib/remplir2035`, qui importe `pdfjs-dist/...?url` et touche au navigateur DÈS L'IMPORT. Même
+  famille que `pdfText.ts`, et la doublure est honnête ici : le test vérifie précisément que la
+  génération est REFUSÉE.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 4 testés** — banque,
-  documents, statistiques, écritures — donc **13 sans aucun test de rendu**. Un chiffre qu'on
-  recopie sans le recompter dérive à chaque ajout ; celui-ci se remesure en une commande.
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 5 testés** — banque,
+  documents, statistiques, écritures, clôture — donc **12 sans aucun test de rendu**. Un chiffre
+  qu'on recopie sans le recompter dérive à chaque ajout ; celui-ci se remesure en une commande.
   **`BanqueTab` portait le même défaut que les trois précédents** : `rapprocherTout` (le lot
   automatique, à distinguer de `validerEtRapprocherLot` juste au-dessus dans le fichier, qui
   lui portait déjà son verrou `useRef`) ne se désactivait que via `rapprochementAuto`, un ÉTAT
@@ -1732,7 +1779,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 938 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 941 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

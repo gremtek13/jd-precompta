@@ -47,14 +47,17 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
         supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
+      lireTout<Categorie>((debut, fin) =>
+        supabase.from('categories').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
+      ),
       lireTout<Piece>((debut, fin) =>
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-    ]).then(([brouillon, { data: categoriesData }, lecturePieces]) => {
+    ]).then(([brouillon, lectureCategories, lecturePieces]) => {
       setEcritures(brouillon.lignes)
-      setCategories(categoriesData ?? [])
+      setCategories(lectureCategories.lignes)
       setPieces(lecturePieces.lignes)
       setLectureIncomplete(brouillon.motif ?? lecturePieces.motif)
       setLoading(false)

@@ -70,8 +70,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, lecturePieces, brouillon, { data: immobilisationsData }, lectureLignes, { data: declarationsData }] = await Promise.all([
-      supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
+    const [lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureDeclarations] = await Promise.all([
+      lireTout<Categorie>((debut, fin) =>
+        supabase.from('categories').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
+      ),
       lireTout<Piece>((debut, fin) =>
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
@@ -83,25 +86,37 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('date', { ascending: false }).order('id').range(debut, fin),
       ),
-      supabase.from('immobilisations').select('piece_id').eq('dossier_id', dossierId),
+      // Paginée comme le reste : cette liste EXCLUT du brouillon les pièces devenues des actifs.
+      // Tronquée, elle laisserait générer une charge sur une immobilisation — exactement ce que
+      // `ecrituresSansObjet` signale ensuite, mais produit par la lecture plutôt que par un geste.
+      lireTout<{ piece_id: string | null }>((debut, fin) =>
+        supabase.from('immobilisations').select('piece_id, id', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
           .order('id').range(debut, fin),
       ),
-      supabase.from('declarations_tva').select('*').eq('dossier_id', dossierId).order('periode_debut', { ascending: false }),
+      lireTout<DeclarationTva>((debut, fin) =>
+        supabase.from('declarations_tva').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('periode_debut', { ascending: false }).order('id').range(debut, fin),
+      ),
     ])
     setLignesBancaires(lectureLignes.lignes)
-    setCategories(categoriesData ?? [])
+    setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
     setEcritures(brouillon.lignes)
-    // Un seul drapeau pour les trois collections : ce sont les trois qui font le FEC et la piste
-    // d'audit, et l'écran n'a rien de plus utile à dire selon laquelle a manqué.
+    // Un seul drapeau pour TOUTES les collections dont dépendent le FEC et la piste d'audit, et
+    // l'écran n'a rien de plus utile à dire selon laquelle a manqué. Les catégories et les
+    // immobilisations en font partie : la première décide du compte de chaque écriture, la seconde
+    // de quelles pièces n'en produisent pas.
     setBrouillonIncomplet(
-      [brouillon, lecturePieces, lectureLignes].find((l) => !l.complete)?.motif ?? null,
+      [brouillon, lecturePieces, lectureLignes, lectureCategories, lectureImmobilisations]
+        .find((l) => !l.complete)?.motif ?? null,
     )
-    setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
-    setDeclarationsTva(declarationsData ?? [])
+    setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
+    setDeclarationsTva(lectureDeclarations.lignes)
     setLoading(false)
   }
 

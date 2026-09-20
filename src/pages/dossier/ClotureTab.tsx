@@ -19,10 +19,13 @@ import { lireTout } from '../../lib/lectureComplete'
 export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
-  // Non nul quand les pièces n'ont PAS pu être lues en entier. Cet écran produit une déclaration :
-  // une 2035 calculée sur une partie des pièces est plausible, fausse, et signée — le formulaire
-  // n'a nulle part où dire qu'il est amputé, donc le remplissage se refuse.
-  const [piecesIncompletes, setPiecesIncompletes] = useState<string | null>(null)
+  // Non nul quand l'une des QUATRE collections dont dépend la déclaration n'a pas pu être lue en
+  // entier — pièces, catégories, immobilisations, cotisations, véhicules. Cet écran produit une
+  // déclaration : une 2035 calculée sur une partie de ses entrées est plausible, fausse, et signée,
+  // et le formulaire n'a nulle part où dire qu'il est amputé. Le remplissage se refuse donc.
+  // Le nom dit « lecture » et non « pièces » : il a porté le second pendant que le garde-fou ne
+  // vérifiait qu'une entrée sur quatre, ce qu'aucune relecture de l'écran ne pouvait montrer.
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Cadre 7 du 2035-B : le total des indemnités kilométriques alimente la case BJ, ligne 23.
@@ -43,28 +46,49 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, lecturePieces, { data: immobilisationsData }, { data: cotisationsData }, { data: vehiculesData }, { data: dossierData }] = await Promise.all([
-      supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
-      // Lue par tranches, triée sur un ordre TOTAL : PostgREST plafonne le nombre de lignes rendues
-      // sans le signaler (voir lib/lectureComplete.ts), et cet écran produit une DÉCLARATION —
-      // une 2035 bâtie sur une partie des pièces est plausible, fausse, et signée.
+    // LES QUATRE ENTRÉES DE LA DÉCLARATION SONT LUES PAR TRANCHES, PAS SEULEMENT LES PIÈCES.
+    // PostgREST plafonne le nombre de lignes rendues sans le signaler (voir lib/lectureComplete.ts),
+    // et cet écran produit une DÉCLARATION. Le garde-fou ne couvrait que `pieces` : il promettait
+    // donc « ce formulaire est bâti sur tout » en n'ayant vérifié qu'une entrée sur quatre, et une
+    // cotisation ou une immobilisation manquante est tout aussi plausible, fausse et signée.
+    // Le tri est TOTAL partout (`id` en départage) : sans clé unique, deux tranches se recouvrent
+    // ou sautent des lignes, et rien ne le signale.
+    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, { data: dossierData }] = await Promise.all([
+      lireTout<Categorie>((debut, fin) =>
+        supabase.from('categories').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
+      ),
       lireTout<Piece>((debut, fin) =>
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
       ),
-      supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
-      supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
+      lireTout<Immobilisation>((debut, fin) =>
+        supabase.from('immobilisations').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
+      lireTout<CotisationDeclaree>((debut, fin) =>
+        supabase.from('cotisations_declarees').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       // Tous exercices : c'est le moteur qui filtre sur l'année, comme pour les cotisations.
-      supabase.from('vehicules').select('*').eq('dossier_id', dossierId),
+      lireTout<VehiculeDossier>((debut, fin) =>
+        supabase.from('vehicules').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
     ])
     setDossier(dossierData ?? null)
-    setVehicules(vehiculesData ?? [])
-    setCategories(categoriesData ?? [])
+    setVehicules(lectureVehicules.lignes)
+    setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
-    setPiecesIncompletes(lecturePieces.complete ? null : lecturePieces.motif)
-    setImmobilisations(immobilisationsData ?? [])
-    setCotisations(cotisationsData ?? [])
+    // Un seul drapeau pour les quatre : l'écran n'a rien de plus utile à dire selon laquelle a
+    // manqué, et le formulaire se refuse dans tous les cas.
+    setLectureIncomplete(
+      [lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules]
+        .find((l) => !l.complete)?.motif ?? null,
+    )
+    setImmobilisations(lectureImmobilisations.lignes)
+    setCotisations(lectureCotisations.lignes)
     setLoading(false)
   }
 
@@ -156,7 +180,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const generationEnCours = useRef(false)
 
   async function telechargerFormulaire(annee: number, valeurs: Map<string, number>) {
-    if (generationEnCours.current || piecesIncompletes) return
+    if (generationEnCours.current || lectureIncomplete) return
     generationEnCours.current = true
     setError(null)
     try {
@@ -424,11 +448,13 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
-      {piecesIncompletes && (
+      {lectureIncomplete && (
         <p className="error-text">
-          Les pièces validées n'ont pas pu être lues en entier ({piecesIncompletes}). Les montants
-          ci-dessous portent donc sur une partie du dossier, et le remplissage du formulaire est
-          bloqué — une 2035 calculée sur une lecture partielle est plausible, fausse, et signée.
+          Une des collections dont dépend la déclaration n'a pas pu être lue en entier
+          ({lectureIncomplete}) — pièces, catégories, immobilisations, cotisations ou véhicules. Les
+          montants ci-dessous portent donc sur une partie du dossier, et le remplissage du
+          formulaire est bloqué : une 2035 calculée sur une lecture partielle est plausible, fausse,
+          et signée.
         </p>
       )}
 
@@ -446,7 +472,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
             valeurs={f.valeurs}
             genere={genere === f.declaration.annee}
             onTelecharger={() => telechargerFormulaire(f.declaration.annee, f.valeurs)}
-            blocage={piecesIncompletes}
+            blocage={lectureIncomplete}
           />
         ))
       )}
@@ -484,7 +510,7 @@ function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage }: {
           className="btn btn-primary btn-sm"
           onClick={onTelecharger}
           disabled={blocage !== null}
-          title={blocage ? `Lecture partielle des pièces (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.` : undefined}
+          title={blocage ? `Lecture partielle d'une des collections de la déclaration (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.` : undefined}
         >
           {genere ? '↻ Regénérer le formulaire' : '⬇ Remplir le formulaire officiel'}
         </button>

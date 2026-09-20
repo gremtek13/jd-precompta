@@ -23,9 +23,13 @@ vi.mock('../../lib/supabase', () => {
     select: () => chaine,
     eq: () => chaine,
     order: () => chaine,
+    // `range` et le `count` annoncé sont indispensables depuis que la liste est lue par tranches
+    // (voir lib/lectureComplete.ts) : sans `range` la chaîne casse, et sans compte annoncé toute
+    // lecture se déclare INCOMPLÈTE — l'écran afficherait alors une erreur permanente.
+    range: () => chaine,
     // Le chaînage est « thenable » : `await supabase.from(...).select(...)...` passe par ici.
-    then: (suite: (r: { data: unknown[]; error: null }) => unknown) =>
-      Promise.resolve({ data: [], error: null }).then(suite),
+    then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) =>
+      Promise.resolve({ data: [], error: null, count: 0 }).then(suite),
     insert: (valeur: Record<string, unknown>) => {
       faux.inserts.push(valeur)
       return new Promise((resoudre) => {

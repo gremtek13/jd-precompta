@@ -16,8 +16,20 @@ import { describe, expect, it } from 'vitest'
 // Une vérification qui doit être « rejouée à la main » et dont personne ne peut voir qu'elle est
 // fausse ne vaut rien. Elle tourne donc ici, à chaque `npm test` et à chaque CI.
 
+// LA LISTE N'EST PAS CELLE DES GROSSES TABLES, C'EST CELLE DONT UN LIVRABLE DÉPEND.
+// Les six premières sont les collections volumineuses du projet. Les cinq suivantes ont rejoint la
+// liste le 20/09/2026 et elles sont toutes MINUSCULES aujourd'hui (43 cotisations, 10 catégories,
+// 2 immobilisations, 1 véhicule, 8 natures) : c'est précisément ce qui rendait leur absence
+// confortable. Or `ClotureTab` refusait de remplir la 2035 sur une lecture partielle en n'ayant
+// vérifié QUE les pièces — une entrée sur cinq. Le garde-fou promettait donc « ce formulaire est
+// bâti sur tout » et ne pouvait pas le tenir ; un garde-fou qui ment est pire qu'un garde-fou
+// absent, parce qu'on cesse d'aller voir.
+// Règle du projet appliquée : un mécanisme dont la justesse dépend de la PETITESSE des données
+// tombera le jour où elles grandissent. Aucune de ces cinq tables n'est bornée par le modèle.
 const TABLES = ['pieces', 'lignes_bancaires', 'ecritures_brouillon', 'documents_divers',
-                'piece_textes_ocr', 'piece_commentaires']
+                'piece_textes_ocr', 'piece_commentaires',
+                'categories', 'cotisations_declarees', 'immobilisations', 'vehicules',
+                'natures_immobilisation']
 
 // Les lectures dont la petitesse est garantie par le MODÈLE et non par la chance. Chaque entrée
 // porte sa raison : c'est ce qui fait de l'ajout d'une exception un acte délibéré plutôt qu'un
@@ -35,27 +47,47 @@ function fichiersSource(dossier: string): string[] {
   })
 }
 
-/** Les lectures de COLLECTION qui n'annoncent pas de compte — donc indiscernables d'une troncature. */
-export function lecturesNonPaginees(): { fichier: string; table: string; extrait: string }[] {
-  // `[^;]*?` et non `.*?` : la chaîne s'arrête au point-virgule, sinon une expression voisine
-  // fournirait le `count:` qui manque et masquerait le défaut.
-  const chaine = new RegExp(
-    `\\.from\\('(${TABLES.join('|')})'\\)((?:[^;])*?)(?=\\n\\s*(?:const|let|return|if|await|\\}|//)|;)`,
-    'gs',
-  )
-  const trouves: { fichier: string; table: string; extrait: string }[] = []
-  for (const fichier of fichiersSource('src')) {
-    const source = readFileSync(fichier, 'utf8')
-    for (const m of source.matchAll(chaine)) {
-      const [, table, corps] = m
-      if (!corps.includes('.select(')) continue                       // écriture, pas lecture
-      if (corps.includes('count:')) continue                          // paginée et déclarée
-      if (corps.includes('.single()') || corps.includes('.maybeSingle()')) continue  // une ligne
-      if (/\.limit\(\s*\d+\s*\)/.test(corps)) continue                // plafond VOULU et écrit
-      trouves.push({ fichier, table, extrait: corps.split(/\s+/).join(' ').slice(0, 90) })
-    }
+interface LectureTrouvee { fichier: string; table: string; extrait: string }
+
+// CE DÉCOUPAGE A ÉTÉ FAUX UNE PREMIÈRE FOIS, ET IL RENDAIT ZÉRO POUR UNE RAISON FAUSSE — la
+// deuxième fois pour cette même vérification, après le grep ligne à ligne que ce test remplaçait.
+//
+// La version d'origine délimitait le corps par `[^;]*?` suivi d'un `lookahead`. Or le dépôt n'écrit
+// pas de point-virgule, et les lectures vivent presque toutes dans un `Promise.all([...])` dont les
+// entrées se terminent par une VIRGULE : le corps grossissait donc jusqu'au commentaire suivant, en
+// AVALANT au passage les `.from(...)` voisins. Le moteur reprenait après eux, et ces lectures-là
+// n'étaient jamais examinées. Mesuré : une lecture non paginée remise au milieu d'un Promise.all
+// restait invisible, et le test vert.
+//
+// La borne qui répare est simple et vérifiable : **un corps s'arrête au `.from(` SUIVANT**, quelle
+// que soit sa table. Un `.from(` ne peut pas appartenir à la chaîne en cours, donc on ne peut plus
+// en sauter un. Les autres bornes (point-virgule, ligne qui recommence autre chose) ne font que
+// RACCOURCIR le corps, ce qui est le sens sûr : un corps trop court se signale, un corps trop long
+// se tait.
+export function lecturesNonPagineesDe(fichier: string, source: string): LectureTrouvee[] {
+  const departs = [...source.matchAll(/\.from\('([a-z_]+)'\)/g)]
+  const trouves: LectureTrouvee[] = []
+  for (const [i, depart] of departs.entries()) {
+    if (!TABLES.includes(depart[1])) continue
+    const debut = depart.index + depart[0].length
+    const prochainFrom = departs[i + 1]?.index ?? source.length
+    const reste = source.slice(debut, prochainFrom)
+    // Le commentaire n'est PAS une borne : une chaîne peut en porter un entre deux maillons, et
+    // couper là ferait passer la lecture pour une écriture faute d'y voir son `.select(`.
+    const coupure = reste.search(/;|\n\s*(?:const|let|return|if|await|\})/)
+    const corps = coupure === -1 ? reste : reste.slice(0, coupure)
+    if (!corps.includes('.select(')) continue                       // écriture, pas lecture
+    if (corps.includes('count:')) continue                          // paginée et déclarée
+    if (corps.includes('.single()') || corps.includes('.maybeSingle()')) continue  // une ligne
+    if (/\.limit\(\s*\d+\s*\)/.test(corps)) continue                // plafond VOULU et écrit
+    trouves.push({ fichier, table: depart[1], extrait: corps.split(/\s+/).join(' ').slice(0, 90) })
   }
   return trouves
+}
+
+/** Les lectures de COLLECTION qui n'annoncent pas de compte — donc indiscernables d'une troncature. */
+export function lecturesNonPaginees(): LectureTrouvee[] {
+  return fichiersSource('src').flatMap((f) => lecturesNonPagineesDe(f, readFileSync(f, 'utf8')))
 }
 
 describe('plafond PostgREST — aucune collection lue sans compte annoncé', () => {
@@ -68,12 +100,48 @@ describe('plafond PostgREST — aucune collection lue sans compte annoncé', () 
     ).toEqual([])
   })
 
-  // Un contrôle qui ne trouve jamais rien peut être un contrôle cassé : celui-ci le dit en
-  // vérifiant qu'il sait ENCORE voir. Sans ça, une regex devenue inopérante afficherait zéro
-  // exactement comme un dépôt sain — la panne qui ressemble au succès.
-  it('sait encore repérer une lecture non paginée', () => {
+  // UN CONTRÔLE QUI NE TROUVE JAMAIS RIEN PEUT ÊTRE UN CONTRÔLE CASSÉ. Celui-ci ne se contente
+  // donc pas de vérifier qu'il voit « quelque chose » : on lui PLANTE le défaut, dans la forme
+  // exacte qui l'avait aveuglé — une lecture nue au milieu d'un `Promise.all`, entre deux lectures
+  // correctement paginées, sans un seul point-virgule dans le fichier.
+  it('voit une lecture nue coincée entre deux lectures paginées', () => {
+    const source = [
+      "const [a, b, c] = await Promise.all([",
+      "  lireTout<Piece>((debut, fin) =>",
+      "    supabase.from('pieces').select('*', { count: 'exact' })",
+      "      .eq('dossier_id', d).order('id').range(debut, fin),",
+      "  ),",
+      "  supabase.from('cotisations_declarees').select('*').eq('dossier_id', d),",
+      "  // Tous exercices : c'est le moteur qui filtre.",
+      "  lireTout<Vehicule>((debut, fin) =>",
+      "    supabase.from('vehicules').select('*', { count: 'exact' })",
+      "      .eq('dossier_id', d).order('id').range(debut, fin),",
+      "  ),",
+      "])",
+    ].join('\n')
+    expect(lecturesNonPagineesDe('synthetique.ts', source).map((l) => l.table))
+      .toEqual(['cotisations_declarees'])
+  })
+
+  // Et le symétrique : il ne doit pas crier au loup sur une lecture correcte, sinon on ajouterait
+  // des exceptions pour le faire taire et la liste perdrait son sens.
+  it('se tait sur une lecture paginée dont le commentaire coupe la chaîne', () => {
+    const source = [
+      "supabase.from('pieces')",
+      "  // un commentaire au milieu de la chaîne",
+      "  .select('*', { count: 'exact' })",
+      "  .eq('dossier_id', d).order('id').range(debut, fin)",
+    ].join('\n')
+    expect(lecturesNonPagineesDe('synthetique.ts', source)).toEqual([])
+  })
+
+  it('ignore une ÉCRITURE, qui n’a pas de collection à tronquer', () => {
+    const source = "supabase.from('categories').update({ poste_2035: v }).eq('id', id)"
+    expect(lecturesNonPagineesDe('synthetique.ts', source)).toEqual([])
+  })
+
+  it('garde ses exceptions alignées sur des lectures réelles', () => {
     const toutes = lecturesNonPaginees()
-    expect(toutes.length, "le contrôle ne voit plus rien du tout — regex à reprendre").toBeGreaterThan(0)
     expect(Object.keys(EXCEPTIONS).every((f) => toutes.some((l) => l.fichier === f)),
       'une exception déclarée ne correspond à aucune lecture réelle — à retirer').toBe(true)
   })
