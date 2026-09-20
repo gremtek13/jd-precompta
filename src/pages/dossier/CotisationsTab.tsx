@@ -1,5 +1,6 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
+import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, formatDate, formatMoney, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
@@ -41,14 +42,17 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data }, { data: documentsData }] = await Promise.all([
+    const [{ data }, lectureDocuments] = await Promise.all([
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId).order('echeance', { ascending: false }),
       // Uniquement les appels de cotisation classés dans l'archive Documents (voir DocumentsTab) — le
       // rattachement se fait ici, pas là-bas, pour rester à côté du montant qu'ils justifient.
-      supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).eq('categorie', 'cotisation'),
+      lireTout<DocumentDivers>((debut, fin) =>
+        supabase.from('documents_divers').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('categorie', 'cotisation').order('id').range(debut, fin),
+      ),
     ])
     setCotisations(data ?? [])
-    setDocumentsCotisation(documentsData ?? [])
+    setDocumentsCotisation(lectureDocuments.lignes)
     setLoading(false)
   }
 

@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { lireTout } from './lectureComplete'
 import type { PieceCommentaire } from './types'
 
 // Commentaires portés sur une pièce ou un document déposé.
@@ -53,12 +54,14 @@ export function texteExploitable(texte: string): string | null {
 }
 
 export async function chargerCommentaires(dossierId: string): Promise<PieceCommentaire[]> {
-  const { data } = await supabase
-    .from('piece_commentaires')
-    .select('*')
-    .eq('dossier_id', dossierId)
-    .order('created_at')
-  return data ?? []
+  // Lue par tranches (voir lib/lectureComplete.ts) : un fil par pièce, et plusieurs messages par
+  // fil. Tronquée, elle ferait disparaître la précision du client sur les pièces les plus
+  // récentes — précisément celles qu'on est en train d'arbitrer.
+  const { lignes } = await lireTout<PieceCommentaire>((debut, fin) =>
+    supabase.from('piece_commentaires').select('*', { count: 'exact' })
+      .eq('dossier_id', dossierId).order('created_at').order('id').range(debut, fin),
+  )
+  return lignes
 }
 
 // Fil de discussion par cible, du plus ancien au plus récent — l'ordre de lecture d'une conversation.

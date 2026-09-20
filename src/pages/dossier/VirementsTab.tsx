@@ -5,6 +5,8 @@ import type { LigneBancaire } from '../../lib/types'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
+import { lireTout } from '../../lib/lectureComplete'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 // Prélèvements de l'exploitant — virements du compte pro vers le compte personnel, marqués depuis
 // l'onglet Banque (bouton "Virement personnel" sur un mouvement non rapproché). Une lecture seule ici :
@@ -15,16 +17,21 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
   const [loading, setLoading] = useState(true)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [recherche, setRecherche] = useState('')
+  // Non nul quand la liste n'a pas pu être lue en entier — voir lib/lectureComplete.ts.
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase
-      .from('lignes_bancaires')
-      .select('*')
-      .eq('dossier_id', dossierId)
-      .eq('prelevement_personnel', true)
-      .order('date', { ascending: false })
-    setLignes(data ?? [])
+    // Lue par tranches (voir lib/lectureComplete.ts) : cette liste est petite aujourd'hui, mais
+    // elle porte un TOTAL — et un total calculé sur une lecture tronquée a l'air d'un total.
+    const lecture = await lireTout<LigneBancaire>((debut, fin) =>
+      supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId)
+        .eq('prelevement_personnel', true)
+        .order('date', { ascending: false }).order('id').range(debut, fin),
+    )
+    setLignes(lecture.lignes)
+    setLectureIncomplete(lecture.complete ? null : lecture.motif)
     setLoading(false)
   }
 
@@ -49,6 +56,12 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les virements personnels"
+        motif={lectureIncomplete}
+        consequence="Le total ci-dessous porte donc sur une partie d’entre eux."
+      />
+
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
         Virements du compte pro vers le compte personnel — pas des charges, exclus des totaux par poste
         de l'onglet Clôture. Un mouvement se marque comme tel depuis l'onglet Banque ("Virement

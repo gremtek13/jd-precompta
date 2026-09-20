@@ -8,6 +8,8 @@ import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
 import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { grouperParTiers } from '../../lib/suggestionTiers'
+import { lireTout } from '../../lib/lectureComplete'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
@@ -69,6 +71,8 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // Même garde que dans DocumentsTab : une liste qu'on n'a pas pu lire ne vaut pas « aucun texte ».
   // Relancer la lecture sur cette base paierait Textract sur des pièces déjà lues.
   const [presenceTexteIncertaine, setPresenceTexteIncertaine] = useState<string | null>(null)
+  // Non nul quand la liste des pièces n'a pas pu être lue en entier (voir lib/lectureComplete.ts).
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[]>([])
   // Le texte de la pièce dépliée, chargé à la demande. Une seule à la fois : c'est une consultation
   // ponctuelle pour lever un doute, pas une colonne du tableau.
@@ -76,18 +80,25 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const { data: piecesData } = await supabase
-      .from('pieces')
-      .select('*')
-      .eq('dossier_id', dossierId)
-      .order('date_piece', { ascending: false, nullsFirst: false })
+    // Lues par tranches, triées sur un ordre TOTAL : le plafond de PostgREST ne se signale pas
+    // (voir lib/lectureComplete.ts). Tronquée, la liste ne paraît pas vide — elle paraît complète,
+    // et les contrôles posés dessus (doublon de contenu, mois en double) se taisent sur le reste.
+    const lecturePieces = await lireTout<Piece>((debut, fin) =>
+      supabase.from('pieces').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId)
+        .order('date_piece', { ascending: false, nullsFirst: false }).order('id').range(debut, fin),
+    )
+    const piecesData = lecturePieces.lignes
+    setLectureIncomplete(lecturePieces.complete ? null : lecturePieces.motif)
 
-    const { data: lignesBancairesData } = await supabase
-      .from('lignes_bancaires')
-      .select('piece_id')
-      .eq('dossier_id', dossierId)
-      .eq('statut', 'rapprochee')
-      .not('piece_id', 'is', null)
+    const lectureRapprochees = await lireTout<{ piece_id: string | null }>((debut, fin) =>
+      supabase.from('lignes_bancaires').select('piece_id', { count: 'exact' })
+        .eq('dossier_id', dossierId)
+        .eq('statut', 'rapprochee')
+        .not('piece_id', 'is', null)
+        .order('id').range(debut, fin),
+    )
+    const lignesBancairesData = lectureRapprochees.lignes
 
     const { data: categoriesData } = await supabase
       .from('categories')
@@ -380,6 +391,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les pièces du dossier"
+        motif={lectureIncomplete}
+        consequence={
+          'La liste ci-dessous n’est donc pas complète, et les contrôles posés dessus (doublon de ' +
+          'contenu, mois en double) se taisent sur ce qu’ils n’ont pas vu.'
+        }
+      />
+
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche
           valeur={recherche}

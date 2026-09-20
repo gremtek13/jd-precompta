@@ -716,8 +716,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   doit être dit partout finit par n'être dit nulle part quand chaque écran le réécrit. Seule varie
   la `consequence` — ce que le cabinet a sous les yeux et qui est devenu faux ; « lecture partielle »
   tout seul ne dit pas si c'est grave.
-  **Ce qui reste** : les trois écrans client, Pièces, Documents, Estimation, Immobilisations,
-  Financement. Chantier non pas difficile mais ÉTENDU — le risque est d'en oublier un.
+  **Le portage est terminé** (20/09/2026) : plus une seule lecture de collection entière n'est faite
+  en `select('*')` nu sur `pieces`, `lignes_bancaires`, `ecritures_brouillon`, `documents_divers`,
+  `piece_textes_ocr` ou `piece_commentaires`. Deux endroits méritaient mieux qu'un bandeau, et
+  LÈVENT :
+  - `chargerHashsExistants` (lib/importFichiers.ts) — les empreintes du dédoublonnage. Une liste
+    tronquée n'est pas une liste plus courte : c'est un dédoublonnage qui laisse passer tout ce
+    qu'elle ne contient pas, sur un import en masse, donc à l'échelle du dossier entier.
+  - `chargerEmpreintesTexte` (lib/doublonsTexte.ts) — même raisonnement : un détecteur de doublons
+    qui en manque sans le dire vaut moins que pas de détecteur.
+  Et `PresenceTexteOcr` traite une lecture INCOMPLÈTE exactement comme un refus, pour la même raison
+  qu'au-dessus : ne pas savoir interdit de relancer une lecture facturée.
+  **Ce que ce portage NE garantit pas** : qu'une lecture ajoutée demain y pense. Le grep qui l'a
+  guidé (`from('<table>')` + `select(` sans `count: 'exact'`) rend zéro aujourd'hui, et c'est ce
+  qu'il faut rejouer avant de croire qu'une table est couverte.
 - **Un filtre de période écarte les NULL sans le dire.** En SQL, une comparaison avec NULL n'est
   jamais vraie : `gte`/`lte` sur `date_piece` excluait donc les pièces validées sans date de
   *toutes* les périodes à la fois — absentes du ZIP, du récapitulatif et du total de chaque pack,
@@ -1443,7 +1455,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 902 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 907 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

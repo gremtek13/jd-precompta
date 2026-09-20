@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
+import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
 import type { Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -32,12 +33,17 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
 
   async function load() {
     setLoading(true)
-    const [{ data: piecesData }, { data: immobilisationsData }, { data: naturesData }] = await Promise.all([
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
+    const [lecturePieces, { data: immobilisationsData }, { data: naturesData }] = await Promise.all([
+      // Lue par tranches (voir lib/lectureComplete.ts) : c'est parmi ces pièces qu'on choisit celle
+      // à immobiliser, et une liste tronquée ne paraît pas tronquée.
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+      ),
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId).order('date_acquisition', { ascending: false }),
       supabase.from('natures_immobilisation').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
     ])
-    setPieces(piecesData ?? [])
+    setPieces(lecturePieces.lignes)
     setImmobilisations(immobilisationsData ?? [])
     setNatures(naturesData ?? [])
     setLoading(false)

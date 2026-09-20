@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { lireTout } from './lectureComplete'
 
 // Le texte lu par l'OCR sur une pièce OU sur un document, conservé et relu.
 //
@@ -99,13 +100,19 @@ async function presenceTexteOcr(
   dossierId: string,
   colonne: 'piece_id' | 'document_id',
 ): Promise<PresenceTexteOcr> {
-  const { data, error } = await supabase.from('piece_textes_ocr').select(colonne).eq('dossier_id', dossierId)
-  const lignes = (data ?? []) as Record<string, unknown>[]
+  // Lue par tranches : une ligne par pièce et par document, donc cette table suit la taille du
+  // dossier. Tronquée, elle ferait passer pour « sans texte » des documents déjà lus — et chaque
+  // relecture est un appel Textract FACTURÉ. Une lecture incomplète vaut donc erreur ici, au même
+  // titre qu'un refus : dans les deux cas on ne sait pas, et ne pas savoir interdit de relancer.
+  const { lignes, complete, motif } = await lireTout<Record<string, unknown>>((debut, fin) =>
+    supabase.from('piece_textes_ocr').select(colonne, { count: 'exact' })
+      .eq('dossier_id', dossierId).order('id').range(debut, fin),
+  )
   return {
     avecTexte: new Set(
       lignes.map((l) => l[colonne] as string | null).filter((id): id is string => !!id),
     ),
-    erreur: error?.message ?? null,
+    erreur: complete ? null : motif,
   }
 }
 

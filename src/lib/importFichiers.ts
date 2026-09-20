@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { lireTout } from './lectureComplete'
 import { slugify } from './format'
 import { ACHAT_PAR_DEFAUT, extractPiece, hashFichier, LABEL_CLASSIFICATION, orientationDe } from './extraction'
 import { enregistrerTexteOcr } from './texteOcr'
@@ -42,15 +43,26 @@ export async function estFichierSupporte(file: File): Promise<boolean> {
 // n'était encore importé, et tout un dossier repartait en double. C'est le même piège que
 // `fichierDejaPresent`, mais sur un import en masse — donc à l'échelle du dossier entier.
 export async function chargerHashsExistants(dossierId: string): Promise<Set<string>> {
+  // Lues PAR TRANCHES, et refusées si elles ne peuvent pas se dire complètes : c'est ici que le
+  // plafond de PostgREST (voir lib/lectureComplete.ts) ferait le plus de dégâts. Une liste
+  // d'empreintes tronquée n'est pas une liste plus courte — c'est un dédoublonnage qui laisse
+  // passer tout ce qu'elle ne contient pas, sur un import en masse, donc à l'échelle du dossier.
+  // Même raisonnement qu'au-dessus : mieux vaut lever que conclure « pas encore importé ».
   const [pieces, documents] = await Promise.all([
-    supabase.from('pieces').select('storage_hash').eq('dossier_id', dossierId).not('storage_hash', 'is', null),
-    supabase.from('documents_divers').select('storage_hash').eq('dossier_id', dossierId).not('storage_hash', 'is', null),
+    lireTout<{ storage_hash: string | null }>((debut, fin) =>
+      supabase.from('pieces').select('storage_hash', { count: 'exact' })
+        .eq('dossier_id', dossierId).not('storage_hash', 'is', null).order('id').range(debut, fin),
+    ),
+    lireTout<{ storage_hash: string | null }>((debut, fin) =>
+      supabase.from('documents_divers').select('storage_hash', { count: 'exact' })
+        .eq('dossier_id', dossierId).not('storage_hash', 'is', null).order('id').range(debut, fin),
+    ),
   ])
-  const erreur = pieces.error ?? documents.error
-  if (erreur) throw new Error(`Empreintes des fichiers déjà importés illisibles : ${erreur.message}`)
+  const motif = [pieces, documents].find((l) => !l.complete)?.motif
+  if (motif) throw new Error(`Empreintes des fichiers déjà importés illisibles : ${motif}`)
   const hashs = new Set<string>()
-  for (const p of pieces.data ?? []) if (p.storage_hash) hashs.add(p.storage_hash)
-  for (const d of documents.data ?? []) if (d.storage_hash) hashs.add(d.storage_hash)
+  for (const p of pieces.lignes) if (p.storage_hash) hashs.add(p.storage_hash)
+  for (const d of documents.lignes) if (d.storage_hash) hashs.add(d.storage_hash)
   return hashs
 }
 

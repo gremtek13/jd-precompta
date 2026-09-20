@@ -26,6 +26,7 @@ import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
 import Avatar from '../components/widgets/Avatar'
 import { anneeDe } from '../lib/format'
+import { lireTout } from '../lib/lectureComplete'
 
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
@@ -87,15 +88,27 @@ export default function DossierDetail() {
     let annule = false
     setAnneesDisponibles(null)
     Promise.all([
-      supabase.from('pieces').select('date_piece').eq('dossier_id', id).not('date_piece', 'is', null),
-      supabase.from('lignes_bancaires').select('date').eq('dossier_id', id),
-      supabase.from('ecritures_brouillon').select('date').eq('dossier_id', id),
-    ]).then(([{ data: pcs }, { data: lgs }, { data: ecr }]) => {
+      // Lues par tranches : tronquées, elles ne perdent pas des lignes visibles — elles font
+      // disparaître un EXERCICE du sélecteur, et tout ce que le cabinet regarde ensuite est filtré
+      // par lui (voir lib/lectureComplete.ts).
+      lireTout<{ date_piece: string | null }>((debut, fin) =>
+        supabase.from('pieces').select('date_piece', { count: 'exact' })
+          .eq('dossier_id', id).not('date_piece', 'is', null).order('id').range(debut, fin),
+      ),
+      lireTout<{ date: string }>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('date', { count: 'exact' })
+          .eq('dossier_id', id).order('id').range(debut, fin),
+      ),
+      lireTout<{ date: string }>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('date', { count: 'exact' })
+          .eq('dossier_id', id).order('id').range(debut, fin),
+      ),
+    ]).then(([pcs, lgs, ecr]) => {
       if (annule) return
       const annees = new Set<number>()
-      for (const p of pcs ?? []) if (p.date_piece) annees.add(anneeDe(p.date_piece))
-      for (const l of lgs ?? []) annees.add(anneeDe(l.date))
-      for (const e of ecr ?? []) annees.add(anneeDe(e.date))
+      for (const p of pcs.lignes) if (p.date_piece) annees.add(anneeDe(p.date_piece))
+      for (const l of lgs.lignes) annees.add(anneeDe(l.date))
+      for (const e of ecr.lignes) annees.add(anneeDe(e.date))
       setAnneesDisponibles([...annees].sort((a, b) => b - a))
     })
     return () => { annule = true }

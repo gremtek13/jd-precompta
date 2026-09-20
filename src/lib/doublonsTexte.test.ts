@@ -3,18 +3,43 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 // Faux client Supabase — requis même pour la fonction PURE de ce module : `doublonsTexte.ts` importe
 // `supabase.ts`, qui lève au chargement quand les variables d'environnement manquent (ce qui est le
 // cas en CI). Voir contrepartieBanque.test.ts, même motif.
-const etat = { reponse: null as { data: unknown; error: unknown } | null }
+const etat = {
+  reponse: null as { data: unknown; error: unknown } | null,
+  // Plafond du serveur (« Max rows » de PostgREST, qui ne se signale pas) et total annoncé quand le
+  // test veut le faire mentir — voir lib/lectureComplete.ts.
+  plafond: null as number | null,
+  compteAnnonce: null as number | null,
+}
 const journal: { table: string; colonnes: string; dossierId: string }[] = []
 
 vi.mock('./supabase', () => ({
   supabase: {
     from: (table: string) => ({
-      select: (colonnes: string) => ({
-        eq: (_col: string, dossierId: string) => {
-          journal.push({ table, colonnes, dossierId })
-          return Promise.resolve(etat.reponse ?? { data: [], error: null })
-        },
-      }),
+      select: (colonnes: string) => {
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        const chaine = {
+          eq: (_col: string, dossierId: string) => {
+            journal.push({ table, colonnes, dossierId })
+            return chaine
+          },
+          order: () => chaine,
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          then: (resoudre: (v: unknown) => unknown) => {
+            const reponse = etat.reponse ?? { data: [], error: null }
+            if (reponse.error) return Promise.resolve(resoudre({ ...reponse, count: null }))
+            const toutes = (reponse.data ?? []) as unknown[]
+            const demande = fin - debut + 1
+            const taille = etat.plafond == null ? demande : Math.min(demande, etat.plafond)
+            return Promise.resolve(resoudre({
+              data: toutes.slice(debut, debut + taille),
+              error: null,
+              count: etat.compteAnnonce ?? toutes.length,
+            }))
+          },
+        }
+        return chaine
+      },
     }),
   },
 }))
@@ -24,6 +49,8 @@ const { grouperDoublonsDeTexte, chargerEmpreintesTexte, chargerDoublonsDeTexte }
 
 beforeEach(() => {
   etat.reponse = null
+  etat.plafond = null
+  etat.compteAnnonce = null
   journal.length = 0
 })
 

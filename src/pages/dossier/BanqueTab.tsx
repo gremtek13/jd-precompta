@@ -970,8 +970,12 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
   const [sourceFileName, setSourceFileName] = useState<string | null>(null)
 
   useEffect(() => {
-    supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).eq('categorie', 'releve_bancaire')
-      .then(({ data }) => setDocumentsReleve(data ?? []))
+    // Lue par tranches (voir lib/lectureComplete.ts) : un dossier accumule un relevé par mois et
+    // par compte, et cette liste est celle où l'on vient rechercher un fichier à importer.
+    lireTout<DocumentDivers>((debut, fin) =>
+      supabase.from('documents_divers').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).eq('categorie', 'releve_bancaire').order('id').range(debut, fin),
+    ).then((lecture) => setDocumentsReleve(lecture.lignes))
   }, [dossierId])
 
   // Même Blob générique que handlePdfBlob ci-dessous : un fichier fraîchement déposé (File) ou un CSV

@@ -52,9 +52,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   async function load() {
     setLoading(true)
-    const [{ data: categoriesData }, { data: piecesValideesData }, brouillon, { data: immobilisationsData }, { data: lignesData }, { data: declarationsData }] = await Promise.all([
+    const [{ data: categoriesData }, lecturePieces, brouillon, { data: immobilisationsData }, lectureLignes, { data: declarationsData }] = await Promise.all([
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre'),
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+      ),
       // Lue par tranches, et triée sur un ordre TOTAL (`date` n'est pas unique) : sans clé de
       // départage, deux tranches successives peuvent se recouvrir ou sauter des lignes, et rien ne
       // le signale.
@@ -63,14 +66,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           .eq('dossier_id', dossierId).order('date', { ascending: false }).order('id').range(debut, fin),
       ),
       supabase.from('immobilisations').select('piece_id').eq('dossier_id', dossierId),
-      supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null),
+      lireTout<LigneBancaire>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
+          .order('id').range(debut, fin),
+      ),
       supabase.from('declarations_tva').select('*').eq('dossier_id', dossierId).order('periode_debut', { ascending: false }),
     ])
-    setLignesBancaires(lignesData ?? [])
+    setLignesBancaires(lectureLignes.lignes)
     setCategories(categoriesData ?? [])
-    setPiecesValidees(piecesValideesData ?? [])
+    setPiecesValidees(lecturePieces.lignes)
     setEcritures(brouillon.lignes)
-    setBrouillonIncomplet(brouillon.complete ? null : brouillon.motif)
+    // Un seul drapeau pour les trois collections : ce sont les trois qui font le FEC et la piste
+    // d'audit, et l'écran n'a rien de plus utile à dire selon laquelle a manqué.
+    setBrouillonIncomplet(
+      [brouillon, lecturePieces, lectureLignes].find((l) => !l.complete)?.motif ?? null,
+    )
     setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
     setDeclarationsTva(declarationsData ?? [])
     setLoading(false)

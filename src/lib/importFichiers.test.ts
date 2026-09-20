@@ -9,16 +9,37 @@ const etat = {
   insertError: null as { message: string } | null,
   extraction: null as Record<string, unknown> | null,
   extractionLeve: false,
+  // Plafond du serveur (« Max rows » de PostgREST, qui ne se signale pas) et total annoncé quand le
+  // test veut le faire mentir.
+  plafond: null as number | null,
+  compteAnnonce: null as number | null,
 }
 const journal: { action: string; cible: string }[] = []
 
 vi.mock('./supabase', () => {
   const lecture = (table: 'pieces' | 'documents') => {
+    // `range` honoré et `count` annoncé : sans cela, la lecture par tranches des empreintes ne
+    // serait pas mise à l'épreuve — or c'est elle qui empêche un import en masse de repartir en
+    // double au-delà du plafond de PostgREST.
+    let debut = 0
+    let fin = Number.MAX_SAFE_INTEGER
     const chaine = {
       select: () => chaine,
       eq: () => chaine,
       not: () => chaine,
-      then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(etat[table])),
+      order: () => chaine,
+      range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+      then: (resoudre: (v: unknown) => unknown) => {
+        const src = etat[table]
+        if (src.error) return Promise.resolve(resoudre({ data: null, error: src.error, count: null }))
+        const demande = fin - debut + 1
+        const taille = etat.plafond == null ? demande : Math.min(demande, etat.plafond)
+        return Promise.resolve(resoudre({
+          data: src.data.slice(debut, debut + taille),
+          error: null,
+          count: etat.compteAnnonce ?? src.data.length,
+        }))
+      },
     }
     return chaine
   }
@@ -89,6 +110,8 @@ const importer = (nom: string, hashsConnus = new Set<string>()) =>
 beforeEach(() => {
   etat.pieces = { data: [], error: null }
   etat.documents = { data: [], error: null }
+  etat.plafond = null
+  etat.compteAnnonce = null
   etat.uploadError = null
   etat.insertError = null
   etat.extraction = { classification: 'facture', date_piece: '2026-03-10', tiers: 'EDF', montant_ttc: 120, confiance: 'haute' }
@@ -115,6 +138,23 @@ describe('chargerHashsExistants', () => {
     etat.pieces.data = [{ storage_hash: 'a' }, { storage_hash: null }]
     etat.documents.data = [{ storage_hash: 'b' }]
     expect([...(await chargerHashsExistants('d1'))].sort()).toEqual(['a', 'b'])
+  })
+
+  it('recolle les tranches quand le serveur plafonne', async () => {
+    // Lue d'un coup, la liste n'aurait qu'une empreinte sur trois — et l'import en masse aurait
+    // réimporté les deux autres, en silence.
+    etat.plafond = 1
+    etat.pieces.data = [{ storage_hash: 'a' }, { storage_hash: 'b' }, { storage_hash: 'c' }]
+    expect([...(await chargerHashsExistants('d1'))].sort()).toEqual(['a', 'b', 'c'])
+  })
+
+  it('lève quand la lecture ne peut pas se dire complète', async () => {
+    // La base annonce cinq empreintes et n'en rend qu'une, puis plus rien. Rendre l'ensemble
+    // partiel serait pire que rien : le dédoublonnage laisserait passer tout ce qu'il ignore.
+    etat.plafond = 1
+    etat.compteAnnonce = 5
+    etat.pieces.data = [{ storage_hash: 'a' }]
+    await expect(chargerHashsExistants('d1')).rejects.toThrow('Empreintes des fichiers déjà importés illisibles')
   })
 
   it('lève quand une lecture échoue, au lieu de rendre un ensemble vide', async () => {

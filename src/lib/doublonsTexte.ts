@@ -1,4 +1,5 @@
 import { supabase } from './supabase'
+import { lireTout } from './lectureComplete'
 
 // Le même document déposé deux fois — ce que l'empreinte du FICHIER ne peut pas voir.
 //
@@ -72,14 +73,19 @@ export function grouperDoublonsDeTexte(empreintes: EmpreinteTexte[]): DoublonDeT
 // Lit les empreintes SEULES, jamais les textes : c'est tout l'intérêt de la colonne générée. Un
 // texte OCR pèse des kilo-octets par ligne, et cette liste couvre le dossier entier.
 export async function chargerEmpreintesTexte(dossierId: string): Promise<EmpreinteTexte[]> {
-  const { data, error } = await supabase
-    .from('piece_textes_ocr')
-    .select('piece_id, document_id, texte_md5')
-    .eq('dossier_id', dossierId)
+  // Lue par tranches : il y a une ligne par pièce ET par document du dossier, donc cette table
+  // grandit exactement comme le dossier (voir lib/lectureComplete.ts). Tronquée, elle ne rendrait
+  // pas « moins de doublons » — elle en manquerait sans le dire, ce qui est la seule chose qu'un
+  // détecteur de doublons ne doit jamais faire.
+  const { lignes, complete, motif } = await lireTout<Record<string, unknown>>((debut, fin) =>
+    supabase.from('piece_textes_ocr').select('piece_id, document_id, texte_md5', { count: 'exact' })
+      .eq('dossier_id', dossierId).order('id').range(debut, fin),
+  )
   // Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture : sans ça,
   // un refus RLS se lirait « aucun doublon », c'est-à-dire exactement le contraire de ce qu'on sait.
-  if (error) throw error
-  return (data ?? []).map((l) => ({
+  // Une lecture INCOMPLÈTE dit la même chose en plus discret, donc elle lève aussi.
+  if (!complete) throw new Error(`Empreintes de texte illisibles : ${motif}`)
+  return lignes.map((l) => ({
     pieceId: (l.piece_id as string | null) ?? null,
     documentId: (l.document_id as string | null) ?? null,
     empreinte: (l.texte_md5 as string | null) ?? '',

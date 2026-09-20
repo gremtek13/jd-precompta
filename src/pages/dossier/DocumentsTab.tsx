@@ -8,6 +8,8 @@ import { correspondALaRecherche } from '../../lib/recherche'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 import { documentsAvecTexteOcr, enregistrerTexteOcr, lireTexteOcrDuDocument, texteOcrDuDocument } from '../../lib/texteOcr'
 import { documentsARelire, relireTextesDocuments } from '../../lib/relectureDocuments'
+import { lireTout } from '../../lib/lectureComplete'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -38,6 +40,8 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   // sais pas », et surtout pas « aucun texte » : proposer « Retrouver le texte lu » sur cette base
   // paierait Textract une seconde fois sur des documents déjà lus (voir lib/texteOcr.ts).
   const [presenceTexteIncertaine, setPresenceTexteIncertaine] = useState<string | null>(null)
+  // Non nul quand la liste des documents n'a pas pu être lue en entier (voir lib/lectureComplete.ts).
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [ocrOuvert, setOcrOuvert] = useState<{ documentId: string; texte: string | null } | null>(null)
   const [relecture, setRelecture] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
   // Le verrou est un ref, jamais l'état ci-dessus : `setRelecture` ne prend effet qu'au rendu
@@ -64,11 +68,18 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [{ data: documentsData }, { data: sousDossiersData }] = await Promise.all([
-      supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
+    const [lectureDocuments, { data: sousDossiersData }] = await Promise.all([
+      // Lue par tranches, triée sur un ordre TOTAL (voir lib/lectureComplete.ts) : un dossier
+      // accumule un relevé par mois et par compte, plus les attestations — cette table grandit
+      // toute seule, et le bouton « Retrouver le texte lu » compte ce qu'elle rend.
+      lireTout<DocumentDivers>((debut, fin) =>
+        supabase.from('documents_divers').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
+      ),
       supabase.from('sous_dossiers').select('*').eq('dossier_id', dossierId).order('ordre').order('nom'),
     ])
-    setDocuments(documentsData ?? [])
+    setDocuments(lectureDocuments.lignes)
+    setLectureIncomplete(lectureDocuments.complete ? null : lectureDocuments.motif)
     setSousDossiers(sousDossiersData ?? [])
     const presence = await documentsAvecTexteOcr(dossierId)
     setAvecTexteOcr(presence.avecTexte)
@@ -329,6 +340,12 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
           <button className="btn btn-primary btn-sm" onClick={() => setAjoutOuvert(true)}>+ Ajouter des documents</button>
         </div>
       </div>
+
+      <BandeauLecturePartielle
+        quoi="Les documents du dossier"
+        motif={lectureIncomplete}
+        consequence="La liste ci-dessous n’est donc pas complète — recharge la page avant de t’y fier."
+      />
 
       {presenceTexteIncertaine && (
         // Dit pourquoi le bouton a disparu, plutôt que de le laisser manquer sans raison visible.

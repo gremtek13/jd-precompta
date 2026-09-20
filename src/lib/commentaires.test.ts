@@ -22,9 +22,18 @@ vi.mock('./supabase', () => ({
         return { select: () => ({ single: () => Promise.resolve(reponses.insert) }) }
       },
       select: () => {
+        // Le chaînage réel finit par `.range()` : la lecture des commentaires se fait par tranches
+        // (voir lib/lectureComplete.ts), et un faux client qui s'arrêterait à `.order()` testerait
+        // un appel que la production ne fait plus.
         const chaine = {
           eq: () => chaine,
-          order: () => Promise.resolve(reponses.select),
+          order: () => chaine,
+          range: () => chaine,
+          then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre({
+            data: reponses.select.data ?? [],
+            error: null,
+            count: (reponses.select.data ?? []).length,
+          })),
         }
         return chaine
       },

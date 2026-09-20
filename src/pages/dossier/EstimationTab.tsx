@@ -4,6 +4,8 @@ import { formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
 import { ecartPct, totauxPourAnnee } from '../../lib/estimation'
 import type { Categorie, CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
+import { lireTout } from '../../lib/lectureComplete'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 const ANNEE_COURANTE = new Date().getFullYear()
 
@@ -25,6 +27,9 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
   const [referencesPostes, setReferencesPostes] = useState<ReferencePosteAnnuel[]>([])
   const [loading, setLoading] = useState(true)
+  // Non nul quand recettes ou dépenses n'ont pas pu être lues en entier : l'estimation porte alors
+  // sur une partie du dossier, et une assiette de cotisations sous-évaluée a l'air normale.
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [calculating, setCalculating] = useState(false)
@@ -48,24 +53,34 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setLoading(true)
     const [
       { data: cotisationsData },
-      { data: recettesValideesData },
-      { data: piecesValideesData },
+      lectureRecettes,
+      lecturePieces,
       { data: categoriesData },
       { data: immobilisationsData },
       { data: referencesData },
       { data: referencesPostesData },
     ] = await Promise.all([
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee').eq('type_piece', 'vente'),
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
+      // Lues par tranches (voir lib/lectureComplete.ts) : recettes et dépenses FONT le résultat
+      // estimé, donc l'assiette des cotisations. Tronquées, elles rendent une estimation plausible.
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').eq('type_piece', 'vente')
+          .order('id').range(debut, fin),
+      ),
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+      ),
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
       supabase.from('immobilisations').select('piece_id').eq('dossier_id', dossierId),
       supabase.from('references_annuelles').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }),
       supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
     ])
     setCotisations(cotisationsData ?? [])
-    setRecettesValidees(recettesValideesData ?? [])
-    setPiecesValidees(piecesValideesData ?? [])
+    setRecettesValidees(lectureRecettes.lignes)
+    setPiecesValidees(lecturePieces.lignes)
+    setLectureIncomplete(lectureRecettes.motif ?? lecturePieces.motif)
     setCategories(categoriesData ?? [])
     setImmobilisationPieceIds(new Set((immobilisationsData ?? []).map((i) => i.piece_id).filter((id): id is string => !!id)))
     setReferences(referencesData ?? [])
@@ -258,6 +273,15 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les recettes et dépenses validées"
+        motif={lectureIncomplete}
+        consequence={
+          'L’estimation ci-dessous porte donc sur une partie du dossier : une assiette de ' +
+          'cotisations sous-évaluée a exactement l’air d’une bonne nouvelle.'
+        }
+      />
+
       <div className="brouillon-banner">
         <strong>Estimation indicative</strong> — une projection pour anticiper, pas un calcul officiel de
         régularisation URSSAF ni un substitut à l'avis de l'expert-comptable. Limitée aux charges

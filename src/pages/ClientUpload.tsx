@@ -8,8 +8,10 @@ import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, PieceCom
 import BarreRecherche from '../components/BarreRecherche'
 import { correspondALaRecherche } from '../lib/recherche'
 import FilCommentaires from '../components/FilCommentaires'
+import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { chargerCommentaires, cleCible, commentairesParCible } from '../lib/commentaires'
 import type { CibleCommentaire } from '../lib/commentaires'
+import { lireTout } from '../lib/lectureComplete'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
 const ANNEE_COURANTE = new Date().getFullYear()
@@ -46,6 +48,9 @@ export default function ClientUpload() {
   const [documents, setDocuments] = useState<DocumentDivers[]>([])
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  // Non nul quand la liste des envois ou des relevés n'a pas pu être lue en entier. Dit au client,
+  // dans sa langue : sans ça l'écran pourrait lui réclamer un document qu'il a déjà envoyé.
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   // Fichiers en cours d'envoi/analyse — état purement local (pas encore une ligne en base) : le temps
   // que Textract réponde (jusqu'à 50s sur un document multi-pages), aucune ligne n'existe encore, donc
   // rien à corriger après coup. Voir handleFiles.
@@ -65,16 +70,29 @@ export default function ClientUpload() {
 
   async function load() {
     if (!dossierId) return
-    const [{ data: piecesData }, { data: documentsData }, { data: lignesData }, { data: cotisationsData }, commentairesData] = await Promise.all([
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
-      supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
-      supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId),
+    const [lecturePieces, lectureDocuments, lectureLignes, { data: cotisationsData }, commentairesData] = await Promise.all([
+      // Lues par tranches : le plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts),
+      // et c'est sur ces deux collections que repose « ce qu'il reste à envoyer ». Tronquées, elles
+      // demanderaient au client des documents qu'il a déjà envoyés.
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
+      ),
+      lireTout<DocumentDivers>((debut, fin) =>
+        supabase.from('documents_divers').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
+      ),
+      lireTout<LigneBancaire>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
       chargerCommentaires(dossierId),
     ])
-    setPieces(piecesData ?? [])
-    setDocuments(documentsData ?? [])
-    setLignes(lignesData ?? [])
+    setPieces(lecturePieces.lignes)
+    setDocuments(lectureDocuments.lignes)
+    setLignes(lectureLignes.lignes)
+    setLectureIncomplete(lecturePieces.motif ?? lectureLignes.motif)
     setCotisations(cotisationsData ?? [])
     setCommentaires(commentairesData)
   }
@@ -198,6 +216,13 @@ export default function ClientUpload() {
   return (
     <>
       <div className="topbar"><h1>Mes pièces</h1></div>
+
+      <BandeauLecturePartielle
+        quoi="Tes envois"
+        motif={lectureIncomplete}
+        technique={false}
+        consequence="Recharge la page : cette liste peut te demander un document que tu as déjà envoyé."
+      />
 
       <h3>Ce qu'il reste à envoyer</h3>
       <div className="card" style={{ padding: 0, marginBottom: 20 }}>

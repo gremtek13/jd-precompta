@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
+import { lireTout } from '../../lib/lectureComplete'
 import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
@@ -38,30 +39,39 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
     setLoading(true)
     const [
       { data: empruntsData },
-      { data: piecesValideesData },
+      lecturePieces,
       { data: categoriesData },
       { data: immobilisationsData },
       { data: cotisationsData },
-      { data: lignesBanqueData },
+      lectureBanque,
       { data: previsionnelData },
     ] = await Promise.all([
       supabase.from('emprunts').select('*').eq('dossier_id', dossierId).order('date_debut', { ascending: false }),
-      supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee'),
+      // Lues par tranches (voir lib/lectureComplete.ts) : recettes et charges font la situation
+      // intermédiaire, les ratios bancaires et le plan de trésorerie — trois chiffres qu'un banquier
+      // regarde.
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('id').range(debut, fin),
+      ),
       supabase.from('categories').select('*').or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
       supabase.from('immobilisations').select('*').eq('dossier_id', dossierId),
       supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
       // Solde de trésorerie recalculé depuis le détail (pas juste l'agrégat "aujourd'hui") pour
       // pouvoir aussi répondre "à telle date" dans la situation intermédiaire ci-dessous — sur tout
       // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours.
-      supabase.from('ecritures_brouillon').select('date, sens, montant').eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE),
+      lireTout<{ date: string; sens: string; montant: number }>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('date, sens, montant', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE).order('id').range(debut, fin),
+      ),
       supabase.from('previsionnels_bancaires').select('*').eq('dossier_id', dossierId).maybeSingle(),
     ])
     setEmprunts((empruntsData ?? []) as Emprunt[])
-    setPiecesValidees((piecesValideesData ?? []) as Piece[])
+    setPiecesValidees(lecturePieces.lignes)
     setCategories((categoriesData ?? []) as Categorie[])
     setImmobilisations((immobilisationsData ?? []) as Immobilisation[])
     setCotisations((cotisationsData ?? []) as CotisationDeclaree[])
-    setLignesBanque((lignesBanqueData ?? []) as LigneBanque[])
+    setLignesBanque(lectureBanque.lignes as LigneBanque[])
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
     setLoading(false)
   }

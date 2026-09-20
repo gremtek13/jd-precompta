@@ -8,7 +8,9 @@ import { IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
 import ProgressRing from '../components/widgets/ProgressRing'
+import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import type { CotisationDeclaree, DocumentDivers, Dossier, LigneBancaire, Piece } from '../lib/types'
+import { lireTout } from '../lib/lectureComplete'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -48,6 +50,9 @@ export default function ClientHome() {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [chargement, setChargement] = useState(true)
+  // Non nul quand la liste des envois ou des relevés n'a pas pu être lue en entier. Dit au client,
+  // dans sa langue : sans ça l'écran pourrait lui réclamer un document qu'il a déjà envoyé.
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [onboardingVu, setOnboardingVu] = useState(true)
   const [capturing, setCapturing] = useState(false)
   const [captureError, setCaptureError] = useState<string | null>(null)
@@ -55,18 +60,31 @@ export default function ClientHome() {
   async function load() {
     if (!dossierId) return
     setChargement(true)
-    const [{ data: dossierData }, { data: piecesData }, { data: documentsData }, { data: lignesData }, { data: cotisationsData }] =
+    const [{ data: dossierData }, lecturePieces, lectureDocuments, lectureLignes, { data: cotisationsData }] =
       await Promise.all([
         supabase.from('dossiers').select('*').eq('id', dossierId).maybeSingle(),
-        supabase.from('pieces').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
-        supabase.from('documents_divers').select('*').eq('dossier_id', dossierId).order('created_at', { ascending: false }),
-        supabase.from('lignes_bancaires').select('*').eq('dossier_id', dossierId),
+        // Lues par tranches (voir lib/lectureComplete.ts) : ces deux collections portent les
+        // tuiles chiffrées et l'anneau « ce qu'il reste à envoyer », qui doivent dire la même chose
+        // que ClientUpload et que la Checklist du cabinet au même moment.
+        lireTout<Piece>((debut, fin) =>
+          supabase.from('pieces').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
+        ),
+        lireTout<DocumentDivers>((debut, fin) =>
+          supabase.from('documents_divers').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('created_at', { ascending: false }).order('id').range(debut, fin),
+        ),
+        lireTout<LigneBancaire>((debut, fin) =>
+          supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        ),
         supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
       ])
     setDossier(dossierData ?? null)
-    setPieces(piecesData ?? [])
-    setDocuments(documentsData ?? [])
-    setLignes(lignesData ?? [])
+    setPieces(lecturePieces.lignes)
+    setDocuments(lectureDocuments.lignes)
+    setLignes(lectureLignes.lignes)
+    setLectureIncomplete(lecturePieces.motif ?? lectureLignes.motif)
     setCotisations(cotisationsData ?? [])
     setChargement(false)
   }
@@ -178,6 +196,13 @@ export default function ClientHome() {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Tes envois"
+        motif={lectureIncomplete}
+        technique={false}
+        consequence="Recharge la page : cette liste peut te demander un document que tu as déjà envoyé."
+      />
+
       <section className="client-hero">
         <span className="client-hero-date">{aujourdhui}</span>
         <h1>{prenom ? `Bonjour ${prenom} 👋` : 'Bonjour 👋'}</h1>

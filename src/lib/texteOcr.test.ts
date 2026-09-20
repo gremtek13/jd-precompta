@@ -7,6 +7,9 @@ const reponses = {
   select: { data: [] as { piece_id: string }[] | null, error: null as { message: string } | null },
   single: { data: null as { texte: string } | null },
   upsert: { error: null as { message: string } | null },
+  // Plafond du serveur et total annoncé — voir lib/lectureComplete.ts.
+  plafond: null as number | null,
+  compteAnnonce: null as number | null,
 }
 let upsert: Record<string, unknown> | null = null
 let onConflict: string | undefined
@@ -20,10 +23,28 @@ vi.mock('./supabase', () => ({
         return Promise.resolve(reponses.upsert)
       },
       select: () => {
+        // `range` honoré et `count` annoncé : la liste « qui a déjà un texte » se lit par tranches
+        // (voir lib/lectureComplete.ts), et c'est elle qui décide d'une dépense Textract.
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
         const chaine = {
           eq: () => chaine,
+          order: () => chaine,
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
           maybeSingle: () => Promise.resolve(reponses.single),
-          then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(reponses.select)),
+          then: (resoudre: (v: unknown) => unknown) => {
+            if (reponses.select.error) {
+              return Promise.resolve(resoudre({ data: null, error: reponses.select.error, count: null }))
+            }
+            const toutes = reponses.select.data ?? []
+            const demande = fin - debut + 1
+            const taille = reponses.plafond == null ? demande : Math.min(demande, reponses.plafond)
+            return Promise.resolve(resoudre({
+              data: toutes.slice(debut, debut + taille),
+              error: null,
+              count: reponses.compteAnnonce ?? toutes.length,
+            }))
+          },
         }
         return chaine
       },
@@ -40,6 +61,8 @@ beforeEach(() => {
   reponses.select = { data: [], error: null }
   reponses.single = { data: null }
   reponses.upsert = { error: null }
+  reponses.plafond = null
+  reponses.compteAnnonce = null
 })
 
 describe('texteOcrExploitable — rien lu n’est pas « rien dessus »', () => {
@@ -129,6 +152,28 @@ describe('lecture', () => {
     return piecesAvecTexteOcr('d1').then(({ avecTexte, erreur }) => {
       expect(avecTexte.size).toBe(0)
       expect(erreur).toBeNull()
+    })
+  })
+
+  it('recolle les tranches quand le serveur plafonne', () => {
+    // Lue d'un coup, la liste n'aurait qu'une pièce sur trois : les deux autres passeraient pour
+    // « sans texte », et le bouton de relecture proposerait de repayer Textract dessus.
+    reponses.plafond = 1
+    reponses.select = { data: [{ piece_id: 'a' }, { piece_id: 'b' }, { piece_id: 'c' }], error: null }
+    return piecesAvecTexteOcr('d1').then(({ avecTexte, erreur }) => {
+      expect([...avecTexte].sort()).toEqual(['a', 'b', 'c'])
+      expect(erreur).toBeNull()
+    })
+  })
+
+  it('DIT que la lecture est INCOMPLÈTE, comme elle dit qu’elle a échoué', () => {
+    // La base annonce cinq lignes et n'en rend qu'une, puis plus rien : ne pas savoir interdit de
+    // relancer une lecture facturée, exactement comme un refus.
+    reponses.plafond = 1
+    reponses.compteAnnonce = 5
+    reponses.select = { data: [{ piece_id: 'a' }], error: null }
+    return piecesAvecTexteOcr('d1').then(({ erreur }) => {
+      expect(erreur).toContain('sur 5')
     })
   })
 

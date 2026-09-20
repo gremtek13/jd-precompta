@@ -16,6 +16,8 @@ const faux = vi.hoisted(() => ({
   suppression: { error: null as { message: string } | null },
   inserts: [] as Record<string, unknown>[],
   suppressions: 0,
+  // Plafond du serveur : le « Max rows » de PostgREST, qui ne se signale pas.
+  plafond: null as number | null,
   // Laissée en attente : la fenêtre réelle pendant laquelle le second clic arrive.
   resoudreInsert: null as null | (() => void),
 }))
@@ -23,6 +25,10 @@ const faux = vi.hoisted(() => ({
 vi.mock('../../lib/supabase', () => {
   function chaine(table: string) {
     let operation = 'select'
+    // Le faux client honore `range` et annonce un `count` : la lecture par tranches ne prouverait
+    // rien contre un serveur qui rend tout d'un coup quoi qu'on lui demande.
+    let debut = 0
+    let fin = Number.MAX_SAFE_INTEGER
     const c: Record<string, unknown> = {}
     // `piece_textes_ocr` est interrogée de DEUX façons : en liste (quels documents ont un texte) et
     // à l'unité (le texte de celui-ci). Rendre la même chose aux deux ferait planter la première sur
@@ -32,11 +38,26 @@ vi.mock('../../lib/supabase', () => {
         faux.suppressions++
         return Promise.resolve({ data: null, error: faux.suppression.error })
       }
-      if (table === 'documents_divers') return Promise.resolve({ data: faux.documents, error: null })
+      if (table === 'documents_divers') {
+        const demande = fin - debut + 1
+        const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
+        return Promise.resolve({
+          data: faux.documents.slice(debut, debut + taille),
+          error: null,
+          count: faux.documents.length,
+        })
+      }
       if (table === 'piece_textes_ocr') {
-        return mode === 'unique'
-          ? Promise.resolve({ data: faux.lectureTexte.data, error: faux.lectureTexte.error })
-          : Promise.resolve({ data: faux.presence.data, error: faux.presence.error })
+        if (mode === 'unique') {
+          return Promise.resolve({ data: faux.lectureTexte.data, error: faux.lectureTexte.error })
+        }
+        // La liste « qui a déjà un texte » se lit par tranches et annonce son total : sans `count`,
+        // la lecture se déclarerait incomplète — à juste titre (voir lib/lectureComplete.ts).
+        return Promise.resolve({
+          data: faux.presence.error ? null : faux.presence.data,
+          error: faux.presence.error,
+          count: faux.presence.error ? null : faux.presence.data.length,
+        })
       }
       if (table === 'pieces' && operation === 'insert') {
         return new Promise((resoudre) => {
@@ -50,6 +71,7 @@ vi.mock('../../lib/supabase', () => {
       insert: (valeur: Record<string, unknown>) => { operation = 'insert'; faux.inserts.push(valeur); return c },
       delete: () => { operation = 'delete'; return c },
       update: () => { operation = 'update'; return c },
+      range: (d: number, f: number) => { debut = d; fin = f; return c },
       upsert: () => { operation = 'upsert'; return c },
       single: () => reponse('unique'),
       maybeSingle: () => reponse('unique'),
@@ -74,6 +96,7 @@ function documentDeTest() {
 }
 
 function reinitialiser() {
+  faux.plafond = null
   faux.documents = [documentDeTest()]
   faux.lectureTexte = { data: { texte: 'FOUR MICRO-ONDES' }, error: null }
   faux.presence = { data: [], error: null }
@@ -104,6 +127,20 @@ describe('DocumentsTab — « C\'est une facture »', () => {
 
     await act(async () => { faux.resoudreInsert?.() })
     expect(faux.suppressions).toBe(1)
+  })
+
+  it('recolle les tranches quand le serveur plafonne la liste des documents', async () => {
+    reinitialiser()
+    faux.plafond = 1
+    faux.documents = [
+      { ...documentDeTest(), id: 'doc-1', nom_fichier: 'releve-janvier.pdf' },
+      { ...documentDeTest(), id: 'doc-2', nom_fichier: 'releve-fevrier.pdf' },
+    ]
+    render(<DocumentsTab dossierId="dossier-de-test" />)
+
+    // Lue d'un coup, la liste n'aurait que janvier — et rien ne l'aurait dit.
+    expect(await screen.findByText('releve-janvier.pdf')).toBeDefined()
+    expect(screen.getByText('releve-fevrier.pdf')).toBeDefined()
   })
 
   it('renonce sans rien créer quand le texte lu ne peut pas être relu', async () => {

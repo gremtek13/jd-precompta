@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { formatMoney } from '../lib/format'
 import { ecartPct, totauxPourAnnee } from '../lib/estimation'
 import type { CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
+import { lireTout } from '../lib/lectureComplete'
 
 const ANNEE_COURANTE = new Date().getFullYear()
 
@@ -25,14 +26,20 @@ export default function ClientSimulation() {
   useEffect(() => {
     if (!dossierId) return
     async function load() {
-      const [{ data: cotisationsData }, { data: recettesValideesData }, { data: referencesData }, { data: referencesPostesData }] = await Promise.all([
+      const [{ data: cotisationsData }, lectureRecettes, { data: referencesData }, { data: referencesPostesData }] = await Promise.all([
         supabase.from('cotisations_declarees').select('*').eq('dossier_id', dossierId),
-        supabase.from('pieces').select('*').eq('dossier_id', dossierId).eq('statut', 'validee').eq('type_piece', 'vente'),
+        // Lues par tranches : ces recettes FONT le chiffre d'affaires simulé (voir
+        // lib/lectureComplete.ts). Tronquées, elles produisent une simulation plausible et basse.
+        lireTout<Piece>((debut, fin) =>
+          supabase.from('pieces').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).eq('statut', 'validee').eq('type_piece', 'vente')
+            .order('id').range(debut, fin),
+        ),
         supabase.from('references_annuelles').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }),
         supabase.from('references_postes_annuels').select('*').eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste'),
       ])
       setCotisations(cotisationsData ?? [])
-      setRecettesValidees(recettesValideesData ?? [])
+      setRecettesValidees(lectureRecettes.lignes)
       setReferences(referencesData ?? [])
       setReferencesPostes(referencesPostesData ?? [])
       setLoading(false)
