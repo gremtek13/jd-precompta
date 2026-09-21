@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
+import { dotationsNonProratisees, RESERVE_PRORATA_TEMPORIS } from '../../lib/declaration2035'
 import type { Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -19,7 +20,14 @@ const DUREE_DEFAUT_ANNEES = 5
 // proposée comme candidate ; c'est toujours le cabinet qui décide de l'enregistrer comme telle
 // (jamais automatique). La nature du bien (téléphone, véhicule...) suggère une durée d'amortissement
 // usuelle — toujours modifiable, l'arbitrage réel restant à l'expert-comptable. La dotation annuelle
-// affichée est un calcul linéaire simple, sans prorata temporis — voir le bandeau.
+// affichée est un calcul linéaire simple, sans prorata temporis.
+//
+// CETTE RÉSERVE-LÀ RENVOYAIT À « LE BANDEAU », QUI NE LA PORTE PAS : le bandeau de cet écran est le
+// rappel générique « Brouillon », affiché partout, et il ne dit rien de la première annuité. La
+// réserve ne vivait donc que dans ce commentaire, pendant que l'écran affichait une colonne
+// « Dotation annuelle » qui a toutes les apparences d'une annuité calculée. Elle est désormais
+// CALCULÉE et montrée (voir `dotationsNonProratisees`), et seulement quand elle apprend quelque
+// chose — un bien acquis le 1er janvier a bien une première annuité pleine.
 export default function ImmobilisationsTab({ dossierId }: { dossierId: string }) {
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
@@ -84,6 +92,17 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
       recherche,
     ),
   )
+
+  // La même fonction que Clôture, appelée sur chaque exercice d'acquisition présent : la colonne
+  // « Dotation annuelle » ci-dessous est pleine pour tout le monde, et il faut dire pour qui c'est
+  // faux.
+  //
+  // Sur l'ensemble d'AVANT la recherche, jamais sur `immobilisationsAffichees` — et c'est la règle
+  // du projet prise par son côté le plus coûteux : une recherche ne doit pas fabriquer une ALERTE
+  // (le piège de la Balance des comptes), mais elle doit encore moins en faire disparaître une, ce
+  // qui fabrique une BONNE nouvelle que personne n'ira vérifier (le piège de la liste des dossiers).
+  // La note NOMME le bien, donc elle reste exploitable même si la recherche le masque.
+  const dotationsAReprendre = anneesDisponibles.flatMap((a) => dotationsNonProratisees(immobilisationsFiltrees, a))
 
   // Changer la nature choisie pré-remplit la durée suggérée, sans écraser une durée déjà modifiée à la
   // main pour cette pièce.
@@ -220,6 +239,39 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
           total={immobilisationsFiltrees.length}
         />
       </div>
+
+      {dotationsAReprendre.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>
+            Première annuité à reprendre ({dotationsAReprendre.length})
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>{RESERVE_PRORATA_TEMPORIS}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Bien</th>
+                <th>Acquisition</th>
+                <th style={{ textAlign: 'right' }}>Dotation comptée</th>
+                <th style={{ textAlign: 'right' }}>Prorata temporis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dotationsAReprendre.map((d) => (
+                <tr key={`${d.libelle}-${d.dateAcquisition}`}>
+                  <td>{d.libelle}</td>
+                  <td>{formatDate(d.dateAcquisition)}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                    {formatMoney(d.dotationComptee)}
+                  </td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                    {formatMoney(d.dotationProratisee)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (

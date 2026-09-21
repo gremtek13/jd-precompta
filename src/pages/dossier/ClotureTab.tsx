@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { anneeDe, formatMoney } from '../../lib/format'
+import { anneeDe, formatMoney, formatDate } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
-import { calculerDeclaration2035 } from '../../lib/declaration2035'
+import { calculerDeclaration2035, dotationsNonProratisees, RESERVE_PRORATA_TEMPORIS, type DotationNonProratisee } from '../../lib/declaration2035'
 import { CASES_2035, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
 import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
 import { remplir2035 } from '../../lib/remplir2035'
@@ -176,6 +176,13 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const doublonsVehicules: { annee: number; doublon: DoublonFraisVehicule }[] = declarations
     .map((d) => ({ annee: d.annee, doublon: doublonFraisVehicules(d) }))
     .filter((x): x is { annee: number; doublon: DoublonFraisVehicule } => x.doublon !== null)
+
+  // Première annuité d'un bien acquis en cours d'année : l'application la compte en entier, la règle
+  // fiscale la réduit prorata temporis (voir `dotationsNonProratisees`). La réserve vivait jusqu'ici
+  // dans un commentaire de source, sur l'écran d'à côté — donc nulle part pour qui remplit la 2035.
+  const dotationsAReprendre: { annee: number; dotations: DotationNonProratisee[] }[] = declarations
+    .map((d) => ({ annee: d.annee, dotations: dotationsNonProratisees(immobilisations, d.annee) }))
+    .filter((x) => x.dotations.length > 0)
 
   // Véhicules dont l'indemnité n'a pas pu être calculée : leur déduction manque sur le formulaire,
   // et rien sur le PDF ne le dirait.
@@ -376,6 +383,43 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
                   </td>
                 </tr>
               ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {dotationsAReprendre.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>
+            Première annuité d’amortissement à reprendre ({dotationsAReprendre.reduce((n, x) => n + x.dotations.length, 0)})
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>{RESERVE_PRORATA_TEMPORIS}</p>
+          <table>
+            <thead>
+              <tr>
+                <th>Exercice</th>
+                <th>Bien</th>
+                <th>Acquisition</th>
+                <th style={{ textAlign: 'right' }}>Dotation comptée</th>
+                <th style={{ textAlign: 'right' }}>Prorata temporis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {dotationsAReprendre.flatMap(({ annee, dotations }) =>
+                dotations.map((d) => (
+                  <tr key={`${annee}-${d.libelle}-${d.dateAcquisition}`}>
+                    <td>{annee}</td>
+                    <td>{d.libelle}</td>
+                    <td>{formatDate(d.dateAcquisition)}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                      {formatMoney(d.dotationComptee)}
+                    </td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatMoney(d.dotationProratisee)}
+                    </td>
+                  </tr>
+                )),
+              )}
             </tbody>
           </table>
         </div>

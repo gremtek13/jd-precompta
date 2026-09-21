@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import ClotureTab from './ClotureTab'
@@ -75,12 +75,20 @@ function cotisation(id: string) {
   }
 }
 
-function poser(muet: Record<string, number> = {}) {
+function immobilisation(o: Record<string, unknown> = {}) {
+  return {
+    id: 'i1', dossier_id: 'dossier-de-test', piece_id: null, nature_id: null,
+    libelle: 'Ordinateur', valeur: 12000, date_acquisition: '2025-01-01', duree_annees: 5,
+    created_at: '2025-01-01T09:00:00Z', ...o,
+  }
+}
+
+function poser(muet: Record<string, number> = {}, immos: Record<string, unknown>[] = []) {
   faux.muetApresParTable = muet
   faux.parTable = {
     categories: [CATEGORIE],
     pieces: [PIECE],
-    immobilisations: [],
+    immobilisations: immos,
     cotisations_declarees: [cotisation('c1'), cotisation('c2')],
     vehicules: [],
     dossiers: [{ nom: 'Dossier de test', libelle_naf: 'Infirmier', siret: '12345678901234' }],
@@ -114,5 +122,54 @@ describe('ClotureTab — le refus de remplir une 2035 sur une lecture partielle'
     const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(bouton.hasAttribute('disabled')).toBe(false)
     expect(screen.queryByText(/n'a pas pu être lue en entier/)).toBeNull()
+  })
+})
+
+// LA PREMIÈRE ANNUITÉ D'AMORTISSEMENT, DITE LÀ OÙ ELLE EST SIGNÉE.
+//
+// `dotationPourAnnee` compte la dotation en entier dès l'année d'acquisition ; l'amortissement
+// fiscal se calcule prorata temporis. La simplification est assumée — mais la réserve ne vivait que
+// dans un commentaire de source de l'onglet Immobilisations, renvoyant à « le bandeau », qui est le
+// rappel générique « Brouillon ». Personne, en remplissant la 2035, ne pouvait l'apprendre.
+//
+// Ce que ce test garde et qu'aucun test de `src/lib` ne peut garder : le CÂBLAGE. `dotationsNon-
+// Proratisees` est juste et testée à part ; ce qui manquait, c'est qu'un écran l'APPELLE.
+describe('ClotureTab — la première annuité d’amortissement à reprendre', () => {
+  it('montre l’écart, chiffré, pour un bien acquis en cours d’année', async () => {
+    poser({}, [immobilisation({ date_acquisition: '2025-07-01' })])
+    monter()
+
+    const titre = await screen.findByText(/Première annuité d’amortissement à reprendre \(1\)/)
+    // Borné à la carte d'avertissement : 2 400,00 € figure AUSSI dans le tableau du formulaire, au
+    // poste Amortissements — c'est d'ailleurs la preuve que la dotation entière y part bien. Sans
+    // ce cadrage, `findByText` échoue en « Found multiple elements », qui ne ressemble pas au
+    // défaut gardé (piège déjà payé sur EcrituresTab).
+    const carte = within(titre.closest('.card')!)
+    carte.getByText(/prorata temporis/)
+    // Les deux montants côte à côte : la réserve sans le chiffre ne dit pas ce qu'elle coûte.
+    // `\s` plutôt qu'une espace : `toLocaleString('fr-FR')` sépare les milliers par une espace
+    // fine insécable (U+202F), celle-là même qui fait échouer la génération de PDF (voir CLAUDE.md).
+    carte.getByText(/^2\s400,00\s€$/)
+    carte.getByText(/^1\s200,00\s€$/)
+  })
+
+  it('se tait quand le bien est acquis le 1er janvier', async () => {
+    // Garde SYMÉTRIQUE, et il porte l'essentiel : sans lui, « l'écran avertit » serait satisfait par
+    // un écran qui avertit TOUJOURS — et une mise en garde permanente cesse d'être lue.
+    poser({}, [immobilisation()])
+    monter()
+
+    // Ancré sur quelque chose que ce jeu de données produit forcément, sinon un écran encore en
+    // chargement rendrait le test vert pour une raison fausse.
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(/Première annuité d’amortissement à reprendre/)).toHaveLength(0)
+  })
+
+  it('se tait quand le dossier ne porte aucune immobilisation', async () => {
+    poser()
+    monter()
+
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(/Première annuité d’amortissement à reprendre/)).toHaveLength(0)
   })
 })

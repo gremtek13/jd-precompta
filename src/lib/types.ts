@@ -216,6 +216,8 @@ export interface NatureImmobilisation {
 // Palier 5, brique 2 — registre des immobilisations. Une pièce validée dépassant le seuil peut être
 // enregistrée ici plutôt que traitée comme une charge courante ; la durée d'amortissement n'est
 // qu'une suggestion (linéaire, sans prorata temporis) — l'arbitrage réel reste à l'expert-comptable.
+// L'écart de la PREMIÈRE annuité est chiffré et montré : voir `dotationsNonProratisees`
+// (lib/declaration2035.ts), appelée par les onglets Immobilisations et Clôture.
 export interface Immobilisation {
   id: string
   dossier_id: string

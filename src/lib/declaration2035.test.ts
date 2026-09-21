@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  calculerDeclaration2035, dotationPourAnnee,
+  calculerDeclaration2035, dotationPourAnnee, dotationsNonProratisees, RESERVE_PRORATA_TEMPORIS,
   POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM,
 } from './declaration2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
@@ -247,5 +247,83 @@ describe('calculerDeclaration2035 — indemnités kilométriques', () => {
     }
     expect(calcul({ vehicules: [vehicule({ motorisation: 'electrique' })] }).indemnitesKilometriques?.total)
       .toBe(3192)
+  })
+})
+
+// LA PREMIÈRE ANNUITÉ D'UN BIEN ACQUIS EN COURS D'ANNÉE EST SURÉVALUÉE, ET RIEN NE LE DISAIT.
+//
+// `dotationPourAnnee` compte la dotation en ENTIER dès l'année d'acquisition, là où l'amortissement
+// fiscal se calcule prorata temporis depuis la mise en service. La simplification est assumée et
+// écrite dans `types.ts` ; ce qui ne l'était pas, c'est le silence — la réserve ne vivait que dans
+// un commentaire de source renvoyant à « le bandeau », qui est le rappel générique « Brouillon »
+// affiché sur tous les écrans et ne dit rien de tout cela. `dotationsNonProratisees` la CALCULE,
+// pour qu'elle puisse être montrée là où le chiffre est lu — et signé.
+//
+// Le jeu d'essai est typé SANS `as` : le compilateur vérifie alors chaque champ contre la table,
+// exhaustivement, là où un objet nu laisserait passer une colonne inventée ou manquante.
+const immobilisation = (o: Partial<Immobilisation> = {}): Immobilisation => ({
+  id: 'i-1', dossier_id: 'd-1', piece_id: null, nature_id: null,
+  libelle: 'Ordinateur', valeur: 12000, date_acquisition: '2025-01-01', duree_annees: 5,
+  created_at: '2025-01-01T09:00:00Z', ...o,
+})
+
+describe('dotationsNonProratisees', () => {
+  it('se tait sur un bien acquis le 1er janvier', () => {
+    // Le garde qui empêche la mise en garde d'être permanente : au 1er janvier la première annuité
+    // est bien pleine, il n'y a RIEN à reprendre. Une mise en garde toujours affichée cesse d'être
+    // lue, puis emporte ses voisines dans son discrédit.
+    expect(dotationsNonProratisees([immobilisation()], 2025)).toEqual([])
+  })
+
+  it('chiffre l’écart d’un bien acquis en milieu d’année', () => {
+    // 12 000 € sur 5 ans = 2 400 € par an. Acquis le 1er juillet, le prorata temporis (convention
+    // 30/360) n'en retient que la moitié : 1 200 €. L'écart de 1 200 € part en déduction sur une
+    // déclaration signée, sans que rien ne le signale.
+    expect(dotationsNonProratisees([immobilisation({ date_acquisition: '2025-07-01' })], 2025)).toEqual([
+      { libelle: 'Ordinateur', dateAcquisition: '2025-07-01', dotationComptee: 2400, dotationProratisee: 1200 },
+    ])
+  })
+
+  it('va jusqu’au cas extrême — un bien acquis le 31 décembre', () => {
+    // Un seul jour d'usage sur l'exercice, et l'application déduit une annuité entière. C'est le cas
+    // qui dit le mieux ce que la simplification coûte : 2 400 € comptés pour 6,67 € dus.
+    expect(dotationsNonProratisees([immobilisation({ date_acquisition: '2025-12-31' })], 2025)).toEqual([
+      { libelle: 'Ordinateur', dateAcquisition: '2025-12-31', dotationComptee: 2400, dotationProratisee: 6.67 },
+    ])
+  })
+
+  it('arrondit au centime, sur la dotation ET sur le prorata', () => {
+    // 10 000 / 3 ne tombe pas juste : sans arrondi, l'écran afficherait 3333.3333333333335.
+    expect(dotationsNonProratisees(
+      [immobilisation({ valeur: 10000, duree_annees: 3, date_acquisition: '2025-10-01' })], 2025,
+    )).toEqual([
+      { libelle: 'Ordinateur', dateAcquisition: '2025-10-01', dotationComptee: 3333.33, dotationProratisee: 833.33 },
+    ])
+  })
+
+  it('ne rend QUE l’année d’acquisition', () => {
+    // Les annuités intermédiaires sont justes des deux côtés — une année pleine est une année
+    // pleine. Les signaler ferait crier au loup sur quatre exercices au lieu d'un.
+    const immo = immobilisation({ date_acquisition: '2025-07-01' })
+    expect(dotationsNonProratisees([immo], 2026)).toEqual([])
+    expect(dotationsNonProratisees([immo], 2027)).toEqual([])
+  })
+
+  it('ne retient que les biens concernés d’un registre mêlé', () => {
+    expect(dotationsNonProratisees([
+      immobilisation({ id: 'a', libelle: 'Bureau', date_acquisition: '2025-01-01' }),
+      immobilisation({ id: 'b', libelle: 'Véhicule', date_acquisition: '2025-04-01' }),
+      immobilisation({ id: 'c', libelle: 'Ancien', date_acquisition: '2023-05-01' }),
+    ], 2025).map((d) => d.libelle)).toEqual(['Véhicule'])
+  })
+
+  it('porte une réserve qui NOMME la conséquence, pas seulement le procédé', () => {
+    // Même exigence que `BandeauLecturePartielle` : « lecture partielle » tout seul ne dit pas si
+    // c'est grave. Ici il faut que la phrase dise que l'annuité est trop élevée et qu'il reste un
+    // reliquat après la durée — sans quoi l'opérateur lit « prorata temporis » et passe.
+    expect(RESERVE_PRORATA_TEMPORIS).toContain('prorata temporis')
+    expect(RESERVE_PRORATA_TEMPORIS).toContain('trop')
+    expect(RESERVE_PRORATA_TEMPORIS).toContain('reliquat')
+    expect(RESERVE_PRORATA_TEMPORIS).toContain('signer')
   })
 })
