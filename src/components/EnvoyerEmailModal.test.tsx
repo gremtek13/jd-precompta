@@ -15,6 +15,7 @@ const faux = vi.hoisted(() => ({
   // La promesse du premier envoi reste EN ATTENTE : c'est la fenêtre réelle pendant laquelle la
   // seconde soumission arrive. La résoudre tout de suite supprimerait la fenêtre que le verrou ferme.
   resoudre: null as null | ((v: unknown) => void),
+  rejeter: null as null | ((e: unknown) => void),
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -22,7 +23,7 @@ vi.mock('../lib/supabase', () => ({
     functions: {
       invoke: (nom: string, options: unknown) => {
         faux.appels.push({ nom, options })
-        return new Promise((resolve) => { faux.resoudre = resolve })
+        return new Promise((resolve, reject) => { faux.resoudre = resolve; faux.rejeter = reject })
       },
     },
   },
@@ -31,6 +32,7 @@ vi.mock('../lib/supabase', () => ({
 function monter() {
   faux.appels = []
   faux.resoudre = null
+  faux.rejeter = null
   render(
     <EnvoyerEmailModal
       dossierId="d1"
@@ -56,9 +58,13 @@ describe('EnvoyerEmailModal — le verrou d’envoi', () => {
     expect(faux.appels).toHaveLength(1)
   })
 
-  // IL FAUT TROIS SOUMISSIONS pour distinguer un verrou posé avant le `try` d'un verrou posé dedans.
-  // Ici il n'y a pas de `try`, mais la troisième soumission éprouve autre chose d'aussi réel : que le
-  // verrou n'est pas relâché par le refus lui-même.
+  // IL FAUT TROIS SOUMISSIONS pour distinguer un verrou posé avant le `try` d'un verrou posé dedans,
+  // et la troisième éprouve aussi que le verrou n'est pas relâché par le refus lui-même.
+  //
+  // CE COMMENTAIRE DISAIT « ici il n'y a pas de `try` », ET C'ÉTAIT LE DÉFAUT, pas une particularité
+  // à contourner : le relâchement vivait en clair après l'`await`, donc une exception laissait le
+  // verrou pris pour de bon. Le test l'avait sous les yeux et l'a traité comme un décor. Corrigé le
+  // 21/09/2026, après le même défaut dans `SuperPdpFactureModal` — voir le dernier cas ci-dessous.
   it("ne se relâche pas sur le refus d'une soumission surnuméraire", async () => {
     const bouton = monter()
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
@@ -76,6 +82,22 @@ describe('EnvoyerEmailModal — le verrou d’envoi', () => {
     expect(screen.getByText(/Adresse refusée/)).toBeTruthy()
 
     await act(async () => { screen.getByRole('button', { name: 'Envoyer' }).click() })
+    expect(faux.appels).toHaveLength(2)
+  })
+
+  // LE CAS QUE CE FICHIER N'AVAIT PAS, et qui échouait avant le 21/09/2026. Une EXCEPTION n'est pas
+  // une erreur rendue : elle sortait de `envoyer` sans relâcher quoi que ce soit, et l'écran se
+  // figeait — bouton grisé, aucun message, aucun renvoi possible sans rouvrir la modale. Sur une
+  // action qui SORT de l'application, ne pas savoir si l'e-mail est parti est le pire résultat.
+  it('relâche le verrou sur une exception inattendue, et dit pourquoi', async () => {
+    const bouton = monter()
+    await act(async () => { bouton.click() })
+    await act(async () => { faux.rejeter?.(new Error('Réseau injoignable')) })
+
+    expect(screen.getByText(/Réseau injoignable/)).toBeTruthy()
+    const relance = screen.getByRole('button', { name: 'Envoyer' }) as HTMLButtonElement
+    expect(relance.disabled).toBe(false)
+    await act(async () => { relance.click() })
     expect(faux.appels).toHaveLength(2)
   })
 })

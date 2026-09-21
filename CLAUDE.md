@@ -1551,11 +1551,31 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   entier. Avec deux clics la version fautive paraît correcte : c'est une mutation qui a survécu au
   premier jeu de tests, pas une relecture, qui l'a montré.
   **ET IL SE RELÂCHE DANS UN `finally`, JAMAIS EN CLAIR APRÈS L'`await`** — seconde moitié de la
-  règle, restée non écrite jusqu'au 21/09/2026 parce qu'elle était seulement PRATIQUÉE. Un
-  relâchement posé en ligne laisse le verrou pris dès qu'une exception passe à côté, et l'écran se
-  fige alors sans message : le bouton reste grisé, plus rien ne part, et rien ne dit pourquoi. C'est
-  pire qu'un doublon, qui au moins se voit. `SuperPdpFactureModal` était le seul des quatre dans ce
-  cas, et il a fallu écrire son test pour s'en apercevoir.
+  règle, restée non écrite jusqu'au 21/09/2026 parce qu'elle était seulement PRATIQUÉE : douze
+  porteurs sur quatorze la respectaient sans que rien ne l'exige. Un relâchement posé en ligne laisse
+  le verrou pris dès qu'une exception passe à côté, et l'écran se fige alors sans message : le bouton
+  reste grisé, plus rien ne part, et rien ne dit pourquoi. C'est pire qu'un doublon, qui au moins se
+  voit — et sur une action irréversible, l'utilisateur ne peut même pas savoir si elle est partie.
+  **LES DEUX EN FAUTE ÉTAIENT EXACTEMENT LES DEUX DONT L'ACTION SORT DE L'APPLICATION**, et ce n'est
+  pas une coïncidence utile à taire : `SuperPdpFactureModal` (une facture transmise à une plateforme
+  agréée DGFiP) et `EnvoyerEmailModal` (un e-mail parti chez le client). Les douze autres, dont le
+  doublon ne crée qu'une ligne, étaient corrects.
+  **LE SECOND A ÉTÉ TROUVÉ PAR BALAYAGE, TROIS HEURES APRÈS LE PREMIER** — encore « chercher toutes
+  les copies avant de corriger la première ». Et son test d'écran existait DEPUIS LA VEILLE : son
+  commentaire disait mot pour mot « ici il n'y a pas de `try` », il avait donc le défaut sous les
+  yeux et l'a traité comme un décor.
+  **LA RÈGLE NE RESTE PLUS DANS CE FICHIER : elle est devenue un test** (`verrousExecution.test.ts`).
+  Il part de TOUT `X.current = true` de `src`, exige que chaque `X.current = false` tombe dans un
+  `finally` qui l'ENFERME — comptage d'accolades, parce qu'un `finally` déjà refermé plus haut
+  tromperait un simple « y en a-t-il un avant ? » — et n'admet que des exceptions écrites, dont
+  aucune à ce jour. Comme `rls.sql` part de `pg_class` et `lecturesPaginees` de toute lecture : un
+  verrou ajouté demain est attrapé sans que personne ait à y penser.
+  **Ce qu'il ne garde PAS, annoncé plutôt que laissé deviner** : que le verrou soit posé AVANT le
+  `try`. Cela ne se lit pas de façon fiable sur du texte, et c'est déjà gardé écran par écran par le
+  cas à TROIS clics de chaque test de modale — le seul qui distingue les deux placements.
+  Cinq mutations mordent, dont le défaut d'origine replanté et le `finally` déjà refermé ; la
+  mutation « le scanner ne lit plus rien » en fait tomber DEUX, les deux bornes posées pour que
+  « zéro faute » et « aveugle » restent distinguables.
   **Les porteurs se recensent ici, et un ordinal dispersé ne tient pas.** Deux sessions travaillant
   en parallèle le 20/09/2026 ont écrit « troisième » et « cinquième » pour ce motif dans ce fichier.
   Un rang inscrit au fil du texte oblige à recompter à chaque ajout, sur des paragraphes que
@@ -2474,7 +2494,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1048 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1058 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

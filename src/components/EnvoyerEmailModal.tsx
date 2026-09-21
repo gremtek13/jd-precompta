@@ -1,6 +1,7 @@
 import { useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../lib/supabase'
 import { extraireErreurFonction } from '../lib/invokeErreur'
+import { messageErreur } from '../lib/messageErreur'
 
 interface Props {
   dossierId: string
@@ -42,17 +43,28 @@ export default function EnvoyerEmailModal({ dossierId, type, destinataireInitial
     envoiEnCours.current = true
     setEnvoi(true)
     setErreur(null)
-    const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('send-email', {
-      body: { dossierId, type, destinataire: destinataire.trim(), message: message.trim() || undefined, factureId },
-    })
-    setEnvoi(false)
-    envoiEnCours.current = false
-    if (data?.error || invokeError) {
-      setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'envoi."))
-      return
+    // LE RELÂCHEMENT VIT DANS UN `finally` — seconde moitié de la règle du verrou, et elle manquait
+    // ici jusqu'au 21/09/2026 : les deux affectations suivaient l'`await` en clair, donc une
+    // exception inattendue laissait le verrou PRIS et `envoi` à true. L'écran se figeait alors sans
+    // rien dire — bouton grisé, aucun message, aucun moyen de réessayer sans rouvrir la modale — sur
+    // l'action qui SORT de l'application. Trouvé par balayage après le même défaut dans
+    // `SuperPdpFactureModal`, et c'est `verrousExecution.test.ts` qui l'interdit désormais partout.
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('send-email', {
+        body: { dossierId, type, destinataire: destinataire.trim(), message: message.trim() || undefined, factureId },
+      })
+      if (data?.error || invokeError) {
+        setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'envoi."))
+        return
+      }
+      setEnvoye(true)
+      onSent?.()
+    } catch (err) {
+      setErreur(messageErreur(err, "Échec de l'envoi."))
+    } finally {
+      setEnvoi(false)
+      envoiEnCours.current = false
     }
-    setEnvoye(true)
-    onSent?.()
   }
 
   return (
