@@ -1263,8 +1263,24 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   empreinte.
   La vraie preuve est un ALLER-RETOUR : `get_edge_function`, puis diff contre le fichier du dépôt
   après avoir appliqué le décodage `\uXXXX` connu à la source. Zéro différence résiduelle prouve que
-  les 1 174 lignes retransmises sont arrivées au caractère près — fait le 21/09/2026 sur la
-  version 43.
+  les lignes retransmises sont arrivées au caractère près — fait le 21/09/2026 sur les versions 43
+  puis 45 (1 278 lignes, 6 échappements décodés, zéro différence).
+  **ET IL NE COÛTE RIEN : IL SE FAIT ENTIÈREMENT EN BASH.** C'est ce qui décide qu'on le fera
+  vraiment à chaque fois, parce qu'une vérification chère finit par se sauter — et une
+  vérification qu'on saute vaut exactement zéro. Deux chemins, aucun ne demande de retranscrire
+  quoi que ce soit :
+  - Un résultat d'outil trop volumineux pour la conversation est **écrit sur disque** et le message
+    d'erreur en donne le chemin. `get_edge_function` sur une fonction de cette taille tombe dedans :
+    le JSON s'ouvre alors en Python, et le diff se fait contre le fichier du dépôt.
+  - Sinon, le **journal de session** (`~/.claude/projects/<projet>/<session>.jsonl`) porte chaque
+    appel d'outil avec son entrée : on y relit le payload RÉELLEMENT transmis. Cela prouve la
+    transcription et non le transport, ce qui est la moitié utile quand le transport vient d'être
+    prouvé sur une autre fonction du même déploiement — à dire comme tel plutôt qu'à confondre avec
+    un aller-retour complet.
+  **Ce qui reste à faire AVANT d'écraser**, et qui a été sauté sur `extract-piece` le 21/09/2026 :
+  comparer le DÉPLOYÉ au dépôt. Sans dégât ici (la version en place avait été vérifiée le matin même
+  et personne d'autre ne déploie), mais c'est précisément le contrôle qui avait trouvé la version 42
+  en retard de trois correctifs, et il ne vaut que s'il est systématique.
   **ET CET ALLER-RETOUR A TROUVÉ AUTRE CHOSE : un commit n'est PAS un déploiement.** La version 42,
   en production depuis le 20/09, était en retard de TROIS correctifs présents dans git et jamais
   déployés — le garde-fou de l'année à quatre chiffres, la lecture des douze mois français, et la

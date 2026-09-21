@@ -46,11 +46,18 @@ import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
 // `edgeFunctionsRegions.test.ts` le vérifie.
 //
 // HAIKU 4.5 DEPUIS LE 21/09/2026, sur mesure et non sur intuition — les deux modèles le même jour,
-// même prompt, mêmes 43 textes du dossier réel : zéro rejet de citation des deux côtés, couverture à
-// égalité, et les sept désaccords sont des variantes de FORME de la même valeur
-// (« mercredi 23 juillet 2025 » contre « 23/07/2025 »). Le TTC cité se retrouve dans le montant
-// stocké 38/38 contre 37/37. Environ trois fois moins cher sur cet étage, qui pèse les deux tiers du
-// coût d'une extraction courte.
+// même prompt, mêmes 43 textes du dossier réel, et la mesure REJOUÉE EN ENTIER dans la région de la
+// production avant d'y toucher : 216 citations, zéro rejet, le compte exact de Sonnet. Couverture
+// strictement à égalité, 4 champs gagnés contre 4 perdus, et 3 désaccords vrais qui sont des
+// variantes de forme de la même valeur (« $24.00 » contre « $24.00 USD » : `parseAmount` rend 24 des
+// deux côtés). Environ trois fois moins cher sur cet étage, qui pèse les deux tiers du coût d'une
+// extraction courte.
+//
+// L'EXEMPLE QUI ILLUSTRAIT CETTE PHRASE ÉTAIT FAUX, et il cachait un défaut : « mercredi 23 juillet
+// 2025 » contre « 23/07/2025 » était donné comme « deux branches de parseDate, même date ». Exécuté,
+// le premier rendait `null` — une date PERDUE, pas une variante. Voir `parseDate` plus bas. Écrit par
+// relecture, démenti par une exécution : c'est pour ça que les citations réelles sont désormais
+// passées dans les vrais analyseurs, et pas seulement comparées entre elles.
 //
 // POURQUOI UN MODÈLE PLUS PETIT EST SÛR ICI, ET CE N'EST PAS DE LA CONFIANCE : le contrat de
 // citation BORNE ce qu'il peut coûter. Le modèle DÉSIGNE une chaîne du document, `verifierCitations`
@@ -356,7 +363,9 @@ function parseDate(raw?: string): string | null {
   // marche jamais : elle n'a pas l'air cassée.
   //
   // Même table que le repli sur texte brut (`MOIS_PAR_NOM`), pour qu'un mois lu ici et là-bas soit le
-  // même. Ancré comme les deux branches au-dessus : Textract rend la VALEUR du champ, pas la ligne.
+  // même. Ancrée comme les deux branches au-dessus — l'ancrage borne ce qui est lu à ce qui a été
+  // DÉSIGNÉ, il n'a jamais eu pour rôle d'écarter ce que le document imprime devant la date : c'est
+  // le retrait du jour de la semaine, en tête de fonction, qui s'en charge.
   //
   // L'ANNÉE SUR DEUX CHIFFRES EST ADMISE ICI COMME ELLE L'EST PLUS HAUT : la branche numérique la
   // traite depuis toujours, et rien ne justifiait qu'un « 12 juin 25 » vaille moins qu'un
@@ -386,10 +395,11 @@ function parseDate(raw?: string): string | null {
   return toIsoDate(d.getFullYear(), d.getMonth() + 1, d.getDate())
 }
 
-// Repli de lecture de la date sur le texte OCR brut, quand Textract n'a étiqueté aucun champ
-// INVOICE_RECEIPT_DATE. Même principe que `tvaDepuisTexteBrut` plus bas : le texte a bien été lu,
-// c'est l'étiquetage qui manque. Constaté sur un fournisseur récurrent dont 18 factures sur 22 sont
-// ressorties sans date alors qu'elle y est imprimée en clair — et une pièce sans date n'entre
+// Repli de lecture de la date sur le texte OCR brut, quand le MODÈLE n'a cité aucune date — c'était
+// « quand Textract n'a étiqueté aucun champ INVOICE_RECEIPT_DATE » avant la marche 1, et ce
+// déclencheur-là n'existe plus. Même principe que `tvaDepuisTexteBrut` plus bas : le texte a bien été
+// lu, c'est sa DÉSIGNATION qui manque. Constaté sur un fournisseur récurrent dont 18 factures sur 22
+// sont ressorties sans date alors qu'elle y est imprimée en clair — et une pièce sans date n'entre
 // ensuite dans aucun pack (voir packGenerator), donc le manque coûte cher.
 //
 // Volontairement prudent : dater une facture du jour où elle doit être *payée* la range dans le
