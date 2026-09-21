@@ -102,8 +102,21 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
     if (error) { setErreur(error.message); charger() } else setErreur(null)
   }
 
-  async function supprimer(id: string) {
-    const { error } = await supabase.from('vehicules').delete().eq('id', id)
+  async function supprimer(v: VehiculeDossier) {
+    // Le bouton « Retirer » vit dans la MÊME ligne que le champ des kilomètres qu'on vient
+    // d'éditer : un clic distrait effaçait le véhicule, sa puissance fiscale et son kilométrage,
+    // tous saisis à la main, et rien ne le demandait. Ces kilomètres décident de la case BJ de la
+    // 2035 — la déduction disparaît alors sans que personne ne la cherche.
+    // Le message NOMME ce qui part, comme partout ailleurs dans ce projet : « Êtes-vous sûr ? » ne
+    // dit pas ce qu'on perd, et se ferme en un clic aussi distrait que le premier.
+    // Le modèle est facultatif : sans lui, on nomme le véhicule par son type plutôt que de
+    // laisser un message qui ne désigne rien.
+    const quoi = v.modele?.trim() || TYPES.find((t) => t.valeur === v.type)?.libelle || 'ce véhicule'
+    if (!window.confirm(
+      `Retirer « ${quoi} » de l'exercice ${v.annee} ? Ses ${v.km_professionnel} km professionnels `
+      + 'seront perdus, et l\'indemnité kilométrique de cet exercice recalculée sans lui.',
+    )) return
+    const { error } = await supabase.from('vehicules').delete().eq('id', v.id)
     if (error) { setErreur(error.message); return }
     setErreur(null)
     await charger()
@@ -254,7 +267,7 @@ export default function VehiculesCard({ dossierId }: { dossierId: string }) {
                         : formatMoney(indemnite.total)}
                     </td>
                     <td className="td-action">
-                      <button className="btn btn-outline btn-sm" onClick={() => supprimer(v.id)}>Retirer</button>
+                      <button className="btn btn-outline btn-sm" onClick={() => supprimer(v)}>Retirer</button>
                     </td>
                   </tr>
                 )

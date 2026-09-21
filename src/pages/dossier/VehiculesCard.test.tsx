@@ -15,13 +15,22 @@ const faux = vi.hoisted(() => ({
   // pendant laquelle un second clic arrive. La résoudre tout de suite supprimerait la fenêtre
   // même que le verrou est censé fermer.
   resoudreInsert: null as null | (() => void),
+  // Les véhicules déjà enregistrés, pour exercer la LIGNE — donc son bouton « Retirer ».
+  vehicules: [] as Record<string, unknown>[],
+  suppressions: 0,
 }))
 
+// Une chaîne NEUVE par appel, et non une seule partagée par le module : un `delete()` laisserait
+// sinon la chaîne en mode suppression pour tous les appels suivants, et la lecture qui suit
+// rendrait un résultat de suppression.
 vi.mock('../../lib/supabase', () => {
+  const fabriquer = () => {
   const chaine: Record<string, unknown> = {}
+  let suppression = false
   Object.assign(chaine, {
     select: () => chaine,
-    eq: () => chaine,
+    eq: () => (suppression ? Promise.resolve({ error: null }) : chaine),
+    delete: () => { suppression = true; faux.suppressions += 1; return chaine },
     order: () => chaine,
     // `range` et le `count` annoncé sont indispensables depuis que la liste est lue par tranches
     // (voir lib/lectureComplete.ts) : sans `range` la chaîne casse, et sans compte annoncé toute
@@ -29,7 +38,7 @@ vi.mock('../../lib/supabase', () => {
     range: () => chaine,
     // Le chaînage est « thenable » : `await supabase.from(...).select(...)...` passe par ici.
     then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) =>
-      Promise.resolve({ data: [], error: null, count: 0 }).then(suite),
+      Promise.resolve({ data: faux.vehicules, error: null, count: faux.vehicules.length }).then(suite),
     insert: (valeur: Record<string, unknown>) => {
       faux.inserts.push(valeur)
       return new Promise((resoudre) => {
@@ -37,7 +46,9 @@ vi.mock('../../lib/supabase', () => {
       })
     },
   })
-  return { supabase: { from: () => chaine } }
+    return chaine
+  }
+  return { supabase: { from: () => fabriquer() } }
 })
 
 function monter(annee: number | 'toutes') {
@@ -81,5 +92,55 @@ describe('VehiculesCard', () => {
     await screen.findByText(/Choisis l'exercice à renseigner/)
     expect(screen.queryByRole('button', { name: /Ajouter un véhicule/ })).toBeNull()
     expect(faux.inserts).toHaveLength(0)
+  })
+})
+
+describe('retirer un véhicule : ce qui part se dit AVANT de partir', () => {
+  // Le bouton « Retirer » vit dans la MÊME ligne que le champ des kilomètres qu'on vient d'éditer,
+  // et il partait sans rien demander. Ces kilomètres sont saisis à la main et décident de la case
+  // BJ de la 2035 : effacés par distraction, la déduction disparaît sans que personne ne la
+  // cherche. C'était la seule suppression de données saisies du projet sans confirmation.
+  function poserUnVehicule() {
+    faux.vehicules = [{
+      id: 'v1', dossier_id: 'dossier-de-test', annee: 2025, modele: 'Peugeot 308', type: 'voiture',
+      puissance_fiscale: 6, bareme: 'bnc', motorisation: 'thermique', carburant: 'diesel',
+      km_professionnel: 12000, inscrit_immobilisations: false, created_at: '2026-01-05T10:00:00Z',
+    }]
+    faux.suppressions = 0
+  }
+
+  it('ne supprime rien quand la confirmation est refusée', async () => {
+    poserUnVehicule()
+    window.confirm = () => false
+    monter(2025)
+    const retirer = await screen.findByRole('button', { name: /^Retirer$/ })
+    await act(async () => { retirer.click() })
+    expect(faux.suppressions).toBe(0)
+  })
+
+  it('NOMME le véhicule et ses kilomètres dans la question posée', async () => {
+    // « Êtes-vous sûr ? » se ferme en un clic aussi distrait que le premier : le message doit dire
+    // ce qu'on perd, comme partout ailleurs dans ce projet.
+    poserUnVehicule()
+    let question = ''
+    window.confirm = (m?: string) => { question = m ?? ''; return false }
+    monter(2025)
+    const retirer = await screen.findByRole('button', { name: /^Retirer$/ })
+    await act(async () => { retirer.click() })
+
+    expect(question).toContain('Peugeot 308')
+    expect(question).toContain('12000')
+    expect(question).toContain('2025')
+  })
+
+  it('supprime quand la confirmation est acceptée', async () => {
+    // Le garde SYMÉTRIQUE : sans lui, « on ne supprime pas sans confirmation » serait satisfait par
+    // un bouton qui ne supprime JAMAIS.
+    poserUnVehicule()
+    window.confirm = () => true
+    monter(2025)
+    const retirer = await screen.findByRole('button', { name: /^Retirer$/ })
+    await act(async () => { retirer.click() })
+    expect(faux.suppressions).toBe(1)
   })
 })

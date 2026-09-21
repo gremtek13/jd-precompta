@@ -86,11 +86,18 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     }
   }
 
-  async function revoke(membershipId: string) {
+  async function revoke(row: MembershipRow) {
+    // Couper l'accès d'un client est réversible, mais pas d'un clic : il faut recréer l'accès ET
+    // lui communiquer un nouveau mot de passe. C'était le seul geste destructeur de cet écran à
+    // partir sans rien demander, dans une colonne d'actions où il voisine « Relancer ».
+    if (!window.confirm(
+      `Retirer l'accès de ${row.email ?? 'ce compte'} au dossier ? Le client ne pourra plus déposer `
+      + 'de pièces tant qu\'un nouvel accès ne lui aura pas été créé, avec un nouveau mot de passe.',
+    )) return
     // Le `load()` qui suit montre normalement l'échec (la ligne réapparaît) — sauf quand il échoue
     // pour la MÊME raison, et la liste se vide alors au lieu de garder sa ligne : l'écran dirait
     // « aucun accès » précisément quand l'accès est toujours là.
-    const { error: deleteError } = await supabase.from('memberships').delete().eq('id', membershipId)
+    const { error: deleteError } = await supabase.from('memberships').delete().eq('id', row.id)
     if (deleteError) {
       setError(messageErreur(deleteError, "L'accès n'a pas pu être retiré."))
       return
@@ -175,7 +182,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
                     {r.email && (
                       <button className="btn btn-outline btn-sm" onClick={() => setRelanceDe(r)}>Relancer</button>
                     )}
-                    <button className="btn btn-danger btn-sm" onClick={() => revoke(r.id)}>Retirer</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => revoke(r)}>Retirer</button>
                   </td>
                 </tr>
               ))}

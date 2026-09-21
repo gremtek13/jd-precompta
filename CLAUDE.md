@@ -1003,6 +1003,30 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   donc deux « Entrée » rapprochés sur « Créer l'accès » (un `<form>`, le pire déclencheur) ne peuvent
   PAS produire deux accès — la base rattrape, et ce site n'a pas besoin d'un verrou. Ne pas le
   réenquêter.
+- **UNE SUPPRESSION SE CONFIRME, ET LA CONFIRMATION NOMME CE QU'ON PERD** (balayage du 21/09/2026,
+  jamais fait jusque-là). Vingt-six suppressions dans `src/`, **neuf sans confirmation** — et sept
+  s'expliquent : trois vivent dans `src/lib` et sont confirmées par l'écran qui les appelle
+  (`FilCommentaires`, `ConfirmationSuppression`), une est un effet de bord interne
+  (`retirerContrepartieBanque`), une est un TOGGLE réversible d'un clic (l'assignation d'un membre
+  d'équipe), et deux ne sont pas des suppressions nues mais un déplacement (`convertirEnPiece`) et
+  une régénération idempotente (`regenererEcriture`).
+  **Les deux vraies étaient les deux qui effacent un travail humain :**
+  - `VehiculesCard.supprimer` — et le bouton « Retirer » vit dans la MÊME LIGNE que le champ des
+    kilomètres qu'on vient d'éditer. Un clic distrait effaçait le véhicule, sa puissance fiscale et
+    son kilométrage, tous saisis à la main — or ces kilomètres décident de la case BJ de la 2035,
+    donc la déduction disparaissait sans que personne ne la cherche. **C'était la seule suppression
+    de données SAISIES du projet à partir sans rien demander.**
+  - `AccesTab.revoke` — couper l'accès d'un client, dans une colonne d'actions où « Retirer »
+    voisine « Relancer ». Réversible, mais pas d'un clic : il faut recréer l'accès ET communiquer un
+    nouveau mot de passe.
+  **Le message NOMME ce qui part**, comme les quatorze confirmations déjà en place (« et tous ses
+  mouvements », « La pièce redevient une charge courante ordinaire ») : « Êtes-vous sûr ? » se ferme
+  en un clic aussi distrait que le premier, et un test le garde nommément sur les deux écrans.
+  **`AccesTab` et Suppléments entrent dans les écrans testés par un défaut trouvé**, jamais par
+  méthode — huit mutations mordent sur les deux, dont chaque code tel qu'il était et, des deux
+  côtés, le garde SYMÉTRIQUE : sans lui, « on ne supprime pas sans confirmation » serait satisfait
+  par un bouton qui ne supprime JAMAIS, et « l'écran n'affirme pas qu'il n'y a personne » par un
+  écran qui crie à l'erreur sur un dossier neuf.
 - **ET CE BALAYAGE S'ÉTAIT ARRÊTÉ À `src/` — LES EDGE FUNCTIONS N'AVAIENT JAMAIS ÉTÉ REGARDÉES**
   (21/09/2026). Le même motif y est BIEN PLUS COÛTEUX, et pour une raison structurelle : la question
   qui décide dans `src/` est *quelque chose recharge-t-il derrière ?*, et la réponse y est presque
@@ -2982,10 +3006,11 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 10 testés** — banque,
-  documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations et
-  suppléments (21/09/2026) — donc **7 sans aucun test de rendu**. Suppléments y est entré comme
-  Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 11 testés** — banque,
+  documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations,
+  suppléments et accès (21/09/2026) — donc **6 sans aucun test de rendu** : factures,
+  immobilisations, cotisations, estimation, financement, virements. Suppléments et Accès y sont
+  entrés comme Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
   `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une
@@ -3035,7 +3060,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1160 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1169 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
