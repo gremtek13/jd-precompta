@@ -1634,7 +1634,19 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   SURVÉCU : « poser le verrou après `setEnvoi(true)` » ne déplace rien, `setEnvoi` étant synchrone.
   **Une mutation qui ne mord pas accuse d'abord la mutation, pas le test** ; réécrite en déplaçant
   l'affectation derrière le vrai `await`, elle mord.
-  C'est un premier fil, pas une couverture : dix onglets n'ont toujours aucun test de rendu.
+  **21/09/2026 — sixième porteur couvert** : `FactureAvoirModal.creerAvoir`, l'un des quatre verrous
+  corrigés le 20/09/2026 (voir plus haut) qui n'avait encore aucun test associé — son doublon ne crée
+  pas une ligne de trop mais CONSOMME deux fois un numéro de la série "A" (RPC
+  `attribuer_numero_facture`), suite légale qui n'admet ni trou ni doublon. Même famille de trois cas
+  qu'`EnvoyerEmailModal` : deux clics rapprochés ne consomment qu'un numéro, un troisième clic ne
+  relâche pas le verrou du premier (le cas qui distingue un verrou posé avant le `try` d'un verrou
+  posé dedans), et un échec du RPC relâche bien le verrou pour permettre un nouvel essai. Deux
+  mutations tuées avant de committer : retirer la garde fait échouer 2 des 3 tests, et la déplacer
+  dans le `try` — le bug documenté plus haut sur d'autres modales — ne fait échouer QUE le test à
+  trois clics, exactement la discrimination qu'il est censé apporter.
+  C'est un premier fil, pas une couverture : dix onglets n'ont toujours aucun test de rendu, et deux
+  des quatre verrous corrigés le 20/09 (`SuperPdpFactureModal.appeler`, `PieceFormModal.save`)
+  restent eux aussi sans test d'écran.
   **`BanqueTab` portait le même défaut que les trois précédents** : `rapprocherTout` (le lot
   automatique, à distinguer de `validerEtRapprocherLot` juste au-dessus dans le fichier, qui
   lui portait déjà son verrou `useRef`) ne se désactivait que via `rapprochementAuto`, un ÉTAT
