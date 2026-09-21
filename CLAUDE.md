@@ -1460,6 +1460,39 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   La convention d'arrondi est celle des amortissements linéaires (30/360), et la date retenue est
   celle d'ACQUISITION faute de mise en service au modèle — quand les deux diffèrent l'acquisition
   précède, donc la fraction calculée est la plus généreuse des deux.
+- **ET LA MÊME QUESTION POSÉE AUX COTISATIONS A RENDU UNE DÉDUCTION DE TROP** (21/09/2026).
+  `calculerDeclaration2035` porte la cotisation **complète** au poste « Cotisations sociales
+  personnelles » (case BK, ligne 25). Or la CSG-CRDS d'un travailleur non salarié se décompose en
+  **6,8 points déductibles** du résultat BNC et **2,9 qui ne le sont pas** (CSG non déductible 2,4 +
+  CRDS 0,5). La part non déductible partait donc en déduction sur une déclaration signée.
+  **L'application savait la ventiler et ne s'en servait pas** : `cotisations_declarees.montant_csg_crds`
+  existe, l'écran Cotisations le saisit, et il AFFICHAIT même la part déductible — avec les deux taux
+  écrits en dur DANS le composant, donc hors de portée des tests et invisibles pour le moteur. Ils
+  vivent désormais à côté du contrôle qui s'en sert (`partCsgNonDeductible`, lib/declaration2035.ts).
+  **On signale, on ne corrige pas** — l'en-tête du moteur le dit (« il totalise, il ne déclare pas »),
+  et c'est le parti pris de `doublonFraisVehicules` comme de `dotationsNonProratisees`.
+  **Deux états distincts, et c'est le cœur du contrôle** : ce qu'on sait chiffrer, et ce qu'on ne sait
+  pas. Une cotisation sans ventilation ne vaut pas « zéro de CSG » — les confondre ferait annoncer
+  « rien à réintégrer » sur un dossier qui n'a jamais renseigné le détail, **ce qui est le cas de toute
+  la production aujourd'hui** (mesuré : 43 cotisations en base, 0 ventilée). Famille des résultats
+  vides qui ressemblent à une réponse, appliquée cette fois à une SAISIE manquante.
+  **CE QUI RESTE OUVERT, ET QUI EST UNE DÉCISION DE L'UTILISATEUR, PAS DU CODE** : la case **BV**
+  (2035-A, ligne 14, « Contribution sociale généralisée déductible ») existe dans la liste des cases
+  ET dans le rattachement poste → case, et **rien ne l'alimente jamais** — aucun poste « CSG
+  déductible » n'est produit par le chemin des cotisations. Deux traitements sont admis en pratique
+  (sortir la CSG déductible de la ligne 25 pour la porter ligne 14, ou tout laisser en 25 et
+  réintégrer le non déductible en case CC) ; ils donnent le même résultat et la présentation diffère.
+  Le moteur n'en choisit aucun, et l'écran dit maintenant ce qu'il faut savoir pour trancher.
+  **Neuf mutations posées, huit mordent** — et la neuvième est à garder telle quelle : le commentaire
+  qui l'annonçait était FAUX. Il était écrit que calculer le non déductible sur 2,9/9,7 plutôt que par
+  complément laisserait un centime d'écart. **Mesuré sur les 20 000 000 de montants au centime de
+  0,01 € à 200 000 € : zéro écart**, et c'est arithmétique (6,8 + 2,9 = 9,7, donc les parties
+  fractionnaires se complètent exactement). Écrit comme tel dans le module plutôt que maquillé en
+  assertion de complaisance — la forme par complément est gardée parce qu'elle tient par CONSTRUCTION,
+  le jour où l'un des deux taux changera.
+  **Et un garde symétrique qui ne mordait pas, corrigé plutôt qu'accepté** : « se tait sur un exercice
+  sans cotisation » rend `null` de toute façon, donc « avertit toujours » y passait inaperçu. C'est un
+  appel de retraite ventilé à **zéro** de CSG — un cas réel — qui sépare les deux.
 - **Un fichier envoyé au stockage sans ligne en base est un orphelin.** L'import retire le
   fichier quand l'insertion échoue, et ne retient son empreinte qu'une fois la ligne écrite —
   la retenir avant faisait passer pour « déjà présent » un fichier dont l'import venait
@@ -3152,7 +3185,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1193 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1204 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
