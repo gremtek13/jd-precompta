@@ -41,6 +41,32 @@ Les deux listes doivent coïncider exactement — même nombre de lignes, mêmes
 puis le `\n` ajouté d'un côté, la convention « un fichier texte se termine par exactement un saut de
 ligne » de l'autre : les deux se comparent sur le contenu, pas sur un espace de fin.
 
+### Le raccourci : UNE valeur à comparer plutôt que cinquante-six
+
+Comparer 56 lignes à l'œil est exactement le genre de vérification qu'on finit par survoler — et une
+vérification survolée vaut zéro. L'empreinte AGRÉGÉE rend un seul nombre de chaque côté :
+
+```sql
+select count(*) as migrations,
+       md5(string_agg(md5(rtrim(array_to_string(statements, E'\n'), E'\n') || E'\n') || '  ' || version || '_' || name,
+                      E'\n' order by version)) as empreinte_globale
+from supabase_migrations.schema_migrations;
+```
+
+```bash
+cd supabase/schema
+for f in $(ls *.sql | sort); do printf '%s  %s\n' "$(md5sum "$f" | cut -c1-32)" "${f%.sql}"; done \
+  | head -c -1 | md5sum | cut -c1-32
+```
+
+**Le `head -c -1` n'est pas un détail, c'est LE piège de ce raccourci** : `string_agg` joint sans
+saut de ligne final, la boucle shell en pose un. Sans lui les deux empreintes diffèrent toujours, et
+on conclut à une dérive qui n'existe pas — ce qui est la pire issue possible pour un contrôle, parce
+qu'on cesse alors de le croire. Vérifié en s'y faisant prendre.
+
+Les deux empreintes égales ⇒ aucune dérive, et on n'a lu que deux chaînes. Elles diffèrent ⇒ on
+déroule la comparaison ligne à ligne ci-dessus pour savoir LAQUELLE a bougé.
+
 Pour régénérer un fichier absent ou divergent, lire son SQL et le réécrire tel quel :
 
 ```sql
@@ -48,7 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 22/09/2026** : 57 fichiers, 57 migrations, aucune divergence.
+**Vérifié par empreinte le 19/09/2026 puis le 21/09/2026** : 56 fichiers, 56 migrations,
+empreinte globale `155435c884d6e3c1d5195861b2fe7747` des deux côtés, aucune divergence.
 
 ## Restaurer un schéma à partir d'ici
 
