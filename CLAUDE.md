@@ -1493,6 +1493,34 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Et un garde symétrique qui ne mordait pas, corrigé plutôt qu'accepté** : « se tait sur un exercice
   sans cotisation » rend `null` de toute façon, donc « avertit toujours » y passait inaperçu. C'est un
   appel de retraite ventilé à **zéro** de CSG — un cas réel — qui sépare les deux.
+- **UN BOUTON QUI OUVRE UN FICHIER NE FAIT JAMAIS RIEN EN SILENCE** (21/09/2026). Cinq copies de
+  « signer une URL puis ouvrir un onglet » — `depot.ts::ouvrirJustificatif`, `CotisationsTab`,
+  `DocumentsTab`, `PacksTab`, `InformationsTab` — avaient divergé sur les trois points qui comptent.
+  - **La raison.** Trois disaient « Aperçu indisponible » sans passer par `messageErreur`.
+    `PacksTab.download` faisait pire : il LISAIT son erreur puis faisait `return`, donc le bouton de
+    téléchargement d'un pack ne faisait visiblement RIEN — sur le livrable qu'on envoie au comptable,
+    et c'est mot pour mot le défaut corrigé la veille sur l'export d'`InformationsTab`, resté entier
+    sur l'autre chemin de téléchargement du MÊME fichier.
+  - **`noopener`.** Une seule des cinq le passait.
+  - **LE BLOCAGE DE FENÊTRE, et c'est le vrai défaut** : aucune ne lisait le retour de `window.open`.
+    Appelé après un `await` — ce que font les cinq, puisqu'elles attendent une URL signée — il sort
+    de la fenêtre d'activation transitoire du navigateur, **rend `null`, et il ne se passe rien** :
+    ni onglet, ni message. Un bouton cassé a exactement la même tête.
+  **ET C'EST `noopener` QUI RENDAIT LE TROISIÈME POINT INDÉTECTABLE**, le piège à retenir :
+  `window.open(url, '_blank', 'noopener')` rend `null` **même quand il réussit** — la spécification
+  HTML refuse de donner une référence à l'ouvrant — donc succès et blocage y sont indiscernables.
+  On ouvre sans le mot-clé, on teste le retour, PUIS on coupe la référence par `onglet.opener = null`,
+  qui protège autant et laisse le blocage visible.
+  **Point unique `lib/apercu.ts`**, comme `retirerFichiers` pour les retraits, et **la règle devient
+  un scanner** : plus aucun `window.open` hors de ce fichier, exceptions écrites portant leur raison
+  (une, le point unique lui-même). Onze mutations mordent, dont le défaut d'origine, le retour à
+  `noopener`, la lecture « par ligne » du scanner et les deux gardes symétriques de `PacksTab`.
+  **ET LE FAUX `window.open` D'UN TEST EXISTANT ÉTAIT INFIDÈLE** : celui d'`InformationsTab` rendait
+  `null` en toutes circonstances, donc le test du cas PASSANT exerçait sans le dire le chemin du
+  blocage — *un jeu d'essai infidèle ne fait pas qu'affaiblir un test, il lui fait prouver autre
+  chose*. Le faux d'`apercu.test.ts` MODÉLISE désormais la règle `noopener` du navigateur : sans cette
+  fidélité-là, la mutation qui remet le mot-clé ne mordait pas, et le module aurait perdu en silence
+  sa seule façon de voir un blocage.
 - **Un fichier envoyé au stockage sans ligne en base est un orphelin.** L'import retire le
   fichier quand l'insertion échoue, et ne retient son empreinte qu'une fois la ligne écrite —
   la retenir avant faisait passer pour « déjà présent » un fichier dont l'import venait
@@ -3185,7 +3213,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1204 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1216 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
