@@ -394,9 +394,8 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `extract-piece`) et compare aussi les PROMPTS au caractère près. Un prompt qui dérive demande autre
   chose au modèle, et aucun test de comportement ne peut le voir — `verifierCitations` vérifie des
   citations, pas la question qui les a produites.
-  **Ce qui reste est une vérification, pas du code** : la fonction n'est pas déployée, et la bascule
-  n'est pas vérifiable depuis cet environnement. Elle demande un dépôt réel, et de préférence un PDF
-  MULTI-PAGES — seul cas qui exerce la pagination.
+  **Déployée le 21/09/2026 (version 43)**, et ce qui reste est une VÉRIFICATION : un dépôt réel, de
+  préférence un PDF multi-pages — seul cas qui exerce la pagination.
 - **Le balayage des paramètres par défaut a rendu un résultat NÉGATIF pour tous les autres**
   (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
   `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
@@ -577,10 +576,13 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 - **Marche 1 de la réduction du coût d'extraction — BRANCHÉE le 21/09/2026, pas encore éprouvée.**
   `extract-piece` lit désormais par `DetectDocumentText` (OCR seul, ~7× moins cher) puis fait CITER
   les champs par un modèle. Socle, mesure et branchement livrés (voir « Décisions techniques »).
-  **Ce qui reste est une vérification, pas du code** : la fonction n'est pas déployée, et la bascule
-  n'est pas vérifiable depuis cet environnement (règle permanente : aucun appel Textract ni
-  `extract-piece`). Elle demande un dépôt réel de l'utilisateur, comme Super PDP — et le premier
-  dépôt doit être un PDF MULTI-PAGES, seul cas qui exerce la pagination `NextToken`.
+  **DÉPLOYÉE le 21/09/2026 (version 43)**, mais pas encore éprouvée : la bascule n'est pas
+  vérifiable depuis cet environnement (règle permanente : aucun appel Textract ni `extract-piece`).
+  Elle demande un dépôt réel de l'utilisateur, comme Super PDP — et le premier dépôt doit être un PDF
+  MULTI-PAGES, seul cas qui exerce la pagination `NextToken`. Deux choses à regarder dans
+  `query_logs` ce jour-là : la ligne `[extract-piece] citation …` qui donne les tokens réellement
+  consommés, et l'absence de `_citation_erreur` — si Bedrock refuse depuis la région de Textract,
+  l'extraction continue sur le seul texte OCR et c'est là que ça se verra.
 - **Marche 2 — OCR local (PaddleOCR) sur un mini-PC, avec débordement AWS permanent.** Le SENS de
   l'appel est décidé (21/09/2026) et ne se rediscute pas : **la machine locale interroge Supabase,
   Supabase ne l'appelle jamais.** Un service local demande « y a-t-il des pièces sans texte ? »,
@@ -1078,10 +1080,22 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   produisent `\\u0300`, soit un antislash littéral dans la classe de caractères. Essayé, déployé,
   et `sansAccents` ne retirait plus les accents — extraction dégradée pendant quatre minutes avant
   restauration.
-  **Un déploiement se vérifie par l'empreinte, pas par une relecture** : `deploy_edge_function`
-  rend un `ezbr_sha256`. Redéployer une source déjà déployée doit rendre exactement la même
-  empreinte ; c'est la seule preuve bon marché qu'aucune dérive de transcription ne s'est glissée
-  dans les 770 lignes qu'il faut retransmettre à chaque fois.
+  **Un déploiement se vérifie, il ne se relit pas** — et il y a MIEUX que l'empreinte.
+  `deploy_edge_function` rend un `ezbr_sha256`, et redéployer une source déjà déployée doit rendre
+  la même : c'est bon marché, mais ça ne prouve que le DÉTERMINISME de la transformation, pas la
+  fidélité de la transcription. Une transcription fautive redéployée donne deux fois la même
+  empreinte.
+  La vraie preuve est un ALLER-RETOUR : `get_edge_function`, puis diff contre le fichier du dépôt
+  après avoir appliqué le décodage `\uXXXX` connu à la source. Zéro différence résiduelle prouve que
+  les 1 174 lignes retransmises sont arrivées au caractère près — fait le 21/09/2026 sur la
+  version 43.
+  **ET CET ALLER-RETOUR A TROUVÉ AUTRE CHOSE : un commit n'est PAS un déploiement.** La version 42,
+  en production depuis le 20/09, était en retard de TROIS correctifs présents dans git et jamais
+  déployés — le garde-fou de l'année à quatre chiffres, la lecture des douze mois français, et la
+  relecture des dates sur le calendrier civil. Rien ne le signalait : les tests lisent le FICHIER DU
+  DÉPÔT, pas la copie déployée, donc ils étaient verts sur du code que la production n'exécutait
+  pas. Comparer le déployé au dépôt AVANT d'écraser est donc à faire à chaque déploiement, autant
+  pour savoir ce qu'on embarque que pour vérifier que personne n'a modifié la production à la main.
 - **`npx tsc --noEmit` ne vérifie rien dans ce dépôt.** Le `tsconfig.json` racine a
   `"files": []` et ne fait que référencer `tsconfig.app.json` / `tsconfig.node.json` : lancé
   seul, `tsc --noEmit` sort silencieusement sans avoir typé une seule ligne, ce qui ressemble
