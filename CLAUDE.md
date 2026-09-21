@@ -2211,10 +2211,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
   (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 7 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs — donc **10 sans aucun test
-  de rendu**. Cinq CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  de rendu**. SIX CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
-  `FilCommentaires` et `BalanceCard` (20/09/2026). Un onglet n'est donc pas « testé » parce qu'une
-  de ses cartes l'est — Informations reste dans les dix.
+  `FilCommentaires`, `BalanceCard` (20/09/2026) et `FactureAvoirModal` (21/09/2026). Un onglet n'est
+  donc pas « testé » parce qu'une de ses cartes l'est — Informations reste dans les dix.
   **La liste des dossiers a rejoint les écrans testés le 20/09/2026** (`DossiersList.test.tsx`) :
   ni un onglet ni une carte mais une PAGE, donc le compte des 17 onglets ne bouge pas. Elle y est
   entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre l'affichage » plus haut.
@@ -2247,7 +2247,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1032 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1035 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
