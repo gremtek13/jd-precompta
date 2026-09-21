@@ -5,6 +5,7 @@ import type { CibleCommentaire } from './commentaires'
 import { enregistrerTexteOcr } from './texteOcr'
 import { montantsPourPiece } from './tauxChange'
 import { messageErreur } from './messageErreur'
+import { retirerFichiers } from './stockage'
 
 // En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
 // d'y ajouter une précision tout de suite, au seul moment où il sait encore pourquoi la dépense a été
@@ -68,12 +69,10 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
         // ET LE RETRAIT LUI-MÊME SE VÉRIFIE : une compensation dont on jette le résultat laisse
         // exactement l'orphelin qu'elle existe pour éviter. Rien ne recharge le STOCKAGE — aucun écran
         // ne le relit jamais — donc l'échec n'aurait aucun témoin, et chaque nouvel essai déposerait un
-        // fichier de plus (le chemin porte un horodatage). Non bloquant : l'erreur d'insertion reste
-        // celle qu'on remonte, c'est elle qui explique à l'utilisateur ce qui s'est passé.
-        const { error: erreurRetrait } = await supabase.storage.from('pieces').remove([path])
-        if (erreurRetrait) {
-          console.error(`[depot] fichier ORPHELIN laissé dans le stockage : ${path}`, erreurRetrait)
-        }
+        // fichier de plus (le chemin porte un horodatage). `retirerFichiers` journalise et ne LÈVE
+        // jamais — c'est ce qui garantit que l'erreur remontée reste celle de l'INSERTION, la seule
+        // qui explique à l'utilisateur ce qui s'est passé, et non une coupure réseau survenue après.
+        await retirerFichiers('pieces', [path], 'depot')
         throw error ?? new Error("l'enregistrement n'a rien rendu")
       }
       return data.id as string

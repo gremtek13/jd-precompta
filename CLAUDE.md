@@ -1090,6 +1090,27 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   celle qui remet le code TEL QU'IL ÉTAIT (« on navigue toujours ») : elle fait tomber deux des trois
   tests, le troisième étant le garde symétrique — sans lui, « l'écran ne navigue pas » serait satisfait
   par un écran qui ne navigue JAMAIS.
+  **ET LA RÈGLE NE RESTE PAS DANS CE FICHIER : elle est devenue un test** (`retraitsStockage.test.ts`),
+  comme `verrousExecution` et `lecturesPaginees` avant elle. Il part de TOUTE source de production de
+  `src/`, refuse tout `.storage…remove(` hors du point unique, et n'admet que des exceptions écrites
+  portant **la raison pour laquelle `retirerFichiers` ne convient pas** — deux à ce jour, et toutes
+  deux ont besoin du RÉSULTAT, que le point unique ne rend pas.
+  Il porte une **seconde règle, sans aucune exception** : plus aucun `.catch(() => {})` dans une
+  source de production. Il n'existe pas de cas où cette forme soit correcte — vouloir ignorer un échec
+  se dit en le journalisant — et elle était présente sept fois. Même statut que le ternaire interdit
+  par `erreursSupabase.test.ts`.
+  **Et il a fallu lui apprendre à lire les commentaires de ce dépôt** : `stockage.ts` CITE
+  `.catch(() => {})` en toutes lettres pour expliquer pourquoi c'est interdit, donc le scanner
+  retirerait cette ligne-là. Il ne coupe QUE les lignes entièrement en commentaire, jamais un
+  commentaire de fin de ligne : le code fautif serait de toute façon AVANT le `//`, et couper là
+  risquerait d'avaler une chaîne contenant `//` (une URL) — c'est-à-dire de rendre le scanner aveugle
+  sur cette ligne, le seul sens dangereux.
+  Sept mutations mordent, dont le défaut d'origine replanté sur un vrai écran, l'exception INVENTÉE
+  (qui ne correspond à aucun retrait réel), et le retrait du filtrage des commentaires.
+  **Les deux jumeaux `depot.ts` / `importFichiers.ts` ont rejoint le point unique dans la foulée**, et
+  ce n'était pas cosmétique : leur version en ligne laissait un rejet réseau du RETRAIT remonter à la
+  place de l'erreur d'INSERTION, c'est-à-dire remplacer la seule explication utile à l'utilisateur par
+  une autre, survenue après. `retirerFichiers` ne lève jamais, et c'est un test qui le fige.
 - **UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS — une fonction vit en production sans exister dans ce
   dépôt** (constaté le 21/09/2026). `list_edge_functions` rend **quatorze** fonctions ; le dépôt en
   porte treize. La quatorzième s'appelle `bright-task` (nom par défaut de Supabase), elle est
@@ -2866,7 +2887,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1112 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1123 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
