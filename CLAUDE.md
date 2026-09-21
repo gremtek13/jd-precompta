@@ -1426,6 +1426,40 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   envoyé au comptable : quand une pièce ne peut pas être ajoutée au ZIP, elle est recensée,
   écrite dans une feuille « Pièces manquantes » du récapitulatif *et* remontée à l'écran.
   Auparavant l'Excel l'annonçait, le total la comptait, l'archive ne la contenait pas.
+- **ET UNE RÉSERVE QUI RENVOIE À UN BANDEAU QUI NE LA PORTE PAS N'EST PAS DITE NON PLUS**
+  (21/09/2026). `dotationPourAnnee` compte la dotation d'amortissement EN ENTIER dès l'année
+  d'acquisition ; l'amortissement fiscal se calcule **prorata temporis** depuis la mise en service,
+  et le reliquat se déduit une année de plus, au-delà de la durée. La simplification est ASSUMÉE et
+  écrite dans `types.ts` — le modèle ne porte pas de date de mise en service, et l'arbitrage reste
+  celui de l'expert-comptable.
+  **Ce qui ne l'était pas, c'est le silence.** La réserve ne vivait que dans le commentaire
+  d'en-tête d'`ImmobilisationsTab`, qui renvoyait à « voir le bandeau » — or le bandeau de cet écran
+  est `BrouillonBanner`, le rappel générique affiché sur TOUS les écrans du projet, et il ne dit rien
+  de la première annuité. Le commentaire nommait donc une mise en garde qui n'existait nulle part,
+  pendant que l'écran affichait une colonne **« Dotation annuelle »** — qui a toutes les apparences
+  d'une annuité calculée — et que Clôture la portait en case CH d'une 2035 **signée**.
+  **Ce que ça coûte, chiffré** : 12 000 € amortis sur 5 ans, acquis le 1er juillet, ce sont 2 400 €
+  déduits pour 1 200 € dus ; acquis le 31 décembre, 2 400 € pour 6,67 €. Le TOTAL sur la durée reste
+  juste — c'est la répartition entre exercices qui ne l'est pas, et elle est chargée en tête.
+  **Le remède est celui du pack** : `dotationsNonProratisees` (lib/declaration2035.ts) CALCULE
+  l'écart, les deux écrans le montrent. Trois décisions :
+  - **Rendue VIDE quand elle n'apprend rien** — un bien acquis le 1er janvier a bien une première
+    annuité pleine. Même raison que `detailPiecesSansDate` : une mise en garde permanente cesse
+    d'être lue, puis emporte ses voisines dans son discrédit.
+  - **Seule l'année d'ACQUISITION est rendue**, et c'est un arbitrage écrit : les annuités
+    intermédiaires sont justes des deux côtés, et la seule autre qui diffère est le reliquat APRÈS
+    la durée — une déduction manquante, donc dans le sens prudent, que le modèle ne produit jamais
+    et que la phrase nomme à la place.
+  - **Sur l'ensemble d'AVANT la recherche**, et c'est la règle « une recherche filtre l'affichage,
+    jamais un total » prise par son côté le plus coûteux : une recherche ne doit pas fabriquer une
+    ALERTE (le piège de la Balance des comptes), mais elle doit encore moins en faire DISPARAÎTRE
+    une — c'est fabriquer une bonne nouvelle, que personne n'ira vérifier (le piège de la liste des
+    dossiers). Elle suit en revanche le filtre d'exercice, qui est un cadrage choisi et affiché.
+  **Sept mutations sur le calcul, six sur les deux écrans**, dont le code tel qu'il était des deux
+  côtés, les gardes symétriques « l'écran avertit TOUJOURS », et les deux sens du cadrage.
+  La convention d'arrondi est celle des amortissements linéaires (30/360), et la date retenue est
+  celle d'ACQUISITION faute de mise en service au modèle — quand les deux diffèrent l'acquisition
+  précède, donc la fraction calculée est la plus généreuse des deux.
 - **Un fichier envoyé au stockage sans ligne en base est un orphelin.** L'import retire le
   fichier quand l'insertion échoue, et ne retient son empreinte qu'une fois la ligne écrite —
   la retenir avant faisait passer pour « déjà présent » un fichier dont l'import venait
@@ -3064,11 +3098,11 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 11 testés** — banque,
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 12 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations,
-  suppléments et accès (21/09/2026) — donc **6 sans aucun test de rendu** : factures,
-  immobilisations, cotisations, estimation, financement, virements. Suppléments et Accès y sont
-  entrés comme Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  suppléments, accès et immobilisations (21/09/2026) — donc **5 sans aucun test de rendu** :
+  factures, cotisations, estimation, financement, virements. Suppléments, Accès et Immobilisations y
+  sont entrés comme Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
   `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une
@@ -3118,7 +3152,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1179 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1193 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
