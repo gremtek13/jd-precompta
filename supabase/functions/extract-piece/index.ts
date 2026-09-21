@@ -1,21 +1,50 @@
-// Edge Function : extraction automatique des champs d'une pièce (facture/reçu) via AWS Textract.
+// Edge Function : extraction automatique des champs d'une pièce (facture/reçu).
+//
+// DEUX ÉTAGES, ET LA SÉPARATION EST LE CŒUR DE CE FICHIER :
+//
+//   1. **Lire le texte** — Textract `DetectDocumentText` (OCR seul, ~1,50 $/1000 pages).
+//   2. **Désigner les champs** — un modèle qui lit ce texte et CITE les champs, sans jamais calculer.
+//
+// Avant, un seul appel faisait les deux : `AnalyzeExpense`, à 10 $/1000 pages. On payait près de sept
+// fois le prix de l'OCR pour un ÉTIQUETAGE si irrégulier qu'il fallait doubler chaque champ d'un
+// repli sur texte brut — `INVOICE_RECEIPT_DATE` n'est sorti que sur 4 factures sur 22 d'un même
+// fournisseur, alors que la date était lue à chaque fois. C'est ce repli qui travaillait déjà.
+//
+// LE CONTRAT DE CITATION vit dans `src/lib/extractionChamps.ts` et y est expliqué en entier : le
+// modèle rend la chaîne TELLE QU'IMPRIMÉE ("1 234,56 €"), le code vérifie qu'elle figure dans le
+// texte source, puis la passe aux analyseurs déjà éprouvés de ce fichier (`parseAmount`, `parseDate`).
+// Une valeur inventée n'est nulle part dans le texte, donc rejetée. Mesuré sur les 41 textes réels du
+// dossier : 209 citations, zéro invention, zéro erreur de montant.
+//
+// **ET L'ÉTAGE 2 EST BEST-EFFORT, L'ÉTAGE 1 NON.** Un échec du modèle (Bedrock indisponible, quota,
+// JSON malformé) ne fait PAS échouer l'extraction : l'OCR est déjà payé et il porte l'essentiel — le
+// texte conservé, la classification, la lecture 2035, l'échéancier de cotisation et le repli de date
+// sur texte brut. Perdre le tiers et les montants coûte une saisie ; perdre le reste coûte le
+// document. C'est aussi cette séparation qui prépare la marche 2 (OCR local) : seul l'étage 1 change.
 //
 // Le navigateur télécharge d'abord le fichier depuis le bucket Storage 'pieces' avec sa propre
 // session (déjà autorisée par les policies RLS du bucket pour ce dossier), puis envoie les octets
 // bruts ici. Cette fonction ne fait donc aucune vérification d'autorisation supplémentaire : si le
 // navigateur a pu obtenir le fichier, l'utilisateur y avait déjà droit. Elle ne touche ni la base ni
-// le storage Supabase — elle est un simple relais vers Textract, qui seul détient les identifiants AWS.
+// le storage Supabase — elle est un simple relais vers AWS, qui seul détient les identifiants.
 //
 // Rien n'est jamais enregistré automatiquement : le résultat n'est qu'une suggestion que
 // l'utilisateur valide ou corrige côté client avant sauvegarde.
 
 import {
   TextractClient,
-  AnalyzeExpenseCommand,
-  StartExpenseAnalysisCommand,
-  GetExpenseAnalysisCommand,
+  DetectDocumentTextCommand,
+  StartDocumentTextDetectionCommand,
+  GetDocumentTextDetectionCommand,
 } from "npm:@aws-sdk/client-textract@3"
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "npm:@aws-sdk/client-s3@3"
+import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
+
+// Le modèle qui CITE. C'est celui sur lequel la mesure des 41 textes a été faite — en changer
+// invaliderait ce feu vert, donc c'est un choix à rouvrir avec une nouvelle mesure, jamais en
+// passant. Même région que Textract (voir le gestionnaire) : le texte OCR sort au même endroit que
+// le document dont il vient, et `edgeFunctionsRegions.test.ts` le vérifie.
+const MODELE_CITATION = "eu.anthropic.claude-sonnet-4-6"
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -30,14 +59,119 @@ function json(body: unknown, status = 200) {
   })
 }
 
-interface ExpenseField {
-  Type?: { Text?: string }
-  ValueDetection?: { Text?: string; Confidence?: number }
-}
-
 interface TextractBlock {
   BlockType?: string
   Text?: string
+  // La confiance de LISIBILITÉ du bloc — elle dit que les caractères ont été bien lus, pas que la
+  // valeur est la bonne. Elle remplace la moyenne des confiances de champs d'AnalyzeExpense, qui
+  // mesurait exactement la même chose sur six champs au lieu du texte entier.
+  Confidence?: number
+}
+
+// ── DÉBUT COPIE extractionChamps ────────────────────────────────────────────────────────────────
+// Recopié de `src/lib/extractionChamps.ts` (Edge Function auto-portée : aucun import de `src/`).
+//
+// ÉCRIT SANS ANNOTATIONS DE TYPE, DÉLIBÉRÉMENT. C'est ce qui permet à `extractionChampsCopie.test.ts`
+// d'EXTRAIRE ce bloc et de l'EXÉCUTER contre l'original, plutôt que de le relire. Un garde-fou qui
+// compare deux comportements attrape une dérive ; un qui compare deux textes attrape un reformatage.
+const CHAMPS_CITES = ["tiers", "date", "devise", "totalTtc", "totalHt", "totalTva"]
+const CHAMPS_MONTANT = ["totalTtc", "totalHt", "totalTva"]
+
+function normaliser(texte) {
+  return texte.replace(/\s+/g, " ").trim().toLowerCase()
+}
+
+function verifierCitations(citations, texte) {
+  const normalise = normaliser(texte)
+  const sansBlancs = normalise.replace(/\s/g, "")
+  const retenues = {}
+  const rejetees = []
+
+  for (const champ of CHAMPS_CITES) {
+    const citation = citations[champ]
+    if (citation == null) continue
+    if (citation.trim() === "") {
+      rejetees.push({ champ, citation, motif: "citation vide" })
+      continue
+    }
+    const cible = normaliser(citation)
+    const trouvee = normalise.includes(cible)
+      || (CHAMPS_MONTANT.includes(champ) && sansBlancs.includes(cible.replace(/\s/g, "")))
+    if (trouvee) retenues[champ] = citation
+    else rejetees.push({ champ, citation, motif: "absente du texte" })
+  }
+  return { retenues, rejetees }
+}
+// ── FIN COPIE extractionChamps ──────────────────────────────────────────────────────────────────
+
+const PROMPT_EXTRACTION = `Tu lis le texte OCR d'un document comptable français et tu en extrais six champs.
+
+RÈGLE ABSOLUE : tu RECOPIES des extraits du texte, tu ne calcules ni ne reformules jamais.
+Rends chaque champ exactement tel qu'il est imprimé, espaces et symboles compris ("1 234,56 €",
+"1er juin 2025"). N'ajoute pas de zéro, ne convertis pas de format, ne corrige pas une faute.
+
+Si un champ n'apparaît pas dans le texte, rends null. C'est une bonne réponse : une valeur absente
+se corrige à la main, une valeur inventée passe inaperçue et fausse une déclaration.
+
+- tiers : la raison sociale de l'ÉMETTEUR du document (le fournisseur), pas le destinataire.
+- date : la date d'ÉMISSION du document. Pas l'échéance, pas la date de règlement, pas une période
+  de validité, pas une date de mention légale.
+- devise : le symbole ou le code monétaire tel qu'il accompagne les montants ("€", "EUR", "$",
+  "USD"). Si le document n'en porte aucun, rends null.
+- totalTtc : le montant total toutes taxes comprises.
+- totalHt : le total hors taxes.
+- totalTva : le montant de TVA. S'il y a plusieurs taux, rends null — le total sera recalculé.
+
+Réponds uniquement par un objet JSON avec ces six clés.`
+
+// Ce que le modèle a désigné sur ce document, après vérification.
+interface Citation {
+  retenues: Record<string, string>
+  rejetees: { champ: string; citation: string; motif: string }[]
+  erreur: string | null
+  usage: { entree: number; sortie: number } | null
+}
+
+// Demande au modèle de CITER les champs, puis vérifie chaque citation contre le texte source.
+//
+// BEST-EFFORT PAR CONSTRUCTION — voir l'en-tête du fichier : tout échec rend des citations vides et
+// laisse l'extraction se poursuivre sur le seul texte OCR. Le `catch` couvre Bedrock indisponible, un
+// quota atteint, une réponse tronquée et un JSON malformé : aucun de ces cas ne justifie de perdre le
+// texte d'un document qu'on vient de payer.
+//
+// LA DEVISE EST DEMANDÉE MAIS N'EST PAS RENDUE, et ce n'est pas un oubli. La règle qui transforme
+// « $ » en « USD » vit dans `src/lib/devises.ts`, et `montantsPourPiece` la lit déjà sur le texte OCR
+// qui remonte jusqu'à lui (voir le commentaire de `MontantsLus.texte_ocr`) : la rendre ici en ferait
+// une SECONDE copie à tenir synchronisée, pour un gain nul. On la demande quand même parce qu'un
+// modèle à qui l'on rappelle que les montants portent une monnaie cite mieux les montants — c'est
+// la mesure sur les quatre factures en dollars du dossier qui l'a montré.
+async function citerChamps(texte: string, region: string): Promise<Citation> {
+  const vide: Citation = { retenues: {}, rejetees: [], erreur: null, usage: null }
+  if (!texte.trim()) return vide
+
+  try {
+    const client = new AnthropicBedrock({
+      awsRegion: region,
+      awsAccessKey: Deno.env.get("AWS_ACCESS_KEY_ID"),
+      awsSecretKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
+    })
+    const reponse = await client.messages.create({
+      model: MODELE_CITATION,
+      max_tokens: 500,
+      messages: [{ role: "user", content: `${PROMPT_EXTRACTION}\n\n--- TEXTE ---\n${texte}` }],
+    })
+    const usage = {
+      entree: reponse.usage?.input_tokens ?? 0,
+      sortie: reponse.usage?.output_tokens ?? 0,
+    }
+    const brut = reponse.content.find((b: { type: string }) => b.type === "text")
+    const json = brut?.text?.match(/\{[\s\S]*\}/)?.[0]
+    if (!json) return { ...vide, erreur: "réponse du modèle illisible", usage }
+    return { ...verifierCitations(JSON.parse(json), texte), erreur: null, usage }
+  } catch (err) {
+    console.error("[extract-piece] citation des champs", err)
+    return { ...vide, erreur: err instanceof Error ? err.message : String(err) }
+  }
 }
 
 // Reprend l'algorithme de src/lib/csv.ts (parseMontantBancaire) — fichier auto-porteur, voir
@@ -755,73 +889,44 @@ function resoudreMontants(
   return { montant_ht: ht, montant_tva: tva, montant_ttc: ttc, redressement, coherent }
 }
 
-function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[] }) {
-  const documents = result.ExpenseDocuments ?? []
-  if (documents.length === 0) {
-    return {
-      tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
-      confiance: "basse" as const, classification: "facture" as const, texte_ocr: "",
-      lecture_2035: { recettes: null, charges_sociales_personnelles: null, resultat: null, _diag_2035: undefined, _diag_resultat: undefined },
-      lecture_cotisation: { echeances: [], _diag_cotisation: undefined },
-    }
+// Le cas « rien lu » : document illisible, image vide, page blanche. Rendu explicitement plutôt que
+// par des champs nuls disséminés — l'appelant doit pouvoir distinguer « lu, rien trouvé » de « pas lu ».
+function rienLu() {
+  return {
+    tiers: null, date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
+    confiance: "basse" as const, classification: "facture" as const, texte_ocr: "",
+    lecture_2035: { recettes: null, charges_sociales_personnelles: null, resultat: null, _diag_2035: undefined, _diag_resultat: undefined },
+    lecture_cotisation: { echeances: [], _diag_cotisation: undefined },
   }
+}
 
-  // Un document multi-pages (relevé, 2035...) peut être renvoyé par Textract comme plusieurs
-  // ExpenseDocuments — un par page ou groupe de pages — pas forcément un seul avec toutes les Blocks.
-  // La classification, le repli TVA texte brut et la lecture 2035 doivent donc chercher sur toutes les
-  // pages, pas juste la première : sinon un libellé tombant sur une page suivante serait invisible.
-  const lignes = lignesOcr(documents.flatMap((d) => d.Blocks ?? []))
+type Grade = "basse" | "moyenne" | "haute"
+const RANG: Record<Grade, number> = { basse: 0, moyenne: 1, haute: 2 }
+function pire(...grades: Grade[]): Grade {
+  return grades.reduce((a, b) => (RANG[a] <= RANG[b] ? a : b))
+}
 
-  const summary: Record<string, { text: string; confidence: number }> = {}
-  // Une facture peut avoir plusieurs lignes de TVA (taux différents) — Textract renvoie alors
-  // plusieurs champs de type "TAX" ; les garder tous dans un Record écraserait tout sauf le dernier,
-  // donc on les collecte à part plutôt que de les traiter comme les autres champs uniques.
-  //
-  // Collectés, et non additionnés au fil de l'eau : Textract émet aussi un champ par RÉPÉTITION du
-  // même total sur le document, et les additionner en aveugle multipliait la TVA par le nombre de
-  // fois qu'elle est imprimée. C'est resoudreMontants qui décide de ce qui s'additionne.
-  const taxesDetectees: number[] = []
-  let taxConfidenceSum = 0
-  let taxConfidenceCount = 0
-  // Même raison que pour lignesOcr ci-dessus : la date/le fournisseur/le total peuvent être détectés
-  // sur un ExpenseDocuments[1+] plutôt que [0] sur un document multi-pages — constaté en pratique par
-  // des dates trouvées sur certains documents et pas d'autres sans raison apparente. On parcourt tous
-  // les groupes et on garde la première occurrence de chaque champ (page 1 en priorité), jamais la
-  // dernière qui pourrait provenir d'une mention moins fiable plus loin dans le document.
-  for (const doc of documents) {
-    for (const field of doc.SummaryFields ?? []) {
-      const type = field.Type?.Text
-      const text = field.ValueDetection?.Text
-      const confidence = field.ValueDetection?.Confidence ?? 0
-      if (!type || !text) continue
+function extraireChamps(blocks: TextractBlock[], lignes: string[], citation: Citation) {
+  if (lignes.length === 0) return rienLu()
 
-      if (type === "TAX") {
-        const amount = parseAmount(text)
-        if (amount != null) {
-          taxesDetectees.push(amount)
-          taxConfidenceSum += confidence
-          taxConfidenceCount++
-        }
-        continue
-      }
-      if (!summary[type]) summary[type] = { text, confidence }
-    }
-  }
+  const { retenues, rejetees } = citation
 
-  const total = summary["TOTAL"]
-  const vendor = summary["VENDOR_NAME"]
-  const date = summary["INVOICE_RECEIPT_DATE"]
-  const subtotal = summary["SUBTOTAL"]
+  // Les citations retenues passent aux analyseurs DÉJÀ ÉPROUVÉS de ce fichier, jamais à de nouveaux.
+  // C'est tout l'intérêt du contrat : le modèle DÉSIGNE une chaîne du document, le code l'interprète
+  // avec les règles d'avant. Arrondis, séparateurs de milliers, fuseaux — rien de tout cela ne dépend
+  // du modèle, et rien n'est écrit une troisième fois.
+  const montantTtc = parseAmount(retenues.totalTtc)
+  const montantHtDeclare = parseAmount(retenues.totalHt)
+  const tvaCitee = parseAmount(retenues.totalTva)
 
-  const montantTtc = parseAmount(total?.text)
-  const montantHtDeclare = parseAmount(subtotal?.text)
-
-  // Reconstitution des trois montants, y compris la déduction de la TVA par différence quand une
-  // facture affiche un HT et un TTC sans que Textract isole de ligne "TVA" (voir resoudreMontants).
-  let montants = resoudreMontants(montantTtc, montantHtDeclare, taxesDetectees)
+  // `resoudreMontants` garde son entrée en LISTE bien qu'il n'y ait plus qu'une TVA possible : il est
+  // testé sous cette forme, et ses redressements (permutation HT/TVA, déduction par soustraction)
+  // restent tous valables. Seul `doublon_tva` ne peut plus se déclencher — il réparait un artefact
+  // d'AnalyzeExpense, qui émettait un champ par RÉPÉTITION du même total sur le document. Le retirer
+  // maintenant ferait perdre sa batterie de tests sans rien simplifier.
+  let montants = resoudreMontants(montantTtc, montantHtDeclare, tvaCitee == null ? [] : [tvaCitee])
 
   // Dernier recours : tableau de ventilation TVA imprimé comme texte simple (tickets de caisse).
-  // Diagnostic temporaire inclus tant que le motif n'est pas confirmé sur un cas réel.
   let lignesBrutesDiag: string[] | undefined
   if (montants.montant_tva == null) {
     const montant = tvaDepuisTexteBrut(lignes)
@@ -829,13 +934,11 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     else lignesBrutesDiag = lignes
   }
 
-  // Date : le champ étiqueté par Textract d'abord, puis le texte OCR brut. Textract n'étiquette
-  // INVOICE_RECEIPT_DATE que de façon irrégulière — sur un fournisseur récurrent réel, 4 factures
-  // sur 22 seulement — alors que la date est lue et présente dans `lignes` dans tous les cas.
-  let datePiece = parseDate(date?.text)
+  // Date : la citation d'abord, puis le repli sur texte brut — même ordre qu'avant, même raison. Le
+  // repli n'a pas disparu avec AnalyzeExpense : il reste le seul recours quand le document n'imprime
+  // aucun libellé de date reconnaissable, et c'est lui qui portait déjà l'essentiel du travail.
+  let datePiece = parseDate(retenues.date)
   let datesDiag: string[] | undefined
-  // Renseigné uniquement quand la date vient de la règle de dernier recours (première date en ordre
-  // de lecture) : l'appelant la remonte alors à vérifier plutôt que de la présenter comme lue.
   let dateDeduite = false
   if (!datePiece) {
     const repli = dateDepuisTexteBrut(lignes, new Date().getUTCFullYear())
@@ -847,49 +950,54 @@ function extractFields(result: { ExpenseDocuments?: { SummaryFields?: ExpenseFie
     }
   }
 
-  const confidences = [total, vendor, date].filter((f): f is { text: string; confidence: number } => !!f).map((f) => f.confidence)
-  if (taxConfidenceCount > 0) confidences.push(taxConfidenceSum / taxConfidenceCount)
-  const avgConfidence = confidences.length ? confidences.reduce((a, b) => a + b, 0) / confidences.length : 0
-
-  // La confiance rendue par Textract mesure la LISIBILITÉ, pas la justesse : elle dit qu'il a bien lu
-  // les caractères, pas qu'il a pris le bon nombre. Les onze pièces à TVA démontrablement fausse du
-  // corpus étaient TOUTES en « haute » — l'opérateur qui trie par confiance pour savoir quoi relire
-  // regardait précisément la mauvaise colonne.
+  // TROIS PLAFONDS, ET AUCUN NE MESURE LA MÊME CHOSE. La confiance rendue est le pire des trois.
   //
-  // On la plafonne donc par ce que les montants disent d'eux-mêmes. Une pièce dont les trois montants
-  // ne bouclent pas, ou dont le taux est impossible, ne peut pas être annoncée comme sûre : c'est
-  // exactement celle qu'il faut rouvrir. Une pièce redressée est juste, mais elle n'a plus été lue —
-  // « moyenne » dit qu'on y a touché.
-  const lecture = avgConfidence >= 90 ? "haute" as const : avgConfidence >= 70 ? "moyenne" as const : "basse" as const
-  const plafond = !montants.coherent ? "basse" as const : montants.redressement ? "moyenne" as const : "haute" as const
-  const rang = { basse: 0, moyenne: 1, haute: 2 }
-  const confiance = rang[lecture] <= rang[plafond] ? lecture : plafond
+  //   - La LISIBILITÉ, moyenne des confiances de blocs OCR. Elle dit que les caractères ont été bien
+  //     lus, pas que la valeur est la bonne : les onze pièces à TVA démontrablement fausse du corpus
+  //     étaient TOUTES en « haute ». C'est la même grandeur qu'avant, simplement mesurée sur le texte
+  //     entier plutôt que sur six champs étiquetés.
+  //   - La COHÉRENCE des montants entre eux (`resoudreMontants`) : la seule des trois qui juge le
+  //     RÉSULTAT et non la lecture. Une pièce redressée est juste mais n'a plus été lue.
+  //   - La CITATION. Un rejet est une invention ATTRAPÉE : le champ est écarté, donc la pièce n'en
+  //     souffre pas directement — mais un modèle qui a composé une valeur sur CE document a pu en
+  //     composer une autre qui, elle, figurait par hasard dans le texte. On descend d'un cran sans
+  //     aller jusqu'à « basse » : la plupart des rejets portent sur un champ simplement absent du
+  //     document, et les traiter en faute grave noierait le signal — le défaut que ce dépôt nomme
+  //     « un avertissement qui se trompe souvent finit par ne plus être lu ».
+  const lisibles = blocks.filter((b) => b.Confidence != null)
+  const lisibilite = lisibles.length
+    ? lisibles.reduce((somme, b) => somme + (b.Confidence ?? 0), 0) / lisibles.length
+    : 0
+  const confiance = pire(
+    lisibilite >= 90 ? "haute" : lisibilite >= 70 ? "moyenne" : "basse",
+    !montants.coherent ? "basse" : montants.redressement ? "moyenne" : "haute",
+    rejetees.length > 0 || citation.erreur ? "moyenne" : "haute",
+  )
 
   return {
-    tiers: vendor?.text ?? null,
+    tiers: retenues.tiers ?? null,
     date_piece: datePiece,
     montant_ttc: montants.montant_ttc,
     montant_tva: montants.montant_tva,
     montant_ht: montants.montant_ht,
     confiance,
     classification: classifieDocument(lignes),
-    // Le texte lu, rendu tel quel. Il était jusqu'ici calculé puis jeté : il sert à classer le
-    // document, à retrouver une date et à rattraper une TVA, mais rien n'en sortait. Or c'est
-    // exactement ce qui manque à l'opérateur devant « BOULANGER MARSEILLE, 199,99 € » — la réponse
-    // (« FOUR MICRO-ONDES ») était sous ses yeux à l'extraction, et personne ne l'a gardée.
-    // Aucun filtrage ni troncature : ce qui sera montré doit être ce qui a été lu, sinon on ne peut
-    // plus diagnostiquer une extraction douteuse avec.
+    // Le texte lu, rendu tel quel — sans filtrage ni troncature. Il sert à classer le document, à
+    // retrouver une date, à rattraper une TVA, et désormais à CITER les champs : c'est la seule
+    // entrée de l'étage 2. Ce qui sera montré à l'opérateur doit être ce qui a été donné au modèle,
+    // sinon on ne peut plus diagnostiquer une citation douteuse avec.
     texte_ocr: lignes.join("\n"),
     lecture_2035: lectureDeclaration2035(lignes),
     lecture_cotisation: lectureAppelCotisation(lignes),
-    // Diagnostic temporaire : uniquement présent si la TVA reste introuvable après toutes les
-    // tentatives — permet de voir le texte OCR brut plutôt que de deviner encore un nouveau motif.
     ...(lignesBrutesDiag ? { _lignes_brutes: lignesBrutesDiag } : {}),
     ...(datesDiag ? { _diag_dates: datesDiag } : {}),
     ...(dateDeduite ? { _date_deduite: true } : {}),
-    // Ce qui a dû être redressé, pour que l'appelant puisse le dire plutôt que de présenter un
-    // montant reconstitué comme un montant lu — même raison que _date_deduite juste au-dessus.
     ...(montants.redressement ? { _montants_redresses: montants.redressement } : {}),
+    // Ce que le modèle a composé et qu'on a écarté — jamais en silence. Sans ce diagnostic, un champ
+    // vide ne dit pas s'il était ABSENT du document ou INVENTÉ puis rejeté, et ces deux situations
+    // n'appellent pas la même correction : la première se saisit à la main, la seconde se remonte.
+    ...(rejetees.length > 0 ? { _citations_rejetees: rejetees } : {}),
+    ...(citation.erreur ? { _citation_erreur: citation.erreur } : {}),
   }
 }
 
@@ -899,22 +1007,57 @@ function isPdf(bytes: Uint8Array): boolean {
   return bytes.length > 4 && bytes[0] === 0x25 && bytes[1] === 0x50 && bytes[2] === 0x44 && bytes[3] === 0x46
 }
 
-interface ExpenseAnalysisResult {
-  ExpenseDocuments?: { SummaryFields?: ExpenseField[]; Blocks?: TextractBlock[] }[]
+// ── DÉBUT PAGINATION ────────────────────────────────────────────────────────────────────────────
+// Recolle toutes les pages d'un job Textract asynchrone.
+//
+// ÉCRIT SANS ANNOTATIONS DE TYPE ET SUR UN FOURNISSEUR DE PAGES, DÉLIBÉRÉMENT : c'est ce qui permet
+// à `extractPiecePagination.test.ts` de l'EXTRAIRE et de l'EXÉCUTER contre un faux pagineur. Vérifier
+// la présence d'une boucle par une recherche de texte serait le contrôle faible que ce dépôt accepte
+// faute de mieux ailleurs ; ici on peut faire mieux, donc on le fait.
+//
+// CE QUE CETTE BOUCLE EMPÊCHE : `GetDocumentTextDetection` PAGINE, et ne le signale QUE par un
+// `NextToken`. Sans elle, un document de plusieurs pages rendrait ses mille premiers blocs et rien
+// d'autre — texte OCR tronqué, donc classification faite sur un fragment, 2035 lue à moitié,
+// échéancier de cotisation amputé, et un modèle à qui l'on demande de citer des champs dans un texte
+// qu'on lui a coupé. Aucune erreur nulle part. C'est le piège que ce dépôt connaît sous le nom de
+// « plafond de PostgREST », arrivé par une porte que le passage à la détection de texte vient
+// d'ouvrir : `AnalyzeExpense` rendait ses pages autrement.
+//
+// L'absence de `NextToken` fait foi, et c'est suffisant ICI : contrairement à PostgREST, la fin est
+// ANNONCÉE par l'API et non déduite d'une tranche plus courte que demandée. C'est la différence qui
+// dispense d'un compte annoncé — et elle doit être vérifiée avant d'appliquer ce raccourci ailleurs.
+async function collecterBlocs(premiere, pageSuivante) {
+  const blocs = [...(premiere.Blocks ?? [])]
+  let suite = premiere.NextToken
+  while (suite) {
+    const encore = await pageSuivante(suite)
+    blocs.push(...(encore.Blocks ?? []))
+    suite = encore.NextToken
+  }
+  return blocs
+}
+// ── FIN PAGINATION ──────────────────────────────────────────────────────────────────────────────
+
+interface DetectionResult {
+  Blocks?: TextractBlock[]
+  NextToken?: string
+  JobStatus?: string
 }
 
-// L'API synchrone AnalyzeExpense ne traite que les PDF d'une seule page (ou une image) — un PDF de
-// plusieurs pages échoue systématiquement. L'API asynchrone StartExpenseAnalysis/GetExpenseAnalysis
-// gère le multi-pages, mais impose que le document soit dans un bucket S3 (pas envoyé en direct) :
-// on l'y dépose temporairement, on lance le job, on attend le résultat par sondage (pas de SNS —
-// inutile pour une seule requête synchrone côté utilisateur), puis on supprime le fichier quel que
-// soit le résultat, y compris en cas d'erreur.
-async function analyzeExpensePdfAsync(fileBytes: Uint8Array, textract: TextractClient): Promise<ExpenseAnalysisResult> {
+// L'API synchrone `DetectDocumentText` ne traite qu'une page (ou une image) — un PDF de plusieurs
+// pages échoue systématiquement. L'API asynchrone StartDocumentTextDetection/GetDocumentTextDetection
+// gère le multi-pages mais impose que le document soit dans un bucket S3 (pas envoyé en direct) : on
+// l'y dépose temporairement, on lance le job, on attend par sondage (pas de SNS — inutile pour une
+// seule requête synchrone côté utilisateur), puis on supprime le fichier quel que soit le résultat, y
+// compris en cas d'erreur.
+async function detecterTextePdfAsync(
+  fileBytes: Uint8Array, textract: TextractClient, region: string,
+): Promise<TextractBlock[]> {
   const bucket = Deno.env.get("AWS_TEXTRACT_BUCKET")
-  if (!bucket) throw new Error("AWS_TEXTRACT_BUCKET non configuré — extraction multi-pages indisponible.")
+  if (!bucket) throw new Error("AWS_TEXTRACT_BUCKET non configuré — lecture multi-pages indisponible.")
 
   const s3 = new S3Client({
-    region: Deno.env.get("AWS_REGION") ?? "eu-central-1",
+    region,
     credentials: {
       accessKeyId: Deno.env.get("AWS_ACCESS_KEY_ID")!,
       secretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY")!,
@@ -926,7 +1069,7 @@ async function analyzeExpensePdfAsync(fileBytes: Uint8Array, textract: TextractC
 
   try {
     const start = await textract.send(
-      new StartExpenseAnalysisCommand({ DocumentLocation: { S3Object: { Bucket: bucket, Name: key } } }),
+      new StartDocumentTextDetectionCommand({ DocumentLocation: { S3Object: { Bucket: bucket, Name: key } } }),
     )
     const jobId = start.JobId
     if (!jobId) throw new Error("Textract n'a pas renvoyé d'identifiant de job.")
@@ -934,21 +1077,35 @@ async function analyzeExpensePdfAsync(fileBytes: Uint8Array, textract: TextractC
     // Sondage toutes les 2s pendant 50s max — largement suffisant pour un document de quelques
     // pages ; au-delà, mieux vaut renvoyer une erreur claire que de laisser l'utilisateur attendre.
     const deadline = Date.now() + 50_000
-    let last: (ExpenseAnalysisResult & { JobStatus?: string }) | undefined
+    let page: DetectionResult | undefined
     while (Date.now() < deadline) {
       await new Promise((resolve) => setTimeout(resolve, 2000))
-      last = await textract.send(new GetExpenseAnalysisCommand({ JobId: jobId }))
-      if (last.JobStatus === "SUCCEEDED" || last.JobStatus === "FAILED") break
+      page = await textract.send(new GetDocumentTextDetectionCommand({ JobId: jobId }))
+      if (page.JobStatus === "SUCCEEDED" || page.JobStatus === "FAILED") break
     }
 
-    if (!last || last.JobStatus !== "SUCCEEDED") {
+    if (!page || page.JobStatus !== "SUCCEEDED") {
       throw new Error(
-        last?.JobStatus === "FAILED"
-          ? "Textract n'a pas pu analyser ce document (illisible ou format non pris en charge)."
-          : "Extraction trop longue — réessaie ou saisis les champs manuellement.",
+        page?.JobStatus === "FAILED"
+          ? "Textract n'a pas pu lire ce document (illisible ou format non pris en charge)."
+          : "Lecture trop longue — réessaie ou saisis les champs manuellement.",
       )
     }
-    return last
+
+    // **GetDocumentTextDetection PAGINE, et ne le signale QUE par un `NextToken`.** Sans cette boucle,
+    // un document de plusieurs pages rendrait ses mille premiers blocs et rien d'autre : texte OCR
+    // tronqué, donc classification faite sur un fragment, 2035 lue à moitié, échéancier de cotisation
+    // amputé, et un modèle à qui l'on demande de citer des champs dans un texte qu'on lui a coupé.
+    // Aucune erreur nulle part. C'est mot pour mot le piège que ce dépôt connaît sous le nom de
+    // « plafond de PostgREST », sur une autre API — et il arrive ici par une porte que le passage à
+    // la détection de texte vient d'ouvrir : `AnalyzeExpense` rendait ses pages autrement.
+    //
+    // L'absence de `NextToken` fait foi, et c'est suffisant ici : contrairement à PostgREST, la fin
+    // est ANNONCÉE par l'API plutôt que déduite d'une tranche plus courte que demandée.
+    return await collecterBlocs(
+      page,
+      (suite: string) => textract.send(new GetDocumentTextDetectionCommand({ JobId: jobId, NextToken: suite })),
+    )
   } finally {
     // Filet de sécurité : même si la suppression échoue, une règle de cycle de vie sur le bucket
     // purge automatiquement le dossier tmp/ après 1 jour (voir configuration du bucket).
@@ -971,8 +1128,14 @@ Deno.serve(async (req: Request) => {
       return json({ error: "Fichier trop volumineux pour l'extraction automatique (max 10 Mo)." }, 400)
     }
 
-    const client = new TextractClient({
-      region: Deno.env.get("AWS_REGION") ?? "eu-central-1",
+    // UNE SEULE région pour les trois clients AWS — Textract, le S3 du chemin asynchrone, et Bedrock.
+    // Déclarée une fois plutôt que répétée : deux replis différents enverraient une partie des
+    // documents, donc sur un dossier de santé des noms de patients, dans une autre juridiction, et le
+    // registre RGPD annoncerait une région pour deux. `edgeFunctionsRegions.test.ts` le vérifie, et
+    // cette forme-ci rend la faute structurellement impossible plutôt que seulement détectable.
+    const region = Deno.env.get("AWS_REGION") ?? "eu-central-1"
+    const textract = new TextractClient({
+      region,
       credentials: {
         accessKeyId: Deno.env.get("AWS_ACCESS_KEY_ID")!,
         secretAccessKey: Deno.env.get("AWS_SECRET_ACCESS_KEY")!,
@@ -981,11 +1144,28 @@ Deno.serve(async (req: Request) => {
 
     // Les PDF passent par le chemin asynchrone (seul à supporter le multi-pages) ; les images
     // (JPEG/PNG re-encodées côté client) restent sur le chemin synchrone, plus rapide et sans S3.
-    const result = isPdf(fileBytes)
-      ? await analyzeExpensePdfAsync(fileBytes, client)
-      : await client.send(new AnalyzeExpenseCommand({ Document: { Bytes: fileBytes } }))
+    const blocks = isPdf(fileBytes)
+      ? await detecterTextePdfAsync(fileBytes, textract, region)
+      : (await textract.send(new DetectDocumentTextCommand({ Document: { Bytes: fileBytes } }))).Blocks ?? []
 
-    return json(extractFields(result))
+    const lignes = lignesOcr(blocks)
+    const citation = await citerChamps(lignes.join("\n"), region)
+
+    // L'usage est JOURNALISÉ, pas compté par cabinet — décision assumée, écrite plutôt que tue.
+    // Cette fonction ne reçoit que des OCTETS : pas de `dossier_id`, donc rien à quoi rattacher ce
+    // coût sans changer son contrat et ses trois appelants. Le journal le rend interrogeable
+    // (`query_logs`) dès aujourd'hui, ce qui est le morceau irréversible — des tokens non journalisés
+    // ne se retrouvent jamais, un plafond s'ajoute quand on veut.
+    // Le compteur reste à construire, et il devra être DISTINCT de celui de l'assistant comptable :
+    // partagé, 5 000 documents par mois feraient sauter le plafond de l'assistant sans que personne
+    // comprenne pourquoi.
+    if (citation.usage) {
+      console.log(
+        `[extract-piece] citation ${MODELE_CITATION} — ${citation.usage.entree} tokens entrée, ${citation.usage.sortie} tokens sortie`,
+      )
+    }
+
+    return json(extraireChamps(blocks, lignes, citation))
   } catch (err) {
     console.error(err)
     return json({ error: err instanceof Error ? err.message : "Échec de l'extraction automatique." }, 500)

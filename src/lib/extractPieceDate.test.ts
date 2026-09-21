@@ -366,8 +366,12 @@ describe('extract-piece / branchement du repli', () => {
   // quand la fonction englobante ne peut pas être exécutée hors de Deno.
   const source = readFileSync(new URL('../../supabase/functions/extract-piece/index.ts', import.meta.url), 'utf8')
 
-  it('appelle le repli quand Textract n’a pas étiqueté de date', () => {
-    expect(source).toContain('let datePiece = parseDate(date?.text)')
+  it('appelle le repli quand le modèle n’a cité aucune date', () => {
+    // La SOURCE de la date a changé le 21/09/2026 — le champ étiqueté par AnalyzeExpense est devenu
+    // une citation vérifiée (`retenues.date`) — mais le branchement gardé ici est le même, et pour la
+    // même raison : le repli sur texte brut reste le seul recours quand le document n'imprime aucun
+    // libellé reconnaissable, et c'est lui qui porte l'essentiel du travail.
+    expect(source).toContain('let datePiece = parseDate(retenues.date)')
     expect(source).toContain('if (!datePiece) {')
     expect(source).toContain('const repli = dateDepuisTexteBrut(lignes, new Date().getUTCFullYear())')
     expect(source).toContain('datePiece = repli.date')

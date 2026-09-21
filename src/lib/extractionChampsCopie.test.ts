@@ -1,33 +1,48 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { CHAMPS_CITES, verifierCitations, type CitationsChamps } from './extractionChamps'
+import { CHAMPS_CITES, PROMPT_EXTRACTION, verifierCitations, type CitationsChamps } from './extractionChamps'
 
-// `evaluer-extraction` est auto-portée (aucun import de `src/`) et redéclare donc `verifierCitations`.
-// Ce garde-fou EXÉCUTE la copie déployée contre l'originale, plutôt que de comparer deux textes :
-// une dérive de comportement est ce qui coûte, un reformatage ne coûte rien.
+// DEUX Edge Functions auto-portées (aucun import de `src/`) redéclarent `verifierCitations`, et ce
+// garde-fou EXÉCUTE chaque copie contre l'originale plutôt que de comparer deux textes : une dérive
+// de COMPORTEMENT est ce qui coûte, un reformatage ne coûte rien.
 //
-// CE QU'UNE DÉRIVE COÛTERAIT ICI : la copie décide de ce qui est MESURÉ, l'originale de ce qui sera
-// RETENU en production. Deux règles de vérification différentes, et l'essai qui autorise la bascule
-// n'aurait pas mesuré ce que la bascule va faire — un feu vert donné sur autre chose que la chose.
+// CE QU'UNE DÉRIVE COÛTERAIT, ET CE N'EST PAS LE MÊME PRIX DES DEUX CÔTÉS :
+//
+//   - `evaluer-extraction` décide de ce qui est MESURÉ. Une copie qui diverge, et l'essai qui a
+//     autorisé la bascule n'aura pas mesuré ce que la bascule fait — un feu vert donné sur autre
+//     chose que la chose.
+//   - `extract-piece` décide de ce qui est RETENU EN PRODUCTION. Une copie plus permissive laisserait
+//     passer une valeur que le module source aurait rejetée : elle serait écrite sur la pièce, donc
+//     comptée en 2035 et exportée en FEC. C'est la seule vérification qui empêche une valeur composée
+//     par un modèle d'entrer dans une comptabilité.
+//
+// LE PROMPT EST GARDÉ AUSSI, au caractère près. Il fait partie du contrat autant que la vérification :
+// deux prompts divergents demandent deux choses différentes, et la mesure ne vaut plus pour ce que la
+// production exécute.
 
-function copieDeployee() {
-  const source = readFileSync(
-    new URL('../../supabase/functions/evaluer-extraction/index.ts', import.meta.url), 'utf8')
+const FONCTIONS_AUTOPORTEES = ['evaluer-extraction', 'extract-piece'] as const
+
+function sourceDe(fonction: string): string {
+  return readFileSync(
+    new URL(`../../supabase/functions/${fonction}/index.ts`, import.meta.url), 'utf8')
+}
+
+function copieDeployee(fonction: string) {
+  const source = sourceDe(fonction)
 
   const debut = source.indexOf('// ── DÉBUT COPIE extractionChamps')
   const fin = source.indexOf('// ── FIN COPIE extractionChamps')
-  expect(debut, 'bornes de la copie introuvables dans evaluer-extraction — garde-fou à remettre à jour')
+  expect(debut, `bornes de la copie introuvables dans ${fonction} — garde-fou à remettre à jour`)
     .toBeGreaterThan(-1)
   expect(fin).toBeGreaterThan(debut)
 
   const bloc = source.slice(debut, fin)
   // Un renommage doit casser bruyamment : le bloc peut se reformater, il ne peut pas perdre son nom.
-  expect(bloc, '`verifierCitations` absente de la copie déployée').toContain('function verifierCitations(')
+  expect(bloc, `\`verifierCitations\` absente de ${fonction}`).toContain('function verifierCitations(')
 
   return new Function(`${bloc}; return verifierCitations`)() as typeof verifierCitations
 }
 
-const deployee = copieDeployee()
 
 const TEXTE = [
   'CABINET VERDIER & ASSOCIÉS',
@@ -38,7 +53,9 @@ const TEXTE = [
   'Net à payer 4 080,00 €',
 ].join('\n')
 
-describe('evaluer-extraction / verifierCitations (copie déployée)', () => {
+for (const fonction of FONCTIONS_AUTOPORTEES) describe(`${fonction} / verifierCitations (copie déployée)`, () => {
+  const deployee = copieDeployee(fonction)
+
   // La batterie porte sur les FRONTIÈRES du module — là où deux implémentations « qui font la même
   // chose » divergent : les blancs insécables, l'asymétrie montant/tiers, les accents, et la
   // distinction entre « null » et « chaîne vide ».
@@ -64,9 +81,7 @@ describe('evaluer-extraction / verifierCitations (copie déployée)', () => {
     // portait cette clé, donc les deux implémentations « étaient d'accord » sur des questions qu'on
     // ne leur posait pas. C'est la panne que ce dépôt connaît déjà sous un autre nom — une liste
     // d'inclusion tenue à la main ne contient que ce à quoi quelqu'un a pensé.
-    const source = readFileSync(
-      new URL('../../supabase/functions/evaluer-extraction/index.ts', import.meta.url), 'utf8')
-    const declaree = source.match(/const CHAMPS_CITES = \[([^\]]+)\]/)?.[1]
+    const declaree = sourceDe(fonction).match(/const CHAMPS_CITES = \[([^\]]+)\]/)?.[1]
     expect(declaree, '`CHAMPS_CITES` introuvable dans la copie déployée').toBeTruthy()
     const champs = [...declaree!.matchAll(/"([a-zA-Z]+)"/g)].map((m) => m[1])
     expect(champs).toEqual([...CHAMPS_CITES])
@@ -89,6 +104,16 @@ describe('evaluer-extraction / verifierCitations (copie déployée)', () => {
       expect(deployee(cas, TEXTE), `divergence sur ${JSON.stringify(cas)}`)
         .toEqual(verifierCitations(cas, TEXTE))
     }
+  })
+
+  it('porte le MÊME prompt que src/lib, au caractère près', () => {
+    // Un prompt n'est pas un commentaire : c'est lui qui décide de ce que le modèle cite. Deux
+    // versions divergentes, et la mesure faite sur l'une ne dit plus rien de ce que l'autre produit —
+    // sans qu'aucun test de comportement ne puisse le voir, puisque `verifierCitations` vérifie des
+    // citations et non la question qui les a produites.
+    const litteral = sourceDe(fonction).match(/const PROMPT\w* = `([\s\S]*?)`/)?.[1]
+    expect(litteral, `prompt introuvable dans ${fonction} — garde-fou à remettre à jour`).toBeTruthy()
+    expect(litteral).toBe(PROMPT_EXTRACTION)
   })
 
   it('et la batterie DISTINGUE bien les deux issues — sinon elle ne prouverait rien', () => {
