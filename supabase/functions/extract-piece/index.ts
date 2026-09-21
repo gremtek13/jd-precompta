@@ -46,6 +46,19 @@ import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
 // le document dont il vient, et `edgeFunctionsRegions.test.ts` le vérifie.
 const MODELE_CITATION = "eu.anthropic.claude-sonnet-4-6"
 
+// LE MUR DE LA PLATEFORME EST À 150 s (plan free : « wall clock limit », et le même chiffre pour le
+// délai d'inactivité qui rend un 504). Le franchir ne rend pas une erreur lisible — la requête est
+// coupée — et fait perdre TOUT, y compris un texte OCR déjà facturé. On s'arrête donc avant lui, et
+// on répartit le budget selon le contrat des deux étages (voir l'en-tête) : l'étage 1 n'est pas
+// facultatif, l'étage 2 l'est.
+const MUR_PLATEFORME_MS = 150_000
+// Ce qui reste à faire une fois la citation rendue : suppression du fichier temporaire S3,
+// sérialisation, trajet retour.
+const MARGE_REPONSE_MS = 10_000
+// En dessous de quoi l'étage 2 est SAUTÉ plutôt que tenté. Une citation coupée par le mur coûte le
+// document entier ; une citation absente ne coûte qu'une saisie. Le contrat décide, pas l'optimisme.
+const BUDGET_CITATION_MS = 30_000
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -1051,8 +1064,9 @@ interface DetectionResult {
 // seule requête synchrone côté utilisateur), puis on supprime le fichier quel que soit le résultat, y
 // compris en cas d'erreur.
 async function detecterTextePdfAsync(
-  fileBytes: Uint8Array, textract: TextractClient, region: string,
+  fileBytes: Uint8Array, textract: TextractClient, region: string, finLecture: number,
 ): Promise<TextractBlock[]> {
+  const debutLecture = Date.now()
   const bucket = Deno.env.get("AWS_TEXTRACT_BUCKET")
   if (!bucket) throw new Error("AWS_TEXTRACT_BUCKET non configuré — lecture multi-pages indisponible.")
 
@@ -1074,11 +1088,13 @@ async function detecterTextePdfAsync(
     const jobId = start.JobId
     if (!jobId) throw new Error("Textract n'a pas renvoyé d'identifiant de job.")
 
-    // Sondage toutes les 2s pendant 50s max — largement suffisant pour un document de quelques
-    // pages ; au-delà, mieux vaut renvoyer une erreur claire que de laisser l'utilisateur attendre.
-    const deadline = Date.now() + 50_000
+    // Sondage toutes les 2 s jusqu'à la borne que le gestionnaire a calculée, et NON pendant une
+    // durée fixe : ce qui décide n'est pas « combien de temps on accepte d'attendre » mais « combien
+    // il reste avant que la plateforme ne coupe ». Le budget fixe de 50 s venait de la version
+    // `AnalyzeExpense` et n'avait jamais rencontré de document long — le 21/09/2026, un PDF de
+    // plusieurs pages l'a dépassé et l'extraction a été perdue alors que Textract travaillait encore.
     let page: DetectionResult | undefined
-    while (Date.now() < deadline) {
+    while (Date.now() < finLecture) {
       await new Promise((resolve) => setTimeout(resolve, 2000))
       page = await textract.send(new GetDocumentTextDetectionCommand({ JobId: jobId }))
       if (page.JobStatus === "SUCCEEDED" || page.JobStatus === "FAILED") break
@@ -1088,7 +1104,14 @@ async function detecterTextePdfAsync(
       throw new Error(
         page?.JobStatus === "FAILED"
           ? "Textract n'a pas pu lire ce document (illisible ou format non pris en charge)."
-          : "Lecture trop longue — réessaie ou saisis les champs manuellement.",
+          // « Réessaie » tout seul était un mauvais conseil : sur un document réellement long, une
+          // seconde tentative échoue à l'identique. Le message dit donc ce qui s'est passé, que le
+          // fichier est bien déposé (l'extraction est appelée APRÈS l'écriture de la ligne), et les
+          // trois suites possibles — dont « Relire les documents », qui rejoue la lecture sans
+          // redéposer le fichier.
+          : `Lecture automatique trop longue : Textract n'avait pas fini au bout de ${
+            Math.round((Date.now() - debutLecture) / 1000)
+          } s. Le fichier est bien déposé — relance « Relire les documents », saisis les champs à la main, ou dépose le document en plusieurs parties.`,
       )
     }
 
@@ -1118,6 +1141,10 @@ Deno.serve(async (req: Request) => {
     return new Response("ok", { headers: corsHeaders })
   }
 
+  // Compté à l'ENTRÉE, lecture du corps comprise : c'est le mur de la plateforme qu'on longe, et il
+  // part de la requête, pas du lancement du job Textract.
+  const debut = Date.now()
+
   try {
     const fileBytes = new Uint8Array(await req.arrayBuffer())
 
@@ -1144,12 +1171,25 @@ Deno.serve(async (req: Request) => {
 
     // Les PDF passent par le chemin asynchrone (seul à supporter le multi-pages) ; les images
     // (JPEG/PNG re-encodées côté client) restent sur le chemin synchrone, plus rapide et sans S3.
+    const finLecture = debut + MUR_PLATEFORME_MS - MARGE_REPONSE_MS - BUDGET_CITATION_MS
     const blocks = isPdf(fileBytes)
-      ? await detecterTextePdfAsync(fileBytes, textract, region)
+      ? await detecterTextePdfAsync(fileBytes, textract, region, finLecture)
       : (await textract.send(new DetectDocumentTextCommand({ Document: { Bytes: fileBytes } }))).Blocks ?? []
 
     const lignes = lignesOcr(blocks)
-    const citation = await citerChamps(lignes.join("\n"), region)
+
+    // L'étage 2 n'est tenté que s'il reste de quoi l'achever. Le sauter rend le même objet qu'un
+    // échec Bedrock — c'est la forme que le contrat best-effort prévoit déjà — et l'extraction
+    // continue sur le seul texte OCR, qui porte l'essentiel.
+    const resteApresOcr = debut + MUR_PLATEFORME_MS - MARGE_REPONSE_MS - Date.now()
+    const citation: Citation = resteApresOcr >= BUDGET_CITATION_MS
+      ? await citerChamps(lignes.join("\n"), region)
+      : {
+        retenues: {},
+        rejetees: [],
+        erreur: `temps insuffisant après la lecture OCR (${Math.round(resteApresOcr / 1000)} s restantes)`,
+        usage: null,
+      }
 
     // L'usage est JOURNALISÉ, pas compté par cabinet — décision assumée, écrite plutôt que tue.
     // Cette fonction ne reçoit que des OCTETS : pas de `dossier_id`, donc rien à quoi rattacher ce
@@ -1159,11 +1199,19 @@ Deno.serve(async (req: Request) => {
     // Le compteur reste à construire, et il devra être DISTINCT de celui de l'assistant comptable :
     // partagé, 5 000 documents par mois feraient sauter le plafond de l'assistant sans que personne
     // comprenne pourquoi.
+    // Le COMPTE des rejets est journalisé, JAMAIS les valeurs : une citation rejetée est une chaîne
+    // que le modèle a tirée du document, donc possiblement un nom de patient — elle n'a rien à faire
+    // dans un journal. Le compte suffit à la seule question qu'on se pose ici : le contrat de
+    // citation tient-il en production ? Sans lui il n'en reste rien, `_citations_rejetees` repartant
+    // vers le navigateur et une relecture en masse le jetant (elle n'écrit que la date et le texte).
     if (citation.usage) {
       console.log(
-        `[extract-piece] citation ${MODELE_CITATION} — ${citation.usage.entree} tokens entrée, ${citation.usage.sortie} tokens sortie`,
+        `[extract-piece] citation ${MODELE_CITATION} — ${citation.usage.entree} tokens entrée, ` +
+          `${citation.usage.sortie} tokens sortie, ${Object.keys(citation.retenues).length} champ(s) cité(s), ` +
+          `${citation.rejetees.length} rejeté(s)`,
       )
     }
+    if (citation.erreur) console.log(`[extract-piece] citation non rendue — ${citation.erreur}`)
 
     return json(extraireChamps(blocks, lignes, citation))
   } catch (err) {
