@@ -394,8 +394,10 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `extract-piece`) et compare aussi les PROMPTS au caractère près. Un prompt qui dérive demande autre
   chose au modèle, et aucun test de comportement ne peut le voir — `verifierCitations` vérifie des
   citations, pas la question qui les a produites.
-  **Déployée le 21/09/2026 (version 43)**, et ce qui reste est une VÉRIFICATION : un dépôt réel, de
-  préférence un PDF multi-pages — seul cas qui exerce la pagination.
+  **Déployée le 21/09/2026 (version 43), et la VÉRIFICATION annoncée ici a mordu du premier coup** :
+  le dépôt réel a rendu 500 sur la policy IAM, pas sur le code (voir « un déploiement n'est pas une
+  autorisation »). La pagination `NextToken` reste donc INÉPROUVÉE — le document n'est jamais
+  arrivé jusqu'à elle.
 - **Le balayage des paramètres par défaut a rendu un résultat NÉGATIF pour tous les autres**
   (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
   `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
@@ -450,6 +452,12 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   partagent la même région. Ce que ce test NE peut pas garder : le secret `AWS_REGION`, qui l'emporte
   sur le repli du code et qu'aucun fichier du dépôt ne connaît. La moitié gouvernée par le code est
   gardée, l'autre est une vérification humaine (voir RGPD.md §8.1).
+- **Ce que ces fonctions ont le DROIT de faire chez AWS, c'est un autre test qui le dit.**
+  `edgeFunctionsIam.test.ts` balaie toutes les Edge Functions et rend la liste des actions IAM que
+  leur code appelle — service lu sur l'import, jamais deviné du nom de la commande. Il ne lit pas la
+  policy (elle vit chez AWS), il rend impossible de CHANGER la surface d'autorisation sans s'en
+  apercevoir : c'est cette bascule silencieuse qui a mis l'extraction à terre le 21/09/2026. Même
+  couple que ci-dessus : une moitié gardée par le code, l'autre par une vérification humaine.
 
 - **Qui voit quoi, c'est un essai rejouable qui le dit** — `supabase/essais/rls.sql`, par
   impersonation réelle des trois profils sur les 40 tables du schéma **et sur les trois seaux de
@@ -576,13 +584,22 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 - **Marche 1 de la réduction du coût d'extraction — BRANCHÉE le 21/09/2026, pas encore éprouvée.**
   `extract-piece` lit désormais par `DetectDocumentText` (OCR seul, ~7× moins cher) puis fait CITER
   les champs par un modèle. Socle, mesure et branchement livrés (voir « Décisions techniques »).
-  **DÉPLOYÉE le 21/09/2026 (version 43)**, mais pas encore éprouvée : la bascule n'est pas
-  vérifiable depuis cet environnement (règle permanente : aucun appel Textract ni `extract-piece`).
-  Elle demande un dépôt réel de l'utilisateur, comme Super PDP — et le premier dépôt doit être un PDF
-  MULTI-PAGES, seul cas qui exerce la pagination `NextToken`. Deux choses à regarder dans
-  `query_logs` ce jour-là : la ligne `[extract-piece] citation …` qui donne les tokens réellement
-  consommés, et l'absence de `_citation_erreur` — si Bedrock refuse depuis la région de Textract,
-  l'extraction continue sur le seul texte OCR et c'est là que ça se verra.
+  **DÉPLOYÉE le 21/09/2026 (version 43), et BLOQUÉE PAR LA POLICY IAM au premier dépôt réel.**
+  L'utilisateur `jd-precompta-textract` n'est autorisé que sur le trio `AnalyzeExpense` /
+  `StartExpenseAnalysis` / `GetExpenseAnalysis` : le dépôt du 21/09 a rendu 500
+  (`AccessDeniedException`), donc aucun texte, aucune citation, aucun chiffre de tokens. Voir
+  « un déploiement n'est pas une autorisation » dans « Problèmes connus » — c'est là que vit la
+  leçon et son garde-fou.
+  **Ce qui débloque, et c'est un geste hors dépôt** : ajouter à la policy IAM
+  `textract:DetectDocumentText`, `textract:StartDocumentTextDetection` et
+  `textract:GetDocumentTextDetection`. Les trois actions `*Expense` peuvent rester tant que la
+  marche 1 n'est pas éprouvée — elles sont le chemin de repli vers la version 42 — et se retirent
+  ensuite. **Tant que ce n'est pas fait, TOUT dépôt échoue** : les deux chemins (synchrone pour les
+  images, asynchrone pour les PDF) demandent des actions que la policy ignore.
+  Ce qui reste à mesurer une fois la policy corrigée, et qu'aucun autre moyen ne donne : la ligne
+  `[extract-piece] citation …` avec les tokens réellement consommés (le chiffre de ce fichier reste
+  une estimation jusque-là), et l'absence de `_citation_erreur` — si Bedrock refuse depuis la
+  région de Textract, l'extraction continue sur le seul texte OCR et c'est là que ça se verra.
 - **Marche 2 — OCR local (PaddleOCR) sur un mini-PC, avec débordement AWS permanent.** Le SENS de
   l'appel est décidé (21/09/2026) et ne se rediscute pas : **la machine locale interroge Supabase,
   Supabase ne l'appelle jamais.** Un service local demande « y a-t-il des pièces sans texte ? »,
@@ -1096,6 +1113,34 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   DÉPÔT, pas la copie déployée, donc ils étaient verts sur du code que la production n'exécutait
   pas. Comparer le déployé au dépôt AVANT d'écraser est donc à faire à chaque déploiement, autant
   pour savoir ce qu'on embarque que pour vérifier que personne n'a modifié la production à la main.
+  **ET UN DÉPLOIEMENT N'EST PAS UNE AUTORISATION** (21/09/2026, troisième membre de la même
+  famille). La version 43 était juste, déployée, et vérifiée au caractère près par l'aller-retour
+  ci-dessus. Le premier dépôt réel a rendu **500** : `AccessDeniedException — User
+  jd-precompta-textract is not authorized to perform: textract:StartDocumentTextDetection`. La
+  bascule d'`AnalyzeExpense` vers `DetectDocumentText` avait changé la **surface d'autorisation**,
+  et rien dans le dépôt ne le disait : la policy IAM n'autorisait que le trio
+  `AnalyzeExpense` / `StartExpenseAnalysis` / `GetExpenseAnalysis`.
+  Les trois vérifications en place regardaient toutes le CODE — les tests lisent la source, le diff
+  lit la copie déployée, le numéro de version dit ce qui tourne. **Aucune ne regarde ce que ce code
+  a le droit de faire**, et c'est la seule chose qu'un dépôt réel pouvait montrer. Le processus n'a
+  donc pas échoué : CLAUDE.md annonçait « ce qui reste est une VÉRIFICATION : un dépôt réel », et
+  c'est elle qui a trouvé.
+  **Dégât : nul, et la forme de l'échec est celle qu'on veut.** Le fichier était déjà déposé et la
+  ligne écrite quand l'extraction a été appelée — la pièce existe, sans date ni tiers ni montant, et
+  « Retrouver le texte lu » la rattrapera une fois la policy corrigée. L'étage 1 qui échoue coûte
+  une saisie, pas le document.
+  **Le garde-fou est `edgeFunctionsIam.test.ts`** : il balaie TOUTES les Edge Functions, lit le
+  service sur l'import (`@aws-sdk/client-textract` → `textract`) plutôt que de le deviner du nom de
+  la commande, et compare la surface obtenue à une liste déclarée. Toute commande ajoutée, retirée
+  ou changée de service le fait virer au rouge — donc oblige à se poser la question « la policy
+  autorise-t-elle celle-là ? » avant le déploiement et non après le premier 500. Deux décisions :
+  **la liste attendue vit dans le TEST et non à côté de l'appel**, sinon elle serait mise à jour
+  dans la même édition que l'appel, le test resterait vert et la policy resterait fausse — le
+  contrôle tautologique que ce dépôt connaît déjà ; et le streaming Bedrock n'est demandé que si le
+  code appelle `messages.stream`, une policy ne devant pas autoriser ce dont personne ne se sert.
+  Ce qu'il ne peut PAS garder, annoncé comme pour la suppression de fichier dans `rls.sql` : **la
+  policy elle-même**, qui vit chez AWS et qu'aucun fichier du dépôt ne connaît. Huit mutations
+  mordent, dont le défaut d'origine replanté — la bascule complète vers le trio Expense.
 - **`npx tsc --noEmit` ne vérifie rien dans ce dépôt.** Le `tsconfig.json` racine a
   `"files": []` et ne fait que référencer `tsconfig.app.json` / `tsconfig.node.json` : lancé
   seul, `tsc --noEmit` sort silencieusement sans avoir typé une seule ligne, ce qui ressemble
@@ -2123,7 +2168,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1024 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1028 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
