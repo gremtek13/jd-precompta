@@ -364,9 +364,39 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   avec cette clé. Les deux copies « étaient d'accord » sur des questions qu'on ne leur posait pas —
   la panne que ce dépôt connaît déjà sous un autre nom. Le garde compare désormais les deux listes
   de champs et DÉRIVE ses cas de `CHAMPS_CITES`.
-  **Ce qui reste** : brancher `DetectDocumentText` + ce contrat dans `extract-piece`. La bascule
-  n'est pas vérifiable depuis cet environnement (règle permanente : aucun appel Textract ni
-  `extract-piece`) — elle demandera un dépôt réel de l'utilisateur, comme pour Super PDP.
+  **BRANCHÉ dans `extract-piece` le 21/09/2026**, et la SÉPARATION vaut plus que l'économie :
+  l'étage 1 produit du texte, l'étage 2 en tire des champs, et les deux ne se connaissent que par une
+  chaîne de caractères. C'est la couture dont la marche 2 a besoin — remplacer Textract par PaddleOCR
+  ne touchera que l'étage 1.
+  **L'étage 2 est BEST-EFFORT, l'étage 1 non** : Bedrock indisponible, quota atteint, JSON malformé,
+  l'extraction continue sur le seul texte OCR et rend la classification, la lecture 2035,
+  l'échéancier de cotisation et la date par repli. Perdre le tiers et les montants coûte une saisie ;
+  perdre le reste coûte le document.
+  **La confiance rendue devient honnête.** Elle était la moyenne des confiances de champs Textract,
+  qui mesure la LISIBILITÉ — les onze pièces à TVA démontrablement fausse du corpus étaient toutes en
+  « haute ». Elle est maintenant le PIRE de trois plafonds qui ne mesurent pas la même chose :
+  lisibilité des blocs OCR, cohérence des montants entre eux (la seule qui juge le résultat), et
+  citation. Un rejet de citation est une invention ATTRAPÉE : il coûte un cran, jamais « basse » —
+  la plupart des rejets portent sur un champ simplement absent du document, et les traiter en faute
+  grave noierait le signal.
+  **La devise est demandée au modèle mais PAS rendue**, et ce n'est pas un oubli : la règle qui
+  transforme « $ » en « USD » vit dans `src/lib/devises.ts`, et `montantsPourPiece` la lit déjà sur
+  le texte OCR qui remonte jusqu'à lui (voir le commentaire de `MontantsLus.texte_ocr`, qui refuse
+  explicitement cette seconde copie). On la demande quand même parce qu'un modèle à qui l'on rappelle
+  que les montants portent une monnaie cite mieux les montants.
+  **L'usage de tokens est JOURNALISÉ, pas compté par cabinet** — décision assumée. La fonction ne
+  reçoit que des OCTETS : aucun `dossier_id` à quoi rattacher ce coût sans changer son contrat et ses
+  trois appelants. Le journal est le morceau irréversible (`query_logs`) — des tokens non journalisés
+  ne se retrouvent jamais, un plafond s'ajoute quand on veut. Ce plafond devra être **distinct** de
+  celui de l'assistant comptable : partagé, 5 000 documents par mois feraient sauter le plafond de
+  l'assistant sans que personne comprenne pourquoi.
+  **Le garde de duplication couvre désormais les DEUX copies** (`evaluer-extraction` et
+  `extract-piece`) et compare aussi les PROMPTS au caractère près. Un prompt qui dérive demande autre
+  chose au modèle, et aucun test de comportement ne peut le voir — `verifierCitations` vérifie des
+  citations, pas la question qui les a produites.
+  **Ce qui reste est une vérification, pas du code** : la fonction n'est pas déployée, et la bascule
+  n'est pas vérifiable depuis cet environnement. Elle demande un dépôt réel, et de préférence un PDF
+  MULTI-PAGES — seul cas qui exerce la pagination.
 - **Le balayage des paramètres par défaut a rendu un résultat NÉGATIF pour tous les autres**
   (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
   `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
@@ -544,10 +574,13 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 
 ## Fonctionnalités actuellement en cours
 
-- **Marche 1 de la réduction du coût d'extraction** : remplacer `AnalyzeExpense` par
-  `DetectDocumentText` (OCR seul, ~7× moins cher) plus un modèle qui lit le texte et CITE les
-  champs. Socle et mesure livrés (voir « Décisions techniques ») ; le branchement dans
-  `extract-piece` reste à faire.
+- **Marche 1 de la réduction du coût d'extraction — BRANCHÉE le 21/09/2026, pas encore éprouvée.**
+  `extract-piece` lit désormais par `DetectDocumentText` (OCR seul, ~7× moins cher) puis fait CITER
+  les champs par un modèle. Socle, mesure et branchement livrés (voir « Décisions techniques »).
+  **Ce qui reste est une vérification, pas du code** : la fonction n'est pas déployée, et la bascule
+  n'est pas vérifiable depuis cet environnement (règle permanente : aucun appel Textract ni
+  `extract-piece`). Elle demande un dépôt réel de l'utilisateur, comme Super PDP — et le premier
+  dépôt doit être un PDF MULTI-PAGES, seul cas qui exerce la pagination `NextToken`.
 - **Marche 2 — OCR local (PaddleOCR) sur un mini-PC, avec débordement AWS permanent.** Le SENS de
   l'appel est décidé (21/09/2026) et ne se rediscute pas : **la machine locale interroge Supabase,
   Supabase ne l'appelle jamais.** Un service local demande « y a-t-il des pièces sans texte ? »,
@@ -813,6 +846,25 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   d'échouer.
 - **Les API paginées de Storage sont paginées explicitement.** `list()` plafonne à 100 entrées
   sans le signaler : la suppression d'un dossier laissait tout le reste orphelin au-delà.
+- **ET TEXTRACT AUSSI, par une porte que le passage à la détection de texte vient d'ouvrir**
+  (21/09/2026). `GetDocumentTextDetection` rend ses résultats par PAGES et ne le signale que par un
+  `NextToken` — `AnalyzeExpense` rendait les siennes autrement, donc ce piège n'existait pas avant.
+  Sans la boucle, un document de plusieurs pages perd tout au-delà des mille premiers blocs : texte
+  OCR tronqué, donc classification faite sur un fragment, 2035 lue à moitié, échéancier de cotisation
+  amputé, et un modèle à qui l'on demande de citer des champs dans un texte qu'on lui a coupé. Aucune
+  erreur nulle part.
+  **Une différence avec PostgREST, à vérifier avant d'appliquer le même raccourci ailleurs** : ici la
+  fin est ANNONCÉE par l'API (absence de `NextToken`) et non déduite d'une tranche plus courte que
+  demandée. C'est ce qui dispense d'un compte annoncé — et c'est exactement ce que `lireTout` ne peut
+  PAS supposer de PostgREST.
+  **La boucle est écrite sur un FOURNISSEUR DE PAGES et non en ligne dans l'appel AWS**, entre les
+  bornes `── DÉBUT/FIN PAGINATION` : c'est ce qui permet à `extractPiecePagination.test.ts` de
+  l'EXTRAIRE et de l'EXÉCUTER contre un faux pagineur. Les autres garde-fous de cette fonction
+  vérifient un câblage par recherche de texte, faute de pouvoir lancer du Deno ici ; celui-là n'avait
+  pas cette excuse. Le faux pagineur REFUSE un jeton déjà servi, pour qu'une boucle qui redemanderait
+  la même page échoue au lieu de tourner indéfiniment. Cinq cas, dont « une page vide n'est pas la
+  fin » — c'est le `NextToken` qui décide, et confondre les deux couperait le document à la première
+  page blanche.
 - **Et la TABLE se pagine aussi : PostgREST plafonne le nombre de lignes rendues.** C'est le
   réglage « Max rows » du projet (1 000 par défaut), et il ne se signale pas — la réponse est une
   liste valide, simplement plus courte que la réalité. Un `select('*').eq('dossier_id', …)` rend
@@ -2057,7 +2109,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1013 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1024 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
