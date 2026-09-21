@@ -396,8 +396,9 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   citations, pas la question qui les a produites.
   **Déployée le 21/09/2026 (version 43), et la VÉRIFICATION annoncée ici a mordu du premier coup** :
   le dépôt réel a rendu 500 sur la policy IAM, pas sur le code (voir « un déploiement n'est pas une
-  autorisation »). La pagination `NextToken` reste donc INÉPROUVÉE — le document n'est jamais
-  arrivé jusqu'à elle.
+  autorisation »). Une fois la policy corrigée, la chaîne complète est passée le jour même — et la
+  mesure a divisé par quatre l'économie annoncée, l'étage 2 reprenant les deux tiers de ce que
+  l'étage 1 fait gagner (chiffres dans « Fonctionnalités actuellement en cours »).
 - **Le balayage des paramètres par défaut a rendu un résultat NÉGATIF pour tous les autres**
   (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
   `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
@@ -584,22 +585,44 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 - **Marche 1 de la réduction du coût d'extraction — BRANCHÉE le 21/09/2026, pas encore éprouvée.**
   `extract-piece` lit désormais par `DetectDocumentText` (OCR seul, ~7× moins cher) puis fait CITER
   les champs par un modèle. Socle, mesure et branchement livrés (voir « Décisions techniques »).
-  **DÉPLOYÉE le 21/09/2026 (version 43), et BLOQUÉE PAR LA POLICY IAM au premier dépôt réel.**
-  L'utilisateur `jd-precompta-textract` n'est autorisé que sur le trio `AnalyzeExpense` /
-  `StartExpenseAnalysis` / `GetExpenseAnalysis` : le dépôt du 21/09 a rendu 500
-  (`AccessDeniedException`), donc aucun texte, aucune citation, aucun chiffre de tokens. Voir
-  « un déploiement n'est pas une autorisation » dans « Problèmes connus » — c'est là que vit la
-  leçon et son garde-fou.
-  **Ce qui débloque, et c'est un geste hors dépôt** : ajouter à la policy IAM
-  `textract:DetectDocumentText`, `textract:StartDocumentTextDetection` et
-  `textract:GetDocumentTextDetection`. Les trois actions `*Expense` peuvent rester tant que la
-  marche 1 n'est pas éprouvée — elles sont le chemin de repli vers la version 42 — et se retirent
-  ensuite. **Tant que ce n'est pas fait, TOUT dépôt échoue** : les deux chemins (synchrone pour les
-  images, asynchrone pour les PDF) demandent des actions que la policy ignore.
-  Ce qui reste à mesurer une fois la policy corrigée, et qu'aucun autre moyen ne donne : la ligne
-  `[extract-piece] citation …` avec les tokens réellement consommés (le chiffre de ce fichier reste
-  une estimation jusque-là), et l'absence de `_citation_erreur` — si Bedrock refuse depuis la
-  région de Textract, l'extraction continue sur le seul texte OCR et c'est là que ça se verra.
+  **ÉPROUVÉE EN PRODUCTION le 21/09/2026** (version 43), après un premier dépôt à 500 : la policy
+  IAM n'autorisait pas les trois nouvelles actions Textract — voir « un déploiement n'est pas une
+  autorisation » dans « Problèmes connus », c'est là que vivent la leçon et son garde-fou. Policy
+  corrigée (`DetectDocumentText`, `StartDocumentTextDetection`, `GetDocumentTextDetection` ajoutées
+  à `jd-precompta-textract`), relecture relancée, chaîne complète passée : OCR asynchrone,
+  3 266 caractères archivés, citation rendue, date écrite. **Bedrock répond bien depuis la région
+  de Textract** — c'était le seul point que cet environnement ne pouvait pas vérifier.
+  **ET LA MESURE CORRIGE L'ÉCONOMIE ANNONCÉE, DANS LE MAUVAIS SENS.** Relevé sur ce document de
+  2 pages : `2 214 tokens entrée, 86 tokens sortie`. Aux tarifs Sonnet habituels (3 $/M en entrée,
+  15 $/M en sortie — à confronter à la facture AWS réelle, Bedrock ayant sa propre grille) :
+
+  | | OCR | Citation | Total |
+  |---|---|---|---|
+  | Avant (`AnalyzeExpense`) | 0,0200 $ | — | **0,0200 $** |
+  | Après (`DetectDocumentText` + citation) | 0,0030 $ | 0,0079 $ | **0,0109 $** |
+
+  Soit **≈ 1,8×**, pas les « ~7× » que le tarif OCR seul laissait croire ni les ~3× estimés au
+  branchement. **L'étage 2 est devenu 73 % du coût** : l'économie de l'étage 1 est réelle mais
+  l'étage 2 en reprend les deux tiers.
+  **Le texte OCR domine l'entrée, pas le prompt** : 1 177 caractères de prompt contre 3 266 de
+  texte, soit 26 % — donc la mise en cache du prompt rapporterait peu, contrairement à ce qu'on
+  suppose d'habitude. Ce qui surprend davantage : **2,0 caractères par token**, moitié moins que
+  l'ordinaire. Un texte OCR français plein de références, de montants et de capitales se découpe
+  mal, et c'est lui qui décide de la facture.
+  **Conséquence directe pour la marche 2, à ne pas se raconter autrement** : sortir l'OCR d'AWS
+  retire 0,0030 $ sur 0,0109 $, soit 27 %. Le gain de la marche 2 est donc surtout **RGPD** (un
+  sous-traitant de moins sur des documents qui portent des noms de patients), pas budgétaire. La
+  vraie prochaine économie, si on en cherche une, est du côté du modèle de citation — un modèle plus
+  petit, mesuré sur les 41 textes comme l'a été celui-ci, jamais changé en passant.
+  **Ce qui reste INÉPROUVÉ, et il faut le dire** : la pagination `NextToken`. Un document de 2 pages
+  et 3 266 caractères fait de l'ordre de 600 blocs, sous le seuil de 1 000 qui déclenche une seconde
+  page de résultats — la boucle n'a donc presque certainement pas tourné. Elle reste gardée par
+  `extractPiecePagination.test.ts` contre un faux pagineur, ce qui est la vraie couverture ; une
+  confirmation en production demanderait un document nettement plus dense (5 pages et plus).
+  **Et les rejets de citation ne sont PAS observables depuis les logs** : `_citations_rejetees` et
+  `_citation_erreur` repartent vers le navigateur, et une relecture en masse les jette (elle n'écrit
+  que la date et le texte, par conception). Seul le COMPTE devrait être journalisé — jamais les
+  valeurs, une citation rejetée pouvant être un nom de patient.
 - **Marche 2 — OCR local (PaddleOCR) sur un mini-PC, avec débordement AWS permanent.** Le SENS de
   l'appel est décidé (21/09/2026) et ne se rediscute pas : **la machine locale interroge Supabase,
   Supabase ne l'appelle jamais.** Un service local demande « y a-t-il des pièces sans texte ? »,
