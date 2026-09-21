@@ -290,6 +290,29 @@ function resultatListe<T>(lignes: T[] | null, total: number | null, cle: string)
   }
 }
 
+// « AUJOURD'HUI » AU FUSEAU DU CABINET, PAS À CELUI DU SERVEUR.
+//
+// Une Edge Function tourne en UTC : `new Date().toISOString().slice(0, 10)` rend la VEILLE entre
+// minuit et 2 h du matin à Paris. L'assistant s'en sert pour interpréter « cette année », « l'an
+// dernier », « ce mois-ci » — donc un jour d'écart déplace la PÉRIODE d'une réponse, et le
+// 1er janvier au petit matin c'est l'EXERCICE ENTIER qui change, sur un assistant dont tout le
+// prompt exige des montants exacts et la période concernée.
+//
+// Le fuseau est écrit en dur et ne se devine pas : cette application est française de bout en bout
+// (2035, URSSAF, Super PDP), et la fonction ne reçoit rien qui dise où se trouve son appelant.
+// `formatToParts` plutôt qu'un format de locale : c'est le séparateur qui varie d'une locale à
+// l'autre, pas les composantes.
+function aujourdHuiCabinet(): string {
+  const parties = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date())
+  const valeur = (type: string) => parties.find((p) => p.type === type)?.value ?? ""
+  return `${valeur("year")}-${valeur("month")}-${valeur("day")}`
+}
+
 async function executerOutil(ctx: OutilContexte, nom: string, input: Record<string, unknown>): Promise<unknown> {
   const { admin, dossierId, dossier } = ctx
 
@@ -503,7 +526,7 @@ Deno.serve(async (req: Request) => {
     .slice(-20)
     .map((h) => ({ role: h.role, texte: h.texte.slice(0, 4000) }))
 
-  const aujourdhui = new Date().toISOString().slice(0, 10)
+  const aujourdhui = aujourdHuiCabinet()
   const systemPrompt = `Tu es l'assistant comptable interne du cabinet JD Consult, pour le dossier "${dossierRow.nom}" (précomptabilité — un brouillon à vérifier, jamais une comptabilité tenue).
 
 Règles impératives :

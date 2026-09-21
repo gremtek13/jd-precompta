@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { convertirMontants, deviseDuTexte, DEVISE_PIVOT, tauxApplicable, type Cotation } from './devises'
+import { aujourdHuiSql } from './format'
 
 // Accès aux taux de change : lecture du cache local (`taux_change_bce`), et appel à la BCE quand la
 // date demandée n'y est pas encore. Séparé de lib/devises.ts, qui ne fait que du calcul et ne connaît
@@ -112,7 +113,13 @@ export async function montantsPourPiece(lus: MontantsLus, datePiece: string | nu
   // Sans date lue sur le document, le taux du jour : c'est la meilleure approximation disponible, et
   // elle vaut mieux qu'une pièce laissée non convertie. La date sera corrigée à l'arbitrage, et la
   // conversion avec elle.
-  const date = datePiece ?? new Date().toISOString().slice(0, 10)
+  //
+  // « Aujourd'hui » au calendrier civil (`aujourdHuiSql`), jamais `toISOString().slice(0, 10)` qui
+  // rend la date UTC : entre minuit et 2 h du matin à Paris, l'instant est encore hier en UTC, et la
+  // pièce serait alors convertie au taux de la VEILLE. Le défaut est bien plus large qu'une fenêtre
+  // de deux heures pour qui travaille à l'est de Greenwich — à Auckland, la date UTC est en retard
+  // d'un jour pendant toute la matinée.
+  const date = datePiece ?? aujourdHuiSql()
   const trouve = await tauxBce(devise, date)
   if (!trouve) {
     return {

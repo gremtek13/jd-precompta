@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Le client Supabase est simulé : ce module lit le cache des taux et appelle une Edge Function. La
 // règle de CALCUL, elle, vit dans lib/devises.ts et se teste sans rien simuler — ici on vérifie
@@ -10,6 +10,9 @@ const etat = {
   erreurFonction: null as { message: string } | null,
 }
 const appels = { cache: 0, fonction: 0 }
+// La date réellement demandée à la BCE. Sans elle, le faux client répond la même chose quelle que
+// soit la date, et le repli « aujourd'hui » de montantsPourPiece n'est vérifiable par rien.
+const datesDemandees: string[] = []
 
 vi.mock('./supabase', () => ({
   supabase: {
@@ -26,8 +29,9 @@ vi.mock('./supabase', () => ({
       return chaine
     },
     functions: {
-      invoke: () => {
+      invoke: (_nom: string, options?: { body?: { date?: string } }) => {
         appels.fonction++
+        if (options?.body?.date) datesDemandees.push(options.body.date)
         return Promise.resolve({ data: etat.reponseFonction, error: etat.erreurFonction })
       },
     },
@@ -47,6 +51,7 @@ beforeEach(() => {
   etat.erreurFonction = null
   appels.cache = 0
   appels.fonction = 0
+  datesDemandees.length = 0
 })
 
 describe('tauxBce', () => {
@@ -122,5 +127,66 @@ describe('montantsPourPiece', () => {
       montant_ht: null, montant_tva: null, montant_ttc: 120,
       devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null,
     })
+  })
+})
+
+// LE REPLI « AUJOURD'HUI » N'ÉTAIT EXERCÉ PAR AUCUN TEST, et c'est là que vivait le défaut du
+// 21/09/2026 : `new Date().toISOString().slice(0, 10)`, donc la date UTC. Les quatre cas ci-dessus
+// passent tous une date explicite — l'angle mort que CLAUDE.md nomme sous « un paramètre par défaut
+// est un angle mort des tests », ici sous la forme d'une valeur implicite plutôt que d'un défaut de
+// signature.
+//
+// CE QU'IL EN COÛTE : une pièce en devise dont l'OCR n'a pas lu la date est convertie au taux de la
+// VEILLE. À Paris, entre minuit et 2 h du matin ; à l'est de Greenwich, pendant toute la matinée.
+// Le montant en euros part alors en comptabilité sans que rien ne le distingue d'une conversion
+// juste — le taux enregistré est un vrai taux BCE, simplement pas celui du bon jour.
+describe('la date de repli est celle du calendrier civil, jamais celle d’UTC', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  // Vingt-quatre instants d'une même journée. Un seul ne suffirait pas : quel que soit l'instant
+  // choisi, il existe un fuseau où la date UTC et la date locale coïncident encore (à Paris l'écart
+  // ne dure que de minuit à 2 h). Balayer les vingt-quatre heures garantit qu'au moins un instant
+  // les sépare dans TOUT fuseau dont le décalage n'est pas nul.
+  const INSTANTS = Array.from({ length: 24 }, (_, h) => `2026-09-21T${String(h).padStart(2, '0')}:30:00Z`)
+
+  function dateCivileLocale(): string {
+    // Recalculée ici plutôt que reprise d'`aujourdHuiSql` : le test doit distinguer les deux
+    // implémentations, pas répéter celle qu'il vérifie.
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  }
+
+  it('demande le taux du jour de l’utilisateur pour une pièce sans date lue', async () => {
+    vi.useFakeTimers()
+    for (const instant of INSTANTS) {
+      vi.setSystemTime(new Date(instant))
+      datesDemandees.length = 0
+      await montantsPourPiece(MONTANTS_USD, null)
+      expect(datesDemandees, `instant ${instant}`).toEqual([dateCivileLocale()])
+    }
+  })
+
+  it('sépare bien les deux dates au moins une fois — sauf, irréductiblement, sous UTC', () => {
+    // La borne qui empêche le test précédent d'être vert pour une raison fausse. Sous TZ=UTC les
+    // deux implémentations sont INDISCERNABLES, et aucune écriture de test n'y changera rien : le
+    // fuseau du runner GitHub est justement UTC, donc cette garantie-là est portée par
+    // `npm run test:fuseaux` et par lui seul. C'est le même constat que pour `toIsoDate`.
+    vi.useFakeTimers()
+    const separes = INSTANTS.filter((instant) => {
+      vi.setSystemTime(new Date(instant))
+      return dateCivileLocale() !== instant.slice(0, 10)
+    })
+    const decalage = new Date('2026-09-21T12:00:00Z').getTimezoneOffset()
+    if (decalage === 0) expect(separes).toEqual([])
+    else expect(separes.length).toBeGreaterThan(0)
+  })
+
+  it('garde la date lue sur le document quand il y en a une', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « demande toujours la date du jour » satisferait le premier test
+    // tout en jetant la date de la pièce — une facture de juillet convertie au taux d'aujourd'hui.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-21T22:30:00Z'))
+    await montantsPourPiece(MONTANTS_USD, '2025-07-09')
+    expect(datesDemandees).toEqual(['2025-07-09'])
   })
 })
