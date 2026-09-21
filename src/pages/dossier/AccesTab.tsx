@@ -23,6 +23,12 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   const [inviting, setInviting] = useState(false)
   const [copie, setCopie] = useState(false)
   const [relanceDe, setRelanceDe] = useState<MembershipRow | null>(null)
+  // « Aucun accès client pour ce dossier » est une AFFIRMATION, pas un écran vide : une lecture
+  // refusée rendait la même liste vide, et le cabinet en concluait qu'il ne restait aucun accès.
+  // C'est le pire sens pour ce geste-là — on coupe l'accès d'un client qui part, et on croit l'avoir
+  // fait. Même famille que la suppression d'un dossier : une lecture dont l'échec ressemble à un
+  // résultat vide se vérifie comme une écriture.
+  const [erreurLecture, setErreurLecture] = useState<string | null>(null)
 
   // Verrou d'exécution en `useRef`, pas en état React : `setInviting(true)` ne prend effet qu'au
   // rendu suivant, donc `disabled={inviting}` laisse passer deux soumissions rapprochées — sur un
@@ -39,7 +45,8 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   const creationEnCours = useRef(false)
 
   async function load() {
-    const { data } = await supabase.from('memberships').select('id, user_id, email').eq('dossier_id', dossierId)
+    const { data, error: loadError } = await supabase.from('memberships').select('id, user_id, email').eq('dossier_id', dossierId)
+    setErreurLecture(loadError ? messageErreur(loadError, "La liste des accès n'a pas pu être lue.") : null)
     setRows(data ?? [])
   }
 
@@ -80,7 +87,15 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   }
 
   async function revoke(membershipId: string) {
-    await supabase.from('memberships').delete().eq('id', membershipId)
+    // Le `load()` qui suit montre normalement l'échec (la ligne réapparaît) — sauf quand il échoue
+    // pour la MÊME raison, et la liste se vide alors au lieu de garder sa ligne : l'écran dirait
+    // « aucun accès » précisément quand l'accès est toujours là.
+    const { error: deleteError } = await supabase.from('memberships').delete().eq('id', membershipId)
+    if (deleteError) {
+      setError(messageErreur(deleteError, "L'accès n'a pas pu être retiré."))
+      return
+    }
+    setError(null)
     load()
   }
 
@@ -142,7 +157,12 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
 
       <h3>Accès actuels</h3>
       <div className="card table-scroll" style={{ padding: 0 }}>
-        {rows.length === 0 ? (
+        {erreurLecture ? (
+          <div className="empty-state error-text">
+            {erreurLecture} On ne peut donc pas dire qui a accès à ce dossier — surtout ne pas en
+            conclure que personne ne l'a. Recharge la page.
+          </div>
+        ) : rows.length === 0 ? (
           <div className="empty-state">Aucun accès client pour ce dossier.</div>
         ) : (
           <table>

@@ -24,13 +24,19 @@ export default function SuperPdpFactureModal({ dossierId, facture, onClose, onUp
   const [evenements, setEvenements] = useState<FactureSuperpdpEvent[] | null>(null)
   const [enCours, setEnCours] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
+  // « Aucun événement » a DEUX causes indiscernables tant qu'on ne lit pas l'erreur : la
+  // transmission n'a rien produit, ou l'historique n'a pas été lu. CLAUDE.md décrit déjà la
+  // première (une écriture d'événement perdue ne se voit qu'ici, à la réouverture) — encore
+  // faut-il que l'écran puisse dire laquelle des deux il montre.
+  const [erreurLecture, setErreurLecture] = useState<string | null>(null)
 
   async function charger() {
-    const { data } = await supabase
+    const { data, error: chargeError } = await supabase
       .from('facture_superpdp_events')
       .select('*')
       .eq('facture_id', facture.id)
       .order('occurred_at', { ascending: true })
+    setErreurLecture(chargeError ? messageErreur(chargeError, "L'historique n'a pas pu être lu.") : null)
     setEvenements((data ?? []) as FactureSuperpdpEvent[])
   }
   useEffect(() => { charger() }, [facture.id])
@@ -106,7 +112,14 @@ export default function SuperPdpFactureModal({ dossierId, facture, onClose, onUp
               {evenements === null ? (
                 <p className="muted">Chargement…</p>
               ) : evenements.length === 0 ? (
-                <p className="muted">Aucun événement pour l'instant — actualise dans quelques instants.</p>
+                erreurLecture ? (
+                  <p className="error-text">
+                    {erreurLecture} On ne peut donc pas dire ce que la plateforme a renvoyé sur cette
+                    facture — ne pas en conclure qu'il ne s'est rien passé. Rouvre cette fenêtre.
+                  </p>
+                ) : (
+                  <p className="muted">Aucun événement pour l'instant — actualise dans quelques instants.</p>
+                )
               ) : (
                 <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
                   <table>

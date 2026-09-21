@@ -39,11 +39,18 @@ export default function CabinetBrandingPage() {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [succes, setSucces] = useState(false)
+  // Troisième copie du motif d'informationsDossier.ts, et celle qui perd le plus : sans cette
+  // lecture, `logoStoragePath` repart de `cabinet?.logo_storage_path ?? null`, donc l'enregistrement
+  // EFFACE le chemin du logo — le fichier reste dans le seau, plus rien ne le désigne — et la
+  // couleur comme la police retombent sur leurs valeurs par défaut. Tant que ce drapeau est levé,
+  // on ne sait pas ce que le cabinet porte, donc on n'enregistre pas par-dessus.
+  const [erreurChargement, setErreurChargement] = useState<string | null>(null)
 
   async function charger() {
     if (!monCabinetId) return
     setLoading(true)
-    const { data } = await supabase.from('cabinets').select('*').eq('id', monCabinetId).maybeSingle()
+    const { data, error: chargeError } = await supabase.from('cabinets').select('*').eq('id', monCabinetId).maybeSingle()
+    setErreurChargement(chargeError ? messageErreur(chargeError, "La charte du cabinet n'a pas pu être lue.") : null)
     if (data) {
       setCabinet(data)
       setCouleur(data.couleur_primaire ?? COULEUR_DEFAUT)
@@ -76,6 +83,8 @@ export default function CabinetBrandingPage() {
   async function enregistrer(e: FormEvent) {
     e.preventDefault()
     if (!monCabinetId) return
+    // Seconde ceinture : le bouton est déjà grisé (voir `erreurChargement`).
+    if (erreurChargement) return
     if (!estCouleurHexValide(couleur)) {
       setError('Couleur invalide — choisis-en une avec le sélecteur ci-dessus.')
       return
@@ -202,10 +211,17 @@ export default function CabinetBrandingPage() {
             )}
           </div>
 
+          {erreurChargement && (
+            <p className="error-text">
+              {erreurChargement} La charte affichée ci-dessus est donc celle par défaut et non celle
+              du cabinet : enregistrer maintenant remplacerait ses couleurs et ferait perdre son
+              logo. Recharge la page avant de modifier quoi que ce soit.
+            </p>
+          )}
           {error && <p className="error-text">{error}</p>}
           {succes && <p className="muted" style={{ color: 'var(--color-primary)' }}>Enregistré.</p>}
 
-          <button type="submit" className="btn btn-primary" disabled={saving} style={{ marginTop: 6 }}>
+          <button type="submit" className="btn btn-primary" disabled={saving || erreurChargement !== null} style={{ marginTop: 6 }}>
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </form>
