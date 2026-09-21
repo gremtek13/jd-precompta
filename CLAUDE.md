@@ -2456,6 +2456,37 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Et le NOM du bloc de tests mentait aussi** : « date étiquetée par Textract (parseDate) », pour une
   fonction que Textract n'appelle plus. C'est ce nom resté en place qui a rendu le changement de
   contrat invisible — le piège que ce fichier nomme déjà sous « un nom qui ment sur son filtre ».
+- **DEUX ÉCRIVAINS, DEUX CONVENTIONS DE SIGNE, DANS LA MÊME COLONNE** (`references_postes_annuels`,
+  21/09/2026). Le bouton « Calculer le détail par poste » d'Estimation multipliait chaque dépense par
+  −1 et écrivait donc des montants NÉGATIFS ; le formulaire juste au-dessus, dans la même carte, y
+  écrit ce que le cabinet tape — un loyer se saisit « 12000 ». Les deux lignes s'affichent dans le
+  MÊME tableau, sous un titre qui dit « autres charges », l'une à 12 000,00 € et l'autre à
+  −8 450,00 €, sans que rien n'explique la différence.
+  **La convention du projet était pourtant déjà écrite, deux fois** : `cases2035.ts` dit « `montant`
+  reste positif, le signe est porté par la nature », et `totauxPourAnnee` — dans le module même où ce
+  calcul atterrit désormais — rend un `ca` et des `cotis` positifs. C'est donc le CALCUL qui rentre
+  dans le rang, pas la saisie.
+  **ET LES RECETTES N'AVAIENT RIEN À FAIRE LÀ, ce que son propre commentaire disait déjà** : « ici on
+  ne veut que les postes de charge issus des catégories ». Le code, lui, ne le faisait pas — une
+  pièce de VENTE dont la catégorie porte un poste 2035 entrait dans la carte « autres charges »,
+  positive, indiscernable d'une charge une fois écrite. Le chiffre d'affaires a son propre champ,
+  dans `references_annuelles`.
+  **LATENT au sens le plus fort** : `references_postes_annuels` est VIDE dans toute la base, la
+  fonctionnalité n'ayant jamais été exercée — « une table vide parce que rien ne l'a encore exercée
+  ne prouve rien ». Ce qui la rend digne d'être corrigée est qu'une fois deux lignes écrites par les
+  deux chemins, rien ne dirait laquelle suit quelle convention.
+  **Trouvé par un balayage qui vaut plus que la prise** : les fonctions de CALCUL définies dans les
+  écrans (59 dans `src/pages` et `src/components`), croisées avec les exports de `src/lib`. Un seul
+  homonyme, `csgDeductible` — et il est **légitime**, l'écran important la fonction du module sous
+  alias pour l'envelopper du cas `null`. Ce sont les plus LONGUES qui ont payé, pas les homonymes :
+  la duplication se cherche par la VALEUR, jamais par le nom, comme `calculerLigne` /
+  `calculerLigneMontants`. À ne pas rebalayer sans raison.
+  Dix mutations mordent, dont le code tel qu'il était, la valeur absolue (qui ferait d'un avoir une
+  charge de PLUS), et l'écran qui passe `recettesValidees` au lieu de `piecesValidees` — que le type
+  ne peut pas voir, les deux étant des `Piece[]`.
+  **Et le compilateur a attrapé le premier jeu d'essai** : `Categorie` n'a ni `nom` ni `type` mais
+  `code` et `libelle`. Quatrième écran où la contrainte de type sans `as` mord avant qu'un test
+  n'ait tourné.
 - **Une recherche filtre l'affichage, jamais un total.** Une barre de recherche réduit les
   lignes visibles ; les montants calculés à côté (TVA déductible/collectée, total appelé/versé,
   total prélevé) restent sur l'ensemble filtré par l'exercice, et un export (FEC) reste sur cet
@@ -3284,11 +3315,11 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 12 testés** — banque,
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 13 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations,
-  suppléments, accès et immobilisations (21/09/2026) — donc **5 sans aucun test de rendu** :
-  factures, cotisations, estimation, financement, virements. Suppléments, Accès et Immobilisations y
-  sont entrés comme Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  suppléments, accès, immobilisations et estimation (21/09/2026) — donc **4 sans aucun test de
+  rendu** : factures, cotisations, financement, virements. Suppléments, Accès, Immobilisations et
+  Estimation y sont entrés comme Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
   `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une
@@ -3338,7 +3369,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1257 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1268 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
