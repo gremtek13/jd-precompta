@@ -604,6 +604,17 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   Soit **≈ 1,8×**, pas les « ~7× » que le tarif OCR seul laissait croire ni les ~3× estimés au
   branchement. **L'étage 2 est devenu 73 % du coût** : l'économie de l'étage 1 est réelle mais
   l'étage 2 en reprend les deux tiers.
+  **SECONDE MESURE, SUR UN DOCUMENT DENSE, ET LE RAPPORT N'EST PAS LE MÊME** : 80 042 caractères,
+  `25 983 tokens entrée, 69 tokens sortie`, de l'ordre de 30 pages. Citation 0,079 $, OCR 0,045 $,
+  total **0,124 $** contre **0,30 $** par l'ancien chemin — soit **≈ 2,4×**, et l'étage 1 y pèse 36 %
+  au lieu de 27 %.
+  **Ce qui fait varier le rapport n'est PAS la taille mais le DÉCOUPAGE EN TOKENS** : 3,1 caractères
+  par token ici contre 2,0 sur la facture courte. Un document administratif en phrases se découpe
+  bien ; une facture pleine de références, de montants et de capitales se découpe mal, et coûte donc
+  proportionnellement plus cher à faire citer. **Le coût de l'étage 2 suit le texte, celui de
+  l'étage 1 suit les pages** — deux grandeurs différentes, et c'est pourquoi un rapport unique
+  n'existe pas. Retenir la fourchette, pas un chiffre : **entre 1,8× et 2,4×** sur les deux documents
+  réels mesurés.
   **Le texte OCR domine l'entrée, pas le prompt** : 1 177 caractères de prompt contre 3 266 de
   texte, soit 26 % — donc la mise en cache du prompt rapporterait peu, contrairement à ce qu'on
   suppose d'habitude. Ce qui surprend davantage : **2,0 caractères par token**, moitié moins que
@@ -614,11 +625,16 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   sous-traitant de moins sur des documents qui portent des noms de patients), pas budgétaire. La
   vraie prochaine économie, si on en cherche une, est du côté du modèle de citation — un modèle plus
   petit, mesuré sur les 41 textes comme l'a été celui-ci, jamais changé en passant.
-  **Ce qui reste INÉPROUVÉ, et il faut le dire** : la pagination `NextToken`. Un document de 2 pages
-  et 3 266 caractères fait de l'ordre de 600 blocs, sous le seuil de 1 000 qui déclenche une seconde
-  page de résultats — la boucle n'a donc presque certainement pas tourné. Elle reste gardée par
-  `extractPiecePagination.test.ts` contre un faux pagineur, ce qui est la vraie couverture ; une
-  confirmation en production demanderait un document nettement plus dense (5 pages et plus).
+  **LA PAGINATION `NextToken` EST CONFIRMÉE EN PRODUCTION** (21/09/2026, second dépôt réel). Le
+  premier document, 2 pages et 3 266 caractères, faisait de l'ordre de 600 blocs — sous le seuil de
+  1 000, donc la boucle n'avait pas tourné. Le second l'a exercée sans ambiguïté : **80 042
+  caractères, 1 325 lignes OCR, ~10 925 mots**, soit de l'ordre de **12 250 blocs** (Textract émet un
+  bloc par MOT en plus d'un par ligne). À 1 000 blocs par réponse, cela fait **au moins treize pages
+  de résultats, donc douze allers-retours `NextToken`**.
+  **Sans la boucle, 92 % de ce document serait parti en silence** : la première réponse porte ~1 000
+  blocs, soit environ 8 % du texte, et rien — ni erreur, ni avertissement — ne l'aurait dit. Le texte
+  archivé aurait été tronqué, la classification faite sur un fragment, et le modèle aurait cité des
+  champs dans un texte qu'on lui avait coupé. C'est exactement le dégât annoncé, mesuré.
   **Le COMPTE des rejets de citation est journalisé depuis la version 44** — jamais les valeurs, une
   citation rejetée étant une chaîne tirée du document, donc possiblement un nom de patient. Sans lui
   il n'en restait rien : `_citations_rejetees` repart vers le navigateur, et une relecture en masse
@@ -626,6 +642,12 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   **VERSION 44 DÉPLOYÉE le 21/09/2026**, vérifiée par aller-retour — zéro différence résiduelle sur
   1 221 lignes. Elle porte ce journal et la correction du budget mural (voir « un budget fixe est
   juste tant que personne ne le dépasse »).
+  **Et le journal a rendu son premier chiffre utile dès le dépôt suivant** : `3 champ(s) cité(s),
+  0 rejeté(s)` sur un document de 80 000 caractères. Le contrat de citation, mesuré hors ligne sur
+  les 41 textes (209 citations, zéro invention), se comporte de même en production sur un document
+  vingt fois plus long que ceux du corpus. Les trois champs non cités sont rendus `null` par le
+  modèle, ce qui est la bonne réponse quand ils ne figurent pas sur le document — un `null` se
+  saisit à la main, une valeur inventée passe inaperçue.
 - **Marche 2 — OCR local (PaddleOCR) sur un mini-PC, avec débordement AWS permanent.** Le SENS de
   l'appel est décidé (21/09/2026) et ne se rediscute pas : **la machine locale interroge Supabase,
   Supabase ne l'appelle jamais.** Un service local demande « y a-t-il des pièces sans texte ? »,
