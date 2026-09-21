@@ -74,6 +74,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [presenceTexteIncertaine, setPresenceTexteIncertaine] = useState<string | null>(null)
   // Non nul quand la liste des pièces n'a pas pu être lue en entier (voir lib/lectureComplete.ts).
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // Séparé de `lectureIncomplete` : le bandeau dit ce qui est devenu FAUX, et ce n'est pas la même
+  // chose pour une liste de pièces tronquée que pour un fil de précisions tronqué. Les fondre en un
+  // seul afficherait, sur l'un des deux cas, une conséquence qui n'est pas la sienne.
+  const [commentairesIncomplets, setCommentairesIncomplets] = useState<string | null>(null)
   const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[]>([])
   // Le texte de la pièce dépliée, chargé à la demande. Une seule à la fois : c'est une consultation
   // ponctuelle pour lever un doute, pas une colonne du tableau.
@@ -129,7 +133,9 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     // Les précisions portées par le client sur ses dépôts. Chargées ici, en une requête pour tout le
     // dossier, et passées à la ligne : c'est le seul endroit où elles servent vraiment, au moment où
     // l'opérateur choisit une catégorie sans savoir ce qu'est « BOULANGER MARSEILLE ».
-    setCommentaires(await chargerCommentaires(dossierId))
+    const lectureCommentaires = await chargerCommentaires(dossierId)
+    setCommentaires(lectureCommentaires.commentaires)
+    setCommentairesIncomplets(lectureCommentaires.motif)
     const presence = await piecesAvecTexteOcr(dossierId)
     setAvecTexteOcr(presence.avecTexte)
     setPresenceTexteIncertaine(presence.erreur)
@@ -414,6 +420,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         consequence={
           'La liste ci-dessous n’est donc pas complète, et les contrôles posés dessus (doublon de ' +
           'contenu, mois en double) se taisent sur ce qu’ils n’ont pas vu.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les précisions déposées par le client"
+        motif={commentairesIncomplets}
+        consequence={
+          'Une pièce peut donc porter une précision sans qu’elle apparaisse sur sa ligne — et c’est ' +
+          'l’appel au client que ces précisions existent pour éviter. Vérifie dans la fiche avant ' +
+          'de catégoriser.'
         }
       />
 

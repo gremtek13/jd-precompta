@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import PiecesTab from './PiecesTab'
+import type { Piece, PieceCommentaire } from '../../lib/types'
 
 // L'ÉCRAN OÙ LA PIÈCE SE CORRIGE. Cinq contrôles de la famille « donnée démontrée fausse » y
 // envoient l'opérateur depuis la Checklist (`cible: 'pieces'`), et trois seulement marquaient la
@@ -10,7 +11,13 @@ import PiecesTab from './PiecesTab'
 //
 // Ce test garde la PRÉSENCE du badge, ce qu'aucun test de `src/lib` ne peut faire : les deux
 // contrôles étaient justes, ils n'étaient simplement branchés nulle part ici.
-const faux = vi.hoisted(() => ({ parTable: {} as Record<string, unknown[]> }))
+const faux = vi.hoisted(() => ({
+  parTable: {} as Record<string, unknown[]>,
+  // Par table, le rang au-delà duquel le serveur ne rend plus rien TOUT EN annonçant le vrai
+  // total : c'est ce qui produit une lecture incomplète, pas une tranche plus courte (que
+  // `lireTout` recolle, à juste titre).
+  muetApres: {} as Record<string, number>,
+}))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -29,8 +36,10 @@ vi.mock('../../lib/supabase', () => ({
         maybeSingle: () => Promise.resolve({ data: null, error: null }),
         then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
           const toutes = faux.parTable[table] ?? []
+          const plafond = faux.muetApres[table]
+          const finReelle = plafond === undefined ? debut + (fin - debut + 1) : Math.min(debut + (fin - debut + 1), plafond)
           return Promise.resolve({
-            data: toutes.slice(debut, debut + (fin - debut + 1)),
+            data: toutes.slice(debut, finReelle),
             error: null,
             count: toutes.length,
           }).then(suite)
@@ -55,21 +64,32 @@ vi.mock('../../lib/texteOcr', () => ({
   texteOcrDeLaPiece: async () => null,
 }))
 
-function piece(o: Record<string, unknown> = {}) {
+// Typé `Piece` SANS `as` : le compilateur vérifie alors chaque champ contre la table, à chaque
+// build et exhaustivement. C'est le remède déjà appliqué à ChecklistTab et BanqueTab après un
+// `devise: null` qui faisait compter CHAQUE pièce comme « devise non convertie » — un jeu d'essai
+// infidèle ne fait pas qu'affaiblir un test, il lui fait prouver autre chose.
+function piece(o: Partial<Piece> = {}): Piece {
   return {
     id: 'p1', dossier_id: 'dossier-de-test', nom_fichier: 'justificatif.pdf', statut: 'a_valider',
     type_piece: 'achat', date_piece: '2026-03-10', montant_ht: null, montant_tva: null,
     montant_ttc: 120, tiers: 'FOURNISSEUR', categorie_id: null, confiance: 'haute',
     devise: 'EUR', montant_devise: null, taux_change: null, sous_dossier_id: null,
     storage_path: 'dossier-de-test/justificatif.pdf', storage_hash: null,
+    // CINQ colonnes que ce jeu d'essai omettait, et que le typage a sorties une par une dès les
+    // premières compilations : `uploaded_by`, `source` (`'cabinet'` n'existe pas — c'est déjà
+    // l'infidélité qu'un autre écran portait), `conversion_source`, `notes` et
+    // `superpdp_invoice_id`. Aucune n'était visible en relisant.
+    uploaded_by: null, source: 'upload', conversion_source: null,
+    notes: null, superpdp_invoice_id: null, updated_at: '2026-09-16T09:00:00Z',
     created_at: '2026-09-16T09:00:00Z', ...o,
   }
 }
 
-function poser(pieces: unknown[]) {
+function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
+  faux.muetApres = {}
   faux.parTable = {
     pieces, categories: [], sous_dossiers: [], tiers_categories: [],
-    tiers_categories_cabinet: [], piece_commentaires: [], lignes_bancaires: [],
+    tiers_categories_cabinet: [], piece_commentaires: commentaires, lignes_bancaires: [],
   }
 }
 
@@ -106,5 +126,49 @@ describe('PiecesTab — les badges des données démontrées fausses', () => {
     await screen.findByText('FOURNISSEUR')
     expect(screen.queryByText('Date impossible')).toBeNull()
     expect(screen.queryByText('Devise non convertie')).toBeNull()
+  })
+})
+
+describe('PiecesTab — une précision manquante ne doit pas ressembler à un client silencieux', () => {
+  const commentaire = (i: number): PieceCommentaire => ({
+    id: `c${i}`, dossier_id: 'dossier-de-test', piece_id: 'p1', document_id: null,
+    auteur_id: 'u1', origine: 'client', texte: `précision ${i}`,
+    created_at: '2026-09-16T10:00:00Z',
+  })
+
+  it('DIT que le fil des précisions est tronqué', async () => {
+    // `chargerCommentaires` portait depuis toujours la mise en garde — « la précision du client
+    // disparaît sur les pièces les plus récentes, précisément celles qu'on arbitre » — au-dessus
+    // d'un code qui jetait le drapeau permettant de la voir. Une liste plus courte est
+    // indiscernable d'un client qui n'a rien écrit, et c'est l'appel téléphonique que ces
+    // précisions existent pour éviter.
+    poser([piece()], [commentaire(1), commentaire(2), commentaire(3), commentaire(4)])
+    faux.muetApres = { piece_commentaires: 2 }
+    monter('toutes')
+
+    expect(await screen.findByText(/Les précisions déposées par le client/)).toBeDefined()
+  })
+
+  it('ne dit rien quand le fil a été lu en entier', async () => {
+    // Le garde SYMÉTRIQUE : sans lui, « le bandeau apparaît » serait satisfait par un bandeau
+    // permanent, qu'on cesserait de lire — et il emporterait ses voisins dans son discrédit.
+    poser([piece()], [commentaire(1), commentaire(2)])
+    monter('toutes')
+
+    // Ancré sur le tiers, qui est présent : vérifier une ABSENCE sur un écran encore en chargement
+    // rendrait ce test vert pour une raison fausse.
+    await screen.findByText('FOURNISSEUR')
+    expect(screen.queryAllByText(/Les précisions déposées par le client/)).toHaveLength(0)
+  })
+
+  it('n’annonce pas les précisions tronquées quand ce sont les PIÈCES qui le sont', async () => {
+    // Deux bandeaux, deux conséquences : les fondre en un seul afficherait, sur l'un des deux cas,
+    // une phrase qui n'est pas la sienne.
+    poser([piece({ id: 'p1' }), piece({ id: 'p2' }), piece({ id: 'p3' })], [commentaire(1)])
+    faux.muetApres = { pieces: 1 }
+    monter('toutes')
+
+    expect(await screen.findByText(/Les pièces du dossier/)).toBeDefined()
+    expect(screen.queryAllByText(/Les précisions déposées par le client/)).toHaveLength(0)
   })
 })

@@ -8,7 +8,7 @@ import type { PieceCommentaire } from './types'
 const reponses = {
   utilisateur: { data: { user: { id: 'u-auteur' } as { id: string } | null } },
   insert: { data: null as PieceCommentaire | null, error: null as { message: string } | null },
-  select: { data: [] as PieceCommentaire[] | null },
+  select: { data: [] as PieceCommentaire[] | null, muetApres: null as number | null },
   delete: { error: null as { message: string } | null },
 }
 let insere: Record<string, unknown> | null = null
@@ -25,15 +25,23 @@ vi.mock('./supabase', () => ({
         // Le chaînage réel finit par `.range()` : la lecture des commentaires se fait par tranches
         // (voir lib/lectureComplete.ts), et un faux client qui s'arrêterait à `.order()` testerait
         // un appel que la production ne fait plus.
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
         const chaine = {
           eq: () => chaine,
           order: () => chaine,
-          range: () => chaine,
-          then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre({
-            data: reponses.select.data ?? [],
-            error: null,
-            count: (reponses.select.data ?? []).length,
-          })),
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          then: (resoudre: (v: unknown) => unknown) => {
+            const toutes = reponses.select.data ?? []
+            // Ce qui produit une lecture INCOMPLÈTE n'est pas une tranche plus courte — `lireTout`
+            // recolle et déclare `complete`, ce qui est exactement ce qu'il doit faire. C'est un
+            // serveur qui CESSE de rendre tout en continuant d'annoncer le vrai total : la boucle
+            // s'arrête sur une tranche vide, et le compte annoncé fait foi.
+            const servies = reponses.select.muetApres === null
+              ? toutes.slice(debut, fin + 1)
+              : toutes.slice(debut, Math.min(fin + 1, reponses.select.muetApres))
+            return Promise.resolve(resoudre({ data: servies, error: null, count: toutes.length }))
+          },
         }
         return chaine
       },
@@ -59,7 +67,7 @@ beforeEach(() => {
   insere = null
   reponses.utilisateur = { data: { user: { id: 'u-auteur' } } }
   reponses.insert = { data: commentaire({ id: 'c-neuf' }), error: null }
-  reponses.select = { data: [] }
+  reponses.select = { data: [], muetApres: null }
   reponses.delete = { error: null }
 })
 
@@ -221,8 +229,35 @@ describe('ajouterCommentaire — ce qui part en base', () => {
 
 describe('lecture et suppression', () => {
   it('rend une liste vide plutôt que null quand la base ne rend rien', () => {
-    reponses.select = { data: null }
-    return chargerCommentaires('d1').then((c) => { expect(c).toEqual([]) })
+    reponses.select = { data: null, muetApres: null }
+    return chargerCommentaires('d1').then((r) => { expect(r.commentaires).toEqual([]) })
+  })
+
+  it('DIT que le fil est tronqué au lieu de rendre une liste plus courte', async () => {
+    // Le commentaire de cette fonction annonce le dégât depuis toujours — « la précision du client
+    // disparaît sur les pièces les plus récentes, précisément celles qu'on arbitre » — et le code
+    // jetait le drapeau qui permet de le voir. Une liste plus courte est indiscernable d'un client
+    // qui n'a rien écrit, et c'est l'appel téléphonique que ces précisions existent pour éviter.
+    reponses.select = {
+      data: Array.from({ length: 5 }, (_, i) => ({ id: `c${i}` } as PieceCommentaire)),
+      muetApres: 2,
+    }
+    const r = await chargerCommentaires('d1')
+    expect(r.commentaires).toHaveLength(2)
+    expect(r.motif).toBeTruthy()
+    expect(r.motif).toContain('5')
+  })
+
+  it('ne crie pas au loup quand tout a été lu', async () => {
+    // Le garde SYMÉTRIQUE : sans lui, « le fil est tronqué » serait satisfait par un bandeau
+    // affiché en permanence, qu'on cesserait de lire.
+    reponses.select = {
+      data: Array.from({ length: 3 }, (_, i) => ({ id: `c${i}` } as PieceCommentaire)),
+      muetApres: null,
+    }
+    const r = await chargerCommentaires('d1')
+    expect(r.commentaires).toHaveLength(3)
+    expect(r.motif).toBeNull()
   })
 
   it('remonte l’échec d’une suppression', () => {

@@ -1124,6 +1124,39 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   l'échec, et **où la reprendre** (onglet Packs). Il s'AJOUTE à l'avertissement des pièces manquantes
   au lieu de l'écraser — les deux comptent, et celui-là se lit avant de supprimer quoi que ce soit.
   Quatre mutations mordent, dont le code tel qu'il était.
+- **UNE MISE EN GARDE ÉCRITE AU-DESSUS D'UN CODE QUI JETTE LE DRAPEAU PERMETTANT DE LA VOIR**
+  (`chargerCommentaires`, 21/09/2026). Son commentaire disait, depuis le début : « Tronquée, elle
+  ferait disparaître la précision du client sur les pièces les plus récentes — précisément celles
+  qu'on est en train d'arbitrer. » Et la fonction ne reprenait que `lignes` de `lireTout` : `complete`
+  et `motif` partaient à la poubelle. **Elle nommait le dégât sans pouvoir le signaler.**
+  Ce que ça coûte est exactement ce que la fonctionnalité existe pour éviter : une liste plus courte
+  est INDISCERNABLE d'un client qui n'a rien écrit, donc le cabinet catégorise sans lire la précision
+  — et le décroche le téléphone, « la chose la plus chère de toute la chaîne ».
+  **DEUX bandeaux, pas un**, dans les deux écrans qui lisent ce fil (`PiecesTab`, `ClientUpload`) :
+  la raison d'être de `BandeauLecturePartielle` est de dire CE QUI est devenu faux, et ce n'est pas
+  la même chose pour une liste de pièces tronquée que pour un fil de précisions tronqué. Les fondre
+  afficherait, sur l'un des deux cas, une conséquence qui n'est pas la sienne — et un test garde
+  précisément ça (pièces tronquées ⇒ le bandeau des précisions se tait).
+  **LATENT au sens le plus fort : `piece_commentaires` est VIDE** (0 ligne, tous dossiers confondus)
+  — la fonctionnalité est livrée, pas encore exercée. Le critère reste celui du projet : cette
+  collection peut-elle grandir ? Une ligne par message, donc oui, sans borne.
+  **Trouvé par balayage** : les douze lectures de `src/` dont l'erreur (ou le `complete`) n'est pas
+  lue. Les onze autres sont légitimes et le résultat est à garder — `is_super_admin` et les rôles
+  d'`AuthContext` échouent du côté FERMÉ, et `texteOcrDe` est le chemin d'AFFICHAGE, dont le jumeau
+  destructeur `lireTexteOcrDuDocument` rend déjà son erreur.
+  **ET LA MUTATION QUI A SURVÉCU DIT QUELQUE CHOSE D'UTILE** : retirer `count: 'exact'` laisse
+  `commentaires.test.ts` vert, parce que son faux client annonce un compte quoi qu'on demande.
+  Ce n'est pas un trou — `lecturesPaginees.test.ts` l'attrape, nommément, sur TOUTE source de
+  production. Le modéliser une seconde fois dans ce faux client dupliquerait une garantie déjà
+  exhaustive ; c'est dit ici plutôt que masqué par un test de complaisance.
+- **ET LE TROISIÈME JEU D'ESSAI D'ÉCRAN N'ÉTAIT PAS TYPÉ — cinq colonnes manquantes** (21/09/2026).
+  Le remède de la contrainte de type avait été appliqué à `ChecklistTab` et `BanqueTab`, pas à
+  `PiecesTab`, dont le `piece()` restait un `Record<string, unknown>`. Typé `Partial<Piece> => Piece`
+  **sans `as`**, le compilateur a sorti une par une : `uploaded_by`, `source`, `conversion_source`,
+  `notes`, `superpdp_invoice_id`. Aucune n'était visible en relisant, et aucune ne faisait échouer
+  un test — c'est le propre de ce défaut : il ne se voit qu'en posant l'assertion qui tombe dessus,
+  et ici l'assertion est le compilateur. **S'arrêter à deux écrans sur trois** est la même
+  demi-mesure que le scanner qui ne regardait qu'une porte sur quatre.
 - **UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS — une fonction vit en production sans exister dans ce
   dépôt** (constaté le 21/09/2026). `list_edge_functions` rend **quatorze** fonctions ; le dépôt en
   porte treize. La quatorzième s'appelle `bright-task` (nom par défaut de Supabase), elle est
@@ -2900,7 +2933,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1125 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1130 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

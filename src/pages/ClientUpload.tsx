@@ -51,6 +51,9 @@ export default function ClientUpload() {
   // Non nul quand la liste des envois ou des relevés n'a pas pu être lue en entier. Dit au client,
   // dans sa langue : sans ça l'écran pourrait lui réclamer un document qu'il a déjà envoyé.
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // À part de `lectureIncomplete` : un fil de précisions tronqué n'a pas la même conséquence qu'une
+  // liste d'envois tronquée, et le bandeau ne sert qu'à dire CE QUI est devenu faux.
+  const [precisionsIncompletes, setPrecisionsIncompletes] = useState<string | null>(null)
   // Fichiers en cours d'envoi/analyse — état purement local (pas encore une ligne en base) : le temps
   // que Textract réponde (jusqu'à 50s sur un document multi-pages), aucune ligne n'existe encore, donc
   // rien à corriger après coup. Voir handleFiles.
@@ -97,7 +100,8 @@ export default function ClientUpload() {
     setLignes(lectureLignes.lignes)
     setLectureIncomplete(lecturePieces.motif ?? lectureLignes.motif)
     setCotisations(lectureCotisations.lignes)
-    setCommentaires(commentairesData)
+    setCommentaires(commentairesData.commentaires)
+    setPrecisionsIncompletes(commentairesData.motif)
   }
 
   useEffect(() => { load() }, [dossierId])
@@ -225,6 +229,12 @@ export default function ClientUpload() {
         motif={lectureIncomplete}
         technique={false}
         consequence="Recharge la page : cette liste peut te demander un document que tu as déjà envoyé."
+      />
+      <BandeauLecturePartielle
+        quoi="Tes précisions"
+        motif={precisionsIncompletes}
+        technique={false}
+        consequence="Recharge la page : il manque peut-être des messages sous tes documents."
       />
 
       <h3>Ce qu'il reste à envoyer</h3>

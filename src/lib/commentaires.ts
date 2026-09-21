@@ -53,15 +53,22 @@ export function texteExploitable(texte: string): string | null {
   return propre.length > 0 ? propre : null
 }
 
-export async function chargerCommentaires(dossierId: string): Promise<PieceCommentaire[]> {
+export async function chargerCommentaires(
+  dossierId: string,
+): Promise<{ commentaires: PieceCommentaire[]; motif: string | null }> {
   // Lue par tranches (voir lib/lectureComplete.ts) : un fil par pièce, et plusieurs messages par
   // fil. Tronquée, elle ferait disparaître la précision du client sur les pièces les plus
   // récentes — précisément celles qu'on est en train d'arbitrer.
-  const { lignes } = await lireTout<PieceCommentaire>((debut, fin) =>
+  //
+  // ET CETTE MISE EN GARDE ÉTAIT ÉCRITE AU-DESSUS D'UN CODE QUI JETAIT LE DRAPEAU permettant de la
+  // voir : seul `lignes` était repris, `complete` partait à la poubelle. La fonction nommait donc le
+  // dégât sans pouvoir le signaler — et une liste plus courte ne se distingue en rien d'un client
+  // qui n'a rien écrit. Le `motif` remonte maintenant jusqu'à l'écran, qui porte déjà le bandeau.
+  const { lignes, complete, motif } = await lireTout<PieceCommentaire>((debut, fin) =>
     supabase.from('piece_commentaires').select('*', { count: 'exact' })
       .eq('dossier_id', dossierId).order('created_at').order('id').range(debut, fin),
   )
-  return lignes
+  return { commentaires: lignes, motif: complete ? null : motif }
 }
 
 // Fil de discussion par cible, du plus ancien au plus récent — l'ordre de lecture d'une conversation.
