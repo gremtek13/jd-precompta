@@ -1780,14 +1780,82 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Sept mutations mordent** (`datesUtc.test.ts`), dont chacun des deux défauts replanté et le
   scanner ramené à la lecture « par ligne » — le piège qui a déjà aveuglé **quatre** balayages de ce
   dépôt, et contre lequel une source synthétique porte la faute coupée sur trois lignes.
-  **ET LA MUTATION DU REPLI DE TAUX EST INVISIBLE SOUS `TZ=UTC`, IRRÉDUCTIBLEMENT** : les deux
-  implémentations y sont identiques, et aucune écriture de test n'y changera rien. Elle mord sous
-  Europe/Paris, America/New_York et Pacific/Auckland — c'est `npm run test:fuseaux` qui porte seule
-  cette garantie, le runner GitHub étant en UTC. Le test le DIT, avec un contrôle qui vérifie que les
-  deux dates se séparent au moins une fois hors UTC : sans lui il serait vert pour une raison fausse.
+  **ET « IRRÉDUCTIBLEMENT INVISIBLE SOUS `TZ=UTC` » ÉTAIT FAUX — DÉMENTI PAR L'EXÉCUTION LE JOUR
+  MÊME.** Il était écrit ici que la mutation du repli de taux ne mord pas sous UTC, que « aucune
+  écriture de test n'y changera rien », et que `npm run test:fuseaux` portait seul cette garantie.
+  La prémisse était juste — les deux implémentations sont bien identiques sous UTC — et la
+  conclusion ne l'était pas : elle supposait qu'un test SUBIT le fuseau du runner. **Node relit
+  `process.env.TZ` à chaque opération de date**, donc un test le CHOISIT. `tauxChange.test.ts`
+  balaie désormais Europe/Paris, UTC, America/Martinique et Pacific/Auckland qu'il pose lui-même, et
+  la mutation mord sur le runner GitHub. Écrit par relecture, corrigé par exécution — comme la
+  phrase sur `parseDate` plus haut.
+  **Et la borne de ce test a dû être gardée à son tour** : ramener la liste au seul UTC laissait tout
+  vert, la boucle de vérification tournant alors ZÉRO fois. Une garde qui ne s'exécute pas est
+  indiscernable d'une garde qui passe.
   **`agent-comptable` déployée en version 18** le 21/09/2026 — `verify_jwt` relu et repassé à `false`,
   déployé comparé au dépôt AVANT écrasement (identique au caractère près, donc rien à embarquer au
   passage), aller-retour après : zéro différence résiduelle sur 661 lignes.
+- **ET LA MÊME RÈGLE, PRISE PAR L'AUTRE BOUT : L'AFFICHAGE. UNE DATE CIVILE N'A PAS DE FUSEAU, ET
+  `formatDate` LUI EN DONNAIT UN** (21/09/2026). Le balayage précédent visait l'ÉCRITURE d'une date
+  (`toISOString().slice(0, 10)`) ; celui-ci vise sa LECTURE. `formatDate` — la fonction qui affiche
+  chaque date de l'application, **cinquante appels, dont quarante-cinq sur une colonne `date` de
+  Postgres** (mesuré en croisant les appelants avec `information_schema.columns` : la séparation est
+  nette, tout le reste étant `created_at`, `occurred_at` ou `generated_at`) — faisait
+  `new Date(value).toLocaleDateString('fr-FR')`. Or `new Date('2026-01-01')` est MINUIT UTC :
+  replacée dans le fuseau de qui regarde, elle recule d'un jour dès que le décalage est négatif.
+  **LE DÉFAUT ÉTAIT ÉCRIT EN TOUTES LETTRES TROIS LIGNES PLUS BAS**, dans le commentaire
+  d'`anneeDe` : « à New York, ce 1er janvier se lit 31 décembre 2025. Tant que les utilisateurs sont
+  en France le résultat est juste par chance, pas par construction ». Ce commentaire explique la
+  distinction civile/instant sur dix lignes pour ses voisines, pendant que la fonction juste au-dessus
+  de lui la piétinait. Même forme que `chargerCommentaires`, dont la mise en garde vivait au-dessus
+  d'un code qui jetait le drapeau permettant de la voir.
+  **ET « LES UTILISATEURS SONT EN FRANCE » NE PROTÈGE PAS, C'EST LÀ QUE LA PRÉMISSE CASSE** : la
+  Guadeloupe, la Martinique, la Guyane, Saint-Pierre-et-Miquelon et la Polynésie SONT la France, et
+  une profession de santé y est exactement la clientèle de cette application. **Mesuré** : sur ces
+  cinq fuseaux, une pièce du 01/01/2026 s'affiche 31/12/2025 — l'EXERCICE PRÉCÉDENT — pendant que
+  Clôture, la 2035 et le FEC la comptent dans le bon. La Réunion, Mayotte et la Nouvelle-Calédonie,
+  à l'est, sont indemnes.
+  **ON NE ROUTE PAS PAR APPELANT, LA VALEUR DIT CE QU'ELLE EST** : PostgREST rend une colonne `date`
+  en `AAAA-MM-JJ` nu et un `timestamptz` avec son heure. `formatDate` discrimine donc sur la FORME de
+  ce qu'elle reçoit, reste juste pour les deux, et **un appelant ajouté demain est juste par
+  construction** — là où une règle à appliquer site par site attend seulement son prochain oubli
+  (c'est « un piège qu'un nom supprime vaut mieux qu'un piège gardé par un contrôle », appliqué à la
+  forme de la donnée). Une valeur que `Date` ne sait pas lire est rendue TELLE QUELLE : c'est ainsi
+  qu'un `+012345-01` écrit par une extraction fautive se voit, au lieu d'être remplacé par une date
+  plausible.
+  **LA COPIE DE `send-email` EST CORRIGÉE DANS LA FOULÉE** — chercher toutes les copies avant de
+  corriger la première. Elle est LATENTE (le runtime des Edge Functions est en UTC, donc le libellé
+  se retrouve par accident de runtime) mais porte `date_emission` et `date_echeance` d'une facture
+  **envoyée au client**, et rien ne le dirait une fois l'e-mail parti. `SuperAdminPage`, dont le
+  `new Date(created_at).toLocaleDateString` est désormais exactement ce que `formatDate` fait,
+  rejoint le point unique. Déployée en **version 3**, `verify_jwt` relu et repassé à `false`, déployé
+  comparé au dépôt AVANT écrasement (identique au caractère près), aller-retour après : zéro
+  différence résiduelle sur 228 lignes.
+  **LES TESTS CHOISISSENT LEUR FUSEAU**, et c'est ce qui décide de ce qu'ils gardent : sous
+  Europe/Paris comme sous UTC le défaut est rigoureusement invisible, donc un test écrit normalement
+  serait resté vert avec le défaut entier. C'est la découverte qui a aussi corrigé la phrase
+  « irréductiblement » ci-dessus.
+  **`datesAffichees.test.ts` fait de la règle un contrôle**, parce qu'elle vivait dans un commentaire
+  et n'a pas suffi. Il part de TOUTE source de `src/` et de `supabase/functions/`, interdit
+  `new Date(<valeur>).toLocale…String(` et n'admet que des exceptions écrites portant leur raison —
+  trois, toutes des INSTANTS démontrés (`dateRelative` et ses trois appelants, l'horodatage d'une
+  sauvegarde, le repli de `send-email`). `new Date()` SANS argument reste libre : c'est « maintenant »,
+  jamais une date civile.
+  **SA BORNE A MORDU À LA PREMIÈRE EXÉCUTION, et c'est la CINQUIÈME fois que ce dépôt se fait prendre
+  par la portée d'une expression régulière** : avec un `[\s\S]*?` nu, un `new Date(valeur)` de calcul
+  en haut d'un fichier se raccorde au `.toLocaleDateString(` d'un `new Date()` parfaitement légitime
+  cent lignes plus bas — `DossiersList.tsx` ressortait en faute sans l'être. Le corps ne peut donc pas
+  enjamber un `new Date(`, réparation identique à « un corps s'arrête au `.from(` SUIVANT ».
+  **ET UN SCANNER QUI COMPTE NE PEUT PAS GARDER `send-email`** — dit plutôt que laissé croire :
+  replanter le défaut y laisse le compte à UN, la même occurrence devenant le seul chemin au lieu
+  d'un repli. Vérifié par mutation, qui a SURVÉCU. Ce qui la garde est donc le garde-fou habituel des
+  fonctions auto-portées : lire la vraie source, en extraire `formaterDate` et l'EXÉCUTER — sous des
+  fuseaux choisis là aussi, pour ne pas dépendre de l'accident de runtime.
+  **Et les deux copies s'évaluent contre une TABLE écrite dans le test, jamais l'une contre l'autre** :
+  `expect(deployee(iso)).toBe(formatDate(iso))` reste vert si l'on remplace le second appel par le
+  premier — la comparaison devient une tautologie, exactement l'aveuglement trouvé le même jour sur
+  `agentComptableAnalyse`. Une référence extérieure aux deux copies ne peut pas s'effondrer ainsi.
+  Neuf mutations mordent en tout.
 - **Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture.**
   Un `count` nul, un `data` nul : indiscernables d'un « rien trouvé ». C'est ce qui faisait
   répondre « ce fichier est nouveau » à `fichierDejaPresent` quand la lecture était refusée,
@@ -3237,7 +3305,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1230 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1243 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
