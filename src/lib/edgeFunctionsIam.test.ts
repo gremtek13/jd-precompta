@@ -23,6 +23,22 @@ import { describe, expect, it } from 'vitest'
 // vérifier depuis ici est impossible (cet environnement n'appelle jamais AWS). La moitié gouvernée
 // par le code est gardée ; l'autre est une vérification humaine.
 //
+// ET IL Y A UN TROU PLUS FIN QUE « LA POLICY », QU'IL FAUT NOMMER PLUTÔT QUE LAISSER DEVINER : une
+// policy IAM cadre une action par RESSOURCE, et ce test ne compte que des ACTIONS. Changer de modèle
+// Bedrock laisse l'action rigoureusement identique — `bedrock:InvokeModel` des deux côtés — tout en
+// changeant l'ARN visé. Une policy restreinte à un modèle refuserait donc le nouveau avec un test
+// VERT, ce qui est exactement la forme du défaut que ce fichier a été écrit pour empêcher, revenu
+// par une porte que la liste d'actions ne regarde pas.
+//
+// Le 21/09/2026, la bascule Sonnet 4.6 → Haiku 4.5 est passée dans cet angle mort, et elle n'a été
+// couverte que PAR CHANCE : le harnais de mesure (`evaluer-extraction`) avait appelé Haiku avec les
+// MÊMES identifiants AWS et dans la MÊME région que la production, donc un refus IAM s'y serait
+// montré d'abord. C'est une raison de plus de garder ce harnais aligné sur la production plutôt
+// qu'une commodité — voir `edgeFunctionsRegions.test.ts`.
+//
+// Règle qui en découle : **changer de modèle demande un APPEL RÉEL avec les identifiants de la
+// production, jamais un test vert.** Aucun contrôle de ce dépôt ne peut s'y substituer.
+//
 // La liste attendue vit DANS CE TEST et non dans les fonctions, délibérément : une constante posée
 // à côté de l'appel serait mise à jour dans la même édition que l'appel, le test resterait vert et
 // la policy resterait fausse — le contrôle tautologique que ce dépôt connaît déjà. Ici, ajouter une

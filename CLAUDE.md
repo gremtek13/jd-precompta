@@ -1316,6 +1316,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   Ce qu'il ne peut PAS garder, annoncé comme pour la suppression de fichier dans `rls.sql` : **la
   policy elle-même**, qui vit chez AWS et qu'aucun fichier du dépôt ne connaît. Huit mutations
   mordent, dont le défaut d'origine replanté — la bascule complète vers le trio Expense.
+  **ET IL Y A UN TROU PLUS FIN QUE « LA POLICY », NOMMÉ LE 21/09/2026 PARCE QUE LA BASCULE DE MODÈLE
+  VENAIT D'Y PASSER** : une policy IAM cadre une action par RESSOURCE, et ce test ne compte que des
+  ACTIONS. Changer de modèle Bedrock laisse l'action rigoureusement identique — `bedrock:InvokeModel`
+  des deux côtés — tout en changeant l'ARN visé. Une policy restreinte à un modèle refuserait donc le
+  nouveau **avec un test VERT** : exactement la forme du défaut que ce garde-fou existe pour
+  empêcher, revenu par la porte que sa liste d'actions ne regarde pas.
+  **La bascule Sonnet 4.6 → Haiku 4.5 n'a été couverte que PAR CHANCE**, et le dire vaut mieux que de
+  s'en féliciter : le harnais de mesure avait appelé Haiku avec les MÊMES identifiants AWS et dans la
+  MÊME région que la production, donc un refus IAM s'y serait montré d'abord. C'est une raison de
+  plus de garder ce harnais aligné sur la production plutôt qu'une commodité.
+  **Règle qui en découle : changer de modèle demande un APPEL RÉEL avec les identifiants de la
+  production, jamais un test vert.** Aucun contrôle de ce dépôt ne peut s'y substituer — c'est le
+  même couple « une moitié gardée par le code, l'autre par une vérification » que partout ailleurs
+  sur AWS, avec une frontière simplement plus fine qu'annoncé jusqu'ici.
 - **UN BUDGET FIXE EST JUSTE TANT QUE PERSONNE NE LE DÉPASSE** (21/09/2026). Le sondage du job
   Textract asynchrone attendait 50 s, en dur, avec un commentaire qui l'annonçait « largement
   suffisant pour un document de quelques pages ». Il l'était — jusqu'au premier document qui ne
