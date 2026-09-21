@@ -29,7 +29,8 @@ function extraireDeLEdgeFunction() {
 
   // Les constantes se recopient telles quelles : ce sont elles qui décident quels libellés comptent.
   for (const nom of ['const MOIS_PAR_NOM', 'const LIBELLE_DATE_FACTURE', 'const LIBELLE_VILLE_LE', 'const LIBELLE_AUTRE_DATE',
-                     'const DATE_ISO_REGEX', 'const DATE_NUMERIQUE_REGEX', 'const DATE_TEXTUELLE_REGEX']) {
+                     'const DATE_ISO_REGEX', 'const DATE_NUMERIQUE_REGEX', 'const DATE_TEXTUELLE_REGEX',
+                     'const JOUR_SEMAINE']) {
     const debut = source.indexOf(nom)
     expect(debut, `\`${nom}\` introuvable`).toBeGreaterThan(-1)
     const fin = nom === 'const MOIS_PAR_NOM' ? source.indexOf('\n}\n', debut) + 2 : source.indexOf('\n', debut) + 1
@@ -263,7 +264,12 @@ describe('extract-piece / toIsoDate (copie déployée)', () => {
   })
 })
 
-describe('extract-piece / date étiquetée par Textract (parseDate)', () => {
+// Le nom de ce bloc a changé avec la marche 1, et pas pour faire joli : `parseDate` lisait le champ
+// INVOICE_RECEIPT_DATE étiqueté par `AnalyzeExpense`, qui n'existe plus. Son unique appelant est
+// désormais la CITATION d'un modèle, dont le contrat est de recopier la chaîne TELLE QU'IMPRIMÉE —
+// donc plus longue et plus bavarde que la valeur d'un champ. C'est ce changement de contrat, resté
+// invisible parce que le nom ne l'a pas suivi, qui a laissé perdre deux dates du corpus.
+describe('extract-piece / date citée par le modèle (parseDate)', () => {
   // Chemin distinct du repli : quand Textract étiquette INVOICE_RECEIPT_DATE, sa valeur passe par
   // `parseDate` sans jamais traverser la fenêtre d'années de `datesDeLaLigne`. C'est par là qu'un
   // justificatif d'immatriculation est entré daté du 27/09/2028 sur un import réel.
@@ -351,6 +357,38 @@ describe('extract-piece / date étiquetée par Textract (parseDate)', () => {
     expect(parseDate('0999-01-01')).toBeNull()
     // Et ce qui est légitime passe toujours.
     expect(parseDate('2024-06-05')).toBe('2024-06-05')
+  })
+
+  it('lit une date précédée de son jour de la semaine, en toutes lettres comme abrégé', () => {
+    // Les deux seules dates perdues du corpus réel, et les deux pour cette raison. Le modèle qui
+    // CITE recopie ce que le document imprime ; toutes les branches de `parseDate` étaient ancrées
+    // parce que Textract, lui, rendait la valeur d'un champ. L'appelant a changé, pas l'ancrage.
+    expect(parseDate('mercredi 23 juillet 2025')).toBe('2025-07-23')
+    expect(parseDate('jeu. 12 juin 2025')).toBe('2025-06-12')
+    expect(parseDate('Mardi 5 août 2025')).toBe('2025-08-05')
+    expect(parseDate('lundi 1er juin 2025')).toBe('2025-06-01')
+    // Le jour de la semaine devant un format NUMÉRIQUE aussi : le retrait vaut pour toutes les
+    // branches, et pas seulement pour celle qui a révélé le défaut.
+    expect(parseDate('vendredi 23/07/2025')).toBe('2025-07-23')
+  })
+
+  it('lit une année sur deux chiffres derrière un mois en toutes lettres', () => {
+    // La branche numérique l'admet depuis toujours ; rien ne justifiait que « 12 juin 25 » vaille
+    // moins que « 12/06/25 ». C'est le second cas réel — cité « jeu. 12 juin 25 00:10 », donc les
+    // deux défauts sur la même chaîne.
+    expect(parseDate('12 juin 25')).toBe('2025-06-12')
+    expect(parseDate('jeu. 12 juin 25 00:10')).toBe('2025-06-12')
+    expect(parseDate('3 mars 24')).toBe('2024-03-03')
+  })
+
+  it('ne prend pas un mot quelconque devant une date pour un jour de la semaine', () => {
+    // LE RISQUE SYMÉTRIQUE, et c'est lui qui décide de la forme de la correction : retirer « des
+    // lettres avant le quantième » ferait de « facture 12 juin 25 » une date, c'est-à-dire la valeur
+    // plausible et fausse que tout le contrat de citation existe pour empêcher. Les jours sont donc
+    // NOMMÉS un par un. Même parti pris que `MOTS_SANS_IDENTITE` dans `cleFournisseur`.
+    expect(parseDate('facture 12 juin 2025')).toBeNull()
+    expect(parseDate('échéance 12 juin 2025')).toBeNull()
+    expect(parseDate('période 12 juin 2025')).toBeNull()
   })
 
   it('refuse toujours une date qui n’existe pas au calendrier', () => {

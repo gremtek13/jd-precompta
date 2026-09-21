@@ -124,3 +124,26 @@ for (const fonction of FONCTIONS_AUTOPORTEES) describe(`${fonction} / verifierCi
     expect(resultats.some((r) => r.rejetees.length > 0)).toBe(true)
   })
 })
+
+describe('le harnais de mesure et la production nomment le MÊME modèle', () => {
+  it('fait porter au défaut d’`evaluer-extraction` le modèle que `extract-piece` exécute', () => {
+    // LA TROISIÈME CHOSE QUI DÉCIDE DE CE QUI EST MESURÉ, et la seule qui n'était pas gardée. Le
+    // prompt l'est au caractère près, `verifierCitations` par exécution — restait le MODÈLE, qui
+    // décide autant que les deux autres de ce que la mesure observe. Le harnais accepte bien un
+    // `modele` en paramètre, et c'est sa raison d'être : comparer deux modèles. Mais ce qu'il fait
+    // SANS argument doit rester « mesurer la production », sinon un essai lancé par réflexe rend un
+    // feu vert sur un modèle que personne n'exécute.
+    //
+    // Même famille que la région (`edgeFunctionsRegions.test.ts`) : un harnais qui dérive de la
+    // production cesse de la mesurer, et rien dans son résultat ne le dit — il répond toujours, avec
+    // des chiffres plausibles.
+    const modeleDe = (fonction: string, constante: string) =>
+      sourceDe(fonction).match(new RegExp(`const ${constante} = "([^"]+)"`))?.[1]
+
+    const production = modeleDe('extract-piece', 'MODELE_CITATION')
+    const mesure = modeleDe('evaluer-extraction', 'MODELE_PAR_DEFAUT')
+    expect(production, 'MODELE_CITATION introuvable — garde-fou à remettre à jour').toBeTruthy()
+    expect(mesure, 'MODELE_PAR_DEFAUT introuvable — garde-fou à remettre à jour').toBeTruthy()
+    expect(mesure).toBe(production)
+  })
+})

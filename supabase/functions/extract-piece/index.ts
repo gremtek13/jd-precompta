@@ -40,11 +40,28 @@ import {
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from "npm:@aws-sdk/client-s3@3"
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
 
-// Le modèle qui CITE. C'est celui sur lequel la mesure des 41 textes a été faite — en changer
-// invaliderait ce feu vert, donc c'est un choix à rouvrir avec une nouvelle mesure, jamais en
-// passant. Même région que Textract (voir le gestionnaire) : le texte OCR sort au même endroit que
-// le document dont il vient, et `edgeFunctionsRegions.test.ts` le vérifie.
-const MODELE_CITATION = "eu.anthropic.claude-sonnet-4-6"
+// Le modèle qui CITE. En changer invalide le feu vert donné par la mesure, donc c'est un choix à
+// rouvrir avec une NOUVELLE mesure sur les textes réels, jamais en passant. Même région que Textract
+// (voir le gestionnaire) : le texte OCR sort au même endroit que le document dont il vient, et
+// `edgeFunctionsRegions.test.ts` le vérifie.
+//
+// HAIKU 4.5 DEPUIS LE 21/09/2026, sur mesure et non sur intuition — les deux modèles le même jour,
+// même prompt, mêmes 43 textes du dossier réel : zéro rejet de citation des deux côtés, couverture à
+// égalité, et les sept désaccords sont des variantes de FORME de la même valeur
+// (« mercredi 23 juillet 2025 » contre « 23/07/2025 »). Le TTC cité se retrouve dans le montant
+// stocké 38/38 contre 37/37. Environ trois fois moins cher sur cet étage, qui pèse les deux tiers du
+// coût d'une extraction courte.
+//
+// POURQUOI UN MODÈLE PLUS PETIT EST SÛR ICI, ET CE N'EST PAS DE LA CONFIANCE : le contrat de
+// citation BORNE ce qu'il peut coûter. Le modèle DÉSIGNE une chaîne du document, `verifierCitations`
+// refuse celle qui n'y figure pas, et les analyseurs éprouvés font le reste. Un modèle plus faible
+// cite donc MOINS — ce qui coûte une saisie — mais ne peut pas faire entrer une valeur composée dans
+// une comptabilité. C'est cette séparation qui rend le modèle interchangeable, et c'est elle qu'il
+// faudrait revérifier avant d'en changer, pas seulement le palmarès du modèle.
+//
+// `extractionChampsCopie.test.ts` garde que le défaut d'`evaluer-extraction` nomme CE modèle : un
+// harnais qui mesure autre chose que la production rend un feu vert sur autre chose que la chose.
+const MODELE_CITATION = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 // LE MUR DE LA PLATEFORME EST À 150 s (plan free : « wall clock limit », et le même chiffre pour le
 // délai d'inactivité qui rend un 504). Le franchir ne rend pas une erreur lisible — la requête est
@@ -290,9 +307,30 @@ function dateFuture(iso: string): boolean {
   return iso > limite
 }
 
+// Les jours de la semaine, NOMMÉS — abrégés compris, l'OCR rendant « jeu. » aussi souvent que
+// « jeudi ». Une classe générique (« des lettres avant le quantième ») ferait de « facture 12 juin
+// 25 » une date : exactement la valeur plausible et fausse que le contrat de citation existe pour
+// empêcher. Même parti pris que `MOIS_PAR_NOM` et que `MOTS_SANS_IDENTITE` : une liste explicite.
+const JOUR_SEMAINE = /^(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche|lun|mar|mer|jeu|ven|sam|dim)\.?\s+/i
+
 function parseDate(raw?: string): string | null {
   if (!raw) return null
-  const trimmed = raw.trim()
+  // LE JOUR DE LA SEMAINE EST RETIRÉ AVANT TOUTE BRANCHE, et c'est une correction de la marche 1,
+  // pas un raffinement. Les branches ci-dessous sont toutes ANCRÉES, et le commentaire qui le
+  // justifiait disait vrai de son époque : « Textract rend la VALEUR du champ, pas la ligne ».
+  // AnalyzeExpense était alors le seul appelant. Il n'en reste AUCUN — depuis la bascule vers
+  // `DetectDocumentText`, cette fonction ne lit plus que la CITATION d'un modèle à qui l'on demande
+  // de recopier la chaîne telle qu'elle est imprimée, jour de la semaine compris. L'ancrage ne
+  // bornait donc plus une ligne, il faisait perdre la date.
+  //
+  // MESURÉ sur les 43 textes réels, et la mesure a corrigé l'intuition deux fois. « Combien de
+  // documents impriment une date en toutes lettres précédée de quelque chose ? » rend 31 fois « le »
+  // contre 1 fois un jour de la semaine — et conclurait qu'il faut traiter « le ». Mais ce qui
+  // compte n'est pas ce que le document IMPRIME, c'est ce que le modèle CITE : sur 42 dates citées,
+  // ZÉRO porte « le » (le modèle le laisse au document) et DEUX portent un jour de la semaine, qui
+  // étaient les deux seules dates perdues. Compter la mauvaise population répondait à une autre
+  // question, avec le même air de rigueur.
+  const trimmed = raw.trim().replace(JOUR_SEMAINE, "")
 
   // ISO ou proche : AAAA-MM-JJ, AAAA/MM/JJ
   let m = trimmed.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/)
@@ -319,10 +357,19 @@ function parseDate(raw?: string): string | null {
   //
   // Même table que le repli sur texte brut (`MOIS_PAR_NOM`), pour qu'un mois lu ici et là-bas soit le
   // même. Ancré comme les deux branches au-dessus : Textract rend la VALEUR du champ, pas la ligne.
-  const mFr = sansAccents(trimmed.toLowerCase()).match(/^(\d{1,2})(?:er)?\s+([a-z]+)\.?\s+(\d{4})\b/)
+  //
+  // L'ANNÉE SUR DEUX CHIFFRES EST ADMISE ICI COMME ELLE L'EST PLUS HAUT : la branche numérique la
+  // traite depuis toujours, et rien ne justifiait qu'un « 12 juin 25 » vaille moins qu'un
+  // « 12/06/25 ». C'est la seconde des deux citations perdues du corpus. Le pivot (70) est celui de
+  // la branche numérique — recopier la règle plutôt que d'en inventer une seconde.
+  const mFr = sansAccents(trimmed.toLowerCase()).match(/^(\d{1,2})(?:er)?\s+([a-z]+)\.?\s+(\d{2,4})\b/)
   if (mFr) {
     const mois = MOIS_PAR_NOM[mFr[2]]
-    if (mois) return toIsoDate(+mFr[3], mois, +mFr[1])
+    if (mois) {
+      let annee = +mFr[3]
+      if (annee < 100) annee += annee < 70 ? 2000 : 1900
+      return toIsoDate(annee, mois, +mFr[1])
+    }
   }
 
   // Dernier recours pour les formats textuels (ex. "27 August 2026") que Date sait parfois lire.

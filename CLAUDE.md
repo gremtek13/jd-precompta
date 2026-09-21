@@ -413,12 +413,21 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   absente du texte source. La couverture est à égalité — Haiku trouve un TTC de plus, Sonnet deux
   TVA de plus, et la TVA est le seul des six champs à porter un repli (`tvaDepuisTexteBrut`) ET à
   se recalculer par soustraction dans `resoudreMontants`, donc c'est le moins coûteux à manquer.
-  **LES SEPT DÉSACCORDS SONT DES VARIANTES DE FORME, PAS DE VALEUR**, et c'est le résultat qui
-  compte : `« mercredi 23 juillet 2025 »` contre `« 23/07/2025 »` (deux branches de `parseDate`,
-  même date), `« $24.00 »` contre `« $24.00 USD »` (`parseAmount` rend 24,00 dans les deux cas), et
-  trois fois `« $ »` contre `« USD »` sur un champ **demandé mais pas rendu**. Aucune valeur
-  divergente sur aucun champ qui part en comptabilité. Le TTC cité se retrouve dans le montant
-  stocké 37/37 pour Sonnet, **38/38 pour Haiku**.
+  **LES SEPT DÉSACCORDS SONT DES VARIANTES DE FORME, PAS DE VALEUR** — vrai, mais **l'exemple choisi
+  pour l'illustrer était FAUX, et il cachait un défaut de production** (corrigé le 21/09/2026, voir
+  « une contrainte justifiée par un appelant » plus bas). Il était écrit ici que
+  `« mercredi 23 juillet 2025 »` contre `« 23/07/2025 »`, c'était « deux branches de `parseDate`,
+  même date ». EXÉCUTÉ, `parseDate` rend `null` sur le premier et `2025-07-23` sur le second : ce
+  n'était pas une variante de forme, c'était une date PERDUE — et celle de Sonnet, le modèle en
+  place. Écrit par relecture du code, démenti par une exécution.
+  Les autres tiennent, et ont été exécutés cette fois : `« $24.00 »` contre `« $24.00 USD »`
+  (`parseAmount` rend 24 dans les deux cas), `« 20/12/24 10:47 »` contre `« 20/12/24 »`
+  (`2024-12-20` des deux côtés), et trois fois `« $ »` contre `« USD »` sur un champ **demandé mais
+  pas rendu**. Aucune valeur divergente sur aucun champ qui part en comptabilité. Le TTC cité se
+  retrouve dans le montant stocké 37/37 pour Sonnet, **38/38 pour Haiku**.
+  **Une fois `parseDate` corrigé, les deux modèles rendent 42 dates citées, 0 perdue, 38 identiques
+  à la date stockée** — l'égalité annoncée est donc vraie, mais elle ne l'était pas encore au moment
+  où elle a été écrite.
   **C'est exactement ce que le contrat de citation prédit** : le modèle DÉSIGNE une chaîne, les
   analyseurs éprouvés l'interprètent. Un modèle plus petit choisit parfois une autre forme de la
   même chose — et la normalisation vit dans du code testé, pas dans le modèle. C'est cette
@@ -442,6 +451,32 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   **Appelé avec `limite: 0`, ce harnais lit la région sans facturer un seul token**, la boucle ne
   tournant sur aucune pièce : c'est le moyen le moins cher de reposer la question le jour où le
   secret change, et il ne demande d'accès à aucun tableau de bord.
+  **BASCULÉ EN PRODUCTION LE 21/09/2026** (`MODELE_CITATION`), la mesure ayant été rejouée EN ENTIER
+  dans la région de la production avant d'y toucher : 43 textes, 0 échec, **216 citations, 0 rejet** —
+  le compte exact de Sonnet, et un de plus que la même mesure en `eu-west-1`.
+  **DEUX EXÉCUTIONS DU MÊME MODÈLE DIFFÈRENT AUTANT QUE DEUX MODÈLES DIFFÉRENTS, et c'est le résultat
+  le plus utile de la journée** : Haiku contre lui-même (deux régions) rend 5 écarts de champ sur
+  2 pièces ; Sonnet contre Haiku en rend 16 sur 10, dont 9 sont de la COUVERTURE (l'un cite, l'autre
+  rend `null`) et 7 de vrais désaccords. Quatre des cinq écarts « du modèle contre lui-même » sont
+  les mêmes variantes de dollars qui comptaient comme « désaccord entre modèles ». Une bonne part de
+  ce qu'on attribuait au choix du modèle est le bruit d'exécution de la tâche elle-même — ce qui
+  **abaisse** ce qu'un palmarès de modèles peut prouver, et **relève** d'autant ce que fait le
+  contrat de citation.
+  **Ce que la bascule change RÉELLEMENT, champ par champ** : 3 désaccords vrais, tous des variantes
+  de forme de la même valeur (deux dates, une devise — sur un champ qui n'est même pas rendu), et une
+  couverture strictement à égalité, 4 champs gagnés contre 4 perdus. **Vérifié en exécutant les vrais
+  analyseurs sur les citations réelles**, pas en les lisant : c'est cette vérification-là qui a trouvé
+  le défaut de `parseDate` ci-dessous, et démenti une phrase de ce fichier.
+  **Le garde qui manquait** : `extractionChampsCopie.test.ts` comparait le prompt au caractère près et
+  `verifierCitations` par exécution, mais pas le MODÈLE — la troisième chose qui décide de ce qui est
+  mesuré. Le défaut d'`evaluer-extraction` doit nommer `MODELE_CITATION` ; passer un `modele` reste la
+  raison d'être du harnais, mais ce qu'il fait SANS argument doit rester « mesurer la production ».
+  Trois mutations mordent.
+  **Pourquoi un modèle plus petit est SÛR ici, et ce n'est pas de la confiance** : le contrat de
+  citation BORNE le coût d'une erreur. Un modèle plus faible cite MOINS — ce qui coûte une saisie —
+  mais ne peut pas faire entrer une valeur composée dans une comptabilité, `verifierCitations`
+  refusant ce qui n'est pas dans le texte. C'est cette séparation qu'il faut revérifier avant de
+  changer de modèle, pas seulement le palmarès du modèle.
   **Deux identifiants refusés au passage, à ne pas rechercher** : les formes courtes
   `eu.anthropic.claude-haiku-4-5` et `eu.anthropic.claude-sonnet-5` rendent une `ValidationException`
   (« The provided model identifier is invalid »). Seule la forme datée complète passe, alors même
@@ -1576,6 +1611,47 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   chemins de `parseDate` ET `datesDeLaLigne` y passent tous — le posant ailleurs, les autres
   resteraient ouverts. C'est la même leçon que « deux chemins mènent à une date, un seul contrôle
   les couvre tous les deux », appliquée une fois de plus.
+- **UNE CONTRAINTE JUSTIFIÉE PAR UN APPELANT DEVIENT FAUSSE QUAND CET APPELANT DISPARAÎT — ET SON
+  COMMENTAIRE, LUI, GARDE L'AIR D'ÊTRE VRAI** (`parseDate`, corrigé le 21/09/2026). Ses branches sont
+  ANCRÉES (`^`), et le commentaire qui l'expliquait disait vrai de son époque : « Textract rend la
+  VALEUR du champ, pas la ligne ». `AnalyzeExpense` était alors le seul appelant.
+  **Depuis la marche 1, il n'en reste AUCUN** : `parseDate` a un unique appelant, la CITATION d'un
+  modèle à qui l'on demande explicitement de recopier la chaîne **telle qu'imprimée**, donc plus
+  longue et plus bavarde que la valeur d'un champ. L'ancrage ne bornait donc plus une ligne, il
+  faisait PERDRE la date.
+  **Deux citations sur 42 du corpus réel étaient perdues**, et les deux pour cette raison :
+  `« mercredi 23 juillet 2025 »` (nom du jour devant) et `« jeu. 12 juin 25 00:10 »` (nom du jour
+  abrégé **et** année sur deux chiffres, que la branche « mois français » exigeait à quatre alors que
+  la branche numérique les admet depuis toujours). Le dégât n'est pas toujours la perte : le repli sur
+  texte brut rattrape souvent, mais RÉTROGRADE la date en déduction « à vérifier » — le coût déjà
+  nommé plus haut pour les douze mois français.
+  **CE DÉFAUT VIVAIT DANS UNE PHRASE DE CE FICHIER, ÉCRITE COMME UN ARGUMENT RASSURANT.** Il y était
+  écrit que `« mercredi 23 juillet 2025 »` contre `« 23/07/2025 »`, c'était « deux branches de
+  `parseDate`, même date » — donné comme preuve que les deux modèles s'accordaient. Exécuté,
+  `parseDate` rend `null` sur le premier. La phrase avait été écrite par RELECTURE, et elle
+  transformait un défaut en argument.
+  **LA MESURE A CORRIGÉ L'INTUITION DEUX FOIS, ET LA SECONDE EST LA LEÇON.** Première correction :
+  j'allais ne traiter que le nom du jour, seul cas observé. Un comptage en base dit que sur 42 textes
+  portant une date en toutes lettres, **31 la font précéder de « le »** et **1 d'un nom de jour** —
+  donc « corriger ce qui est mesuré » ratait 31 cas sur 32. Seconde correction, qui annule la
+  première : ce comptage portait sur ce que les documents **impriment**, et ce qui décide est ce que
+  le modèle **cite**. Sur les 42 dates citées, **ZÉRO porte « le »** (le modèle le laisse au document)
+  et **DEUX portent un nom de jour** — exactement les deux perdues. La première mesure avait tout
+  l'air de la rigueur et répondait à une autre question.
+  **Les jours sont NOMMÉS un par un**, abrégés compris (`JOUR_SEMAINE`), jamais « des lettres avant le
+  quantième » : cette forme-là ferait de « facture 12 juin 25 » une date, c'est-à-dire la valeur
+  plausible et fausse que tout le contrat de citation existe pour empêcher. Un test garde ce risque
+  symétrique, comme pour `MOTS_SANS_IDENTITE`. Quatre mutations mordent.
+  **Le retrait se fait AVANT toutes les branches** et pas seulement devant celle qui a révélé le
+  défaut — sinon `« vendredi 23/07/2025 »` resterait ouvert. Encore « deux chemins mènent à une date,
+  un seul contrôle les couvre tous les deux ».
+  **`DATE_TEXTUELLE_REGEX` n'est PAS étendue aux années à deux chiffres, et c'est délibéré** : elle
+  BALAIE un document entier, là où `parseDate` reçoit UNE valeur désignée. Les deux n'ont pas le même
+  droit à l'erreur, et élargir un scanner sur du texte libre est ce qui a déjà failli supprimer
+  32 encaissements CPAM (voir `soldesDuPdf`).
+  **Et le NOM du bloc de tests mentait aussi** : « date étiquetée par Textract (parseDate) », pour une
+  fonction que Textract n'appelle plus. C'est ce nom resté en place qui a rendu le changement de
+  contrat invisible — le piège que ce fichier nomme déjà sous « un nom qui ment sur son filtre ».
 - **Une recherche filtre l'affichage, jamais un total.** Une barre de recherche réduit les
   lignes visibles ; les montants calculés à côté (TVA déductible/collectée, total appelé/versé,
   total prélevé) restent sur l'ensemble filtré par l'exercice, et un export (FEC) reste sur cet
@@ -2352,7 +2428,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1054 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1040 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

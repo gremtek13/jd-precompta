@@ -33,7 +33,17 @@ import { createClient } from "npm:@supabase/supabase-js@2"
 //      production n'utilise pas prouve donc la disponibilité AILLEURS, ce qui ne décide rien.
 // Gardée par `edgeFunctionsRegions.test.ts`, qui lit cette source.
 const REGION = Deno.env.get("AWS_REGION") ?? "eu-central-1"
-const MODELE_PAR_DEFAUT = "eu.anthropic.claude-sonnet-4-6"
+// LE DÉFAUT SUIT LA PRODUCTION, et `extractionChampsCopie.test.ts` le garde. Un `modele` passé en
+// paramètre le remplace — c'est la raison d'être de ce harnais, comparer deux modèles — mais ce
+// qu'il fait SANS argument doit rester « mesurer ce que la production exécute ». Même famille que la
+// région ci-dessus : un harnais qui dérive de la production cesse de la mesurer, et son résultat ne
+// le dit pas, il reste plausible.
+//
+// Pour ne pas les rechercher : les formes courtes `eu.anthropic.claude-haiku-4-5` et
+// `eu.anthropic.claude-sonnet-5` rendent une `ValidationException` (« The provided model identifier
+// is invalid »). Seule la forme datée complète passe, alors que `eu.anthropic.claude-sonnet-4-6`
+// fonctionne sans suffixe : les deux conventions coexistent.
+const MODELE_PAR_DEFAUT = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
 
 // ── DÉBUT COPIE extractionChamps ────────────────────────────────────────────────────────────────
 // Recopié de `src/lib/extractionChamps.ts` (Edge Function auto-portée : aucun import de `src/`).
