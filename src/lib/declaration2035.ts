@@ -143,6 +143,78 @@ export function dotationsNonProratisees(immobilisations: Immobilisation[], annee
     .filter((d) => d.dotationProratisee !== d.dotationComptee)
 }
 
+// LA CSG-CRDS EST DÉDUITE EN ENTIER, ET 2,9 DE SES 9,7 POINTS NE SONT PAS DÉDUCTIBLES.
+//
+// `calculerDeclaration2035` porte la cotisation COMPLÈTE au poste « Cotisations sociales
+// personnelles » (case BK, ligne 25). Or la CSG-CRDS d'un travailleur non salarié se décompose en
+// 6,8 points DÉDUCTIBLES du résultat BNC et 2,9 points qui ne le sont pas (CSG non déductible 2,4 +
+// CRDS 0,5). La part non déductible part donc en déduction sur une déclaration signée.
+//
+// L'application SAIT la calculer : `cotisations_declarees.montant_csg_crds` existe et l'écran
+// Cotisations le saisit — il affichait même la part déductible, avec ces deux taux écrits en dur
+// dans le composant. Le moteur, lui, l'ignorait entièrement.
+//
+// ON LE SIGNALE, ON NE LE CORRIGE PAS, et c'est la ligne de conduite de ce moteur, écrite dans son
+// en-tête : il totalise, il ne déclare pas. Même parti pris que `doublonFraisVehicules`, qui nomme
+// une dépense comptée deux fois sans choisir laquelle retirer, et que `dotationsNonProratisees`.
+// Retrancher d'office changerait un total que le cabinet lit depuis le début, sur le seul document
+// qu'il signe.
+export const TAUX_CSG_DEDUCTIBLE = 6.8
+export const TAUX_CSG_CRDS_TOTAL = 9.7
+
+/** La part déductible d'un montant de CSG-CRDS, arrondie au centime. */
+export function csgDeductible(montantCsgCrds: number): number {
+  return arrondi(montantCsgCrds * (TAUX_CSG_DEDUCTIBLE / TAUX_CSG_CRDS_TOTAL))
+}
+
+export interface PartCsgNonDeductible {
+  /** Cotisations de l'exercice dont la ventilation CSG-CRDS est saisie. */
+  nbVentilees: number
+  /** Les autres. La part non déductible y est INCONNUE, surtout pas nulle — d'où un compte à part. */
+  nbSansVentilation: number
+  totalCsgCrds: number
+  csgDeductible: number
+  /** Ce qui est déduit à tort, sur ce qu'on sait ventiler. */
+  csgNonDeductible: number
+}
+
+// Ce que la ligne 25 porte à tort sur cet exercice, et ce qu'on ne peut pas encore chiffrer.
+//
+// Rendue `null` quand l'exercice ne porte AUCUNE cotisation : il n'y a alors rien à dire, et une
+// mise en garde permanente cesse d'être lue avant d'emporter ses voisines.
+//
+// Les deux comptes sont séparés à dessein : une cotisation sans ventilation ne vaut pas « zéro de
+// CSG » — c'est la famille des lectures dont l'échec ressemble à un résultat vide, appliquée à une
+// SAISIE. Les additionner ferait annoncer « rien à réintégrer » sur un dossier qui n'a simplement
+// jamais renseigné le détail.
+//
+// Le non déductible se déduit du déductible (`total - déductible`) plutôt que de se calculer sur
+// 2,9/9,7. **Et la raison d'abord écrite ici était FAUSSE** : « deux arrondis indépendants
+// laisseraient un centime d'écart » — mesuré sur les 20 000 000 de montants au centime de 0,01 € à
+// 200 000 €, les deux formules rendent EXACTEMENT le même résultat, zéro écart. C'est arithmétique :
+// 6,8 + 2,9 = 9,7, donc les deux produits somment exactement au total et leurs parties
+// fractionnaires se complètent — celle qui arrondit vers le bas rend précisément ce que l'autre
+// prend. La mutation correspondante ne mord donc pas, et c'est dit ici plutôt que déguisé en
+// assertion de complaisance.
+// Ce qui décide vraiment : la forme par complément tient PAR CONSTRUCTION, sans dépendre de cette
+// coïncidence ni du jour où l'un des deux taux changera (ils bougent d'une année sur l'autre).
+export function partCsgNonDeductible(cotisations: CotisationDeclaree[], annee: number): PartCsgNonDeductible | null {
+  const deLAnnee = cotisations.filter((c) => anneeDe(c.echeance) === annee)
+  if (deLAnnee.length === 0) return null
+
+  const ventilees = deLAnnee.filter((c) => c.montant_csg_crds != null)
+  const totalCsgCrds = arrondi(ventilees.reduce((s, c) => s + (c.montant_csg_crds ?? 0), 0))
+  const deductible = csgDeductible(totalCsgCrds)
+
+  return {
+    nbVentilees: ventilees.length,
+    nbSansVentilation: deLAnnee.length - ventilees.length,
+    totalCsgCrds,
+    csgDeductible: deductible,
+    csgNonDeductible: arrondi(totalCsgCrds - deductible),
+  }
+}
+
 export function calculerDeclaration2035(
   annee: number,
   pieces: Piece[],

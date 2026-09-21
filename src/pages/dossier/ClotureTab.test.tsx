@@ -67,11 +67,11 @@ const PIECE = {
   created_at: '2025-03-10T09:00:00Z',
 }
 
-function cotisation(id: string) {
+function cotisation(id: string, o: Record<string, unknown> = {}) {
   return {
     id, dossier_id: 'dossier-de-test', organisme: 'URSSAF', echeance: '2025-03-05',
-    montant_appele: 300, montant_verse: 300, previsionnel: false, document_id: null,
-    created_at: '2025-03-05T09:00:00Z',
+    montant_appele: 300, montant_verse: 300, montant_csg_crds: null,
+    previsionnel: false, document_id: null, created_at: '2025-03-05T09:00:00Z', ...o,
   }
 }
 
@@ -83,13 +83,17 @@ function immobilisation(o: Record<string, unknown> = {}) {
   }
 }
 
-function poser(muet: Record<string, number> = {}, immos: Record<string, unknown>[] = []) {
+function poser(
+  muet: Record<string, number> = {},
+  immos: Record<string, unknown>[] = [],
+  cotis: Record<string, unknown>[] = [cotisation('c1'), cotisation('c2')],
+) {
   faux.muetApresParTable = muet
   faux.parTable = {
     categories: [CATEGORIE],
     pieces: [PIECE],
     immobilisations: immos,
-    cotisations_declarees: [cotisation('c1'), cotisation('c2')],
+    cotisations_declarees: cotis,
     vehicules: [],
     dossiers: [{ nom: 'Dossier de test', libelle_naf: 'Infirmier', siret: '12345678901234' }],
   }
@@ -171,5 +175,53 @@ describe('ClotureTab — la première annuité d’amortissement à reprendre', 
 
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(screen.queryAllByText(/Première annuité d’amortissement à reprendre/)).toHaveLength(0)
+  })
+})
+
+// LA CSG-CRDS NON DÉDUCTIBLE, DITE SUR L'ÉCRAN QUI REMPLIT LE FORMULAIRE.
+//
+// Le moteur porte la cotisation ENTIÈRE en case BK (ligne 25), CSG non déductible et CRDS
+// comprises. `partCsgNonDeductible` est juste et testée à part ; ce que ce test garde, c'est que
+// l'écran l'APPELLE — et qu'il distingue ce qu'on sait chiffrer de ce qu'on ne sait pas.
+describe('ClotureTab — la CSG-CRDS non déductible', () => {
+  it('chiffre la part à réintégrer quand la ventilation est saisie', async () => {
+    poser({}, [], [cotisation('c1', { montant_csg_crds: 970 })])
+    monter()
+
+    const titre = await screen.findByText(/CSG-CRDS non déductible comprise dans la ligne 25/)
+    const carte = within(titre.closest('.card')!)
+    carte.getByText(/^970,00\s€$/)
+    carte.getByText(/^680,00\s€$/)
+    carte.getByText(/^290,00\s€$/)
+  })
+
+  it('dit qu’il ne peut PAS la chiffrer plutôt que d’annoncer zéro', async () => {
+    // Le cas de toute la production aujourd'hui : `montant_csg_crds` n'est renseigné nulle part.
+    // Se taire reviendrait à dire « rien à réintégrer » — la famille des résultats vides qui
+    // ressemblent à une réponse, appliquée cette fois à une saisie manquante.
+    poser({}, [], [cotisation('c1'), cotisation('c2')])
+    monter()
+
+    const titre = await screen.findByText(/CSG-CRDS non déductible comprise dans la ligne 25/)
+    within(titre.closest('.card')!).getByText(/2 — part non déductible non chiffrable/)
+  })
+
+  it('se tait sur un exercice sans aucune cotisation', async () => {
+    poser({}, [], [])
+    monter()
+
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(/CSG-CRDS non déductible/)).toHaveLength(0)
+  })
+
+  it('se tait quand toutes les cotisations sont ventilées à zéro de CSG', async () => {
+    // LE garde symétrique, et le précédent ne suffisait PAS : un exercice sans cotisation rend
+    // `null` de toute façon, donc « avertit toujours » y passait inaperçu. Un appel de retraite
+    // sans ligne de CSG est un cas réel, et c'est lui qui distingue les deux.
+    poser({}, [], [cotisation('c1', { montant_csg_crds: 0 })])
+    monter()
+
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(/CSG-CRDS non déductible/)).toHaveLength(0)
   })
 })

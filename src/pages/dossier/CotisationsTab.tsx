@@ -9,12 +9,11 @@ import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { messageErreur } from '../../lib/messageErreur'
-
-// Taux CSG-CRDS en vigueur pour les indépendants/professions libérales : 9,70 % au total, dont
-// 6,80 points déductibles du revenu imposable et 2,90 points non déductibles. Source : barèmes
-// Urssaf.fr — à vérifier périodiquement, ces taux peuvent évoluer d'une année sur l'autre.
-const TAUX_CSG_DEDUCTIBLE = 6.8
-const TAUX_CSG_CRDS_TOTAL = 9.7
+// Les taux CSG-CRDS vivaient ici, en dur dans ce composant — donc hors de portée des tests, et
+// invisibles pour le moteur de la 2035, qui déduisait la CSG-CRDS ENTIÈRE. Ils sont désormais au
+// même endroit que le contrôle qui s'en sert (voir `partCsgNonDeductible`) : une règle recopiée
+// deux fois n'attend pas de diverger, elle attend un troisième appelant.
+import { csgDeductible as partDeductible } from '../../lib/declaration2035'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
 // URSSAF (montants connus tardivement, jamais déductibles d'un relevé bancaire seul) et calcul
@@ -214,9 +213,10 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     window.open(data.signedUrl, '_blank')
   }
 
+  // Une cotisation sans ventilation saisie n'a pas « zéro » de CSG déductible : on ne sait pas.
+  // D'où `null` plutôt que 0 — c'est ce que la colonne affiche en « — ».
   function csgDeductible(montantCsgCrds: number | null): number | null {
-    if (montantCsgCrds == null) return null
-    return Number((montantCsgCrds * (TAUX_CSG_DEDUCTIBLE / TAUX_CSG_CRDS_TOTAL)).toFixed(2))
+    return montantCsgCrds == null ? null : partDeductible(montantCsgCrds)
   }
 
   const documentsNonRattaches = documentsCotisation.filter((d) => !d.attached_to_cotisation_id)

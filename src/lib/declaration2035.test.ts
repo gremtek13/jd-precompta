@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculerDeclaration2035, dotationPourAnnee, dotationsNonProratisees, RESERVE_PRORATA_TEMPORIS,
+  csgDeductible, partCsgNonDeductible,
   POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM,
 } from './declaration2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
@@ -325,5 +326,84 @@ describe('dotationsNonProratisees', () => {
     expect(RESERVE_PRORATA_TEMPORIS).toContain('trop')
     expect(RESERVE_PRORATA_TEMPORIS).toContain('reliquat')
     expect(RESERVE_PRORATA_TEMPORIS).toContain('signer')
+  })
+})
+
+// LA CSG-CRDS EST DÉDUITE EN ENTIER, ET 2,9 DE SES 9,7 POINTS NE SONT PAS DÉDUCTIBLES.
+//
+// Le moteur porte la cotisation COMPLÈTE en case BK (ligne 25). L'application sait pourtant
+// ventiler : `montant_csg_crds` existe et l'écran Cotisations le saisit — il affichait même la part
+// déductible, avec les deux taux écrits en dur DANS le composant, donc hors de portée des tests et
+// invisibles pour le moteur. On signale sans corriger, comme `doublonFraisVehicules`.
+const cotisation = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => ({
+  id: 'c-1', dossier_id: 'd-1', echeance: '2025-03-05',
+  montant_appele: 3000, montant_verse: 3000, montant_csg_crds: 970,
+  previsionnel: false, created_at: '2025-03-05T09:00:00Z', ...o,
+})
+
+describe('partCsgNonDeductible', () => {
+  it('se tait quand l’exercice ne porte aucune cotisation', () => {
+    // Rien à dire, donc rien à afficher : une mise en garde permanente cesse d'être lue.
+    expect(partCsgNonDeductible([], 2025)).toBeNull()
+    expect(partCsgNonDeductible([cotisation({ echeance: '2024-03-05' })], 2025)).toBeNull()
+  })
+
+  it('chiffre la part à réintégrer', () => {
+    // 970 € de CSG-CRDS : 6,8/9,7 déductibles = 680,00 €, donc 290,00 € déduits à tort.
+    expect(partCsgNonDeductible([cotisation()], 2025)).toEqual({
+      nbVentilees: 1, nbSansVentilation: 0,
+      totalCsgCrds: 970, csgDeductible: 680, csgNonDeductible: 290,
+    })
+  })
+
+  it('les deux parts font toujours EXACTEMENT le total', () => {
+    // Ce que ce test garde : la PROPRIÉTÉ (les deux parts somment au total), pas la formule. Il ne
+    // distingue PAS la forme par complément de la forme directe sur 2,9/9,7 — mesuré, elles ne
+    // diffèrent sur aucun des 20 millions de montants au centime de 0,01 € à 200 000 €. La mutation
+    // correspondante ne mord donc pas, et c'est écrit dans le module plutôt que maquillé ici.
+    for (const montant of [0.01, 3.33, 99.99, 1234.56, 970, 4567.89]) {
+      const part = partCsgNonDeductible([cotisation({ montant_csg_crds: montant })], 2025)!
+      expect(part.csgDeductible + part.csgNonDeductible).toBeCloseTo(montant, 10)
+    }
+  })
+
+  it('compte à part les cotisations SANS ventilation, au lieu de les traiter comme zéro', () => {
+    // Le point du contrôle : « pas de CSG saisie » n'est pas « pas de CSG ». Les confondre ferait
+    // annoncer « rien à réintégrer » sur un dossier qui n'a jamais renseigné le détail — la famille
+    // des lectures dont l'échec ressemble à un résultat vide, appliquée à une saisie.
+    expect(partCsgNonDeductible([
+      cotisation({ id: 'a' }),
+      cotisation({ id: 'b', montant_csg_crds: null }),
+      cotisation({ id: 'c', montant_csg_crds: null }),
+    ], 2025)).toEqual({
+      nbVentilees: 1, nbSansVentilation: 2,
+      totalCsgCrds: 970, csgDeductible: 680, csgNonDeductible: 290,
+    })
+  })
+
+  it('se tait quand la CSG est à zéro sur toutes les cotisations ventilées', () => {
+    // Garde SYMÉTRIQUE, et sa première version ne mordait pas : elle posait un exercice SANS
+    // cotisation, donc `null`, indistinguable d'un filtre trop large. Un appel de retraite sans
+    // ligne de CSG est un cas réel, et il ne doit rien déclencher — c'est lui qui sépare
+    // « l'écran avertit quand il faut » de « l'écran avertit toujours ».
+    expect(partCsgNonDeductible([cotisation({ montant_csg_crds: 0 })], 2025)).toEqual({
+      nbVentilees: 1, nbSansVentilation: 0,
+      totalCsgCrds: 0, csgDeductible: 0, csgNonDeductible: 0,
+    })
+  })
+
+  it('ne retient que les cotisations de l’exercice demandé', () => {
+    const part = partCsgNonDeductible([
+      cotisation({ id: 'a', echeance: '2025-03-05' }),
+      cotisation({ id: 'b', echeance: '2024-03-05' }),
+    ], 2025)!
+    expect(part.nbVentilees).toBe(1)
+    expect(part.totalCsgCrds).toBe(970)
+  })
+
+  it('csgDeductible applique 6,8 sur 9,7, arrondi au centime', () => {
+    expect(csgDeductible(970)).toBe(680)
+    expect(csgDeductible(100)).toBe(70.1)
+    expect(csgDeductible(0)).toBe(0)
   })
 })

@@ -3,7 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatMoney, formatDate } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
-import { calculerDeclaration2035, dotationsNonProratisees, RESERVE_PRORATA_TEMPORIS, type DotationNonProratisee } from '../../lib/declaration2035'
+import { calculerDeclaration2035, dotationsNonProratisees, partCsgNonDeductible, RESERVE_PRORATA_TEMPORIS,
+  type DotationNonProratisee, type PartCsgNonDeductible } from '../../lib/declaration2035'
 import { CASES_2035, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
 import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
 import { remplir2035 } from '../../lib/remplir2035'
@@ -176,6 +177,15 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const doublonsVehicules: { annee: number; doublon: DoublonFraisVehicule }[] = declarations
     .map((d) => ({ annee: d.annee, doublon: doublonFraisVehicules(d) }))
     .filter((x): x is { annee: number; doublon: DoublonFraisVehicule } => x.doublon !== null)
+
+  // La CSG-CRDS est portée EN ENTIER au poste « Cotisations sociales personnelles » (case BK), alors
+  // que 2,9 de ses 9,7 points ne sont pas déductibles du résultat BNC. Le moteur ne retranche rien
+  // — il totalise, il ne déclare pas — donc c'est ici que ça se dit, sur l'écran qui remplit le
+  // formulaire. Deux états distincts : ce qu'on sait chiffrer, et ce qu'on ne sait pas encore.
+  const csgAReintegrer: { annee: number; part: PartCsgNonDeductible }[] = declarations
+    .map((d) => ({ annee: d.annee, part: partCsgNonDeductible(cotisations, d.annee) }))
+    .filter((x): x is { annee: number; part: PartCsgNonDeductible } =>
+      x.part !== null && (x.part.csgNonDeductible > 0 || x.part.nbSansVentilation > 0))
 
   // Première annuité d'un bien acquis en cours d'année : l'application la compte en entier, la règle
   // fiscale la réduit prorata temporis (voir `dotationsNonProratisees`). La réserve vivait jusqu'ici
@@ -380,6 +390,47 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
                   </td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {formatMoney(p.ligne.montant)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {csgAReintegrer.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>CSG-CRDS non déductible comprise dans la ligne 25</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Les cotisations sont portées en entier au poste « Cotisations sociales personnelles »
+            (case BK, ligne 25). Sur les 9,7 points de CSG-CRDS d’un travailleur non salarié, 6,8
+            seulement sont déductibles du résultat : les 2,9 restants (CSG non déductible et CRDS)
+            sont à réintégrer. L’application ne le fait jamais d’office — le choix engage la
+            déclaration, il vous revient.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Exercice</th>
+                <th style={{ textAlign: 'right' }}>CSG-CRDS ventilée</th>
+                <th style={{ textAlign: 'right' }}>dont déductible</th>
+                <th style={{ textAlign: 'right' }}>à réintégrer</th>
+                <th>Cotisations sans ventilation</th>
+              </tr>
+            </thead>
+            <tbody>
+              {csgAReintegrer.map(({ annee, part }) => (
+                <tr key={annee}>
+                  <td>{annee}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(part.totalCsgCrds)}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(part.csgDeductible)}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                    {formatMoney(part.csgNonDeductible)}
+                  </td>
+                  <td>
+                    {part.nbSansVentilation === 0
+                      ? '—'
+                      : `${part.nbSansVentilation} — part non déductible non chiffrable, à saisir dans Cotisations (« dont CSG-CRDS »)`}
                   </td>
                 </tr>
               ))}
