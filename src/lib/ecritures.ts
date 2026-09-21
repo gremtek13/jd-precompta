@@ -91,10 +91,10 @@ export interface AnalyseEcritures {
   nbSansContrepartie: number
   // Écriture complète (contrepartie présente) dont le total débit ne correspond pas au total crédit.
   groupesDesequilibres: GroupeDesequilibre[]
-  // Pièce modifiée depuis que son écriture a été générée — montant, TVA, CATÉGORIE ou DATE :
-  // l'écriture enregistrée ne correspond plus soit au montant TTC actuel, soit au compte de la
-  // catégorie actuelle, soit à la date de la pièce. Les deux derniers ne déplacent AUCUN total,
-  // donc rien d'autre ne peut les voir — et la date déplace l'écriture d'EXERCICE.
+  // Pièce modifiée depuis que son écriture a été générée — montant TTC, VENTILATION DE LA TVA,
+  // CATÉGORIE ou DATE. Les trois derniers ne déplacent AUCUN total, donc rien d'autre ne peut les
+  // voir : la catégorie change le compte qui part en FEC, la date change l'EXERCICE, et la TVA
+  // change la répartition entre charge et TVA déductible à somme constante.
   piecesDesynchronisees: Piece[]
 }
 
@@ -226,6 +226,11 @@ export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser
   const piecesDesynchronisees = aComptabiliser.filter(({ piece: p, compte }) => {
     const lignes = ecritures.filter((e) => e.piece_id === p.id && e.compte !== COMPTE_BANQUE)
     if (lignes.length === 0) return false // pas encore générée — pas une désynchronisation
+    // Signé par rapport au sens naturel de la pièce (achat = débit, vente = crédit) : une simple somme
+    // des montants (toujours positifs) donnerait un faux "désynchronisée" sur une pièce à montant
+    // négatif (avoir, remboursement), dont les lignes sont correctement enregistrées au sens inverse
+    // par lignesChargeProduitPourPiece — pas en écart, juste du signe attendu pour ce cas-là.
+    const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
     // LE COMPTE AUTANT QUE LE MONTANT. Recatégoriser une pièce déjà validée est un geste courant,
     // et rien ne réécrit l'écriture : elle reste sur l'ANCIEN compte. Or le total, lui, ne bouge pas
     // d'un centime — un contrôle qui ne regarde que le montant déclare donc « synchronisée » une
@@ -236,6 +241,22 @@ export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser
       (e) => e.compte !== compte && e.compte !== COMPTE_TVA_DEDUCTIBLE && e.compte !== COMPTE_TVA_COLLECTEE,
     )
     if (surUnAutreCompte) return true
+    // ET LA VENTILATION DE LA TVA, QUE LE TOTAL NE PEUT PAS VOIR — le panneau annonçait pourtant
+    // « montant, TVA » depuis toujours. Corriger `montant_tva` en gardant le TTC laisse le total du
+    // groupe RIGOUREUSEMENT INCHANGÉ (les deux lignes se compensent) et les comptes identiques : ni
+    // la comparaison de montant ni celle de compte ne peut en dire un mot. Même silence quand la TVA
+    // est ajoutée ou effacée après coup, le nombre de lignes changeant sans que leur somme bouge.
+    // Ce que ça coûte : la charge et la TVA déductible partent FAUSSES en FEC et en balance, à somme
+    // juste — pendant que la 2035, calculée sur les pièces, dit autre chose. Encore deux livrables
+    // pour un seul euro.
+    // On compare la TVA ENREGISTRÉE à celle que la pièce annonce (0 quand elle n'en porte pas, ce
+    // qui couvre d'un coup l'ajout et l'effacement) ; signée comme le total, sinon un avoir passerait
+    // pour un écart. Démontré sur une pièce réelle du schéma : 57,00 € portés en charge entière alors
+    // que la pièce annonce 50,91 + 6,09 de TVA, total juste, compte juste, contrôle muet.
+    const tvaEnregistree = lignes
+      .filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE)
+      .reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
+    if (Math.abs(tvaEnregistree - (p.montant_tva ?? 0)) > EPSILON_EQUILIBRE) return true
     // LA DATE AUTANT QUE LE COMPTE, ET ELLE COÛTE PLUS CHER QUE LUI. Une pièce validée sans date
     // reçoit une écriture datée de son DÉPÔT (le repli de lignesChargeProduitPourPiece) ; « Retrouver
     // les dates manquantes » écrit ensuite `date_piece` sans toucher à l'écriture — par conception,
@@ -251,11 +272,6 @@ export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser
     // il n'y a rien à contredire — et comparer au repli ferait crier au loup dès qu'une écriture a
     // été générée dans un autre fuseau que celui qui la relit, `dateLocaleDe` lisant un INSTANT.
     if (p.date_piece && lignes.some((e) => e.date !== p.date_piece)) return true
-    // Signé par rapport au sens naturel de la pièce (achat = débit, vente = crédit) : une simple somme
-    // des montants (toujours positifs) donnerait un faux "désynchronisée" sur une pièce à montant
-    // négatif (avoir, remboursement), dont les lignes sont correctement enregistrées au sens inverse
-    // par lignesChargeProduitPourPiece — pas en écart, juste du signe attendu pour ce cas-là.
-    const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
     const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
     return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
   }).map(({ piece }) => piece)

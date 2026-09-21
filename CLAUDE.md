@@ -1536,9 +1536,36 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   TAIRAIT sur un groupe à moitié périmé le jour où un écrivain partiel apparaîtra, et un contrôle
   qui parle trop se corrige quand celui qui se tait ne se voit pas.
   **Le texte du panneau mentait déjà** : il annonçait « montant, TVA... » et n'avait jamais été
-  repris quand le compte a rejoint le contrôle la veille. Il nomme désormais les trois, et le tableau
-  porte la date actuelle à côté du montant — sans quoi un « à régénérer » sur une pièce dont le
-  montant est juste ne dit pas ce qui a bougé.
+  repris quand le compte a rejoint le contrôle la veille. Il nomme désormais les quatre, et le
+  tableau porte la date actuelle à côté du montant — sans quoi un « à régénérer » sur une pièce dont
+  le montant est juste ne dit pas ce qui a bougé.
+  **ET LE QUATRIÈME CHAMP ÉTAIT CELUI QUE LE PANNEAU PROMETTAIT DEPUIS TOUJOURS : LA VENTILATION DE
+  LA TVA** (21/09/2026). Corriger `montant_tva` en gardant le TTC laisse le total du groupe
+  RIGOUREUSEMENT inchangé — les deux lignes se compensent — et les comptes identiques : ni la
+  comparaison de montant ni celle de compte ne peut en dire un mot. Même silence quand la TVA est
+  ajoutée ou effacée après coup, le NOMBRE de lignes changeant sans que leur somme bouge.
+  **CELUI-CI N'EST PAS LATENT — il est DÉMONTRÉ sur une pièce du schéma**, et c'est le premier des
+  quatre dans ce cas : `IMG_3582.jpeg` porte 57,00 € en charge entière alors que la pièce annonce
+  50,91 + 6,09 de TVA. Validée, catégorie « Notes de frais » dont le compte 625700 est bien celui de
+  l'écriture, total juste au centime — **aucun des trois contrôles ne la voyait**. Sa voisine
+  `IMG_5164.JPEG` (199,99 € contre 199,00) était, elle, déjà prise par la comparaison de montant :
+  c'est ce qui rend la première distinctive. Les deux sont dans `deltasoins 10`, un bac à sable
+  abandonné sur données fictives : **ce qui est démontré est le MÉCANISME, pas un préjudice
+  comptable** (voir « État des données »).
+  **Ce que ça coûte** : la charge et la TVA déductible partent FAUSSES en FEC et en balance, à somme
+  juste — 6,09 € déplacés de l'une à l'autre — pendant que la 2035, calculée sur les pièces, dit
+  autre chose. Encore deux livrables pour un seul euro, et le cross-check TVA de l'onglet Écritures
+  ne le rattrape que si une déclaration existe sur la période.
+  **On compare la TVA ENREGISTRÉE à celle que la pièce annonce, 0 quand elle n'en porte pas** — ce
+  qui couvre l'ajout et l'effacement d'un seul test — et SIGNÉE comme le total, sinon chaque avoir
+  portant de la TVA deviendrait un faux positif. Les deux comptes, déductible ET collectée : n'en
+  regarder qu'un rendrait le contrôle aveugle sur la moitié des pièces et bavard sur l'autre.
+  Quatre mutations mordent, dont le code tel qu'il était.
+  **ET IL A EXPOSÉ UN JEU D'ESSAI INCOHÉRENT** — troisième de la journée, par une troisième porte :
+  un test existant portait 20 € de TVA au brouillon sur une pièce dont `montant_tva` était nul,
+  combinaison que `lignesChargeProduitPourPiece` ne produit jamais. Il passait parce qu'aucun
+  contrôle ne regardait la ventilation. Ni le compilateur ni le balayage des NOT NULL ne pouvaient le
+  voir : l'incohérence n'est pas dans un champ, elle est ENTRE deux objets du même jeu d'essai.
 - **Une piste d'audit se PRODUIT, elle ne se contrôle pas seulement.** Les contrôles ci-dessus disent
   qu'il y a une rupture ; ce qu'un vérificateur demande est un fichier : chaque écriture avec son
   justificatif (tiers, date, montant, nom du fichier, empreinte SHA-256) et l'opération bancaire
@@ -2666,7 +2693,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1072 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1076 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

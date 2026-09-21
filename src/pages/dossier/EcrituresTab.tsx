@@ -479,11 +479,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             Écritures à régénérer <span className="badge badge-danger">à traiter</span>
           </h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            Ces pièces ont été modifiées depuis que leur écriture a été générée : montant, catégorie
-            (donc compte) ou date. Les deux dernières ne déplacent aucun total — une catégorie change
-            le compte qui part en FEC, une date change l'EXERCICE dans lequel l'écriture tombe, alors
-            que la 2035 lit celle de la pièce. Reprend tout cela à jour sans toucher à une éventuelle
-            contrepartie banque déjà rapprochée, dont la date est celle du paiement.
+            Ces pièces ont été modifiées depuis que leur écriture a été générée : montant TTC,
+            ventilation de la TVA, catégorie (donc compte) ou date. Les trois dernières ne déplacent
+            AUCUN total — une catégorie change le compte qui part en FEC, une date change l'EXERCICE
+            dans lequel l'écriture tombe alors que la 2035 lit celle de la pièce, et une TVA corrigée
+            à TTC constant change la répartition entre charge et TVA déductible à somme juste.
+            Reprend tout cela à jour sans toucher à une éventuelle contrepartie banque déjà
+            rapprochée, dont la date est celle du paiement.
           </p>
           <table>
             <thead><tr><th>Pièce</th><th>Montant actuel</th><th>Date actuelle</th><th></th></tr></thead>

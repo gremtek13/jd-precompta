@@ -214,11 +214,15 @@ describe('piecesDesynchronisees — le compte autant que le montant', () => {
   it('ne prend pas les comptes de TVA pour un autre compte', () => {
     // Sinon TOUTE pièce portant de la TVA serait déclarée désynchronisée, et le contrôle
     // deviendrait inécoutable dès la première facture au taux normal.
+    // La pièce DÉCLARE sa TVA (le jeu d'essai portait 20 € au brouillon sur une pièce dont
+    // `montant_tva` est nul — une combinaison que `lignesChargeProduitPourPiece` ne produit jamais,
+    // et que le contrôle de ventilation ci-dessous signale à juste titre).
     const avecTva = [
       ecriture({ piece_id: 'recat', compte: ACHATS, sens: 'debit', montant: 100 }),
       ecriture({ piece_id: 'recat', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
     ]
-    expect(analyserEcritures(avecTva, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+    const ventilee = piece({ id: 'recat', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+    expect(analyserEcritures(avecTva, [{ piece: ventilee, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
   })
 
   it('ne regarde pas la contrepartie banque, qui vit sur son propre compte', () => {
@@ -227,6 +231,61 @@ describe('piecesDesynchronisees — le compte autant que le montant', () => {
       ecriture({ piece_id: 'recat', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
     ]
     expect(analyserEcritures(complete, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+  })
+})
+
+describe('piecesDesynchronisees — la ventilation de la TVA, que le total ne peut pas voir', () => {
+  it('signale une TVA corrigée à TTC constant — total identique, comptes identiques', () => {
+    // LE CAS DÉMONTRÉ SUR UNE PIÈCE RÉELLE DU SCHÉMA : 57,00 € portés en charge entière alors que la
+    // pièce annonce 50,91 + 6,09 de TVA. Les deux lignes attendues se compensent exactement, donc le
+    // total du groupe ne bouge pas d'un centime et le compte est le bon : ni la comparaison de
+    // montant ni celle de compte ne peut en dire un mot. La charge et la TVA déductible partent
+    // pourtant FAUSSES en FEC et en balance, à somme juste.
+    const p = piece({ id: 'tva', montant_ht: 50.91, montant_tva: 6.09, montant_ttc: 57 })
+    const nonVentilee = [ecriture({ piece_id: 'tva', compte: ACHATS, sens: 'debit', montant: 57 })]
+    expect(analyserEcritures(nonVentilee, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([p])
+
+    // Le garde symétrique : correctement ventilée, elle ne bouge pas. Sans lui, le test ci-dessus
+    // serait satisfait par un contrôle qui signale toute pièce portant de la TVA.
+    const ventilee = [
+      ecriture({ piece_id: 'tva', compte: ACHATS, sens: 'debit', montant: 50.91 }),
+      ecriture({ piece_id: 'tva', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 6.09 }),
+    ]
+    expect(analyserEcritures(ventilee, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+  })
+
+  it('voit aussi une TVA EFFACÉE après coup, dont la ligne survit', () => {
+    // Le cas inverse, et le total est encore juste : la pièce ne porte plus de TVA, l'écriture en
+    // garde une. `montant_tva` nul vaut 0 attendu, ce qui couvre l'ajout et l'effacement d'un coup.
+    const p = piece({ id: 'effacee', montant_ht: null, montant_tva: null, montant_ttc: 120 })
+    const lignes = [
+      ecriture({ piece_id: 'effacee', compte: ACHATS, sens: 'debit', montant: 100 }),
+      ecriture({ piece_id: 'effacee', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
+    ]
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([p])
+  })
+
+  it('compte la TVA COLLECTÉE d’une vente comme la déductible d’un achat', () => {
+    // Une vente ventile sur 445710, pas 445660. Ne regarder qu'un seul des deux comptes rendrait le
+    // contrôle aveugle sur la moitié des pièces — et bavard sur l'autre.
+    const p = piece({ id: 'vente', type_piece: 'vente', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+    const justes = [
+      ecriture({ piece_id: 'vente', compte: VENTES, sens: 'credit', montant: 100 }),
+      ecriture({ piece_id: 'vente', compte: COMPTE_TVA_COLLECTEE, sens: 'credit', montant: 20 }),
+    ]
+    expect(analyserEcritures(justes, [{ piece: p, compte: VENTES }]).piecesDesynchronisees).toEqual([])
+  })
+
+  it('ne prend pas un avoir correctement ventilé pour un écart', () => {
+    // Ses lignes sont au sens INVERSE du sens naturel de la pièce (voir lignesChargeProduitPourPiece).
+    // Une somme non signée de la TVA conclurait à -20 contre +20 attendu, soit un faux positif sur
+    // chaque avoir portant de la TVA.
+    const p = piece({ id: 'avoir', montant_ht: -100, montant_tva: -20, montant_ttc: -120 })
+    const lignes = [
+      ecriture({ piece_id: 'avoir', compte: ACHATS, sens: 'credit', montant: 100 }),
+      ecriture({ piece_id: 'avoir', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'credit', montant: 20 }),
+    ]
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
   })
 })
 
