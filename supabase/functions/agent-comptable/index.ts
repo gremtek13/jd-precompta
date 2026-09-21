@@ -34,6 +34,9 @@
 // Fichier auto-porteur, comme les autres fonctions de ce dossier (déployées par copier-coller dans
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts et
 // src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
+// Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
+// extrait `piecesAComptabiliser` et `analyserEcritures` et les exécute contre celles de src/lib :
+// elle avait dérivé sans que rien ne puisse le voir.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
