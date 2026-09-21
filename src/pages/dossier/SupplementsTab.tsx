@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
+import { messageErreur } from '../../lib/messageErreur'
 import {
   LABEL_STATUT_SUPPLEMENT, LABEL_TYPE_SUPPLEMENT, type Supplement, type TypeSupplement,
 } from '../../lib/supplements'
@@ -402,7 +403,19 @@ function MouvementsModal({ compte, mouvements, onClose, onChanged }: {
 
   async function supprimer(m: MouvementCca) {
     if (!window.confirm('Supprimer ce mouvement ?')) return
-    await supabase.from('mouvements_cca').delete().eq('id', m.id)
+    // Sa fonction JUMELLE `ajouter`, trente lignes plus haut, lit bien son erreur ; celle-ci, non —
+    // exactement le couple `DocumentsTab.supprimer` / `supprimerSelection`. Le `onChanged()` qui
+    // suit recharge, donc la ligne réapparaît : c'est un signal, mais MUET et ambigu, sur une
+    // suppression que l'utilisateur vient de CONFIRMER. Le réflexe est alors de reconfirmer, et
+    // d'obtenir le même silence — le défaut déjà payé sur `SuperPdpModal.retirer()`.
+    // Et le solde d'un compte courant est TOUJOURS recalculé depuis l'historique complet : une
+    // ligne qu'on croit retirée et qui reste est un solde que le cabinet croit faux.
+    const { error } = await supabase.from('mouvements_cca').delete().eq('id', m.id)
+    if (error) {
+      setErreur(messageErreur(error, "Ce mouvement n'a pas pu être supprimé."))
+      return
+    }
+    setErreur(null)
     onChanged()
   }
 

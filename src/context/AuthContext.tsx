@@ -146,7 +146,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session])
 
   async function signOut() {
-    await supabase.auth.signOut()
+    // CE QUE LA SOURCE DE LA BIBLIOTHÈQUE DIT, ET QUI CORRIGE L'INTUITION (vérifié dans
+    // `@supabase/auth-js`, GoTrueClient._signOut) : sur une erreur SERVEUR — réseau, 5xx —
+    // `removeCurrentSession()` est appelé AVANT que l'erreur soit rendue, donc la session locale
+    // part quand même et l'écran revient bien à la connexion. Un seul chemin laisse l'utilisateur
+    // connecté sans le dire : une erreur sur la LECTURE de la session locale, qui sort avant tout
+    // retrait. Étroit, mais silencieux — et sur un poste de cabinet partagé, c'est une session
+    // laissée ouverte derrière un bouton qui n'a rien fait de visible.
+    // ET IL Y A PIRE QUE LE LOCAL : la portée par défaut est `global`, donc « Déconnexion » promet
+    // de fermer TOUTES les sessions du compte. Sur une erreur réseau, la révocation côté serveur
+    // n'a PAS eu lieu — le jeton reste valide jusqu'à son expiration, et rien ne le dit.
+    // Best-effort JOURNALISÉ plutôt que remonté : l'écran est déjà reparti à la connexion dans le
+    // cas courant, donc un message n'aurait personne à qui parler — mais l'avaler sans trace
+    // rendrait ce chemin indiagnosticable. C'est le précédent `tauxChange.tauxBce`.
+    const { error } = await supabase.auth.signOut()
+    if (error) console.error('[signOut] déconnexion incomplète :', error.message)
   }
 
   function setDossierActifId(id: string) {
