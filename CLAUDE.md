@@ -173,6 +173,21 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   rejoindre ce même contexte plutôt que réinventer un `useState<ValeurAnnee>` local. Le filtre "sans
   date" (propre aux pièces, sans équivalent sur un mouvement bancaire ou une écriture) reste un état
   local à `PiecesTab`, hors de ce contexte.
+  **BALAYÉ LE 21/09/2026, RÉSULTAT NÉGATIF, à garder pour ne pas le refaire.** La question posée était
+  celle qui coûte : un écran dont un TOTAL dépend d'une année qu'il a choisie lui-même, pendant que
+  l'en-tête en annonce une autre — l'opérateur croit alors lire le même exercice partout. **Aucun des
+  quatorze sites d'année locale n'est dans ce cas.** Trois formes, toutes légitimes :
+  les cinq onglets qui portent leur PROPRE `AnneeTabs` à l'écran (Documents, Factures, Virements,
+  Cotisations, Immobilisations) — le sélecteur est sous les yeux, le total lui est cohérent ;
+  les chiffres ÉTIQUETÉS de leur année (« Avancement 2026 » dans la Balance des comptes, avec le
+  paragraphe qui dit déjà « indépendant de l'exercice sélectionné » ; « Projection 2026 » d'Estimation ;
+  « sur N mois écoulés cette année » des ratios bancaires) ; et l'année civile de `ChecklistTab`, qui
+  doit RESTER civile — c'est la même que `ClientHome` et `ClientUpload`, et les trois écrans doivent
+  dire la même chose au même moment (voir `moisEcoulesCetteAnnee()`).
+  **Ce qui resterait à trancher n'est pas un chiffre faux mais une ergonomie** : sur ces cinq onglets,
+  le sélecteur d'exercice de l'en-tête est affiché ET sans effet, puisque le cockpit englobe tous les
+  onglets. Il n'est pas inerte pour autant — il prépare l'onglet suivant. À rouvrir comme une question
+  produit, pas comme un défaut.
 - **Français partout** : noms de variables/fonctions, commentaires, libellés
   UI, messages d'erreur utilisateur. Les commentaires expliquent le
   *pourquoi* (contrainte métier, bug évité, choix délibéré), jamais un simple
@@ -1611,6 +1626,49 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   prenaient « aujourd'hui » en `toISOString()` — la date UTC — depuis toujours : tous les tests
   passaient une date explicite, donc ce chemin n'a jamais été exercé. Quand une fonction testée
   a une valeur par défaut, elle mérite son propre test.
+- **ET CETTE RÈGLE-LÀ N'ÉTAIT GARDÉE PAR RIEN, APRÈS AVOIR ÉTÉ PAYÉE TROIS FOIS** (21/09/2026).
+  `capitalRestantDu`/`empruntActif` ci-dessus, la période par défaut d'un pack, `toIsoDate` — trois
+  occurrences, trois corrections, zéro contrôle. Elle vivait dans ce fichier et dans les fonctions de
+  `lib/format.ts` faites pour elle (`aujourdHuiSql`, `premierJourDuMoisCourant`, `ajouterMois`,
+  `ajouterJours`), c'est-à-dire nulle part où une rechute se verrait.
+  **LE SIGNAL MÉCANIQUE N'EST PAS `toISOString()`, C'EST SA TRONCATURE**, et c'est ce qui rend le
+  balayage possible sans arbitrage : gardé ENTIER, `new Date().toISOString()` est un INSTANT, donc
+  légitime — un `created_at`, un `updated_at`, un `validated_at`, et ce dépôt le fait neuf fois à bon
+  droit. C'est le `.slice(0, 10)` (ou `.substring`, `.substr`, `.split('T')[0]`) qui en fait une date
+  CIVILE, prise dans le fuseau du serveur et non dans celui de qui regarde.
+  **Six troncatures, DEUX en faute :**
+  - `tauxChange.montantsPourPiece` — le taux du jour d'une pièce dont l'OCR n'a pas lu la date.
+    La pièce est convertie au taux de la VEILLE entre minuit et 2 h du matin à Paris, et **pendant
+    toute la matinée à l'est de Greenwich**. Le montant part en comptabilité sans que rien ne le
+    distingue d'une conversion juste : le taux enregistré est un VRAI taux BCE, simplement pas celui
+    du bon jour. Aucun test n'exerçait ce repli — les quatre cas existants passaient tous une date
+    explicite, exactement l'angle mort décrit ci-dessus.
+  - `agent-comptable` — la « Date du jour » donnée au modèle « pour interpréter cette année, l'an
+    dernier ». Une Edge Function tourne en UTC : un jour d'écart déplace la PÉRIODE d'une réponse, et
+    le 1er janvier au petit matin c'est l'EXERCICE ENTIER, sur un assistant dont tout le prompt exige
+    des montants exacts et la période concernée. Le fuseau du cabinet est désormais ÉCRIT
+    (`Europe/Paris`, via `formatToParts` — c'est le séparateur qui varie d'une locale à l'autre, pas
+    les composantes) : la fonction ne reçoit rien qui dise où se trouve son appelant, et cette
+    application est française de bout en bout.
+  **Les quatre autres sont légitimes, et la raison est toujours l'une de deux** : une `Date` ANCRÉE
+  en UTC de bout en bout (`${date}T00:00:00Z` puis `setUTCDate` — `dateMoinsJours` et son jumeau
+  auto-porté de `taux-change-bce`), ou une borne dont l'écart de fuseau est COUVERT par une marge
+  écrite pour lui (`dateFuture`, son jour de marge).
+  **L'EXCEPTION PORTE UN NOMBRE, PAS SEULEMENT UNE RAISON**, et c'est le point de conception :
+  dispenser un FICHIER dispense tout le fichier — or le premier dispensé est justement `tauxChange.ts`,
+  où le défaut vivait à deux lignes de la troncature légitime. Une rechute y serait passée sans un mot.
+  Le compte doit tomber juste : une de plus est une rechute, une de moins est une raison morte.
+  **Sept mutations mordent** (`datesUtc.test.ts`), dont chacun des deux défauts replanté et le
+  scanner ramené à la lecture « par ligne » — le piège qui a déjà aveuglé **quatre** balayages de ce
+  dépôt, et contre lequel une source synthétique porte la faute coupée sur trois lignes.
+  **ET LA MUTATION DU REPLI DE TAUX EST INVISIBLE SOUS `TZ=UTC`, IRRÉDUCTIBLEMENT** : les deux
+  implémentations y sont identiques, et aucune écriture de test n'y changera rien. Elle mord sous
+  Europe/Paris, America/New_York et Pacific/Auckland — c'est `npm run test:fuseaux` qui porte seule
+  cette garantie, le runner GitHub étant en UTC. Le test le DIT, avec un contrôle qui vérifie que les
+  deux dates se séparent au moins une fois hors UTC : sans lui il serait vert pour une raison fausse.
+  **`agent-comptable` déployée en version 18** le 21/09/2026 — `verify_jwt` relu et repassé à `false`,
+  déployé comparé au dépôt AVANT écrasement (identique au caractère près, donc rien à embarquer au
+  passage), aller-retour après : zéro différence résiduelle sur 661 lignes.
 - **Une lecture dont l'échec ressemble à un résultat vide se vérifie comme une écriture.**
   Un `count` nul, un `data` nul : indiscernables d'un « rien trouvé ». C'est ce qui faisait
   répondre « ce fichier est nouveau » à `fichierDejaPresent` quand la lecture était refusée,
@@ -3060,7 +3118,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1169 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1179 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
