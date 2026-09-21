@@ -10,6 +10,7 @@ import { useAuth } from '../../context/AuthContext'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
 import FilCommentaires from '../../components/FilCommentaires'
 import { messageErreur } from '../../lib/messageErreur'
+import { retirerFichiers } from '../../lib/stockage'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -399,7 +400,7 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       // Best-effort : le fichier au storage n'a pas besoin de bloquer la suppression de la pièce s'il
       // a déjà disparu ou si la suppression échoue pour une autre raison.
       if (piece.storage_path) {
-        await supabase.storage.from('pieces').remove([piece.storage_path]).catch(() => {})
+        await retirerFichiers('pieces', [piece.storage_path], 'PieceFormModal')
       }
 
       onSaved()

@@ -21,6 +21,7 @@ import SuperPdpModal from './SuperPdpModal'
 import CategoriserTiersModal from './CategoriserTiersModal'
 import { useAnnee } from '../../context/AnneeContext'
 import { useAuth } from '../../context/AuthContext'
+import { retirerFichiers } from '../../lib/stockage'
 
 export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -321,7 +322,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         continue
       }
       if (piece?.storage_path) {
-        await supabase.storage.from('pieces').remove([piece.storage_path]).catch(() => {})
+        await retirerFichiers('pieces', [piece.storage_path], 'PiecesTab')
       }
       supprimees++
     }

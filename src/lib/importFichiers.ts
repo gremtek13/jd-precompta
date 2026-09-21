@@ -107,7 +107,15 @@ export async function importerFichierDossier(params: {
   const enregistrer = async (table: 'pieces' | 'documents_divers', ligne: Record<string, unknown>): Promise<string> => {
     const { data, error } = await supabase.from(table).insert(ligne).select('id').single()
     if (error || !data) {
-      await supabase.storage.from('pieces').remove([path])
+      // ET LE RETRAIT LUI-MÊME SE VÉRIFIE : une compensation dont on jette le résultat laisse
+      // exactement l'orphelin qu'elle existe pour éviter. Rien ne recharge le STOCKAGE — aucun écran
+      // ne le relit jamais — donc l'échec n'aurait aucun témoin, et chaque nouvel essai déposerait un
+      // fichier de plus (le chemin porte un horodatage). Non bloquant : l'erreur d'insertion reste
+      // celle qu'on remonte, c'est elle qui explique à l'utilisateur ce qui s'est passé.
+      const { error: erreurRetrait } = await supabase.storage.from('pieces').remove([path])
+      if (erreurRetrait) {
+        console.error(`[importFichiers] fichier ORPHELIN laissé dans le stockage : ${path}`, erreurRetrait)
+      }
       throw error ?? new Error("l'enregistrement n'a rien rendu")
     }
     hashsConnus.add(hash)

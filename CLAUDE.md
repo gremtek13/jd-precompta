@@ -1041,6 +1041,55 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   v10, `receive-email` v6 — chacune avec son `verify_jwt` relu et repassé à `false`, et vérifiée par
   aller-retour (179, 207 et 276 lignes, zéro différence résiduelle). La comparaison AVANT écrasement
   a rendu trois fois le même résultat : déployé identique au dépôt moins le correctif.
+- **ET LA QUESTION QUI DÉCIDE N'A JAMAIS ÉTÉ POSÉE DU STOCKAGE** (21/09/2026). Le balayage du
+  20/09/2026 demandait *quelque chose recharge-t-il derrière ?* et répondait « presque toujours oui ».
+  C'était vrai des TABLES : un `load()` suit, la ligne supprimée réapparaît, l'échec se voit.
+  **Pour le STOCKAGE la réponse est TOUJOURS non** — aucun écran de ce projet ne relit jamais un seau.
+  Neuf retraits de fichier, dont **sept en `.remove([...]).catch(() => {})`**, c'est-à-dire la façon
+  la plus explicite possible de dire qu'on ne veut pas savoir. Trois étages, et ils ne coûtent pas la
+  même chose :
+  - **`suppressionDossier.ts` — le pire, et de loin.** Ni `list()` ni `remove()` ne lisaient leur
+    `{ error }`, et un `catch {}` avalait le reste. Or **une lecture refusée rend `data: null`,
+    indiscernable d'un dossier vide** (famille déjà nommée : « une lecture dont l'échec ressemble à un
+    résultat vide ») : ZÉRO fichier retiré, pendant que l'écran annonçait une suppression propre.
+    **C'est le geste auquel se ramène une demande d'effacement**, et les données de patients sont dans
+    les FICHIERS, pas dans les tables (RGPD.md §4) — le cabinet croyait avoir effacé ce qui était
+    toujours là. Et la ligne `dossiers` venant de partir, plus aucun écran ne peut les retrouver.
+    La fonction REND désormais un bilan (`demandes`, `retires`, `echecs`, `inventaireIncomplet`) et
+    reste non bloquante — mais **non bloquant n'est pas muet** : l'écran retient la navigation et dit
+    ce qui reste, parce que naviguer tout de suite emporterait le message avec l'écran et que c'est la
+    seule occasion de le lire. `inventaireIncomplet` porte la phrase de `packGenerator` appliquée
+    ailleurs : **on ne peut pas recenser ce qu'on n'a pas lu**, donc on dit qu'on ne sait pas plutôt
+    que d'annoncer un compte faux.
+  - **`depot.ts` et `importFichiers.ts` — les DEUX JUMEAUX de la compensation de `receive-email`**,
+    corrigée une heure plus tôt. Les corriger le même jour n'est pas du zèle : « chercher toutes les
+    copies avant de corriger la première » est une règle de ce fichier, et s'arrêter à la première
+    aurait été exactement le défaut qu'elle décrit. Journalisés avec le CHEMIN — chaque nouvel essai
+    dépose un fichier de plus, l'horodatage étant dans le nom.
+  - **Les quatre écrans (`PiecesTab`, `PieceFormModal`, `DocumentsTab`, `CabinetBrandingPage`) passent
+    par un point unique**, `lib/stockage.ts::retirerFichiers`, qui journalise au lieu de bâtir un
+    message par écran. **Et l'arbitrage est écrit plutôt que tu** : ici le résidu reste sous
+    `dossierId/`, donc la suppression du dossier finira par le ramasser, et le geste de l'utilisateur
+    est bien accompli ET visible (la ligne a disparu). C'est la différence avec la suppression d'un
+    dossier, où plus rien ne repassera jamais. Un best-effort journalisé satisfait la règle du projet
+    — c'est le précédent `tauxChange.tauxBce`, déjà admis comme légitime.
+    Le `catch` reste nécessaire et il est gardé par un test : **`remove()` rend `{ error }` sur un
+    refus du serveur mais REJETTE sur une coupure réseau**, et les deux laissent le même fichier.
+  **ET UN DÉFAUT DE PLUS, TROUVÉ EN LISANT CES NEUF LIGNES : `DocumentsTab.supprimer` retirait le
+  fichier MÊME QUAND LA LIGNE N'ÉTAIT PAS PARTIE** (`await supabase.from(...).delete()` sans
+  destructuration). Une suppression refusée laissait donc une ligne bien visible qui désigne un
+  fichier disparu — **pire qu'un orphelin** : le téléchargement casse, et l'empreinte SHA-256 que la
+  piste d'audit donne pour preuve ne vérifie plus rien. Sa fonction JUMELLE trente lignes plus bas
+  (`supprimerSelection`) testait déjà `deleteError` ; celle-ci, non.
+  **LATENT, et mesuré** : sur les 151 objets des trois seaux, **deux seulement ne sont référencés par
+  aucune table, et ce sont des fixtures d'essai RLS** — zéro orphelin de production.
+  **Ce que la couverture ajoute, et pourquoi il en fallait DEUX SORTES** : `suppressionDossier.test.ts`
+  (13 tests, 6 mutations) garde le CALCUL — la fonction sait dire ce qu'elle n'a pas retiré ;
+  `InformationsTab.test.tsx` (3 tests, 4 mutations) garde le CÂBLAGE, que jamais aucun test de
+  `src/lib` ne pourrait voir — que l'écran le MONTRE au lieu de naviguer. La mutation qui compte est
+  celle qui remet le code TEL QU'IL ÉTAIT (« on navigue toujours ») : elle fait tomber deux des trois
+  tests, le troisième étant le garde symétrique — sans lui, « l'écran ne navigue pas » serait satisfait
+  par un écran qui ne navigue JAMAIS.
 - **UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS — une fonction vit en production sans exister dans ce
   dépôt** (constaté le 21/09/2026). `list_edge_functions` rend **quatorze** fonctions ; le dépôt en
   porte treize. La quatorzième s'appelle `bright-task` (nom par défaut de Supabase), elle est
@@ -2765,13 +2814,14 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 8 testés** — banque,
-  documents, statistiques, écritures, clôture, checklist, justificatifs et packs (21/09/2026) — donc
-  **9 sans aucun test de rendu**. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 9 testés** — banque,
+  documents, statistiques, écritures, clôture, checklist, justificatifs, packs et informations
+  (21/09/2026) — donc **8 sans aucun test de rendu**. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
-  `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une de ses cartes l'est —
-  Informations reste dans les neuf.
+  `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une
+  de ses cartes l'est : Informations est resté dans les non-testés jusqu'à ce qu'il gagne son propre
+  test de rendu, le 21/09/2026, sur ce que la suppression d'un dossier laisse dans le stockage.
   **La liste des dossiers a rejoint les écrans testés le 20/09/2026** (`DossiersList.test.tsx`) :
   ni un onglet ni une carte mais une PAGE, donc le compte des 17 onglets ne bouge pas. Elle y est
   entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre l'affichage » plus haut.
@@ -2816,7 +2866,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1088 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1112 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

@@ -12,6 +12,9 @@ const etat = {
   // `{ message }` aurait testé un comportement que la production n'a pas.
   uploadError: null as Error | null,
   insertError: null as Error | null,
+  // Le retrait de compensation échoue lui aussi : le fichier reste en place, et il faut que ça
+  // se dise — rien ne recharge le stockage, donc personne ne le verrait autrement.
+  removeError: null as Error | null,
   // Écriture acceptée mais relecture vide : ce que rendrait une policy qui autorise l'insert sans
   // autoriser le select. Ni erreur, ni ligne — le cas qu'un `if (error)` seul laisserait passer.
   insertRendVide: false,
@@ -67,7 +70,7 @@ vi.mock('./supabase', () => ({
         },
         remove: (chemins: string[]) => {
           journal.push({ action: 'remove', cible: chemins.join(',') })
-          return Promise.resolve({ error: null })
+          return Promise.resolve({ error: etat.removeError })
         },
       }),
     },
@@ -108,6 +111,7 @@ beforeEach(() => {
   etat.lectureDoublonLeve = false
   etat.uploadError = null
   etat.insertError = null
+  etat.removeError = null
   etat.insertRendVide = false
   etat.extraction = { classification: 'facture', date_piece: '2026-03-10', tiers: 'EDF', montant_ttc: 120, confiance: 'haute' }
   etat.extractionLeve = false
@@ -181,6 +185,26 @@ describe('deposerFichier', () => {
     etat.insertError = new Error('permission denied')
     expect(await deposer('facture.pdf')).toEqual({ statut: 'erreur', message: 'permission denied' })
     expect(journal.map((j) => j.action)).toEqual(['upload', 'insert:pieces', 'remove'])
+  })
+
+  it('journalise le fichier resté ORPHELIN quand le retrait échoue lui aussi', async () => {
+    // Le retrait est une COMPENSATION : s'il rate en silence, il laisse exactement l'orphelin qu'il
+    // existe pour éviter. Rien ne recharge le STOCKAGE — aucun écran ne le relit jamais — donc le
+    // journal est la seule trace possible ; et chaque nouvel essai en déposerait un de plus, le
+    // chemin portant un horodatage.
+    etat.insertError = new Error('permission denied')
+    etat.removeError = { message: 'objet verrouillé' } as never
+    const console_ = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      expect((await deposer('facture.pdf')).statut).toBe('erreur')
+      const dit = console_.mock.calls.map((c) => String(c[0]))
+      expect(dit.some((m) => m.includes('ORPHELIN'))).toBe(true)
+      // Le CHEMIN, pas seulement « ça a raté » : sans lui, le signalement ne désigne aucun fichier.
+      const chemin = journal.find((j) => j.action === 'upload')!.cible
+      expect(dit.some((m) => m.includes(chemin))).toBe(true)
+    } finally {
+      console_.mockRestore()
+    }
   })
 
   it('remonte l’échec de la vérification anti-doublon au lieu de déposer quand même', async () => {

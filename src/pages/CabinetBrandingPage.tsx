@@ -5,6 +5,7 @@ import { eclaircir, estCouleurHexValide } from '../lib/colors'
 import { signalerMajBranding } from '../lib/branding'
 import type { Cabinet } from '../lib/types'
 import { messageErreur } from '../lib/messageErreur'
+import { retirerFichiers } from '../lib/stockage'
 
 // Polices proposées, pas de champ libre : un nom de police Google Fonts mal orthographié ne casse
 // rien (repli silencieux sur Inter dans le navigateur) mais ne sert à rien non plus — autant garantir
@@ -92,7 +93,7 @@ export default function CabinetBrandingPage() {
         // L'ancien logo n'est pas gardé — un seul logo actif à la fois, pas d'archive à faire le
         // ménage dessus plus tard. Best-effort : un échec de suppression ne bloque pas le nouveau.
         if (logoStoragePath) {
-          await supabase.storage.from('cabinet-logos').remove([logoStoragePath]).catch(() => {})
+          await retirerFichiers('cabinet-logos', [logoStoragePath], 'CabinetBranding')
         }
         logoStoragePath = chemin
       }
@@ -125,7 +126,7 @@ export default function CabinetBrandingPage() {
     setSaving(true)
     setError(null)
     try {
-      await supabase.storage.from('cabinet-logos').remove([cabinet.logo_storage_path]).catch(() => {})
+      await retirerFichiers('cabinet-logos', [cabinet.logo_storage_path], 'CabinetBranding')
       const { error: updateError } = await supabase.from('cabinets').update({ logo_storage_path: null }).eq('id', monCabinetId)
       if (updateError) throw updateError
       setLogoFile(null)

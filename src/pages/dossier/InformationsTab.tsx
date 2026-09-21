@@ -4,7 +4,7 @@ import { supabase } from '../../lib/supabase'
 import { useAuth } from '../../context/AuthContext'
 import { generatePack } from '../../lib/packGenerator'
 import { aujourdHuiSql } from '../../lib/format'
-import { supprimerDossierDefinitivement } from '../../lib/suppressionDossier'
+import { supprimerDossierDefinitivement, messageNettoyage } from '../../lib/suppressionDossier'
 import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
 import VehiculesCard from './VehiculesCard'
@@ -53,6 +53,9 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
   const [confirmerSuppression, setConfirmerSuppression] = useState(false)
   const [suppressionEnCours, setSuppressionEnCours] = useState(false)
   const [suppressionErreur, setSuppressionErreur] = useState<string | null>(null)
+  // Ce que le nettoyage du stockage n'a pas su faire. Séparé de `suppressionErreur` : le dossier EST
+  // supprimé, ce n'est donc pas un échec à réessayer mais un reste à signaler.
+  const [resteStockage, setResteStockage] = useState<string | null>(null)
 
   const [vehiculeType, setVehiculeType] = useState<VehiculeType>('aucun')
   const [vehiculeLibelle, setVehiculeLibelle] = useState('')
@@ -167,7 +170,17 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
     setSuppressionEnCours(true)
     setSuppressionErreur(null)
     try {
-      await supprimerDossierDefinitivement(dossierId)
+      const bilan = await supprimerDossierDefinitivement(dossierId)
+      // Le dossier est parti ; il ne reste qu'à DIRE ce que le stockage a gardé. Naviguer tout de
+      // suite emporterait le message avec l'écran, donc on attend un acquittement — c'est la seule
+      // occasion de le lire, plus aucun écran ne pouvant retrouver ces fichiers ensuite.
+      const reste = messageNettoyage(bilan)
+      if (reste) {
+        setConfirmerSuppression(false)
+        setSuppressionEnCours(false)
+        setResteStockage(reste)
+        return
+      }
       navigate('/dossiers')
     } catch (err) {
       setSuppressionErreur(messageErreur(err, 'La suppression a échoué.'))
@@ -179,6 +192,15 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
 
   return (
     <>
+    {resteStockage && (
+      <div className="card" style={{ maxWidth: 640, marginBottom: 20 }}>
+        <h3 style={{ marginTop: 0 }}>Des fichiers sont restés dans le stockage</h3>
+        <p className="error-text">{resteStockage}</p>
+        <button type="button" className="btn" onClick={() => navigate('/dossiers')}>
+          J'ai compris — revenir à la liste
+        </button>
+      </div>
+    )}
     <div className="card" style={{ maxWidth: 640, marginBottom: 20 }}>
       <h3 style={{ marginTop: 0 }}>Identité du dossier</h3>
       <p className="muted" style={{ marginTop: -8 }}>

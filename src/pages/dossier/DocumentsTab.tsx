@@ -11,6 +11,8 @@ import { documentsARelire, relireTextesDocuments } from '../../lib/relectureDocu
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { chargerDoublonsDeTexte } from '../../lib/doublonsTexte'
+import { messageErreur } from '../../lib/messageErreur'
+import { retirerFichiers } from '../../lib/stockage'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -207,8 +209,17 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
   async function supprimer(doc: DocumentDivers) {
     if (!window.confirm(`Supprimer définitivement "${doc.nom_fichier}" ?`)) return
-    await supabase.from('documents_divers').delete().eq('id', doc.id)
-    await supabase.storage.from('pieces').remove([doc.storage_path]).catch(() => {})
+    // LA LIGNE D'ABORD, LE FICHIER ENSUITE — et seulement si elle est bien partie. Le fichier était
+    // retiré quoi qu'il arrive : une suppression refusée (RLS, réseau) laissait donc une ligne bien
+    // visible qui désigne un fichier disparu. C'est pire qu'un orphelin — le téléchargement casse, et
+    // l'empreinte SHA-256 que la piste d'audit donne pour preuve ne vérifie plus rien. La fonction
+    // jumelle trente lignes plus bas (`supprimerSelection`) teste déjà `deleteError` ; celle-ci, non.
+    const { error: erreurSuppression } = await supabase.from('documents_divers').delete().eq('id', doc.id)
+    if (erreurSuppression) {
+      setError(messageErreur(erreurSuppression, 'La suppression a échoué.'))
+      return
+    }
+    await retirerFichiers('pieces', [doc.storage_path], 'DocumentsTab')
     load()
   }
 
@@ -237,7 +248,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
       const { error: deleteError } = await supabase.from('documents_divers').delete().eq('id', id)
       if (deleteError) continue
       if (doc?.storage_path) {
-        await supabase.storage.from('pieces').remove([doc.storage_path]).catch(() => {})
+        await retirerFichiers('pieces', [doc.storage_path], 'DocumentsTab')
       }
     }
     setSelected(new Set())
