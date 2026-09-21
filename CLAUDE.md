@@ -996,6 +996,14 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   à rien. Cinq mutations mordent, dont les trois défauts d'origine replantés un par un ; « le scanner
   devient aveugle » en fait tomber DEUX, les deux bornes posées pour que « zéro faute » et
   « aveugle » restent distinguables.
+  **LES TROIS SONT EN PRODUCTION** (21/09/2026) : `create-cabinet` v3, `send-email` v2,
+  `superpdp-emit` v9 — chacune déployée avec son `verify_jwt` relu et repassé explicitement (règle
+  ci-dessous), et vérifiée par aller-retour. Sur `superpdp-emit`, 417 lignes, **zéro différence
+  résiduelle**.
+  **Et la comparaison AVANT écrasement, celle qui se saute, a rendu son résultat utile** : le
+  déployé était identique au dépôt moins le correctif, aux deux écritures près — donc personne
+  n'avait modifié la production à la main, et il n'y avait aucun correctif non déployé à embarquer
+  au passage (le cas qui avait trouvé `extract-piece` en retard de trois correctifs).
 - **UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS — une fonction vit en production sans exister dans ce
   dépôt** (constaté le 21/09/2026). `list_edge_functions` rend **quatorze** fonctions ; le dépôt en
   porte treize. La quatorzième s'appelle `bright-task` (nom par défaut de Supabase), elle est
