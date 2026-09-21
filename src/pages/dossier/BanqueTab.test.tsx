@@ -2,6 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
+import type { Piece } from '../../lib/types'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
 // `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
@@ -10,7 +11,7 @@ import BanqueTab from './BanqueTab'
 // facture » (DocumentsTab), retrouvé ici en écrivant le test plutôt qu'en relisant le code.
 const faux = vi.hoisted(() => ({
   lignes: [] as Record<string, unknown>[],
-  pieces: [] as Record<string, unknown>[],
+  pieces: [] as unknown[],
   updatesLignes: [] as Record<string, unknown>[],
   // La promesse de la première mise à jour de ligne bancaire est gardée en attente : c'est la
   // fenêtre réelle pendant laquelle un second clic arrive. La résoudre tout de suite supprimerait
@@ -84,11 +85,20 @@ function ligneDeTest() {
   }
 }
 
-function pieceDeTest() {
+// TYPÉ, et sans `as` : le compilateur vérifie alors chaque champ contre `Piece`, donc contre la
+// table. Le jeu d'essai portait `devise: null`, impossible en base (NOT NULL DEFAULT 'EUR') — et ce
+// n'était pas inerte ici : `reglerPieceSurBanque` sort sur `!piece.devise` AVANT son test
+// `=== 'EUR'`, donc le test exerçait la branche du champ absent au lieu de celle d'une pièce en
+// euros. Un jeu d'essai infidèle ne fait pas qu'affaiblir un test : il lui fait prouver autre chose.
+function pieceDeTest(o: Partial<Piece> = {}): Piece {
   return {
-    id: 'piece-1', dossier_id: 'dossier-de-test', statut: 'validee', montant_ttc: 100,
-    date_piece: '2025-06-01', tiers: 'Fournisseur', type_piece: 'achat', devise: null,
-    nom_fichier: 'facture.pdf', storage_path: 'dossier/facture.pdf',
+    id: 'piece-1', dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload',
+    storage_path: 'dossier/facture.pdf', nom_fichier: 'facture.pdf', storage_hash: null,
+    date_piece: '2025-06-01', tiers: 'Fournisseur', montant_ht: null, montant_tva: null,
+    montant_ttc: 100, devise: 'EUR', montant_devise: null, taux_change: null,
+    conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    created_at: '2025-06-01T09:00:00Z', updated_at: '2025-06-01T09:00:00Z', ...o,
   }
 }
 

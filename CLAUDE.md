@@ -1998,6 +1998,28 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Et le `git checkout --` destiné à défaire une mutation a de nouveau emporté le test non commité
   du même fichier** — le piège que ce fichier nomme déjà, repayé le même jour. Il se voit au COMPTE
   de tests (55 attendus, 52 rendus), pas au vert : la suite restait verte, simplement plus courte.
+  **ET LE BALAYAGE QUI A SUIVI A TROUVÉ LE JUMEAU, PUIS S'EST FAIT REMPLACER PAR LE COMPILATEUR.**
+  Le balayage : toute colonne NOT NULL dans TOUTES les tables où son nom apparaît (86 noms, tirés
+  d'`information_schema`), croisée avec un `X: null` dans un fichier de test. Trois prises, dont deux
+  légitimes et instructives — un `date: null` qui est la RÉPONSE d'un modèle et non une ligne de
+  table (un champ absent se cite `null`), et un `nom: null` qui est l'en-tête d'un formulaire 2035.
+  La troisième était réelle : le même `devise: null` dans `BanqueTab.test.tsx`. **Et là il n'était
+  pas inerte** : `reglerPieceSurBanque` sort sur `!piece.devise` AVANT son test `=== 'EUR'`, donc le
+  test exerçait la branche du champ absent au lieu de celle d'une pièce en euros. Un jeu d'essai
+  infidèle ne fait pas qu'affaiblir un test, **il lui fait prouver autre chose**.
+  **La règle ne devient PAS un scanner, elle devient une CONTRAINTE DE TYPE** — et c'est mieux : les
+  deux jeux d'essai d'écran sont désormais typés `(o: Partial<Piece> = {}): Piece` **sans `as`**,
+  donc le compilateur vérifie chaque champ contre la table, exhaustivement, à chaque build. Un `as`
+  ou un objet nu rend la vérification muette, et c'est exactement ce qui avait laissé passer le
+  défaut. Même principe que « un piège qu'un nom supprime vaut mieux qu'un piège gardé par un
+  contrôle » : le compilateur voit tout, un scanner ne voit que ce qu'on a pensé à lui montrer.
+  **Le typage a mordu immédiatement** : `source: 'cabinet'` n'existe pas, `Source` valant
+  `'upload' | 'email' | 'superpdp'` — une seconde infidélité que le balayage sur les NOT NULL ne
+  pouvait pas voir, puisqu'elle porte sur le DOMAINE d'une valeur et non sur sa nullité. La mutation
+  qui replante `devise: null` fait désormais échouer `tsc -b`, pas un test.
+  **Piège de vérification à connaître** : `npx tsc -b 2>&1 | tail -5 && echo OK` affiche « OK » même
+  quand `tsc` échoue — le code de sortie d'un pipe est celui du DERNIER maillon. Lire
+  `${PIPESTATUS[0]}`, sinon le contrôle du typage se met à mentir comme les autres.
   **Le badge ne suffisait PAS pour la date, et c'est une mutation ratée qui l'a montré.** Une pièce
   datée après son dépôt est par définition dans un exercice futur, donc écartée par le sélecteur
   d'exercice de l'en-tête — qui s'ouvre toujours sur une année PRÉCISE (`calculerAnneeParDefaut` ne

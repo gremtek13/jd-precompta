@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
+import type { Piece } from '../../lib/types'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -50,17 +51,21 @@ vi.mock('../../lib/supabase', () => ({
 vi.mock('../../lib/controlesReleves', () => ({ chargerRelevesIncoherents: async () => [] }))
 vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => [] }))
 
-function piece(o: Record<string, unknown> = {}) {
+// Le jeu d'essai est TYPÉ, et sans `as` : c'est le compilateur qui vérifie alors chaque champ
+// contre `Piece`, donc contre la table — exhaustivement, à chaque build. Un `as Piece` ou un objet
+// nu rendrait la vérification muette, et c'est ce qui avait laissé passer `devise: null` alors que
+// la colonne est NOT NULL DEFAULT 'EUR' : chaque pièce du jeu d'essai comptait en « devise non
+// convertie » (`piecesDeviseNonConvertie` teste `devise !== 'EUR'`, vrai pour null) sans qu'aucun
+// test n'échoue. Un piège que le compilateur supprime vaut mieux qu'un piège gardé par un contrôle.
+function piece(o: Partial<Piece> = {}): Piece {
   return {
-    id: 'p1', dossier_id: 'dossier-de-test', nom_fichier: 'justificatif.pdf', statut: 'a_valider',
-    type_piece: 'achat', date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
-    tiers: null, categorie_id: null, confiance: 'haute',
-    // `devise` est NOT NULL DEFAULT 'EUR' en base : un `null` ici n'existe pas en production et
-    // faisait de CHAQUE pièce du jeu d'essai une « devise non convertie »
-    // (`piecesDeviseNonConvertie` teste `devise !== 'EUR'`, vrai pour null). Un jeu d'essai
-    // infidèle au schéma fait passer — ou échouer — un test pour une raison fausse.
-    devise: 'EUR', montant_devise: null, taux_change: null,
-    created_at: '2026-09-16T09:00:00Z', ...o,
+    id: 'p1', dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload',
+    storage_path: 'dossier-de-test/justificatif.pdf', nom_fichier: 'justificatif.pdf',
+    storage_hash: null, date_piece: null, tiers: null, montant_ht: null, montant_tva: null,
+    montant_ttc: null, devise: 'EUR', montant_devise: null, taux_change: null,
+    conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
+    statut: 'a_valider', notes: null, confiance: 'haute', superpdp_invoice_id: null,
+    created_at: '2026-09-16T09:00:00Z', updated_at: '2026-09-16T09:00:00Z', ...o,
   }
 }
 
