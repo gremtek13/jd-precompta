@@ -40,7 +40,25 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
     setPacks(lecture.lignes)
   }
 
-  async function loadPreview() {
+  // L'APERÇU EST ANNULABLE, et c'est ce qui manquait. Ses dépendances ne sont pas `dossierId`
+  // comme partout ailleurs : ce sont les DEUX DATES, que l'opérateur change à la main, écran
+  // ouvert, plusieurs fois de suite. Deux changements rapprochés lancent donc deux lectures qui se
+  // chevauchent, et c'est la DERNIÈRE ARRIVÉE qui écrit — pas la dernière demandée.
+  //
+  // ET LA COURSE PENCHE TOUJOURS DU MÊME CÔTÉ, ce qui la rend pire qu'un tirage au sort : `lireTout`
+  // fait d'autant plus d'allers-retours que la période est large, donc la lecture de la période
+  // LARGE est la plus lente. Rétrécir la période — « finalement, juillet seul » — est le geste
+  // courant, et c'est précisément celui qui laisse à l'écran le compte et le total de la période
+  // d'avant, sous des dates qui en annoncent une autre.
+  //
+  // Ce que ça coûte : l'opérateur lit « 22 pièces validées — 1 697,39 € », génère, et le pack ne
+  // contient pas cela. C'est le même écran dont l'aperçu était déjà « plus optimiste que le
+  // générateur qui allait refuser juste après » — et `previewIncomplet` se trompe de la même façon,
+  // une lecture périmée pouvant effacer le bandeau d'une période réellement partielle.
+  //
+  // Le garde est le drapeau d'annulation déjà utilisé par l'aperçu de `PieceFormModal` : la lecture
+  // continue (on ne peut pas rappeler une requête partie), mais elle n'écrit plus.
+  async function loadPreview(estPerimee: () => boolean = () => false) {
     // Lue par tranches : l'aperçu annonce ce que contiendra un livrable envoyé au comptable, et
     // `packGenerator` REFUSE déjà de produire un pack sur une lecture incomplète. L'aperçu, lui,
     // affichait un total tronqué sans le dire — donc plus optimiste que le générateur qui allait
@@ -59,6 +77,10 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
         .eq('dossier_id', dossierId).eq('statut', 'validee').is('date_piece', null)
         .order('id').range(debut, fin),
     )
+    // Le contrôle est posé APRÈS les deux lectures et AVANT la première écriture : c'est le seul
+    // endroit qui vaille, puisque la course se joue sur l'ordre d'ARRIVÉE. Le poser avant les
+    // lectures ne verrait rien — à ce moment-là, la demande est encore la plus récente.
+    if (estPerimee()) return
     const rows = lecture.lignes
     setPreviewIncomplet(lecture.complete && sansDate.complete ? null : (lecture.motif ?? sansDate.motif))
     setPreview({
@@ -70,7 +92,11 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   }
 
   useEffect(() => { loadPacks() }, [dossierId])
-  useEffect(() => { loadPreview() }, [dossierId, periodeDebut, periodeFin])
+  useEffect(() => {
+    let perimee = false
+    loadPreview(() => perimee)
+    return () => { perimee = true }
+  }, [dossierId, periodeDebut, periodeFin])
 
   async function handleGenerate() {
     setGenerating(true)

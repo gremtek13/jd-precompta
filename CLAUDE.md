@@ -1571,6 +1571,47 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   `dossier_id`/`cabinet_id`, qui sont le cadrage d'un écran et non une restriction : les signaler
   tous noierait le signal (la première version du balayage le faisait, et rendait quatorze lignes
   dont aucune n'était un défaut).
+- **UNE LECTURE PLUS LENTE ÉCRIT EN DERNIER, ET L'ÉCRAN MENT SANS LE DIRE** (`PacksTab`, corrigé le
+  21/09/2026). Trente et un `useEffect` du projet relancent un chargement quand leurs dépendances
+  changent, et **trente n'ont aucune annulation** — mais ce n'est pas une liste de trente défauts :
+  c'est la colonne des DÉPENDANCES qui décide. Toutes sont `dossierId` ou équivalent, qui ne change
+  qu'à la navigation. **Une seule dépend d'une valeur que l'opérateur modifie en boucle, écran
+  ouvert** : l'aperçu d'un pack, sur `[dossierId, periodeDebut, periodeFin]`.
+  Deux changements de date rapprochés lancent donc deux lectures qui se chevauchent, et c'est la
+  dernière ARRIVÉE qui écrit — pas la dernière demandée.
+  **ET LA COURSE PENCHE TOUJOURS DU MÊME CÔTÉ, ce qui la rend pire qu'un tirage au sort** : `lireTout`
+  fait d'autant plus d'allers-retours que la période est large, donc la période LARGE est la plus
+  lente à revenir. Rétrécir la période — « finalement, juillet seul » — est le geste courant, et
+  c'est exactement celui qui laisse à l'écran le compte et le total de la période d'avant, sous des
+  dates qui en annoncent une autre.
+  **Ce que ça coûte** : l'opérateur lit un chiffre, génère, et le pack ne contient pas cela — sur le
+  livrable qu'on envoie au comptable. C'est le même écran dont l'aperçu était déjà « plus optimiste
+  que le générateur qui allait refuser juste après », et `previewIncomplet` se trompe de la même
+  façon : une lecture périmée peut effacer le bandeau d'une période réellement partielle.
+  **Le contrôle se pose APRÈS les lectures et AVANT la première écriture**, et c'est le seul endroit
+  qui vaille — la course se joue sur l'ordre d'ARRIVÉE, donc le poser avant les lectures ne verrait
+  rien. Une mutation le prouve : déplacé en tête, le test de course retombe au rouge. Le garde est le
+  drapeau d'annulation déjà utilisé par l'aperçu de `PieceFormModal` ; la lecture continue (on ne
+  rappelle pas une requête partie), elle n'écrit plus.
+  **Trois tests, quatre mutations, toutes mordent** — dont le code TEL QU'IL ÉTAIT, ce qui prouve que
+  ce n'est pas de la couverture. Et deux des trois tests sont des gardes SYMÉTRIQUES : « tout est
+  périmé » les fait tomber tous les trois, donc un correctif qui figerait l'écran au lieu de le
+  réparer est attrapé aussi. Sans eux, « l'écran n'affiche pas le mauvais chiffre » serait satisfait
+  par un écran qui n'affiche jamais rien.
+  **Aucun test de `src/lib` ne pouvait le voir** : `lireTout` est juste, `packGenerator` est juste,
+  c'est l'ORDRE D'ARRIVÉE de deux appels corrects qui produit le mensonge.
+  **Le balayage vaut plus que la prise, et sa forme utile n'est pas « qui n'annule pas »** (trente
+  réponses, aucun signal) **mais « de quoi dépend l'effet »** : une dépendance que l'utilisateur
+  change à la main, écran ouvert, est la seule qui puisse courir contre elle-même. À rejouer sous
+  cette forme quand un écran gagne un filtre.
+- **Et le frère du verrou a rendu un résultat NÉGATIF, mesuré le 21/09/2026** : un drapeau « en
+  cours » (`setLoading`, `setSaving`…) relâché hors d'un `finally` a la même conséquence qu'un
+  verrou — écran figé, bouton grisé ou spinner éternel. Le balayage brut rend 43 sites et ne dit
+  rien, parce qu'un `load()` qui lit `{ error }` ne LÈVE jamais (règle du projet) : son
+  `setLoading(false)` tombe toujours. Resserré sur la vraie question — le drapeau ET un appel qui
+  peut lever —, il rend **zéro**. Et il n'est pas aveugle : 156 fonctions async parcourues, 88
+  portant un drapeau, 16 appelant quelque chose qui lève, **14 les deux, et les 14 sont dans un
+  `finally`**. Ne pas le rebalayer sans raison.
 - **Un verrou d'exécution est un `useRef`, jamais un état React.** `setRunning(true)` ne prend
   effet qu'au rendu suivant : `disabled={running}` laisse donc passer deux clics rapprochés, et
   les deux entrent dans le traitement. Sur l'import en masse, chacun repartait avec **son propre**
@@ -2488,13 +2529,13 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 7 testés** — banque,
-  documents, statistiques, écritures, clôture, checklist, justificatifs — donc **10 sans aucun test
-  de rendu**. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 8 testés** — banque,
+  documents, statistiques, écritures, clôture, checklist, justificatifs et packs (21/09/2026) — donc
+  **9 sans aucun test de rendu**. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
   `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une de ses cartes l'est —
-  Informations reste dans les dix.
+  Informations reste dans les neuf.
   **La liste des dossiers a rejoint les écrans testés le 20/09/2026** (`DossiersList.test.tsx`) :
   ni un onglet ni une carte mais une PAGE, donc le compte des 17 onglets ne bouge pas. Elle y est
   entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre l'affichage » plus haut.
@@ -2539,7 +2580,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1058 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1061 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
