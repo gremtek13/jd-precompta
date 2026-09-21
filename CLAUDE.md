@@ -454,6 +454,15 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   **BASCULÉ EN PRODUCTION LE 21/09/2026** (`MODELE_CITATION`), la mesure ayant été rejouée EN ENTIER
   dans la région de la production avant d'y toucher : 43 textes, 0 échec, **216 citations, 0 rejet** —
   le compte exact de Sonnet, et un de plus que la même mesure en `eu-west-1`.
+  **ÉPROUVÉ SUR UN DÉPÔT RÉEL LE JOUR MÊME**, et c'est la seule vérification qui restait : un PDF de
+  cotisation, `1 495 tokens entrée, 70 tokens sortie, 2 champ(s) cité(s), 0 rejeté(s)`. La chaîne
+  entière a tenu — OCR asynchrone, 3 061 caractères archivés, citation rendue, classification
+  `cotisation`, document rangé dans Documents et son texte rattaché à `document_id`. **Le coût
+  mesuré sur ce document réel est de 0,0019 $ contre 0,0055 $ qu'aurait coûté Sonnet, soit 2,97×** :
+  le rapport de 3,0× annoncé par la mesure hors ligne se retrouve au centième sur la production.
+  **Et c'est CET appel qui tranche la question IAM par ressource** (voir `edgeFunctionsIam.test.ts`)
+  : jusque-là, seul le harnais avait invoqué Haiku. Désormais c'est `extract-piece` elle-même, avec
+  ses propres identifiants, dans sa propre région.
   **DEUX EXÉCUTIONS DU MÊME MODÈLE DIFFÈRENT AUTANT QUE DEUX MODÈLES DIFFÉRENTS, et c'est le résultat
   le plus utile de la journée** : Haiku contre lui-même (deux régions) rend 5 écarts de champ sur
   2 pièces ; Sonnet contre Haiku en rend 16 sur 10, dont 9 sont de la COUVERTURE (l'un cite, l'autre
@@ -509,6 +518,35 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   machine de bureau reste une dépendance du chemin de production. La décision tient donc sur ses
   autres pieds — mais son pied budgétaire serait deux fois moins solide, et c'est à savoir le jour
   où la question se rouvre.
+- **QUATRE CITATIONS SUR CINQ SONT PAYÉES PUIS JETÉES — ET C'EST QUAND MÊME NON** (mesuré le
+  21/09/2026). Un dépôt réel de cotisation a fait poser la question : l'étage 2 tourne sur TOUT
+  document lu, mais le chemin Documents n'écrit que `categorie` et le texte. `DocumentDivers` n'a ni
+  tiers, ni date, ni montant — vérifié dans `types.ts` et dans les deux jumeaux `depot.ts` /
+  `importFichiers.ts`. Pour un relevé, une cotisation, une attestation, la citation est donc
+  intégralement perdue.
+  **Et la proportion n'est pas celle du nombre de dépôts, c'est celle du TEXTE** — le coût de
+  l'étage 2 suit le texte, pas les pages. Sur le dossier vivant : 43 pièces pour 38 documents, soit
+  47 % des dépôts, mais **80,9 % de l'entrée du modèle**, les documents faisant 20 757 caractères en
+  moyenne contre 3 284 pour une pièce. Les relevés bancaires sont à la fois les plus nombreux (19 sur
+  38) et les plus longs.
+  **LE CHIFFRE ABSOLU RENVERSE LA CONCLUSION, ET C'EST TOUT L'INTÉRÊT DE L'AVOIR CALCULÉ** : ces
+  80,9 % valent **0,28 à 0,42 $** pour l'HISTOIRE ENTIÈRE du dossier. Le gaspillage coûte **≈ 11 $
+  les 1 000 documents archivés** — il faut donc ~880 documents par an pour jeter 10 $, ~4 400 pour en
+  jeter 50. C'est exactement le raisonnement qui a écarté la marche 2, et il penche du même côté :
+  un rapport frappant ne fait pas une facture. Changer le contrat d'une fonction dont dépend le
+  chemin de production ne se paie pas avec quarante centimes.
+  **CE QUI LE ROUVRIRAIT** : un cabinet à quelques milliers de documents archivés par an. C'est la
+  même borne que la marche 2, et elle se relit dans `query_logs` par les lignes
+  `[extract-piece] citation …`, qui portent le compte de tokens de chaque appel.
+  **ET LE PIÈGE D'IMPLÉMENTATION EST ÉCRIT MAINTENANT, PENDANT QU'IL EST FRAIS** — la version
+  évidente est FAUSSE. `classifieDocument` étant une fonction pure du texte, on est tenté de classer
+  AVANT de citer et de sauter l'étage 2 quand la classification ne mène pas à Pièces. Mais
+  `extract-piece` ne peut pas en décider seul : `PieceFormModal` l'appelle pour PRÉREMPLIR un
+  formulaire que l'utilisateur est en train de remplir comme une pièce, et un saut fondé sur la
+  classification lui retirerait son préremplissage en silence dès qu'un document porte un marqueur
+  de cotisation. **C'est l'APPELANT qui sait ce dont il a besoin**, pas la classification : le jour
+  où ce chantier se rouvre, il passe par un paramètre du contrat, pas par une heuristique interne.
+  Trouvé en regardant les trois appelants, pas en relisant le gestionnaire.
 - **N° de TVA intracommunautaire français** calculé déterministiquement à
   partir du SIREN (formule CGI art. 286 ter : `clé = (12 + 3×(SIREN mod 97))
   mod 97`, puis `FR` + clé 2 chiffres + SIREN) plutôt que demandé comme champ
