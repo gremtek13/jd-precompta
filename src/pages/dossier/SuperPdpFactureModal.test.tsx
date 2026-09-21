@@ -3,38 +3,36 @@ import { describe, expect, it, vi } from 'vitest'
 import SuperPdpFactureModal from './SuperPdpFactureModal'
 import type { FactureEmise } from '../../lib/types'
 
-// Le verrou d'exécution de la transmission Super PDP (CLAUDE.md, « un verrou d'exécution est un
-// `useRef`, jamais un état React »). Le doublon ne crée pas une ligne en trop : il TRANSMET deux
-// fois la même facture à une plateforme de dématérialisation agréée DGFiP — irréversible par cette
-// voie (voir l'avertissement affiché dans la modale). CLAUDE.md annonçait cette couverture livrée
-// le 21/09/2026 ; aucun fichier de test n'existait — c'est ce que ce fichier corrige.
+// Le dernier des quatre verrous corrigés le 20/09/2026 à n'avoir aucun test d'écran, et celui dont
+// le doublon sort de l'application : il TRANSMET deux fois la même facture à une plateforme de
+// dématérialisation agréée DGFiP. Une facture transmise ne s'annule pas par cette voie — seul un
+// avoir la corrige — donc le doublon ne se rattrape pas d'un clic, contrairement à une ligne en
+// base qu'un cabinet voit et supprime.
+//
+// ET CE TEST A TROUVÉ UN SECOND DÉFAUT, celui qu'il fallait écrire pour voir : le relâchement du
+// verrou vivait en clair après l'`await`, sans `try`. Toute exception inattendue laissait donc le
+// verrou PRIS et `enCours` à true — bouton grisé, aucun message, aucun moyen de réessayer. Les trois
+// autres verrous du projet portaient déjà un `finally` ; celui-ci était le seul sans.
 const faux = vi.hoisted(() => ({
-  appelsInvoke: [] as unknown[],
-  resoudreInvoke: null as null | ((v: unknown) => void),
-  appelsCharger: 0,
-  resoudreCharger: null as null | ((v: unknown) => void),
+  appels: [] as { nom: string; body: unknown }[],
+  // La promesse du premier appel reste EN ATTENTE : c'est la fenêtre réelle pendant laquelle un clic
+  // surnuméraire arrive. La résoudre tout de suite supprimerait la fenêtre que le verrou ferme.
+  resoudre: null as null | ((v: unknown) => void),
+  rejeter: null as null | ((e: unknown) => void),
 }))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
-    from: () => ({
-      select: () => ({
-        eq: () => ({
-          order: () => {
-            faux.appelsCharger += 1
-            // Le premier appel (montage, useEffect) se résout tout de suite pour que le bouton
-            // apparaisse ; les suivants (après une transmission) restent EN ATTENTE — c'est la
-            // fenêtre réelle où un second clic peut arriver avant que la relecture ne finisse.
-            if (faux.appelsCharger === 1) return Promise.resolve({ data: [] })
-            return new Promise((resolve) => { faux.resoudreCharger = resolve })
-          },
-        }),
-      }),
-    }),
+    from: (table: string) => {
+      if (table === 'facture_superpdp_events') {
+        return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: [] }) }) }) }
+      }
+      throw new Error(`Table non attendue dans ce test : ${table}`)
+    },
     functions: {
-      invoke: (nom: string, options: unknown) => {
-        faux.appelsInvoke.push({ nom, options })
-        return new Promise((resolve) => { faux.resoudreInvoke = resolve })
+      invoke: (nom: string, options: { body: unknown }) => {
+        faux.appels.push({ nom, body: options.body })
+        return new Promise((resolve, reject) => { faux.resoudre = resolve; faux.rejeter = reject })
       },
     },
   },
@@ -69,63 +67,65 @@ const facture: FactureEmise = {
 }
 
 async function monter() {
-  faux.appelsInvoke = []
-  faux.resoudreInvoke = null
-  faux.appelsCharger = 0
-  faux.resoudreCharger = null
+  faux.appels = []
+  faux.resoudre = null
+  faux.rejeter = null
   render(
     <SuperPdpFactureModal dossierId="d1" facture={facture} onClose={() => {}} onUpdated={() => {}} />,
   )
-  return screen.findByRole('button', { name: 'Envoyer via Super PDP' })
+  // Les événements se chargent en `useEffect` : on attend le rendu stable avant de cliquer, sinon le
+  // test mesurerait un écran encore en chargement.
+  await screen.findByText('Jamais transmise')
+  return screen.getByRole('button', { name: /Envoyer/ })
 }
 
-describe('SuperPdpFactureModal — le verrou de transmission Super PDP', () => {
+describe('SuperPdpFactureModal — le verrou de transmission', () => {
   it("ne transmet qu'une fois quand on clique deux fois de suite", async () => {
     const bouton = await monter()
 
-    // LES DEUX CLICS DANS LE MÊME `act` : deux `fireEvent.click`/`.click()` successifs ouvrent
-    // chacun leur `act`, qui rend le composant en sortant — le second tomberait sur un bouton déjà
-    // re-rendu avec l'état à jour, et le test resterait vert avec le défaut réinstallé (CLAUDE.md).
+    // LES DEUX CLICS DANS LE MÊME `act` : deux `.click()` successifs ouvrent chacun leur `act`, qui
+    // rend le composant en sortant — le second tomberait sur un bouton déjà re-rendu avec `enCours`
+    // à jour, et le test resterait VERT avec le défaut réinstallé (CLAUDE.md).
     await act(async () => { bouton.click(); bouton.click() })
 
-    expect(faux.appelsInvoke).toHaveLength(1)
+    expect(faux.appels).toHaveLength(1)
+    expect(faux.appels[0]).toEqual({ nom: 'superpdp-emit', body: { dossierId: 'd1', factureId: 'f1', action: 'envoyer' } })
   })
 
-  it("un troisième clic ne transmet pas une seconde fois", async () => {
+  // IL FAUT TROIS CLICS pour distinguer un verrou posé AVANT le `try` d'un verrou posé dedans : si
+  // la pose vivait dans le `try`, le `return` du deuxième sortirait par le `finally`, qui relâcherait
+  // le verrou du PREMIER — encore en cours — et le troisième repartirait pour une seconde
+  // transmission. Avec deux clics la version fautive paraît correcte.
+  it("un troisième clic ne déclenche pas de seconde transmission", async () => {
     const bouton = await monter()
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
-    expect(faux.appelsInvoke).toHaveLength(1)
+    expect(faux.appels).toHaveLength(1)
   })
 
-  // Distingue un verrou relâché DÈS la réponse de `invoke` (l'ancien code : les deux lignes de
-  // relâchement vivaient juste après ce premier `await`, avant même la relecture des événements) d'un
-  // verrou relâché seulement après la relecture ET `onUpdated()` (le correctif, verrou tenu dans un
-  // `finally` qui enveloppe tout). Sans cette distinction, un clic pendant la relecture qui suit un
-  // envoi réussi transmettrait une seconde fois la même facture — avant même que la première
-  // transmission n'ait fini de se refléter à l'écran.
-  it("reste désactivé — donc bloque un second clic — pendant la relecture qui suit une transmission réussie", async () => {
+  it('relâche le verrou sur une erreur rendue par la fonction, pour laisser réessayer', async () => {
     const bouton = await monter()
     await act(async () => { bouton.click() })
-    expect(faux.appelsInvoke).toHaveLength(1)
+    await act(async () => { faux.resoudre?.({ data: { error: 'SIRET vendeur non conforme' }, error: null }) })
 
-    await act(async () => { faux.resoudreInvoke?.({ data: { ok: true }, error: null }) })
-    expect(faux.appelsCharger).toBe(2)
-
-    const boutonPendantRelecture = screen.getByRole('button', { name: /Envoi/ })
-    await act(async () => { boutonPendantRelecture.click() })
-    expect(faux.appelsInvoke).toHaveLength(1)
-
-    await act(async () => { faux.resoudreCharger?.({ data: [] }) })
+    expect(screen.getByText(/SIRET vendeur non conforme/)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: /Envoyer/ }).click() })
+    expect(faux.appels).toHaveLength(2)
   })
 
-  it("affiche le message d'erreur métier et relâche le verrou pour réessayer", async () => {
+  // LE DÉFAUT QUE CE TEST A TROUVÉ, et le seul des quatre cas qui échouait avant correction. Une
+  // exception — et non une erreur RENDUE — sortait de `appeler` sans relâcher quoi que ce soit :
+  // verrou pris, `enCours` à true, bouton grisé, aucun message. L'utilisateur ne pouvait ni savoir
+  // si la facture était partie, ni réessayer sans rouvrir la modale. C'est le pire état possible
+  // pour une action irréversible qui sort de l'application.
+  it('relâche le verrou sur une exception inattendue, et dit pourquoi', async () => {
     const bouton = await monter()
     await act(async () => { bouton.click() })
-    await act(async () => { faux.resoudreInvoke?.({ data: { error: 'SIRET manquant' }, error: null }) })
-    expect(screen.getByText(/SIRET manquant/)).toBeTruthy()
+    await act(async () => { faux.rejeter?.(new Error('Réseau injoignable')) })
 
-    const boutonRouvert = await screen.findByRole('button', { name: 'Envoyer via Super PDP' })
-    await act(async () => { boutonRouvert.click() })
-    expect(faux.appelsInvoke).toHaveLength(2)
+    expect(screen.getByText(/Réseau injoignable/)).toBeTruthy()
+    const relance = screen.getByRole('button', { name: /Envoyer/ }) as HTMLButtonElement
+    expect(relance.disabled).toBe(false)
+    await act(async () => { relance.click() })
+    expect(faux.appels).toHaveLength(2)
   })
 })

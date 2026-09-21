@@ -1550,6 +1550,12 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   relâche le verrou du PREMIER, encore en cours. Le troisième passe alors, et le défaut revient
   entier. Avec deux clics la version fautive paraît correcte : c'est une mutation qui a survécu au
   premier jeu de tests, pas une relecture, qui l'a montré.
+  **ET IL SE RELÂCHE DANS UN `finally`, JAMAIS EN CLAIR APRÈS L'`await`** — seconde moitié de la
+  règle, restée non écrite jusqu'au 21/09/2026 parce qu'elle était seulement PRATIQUÉE. Un
+  relâchement posé en ligne laisse le verrou pris dès qu'une exception passe à côté, et l'écran se
+  fige alors sans message : le bouton reste grisé, plus rien ne part, et rien ne dit pourquoi. C'est
+  pire qu'un doublon, qui au moins se voit. `SuperPdpFactureModal` était le seul des quatre dans ce
+  cas, et il a fallu écrire son test pour s'en apercevoir.
   **Les porteurs se recensent ici, et un ordinal dispersé ne tient pas.** Deux sessions travaillant
   en parallèle le 20/09/2026 ont écrit « troisième » et « cinquième » pour ce motif dans ce fichier.
   Un rang inscrit au fil du texte oblige à recompter à chaque ajout, sur des paragraphes que
@@ -2364,7 +2370,22 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   donc deux « Entrée » rapprochés suffisent, comme pour `EnvoyerEmailModal`. Le test couvre AUSSI
   « Enregistrer brouillon », le second chemin de la même fiche : n'exercer que « Valider » aurait
   laissé à découvert le geste le plus courant sur une pièce qu'on vient de déposer.
-  **Il reste UN des quatre verrous sans test d'écran** : `SuperPdpFactureModal.appeler`.
+  **21/09/2026 — huitième porteur, et LE LOT DES QUATRE EST FERMÉ** : `SuperPdpFactureModal.appeler`,
+  dont le doublon est le seul à SORTIR de l'application — il transmet deux fois la même facture à une
+  plateforme agréée DGFiP, et une facture transmise ne s'annule pas par cette voie (seul un avoir la
+  corrige). Quatre tests, cinq mutations, toutes mordent.
+  **ET CE TEST A TROUVÉ UN SECOND DÉFAUT, celui qu'il fallait l'écrire pour voir** : ce verrou était
+  le SEUL des quatre sans `try`. Son relâchement vivait en clair après l'`await` —
+  `setEnCours(false)` puis `appelEnCours.current = false` — donc toute exception sortait de la
+  fonction sans relâcher quoi que ce soit. L'écran retombait alors dans son pire état possible :
+  bouton grisé, aucun message, aucun moyen de réessayer sans rouvrir la modale, sur une action
+  irréversible dont l'utilisateur ne peut pas savoir si elle est partie.
+  **La preuve que ce n'est pas de la simple couverture** : la mutation qui remet le code TEL QU'IL
+  ÉTAIT ne fait tomber qu'UN des quatre tests, celui de l'exception. Les trois autres passaient déjà.
+  **Règle complétée, parce qu'elle était énoncée à moitié** : le verrou se pose AVANT le `try`, et il
+  se relâche DANS un `finally` — jamais en clair après l'`await`. La première moitié était écrite
+  depuis longtemps ; la seconde était seulement pratiquée, donc elle a fini par être oubliée une
+  fois.
   **`EcrituresTab` a rejoint la liste le 20/09/2026**, et c'est l'onglet qui le méritait le plus :
   il produit les deux seuls fichiers officiels du projet, le FEC et la piste d'audit. Quatre tests,
   cinq mutations, toutes mordent — dont celle qui compte vraiment : rebrancher `ecrituresSansObjet`
@@ -2404,10 +2425,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
   (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 7 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs — donc **10 sans aucun test
-  de rendu**. SEPT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  de rendu**. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
-  `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal` et `PieceFormModal`
-  (21/09/2026) — SEPT au total. Un onglet n'est donc pas « testé » parce qu'une de ses cartes l'est —
+  `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
+  `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une de ses cartes l'est —
   Informations reste dans les dix.
   **La liste des dossiers a rejoint les écrans testés le 20/09/2026** (`DossiersList.test.tsx`) :
   ni un onglet ni une carte mais une PAGE, donc le compte des 17 onglets ne bouge pas. Elle y est
@@ -2453,7 +2474,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1044 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1048 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

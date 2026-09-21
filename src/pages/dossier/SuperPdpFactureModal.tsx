@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { formatDate } from '../../lib/format'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
+import { messageErreur } from '../../lib/messageErreur'
 import type { FactureEmise, FactureSuperpdpEvent } from '../../lib/types'
 
 interface Props {
@@ -44,6 +45,12 @@ export default function SuperPdpFactureModal({ dossierId, facture, onClose, onUp
     appelEnCours.current = true
     setEnCours(true)
     setErreur(null)
+    // LE RELÂCHEMENT VIT DANS UN `finally`, et ce n'était pas le cas jusqu'au 21/09/2026 : les deux
+    // affectations suivaient l'`await` en clair, donc toute exception inattendue laissait le verrou
+    // PRIS et `enCours` à true. L'écran retombait alors dans son pire état possible — bouton grisé,
+    // aucun message, aucun moyen de réessayer sans rouvrir la modale — c'est-à-dire un silence sur
+    // une action dont l'utilisateur ne peut pas savoir si elle est partie. Les trois autres verrous
+    // du projet portaient déjà cette forme ; celui-ci était le seul sans `try`.
     try {
       const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('superpdp-emit', {
         body: { dossierId, factureId: facture.id, action },
@@ -54,6 +61,8 @@ export default function SuperPdpFactureModal({ dossierId, facture, onClose, onUp
       }
       await charger()
       onUpdated()
+    } catch (err) {
+      setErreur(messageErreur(err, "Échec de l'appel à Super PDP."))
     } finally {
       setEnCours(false)
       appelEnCours.current = false
