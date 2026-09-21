@@ -150,7 +150,17 @@ Deno.serve(async (req: Request) => {
         error: "Un compte existe déjà avec cet e-mail, mais il n'est rattaché à aucun dossier ou membre de ce cabinet — impossible de le réutiliser ici (ça écraserait le mot de passe d'un compte qui n'est pas le tien). Demande à cette personne d'utiliser une autre adresse e-mail.",
       }, 409)
     }
-    await admin.auth.admin.updateUserById(userId, { password })
+    // Voir create-client-access, qui porte le même geste et la même explication : le résultat de
+    // cette écriture partait à la poubelle, donc la fonction pouvait répondre `ok: true` sur un mot
+    // de passe jamais posé. On refuse AVANT d'écrire dans cabinet_admins, pendant que l'état est
+    // encore propre.
+    const { error: erreurMotDePasse } = await admin.auth.admin.updateUserById(userId, { password })
+    if (erreurMotDePasse) {
+      console.error(`[create-team-member] mot de passe NON changé pour ${userId} : ${erreurMotDePasse.message}`)
+      return json({
+        error: `Le mot de passe du compte existant n'a pas pu être changé (${erreurMotDePasse.message}) — personne n'a été ajoutée à l'équipe. Réessaie, et ne communique pas ce mot de passe tant que ce message revient : il ne fonctionnerait pas.`,
+      }, 500)
+    }
   } else {
     return json({ error: createError?.message ?? "Création du compte échouée." }, 500)
   }

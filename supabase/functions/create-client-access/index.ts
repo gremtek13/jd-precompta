@@ -174,7 +174,21 @@ Deno.serve(async (req: Request) => {
     }
     // Le mot de passe saisi dans le formulaire doit rester celui à donner au client, que le compte
     // soit neuf ou réutilisé.
-    await supabaseAdmin.auth.admin.updateUserById(clientUserId, { password })
+    // ET CETTE ÉCRITURE-LÀ EST CELLE DONT L'ÉCHEC SE VOIT LE MOINS : son résultat partait à la
+    // poubelle, la fonction répondait `ok: true`, et le cabinet communiquait au client un mot de
+    // passe qui n'a jamais été posé. Le symptôme — « je n'arrive pas à me connecter » — ressemble
+    // à une erreur de saisie du client, et rien côté cabinet ne dit le contraire : le compte
+    // existe, l'accès existe, tout a l'air en ordre.
+    // On refuse AVANT de créer le membership plutôt que d'avertir après : à ce point rien
+    // d'irréversible n'a eu lieu (le compte préexistait, aucun accès n'est encore posé), donc
+    // échouer laisse un état propre et le nouvel essai est le geste naturel.
+    const { error: erreurMotDePasse } = await supabaseAdmin.auth.admin.updateUserById(clientUserId, { password })
+    if (erreurMotDePasse) {
+      console.error(`[create-client-access] mot de passe NON changé pour ${clientUserId} : ${erreurMotDePasse.message}`)
+      return json({
+        error: `Le mot de passe du compte existant n'a pas pu être changé (${erreurMotDePasse.message}) — aucun accès n'a été créé. Réessaie, et ne communique surtout pas ce mot de passe au client tant que ce message revient : il ne fonctionnerait pas.`,
+      }, 500)
+    }
   } else {
     return json({ error: createError?.message ?? "Création du compte échouée." }, 500)
   }

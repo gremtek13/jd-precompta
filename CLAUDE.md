@@ -1004,6 +1004,37 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déployé était identique au dépôt moins le correctif, aux deux écritures près — donc personne
   n'avait modifié la production à la main, et il n'y avait aucun correctif non déployé à embarquer
   au passage (le cas qui avait trouvé `extract-piece` en retard de trois correctifs).
+  **ET CE SCANNER NE REGARDAIT QU'UNE PORTE SUR QUATRE — TROIS SITES DE PLUS LE LENDEMAIN**
+  (21/09/2026). Il cherchait `.from(`, la forme des quatre sites du jour d'avant. Or un client
+  Supabase écrit par QUATRE portes : `.from(` (les tables), `.rpc(` (les fonctions SQL, qui écrivent
+  aussi), `.auth.` (les comptes) et `.storage.` (les fichiers). Le balayage des trois autres a rendu
+  trois sites, et **le premier est le plus coûteux de toute la famille** :
+  - `create-client-access` et `create-team-member` — `auth.admin.updateUserById(id, { password })`
+    sur un compte RÉUTILISÉ, résultat jeté. La fonction répondait ensuite `ok: true`, et le cabinet
+    communiquait au client un mot de passe **qui n'avait jamais été posé**. Rien ne le dit : le
+    compte existe, l'accès existe, tout a l'air en ordre — et le symptôme, « je n'arrive pas à me
+    connecter », ressemble à une erreur du client. Le commentaire juste au-dessus énonçait pourtant
+    la garantie que l'échec brise : « le mot de passe saisi dans le formulaire doit rester celui à
+    donner au client ».
+    **On REFUSE avant de créer l'accès plutôt que d'avertir après**, et c'est le point de la
+    correction : à cet endroit rien d'irréversible n'a eu lieu (le compte préexistait, aucun
+    `membership` ni `cabinet_admins` n'est encore écrit), donc échouer laisse un état propre et le
+    nouvel essai est le geste naturel. Le message dit explicitement de ne pas communiquer ce mot de
+    passe tant qu'il revient.
+  - `receive-email` — le retrait du fichier quand l'insertion échoue. **Une compensation dont on
+    jette le résultat laisse exactement l'orphelin qu'elle existe pour éviter**, mot pour mot le
+    défaut des deux `delete` de `create-cabinet`, sur la troisième copie du même geste (les deux
+    autres, `depot.ts` et `importFichiers.ts`, sont côté `src/`).
+  **Mesuré avant de corriger, et le résultat est NÉGATIF** : sur les 151 objets des trois seaux,
+  **deux seulement ne sont référencés par aucune table, et ce sont des fixtures d'essai RLS**
+  (`11111111-…/logo-test.png`, `11111111-aaaa-…/test-piece.pdf`, déposées le 08/09) — zéro orphelin
+  de production. Comme les autres de cette famille, ce qui rend ces sites dignes d'être corrigés
+  n'est pas un préjudice constaté mais qu'aucun ne PEUT se voir une fois arrivé.
+  **Cinq mutations mordent**, dont **le défaut d'origine replanté — ramener la regex à `.from(`
+  seul —, qui fait tomber QUATRE tests** : sans les cas synthétiques d'une écriture par `.rpc(`, par
+  `.auth.` et par `.storage.`, rétrécir ce scanner serait resté entièrement vert. C'est la panne que
+  ce dépôt connaît sous un autre nom : **une liste d'inclusion tenue à la main ne contient que ce à
+  quoi quelqu'un a pensé**, et son silence est indiscernable d'un dépôt sain.
 - **UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS — une fonction vit en production sans exister dans ce
   dépôt** (constaté le 21/09/2026). `list_edge_functions` rend **quatorze** fonctions ; le dépôt en
   porte treize. La quatorzième s'appelle `bright-task` (nom par défaut de Supabase), elle est
@@ -2770,7 +2801,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1085 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1088 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

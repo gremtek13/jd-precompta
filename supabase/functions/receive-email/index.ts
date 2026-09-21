@@ -253,8 +253,15 @@ Deno.serve(async (req: Request) => {
         // la pièce jointe suivante. Sans ça il y reste orphelin, invisible de tout écran, et seule la
         // suppression du dossier entier l'aurait nettoyé — même règle que `depot.ts` et
         // `importFichiers.ts`, qui la portent depuis longtemps.
+        // Et une compensation dont on jette le résultat laisse exactement l'orphelin qu'elle existe
+        // pour éviter — même défaut que les deux `delete` de create-cabinet. Rien ne recharge
+        // derrière : personne ne relit le seau, donc le fichier resterait là sans qu'aucun écran ni
+        // aucun compte ne puisse le montrer.
         console.error("Insertion échouée:", fichier.id, insertError)
-        await supabase.storage.from("pieces").remove([path])
+        const { error: erreurRetrait } = await supabase.storage.from("pieces").remove([path])
+        if (erreurRetrait) {
+          console.error(`[receive-email] fichier ORPHELIN laissé dans le stockage : ${path} (${erreurRetrait.message})`)
+        }
         continue
       }
 
