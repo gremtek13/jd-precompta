@@ -547,7 +547,22 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 - **Marche 1 de la réduction du coût d'extraction** : remplacer `AnalyzeExpense` par
   `DetectDocumentText` (OCR seul, ~7× moins cher) plus un modèle qui lit le texte et CITE les
   champs. Socle et mesure livrés (voir « Décisions techniques ») ; le branchement dans
-  `extract-piece` reste à faire. Marche 2 prévue : OCR local (PaddleOCR) avec débordement AWS.
+  `extract-piece` reste à faire.
+- **Marche 2 — OCR local (PaddleOCR) sur un mini-PC, avec débordement AWS permanent.** Le SENS de
+  l'appel est décidé (21/09/2026) et ne se rediscute pas : **la machine locale interroge Supabase,
+  Supabase ne l'appelle jamais.** Un service local demande « y a-t-il des pièces sans texte ? »,
+  télécharge le fichier, lit, écrit `piece_textes_ocr`. Ce qu'on y gagne n'est pas du confort :
+  aucun port ouvert, aucun tunnel à entretenir, aucun certificat, et rien à refaire le jour où l'IP
+  de la box change. Le sens inverse — une Edge Function qui appelle la maison — ferait d'une machine
+  de bureau une dépendance du chemin de production, exposée sur Internet.
+  **Le débordement AWS s'exprime alors tout seul** : une pièce que personne n'a lue au bout de N
+  minutes part chez Textract. C'est un repli PERMANENT et non un choix fait une fois — la machine
+  peut être éteinte, saturée ou en train de redémarrer, et le dépôt d'un client ne doit pas en
+  dépendre. `N` se déduit du temps réel d'une page mesuré sur cette machine, jamais d'une intuition.
+  **Et le RGPD change de forme, pas de niveau** : sortir l'OCR d'AWS RETIRE un sous-traitant du
+  registre, mais les pièces — donc des noms de patients — vivent alors sur une machine de bureau.
+  Chiffrement du disque et accès physique deviennent des questions réelles, à écrire dans `RGPD.md`
+  AVANT la mise en service et pas après.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -2165,6 +2180,10 @@ pas de Supabase CLI configurée dans ce dépôt.
   d'abord s'il est **verrouillé par le plan** (`get_organization` rend le
   plan) ou **volontaire** avant d'envoyer l'utilisateur cliquer dans un
   dashboard où le réglage n'existe pas. Voir "Problèmes connus".
+- **Deux sessions ne poussent jamais sur la même branche.** Elles ne se voient pas et écrasent le
+  travail l'une de l'autre sans qu'aucun signal ne paraisse — c'est déjà arrivé en plus discret, deux
+  sessions ayant écrit deux ordinaux différents dans ce fichier le même jour. Une session qui
+  travaille depuis une AUTRE machine (l'OCR local, par exemple) prend sa propre branche.
 - Avant de supprimer une table jugée morte, réunir les six preuves plutôt
   qu'une seule : 0 ligne, 0 clé étrangère entrante, 0 vue dépendante, 0
   trigger, 0 fonction la mentionnant (`pg_proc.prosrc`), 0 référence dans le
