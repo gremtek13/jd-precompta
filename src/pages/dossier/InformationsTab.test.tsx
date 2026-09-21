@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InformationsTab from './InformationsTab'
 
@@ -20,6 +20,18 @@ const faux = vi.hoisted(() => ({
   // du second bloc de tests : le bouton ne doit pas se contenter de ne rien faire.
   signError: null as { message: string } | null,
   ouvertures: [] as string[],
+  // Ce que la lecture des informations rend. `erreur` non nulle veut dire « on ne SAIT PAS ce que
+  // porte le dossier » — et le formulaire, lui, a exactement la même tête que sur un dossier neuf.
+  lecture: { informations: null as unknown, erreur: null as string | null },
+  enregistrements: [] as unknown[],
+}))
+
+vi.mock('../../lib/informationsDossier', () => ({
+  chargerInformationsDossier: () => Promise.resolve(faux.lecture),
+  enregistrerInformationsDossier: (_id: string, saisie: unknown) => {
+    faux.enregistrements.push(saisie)
+    return Promise.resolve(null)
+  },
 }))
 
 vi.mock('../../lib/suppressionDossier', () => ({
@@ -107,6 +119,8 @@ beforeEach(() => {
   faux.navigations = []
   faux.signError = null
   faux.ouvertures = []
+  faux.lecture = { informations: null, erreur: null }
+  faux.enregistrements = []
   window.open = ((url: string) => { faux.ouvertures.push(url); return null }) as typeof window.open
 })
 
@@ -174,5 +188,78 @@ describe('export avant suppression : un bouton ne fait jamais rien en silence', 
     // La RAISON, et la sortie : sans « onglet Packs », le message dit seulement qu'on a perdu.
     expect(screen.getByText(/objet introuvable/)).toBeTruthy()
     expect(screen.getByText(/onglet Packs/)).toBeTruthy()
+  })
+})
+
+describe('informations du client : on n’écrase jamais ce qu’on n’a pas su lire', () => {
+  // `informationsDossier.test.ts` garde le CALCUL — la lecture sait dire qu'elle a échoué. Ce qui
+  // suit garde le CÂBLAGE, et aucun test de `src/lib` ne le peut : la fonction est juste, c'est
+  // l'écran qui décidait d'enregistrer par-dessus. Le piège est visible dans le code : l'upsert
+  // porte TOUS les champs, et le formulaire non rempli est identique à un formulaire non LU.
+
+  // Deux boutons « Enregistrer » cohabitent sur cet écran (identité, puis informations) : on
+  // s'ancre donc sur le formulaire qui porte le champ Véhicule, pas sur un rang dans le document.
+  function formulaireInformations() {
+    const champ = screen.getByLabelText('Véhicule')
+    const form = champ.closest('form')
+    if (!form) throw new Error('formulaire des informations introuvable')
+    return within(form)
+  }
+
+  it('REFUSE d’enregistrer et DIT pourquoi quand la lecture a échoué', async () => {
+    faux.lecture = { informations: null, erreur: 'JWT expired' }
+    monter()
+    await act(async () => {})
+
+    expect(screen.getByText(/JWT expired/)).toBeTruthy()
+    expect(screen.getByText(/enregistrer maintenant les écraserait/)).toBeTruthy()
+
+    const bouton = formulaireInformations().getByRole('button', { name: /^Enregistrer$/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.enregistrements).toEqual([])
+
+    // À SAVOIR POUR LA PROCHAINE MUTATION : retirer la seconde ceinture du gestionnaire
+    // (`if (erreurChargement) return`) laisse ces huit tests VERTS, et c'est juste — un bouton
+    // grisé n'appelle pas son gestionnaire, et la soumission implicite par « Entrée » ne trouve
+    // pas de bouton par défaut actif. Elle est gardée pour le jour où un autre chemin mènera à ce
+    // gestionnaire, pas parce qu'un clic l'atteint : la dire mordante serait faux. Même arbitrage
+    // que la seconde ceinture de ClotureTab.
+  })
+
+  it('laisse enregistrer un dossier qui n’a simplement jamais rien rempli', async () => {
+    // Le garde SYMÉTRIQUE, et il porte tout : sans lui, « l'écran refuse d'écraser » serait
+    // satisfait par un écran qui refuse TOUJOURS — donc par un formulaire qu'on ne peut plus
+    // remplir, sur le cas le plus courant de tous.
+    faux.lecture = { informations: null, erreur: null }
+    monter()
+    await act(async () => {})
+
+    expect(screen.queryAllByText(/enregistrer maintenant les écraserait/)).toHaveLength(0)
+    const bouton = formulaireInformations().getByRole('button', { name: /^Enregistrer$/ })
+    expect(bouton.hasAttribute('disabled')).toBe(false)
+    await act(async () => { bouton.click() })
+    expect(faux.enregistrements).toHaveLength(1)
+  })
+
+  it('préremplit le formulaire avec ce que le dossier porte', async () => {
+    // Troisième garde : « le formulaire est vide » ne doit pas être vrai TOUT LE TEMPS, sinon le
+    // premier test passerait pour une raison fausse et l'écran aurait perdu sa fonction.
+    faux.lecture = {
+      informations: {
+        id: 'i1', dossier_id: 'd1', vehicule_type: 'personnel_ik', vehicule_libelle: 'Peugeot 308',
+        jours_travailles_an: 218, tickets_restaurant: true,
+        justificatif_tickets_restaurant_recu: false, cheques_vacances: false,
+        justificatif_cheques_vacances_recu: false, notes: 'Local partagé',
+        updated_at: '2026-09-20T10:00:00Z',
+      },
+      erreur: null,
+    }
+    monter()
+    await act(async () => {})
+
+    expect((screen.getByLabelText('Véhicule') as HTMLSelectElement).value).toBe('personnel_ik')
+    expect((screen.getByLabelText(/Jours travaillés/) as HTMLInputElement).value).toBe('218')
+    expect((screen.getByLabelText(/Autres informations/) as HTMLTextAreaElement).value).toBe('Local partagé')
   })
 })

@@ -1,8 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import type { VehiculeType } from '../lib/types'
 import { messageErreur } from '../lib/messageErreur'
+import { chargerInformationsDossier, enregistrerInformationsDossier } from '../lib/informationsDossier'
 
 // Version client du même formulaire que InformationsTab (cabinet) — mêmes champs, même table
 // (informations_dossier, upsert sur dossier_id), juste un texte adapté à quelqu'un qui n'est pas
@@ -22,18 +22,22 @@ export default function ClientInformations() {
   const [ticketsRestaurant, setTicketsRestaurant] = useState(false)
   const [chequesVacances, setChequesVacances] = useState(false)
   const [notes, setNotes] = useState('')
+  // Jumeau du cabinet : « on n'a pas pu lire » et « il n'y a rien à lire » donnent le même formulaire
+  // vide, et l'enregistrement porte TOUS les champs (voir lib/informationsDossier.ts).
+  const [erreurChargement, setErreurChargement] = useState<string | null>(null)
 
   async function load() {
     if (!dossierId) return
     setLoading(true)
-    const { data } = await supabase.from('informations_dossier').select('*').eq('dossier_id', dossierId).maybeSingle()
-    if (data) {
-      setVehiculeType(data.vehicule_type)
-      setVehiculeLibelle(data.vehicule_libelle ?? '')
-      setJoursTravailles(data.jours_travailles_an != null ? String(data.jours_travailles_an) : '')
-      setTicketsRestaurant(data.tickets_restaurant)
-      setChequesVacances(data.cheques_vacances)
-      setNotes(data.notes ?? '')
+    const { informations, erreur } = await chargerInformationsDossier(dossierId)
+    setErreurChargement(erreur)
+    if (informations) {
+      setVehiculeType(informations.vehicule_type)
+      setVehiculeLibelle(informations.vehicule_libelle ?? '')
+      setJoursTravailles(informations.jours_travailles_an != null ? String(informations.jours_travailles_an) : '')
+      setTicketsRestaurant(informations.tickets_restaurant)
+      setChequesVacances(informations.cheques_vacances)
+      setNotes(informations.notes ?? '')
     }
     setLoading(false)
   }
@@ -43,22 +47,19 @@ export default function ClientInformations() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!dossierId) return
+    // Enregistrer ce qu'on n'a pas su lire, c'est l'effacer. Seconde ceinture : le bouton est grisé.
+    if (erreurChargement) return
     setSaving(true)
     setError(null)
     setSaved(false)
     try {
-      const payload = {
-        dossier_id: dossierId,
-        vehicule_type: vehiculeType,
-        vehicule_libelle: vehiculeType === 'aucun' ? null : (vehiculeLibelle.trim() || null),
-        jours_travailles_an: joursTravailles ? parseInt(joursTravailles, 10) : null,
-        tickets_restaurant: ticketsRestaurant,
-        cheques_vacances: chequesVacances,
-        notes: notes.trim() || null,
-        updated_at: new Date().toISOString(),
+      const erreur = await enregistrerInformationsDossier(dossierId, {
+        vehiculeType, vehiculeLibelle, joursTravailles, ticketsRestaurant, chequesVacances, notes,
+      })
+      if (erreur) {
+        setError(erreur)
+        return
       }
-      const { error: upsertError } = await supabase.from('informations_dossier').upsert(payload, { onConflict: 'dossier_id' })
-      if (upsertError) throw upsertError
       setSaved(true)
       load()
     } catch (err) {
@@ -126,9 +127,16 @@ export default function ClientInformations() {
               <textarea id="notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
             </div>
 
+            {erreurChargement && (
+              <p className="error-text">
+                {erreurChargement} Tes réponses n'ont pas pu être chargées : le formulaire est
+                peut-être vide alors que tu avais déjà répondu, et enregistrer maintenant effacerait
+                ce que tu avais mis. Recharge la page avant de modifier quoi que ce soit.
+              </p>
+            )}
             {error && <p className="error-text">{error}</p>}
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <button className="btn btn-primary" type="submit" disabled={saving}>
+              <button className="btn btn-primary" type="submit" disabled={saving || erreurChargement !== null}>
                 {saving ? 'Enregistrement…' : 'Enregistrer'}
               </button>
               {saved && <span className="muted">Enregistré ✓</span>}

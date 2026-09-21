@@ -11,6 +11,7 @@ import VehiculesCard from './VehiculesCard'
 import SauvegardeCard from './SauvegardeCard'
 import BalanceCard from './BalanceCard'
 import { messageErreur } from '../../lib/messageErreur'
+import { chargerInformationsDossier, enregistrerInformationsDossier } from '../../lib/informationsDossier'
 
 // Informations déclaratives saisies une fois par le cabinet (ou récupérées auprès du client) plutôt
 // que déduites d'un document — un type de véhicule ou l'existence de tickets-restaurant ne se lit pas
@@ -63,17 +64,21 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
   const [ticketsRestaurant, setTicketsRestaurant] = useState(false)
   const [chequesVacances, setChequesVacances] = useState(false)
   const [notes, setNotes] = useState('')
+  // « On n'a pas pu lire » et « il n'y a rien à lire » donnent le même formulaire vide. Tant que ce
+  // drapeau est levé, enregistrer écraserait ce qu'on ignore (voir lib/informationsDossier.ts).
+  const [erreurChargement, setErreurChargement] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
-    const { data } = await supabase.from('informations_dossier').select('*').eq('dossier_id', dossierId).maybeSingle()
-    if (data) {
-      setVehiculeType(data.vehicule_type)
-      setVehiculeLibelle(data.vehicule_libelle ?? '')
-      setJoursTravailles(data.jours_travailles_an != null ? String(data.jours_travailles_an) : '')
-      setTicketsRestaurant(data.tickets_restaurant)
-      setChequesVacances(data.cheques_vacances)
-      setNotes(data.notes ?? '')
+    const { informations, erreur } = await chargerInformationsDossier(dossierId)
+    setErreurChargement(erreur)
+    if (informations) {
+      setVehiculeType(informations.vehicule_type)
+      setVehiculeLibelle(informations.vehicule_libelle ?? '')
+      setJoursTravailles(informations.jours_travailles_an != null ? String(informations.jours_travailles_an) : '')
+      setTicketsRestaurant(informations.tickets_restaurant)
+      setChequesVacances(informations.cheques_vacances)
+      setNotes(informations.notes ?? '')
     }
     setLoading(false)
   }
@@ -99,24 +104,20 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    // Enregistrer ce qu'on n'a pas su lire, c'est l'écraser : l'upsert porte tous les champs et le
+    // formulaire est resté sur ses valeurs par défaut. Seconde ceinture, le bouton étant déjà grisé.
+    if (erreurChargement) return
     setSaving(true)
     setError(null)
     setSaved(false)
     try {
-      const payload = {
-        dossier_id: dossierId,
-        vehicule_type: vehiculeType,
-        vehicule_libelle: vehiculeType === 'aucun' ? null : (vehiculeLibelle.trim() || null),
-        jours_travailles_an: joursTravailles ? parseInt(joursTravailles, 10) : null,
-        tickets_restaurant: ticketsRestaurant,
-        cheques_vacances: chequesVacances,
-        notes: notes.trim() || null,
-        updated_at: new Date().toISOString(),
+      const erreur = await enregistrerInformationsDossier(dossierId, {
+        vehiculeType, vehiculeLibelle, joursTravailles, ticketsRestaurant, chequesVacances, notes,
+      })
+      if (erreur) {
+        setError(erreur)
+        return
       }
-      // Upsert sur dossier_id (contrainte unique en base) : une seule ligne d'informations par
-      // dossier, qu'elle existe déjà ou non.
-      const { error: upsertError } = await supabase.from('informations_dossier').upsert(payload, { onConflict: 'dossier_id' })
-      if (upsertError) throw upsertError
       setSaved(true)
       load()
     } catch (err) {
@@ -288,9 +289,16 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
           <textarea id="notes" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
         </div>
 
+        {erreurChargement && (
+          <p className="error-text">
+            {erreurChargement} Le formulaire ci-dessus est donc peut-être vide alors que le dossier
+            porte des informations : enregistrer maintenant les écraserait. Recharge la page avant de
+            modifier quoi que ce soit.
+          </p>
+        )}
         {error && <p className="error-text">{error}</p>}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-          <button className="btn btn-primary" type="submit" disabled={saving}>
+          <button className="btn btn-primary" type="submit" disabled={saving || erreurChargement !== null}>
             {saving ? 'Enregistrement…' : 'Enregistrer'}
           </button>
           {saved && <span className="muted">Enregistré ✓</span>}
