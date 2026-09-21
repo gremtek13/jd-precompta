@@ -9,17 +9,21 @@ import { messageErreur } from './messageErreur'
 //
 // **La date** : une pièce sans date n'entre dans aucun pack — le filtre `gte`/`lte` sur `date_piece`
 // écarte les NULL (voir packGenerator) — donc elle est invisible du livrable envoyé au comptable,
-// quelle que soit la période demandée. Textract n'étiquette le champ INVOICE_RECEIPT_DATE que de
-// façon irrégulière, et le repli qui lit la date dans le texte brut est arrivé après coup : les
-// pièces déposées avant n'en ont jamais bénéficié.
+// quelle que soit la période demandée. Les pièces déposées avant que la lecture de date ne soit
+// fiable n'en ont jamais bénéficié — d'abord parce que le repli sur texte brut est arrivé après
+// coup, puis parce que `parseDate` perdait les dates précédées d'un jour de la semaine jusqu'au
+// 21/09/2026. Une relecture est donc le seul moyen de leur appliquer les corrections d'après coup.
+// (Le mécanisme d'origine — l'étiquetage irrégulier d'`INVOICE_RECEIPT_DATE` par `AnalyzeExpense` —
+// n'existe plus depuis la marche 1 : c'est le MODÈLE qui désigne la date, et il la cite sur 42 des
+// 43 textes du corpus réel. La relecture garde donc tout son sens, pour une autre raison.)
 //
 // **Le texte OCR** : il était calculé à chaque extraction puis jeté (voir lib/texteOcr.ts). Toutes
 // les pièces déposées avant qu'on le conserve n'en ont donc aucun — or ce sont exactement celles que
 // le cabinet arbitre aujourd'hui, et pour lesquelles « BOULANGER MARSEILLE » ne dit rien.
 //
-// **Les deux ensemble, en une seule passe.** Chaque relecture coûte un appel Textract facturé et
-// jusqu'à 50 secondes : les séparer en deux actions paierait deux fois la même lecture. Ce qui est
-// demandé au service est identique, seul diffère ce qu'on en garde.
+// **Les deux ensemble, en une seule passe.** Chaque relecture coûte un appel Textract facturé, plus
+// un appel au modèle de citation : les séparer en deux actions paierait deux fois la même lecture.
+// Ce qui est demandé au service est identique, seul diffère ce qu'on en garde.
 //
 // **Rien d'autre n'est jamais écrit.** Jamais le tiers, jamais les montants, jamais le statut : ces
 // pièces sont pour la plupart déjà validées, donc relues et corrigées à la main par le comptable.
@@ -69,9 +73,17 @@ export async function relireDocuments(
   const resultat: ResultatRelecture = { datees: [], sansDate: [], textesArchives: [], echecs: [] }
 
   // Séquentiel, jamais en parallèle : chaque PDF passe par le chemin asynchrone de Textract, qui
-  // dépose le fichier sur S3 et sonde le job jusqu'à 50 s. Lancer vingt analyses d'un coup multiplie
-  // le coût au même instant et risque le throttling côté AWS, pour un gain nul sur une action qu'on
-  // ne lance qu'une fois. La progression est remontée à l'appelant, qui peut l'afficher.
+  // dépose le fichier sur S3 et sonde le job. Lancer vingt analyses d'un coup multiplie le coût au
+  // même instant et risque le throttling côté AWS, pour un gain nul sur une action qu'on ne lance
+  // qu'une fois. La progression est remontée à l'appelant, qui peut l'afficher.
+  //
+  // CE QUE COÛTE UN LOT A TRIPLÉ LE 21/09/2026, et c'est écrit ici plutôt que tu : le sondage
+  // attendait 50 s en dur, il longe maintenant le mur de la plateforme (110 s de lecture, plus 30 s
+  // de citation). Un document COURT ne change pas — la boucle sort dès que le job est fini — mais un
+  // document long qui échouait en 52 s prend désormais jusqu'à 140 s et RÉUSSIT. Le pire cas d'un
+  // lot passe donc d'environ 50 s à 140 s par pièce. C'est le bon échange (un document lu vaut mieux
+  // qu'un lot rapide qui n'en lit aucun), mais quiconque dimensionne un lot doit partir du bon
+  // chiffre.
   let fait = 0
   for (const piece of aTraiter) {
     onProgression?.(fait, aTraiter.length, piece.nom_fichier)
@@ -175,8 +187,9 @@ export async function relireTextesDocuments(
   const resultat: ResultatRelectureDocuments = { textesArchives: [], sansTexte: [], echecs: [] }
 
   // Séquentiel pour la même raison que côté pièces : chaque PDF passe par le chemin asynchrone de
-  // Textract (dépôt S3 puis sondage jusqu'à 50 s), et lancer trente analyses d'un coup multiplie le
-  // coût au même instant pour un gain nul sur une action qu'on ne lance qu'une fois.
+  // Textract (dépôt S3 puis sondage), et lancer trente analyses d'un coup multiplie le coût au même
+  // instant pour un gain nul sur une action qu'on ne lance qu'une fois. Le pire cas par document est
+  // celui décrit plus haut, et il a triplé le 21/09/2026.
   let fait = 0
   for (const document of aTraiter) {
     onProgression?.(fait, aTraiter.length, document.nom_fichier)
