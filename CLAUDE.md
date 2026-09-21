@@ -2127,6 +2127,13 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   évitent le seul mot « assurance vie », qui figure sur de vraies factures de
   courtier. Validés en exécutant la vraie fonction sur les textes OCR réels du
   dossier : 41 factures sur 41 restent des factures.
+  **Ce que cet ordre coûte, mesuré le 21/09/2026 sur un dépôt réel, et laissé tel quel** : une
+  ATTESTATION DE VIGILANCE URSSAF (marqueurs `URSSAF` + `ATTESTATION` + « vigilance », zéro montant
+  lisible, aucun échéancier reconnu par les deux formats) ressort en `cotisation` et non en
+  `attestation`, le marqueur URSSAF étant testé le premier. **Ce n'est pas un défaut mais une
+  étiquette** : les deux classifications mènent à Documents, où seules `categorie` et le texte sont
+  écrits. Ajouter un marqueur « vigilance » demanderait un redéploiement de la fonction
+  d'extraction, ce qu'une étiquette ne paie pas — noté pour ne pas le réenquêter à chaque audit.
 - **Un justificatif de RECETTE est une pièce, pas un document — et pas un achat.** Un bordereau
   de télétransmission (le récapitulatif d'un lot de feuilles de soins envoyé à l'Assurance Maladie
   et aux mutuelles) est le justificatif de ce que le praticien a facturé. Classé « facture » comme
