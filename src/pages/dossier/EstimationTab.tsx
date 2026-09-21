@@ -2,7 +2,7 @@ import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
-import { ecartPct, totauxPourAnnee } from '../../lib/estimation'
+import { chargesParPostePourAnnee, ecartPct, totauxPourAnnee } from '../../lib/estimation'
 import type { Categorie, CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -208,32 +208,13 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
-  // Même regroupement par poste_2035 que l'onglet Clôture (catégorie → poste, pièces d'immobilisation
-  // exclues pour ne pas compter une dépense capitalisée comme une charge courante en plus) — mais sans
-  // les lignes synthétiques amortissements/cotisations de Clôture : ici on ne veut que les postes de
-  // charge issus des catégories, les cotisations ayant déjà leur propre repère à côté.
-  function totauxParPostePourAnnee(annee: number): Map<string, number> {
-    const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
-    const totaux = new Map<string, number>()
-    for (const p of piecesValidees) {
-      if (!p.date_piece?.startsWith(String(annee))) continue
-      if (immobilisationPieceIds.has(p.id)) continue
-      const cat = categorieById(p.categorie_id)
-      if (!cat?.poste_2035) continue
-      const montant = p.montant_ht ?? p.montant_ttc ?? 0
-      const signe = p.type_piece === 'vente' ? 1 : -1
-      totaux.set(cat.poste_2035, (totaux.get(cat.poste_2035) ?? 0) + signe * montant)
-    }
-    return totaux
-  }
-
   async function calculerPostesDepuisAppli() {
     const annee = parseInt(anneeACalculer, 10)
     if (!annee) return
     setCalculatingPostes(true)
     setError(null)
     try {
-      const totaux = totauxParPostePourAnnee(annee)
+      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee)
       if (totaux.size === 0) {
         setError("Aucune pièce avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
         return

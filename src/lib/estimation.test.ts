@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ecartPct, totauxPourAnnee } from './estimation'
+import { chargesParPostePourAnnee, ecartPct, totauxPourAnnee } from './estimation'
 import type { CotisationDeclaree, Piece } from './types'
 
 const piece = (o: Partial<Piece>): Piece => ({
@@ -68,5 +68,89 @@ describe('ecartPct', () => {
   it('arrondit à l’entier', () => {
     expect(ecartPct(133, 100)).toBe('+33 %')
     expect(ecartPct(100.4, 100)).toBe('+0 %')
+  })
+})
+
+// DEUX ÉCRIVAINS, DEUX CONVENTIONS DE SIGNE, DANS LA MÊME COLONNE.
+//
+// Le bouton « Calculer le détail par poste » multipliait chaque dépense par −1 et écrivait donc des
+// montants NÉGATIFS dans `references_postes_annuels` ; le formulaire juste au-dessus y écrit ce que
+// le cabinet tape, et un loyer se saisit « 12000 ». Les deux lignes s'affichent dans le MÊME
+// tableau, sous un titre qui dit « autres charges », l'une à 12 000,00 € et l'autre à −8 450,00 €,
+// sans que rien n'explique la différence.
+//
+// La convention du projet est écrite ailleurs — `cases2035.ts` : « `montant` reste positif, le signe
+// est porté par la nature », et `totauxPourAnnee` ci-dessus rend un `ca` et des `cotis` positifs.
+// C'est donc le calcul qui rentre dans le rang.
+//
+// LATENT : `references_postes_annuels` est VIDE dans toute la base, la fonctionnalité n'ayant jamais
+// été exercée. Ce qui la rend digne d'être corrigée est qu'une fois deux lignes écrites par les deux
+// chemins, rien ne dirait laquelle suit quelle convention.
+describe('chargesParPostePourAnnee', () => {
+  const cat = (id: string, poste: string | null) => ({ id, poste_2035: poste })
+  const CATEGORIES = [cat('c-loyer', 'Loyer'), cat('c-hono', 'Honoraires'), cat('c-sans', null)]
+  const achat = (o: Partial<Piece>): Piece =>
+    ({
+      id: 'p1', type_piece: 'achat', statut: 'validee', date_piece: '2025-03-01',
+      categorie_id: 'c-loyer', montant_ht: 100, montant_ttc: 120, ...o,
+    }) as Piece
+
+  it('rend des montants POSITIFS, comme la saisie manuelle', () => {
+    const totaux = chargesParPostePourAnnee([achat({})], CATEGORIES, new Set(), 2025)
+    expect(totaux.get('Loyer')).toBe(100)
+  })
+
+  it('laisse un avoir DIMINUER le poste, plutôt que de prendre la valeur absolue', () => {
+    // Même règle que `declaration2035` : on additionne le montant tel quel. Une valeur absolue
+    // ferait d'un remboursement une charge de plus.
+    const totaux = chargesParPostePourAnnee(
+      [achat({ id: 'a' }), achat({ id: 'b', montant_ht: -30 })], CATEGORIES, new Set(), 2025)
+    expect(totaux.get('Loyer')).toBe(70)
+  })
+
+  it('écarte les recettes, que la carte « autres charges » ne doit pas contenir', () => {
+    // Le commentaire d'origine le disait déjà — « ici on ne veut que les postes de charge issus des
+    // catégories » — et le code ne le faisait pas : une vente entrait, positive, indiscernable
+    // d'une charge une fois écrite en base. Le chiffre d'affaires a son champ dans
+    // `references_annuelles`.
+    const totaux = chargesParPostePourAnnee(
+      [achat({ id: 'v', type_piece: 'vente', categorie_id: 'c-hono', montant_ht: 4500 })],
+      CATEGORIES, new Set(), 2025)
+    expect(totaux.has('Honoraires')).toBe(false)
+    expect(totaux.size).toBe(0)
+  })
+
+  it('écarte une pièce immobilisée', () => {
+    // Sinon une dépense capitalisée serait comptée une fois en charge courante ET une fois en
+    // amortissement.
+    const totaux = chargesParPostePourAnnee([achat({ id: 'i' })], CATEGORIES, new Set(['i']), 2025)
+    expect(totaux.size).toBe(0)
+  })
+
+  it('écarte une pièce d’un autre exercice, et une sans poste', () => {
+    const totaux = chargesParPostePourAnnee(
+      [achat({ id: 'a', date_piece: '2024-12-31' }), achat({ id: 'b', categorie_id: 'c-sans' })],
+      CATEGORIES, new Set(), 2025)
+    expect(totaux.size).toBe(0)
+  })
+
+  it('retombe sur le TTC quand le HT n’est pas lu, comme le moteur de la 2035', () => {
+    const totaux = chargesParPostePourAnnee(
+      [achat({ montant_ht: null, montant_ttc: 120 })], CATEGORIES, new Set(), 2025)
+    expect(totaux.get('Loyer')).toBe(120)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « rend des montants positifs » et « écarte les recettes » seraient
+  // satisfaits par une fonction qui ne rend JAMAIS rien — et le bouton afficherait pour toujours
+  // « Aucune pièce avec un poste 2035 renseigné pour cette année ».
+  it('cumule bien plusieurs postes d’un même exercice', () => {
+    const totaux = chargesParPostePourAnnee(
+      [
+        achat({ id: 'a', montant_ht: 100 }),
+        achat({ id: 'b', montant_ht: 250, date_piece: '2025-07-04' }),
+        achat({ id: 'c', categorie_id: 'c-hono', montant_ht: 80 }),
+      ],
+      CATEGORIES, new Set(), 2025)
+    expect([...totaux].sort()).toEqual([['Honoraires', 80], ['Loyer', 350]])
   })
 })

@@ -18,3 +18,46 @@ export function ecartPct(valeurN: number, valeurN1: number | null): string {
   if (!valeurN1) return '—'
   return `${valeurN >= valeurN1 ? '+' : ''}${(((valeurN - valeurN1) / valeurN1) * 100).toFixed(0)} %`
 }
+
+/**
+ * Le détail par poste des CHARGES d'un exercice, pour la carte « Détail par poste (autres charges) ».
+ *
+ * DEUX ÉCRIVAINS, DEUX CONVENTIONS DE SIGNE, DANS LA MÊME COLONNE. Ce calcul vivait dans
+ * `EstimationTab` et multipliait chaque dépense par −1 : le bouton « Calculer le détail par poste »
+ * écrivait donc des montants NÉGATIFS dans `references_postes_annuels`, pendant que le formulaire
+ * juste au-dessus y écrit ce que le cabinet tape — un loyer se saisit « 12000 », pas « −12000 ».
+ * Les deux lignes s'affichent dans le MÊME tableau, l'une à 12 000,00 € et l'autre à −8 450,00 €,
+ * sans que rien n'explique la différence.
+ *
+ * La convention du projet est pourtant écrite ailleurs : `cases2035.ts` dit « `montant` reste
+ * positif, le signe est porté par la nature », et `totauxPourAnnee` juste au-dessus rend un `ca` et
+ * des `cotis` positifs. C'est donc le calcul qui rentre dans le rang, pas la saisie.
+ *
+ * ET LES RECETTES N'ONT RIEN À FAIRE ICI, ce que le commentaire d'origine disait déjà sans que le
+ * code le fasse : « ici on ne veut que les postes de charge issus des catégories ». Une pièce de
+ * vente dont la catégorie porte un poste 2035 entrait dans une carte intitulée « autres charges »,
+ * indiscernable d'une charge une fois écrite. Le chiffre d'affaires a son propre champ, dans
+ * `references_annuelles`.
+ *
+ * Le montant est accumulé TEL QUEL — pas en valeur absolue : un avoir sur une charge la diminue,
+ * exactement comme dans `declaration2035`, dont ce regroupement reprend la logique (catégorie →
+ * poste, pièces immobilisées exclues pour ne pas compter une dépense capitalisée comme une charge
+ * courante en plus).
+ */
+export function chargesParPostePourAnnee(
+  piecesValidees: Piece[],
+  categories: { id: string; poste_2035: string | null }[],
+  immobilisationPieceIds: ReadonlySet<string>,
+  annee: number,
+): Map<string, number> {
+  const totaux = new Map<string, number>()
+  for (const p of piecesValidees) {
+    if (!p.date_piece?.startsWith(String(annee))) continue
+    if (p.type_piece === 'vente') continue
+    if (immobilisationPieceIds.has(p.id)) continue
+    const poste = categories.find((c) => c.id === p.categorie_id)?.poste_2035
+    if (!poste) continue
+    totaux.set(poste, (totaux.get(poste) ?? 0) + (p.montant_ht ?? p.montant_ttc ?? 0))
+  }
+  return totaux
+}
