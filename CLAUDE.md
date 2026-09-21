@@ -366,8 +366,9 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   de champs et DÉRIVE ses cas de `CHAMPS_CITES`.
   **BRANCHÉ dans `extract-piece` le 21/09/2026**, et la SÉPARATION vaut plus que l'économie :
   l'étage 1 produit du texte, l'étage 2 en tire des champs, et les deux ne se connaissent que par une
-  chaîne de caractères. C'est la couture dont la marche 2 a besoin — remplacer Textract par PaddleOCR
-  ne touchera que l'étage 1.
+  chaîne de caractères. Elle avait été motivée en partie par la marche 2, écartée depuis — et elle
+  tient sans elle : c'est cette couture qui a rendu la mesure de coût poste par poste possible, et
+  qui garde le fournisseur d'OCR remplaçable si la question revient.
   **L'étage 2 est BEST-EFFORT, l'étage 1 non** : Bedrock indisponible, quota atteint, JSON malformé,
   l'extraction continue sur le seul texte OCR et rend la classification, la lecture 2035,
   l'échéancier de cotisation et la date par repli. Perdre le tiers et les montants coûte une saisie ;
@@ -403,6 +404,26 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
   `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
   `extraireErreurFonction` était à découvert, et pas seulement sur son défaut : sur tout.
+- **LA MARCHE 2 (OCR LOCAL) EST ÉCARTÉE — décision de l'utilisateur, 21/09/2026, prise sur la
+  mesure.** Le chantier était cadré et son architecture arrêtée : un service sur un mini-PC
+  interrogeant Supabase (jamais l'inverse — aucun port ouvert, aucun tunnel, rien à refaire quand
+  l'IP de la box change), avec un débordement AWS PERMANENT pour les pièces que personne n'a lues.
+  Ce qui l'a arrêté n'est pas une difficulté technique, c'est le chiffre : **sortir l'OCR d'AWS ne
+  retire que 27 à 36 % du coût** d'une extraction (0,0030 $ sur 0,0109 $ pour une facture courte,
+  0,045 $ sur 0,124 $ pour un document dense) — tout le reste est l'étage 2, qui ne bouge pas. Un
+  quart de la facture ne paie pas une machine de bureau devenue dépendance du chemin de production.
+  **Et le RGPD ne penchait pas du côté qu'on croyait** : retirer AWS du registre ferait vivre les
+  pièces — donc des noms de patients — sur une machine de bureau, ce qui DÉPLACE la question
+  (chiffrement du disque, accès physique, sauvegarde) au lieu de la supprimer. Textract tourne déjà
+  en région européenne, et c'est un test qui le garde.
+  **Rien n'est à défaire** : aucun code n'avait été écrit. La séparation des deux étages, motivée en
+  partie par ce chantier, tient sur ses propres mérites — c'est elle qui a rendu la mesure de coût
+  possible, et elle garde le fournisseur d'OCR remplaçable le jour où la question reviendrait.
+  **Ce qui la rouvrirait, et c'est la seule chose utile à retenir** : un VOLUME qui rende la facture
+  d'extraction matérielle (à 0,12 $ le document dense, il y faut des milliers de pages par mois), ou
+  une exigence CLIENT de ne pas confier les pièces à un sous-traitant. Jamais une intuition de coût —
+  la facture AWS tranche, et elle est désormais lisible poste par poste dans `query_logs` par la
+  ligne `[extract-piece] citation …`.
 - **N° de TVA intracommunautaire français** calculé déterministiquement à
   partir du SIREN (formule CGI art. 286 ter : `clé = (12 + 3×(SIREN mod 97))
   mod 97`, puis `FR` + clé 2 chiffres + SIREN) plutôt que demandé comme champ
@@ -567,24 +588,11 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   pack contient les FICHIERS, une sauvegarde contient les LIGNES qui les relient ; il
   faut les deux pour repartir de zéro, et c'est la confusion la plus coûteuse à laisser
   s'installer. Voir PLAN_DE_REPRISE.md.
-- Ergonomie issue d'un audit comparatif avec un logiciel concurrent (MEG,
-  utilisé par l'expert-comptable de l'utilisateur) : fiche pièce en deux
-  colonnes avec pied de formulaire fixe ; exercice unifié en en-tête du
-  dossier (voir AnneeContext) ; aperçu du justificatif et message explicite
-  sur l'absence de candidat directement dans le panneau de rapprochement
-  bancaire (`lib/depot.ts::ouvrirJustificatif`) ; badge de rapprochement
-  distinct du statut de validation dans la liste des pièces ; "Statistiques"
-  renommé "Balance des comptes" avec un tableau de pilotage (évolution
-  mensuelle des encaissements/décaissements, avancement du dossier — voir
-  `lib/tableauPilotage.ts`) ; navigation clarifiée (Justificatifs/Documents
-  administratifs/Factures émises) et paragraphes d'intro longs raccourcis
-  avec le détail replié en `<details>`.
-
-## Fonctionnalités actuellement en cours
-
-- **Marche 1 de la réduction du coût d'extraction — BRANCHÉE le 21/09/2026, pas encore éprouvée.**
-  `extract-piece` lit désormais par `DetectDocumentText` (OCR seul, ~7× moins cher) puis fait CITER
-  les champs par un modèle. Socle, mesure et branchement livrés (voir « Décisions techniques »).
+- **Marche 1 de la réduction du coût d'extraction — TERMINÉE ET ÉPROUVÉE le 21/09/2026.**
+  `extract-piece` lit par `DetectDocumentText` (OCR seul) puis fait CITER les champs par un modèle.
+  Socle, mesure, branchement, déploiement et vérification en production, tous livrés le même jour
+  (le contrat de citation lui-même vit dans « Décisions techniques »). **La marche 2 qui devait la
+  suivre est écartée** — voir la décision du 21/09/2026, prise sur les chiffres ci-dessous.
   **ÉPROUVÉE EN PRODUCTION le 21/09/2026** (version 43), après un premier dépôt à 500 : la policy
   IAM n'autorisait pas les trois nouvelles actions Textract — voir « un déploiement n'est pas une
   autorisation » dans « Problèmes connus », c'est là que vivent la leçon et son garde-fou. Policy
@@ -648,21 +656,21 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   vingt fois plus long que ceux du corpus. Les trois champs non cités sont rendus `null` par le
   modèle, ce qui est la bonne réponse quand ils ne figurent pas sur le document — un `null` se
   saisit à la main, une valeur inventée passe inaperçue.
-- **Marche 2 — OCR local (PaddleOCR) sur un mini-PC, avec débordement AWS permanent.** Le SENS de
-  l'appel est décidé (21/09/2026) et ne se rediscute pas : **la machine locale interroge Supabase,
-  Supabase ne l'appelle jamais.** Un service local demande « y a-t-il des pièces sans texte ? »,
-  télécharge le fichier, lit, écrit `piece_textes_ocr`. Ce qu'on y gagne n'est pas du confort :
-  aucun port ouvert, aucun tunnel à entretenir, aucun certificat, et rien à refaire le jour où l'IP
-  de la box change. Le sens inverse — une Edge Function qui appelle la maison — ferait d'une machine
-  de bureau une dépendance du chemin de production, exposée sur Internet.
-  **Le débordement AWS s'exprime alors tout seul** : une pièce que personne n'a lue au bout de N
-  minutes part chez Textract. C'est un repli PERMANENT et non un choix fait une fois — la machine
-  peut être éteinte, saturée ou en train de redémarrer, et le dépôt d'un client ne doit pas en
-  dépendre. `N` se déduit du temps réel d'une page mesuré sur cette machine, jamais d'une intuition.
-  **Et le RGPD change de forme, pas de niveau** : sortir l'OCR d'AWS RETIRE un sous-traitant du
-  registre, mais les pièces — donc des noms de patients — vivent alors sur une machine de bureau.
-  Chiffrement du disque et accès physique deviennent des questions réelles, à écrire dans `RGPD.md`
-  AVANT la mise en service et pas après.
+- Ergonomie issue d'un audit comparatif avec un logiciel concurrent (MEG,
+  utilisé par l'expert-comptable de l'utilisateur) : fiche pièce en deux
+  colonnes avec pied de formulaire fixe ; exercice unifié en en-tête du
+  dossier (voir AnneeContext) ; aperçu du justificatif et message explicite
+  sur l'absence de candidat directement dans le panneau de rapprochement
+  bancaire (`lib/depot.ts::ouvrirJustificatif`) ; badge de rapprochement
+  distinct du statut de validation dans la liste des pièces ; "Statistiques"
+  renommé "Balance des comptes" avec un tableau de pilotage (évolution
+  mensuelle des encaissements/décaissements, avancement du dossier — voir
+  `lib/tableauPilotage.ts`) ; navigation clarifiée (Justificatifs/Documents
+  administratifs/Factures émises) et paragraphes d'intro longs raccourcis
+  avec le détail replié en `<details>`.
+
+## Fonctionnalités actuellement en cours
+
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
