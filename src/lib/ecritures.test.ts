@@ -230,6 +230,76 @@ describe('piecesDesynchronisees — le compte autant que le montant', () => {
   })
 })
 
+describe('piecesDesynchronisees — la date, qui déplace l’écriture d’EXERCICE', () => {
+  it('signale une pièce datée APRÈS coup, dont ni le montant ni le compte n’ont bougé', () => {
+    // LE CHEMIN RÉEL DES GESTES. Une pièce validée sans date reçoit une écriture datée de son DÉPÔT
+    // (le repli de lignesChargeProduitPourPiece). « Retrouver les dates manquantes » écrit ensuite
+    // `date_piece` et RIEN D'AUTRE — c'est ce qui la rend sûre à lancer sur un dossier relu à la
+    // main — donc personne ne réconcilie l'écriture. Corriger la date à la main fait pareil.
+    const datee = piece({ id: 'datee', date_piece: '2025-03-14', created_at: '2026-09-16T09:00:00Z' })
+    const lignes = [ecriture({ piece_id: 'datee', date: '2026-09-16', compte: ACHATS, sens: 'debit', montant: 120 })]
+    expect(analyserEcritures(lignes, [{ piece: datee, compte: ACHATS }]).piecesDesynchronisees).toEqual([datee])
+
+    // Le cas symétrique, sans lequel le test ci-dessus serait satisfait par un contrôle qui signale
+    // tout : la même écriture à la bonne date ne bouge pas.
+    const aJour = [ecriture({ piece_id: 'datee', date: '2025-03-14', compte: ACHATS, sens: 'debit', montant: 120 })]
+    expect(analyserEcritures(aJour, [{ piece: datee, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+  })
+
+  it('ne déplace aucun total — c’est pour ça que rien d’autre ne peut le voir', () => {
+    // Le montant est le même au centime, le compte est le même : ni groupesDesequilibres ni la
+    // comparaison de montant ne peuvent rien en dire. Seule la DATE diffère, et elle décide de
+    // l'exercice — `ecrituresFiltrees` et le FEC lisent la date de l'ÉCRITURE, pendant que Clôture
+    // et la 2035 lisent celle de la PIÈCE. Deux livrables, deux années, aucun signal.
+    const p = piece({ id: 'exercice', date_piece: '2025-12-28' })
+    const lignes = [
+      ecriture({ piece_id: 'exercice', date: '2026-01-04', compte: ACHATS, sens: 'debit', montant: 100 }),
+      ecriture({ piece_id: 'exercice', date: '2026-01-04', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
+      ecriture({ piece_id: 'exercice', date: '2026-01-04', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
+    ]
+    const analyse = analyserEcritures(lignes, [{ piece: p, compte: ACHATS }])
+    expect(analyse.groupesDesequilibres).toEqual([]) // équilibré : le montant n'a pas bougé
+    expect(analyse.piecesDesynchronisees).toEqual([p])
+  })
+
+  it('se tait sur une pièce SANS date — il n’y a rien à contredire', () => {
+    // Une pièce sans date ne prétend à aucun exercice (même arbitrage que la feuille « Pièces sans
+    // date » d'un pack). Comparer son écriture au repli ferait pire que rien : `dateLocaleDe` lit un
+    // INSTANT, donc une écriture générée dans un autre fuseau que celui qui la relit serait déclarée
+    // désynchronisée à tort — un avertissement qui se trompe emporte ses voisins qui, eux, disent vrai.
+    const sansDate = piece({ id: 'sans-date', date_piece: null, created_at: '2026-09-16T23:30:00Z' })
+    const lignes = [ecriture({ piece_id: 'sans-date', date: '2026-09-17', compte: ACHATS, sens: 'debit', montant: 120 })]
+    expect(analyserEcritures(lignes, [{ piece: sansDate, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+  })
+
+  it('suffit d’UNE ligne en retard — le sens sûr, et il est défensif', () => {
+    // CE CAS N'EST PAS PRODUCTIBLE PAR LE CODE D'AUJOURD'HUI, et le dire vaut mieux que de le
+    // laisser croire : `lignesChargeProduitPourPiece` donne la MÊME date à toutes ses lignes et la
+    // régénération les remplace toutes, donc un groupe à dates mélangées n'existe pas (vérifié en
+    // base : 0 groupe sur les 2 du schéma). Le test fige quand même `some` plutôt qu'`every`, parce
+    // que les deux ne coûtent pas la même chose le jour où un écrivain partiel apparaîtra : `every`
+    // se TAIRAIT sur un groupe à moitié périmé, c'est-à-dire sur le seul état où le brouillon se
+    // contredit lui-même. Le contrôle qui parle trop se corrige ; celui qui se tait ne se voit pas.
+    const p = piece({ id: 'moitie', date_piece: '2025-06-30' })
+    const lignes = [
+      ecriture({ piece_id: 'moitie', date: '2025-06-30', compte: ACHATS, sens: 'debit', montant: 100 }),
+      ecriture({ piece_id: 'moitie', date: '2026-09-16', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
+    ]
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([p])
+  })
+
+  it('ne compte pas la date de la contrepartie banque, qui est celle du PAIEMENT', () => {
+    // Elle diffère de la date de la facture presque toujours — la retenir déclarerait désynchronisée
+    // chaque pièce rapprochée du dossier, c'est-à-dire exactement celles qui sont en ordre.
+    const p = piece({ id: 'payee', date_piece: '2026-03-10' })
+    const lignes = [
+      ecriture({ piece_id: 'payee', date: '2026-03-10', compte: ACHATS, sens: 'debit', montant: 120 }),
+      ecriture({ piece_id: 'payee', date: '2026-04-05', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
+    ]
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }]).piecesDesynchronisees).toEqual([])
+  })
+})
+
 describe('ecrituresSansObjet', () => {
   const cats = [categorie(), categorie({ id: 'c2', compte_comptable: null })]
 

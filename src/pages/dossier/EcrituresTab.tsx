@@ -479,17 +479,20 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             Écritures à régénérer <span className="badge badge-danger">à traiter</span>
           </h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            Ces pièces ont été modifiées (montant, TVA...) depuis que leur écriture a été générée — la
-            charge/produit enregistrée ne correspond plus au montant actuel de la pièce. Reprend les
-            montants à jour sans toucher à une éventuelle contrepartie banque déjà rapprochée.
+            Ces pièces ont été modifiées depuis que leur écriture a été générée : montant, catégorie
+            (donc compte) ou date. Les deux dernières ne déplacent aucun total — une catégorie change
+            le compte qui part en FEC, une date change l'EXERCICE dans lequel l'écriture tombe, alors
+            que la 2035 lit celle de la pièce. Reprend tout cela à jour sans toucher à une éventuelle
+            contrepartie banque déjà rapprochée, dont la date est celle du paiement.
           </p>
           <table>
-            <thead><tr><th>Pièce</th><th>Montant actuel</th><th></th></tr></thead>
+            <thead><tr><th>Pièce</th><th>Montant actuel</th><th>Date actuelle</th><th></th></tr></thead>
             <tbody>
               {piecesDesynchronisees.map((p) => (
                 <tr key={p.id}>
                   <td>{p.tiers ?? p.nom_fichier}</td>
                   <td>{formatMoney(p.montant_ttc)}</td>
+                  <td>{p.date_piece ? formatDate(p.date_piece) : <span className="muted">sans date</span>}</td>
                   <td>
                     <button className="btn btn-outline btn-sm" disabled={regenerating === p.id} onClick={() => regenererEcriture(p)}>
                       {regenerating === p.id ? 'Régénération…' : 'Régénérer'}

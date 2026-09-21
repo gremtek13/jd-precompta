@@ -91,9 +91,10 @@ export interface AnalyseEcritures {
   nbSansContrepartie: number
   // Écriture complète (contrepartie présente) dont le total débit ne correspond pas au total crédit.
   groupesDesequilibres: GroupeDesequilibre[]
-  // Pièce modifiée depuis que son écriture a été générée — montant, TVA, ou CATÉGORIE : l'écriture
-  // enregistrée ne correspond plus soit au montant TTC actuel, soit au compte de la catégorie
-  // actuelle. Le second cas ne déplace aucun total, donc rien d'autre ne peut le voir.
+  // Pièce modifiée depuis que son écriture a été générée — montant, TVA, CATÉGORIE ou DATE :
+  // l'écriture enregistrée ne correspond plus soit au montant TTC actuel, soit au compte de la
+  // catégorie actuelle, soit à la date de la pièce. Les deux derniers ne déplacent AUCUN total,
+  // donc rien d'autre ne peut les voir — et la date déplace l'écriture d'EXERCICE.
   piecesDesynchronisees: Piece[]
 }
 
@@ -235,6 +236,21 @@ export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser
       (e) => e.compte !== compte && e.compte !== COMPTE_TVA_DEDUCTIBLE && e.compte !== COMPTE_TVA_COLLECTEE,
     )
     if (surUnAutreCompte) return true
+    // LA DATE AUTANT QUE LE COMPTE, ET ELLE COÛTE PLUS CHER QUE LUI. Une pièce validée sans date
+    // reçoit une écriture datée de son DÉPÔT (le repli de lignesChargeProduitPourPiece) ; « Retrouver
+    // les dates manquantes » écrit ensuite `date_piece` sans toucher à l'écriture — par conception,
+    // c'est ce qui la rend sûre à lancer sur un dossier déjà relu à la main. Rien ne réconcilie les
+    // deux, et corriger à la main la date d'une pièce déjà générée fait exactement pareil.
+    // Le compte, lui, gardait au moins la bonne année. Ici non : sur les pièces réelles du projet, le
+    // dépôt suit la date de la pièce de 549 jours en MÉDIANE (1 336 au maximum) et 68 pièces tombent
+    // dans une autre année civile. L'écriture part donc dans le mauvais EXERCICE — le filtre
+    // d'exercice et le FEC lisent `e.date`, pendant que Clôture et la 2035 lisent `date_piece`. Le
+    // FEC embarque même la contradiction sur UNE SEULE LIGNE, sa colonne PieceDate venant de la
+    // pièce et EcritureDate de l'écriture.
+    // On ne compare QUE si la pièce porte une date : sans date elle ne prétend à aucun exercice, donc
+    // il n'y a rien à contredire — et comparer au repli ferait crier au loup dès qu'une écriture a
+    // été générée dans un autre fuseau que celui qui la relit, `dateLocaleDe` lisant un INSTANT.
+    if (p.date_piece && lignes.some((e) => e.date !== p.date_piece)) return true
     // Signé par rapport au sens naturel de la pièce (achat = débit, vente = crédit) : une simple somme
     // des montants (toujours positifs) donnerait un faux "désynchronisée" sur une pièce à montant
     // négatif (avoir, remboursement), dont les lignes sont correctement enregistrées au sens inverse

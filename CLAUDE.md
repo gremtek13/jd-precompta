@@ -1506,6 +1506,39 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   un badge que je croyais muet — `nbSansContrepartie` et `groupesDesequilibres` partent des
   écritures, pas de la liste éligible. La conclusion tenait, la cause non ; seule une exécution l'a
   montré.
+  **ET UN TROISIÈME CHAMP MANQUAIT AU MÊME CONTRÔLE — LA DATE, ET ELLE COÛTE PLUS CHER QUE LE
+  COMPTE** (21/09/2026). Le compte gardait au moins la bonne ANNÉE ; la date, non. Une pièce validée
+  sans date reçoit une écriture datée de son DÉPÔT (`lignesChargeProduitPourPiece` : `date_piece ??
+  dateLocaleDe(created_at)`, repli délibéré et déjà figé par un test). « Retrouver les dates
+  manquantes » écrit ensuite `date_piece` **et rien d'autre** — c'est précisément ce qui la rend
+  sûre à lancer sur un dossier relu à la main — donc rien ne réconcilie l'écriture. Corriger à la
+  main la date d'une pièce déjà générée fait exactement pareil.
+  **L'ÉCART N'EST PAS UNE APPROXIMATION, IL EST MESURÉ** : sur les pièces réelles du projet, le
+  dépôt suit la date de la pièce de **549 jours en MÉDIANE**, 1 336 au maximum, et **68 pièces**
+  portent une année de dépôt différente de leur année de pièce. L'écriture part donc dans le mauvais
+  EXERCICE : `ecrituresFiltrees` et le FEC lisent `e.date`, pendant que Clôture et la 2035 lisent
+  `date_piece`. Le FEC **embarque la contradiction sur UNE SEULE LIGNE**, sa colonne `PieceDate`
+  venant de la pièce (`dateDePiece` préfère déjà `date_piece`) et `EcritureDate` de l'écriture — et
+  la charge se retrouve dans le FEC d'une année pendant qu'elle est en 2035 dans l'autre.
+  **On ne compare QUE si la pièce porte une date**, et c'est la décision qui empêche le contrôle de
+  crier au loup : sans date, elle ne prétend à aucun exercice (même arbitrage que la feuille
+  « Pièces sans date » d'un pack), donc il n'y a rien à contredire — et comparer au repli
+  signalerait toute écriture générée dans un autre fuseau que celui qui la relit, `dateLocaleDe`
+  lisant un INSTANT. La contrepartie banque reste exclue, sa date étant celle du PAIEMENT : la
+  retenir signalerait chaque pièce rapprochée, c'est-à-dire celles qui sont en ordre.
+  **LATENT lui aussi, et mesuré** : zéro écriture en base dont la date diffère de celle de sa pièce,
+  zéro pièce validée sans date prête à être comptabilisée. Comme ses deux aînés, ce qui le rend digne
+  d'être corrigé n'est pas un préjudice constaté mais qu'il ne PEUT pas se voir une fois arrivé.
+  **Cinq mutations, et la cinquième a d'abord SURVÉCU** : `every` au lieu de `some` ne se distingue
+  sur aucune donnée productible, `lignesChargeProduitPourPiece` donnant la même date à toutes ses
+  lignes et la régénération les remplaçant toutes (0 groupe à dates mélangées en base). Le cas est
+  donc ajouté comme DÉFENSIF et annoncé comme tel plutôt que déguisé en cas réel : `every` se
+  TAIRAIT sur un groupe à moitié périmé le jour où un écrivain partiel apparaîtra, et un contrôle
+  qui parle trop se corrige quand celui qui se tait ne se voit pas.
+  **Le texte du panneau mentait déjà** : il annonçait « montant, TVA... » et n'avait jamais été
+  repris quand le compte a rejoint le contrôle la veille. Il nomme désormais les trois, et le tableau
+  porte la date actuelle à côté du montant — sans quoi un « à régénérer » sur une pièce dont le
+  montant est juste ne dit pas ce qui a bougé.
 - **Une piste d'audit se PRODUIT, elle ne se contrôle pas seulement.** Les contrôles ci-dessus disent
   qu'il y a une rupture ; ce qu'un vérificateur demande est un fichier : chaque écriture avec son
   justificatif (tiers, date, montant, nom du fichier, empreinte SHA-256) et l'opération bancaire
@@ -2580,7 +2613,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1061 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1066 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
