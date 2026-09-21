@@ -1149,6 +1149,51 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   Ce n'est pas un trou — `lecturesPaginees.test.ts` l'attrape, nommément, sur TOUTE source de
   production. Le modéliser une seconde fois dans ce faux client dupliquerait une garantie déjà
   exhaustive ; c'est dit ici plutôt que masqué par un test de complaisance.
+- **ET LA MÊME LECTURE SERT À REMPLIR UN FORMULAIRE QU'ON RÉENREGISTRE ENSUITE — LÀ, ELLE ÉCRASE**
+  (21/09/2026). Le balayage de `chargerCommentaires` avait classé onze lectures « légitimes » en n'en
+  nommant que trois. Rejoué en les regardant une par une, il rend **dix-neuf** sites (dont sept
+  `auth.getUser()`, traités par `?? null` partout) et **quatre vrais défauts**, tous de la même
+  famille et tous invisibles pour la même raison : le résultat d'une lecture ratée ressemble
+  exactement au résultat d'une lecture réussie qui ne trouve rien.
+  **LE MOTIF LE PLUS COÛTEUX EST « LECTURE → FORMULAIRE → UPSERT DE TOUS LES CHAMPS »**, et il
+  existait en TROIS copies. Une lecture qui échoue laisse le formulaire sur ses valeurs INITIALES,
+  donc identique à celui d'un dossier neuf, et le premier « Enregistrer » réécrit par-dessus :
+  - `InformationsTab` et `ClientInformations` — jumeaux au caractère près. `vehicule_type` retombe à
+    « aucun », or il commande le forfait kilométrique, donc la case BJ de la 2035 ; `notes` est du
+    texte libre que personne ne relit, donc que personne ne verrait disparaître. **Les 3 lignes en
+    base portent toutes un véhicule, des jours travaillés et des avantages** : il y aurait eu de quoi
+    détruire sur 3 sur 3.
+  - `CabinetBrandingPage` — la pire des trois, et pas pour la raison qu'on croit : `logoStoragePath`
+    repart de `cabinet?.logo_storage_path ?? null`, donc l'enregistrement **EFFACE le chemin du
+    logo**. Le fichier reste dans le seau, plus rien ne le désigne — un orphelin fabriqué par
+    l'écran, et une charte de cabinet remplacée par celle d'origine.
+  **CE QUE LE CORRECTIF GARDE ET CE QU'IL NE GARDE PAS, mesuré plutôt que supposé** : un refus RLS
+  rend **ZÉRO LIGNE ET AUCUNE ERREUR** (impersonation d'un compte rattaché à rien, sur la base
+  réelle), donc il reste indiscernable d'un dossier neuf et **aucun code ne peut l'attraper ici**.
+  Ce que lire l'erreur attrape, et qui suffit à produire le dégât : session expirée, coupure réseau,
+  5xx, colonne renommée. Le couple habituel — une moitié gardée par le code, l'autre annoncée.
+  **Les deux autres défauts sont des LISTES dont le vide est une AFFIRMATION**, ce qui est la même
+  panne sous une autre forme : `AccesTab` disait « Aucun accès client pour ce dossier » sur une
+  lecture refusée — le pire sens possible pour ce geste-là, puisqu'on coupe l'accès d'un client qui
+  part et qu'on croit l'avoir fait ; et `SuperPdpFactureModal` disait « Aucun événement pour
+  l'instant » sur une facture partie chez une plateforme agréée DGFiP, c'est-à-dire **le symptôme
+  exact que ce fichier décrit déjà pour une écriture d'événement perdue** — les deux causes étaient
+  indiscernables, donc le diagnostic annoncé plus haut ne pouvait même pas se poser.
+  `revoke()` lit désormais son erreur aussi : le `load()` qui suit montre normalement l'échec (la
+  ligne réapparaît), **sauf quand il échoue pour la MÊME raison** — la liste se vide alors au lieu
+  de garder sa ligne, ce qui retourne le signal.
+  **Le module partagé (`lib/informationsDossier.ts`) n'existe pas pour dédupliquer** mais pour que la
+  correction ne puisse pas diverger entre deux jumeaux, et pour rendre la chose testable. Deux sortes
+  de couverture, comme pour la suppression d'un dossier : le module garde le CALCUL (13 tests,
+  6 mutations, dont le défaut d'origine replanté qui en fait tomber trois), l'écran garde le CÂBLAGE
+  (3 tests, 4 mutations sur 5). **La cinquième survit à juste titre** — retirer la seconde ceinture
+  du gestionnaire ne se voit pas, un bouton grisé n'appelant pas son gestionnaire et la soumission
+  implicite ne trouvant pas de bouton par défaut actif. C'est écrit dans le test plutôt que déguisé
+  en assertion de complaisance, comme pour `ClotureTab`.
+  **Les huit lectures restantes sont légitimes, et le résultat est à garder** : les quatre
+  d'`AuthContext` échouent du côté FERMÉ, `auth.getUser()` est traité par `?? null` partout, et
+  `texteOcrDe` est le chemin d'AFFICHAGE dont le jumeau destructeur `lireTexteOcrDuDocument` rend
+  déjà son erreur.
 - **ET LE TROISIÈME JEU D'ESSAI D'ÉCRAN N'ÉTAIT PAS TYPÉ — cinq colonnes manquantes** (21/09/2026).
   Le remède de la contrainte de type avait été appliqué à `ChecklistTab` et `BanqueTab`, pas à
   `PiecesTab`, dont le `piece()` restait un `Record<string, unknown>`. Typé `Partial<Piece> => Piece`
@@ -2933,7 +2978,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1130 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1146 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
