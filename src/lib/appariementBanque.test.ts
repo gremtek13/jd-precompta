@@ -5,8 +5,10 @@ import {
   libelleExploitable,
   motsIdentifiants,
   piecesMontantIntrouvableEnBanque,
+  planRapprochementAutomatique,
   tiersConfirmeParBanque,
 } from './appariementBanque'
+import type { CotisationRapprochable } from './appariementBanque'
 import type { LigneBancaire, Piece } from './types'
 
 const piece = (o: Partial<Piece>): Piece =>
@@ -383,5 +385,148 @@ describe('piecesMontantIntrouvableEnBanque', () => {
   it('tient compte des centimes, pas d’un arrondi à l’euro', () => {
     const piece38 = piece({ montant_ttc: 38.4 })
     expect(piecesMontantIntrouvableEnBanque([piece38], [ligne({ montant: -38.42 })])).toEqual([piece38])
+  })
+})
+
+// « TOUT RAPPROCHER AUTOMATIQUEMENT » TRANCHAIT À PILE OU FACE, EN MASSE ET SANS LE DIRE.
+//
+// L'écran Banque faisait `piecesValidees.find(...)` sur montant + date, puis « consommait » la pièce
+// avant de passer à la ligne suivante. Deux conséquences que rien ne signalait : quand deux pièces
+// convenaient aussi bien l'une que l'autre, la PREMIÈRE DE LA LISTE gagnait ; et quand une pièce
+// convenait à deux mouvements, le PREMIER MOUVEMENT RENCONTRÉ l'emportait. Ni l'un ni l'autre n'est
+// un choix — c'est un effet de l'ordre de tri, appliqué à N lignes sur un seul clic.
+//
+// `motifDeDoute` nomme pourtant ce cas depuis toujours, une trentaine de lignes plus haut dans le
+// même fichier : « deux factures mensuelles identiques, ou une pièce déposée deux fois ». Le module
+// refusait de trancher pendant que l'écran tranchait — encore deux réponses pour la même question.
+//
+// LE CAS EST CELUI DU DOSSIER RÉEL, pas une hypothèse : deux dépôts du même document Transmedical à
+// 38,40 €, portant la même date, face au prélèvement du 5 juin.
+describe('planRapprochementAutomatique', () => {
+  const deuxPiecesIdentiques = [
+    piece({ id: 'mai', statut: 'validee', date_piece: '2025-06-01' }),
+    piece({ id: 'juin', statut: 'validee', date_piece: '2025-06-01' }),
+  ]
+  const vide = { pieces: new Set<string>(), cotisations: new Set<string>() }
+
+  it('rapproche la ligne quand une seule pièce convient', () => {
+    const plan = planRapprochementAutomatique(
+      [ligne({ id: 'l1' })], [piece({ id: 'juin', statut: 'validee' })], [], vide)
+    expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'juin' }])
+    expect(plan.ecartesPourAmbiguite).toBe(0)
+  })
+
+  it('refuse de choisir entre deux pièces qui conviennent aussi bien', () => {
+    const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], deuxPiecesIdentiques, [], vide)
+    expect(plan.retenus).toEqual([])
+    expect(plan.ecartesPourAmbiguite).toBe(1)
+  })
+
+  it('refuse aussi dans l’autre sens : une pièce que deux mouvements se disputent', () => {
+    // C'est le sens que la version « consommante » masquait le mieux : elle rapprochait bel et bien
+    // le premier mouvement, sans que rien ne dise que le second convenait tout autant.
+    const plan = planRapprochementAutomatique(
+      [ligne({ id: 'l1', date: '2025-06-05' }), ligne({ id: 'l2', date: '2025-06-06' })],
+      [piece({ id: 'juin', statut: 'validee' })], [], vide)
+    expect(plan.retenus).toEqual([])
+    expect(plan.ecartesPourAmbiguite).toBe(2)
+  })
+
+  // GARDE SYMÉTRIQUE, et elle est indispensable : sans elle, « refuse l'ambiguïté » serait satisfait
+  // par une fonction qui ne retient JAMAIS rien, et le bouton disparaîtrait de l'écran sans que
+  // personne comprenne pourquoi.
+  it('ne se met pas à tout refuser', () => {
+    const plan = planRapprochementAutomatique(
+      [ligne({ id: 'l1', montant: -38.4 }), ligne({ id: 'l2', montant: -120, date: '2025-06-10' })],
+      [
+        piece({ id: 'a', statut: 'validee', montant_ttc: 38.4 }),
+        piece({ id: 'b', statut: 'validee', montant_ttc: 120, date_piece: '2025-06-09' }),
+      ], [], vide)
+    expect(plan.retenus).toEqual([
+      { ligneId: 'l1', pieceId: 'a' },
+      { ligneId: 'l2', pieceId: 'b' },
+    ])
+    expect(plan.ecartesPourAmbiguite).toBe(0)
+  })
+
+  it('ne compte pas comme ambiguë une ligne qui n’a aucune candidate', () => {
+    // Sinon le message « N mouvements ont plusieurs pièces possibles » compterait tout le relevé, et
+    // un avertissement qui se trompe toujours finit par ne plus être lu.
+    const plan = planRapprochementAutomatique(
+      [ligne({ id: 'l1', montant: -999 })], [piece({ id: 'juin', statut: 'validee' })], [], vide)
+    expect(plan.retenus).toEqual([])
+    expect(plan.ecartesPourAmbiguite).toBe(0)
+  })
+
+  it('écarte une pièce déjà rapprochée ailleurs, ce qui lève l’ambiguïté', () => {
+    const plan = planRapprochementAutomatique(
+      [ligne({ id: 'l1' })], deuxPiecesIdentiques, [],
+      { pieces: new Set(['mai']), cotisations: new Set<string>() })
+    expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'juin' }])
+    expect(plan.ecartesPourAmbiguite).toBe(0)
+  })
+
+  it('tient la tolérance de cinq jours, des deux côtés de la borne', () => {
+    const avec = (date: string) => planRapprochementAutomatique(
+      [ligne({ id: 'l1', date: '2025-06-05' })],
+      [piece({ id: 'p', statut: 'validee', date_piece: date })], [], vide).retenus.length
+    expect(avec('2025-05-31'), '5 jours avant — dans la tolérance').toBe(1)
+    expect(avec('2025-06-10'), '5 jours après — dans la tolérance').toBe(1)
+    expect(avec('2025-05-30'), '6 jours avant — hors tolérance').toBe(0)
+    expect(avec('2025-06-11'), '6 jours après — hors tolérance').toBe(0)
+  })
+
+  it('compte les jours à l’identique dans tous les fuseaux', () => {
+    // CE TEST NE DISTINGUE PAS LES DEUX IMPLÉMENTATIONS, et le dire vaut mieux que de le laisser
+    // croire : la mutation « `jourDe` remplacé par `new Date(iso).getTime()` », celle que l'écran
+    // faisait, SURVIT — et à juste titre. Sur deux dates civiles les deux formes sont rigoureusement
+    // équivalentes, l'une comme l'autre passant par minuit UTC. Ce que `jourDe` apporte est de la
+    // FORME, pas du comportement : il lit le libellé, donc il ne PEUT pas se mettre à dépendre d'un
+    // fuseau le jour où on lui passe autre chose qu'une colonne `date`. C'est la même règle que
+    // `formatDate`, et le module la portait déjà quand l'écran la recopiait.
+    // Ce que le test garde vraiment : le résultat ne bouge pas d'un fuseau à l'autre.
+    const TZ_ORIGINE = process.env.TZ
+    try {
+      for (const tz of ['Europe/Paris', 'UTC', 'America/Martinique', 'Pacific/Tahiti']) {
+        process.env.TZ = tz
+        const plan = planRapprochementAutomatique(
+          [ligne({ id: 'l1', date: '2025-06-05' })],
+          [piece({ id: 'p', statut: 'validee', date_piece: '2025-05-31' })], [], vide)
+        expect(plan.retenus.length, tz).toBe(1)
+      }
+    } finally { process.env.TZ = TZ_ORIGINE }
+  })
+
+  describe('cotisations', () => {
+    const cot = (o: Partial<CotisationRapprochable>): CotisationRapprochable =>
+      ({ id: 'c1', echeance: '2025-06-05', montant_appele: 38.4, montant_verse: null, ...o })
+
+    it('rapproche une échéance quand aucune pièce ne convient', () => {
+      const plan = planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({})], vide)
+      expect(plan.retenus).toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
+    })
+
+    it('compare au montant VERSÉ quand il est connu', () => {
+      // Un appel n'est pas toujours prélevé pour son montant appelé exact (régularisation, paiement
+      // partiel) : c'est le montant réellement versé qui doit retrouver le mouvement.
+      const plan = planRapprochementAutomatique(
+        [ligne({ id: 'l1', montant: -40 })], [], [cot({ montant_appele: 38.4, montant_verse: 40 })], vide)
+      expect(plan.retenus).toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
+    })
+
+    it('refuse de choisir entre deux échéances identiques', () => {
+      const plan = planRapprochementAutomatique(
+        [ligne({ id: 'l1' })], [], [cot({ id: 'c1' }), cot({ id: 'c2' })], vide)
+      expect(plan.retenus).toEqual([])
+      expect(plan.ecartesPourAmbiguite).toBe(1)
+    })
+
+    it('laisse la précédence à la pièce, comme avant', () => {
+      // Ce n'est PAS un arbitrage entre égaux mais une règle de l'écran, conservée telle quelle : la
+      // changer serait une décision produit, pas une correction.
+      const plan = planRapprochementAutomatique(
+        [ligne({ id: 'l1' })], [piece({ id: 'p', statut: 'validee' })], [cot({})], vide)
+      expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'p' }])
+    })
   })
 })

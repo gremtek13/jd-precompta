@@ -12,13 +12,15 @@ import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
 import { chargerRelevesIncoherents, enregistrerControleReleve } from '../../lib/controlesReleves'
-import { analyserAppariements, libelleExploitable, piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
+import {
+  analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE_RAPPROCHEMENT,
+  libelleExploitable, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
+} from '../../lib/appariementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementDevise'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
 
-const JOURS_TOLERANCE_RAPPROCHEMENT = 5
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
 
 // Signature (date, libellé, montant) d'un mouvement bancaire — sert à repérer un doublon d'import
@@ -135,7 +137,10 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   // des pièces déjà relues par le cabinet : rapprocher sur de l'OCR non validé reviendrait à écrire
   // une écriture comptable sur un montant que personne n'a confirmé.
   const piecesValidees = useMemo(() => pieces.filter((p) => p.statut === 'validee'), [pieces])
-  const piecesRapprochees = useMemo(() => new Set(lignes.filter((l) => l.piece_id).map((l) => l.piece_id)), [lignes])
+  const piecesRapprochees = useMemo(
+    () => new Set(lignes.map((l) => l.piece_id).filter((id): id is string => id != null)),
+    [lignes],
+  )
   const piecesSansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id))
   // Sous-ensemble plus grave que la simple absence de rapprochement : un montant qui n'apparaît nulle
   // part dans le relevé, à AUCUNE date, signale soit un relevé incomplet soit un montant faux — voir
@@ -145,7 +150,10 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     () => piecesMontantIntrouvableEnBanque(piecesSansMouvement, lignes),
     [piecesSansMouvement, lignes],
   )
-  const cotisationsRapprochees = useMemo(() => new Set(lignes.filter((l) => l.cotisation_id).map((l) => l.cotisation_id)), [lignes])
+  const cotisationsRapprochees = useMemo(
+    () => new Set(lignes.map((l) => l.cotisation_id).filter((id): id is string => id != null)),
+    [lignes],
+  )
   const cotisationsSansMouvement = cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
 
 
@@ -168,34 +176,18 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     correspondALaRecherche([l.libelle, l.montant, l.date, formatDate(l.date)], recherche),
   )
 
+  // Le critère vit dans lib/appariementBanque.ts, testé, et non plus recopié ici : c'est le même que
+  // celui du bouton « Tout rapprocher », qui doit rester le même par construction et pas par
+  // vigilance. Ici on garde la première candidate — le panneau montre de toute façon TOUTES les
+  // pièces triées par score, et propose de voir le justificatif avant de confirmer.
   function suggestion(ligne: LigneBancaire): Piece | null {
     if (ligne.statut !== 'non_rapprochee') return null
-    const ligneDate = new Date(ligne.date).getTime()
-    const candidats = piecesValidees.filter((p) => {
-      if (piecesRapprochees.has(p.id)) return false
-      if (p.montant_ttc == null) return false
-      if (Math.abs(Math.abs(p.montant_ttc) - Math.abs(ligne.montant)) > 0.01) return false
-      if (!p.date_piece) return false
-      const jours = Math.abs(new Date(p.date_piece).getTime() - ligneDate) / 86_400_000
-      return jours <= JOURS_TOLERANCE_RAPPROCHEMENT
-    })
-    return candidats[0] ?? null
+    return candidatsPieces(ligne, piecesValidees, piecesRapprochees)[0] ?? null
   }
 
-  // Même logique que pour les pièces, mais comparée au montant réellement versé (montant_verse) quand
-  // il est connu — un appel n'est pas toujours prélevé pour son montant appelé exact (régularisation,
-  // paiement partiel) — sinon au montant appelé, seul chiffre disponible avant paiement.
   function suggestionCotisation(ligne: LigneBancaire): CotisationDeclaree | null {
     if (ligne.statut !== 'non_rapprochee') return null
-    const ligneDate = new Date(ligne.date).getTime()
-    const candidats = cotisations.filter((c) => {
-      if (cotisationsRapprochees.has(c.id)) return false
-      const montantRef = c.montant_verse ?? c.montant_appele
-      if (Math.abs(Math.abs(montantRef) - Math.abs(ligne.montant)) > 0.01) return false
-      const jours = Math.abs(new Date(c.echeance).getTime() - ligneDate) / 86_400_000
-      return jours <= JOURS_TOLERANCE_RAPPROCHEMENT
-    })
-    return candidats[0] ?? null
+    return (candidatsCotisations(ligne, cotisations, cotisationsRapprochees)[0] as CotisationDeclaree | undefined) ?? null
   }
 
   // Un prélèvement récurrent (assurance, virement personnel...) sans règle "Toujours ignorer" — soit
@@ -326,45 +318,17 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const nonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
   const totalNonRapproche = nonRapprochees.reduce((s, l) => s + l.montant, 0)
 
-  // Même critère que suggestion()/suggestionCotisation() (montant + date à ±5 jours), mais avec des
-  // ensembles "consommés" locaux plutôt que piecesRapprochees/cotisationsRapprochees (dérivés de l'état
-  // en base) — sinon deux mouvements différents pourraient tous les deux se voir proposer la même
-  // pièce/échéance dans une seule passe, avant que l'écriture en base n'ait eu le temps de se refléter.
-  function rapprochementsAutomatiques(): { ligneId: string; pieceId?: string; cotisationId?: string }[] {
-    const piecesConsommees = new Set(piecesRapprochees)
-    const cotisationsConsommees = new Set(cotisationsRapprochees)
-    const maj: { ligneId: string; pieceId?: string; cotisationId?: string }[] = []
-
-    for (const ligne of nonRapprochees) {
-      const ligneDate = new Date(ligne.date).getTime()
-      const piece = piecesValidees.find((p) => {
-        if (piecesConsommees.has(p.id)) return false
-        if (p.montant_ttc == null || !p.date_piece) return false
-        if (Math.abs(Math.abs(p.montant_ttc) - Math.abs(ligne.montant)) > 0.01) return false
-        const jours = Math.abs(new Date(p.date_piece).getTime() - ligneDate) / 86_400_000
-        return jours <= JOURS_TOLERANCE_RAPPROCHEMENT
-      })
-      if (piece) {
-        piecesConsommees.add(piece.id)
-        maj.push({ ligneId: ligne.id, pieceId: piece.id })
-        continue
-      }
-      const cotisation = cotisations.find((c) => {
-        if (cotisationsConsommees.has(c.id)) return false
-        const montantRef = c.montant_verse ?? c.montant_appele
-        if (Math.abs(Math.abs(montantRef) - Math.abs(ligne.montant)) > 0.01) return false
-        const jours = Math.abs(new Date(c.echeance).getTime() - ligneDate) / 86_400_000
-        return jours <= JOURS_TOLERANCE_RAPPROCHEMENT
-      })
-      if (cotisation) {
-        cotisationsConsommees.add(cotisation.id)
-        maj.push({ ligneId: ligne.id, cotisationId: cotisation.id })
-      }
-    }
-    return maj
-  }
-
-  const suggestionsAutomatiques = rapprochementsAutomatiques()
+  // Le plan vit dans lib/appariementBanque.ts, testé. Il REFUSE de trancher quand deux pièces
+  // conviennent aussi bien l'une que l'autre, dans les deux sens — la version précédente parcourait
+  // les lignes en « consommant » les pièces au passage, si bien que le premier mouvement rencontré
+  // emportait la pièce : pas un choix, un effet de l'ordre de tri, en masse et sur un seul clic.
+  const planAuto = useMemo(
+    () => planRapprochementAutomatique(nonRapprochees, piecesValidees, cotisations, {
+      pieces: piecesRapprochees, cotisations: cotisationsRapprochees,
+    }),
+    [nonRapprochees, piecesValidees, cotisations, piecesRapprochees, cotisationsRapprochees],
+  )
+  const suggestionsAutomatiques = planAuto.retenus
 
   // Appariements où le montant, la date ET le fournisseur concordent — le seul cas où valider une
   // pièce n'apprend rien à personne. Le tri vit dans lib/appariementBanque.ts, testé ; ici il ne
@@ -428,11 +392,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   const rapprochementEnCours = useRef(false)
 
   // Applique en une fois tous les rapprochements sûrs (montant + date proches, un seul candidat
-  // disponible) — rien n'est écrit sans ce clic explicite, et le tableau reste modifiable/annulable
-  // ligne par ligne ensuite comme n'importe quel rapprochement.
+  // disponible DE PART ET D'AUTRE) — rien n'est écrit sans ce clic explicite, et le tableau reste
+  // modifiable/annulable ligne par ligne ensuite comme n'importe quel rapprochement.
+  //
+  // « Un seul candidat disponible » était annoncé ici bien avant d'être vrai : le tri décidait à la
+  // place de l'opérateur quand plusieurs pièces convenaient. C'est `planRapprochementAutomatique`
+  // qui le garantit maintenant, et un test qui le figera.
   async function rapprocherTout() {
     if (rapprochementEnCours.current) return
-    const maj = rapprochementsAutomatiques()
+    const maj = planAuto.retenus
     if (maj.length === 0) return
     rapprochementEnCours.current = true
     setRapprochementAuto(true)
@@ -575,6 +543,16 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           >
             {rapprochementAuto ? 'Rapprochement…' : `Tout rapprocher automatiquement (${suggestionsAutomatiques.length})`}
           </button>
+        )}
+        {/* Un bouton qui annonce N en en traitant moins ne dit pas où sont passées les autres — même
+            règle que la feuille « Pièces manquantes » d'un pack. Ces lignes-là ont bien des
+            candidates, mais plusieurs conviennent aussi bien : les départager demande d'ouvrir les
+            documents, et c'est le travail de l'opérateur, pas celui d'un tri. */}
+        {planAuto.ecartesPourAmbiguite > 0 && (
+          <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
+            {planAuto.ecartesPourAmbiguite} mouvement(s) ont plusieurs pièces ou échéances possibles et
+            ne sont pas rapprochés automatiquement — ouvre la ligne pour choisir.
+          </p>
         )}
         {regles.length > 0 && (
           <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>

@@ -132,4 +132,43 @@ describe('BanqueTab — Tout rapprocher automatiquement', () => {
     await act(async () => { faux.resoudreUpdateLigne?.() })
     await waitFor(() => expect(screen.queryByRole('button', { name: /Tout rapprocher automatiquement/ })).toBeNull())
   })
+
+  // DEUX PIÈCES QUI CONVIENNENT AUSSI BIEN L'UNE QUE L'AUTRE — le cas réel de ce dossier, deux
+  // dépôts du même document au même montant et à la même date. L'écran faisait
+  // `piecesValidees.find(...)` : la PREMIÈRE DE LA LISTE gagnait, en masse et sur un seul clic, sans
+  // que rien ne le dise. `planRapprochementAutomatique` refuse désormais, et l'écran DIT ce qu'il
+  // laisse — un bouton qui annonce N en en traitant moins ne dit pas où sont passées les autres.
+  //
+  // Aucun test de `src/lib` ne peut voir ceci : le plan est juste, c'est son CÂBLAGE à l'écran qui
+  // décide de ce qui s'écrit en base et de ce que l'opérateur lit.
+  it('ne rapproche rien et le dit quand deux pièces se disputent le mouvement', async () => {
+    reinitialiser()
+    faux.pieces = [
+      pieceDeTest({ id: 'piece-1', nom_fichier: 'mai.pdf' }),
+      pieceDeTest({ id: 'piece-2', nom_fichier: 'juin.pdf' }),
+    ]
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+
+    await screen.findByText(/plusieurs pièces ou échéances possibles/)
+    expect(screen.queryByRole('button', { name: /Tout rapprocher automatiquement/ })).toBeNull()
+    expect(faux.updatesLignes).toHaveLength(0)
+  })
+
+  // GARDE SYMÉTRIQUE, et elle porte tout : sans elle, « l'écran refuse l'ambiguïté » serait satisfait
+  // par un écran qui n'affiche JAMAIS le bouton et crie à l'ambiguïté sur un relevé ordinaire.
+  it('ne crie pas à l’ambiguïté quand une seule pièce convient', async () => {
+    reinitialiser()
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+
+    await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    expect(screen.queryByText(/plusieurs pièces ou échéances possibles/)).toBeNull()
+  })
 })

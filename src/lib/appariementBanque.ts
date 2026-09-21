@@ -268,3 +268,138 @@ function motifDeDoute(
   }
   return null
 }
+
+// ————————————————————————————————————————————————————————————————————————————————————————————————
+// RAPPROCHEMENT ASSISTÉ DE L'ÉCRAN BANQUE — une politique DIFFÉRENTE de celle ci-dessus, et c'est
+// voulu.
+//
+// `analyserAppariements` décide s'il faut VALIDER une pièce, acte professionnel : trois signaux, dont
+// le fournisseur lu dans le libellé, et sept jours de tolérance. Ce qui suit décide s'il faut RELIER
+// un mouvement à une pièce DÉJÀ validée par un humain : deux signaux (montant au centime, date à cinq
+// jours), parce que la pièce a déjà été regardée. Les deux tolérances sont donc distinctes par
+// construction et ne doivent pas être confondues — d'où deux constantes, deux noms.
+//
+// CE QUI N'EST PAS UNE POLITIQUE, EN REVANCHE, C'EST DE TRANCHER À PILE OU FACE. L'écran faisait
+// `piecesValidees.find(...)` : quand deux pièces convenaient aussi bien l'une que l'autre, la
+// première de la liste gagnait, en masse, sur un clic, sans que rien ne le dise. Or le commentaire
+// de `motifDeDoute` ci-dessus nomme exactement ce cas — « deux factures mensuelles identiques, ou
+// une pièce déposée deux fois » — et ce dossier en porte un : deux dépôts du même document
+// Transmedical à 38,40 €, que ce fichier documente depuis longtemps. Le module refusait de trancher
+// pendant que l'écran tranchait.
+//
+// Un faux négatif coûte un clic : la ligne reste dans la liste, avec son panneau qui montre TOUTES
+// les candidates triées. Un faux positif attache le mauvais justificatif à un mouvement, laisse le
+// vrai mouvement de l'autre mois sans pièce, et part en piste d'audit.
+export const JOURS_TOLERANCE_RAPPROCHEMENT = 5
+
+export interface CotisationRapprochable {
+  id: string
+  echeance: string
+  montant_appele: number
+  montant_verse: number | null
+}
+
+export interface RapprochementPropose {
+  ligneId: string
+  pieceId?: string
+  cotisationId?: string
+}
+
+export interface PlanRapprochement {
+  retenus: RapprochementPropose[]
+  // Lignes qui ont des candidates mais dont aucune ne s'impose — laissées à l'opérateur. Comptées
+  // plutôt que tues : un bouton qui annonce « 12 » en traitant 9 ne dit pas où sont passées les 3
+  // autres, et c'est la règle du pack (« un livrable incomplet le dit »).
+  ecartesPourAmbiguite: number
+}
+
+function montantEgal(a: number | null | undefined, b: number): boolean {
+  return a != null && Math.abs(Math.abs(a) - Math.abs(b)) <= 0.01
+}
+
+/** Les pièces validées qui conviennent à ce mouvement — toutes, jamais la première. */
+export function candidatsPieces(
+  ligne: LigneBancaire,
+  piecesValidees: Piece[],
+  dejaRapprochees: ReadonlySet<string>,
+  joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
+): Piece[] {
+  return piecesValidees.filter((p) =>
+    !dejaRapprochees.has(p.id)
+    && p.date_piece != null
+    && montantEgal(p.montant_ttc, ligne.montant)
+    && Math.abs(jourDe(p.date_piece) - jourDe(ligne.date)) <= joursTolerance)
+}
+
+/**
+ * Les échéances de cotisation qui conviennent à ce mouvement.
+ *
+ * Comparées au montant réellement VERSÉ quand il est connu — un appel n'est pas toujours prélevé
+ * pour son montant appelé exact (régularisation, paiement partiel) — sinon au montant appelé, seul
+ * chiffre disponible avant paiement.
+ */
+export function candidatsCotisations(
+  ligne: LigneBancaire,
+  cotisations: CotisationRapprochable[],
+  dejaRapprochees: ReadonlySet<string>,
+  joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
+): CotisationRapprochable[] {
+  return cotisations.filter((c) =>
+    !dejaRapprochees.has(c.id)
+    && montantEgal(c.montant_verse ?? c.montant_appele, ligne.montant)
+    && Math.abs(jourDe(c.echeance) - jourDe(ligne.date)) <= joursTolerance)
+}
+
+/**
+ * Ce que « Tout rapprocher automatiquement » doit écrire, et ce qu'il doit laisser.
+ *
+ * UNICITÉ MUTUELLE, DANS LES DEUX SENS, comme `analyserAppariements` : une ligne que deux pièces se
+ * disputent n'est pas rapprochable, et une pièce que deux lignes se disputent non plus. La version
+ * précédente parcourait les lignes dans l'ordre en « consommant » les pièces au passage : le premier
+ * mouvement rencontré emportait la pièce, ce qui n'est pas un choix mais un effet de l'ordre de tri.
+ *
+ * La précédence pièce > cotisation est CONSERVÉE telle quelle : ce n'est pas un arbitrage entre
+ * égaux mais une règle de l'écran, et la changer serait une décision produit.
+ */
+export function planRapprochementAutomatique(
+  lignesNonRapprochees: LigneBancaire[],
+  piecesValidees: Piece[],
+  cotisations: CotisationRapprochable[],
+  dejaRapprochees: { pieces: ReadonlySet<string>; cotisations: ReadonlySet<string> },
+  joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
+): PlanRapprochement {
+  const parLignePieces = new Map<string, Piece[]>()
+  const parLigneCotisations = new Map<string, CotisationRapprochable[]>()
+  const lignesParPiece = new Map<string, number>()
+  const lignesParCotisation = new Map<string, number>()
+
+  for (const ligne of lignesNonRapprochees) {
+    const pieces = candidatsPieces(ligne, piecesValidees, dejaRapprochees.pieces, joursTolerance)
+    const cotis = candidatsCotisations(ligne, cotisations, dejaRapprochees.cotisations, joursTolerance)
+    parLignePieces.set(ligne.id, pieces)
+    parLigneCotisations.set(ligne.id, cotis)
+    for (const p of pieces) lignesParPiece.set(p.id, (lignesParPiece.get(p.id) ?? 0) + 1)
+    for (const c of cotis) lignesParCotisation.set(c.id, (lignesParCotisation.get(c.id) ?? 0) + 1)
+  }
+
+  const retenus: RapprochementPropose[] = []
+  let ecartesPourAmbiguite = 0
+
+  for (const ligne of lignesNonRapprochees) {
+    const pieces = parLignePieces.get(ligne.id) ?? []
+    const cotis = parLigneCotisations.get(ligne.id) ?? []
+    if (pieces.length === 0 && cotis.length === 0) continue
+
+    if (pieces.length === 1 && (lignesParPiece.get(pieces[0].id) ?? 0) === 1) {
+      retenus.push({ ligneId: ligne.id, pieceId: pieces[0].id })
+      continue
+    }
+    if (pieces.length === 0 && cotis.length === 1 && (lignesParCotisation.get(cotis[0].id) ?? 0) === 1) {
+      retenus.push({ ligneId: ligne.id, cotisationId: cotis[0].id })
+      continue
+    }
+    ecartesPourAmbiguite++
+  }
+
+  return { retenus, ecartesPourAmbiguite }
+}
