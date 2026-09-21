@@ -141,7 +141,16 @@ describe('montantsPourPiece', () => {
 // Le montant en euros part alors en comptabilité sans que rien ne le distingue d'une conversion
 // juste — le taux enregistré est un vrai taux BCE, simplement pas celui du bon jour.
 describe('la date de repli est celle du calendrier civil, jamais celle d’UTC', () => {
-  afterEach(() => { vi.useRealTimers() })
+  const TZ_ORIGINE = process.env.TZ
+  afterEach(() => { vi.useRealTimers(); process.env.TZ = TZ_ORIGINE })
+
+  // LE TEST CHOISIT SES FUSEAUX AU LIEU DE SUBIR CELUI DU RUNNER, et c'est ce qui décide de ce
+  // qu'il garde. Sous TZ=UTC — le fuseau du runner GitHub — les deux implémentations sont
+  // INDISCERNABLES : un test qui se contente du fuseau ambiant est donc vert avec le défaut entier,
+  // et la garantie repose alors sur quelqu'un pensant à lancer `npm run test:fuseaux`. Node relit
+  // `process.env.TZ` à chaque opération de date, donc le fuseau se choisit ici même et la garantie
+  // tient dans n'importe quel runner.
+  const FUSEAUX = ['Europe/Paris', 'UTC', 'America/Martinique', 'Pacific/Auckland']
 
   // Vingt-quatre instants d'une même journée. Un seul ne suffirait pas : quel que soit l'instant
   // choisi, il existe un fuseau où la date UTC et la date locale coïncident encore (à Paris l'écart
@@ -158,27 +167,40 @@ describe('la date de repli est celle du calendrier civil, jamais celle d’UTC',
 
   it('demande le taux du jour de l’utilisateur pour une pièce sans date lue', async () => {
     vi.useFakeTimers()
-    for (const instant of INSTANTS) {
-      vi.setSystemTime(new Date(instant))
-      datesDemandees.length = 0
-      await montantsPourPiece(MONTANTS_USD, null)
-      expect(datesDemandees, `instant ${instant}`).toEqual([dateCivileLocale()])
+    for (const tz of FUSEAUX) {
+      process.env.TZ = tz
+      for (const instant of INSTANTS) {
+        vi.setSystemTime(new Date(instant))
+        datesDemandees.length = 0
+        await montantsPourPiece(MONTANTS_USD, null)
+        expect(datesDemandees, `${tz}, instant ${instant}`).toEqual([dateCivileLocale()])
+      }
     }
   })
 
-  it('sépare bien les deux dates au moins une fois — sauf, irréductiblement, sous UTC', () => {
-    // La borne qui empêche le test précédent d'être vert pour une raison fausse. Sous TZ=UTC les
-    // deux implémentations sont INDISCERNABLES, et aucune écriture de test n'y changera rien : le
-    // fuseau du runner GitHub est justement UTC, donc cette garantie-là est portée par
-    // `npm run test:fuseaux` et par lui seul. C'est le même constat que pour `toIsoDate`.
+  it('sépare bien les deux dates hors UTC, quel que soit le fuseau du runner', () => {
+    // La borne qui empêche le test précédent d'être vert pour une raison fausse : si le fuseau ne
+    // changeait pas, les deux dates coïncideraient partout et le balayage ne démontrerait rien.
+    // UTC est attendu à ZÉRO séparation — c'est exactement pourquoi il ne peut pas être le seul
+    // fuseau exercé.
     vi.useFakeTimers()
-    const separes = INSTANTS.filter((instant) => {
-      vi.setSystemTime(new Date(instant))
-      return dateCivileLocale() !== instant.slice(0, 10)
-    })
-    const decalage = new Date('2026-09-21T12:00:00Z').getTimezoneOffset()
-    if (decalage === 0) expect(separes).toEqual([])
-    else expect(separes.length).toBeGreaterThan(0)
+    const separations = new Map<string, number>()
+    for (const tz of FUSEAUX) {
+      process.env.TZ = tz
+      separations.set(tz, INSTANTS.filter((instant) => {
+        vi.setSystemTime(new Date(instant))
+        return dateCivileLocale() !== instant.slice(0, 10)
+      }).length)
+    }
+    // Et la liste elle-même est gardée, sans quoi la boucle ci-dessous tournerait ZÉRO fois et
+    // passerait à vide : ramener `FUSEAUX` au seul UTC restaurerait exactement l'aveuglement que ce
+    // test existe pour lever. Vérifié par mutation — sans cette ligne, elle SURVIVAIT.
+    const horsUtc = FUSEAUX.filter((f) => f !== 'UTC')
+    expect(horsUtc.length, 'FUSEAUX doit exercer au moins un fuseau décalé').toBeGreaterThan(0)
+    expect(separations.get('UTC'), 'UTC doit rester exercé, pour la borne à zéro').toBe(0)
+    for (const tz of horsUtc) {
+      expect(separations.get(tz), tz).toBeGreaterThan(0)
+    }
   })
 
   it('garde la date lue sur le document quand il y en a une', async () => {

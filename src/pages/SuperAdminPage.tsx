@@ -6,6 +6,7 @@ import ConfirmationSuppression from '../components/ConfirmationSuppression'
 import RestaurationCard from './RestaurationCard'
 import { extraireErreurFonction } from '../lib/invokeErreur'
 import { lireTout } from '../lib/lectureComplete'
+import { formatDate } from '../lib/format'
 import { messageErreur } from '../lib/messageErreur'
 
 interface CabinetApercu {
@@ -337,7 +338,7 @@ export default function SuperAdminPage() {
                       </>
                     )}
                   </td>
-                  <td className="hide-mobile">{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
+                  <td className="hide-mobile">{formatDate(c.created_at)}</td>
                   <td className="td-actions">
                     <button type="button" className="btn btn-outline btn-sm" onClick={() => ouvrirPlafond(c)}>
                       Plafond IA

@@ -115,9 +115,33 @@ export function formatMoney(value: number | null): string {
   return value.toLocaleString('fr-FR', { style: 'currency', currency: 'EUR' })
 }
 
+// Une date affichée en français, qu'elle vienne d'une colonne `date` de Postgres (`date_piece`,
+// `echeance`, `date_emission`…) ou d'un `timestamptz` (`created_at`, `generated_at`, `occurred_at`).
+// Les deux ne se lisent PAS de la même façon, et c'est exactement la distinction que portent
+// `anneeDe` / `anneeLocaleDe` juste en dessous — elle manquait ici, sur la fonction d'affichage.
+//
+// `new Date('2026-01-01')` est interprétée comme MINUIT UTC : replacée dans le fuseau de qui
+// regarde, elle recule d'un jour dès que le décalage est négatif. Ce n'est pas une hypothèse
+// lointaine — la Guadeloupe, la Martinique, la Guyane, Saint-Pierre-et-Miquelon et la Polynésie
+// SONT la France, et une profession de santé y est précisément la clientèle de cette application.
+// Une pièce du 1er janvier s'y affichait au 31 décembre, donc dans l'EXERCICE PRÉCÉDENT, pendant
+// que tous les totaux la comptaient dans le bon. Quarante-cinq des cinquante appels passent une
+// date civile.
+//
+// ON NE ROUTE PAS PAR APPELANT : la valeur DIT elle-même ce qu'elle est, PostgREST rendant une
+// colonne `date` en `AAAA-MM-JJ` nu et un `timestamptz` avec son heure. Un appelant ajouté demain
+// est donc juste par construction, quel que soit celui des deux qu'il passe — là où une règle à
+// appliquer site par site attend seulement son prochain oubli.
+const DATE_CIVILE = /^\d{4}-\d{2}-\d{2}$/
+
 export function formatDate(value: string | null): string {
   if (!value) return '—'
-  return new Date(value).toLocaleDateString('fr-FR')
+  if (DATE_CIVILE.test(value)) return `${value.slice(8, 10)}/${value.slice(5, 7)}/${value.slice(0, 4)}`
+  // Un horodatage : son jour dépend légitimement du fuseau de qui le regarde (voir `dateLocaleDe`).
+  // Une valeur que `Date` ne sait pas lire est rendue TELLE QUELLE plutôt que remplacée par une date
+  // plausible : c'est ainsi qu'un `+012345-01` écrit par une extraction fautive se voit.
+  if (Number.isNaN(new Date(value).getTime())) return value
+  return formatDate(dateLocaleDe(value))
 }
 
 // Année, mois (1-12) et jour d'une date, lus sur le calendrier civil.

@@ -42,8 +42,17 @@ interface LigneRow { designation: string; quantite: number; prix_unitaire_ht: nu
 function formaterMontant(n: number): string {
   return n.toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " €"
 }
+// `date_emission` et `date_echeance` sont des colonnes `date` de Postgres : une date CIVILE, qui n'a
+// pas d'heure, donc pas de fuseau — son libellé est ce qu'il faut lire. Passer par `new Date(d)`
+// l'interpréterait comme minuit UTC puis la replacerait dans le fuseau du runtime : juste tant que
+// ce runtime est en UTC, et faux d'un jour le jour où il ne l'est plus, sur les dates d'une facture
+// envoyée au client. Rien ne le dirait — l'e-mail est parti.
+// Même correctif que `formatDate` dans src/lib/format.ts, où le défaut, lui, était VISIBLE : aux
+// Antilles, en Guyane et en Polynésie, une pièce du 1er janvier s'affichait au 31 décembre.
 function formaterDate(d: string): string {
-  return new Date(d).toLocaleDateString("fr-FR")
+  return /^\d{4}-\d{2}-\d{2}$/.test(d)
+    ? `${d.slice(8, 10)}/${d.slice(5, 7)}/${d.slice(0, 4)}`
+    : new Date(d).toLocaleDateString("fr-FR")
 }
 // Échappement minimal — designation/tiers_nom/message viennent d'une saisie du cabinet, pas d'un
 // tiers non authentifié, mais un e-mail HTML reste un contexte où un "<" mal placé casse le rendu.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { ajouterJours, ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, cleFournisseur, comptesParMois, dateLocaleDe, dernierJourDuMois, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
+import { ajouterJours, ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, cleFournisseur, comptesParMois, dateLocaleDe, dernierJourDuMois, formatDate, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -99,6 +99,118 @@ describe('dateLocaleDe', () => {
 
   it('produit toujours une date SQL bien formée', () => {
     expect(dateLocaleDe(new Date(2026, 8, 5, 9, 0).toISOString())).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+  })
+})
+
+// UNE DATE CIVILE N'A PAS DE FUSEAU, ET `formatDate` LUI EN DONNAIT UN.
+//
+// La fonction qui affiche chaque date de l'application — cinquante appels, dont quarante-cinq sur
+// une colonne `date` de Postgres — passait par `new Date(value).toLocaleDateString('fr-FR')`. Or
+// `new Date('2026-01-01')` est minuit UTC : replacée dans le fuseau de qui regarde, elle recule
+// d'un jour dès que le décalage est négatif.
+//
+// CE N'EST PAS UNE HYPOTHÈSE LOINTAINE. La Guadeloupe, la Martinique, la Guyane,
+// Saint-Pierre-et-Miquelon et la Polynésie sont la France, et une profession de santé y est
+// exactement la clientèle de cette application. Le 1er janvier s'y affichait au 31 décembre —
+// l'EXERCICE PRÉCÉDENT — pendant que tous les totaux comptaient la pièce dans le bon.
+//
+// CES TESTS CHOISISSENT LEUR FUSEAU au lieu d'attendre celui du runner. `npm test` tourne sous
+// Europe/Paris, où le défaut est rigoureusement invisible : un test écrit « normalement » serait
+// resté vert avec le défaut entier, et la garantie aurait reposé sur quelqu'un pensant à lancer
+// `npm run test:fuseaux`. Node relit `process.env.TZ` à chaque opération de date, donc le test
+// porte sa garantie lui-même, dans n'importe quel runner.
+describe('formatDate — une date civile n’a pas de fuseau', () => {
+  const TZ_ORIGINE = process.env.TZ
+  const sousFuseau = (tz: string, f: () => void) => {
+    process.env.TZ = tz
+    try { f() } finally { process.env.TZ = TZ_ORIGINE }
+  }
+
+  // LA BORNE DU HARNAIS, avant toute autre assertion : si changer `process.env.TZ` ne prenait pas,
+  // tous les cas ci-dessous passeraient sans rien démontrer — la panne qui ressemble exactement au
+  // succès, et que `fuseau.test.ts` existe déjà pour empêcher ailleurs.
+  it('le harnais change bien de fuseau', () => {
+    sousFuseau('America/Martinique', () => {
+      expect(new Date('2026-01-01').toLocaleDateString('fr-FR')).toBe('31/12/2025')
+    })
+    sousFuseau('Europe/Paris', () => {
+      expect(new Date('2026-01-01').toLocaleDateString('fr-FR')).toBe('01/01/2026')
+    })
+  })
+
+  // Les cinq fuseaux français à l'ouest de Greenwich, plus deux à l'est en garde symétrique : sans
+  // eux, « la date ne bouge pas » serait satisfait par une fonction qui rend n'importe quoi de
+  // constant.
+  const FUSEAUX_FRANCE = [
+    'Europe/Paris', 'Indian/Reunion', 'Pacific/Noumea',
+    'America/Guadeloupe', 'America/Martinique', 'America/Cayenne', 'America/Miquelon', 'Pacific/Tahiti',
+  ]
+
+  it('rend le même jour dans tous les fuseaux de la France', () => {
+    // La liste est gardée avant d'être parcourue : réduite aux fuseaux de l'EST, elle ne
+    // démontrerait plus rien tout en restant verte. Vérifié par mutation — sans cette ligne, elle
+    // SURVIVAIT, la garantie retombant sur le seul cas Martinique écrit en dur plus bas.
+    // Le critère EST la condition du défaut : minuit UTC — ce que vaut `new Date('2026-09-21')` —
+    // y tombe-t-il la VEILLE ? Cinq des fuseaux listés doivent répondre oui.
+    const ouGoutteLeDefaut = FUSEAUX_FRANCE.filter((tz) =>
+      new Date('2026-09-21T00:00:00Z').toLocaleDateString('fr-CA', { timeZone: tz }) !== '2026-09-21')
+    expect(ouGoutteLeDefaut.length, 'FUSEAUX_FRANCE doit exercer les DOM-TOM de l’ouest')
+      .toBeGreaterThanOrEqual(5)
+
+    for (const tz of FUSEAUX_FRANCE) {
+      sousFuseau(tz, () => {
+        expect(formatDate('2026-09-21'), tz).toBe('21/09/2026')
+        expect(formatDate('2026-02-29' /* 2026 n'est pas bissextile : le libellé se lit tel quel */), tz)
+          .toBe('29/02/2026')
+      })
+    }
+  })
+
+  // LE CAS QUI COÛTE : le 1er janvier franchit la frontière d'exercice. Une pièce datée de ce
+  // jour-là s'affichait au 31 décembre de l'année précédente, donc dans un exercice où Clôture,
+  // la 2035 et le FEC ne la comptent pas — et rien ne le disait.
+  it('garde le 1er janvier dans son exercice, même aux Antilles', () => {
+    sousFuseau('America/Martinique', () => {
+      expect(formatDate('2026-01-01')).toBe('01/01/2026')
+      expect(formatDate('2025-12-31')).toBe('31/12/2025')
+    })
+  })
+
+  // GARDE SYMÉTRIQUE, et c'est elle qui empêche la correction facile — ignorer les fuseaux
+  // partout. Un `created_at` est un INSTANT : son jour dépend LÉGITIMEMENT de qui le regarde, et
+  // c'est la distinction qu'`anneeDe` / `anneeLocaleDe` portent déjà. Sans ce cas, « une date ne
+  // bouge pas » serait satisfait par une fonction qui lirait le libellé UTC d'un horodatage.
+  it('fait bien suivre le fuseau à un horodatage', () => {
+    // Un dépôt vécu comme le 1er janvier à 00 h 30 à Fort-de-France s'écrit 04 h 30 UTC : son
+    // libellé et sa lecture locale coïncident. À l'inverse, un dépôt du 31 décembre à 22 h là-bas
+    // s'écrit déjà le 1er janvier en UTC — et c'est le 31 qu'il faut afficher.
+    sousFuseau('America/Martinique', () => {
+      expect(formatDate('2026-01-01T02:00:00Z')).toBe('31/12/2025')
+      expect(formatDate('2026-01-01T16:00:00Z')).toBe('01/01/2026')
+    })
+    sousFuseau('Europe/Paris', () => {
+      expect(formatDate('2025-12-31T23:30:00Z')).toBe('01/01/2026')
+    })
+  })
+
+  it('rend une valeur illisible telle quelle, plutôt qu’une date plausible', () => {
+    // `+012345-01` a réellement été écrit dans `pieces.date_piece` par une extraction qui lisait un
+    // numéro de facture comme une année (voir CLAUDE.md, `dateFuture` compare des CHAÎNES). Le
+    // remplacer par une date inventée le rendrait indétectable ; ici l'opérateur voit ce qui est
+    // stocké.
+    expect(formatDate('pas une date')).toBe('pas une date')
+    expect(formatDate(null)).toBe('—')
+    expect(formatDate('')).toBe('—')
+  })
+
+  it('n’a rien changé à ce que la France métropolitaine avait sous les yeux', () => {
+    // Le correctif ne doit se voir NULLE PART à l'est de Greenwich : même jour, même séparateur,
+    // mêmes zéros de tête qu'avec `toLocaleDateString`.
+    sousFuseau('Europe/Paris', () => {
+      for (const iso of ['2026-01-01', '2026-09-21', '2025-12-31', '2024-02-29']) {
+        expect(formatDate(iso)).toBe(new Date(iso).toLocaleDateString('fr-FR'))
+      }
+    })
   })
 })
 
