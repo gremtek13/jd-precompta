@@ -216,10 +216,22 @@ async function actualiserStatut(
       dossier_id: dossierId, facture_id: factureId, superpdp_event_id: e.id,
       status_code: e.status_code, status_text: e.status_text, occurred_at: e.created_at,
     }))
-    await admin.from("facture_superpdp_events").upsert(lignes, { onConflict: "facture_id,superpdp_event_id", ignoreDuplicates: true })
+    // CE QUI EST RENDU VIENT DE L'API, PAS DE LA BASE : un échec d'écriture ici ne se voit donc pas
+    // tout de suite — l'écran affiche les événements fraîchement lus, et c'est à la RÉOUVERTURE de
+    // la modale, qui relit la table, que l'historique se révèle vide sous un statut bien présent.
+    // Non bloquant (la facture est déjà partie chez la plateforme), mais journalisé : sur cette
+    // fonction, le diagnostic passe par les logs de production, ce sandbox ne pouvant pas appeler
+    // l'API Super PDP.
+    const { error: erreurEvenements } = await admin.from("facture_superpdp_events").upsert(lignes, { onConflict: "facture_id,superpdp_event_id", ignoreDuplicates: true })
+    if (erreurEvenements) {
+      console.error(`[superpdp-emit] ${lignes.length} événement(s) non enregistré(s) pour la facture ${factureId} : ${erreurEvenements.message}`)
+    }
   }
   const dernier = [...evenements].sort((a, b) => a.id - b.id).at(-1) ?? null
-  await admin.from("factures_emises").update({ superpdp_dernier_statut: dernier?.status_code ?? null }).eq("id", factureId)
+  const { error: erreurStatut } = await admin.from("factures_emises").update({ superpdp_dernier_statut: dernier?.status_code ?? null }).eq("id", factureId)
+  if (erreurStatut) {
+    console.error(`[superpdp-emit] statut « ${dernier?.status_code ?? "aucun"} » non écrit sur la facture ${factureId} : ${erreurStatut.message}`)
+  }
   return { dernierStatut: dernier?.status_code ?? null, evenements }
 }
 

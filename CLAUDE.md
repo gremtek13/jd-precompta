@@ -963,6 +963,54 @@ ont été découverts, en cherchant à apparier une facture en dollars.
     la date et la réponse) puis rend `null`, l'appelant décidant de la suite. La règle « tout
     `invoke()` passe par `extraireErreurFonction` » vise l'affichage d'un message à l'utilisateur —
     un best-effort journalisé la satisfait autrement. Sur treize appels, c'est la seule exception.
+- **ET CE BALAYAGE S'ÉTAIT ARRÊTÉ À `src/` — LES EDGE FUNCTIONS N'AVAIENT JAMAIS ÉTÉ REGARDÉES**
+  (21/09/2026). Le même motif y est BIEN PLUS COÛTEUX, et pour une raison structurelle : la question
+  qui décide dans `src/` est *quelque chose recharge-t-il derrière ?*, et la réponse y est presque
+  toujours oui. **Dans une Edge Function elle est presque toujours non** — rien ne recharge,
+  l'appelant reçoit le code de retour que la fonction a décidé d'écrire, et une écriture ratée ne
+  laisse aucune trace nulle part.
+  **Six sites, quatre qui comptent, et les quatre portent sur une action DÉJÀ IRRÉVERSIBLE au moment
+  de l'écriture** :
+  - `send-email` — le journal `emails_envoyes`, écrit APRÈS que Resend a accepté l'e-mail. L'échec
+    rendait un journal muet, indiscernable d'un envoi qui n'a pas eu lieu, pendant que l'appelant
+    lisait `ok: true`. C'est exactement ce que cette table existe pour empêcher, son en-tête disant
+    « un cabinet doit toujours pouvoir retrouver qui ».
+  - `create-cabinet` — les DEUX compensations, c'est-à-dire les `delete` qui retirent le cabinet
+    quand la création du compte ou du `cabinet_admins` a échoué. **Une compensation qui échoue en
+    silence laisse exactement le fantôme qu'elle existe pour éviter** : le super-admin ne lit que
+    l'erreur d'ORIGINE, recommence avec une autre adresse, et le cabinet vide reste. Le commentaire
+    du code nommait déjà ce fantôme comme le dégât à empêcher ; il ne vérifiait pas l'avoir empêché.
+    D'où `retirerCabinet`, qui REND la phrase à ajouter à l'erreur plutôt que de seulement
+    journaliser : un log d'Edge Function n'est lu que par quelqu'un qui sait déjà qu'il y a un
+    problème, et ici personne ne le saurait.
+  - `superpdp-emit` — les événements et le dernier statut. Le retour vient de l'API Super PDP et non
+    de la base, donc l'échec ne se voit pas tout de suite : c'est à la RÉOUVERTURE de la modale, qui
+    relit la table, que l'historique se révèle vide sous un statut bien présent.
+  **LATENTS, et mesurés** : 0 cabinet sans admin, 0 e-mail journalisé, 0 événement Super PDP. Rien
+  n'a été perdu — ce qui les rend dignes d'être corrigés est qu'aucun des quatre ne PEUT se voir une
+  fois arrivé, sur des actions qu'on ne rejoue pas.
+  **La règle devient un test** (`edgeFunctionsEcritures.test.ts`), qui part de TOUTES les fonctions
+  comme `rls.sql` part de `pg_class`. Il ne garde PAS ce qu'on fait de l'erreur — journaliser,
+  remonter ou compenser est un arbitrage par site — seulement qu'elle ne soit pas jetée. Les lectures
+  s'écartent d'elles-mêmes par leur forme : une lecture est toujours destructurée, sinon elle ne sert
+  à rien. Cinq mutations mordent, dont les trois défauts d'origine replantés un par un ; « le scanner
+  devient aveugle » en fait tomber DEUX, les deux bornes posées pour que « zéro faute » et
+  « aveugle » restent distinguables.
+- **UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS — une fonction vit en production sans exister dans ce
+  dépôt** (constaté le 21/09/2026). `list_edge_functions` rend **quatorze** fonctions ; le dépôt en
+  porte treize. La quatorzième s'appelle `bright-task` (nom par défaut de Supabase), elle est
+  ACTIVE, en `verify_jwt: false`, et son nom n'apparaît dans AUCUN fichier du dépôt — ni source, ni
+  doc, ni SQL.
+  **Elle est inoffensive, et c'est une session précédente qui l'a rendue telle** : sa source déployée
+  ne contient plus qu'un `Deno.serve(() => new Response("Fonction retirée — voir receive-email.",
+  { status: 410 }))`. C'était une ancienne version de `receive-email`, restée active par erreur,
+  neutralisée sur place faute d'outil de suppression.
+  **Ce qui reste un défaut est donc le REGISTRE, pas la fonction** : la décision n'existe QUE dans la
+  copie déployée. Un audit qui part du dépôt ne peut pas la connaître, et rouvre l'enquête — c'est
+  précisément ce qui s'est passé ici, au coût d'une lecture de source et d'une vérification Resend.
+  **La vérification a été REFAITE plutôt que recopiée** (21/09/2026, MCP Resend) : un seul webhook
+  enregistré, `email.received` → `.../functions/v1/receive-email`. `bright-task` ne reçoit donc rien.
+  **À ne pas réenquêter au prochain audit** ; à supprimer le jour où un outil le permet.
 - **Ce qui doit être tout ou rien vit dans une fonction SQL.** Une facture s'enregistre en un
   seul appel (`enregistrer_facture`) : en-tête, remplacement des lignes, numéro et validation
   dans la même transaction. En trois à cinq allers-retours, un échec au milieu laissait la
@@ -2693,7 +2741,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1076 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1085 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

@@ -195,13 +195,24 @@ Deno.serve(async (req: Request) => {
     return json({ error: `Échec de l'envoi : ${sendError.message}` }, 502)
   }
 
-  await admin.from("emails_envoyes").insert({
+  // L'E-MAIL EST DÉJÀ PARTI À CE STADE, donc ces deux écritures ne peuvent plus rien annuler : elles
+  // ne bloquent pas la réponse. Mais une écriture best-effort se JOURNALISE — sans quoi un journal
+  // d'envoi muet est indiscernable d'un envoi qui n'a pas eu lieu, et c'est précisément ce que cette
+  // table existe pour empêcher (voir l'en-tête : « un cabinet doit toujours pouvoir retrouver qui »).
+  // L'appelant, lui, reçoit `ok: true` et n'apprendrait rien.
+  const { error: erreurJournal } = await admin.from("emails_envoyes").insert({
     dossier_id: dossierId, type, destinataire, objet,
     facture_id: factureId, resend_id: sent?.id ?? null, envoye_par: callerData.user.id,
   })
+  if (erreurJournal) {
+    console.error(`[send-email] e-mail ENVOYÉ (resend_id=${sent?.id ?? "?"}) mais non journalisé : ${erreurJournal.message}`)
+  }
 
   if (type === "facture" && factureId) {
-    await admin.from("factures_emises").update({ tiers_email: destinataire }).eq("id", factureId)
+    const { error: erreurEmail } = await admin.from("factures_emises").update({ tiers_email: destinataire }).eq("id", factureId)
+    if (erreurEmail) {
+      console.error(`[send-email] adresse du destinataire non mémorisée sur la facture ${factureId} : ${erreurEmail.message}`)
+    }
   }
 
   return json({ ok: true })
