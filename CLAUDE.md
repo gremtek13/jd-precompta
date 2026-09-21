@@ -129,6 +129,8 @@ supabase/
                   compare par empreinte, puis se supprime. rls.sql : rejoue les policies
                   par impersonation des trois profils sur TOUTES les tables du schéma,
                   puis se mute lui-même pour prouver qu'il sait encore échouer.
+                  allerretour.py : compare la copie DÉPLOYÉE d'une Edge Function au fichier
+                  du dépôt, à rejouer après chaque déploiement.
   schema/         export du schéma, une migration par fichier — voir PLAN_DE_REPRISE.md.
                   Ce n'est PAS la source de vérité : la base l'est, et les migrations
                   continuent de s'appliquer par l'outil MCP.
@@ -1035,6 +1037,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   `.auth.` et par `.storage.`, rétrécir ce scanner serait resté entièrement vert. C'est la panne que
   ce dépôt connaît sous un autre nom : **une liste d'inclusion tenue à la main ne contient que ce à
   quoi quelqu'un a pensé**, et son silence est indiscernable d'un dépôt sain.
+  **LES TROIS SONT EN PRODUCTION** le jour même : `create-team-member` v3, `create-client-access`
+  v10, `receive-email` v6 — chacune avec son `verify_jwt` relu et repassé à `false`, et vérifiée par
+  aller-retour (179, 207 et 276 lignes, zéro différence résiduelle). La comparaison AVANT écrasement
+  a rendu trois fois le même résultat : déployé identique au dépôt moins le correctif.
 - **UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS — une fonction vit en production sans exister dans ce
   dépôt** (constaté le 21/09/2026). `list_edge_functions` rend **quatorze** fonctions ; le dépôt en
   porte treize. La quatorzième s'appelle `bright-task` (nom par défaut de Supabase), elle est
@@ -1411,6 +1417,15 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   après avoir appliqué le décodage `\uXXXX` connu à la source. Zéro différence résiduelle prouve que
   les lignes retransmises sont arrivées au caractère près — fait le 21/09/2026 sur les versions 43
   puis 45 (1 278 lignes, 6 échappements décodés, zéro différence).
+  **ET IL N'EST PLUS UNE RECETTE À REFAIRE DE MÉMOIRE : c'est `supabase/essais/allerretour.py`**
+  (21/09/2026), rejoué d'une commande — `python3 supabase/essais/allerretour.py <id> <chemin>
+  [marqueur]`. Il retrouve le journal de la session en cours tout seul, applique le décodage
+  `\uXXXX` à la source du dépôt et rend « zéro différence résiduelle sur N lignes ». Le `marqueur`
+  facultatif est ce qui l'empêche de mentir : **sans lui, le journal porte encore les lectures
+  ANTÉRIEURES de la même fonction**, et l'aller-retour comparerait le dépôt à la version qu'on vient
+  de remplacer — vert pour une raison fausse. Lui aussi est éprouvé par mutation (une ligne changée,
+  un accent changé, un marqueur introuvable : les trois virent au rouge), parce qu'un harnais qui
+  ment est pire qu'un harnais absent.
   **ET IL NE COÛTE RIEN : IL SE FAIT ENTIÈREMENT EN BASH.** C'est ce qui décide qu'on le fera
   vraiment à chaque fois, parce qu'une vérification chère finit par se sauter — et une
   vérification qu'on saute vaut exactement zéro. Deux chemins, aucun ne demande de retranscrire
