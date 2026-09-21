@@ -1011,6 +1011,27 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **La vérification a été REFAITE plutôt que recopiée** (21/09/2026, MCP Resend) : un seul webhook
   enregistré, `email.received` → `.../functions/v1/receive-email`. `bright-task` ne reçoit donc rien.
   **À ne pas réenquêter au prochain audit** ; à supprimer le jour où un outil le permet.
+- **ET DÉPLOYER PAR L'OUTIL MCP REMET `verify_jwt` À `true` SI ON NE LE DIT PAS — trouvé en me le
+  faisant à moi-même, le 21/09/2026.** `deploy_edge_function` porte un paramètre `verify_jwt`
+  **obligatoire, dont le défaut est `true`**. Omis, il ne prend pas la valeur en place : il la
+  REMPLACE. `create-cabinet` est ainsi passée de `false` à `true` en version 2, sans que rien dans
+  l'appel ne parle d'authentification. Restauré en version 3 — et les deux versions portent le même
+  `ezbr_sha256`, ce qui prouve que seul le drapeau avait bougé, le code étant identique au caractère
+  près.
+  **CE QUE ÇA COÛTERAIT SUR LA MAUVAISE FONCTION** : `receive-email` est le webhook Resend, appelé
+  par un tiers qui ne porte AUCUN JWT. La passer à `true` ferait rejeter chaque e-mail entrant par la
+  passerelle, **avant même que la fonction tourne** — donc sans un seul log applicatif, sans erreur
+  dans l'application, et avec pour seul symptôme des e-mails clients qui n'arrivent plus. C'est
+  exactement la forme de panne que ce fichier traque partout : celle qui ressemble au silence normal.
+  **DIX des quatorze fonctions déployées portent `verify_jwt: false`** (mesuré le 21/09/2026) :
+  `receive-email`, `agent-comptable`, `create-cabinet`, `create-client-access`, `create-team-member`,
+  `delete-cabinet`, `send-email`, `superpdp-credentials`, `superpdp-sync`, et `bright-task`. Les
+  quatre autres sont à `true` (`extract-piece`, `superpdp-emit`, `taux-change-bce`,
+  `evaluer-extraction`).
+  **RÈGLE : tout appel à `deploy_edge_function` passe `verify_jwt` EXPLICITEMENT**, à la valeur que
+  `list_edge_functions` rend pour cette fonction — jamais au jugé, jamais par omission. Le relire
+  AVANT de déployer fait désormais partie de la comparaison déployé/dépôt, au même titre que la
+  source : un déploiement ne change pas que du code.
 - **Ce qui doit être tout ou rien vit dans une fonction SQL.** Une facture s'enregistre en un
   seul appel (`enregistrer_facture`) : en-tête, remplacement des lignes, numéro et validation
   dans la même transaction. En trois à cinq allers-retours, un échec au milieu laissait la
@@ -2840,6 +2861,10 @@ pas de Supabase CLI configurée dans ce dépôt.
   les sept MUTATIONS mordent toujours. Ce n'est pas automatisé : la CI n'a pas
   d'accès à la base.
 - Toute nouvelle Edge Function reste auto-porteuse (pas d'import `src/`).
+- Tout déploiement d'Edge Function passe `verify_jwt` EXPLICITEMENT, à la valeur que rend
+  `list_edge_functions` pour cette fonction : le paramètre a `true` pour défaut et REMPLACE la valeur
+  en place quand on l'omet. Sur `receive-email` (webhook Resend, sans JWT), l'oubli coupe les e-mails
+  entrants sans le moindre signal. Voir « Problèmes connus ».
 - Tout nouvel appel à `supabase.functions.invoke()` doit gérer l'erreur via
   `extraireErreurFonction()`.
 - Tout message d'erreur issu d'un `{ error }` Supabase passe par `messageErreur()` —
