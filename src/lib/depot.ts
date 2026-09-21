@@ -5,6 +5,7 @@ import type { CibleCommentaire } from './commentaires'
 import { enregistrerTexteOcr } from './texteOcr'
 import { montantsPourPiece } from './tauxChange'
 import { messageErreur } from './messageErreur'
+import { ouvrirApercu } from './apercu'
 import { retirerFichiers } from './stockage'
 
 // En cas de succès, la ligne créée est nommée : c'est ce qui permet à l'écran de proposer au client
@@ -141,10 +142,9 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
 // consulter un justificatif sans quitter l'écran de rapprochement bancaire (voir BanqueTab) : on n'y
 // affichait jusqu'ici que le tiers et le montant, jamais le document lui-même.
 export async function ouvrirJustificatif(storagePath: string): Promise<void> {
-  const { data, error } = await supabase.storage.from('pieces').createSignedUrl(storagePath, 300)
-  if (error || !data) {
-    window.alert('Aperçu indisponible pour ce justificatif.')
-    return
-  }
-  window.open(data.signedUrl, '_blank', 'noopener')
+  // Passe par le point unique (lib/apercu.ts) : la version locale disait « Aperçu indisponible »
+  // sans la raison, et son `noopener` rendait par-dessus le marché un blocage de fenêtre
+  // indiscernable d'une réussite.
+  const resultat = await ouvrirApercu('pieces', storagePath, 300)
+  if (!resultat.ok) window.alert(resultat.message)
 }

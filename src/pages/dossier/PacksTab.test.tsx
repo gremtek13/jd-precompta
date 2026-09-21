@@ -25,6 +25,20 @@ const faux = vi.hoisted(() => ({
   // quel ordre elles arrivent. Rien ne se résout tout seul.
   enAttente: [] as { periode: string; repondre: (r: Reponse) => void }[],
   periodesDemandees: [] as string[],
+  // Les packs déjà générés, que l'écran liste avec leurs deux boutons de téléchargement.
+  packs: [] as unknown[],
+  // Ce que le point unique d'ouverture rend. Le doublure vaut mieux qu'un vrai `window.open` ici :
+  // ce test garde le CÂBLAGE (l'écran dit-il l'échec ?), le comportement du point unique étant
+  // gardé à part par `apercu.test.ts`.
+  apercu: { ok: true } as { ok: true } | { ok: false; message: string },
+  cheminsDemandes: [] as string[],
+}))
+
+vi.mock('../../lib/apercu', () => ({
+  ouvrirApercu: (_seau: string, chemin: string) => {
+    faux.cheminsDemandes.push(chemin)
+    return Promise.resolve(faux.apercu)
+  },
 }))
 
 vi.mock('../../lib/supabase', () => {
@@ -43,7 +57,7 @@ vi.mock('../../lib/supabase', () => {
       }
     }
     self.then = (resolve: (r: Reponse) => void) => {
-      if (table === 'packs') return resolve({ data: [], count: 0, error: null })
+      if (table === 'packs') return resolve({ data: faux.packs, count: faux.packs.length, error: null })
       // Les pièces sans date ne dépendent d'aucune période : elles répondent tout de suite, pour
       // que le test n'ait à ordonner QUE les deux lectures qui courent l'une contre l'autre.
       if (etat.estSansDate) return resolve({ data: [], count: 0, error: null })
@@ -74,6 +88,9 @@ function changerPeriode(debut: string, fin: string) {
 beforeEach(() => {
   faux.enAttente = []
   faux.periodesDemandees = []
+  faux.packs = []
+  faux.apercu = { ok: true }
+  faux.cheminsDemandes = []
 })
 
 describe('PacksTab — l’aperçu suit la période affichée, pas la lecture la plus lente', () => {
@@ -124,5 +141,45 @@ describe('PacksTab — l’aperçu suit la période affichée, pas la lecture la
     await repondre('2026-07-01→2026-07-31', 4)
 
     expect(screen.getByText(/4 pièce\(s\) validée\(s\)/)).toBeTruthy()
+  })
+})
+
+// UN BOUTON DE TÉLÉCHARGEMENT NE FAIT JAMAIS RIEN EN SILENCE.
+//
+// `download` LISAIT son erreur puis faisait `return` : le clic ne produisait ni onglet, ni message,
+// sur le livrable qu'on envoie au comptable. C'est mot pour mot le défaut corrigé la veille sur
+// l'export d'`InformationsTab`, resté entier sur l'autre chemin de téléchargement du MÊME fichier.
+describe('PacksTab — le téléchargement d’un pack', () => {
+  function poserUnPack() {
+    faux.packs = [{
+      id: 'pk1', dossier_id: 'd1', periode_debut: '2026-07-01', periode_fin: '2026-07-31',
+      nb_pieces: 4, total_ttc: 400, storage_path_zip: 'd1/p/pack.zip',
+      storage_path_excel: 'd1/p/recap.xlsx', created_at: '2026-08-01T09:00:00Z',
+    }]
+  }
+
+  it('DIT pourquoi quand l’ouverture échoue, au lieu de ne rien faire', async () => {
+    poserUnPack()
+    faux.apercu = { ok: false, message: "L'ouverture a été bloquée par le navigateur." }
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+
+    const zip = screen.getByRole('button', { name: 'ZIP' })
+    await act(async () => { zip.click() })
+
+    expect(faux.cheminsDemandes).toEqual(['d1/p/pack.zip'])
+    expect(screen.getByText(/bloquée par le navigateur/)).toBeTruthy()
+  })
+
+  it('ne se plaint pas quand l’ouverture réussit', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « l'écran dit l'échec » serait satisfait par un écran qui se
+    // plaint toujours, y compris sur le téléchargement qui vient de partir.
+    poserUnPack()
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+
+    const excel = screen.getByRole('button', { name: 'Excel' })
+    await act(async () => { excel.click() })
+
+    expect(faux.cheminsDemandes).toEqual(['d1/p/recap.xlsx'])
+    expect(screen.queryAllByText(/bloquée par le navigateur/)).toHaveLength(0)
   })
 })

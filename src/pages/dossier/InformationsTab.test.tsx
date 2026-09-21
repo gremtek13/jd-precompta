@@ -20,6 +20,11 @@ const faux = vi.hoisted(() => ({
   // du second bloc de tests : le bouton ne doit pas se contenter de ne rien faire.
   signError: null as { message: string } | null,
   ouvertures: [] as string[],
+  // Le navigateur bloque-t-il la fenêtre surgissante ? `window.open` rend alors `null`, et c'est le
+  // SEUL signal disponible. Le faux rendait `null` en toutes circonstances : le test du cas passant
+  // exerçait donc, sans le dire, le chemin du blocage — un jeu d'essai infidèle ne fait pas
+  // qu'affaiblir un test, il lui fait prouver autre chose.
+  ouvertureBloquee: false,
   // Ce que la lecture des informations rend. `erreur` non nulle veut dire « on ne SAIT PAS ce que
   // porte le dossier » — et le formulaire, lui, a exactement la même tête que sur un dossier neuf.
   lecture: { informations: null as unknown, erreur: null as string | null },
@@ -119,9 +124,13 @@ beforeEach(() => {
   faux.navigations = []
   faux.signError = null
   faux.ouvertures = []
+  faux.ouvertureBloquee = false
   faux.lecture = { informations: null, erreur: null }
   faux.enregistrements = []
-  window.open = ((url: string) => { faux.ouvertures.push(url); return null }) as typeof window.open
+  window.open = ((url: string) => {
+    faux.ouvertures.push(url)
+    return faux.ouvertureBloquee ? null : { opener: window as unknown } as Window
+  }) as typeof window.open
 })
 
 describe('suppression d’un dossier : ce qui reste dans le stockage se dit', () => {
@@ -172,6 +181,24 @@ describe('export avant suppression : un bouton ne fait jamais rien en silence', 
     await act(async () => {})
     await exporter()
     expect(faux.ouvertures).toEqual(['https://exemple/pack.zip'])
+    // Garde SYMÉTRIQUE : sans lui, « l'écran dit quand ça échoue » serait satisfait par un écran
+    // qui se plaint TOUJOURS, y compris sur l'archive qui vient de s'ouvrir.
+    expect(screen.queryAllByText(/n'a pas pu être ouverte/)).toHaveLength(0)
+  })
+
+  it('DIT que le navigateur a bloqué la fenêtre, au lieu de ne rien faire', async () => {
+    // Le lien EXISTE, l'archive EXISTE : seul l'onglet n'est pas parti. Sans ce message, l'écran
+    // est rigoureusement identique à un bouton cassé — et l'opérateur est sur le point de
+    // supprimer le dossier. `window.open` appelé après un `await` sort de la fenêtre d'activation
+    // transitoire du navigateur, donc ce cas n'a rien de théorique.
+    faux.ouvertureBloquee = true
+    monter()
+    await act(async () => {})
+    await exporter()
+
+    expect(faux.ouvertures).toEqual(['https://exemple/pack.zip'])
+    expect(screen.getByText(/bloquée par le navigateur/)).toBeTruthy()
+    expect(screen.getByText(/onglet Packs/)).toBeTruthy()
   })
 
   it('DIT que le lien a échoué, et où reprendre l’archive', async () => {
@@ -184,7 +211,10 @@ describe('export avant suppression : un bouton ne fait jamais rien en silence', 
     await exporter()
 
     expect(faux.ouvertures).toEqual([])
-    expect(screen.getByText(/lien de téléchargement n'a pas pu être créé/)).toBeTruthy()
+    // Le message vient désormais du point unique (lib/apercu.ts), mais il doit toujours dire les
+    // trois mêmes choses — l'archive EXISTE, la raison, et où la reprendre.
+    expect(screen.getByText(/L'archive est bien générée et enregistrée/)).toBeTruthy()
+    expect(screen.getByText(/n'a pas pu être créé/)).toBeTruthy()
     // La RAISON, et la sortie : sans « onglet Packs », le message dit seulement qu'on a perdu.
     expect(screen.getByText(/objet introuvable/)).toBeTruthy()
     expect(screen.getByText(/onglet Packs/)).toBeTruthy()

@@ -13,6 +13,7 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { chargerDoublonsDeTexte } from '../../lib/doublonsTexte'
 import { messageErreur } from '../../lib/messageErreur'
 import { retirerFichiers } from '../../lib/stockage'
+import { ouvrirApercu } from '../../lib/apercu'
 
 const LABEL_CATEGORIE: Record<CategorieDocument, string> = {
   releve_bancaire: 'Relevé bancaire',
@@ -199,12 +200,8 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   }
 
   async function voir(storagePath: string) {
-    const { data, error: signError } = await supabase.storage.from('pieces').createSignedUrl(storagePath, 300)
-    if (signError || !data) {
-      window.alert('Aperçu indisponible.')
-      return
-    }
-    window.open(data.signedUrl, '_blank')
+    const resultat = await ouvrirApercu('pieces', storagePath, 300)
+    if (!resultat.ok) window.alert(resultat.message)
   }
 
   async function supprimer(doc: DocumentDivers) {

@@ -6,6 +6,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import type { Pack, Piece } from '../../lib/types'
 import { messageErreur } from '../../lib/messageErreur'
+import { ouvrirApercu } from '../../lib/apercu'
 
 // Période proposée par défaut : le mois précédent en entier. Calculée sur le calendrier civil plutôt
 // que via `Date.toISOString()`, qui rendait la veille du bon jour à Paris (minuit local = 22 h UTC la
@@ -138,10 +139,12 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
     }
   }
 
+  // LISAIT SON ERREUR PUIS FAISAIT `return` — donc le bouton de téléchargement d'un pack ne faisait
+  // visiblement RIEN, sur le livrable qu'on envoie au comptable. Même défaut que l'export
+  // d'InformationsTab, sur l'autre chemin de téléchargement du MÊME fichier.
   async function download(path: string) {
-    const { data, error } = await supabase.storage.from('packs').createSignedUrl(path, 60)
-    if (error || !data) return
-    window.open(data.signedUrl, '_blank')
+    const resultat = await ouvrirApercu('packs', path, 60)
+    if (!resultat.ok) setError(resultat.message)
   }
 
   return (

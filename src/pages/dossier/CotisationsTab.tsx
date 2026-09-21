@@ -14,6 +14,7 @@ import { messageErreur } from '../../lib/messageErreur'
 // même endroit que le contrôle qui s'en sert (voir `partCsgNonDeductible`) : une règle recopiée
 // deux fois n'attend pas de diverger, elle attend un troisième appelant.
 import { csgDeductible as partDeductible } from '../../lib/declaration2035'
+import { ouvrirApercu } from '../../lib/apercu'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
 // URSSAF (montants connus tardivement, jamais déductibles d'un relevé bancaire seul) et calcul
@@ -205,12 +206,8 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   }
 
   async function voirDocument(storagePath: string) {
-    const { data, error: signError } = await supabase.storage.from('pieces').createSignedUrl(storagePath, 300)
-    if (signError || !data) {
-      window.alert('Aperçu indisponible.')
-      return
-    }
-    window.open(data.signedUrl, '_blank')
+    const resultat = await ouvrirApercu('pieces', storagePath, 300)
+    if (!resultat.ok) window.alert(resultat.message)
   }
 
   // Une cotisation sans ventilation saisie n'a pas « zéro » de CSG déductible : on ne sait pas.
