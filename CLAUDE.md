@@ -404,6 +404,38 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   (20/09/2026) : sept fonctions exportées de `src/lib` en portent un, et `ordreSuppression`,
   `baremeDeLAnnee`, `soldesDuPdf`, `capitalRestantDu` et `empruntActif` exercent déjà le leur. Seul
   `extraireErreurFonction` était à découvert, et pas seulement sur son défaut : sur tout.
+- **HAIKU 4.5 CITE AUSSI FIDÈLEMENT QUE SONNET 4.6, POUR TROIS FOIS MOINS CHER** (mesuré le
+  21/09/2026 sur les 43 textes réels du dossier `test`, les deux modèles le même jour, même prompt,
+  mêmes documents). C'est la mesure que ce fichier exigeait avant tout changement de modèle — « en
+  changer invaliderait ce feu vert, donc c'est un choix à rouvrir avec une nouvelle mesure, jamais
+  en passant ».
+  **Zéro rejet des deux côtés** : aucune des 216 citations de Sonnet ni des 215 de Haiku n'était
+  absente du texte source. La couverture est à égalité — Haiku trouve un TTC de plus, Sonnet deux
+  TVA de plus, et la TVA est le seul des six champs à porter un repli (`tvaDepuisTexteBrut`) ET à
+  se recalculer par soustraction dans `resoudreMontants`, donc c'est le moins coûteux à manquer.
+  **LES SEPT DÉSACCORDS SONT DES VARIANTES DE FORME, PAS DE VALEUR**, et c'est le résultat qui
+  compte : `« mercredi 23 juillet 2025 »` contre `« 23/07/2025 »` (deux branches de `parseDate`,
+  même date), `« $24.00 »` contre `« $24.00 USD »` (`parseAmount` rend 24,00 dans les deux cas), et
+  trois fois `« $ »` contre `« USD »` sur un champ **demandé mais pas rendu**. Aucune valeur
+  divergente sur aucun champ qui part en comptabilité. Le TTC cité se retrouve dans le montant
+  stocké 37/37 pour Sonnet, **38/38 pour Haiku**.
+  **C'est exactement ce que le contrat de citation prédit** : le modèle DÉSIGNE une chaîne, les
+  analyseurs éprouvés l'interprètent. Un modèle plus petit choisit parfois une autre forme de la
+  même chose — et la normalisation vit dans du code testé, pas dans le modèle. C'est cette
+  séparation qui rend le modèle interchangeable, et la mesure le confirme plutôt que de l'espérer.
+  **Le coût, aux tarifs première partie** (Bedrock ayant sa propre grille, c'est l'ordre de grandeur
+  et non le centime) : 6,11 $ contre 2,04 $ les 1 000 documents pour l'étage 2, soit **3,0×**. Sur
+  la chaîne complète, le rapport avec l'ancien `AnalyzeExpense` passerait de **1,8–2,4× à 3,5–4,2×**.
+  **CE QUI RESTE À VÉRIFIER AVANT DE BASCULER, et c'est le même angle mort que ce matin** :
+  `evaluer-extraction` tourne en `eu-west-1` en dur, `extract-piece` en `AWS_REGION ?? eu-central-1`.
+  La disponibilité du profil d'inférence `eu.anthropic.claude-haiku-4-5-20251001-v1:0` est donc
+  prouvée dans la région de la MESURE, pas dans celle de la PRODUCTION — et aucun fichier du dépôt
+  ne connaît la valeur d'`AWS_REGION`. Basculer sans le vérifier, c'est rejouer « un déploiement
+  n'est pas une autorisation » sur une autre ressource.
+  **Deux identifiants refusés au passage, à ne pas rechercher** : les formes courtes
+  `eu.anthropic.claude-haiku-4-5` et `eu.anthropic.claude-sonnet-5` rendent une `ValidationException`
+  (« The provided model identifier is invalid »). Seule la forme datée complète passe, alors même
+  que `eu.anthropic.claude-sonnet-4-6` fonctionne sans suffixe — les deux conventions coexistent.
 - **LA MARCHE 2 (OCR LOCAL) EST ÉCARTÉE — décision de l'utilisateur, 21/09/2026, prise sur la
   mesure.** Le chantier était cadré et son architecture arrêtée : un service sur un mini-PC
   interrogeant Supabase (jamais l'inverse — aucun port ouvert, aucun tunnel, rien à refaire quand
@@ -424,6 +456,14 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   une exigence CLIENT de ne pas confier les pièces à un sous-traitant. Jamais une intuition de coût —
   la facture AWS tranche, et elle est désormais lisible poste par poste dans `query_logs` par la
   ligne `[extract-piece] citation …`.
+  **ET LE CHIFFRE QUI A DÉCIDÉ BOUGERAIT SI LE MODÈLE DE CITATION CHANGEAIT** — écrit ici parce que
+  taire une conséquence défavorable à une décision qu'on vient de prendre est la façon la plus facile
+  de la rendre fausse. Les 27 à 36 % supposent Sonnet 4.6 à l'étage 2. Avec Haiku 4.5 (voir la mesure
+  ci-dessus), l'OCR devient **53 à 63 %** du coût d'une extraction, et l'économie que la marche 2
+  apporterait double. Ce qui ne change PAS : le RGPD ne penche toujours pas de ce côté, et une
+  machine de bureau reste une dépendance du chemin de production. La décision tient donc sur ses
+  autres pieds — mais son pied budgétaire serait deux fois moins solide, et c'est à savoir le jour
+  où la question se rouvre.
 - **N° de TVA intracommunautaire français** calculé déterministiquement à
   partir du SIREN (formule CGI art. 286 ter : `clé = (12 + 3×(SIREN mod 97))
   mod 97`, puis `FR` + clé 2 chiffres + SIREN) plutôt que demandé comme champ
