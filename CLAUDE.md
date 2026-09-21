@@ -2541,6 +2541,39 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   candidat en face — avec un tiers lu « DARNIS JEREMY », le nom du client lui-même, là où la banque
   disait « PRLV SEPA TRANSMEDICAL ». Un faux négatif coûte un clic ; un faux positif inscrit une
   donnée fausse comme vérifiée par le cabinet.
+  **ET LE MODULE AVAIT RAISON PENDANT QUE L'ÉCRAN TRANCHAIT À PILE OU FACE** (21/09/2026). Cette
+  règle vaut pour VALIDER une pièce ; l'écran Banque, lui, RELIE un mouvement à une pièce déjà
+  validée par un humain, ce qui est une barre plus basse et assumée — deux signaux, cinq jours au
+  lieu de sept. Deux tolérances distinctes, deux noms, et c'est délibéré.
+  **Ce qui n'était pas une politique, c'était de trancher au hasard.** « Tout rapprocher
+  automatiquement » faisait `piecesValidees.find(...)` puis « consommait » la pièce avant de passer
+  à la ligne suivante : quand deux pièces convenaient aussi bien l'une que l'autre, **la première de
+  la liste gagnait** ; quand une pièce convenait à deux mouvements, **le premier mouvement rencontré
+  l'emportait**. Ni l'un ni l'autre n'est un choix — c'est un effet de l'ordre de tri, appliqué à N
+  lignes sur un seul clic, sans confirmation.
+  **`motifDeDoute` nommait pourtant ce cas exact, trente lignes plus haut dans le module que l'écran
+  n'utilisait pas ici** : « deux factures mensuelles identiques, ou une pièce déposée deux fois ».
+  Et le cas est celui de ce dossier — les deux dépôts Transmedical à 38,40 € du même document,
+  décrits plus bas. Le module refusait de trancher pendant que l'écran tranchait : encore deux
+  réponses pour la même question, dont une seule est testée.
+  **LATENT, et mesuré** : zéro collision entre pièces VALIDÉES dans toute la base (deux pièces de
+  même montant au centime dont les dates tiennent dans la même fenêtre). Comme les autres de cette
+  famille, ce qui le rend digne d'être corrigé n'est pas un préjudice constaté mais qu'il ne PEUT
+  pas se voir une fois arrivé : le mauvais justificatif attaché au mouvement, le vrai mouvement de
+  l'autre mois laissé sans pièce, et les deux en piste d'audit.
+  **`planRapprochementAutomatique` applique l'unicité mutuelle DANS LES DEUX SENS** et l'écran DIT
+  combien de mouvements il laisse de côté — un bouton qui annonce N en en traitant moins ne dit pas
+  où sont passées les autres (règle du pack). Le commentaire de `rapprocherTout` promettait d'ailleurs
+  « un seul candidat disponible » bien avant que ce soit vrai.
+  **La précédence pièce > cotisation est CONSERVÉE telle quelle** : ce n'est pas un arbitrage entre
+  égaux mais une règle de l'écran, et la changer serait une décision produit, pas une correction.
+  **Dix mutations, neuf mordent** — dont le code tel qu'il était des deux côtés, l'unicité dans un
+  seul sens, et les gardes symétriques (« on ne retient plus jamais rien », « l'écran crie toujours
+  à l'ambiguïté »). **La dixième est à garder telle quelle** : remplacer `jourDe` par
+  `new Date(iso).getTime()` — ce que l'écran faisait — ne change RIEN sur des dates civiles, les deux
+  formes passant par minuit UTC. Ce que `jourDe` apporte est de la FORME (il ne peut pas se mettre à
+  dépendre d'un fuseau), pas du comportement, et c'est écrit dans le test plutôt que maquillé en
+  assertion de complaisance.
 - **Un rapprochement qui hésite dit un symptôme, pas une cause.** `analyserAppariements` a été exécuté
   sur les données réelles du dossier `test` (41 pièces, les 26 mouvements non rapprochés qui pouvaient
   former une paire) : 6 appariements certains, 6 à arbitrer, et **chacun des six refus est juste** —
@@ -3305,7 +3338,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1243 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1257 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
