@@ -619,10 +619,13 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   page de résultats — la boucle n'a donc presque certainement pas tourné. Elle reste gardée par
   `extractPiecePagination.test.ts` contre un faux pagineur, ce qui est la vraie couverture ; une
   confirmation en production demanderait un document nettement plus dense (5 pages et plus).
-  **Et les rejets de citation ne sont PAS observables depuis les logs** : `_citations_rejetees` et
-  `_citation_erreur` repartent vers le navigateur, et une relecture en masse les jette (elle n'écrit
-  que la date et le texte, par conception). Seul le COMPTE devrait être journalisé — jamais les
-  valeurs, une citation rejetée pouvant être un nom de patient.
+  **Le COMPTE des rejets de citation est journalisé depuis la version 44** — jamais les valeurs, une
+  citation rejetée étant une chaîne tirée du document, donc possiblement un nom de patient. Sans lui
+  il n'en restait rien : `_citations_rejetees` repart vers le navigateur, et une relecture en masse
+  le jette (elle n'écrit que la date et le texte, par conception).
+  **VERSION 44 DÉPLOYÉE le 21/09/2026**, vérifiée par aller-retour — zéro différence résiduelle sur
+  1 221 lignes. Elle porte ce journal et la correction du budget mural (voir « un budget fixe est
+  juste tant que personne ne le dépasse »).
 - **Marche 2 — OCR local (PaddleOCR) sur un mini-PC, avec débordement AWS permanent.** Le SENS de
   l'appel est décidé (21/09/2026) et ne se rediscute pas : **la machine locale interroge Supabase,
   Supabase ne l'appelle jamais.** Un service local demande « y a-t-il des pièces sans texte ? »,
@@ -1164,6 +1167,29 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   Ce qu'il ne peut PAS garder, annoncé comme pour la suppression de fichier dans `rls.sql` : **la
   policy elle-même**, qui vit chez AWS et qu'aucun fichier du dépôt ne connaît. Huit mutations
   mordent, dont le défaut d'origine replanté — la bascule complète vers le trio Expense.
+- **UN BUDGET FIXE EST JUSTE TANT QUE PERSONNE NE LE DÉPASSE** (21/09/2026). Le sondage du job
+  Textract asynchrone attendait 50 s, en dur, avec un commentaire qui l'annonçait « largement
+  suffisant pour un document de quelques pages ». Il l'était — jusqu'au premier document qui ne
+  l'était pas : un PDF déposé le jour même a rendu `Lecture trop longue` au bout de 52 s, alors que
+  Textract travaillait encore. Le budget venait de la version `AnalyzeExpense` et avait traversé la
+  bascule sans être reconsidéré.
+  **Ce qui décide n'est pas « combien de temps on accepte d'attendre » mais « combien il reste avant
+  que la plateforme ne coupe ».** Supabase arrête une Edge Function à 150 s au plan free (wall clock,
+  et le même chiffre pour le délai d'inactivité, qui rend un 504) : franchir ce mur ne rend AUCUN
+  message et fait perdre tout le travail, **y compris un texte OCR déjà facturé**. La borne se déduit
+  donc de l'entrée dans le gestionnaire (`MUR_PLATEFORME_MS - MARGE_REPONSE_MS - BUDGET_CITATION_MS`,
+  soit 110 s de lecture) et descend en paramètre, au lieu d'être reposée dans la boucle.
+  **Le reste tombe du contrat des deux étages, il n'a pas été inventé pour l'occasion** : l'étage 2
+  n'est TENTÉ que s'il reste son budget, et le sauter rend exactement le même objet qu'un échec
+  Bedrock. Une citation coupée par le mur coûte le document entier ; une citation absente coûte une
+  saisie. C'est la même phrase que l'en-tête de la fonction, appliquée au temps plutôt qu'aux pannes.
+  **Et le message de dépassement était un mauvais conseil**, ce qui est pire qu'un message vague :
+  « réessaie » sur un document réellement long échoue à l'identique. Il dit maintenant au bout de
+  combien de secondes Textract n'avait pas fini, que le fichier est bien déposé, et les trois suites
+  réelles — dont « Relire les documents », qui rejoue la lecture sans redéposer.
+  `extractPieceBudget.test.ts` garde l'arithmétique et la forme ; sept mutations mordent, dont le
+  délai fixe replanté. Ce qu'il ne peut pas garder : la valeur du mur chez Supabase, qui dépend du
+  plan — passer au plan payant le porte à 400 s et demandera de modifier ce test sciemment.
 - **`npx tsc --noEmit` ne vérifie rien dans ce dépôt.** Le `tsconfig.json` racine a
   `"files": []` et ne fait que référencer `tsconfig.app.json` / `tsconfig.node.json` : lancé
   seul, `tsc --noEmit` sort silencieusement sans avoir typé une seule ligne, ce qui ressemble
@@ -2191,7 +2217,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1028 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1032 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
