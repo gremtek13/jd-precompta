@@ -16,6 +16,10 @@ const faux = vi.hoisted(() => ({
   bilan: { demandes: 0, retires: 0, echecs: [] as unknown[], inventaireIncomplet: false },
   message: '',
   navigations: [] as string[],
+  // L'export produit bien son archive ; seul le LIEN de téléchargement échoue. C'est tout l'objet
+  // du second bloc de tests : le bouton ne doit pas se contenter de ne rien faire.
+  signError: null as { message: string } | null,
+  ouvertures: [] as string[],
 }))
 
 vi.mock('../../lib/suppressionDossier', () => ({
@@ -35,7 +39,12 @@ vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ estChef: true })
 vi.mock('./VehiculesCard', () => ({ default: () => null }))
 vi.mock('./SauvegardeCard', () => ({ default: () => null }))
 vi.mock('./BalanceCard', () => ({ default: () => null }))
-vi.mock('../../lib/packGenerator', () => ({ generatePack: () => Promise.resolve({}) }))
+vi.mock('../../lib/packGenerator', () => ({
+  generatePack: () => Promise.resolve({
+    nbPieces: 4, storagePathZip: 'd1/p/pack.zip', storagePathExcel: 'd1/p/recap.xlsx',
+    totalTtc: 1200, manquantes: [],
+  }),
+}))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -46,8 +55,19 @@ vi.mock('../../lib/supabase', () => ({
         eq: () => chaine,
         maybeSingle: () => Promise.resolve({ data: null, error: null }),
         update: () => chaine,
+        insert: () => Promise.resolve({ error: null }),
       })
       return chaine
+    },
+    auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
+    storage: {
+      from: () => ({
+        createSignedUrl: () => Promise.resolve(
+          faux.signError
+            ? { data: null, error: faux.signError }
+            : { data: { signedUrl: 'https://exemple/pack.zip' }, error: null },
+        ),
+      }),
     },
   },
 }))
@@ -85,6 +105,9 @@ beforeEach(() => {
   faux.bilan = { demandes: 0, retires: 0, echecs: [], inventaireIncomplet: false }
   faux.message = ''
   faux.navigations = []
+  faux.signError = null
+  faux.ouvertures = []
+  window.open = ((url: string) => { faux.ouvertures.push(url); return null }) as typeof window.open
 })
 
 describe('suppression d’un dossier : ce qui reste dans le stockage se dit', () => {
@@ -121,5 +144,35 @@ describe('suppression d’un dossier : ce qui reste dans le stockage se dit', ()
 
     expect(faux.navigations).toEqual(['/dossiers'])
     expect(screen.queryAllByText(/restés dans le stockage/)).toHaveLength(0)
+  })
+})
+
+describe('export avant suppression : un bouton ne fait jamais rien en silence', () => {
+  async function exporter() {
+    const bouton = screen.getByRole('button', { name: /Exporter/ })
+    await act(async () => { bouton.click() })
+  }
+
+  it('ouvre l’archive quand le lien se crée', async () => {
+    monter()
+    await act(async () => {})
+    await exporter()
+    expect(faux.ouvertures).toEqual(['https://exemple/pack.zip'])
+  })
+
+  it('DIT que le lien a échoué, et où reprendre l’archive', async () => {
+    // Le défaut d'origine : `const { data: signed } = …` sans erreur, puis `if (signed)`. Rien ne
+    // s'ouvrait, rien ne s'affichait, et l'opérateur — qui est sur le point de supprimer le dossier —
+    // en concluait que l'export n'avait rien produit.
+    faux.signError = { message: 'objet introuvable' }
+    monter()
+    await act(async () => {})
+    await exporter()
+
+    expect(faux.ouvertures).toEqual([])
+    expect(screen.getByText(/lien de téléchargement n'a pas pu être créé/)).toBeTruthy()
+    // La RAISON, et la sortie : sans « onglet Packs », le message dit seulement qu'on a perdu.
+    expect(screen.getByText(/objet introuvable/)).toBeTruthy()
+    expect(screen.getByText(/onglet Packs/)).toBeTruthy()
   })
 })

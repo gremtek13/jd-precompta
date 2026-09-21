@@ -1111,6 +1111,19 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   ce n'était pas cosmétique : leur version en ligne laissait un rejet réseau du RETRAIT remonter à la
   place de l'erreur d'INSERTION, c'est-à-dire remplacer la seule explication utile à l'utilisateur par
   une autre, survenue après. `retirerFichiers` ne lève jamais, et c'est un test qui le fige.
+  **LE MÊME BALAYAGE PORTÉ AUX TROIS AUTRES PORTES DE `src/` REND UN RÉSULTAT PRESQUE ENTIÈREMENT
+  NÉGATIF — à garder, pour ne pas le refaire** (21/09/2026) : les 3 `.rpc(`, les 6 `upload()` et 6 des
+  7 `createSignedUrl()` lisent tous leur erreur. `AuthContext` lit `is_super_admin` sans erreur, et
+  c'est LÉGITIME — la lecture échoue en « pas super-admin », donc du côté fermé.
+  **La septième était en faute, et c'est la pire des sept possibles** : `InformationsTab`, l'export
+  fait « juste avant une suppression définitive » (son propre commentaire le dit). `const { data:
+  signed } = …` puis `if (signed)` : sur un échec, **le bouton ne fait VISIBLEMENT RIEN** — aucun
+  onglet, aucun message. L'archive est pourtant bien générée et enregistrée ; l'opérateur, lui, en
+  conclut le contraire au moment précis où il s'apprête à tout supprimer, et relance.
+  Le message dit désormais les trois choses qui manquaient : que l'archive EXISTE, la raison de
+  l'échec, et **où la reprendre** (onglet Packs). Il s'AJOUTE à l'avertissement des pièces manquantes
+  au lieu de l'écraser — les deux comptent, et celui-là se lit avant de supprimer quoi que ce soit.
+  Quatre mutations mordent, dont le code tel qu'il était.
 - **UN DÉPLOIEMENT N'EST PAS UN COMMIT NON PLUS — une fonction vit en production sans exister dans ce
   dépôt** (constaté le 21/09/2026). `list_edge_functions` rend **quatorze** fonctions ; le dépôt en
   porte treize. La quatorzième s'appelle `bright-task` (nom par défaut de Supabase), elle est
@@ -2887,7 +2900,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1123 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1125 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

@@ -157,8 +157,20 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
       if (manquantes.length > 0) {
         setExportErreur(`Export terminé, mais ${manquantes.length} pièce(s) manquent à l'archive (fichier introuvable) : ${manquantes.slice(0, 3).join(', ')}${manquantes.length > 3 ? '…' : ''}. Vérifie avant toute suppression — le récapitulatif les liste dans son onglet « Pièces manquantes ».`)
       }
-      const { data: signed } = await supabase.storage.from('packs').createSignedUrl(storagePathZip, 60)
-      if (signed) window.open(signed.signedUrl, '_blank')
+      // LE SEUL DES SEPT `createSignedUrl` DU PROJET À NE PAS LIRE SON ERREUR — les six autres le
+      // font. Sans ça, `signed` est simplement `undefined` et le bouton ne fait VISIBLEMENT RIEN :
+      // pas de message, pas d'onglet qui s'ouvre. Et c'est le pire endroit pour ça, l'export étant
+      // fait « juste avant une suppression définitive » (voir plus haut) : le réflexe est de croire
+      // que rien n'a été produit et de tout relancer, alors que l'archive est bien en place.
+      const { data: signed, error: signError } = await supabase.storage.from('packs').createSignedUrl(storagePathZip, 60)
+      if (signError || !signed) {
+        const dit = `L'archive est bien générée et enregistrée, mais son lien de téléchargement n'a pas pu être créé (${messageErreur(signError, 'raison inconnue')}). Récupère-la depuis l'onglet Packs — inutile de la régénérer.`
+        // On AJOUTE au message des pièces manquantes plutôt que de l'écraser : les deux comptent, et
+        // celui-là est à lire avant de supprimer quoi que ce soit.
+        setExportErreur((precedent) => (precedent ? `${precedent} ${dit}` : dit))
+        return
+      }
+      window.open(signed.signedUrl, '_blank')
     } catch (err) {
       setExportErreur(messageErreur(err, "L'export a échoué."))
     } finally {
