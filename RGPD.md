@@ -53,7 +53,7 @@ toujours « à valider », et la catégorie reste un arbitrage humain.
 | Sous-traitant | Rôle | Région vérifiée | Transfert hors UE |
 |---|---|---|---|
 | **Supabase** | Base, stockage des fichiers, authentification | `eu-west-1` (Irlande) | Non |
-| **AWS Textract** | OCR des pièces déposées | `eu-central-1` (Francfort), repli du code **gardé par un test** | Non, **sauf si le secret `AWS_REGION` dit autre chose — §8.1** |
+| **AWS Textract** | OCR des pièces déposées | `eu-central-1` (Francfort), repli du code **gardé par un test**, secret **mesuré** le 21/09/2026 (§8.1) | Non |
 | **AWS Bedrock** | Assistant comptable (Claude) | `eu-west-1` (Irlande), **gardé par un test** | Non |
 | **Super PDP** | Plateforme de dématérialisation agréée DGFiP | France | Non |
 | **Resend** | Envoi et réception d'e-mails | `eu-west-1` (Irlande), confirmé par le cabinet le 22/09/2026 | Non, **sous réserve du DPA — voir §8.2** |
@@ -212,7 +212,7 @@ Ce qui est **affirmé sans être rejoué** — et c'est la limite à connaître 
 
 ## 8. Ce qui reste à décider ou à faire
 
-### 8.1 — Lire le secret `AWS_REGION` *(à faire, une minute)*
+### 8.1 — Lire le secret `AWS_REGION` *(FAIT le 21/09/2026 — `eu-central-1`, donc UE)*
 
 Le contenu INTÉGRAL de chaque document déposé part chez AWS pour être lu, bordereaux compris. La
 région décide si c'est un traitement en Europe ou un transfert hors UE.
@@ -222,10 +222,16 @@ vraie source déployée et refuse toute région hors UE, pour Textract comme pou
 au passage que les deux clients Textract d'`extract-piece` partagent la même région, sans quoi une
 partie des documents partirait ailleurs pendant que le registre annoncerait une seule région.
 
-**La moitié qu'il ne gouverne pas reste à vérifier à la main** : si le secret `AWS_REGION` est
-défini côté Supabase, il l'emporte sur le repli du code, et aucun fichier de ce dépôt ne peut le
-savoir. À lire dans Supabase → Edge Functions → Secrets, et à confirmer ici. S'il n'est pas défini,
-le repli `eu-central-1` s'applique et ce point est clos.
+**La moitié qu'il ne gouverne pas est désormais MESURÉE, et c'est mieux qu'une lecture de tableau
+de bord** : le secret `AWS_REGION` l'emporte sur le repli du code, et aucun fichier de ce dépôt ne
+peut dire sa valeur. Plutôt que d'aller la lire dans Supabase → Edge Functions → Secrets — une
+vérification humaine qu'on oublie de refaire, et que rien ne rappelle le jour où le secret change —
+`evaluer-extraction` résout le MÊME secret que la production et REND la région obtenue. Appelée avec
+`limite: 0` elle ne parcourt aucune pièce, donc ne facture rien.
+
+**Résultat, le 21/09/2026 : `eu-central-1` (Francfort).** C'est bien la région annoncée au §3 comme
+repli du code, elle est dans l'Union, et ce point est clos. **Il se rouvre en un appel** le jour où
+le secret change ou qu'on veut s'en assurer, sans accès au tableau de bord.
 
 ### 8.2 — Établir le statut de Resend *(partiellement fait — deux points restent)*
 

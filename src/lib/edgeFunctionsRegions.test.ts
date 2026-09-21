@@ -50,11 +50,20 @@ describe('régions des Edge Functions qui sortent de Supabase', () => {
     // dossier de santé, des noms de patients. Un essai n'est pas une excuse : il fait sortir les
     // mêmes données que la production, et il doit les faire sortir au même endroit.
     const source = sourceDe('evaluer-extraction')
-    const regions = [...source.matchAll(/awsRegion:\s*REGION|const REGION = "(eu-[^"]+)"/g)]
-      .map((m) => m[1])
-      .filter(Boolean)
-    expect(regions.length, "aucune région trouvée dans evaluer-extraction — le garde-fou doit être remis à jour").toBeGreaterThan(0)
-    for (const region of regions) expect(REGIONS_UE).toContain(region)
+    const replis = [...source.matchAll(/Deno\.env\.get\("AWS_REGION"\)\s*\?\?\s*"([^"]+)"/g)].map((m) => m[1])
+    expect(replis.length, "aucun repli `AWS_REGION` trouvé dans evaluer-extraction — le garde-fou doit être remis à jour").toBeGreaterThan(0)
+    for (const region of replis) expect(REGIONS_UE).toContain(region)
+  })
+
+  it('fait tourner la mesure dans la MÊME région que la production', () => {
+    // Le cœur du garde-fou, et ce qu'aucun des deux tests ci-dessus ne dit à lui seul : une mesure
+    // faite ailleurs que la production ne mesure pas la production. La disponibilité d'un modèle
+    // Bedrock est PAR RÉGION — `agent-comptable` câble eu-west-1 en dur parce que son modèle n'y
+    // était proposé que là — donc un essai concluant dans une autre région ne décide rien. Les deux
+    // fonctions doivent lire le même secret et retomber sur le même repli.
+    const replisDe = (fonction: string) =>
+      [...sourceDe(fonction).matchAll(/Deno\.env\.get\("AWS_REGION"\)\s*\?\?\s*"([^"]+)"/g)].map((m) => m[1])
+    expect(new Set([...replisDe('extract-piece'), ...replisDe('evaluer-extraction')]).size).toBe(1)
   })
 
   it('fait tourner l’assistant comptable en Europe', () => {

@@ -21,9 +21,18 @@
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
 import { createClient } from "npm:@supabase/supabase-js@2"
 
-// Même région que l'assistant comptable et que Textract : eu-west-1 (Irlande). Gardée par
-// `edgeFunctionsRegions.test.ts`, qui lit cette source.
-const REGION = "eu-west-1"
+// LA MÊME RÉGION QUE LA PRODUCTION, ET PAS UNE AUTRE — écrite exactement comme dans
+// `extract-piece`, dont c'est le chemin qu'on mesure. Deux raisons, et la seconde n'est pas celle
+// qu'on croit d'abord :
+//   1. RGPD. Cet essai envoie le TEXTE OCR INTÉGRAL de chaque pièce au modèle, noms de patients
+//      compris. Mesurer ailleurs, c'est faire sortir les mêmes données vers une autre juridiction
+//      que celle que le registre annonce.
+//   2. La DISPONIBILITÉ D'UN MODÈLE EST PAR RÉGION. Un profil d'inférence joignable ici et pas là
+//      est le cas normal, pas l'exception — `agent-comptable` câble eu-west-1 en dur précisément
+//      parce que son modèle n'y était proposé que là. Une mesure faite dans une région que la
+//      production n'utilise pas prouve donc la disponibilité AILLEURS, ce qui ne décide rien.
+// Gardée par `edgeFunctionsRegions.test.ts`, qui lit cette source.
+const REGION = Deno.env.get("AWS_REGION") ?? "eu-central-1"
 const MODELE_PAR_DEFAUT = "eu.anthropic.claude-sonnet-4-6"
 
 // ── DÉBUT COPIE extractionChamps ────────────────────────────────────────────────────────────────
@@ -157,6 +166,11 @@ Deno.serve(async (req) => {
     }
 
     return Response.json({
+      // RENDUE, et c'est le point : le secret `AWS_REGION` l'emporte sur le repli ci-dessus, et
+      // aucun fichier du dépôt ne peut dire sa valeur. Un commentaire d'une autre fonction
+      // l'affirme (« eu-central-1 »), mais un commentaire est une déclaration, pas une mesure.
+      // Appelée avec `limite: 0`, cette fonction répond donc à la question sans rien facturer.
+      region: REGION,
       modele,
       pieces: (lignes ?? []).length,
       echecs,

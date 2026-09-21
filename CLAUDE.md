@@ -426,12 +426,22 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   **Le coût, aux tarifs première partie** (Bedrock ayant sa propre grille, c'est l'ordre de grandeur
   et non le centime) : 6,11 $ contre 2,04 $ les 1 000 documents pour l'étage 2, soit **3,0×**. Sur
   la chaîne complète, le rapport avec l'ancien `AnalyzeExpense` passerait de **1,8–2,4× à 3,5–4,2×**.
-  **CE QUI RESTE À VÉRIFIER AVANT DE BASCULER, et c'est le même angle mort que ce matin** :
-  `evaluer-extraction` tourne en `eu-west-1` en dur, `extract-piece` en `AWS_REGION ?? eu-central-1`.
-  La disponibilité du profil d'inférence `eu.anthropic.claude-haiku-4-5-20251001-v1:0` est donc
-  prouvée dans la région de la MESURE, pas dans celle de la PRODUCTION — et aucun fichier du dépôt
-  ne connaît la valeur d'`AWS_REGION`. Basculer sans le vérifier, c'est rejouer « un déploiement
-  n'est pas une autorisation » sur une autre ressource.
+  **LE POINT BLOQUANT ÉTAIT QUE LA MESURE NE TOURNAIT PAS OÙ TOURNE LA PRODUCTION — LEVÉ LE
+  21/09/2026, ET PAR UNE MESURE PLUTÔT QUE PAR UNE LECTURE DE TABLEAU DE BORD.**
+  `evaluer-extraction` tournait en `eu-west-1` en dur, `extract-piece` en `AWS_REGION ?? eu-central-1` :
+  la disponibilité du profil d'inférence était donc prouvée dans la région de la MESURE, pas dans
+  celle de la PRODUCTION — « un déploiement n'est pas une autorisation » rejoué sur une autre
+  ressource. **Ce n'est pas une question de forme** : la disponibilité d'un modèle Bedrock est PAR
+  RÉGION, et `agent-comptable` câble `eu-west-1` en dur précisément parce que son modèle n'y était
+  proposé que là.
+  Le harnais lit désormais le MÊME secret que la production et REND la région qu'il résout, ce qui
+  répond aux deux questions d'un coup : **`AWS_REGION` vaut `eu-central-1`**, et
+  `eu.anthropic.claude-haiku-4-5-20251001-v1:0` y répond (1 pièce, 0 échec, 0 rejet, citations
+  rendues). Un troisième test garde que les deux fonctions retombent sur le même repli — une mesure
+  qui dérive de la production cesse de mesurer la production, en silence.
+  **Appelé avec `limite: 0`, ce harnais lit la région sans facturer un seul token**, la boucle ne
+  tournant sur aucune pièce : c'est le moyen le moins cher de reposer la question le jour où le
+  secret change, et il ne demande d'accès à aucun tableau de bord.
   **Deux identifiants refusés au passage, à ne pas rechercher** : les formes courtes
   `eu.anthropic.claude-haiku-4-5` et `eu.anthropic.claude-sonnet-5` rendent une `ValidationException`
   (« The provided model identifier is invalid »). Seule la forme datée complète passe, alors même
@@ -512,8 +522,11 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `edgeFunctionsRegions.test.ts` lit la vraie source des Edge Functions et refuse toute région AWS
   hors UE — Textract comme Bedrock — et exige que les deux clients Textract d'`extract-piece`
   partagent la même région. Ce que ce test NE peut pas garder : le secret `AWS_REGION`, qui l'emporte
-  sur le repli du code et qu'aucun fichier du dépôt ne connaît. La moitié gouvernée par le code est
-  gardée, l'autre est une vérification humaine (voir RGPD.md §8.1).
+  sur le repli du code et qui peut changer sans qu'aucun fichier du dépôt ne bouge. **Sa valeur est
+  désormais MESURÉE et non supposée — `eu-central-1`, le 21/09/2026** : `evaluer-extraction` résout
+  le même secret et le REND, donc un appel avec `limite: 0` le relit à tout moment sans facturer un
+  token. La moitié gouvernée par le code est gardée, l'autre se remesure en un appel plutôt que de
+  reposer sur une lecture humaine qu'on oublie de refaire (voir RGPD.md §8.1).
 - **Ce que ces fonctions ont le DROIT de faire chez AWS, c'est un autre test qui le dit.**
   `edgeFunctionsIam.test.ts` balaie toutes les Edge Functions et rend la liste des actions IAM que
   leur code appelle — service lu sur l'import, jamais deviné du nom de la commande. Il ne lit pas la
