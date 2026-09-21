@@ -17,6 +17,11 @@
 --   4. Un client ne peut pas écrire ce qui appartient au cabinet.
 --   5. `prochain_numero_facture` refuse l'anonyme. Malgré son nom elle CONSOMME un numéro : un appel
 --      anonyme réussi creuserait un trou dans une suite annuelle qui n'en admet pas.
+--   5bis. Et `attribuer_numero_facture`, le wrapper que les ÉCRANS appellent réellement, refuse
+--      l'anonyme ET le client — sur le dossier d'un autre comme sur le sien, un client ne facturant
+--      pas. Son contrôle d'accès vit dans la fonction qu'elle appelle : rien n'avait exercé la
+--      chaîne SECURITY DEFINER → SECURITY DEFINER, où l'on suppose volontiers qu'une garantie
+--      traverse.
 --   6. Et les mêmes questions sur le STOCKAGE (section S), qui est l'endroit où vivent réellement
 --      les données identifiantes de ce projet — plus un contrôle POSITIF (S3bis : le client voit
 --      bien ses propres fichiers), sans lequel un bucket devenu illisible à tous passerait pour un
@@ -42,8 +47,15 @@
 -- À lancer par l'outil MCP Supabase (`execute_sql`). Les identifiants ci-dessous sont ceux du projet
 -- réel ; sur un autre jeu de données, les remplacer par un client et un chef existants.
 --
--- Dernier passage : 19/09/2026 — 16 lignes de verdict (40 tables du schéma + 3 buckets, 3 profils),
--- 0 en faute, et 12 mutations sur 12 qui mordent.
+-- Dernier passage COMPLET : 19/09/2026 — 16 lignes de verdict (40 tables du schéma + 3 buckets,
+-- 3 profils), 0 en faute, et 12 mutations sur 12 qui mordent.
+--
+-- 21/09/2026 — les contrôles 5bis et les mutations M5ter/M5quater ont été AJOUTÉS puis rejoués
+-- SEULS (4 invariants ok, 2 mutations qui mordent) : `attribuer_numero_facture` refuse l'anonyme en
+-- 42501 et le client en « Accès refusé à ce dossier. », sur son dossier comme sur celui d'un autre,
+-- compteur inchangé (6 -> 6) ; le chef, lui, obtient bien un numéro. Le reste du fichier n'a pas été
+-- relancé à cette occasion — il n'avait pas changé, et aucune migration n'est intervenue depuis.
+-- Dit comme tel plutôt que laissé croire à un passage complet.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.
@@ -76,6 +88,10 @@ declare
   -- conclurait « RLS a refusé » — il passerait pour la mauvaise raison, ce qui est pire qu'un échec.
   -- On exige donc 42501, le refus de policy, nommément.
   motif text;
+  -- Et le MESSAGE, pour les refus qui viennent d'une fonction plpgsql : ceux-là arrivent en P0001,
+  -- le même code que l'annulation volontaire de ce harnais. Le code seul ne les distingue donc pas
+  -- d'un incident sans rapport (voir 5bis).
+  raison text;
 begin
   -- ══ 1 et 2. Anonyme, puis authentifié rattaché à rien ══════════════════════════════════════
   for t in
@@ -182,6 +198,58 @@ begin
   insert into rls_verdict values ('5. anonyme ne consomme pas de numéro', 'prochain_numero_facture',
     case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif,'?') end, not accepte);
   insert into rls_verdict values ('5. le compteur n''a pas bougé', 'facture_numerotation',
+    numero_avant::text || ' -> ' || numero_apres::text, numero_avant = numero_apres);
+
+  -- ══ 5bis. ET C'EST `attribuer_numero_facture` QUE L'APPLICATION APPELLE ════════════════════
+  --
+  -- Le contrôle 5 éprouve `prochain_numero_facture`. Or aucun écran n'appelle celle-là :
+  -- `FactureAvoirModal` appelle `attribuer_numero_facture`, un wrapper SECURITY DEFINER qui délègue
+  -- à la première et formate le numéro. Le contrôle d'accès vit donc DANS L'APPELÉE, et son
+  -- commentaire le dit — mais rien n'avait jamais exercé la CHAÎNE. Un enchaînement
+  -- SECURITY DEFINER → SECURITY DEFINER est exactement le genre d'endroit où l'on suppose qu'une
+  -- garantie traverse : elle traverse bien (`auth.uid()` lit un réglage de SESSION, pas de
+  -- fonction), et c'est mesuré ici plutôt que supposé.
+  --
+  -- Trois profils, parce que le danger n'est pas l'anonyme. Un client authentifié EST une session
+  -- valide : ce qu'il faut prouver, c'est qu'il ne peut consommer de numéro ni sur le dossier d'un
+  -- autre, ni sur le SIEN — un client ne facture pas.
+  select coalesce(max(dernier_numero), -1) into numero_avant from facture_numerotation;
+  for t in
+    select 'anonyme' as profil, null::uuid as sub, autre_dossier as cible
+    union all select 'client, dossier d''un autre', client, autre_dossier
+    union all select 'client, son propre dossier', client, dossier_du_client
+  loop
+    if t.sub is null then
+      set local role anon;
+      perform set_config('request.jwt.claims', json_build_object('role','anon')::text, true);
+    else
+      set local role authenticated;
+      perform set_config('request.jwt.claims', json_build_object('sub', t.sub, 'role','authenticated')::text, true);
+    end if;
+    accepte := false; motif := null; raison := null;
+    begin
+      perform attribuer_numero_facture(t.cible, 2026, 'facture');
+      accepte := true;
+      raise exception 'ANNULATION_ESSAI';
+    exception
+      -- `accepte` est posé AVANT le `raise`, donc ce handler n'a rien à corriger : c'est ce qui
+      -- permet de ne pas confondre l'annulation avec le refus de la fonction, tous deux en P0001.
+      -- Mais « pas accepté » ne suffit pas comme preuve : un P0001 SANS RAPPORT passerait pour un
+      -- refus, et c'est le piège que l'en-tête nomme déjà pour le 42703. On relève donc la RAISON —
+      -- soit 42501 (pas d'EXECUTE), soit le message que la fonction elle-même lève. Reformuler ce
+      -- message fera virer ce contrôle au rouge, et c'est voulu : il faut alors venir le relire.
+      when sqlstate 'P0001' then get stacked diagnostics raison = message_text;
+      when others then accepte := false; motif := sqlstate;
+                       get stacked diagnostics raison = message_text;
+    end;
+    reset role;
+    insert into rls_verdict values ('5bis. ' || t.profil || ' ne consomme pas de numéro',
+      'attribuer_numero_facture',
+      case when accepte then 'ACCEPTÉ' else 'refusé : ' || coalesce(motif, raison, '?') end,
+      (not accepte) and (motif = '42501' or raison like 'Accès refusé%'));
+  end loop;
+  select coalesce(max(dernier_numero), -1) into numero_apres from facture_numerotation;
+  insert into rls_verdict values ('5bis. le compteur n''a pas bougé', 'facture_numerotation',
     numero_avant::text || ' -> ' || numero_apres::text, numero_avant = numero_apres);
 end $$;
 
@@ -326,6 +394,7 @@ declare
   chef   uuid := 'bd6bd047-0ef0-4c9d-a319-1b642aaf2162';
   dossier_du_client uuid := 'ac538d93-7da3-4403-bca6-2d7836810a6f';
   t record; n bigint; hors bigint; accepte boolean; touchees int; motif text;
+  raison text;
   en_faute int; numero_avant int; numero_apres int; restes int;
 begin
   -- M1 : le contrôle « anonyme ne voit rien » exécuté sous le chef.
@@ -417,6 +486,48 @@ begin
   select count(*) into restes from facture_numerotation where annee = 2099;
   insert into rls_mutation values ('M5bis — l''annulation efface la consommation', '0 ligne 2099, compteur inchangé',
     restes || ' ligne(s) 2099, ' || numero_avant || ' -> ' || numero_apres, restes = 0 and numero_avant = numero_apres);
+
+  -- M5ter : le wrapper appelé par le chef. Sans elle, les trois refus de 5bis seraient satisfaits
+  -- par une fonction qui refuse TOUT LE MONDE — un numéro qu'aucun cabinet ne peut plus obtenir, et
+  -- la facturation à l'arrêt. C'est la même asymétrie que MS2 sur le stockage.
+  select coalesce(max(dernier_numero), -1) into numero_avant from facture_numerotation;
+  set local role authenticated;
+  perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+  accepte := false; motif := null;
+  begin
+    perform attribuer_numero_facture(dossier_du_client, 2099, 'facture');
+    accepte := true;
+    raise exception 'ANNULATION_ESSAI';
+  exception when sqlstate 'P0001' then null; when others then accepte := false; motif := sqlstate; end;
+  reset role;
+  select coalesce(max(dernier_numero), -1) into numero_apres from facture_numerotation;
+  select count(*) into restes from facture_numerotation where annee = 2099;
+  insert into rls_mutation values ('M5ter — le wrapper appelé par le chef', 'ACCEPTÉ',
+    case when accepte then 'ACCEPTÉ' else 'refusé par ' || coalesce(motif,'?') end
+    || ', ' || restes || ' ligne(s) 2099, ' || numero_avant || ' -> ' || numero_apres,
+    accepte and restes = 0 and numero_avant = numero_apres);
+
+  -- M5quater : l'exigence de RAISON de 5bis n'est pas décorative. On fait échouer l'essai pour un
+  -- motif SANS RAPPORT — une fonction qui n'existe pas, donc 42883 — et le contrôle doit virer au
+  -- rouge. Mesuré : sans cette exigence, « pas accepté » suffirait et l'essai passerait au VERT
+  -- alors qu'il n'a jamais atteint la fonction. C'est le piège du 42703 que l'en-tête nomme déjà,
+  -- ramené sur un appel de fonction.
+  set local role anon;
+  perform set_config('request.jwt.claims', json_build_object('role','anon')::text, true);
+  accepte := false; motif := null; raison := null;
+  begin
+    perform attribuer_numero_facture_qui_n_existe_pas('00000000-0000-0000-0000-000000000000'::uuid, 2026, 'facture');
+    accepte := true;
+    raise exception 'ANNULATION_ESSAI';
+  exception
+    when sqlstate 'P0001' then get stacked diagnostics raison = message_text;
+    when others then accepte := false; motif := sqlstate;
+                     get stacked diagnostics raison = message_text;
+  end;
+  reset role;
+  insert into rls_mutation values ('M5quater — 5bis sur un échec sans rapport', 'EN FAUTE',
+    'sqlstate ' || coalesce(motif,'?'),
+    not ((not accepte) and (motif = '42501' or raison like 'Accès refusé%')));
 end $$;
 
 -- Mutations de la section stockage. MS2 mérite un mot : le contrôle positif S3bis est le seul du

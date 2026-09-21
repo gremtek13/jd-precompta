@@ -242,6 +242,28 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `categories_et_natures_reservees_aux_connectes`). Toute policy porte donc
   désormais son `to authenticated` explicite, et `supabase/essais/rls.sql` le
   vérifie sur l'intégralité du schéma.
+- **ET CE QUI CONTOURNE LA RLS N'ÉTAIT REJOUÉ QU'À MOITIÉ** (21/09/2026). `rls.sql` éprouvait
+  `prochain_numero_facture` — la fonction `SECURITY DEFINER` qui consomme un numéro — pour le seul
+  profil ANONYME. Or **aucun écran n'appelle celle-là** : `FactureAvoirModal` appelle
+  `attribuer_numero_facture`, un wrapper `SECURITY DEFINER` qui délègue à la première et formate le
+  résultat. Le contrôle d'accès vit dans l'APPELÉE, son commentaire le dit — et rien n'avait jamais
+  exercé la CHAÎNE. Un enchaînement `SECURITY DEFINER` → `SECURITY DEFINER` est exactement l'endroit
+  où l'on suppose qu'une garantie traverse.
+  **Elle traverse** (`auth.uid()` lit un réglage de SESSION, pas de fonction), et c'est maintenant
+  MESURÉ : anonyme refusé en 42501 (pas d'`EXECUTE`), client refusé par « Accès refusé à ce
+  dossier. » sur le dossier d'un autre **comme sur le sien** — un client ne facture pas —, compteur
+  inchangé, et le chef obtient bien `F2026-0001`. Sans ce dernier contrôle positif, trois refus
+  seraient satisfaits par une fonction qui refuse TOUT LE MONDE.
+  **ET LE PIÈGE DU 42703 SE REJOUE SUR UN APPEL DE FONCTION, en pire** : un refus levé par du
+  plpgsql arrive en **P0001**, le code exact de l'annulation volontaire de ce harnais. « Pas
+  accepté » ne prouve donc rien — mesuré, un essai qui n'atteint même pas la fonction (42883, nom
+  inexistant) passait au VERT. Le contrôle exige désormais la RAISON : 42501, ou le message de refus
+  de la fonction. M5quater le prouve en faisant échouer l'essai pour un motif sans rapport.
+  **Mon premier harnais, lui, mentait dans l'autre sens** — il rangeait le verdict « accordé » DANS
+  la branche P0001 du gestionnaire, donc un vrai refus ressortait en faille. `rls.sql` évitait ce
+  piège depuis toujours en posant son drapeau AVANT le `raise` ; la leçon est à lui, pas à moi.
+  **Le reste du fichier n'a pas été relancé** : il n'avait pas changé et aucune migration n'est
+  intervenue. L'en-tête le dit plutôt que de laisser croire à un passage complet.
 - **Les policies se REJOUENT, elles ne se vérifient pas une fois pour toutes.**
   Chaque policy était éprouvée par impersonation à sa création, puis plus rien :
   une migration pouvait en défaire une sans qu'aucun signal n'existe.
