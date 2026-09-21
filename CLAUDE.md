@@ -965,6 +965,44 @@ ont été découverts, en cherchant à apparier une facture en dollars.
     la date et la réponse) puis rend `null`, l'appelant décidant de la suite. La règle « tout
     `invoke()` passe par `extraireErreurFonction` » vise l'affichage d'un message à l'utilisateur —
     un best-effort journalisé la satisfait autrement. Sur treize appels, c'est la seule exception.
+  **ET CE BALAYAGE REJOUÉ LE 21/09/2026 A RENDU DEUX SITES DE PLUS — MAIS SA LEÇON EST AILLEURS.**
+  Sur 29 écritures dont le résultat est jeté, 23 sont suivies d'un rechargement, donc l'échec s'y
+  voit. **SIX DES HUIT RESTANTES ÉTAIENT DES FAUX POSITIFS DU DÉTECTEUR**, et de la même façon à
+  chaque fois : `const { error } = x ? await … : await …` — l'erreur EST lue, elle est simplement
+  une ligne plus haut. **Quatrième fois qu'un balayage de ce dépôt se fait prendre par le retour à
+  la ligne**, et la troisième dans la même journée : un détecteur qui lit « la ligne » plutôt que
+  l'EXPRESSION rend ici 75 % de faux positifs.
+  **C'est aussi pourquoi ce motif-là ne devient PAS un septième scanner**, et le dire vaut mieux que
+  de le laisser deviner : le critère qui décide n'est pas la forme mais « quelque chose recharge-t-il
+  derrière ? », et la réponse est OUI 23 fois sur 29. Un test qui refuserait les 29 serait du bruit,
+  et un avertissement qui se trompe souvent finit par ne plus être lu. Le côté où l'absence de
+  rechargement est STRUCTURELLE — les Edge Functions — a déjà le sien.
+  **Les deux vrais cas :**
+  - `SupplementsTab.supprimer` (un mouvement de compte courant) — sa fonction JUMELLE `ajouter`,
+    trente lignes plus haut, dans le même composant et avec le même état d'erreur déjà affiché,
+    lisait le sien. Exactement le couple `DocumentsTab.supprimer` / `supprimerSelection`. Le
+    `onChanged()` qui suit recharge, donc la ligne réapparaît : c'est un signal, mais MUET et
+    ambigu, sur une action que l'utilisateur vient de CONFIRMER — le réflexe est de reconfirmer et
+    d'obtenir le même silence, défaut déjà payé sur `SuperPdpModal.retirer()`. Et le solde d'un
+    compte courant est TOUJOURS recalculé depuis l'historique complet : une ligne qu'on croit
+    retirée et qui reste est un solde que le cabinet croit faux.
+  - `AuthContext.signOut` — **et ici c'est la SOURCE DE LA BIBLIOTHÈQUE qui corrige l'intuition**,
+    comme pour `messageErreur`. Dans `GoTrueClient._signOut`, une erreur SERVEUR (réseau, 5xx)
+    appelle `removeCurrentSession()` AVANT de rendre l'erreur : la session locale part quand même,
+    et l'écran revient bien à la connexion. Le seul chemin qui laisse l'utilisateur connecté sans le
+    dire est une erreur sur la LECTURE de la session locale, qui sort avant tout retrait — étroit,
+    mais silencieux, et sur un poste de cabinet partagé c'est une session laissée ouverte derrière
+    un bouton qui n'a rien fait de visible.
+    **Ce qui est plus large que ce chemin étroit** : la portée par défaut est `global`, donc
+    « Déconnexion » promet de fermer TOUTES les sessions du compte. Sur une erreur réseau la
+    révocation côté serveur n'a PAS eu lieu, le jeton reste valide jusqu'à expiration, et rien ne le
+    dit. **Journalisé plutôt que remonté**, et l'arbitrage est écrit : dans le cas courant l'écran
+    est déjà reparti à la connexion, donc un message n'aurait personne à qui parler — mais l'avaler
+    sans trace rendrait ce chemin indiagnosticable. C'est le précédent `tauxChange.tauxBce`.
+  **Résultat négatif à garder, mesuré en base** : `memberships` porte `UNIQUE (user_id, dossier_id)`,
+  donc deux « Entrée » rapprochés sur « Créer l'accès » (un `<form>`, le pire déclencheur) ne peuvent
+  PAS produire deux accès — la base rattrape, et ce site n'a pas besoin d'un verrou. Ne pas le
+  réenquêter.
 - **ET CE BALAYAGE S'ÉTAIT ARRÊTÉ À `src/` — LES EDGE FUNCTIONS N'AVAIENT JAMAIS ÉTÉ REGARDÉES**
   (21/09/2026). Le même motif y est BIEN PLUS COÛTEUX, et pour une raison structurelle : la question
   qui décide dans `src/` est *quelque chose recharge-t-il derrière ?*, et la réponse y est presque
@@ -2944,9 +2982,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 9 testés** — banque,
-  documents, statistiques, écritures, clôture, checklist, justificatifs, packs et informations
-  (21/09/2026) — donc **8 sans aucun test de rendu**. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 10 testés** — banque,
+  documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations et
+  suppléments (21/09/2026) — donc **7 sans aucun test de rendu**. Suppléments y est entré comme
+  Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
   `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une
@@ -2996,7 +3035,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1156 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1160 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
