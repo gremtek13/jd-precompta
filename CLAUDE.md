@@ -1377,6 +1377,30 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   qui servent de marqueur sont reproduites — c'est tout ce que la fonction regarde. Pour vérifier
   un changement de classification sur le corpus réel, faire tourner les marqueurs **en base**
   (`piece_textes_ocr`, regex extraites de la source) plutôt que rapatrier les textes.
+  **ET LA DERNIÈRE DUPLICATION SANS GARDE AVAIT DÉJÀ DÉRIVÉ — `agent-comptable`, 21/09/2026.** Le
+  balayage des six fonctions qu'elle duplique depuis `src/lib` (`ecritures.ts`, `controles.ts`) a
+  rendu cinq copies identiques et une périmée : `analyserEcritures` ne comparait **qu'un champ sur
+  quatre**, le TOTAL, pendant que `piecesDesynchronisees` en avait gagné trois de plus dans la même
+  journée — le compte, la ventilation de la TVA, la date.
+  **Ce que ça coûte est pire ici que partout ailleurs** : l'assistant répondait « aucune écriture à
+  régénérer » là où la Checklist du MÊME dossier en comptait, sur l'outil dont toute la raison
+  d'être est de répondre « quelles sont les anomalies ? ». Encore deux livrables et deux réponses,
+  mais celui-ci parle en français à un comptable qui n'ira pas vérifier.
+  **Et la dérive était STRUCTURELLE, pas un oubli de recopie** : l'ancienne copie filtrait bien les
+  mêmes pièces mais **jetait le compte attendu**, ce qui rendait trois des quatre comparaisons
+  impossibles à écrire. La forme partagée (`piecesAComptabiliser`, qui rend la pièce ET son compte)
+  a dû être portée d'abord — c'est elle qui rend la parité atteignable, et pas seulement vraie
+  aujourd'hui.
+  **TROIS MUTATIONS ONT SURVÉCU AU PREMIER JEU DE TESTS, et les trois disaient la même chose** : le
+  garde comparait `src/lib` à lui-même. Extraire la source déployée et l'exécuter ne suffit pas s'il
+  reste un chemin où la copie n'est pas celle qu'on croit — d'où `expect(deployee.analyserEcritures)
+  .not.toBe(analyserEcritures)`, qui refuse l'identité de référence, et deux dérives **plantées dans
+  la vraie source déployée** (la comparaison de compte retirée, le filtre d'immobilisation retiré)
+  plutôt qu'une source synthétique. Quatorze tests, six mutations mordent.
+  **Le harnais est bâti pour qu'on puisse lui donner une source FAUSSE** : `sourceDeployee()` et
+  `extraire(source)` sont séparés, là où les quatre gardes précédents fondaient les deux. Sans cette
+  couture, « le scanner est aveugle » et « les deux copies sont d'accord » restent indiscernables —
+  la panne que ce dépôt connaît sous cinq autres noms.
 - **Une déduction se dit, elle ne se déguise pas en lecture.** Faute de libellé reconnu, la date
   d'une pièce est prise comme la première en ordre de lecture — une facture imprime sa date en
   en-tête, avant ses conditions de règlement et ses mentions légales. Cette règle avait d'abord été
@@ -3213,7 +3237,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1216 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1230 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
