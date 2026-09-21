@@ -1194,6 +1194,24 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   d'`AuthContext` échouent du côté FERMÉ, `auth.getUser()` est traité par `?? null` partout, et
   `texteOcrDe` est le chemin d'AFFICHAGE dont le jumeau destructeur `lireTexteOcrDuDocument` rend
   déjà son erreur.
+  **ET CETTE VÉRIFICATION-LÀ A ÉCHOUÉ DEUX FOIS DANS LA MÊME JOURNÉE, DONC ELLE DEVIENT UN TEST**
+  (`lecturesVerifiees.test.ts`). Elle avait été faite le matin — onze lectures déclarées légitimes,
+  trois nommées — puis refaite l'après-midi en les ouvrant une par une : quatre défauts dedans. C'est
+  mot pour mot « une vérification qu'il faut penser à rejouer, et dont personne ne peut voir qu'elle
+  est fausse, ne vaut rien ». Le scanner part de TOUT `await supabase` de `src/` et n'admet que des
+  exceptions écrites portant leur raison — deux à ce jour, et le critère est unique : **l'échec
+  tombe-t-il du côté FERMÉ ?** Ne rien savoir qui revient à ne rien accorder est légitime ; ne rien
+  savoir qui produit une AFFIRMATION ne l'est pas.
+  **`auth.getUser()` est écarté NOMMÉMENT, jamais `.auth.` en entier**, et c'est la leçon
+  d'`edgeFunctionsEcritures` appliquée à l'envers : cette porte-là écrit des comptes, et c'est
+  derrière elle qu'un mot de passe jamais posé se cachait sous un « ok ». Un cas synthétique
+  (`auth.admin.listUsers`) garde précisément cet élargissement.
+  **IL REMONTE LES ACCOLADES, IL NE LIT PAS « LA LIGNE » — et c'est son propre cas synthétique qui
+  l'a exigé.** Sa première version lisait le texte depuis le début de la ligne portant
+  `await supabase`, et ratait donc ENTIÈREMENT une destructuration coupée sur plusieurs lignes,
+  c'est-à-dire le formatage normal de ce dépôt. **Troisième fois qu'un scanner de ce projet se fait
+  prendre par le retour à la ligne** (après le grep des lectures paginées, puis le test qui l'a
+  remplacé). Six mutations mordent, dont ce défaut-là replanté et l'exception INVENTÉE.
 - **ET LE TROISIÈME JEU D'ESSAI D'ÉCRAN N'ÉTAIT PAS TYPÉ — cinq colonnes manquantes** (21/09/2026).
   Le remède de la contrainte de type avait été appliqué à `ChecklistTab` et `BanqueTab`, pas à
   `PiecesTab`, dont le `piece()` restait un `Record<string, unknown>`. Typé `Partial<Piece> => Piece`
@@ -2978,7 +2996,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1146 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1156 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
