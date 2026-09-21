@@ -54,7 +54,12 @@ function piece(o: Record<string, unknown> = {}) {
   return {
     id: 'p1', dossier_id: 'dossier-de-test', nom_fichier: 'justificatif.pdf', statut: 'a_valider',
     type_piece: 'achat', date_piece: null, montant_ht: null, montant_tva: null, montant_ttc: null,
-    tiers: null, categorie_id: null, confiance: 'haute', devise: null, montant_devise: null,
+    tiers: null, categorie_id: null, confiance: 'haute',
+    // `devise` est NOT NULL DEFAULT 'EUR' en base : un `null` ici n'existe pas en production et
+    // faisait de CHAQUE pièce du jeu d'essai une « devise non convertie »
+    // (`piecesDeviseNonConvertie` teste `devise !== 'EUR'`, vrai pour null). Un jeu d'essai
+    // infidèle au schéma fait passer — ou échouer — un test pour une raison fausse.
+    devise: 'EUR', montant_devise: null, taux_change: null,
     created_at: '2026-09-16T09:00:00Z', ...o,
   }
 }
@@ -86,10 +91,11 @@ describe('ChecklistTab — une date impossible se voit AVANT la validation', () 
     const ligne = await screen.findByText(LIBELLE)
     expect(ligne.textContent).toMatch(/^1 /)
 
-    // ET IL DIT COMMENT LA TROUVER. C'est le seul point de la liste dont le bouton ne suffit pas :
-    // la pièce est par définition dans un exercice futur, donc écartée par le sélecteur d'exercice
-    // de l'en-tête, qui s'ouvre toujours sur une année précise. Sans cette ligne, « Corrigez ces
-    // dates » menait vers une liste où la pièce n'apparaît même pas.
+    // ET IL DIT COMMENT LA TROUVER. Le bouton ne suffit pas : la pièce est par définition dans un
+    // exercice futur, donc écartée par le sélecteur d'exercice de l'en-tête, qui s'ouvre toujours
+    // sur une année précise. Sans cette ligne, « Corrigez ces dates » menait vers une liste où la
+    // pièce n'apparaît même pas. (Ce point s'annonçait « le seul » dans ce cas — il ne l'était que
+    // parmi les pièces DATÉES, voir le bloc suivant.)
     expect(screen.getByText(/toutes les années/)).toBeDefined()
   })
 
@@ -115,5 +121,47 @@ describe('ChecklistTab — une date impossible se voit AVANT la validation', () 
     // raison fausse — c'est le piège d'un test qui vérifie une ABSENCE.
     await screen.findByText(/sans catégorie/)
     expect(screen.queryByText(LIBELLE)).toBeNull()
+  })
+})
+
+describe('ChecklistTab — une pièce SANS date n’est sous aucun exercice, et le point le dit', () => {
+  // LE CAS QUE LA RÈGLE AVAIT MANQUÉ. `PiecesTab` écarte toute pièce dont `date_piece` est nul dès
+  // qu'un exercice précis est choisi — et il l'est toujours, `calculerAnneeParDefaut` ne rendant
+  // « toutes » que sur un dossier vide. C'est PIRE que la date impossible traitée au-dessus :
+  // celle-là se retrouve en changeant d'année, celle-ci ne se retrouve sous AUCUNE année.
+  //
+  // Aucun test de `src/lib` ne peut voir ça : `detailPiecesSansDate` est juste, c'est son CÂBLAGE
+  // point par point qui décide — exactement le piège qui s'est déjà refermé deux fois sur cet écran.
+  const SANS_CATEGORIE = /sans catégorie/
+
+  it('accroche le détail au point « sans catégorie » quand la pièce comptée n’a pas de date', async () => {
+    poser({ validees: [piece({ id: 'orpheline', statut: 'validee', date_piece: null })] })
+    monter()
+
+    await screen.findByText(SANS_CATEGORIE)
+    expect(screen.getByText(/Elle est sans date/)).toBeDefined()
+    // Les deux sorties, nommées : sans elles le détail dit qu'un problème existe sans dire quoi faire.
+    expect(screen.getByText(/toutes les années/)).toBeDefined()
+    expect(screen.getByText(/Sans date/)).toBeDefined()
+  })
+
+  it('ne l’accroche PAS quand la pièce comptée porte une date — sinon il ne prouverait rien', async () => {
+    // Le garde symétrique. Un détail affiché en permanence satisferait le test ci-dessus tout en
+    // cessant d'être lu, et emporterait ses voisins dans son discrédit.
+    poser({ validees: [piece({ id: 'datee', statut: 'validee', date_piece: '2026-03-10' })] })
+    monter()
+
+    await screen.findByText(SANS_CATEGORIE)
+    expect(screen.queryAllByText(/sans date/i)).toHaveLength(0)
+  })
+
+  it('l’accroche aussi au point « confiance basse », qui porte sur l’autre pile', async () => {
+    // Un seul point câblé ne prouve pas le câblage : c'est en s'arrêtant à mi-chemin que les deux
+    // badges manquants de `date-impossible` et `devise-non-convertie` avaient survécu.
+    poser({ aValider: [piece({ id: 'floue', confiance: 'basse', date_piece: null })] })
+    monter()
+
+    await screen.findByText(/faible confiance d'extraction/)
+    expect(screen.getByText(/Elle est sans date/)).toBeDefined()
   })
 })

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { categoriesSansCompte, categoriesSansPoste, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import { aujourdHuiSql, ajouterJours, dateLocaleDe } from './format'
 import type { Categorie, Piece } from './types'
 
@@ -94,6 +94,36 @@ describe('piecesValideesSansCategorie', () => {
     const recette = piece({ id: 'recette', type_piece: 'vente', categorie_id: null })
     const avoir = piece({ id: 'avoir', montant_ttc: -214.21, categorie_id: null })
     expect(piecesValideesSansCategorie([recette, avoir]).map((p) => p.id)).toEqual(['recette', 'avoir'])
+  })
+})
+
+describe('detailPiecesSansDate — un point ne compte pas ce que sa cible ne peut pas montrer', () => {
+  it('se tait quand toutes les pièces comptées ont une date', () => {
+    // La condition la plus importante du lot : ce détail doit être ABSENT le reste du temps. Une
+    // mise en garde affichée en permanence cesse d'être lue, et emporte ses voisines avec elle.
+    expect(detailPiecesSansDate([piece({ id: 'a' }), piece({ id: 'b' })])).toBeUndefined()
+    expect(detailPiecesSansDate([])).toBeUndefined()
+  })
+
+  it('dit combien sont masquées, et par quoi les retrouver', () => {
+    const avec = piece({ id: 'avec' })
+    const sans = piece({ id: 'sans', date_piece: null })
+    const detail = detailPiecesSansDate([avec, sans, piece({ id: 'sans2', date_piece: null })])
+    expect(detail).toContain("2 d'entre elles sont sans date")
+    // Les deux sorties possibles doivent être NOMMÉES : sans elles, le détail dit qu'un problème
+    // existe sans dire quoi faire, ce qui est le défaut qu'il corrige.
+    expect(detail).toContain('toutes les années')
+    expect(detail).toContain('Sans date')
+  })
+
+  it('distingue « toutes » de « une partie » — et le singulier du pluriel', () => {
+    // Dire « 1 d'entre elles » sur une liste d'une seule pièce est une phrase qui sonne faux là où
+    // l'opérateur a le plus besoin d'être précis : quand il n'y a qu'une pièce à retrouver.
+    expect(detailPiecesSansDate([piece({ id: 's', date_piece: null })])).toContain('Elle est sans date')
+    expect(detailPiecesSansDate([
+      piece({ id: 's1', date_piece: null }),
+      piece({ id: 's2', date_piece: null }),
+    ])).toContain('Toutes sont sans date')
   })
 })
 

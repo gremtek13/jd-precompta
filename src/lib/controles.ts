@@ -35,6 +35,34 @@ export function piecesValideesSansCategorie(pieces: Piece[]): Piece[] {
   return pieces.filter((p) => p.statut === 'validee' && !p.categorie_id)
 }
 
+// UN POINT DE CHECKLIST DOIT VÉRIFIER QUE SA CIBLE PEUT MONTRER CE QU'IL COMPTE — et la pièce SANS
+// DATE est le cas que la règle avait manqué.
+//
+// Les points de la Checklist comptent sur le dossier ENTIER. `PiecesTab`, lui, écarte toute pièce
+// dont `date_piece` est nul dès qu'un exercice précis est choisi — et il l'est toujours, `calculer-
+// AnneeParDefaut` ne rendant « toutes » que sur un dossier vide. Une pièce sans date n'est donc pas
+// seulement non marquée : elle est ABSENTE, et d'aucun exercice, pas seulement de celui qu'on
+// regarde. C'est PIRE que la date impossible (déjà traitée) : celle-là se trouve en changeant
+// d'année, celle-ci ne se trouve sous AUCUNE année.
+//
+// Le commentaire de `date-impossible` affirmait d'ailleurs être « le seul point dont le bouton ne
+// suffit PAS à trouver la pièce ». C'était vrai des pièces DATÉES, et seulement d'elles.
+//
+// Rendu vide quand aucune pièce comptée n'est sans date, pour que le détail n'apparaisse QUE quand
+// il apprend quelque chose : une mise en garde affichée en permanence cesse d'être lue, et le
+// dossier vivant n'a aujourd'hui aucune pièce sans date (mesuré le 21/09/2026 — la campagne
+// « Retrouver les dates manquantes » les a toutes comblées). L'état revient au premier dépôt dont
+// l'OCR ne sait pas lire la date, donc le détail se CALCULE au lieu d'être écrit en dur.
+export function detailPiecesSansDate(pieces: Piece[]): string | undefined {
+  const sansDate = pieces.filter((p) => !p.date_piece).length
+  if (sansDate === 0) return undefined
+  const toutes = sansDate === pieces.length
+  const sujet = toutes
+    ? (sansDate > 1 ? 'Toutes sont sans date' : 'Elle est sans date')
+    : `${sansDate} d'entre elles ${sansDate > 1 ? 'sont' : 'est'} sans date`
+  return `${sujet} : l'onglet Justificatifs les masque tant qu'un exercice précis est choisi. Utiliser « toutes les années » dans l'en-tête du dossier, ou le filtre « Sans date ».`
+}
+
 // Sur un dossier assujetti, une pièce validée sans TVA renseignée est plus probablement un oubli de
 // saisie qu'une vraie absence de TVA — signalé pour vérification, jamais corrigé tout seul.
 export function piecesSansTva(pieces: Piece[], assujettiTva: boolean): Piece[] {

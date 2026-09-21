@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -266,14 +266,17 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // « Fiabilité de l'extraction OCR sur les montants »).
     { id: 'montant-suspect', label: 'pièce(s) validée(s) dont le montant ne correspond à aucun mouvement bancaire', action: 'Voir ces montants', nb: montantSuspect.length, cible: 'banque', severite: 'erreur' },
     { id: 'piste-rompue', label: "écriture(s) sans justificatif ou sans mouvement — piste d'audit rompue", action: 'Voir les écritures concernées', nb: ruptures.length, cible: 'ecritures', severite: 'erreur' },
-    { id: 'sans-categorie', label: 'pièce(s) validée(s) sans catégorie — invisibles en compta', action: 'Catégoriser ces pièces', nb: sansCategorie.length, cible: 'pieces', severite: 'erreur' },
+    { id: 'sans-categorie', label: 'pièce(s) validée(s) sans catégorie — invisibles en compta', action: 'Catégoriser ces pièces', nb: sansCategorie.length, cible: 'pieces', severite: 'erreur', detail: detailPiecesSansDate(sansCategorie) },
     // « Erreur » et non « attention » : ce n'est pas une TVA douteuse, c'est une TVA dont le calcul
     // démontre qu'elle est fausse. Elle part telle quelle en TVA déductible et dans la charge.
-    { id: 'tva-impossible', label: 'pièce(s) dont la TVA est arithmétiquement impossible', action: 'Corriger ces montants', nb: tvaImpossible.length, cible: 'pieces', severite: 'erreur' },
-    // Le seul point de cette liste dont le bouton ne suffit PAS à trouver la pièce : elle est par
-    // définition dans un exercice futur, donc écartée par le sélecteur d'exercice de l'en-tête, qui
-    // s'ouvre toujours sur une année précise. « Corrigez ces dates » menait donc vers une liste où
-    // la pièce n'apparaît même pas — et un point qui compte sans pouvoir montrer se paie en crédit.
+    { id: 'tva-impossible', label: 'pièce(s) dont la TVA est arithmétiquement impossible', action: 'Corriger ces montants', nb: tvaImpossible.length, cible: 'pieces', severite: 'erreur', detail: detailPiecesSansDate(tvaImpossible.map((t) => t.piece)) },
+    // Le bouton ne suffit PAS à trouver la pièce : elle est par définition dans un exercice futur,
+    // donc écartée par le sélecteur d'exercice de l'en-tête, qui s'ouvre toujours sur une année
+    // précise. « Corrigez ces dates » menait donc vers une liste où la pièce n'apparaît même pas —
+    // et un point qui compte sans pouvoir montrer se paie en crédit.
+    // Ce détail-ci reste ÉCRIT EN DUR, contrairement à ses voisins : la pièce a bien une date, elle
+    // est seulement dans une autre année, donc `detailPiecesSansDate` n'aurait rien à en dire. Ce
+    // point s'annonçait « le seul » dans ce cas ; il ne l'était que parmi les pièces DATÉES.
     { id: 'date-impossible', label: 'pièce(s) datée(s) après leur dépôt — rangées dans le mauvais exercice', action: 'Corriger ces dates', nb: dateImpossible.length, cible: 'pieces', severite: 'erreur', detail: "Choisir « toutes les années » dans l'en-tête du dossier pour les voir : elles portent le badge « Date impossible »." },
     // « Erreur » comme la date impossible, et pour la même raison : la pièce part dans le mauvais
     // mois, parfois le mauvais exercice. En prime elle bloque un rapprochement bancaire qui était
@@ -292,14 +295,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // En « erreur » : la pièce n'a AUCUN montant en euros tant que le taux manque, donc elle ne
     // compte nulle part — ni en charge, ni en TVA, ni dans la 2035. Exactement l'effet d'une pièce
     // sans catégorie, par un autre chemin.
-    { id: 'devise-non-convertie', label: 'pièce(s) en devise étrangère non converties en euros', action: 'Convertir ces pièces', nb: deviseNonConvertie.length, cible: 'pieces', severite: 'erreur' },
+    { id: 'devise-non-convertie', label: 'pièce(s) en devise étrangère non converties en euros', action: 'Convertir ces pièces', nb: deviseNonConvertie.length, cible: 'pieces', severite: 'erreur', detail: detailPiecesSansDate(deviseNonConvertie) },
     { id: 'desequilibrees', label: 'écriture(s) déséquilibrée(s)', action: 'Voir les écritures déséquilibrées', nb: groupesDesequilibres.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', action: 'Régénérer les écritures concernées', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
     // Avant les autres points d'Écritures : ceux-là disent qu'il MANQUE quelque chose, celui-ci que
     // le brouillon compte quelque chose de faux — une charge immobilisée y est comptée deux fois.
     { id: 'ecritures-sans-objet', label: 'écriture(s) que la pièce ne justifie plus', action: "Retirer l'écriture ou corriger la pièce", nb: ecrituresSansObjetDuDossier.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
-    { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention' },
+    { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention', detail: detailPiecesSansDate(piecesConfianceBasse) },
     { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', action: 'Compléter le compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },
     { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', action: 'Compléter le poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },
     { id: 'sans-tva', label: 'pièce(s) validée(s) sans TVA renseignée', action: 'Compléter la TVA', nb: sansTva.length, cible: 'ecritures', severite: 'attention' },

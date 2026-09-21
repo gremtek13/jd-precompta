@@ -1967,6 +1967,37 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   où rien ne la désigne — le défaut déjà nommé pour `doublon-texte` : un point qui compte sans
   pouvoir montrer se paie en crédit, et l'opérateur cesse de croire le suivant. Les deux badges
   existent maintenant, calculés sur le dossier entier comme leurs voisins.
+  **ET LA RÈGLE QUI EN EST SORTIE NE COUVRAIT QUE LES PIÈCES DATÉES — LE CAS SANS DATE EST PIRE**
+  (21/09/2026). Le commentaire de `date-impossible` s'annonçait « le SEUL point de cette liste dont
+  le bouton ne suffit PAS à trouver la pièce ». C'était vrai des pièces DATÉES, et d'elles seules.
+  `PiecesTab` écarte toute pièce dont `date_piece` est nul dès qu'un exercice précis est choisi
+  (`anneeFilter !== 'toutes' && (!p.date_piece || …)`) — et il l'est toujours, `calculerAnneeParDefaut`
+  ne rendant « toutes » que sur un dossier VIDE. Une date impossible se retrouve en changeant
+  d'année ; **une pièce sans date ne se retrouve sous AUCUNE année**, seulement par le filtre local
+  « Sans date ». Quatre points visent Justificatifs en comptant des pièces qui peuvent n'avoir pas de
+  date — sans catégorie, TVA impossible, devise non convertie, confiance basse — et aucun ne le
+  disait. `mois-en-double` en est exempt par construction (il groupe par mois, donc exige des dates).
+  **Le détail se CALCULE, il ne s'écrit pas en dur** (`detailPiecesSansDate`, lib/controles.ts) :
+  rendu vide quand aucune pièce comptée n'est sans date, pour n'apparaître QUE quand il apprend
+  quelque chose — une mise en garde permanente cesse d'être lue et emporte ses voisines. Il nomme les
+  deux sorties (« toutes les années » et le filtre « Sans date », dont le libellé exact a été relu
+  dans `PiecesTab` plutôt que supposé), et distingue « toutes » de « une partie » au singulier comme
+  au pluriel.
+  **LATENT, et mesuré** : **zéro pièce sans date dans toute la base**, les quatre dossiers confondus
+  — la campagne « Retrouver les dates manquantes » du 20/09 les a toutes comblées. Ce n'est donc pas
+  un préjudice constaté ; l'état revient au premier dépôt dont l'OCR ne sait pas lire la date, et
+  c'est précisément pourquoi le détail est calculé plutôt qu'écrit.
+  **Six mutations mordent**, dont le code tel qu'il était et « câblé sur un seul des quatre points » —
+  s'arrêter à mi-chemin est exactement ce qui avait laissé vivre les deux badges manquants.
+  **ET LE TEST D'ÉCRAN A TROUVÉ UN JEU D'ESSAI INFIDÈLE AU SCHÉMA** : `ChecklistTab.test.tsx` posait
+  `devise: null`, or la colonne est **NOT NULL DEFAULT 'EUR'** — ce `null` n'existe nulle part en
+  production. Comme `piecesDeviseNonConvertie` teste `devise !== 'EUR'`, vrai pour `null`, CHAQUE
+  pièce du jeu d'essai comptait comme « devise non convertie ». Aucun test n'en échouait, ce qui est
+  le propre du défaut : il ne se voit qu'en posant une assertion qui tombe dessus. `types.ts` disait
+  juste (`devise: string`) ; c'est le `as`/objet nu du faux qui contournait le compilateur.
+  **Et le `git checkout --` destiné à défaire une mutation a de nouveau emporté le test non commité
+  du même fichier** — le piège que ce fichier nomme déjà, repayé le même jour. Il se voit au COMPTE
+  de tests (55 attendus, 52 rendus), pas au vert : la suite restait verte, simplement plus courte.
   **Le badge ne suffisait PAS pour la date, et c'est une mutation ratée qui l'a montré.** Une pièce
   datée après son dépôt est par définition dans un exercice futur, donc écartée par le sélecteur
   d'exercice de l'en-tête — qui s'ouvre toujours sur une année PRÉCISE (`calculerAnneeParDefaut` ne
@@ -2613,7 +2644,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1066 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1072 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
