@@ -110,7 +110,28 @@ function tvaNettePourPeriode(ecritures: EcritureRow[], periodeDebut: string, per
   return soldeCompte(dansPeriode, COMPTE_TVA_COLLECTEE, "credit") - soldeCompte(dansPeriode, COMPTE_TVA_DEDUCTIBLE, "debit")
 }
 
-function analyserEcritures(ecritures: EcritureRow[], piecesEligibles: PieceRow[]) {
+interface PieceAComptabiliser {
+  piece: PieceRow
+  compte: string
+}
+
+// Ce qu'une pièce validée DOIT produire au brouillon, et sur QUEL compte — la forme exacte de
+// `piecesAComptabiliser` dans src/lib/ecritures.ts. L'ancienne version de cette fonction filtrait
+// les mêmes pièces mais JETAIT le compte attendu, ce qui rendait trois des quatre comparaisons
+// ci-dessous impossibles à écrire.
+function piecesAComptabiliser(
+  piecesValidees: PieceRow[],
+  categories: CategorieRow[],
+  pieceIdsImmobilisees: ReadonlySet<string>,
+): PieceAComptabiliser[] {
+  return piecesValidees.flatMap((piece) => {
+    if (piece.montant_ttc == null || pieceIdsImmobilisees.has(piece.id)) return []
+    const compte = categories.find((c) => c.id === piece.categorie_id)?.compte_comptable
+    return compte ? [{ piece, compte }] : []
+  })
+}
+
+function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[]) {
   const piecesParGroupe = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
     if (!e.piece_id) continue
@@ -123,13 +144,35 @@ function analyserEcritures(ecritures: EcritureRow[], piecesEligibles: PieceRow[]
     .map(([pieceId, rows]) => ({ pieceId, solde: rows.reduce((s, r) => s + (r.sens === "debit" ? r.montant : -r.montant), 0) }))
     .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
 
-  const piecesDesynchronisees = piecesEligibles.filter((p) => {
+  // QUATRE COMPARAISONS, PAS UNE. Cette copie n'en portait qu'une — le TOTAL — pendant que
+  // src/lib/ecritures.ts en avait gagné trois de plus. L'assistant répondait donc « aucune écriture
+  // à régénérer » là où la Checklist du même dossier en comptait, sur l'outil dont toute la raison
+  // d'être est de répondre « quelles sont les anomalies ? ». Deux livrables, deux réponses.
+  const piecesDesynchronisees = aComptabiliser.filter(({ piece: p, compte }) => {
     const lignes = ecritures.filter((e) => e.piece_id === p.id && e.compte !== COMPTE_BANQUE)
-    if (lignes.length === 0) return false
+    if (lignes.length === 0) return false // pas encore générée — pas une désynchronisation
     const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
+    // LE COMPTE : recatégoriser une pièce validée ne réécrit pas son écriture, et le total ne bouge
+    // pas d'un centime. Les comptes de TVA sont exclus, sinon toute facture au taux normal serait
+    // signalée dès la première.
+    const surUnAutreCompte = lignes.some(
+      (e) => e.compte !== compte && e.compte !== COMPTE_TVA_DEDUCTIBLE && e.compte !== COMPTE_TVA_COLLECTEE,
+    )
+    if (surUnAutreCompte) return true
+    // LA VENTILATION DE LA TVA, que le total ne peut pas voir : corriger `montant_tva` en gardant le
+    // TTC laisse la somme du groupe rigoureusement inchangée, les deux lignes se compensant.
+    const tvaEnregistree = lignes
+      .filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE)
+      .reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
+    if (Math.abs(tvaEnregistree - (p.montant_tva ?? 0)) > EPSILON_EQUILIBRE) return true
+    // LA DATE, et elle coûte plus cher que le compte : une pièce validée sans date reçoit une
+    // écriture datée de son DÉPÔT, et « Retrouver les dates manquantes » écrit ensuite `date_piece`
+    // sans toucher à l'écriture. On ne compare que si la pièce porte une date — sans date elle ne
+    // prétend à aucun exercice, donc il n'y a rien à contredire.
+    if (p.date_piece && lignes.some((e) => e.date !== p.date_piece)) return true
     const total = lignes.reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
     return Math.abs(total - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE
-  })
+  }).map(({ piece }) => piece)
 
   return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
 }
@@ -412,12 +455,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const piecesTyped = (pieces ?? []) as PieceRow[]
     const categoriesTyped = (categories ?? []) as CategorieRow[]
     const ecrituresTyped = (ecritures ?? []) as EcritureRow[]
-    const immobilisationPieceIds = new Set(((immobilisations ?? []) as { piece_id: string | null }[]).map((i) => i.piece_id).filter(Boolean))
-    const categorieById = (id: string | null) => categoriesTyped.find((c) => c.id === id) ?? null
-    const piecesEligibles = piecesTyped.filter(
-      (p) => p.montant_ttc != null && !!categorieById(p.categorie_id)?.compte_comptable && !immobilisationPieceIds.has(p.id),
+    const immobilisationPieceIds = new Set(
+      ((immobilisations ?? []) as { piece_id: string | null }[]).map((i) => i.piece_id).filter((id): id is string => !!id),
     )
-    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, piecesEligibles)
+    const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, immobilisationPieceIds)
+    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser)
     const piecesConfianceBasse = ((piecesAValider ?? []) as { confiance: string | null }[]).filter((p) => p.confiance === "basse")
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped)
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped)
