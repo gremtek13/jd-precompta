@@ -1599,6 +1599,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   l'exception INVENTÉE, les commentaires non coupés, la copie déployée qui avance de la taille
   demandée, celle qui se déclare complète sans compte annoncé, et une SECONDE définition de `lireTout`
   dans la même fonction.
+  **LES DEUX FONCTIONS SONT EN PRODUCTION** le jour même : `superpdp-sync` v6 et `agent-comptable`
+  v22, chacune avec son `verify_jwt` relu et repassé à `false`, le déployé comparé au dépôt AVANT
+  écrasement (identique à HEAD les deux fois, donc personne n'avait modifié la production à la main),
+  et un aller-retour après : zéro différence résiduelle sur 323 et 828 lignes.
+  **ET L'ALLER-RETOUR A MORDU POUR LA PREMIÈRE FOIS SUR UNE VRAIE FAUTE DE TRANSCRIPTION** — c'est à
+  garder, parce que jusqu'ici il n'avait jamais rendu autre chose que « zéro différence » et qu'on
+  aurait pu finir par le croire décoratif. La première version d'`agent-comptable` v21 portait deux
+  `regénérer` au lieu de `régénérer`, dans un commentaire ET **dans la description d'un outil, que le
+  modèle lit à chaque appel**. Inoffensif au sens du comportement ; mais une différence connue entre
+  le déployé et le dépôt est précisément ce qui fait mentir l'audit suivant — la famille du
+  « REGISTRE » déjà nommée pour `bright-task`. Redéployé en v22, différence ramenée à zéro.
+  **Et le résultat d'un `get_edge_function` de cette taille est écrit SUR DISQUE** par l'environnement,
+  chemin donné dans le message : c'est le chemin bon marché que CLAUDE.md décrit, et il rend
+  l'aller-retour d'une fonction de 828 lignes aussi simple que celui d'une petite.
 - **ET LE TROISIÈME JEU D'ESSAI D'ÉCRAN N'ÉTAIT PAS TYPÉ — cinq colonnes manquantes** (21/09/2026).
   Le remède de la contrainte de type avait été appliqué à `ChecklistTab` et `BanqueTab`, pas à
   `PiecesTab`, dont le `piece()` restait un `Record<string, unknown>`. Typé `Partial<Piece> => Piece`
