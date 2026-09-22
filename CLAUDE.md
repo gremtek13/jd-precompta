@@ -1037,6 +1037,18 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   derrière ? », et la réponse est OUI 23 fois sur 29. Un test qui refuserait les 29 serait du bruit,
   et un avertissement qui se trompe souvent finit par ne plus être lu. Le côté où l'absence de
   rechargement est STRUCTURELLE — les Edge Functions — a déjà le sien.
+  **ET CETTE DÉCISION REPOSAIT SUR UN BALAYAGE INCOMPLET EN FORME — REJOUÉ LE 22/09/2026, ELLE TIENT.**
+  Les deux balayages ci-dessus cherchaient `await supabase` et se sont fait prendre par le retour à la
+  ligne (c'est écrit juste au-dessus) ; ils ne voyaient donc ni la chaîne multi-ligne, ni l'entrée d'un
+  `Promise.all` jeté. Rejoué avec la logique complète en forme de `edgeFunctionsEcritures` — remontée à
+  la tête de chaîne, deux portes — le compte tombe à **NEUF écritures de `src/` dont le résultat est
+  jeté, et les NEUF sont suivies d'un `load()`**. Le critère qui décide reste donc satisfait partout, et
+  le septième scanner reste inutile — mais il l'est maintenant pour une raison mesurée plutôt que pour
+  une raison mesurée à moitié.
+  **Le balayage a été éprouvé par plantation avant d'être cru** : une écriture multi-ligne et deux
+  entrées d'un `Promise.all` jeté, posées dans `VirementsTab`, font passer le compte de 9 à 11. Sans
+  cette vérification, « aucune faute » et « aveugle » seraient restés indiscernables — c'est exactement
+  ce qui avait laissé vivre le trou du scanner des Edge Functions.
   **Les deux vrais cas :**
   - `SupplementsTab.supprimer` (un mouvement de compte courant) — sa fonction JUMELLE `ajouter`,
     trente lignes plus haut, dans le même composant et avec le même état d'erreur déjà affiché,
