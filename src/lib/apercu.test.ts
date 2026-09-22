@@ -100,8 +100,18 @@ describe('ouvrirApercu', () => {
 // Cinq copies avaient divergé sur trois points (la raison de l'échec, `noopener`, le retour de
 // `window.open`), et rien ne pouvait le voir. Le scanner part de TOUTE source de production de
 // `src/` : un sixième appelant écrit demain est examiné sans que personne ait à y penser.
-const EXCEPTIONS: Record<string, string> = {
-  'lib/apercu.ts': "c'est le point unique lui-même",
+// L'EXCEPTION PORTE UN NOMBRE, PAS SEULEMENT UNE RAISON — la leçon de `datesUtc.test.ts`, portée
+// ici le 22/09/2026 parce qu'elle manquait. Dispenser un FICHIER dispense TOUT le fichier : mesuré,
+// un second `window.open` planté dans `apercu.ts` laissait les neuf tests VERTS, et le point unique
+// cessait d'être unique en silence.
+// Le compte doit tomber JUSTE : une de plus est une rechute, une de moins est une raison morte.
+const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
+  'lib/apercu.ts': {
+    nombre: 1,
+    raison:
+      "c'est le point unique lui-même : l'unique `window.open` du dépôt, celui dont tous les autres "
+      + "écrans dépendent. C'est lui qui lit le retour, coupe `opener` et rend la raison de l'échec",
+  },
 }
 
 function sources(): { chemin: string; texte: string }[] {
@@ -181,16 +191,44 @@ describe('aucune ouverture de fenêtre hors du point unique', () => {
     expect(toutes.length).toBeGreaterThan(80)
   })
 
+  /** Les ouvertures par fichier — c'est la granularité à laquelle le compte se compare. */
+  const parFichier = (): Map<string, string[]> => {
+    const m = new Map<string, string[]>()
+    for (const o of ouverturesDirectes(toutes)) {
+      const f = o.split(':')[0]
+      m.set(f, [...(m.get(f) ?? []), o])
+    }
+    return m
+  }
+
   it('ne laisse aucun `window.open` en dehors de lib/apercu.ts', () => {
-    const fautifs = ouverturesDirectes(toutes).filter((f) => !(f.split(':')[0] in EXCEPTIONS))
+    const fautifs: string[] = []
+    for (const [fichier, ouvertures] of parFichier()) {
+      const exception = EXCEPTIONS[fichier]
+      // Le compte doit être EXACT : une exception plus étroite que la réalité laisse les sites en
+      // trop remonter, avec de quoi comprendre pourquoi.
+      if (exception && ouvertures.length === exception.nombre) continue
+      const surplus = exception ? ` (exception déclarée pour ${exception.nombre}, trouvé ${ouvertures.length})` : ''
+      fautifs.push(...ouvertures.map((o) => `${o}${surplus}`))
+    }
     expect(fautifs).toEqual([])
   })
 
-  it('n’admet que des exceptions RÉELLES, chacune portant sa raison', () => {
-    const fichiers = new Set(ouverturesDirectes(toutes).map((f) => f.split(':')[0]))
-    for (const [chemin, raison] of Object.entries(EXCEPTIONS)) {
-      expect(fichiers.has(chemin), `exception inventée : ${chemin}`).toBe(true)
-      expect(raison.length).toBeGreaterThan(10)
+  it('chaque exception porte sa raison ET son compte', () => {
+    for (const [chemin, { nombre, raison }] of Object.entries(EXCEPTIONS)) {
+      expect(raison.length, `${chemin} : une exception sans raison est une dette muette`).toBeGreaterThan(80)
+      expect(nombre, `${chemin} : une exception sans compte dispense tout le fichier`).toBeGreaterThan(0)
+    }
+  })
+
+  it('n’a aucune exception morte, ni plus LARGE que ce qu’elle couvre', () => {
+    const vues = parFichier()
+    for (const [chemin, { nombre }] of Object.entries(EXCEPTIONS)) {
+      expect(vues.has(chemin), `exception inventée : ${chemin}`).toBe(true)
+      expect(
+        vues.get(chemin)?.length,
+        `${chemin} : l’exception annonce ${nombre} ouverture(s) dispensée(s)`,
+      ).toBe(nombre)
     }
   })
 

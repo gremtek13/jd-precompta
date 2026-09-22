@@ -37,28 +37,64 @@ import { describe, expect, it } from 'vitest'
 // Clé : `chemin [table]`. La valeur n'est pas un commentaire décoratif — c'est la raison pour
 // laquelle cette collection ne peut PAS grandir, et elle doit tenir devant la question : « et si ce
 // cabinet en avait mille ? »
-const EXCEPTIONS: Record<string, string> = {
-  "src/lib/contrepartieBanque.ts [ecritures_brouillon]":
-    "les écritures d'UNE pièce — la partie double en produit deux ou trois, jamais mille",
-  "src/pages/dossier/FactureApercu.tsx [facture_lignes]":
-    "les lignes d'UNE facture, saisies une par une par qui la rédige",
-  "src/pages/dossier/FactureAvoirModal.tsx [facture_lignes]":
-    "les lignes d'UNE facture d'origine, même borne",
-  "src/pages/dossier/FactureFormModal.tsx [facture_lignes]":
-    "les lignes d'UNE facture en cours de modification, même borne",
-  "src/pages/dossier/SuperPdpFactureModal.tsx [facture_superpdp_events]":
-    "les événements de transmission d'UNE facture — soumission, validation, accusé",
-  "src/lib/tauxChange.ts [taux_change_bce]":
-    "le cours d'UNE devise sur une fenêtre de quelques jours : la requête fixe les deux bornes",
-  "src/context/AuthContext.tsx [memberships]":
-    "les sociétés d'UN utilisateur — un client en a une, exceptionnellement quelques-unes",
-  "src/context/AuthContext.tsx [dossiers]":
-    "les dossiers de CES memberships-là (`.in('id', ids)`), donc la même borne",
-  "src/pages/dossier/AccesTab.tsx [memberships]":
-    "les accès client d'UN dossier : une poignée de personnes, pas une base d'utilisateurs",
-  "src/lib/clotureExercice.ts [exercices_clotures]":
-    "les exercices déjà clôturés d'UN dossier — au plus une ligne par année civile, jamais mille. " +
-    "Seule copie depuis le 22/09/2026 : ClotureTab lisait la sienne, nue, et passe par celle-ci",
+//
+// ET ELLE PORTE UN NOMBRE DEPUIS LE 22/09/2026 — la leçon de `datesUtc.test.ts`, qui manquait ici.
+// La clé est déjà plus fine qu'un nom de fichier, mais pas assez : DEUX lectures nues de la MÊME
+// table dans le MÊME fichier ne se distinguent pas. Mesuré — une seconde lecture de
+// `taux_change_bce` plantée dans `tauxChange.ts` laissait les cinq tests VERTS. Le compte doit
+// tomber JUSTE : une de plus est une rechute, une de moins est une raison morte.
+const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
+  "src/lib/contrepartieBanque.ts [ecritures_brouillon]": {
+    nombre: 1,
+    raison:
+      "les écritures d'UNE pièce — la partie double en produit deux ou trois, jamais mille",
+  },
+  "src/pages/dossier/FactureApercu.tsx [facture_lignes]": {
+    nombre: 1,
+    raison:
+      "les lignes d'UNE facture, saisies une par une par qui la rédige",
+  },
+  "src/pages/dossier/FactureAvoirModal.tsx [facture_lignes]": {
+    nombre: 1,
+    raison:
+      "les lignes d'UNE facture d'origine, même borne",
+  },
+  "src/pages/dossier/FactureFormModal.tsx [facture_lignes]": {
+    nombre: 1,
+    raison:
+      "les lignes d'UNE facture en cours de modification, même borne",
+  },
+  "src/pages/dossier/SuperPdpFactureModal.tsx [facture_superpdp_events]": {
+    nombre: 1,
+    raison:
+      "les événements de transmission d'UNE facture — soumission, validation, accusé",
+  },
+  "src/lib/tauxChange.ts [taux_change_bce]": {
+    nombre: 1,
+    raison:
+      "le cours d'UNE devise sur une fenêtre de quelques jours : la requête fixe les deux bornes",
+  },
+  "src/context/AuthContext.tsx [memberships]": {
+    nombre: 1,
+    raison:
+      "les sociétés d'UN utilisateur — un client en a une, exceptionnellement quelques-unes",
+  },
+  "src/context/AuthContext.tsx [dossiers]": {
+    nombre: 1,
+    raison:
+      "les dossiers de CES memberships-là (`.in('id', ids)`), donc la même borne",
+  },
+  "src/pages/dossier/AccesTab.tsx [memberships]": {
+    nombre: 1,
+    raison:
+      "les accès client d'UN dossier : une poignée de personnes, pas une base d'utilisateurs",
+  },
+  "src/lib/clotureExercice.ts [exercices_clotures]": {
+    nombre: 1,
+    raison:
+      "les exercices déjà clôturés d'UN dossier — au plus une ligne par année civile, jamais mille. " +
+      "Seule copie depuis le 22/09/2026 : ClotureTab lisait la sienne, nue, et passe par celle-ci",
+  },
 }
 
 function fichiersSource(dossier: string): string[] {
@@ -113,12 +149,30 @@ export function lecturesNonPaginees(): LectureTrouvee[] {
 }
 
 describe('plafond PostgREST — aucune collection lue sans compte annoncé', () => {
-  it('ne laisse passer que les exceptions déclarées, avec leur raison', () => {
-    const restants = lecturesNonPaginees().filter((l) => !(`${l.fichier} [${l.table}]` in EXCEPTIONS))
+  /** Les lectures nues regroupées par `fichier [table]` — la granularité du compte. */
+  const parCle = (): Map<string, LectureTrouvee[]> => {
+    const m = new Map<string, LectureTrouvee[]>()
+    for (const l of lecturesNonPaginees()) {
+      const cle = `${l.fichier} [${l.table}]`
+      m.set(cle, [...(m.get(cle) ?? []), l])
+    }
+    return m
+  }
+
+  it('ne laisse passer que les exceptions déclarées, avec leur raison ET leur compte', () => {
+    const restants: string[] = []
+    for (const [cle, lectures] of parCle()) {
+      const exception = EXCEPTIONS[cle]
+      // Le compte doit être EXACT : une exception plus étroite que la réalité laisse les lectures
+      // en trop remonter, avec de quoi comprendre pourquoi.
+      if (exception && lectures.length === exception.nombre) continue
+      const surplus = exception ? ` (exception déclarée pour ${exception.nombre}, trouvé ${lectures.length})` : ''
+      restants.push(...lectures.map((l) => `${cle} ${l.extrait}${surplus}`))
+    }
     expect(
-      restants.map((l) => `${l.fichier} [${l.table}] ${l.extrait}`),
+      restants,
       'Lecture de collection sans `count: \'exact\'` : passe par `lireTout` (lib/lectureComplete.ts), ' +
-      'ou inscris-la dans EXCEPTIONS avec la raison qui borne sa taille.',
+      'ou inscris-la dans EXCEPTIONS avec la raison qui borne sa taille et le NOMBRE de lectures visées.',
     ).toEqual([])
   })
 
@@ -162,9 +216,19 @@ describe('plafond PostgREST — aucune collection lue sans compte annoncé', () 
     expect(lecturesNonPagineesDe('synthetique.ts', source)).toEqual([])
   })
 
-  it('garde ses exceptions alignées sur des lectures réelles', () => {
-    const reelles = new Set(lecturesNonPaginees().map((l) => `${l.fichier} [${l.table}]`))
-    expect(Object.keys(EXCEPTIONS).filter((cle) => !reelles.has(cle)),
+  it('garde ses exceptions alignées sur des lectures réelles, au COMPTE près', () => {
+    const reelles = parCle()
+    expect([...Object.keys(EXCEPTIONS)].filter((cle) => !reelles.has(cle)),
       'exception déclarée ne correspondant à aucune lecture réelle — à retirer').toEqual([])
+    for (const [cle, { nombre }] of Object.entries(EXCEPTIONS)) {
+      expect(reelles.get(cle)?.length, `${cle} : l’exception annonce ${nombre} lecture(s) dispensée(s)`).toBe(nombre)
+    }
+  })
+
+  it('chaque exception porte sa raison ET son compte', () => {
+    for (const [cle, { nombre, raison }] of Object.entries(EXCEPTIONS)) {
+      expect(raison.length, `${cle} : une exception sans raison est une dette muette`).toBeGreaterThan(40)
+      expect(nombre, `${cle} : une exception sans compte en dispense un nombre illimité`).toBeGreaterThan(0)
+    }
   })
 })

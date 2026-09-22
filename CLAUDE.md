@@ -2778,6 +2778,39 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   qu'une chacune, celle écrite pour elles. La règle du cache est donc PORTANTE plutôt qu'affirmée en
   commentaire : sans elle, un second appel sur un même chemin virtuel rendrait le verdict du
   premier — vert pour une raison fausse.
+- **ET TROIS SCANNERS DISPENSAIENT UN FICHIER LÀ OÙ LA DOCTRINE EXIGE UN NOMBRE — LES TROIS ÉTAIENT
+  AVEUGLES, MESURÉ** (22/09/2026). La règle est écrite ici depuis le 21/09/2026 sous `datesUtc` :
+  « L'EXCEPTION PORTE UN NOMBRE, PAS SEULEMENT UNE RAISON », parce que dispenser un FICHIER dispense
+  aussi les sites CORRECTS qu'il porte. Elle avait été appliquée à `datesUtc`, `datesAffichees`,
+  `lecturesVerifiees`, `edgeFunctionsLectures`, `edgeFunctionsPaginees` — et **pas** à `apercu`,
+  `retraitsStockage` ni `lecturesPaginees`. Ce fichier le notait comme « latent, un site chacun » ;
+  latent n'est pas gardé.
+  **La preuve est une plantation, pas un raisonnement** : un second `window.open` dans `apercu.ts`,
+  un second `.storage…remove(` dans `stockage.ts`, une seconde lecture nue de `taux_change_bce` dans
+  `tauxChange.ts` — **les trois scanners restaient ENTIÈREMENT VERTS** (0 test tombé sur 9, 11 et 5).
+  Après conversion, les trois mordent. Ce n'est donc pas un durcissement de principe, c'est un trou
+  mesuré et refermé.
+  **`lecturesPaginees` méritait la conversion autant que les deux autres**, alors que sa clé est
+  déjà plus fine qu'un nom de fichier (`chemin [table]`) : deux lectures nues de la MÊME table dans
+  le MÊME fichier restent indiscernables, et les dix dispensées portent justement une lecture
+  légitimement bornée — c'est-à-dire l'endroit exact où la seconde se glisserait.
+  **`retraitsEnDirect` a dû changer de contrat, et c'est la moitié du correctif qui se raconte
+  mal** : il consultait la liste d'exceptions LUI-MÊME et rendait `[]` pour un fichier dispensé. Une
+  fonction qui rend `[]` ne peut pas dire COMBIEN elle a vu, donc aucun compte ne lui était
+  comparable. Le détecteur COMPTE, l'appelant DISPENSE — et un test synthétique porte la règle (un
+  fichier dispensé pour un retrait qui en porte deux est en faute).
+  **Neuf mutations, toutes mordent** — pour chacun des trois : le site en trop planté dans le
+  fichier dispensé, le compte menti d'une unité, et l'exception INVENTÉE.
+  **ET J'AI PERDU LES TROIS CONVERSIONS EN COURS DE ROUTE, PAR UNE VARIANTE PLUS TRANCHANTE D'UN
+  PIÈGE DÉJÀ PAYÉ DEUX FOIS ICI.** Ce fichier met en garde contre `git checkout --`, qui restaure
+  depuis l'INDEX et emporte un correctif non commité. Le remède qu'on en tire naturellement est
+  « indexer avant de muter » — et il ne suffit pas : **`git checkout HEAD -- <chemin>` réécrit AUSSI
+  L'INDEX**. Le harnais qui remettait un test à sa version d'avant pour prouver l'aveuglement a donc
+  pollué l'index, et le `git checkout -- .` final a restauré la version d'AVANT dans les trois
+  fichiers. **La suite est restée VERTE à 1 427** — plus courte, jamais rouge : exactement le
+  symptôme déjà décrit (« Il se voit au COMPTE de tests, pas au vert »). La règle qui vaut est donc
+  plus forte que celle écrite jusqu'ici : **une modification non commitée se copie HORS du dépôt
+  avant tout harnais qui manipule git**, l'index n'étant pas un abri.
 - **La chaîne vers l'écriture comptable a DEUX portes, pas une.** Une pièce ne génère une écriture
   que si elle a une `categorie_id` **et** que cette catégorie porte un `compte_comptable`
   (`lignesChargeProduitPourPiece` l'exige en paramètre). Une troisième porte, `poste_2035`, commande
@@ -4155,7 +4188,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1427 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1431 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

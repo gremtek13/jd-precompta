@@ -20,13 +20,26 @@ import { describe, expect, it } from 'vitest'
  * Une entrée ici doit expliquer pourquoi le point unique ne convient PAS — jamais « c'est plus
  * simple ». Deux à ce jour, et toutes deux ont besoin du RÉSULTAT, que `retirerFichiers` ne rend pas.
  */
-const EXCEPTIONS: Record<string, string> = {
-  'lib/stockage.ts':
-    "c'est le point unique lui-même",
-  'lib/suppressionDossier.ts':
-    "elle construit un BILAN (combien retirés, lesquels refusés) que l'écran doit montrer : " +
-    "journaliser ne suffit pas quand la ligne `dossiers` part aussi et que plus rien ne " +
-    'pourra retrouver les fichiers ensuite',
+// L'EXCEPTION PORTE UN NOMBRE, PAS SEULEMENT UNE RAISON — la leçon de `datesUtc.test.ts`, portée
+// ici le 22/09/2026 parce qu'elle manquait. Dispenser un FICHIER dispense TOUT le fichier, et les
+// deux dispensés portent justement un retrait LÉGITIME : mesuré, un second retrait planté dans
+// `stockage.ts` laissait les onze tests VERTS — dans les deux fichiers où le résidu ne sera jamais
+// ramassé. Le compte doit tomber JUSTE : une de plus est une rechute, une de moins est une raison
+// morte.
+const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
+  'lib/stockage.ts': {
+    nombre: 1,
+    raison:
+      "c'est le point unique lui-même : l'unique retrait que tous les écrans appellent, celui qui " +
+      'journalise le chemin au lieu de bâtir un message par écran, et qui ne lève jamais',
+  },
+  'lib/suppressionDossier.ts': {
+    nombre: 1,
+    raison:
+      "elle construit un BILAN (combien retirés, lesquels refusés) que l'écran doit montrer : " +
+      "journaliser ne suffit pas quand la ligne `dossiers` part aussi et que plus rien ne " +
+      'pourra retrouver les fichiers ensuite',
+  },
 }
 
 function sources(): { chemin: string; texte: string }[] {
@@ -61,14 +74,16 @@ function sansCommentairesPleins(texte: string): string {
     .join('\n')
 }
 
-/** Les retraits de fichier faits en direct, hors point unique. */
-export function retraitsEnDirect(chemin: string, texte: string): string[] {
+/**
+ * Les retraits de fichier faits en direct. Il ne consulte PLUS les exceptions lui-même : une
+ * fonction qui rend `[]` pour un fichier dispensé ne peut pas dire COMBIEN elle y a vu, donc le
+ * compte ne serait comparable à rien. Le filtrage appartient à l'appelant.
+ */
+export function retraitsEnDirect(_chemin: string, texte: string): string[] {
   const code = sansCommentairesPleins(texte)
   // La chaîne peut être coupée sur plusieurs lignes par le formatage du dépôt, d'où la fenêtre —
   // bornée, pour qu'un `.remove(` sans rapport bien plus bas ne soit pas rattaché à ce `.storage`.
-  const trouves = [...code.matchAll(/\.storage[\s\S]{0,160}?\.remove\s*\(/g)]
-  if (trouves.length === 0 || EXCEPTIONS[chemin]) return []
-  return trouves.map((m) => m[0].replace(/\s+/g, ' '))
+  return [...code.matchAll(/\.storage[\s\S]{0,160}?\.remove\s*\(/g)].map((m) => m[0].replace(/\s+/g, ' '))
 }
 
 /** Les promesses ravalées — `.catch(() => {})` ne dit rien à personne, par construction. */
@@ -95,23 +110,41 @@ describe('un retrait de fichier passe par le point unique', () => {
   })
 
   it('n’en laisse aucun hors du point unique', () => {
-    const fautes = tout.flatMap((f) => retraitsEnDirect(f.chemin, f.texte).map((e) => `${f.chemin} — ${e}`))
+    const fautes: string[] = []
+    for (const f of tout) {
+      const trouves = retraitsEnDirect(f.chemin, f.texte)
+      if (trouves.length === 0) continue
+      const exception = EXCEPTIONS[f.chemin]
+      // Le compte doit être EXACT : une exception plus étroite que la réalité laisse les retraits
+      // en trop remonter, avec de quoi comprendre pourquoi.
+      if (exception && trouves.length === exception.nombre) continue
+      const surplus = exception ? ` (exception déclarée pour ${exception.nombre}, trouvé ${trouves.length})` : ''
+      fautes.push(...trouves.map((e) => `${f.chemin} — ${e}${surplus}`))
+    }
     expect(
       fautes.join('\n'),
       'rien ne recharge le stockage : un retrait raté hors de `retirerFichiers` n’a aucun témoin',
     ).toBe('')
   })
 
-  it('n’admet que des exceptions qui correspondent à un fichier RÉEL portant un retrait', () => {
+  it('chaque exception porte sa raison ET son compte', () => {
+    for (const [chemin, { nombre, raison }] of Object.entries(EXCEPTIONS)) {
+      expect(raison.length, `${chemin} : une exception sans raison est une dette muette`).toBeGreaterThan(80)
+      expect(nombre, `${chemin} : une exception sans compte dispense tout le fichier`).toBeGreaterThan(0)
+    }
+  })
+
+  it('n’admet que des exceptions RÉELLES, ni mortes ni plus LARGES que ce qu’elles couvrent', () => {
     // Sans ce contrôle la liste se remplirait de raisons mortes — une exception laissée après le
-    // déplacement du code qu'elle dispensait, et personne pour s'en apercevoir.
-    for (const chemin of Object.keys(EXCEPTIONS)) {
+    // déplacement du code qu'elle dispensait, et personne pour s'en apercevoir. Et sans le COMPTE,
+    // elle couvrirait aussi le retrait que quelqu'un ajoutera demain à côté du légitime.
+    for (const [chemin, { nombre }] of Object.entries(EXCEPTIONS)) {
       const fichier = tout.find((f) => f.chemin === chemin)
       expect(fichier, `exception morte (fichier absent) : ${chemin}`).toBeDefined()
       expect(
-        /\.storage[\s\S]{0,160}?\.remove\s*\(/.test(sansCommentairesPleins(fichier!.texte)),
-        `exception morte (plus aucun retrait en direct) : ${chemin}`,
-      ).toBe(true)
+        retraitsEnDirect(chemin, fichier!.texte).length,
+        `${chemin} : l’exception annonce ${nombre} retrait(s) dispensé(s)`,
+      ).toBe(nombre)
     }
   })
 
@@ -168,8 +201,24 @@ describe('le scanner lui-même — défaut PLANTÉ, pas espéré', () => {
     expect(retraitsEnDirect('pages/X.tsx', homonyme)).toEqual([])
   })
 
-  it('respecte la liste d’exceptions, et seulement pour le fichier nommé', () => {
-    expect(retraitsEnDirect('lib/stockage.ts', fautif)).toEqual([])
+  it('le détecteur COMPTE, il ne dispense plus — la dispense appartient à l’appelant', () => {
+    // Il rendait `[]` pour un fichier dispensé. Une fonction qui rend `[]` ne peut pas dire COMBIEN
+    // elle a vu, donc le compte d'une exception n'était comparable à rien — et un second retrait
+    // écrit à côté du légitime passait. Elle rend maintenant TOUT, et c'est l'appelant qui compare.
+    expect(retraitsEnDirect('lib/stockage.ts', fautif)).toHaveLength(1)
     expect(retraitsEnDirect('lib/stockage-bis.ts', fautif)).toHaveLength(1)
+  })
+
+  it('la dispense vaut pour le fichier NOMMÉ et jusqu’à son COMPTE, jamais au-delà', () => {
+    // La règle telle qu'elle vit maintenant, éprouvée sur un jeu synthétique : un fichier dispensé
+    // pour UN retrait qui en porte DEUX est en faute, et un fichier non nommé l'est dès le premier.
+    const filtrer = (chemin: string, texte: string) => {
+      const trouves = retraitsEnDirect(chemin, texte)
+      const exception = EXCEPTIONS[chemin]
+      return exception && trouves.length === exception.nombre ? [] : trouves
+    }
+    expect(filtrer('lib/stockage.ts', fautif)).toEqual([])
+    expect(filtrer('lib/stockage.ts', `${fautif}\n${fautif}`)).toHaveLength(2)
+    expect(filtrer('lib/stockage-bis.ts', fautif)).toHaveLength(1)
   })
 })
