@@ -468,7 +468,8 @@ function SituationIntermediaireModal({ piecesValidees, categories, immobilisatio
         <p className="muted" style={{ marginTop: -6 }}>
           Période du {formatDate(periodeDebut)} au {formatDate(dateFin)} — uniquement les pièces
           validées dont la catégorie a un poste 2035 renseigné (voir onglet Clôture pour compléter les
-          postes manquants).
+          postes manquants). La dotation aux amortissements est rapportée à la période, et un bien
+          acquis après cette date n'y figure pas.
         </p>
 
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>

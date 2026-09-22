@@ -7,7 +7,7 @@ const situation = (resultat: number, amortissements = 0): SituationIntermediaire
   periodeDebut: '2026-01-01',
   periodeFin: '2026-06-30',
   resultat,
-  // Les dotations sont stockées négatives et pour l'année entière (voir situationIntermediaire.ts).
+  // Les dotations sont stockées négatives (voir situationIntermediaire.ts).
   totauxParPoste: amortissements ? [[POSTE_AMORTISSEMENTS, -amortissements]] : [],
 } as SituationIntermediaire)
 
@@ -47,6 +47,25 @@ describe('calculerRatiosBancaires', () => {
     const ratios = calculerRatiosBancaires(situation(30000), 0, 120000, 1250, 5000)
     expect(ratios.cafAnnuelleEstimee).toBe(0)
     expect(ratios.capaciteRemboursementAnnees).toBeNull()
+  })
+
+  // L'INVARIANT QUI REMPLACE UN COMMENTAIRE DEVENU FAUX.
+  //
+  // Il était écrit dans `ratiosBancaires.ts` que la dotation est « déjà comptée pour l'année
+  // entière » — vrai à l'époque, et faux depuis que `situationIntermediaire` rapporte la dotation à
+  // la période (22/09/2026). La CAF, elle, n'a pas bougé d'un centime, et ce n'est pas une chance :
+  // `resultat - posteAmortissements` est INVARIANT quand les deux se déplacent du même écart, ce
+  // qui est exactement ce que change une convention de dotation.
+  //
+  // Une phrase dans un commentaire ne peut pas voir sa prémisse disparaître ; ce test, si.
+  it('rend la même CAF quelle que soit la convention de dotation', () => {
+    // Le MÊME semestre, vu par les deux conventions : 12 000 € sur 5 ans, six mois écoulés.
+    // Ancienne — dotation annuelle entière : résultat 8 800 − 2 400 = 6 400, poste −2 400.
+    // Actuelle — dotation du semestre : résultat 8 800 − 1 200 = 7 600, poste −1 200.
+    const ancienneConvention = calculerRatiosBancaires(situation(6400, 2400), 6, 0, 0, 0)
+    const conventionActuelle = calculerRatiosBancaires(situation(7600, 1200), 6, 0, 0, 0)
+    expect(conventionActuelle.cafAnnuelleEstimee).toBe(ancienneConvention.cafAnnuelleEstimee)
+    expect(conventionActuelle.cafAnnuelleEstimee).toBe(17600)   // (7 600 + 1 200) × 12/6
   })
 
   it('retrouve le poste amortissements sous le nom que lui donne la situation', () => {

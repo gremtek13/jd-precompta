@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculerSituationIntermediaire } from './situationIntermediaire'
+import { calculerSituationIntermediaire, fractionDeLAnnee } from './situationIntermediaire'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
 
 const categorie = { id: 'c1', libelle: 'Achats', poste_2035: 'Achats', compte_comptable: '606100' } as Categorie
@@ -65,6 +65,80 @@ describe('calculerSituationIntermediaire', () => {
     ] as CotisationDeclaree[]
     const s = calculerSituationIntermediaire([], [], [], cotisations, '2026-01-01', '2026-12-31')
     expect(s.totauxParPoste.find(([p]) => p === 'Cotisations sociales personnelles')?.[1]).toBe(-680)
+  })
+
+  // LA DOTATION SUIT LA PÉRIODE ANNONCÉE — elle comptait une année entière quelle que soit la date.
+  //
+  // Cet état porte en tête « Période du 1er janvier au <date> » et part dans un dossier bancaire.
+  // La ligne « Amortissements » y valait douze mois de charge même sur un état arrêté en janvier.
+  // Aucun des tests ci-dessus ne pouvait le voir : ils exercent tous une année civile COMPLÈTE,
+  // le seul cas où l'ancienne convention et la bonne coïncident.
+  describe('la dotation est rapportée à la période', () => {
+    const MATERIEL = immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-01-05' })
+    const vente = (montant: number, date: string) =>
+      piece({ id: 'v' + date, type_piece: 'vente', categorie_id: 'c2', montant_ttc: montant, date_piece: date })
+    const dotation = (s: ReturnType<typeof calculerSituationIntermediaire>) =>
+      s.totauxParPoste.find(([poste]) => poste === 'Amortissements')?.[1]
+
+    it('n’invente plus un déficit sur un état arrêté en janvier', () => {
+      // LE CAS QUI COÛTE, et il est chiffré : 800 € de recettes contre 2 400 € de dotation annuelle,
+      // l'état affichait un RÉSULTAT NÉGATIF de 1 600 € — un déficit entièrement fabriqué par la
+      // convention, sur le document qu'on montre à une banque pour obtenir un prêt.
+      const s = calculerSituationIntermediaire(
+        [vente(800, '2026-01-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-01-31')
+      expect(dotation(s)).toBe(-200)        // 2 400 € × 1/12
+      expect(s.resultat).toBe(600)          // et non −1 600
+    })
+
+    it('compte la moitié de la dotation sur un premier semestre', () => {
+      const s = calculerSituationIntermediaire(
+        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-06-30')
+      expect(dotation(s)).toBe(-1200)
+      expect(s.resultat).toBe(8800)
+    })
+
+    it('ignore un bien acquis APRÈS la date de l’état', () => {
+      // La comparaison ne portait que sur les ANNÉES : un matériel acheté le 15 décembre était
+      // amorti en entier sur une situation arrêtée au 30 juin — pas une approximation de prorata,
+      // une charge pour un bien qui n'existe pas encore à la date de l'état.
+      const s = calculerSituationIntermediaire(
+        [vente(10000, '2026-05-10')], [categorie, recette],
+        [immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-12-15' })], [],
+        '2026-01-01', '2026-06-30')
+      expect(dotation(s)).toBeUndefined()
+      expect(s.resultat).toBe(10000)
+    })
+
+    // GARDE SYMÉTRIQUE, et c'est elle qui protège le PRÉVISIONNEL : il appelle cette même fonction
+    // sur une année civile complète (voir PrevisionnelModal), donc une « proratisation » qui
+    // rognerait aussi l'année entière préremplirait un CA et des charges de référence faux. Sans ce
+    // cas, « la dotation suit la période » serait satisfait par une fonction qui rabote toujours.
+    it('laisse une année civile complète rigoureusement inchangée', () => {
+      const s = calculerSituationIntermediaire(
+        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-12-31')
+      expect(dotation(s)).toBe(-2400)
+      expect(s.resultat).toBe(7600)
+    })
+  })
+
+  describe('fractionDeLAnnee', () => {
+    it('rend les bornes attendues', () => {
+      expect(fractionDeLAnnee('2026-01-01', '2026-12-31')).toBe(1)
+      expect(fractionDeLAnnee('2026-01-01', '2026-06-30')).toBe(0.5)
+      expect(fractionDeLAnnee('2026-01-01', '2026-01-31')).toBeCloseTo(1 / 12, 10)
+      // Une période qui ne part pas du 1er janvier — aucun appelant ne le fait aujourd'hui, mais
+      // la fonction ne le suppose pas.
+      expect(fractionDeLAnnee('2026-04-01', '2026-06-30')).toBe(0.25)
+    })
+
+    it('rend 58/360 au 28 février, et c’est la convention 30/360, pas un défaut', () => {
+      // Écrit ici pour que personne ne « corrige » ce chiffre en croyant à un bug : en 30/360, un
+      // mois vaut 30 jours et février en compte 28 ou 29 réels, qui ne sont PAS ramenés à 30 (seul
+      // le 31 l'est). C'est la même convention que `fractionPremiereAnnee` dans declaration2035.ts,
+      // et en avoir deux différentes pour la même dotation serait pire que l'écart de 2/360.
+      expect(fractionDeLAnnee('2026-01-01', '2026-02-28')).toBeCloseTo(58 / 360, 10)
+      expect(fractionDeLAnnee('2026-01-01', '2026-03-31')).toBeCloseTo(90 / 360, 10)
+    })
   })
 
   it('ne compte pas deux fois une pièce devenue immobilisation', () => {

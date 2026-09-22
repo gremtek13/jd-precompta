@@ -22,9 +22,15 @@ export function calculerRatiosBancaires(
   // renommage côté situationIntermediaire.ts, et le `find` aurait rendu 0 en silence.
   const posteAmortissements = situationAnnee.totauxParPoste.find(([poste]) => poste === POSTE_AMORTISSEMENTS)?.[1] ?? 0
   // CAF = résultat + dotations aux amortissements (charge non décaissée). `posteAmortissements` est
-  // déjà négatif et déjà compté pour l'année entière (voir situationIntermediaire.ts) — le retirer du
-  // résultat avant de reproratiser au nombre de mois écoulés donne directement la CAF annualisée,
-  // sans compter deux fois l'effet de la dotation (une reproratisation du résultat brut la doublerait).
+  // déjà négatif : le RETIRER du résultat donne le résultat avant amortissement sur la période, qu'on
+  // annualise ensuite — c'est bien la CAF annuelle, et la dotation n'y est jamais comptée deux fois.
+  //
+  // CE CALCUL EST INSENSIBLE À LA CONVENTION DE DOTATION, et c'est ce qui l'a laissé juste quand
+  // `situationIntermediaire` a cessé de compter l'année entière pour suivre la période (22/09/2026) :
+  // `resultat - posteAmortissements` est invariant, les deux bougeant du même écart. Le commentaire
+  // qui vivait ici disait « déjà compté pour l'année entière » — vrai à l'époque, devenu faux sans
+  // que rien ne le signale, et c'est exactement le piège que ce dépôt nomme sous « une contrainte
+  // justifiée par un appelant ». Un test fige désormais l'invariance plutôt qu'une phrase.
   const resultatHorsAmortissement = situationAnnee.resultat - posteAmortissements
   const cafAnnuelleEstimee = moisEcoules > 0 ? Math.round((resultatHorsAmortissement * 12 / moisEcoules) * 100) / 100 : 0
 
