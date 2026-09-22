@@ -75,11 +75,20 @@ découvre avant.
    secrets Supabase.
 4. **Le domaine d'envoi et de réception** `precompta.jdarnis.fr` chez Resend (vérification DNS).
 5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan, elle est fermée.**
-   Les 54 migrations du projet sont désormais exportées dans `supabase/schema/`, une par fichier,
-   telles que la base les a enregistrées, et vérifiées une à une par empreinte. Elles restent un
-   EXPORT : la source de vérité est la base, les migrations continuent de s'appliquer par l'outil
-   MCP, et l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie
-   en une ligne — à rejouer avant de compter dessus, et après toute nouvelle migration.
+   Les 58 migrations du projet sont exportées dans `supabase/schema/`, une par fichier, telles que
+   la base les a enregistrées, et vérifiées par empreinte agrégée. Elles restent un EXPORT : la
+   source de vérité est la base, les migrations continuent de s'appliquer par l'outil MCP, et
+   l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie en une
+   ligne — à rejouer avant de compter dessus, et après toute nouvelle migration.
+
+   **ET ELLE N'ÉTAIT FERMÉE QU'AUX DEUX TIERS, jusqu'au 22/09/2026.** Les migrations ne portent que
+   **30 `create table` pour 41 tables** : douze tables ont été créées hors `apply_migration` et
+   n'existaient donc dans aucun fichier — dont `lignes_bancaires`, la plus grosse table du projet,
+   et `ecritures_brouillon`, le cœur comptable. Ce plan promettait un schéma reconstructible en
+   s'appuyant sur une empreinte qui compare les FICHIERS aux MIGRATIONS, jamais les migrations au
+   SCHÉMA. Le trou est comblé par `supabase/schema/socle/tables_sans_migration.sql` (instantané
+   généré depuis `pg_catalog`, éprouvé par `supabase/essais/socle.py`), et gardé à chaque build par
+   `src/lib/sauvegardeTables.test.ts`.
 
 ---
 
@@ -89,10 +98,14 @@ Chaque étape suppose la précédente. Les sauter, c'est buter sur une erreur de
 incompréhensible trois étapes plus loin.
 
 1. **Le projet Supabase** — recréer, région `eu-west-1` (RGPD, et c'est là que tourne Bedrock).
-2. **Le schéma** — appliquer les 54 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
+2. **Le schéma** — appliquer les 58 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
    un (`apply_migration`). Ils se suivent : plusieurs suppriment et recréent ce que les précédentes
-   ont posé, les rejouer dans le désordre ne donne pas le même schéma. Sans lui, rien d'autre n'est
-   possible.
+   ont posé, les rejouer dans le désordre ne donne pas le même schéma. **Puis, et seulement
+   ensuite**, jouer `supabase/schema/socle/tables_sans_migration.sql` en une fois : il porte les
+   douze tables que les migrations ne créent pas, et il référence `dossiers`, `pieces` et
+   `categories`, donc il vient après. Sans ces deux moitiés, rien d'autre n'est possible — et avec
+   la première seule, on obtient un schéma qui a l'air complet et auquel il manque la banque et les
+   écritures.
 3. **Les comptes utilisateurs**, avec leurs UUID d'origine (§3.1).
 4. **Le cabinet** — la ligne `cabinets`, et sa charte graphique.
 5. **Les dossiers, un par un** — écran super-admin → « Restaurer une sauvegarde ». L'écran lit le

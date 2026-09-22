@@ -74,8 +74,36 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 19/09/2026 puis le 21/09/2026** : 56 fichiers, 56 migrations,
-empreinte globale `155435c884d6e3c1d5195861b2fe7747` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 22/09/2026** : 58 fichiers, 58 migrations, empreinte globale
+`d2a7eaa33d6fef10480b2aa8ea540c09` des deux côtés, aucune divergence.
+
+## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
+
+Elle compare les **fichiers** aux **migrations**. Elle ne dit rien de ce que les migrations
+**reconstruisent** — et c'est une distinction qui a coûté cher.
+
+**Mesuré le 22/09/2026** : l'historique de migrations ne porte que **30 `create table` pour 41
+tables**. Douze tables ont été créées hors `apply_migration` (éditeur SQL, `execute_sql`) et
+n'existaient donc dans aucun fichier — parmi elles `lignes_bancaires`, la plus grosse table du
+projet, et `ecritures_brouillon`, le cœur comptable dont sortent le FEC et la balance. L'empreinte
+était verte pendant tout ce temps, parce qu'elle répondait à une autre question que celle qu'on lui
+posait. Une vérification qui prouve une chose plus faible que celle qu'on lui prête est la panne que
+ce dépôt connaît sous plusieurs noms ; celle-ci portait sur le plan de reprise.
+
+Le trou est comblé par **`socle/tables_sans_migration.sql`**, un instantané du schéma vivant généré
+depuis `pg_catalog` — tables, contraintes, index, RLS et policies. Il vit dans un SOUS-DOSSIER pour
+rester hors de l'empreinte ci-dessus, qui ne balaie que `supabase/schema/*.sql` : ce n'est pas une
+migration, il ne figure pas dans l'historique, et il ne s'applique pas tout seul.
+
+Deux contrôles le tiennent, et il faut les deux :
+
+- **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
+  au caractère près (57 instructions, empreinte `49fc3d3c27c7229699191765fa68753d` le 22/09/2026).
+  À rejouer après toute migration touchant l'une des douze tables : c'est le seul moment où ce
+  fichier peut dériver, et sa dérive ne se voit nulle part ailleurs.
+- **`src/lib/sauvegardeTables.test.ts`** — refuse, à chaque build, qu'une table du schéma manque au
+  plan de sauvegarde ou l'inverse. C'est lui qui aurait attrapé `exercices_clotures`, créée le matin
+  même et absente des trois sites de `sauvegarde.ts`.
 
 ## Restaurer un schéma à partir d'ici
 
