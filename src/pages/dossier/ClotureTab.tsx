@@ -249,9 +249,22 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     setError(null)
     setClotureMessage(null)
     const dejaCloture = cloturesConnues.has(annee)
+    // LA CONFIRMATION NOMME LES DEUX CONSÉQUENCES, et c'est une correction du 22/09/2026 : la marque
+    // de clôture en commande désormais une SECONDE, l'arrêt des réclamations de documents pour cet
+    // exercice sur les trois écrans « ce qu'il reste à envoyer » (voir lib/resteAEnvoyer.ts). Un
+    // message qui n'en nomme qu'une laisse cocher pour l'une et subir l'autre — et celle qu'il
+    // taisait est justement celle qui fait qu'on vient cliquer ici.
+    //
+    // Même règle que les quatorze autres confirmations du projet : on NOMME ce qu'on perd
+    // (« et tous ses mouvements », « La pièce redevient une charge courante ordinaire »).
+    // « Êtes-vous sûr ? » se ferme d'un clic aussi distrait que le premier.
     const confirmation = dejaCloture
       ? `Relancer la purge des pièces sensibles de l'exercice ${annee} ? Cet exercice est déjà clôturé — cette action rattrape seulement les pièces validées depuis.`
-      : `Clôturer l'exercice ${annee} ? Cette action est irréversible : le texte OCR déjà lu des justificatifs de recette (bordereaux de télétransmission) de cet exercice sera supprimé définitivement. Les fichiers déposés, eux, ne sont pas touchés.`
+      : `Clôturer l'exercice ${annee} ? Cette action est irréversible, et elle fait DEUX choses.\n\n`
+        + `1. Le texte OCR déjà lu des justificatifs de recette (bordereaux de télétransmission) de `
+        + `cet exercice sera supprimé définitivement. Les fichiers déposés, eux, ne sont pas touchés.\n\n`
+        + `2. On cesse de réclamer les documents de ${annee} : ni la checklist du dossier, ni l'espace `
+        + `du client ne les redemanderont.`
     if (!window.confirm(confirmation)) {
       cloturesEnCours.current.delete(annee)
       return

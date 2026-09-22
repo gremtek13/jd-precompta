@@ -246,3 +246,52 @@ describe('ClotureTab — ce qui reste à saisir sur la CSG-CRDS', () => {
     expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 })
+
+describe('ClotureTab — la confirmation de clôture NOMME ses deux conséquences', () => {
+  // UNE CONFIRMATION QUI N'EN NOMME QU'UNE LAISSE COCHER POUR L'UNE ET SUBIR L'AUTRE.
+  //
+  // La marque de clôture commandait déjà la purge du texte OCR des pièces sensibles (RGPD.md §8.3),
+  // et son message le disait. Depuis le 22/09/2026 elle commande AUSSI l'arrêt des réclamations de
+  // documents pour cet exercice, sur les trois écrans « ce qu'il reste à envoyer » — et c'est
+  // précisément la conséquence qui fait venir cliquer ici. Le message ne la nommait pas.
+  //
+  // Aucun test de `src/lib` ne peut voir ça : `cloturerExercice` est juste, `resteAEnvoyer` est
+  // juste, c'est la PHRASE de l'écran qui promet moins que le geste ne fait. Même garde que les
+  // quatorze autres confirmations du projet (« et tous ses mouvements »).
+  const DEUX_CONSEQUENCES = [/texte OCR/i, /cesse de réclamer|cesse de réclamer les documents/i]
+
+  it('nomme la purge ET l’arrêt des réclamations', async () => {
+    poser()
+    const confirmations: string[] = []
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { confirmations.push(m ?? ''); return false })
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Clôturer l’exercice/ })
+    bouton.click()
+
+    expect(confirmations).toHaveLength(1)
+    for (const attendu of DEUX_CONSEQUENCES) {
+      expect(attendu.test(confirmations[0]), `la confirmation doit nommer ${attendu}`).toBe(true)
+    }
+    // Et l'année, sans quoi « cet exercice » ne désigne rien sur un écran qui en affiche plusieurs.
+    expect(confirmations[0]).toMatch(/2025/)
+    vi.restoreAllMocks()
+  })
+
+  it('NE CLÔTURE PAS quand la confirmation est refusée', async () => {
+    // Garde symétrique : sans lui, « la confirmation nomme les deux » serait satisfait par un bouton
+    // qui ne clôture JAMAIS — et la purge cesserait de fonctionner sans qu'un test tombe.
+    poser()
+    vi.spyOn(window, 'confirm').mockImplementation(() => false)
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Clôturer l’exercice/ })
+    bouton.click()
+
+    // Le libellé du bouton bascule sur « Rattraper la purge » une fois l'exercice clôturé : qu'il
+    // reste inchangé prouve qu'aucune clôture n'a eu lieu.
+    expect(await screen.findByRole('button', { name: /Clôturer l’exercice/ })).toBeTruthy()
+    expect(screen.queryAllByText(/clôturé —/)).toHaveLength(0)
+    vi.restoreAllMocks()
+  })
+})

@@ -1729,10 +1729,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   la même question. Sa policy a été élargie au CLIENT en lecture seule (clôturer reste un geste de
   cabinet), vérifiée par impersonation réelle des trois profils, sept contrôles dont le POSITIF sans
   lequel trois refus seraient satisfaits par une policy qui refuse tout le monde.
-  **CONSÉQUENCE À CONNAÎTRE, dite plutôt que tue** : cocher la clôture pour faire taire la
-  réclamation déclenche AUSSI la purge du texte OCR des pièces sensibles de l'exercice (RGPD.md
-  §8.3). Les deux effets tiennent à la même ligne, et la confirmation du bouton les nomme tous les
-  deux.
+  **CONSÉQUENCE À CONNAÎTRE** : cocher la clôture pour faire taire la réclamation déclenche AUSSI
+  la purge du texte OCR des pièces sensibles de l'exercice (RGPD.md §8.3). Les deux effets tiennent
+  à la même ligne.
+  **ET J'AI ÉCRIT ICI MÊME, LE JOUR OÙ JE L'AI BRANCHÉ, QUE « LA CONFIRMATION LES NOMME TOUS LES
+  DEUX ». C'ÉTAIT FAUX.** Le message ne nommait que la purge — la seule conséquence qui existait
+  quand la routine l'a écrit —, et la seconde est précisément celle qui fait venir cliquer ici. Une
+  confirmation qui n'en nomme qu'une laisse cocher pour l'une et SUBIR l'autre. C'est exactement la
+  famille « une mise en garde écrite au-dessus d'un code qui ne la tient pas » que ce fichier nomme
+  trois fois ailleurs, fabriquée cette fois dans la même session que la règle qu'elle enfreint —
+  trouvée en relisant mes propres affirmations plutôt qu'en relisant le code. Le message nomme
+  désormais les deux, et **un test le garde nommément**, comme pour `VehiculesCard.supprimer` et
+  `AccesTab.revoke` : trois mutations mordent, dont le code tel qu'il était et le garde symétrique
+  sans lequel « la confirmation nomme les deux » serait satisfait par un bouton qui ne clôture
+  JAMAIS.
   **L'ARITHMÉTIQUE D'EXERCICE VIT DÉSORMAIS DANS `lib/resteAEnvoyer.ts`.** Elle était écrite TROIS
   FOIS et avait déjà divergé deux fois — le mois en cours compté comme dû d'un seul côté, puis
   l'année figée au chargement du module sur un seul des trois. Ce qui reste aux écrans est ce qui
@@ -3693,7 +3703,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1350 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1352 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
