@@ -3660,7 +3660,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   de ses cartes l'est : Informations est resté dans les non-testés jusqu'à ce qu'il gagne son propre
   test de rendu, le 21/09/2026, sur ce que la suppression d'un dossier laisse dans le stockage.
   **La liste des dossiers a rejoint les écrans testés le 20/09/2026** (`DossiersList.test.tsx`) :
-  ni un onglet ni une carte mais une PAGE, donc le compte des 17 onglets ne bouge pas. Elle y est
+  ni un onglet ni une carte mais une PAGE, donc le compte des 17 onglets ne bouge pas.
+  **ET `ClientHome` LE 22/09/2026 — le premier écran CLIENT à recevoir un test de rendu**, également
+  une PAGE, donc le compte ne bouge pas davantage. Il y entre par le défaut qui coûtait le plus cher
+  de sa famille : au passage d'une année, cet écran annonçait « Relevés bancaires » avec RIEN à
+  envoyer. **Six mutations, toutes mordent**, et la discrimination est le résultat : celle qui
+  dés-APPARIE l'année du compte de mois — le défaut d'origine — fait tomber les CINQ tests, tandis
+  que « la clôture n'est plus lue » et « la réserve est avalée » n'en font tomber qu'un chacune,
+  exactement celui écrit pour elles. **Le doublage d'`AuthContext` est le même que celui de
+  `PiecesTab`** (monter un `AuthProvider` complet ferait dépendre le test d'une session Supabase), et
+  l'écran a besoin d'un `MemoryRouter`, ses tuiles portant des `Link`.
+  **Les deux écrans client restants (`ClientUpload`, `ClientInformations`, `ClientSimulation`) n'ont
+  toujours aucun test de rendu** — dit plutôt que laissé compter : `ClientUpload` porte le MÊME
+  câblage que `ClientHome`, donc son risque est le plus faible des trois maintenant que le calcul
+  est partagé et que l'un des deux est gardé. Elle y est
   entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre l'affichage » plus haut.
   **Deux doublures à connaître avant d'écrire le prochain test d'écran** : `PiecesTab` lit
   `monCabinetId` d'`AuthContext` (monter un `AuthProvider` complet ferait dépendre le test d'une
@@ -3703,7 +3716,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1352 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1357 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
