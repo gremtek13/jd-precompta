@@ -6,6 +6,7 @@ import { formatUsd } from '../../lib/coutsApi'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 interface MessageBrut {
   conversation_id: string
@@ -31,6 +32,7 @@ interface MessageBrut {
 export default function AssistantTab({ dossierId }: { dossierId: string }) {
   const { session } = useAuth()
   const [tous, setTous] = useState<MessageBrut[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [conversationId, setConversationId] = useState<string | null>(null)
   const [chargement, setChargement] = useState(true)
   const [input, setInput] = useState('')
@@ -64,6 +66,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
         .eq('dossier_id', dossierId).order('created_at', { ascending: true }).order('id').range(debut, fin),
     )
     const lignes = lecture.lignes
+    setLectureIncomplete(lecture.complete ? null : lecture.motif)
     setTous(lignes)
     // Seulement au tout premier chargement (conversationId encore null) : ouvre le fil le plus récent
     // s'il y en a un, sinon un fil neuf — un rechargement après l'envoi d'un message ne doit pas
@@ -203,6 +206,14 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
   // sur mobile (bug initial : le contenu débordait carrément du panneau, non contenu du tout).
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
+      <BandeauLecturePartielle
+        quoi="L’historique des échanges"
+        motif={lectureIncomplete}
+        consequence={
+          'Le fil repris perd alors ses premiers échanges — donc le contexte même que l’assistant ' +
+          'relit — et le coût du mois affiché est sous-estimé.'
+        }
+      />
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, flexShrink: 0 }}>
         <div style={{ position: 'relative' }} ref={historiqueRef}>
           <button type="button" className="btn btn-outline btn-sm" onClick={() => setHistoriqueOuvert((v) => !v)}>

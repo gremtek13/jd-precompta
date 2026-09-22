@@ -18,11 +18,14 @@ import { describe, expect, it } from 'vitest'
 //   BanqueTab       2 / 2                ClientHome     2 / 2     ClientUpload   2 / 2
 //   DocumentsTab    1 / 1                EcrituresTab   6 / 1
 //
-// POURQUOI « TOUTES OU AUCUNE » ET NON « TOUTES, POINT » : neuf écrans ne signalent RIEN, et leur
-// donner un signal est une décision par écran (que dit-on au client ? faut-il bloquer un export ?),
-// pas une correction. Ce contrôle mord donc exactement sur le défaut démontré — une promesse tenue à
-// moitié — et il se met à mordre tout seul sur un écran le jour où il gagne son premier signal.
-// Les 29 lectures restantes sont nommées dans CLAUDE.md plutôt que laissées croire couvertes.
+// L'INVARIANT EST « TOUTES, POINT », et il ne l'a été qu'au second temps. Le premier balayage l'a
+// posé en « toutes ou aucune » parce que neuf écrans ne signalaient RIEN — leur donner un signal est
+// une décision par écran (que dit-on au client ? faut-il bloquer un export ?) et non une correction,
+// et un scanner qui aurait crié sur leurs 29 lectures aurait été du bruit. Les neuf ont été couverts
+// dans la foulée, donc la borne faible n'a plus de raison d'être : les 110 sites du dépôt lisent
+// désormais leur drapeau, et TOUTE lecture qui le jetterait est une faute.
+// La version faible est écrite ici plutôt qu'effacée : c'est elle qui permet de reprendre ce
+// contrôle sur un dépôt où le portage n'est pas fini, sans le rendre inécoutable.
 
 /** Les exceptions portent une RAISON et un NOMBRE — dispenser un fichier dispenserait ses lectures
  *  correctes aussi, et une rechute y passerait sans un mot (leçon de `datesUtc.test.ts`). */
@@ -187,17 +190,17 @@ export function liaisonsLireTout(source: string): Liaison[] {
   return liaisons
 }
 
-/** Les lectures jetées d'un fichier qui, lui, signale — vide si le fichier ne signale rien. */
+/** Toute lecture dont le drapeau de complétude n'est lu nulle part. */
 export function lecturesNonSignalees(chemin: string, source: string): string[] {
-  const liaisons = liaisonsLireTout(source)
-  if (!liaisons.some((l) => l.couverte)) return []
-  const jetees = liaisons.filter((l) => !l.couverte).map((l) => `${chemin} — ${l.nom} [${l.table}]`)
+  const jetees = liaisonsLireTout(source)
+    .filter((l) => !l.couverte)
+    .map((l) => `${chemin} — ${l.nom} [${l.table}]`)
   return jetees.slice(EXCEPTIONS[chemin]?.nombre ?? 0)
 }
 
 const TOUTES = sourcesDeProduction()
 
-describe('un écran qui signale une lecture partielle les signale toutes', () => {
+describe('toute lecture de collection dit si elle est partielle', () => {
   it('parcourt bien les sources des deux côtés', () => {
     // Sans cette borne, un scanner qui ne lirait plus rien annoncerait « zéro faute » — la panne qui
     // ressemble exactement au succès, et que ce dépôt a déjà payée sous six autres noms.
@@ -210,17 +213,20 @@ describe('un écran qui signale une lecture partielle les signale toutes', () =>
     const fautes = TOUTES.flatMap((f) => lecturesNonSignalees(f.chemin, f.texte))
     expect(
       fautes,
-      'Ce fichier signale une lecture partielle pour certaines de ses lectures et pas pour ' +
-      'celles-ci : le bandeau reste alors éteint sur une lecture tronquée, et son silence se lit ' +
-      '« tout a été lu ». Ajoute-les au drapeau, ou inscris-les dans EXCEPTIONS avec leur raison.',
+      'Cette lecture reçoit `complete` et le jette : le bandeau reste alors éteint sur une lecture ' +
+      'tronquée, et son silence se lit « tout a été lu ». Câble-la sur le drapeau de son écran ' +
+      '(`BandeauLecturePartielle`), fais-la REFUSER si elle produit un livrable, ou inscris-la ' +
+      'dans EXCEPTIONS avec sa raison et son compte.',
     ).toEqual([])
   })
 
-  it('le compte des fichiers qui signalent ne baisse pas', () => {
-    // Garde SYMÉTRIQUE, et elle n'est pas décorative : sans elle, « toutes ou aucune » serait
-    // satisfait en retirant le dernier contrôle de complétude de chaque écran.
-    const signalent = TOUTES.filter((f) => liaisonsLireTout(f.texte).some((l) => l.couverte))
-    expect(signalent.length, signalent.map((f) => f.chemin).join("\n")).toBeGreaterThanOrEqual(23)
+  it('voit toujours autant de lectures qu’il y en a', () => {
+    // Garde SYMÉTRIQUE : « aucune lecture jetée » est aussi ce que rend un scanner qui ne voit plus
+    // AUCUNE lecture — la panne qui ressemble exactement au succès, et que ce dépôt a déjà payée
+    // sous six autres noms. Mesuré le 22/09/2026 : 110 sites dans 35 fichiers.
+    const liaisons = TOUTES.flatMap((f) => liaisonsLireTout(f.texte))
+    expect(liaisons.length).toBeGreaterThanOrEqual(110)
+    expect(liaisons.every((l) => l.couverte)).toBe(true)
   })
 
   it('n’admet que des exceptions RÉELLES, chacune portant sa raison et son compte', () => {
@@ -281,10 +287,12 @@ describe('le scanner, éprouvé sur des sources synthétiques', () => {
     expect(lecturesNonSignalees('faux.tsx', PAR_TABLEAU)).toEqual([])
   })
 
-  it('se TAIT sur un fichier qui ne signale rien — c’est une autre question', () => {
-    // Garde symétrique : sans elle, « toutes ou aucune » serait satisfait par un scanner qui crie
-    // sur les 29 lectures des neuf écrans sans signal, c'est-à-dire par du bruit.
-    expect(lecturesNonSignalees('faux.tsx', SANS_AUCUN_SIGNAL)).toEqual([])
+  it('attrape un fichier qui ne signale RIEN — la borne a été resserrée', () => {
+    // Sous l'invariant faible du premier temps, ce cas sortait vide : il fallait qu'un fichier
+    // signale déjà quelque chose pour qu'on lui reproche le reste. Les neuf écrans concernés ayant
+    // été couverts, il est redevenu une faute — et ce test est ce qui empêche la borne de
+    // retomber en silence à sa version faible.
+    expect(lecturesNonSignalees('faux.tsx', SANS_AUCUN_SIGNAL)).toEqual(['faux.tsx — lectureA [pieces]'])
     expect(liaisonsLireTout(SANS_AUCUN_SIGNAL)).toHaveLength(1)
   })
 

@@ -12,6 +12,7 @@ import SuperPdpFactureModal from './SuperPdpFactureModal'
 import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/superpdpStatuts'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import { lireTout } from '../../lib/lectureComplete'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 interface Props {
   dossierId: string
@@ -29,6 +30,7 @@ interface Props {
 // transmission électronique n'est jamais obligatoire (ex. client sans SIRET, ou pas encore configuré).
 export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, assujettiTva, onAdresseUpdated }: Props) {
   const [factures, setFactures] = useState<FactureEmise[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [recherche, setRecherche] = useState('')
@@ -48,6 +50,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         .eq('dossier_id', dossierId).order('date_emission', { ascending: false }).order('id').range(debut, fin),
     )
     setFactures(lecture.lignes)
+    setLectureIncomplete(lecture.complete ? null : lecture.motif)
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
@@ -71,6 +74,14 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les factures du dossier"
+        motif={lectureIncomplete}
+        consequence={
+          'La suite des numéros est LÉGALE : une liste tronquée fait croire à un trou là où il n’y en ' +
+          'a pas. Recharge la page avant d’en conclure quoi que ce soit.'
+        }
+      />
       <p className="muted" style={{ marginTop: -8, marginBottom: 4 }}>
         Une facture validée reçoit un numéro définitif et n'est plus modifiable — corrige une erreur
         par une facture d'avoir plutôt qu'en la rouvrant.

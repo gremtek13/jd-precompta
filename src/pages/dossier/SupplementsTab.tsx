@@ -9,6 +9,7 @@ import {
   LABEL_TYPE_MOUVEMENT_CCA, soldeCca, type CompteCourantAssocie, type MouvementCca, type TypeMouvementCca,
 } from '../../lib/cca'
 import { lireTout } from '../../lib/lectureComplete'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 interface FactureOption { id: string; numero: string | null; tiers_nom: string }
 
@@ -18,6 +19,7 @@ interface FactureOption { id: string; numero: string | null; tiers_nom: string }
 // dans un même onglet car tous deux hors du flux de facturation habituel (voir FacturesTab).
 export default function SupplementsTab({ dossierId }: { dossierId: string }) {
   const [supplements, setSupplements] = useState<Supplement[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [comptes, setComptes] = useState<CompteCourantAssocie[]>([])
   const [mouvements, setMouvements] = useState<MouvementCca[]>([])
   const [facturesDispo, setFacturesDispo] = useState<FactureOption[]>([])
@@ -49,6 +51,9 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
     setFacturesDispo(lectureFactures.lignes)
     // Mouvements de tous les comptes du dossier chargés en une fois (plutôt qu'à l'ouverture de
     // chaque modale) pour pouvoir afficher un solde par compte directement dans la liste de cartes.
+    setLectureIncomplete(
+      [lectureSupplements, lectureComptes, lectureFactures].find((l) => !l.complete)?.motif ?? null,
+    )
     const comptesIds = lectureComptes.lignes.map((c) => c.id)
     if (comptesIds.length > 0) {
       // Le solde d'un compte courant est TOUJOURS recalculé depuis son historique complet (voir
@@ -58,6 +63,10 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
           .in('compte_id', comptesIds).order('date', { ascending: false }).order('id').range(debut, fin),
       )
       setMouvements(lectureMouvements.lignes)
+      // Écrasé seulement quand CETTE lecture manque : une lecture complète ne doit pas effacer
+      // l'incomplétude déjà constatée sur les trois autres. Et c'est la plus coûteuse des quatre —
+      // le commentaire ci-dessus le dit depuis toujours au-dessus d'un code qui jetait le drapeau.
+      if (!lectureMouvements.complete) setLectureIncomplete(lectureMouvements.motif)
     } else {
       setMouvements([])
     }
@@ -81,6 +90,14 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les suppléments et les comptes courants"
+        motif={lectureIncomplete}
+        consequence={
+          'Un solde de compte courant est TOUJOURS recalculé depuis son historique complet : ' +
+          'tronqué, il n’est pas plus court, il est FAUX. Recharge la page avant de t’y fier.'
+        }
+      />
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
         Prestations ponctuelles en plus de la mission courante (création ou fermeture de société,
         situation intermédiaire...) et suivi des comptes courants d'associés — deux volets distincts

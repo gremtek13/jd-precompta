@@ -9,6 +9,7 @@ import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { messageErreur } from '../../lib/messageErreur'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 // Seuil au-delà duquel une dépense est candidate à l'immobilisation plutôt qu'à la charge courante.
 // Valeur usuelle citée dans le document d'architecture — pas encore configurable par dossier, cette
@@ -30,6 +31,7 @@ const DUREE_DEFAUT_ANNEES = 5
 // chose — un bien acquis le 1er janvier a bien une première annuité pleine.
 export default function ImmobilisationsTab({ dossierId }: { dossierId: string }) {
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
   const [loading, setLoading] = useState(true)
@@ -65,6 +67,10 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
     setPiecesValidees(lecturePieces.lignes)
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
+    setLectureIncomplete(
+      [lecturePieces, lectureImmobilisations, lectureNatures]
+        .find((l) => !l.complete)?.motif ?? null,
+    )
     setLoading(false)
   }
 
@@ -174,6 +180,14 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les immobilisations et les pièces validées"
+        motif={lectureIncomplete}
+        consequence={
+          'Le tableau d’amortissement et le total des dotations ci-dessous portent donc sur une partie ' +
+          'du dossier, et une pièce déjà immobilisée peut réapparaître dans les candidates.'
+        }
+      />
       <BrouillonBanner />
 
       {candidates.length > 0 && (

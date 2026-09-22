@@ -1563,7 +1563,8 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Mesuré : 110 sites d'appel, 52 dont le drapeau n'est lu nulle part.** Ils se coupent net en deux,
   et c'est la coupure qui décide du chantier : **23 sur huit écrans qui portent DÉJÀ un
   `BandeauLecturePartielle`** (ou refusent un export), donc qui ont déjà décidé de signaler ; 29 sur
-  neuf écrans qui ne signalent rien du tout, ce qui est une autre question.
+  neuf écrans qui ne signalent rien du tout, ce qui ÉTAIT une autre question — tranchée dans la
+  foulée, voir plus bas.
   **C'est mot pour mot le défaut de `ClotureTab`**, corrigé plus haut dans ce fichier — « en n'ayant
   vérifié QUE les pièces, soit une entrée sur cinq… le garde-fou promettait "ce formulaire est bâti
   sur tout" sans pouvoir le tenir ». Corrigé là, resté entier sur les huit voisins : `ChecklistTab`
@@ -1599,30 +1600,50 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   glissait d'un cran ; et surtout **il ne cherchait que `complete` alors que quatre écrans corrects
   lisent `motif`**, qui vaut `null` SI ET SEULEMENT SI `complete` est vrai. Il rendait alors 86
   fautes sur 110, dont l'essentiel était faux. Un taux qui accuse d'abord le détecteur.
-  **`lecturesSignalees.test.ts` fait de la règle un contrôle**, et son invariant est « TOUTES OU
-  AUCUNE » plutôt que « toutes, point » : les neuf écrans sans signal posent une question de produit
-  (que dit-on au client ? faut-il bloquer un export ?) et non une correction, et un scanner qui
-  crierait sur leurs 29 lectures serait du bruit. Il mord exactement sur la promesse tenue à moitié,
-  et se met à mordre tout seul sur un écran le jour où il gagne son premier signal. Le compte des
-  fichiers qui signalent est un PLANCHER (23), sans quoi « toutes ou aucune » serait satisfait en
-  retirant le dernier contrôle de chaque écran.
-  **DOUZE MUTATIONS, ONZE MORDENT**, et la discrimination est le résultat : le défaut d'origine
-  replanté fait tomber À LA FOIS le scanner et le test d'écran — donc la FORME et le CÂBLAGE sont
-  gardés séparément —, tandis que **retirer le bandeau du JSX en gardant le drapeau lu laisse le
-  scanner VERT** et ne fait tomber que le test d'écran. Un scanner de source ne peut pas voir un
-  rendu, et c'est dit plutôt que laissé croire.
-  **La douzième survit à juste titre et c'est écrit dans le test** : retirer la virgule de queue du
-  découpage ne change rien, une entrée vide n'apparaissant qu'en FIN de liste, donc ne décalant
-  jamais un indice antérieur. Ce qui garde réellement l'appariement est la mutation qui décale
-  `noms[k]` d'un cran, et celle-là mord.
-  **LES 29 LECTURES RESTANTES SONT NOMMÉES PLUTÔT QUE LAISSÉES CROIRE COUVERTES** — neuf écrans qui
-  ne signalent rien : `FinancementTab` (6, dont `emprunts` et le solde bancaire, sur le document
-  qu'un cabinet montre à une banque), `SuperAdminPage` (5, dont `agent_conversations`, que ce fichier
-  désigne déjà comme « la façon exacte dont un plafond cesse de protéger » — l'autre moitié de ce
-  nombre a été corrigée le matin même dans `agent-comptable`), `ClientSimulation` (4),
-  `SupplementsTab` (4, dont `mouvements_cca`, « tronqué, c'est un solde faux, pas un historique plus
-  court »), `ImmobilisationsTab` (3), `EquipePage` (3), `CotisationsTab` (2), `AssistantTab` (1),
-  `FacturesTab` (1). Leur donner un signal est une décision par écran, pas une correction.
+  **`lecturesSignalees.test.ts` fait de la règle un contrôle, et son invariant s'est RESSERRÉ dans la
+  même session.** Il a d'abord été posé en « TOUTES OU AUCUNE » — un écran qui signale les signale
+  toutes — parce que neuf écrans ne signalaient RIEN, et que leur en donner un est une décision par
+  écran (que dit-on au client ? faut-il bloquer un export ?) et non une correction : un scanner qui
+  aurait crié sur leurs 29 lectures aurait été du bruit. **Les neuf ont été couverts dans la foulée**,
+  donc la borne faible n'avait plus de raison d'être — les 110 sites du dépôt lisent désormais leur
+  drapeau, et TOUTE lecture qui le jetterait est une faute. La version faible est écrite dans le test
+  plutôt qu'effacée : c'est elle qui permet de reprendre ce contrôle sur un dépôt dont le portage
+  n'est pas fini, sans le rendre inécoutable. Le PLANCHER a changé de nature avec l'invariant — il ne
+  compte plus les fichiers qui signalent mais les LIAISONS que le scanner voit encore (110), sans
+  quoi « aucune lecture jetée » serait aussi ce que rend un scanner devenu aveugle.
+  **CE QUE DISENT LES NEUF NOUVEAUX BANDEAUX, et pourquoi la conséquence n'est jamais la même** :
+  `FinancementTab` (6 lectures) parle du document qu'on présente à une BANQUE — trésorerie,
+  échéancier des dettes, ratios, prévisionnel ; `SuperAdminPage` (5) dit qu'un coût IA tronqué est
+  SOUS-ESTIMÉ, « la façon exacte dont un plafond cesse de protéger » — l'autre moitié de ce même
+  nombre ayant été corrigée le matin dans `agent-comptable` ; `SupplementsTab` (4) dit qu'un solde de
+  compte courant tronqué « n'est pas plus court, il est FAUX », ce solde étant toujours recalculé
+  depuis l'historique complet ; `FacturesTab` (1) qu'une suite de numéros LÉGALE tronquée « fait
+  croire à un trou là où il n'y en a pas » ; `AssistantTab` (1) que le fil repris perd ses premiers
+  échanges, donc le contexte même que l'assistant relit. Plus `ClientSimulation` (4, dans le registre
+  du client, `technique={false}`), `ImmobilisationsTab` (3), `EquipePage` (3) et `CotisationsTab` (2).
+  **ET TROIS COMMENTAIRES DE PLUS NOMMAIENT DÉJÀ LEUR DÉGÂT** au-dessus d'un code qui jetait le
+  drapeau — `SupplementsTab` (« une lecture tronquée donnerait un solde faux, pas un historique plus
+  court »), `AssistantTab` et `FacturesTab`. Avec `PiecesTab`, cela fait QUATRE dans ce seul chantier.
+  C'est la forme la plus fréquente du défaut dans ce dépôt, et elle se cherche en lisant les
+  COMMENTAIRES plutôt que le code : là où quelqu'un a pris la peine d'écrire ce qui serait perdu, il
+  y a une bonne chance que rien ne le garde.
+  **VINGT-DEUX MUTATIONS SUR LES DEUX TEMPS, VINGT-ET-UNE MORDENT**, et la discrimination est le
+  résultat : le défaut d'origine replanté fait tomber À LA FOIS le scanner et le test d'écran — donc
+  la FORME et le CÂBLAGE sont gardés séparément —, et « un écran cesse ENTIÈREMENT de signaler »
+  passait sous l'invariant faible alors qu'il mord sous le resserré, ce qui est exactement ce que le
+  resserrement devait acheter.
+  **ET UNE TROISIÈME COUCHE EXISTAIT SANS QUE JE L'AIE MESURÉE : LE COMPILATEUR.** Il était écrit ici
+  qu'un scanner de source ne peut pas voir un rendu et que seul le test d'écran couvre ce cas — vrai
+  du scanner, et incomplet. `noUnusedLocals: true` est actif dans les deux `tsconfig`, donc un drapeau
+  posé, calculé, et qui n'atteint PLUS RIEN fait échouer `tsc -b` en
+  « `'lectureIncomplete' is declared but its value is never read` ». Vérifié en posant la mutation,
+  pas en relisant le réglage. **Les trois couches ne se recouvrent donc pas** : le scanner voit qu'on
+  CALCULE le drapeau, le compilateur qu'on le LIT, le test d'écran qu'il ATTEINT l'opérateur — et
+  seul le dernier attrape un bandeau bien rendu sous une condition qui ne se réalise jamais.
+  **La dernière mutation survit à juste titre, et c'est écrit dans le test** : retirer la virgule de
+  queue du découpage ne change rien, une entrée vide n'apparaissant qu'en FIN de liste, donc ne
+  décalant jamais un indice antérieur. Ce qui garde réellement l'appariement est la mutation qui
+  décale `noms[k]` d'un cran, et celle-là mord.
 - **ET LE PLAFOND DE COÛT IA SE SOUS-ESTIMAIT — `lecturesPaginees` S'ÉTAIT ARRÊTÉ À `src/` LUI AUSSI**
   (22/09/2026, QUATRIÈME demi-chemin en deux jours : les écritures des Edge Functions portées le
   21/09, leurs lectures le 22/09 au matin, la FORME de leur scanner d'écritures à midi — et la

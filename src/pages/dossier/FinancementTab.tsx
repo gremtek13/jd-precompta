@@ -10,6 +10,7 @@ import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserv
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number }
 
@@ -22,6 +23,7 @@ interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number 
 // tableau brut par compte.
 export default function FinancementTab({ dossierId }: { dossierId: string }) {
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
@@ -97,6 +99,12 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
     setLignesBanque(lectureBanque.lignes as LigneBanque[])
     setPrevisionnelIllisible(previsionnelError ? messageErreur(previsionnelError, "Le prévisionnel enregistré n'a pas pu être lu.") : null)
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
+    // Six lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
+    // manqué, et chacune fausse les mêmes chiffres.
+    setLectureIncomplete(
+      [lectureEmprunts, lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureBanque]
+        .find((l) => !l.complete)?.motif ?? null,
+    )
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
@@ -117,6 +125,15 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les données du dossier bancaire"
+        motif={lectureIncomplete}
+        consequence={
+          'Trésorerie, échéancier des dettes, ratios et prévisionnel ci-dessous portent donc sur une ' +
+          'partie du dossier. C’est le document qu’on présente à une banque — recharge la page ' +
+          'avant de l’éditer.'
+        }
+      />
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
         Échéancier des emprunts, situation intermédiaire et quelques ratios utiles pour un dossier
         bancaire. La balance complète (tous comptes, sans regroupement par poste) reste dans l'onglet

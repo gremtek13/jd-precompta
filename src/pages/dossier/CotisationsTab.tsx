@@ -15,6 +15,7 @@ import { messageErreur } from '../../lib/messageErreur'
 // deux fois n'attend pas de diverger, elle attend un troisième appelant.
 import { csgDeductible as partDeductible } from '../../lib/declaration2035'
 import { ouvrirApercu } from '../../lib/apercu'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
 // URSSAF (montants connus tardivement, jamais déductibles d'un relevé bancaire seul) et calcul
@@ -22,6 +23,7 @@ import { ouvrirApercu } from '../../lib/apercu'
 // explicitement renseignée, jamais sur le montant appelé total qui cumule d'autres cotisations.
 export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [documentsCotisation, setDocumentsCotisation] = useState<DocumentDivers[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -59,6 +61,10 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     ])
     setCotisations(lectureCotisations.lignes)
     setDocumentsCotisation(lectureDocuments.lignes)
+    setLectureIncomplete(
+      [lectureCotisations, lectureDocuments]
+        .find((l) => !l.complete)?.motif ?? null,
+    )
     setLoading(false)
   }
 
@@ -240,6 +246,14 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les cotisations et leurs justificatifs"
+        motif={lectureIncomplete}
+        consequence={
+          'Les totaux appelé et versé ci-dessous portent donc sur une partie de l’exercice, et un appel ' +
+          'peut paraître sans justificatif alors qu’il en a un.'
+        }
+      />
       <BrouillonBanner />
 
       <div className="card" style={{ marginBottom: 20 }}>

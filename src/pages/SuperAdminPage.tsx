@@ -8,6 +8,7 @@ import { extraireErreurFonction } from '../lib/invokeErreur'
 import { lireTout } from '../lib/lectureComplete'
 import { formatDate } from '../lib/format'
 import { messageErreur } from '../lib/messageErreur'
+import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 
 interface CabinetApercu {
   id: string
@@ -41,6 +42,7 @@ interface CabinetApercu {
 // aussitôt son premier comptable en chef : un cabinet sans personne pour s'y connecter ne sert à rien.
 export default function SuperAdminPage() {
   const [cabinets, setCabinets] = useState<CabinetApercu[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
 
   const [ajout, setAjout] = useState(false)
@@ -150,6 +152,12 @@ export default function SuperAdminPage() {
       tokens_sortie: tokensSortie.get(c.id) ?? 0,
       cout_mois_usd: estimerCoutUsd(tokensEntreeMois.get(c.id) ?? 0, tokensSortieMois.get(c.id) ?? 0),
     })))
+    // `agent_conversations` grandit d'une ligne par message, donc plus vite que tout le reste :
+    // tronquée, elle ne VIDE pas le compteur de coût, elle le sous-estime.
+    setLectureIncomplete(
+      [lectureCabinets, lectureDossiers, lectureAdmins, lectureMemberships, lectureUsage]
+        .find((l) => !l.complete)?.motif ?? null,
+    )
     setLoading(false)
   }
 
@@ -259,6 +267,14 @@ export default function SuperAdminPage() {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Les cabinets, leurs dossiers et l’usage de l’IA"
+        motif={lectureIncomplete}
+        consequence={
+          'Les compteurs ci-dessous portent donc sur une partie des données — et un coût IA tronqué ' +
+          'est SOUS-ESTIMÉ, ce qui est la façon exacte dont un plafond cesse de protéger.'
+        }
+      />
       <div className="topbar">
         <h1>Comptes master</h1>
         <button className="btn btn-primary btn-sm" onClick={() => setAjout(true)}>+ Nouveau cabinet</button>

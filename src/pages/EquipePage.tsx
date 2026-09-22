@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext'
 import { extraireErreurFonction } from '../lib/invokeErreur'
 import type { CabinetAdmin, Dossier, DossierAssignation, RoleCabinetAdmin } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
+import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 
 const LABEL_ROLE: Record<RoleCabinetAdmin, string> = {
   comptable_en_chef: 'Comptable en chef',
@@ -20,6 +21,7 @@ const LABEL_ROLE: Record<RoleCabinetAdmin, string> = {
 export default function EquipePage() {
   const { session, monCabinetId } = useAuth()
   const [membres, setMembres] = useState<CabinetAdmin[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [dossiers, setDossiers] = useState<Dossier[]>([])
   const [assignations, setAssignations] = useState<DossierAssignation[]>([])
   const [loading, setLoading] = useState(true)
@@ -56,6 +58,10 @@ export default function EquipePage() {
     setMembres(lectureMembres.lignes)
     setDossiers(lectureDossiers.lignes)
     setAssignations(lectureAssignations.lignes)
+    setLectureIncomplete(
+      [lectureMembres, lectureDossiers, lectureAssignations]
+        .find((l) => !l.complete)?.motif ?? null,
+    )
     setLoading(false)
   }
 
@@ -118,6 +124,14 @@ export default function EquipePage() {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="L’équipe et ses affectations"
+        motif={lectureIncomplete}
+        consequence={
+          'Un membre peut donc paraître affecté à aucun dossier alors qu’il l’est — et un accès qu’on ' +
+          'ne voit pas ne se retire pas.'
+        }
+      />
       <div className="topbar">
         <h1>Équipe</h1>
         <button className="btn btn-primary btn-sm" onClick={() => setAjout(true)}>+ Ajouter un membre</button>

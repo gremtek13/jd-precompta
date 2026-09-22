@@ -5,6 +5,7 @@ import { formatMoney } from '../lib/format'
 import { ecartPct, totauxPourAnnee } from '../lib/estimation'
 import type { CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
+import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 
 const ANNEE_COURANTE = new Date().getFullYear()
 
@@ -18,6 +19,7 @@ export default function ClientSimulation() {
   const { dossierActifId } = useAuth()
   const dossierId = dossierActifId
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [recettesValidees, setRecettesValidees] = useState<Piece[]>([])
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
   const [referencesPostes, setReferencesPostes] = useState<ReferencePosteAnnuel[]>([])
@@ -51,6 +53,11 @@ export default function ClientSimulation() {
       setRecettesValidees(lectureRecettes.lignes)
       setReferences(lectureReferences.lignes)
       setReferencesPostes(lectureReferencesPostes.lignes)
+      // Jumelle d'`EstimationTab` : tronquées, ces lectures rendent une simulation plausible et BASSE.
+      setLectureIncomplete(
+        [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes]
+          .find((l) => !l.complete)?.motif ?? null,
+      )
       setLoading(false)
     }
     load()
@@ -69,6 +76,14 @@ export default function ClientSimulation() {
 
   return (
     <>
+      <BandeauLecturePartielle
+        quoi="Tes données"
+        motif={lectureIncomplete}
+        technique={false}
+        consequence={
+          'Recharge la page : cette simulation peut ne porter que sur une partie de tes recettes et de tes dépenses.'
+        }
+      />
       <div className="topbar"><h1>Ma simulation</h1></div>
 
       <div className="brouillon-banner">
