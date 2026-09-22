@@ -1506,6 +1506,41 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   La convention d'arrondi est celle des amortissements linéaires (30/360), et la date retenue est
   celle d'ACQUISITION faute de mise en service au modèle — quand les deux diffèrent l'acquisition
   précède, donc la fraction calculée est la plus généreuse des deux.
+- **ET LA MÊME DOTATION COMPTAIT UNE ANNÉE ENTIÈRE SUR SIX MOIS — SUR L'ÉTAT QUI PART À LA BANQUE**
+  (`situationIntermediaire`, 22/09/2026). L'écran porte en tête « Période du 1er janvier au <date
+  choisie> », et sa ligne « Amortissements » valait douze mois de dotation quelle que soit cette
+  date.
+  **Mesuré, et le cas extrême n'est pas théorique** : au 31 janvier, un bien de 12 000 € sur 5 ans
+  donne 2 400 € de charge contre 800 € de recettes — l'état affichait un **résultat NÉGATIF de
+  1 600 €**, un déficit entièrement fabriqué par la convention, sur le document qu'un cabinet montre
+  à une banque pour obtenir un prêt. Au 30 juin, 7 600 € au lieu de 8 800, soit 14 % de moins.
+  **Et `dansLaDuree` ne comparait que des ANNÉES** : un matériel acquis le 15 décembre était amorti
+  en entier sur une situation arrêtée au 30 juin. Ce n'est pas une approximation de prorata, c'est
+  une charge pour un bien qui n'existe pas encore à la date de l'état.
+  **CE N'EST PAS LA RÉSERVE CI-DESSUS, et la frontière est le point** : `RESERVE_PRORATA_TEMPORIS`
+  porte sur la date de MISE EN SERVICE, absente du modèle, donc on SIGNALE sans corriger. Ici la
+  longueur de la période est connue exactement et le document n'est pas signé : une charge rapportée
+  à une période est ce que cette période veut dire, pas un arbitrage. La réserve, elle, reste
+  entière — la fraction part du 1er janvier et non de l'acquisition.
+  **L'ANNÉE CIVILE COMPLÈTE EST INCHANGÉE AU CENTIME** (360/360), ce qui laisse le PRÉVISIONNEL
+  intact : il appelle la même fonction du 1er janvier au 31 décembre pour préremplir CA et charges
+  de référence. C'est la garde symétrique du test, sans laquelle « rapporter à la période » serait
+  satisfait par une fonction qui rabote toujours.
+  **`ratiosBancaires` était juste et le reste**, mais pour une raison qu'il fallait figer :
+  `resultat - posteAmortissements` est INVARIANT quand les deux se déplacent du même écart, donc la
+  CAF ne bouge pas d'un centime. Son commentaire, lui, disait « déjà compté pour l'année entière » —
+  vrai à l'époque, devenu faux sans qu'aucun signal ne paraisse, exactement « une contrainte
+  justifiée par un appelant ». Un test porte désormais l'invariance à la place de la phrase.
+  **LATENT, et mesuré** : deux immobilisations en base, toutes deux acquises en novembre et
+  décembre — le profil où le défaut est maximal — mais dans des bacs à sable abandonnés. Comme les
+  autres de cette famille, ce qui le rend digne d'être corrigé est qu'un résultat intermédiaire faux
+  est un chiffre plausible que personne ne redérive.
+  **L'écart de février est écrit dans un test plutôt que corrigé** : en 30/360 un 28 février vaut
+  58/360 et non 60, et avoir DEUX conventions pour la même dotation serait pire que ces 2/360.
+  **Neuf mutations mordent** — dont le code tel qu'il était, la borne de fin qui raboterait aussi
+  l'année pleine, et **la période qui déborde sur l'exercice précédent, qui a d'abord SURVÉCU** :
+  le jeu d'essai ne portait aucune pièce de l'année d'avant, donc l'autre borne n'était gardée par
+  rien. Une mutation qui ne mord pas accuse d'abord le jeu d'essai.
 - **ET LA MÊME QUESTION POSÉE AUX COTISATIONS A RENDU UNE DÉDUCTION DE TROP** (21/09/2026).
   `calculerDeclaration2035` porte la cotisation **complète** au poste « Cotisations sociales
   personnelles » (case BK, ligne 25). Or la CSG-CRDS d'un travailleur non salarié se décompose en
@@ -3337,11 +3372,12 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 13 testés** — banque,
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 14 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations,
-  suppléments, accès, immobilisations et estimation (21/09/2026) — donc **4 sans aucun test de
-  rendu** : factures, cotisations, financement, virements. Suppléments, Accès, Immobilisations et
-  Estimation y sont entrés comme Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  suppléments, accès, immobilisations, estimation (21/09/2026) et financement (22/09/2026) — donc
+  **3 sans aucun test de rendu** : factures, cotisations, virements. Suppléments, Accès,
+  Immobilisations, Estimation et Financement y sont entrés comme Informations : par un défaut
+  trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
   `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une
@@ -3391,7 +3427,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1268 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1279 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
