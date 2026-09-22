@@ -409,7 +409,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   //
   // « Un seul candidat disponible » était annoncé ici bien avant d'être vrai : le tri décidait à la
   // place de l'opérateur quand plusieurs pièces convenaient. C'est `planRapprochementAutomatique`
-  // qui le garantit maintenant, et un test qui le figera.
+  // qui le garantit maintenant, et `appariementBanque.test.ts` le fige (describe
+  // `planRapprochementAutomatique`, avec ses gardes symétriques). La phrase était au FUTUR
+  // alors que le test existait déjà — une promesse qu'on ne peut pas vérifier en la lisant.
   async function rapprocherTout() {
     if (rapprochementEnCours.current) return
     const maj = planAuto.retenus

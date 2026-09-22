@@ -198,7 +198,11 @@ type Contenu = Record<string, Record<string, unknown>[]>
 // partout — six tables ont une autre clé, et aucune des six n'a même de colonne `id` (voir
 // CLES_PRIMAIRES). Ce qui rend la lecture correcte ici, c'est qu'une clé étrangère d'une seule colonne
 // ne peut viser qu'une clé primaire d'une seule colonne : toutes les tables PARENTES du graphe ont
-// donc `id`. Un test le vérifie, pour que le jour où ce ne serait plus vrai se voie ici.
+// donc `id`. `sauvegardeClesPrimaires.test.ts` le vérifie — en DÉRIVANT les clés primaires du
+// schéma exporté, `alter` rejoués, plutôt qu'en croyant CLES_PRIMAIRES — pour que le jour où ce
+// ne serait plus vrai se voie ici. Cette phrase a vécu sans aucun test derrière elle jusqu'au
+// 22/09/2026 : un parent à clé composite ferait déclarer perdue CHAQUE ligne fille, donc
+// refuser toute restauration.
 export function liensPerdus(contenu: Contenu): LienPerdu[] {
   const identifiants = new Map<string, Set<string>>()
   for (const [table, lignes] of Object.entries(contenu)) {

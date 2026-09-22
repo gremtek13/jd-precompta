@@ -2811,6 +2811,58 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   symptôme déjà décrit (« Il se voit au COMPTE de tests, pas au vert »). La règle qui vaut est donc
   plus forte que celle écrite jusqu'ici : **une modification non commitée se copie HORS du dépôt
   avant tout harnais qui manipule git**, l'index n'étant pas un abri.
+- **UNE PHRASE QUI ANNONÇAIT SON PROPRE TEST, ET LE TEST N'EXISTAIT PAS** (22/09/2026). Ce fichier
+  pose que la famille « une mise en garde écrite au-dessus d'un code qui ne la tient pas » **se
+  cherche en lisant les COMMENTAIRES plutôt que le code**. Prise dans sa forme la plus mécanique —
+  les commentaires qui AFFIRMENT qu'un test garde quelque chose, donc une affirmation vérifiable
+  donc réfutable — elle rend **six** affirmations dans les sources de production. **Cinq tiennent**
+  (`cases2035` ×2, `baremeKilometrique`, `ratiosBancaires`, `BanqueTab`), et la sixième ne trouvait
+  rien.
+  **`liensPerdus` (sauvegarde.ts) compare sur `id`**, et son en-tête explique pourquoi c'est
+  correct : « une clé étrangère d'une seule colonne ne peut viser qu'une clé primaire d'une seule
+  colonne : toutes les tables PARENTES du graphe ont donc `id`. **Un test le vérifie**, pour que le
+  jour où ce ne serait plus vrai se voie ici. » Il n'a jamais existé.
+  **LE DÉGÂT EST BRUYANT, PAS SILENCIEUX, et c'est dit plutôt que dramatisé** — cette famille est
+  d'habitude l'inverse. Un parent sans colonne `id` ferait rendre `Set {"undefined"}` à
+  `identifiants`, donc déclarerait perdue CHAQUE ligne fille, et `restaurerSauvegarde` REFUSE sur un
+  lien perdu : ce n'est pas une restauration fausse, c'est une restauration IMPOSSIBLE, bloquée par
+  des centaines de liens qui ne sont pas cassés, au moment précis où l'on restaure. PLAN_DE_REPRISE.md
+  décrit exactement ce terrain-là comme celui dont on découvre les défauts trop tard.
+  **L'INVARIANT TIENT — 11 parents, aucun à clé composite.** Le chantier ne corrige donc rien : il
+  rend vraie une phrase qui était fausse. Ce qui le justifie est la relation qu'on ajoutera demain
+  vers l'une des six tables à clé non-`id` (`cabinet_admins`, `facture_numerotation`,
+  `previsionnels_bancaires`, `super_admins`, `superpdp_credentials`, `taux_change_bce`), et qu'aucun
+  signal n'attraperait.
+  **LA SOURCE EST LE SCHÉMA EXPORTÉ, PAS `CLES_PRIMAIRES`** — sans quoi le garde reposerait sur la
+  liste d'inclusion tenue à la main qu'il est censé contrôler, et ce dépôt connaît cette panne sous
+  cinq noms. Le test DÉRIVE la clé primaire de chaque table du SQL, comme `sauvegardeTables` en
+  dérive la liste des tables.
+  **ET LES `ALTER` DOIVENT SE REJOUER — mesuré, sans eux la dérivation est FAUSSE sur deux tables** :
+  `piece_textes_ocr` (créée avec `primary key` sur `piece_id`, passée à un `id` de substitution par
+  `alter table … add column id … primary key`) et `facture_numerotation` (passée de deux à trois
+  colonnes par `drop constraint` + `add primary key`). C'est la quatrième forme de « un export de
+  schéma n'est pas un schéma » : ici ce n'est pas une table qui manque, c'est une instruction
+  POSTÉRIEURE que la lecture naïve ignore. Quatre instructions dans tout le schéma, deux formes,
+  rejouées dans l'ordre des fichiers puis des instructions.
+  **L'ACCORD AVEC LA BASE EST EXACT, et il a été vérifié par une requête plutôt que supposé** :
+  `pg_constraint` rend 41 tables et six clés non-`id`, et la dérivation les rend **colonne par
+  colonne**. C'est ce qui permet au test de comparer `CLES_PRIMAIRES` au schéma **dans les deux sens
+  et sans AUCUNE exception** — une de moins serait une table paginée sur un `id` inexistant, une de
+  plus une raison morte. Ce que le test ne peut pas garder, annoncé comme partout ailleurs : que le
+  fichier exporté décrive la base réelle. Couple habituel — une moitié gardée par le code, l'autre
+  par une vérification, faite ce jour-là.
+  **La sixième affirmation, elle, était au FUTUR** (`BanqueTab` : « et un test qui le figera ») alors
+  que le test existait déjà. Inoffensif, et corrigé quand même : une promesse au futur ne se vérifie
+  pas en la lisant, donc elle ne se distingue pas d'une promesse jamais tenue — c'est précisément ce
+  qui a laissé vivre la sixième. Les deux commentaires NOMMENT désormais leur fichier de test.
+  **Huit mutations, et la septième a d'abord SURVÉCU** : retirer le tri par position ne changeait
+  rien, l'ordre des expressions régulières coïncidant par ACCIDENT avec l'ordre textuel de tous les
+  fichiers réels. Une mutation qui ne mord pas accuse d'abord le jeu d'essai — un cas SYNTHÉTIQUE
+  (une table qui reçoit un `id` de substitution puis qu'on re-clé) sépare les deux ordres, et le tri
+  redevient portant. Les sept autres : la relation fautive plantée vers une table composite, les
+  trois mensonges possibles de la liste (une de moins, une inventée, les mauvaises colonnes), les
+  `alter` non rejoués, les `drop table` non rejoués, et le lecteur pointé sur un dossier vide — ce
+  dernier fait tomber les quatre, c'est le plancher.
 - **La chaîne vers l'écriture comptable a DEUX portes, pas une.** Une pièce ne génère une écriture
   que si elle a une `categorie_id` **et** que cette catégorie porte un `compte_comptable`
   (`lignesChargeProduitPourPiece` l'exige en paramètre). Une troisième porte, `poste_2035`, commande
@@ -4188,7 +4240,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1431 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1435 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
