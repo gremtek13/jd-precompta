@@ -658,12 +658,24 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   couple que ci-dessus : une moitié gardée par le code, l'autre par une vérification humaine.
 
 - **Qui voit quoi, c'est un essai rejouable qui le dit** — `supabase/essais/rls.sql`, par
-  impersonation réelle des trois profils sur les 40 tables du schéma **et sur les trois seaux de
+  impersonation réelle des trois profils sur les 41 tables du schéma **et sur les trois seaux de
   stockage**, qui sont le vrai enjeu : les données de patients sont dans les FICHIERS, pas dans les
   tables (RGPD.md §4). Il a trouvé, à sa première exécution, ce qu'aucune relecture n'avait vu : un
   visiteur anonyme lisait les catégories et les natures d'immobilisation du cabinet (voir
   « Décisions techniques »). Ce qu'il ne couvre PAS : les Edge Functions en HTTP, et la suppression
   d'un fichier (RGPD.md §8.6).
+- **REJOUÉ LE 22/09/2026 après la migration qui ouvre `exercices_clotures` au client** : les
+  invariants 1, 2 et 3 (anonyme, authentifié rattaché à rien, client) sur les **41** tables —
+  0 en faute, y compris sur la table nouvelle, que la boucle `pg_class` a attrapée sans que personne
+  ait eu à l'y inscrire. **La mutation mord** : le changement de rôle retiré, 28 des 41 virent au
+  rouge (les 13 restantes sont des tables vides, où « refusé » et « rien à voir » se ressemblent par
+  construction). **Ce qui n'a PAS été relancé**, et c'est dit plutôt que laissé croire : les
+  sections 4 à 6 (écritures d'essai, fonctions `SECURITY DEFINER`, stockage) et les sept mutations
+  du fichier. Cet environnement ne peut pas exécuter `rls.sql` autrement qu'en le retranscrivant à
+  la main dans un appel d'outil, et une transcription de 610 lignes est précisément ce qui fait
+  mentir un harnais. La migration du jour n'ajoute qu'une policy de LECTURE sur une table nouvelle,
+  donc elle ne peut affecter que ce qui a été rejoué ; la contrepartie est qu'un changement plus
+  large exigera, lui, le fichier entier.
 - Toutes les tables métier ont RLS activé (`rls_enabled: true` sur
   l'intégralité du schéma `public`) — aucune table de données cabinet/dossier
   ne doit être créée sans policy correspondante.
@@ -1366,6 +1378,41 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   `list_edge_functions` rend pour cette fonction — jamais au jugé, jamais par omission. Le relire
   AVANT de déployer fait désormais partie de la comparaison déployé/dépôt, au même titre que la
   source : un déploiement ne change pas que du code.
+- **UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA — DOUZE TABLES N'Y EXISTAIENT PAS** (22/09/2026,
+  quatrième membre de la famille « un commit n'est pas un déploiement »). `supabase/schema/` porte un
+  export de l'historique de migrations, et PLAN_DE_REPRISE.md en tirait la promesse qu'un schéma
+  reste reconstructible si le projet Supabase disparaît. **Mesuré : l'historique ne porte que 30
+  `create table` pour 41 tables.** Douze ont été créées hors `apply_migration` (éditeur SQL,
+  `execute_sql`) et n'existaient dans AUCUN fichier — dont `lignes_bancaires`, la plus grosse table
+  du projet, et `ecritures_brouillon`, le cœur comptable dont sortent le FEC et la balance.
+  **ET LE CONTRÔLE DE DÉRIVE NE POUVAIT PAS LE VOIR.** L'empreinte agrégée compare les FICHIERS aux
+  MIGRATIONS ; elle était verte, et elle l'est encore (58 = 58, `d2a7eaa33d6fef10480b2aa8ea540c09`
+  des deux côtés). Elle ne dit rien de ce que les migrations RECONSTRUISENT. **Une vérification qui
+  prouve une chose plus faible que celle qu'on lui prête** est la panne que ce dépôt connaît sous
+  plusieurs noms ; celle-ci portait sur le plan de reprise, c'est-à-dire sur ce dont on ne s'aperçoit
+  que le jour où il est trop tard. Les deux documents qui promettaient trop le disent maintenant.
+  **`supabase/schema/socle/tables_sans_migration.sql`** comble le trou : tables, contraintes, index,
+  RLS et policies, générés depuis `pg_catalog`. Dans un SOUS-DOSSIER pour rester hors de l'empreinte,
+  qui ne balaie que `schema/*.sql` — ce n'est pas une migration et il ne s'applique pas tout seul.
+  Le bloc RLS n'est pas décoratif : **une table restaurée sans RLS n'est pas « à sécuriser plus
+  tard », elle est lisible par tout Internet muni de la clé publique**, et rien ne le signale.
+  **RIEN N'Y EST REFORMATÉ, ET C'EST CE QUI LE REND VÉRIFIABLE** : chaque instruction est le rendu
+  exact du catalogue, donc `supabase/essais/socle.py` + `socle.sql` comparent AU CARACTÈRE PRÈS —
+  57 instructions, empreinte `49fc3d3c27c7229699191765fa68753d` des deux côtés. Une version
+  « propre » écrite à la main serait sémantiquement équivalente et INVÉRIFIABLE, c'est-à-dire
+  exactement le plan de reprise qu'on croit avoir. Le harnais mord sur un type de colonne changé, une
+  policy retirée, un RLS retiré, et reste stable sur un changement d'ORDRE, qui est la propriété
+  voulue. **À rejouer après toute migration touchant l'une des douze** : c'est le seul moment où ce
+  fichier peut dériver, et sa dérive ne se voit nulle part ailleurs.
+  **ET LA SOURCE DEVENUE EXHAUSTIVE PERMET ENFIN LE GARDE-FOU QUI MANQUAIT AU PLAN DE SAUVEGARDE.**
+  Une table par dossier doit être inscrite à TROIS endroits de `sauvegarde.ts`, et rien ne le
+  vérifiait : `exercices_clotures`, créée le matin même, n'était inscrite dans aucun — une sauvegarde
+  omettait silencieusement les marques de clôture, et une restauration aurait fait redemander au
+  client les documents d'un exercice bouclé. `sauvegardeTables.test.ts` part du schéma comme
+  `rls.sql` part de `pg_class`, refuse les DEUX sens (une table du plan absente du schéma fait
+  échouer une restauration au moment où plus rien ne peut être vérifié), et n'a **AUCUNE
+  exception** : 41 = 41 = 41. Six mutations mordent, dont le socle retiré du balayage — le trou
+  d'origine — et le scanner rendu aveugle.
 - **Ce qui doit être tout ou rien vit dans une fonction SQL.** Une facture s'enregistre en un
   seul appel (`enregistrer_facture`) : en-tête, remplacement des lignes, numéro et validation
   dans la même transaction. En trois à cinq allers-retours, un échec au milieu laissait la
@@ -1664,10 +1711,51 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   qu'aucune horloge feinte ne produit entre deux instructions synchrones. La forme à un seul `Date` est
   gardée parce qu'elle tient par CONSTRUCTION — même statut que la part non déductible calculée par
   complément dans `declaration2035`.
-  **CE QUI RESTE UNE QUESTION PRODUIT, PAS UN DÉFAUT** : au 1er janvier, « ce qu'il reste à envoyer »
-  repart à zéro sur la nouvelle année et cesse d'un coup de réclamer décembre de l'année révolue — vrai
-  avant comme après ce correctif, et c'est précisément le moment où un cabinet court après les pièces de
-  l'exercice qu'il clôture. À trancher avec l'utilisateur, pas en passant.
+  **CE QUI RESTAIT UNE QUESTION PRODUIT A ÉTÉ TRANCHÉ PAR LE CABINET LE 22/09/2026, ET CORRIGÉ** :
+  au 1er janvier, « ce qu'il reste à envoyer » repartait à zéro sur la nouvelle année et cessait d'un
+  coup de réclamer l'exercice révolu — voir l'entrée dédiée plus bas. La borne retenue est la CLÔTURE
+  et non une date fixe.
+- **ET AU 1ER JANVIER, LES TROIS ÉCRANS CESSAIENT DE RÉCLAMER L'EXERCICE QU'ON CLÔTURE**
+  (22/09/2026). `moisEcoules` vaut 0 le 1er janvier, et les trois écrans ne connaissaient que l'année
+  EN COURS : ils n'avaient donc plus rien à réclamer, ni pour la nouvelle année (aucun mois révolu),
+  ni pour l'ancienne (qu'ils ne regardaient pas). **Une bonne nouvelle fabriquée** — le pire sens de
+  cette famille, personne n'allant vérifier une bonne nouvelle — au moment précis où un cabinet court
+  après les pièces de l'exercice qu'il clôture.
+  **LA BORNE EST LA CLÔTURE, PAS UNE DATE FIXE** (choix du cabinet, 22/09/2026) : on continue de
+  réclamer tant que personne n'a coché que l'exercice est clos. Une date arbitraire (« jusqu'au
+  30 avril ») se serait trompée sur tous les dossiers EN RETARD, c'est-à-dire exactement ceux qui ont
+  besoin qu'on réclame. La marque est `exercices_clotures`, celle que pose déjà le bouton de
+  `ClotureTab` — **une seule marque, pas deux** : en créer une seconde aurait laissé deux vérités sur
+  la même question. Sa policy a été élargie au CLIENT en lecture seule (clôturer reste un geste de
+  cabinet), vérifiée par impersonation réelle des trois profils, sept contrôles dont le POSITIF sans
+  lequel trois refus seraient satisfaits par une policy qui refuse tout le monde.
+  **CONSÉQUENCE À CONNAÎTRE, dite plutôt que tue** : cocher la clôture pour faire taire la
+  réclamation déclenche AUSSI la purge du texte OCR des pièces sensibles de l'exercice (RGPD.md
+  §8.3). Les deux effets tiennent à la même ligne, et la confirmation du bouton les nomme tous les
+  deux.
+  **L'ARITHMÉTIQUE D'EXERCICE VIT DÉSORMAIS DANS `lib/resteAEnvoyer.ts`.** Elle était écrite TROIS
+  FOIS et avait déjà divergé deux fois — le mois en cours compté comme dû d'un seul côté, puis
+  l'année figée au chargement du module sur un seul des trois. Ce qui reste aux écrans est ce qui
+  diffère LÉGITIMEMENT : le registre des libellés (on tutoie le client), et le critère de comptage
+  des pièces (dépôts côté client, `date_piece` côté cabinet — voir l'entrée suivante). Les fondre
+  serait une régression, pas une simplification.
+  **Trois arbitrages écrits** : on ne réclame JAMAIS au-delà de N-1 (un dossier ouvert depuis cinq
+  ans dont personne n'a coché la clôture afficherait cinq exercices en permanence, et une mise en
+  garde permanente cesse d'être lue) ; un point SATISFAIT d'un exercice révolu ne s'affiche pas (sans
+  quoi un dossier à jour afficherait SIX points pour dire qu'il ne reste rien) ; et une lecture de
+  clôtures REFUSÉE se passe en « rien de clos », donc on continue de réclamer — l'inverse ferait
+  cesser de demander sur une panne, ce qui est indiscernable d'un dossier à jour. La réserve le DIT,
+  dans les deux registres depuis un seul endroit.
+  **Correction au passage** : la tuile « Relevés » comptait les mois PRÉSENTS et non les mois révolus
+  reçus, donc affichait « 13/8 » sur un relevé daté d'un mois à venir (ClientHome le rattrapait par
+  un `Math.min`, la Checklist non).
+  **7 mutations sur le module, 5 sur le câblage, toutes mordent** — dont le code tel qu'il était des
+  deux côtés et les deux gardes symétriques (« l'écran n'affiche plus rien », « la réserve s'affiche
+  toujours »). **L'HORLOGE DU TEST D'ÉCRAN EST FIXÉE** au 5 janvier : lue sur l'heure courante, elle
+  serait verte par hasard onze mois sur douze, le défaut ne se voyant qu'au passage d'une année.
+  Piège à connaître : `vi.useFakeTimers()` gèle AUSSI les minuteurs dont `findByText` dépend, et
+  chaque test part alors en expiration — une panne qui ne ressemble pas au défaut gardé. On ne feint
+  que `Date` (`toFake: ['Date']`).
 - **ET « LES TROIS ÉCRANS DISENT LA MÊME CHOSE » N'ÉTAIT VRAI QUE DE DEUX POINTS SUR TROIS**
   (22/09/2026, trouvé en vérifiant l'invariant que le correctif ci-dessus venait de rétablir).
   Relevés bancaires et cotisations : identiques au caractère près dans `ClientHome`, `ClientUpload` et
@@ -3605,7 +3693,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1320 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1350 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
