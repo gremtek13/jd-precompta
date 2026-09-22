@@ -374,7 +374,7 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   cru le faux client infidèle parce qu'il rendait un objet nu. C'est la source de la bibliothèque qui
   a tranché, contre le code de production.
   **ET LA RÈGLE NE RESTE PAS ICI : elle est devenue un test.** `erreursSupabase.test.ts` interdit le
-  ternaire fautif dans TOUTE source de production, **sans aucune exception** — il n'existe pas de cas
+  ternaire fautif dans toute source de `src/`, **sans aucune exception** — il n'y existe pas de cas
   où cette forme soit correcte. `if (err instanceof Error)` reste permis ; ce qui est interdit, c'est
   de faire dépendre le MESSAGE AFFICHÉ de l'héritage. Son auto-contrôle est un défaut PLANTÉ dans une
   source synthétique, avec deux cas voisins qu'il ne doit PAS attraper — « le scanner rend zéro » et
@@ -385,6 +385,28 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   Cinq mutations mordent sur le module, trois sur le scanner. La première est le défaut d'origine
   replanté (exiger `instanceof Error`) : **un test qui n'aurait posé que de vraies `Error` serait
   resté vert avec le défaut entier**, et c'est exactement ce qui l'a laissé vivre depuis le début.
+  **ET « TOUTE SOURCE DE PRODUCTION » ÉTAIT FAUX : CE SCANNER S'ARRÊTAIT À `src/`** (22/09/2026,
+  troisième contrôle de la journée à promettre un périmètre qu'il n'avait pas). Le ternaire interdit
+  vit **huit fois** dans les Edge Functions.
+  **MAIS L'Y PORTER TEL QUEL SERAIT FAUX, et c'est la mesure qui le dit** plutôt qu'une intuition. Ce
+  qui rend ce ternaire dangereux n'est pas sa forme, c'est qu'une valeur NUE puisse l'atteindre — et
+  une valeur nue n'arrive dans un `catch` que si quelqu'un l'a LEVÉE. Compté : `src/` porte 52
+  `throw new …` contre **41 `throw <erreur Supabase>` NUS** (`throw error`, `throw insertError`,
+  `throw uploadError`…), ce qui est précisément pourquoi le ternaire y était faux quarante-cinq fois ;
+  les Edge Functions portent **12 levées, TOUTES `new Error`, zéro nue**, et aucun `Promise.reject`.
+  Les huit ternaires y sont donc inoffensifs — par cette propriété-là, et par aucune autre.
+  **LE CONTRÔLE PORTE SUR LA PRÉCONDITION, PAS SUR LE SYMPTÔME** : côté Edge Functions, rien ne doit
+  être levé qui ne soit un `new …`. C'était VRAI sans être GARDÉ, donc indiscernable d'un dépôt où le
+  premier `if (error) throw error` écrit demain transformerait « new row violates row-level security
+  policy » en **« [object Object] »**, sur le côté où rien ne recharge et où le diagnostic passe par
+  les logs de production. Le remède y est le même qu'ailleurs : `throw new Error(error.message)`.
+  **POURQUOI LES HUIT NE SONT PAS RÉÉCRITS, écrit plutôt que laissé deviner** : le code déployé est
+  CORRECT aujourd'hui, et le corriger demanderait sept redéploiements, chacun avec son `verify_jwt` à
+  relire, sa comparaison avant écrasement et son aller-retour. Ce dépôt a déjà payé un `verify_jwt`
+  retourné en silence. On ne court pas ce risque pour un défaut qui ne peut pas survenir ; on interdit
+  ce qui le ferait survenir. Six mutations mordent, dont la levée nue plantée dans une vraie fonction
+  et le scanner pointé sur le mauvais dossier — avec zéro faute réelle, cette borne-là est la SEULE
+  chose qui distingue « propre » d'« aveugle ».
 - **Extraction de champs : le modèle CITE, il ne calcule jamais** (`src/lib/extractionChamps.ts`,
   20/09/2026, chantier EN COURS). `AnalyzeExpense` coûte 10 $/1000 pages et fait deux choses : lire
   le texte, et ÉTIQUETER des champs. La seconde est si irrégulière — `INVOICE_RECEIPT_DATE` sur
@@ -3915,7 +3937,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1383 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1387 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
