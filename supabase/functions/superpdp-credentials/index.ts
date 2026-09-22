@@ -73,11 +73,17 @@ Deno.serve(async (req: Request) => {
   }
 
   if (payload.action === "status") {
-    const { data } = await admin
+    // `configured: false` est une AFFIRMATION, et l'écran en tire « ce dossier n'est pas configuré »
+    // — donc invite à ressaisir un `client_secret` par-dessus celui qui existe. Une lecture refusée
+    // ne doit pas produire cette réponse-là.
+    const { data, error } = await admin
       .from("superpdp_credentials")
       .select("client_id, updated_at")
       .eq("dossier_id", dossierId)
       .maybeSingle()
+    if (error) {
+      return json({ error: `Le statut Super PDP de ce dossier n'a pas pu être lu (${error.message}).` }, 503)
+    }
     return json({ configured: !!data, client_id: data?.client_id ?? null, updated_at: data?.updated_at ?? null })
   }
 

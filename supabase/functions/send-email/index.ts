@@ -176,11 +176,19 @@ Deno.serve(async (req: Request) => {
     if (factureData.statut !== "validee") {
       return json({ error: "Seule une facture validée peut être envoyée par e-mail." }, 400)
     }
-    const { data: lignesData } = await admin
+    // SA JUMELLE SIX LIGNES PLUS HAUT LIT SON ERREUR, PAS ELLE. `(lignesData ?? [])` sur une lecture
+    // refusée construisait une facture au bon en-tête et au bon total, SANS AUCUNE LIGNE, et
+    // l'envoyait au client — un e-mail parti ne se rattrape pas, et le cabinet n'en saurait rien
+    // puisque la fonction répond « ok ». On refuse d'envoyer : c'est le seul moment où c'est encore
+    // possible.
+    const { data: lignesData, error: lignesError } = await admin
       .from("facture_lignes")
       .select("designation, quantite, prix_unitaire_ht, taux_tva")
       .eq("facture_id", factureId)
       .order("ordre")
+    if (lignesError) {
+      return json({ error: `Les lignes de la facture n'ont pas pu être lues (${lignesError.message}). L'e-mail n'a pas été envoyé : il serait parti sans son détail. Réessaie dans un instant.` }, 503)
+    }
     const construit = construireEmailFacture(factureData as FactureRow, (lignesData ?? []) as LigneRow[], messagePerso)
     objet = construit.objet
     html = construit.html

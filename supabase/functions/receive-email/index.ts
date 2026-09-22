@@ -196,11 +196,27 @@ Deno.serve(async (req: Request) => {
       // transfert automatique peut renvoyer plusieurs fois le même e-mail (relance client, règle de
       // transfert mal configurée...).
       const hash = await hashBytes(bytes)
-      const [{ count: dansPieces }, { count: dansDocuments }] = await Promise.all([
+      const [pieces, documents] = await Promise.all([
         supabase.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossier.id).eq("storage_hash", hash),
         supabase.from("documents_divers").select("id", { count: "exact", head: true }).eq("dossier_id", dossier.id).eq("storage_hash", hash),
       ])
-      if ((dansPieces ?? 0) > 0 || (dansDocuments ?? 0) > 0) {
+      // UN `count` NUL EST INDISCERNABLE D'UN « AUCUN DOUBLON TROUVÉ ». C'est mot pour mot le défaut
+      // que `fichierDejaPresent` (src/lib/extraction.ts) a été corrigé pour ne plus avoir, resté
+      // entier sur cette troisième copie — que la fonction soit auto-portée n'y change rien, et le
+      // commentaire ci-dessus promettait justement « la même détection que les autres points
+      // d'entrée ».
+      //
+      // ON SAUTE LA PIÈCE JOINTE plutôt que de la déposer : un doublon est PERMANENT et compte la
+      // même charge deux fois en 2035 comme en balance, alors qu'une pièce jointe non déposée laisse
+      // la trace que laisse déjà tout échec de cette fonction — et le dossier continue de réclamer
+      // le document sur les trois écrans « ce qu'il reste à envoyer », donc le manque se voit.
+      // Le twin de `src/` LÈVE ; ici il n'y a aucun opérateur pour recevoir une exception.
+      const erreurDoublon = pieces.error ?? documents.error
+      if (erreurDoublon) {
+        console.error(`Détection de doublon impossible, pièce jointe ignorée: ${fichier.id} (${erreurDoublon.message})`)
+        continue
+      }
+      if ((pieces.count ?? 0) > 0 || (documents.count ?? 0) > 0) {
         console.log(`Pièce jointe déjà présente (hash identique), ignorée: ${fichier.id}`)
         continue
       }

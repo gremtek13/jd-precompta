@@ -174,11 +174,22 @@ Deno.serve(async (req: Request) => {
     // Les deux sens : "in" (reçue → achat) et "out" (émise → vente) — voir note en tête de fichier.
     const factures = invoices.slice(0, MAX_FACTURES_PAR_SYNC)
 
-    const { data: dejaImportees } = await admin
+    // LA MÊME LECTURE QUE LE DÉDOUBLONNAGE, ET C'EST LA PLUS COÛTEUSE DES TROIS COPIES.
+    // Son erreur était jetée : une lecture refusée rendait `idsConnus` VIDE, donc `aTraiter` =
+    // TOUTES les factures de la page, et la synchronisation réimportait en un clic celles déjà
+    // présentes — jusqu'à MAX_FACTURES_PAR_SYNC pièces en double, venues d'une plateforme agréée
+    // DGFiP, donc autant de charges comptées deux fois. Et rien ne l'aurait dit : la fonction
+    // répond « N importées », ce qui est vrai.
+    const { data: dejaImportees, error: erreurDeja } = await admin
       .from("pieces")
       .select("superpdp_invoice_id")
       .eq("dossier_id", dossierId)
       .not("superpdp_invoice_id", "is", null)
+    if (erreurDeja) {
+      return json({
+        error: `Les factures déjà importées n'ont pas pu être lues (${erreurDeja.message}). La synchronisation est interrompue : sans cette liste, elle réimporterait celles qui sont déjà là. Réessaie dans un instant.`,
+      }, 503)
+    }
     const idsConnus = new Set(((dejaImportees ?? []) as { superpdp_invoice_id: number }[]).map((p) => p.superpdp_invoice_id))
 
     const aTraiter = factures.filter((i) => !idsConnus.has(i.id))

@@ -203,6 +203,12 @@ interface PlafondResultat {
   coutMoisUsd: number
   limiteAlerteUsd: number | null
   limiteBlocageUsd: number | null
+  // Non nul = le plafond n'a PAS PU ÊTRE VÉRIFIÉ. Ce n'est pas « pas de plafond » : les trois
+  // lectures de cette fonction échouent toutes du côté OUVERT — sans réponse, les deux seuils sont
+  // nuls, la liste des dossiers est vide, l'usage du mois vaut zéro — donc une lecture refusée
+  // LEVAIT le plafond en silence, en annonçant 0,00 $ consommé. Une bonne nouvelle fabriquée sur le
+  // seul mécanisme qui borne une dépense.
+  indetermine: string | null
 }
 
 // Plafond IA mensuel, paramétrable par cabinet depuis Comptes master (voir migration
@@ -213,32 +219,47 @@ interface PlafondResultat {
 // Mois calendaire UTC (comme tokens_entree/tokens_sortie, écrits en UTC par Postgres) — pas le fuseau
 // du navigateur, qui décalerait la frontière du mois de quelques heures selon l'endroit d'où on se connecte.
 async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, cabinetId: string): Promise<PlafondResultat> {
-  const { data: cabinet } = await admin
+  const { data: cabinet, error: erreurCabinet } = await admin
     .from("cabinets")
     .select("limite_ia_alerte_usd, limite_ia_blocage_usd")
     .eq("id", cabinetId)
     .single()
+  // NE PAS SAVOIR INTERDIT D'ENGAGER UNE DÉPENSE — même arbitrage que PresenceTexteOcr côté écran,
+  // où ne pas savoir interdit de relancer une lecture Textract facturée. On refuse plutôt que de
+  // laisser passer : un refus coûte une question, une lecture refusée coûte un mois de plafond.
+  if (erreurCabinet) {
+    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd: null, limiteBlocageUsd: null, indetermine: erreurCabinet.message }
+  }
   const limiteAlerteUsd = (cabinet?.limite_ia_alerte_usd as number | null | undefined) ?? null
   const limiteBlocageUsd = (cabinet?.limite_ia_blocage_usd as number | null | undefined) ?? null
   // Aucun des deux seuils configuré (défaut) : pas de plafond, on évite même la requête suivante.
   if (limiteAlerteUsd == null && limiteBlocageUsd == null) {
-    return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd: null, limiteBlocageUsd: null }
+    return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd: null, limiteBlocageUsd: null, indetermine: null }
   }
 
-  const { data: dossiersCabinet } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+  const { data: dossiersCabinet, error: erreurDossiers } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
+  if (erreurDossiers) {
+    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: erreurDossiers.message }
+  }
   const dossierIds = ((dossiersCabinet ?? []) as { id: string }[]).map((d) => d.id)
   if (dossierIds.length === 0) {
-    return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd }
+    return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: null }
   }
 
   const maintenant = new Date()
   const debutMois = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString()
-  const { data: conversations } = await admin
+  const { data: conversations, error: erreurUsage } = await admin
     .from("agent_conversations")
     .select("tokens_entree, tokens_sortie")
     .eq("role", "assistant")
     .in("dossier_id", dossierIds)
     .gte("created_at", debutMois)
+  // C'est la table que CLAUDE.md désigne déjà comme celle dont la troncature « ne vide pas le
+  // compteur de coût IA, elle le SOUS-ESTIME, ce qui est la façon exacte dont un plafond cesse de
+  // protéger ». Une lecture REFUSÉE, elle, le met à zéro : la même phrase en pire.
+  if (erreurUsage) {
+    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: erreurUsage.message }
+  }
 
   const lignesUsage = (conversations ?? []) as { tokens_entree: number | null; tokens_sortie: number | null }[]
   const totalEntree = lignesUsage.reduce((s, c) => s + (c.tokens_entree ?? 0), 0)
@@ -251,6 +272,7 @@ async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, ca
     coutMoisUsd,
     limiteAlerteUsd,
     limiteBlocageUsd,
+    indetermine: null,
   }
 }
 
@@ -422,7 +444,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     if (date_debut) q = q.gte("date_piece", date_debut).lte("date_piece", date_fin!)
     const { data, error, count } = await q.order("date_piece", { ascending: false }).limit(limite)
     if (error) return { erreur: error.message }
-    const { data: categories } = await admin.from("categories").select("id, libelle").or(`dossier_id.eq.${dossierId},dossier_id.is.null`)
+    // « Sans catégorie » est une AFFIRMATION, et elle part en français à un comptable qui n'ira pas
+    // vérifier : une lecture refusée rendait toutes les pièces `categorie: null`, y compris celles
+    // que le cabinet a arbitrées une par une. On dit qu'on ne sait pas, comme resume_dossier.
+    const { data: categories, error: erreurCategories } = await admin.from("categories").select("id, libelle").or(`dossier_id.eq.${dossierId},dossier_id.is.null`)
+    if (erreurCategories) return { erreur: `Catégories illisibles : ${erreurCategories.message} — ne conclus rien sur la catégorisation des pièces de ce dossier.` }
     const libelleParCategorie = new Map(((categories ?? []) as { id: string; libelle: string }[]).map((c) => [c.id, c.libelle]))
     const avecCategorie = ((data ?? []) as Record<string, unknown>[]).map(({ categorie_id, ...reste }) => ({
       ...reste,
@@ -554,6 +580,14 @@ Deno.serve(async (req: Request) => {
   // Plafond IA du cabinet (voir verifierPlafondCabinet) : vérifié avant tout appel Bedrock — un
   // cabinet bloqué ne doit générer aucun coût supplémentaire, pas même un premier tour d'outils.
   const plafond = await verifierPlafondCabinet(admin, dossierRow.cabinet_id as string)
+  // Le refus NOMME sa cause : « plafond atteint » et « plafond invérifiable » appellent deux gestes
+  // opposés — attendre le mois prochain ou réessayer — et le premier message envoyé sur le second
+  // cas ferait chercher un dépassement qui n'existe pas.
+  if (plafond.indetermine) {
+    return json({
+      error: `Le plafond d'usage du cabinet n'a pas pu être vérifié (${plafond.indetermine}). La question n'a pas été envoyée : tant qu'on ne sait pas ce qui a déjà été consommé ce mois-ci, la poser reviendrait à dépenser sans garde-fou. Réessaie dans un instant.`,
+    }, 503)
+  }
   if (plafond.bloque) {
     return json({
       error: `Plafond mensuel d'usage de l'agent atteint pour ce cabinet (${plafond.coutMoisUsd.toFixed(2)} $ ce mois-ci, limite ${plafond.limiteBlocageUsd?.toFixed(2)} $). Il sera réinitialisé le mois prochain, ou peut être relevé depuis Comptes master.`,

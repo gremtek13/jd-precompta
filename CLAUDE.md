@@ -1417,6 +1417,72 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   désormais la fin du chargement par le seul signal que l'écran en donne — la tuile « Trésorerie
   actuelle », qui affiche « — » tant que `loading` est vrai. Trouvé en rejouant `test:fuseaux`
   plutôt qu'en le relisant, et vérifié par huit passages complets sur quatre fuseaux.
+- **ET CE BALAYAGE-LÀ S'ÉTAIT ARRÊTÉ À `src/` — LES LECTURES DES EDGE FUNCTIONS N'AVAIENT JAMAIS ÉTÉ
+  REGARDÉES** (22/09/2026, le lendemain). C'est mot pour mot ce qui était arrivé aux ÉCRITURES le
+  21/09 (« ET CE BALAYAGE S'ÉTAIT ARRÊTÉ À `src/` »), sur l'autre sens de la même règle : les
+  écritures avaient alors été portées ici par `edgeFunctionsEcritures.test.ts`, les LECTURES non.
+  **Et la raison qui rend ce côté plus coûteux est LA MÊME** : dans `src/`, la question qui décide
+  est *quelque chose recharge-t-il derrière ?*, et la réponse y est presque toujours oui. Dans une
+  Edge Function elle est presque toujours non — rien ne recharge, l'appelant reçoit le code de
+  retour que la fonction a décidé d'écrire, et une lecture refusée y produit une AFFIRMATION que
+  personne ne peut démentir.
+  **Mesuré : 28 lectures nues, 8 en faute**, et les trois qui coûtent le plus sont des bonnes
+  nouvelles fabriquées — le pire sens de cette famille.
+  - **LE PLAFOND DE COÛT IA SE LEVAIT TOUT SEUL, PAR N'IMPORTE LAQUELLE DE SES TROIS LECTURES.**
+    `verifierPlafondCabinet` échouait du côté OUVERT à chaque fois : sans réponse, les deux seuils
+    sont nuls (« pas de plafond, on évite même la requête suivante »), la liste des dossiers est vide
+    (« 0,00 $ »), l'usage du mois vaut zéro. Une lecture refusée rendait donc `bloque: false` en
+    annonçant 0,00 $ consommé, sur le SEUL mécanisme qui borne une dépense — et ce fichier désignait
+    déjà `agent_conversations` comme la table dont la troncature « ne vide pas le compteur de coût
+    IA, elle le SOUS-ESTIME, ce qui est la façon exacte dont un plafond cesse de protéger ». Une
+    lecture refusée, elle, le met à ZÉRO : la même phrase en pire.
+    **On refuse la question plutôt que de la laisser passer**, et c'est le précédent `PresenceTexteOcr` :
+    **ne pas savoir interdit d'engager une dépense**. Un refus coûte une question, une lecture
+    refusée coûte un mois de plafond. Le message NOMME sa cause — « plafond atteint » et « plafond
+    invérifiable » appellent deux gestes opposés (attendre le mois prochain, ou réessayer).
+  - **`superpdp-sync` réimportait toute la page en un clic.** La liste des factures DÉJÀ importées,
+    vide sur une lecture refusée, faisait passer `aTraiter` de « les nouvelles » à « toutes » :
+    jusqu'à `MAX_FACTURES_PAR_SYNC` pièces en double venues d'une plateforme agréée DGFiP, donc
+    autant de charges comptées deux fois — sous une réponse « N importées » qui est vraie.
+  - **`receive-email` — TROISIÈME COPIE de `fichierDejaPresent`**, celle dont ce fichier dit qu'elle
+    lève précisément parce qu'« un `count` nul est indiscernable d'un aucun doublon trouvé ». Le
+    commentaire juste au-dessus promettait « la même détection que les autres points d'entrée ». On
+    SAUTE la pièce jointe plutôt que de la déposer : un doublon est permanent et compte la charge
+    deux fois, quand une pièce jointe non déposée laisse la trace de tout échec de cette fonction —
+    et le dossier continue de la réclamer sur les trois écrans « ce qu'il reste à envoyer ». Le
+    jumeau de `src/` LÈVE ; ici il n'y a aucun opérateur pour recevoir une exception.
+  - **`send-email` envoyait au client une facture SANS AUCUNE LIGNE**, au bon en-tête et au bon
+    total — `(lignesData ?? [])` sur une lecture refusée. Sa jumelle SIX LIGNES plus haut lit son
+    erreur. Un e-mail parti ne se rattrape pas.
+  - Plus **`lister_pieces`** de l'assistant (toutes les pièces rendues `categorie: null`, en français
+    à un comptable qui n'ira pas vérifier) et le **statut Super PDP** (`configured: false` invite à
+    ressaisir un `client_secret` par-dessus celui qui existe).
+  **DIX-NEUF LECTURES NUES RESTENT, TOUTES LÉGITIMES — résultat à garder pour ne pas les
+  réenquêter** : ce sont les contrôles d'accès (`admin_du_dossier`, `cabinet_admins`, `super_admins`,
+  `memberships`) et les refus qu'ils commandent. Sans réponse, rien n'est accordé — le côté FERMÉ.
+  `appartientDejaAuCabinet` est le cas le plus net : son échec rend « ce compte n'appartient pas à ce
+  cabinet », et son propre commentaire dit pourquoi ce sens-là est le bon (c'est la garde contre la
+  prise de contrôle d'un compte déjà inscrit ailleurs).
+  **`edgeFunctionsLectures.test.ts` fait de la règle un contrôle**, sibling d'`edgeFunctionsEcritures`.
+  Deux portes (`await <client>.<porte>` destructuré, et l'entrée d'un `Promise.all`), **le client
+  n'est PAS nommé** (`admin`, `supabase`, `supabaseAsCaller` selon les fonctions — ancrer sur un nom
+  serait la liste d'inclusion, encore), l'exemption de session reste NOMMÉE (`getUser`/`getSession`,
+  jamais `.auth.` en entier), et **l'exception porte un NOMBRE** : quatre de ces neuf fonctions
+  portaient le même jour une lecture légitime ET une lecture en faute, donc une dispense par nom de
+  fichier les aurait couvertes toutes les deux.
+  **ONZE MUTATIONS, TOUTES MORDENT** — dont les quatre défauts d'origine replantés, chaque porte
+  rendue aveugle séparément, l'ancrage sur un seul nom de client, l'exemption élargie, le compte
+  menti d'une unité et l'exception inventée.
+  **ET LA MUTATION DES ACCOLADES APPARIÉES A SURVÉCU D'ABORD** : mon cas de destructuration
+  imbriquée était sur la porte `await`, qui apparie ses accolades elle-même — `groupeAccolades` ne
+  sert QU'À la porte `Promise.all`. Une mutation qui ne mord pas accuse d'abord le jeu d'essai ;
+  déplacé sur la bonne porte, elle mord.
+  **LES CINQ FONCTIONS SONT EN PRODUCTION** le jour même : `superpdp-credentials` v4, `superpdp-sync`
+  v5, `send-email` v4, `receive-email` v7, `agent-comptable` v20 — chacune avec son `verify_jwt` relu
+  et repassé à `false`, le déployé comparé au dépôt AVANT écrasement (identique à HEAD les cinq fois,
+  donc personne n'avait modifié la production à la main et il n'y avait aucun correctif non déployé à
+  embarquer), et un aller-retour après : **zéro différence résiduelle sur 110, 264, 236, 292 et
+  740 lignes**.
 - **ET LE TROISIÈME JEU D'ESSAI D'ÉCRAN N'ÉTAIT PAS TYPÉ — cinq colonnes manquantes** (21/09/2026).
   Le remède de la contrainte de type avait été appliqué à `ChecklistTab` et `BanqueTab`, pas à
   `PiecesTab`, dont le `piece()` restait un `Record<string, unknown>`. Typé `Partial<Piece> => Piece`
@@ -3799,7 +3865,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1365 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1374 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
