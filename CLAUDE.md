@@ -131,6 +131,9 @@ supabase/
                   puis se mute lui-même pour prouver qu'il sait encore échouer.
                   allerretour.py : compare la copie DÉPLOYÉE d'une Edge Function au fichier
                   du dépôt, à rejouer après chaque déploiement.
+  types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
+                  HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
+                  FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
   schema/         export du schéma, une migration par fichier — voir PLAN_DE_REPRISE.md.
                   Ce n'est PAS la source de vérité : la base l'est, et les migrations
                   continuent de s'appliquer par l'outil MCP.
@@ -2707,6 +2710,74 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   exactement à un typecheck réussi. La commande réelle est **`npx tsc -b`** (ce que fait
   `npm run build`). Un identifiant non importé est passé trois fois de suite à travers ce faux
   contrôle — c'est `oxlint` (`react(jsx-no-undef)`) qui l'a rattrapé.
+- **ET CE CONTRÔLE-LÀ NE COUVRAIT QUE `src/` : LES EDGE FUNCTIONS N'AVAIENT JAMAIS RENCONTRÉ DE
+  COMPILATEUR** (22/09/2026). `tsconfig.app.json` n'inclut que `src`, `tsconfig.node.json` que
+  `vite.config.ts` : **4 419 lignes réparties sur quatorze fonctions n'étaient type-vérifiées par
+  RIEN**, et le déploiement ne l'est pas non plus — il regroupe, il ne contrôle pas. Cinquième
+  membre de la famille « le balayage s'était arrêté à `src/` », et le seul qui porte sur un OUTIL
+  plutôt que sur un motif.
+  **LA COUCHE QUI MANQUAIT EST NOMMÉE DANS CE FICHIER DEPUIS LA VEILLE.** Il y est écrit que les
+  trois gardes d'un drapeau de lecture partielle ne se recouvrent pas : « le scanner voit qu'on
+  CALCULE le drapeau, le compilateur qu'il est LU, le test d'écran qu'il ATTEINT l'opérateur ».
+  Côté `src/`, `noUnusedLocals` tient la deuxième. Côté Edge Functions, personne — donc ceci passait
+  sans un mot :
+
+  ```ts
+  const lecture = await lireTout(...)
+  const incomplet = !lecture.complete   // le drapeau EST lu → `lecturesSignalees` reste VERT
+  ...                                   // et `incomplet` n'atteint rien
+  ```
+
+  **Aucun scanner de texte ne peut voir ça** — la liaison est bien couverte, le drapeau bien lu.
+  Seul un compilateur sait qu'une valeur calculée ne va nulle part. C'est le cas d'essai central
+  d'`edgeFunctionsCodeMort.test.ts`, et la mutation qui le plante dans `agent-comptable` fait tomber
+  cinq des six tests.
+  **CE QUI EST GARDÉ EST LE CODE MORT, ET RIEN D'AUTRE — l'arbitrage est écrit plutôt que tu.** Les
+  diagnostics de code mort (variable, import, paramètre, ligne inatteignable, `switch` qui déborde)
+  sont **VERTS sur les 4 419 lignes**, donc le garde se pose sans toucher une ligne de production ni
+  redéployer quoi que ce soit — et c'était la condition pour qu'il se pose du tout. Le typage
+  COMPLET, lui, rend **53 erreurs** sous les réglages par défaut de TypeScript 6.0.3 (qui active
+  `strict`) et **26** en le désactivant. **Aucune des 26 n'est un défaut** : elles se répartissent
+  entre les SDK tiers non installés et le générique `Uint8Array` de la lib DOM. Les fermer
+  demanderait d'installer cinq SDK que `package.json` ne porte pas — payé par chaque `npm ci` de la
+  CI — ou de tenir une LISTE de noms de types à la main, c'est-à-dire la liste d'inclusion dont ce
+  dépôt connaît la panne sous cinq autres noms ; et corriger les sources demanderait sept
+  redéploiements avec leurs `verify_jwt`, leurs comparaisons avant écrasement et leurs
+  allers-retours. **C'est mot pour mot l'arbitrage des huit ternaires interdits, et il penche du
+  même côté** : on garde ce qui est vrai et vérifiable, on NOMME le reste plutôt que de promettre
+  « les Edge Functions sont type-vérifiées ».
+  **LE VRAI TYPAGE DE `supabase-js` A ÉTÉ ESSAYÉ PUIS ÉCARTÉ SUR MESURE**, et ce n'est pas un
+  renoncement de confort : c'est le seul des sept modules qui SOIT installé, donc le candidat
+  évident. Branché sur ses vrais types, `.from('cabinets').select(...)` rend des lignes de type
+  `never` faute de type `Database` généré — soit **15 erreurs sur du code juste**, dont
+  « `limite_ia_alerte_usd` n'existe pas sur `never` ». Le typage réel ne vaut donc qu'avec un schéma
+  généré tenu à jour, ce qui est un autre chantier ; le brancher à moitié produirait du BRUIT, et un
+  avertissement qui se trompe finit par ne plus être lu.
+  **ET J'AI CRU TROUVER UN VRAI DÉFAUT — C'ÉTAIT MA PROTHÈSE.** Le premier passage signalait
+  `'page' is possibly 'undefined'` dans la boucle de sondage d'`extract-piece`, c'est-à-dire
+  exactement le chemin dont ce fichier dit que 92 % d'un document y partiraient en silence.
+  Vérifié : `textract.send` étant shimmé en `any`, assigner `any` à un `let` déclaré
+  `DetectionResult | undefined` **re-narrow au type DÉCLARÉ**, `undefined` compris. Le code est
+  juste ; c'est la prothèse qui parlait. Mesure qui corrige une attente plutôt qu'un défaut — et la
+  raison pour laquelle un garde de typage à moitié branché est dangereux.
+  **RÉSULTAT NÉGATIF MESURÉ AU PASSAGE, à garder pour ne pas le refaire** : `lecturesSignalees` voit
+  bien les **12 sites `lireTout` des Edge Functions** (11 dans `agent-comptable`, 1 dans
+  `superpdp-sync`) — donc il ne s'était PAS arrêté à `src/`, contrairement à ce que le motif laissait
+  craindre — et les 12 lisent leur drapeau **et l'AGISSENT** : refus 404, message d'erreur au modèle,
+  interruption de la synchronisation. Le côté Edge était sain sur ce motif alors même qu'il n'avait
+  qu'une couche de garde.
+  **Les options ne sont PAS retapées dans le test : il LIT `tsconfig.edge.json`**, qui est la source
+  unique — deux copies d'un réglage finissent par diverger, et celle qui dériverait ici ferait passer
+  le test pour un contrôle tenant une barre que personne ne tient. Une mutation le prouve (retirer
+  `noUnusedLocals` du fichier de config fait tomber trois tests). Ce tsconfig n'est **pas** référencé
+  par `tsconfig.json` : `tsc -b` doit rester le contrôle de `src/`, qui est propre.
+  **Sept mutations, toutes mordent, et la DISCRIMINATION est le résultat** : le défaut d'origine
+  planté dans une vraie fonction en fait tomber cinq ; le balayage pointé sur le mauvais dossier n'en
+  fait tomber qu'UNE, le plancher — c'est-à-dire la seule chose qui distingue « zéro faute »
+  d'« aveugle » ; `allowUnreachableCode` et la mise en cache des sources virtuelles n'en font tomber
+  qu'une chacune, celle écrite pour elles. La règle du cache est donc PORTANTE plutôt qu'affirmée en
+  commentaire : sans elle, un second appel sur un même chemin virtuel rendrait le verdict du
+  premier — vert pour une raison fausse.
 - **La chaîne vers l'écriture comptable a DEUX portes, pas une.** Une pièce ne génère une écriture
   que si elle a une `categorie_id` **et** que cette catégorie porte un `compte_comptable`
   (`lignesChargeProduitPourPiece` l'exige en paramètre). Une troisième porte, `poste_2035`, commande
@@ -4084,7 +4155,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1421 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1427 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -4159,6 +4230,8 @@ npm run lint         # oxlint
 npm test             # Vitest, logique métier de src/lib
 npm run test:watch   # Vitest en continu
 npm run test:fuseaux # la suite sous 4 fuseaux (voir "Tests")
+npx tsc -p tsconfig.edge.json   # type-vérifie les Edge Functions (voir « Problèmes connus » :
+                                # seul le CODE MORT y est garanti vert, le reste est annoncé)
 ```
 
 Déploiement : automatique sur push vers `main` (GitHub Actions →

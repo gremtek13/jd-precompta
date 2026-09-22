@@ -1,0 +1,34 @@
+// LES OPTIONS DE CE FICHIER SONT LA SOURCE UNIQUE — `edgeFunctionsCodeMort.test.ts` les LIT plutôt
+// que de les retaper. Deux copies d'un réglage finissent par diverger, et celle qui dériverait ici
+// ferait passer le test pour un contrôle qui tient une barre que personne ne tient.
+//
+// IL N'EST PAS RÉFÉRENCÉ PAR `tsconfig.json`, ET C'EST DÉLIBÉRÉ : `tsc -b` doit rester le contrôle
+// de `src/`, qui est propre. Le typage complet des Edge Functions, lui, rend 26 erreurs dont aucune
+// n'est un défaut (SDK tiers non installés, générique `Uint8Array` de la lib DOM) — les faire
+// tomber demanderait d'installer cinq SDK ou de tenir une liste de noms de types à la main. Ce qui
+// EST garanti, et qui est vert, c'est l'absence de code mort : voir l'en-tête du test.
+//
+// Pour le lancer à la main : `npx tsc -p tsconfig.edge.json`
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "types": [],
+    "skipLibCheck": true,
+    "noEmit": true,
+    "moduleDetection": "force",
+
+    // TypeScript 6 active `strict` par défaut. Ce n'est PAS la barre tenue ici — voir l'en-tête du
+    // test : la tenir demanderait de réécrire puis redéployer sept fonctions correctes.
+    "strict": false,
+
+    // Ce qui EST tenu, et qui est vert sur les 4 419 lignes.
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "allowUnreachableCode": false
+  },
+  "include": ["supabase/functions/**/*.ts", "supabase/types/*.d.ts"]
+}
