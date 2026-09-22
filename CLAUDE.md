@@ -1563,6 +1563,40 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   courante, il dirait autre chose chaque jour — et serait vert par hasard le 30 du mois, c'est-à-dire
   précisément le jour où l'ancien calcul était juste. Quatre mutations mordent, dont le code tel
   qu'il était et la garde symétrique du plancher.
+- **ET LA TROISIÈME BRIQUE DU MÊME DOSSIER BANCAIRE PROJETAIT SUR RIEN, SANS LE DIRE** (22/09/2026,
+  dernier des trois — la question de période posée à la dernière brique).
+  **`lignesBanque` N'EST PAS `lignes_bancaires`**, et c'est ce qui a renversé le diagnostic :
+  `FinancementTab` lit `ecritures_brouillon` filtrée sur le compte 512000, c'est-à-dire ce qui a été
+  COMPTABILISÉ, jamais le relevé importé. Ma première mesure portait sur la mauvaise table et
+  concluait « latent » ; refaite sur la bonne, **les quatre dossiers portent 0 écriture bancaire pour
+  954 lignes de relevé importées**. Ce n'est donc pas latent du tout : tout dossier ouvrant cet écran
+  aujourd'hui lit « 0,00 € d'encaissements observés » et une projection PLATE, sur le document qu'un
+  cabinet montre à une banque. Le choix de source, lui, est légitime et reste : la trésorerie d'un
+  cabinet est celle de sa comptabilité, pas celle d'un fichier déposé.
+  **LE MODULE AVAIT RAISON DE RENDRE 0** — son test « reste à zéro sans historique bancaire » le fige
+  depuis toujours. Ce qui manquait est de pouvoir DISTINGUER ce zéro-là d'un zéro observé : les deux
+  produisaient le même écran. Famille déjà connue, dans sa forme la plus coûteuse — **le vide est une
+  AFFIRMATION** (`AccesTab` « Aucun accès client », `SuperPdpFactureModal` « Aucun événement ») : ici
+  le plan annonce une activité nulle là où il n'a rien lu, et le taux d'endettement affiche « — » sans
+  distinguer « pas encore d'historique » de « le rythme est nul ».
+  **LE DIVISEUR NE BOUGE PAS, et c'est la moitié du correctif qui se raconte mal.** La tentation est
+  de diviser par les seuls mois servis ; ce serait faux, un mois calme étant un VRAI zéro — un cabinet
+  en congés deviendrait deux fois plus actif, c'est-à-dire une bonne nouvelle fabriquée, le pire sens
+  de cette famille. **Le code ne peut pas distinguer « rien lu » de « rien encaissé »** ; l'écran, lui,
+  peut poser la question. On DIT l'assiette, on ne la corrige pas, et un test fige le diviseur.
+  **Les deux cas ne se fondent pas** : « rien à observer » est une moyenne qui ne repose sur rien,
+  « observé sur une partie » est une moyenne juste dont l'assiette est plus courte que l'étiquette ne
+  le laisse croire. Les fondre ferait porter à l'un la conséquence de l'autre — même raison que les
+  DEUX bandeaux de `BandeauLecturePartielle`. Et la réserve est **rendue vide quand elle n'apprend
+  rien**, comme `dotationsNonProratisees`.
+  **Sept mutations mordent, et la DISCRIMINATION est le résultat** : le diviseur et les deux compteurs
+  ne font tomber que des tests de module, le câblage de la modale Dettes & ratios ne fait tomber qu'un
+  test d'écran — donc les deux câblages sont gardés séparément, là où une seule assertion aurait laissé
+  croire que l'un couvre l'autre. Plus le code tel qu'il était (3 + 3) et les gardes symétriques des
+  deux côtés, sans lesquels « l'écran prévient » serait satisfait par un écran qui prévient TOUJOURS.
+  **Résultat négatif à garder** : le reste de `planTresorerie` est juste — bornes comparées en chaînes,
+  mois en cours exclu, échéances rendues à part plutôt que fusionnées dans la moyenne. Ne pas le
+  réenquêter ; ce qui reste ouvert est une question produit, pas un défaut.
 - **ET LA MÊME QUESTION POSÉE AUX COTISATIONS A RENDU UNE DÉDUCTION DE TROP** (21/09/2026).
   `calculerDeclaration2035` porte la cotisation **complète** au poste « Cotisations sociales
   personnelles » (case BK, ligne 25). Or la CSG-CRDS d'un travailleur non salarié se décompose en
@@ -3449,7 +3483,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1283 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1295 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
