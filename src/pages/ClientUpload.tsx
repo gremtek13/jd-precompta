@@ -3,7 +3,9 @@ import { supabase } from '../lib/supabase'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, formatDate, moisDe } from '../lib/format'
+import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, formatDate } from '../lib/format'
+import { lireAnneesCloturees } from '../lib/clotureExercice'
+import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, PieceCommentaire } from '../lib/types'
 import BarreRecherche from '../components/BarreRecherche'
 import { correspondALaRecherche } from '../lib/recherche'
@@ -58,6 +60,11 @@ export default function ClientUpload() {
   // Les précisions du dossier, chargées en une fois. Une requête par ligne de la liste en produirait
   // autant que de dépôts, pour un écran que le client ouvre sur son téléphone.
   const [commentaires, setCommentaires] = useState<PieceCommentaire[]>([])
+  // Exercices que le cabinet a marqués clos : c'est ce qui arrête la réclamation de l'exercice
+  // précédent. Une lecture refusée laisse la liste VIDE, donc on continue de réclamer — jamais
+  // l'inverse, qui ferait cesser de demander sur une panne (voir lib/resteAEnvoyer.ts).
+  const [anneesCloturees, setAnneesCloturees] = useState<number[]>([])
+  const [clotureInconnue, setClotureInconnue] = useState<string | null>(null)
   // Le dépôt dont la zone de précision est ouverte. Amorcé par la photo prise depuis l'accueil, qui
   // navigue ici en désignant la ligne qu'elle vient de créer (voir ClientHome).
   const cibleDepuisAccueil = (useLocation().state as { preciser?: CibleCommentaire } | null)?.preciser
@@ -67,7 +74,7 @@ export default function ClientUpload() {
 
   async function load() {
     if (!dossierId) return
-    const [lecturePieces, lectureDocuments, lectureLignes, lectureCotisations, commentairesData] = await Promise.all([
+    const [lecturePieces, lectureDocuments, lectureLignes, lectureCotisations, commentairesData, clotures] = await Promise.all([
       // Lues par tranches : le plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts),
       // et c'est sur ces deux collections que repose « ce qu'il reste à envoyer ». Tronquées, elles
       // demanderaient au client des documents qu'il a déjà envoyés.
@@ -88,6 +95,7 @@ export default function ClientUpload() {
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
       chargerCommentaires(dossierId),
+      lireAnneesCloturees(dossierId),
     ])
     setPieces(lecturePieces.lignes)
     setDocuments(lectureDocuments.lignes)
@@ -96,6 +104,8 @@ export default function ClientUpload() {
     setCotisations(lectureCotisations.lignes)
     setCommentaires(commentairesData.commentaires)
     setPrecisionsIncompletes(commentairesData.motif)
+    setAnneesCloturees(clotures.annees)
+    setClotureInconnue(clotures.erreur)
   }
 
   useEffect(() => { load() }, [dossierId])
@@ -189,37 +199,43 @@ export default function ClientUpload() {
   // année, alors qu'ils doivent dire la même chose au même moment.
   const { annee: ANNEE_COURANTE, moisEcoules: MOIS_ECOULES } = anneeEtMoisEcoules()
 
-  const moisPresents = new Set(
-    lignes.filter((l) => anneeDe(l.date) === ANNEE_COURANTE).map((l) => moisDe(l.date)),
-  )
-  const moisManquants = Array.from({ length: MOIS_ECOULES }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
-  const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === ANNEE_COURANTE)
-  const piecesEtDocsAnnee = depots.filter((d) => anneeLocaleDe(d.createdAt) === ANNEE_COURANTE)
-
-  const items = [
-    {
-      id: 'banque',
-      label: `Relevés bancaires ${ANNEE_COURANTE}`,
-      ok: moisManquants.length === 0,
-      detail: MOIS_ECOULES === 0
-        ? "Aucun mois encore terminé cette année"
-        : moisManquants.length > 0
-          ? `Mois manquants : ${moisManquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
-          : `${MOIS_ECOULES}/${MOIS_ECOULES} mois reçus`,
-    },
-    {
-      id: 'cotisations',
-      label: `Appels de cotisation ${ANNEE_COURANTE}`,
-      ok: cotisationsAnnee.length > 0,
-      detail: cotisationsAnnee.length > 0 ? `${cotisationsAnnee.length} échéance(s) reçue(s)` : "Aucun appel reçu pour l'instant cette année",
-    },
-    {
-      id: 'depots',
-      label: `Factures et documents ${ANNEE_COURANTE}`,
-      ok: piecesEtDocsAnnee.length > 0,
-      detail: `${piecesEtDocsAnnee.length} déposé(s)`,
-    },
-  ]
+  // L'ARITHMÉTIQUE D'EXERCICE VIT DANS `lib/resteAEnvoyer.ts`, partagée avec l'accueil et la
+  // Checklist du cabinet : elle était écrite trois fois ici et avait déjà divergé deux fois. Ce qui
+  // reste propre à cet écran est le CRITÈRE — on compte les DÉPÔTS (« ai-je envoyé quelque
+  // chose ? »), là où le cabinet compte les pièces DATÉES de l'exercice.
+  const exercices = exercicesAReclamer(ANNEE_COURANTE, MOIS_ECOULES, anneesCloturees)
+  const items = pointsUtiles(exercices.flatMap((ex) => {
+    const manquants = moisManquantsDe(ex, lignes)
+    const cotisationsEx = cotisations.filter((c) => anneeDe(c.echeance) === ex.annee)
+    const depotsEx = depots.filter((d) => anneeLocaleDe(d.createdAt) === ex.annee)
+    return [
+      {
+        annee: ex.annee,
+        id: `banque-${ex.annee}`,
+        label: `Relevés bancaires ${ex.annee}`,
+        ok: manquants.length === 0,
+        detail: ex.moisAttendus.length === 0
+          ? "Aucun mois encore terminé cette année"
+          : manquants.length > 0
+            ? `Mois manquants : ${manquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
+            : `${ex.moisAttendus.length}/${ex.moisAttendus.length} mois reçus`,
+      },
+      {
+        annee: ex.annee,
+        id: `cotisations-${ex.annee}`,
+        label: `Appels de cotisation ${ex.annee}`,
+        ok: cotisationsEx.length > 0,
+        detail: cotisationsEx.length > 0 ? `${cotisationsEx.length} échéance(s) reçue(s)` : "Aucun appel reçu pour l'instant",
+      },
+      {
+        annee: ex.annee,
+        id: `depots-${ex.annee}`,
+        label: `Factures et documents ${ex.annee}`,
+        ok: depotsEx.length > 0,
+        detail: `${depotsEx.length} déposé(s)`,
+      },
+    ]
+  }), ANNEE_COURANTE)
 
   return (
     <>
@@ -256,6 +272,11 @@ export default function ClientUpload() {
           </div>
         ))}
       </div>
+      {reserveCloturesInconnues(clotureInconnue, ANNEE_COURANTE, { technique: false }) && (
+        <p className="muted" style={{ fontSize: '0.82rem', marginTop: -12, marginBottom: 20 }}>
+          {reserveCloturesInconnues(clotureInconnue, ANNEE_COURANTE, { technique: false })}
+        </p>
+      )}
 
       <h3>Déposer des fichiers</h3>
       <div

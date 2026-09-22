@@ -380,6 +380,21 @@ export interface InformationsDossier {
   updated_at: string
 }
 
+// Marque de clôture d'un exercice, posée par le bouton de ClotureTab (voir lib/clotureExercice.ts).
+// Ce n'est PAS une clôture comptable : aucun résultat, aucun impôt n'est figé ici. La ligne ne porte
+// qu'une date, et elle commande deux choses — la purge du texte OCR des pièces sensibles de
+// l'exercice (RGPD.md §8.3) et l'arrêt des réclamations de documents pour cet exercice sur les trois
+// écrans « ce qu'il reste à envoyer » (voir lib/resteAEnvoyer.ts).
+//
+// Pas de colonne `cloture_par` : le cabinet est traité comme un seul acteur dans toute l'application
+// (voir AgentConversation juste en dessous), et `cloture_le` suffit à dater le geste.
+export interface ExerciceCloture {
+  id: string
+  dossier_id: string
+  annee: number
+  cloture_le: string
+}
+
 // Historique de l'agent comptable (voir AssistantTab, supabase/functions/agent-comptable) —
 // partagé entre tous les admins du cabinet pour un dossier donné, comme le reste de l'appli
 // (le cabinet est traité comme un seul acteur). created_by n'est qu'un repère d'audit.

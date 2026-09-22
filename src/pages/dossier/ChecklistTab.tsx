@@ -6,7 +6,7 @@ import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
-import { anneeDe, anneeEtMoisEcoules, formatMoney, moisDe } from '../../lib/format'
+import { anneeDe, anneeEtMoisEcoules, formatMoney } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import type { ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
@@ -16,6 +16,8 @@ import ProgressRing from '../../components/widgets/ProgressRing'
 import MonthlyBars from '../../components/widgets/MonthlyBars'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { lireTout } from '../../lib/lectureComplete'
+import { lireAnneesCloturees } from '../../lib/clotureExercice'
+import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../../lib/resteAEnvoyer'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -62,6 +64,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // Non nul quand l'une des grosses collections n'a pas pu être lue en entier : les points ci-dessous
   // portent alors sur une partie du dossier, et leur SILENCE ne prouve plus rien.
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // Exercices que le cabinet a marqués clos (voir lib/clotureExercice.ts) : c'est ce qui arrête la
+  // réclamation des documents de l'exercice précédent. Une lecture refusée laisse la liste VIDE,
+  // donc on continue de réclamer — jamais l'inverse (voir lib/resteAEnvoyer.ts).
+  const [anneesCloturees, setAnneesCloturees] = useState<number[]>([])
+  const [clotureInconnue, setClotureInconnue] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -76,6 +83,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       lectureEcritures,
       lectureDeclarations,
       { data: infoData },
+      clotures,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -119,6 +127,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
       supabase.from('informations_dossier').select('*').eq('dossier_id', dossierId).maybeSingle(),
+      lireAnneesCloturees(dossierId),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -144,6 +153,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     setEcritures(lectureEcritures.lignes)
     setDeclarationsTva(lectureDeclarations.lignes)
     setInfo(infoData ?? null)
+    setAnneesCloturees(clotures.annees)
+    setClotureInconnue(clotures.erreur)
     setLoading(false)
   }
 
@@ -172,12 +183,17 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // rapporté à SON année, et ces trois écrans doivent dire la même chose au même moment.
   const { annee: anneeCourante, moisEcoules } = anneeEtMoisEcoules()
 
-  const moisPresents = new Set(
-    lignes.filter((l) => anneeDe(l.date) === anneeCourante).map((l) => moisDe(l.date)),
-  )
-  const moisManquants = Array.from({ length: moisEcoules }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
-
-  const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === anneeCourante)
+  // L'ARITHMÉTIQUE D'EXERCICE VIT DANS `lib/resteAEnvoyer.ts`, partagée avec les deux écrans client :
+  // elle était écrite trois fois et avait déjà divergé deux fois. Ce qui reste ici est ce qui diffère
+  // légitimement — le critère de comptage des pièces (voir plus bas) et le registre des libellés.
+  const exercices = exercicesAReclamer(anneeCourante, moisEcoules, anneesCloturees)
+  // L'exercice en cours est toujours le dernier rendu (le révolu vient avant, dans l'ordre
+  // chronologique) — et il est toujours rendu, même marqué clos.
+  const exerciceCourant = exercices[exercices.length - 1]
+  const moisManquants = moisManquantsDe(exerciceCourant, lignes)
+  // Reçus PARMI LES MOIS RÉVOLUS, et non « mois présents » : un relevé daté d'un mois à venir
+  // gonflait le numérateur et affichait « 13/8 ».
+  const moisRecus = exerciceCourant.moisAttendus.length - moisManquants.length
   // Les pièces DATÉES de cette année, validées ou non — se limiter aux validées faisait dire "aucune
   // pièce déposée" alors que des pièces fraîchement importées, encore à valider, étaient déjà bien là.
   //
@@ -193,7 +209,6 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // ferait afficher « Aucune pièce déposée » alors que le client a bien envoyé — et le cabinet le
   // relancerait pour des documents déjà reçus, pendant que l'écran du client les compte.
   const toutesPieces = [...piecesValidees, ...piecesAValider]
-  const piecesAnnee = toutesPieces.filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
   const piecesSansDate = toutesPieces.filter((p) => !p.date_piece)
   const mentionSansDate = piecesSansDate.length > 0
     ? ` — ${piecesSansDate.length} pièce(s) sans date, rattachée(s) à aucun exercice`
@@ -336,40 +351,58 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const pointsParametrage = pointsATraiter.filter((p) => IDS_PARAMETRAGE.has(p.id))
   const pointsTravail = pointsATraiter.filter((p) => !IDS_PARAMETRAGE.has(p.id))
 
-  const items: ItemChecklist[] = [
-    {
-      id: 'banque',
-      label: `Relevés bancaires ${anneeCourante}`,
-      ok: moisManquants.length === 0,
-      // moisEcoules à 0 (janvier, aucun mois encore révolu) : rien à réclamer pour l'instant, pas un
-      // "0/0" qui se lirait comme un compte à rebours étrange.
-      detail: moisEcoules === 0
-        ? "Aucun mois encore révolu cette année"
-        : moisManquants.length > 0
-          ? `Mois manquants : ${moisManquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
-          : `${moisEcoules}/${moisEcoules} mois reçus`,
-      cible: 'banque',
-      action: 'Importer le relevé manquant',
-    },
-    {
-      id: 'cotisations',
-      label: `Appels de cotisation ${anneeCourante}`,
-      ok: cotisationsAnnee.length > 0,
-      detail: cotisationsAnnee.length > 0 ? `${cotisationsAnnee.length} échéance(s) enregistrée(s)` : 'Aucune échéance enregistrée pour cette année',
-      cible: 'cotisations',
-      action: 'Voir les cotisations',
-    },
-    {
-      id: 'factures',
-      label: `Factures / pièces ${anneeCourante}`,
-      ok: piecesAnnee.length > 0,
-      detail: (piecesAnnee.length > 0
-        ? `${piecesAnnee.length} pièce(s) datée(s) de cette année`
-        : 'Aucune pièce datée de cette année') + mentionSansDate,
-      cible: 'pieces',
-      action: 'Voir les pièces',
-    },
-  ]
+  // UN JEU DE POINTS PAR EXERCICE RÉCLAMÉ. Au 1er janvier, l'exercice révolu reste réclamé en entier
+  // tant que sa clôture n'est pas cochée — c'est le moment précis où le cabinet court après ses
+  // pièces, et où cette liste repartait à zéro en annonçant qu'il ne restait rien.
+  const pointsParExercice = exercices.flatMap((ex): (ItemChecklist & { annee: number })[] => {
+    const manquants = ex.annee === anneeCourante ? moisManquants : moisManquantsDe(ex, lignes)
+    const cotisationsEx = cotisations.filter((c) => anneeDe(c.echeance) === ex.annee)
+    const piecesEx = toutesPieces.filter((p) => p.date_piece && anneeDe(p.date_piece) === ex.annee)
+    const recus = ex.moisAttendus.length - manquants.length
+    return [
+      {
+        annee: ex.annee,
+        id: `banque-${ex.annee}`,
+        label: `Relevés bancaires ${ex.annee}`,
+        ok: manquants.length === 0,
+        // Aucun mois attendu (janvier, aucun mois encore révolu) : rien à réclamer pour l'instant,
+        // pas un "0/0" qui se lirait comme un compte à rebours étrange.
+        detail: ex.moisAttendus.length === 0
+          ? "Aucun mois encore révolu cette année"
+          : manquants.length > 0
+            ? `Mois manquants : ${manquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
+            : `${recus}/${ex.moisAttendus.length} mois reçus`,
+        cible: 'banque',
+        action: 'Importer le relevé manquant',
+      },
+      {
+        annee: ex.annee,
+        id: `cotisations-${ex.annee}`,
+        label: `Appels de cotisation ${ex.annee}`,
+        ok: cotisationsEx.length > 0,
+        detail: cotisationsEx.length > 0 ? `${cotisationsEx.length} échéance(s) enregistrée(s)` : 'Aucune échéance enregistrée pour cet exercice',
+        cible: 'cotisations',
+        action: 'Voir les cotisations',
+      },
+      {
+        annee: ex.annee,
+        id: `factures-${ex.annee}`,
+        label: `Factures / pièces ${ex.annee}`,
+        ok: piecesEx.length > 0,
+        // La mention des pièces sans date ne se porte qu'UNE fois, sur l'exercice en cours : elles
+        // n'appartiennent à aucun exercice, et la répéter sous chacun ferait croire à un manque par
+        // exercice.
+        detail: (piecesEx.length > 0
+          ? `${piecesEx.length} pièce(s) datée(s) de cet exercice`
+          : 'Aucune pièce datée de cet exercice') + (ex.annee === anneeCourante ? mentionSansDate : ''),
+        cible: 'pieces',
+        action: 'Voir les pièces',
+      },
+    ]
+  })
+  // Un point SATISFAIT d'un exercice révolu n'apprend rien : la liste dit ce qu'il reste à envoyer,
+  // pas ce qui a déjà été reçu il y a un an (voir pointsUtiles).
+  const items: ItemChecklist[] = pointsUtiles(pointsParExercice, anneeCourante)
 
   if (!info) {
     items.push({
@@ -462,6 +495,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
           'plus rien. Recharge la page avant de t’y fier.'
         }
       />
+      {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (
+        <p className="error-text">{reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true })}</p>
+      )}
       <div className="bento">
         <div className="span-3">
           <KpiTile
@@ -486,7 +522,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         <div className="span-3">
           <KpiTile
             libelle={`Relevés ${anneeCourante}`}
-            valeur={moisEcoules === 0 ? '—' : <>{moisPresents.size}<small>/ {moisEcoules}</small></>}
+            valeur={moisEcoules === 0 ? '—' : <>{moisRecus}<small>/ {moisEcoules}</small></>}
             statut={moisEcoules === 0 ? 'neutral' : moisManquants.length > 0 ? 'warning' : 'ok'}
             detail={moisEcoules === 0 ? 'aucun mois encore révolu' : moisManquants.length > 0 ? `${moisManquants.length} mois manquant(s)` : 'tous les mois reçus'}
             onClick={() => onNavigate('banque')}

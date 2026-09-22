@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { Piece } from '../../lib/types'
 
@@ -12,7 +12,13 @@ import type { Piece } from '../../lib/types'
 // en tête du composant, sur moisEnDoubleSurAbonnement — et il s'est reproduit quand même sur
 // piecesADateImpossible : la SEULE pièce de la base à porter une date impossible est « à valider »,
 // donc le contrôle était aveugle sur le cas même que son commentaire cite comme origine.
-const faux = vi.hoisted(() => ({ parTable: {} as Record<string, unknown[]> }))
+const faux = vi.hoisted(() => ({
+  parTable: {} as Record<string, unknown[]>,
+  // Tables dont la lecture est REFUSÉE. Sans ce levier, « la liste des clôtures est inconnue »
+  // et « aucun exercice n'est clos » rendent exactement le même écran — or c'est précisément ce
+  // que la réserve existe pour distinguer.
+  refusees: new Set<string>(),
+}))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -32,8 +38,11 @@ vi.mock('../../lib/supabase', () => ({
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
         maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+        then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number }) => unknown) => {
           const cle = table === 'pieces' && statut ? `pieces:${statut}` : table
+          if (faux.refusees.has(table)) {
+            return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: 0 }).then(suite)
+          }
           const toutes = faux.parTable[cle] ?? []
           return Promise.resolve({
             data: toutes.slice(debut, debut + (fin - debut + 1)),
@@ -69,7 +78,12 @@ function piece(o: Partial<Piece> = {}): Piece {
   }
 }
 
-function poser(pieces: { validees?: unknown[]; aValider?: unknown[] }) {
+function poser(pieces: {
+  validees?: unknown[]
+  aValider?: unknown[]
+  clotures?: { annee: number }[]
+  clotureRefusee?: boolean
+}) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
     'pieces:a_valider': pieces.aValider ?? [],
@@ -77,7 +91,9 @@ function poser(pieces: { validees?: unknown[]; aValider?: unknown[] }) {
     cotisations_declarees: [], lignes_bancaires: [], immobilisations: [],
     natures_immobilisation: [], categories: [], ecritures_brouillon: [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
+    exercices_clotures: pieces.clotures ?? [],
   }
+  faux.refusees = new Set(pieces.clotureRefusee ? ['exercices_clotures'] : [])
 }
 
 function monter() {
@@ -184,7 +200,7 @@ describe('ChecklistTab — le point « factures » dit ce qu’il compte', () =>
   it('annonce des pièces DATÉES de l’année, jamais « déposées »', async () => {
     poser({ validees: [piece({ id: 'a', statut: 'validee', date_piece: `${ANNEE}-03-04` })] })
     monter()
-    expect(await screen.findByText(/1 pièce\(s\) datée\(s\) de cette année/)).toBeTruthy()
+    expect(await screen.findByText(/1 pièce\(s\) datée\(s\) de cet exercice/)).toBeTruthy()
   })
 
   it('NE DIT PLUS « aucune pièce déposée » quand le client a envoyé des pièces sans date', async () => {
@@ -207,7 +223,7 @@ describe('ChecklistTab — le point « factures » dit ce qu’il compte', () =>
       ],
     })
     monter()
-    expect(await screen.findByText(/1 pièce\(s\) datée\(s\) de cette année/)).toBeTruthy()
+    expect(await screen.findByText(/1 pièce\(s\) datée\(s\) de cet exercice/)).toBeTruthy()
     expect(screen.queryAllByText(/2 pièce\(s\) datée\(s\)/)).toHaveLength(0)
   })
 
@@ -216,7 +232,93 @@ describe('ChecklistTab — le point « factures » dit ce qu’il compte', () =>
     // signale TOUJOURS — et une mise en garde permanente cesse d'être lue.
     poser({ validees: [piece({ id: 'c', statut: 'validee', date_piece: `${ANNEE}-05-05` })] })
     monter()
-    await screen.findByText(/1 pièce\(s\) datée\(s\) de cette année/)
+    await screen.findByText(/1 pièce\(s\) datée\(s\) de cet exercice/)
     expect(screen.queryAllByText(/sans date, rattachée/)).toHaveLength(0)
+  })
+})
+
+describe('ChecklistTab — le 1er janvier, l’exercice révolu reste réclamé jusqu’à sa clôture', () => {
+  // AUCUN TEST DE `src/lib` NE PEUT VOIR CECI : `exercicesAReclamer` est juste et couvert par ses
+  // propres mutations. Ce qui se joue ici est le CÂBLAGE — que l'écran lise vraiment
+  // `exercices_clotures` et en tienne compte, là où il ne connaissait qu'une seule année.
+  //
+  // L'HORLOGE EST FIXÉE, et c'est ce qui décide de ce que ce test garde : lu sur l'heure courante,
+  // il dirait autre chose chaque jour, et serait vert par hasard onze mois sur douze — le défaut
+  // d'origine ne se voit qu'au passage d'une année (même raison que le test des ratios bancaires).
+  const PREMIER_JANVIER = new Date('2027-01-05T09:00:00Z')
+
+  // SEUL `Date` est feint : geler les minuteurs figerait aussi ceux dont `findByText` dépend pour
+  // attendre le rendu, et chaque test partirait en expiration — une panne qui ne ressemble pas au
+  // défaut gardé.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(PREMIER_JANVIER) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('RÉCLAME L’EXERCICE RÉVOLU alors qu’aucun mois de la nouvelle année n’est écoulé', async () => {
+    // Le défaut : au 1er janvier, `moisEcoules` vaut 0 et l'écran ne regardait que l'année en cours.
+    // Il n'avait donc plus rien à réclamer — ni pour 2027 (aucun mois révolu), ni pour 2026 (qu'il ne
+    // regardait pas) — au moment précis où le cabinet court après les pièces qu'il clôture.
+    poser({ validees: [piece({ id: 'v1', statut: 'validee', date_piece: '2026-03-10' })] })
+    monter()
+
+    expect(await screen.findByText('Relevés bancaires 2026')).toBeTruthy()
+    expect(screen.getByText('Relevés bancaires 2027')).toBeTruthy()
+    // Douze mois dus sur l'exercice révolu, aucune ligne bancaire posée.
+    expect(screen.getByText(/Mois manquants : janvier, février, mars/)).toBeTruthy()
+  })
+
+  it('CESSE de le réclamer une fois la clôture cochée', async () => {
+    poser({
+      validees: [piece({ id: 'v1', statut: 'validee', date_piece: '2026-03-10' })],
+      clotures: [{ annee: 2026 }],
+    })
+    monter()
+
+    // Garde SYMÉTRIQUE : sans cette seconde attente, « 2026 a disparu » serait satisfait par un
+    // écran qui n'affiche plus rien du tout.
+    expect(await screen.findByText('Relevés bancaires 2027')).toBeTruthy()
+    expect(screen.queryAllByText('Relevés bancaires 2026')).toHaveLength(0)
+  })
+
+  it('NE RÉCLAME PAS un exercice révolu qui n’a rien à envoyer', async () => {
+    // Un point satisfait d'un exercice révolu n'apprend rien : sans ce filtre, un dossier à jour
+    // afficherait six points pour dire qu'il ne reste rien, et une liste qui ne dit jamais rien
+    // cesse d'être lue. L'exercice EN COURS, lui, garde ses points — ils disent où on en est.
+    poser({ validees: [piece({ id: 'v1', statut: 'validee', date_piece: '2026-03-10' })] })
+    faux.parTable.lignes_bancaires = Array.from({ length: 12 }, (_, i) => ({
+      id: `l${i}`, date: `2026-${String(i + 1).padStart(2, '0')}-15`,
+    }))
+    faux.parTable.cotisations_declarees = [{ id: 'c1', echeance: '2026-05-05' }]
+    monter()
+
+    expect(await screen.findByText('Relevés bancaires 2027')).toBeTruthy()
+    expect(screen.queryAllByText('Relevés bancaires 2026')).toHaveLength(0)
+    expect(screen.queryAllByText('Appels de cotisation 2026')).toHaveLength(0)
+    expect(screen.queryAllByText('Factures / pièces 2026')).toHaveLength(0)
+  })
+
+  it('UNE LISTE DE CLÔTURES ILLISIBLE RÉCLAME, ET LE DIT', async () => {
+    // L'échec tombe du côté qui demande un document de trop, jamais du côté qui se tait : une
+    // lecture refusée qui ferait cesser la réclamation serait indiscernable d'un dossier à jour,
+    // c'est-à-dire la bonne nouvelle fabriquée que tout ce module existe pour empêcher.
+    poser({
+      validees: [piece({ id: 'v1', statut: 'validee', date_piece: '2026-03-10' })],
+      clotureRefusee: true,
+    })
+    monter()
+
+    expect(await screen.findByText('Relevés bancaires 2026')).toBeTruthy()
+    // Et il ne l'avale pas : sans la phrase, ces points-là sont incompréhensibles pour un cabinet
+    // qui vient justement de cocher la clôture.
+    expect(screen.getByText(/Impossible de vérifier si l'exercice 2026 est clôturé/)).toBeTruthy()
+  })
+
+  it('SE TAIT sur les clôtures quand la lecture a réussi', async () => {
+    // Garde symétrique de la précédente : une mise en garde permanente cesse d'être lue, puis
+    // emporte ses voisines dans son discrédit.
+    poser({ validees: [piece({ id: 'v1', statut: 'validee', date_piece: '2026-03-10' })] })
+    monter()
+
+    await screen.findByText('Relevés bancaires 2026')
+    expect(screen.queryAllByText(/Impossible de vérifier si l'exercice/)).toHaveLength(0)
   })
 })

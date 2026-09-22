@@ -3,7 +3,9 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative, moisDe } from '../lib/format'
+import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative } from '../lib/format'
+import { lireAnneesCloturees } from '../lib/clotureExercice'
+import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../lib/resteAEnvoyer'
 import { IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -54,12 +56,17 @@ export default function ClientHome() {
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [onboardingVu, setOnboardingVu] = useState(true)
   const [capturing, setCapturing] = useState(false)
+  // Exercices que le cabinet a marqués clos : c'est ce qui arrête la réclamation de l'exercice
+  // précédent. Une lecture refusée laisse la liste VIDE, donc on continue de réclamer — jamais
+  // l'inverse, qui fabriquerait la bonne nouvelle que ce calcul existe pour empêcher.
+  const [anneesCloturees, setAnneesCloturees] = useState<number[]>([])
+  const [clotureInconnue, setClotureInconnue] = useState<string | null>(null)
   const [captureError, setCaptureError] = useState<string | null>(null)
 
   async function load() {
     if (!dossierId) return
     setChargement(true)
-    const [{ data: dossierData }, lecturePieces, lectureDocuments, lectureLignes, lectureCotisations] =
+    const [{ data: dossierData }, lecturePieces, lectureDocuments, lectureLignes, lectureCotisations, clotures] =
       await Promise.all([
         supabase.from('dossiers').select('*').eq('id', dossierId).maybeSingle(),
         // Lues par tranches (voir lib/lectureComplete.ts) : ces deux collections portent les
@@ -81,6 +88,7 @@ export default function ClientHome() {
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
         ),
+        lireAnneesCloturees(dossierId),
       ])
     setDossier(dossierData ?? null)
     setPieces(lecturePieces.lignes)
@@ -88,6 +96,8 @@ export default function ClientHome() {
     setLignes(lectureLignes.lignes)
     setLectureIncomplete(lecturePieces.motif ?? lectureLignes.motif)
     setCotisations(lectureCotisations.lignes)
+    setAnneesCloturees(clotures.annees)
+    setClotureInconnue(clotures.erreur)
     setChargement(false)
   }
 
@@ -162,41 +172,54 @@ export default function ClientHome() {
   // "En cours de vérification" : côté cabinet ce sont les pièces à valider. Formulé du point de vue du
   // client, à qui on ne demande rien pour celles-ci — c'est au comptable de jouer.
   const enVerification = pieces.filter((p) => p.statut === 'a_valider').length
+  const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === ANNEE_COURANTE)
 
   // Mêmes signaux que la Checklist du cabinet et que "Mes pièces", pour que les trois écrans disent la
   // même chose. Le compte exclut le mois en cours : inutile de réclamer un relevé pour un mois qui
   // n'est pas fini. Année et compte viennent du MÊME instant (voir anneeEtMoisEcoules) — appariés
   // depuis deux instants différents, cet écran annonçait « rien à envoyer » sur l'année révolue.
-  const moisPresents = new Set(
-    lignes.filter((l) => anneeDe(l.date) === ANNEE_COURANTE).map((l) => moisDe(l.date)),
-  )
-  const moisManquants = Array.from({ length: moisEcoules }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
-  const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === ANNEE_COURANTE)
+  // L'ARITHMÉTIQUE D'EXERCICE VIT DANS `lib/resteAEnvoyer.ts`, partagée avec « Mes pièces » et la
+  // Checklist du cabinet. Elle était écrite trois fois, et c'est ICI qu'elle a coûté le plus cher :
+  // au passage d'une année, cet écran annonçait « Relevés bancaires 2026 » avec RIEN à envoyer.
+  const exercices = exercicesAReclamer(ANNEE_COURANTE, moisEcoules, anneesCloturees)
+  const exerciceCourant = exercices[exercices.length - 1]
+  const moisManquants = moisManquantsDe(exerciceCourant, lignes)
+  // Reçus PARMI les mois révolus : « mois présents » laissait un relevé daté d'un mois à venir
+  // gonfler le numérateur, d'où le Math.min qui vivait sur la tuile.
+  const moisRecus = exerciceCourant.moisAttendus.length - moisManquants.length
 
-  const aEnvoyer = [
-    {
-      id: 'banque',
-      label: `Relevés bancaires ${ANNEE_COURANTE}`,
-      ok: moisManquants.length === 0,
-      detail: moisEcoules === 0
-        ? "Aucun mois encore terminé cette année"
-        : moisManquants.length > 0
-          ? `Mois manquants : ${moisManquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
-          : `${moisEcoules}/${moisEcoules} mois reçus`,
-    },
-    {
-      id: 'cotisations',
-      label: `Appels de cotisation ${ANNEE_COURANTE}`,
-      ok: cotisationsAnnee.length > 0,
-      detail: cotisationsAnnee.length > 0 ? `${cotisationsAnnee.length} échéance(s) reçue(s)` : "Aucun appel reçu pour l'instant cette année",
-    },
-    {
-      id: 'depots',
-      label: `Factures et documents ${ANNEE_COURANTE}`,
-      ok: depotsAnnee.length > 0,
-      detail: `${depotsAnnee.length} déposé(s) cette année`,
-    },
-  ]
+  const aEnvoyer = pointsUtiles(exercices.flatMap((ex) => {
+    const manquants = ex.annee === ANNEE_COURANTE ? moisManquants : moisManquantsDe(ex, lignes)
+    const cotisationsEx = cotisations.filter((c) => anneeDe(c.echeance) === ex.annee)
+    const depotsEx = depots.filter((d) => anneeLocaleDe(d.createdAt) === ex.annee)
+    return [
+      {
+        annee: ex.annee,
+        id: `banque-${ex.annee}`,
+        label: `Relevés bancaires ${ex.annee}`,
+        ok: manquants.length === 0,
+        detail: ex.moisAttendus.length === 0
+          ? "Aucun mois encore terminé cette année"
+          : manquants.length > 0
+            ? `Mois manquants : ${manquants.map((m) => NOMS_MOIS[m - 1]).join(', ')}`
+            : `${ex.moisAttendus.length}/${ex.moisAttendus.length} mois reçus`,
+      },
+      {
+        annee: ex.annee,
+        id: `cotisations-${ex.annee}`,
+        label: `Appels de cotisation ${ex.annee}`,
+        ok: cotisationsEx.length > 0,
+        detail: cotisationsEx.length > 0 ? `${cotisationsEx.length} échéance(s) reçue(s)` : "Aucun appel reçu pour l'instant",
+      },
+      {
+        annee: ex.annee,
+        id: `depots-${ex.annee}`,
+        label: `Factures et documents ${ex.annee}`,
+        ok: depotsEx.length > 0,
+        detail: `${depotsEx.length} déposé(s)`,
+      },
+    ]
+  }), ANNEE_COURANTE)
   const nbEnvoye = aEnvoyer.filter((i) => i.ok).length
   const nbManquant = aEnvoyer.length - nbEnvoye
 
@@ -285,7 +308,7 @@ export default function ClientHome() {
           <div className="span-3">
             <KpiTile
               libelle={`Relevés ${ANNEE_COURANTE}`}
-              valeur={moisEcoules === 0 ? '—' : <>{Math.min(moisPresents.size, moisEcoules)}<small>/ {moisEcoules}</small></>}
+              valeur={moisEcoules === 0 ? '—' : <>{moisRecus}<small>/ {moisEcoules}</small></>}
               statut={moisEcoules === 0 ? 'neutral' : moisManquants.length > 0 ? 'warning' : 'ok'}
               detail={moisEcoules === 0 ? 'rien à envoyer encore' : moisManquants.length > 0 ? `${moisManquants.length} mois à envoyer` : 'tous reçus'}
               onClick={() => navigate('/mes-pieces')}
@@ -328,6 +351,11 @@ export default function ClientHome() {
                   )}
                 </div>
               ))}
+              {reserveCloturesInconnues(clotureInconnue, ANNEE_COURANTE, { technique: false }) && (
+                <p className="muted" style={{ fontSize: '0.82rem', marginTop: 10 }}>
+                  {reserveCloturesInconnues(clotureInconnue, ANNEE_COURANTE, { technique: false })}
+                </p>
+              )}
             </div>
           </Widget>
 

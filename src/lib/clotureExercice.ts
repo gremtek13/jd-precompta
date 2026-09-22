@@ -80,3 +80,27 @@ export async function cloturerExercice(dossierId: string, annee: number): Promis
 
   return { dejaCloture, piecesPurgees: ids.length }
 }
+
+// LA MARQUE DE CLÔTURE EST LUE PAR LES TROIS ÉCRANS QUI RÉCLAMENT DES DOCUMENTS (voir
+// `resteAEnvoyer.ts`), et elle ne doit JAMAIS les faire taire par accident.
+//
+// Cette lecture NE LÈVE PAS et ne rend pas d'exception à traiter : un refus, une session expirée ou
+// une coupure rendent « aucun exercice connu comme clos », c'est-à-dire qu'on CONTINUE de réclamer
+// l'exercice précédent. C'est le seul sens sûr — l'autre ferait cesser la réclamation sur une panne,
+// et un écran qui cesse de demander est indiscernable d'un dossier à jour. Le motif est rendu à part
+// pour que l'écran puisse le dire au lieu de l'avaler.
+//
+// Lecture non paginée assumée : au plus une ligne par année civile pour ce dossier (voir
+// lecturesPaginees.test.ts).
+export async function lireAnneesCloturees(
+  dossierId: string,
+): Promise<{ annees: number[]; erreur: string | null }> {
+  const { data, error } = await supabase
+    .from('exercices_clotures')
+    .select('annee')
+    .eq('dossier_id', dossierId)
+  if (error) {
+    return { annees: [], erreur: messageErreur(error, "Impossible de lire les exercices clôturés.") }
+  }
+  return { annees: (data ?? []).map((c: { annee: number }) => c.annee), erreur: null }
+}
