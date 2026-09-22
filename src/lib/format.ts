@@ -193,13 +193,20 @@ export function jourDe(date: string): number {
   return Number(date.slice(8, 10))
 }
 
-// Nombre de mois de l'année en cours déjà entièrement terminés (0 en janvier, 8 en septembre...) —
-// sert à ne jamais réclamer un relevé bancaire ou une échéance pour le mois en cours, qui vient
-// peut-être de commencer (voir DossiersList, ChecklistTab). Avant ce correctif, le mois en cours
-// comptait comme "écoulé" dès son premier jour — le 8 septembre signalait déjà septembre comme
-// manquant alors que le mois n'était même pas fini.
-export function moisEcoulesCetteAnnee(): number {
-  return new Date().getMonth()
+// L'année en cours ET le nombre de ses mois entièrement terminés (0 en janvier, 8 en septembre...),
+// LUS AU MÊME INSTANT. Le compte sert à ne jamais réclamer un relevé bancaire ou une échéance pour le
+// mois en cours, qui vient peut-être de commencer.
+//
+// LES DEUX SONT RENDUS ENSEMBLE PARCE QU'ILS NE VEULENT RIEN DIRE L'UN SANS L'AUTRE : « 8 mois
+// écoulés » ne désigne des mois que rapporté à SON année. Les lire séparément laissait `ClientHome`
+// apparier une année figée au chargement du module — donc pour toute la session, `HashRouter` ne
+// rechargeant jamais — à un compte de mois recalculé à chaque rendu. Au passage d'une année, cet écran
+// affichait « Relevés bancaires 2026 » avec RIEN à envoyer, alors que les douze mois de 2026 sont dus :
+// une bonne nouvelle fabriquée, étiquetée d'une année précise, sur l'écran dont le métier est de dire
+// ce qui manque. Un piège qu'une signature supprime vaut mieux qu'un piège gardé par une relecture.
+export function anneeEtMoisEcoules(): { annee: number; moisEcoules: number } {
+  const maintenant = new Date()
+  return { annee: maintenant.getFullYear(), moisEcoules: maintenant.getMonth() }
 }
 
 // Ancienneté en langage courant ("il y a 2 h", "hier") pour les fils d'activité des tableaux de bord

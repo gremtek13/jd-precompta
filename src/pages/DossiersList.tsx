@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
 import { correspondALaRecherche } from '../lib/recherche'
-import { dateRelative, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
+import { anneeEtMoisEcoules, dateRelative, moisDe } from '../lib/format'
 import type { Dossier } from '../lib/types'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -25,8 +25,6 @@ interface DepotRecent {
   statut: string
 }
 
-const ANNEE_COURANTE = new Date().getFullYear()
-const MOIS_ECOULES = moisEcoulesCetteAnnee()
 const NB_SEMAINES_TENDANCE = 12
 const NB_PRIORITES = 6
 const NB_ACTIVITES = 8
@@ -71,6 +69,11 @@ export default function DossiersList() {
   const [erreurChargement, setErreurChargement] = useState<string | null>(null)
   const [erreurIndicateurs, setErreurIndicateurs] = useState(false)
   const navigate = useNavigate()
+  // Lus au même instant, et à chaque rendu plutôt qu'une fois au chargement du module : `HashRouter`
+  // ne recharge jamais, donc un onglet de cabinet laissé ouvert gardait l'année et le compte de mois
+  // du jour où il a été ouvert. Cet écran doit dire la même chose que la Checklist et que les deux
+  // écrans client (voir anneeEtMoisEcoules).
+  const { annee: ANNEE_COURANTE, moisEcoules: MOIS_ECOULES } = anneeEtMoisEcoules()
 
   async function load() {
     setLoading(true)

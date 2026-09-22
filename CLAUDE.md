@@ -1616,6 +1616,47 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Résultat négatif à garder** : le reste de `planTresorerie` est juste — bornes comparées en chaînes,
   mois en cours exclu, échéances rendues à part plutôt que fusionnées dans la moyenne. Ne pas le
   réenquêter ; ce qui reste ouvert est une question produit, pas un défaut.
+- **ET « MAINTENANT » LU AU CHARGEMENT D'UN MODULE EST FIGÉ POUR TOUTE LA SESSION** (22/09/2026).
+  Un module ne s'évalue qu'une fois, et cette application est une SPA en `HashRouter` : elle ne
+  recharge JAMAIS la page. Un onglet de cabinet laissé ouvert — le cas normal, c'est l'outil du
+  quotidien — garde donc l'année et le compte de mois du jour où il a été ouvert. **Sept constantes**
+  de module en dépendaient, dans cinq écrans.
+  **CE QUI COÛTE N'EST PAS LA PÉREMPTION, C'EST L'APPARIEMENT**, et un seul écran était dans ce cas :
+  `ClientHome` figeait son `ANNEE_COURANTE` au chargement du module et recalculait ses `moisEcoules` à
+  chaque rendu. Au passage d'une année, il affichait donc **« Relevés bancaires 2026 » avec RIEN à
+  envoyer**, alors que les douze mois de 2026 sont dus — `Array.from({ length: 0 })` est vide. C'est
+  une **bonne nouvelle fabriquée**, le pire sens de cette famille (personne ne va vérifier une bonne
+  nouvelle), **étiquetée d'une année précise**, sur l'écran dont le métier est de dire ce qui manque.
+  Et il contredisait `ClientUpload`, alors que ce fichier pose que ces trois écrans « doivent toujours
+  dire la même chose au même moment ».
+  **LES QUATRE AUTRES CONSTANTES SONT LÉGITIMES, résultat à garder** : `ClientUpload` et `DossiersList`
+  figeaient les DEUX valeurs ensemble, donc cohérentes ; `ClientSimulation` et `EstimationTab` utilisent
+  la leur partout dans l'écran ET l'ÉTIQUETTENT (« Projection 2026 »), donc un onglet périmé est périmé,
+  **pas faux** — c'est la règle des « chiffres ÉTIQUETÉS de leur année » prise par son bon côté. Les deux
+  dernières restent en exceptions écrites ; les deux premières sont passées au calcul par rendu, ces
+  trois écrans devant s'accorder.
+  **LE REMÈDE SUPPRIME LE PIÈGE AU LIEU DE LE GARDER** : `moisEcoulesCetteAnnee()` disparaît au profit
+  d'`anneeEtMoisEcoules()`, qui rend les DEUX depuis un seul `Date`. « 8 mois écoulés » ne désigne des
+  mois que rapporté à SON année — les obtenir séparément était la condition du défaut. Le compilateur a
+  d'ailleurs énuméré les quatre appelants d'un coup, exhaustivement : « un piège qu'un nom supprime vaut
+  mieux qu'un piège gardé par un contrôle », appliqué cette fois à une SIGNATURE.
+  **ET `tsc` N'A PAS VU LA ZONE MORTE TEMPORELLE que le correctif introduisait** : la déclaration
+  destructurée s'est d'abord retrouvée APRÈS son premier usage (`depotsAnnee`, quatorze lignes plus
+  haut), ce qui lève à l'exécution. Le compilateur attrape `X` utilisé avant `const X`, pas
+  `const { annee: X } = …`. Trouvé en relisant l'ordre, pas par un outil.
+  **LA RÈGLE DEVIENT UN SCANNER** (`maintenantFige.test.ts`), qui part de TOUTE source de production et
+  n'admet que des exceptions écrites portant **la raison pour laquelle figer cette valeur est sans
+  conséquence** — deux à ce jour, et le COMPTE fait foi. Cinq mutations mordent, dont le défaut d'origine
+  replanté et le scanner rendu aveugle.
+  **UNE SIXIÈME SURVIT, ET C'EST ÉCRIT DANS LE TEST plutôt que maquillé** : remplacer le `Date` unique
+  par deux appels ne peut diverger qu'en enjambant un réveillon à quelques microsecondes près, ce
+  qu'aucune horloge feinte ne produit entre deux instructions synchrones. La forme à un seul `Date` est
+  gardée parce qu'elle tient par CONSTRUCTION — même statut que la part non déductible calculée par
+  complément dans `declaration2035`.
+  **CE QUI RESTE UNE QUESTION PRODUIT, PAS UN DÉFAUT** : au 1er janvier, « ce qu'il reste à envoyer »
+  repart à zéro sur la nouvelle année et cesse d'un coup de réclamer décembre de l'année révolue — vrai
+  avant comme après ce correctif, et c'est précisément le moment où un cabinet court après les pièces de
+  l'exercice qu'il clôture. À trancher avec l'utilisateur, pas en passant.
 - **ET LA MÊME QUESTION POSÉE AUX COTISATIONS A RENDU UNE DÉDUCTION DE TROP** (21/09/2026).
   `calculerDeclaration2035` porte la cotisation **complète** au poste « Cotisations sociales
   personnelles » (case BK, ligne 25). Or la CSG-CRDS d'un travailleur non salarié se décompose en
@@ -3502,7 +3543,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1300 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1307 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

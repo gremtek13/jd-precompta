@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { anneeDe, anneeLocaleDe, formatDate, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
+import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, formatDate, moisDe } from '../lib/format'
 import type { CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, PieceCommentaire } from '../lib/types'
 import BarreRecherche from '../components/BarreRecherche'
 import { correspondALaRecherche } from '../lib/recherche'
@@ -14,12 +14,6 @@ import type { CibleCommentaire } from '../lib/commentaires'
 import { lireTout } from '../lib/lectureComplete'
 
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
-const ANNEE_COURANTE = new Date().getFullYear()
-// Mois entièrement terminés, pas mois entamés (voir lib/format) — cet écran comptait le mois en cours
-// comme dû, et réclamait donc au client un relevé qui n'existe pas encore, en contradiction avec
-// l'accueil et la Checklist du cabinet, qui utilisent tous deux ce même calcul.
-const MOIS_ECOULES = moisEcoulesCetteAnnee()
-
 const LABEL_CATEGORIE: Record<DocumentDivers['categorie'], string> = {
   releve_bancaire: 'Relevé bancaire',
   cotisation: 'Appel de cotisation',
@@ -188,6 +182,13 @@ export default function ClientUpload() {
   // pour que le client sache ce qu'il reste à envoyer sans avoir à demander. Volontairement limité à
   // ces trois-là : le reste (véhicule, tickets restaurant...) dépend d'une configuration par dossier
   // que le client ne voit pas ici.
+  // Mois entièrement terminés, pas mois entamés (voir lib/format) — cet écran comptait le mois en
+  // cours comme dû, et réclamait donc au client un relevé qui n'existe pas encore, en contradiction
+  // avec l'accueil et la Checklist du cabinet, qui lisent tous deux ce même calcul. Lus à chaque
+  // rendu : figés au chargement du module, ils faisaient diverger ces trois écrans au passage d'une
+  // année, alors qu'ils doivent dire la même chose au même moment.
+  const { annee: ANNEE_COURANTE, moisEcoules: MOIS_ECOULES } = anneeEtMoisEcoules()
+
   const moisPresents = new Set(
     lignes.filter((l) => anneeDe(l.date) === ANNEE_COURANTE).map((l) => moisDe(l.date)),
   )

@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { ajouterJours, ajouterMois, anneeDe, anneeLocaleDe, aujourdHuiSql, cleFournisseur, comptesParMois, dateLocaleDe, dernierJourDuMois, formatDate, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { ajouterJours, ajouterMois, anneeDe, anneeEtMoisEcoules, anneeLocaleDe, aujourdHuiSql, cleFournisseur, comptesParMois, dateLocaleDe, dernierJourDuMois, formatDate, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -421,5 +421,44 @@ describe('ajouterJours', () => {
 
   it('rend la date inchangée pour zéro jour', () => {
     expect(ajouterJours('2026-07-14', 0)).toBe('2026-07-14')
+  })
+})
+
+// LE PIÈGE EST DANS L'APPARIEMENT, PAS DANS CHAQUE VALEUR. « 8 mois écoulés » ne désigne des mois que
+// rapporté à SON année : lues depuis deux instants, les deux se contredisent au passage d'une année.
+describe('anneeEtMoisEcoules', () => {
+  afterEach(() => { vi.useRealTimers() })
+
+  it('LIT L’HORLOGE À CHAQUE APPEL, jamais une fois pour toutes', () => {
+    // La mutation qui compte : une valeur calculée au chargement du module. Elle est indiscernable
+    // d'un calcul correct tant qu'on ne bouge pas l'horloge ENTRE deux appels — et dans une SPA à
+    // `HashRouter`, qui ne recharge jamais, c'est la session entière qui la garde figée.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 11, 31, 18, 0, 0))
+    expect(anneeEtMoisEcoules()).toEqual({ annee: 2026, moisEcoules: 11 })
+    vi.setSystemTime(new Date(2027, 0, 1, 9, 0, 0))
+    expect(anneeEtMoisEcoules()).toEqual({ annee: 2027, moisEcoules: 0 })
+  })
+
+  it('compte les mois RÉVOLUS, pas les mois entamés', () => {
+    // Le premier jour d'un mois, ce mois n'est pas dû : réclamer son relevé au client serait réclamer
+    // un document qui n'existe pas encore.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2026, 8, 1, 0, 30, 0))
+    expect(anneeEtMoisEcoules().moisEcoules).toBe(8)
+    vi.setSystemTime(new Date(2026, 8, 30, 23, 30, 0))
+    expect(anneeEtMoisEcoules().moisEcoules).toBe(8)
+  })
+
+  // CE QU'AUCUN TEST NE PEUT PROUVER ICI, écrit plutôt que maquillé en assertion de complaisance :
+  // remplacer le `Date` unique par deux appels (`new Date().getFullYear()` et `new Date().getMonth()`)
+  // SURVIT à toutes ces mutations, et c'est normal — les deux lectures ne peuvent diverger qu'en
+  // straddlant un réveillon à quelques microsecondes près, ce qu'aucune horloge feinte ne produit
+  // entre deux instructions synchrones. La forme à un seul `Date` est gardée parce qu'elle tient par
+  // CONSTRUCTION, comme la part non déductible calculée par complément dans `declaration2035`.
+  it('rend zéro mois en janvier, et l’année de janvier', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date(2027, 0, 15, 12, 0, 0))
+    expect(anneeEtMoisEcoules()).toEqual({ annee: 2027, moisEcoules: 0 })
   })
 })

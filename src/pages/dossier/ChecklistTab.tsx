@@ -6,7 +6,7 @@ import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
-import { anneeDe, formatMoney, moisDe, moisEcoulesCetteAnnee } from '../../lib/format'
+import { anneeDe, anneeEtMoisEcoules, formatMoney, moisDe } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import type { ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
@@ -168,8 +168,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     )
   }
 
-  const anneeCourante = new Date().getFullYear()
-  const moisEcoules = moisEcoulesCetteAnnee()
+  // Même instant pour les deux (voir anneeEtMoisEcoules) : « N mois écoulés » ne désigne des mois que
+  // rapporté à SON année, et ces trois écrans doivent dire la même chose au même moment.
+  const { annee: anneeCourante, moisEcoules } = anneeEtMoisEcoules()
 
   const moisPresents = new Set(
     lignes.filter((l) => anneeDe(l.date) === anneeCourante).map((l) => moisDe(l.date)),

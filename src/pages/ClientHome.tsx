@@ -3,7 +3,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { deposerFichier } from '../lib/depot'
-import { anneeDe, anneeLocaleDe, comptesParMois, dateRelative, moisDe, moisEcoulesCetteAnnee } from '../lib/format'
+import { anneeDe, anneeLocaleDe, anneeEtMoisEcoules, comptesParMois, dateRelative, moisDe } from '../lib/format'
 import { IconCamera, IconDocuments, IconEstimation, IconInformations, IconPieces } from '../components/icons'
 import KpiTile from '../components/widgets/KpiTile'
 import Widget from '../components/widgets/Widget'
@@ -14,7 +14,6 @@ import { lireTout } from '../lib/lectureComplete'
 
 const CLE_ONBOARDING_VU = 'jd-precompta-client-onboarding-vu'
 const NOMS_MOIS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
-const ANNEE_COURANTE = new Date().getFullYear()
 const NB_MOIS_TENDANCE = 12
 const NB_DERNIERS_DEPOTS = 5
 
@@ -150,6 +149,10 @@ export default function ClientHome() {
     })),
   ].sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
 
+  // Lus au même instant et à chaque rendu (voir anneeEtMoisEcoules) — l'année était figée au
+  // chargement du module pendant que le compte de mois, lui, se recalculait.
+  const { annee: ANNEE_COURANTE, moisEcoules } = anneeEtMoisEcoules()
+
   const depotsAnnee = depots.filter((d) => anneeLocaleDe(d.createdAt) === ANNEE_COURANTE)
   const tendanceDepots = comptesParMois(depots.map((d) => d.createdAt), NB_MOIS_TENDANCE)
   const moisCourant = tendanceDepots[tendanceDepots.length - 1] ?? 0
@@ -161,9 +164,9 @@ export default function ClientHome() {
   const enVerification = pieces.filter((p) => p.statut === 'a_valider').length
 
   // Mêmes signaux que la Checklist du cabinet et que "Mes pièces", pour que les trois écrans disent la
-  // même chose. moisEcoulesCetteAnnee() exclut le mois en cours : inutile de réclamer un relevé pour un
-  // mois qui n'est pas fini.
-  const moisEcoules = moisEcoulesCetteAnnee()
+  // même chose. Le compte exclut le mois en cours : inutile de réclamer un relevé pour un mois qui
+  // n'est pas fini. Année et compte viennent du MÊME instant (voir anneeEtMoisEcoules) — appariés
+  // depuis deux instants différents, cet écran annonçait « rien à envoyer » sur l'année révolue.
   const moisPresents = new Set(
     lignes.filter((l) => anneeDe(l.date) === ANNEE_COURANTE).map((l) => moisDe(l.date)),
   )

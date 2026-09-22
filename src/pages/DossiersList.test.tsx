@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import { describe, expect, it, vi } from 'vitest'
-import { moisEcoulesCetteAnnee } from '../lib/format'
+import { anneeEtMoisEcoules } from '../lib/format'
 import DossiersList from './DossiersList'
 
 // « Une recherche filtre l'affichage, jamais un total » — la règle que cet écran violait, et dans le
@@ -47,7 +47,7 @@ vi.mock('../lib/supabase', () => ({
 const ANNEE = new Date().getFullYear()
 // Le même appel que l'écran, et non une constante : « à jour » veut dire « un relevé par mois
 // écoulé », donc un nombre qui dépend du jour où le test tourne.
-const MOIS_ECOULES = moisEcoulesCetteAnnee()
+const MOIS_ECOULES = anneeEtMoisEcoules().moisEcoules
 
 function dossier(id: string, nom: string) {
   return {
