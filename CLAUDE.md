@@ -1483,6 +1483,44 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   donc personne n'avait modifié la production à la main et il n'y avait aucun correctif non déployé à
   embarquer), et un aller-retour après : **zéro différence résiduelle sur 110, 264, 236, 292 et
   740 lignes**.
+- **ET LE SCANNER DES ÉCRITURES, LUI, NE VOYAIT QU'UNE FORME SUR SIX — ET C'ÉTAIT MON TRAVAIL DE LA
+  VEILLE** (22/09/2026). Le matin même, `lecturesVerifiees` avait gagné deux portes de FORME parce
+  qu'« une lecture s'écrit aussi SANS `await` » ; l'après-midi, `edgeFunctionsLectures` était écrit
+  avec ces portes dès le départ. **Son frère `edgeFunctionsEcritures` est resté sur sa lecture LIGNE
+  PAR LIGNE**, ancrée sur `^\s*await <client>.<porte>` — donc sur une seule ligne. C'est mot pour
+  mot « le balayage s'était arrêté à mi-chemin », commis dans la session qui venait de le corriger
+  deux fois.
+  **MESURÉ PAR MUTATION, jamais supposé** : retirer la destructuration de la compensation qui répare
+  un cabinet à moitié créé — `const { error: insertError } = await admin` / `.from("cabinet_admins")`
+  / `.insert({…})`, une VRAIE écriture du dépôt — laissait **les douze tests au VERT**. Cinq formes
+  sur six étaient aveugles : chaîne multi-ligne, entrée de `Promise.all`, `.then(`, promesse
+  flottante, `void`. Et la multi-ligne n'a rien de théorique — **six écritures de ces fonctions sont
+  écrites ainsi**, c'est le formatage normal du dépôt. **SEPTIÈME fois que ce dépôt se fait prendre
+  par un retour à la ligne.**
+  **AUCUNE FAUTE VIVANTE DERRIÈRE CE TROU, et c'est dit plutôt que gonflé** : les trente-deux
+  écritures de ces fonctions prennent toutes leur résultat aujourd'hui. Ce qui justifie
+  l'élargissement n'est donc pas une prise mais la mutation ci-dessus — contrairement aux six autres
+  scanners de ce dépôt, celui-ci est refermé sur un trou démontré et non sur un défaut trouvé, et la
+  différence mérite d'être écrite.
+  **LA RÉPARATION CHANGE LA QUESTION POSÉE** : on ne cherche plus une forme d'écriture mais on
+  demande, à la TÊTE de chaque chaîne, *quelqu'un prend-il ce résultat ?* Pris — destructuré,
+  affecté, rendu, passé en argument, branche de ternaire — l'erreur reste atteignable, et c'est alors
+  au scanner des LECTURES de vérifier qu'on la prend vraiment : deux tests, deux questions, aucune
+  zone commune. Jeté, il n'existe aucune raison d'écrire cela contre une base. Une forme non prévue
+  tombe du côté SIGNALÉ, jamais du côté silencieux.
+  **ET LA MUTATION QUI A SURVÉCU ACCUSAIT LE SCANNER, pas le jeu d'essai — variante nouvelle de la
+  règle**. La première version sautait tout maillon précédé d'un point, pour ne pas compter deux fois
+  `supabase.storage.from(…)`. Retirer cette règle laissait **tout au vert** : le drapeau `g` consomme
+  déjà le jeton `storage`, donc elle ne protégeait de RIEN — et elle rendait aveugle un client atteint
+  par une propriété (`deps.admin.from(…)`), dans le seul sens dangereux. Remplacée par la remontée à
+  la tête de chaîne, qui est correcte dans les deux sens, et gardée par les deux cas.
+  **LES DEUX SCANNERS DE LECTURES ONT ÉTÉ VÉRIFIÉS PAR MUTATION RÉELLE, pas par relecture** — c'est
+  exactement l'erreur qu'on vient de corriger : une lecture multi-ligne privée de son `error` est bien
+  attrapée dans `superpdp-sync` (Edge) comme dans `informationsDossier.ts` (`src/`). Le trou était
+  strictement du côté des écritures.
+  **Dix mutations, toutes mordent** — dont le défaut d'origine TEL QU'IL ÉTAIT (`source.split('\n')`),
+  l'écriture multi-ligne réelle, chaque porte rendue aveugle, le scanner qui crie au loup, la porte
+  `Promise.all` retirée, les commentaires non coupés et l'exception INVENTÉE.
 - **ET LE TROISIÈME JEU D'ESSAI D'ÉCRAN N'ÉTAIT PAS TYPÉ — cinq colonnes manquantes** (21/09/2026).
   Le remède de la contrainte de type avait été appliqué à `ChecklistTab` et `BanqueTab`, pas à
   `PiecesTab`, dont le `piece()` restait un `Record<string, unknown>`. Typé `Partial<Piece> => Piece`
@@ -3865,7 +3903,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1374 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1383 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
