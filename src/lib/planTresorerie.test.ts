@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, type LigneBanquePourPlan } from './planTresorerie'
+import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, type LigneBanquePourPlan } from './planTresorerie'
 import { ajouterMois, premierJourDuMoisCourant } from './format'
 import type { Emprunt } from './emprunts'
 import type { CotisationDeclaree } from './types'
@@ -110,6 +110,30 @@ describe('reserveSurMoyenne', () => {
     const texte = reserveSurMoyenne(plan({ nbLignesObservees: 9, nbMoisAvecDonnees: 5 }))
     expect(texte).toContain('le mois restant compte')
     expect(texte).not.toContain('mois restants comptent')
+  })
+})
+
+describe('reserveSurSolde', () => {
+  it('se tait dès qu’une écriture bancaire existe', () => {
+    // Même sur une seule ligne : le solde est alors un vrai solde, et une mise en garde permanente
+    // cesserait d'être lue.
+    expect(reserveSurSolde([{ date: '2026-01-15', sens: 'debit', montant: 1 }])).toBeNull()
+  })
+
+  it('dit que « 0,00 € » n’est pas « zéro à la banque »', () => {
+    const texte = reserveSurSolde([])
+    expect(texte).toContain("n'est pas")
+    expect(texte).toContain('rien de comptabilisé')
+    expect(texte).toContain('écritures générées')
+  })
+
+  it('NE REGARDE PAS LA MÊME FENÊTRE QUE LA MOYENNE', () => {
+    // Un dossier peut avoir un solde parfaitement juste et une moyenne qui ne repose sur rien : les
+    // écritures existent, mais toutes en dehors des mois que la moyenne regarde. Fondre les deux
+    // réserves ferait taire celle du solde ou crier celle de la moyenne.
+    const vieille: LigneBanquePourPlan[] = [{ date: `${cleMois(-24)}-15`, sens: 'debit', montant: 500 }]
+    expect(reserveSurSolde(vieille)).toBeNull()
+    expect(reserveSurMoyenne(calculerPlanTresorerie(vieille, 0, 6, 1))).toContain('ne repose sur rien')
   })
 })
 

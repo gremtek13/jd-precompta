@@ -84,6 +84,12 @@ function totalDuPoste(modale: HTMLElement, poste: string): string | null {
   return cellule ? (cellule.nextElementSibling?.textContent ?? null) : null
 }
 
+// Combien de fois une phrase apparaît dans le TEXTE rendu — et non dans combien d'éléments. La
+// différence décide : deux mises en garde recollées dans un même paragraphe restent un seul nœud.
+function occurrences(racine: HTMLElement, phrase: string): number {
+  return (racine.textContent ?? '').split(phrase).length - 1
+}
+
 afterEach(() => { vi.useRealTimers() })
 
 describe('FinancementTab — situation intermédiaire', () => {
@@ -195,10 +201,17 @@ describe('FinancementTab — ce sur quoi la projection repose', () => {
   it('dit que la moyenne ne repose sur rien quand aucune écriture bancaire n’a été lue', async () => {
     faux.ecritures = []
     const modale = await ouvrir('Plan de trésorerie')
-    expect(within(modale).getByText(/ne repose sur rien/)).toBeTruthy()
     // La cause est actionnable, et c'est le piège du dossier réel : le relevé est importé, mais les
     // écritures ne sont pas générées — l'écran lit les secondes.
-    expect(within(modale).getByText(/écritures générées/)).toBeTruthy()
+    expect(within(modale).getByText(/rien de comptabilisé/)).toBeTruthy()
+    // ET DITE UNE SEULE FOIS. Un historique vide implique une fenêtre vide, donc les deux réserves se
+    // déclenchent ensemble et pour la même cause : les afficher toutes deux répéterait la même phrase
+    // en rouge sous elle-même, et une mise en garde qu'on répète cesse d'être lue.
+    //
+    // ON COMPTE LES OCCURRENCES DANS LE TEXTE, PAS LES ÉLÉMENTS : `queryAllByText` compte des NŒUDS,
+    // donc concaténer les deux réserves dans un seul paragraphe lui rendait encore « 1 ». La mutation
+    // qui les recolle a survécu à cette assertion-là — c'est elle qui a exigé cette forme.
+    expect(occurrences(modale, 'écritures générées')).toBe(1)
   })
 
   it('se tait quand les six mois demandés sont servis', async () => {
@@ -215,6 +228,20 @@ describe('FinancementTab — ce sur quoi la projection repose', () => {
     const modale = await ouvrir('Plan de trésorerie')
     expect(within(modale).getByText(/2 de ces 6 mois/)).toBeTruthy()
     expect(within(modale).getByText(/sous-estimée/)).toBeTruthy()
+  })
+
+  it('dit que la trésorerie de la situation intermédiaire n’est pas « zéro à la banque »', async () => {
+    // TROISIÈME consommateur de la même source, et celui qu'il aurait été le plus facile d'oublier :
+    // « Trésorerie à cette date : 0,00 € » est arithmétiquement juste, donc muet.
+    faux.ecritures = []
+    const modale = await ouvrir('Situation intermédiaire')
+    expect(within(modale).getByText(/rien de comptabilisé/)).toBeTruthy()
+  })
+
+  it('se tait sur la trésorerie dès qu’une écriture bancaire existe', async () => {
+    faux.ecritures = sixMoisServis()
+    const modale = await ouvrir('Situation intermédiaire')
+    expect(within(modale).queryAllByText(/rien de comptabilisé/)).toHaveLength(0)
   })
 
   it('dit POURQUOI le taux d’endettement est à « — »', async () => {

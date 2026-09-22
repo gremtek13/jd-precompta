@@ -5,7 +5,7 @@ import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '..
 import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire, moisEcoulesDeLAnnee } from '../../lib/situationIntermediaire'
-import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, type EcheanceConnue } from '../../lib/planTresorerie'
+import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, type EcheanceConnue } from '../../lib/planTresorerie'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
@@ -378,6 +378,14 @@ function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations,
   const plan = calculerPlanTresorerie(lignesBanque, soldeActuel, nbMoisHistorique, nbMoisProjection)
   // Une projection bâtie sur rien a exactement la même tête qu'une projection bâtie sur six mois.
   const reserve = reserveSurMoyenne(plan)
+  // Et le solde de DÉPART vient de la même source, sur une fenêtre plus large : tout l'historique.
+  const reserveSolde = reserveSurSolde(lignesBanque)
+  // UNE SEULE RÉSERVE À L'ÉCRAN, et l'ordre n'est pas arbitraire : un historique VIDE implique une
+  // fenêtre vide, donc les deux se déclenchent ensemble et pour la même cause. Les afficher toutes
+  // deux répéterait la même phrase en rouge sous elle-même — et une mise en garde qu'on répète cesse
+  // d'être lue. Celle du solde est la plus complète : elle couvre le solde de départ ET la moyenne.
+  // Le cas « fenêtre partielle » n'a, lui, aucun équivalent côté solde, donc il reste dit.
+  const reserveAffichee = reserveSolde ?? reserve
   const debutProjection = plan.lignes[0]?.mois ? `${plan.lignes[0].mois}-01` : aujourdHuiSql()
   // "-31" plutôt que le vrai dernier jour du mois : comparaison de chaînes (YYYY-MM-DD), pas de
   // date réelle — sert seulement de borne haute, valide même pour un mois de moins de 31 jours.
@@ -406,8 +414,8 @@ function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations,
           {formatMoney(plan.moyenneDecaissements)} de décaissements — mensualités d'emprunts et cotisations déjà payées comprises, puisqu'elles
           transitent par le même compte banque.
         </p>
-        {reserve && (
-          <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserve}</p>
+        {reserveAffichee && (
+          <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserveAffichee}</p>
         )}
 
         <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginBottom: 20 }}>
@@ -471,6 +479,8 @@ function SituationIntermediaireModal({ piecesValidees, categories, immobilisatio
   const tresorerieADate = Math.round(
     lignesBanque.filter((l) => l.date <= dateFin).reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0) * 100,
   ) / 100
+  // « 0,00 € » est juste quand rien n'est comptabilisé, et c'est ce qui le rend dangereux.
+  const reserveSolde = reserveSurSolde(lignesBanque)
 
   return (
     <div style={overlayStyle}>
@@ -505,6 +515,9 @@ function SituationIntermediaireModal({ piecesValidees, categories, immobilisatio
             <strong style={{ fontSize: '1.2rem' }}>{formatMoney(tresorerieADate)}</strong>
           </div>
         </div>
+        {reserveSolde && (
+          <p className="muted" style={{ marginTop: -6, marginBottom: 16, color: 'var(--color-danger, #c0392b)' }}>{reserveSolde}</p>
+        )}
 
         <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
           {situation.totauxParPoste.length === 0 ? (

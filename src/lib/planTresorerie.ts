@@ -94,6 +94,21 @@ export function reserveSurMoyenne(plan: PlanTresorerie): string | null {
   return null
 }
 
+// LE SOLDE VIENT DE LA MÊME SOURCE, ET SA FENÊTRE N'EST PAS LA MÊME. `reserveSurMoyenne` parle des
+// `nbMoisHistorique` derniers mois ; un solde de trésorerie, lui, cumule TOUT l'historique — un dossier
+// peut donc avoir un solde parfaitement juste et une moyenne qui ne repose sur rien. Les deux réserves
+// sont distinctes pour cette raison, et pas par symétrie décorative.
+//
+// « Trésorerie à cette date : 0,00 € » est arithmétiquement JUSTE quand rien n'est comptabilisé — et
+// c'est précisément ce qui le rend dangereux : indiscernable d'un compte réellement vide, sur l'état
+// qu'un cabinet montre à une banque.
+export function reserveSurSolde(lignesBanque: LigneBanquePourPlan[]): string | null {
+  if (lignesBanque.length > 0) return null
+  return `Aucune écriture bancaire dans ce dossier : ce solde n'est pas « zéro à la banque », c'est `
+    + `« rien de comptabilisé ». Les mouvements n'arrivent ici qu'une fois les écritures générées `
+    + `(onglet Écritures) — un relevé importé ne suffit pas.`
+}
+
 export interface EcheanceConnue { date: string; libelle: string; montant: number }
 
 // Mensualités futures des emprunts actifs sur la période du plan — sert surtout à repérer un prêt

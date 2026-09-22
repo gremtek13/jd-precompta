@@ -1594,6 +1594,25 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   test d'écran — donc les deux câblages sont gardés séparément, là où une seule assertion aurait laissé
   croire que l'un couvre l'autre. Plus le code tel qu'il était (3 + 3) et les gardes symétriques des
   deux côtés, sans lesquels « l'écran prévient » serait satisfait par un écran qui prévient TOUJOURS.
+  **ET LE TROISIÈME CONSOMMATEUR DE LA MÊME SOURCE A FAILLI ÊTRE OUBLIÉ** — « chercher toutes les
+  copies avant de corriger la première », pris par son côté le plus banal : j'avais câblé les deux
+  consommateurs qui passent par `calculerPlanTresorerie` et laissé le `tresorerieADate` de la
+  Situation intermédiaire, qui lit les mêmes lignes directement. « Trésorerie à cette date : 0,00 € »
+  y est **arithmétiquement JUSTE** quand rien n'est comptabilisé, et c'est exactement ce qui le rend
+  dangereux : indiscernable d'un compte réellement vide, sur l'état qu'un cabinet montre à une banque.
+  **Les deux réserves ne regardent PAS la même fenêtre**, et c'est pourquoi elles restent deux :
+  `reserveSurMoyenne` parle des N derniers mois, `reserveSurSolde` de TOUT l'historique — un dossier
+  dont les seules écritures datent de deux ans a un solde parfaitement juste et une moyenne qui ne
+  repose sur rien. Un test porte ce cas nommément.
+  **MAIS ELLES NE S'AFFICHENT QU'UNE FOIS**, un historique vide impliquant une fenêtre vide : les
+  afficher toutes deux répétait la même phrase en rouge sous elle-même, et une mise en garde qu'on
+  répète cesse d'être lue. `reserveSolde ?? reserve` — la première couvre les deux chiffres, et le cas
+  « fenêtre partielle », qui n'a aucun équivalent côté solde, reste dit.
+  **LA MUTATION QUI RECOLLE LES DEUX A SURVÉCU, ET C'EST LE TEST QU'IL FALLAIT ACCUSER** :
+  `queryAllByText` compte des NŒUDS, pas des occurrences — deux mises en garde concaténées dans un
+  même paragraphe lui rendaient encore « 1 ». D'où un compteur sur le `textContent`, et une mutation
+  de plus qui le ramène au comptage de nœuds pour prouver que c'est bien LUI qui garde la garantie et
+  non la phrase du commentaire. Six mutations de plus, toutes mordent.
   **Résultat négatif à garder** : le reste de `planTresorerie` est juste — bornes comparées en chaînes,
   mois en cours exclu, échéances rendues à part plutôt que fusionnées dans la moyenne. Ne pas le
   réenquêter ; ce qui reste ouvert est une question produit, pas un défaut.
@@ -3483,7 +3502,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1295 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1300 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
