@@ -104,7 +104,25 @@ async function lireToutesLesLignes(
     if (!data || data.length < TAILLE_PAGE) break
   }
 
-  if (annonce != null && annonce !== lignes.length) {
+  // SANS COMPTE ANNONCÉ, ON NE PEUT PAS DIRE QUE LA LECTURE EST COMPLÈTE — donc on refuse, et c'est
+  // ce que le point 2 ci-dessus promettait sans le tenir : le contrôle ne se déclenchait QUE si la
+  // base avait annoncé un total. Sans total, la boucle s'arrête sur une tranche plus courte que
+  // demandée — le seul indice de fin dont elle dispose, et il est FAIBLE, un plafond serveur plus bas
+  // que `TAILLE_PAGE` la produisant aussi (voir le point 1 de `lectureComplete.ts`). La sauvegarde
+  // repartait alors amputée, sans un mot, et c'est mot pour mot ce que l'en-tête de cette fonction
+  // désigne comme pire qu'une absence de sauvegarde : « à ceci près qu'elle rassure ».
+  //
+  // `lireTout` tranche déjà ce cas dans l'autre sens (`complete: false`, « la base n'a pas annoncé de
+  // total ») : le garde était donc plus strict sur un BANDEAU d'écran que sur le fichier dont on
+  // restaure. Ici il n'y a pas d'appelant à qui laisser le choix — une sauvegarde incomplète ne vaut
+  // rien —, donc on lève.
+  if (annonce == null) {
+    throw new Error(
+      `Sauvegarde refusée : la table « ${table} » n'a annoncé aucun total, et ${lignes.length} ligne(s) ont été lues. ` +
+        'Impossible de dire si la lecture est complète — relancer la sauvegarde.',
+    )
+  }
+  if (annonce !== lignes.length) {
     throw new Error(
       `Sauvegarde refusée : la table « ${table} » annonce ${annonce} lignes et ${lignes.length} ont été lues. ` +
         'Une écriture a eu lieu pendant la lecture — relancer la sauvegarde.',

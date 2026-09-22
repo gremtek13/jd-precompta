@@ -2863,6 +2863,52 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   trois mensonges possibles de la liste (une de moins, une inventée, les mauvaises colonnes), les
   `alter` non rejoués, les `drop table` non rejoués, et le lecteur pointé sur un dossier vide — ce
   dernier fait tomber les quatre, c'est le plancher.
+- **ET LE MÊME FIL A RENDU UN VRAI DÉFAUT : LES DEUX PAGINEURS DU DÉPÔT NE TRAITAIENT PAS LE MÊME
+  CAS DE LA MÊME FAÇON, ET C'EST LA SAUVEGARDE QUI ÉTAIT LA PLUS LAXISTE** (22/09/2026, trouvé en
+  vérifiant une AUTRE affirmation — celle de `lectureComplete.ts` selon laquelle le socle de
+  sauvegarde « se rattrape en REFUSANT »).
+
+  | | compte ABSENT | compte qui ne colle pas |
+  |---|---|---|
+  | `lireTout` (écrans) | **`complete: false`** | `complete: false` |
+  | `lireToutesLesLignes` (sauvegarde) | **accepté en silence** | refus |
+
+  **Le garde était donc plus strict sur un BANDEAU D'ÉCRAN que sur le fichier dont on restaure.**
+  `if (annonce != null && annonce !== lignes.length)` : sans total annoncé, le contrôle ne se
+  déclenche pas, et la boucle s'est arrêtée sur une tranche plus courte que demandée — l'indice de
+  fin que ce fichier désigne lui-même comme FAIBLE, puisqu'un plafond serveur plus bas que
+  `TAILLE_PAGE` le produit aussi. La sauvegarde repartait amputée, sans un mot.
+  **ET SON PROPRE EN-TÊTE NOMMAIT LE DÉGÂT TROIS LIGNES AU-DESSUS** : « une sauvegarde qu'on ne peut
+  pas dire complète ne vaut pas mieux qu'une absence de sauvegarde, **à ceci près qu'elle
+  rassure** ». C'est la forme la plus fréquente de cette famille dans ce dépôt, et c'est sa
+  cinquième occurrence — cette fois dans le fichier dont toute la raison d'être est d'être digne de
+  confiance.
+  **LE RATTRAPAGE PROMIS PAR `lectureComplete.ts` ÉTAIT DONC À MOITIÉ VRAI** : le socle refuse bien
+  sur un compte qui ne colle pas, jamais sur un compte ABSENT — or c'est exactement le cas que la
+  documentation de `lireTout` désigne comme décisif (« sans lui, "rien de plus à lire" et "le serveur
+  ne veut plus rien rendre" sont indiscernables »). Une vérification qui prouve une chose plus faible
+  que celle qu'on lui prête, encore.
+  **LE CORRECTIF FERME AUSSI LA LIMITE DOCUMENTÉE, ce qui est le vrai gain** : le compte étant
+  désormais garanti non nul, l'arrêt sur tranche courte est TOUJOURS rattrapé par la comparaison au
+  total. Ce fichier décrivait cette limite comme « compensée par un refus » ; elle l'est maintenant
+  sans trou.
+  **POURQUOI REFUSER NE COÛTE RIEN, dit comme une INFÉRENCE et non comme une mesure** : `lireTout`
+  rend `complete: false` sur un compte nul depuis qu'il existe, sur les 110 sites de lecture du
+  dépôt, et aucun bandeau n'est affiché en permanence. Un compte absent ne se produit donc pas en
+  fonctionnement normal — c'est un chemin défensif, et le refuser ne bloque aucune sauvegarde réelle.
+  **LE FAUX CLIENT NE POUVAIT PAS EXERCER LE CAS** : `base.compteAnnonce[table] ?? lignes.length`
+  annonce TOUJOURS un compte, et `compteAnnonce` ne sait dire qu'un nombre. « La base n'annonce
+  rien » est un état distinct de « la base annonce autre chose », et il n'avait aucun levier. D'où
+  `base.sansCompte`, et une mutation qui le retire.
+  **DEUX RÉSULTATS NÉGATIFS DU MÊME BALAYAGE, à garder** : le tri de `lireToutesLesLignes` est bien
+  TOTAL (`for (const colonne of tri)` — chaque colonne de la clé primaire, pas seulement la
+  première, ce qui compte pour les six tables à clé composite), et le refus sur compte divergent
+  existe et mord. Ne pas les réenquêter.
+  **Cinq mutations, toutes mordent, et la discrimination est le résultat** : le code TEL QU'IL ÉTAIT
+  ne fait tomber qu'UN test, celui écrit pour lui ; « le socle refuse TOUTE sauvegarde » en fait
+  tomber 25 et « `0` confondu avec aucun total » 22 — ce sont les deux gardes symétriques, sans
+  lesquelles « refuse ce qu'il ne peut pas dire complet » serait satisfait par un socle qui refuse
+  tout, ou par un socle qui casse sur toute table vide.
 - **La chaîne vers l'écriture comptable a DEUX portes, pas une.** Une pièce ne génère une écriture
   que si elle a une `categorie_id` **et** que cette catégorie porte un `compte_comptable`
   (`lignesChargeProduitPourPiece` l'exige en paramètre). Une troisième porte, `poste_2035`, commande
@@ -4240,7 +4286,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1435 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1437 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

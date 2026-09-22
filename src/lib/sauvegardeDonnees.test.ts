@@ -12,6 +12,11 @@ const base = {
   tables: {} as Record<string, Ligne[]>,
   // Permet de faire mentir la base sur son propre compte, ce qu'une écriture concurrente produit.
   compteAnnonce: {} as Record<string, number>,
+  // Et permet de la faire TAIRE sur son propre compte, ce qu'aucun test n'exerçait : `compteAnnonce`
+  // ne sait dire qu'un nombre, et le faux retombait sur `lignes.length`. Or « la base n'annonce
+  // rien » est un cas distinct de « la base annonce autre chose », et c'est celui qui laissait
+  // passer une sauvegarde amputée.
+  sansCompte: new Set<string>(),
   erreur: null as Error | null,
   // Faire échouer UNE table et pas toutes : une erreur globale n'atteint jamais la lecture des
   // tables, la première requête sur `dossiers` s'arrêtant avant.
@@ -65,7 +70,7 @@ function constructeur(table: string) {
         tri.map((c) => String(a[c] ?? '')).join('\u0000').localeCompare(tri.map((c) => String(b[c] ?? '')).join('\u0000')),
       )
     }
-    const total = base.compteAnnonce[table] ?? lignes.length
+    const total = base.sansCompte.has(table) ? null : base.compteAnnonce[table] ?? lignes.length
     return Promise.resolve({ data: lignes.slice(debut, fin + 1), error: null, count: total })
   }
   const chaine = {
@@ -123,6 +128,7 @@ const CABINET = 'cab1'
 beforeEach(() => {
   base.tables = { dossiers: [{ id: DOSSIER, nom: 'Cabinet Martin', cabinet_id: CABINET }] }
   base.compteAnnonce = {}
+  base.sansCompte = new Set()
   base.erreur = null
   base.erreurParTable = {}
   journal.length = 0
@@ -251,6 +257,27 @@ describe('export d’un dossier', () => {
     base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
     base.compteAnnonce.pieces = 2
     await expect(exporterDossier(DOSSIER)).rejects.toThrow(/annonce 2 lignes et 1 ont été lues/)
+  })
+
+  it('refuse une sauvegarde dont la base n’a annoncé AUCUN total', async () => {
+    // LE DÉFAUT D'ORIGINE (22/09/2026) : le contrôle voisin ne se déclenchait QUE sur un compte
+    // annoncé (`annonce != null && annonce !== lignes.length`). Sans total, la boucle s'arrête sur
+    // une tranche plus courte que demandée — un indice de fin FAIBLE, qu'un plafond serveur plus bas
+    // que `TAILLE_PAGE` produit aussi — et la sauvegarde repartait amputée sans un mot.
+    //
+    // `lireTout` tranchait déjà ce cas dans l'autre sens depuis toujours (`complete: false`) : le
+    // dépôt était donc plus strict sur un BANDEAU d'écran que sur le fichier dont on restaure.
+    base.tables.pieces = [{ id: 'p1', dossier_id: DOSSIER }]
+    base.sansCompte.add('pieces')
+    await expect(exporterDossier(DOSSIER)).rejects.toThrow(/n'a annoncé aucun total/)
+  })
+
+  it('n’exige pas de compte là où la base en donne un, même à zéro', async () => {
+    // GARDE SYMÉTRIQUE, et elle est indispensable : sans elle, « refuse ce qu'elle ne peut pas dire
+    // complet » serait satisfait par un socle qui refuse TOUTE sauvegarde. Une table vide annonce
+    // bien `0`, ce qui n'est pas « rien annoncé ».
+    base.tables.pieces = []
+    await expect(exporterDossier(DOSSIER)).resolves.toBeDefined()
   })
 
   it('refuse un dossier introuvable au lieu de rendre un fichier vide', async () => {
