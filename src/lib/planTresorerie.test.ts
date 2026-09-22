@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, type LigneBanquePourPlan } from './planTresorerie'
+import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, type LigneBanquePourPlan } from './planTresorerie'
 import { ajouterMois, premierJourDuMoisCourant } from './format'
 import type { Emprunt } from './emprunts'
 import type { CotisationDeclaree } from './types'
+import type { PlanTresorerie } from './planTresorerie'
 
 const moisCourant = () => premierJourDuMoisCourant()
 const cleMois = (decalage: number) => ajouterMois(moisCourant(), decalage).slice(0, 7)
@@ -41,6 +42,74 @@ describe('calculerPlanTresorerie', () => {
     const plan = calculerPlanTresorerie([], 0, 6, 2)
     expect(plan.moyenneEncaissements).toBe(0)
     expect(plan.lignes.every((l) => l.soldeFin === 0)).toBe(true)
+  })
+})
+
+// CE SUR QUOI LA MOYENNE REPOSE. Le module a toujours eu raison de rendre 0 sans historique — le test
+// voisin « reste à zéro sans historique bancaire » le fige. Ce qui manquait est de pouvoir DISTINGUER
+// ce zéro-là d'un zéro observé : les deux produisaient le même écran, sur le document qu'un cabinet
+// montre à une banque.
+describe('ce sur quoi la moyenne repose', () => {
+  const ligne = (decalage: number, montant = 100): LigneBanquePourPlan =>
+    ({ date: `${cleMois(decalage)}-15`, sens: 'debit', montant })
+
+  it('compte les lignes et les mois RÉELLEMENT servis, pas ceux demandés', () => {
+    const plan = calculerPlanTresorerie([ligne(-1), ligne(-1, 50), ligne(-3)], 0, 6, 1)
+    expect(plan.nbLignesObservees).toBe(3)
+    expect(plan.nbMoisAvecDonnees).toBe(2)
+    expect(plan.nbMoisHistorique).toBe(6)
+  })
+
+  it('ne compte pas ce que la fenêtre écarte', () => {
+    // Le mois en cours n'est pas terminé, le -7e est hors fenêtre : ni l'un ni l'autre n'est
+    // « observé », sans quoi le compteur promettrait une assiette que la moyenne n'a pas utilisée.
+    const plan = calculerPlanTresorerie([ligne(0), ligne(-7), ligne(-2)], 0, 6, 1)
+    expect(plan.nbLignesObservees).toBe(1)
+    expect(plan.nbMoisAvecDonnees).toBe(1)
+  })
+
+  it('LAISSE LE DIVISEUR AUX MOIS DEMANDÉS', () => {
+    // Garde délibéré, et c'est la moitié du correctif : un mois calme est un VRAI zéro. Diviser par
+    // les seuls mois servis ferait d'un cabinet en congés un cabinet deux fois plus actif — on dit
+    // l'assiette, on ne la corrige pas.
+    const plan = calculerPlanTresorerie([ligne(-1, 600)], 0, 6, 1)
+    expect(plan.moyenneEncaissements).toBe(100)
+  })
+})
+
+describe('reserveSurMoyenne', () => {
+  const plan = (o: Partial<PlanTresorerie>): PlanTresorerie => ({
+    moyenneEncaissements: 0, moyenneDecaissements: 0, nbMoisHistorique: 6,
+    nbLignesObservees: 0, nbMoisAvecDonnees: 0, lignes: [], ...o,
+  })
+
+  it('se tait quand tous les mois demandés sont servis', () => {
+    // Une mise en garde permanente cesse d'être lue, puis emporte ses voisines dans son discrédit.
+    expect(reserveSurMoyenne(plan({ nbLignesObservees: 12, nbMoisAvecDonnees: 6 }))).toBeNull()
+  })
+
+  it('dit que la moyenne ne repose sur RIEN quand aucun mouvement n’a été lu', () => {
+    const texte = reserveSurMoyenne(plan({}))
+    expect(texte).toContain('ne repose sur rien')
+    // Le zéro est une AFFIRMATION tant que personne ne dit qu'il n'a rien été lu.
+    expect(texte).toContain('0,00 € ne veut pas dire')
+    // Et la cause est actionnable : un relevé importé ne produit aucune écriture à lui seul.
+    expect(texte).toContain('écritures générées')
+  })
+
+  it('distingue « rien lu » de « lu sur une partie » — jamais la même conséquence', () => {
+    const partiel = reserveSurMoyenne(plan({ nbLignesObservees: 4, nbMoisAvecDonnees: 2 }))
+    expect(partiel).toContain('2 de ces 6 mois')
+    expect(partiel).toContain('sous-estimée')
+    // Garde symétrique : la conséquence de l'un ne doit pas s'afficher sur l'autre.
+    expect(partiel).not.toContain('ne repose sur rien')
+    expect(reserveSurMoyenne(plan({}))).not.toContain('sous-estimée')
+  })
+
+  it('accorde le singulier quand il ne manque qu’un mois', () => {
+    const texte = reserveSurMoyenne(plan({ nbLignesObservees: 9, nbMoisAvecDonnees: 5 }))
+    expect(texte).toContain('le mois restant compte')
+    expect(texte).not.toContain('mois restants comptent')
   })
 })
 

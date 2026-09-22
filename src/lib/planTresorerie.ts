@@ -16,6 +16,16 @@ export interface PlanTresorerie {
   moyenneEncaissements: number
   moyenneDecaissements: number
   nbMoisHistorique: number
+  // CE SUR QUOI LA MOYENNE REPOSE RÉELLEMENT — sans quoi « 0,00 € observé » et « rien à observer »
+  // rendent exactement le même écran, et c'est une AFFIRMATION : le plan annonce alors une activité
+  // nulle là où il n'a rien lu. Famille déjà connue de ce dépôt (« une lecture dont l'échec ressemble
+  // à un résultat vide »), sur le document qu'un cabinet montre à une banque.
+  nbLignesObservees: number
+  // Combien des `nbMoisHistorique` mois portent au moins une écriture. Le DIVISEUR reste
+  // `nbMoisHistorique` : un mois calme est un vrai zéro, et diviser par les seuls mois servis
+  // gonflerait la moyenne d'un cabinet en congés. On le DIT au lieu de le corriger — le code ne peut
+  // pas distinguer « rien lu » de « rien encaissé », l'écran, lui, peut poser la question.
+  nbMoisAvecDonnees: number
   lignes: MoisTresorerie[]
 }
 
@@ -43,6 +53,7 @@ export function calculerPlanTresorerie(
   const totalDecaissements = dansHistorique.filter((l) => l.sens === 'credit').reduce((s, l) => s + l.montant, 0)
   const moyenneEncaissements = Math.round((totalEncaissements / nbMoisHistorique) * 100) / 100
   const moyenneDecaissements = Math.round((totalDecaissements / nbMoisHistorique) * 100) / 100
+  const nbMoisAvecDonnees = new Set(dansHistorique.map((l) => l.date.slice(0, 7))).size
 
   const lignes: MoisTresorerie[] = []
   let soldeCourant = soldeActuel
@@ -54,7 +65,33 @@ export function calculerPlanTresorerie(
     soldeCourant = soldeFin
   }
 
-  return { moyenneEncaissements, moyenneDecaissements, nbMoisHistorique, lignes }
+  return {
+    moyenneEncaissements, moyenneDecaissements, nbMoisHistorique,
+    nbLignesObservees: dansHistorique.length, nbMoisAvecDonnees, lignes,
+  }
+}
+
+// LA RÉSERVE QUI MANQUAIT À LA MOYENNE. Rendue `null` quand elle n'apprend rien — une mise en garde
+// permanente cesse d'être lue, puis emporte ses voisines dans son discrédit (même arbitrage que
+// `dotationsNonProratisees` et `detailPiecesSansDate`).
+//
+// Les deux cas ne disent PAS la même chose, et les fondre ferait porter à l'un la conséquence de
+// l'autre : « rien à observer » est une moyenne qui ne repose sur rien, « observé sur une partie »
+// est une moyenne juste dont l'assiette est plus courte que l'étiquette ne le laisse croire.
+export function reserveSurMoyenne(plan: PlanTresorerie): string | null {
+  if (plan.nbLignesObservees === 0) {
+    return `Aucun mouvement bancaire sur ces ${plan.nbMoisHistorique} mois : la moyenne ne repose sur rien, `
+      + `et 0,00 € ne veut pas dire « aucun encaissement ». Les mouvements n'arrivent ici qu'une fois les `
+      + `écritures générées (onglet Écritures) — un relevé importé ne suffit pas.`
+  }
+  if (plan.nbMoisAvecDonnees < plan.nbMoisHistorique) {
+    const manquants = plan.nbMoisHistorique - plan.nbMoisAvecDonnees
+    return `Mouvements observés sur ${plan.nbMoisAvecDonnees} de ces ${plan.nbMoisHistorique} mois : `
+      + `${manquants === 1 ? 'le mois restant compte' : `les ${manquants} mois restants comptent`} comme `
+      + `${manquants === 1 ? 'un mois' : 'des mois'} à zéro dans la moyenne. Si c'est l'historique qui manque `
+      + `et non l'activité, la moyenne est sous-estimée d'autant.`
+  }
+  return null
 }
 
 export interface EcheanceConnue { date: string; libelle: string; montant: number }

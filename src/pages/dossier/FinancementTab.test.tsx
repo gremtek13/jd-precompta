@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
 import type { Categorie, Immobilisation, Piece } from '../../lib/types'
+import { ajouterMois, premierJourDuMoisCourant } from '../../lib/format'
 
 // LE CALCUL EST DANS `lib/situationIntermediaire.ts`, TESTÉ — CE QUI SE JOUE ICI EST LA PÉRIODE.
 //
@@ -17,6 +18,7 @@ const faux = vi.hoisted(() => ({
   pieces: [] as unknown[],
   categories: [] as unknown[],
   immobilisations: [] as unknown[],
+  ecritures: [] as unknown[],
 }))
 
 vi.mock('../../lib/supabase', () => {
@@ -28,7 +30,8 @@ vi.mock('../../lib/supabase', () => {
       then: (suite: (r: unknown) => unknown) => {
         const donnees = table === 'pieces' ? faux.pieces
           : table === 'categories' ? faux.categories
-          : table === 'immobilisations' ? faux.immobilisations : []
+          : table === 'immobilisations' ? faux.immobilisations
+          : table === 'ecritures_brouillon' ? faux.ecritures : []
         return Promise.resolve({ data: donnees, error: null, count: donnees.length }).then(suite)
       },
     })
@@ -167,3 +170,64 @@ describe('FinancementTab — situation intermédiaire', () => {
   })
 })
 
+
+// CE QU'AUCUN TEST DE `src/lib` NE PEUT VOIR : le plan de trésorerie lit `ecritures_brouillon`, pas
+// les relevés importés. Mesuré le 22/09/2026 — les quatre dossiers de la base portent 0 écriture
+// bancaire pour 954 lignes de relevé importées, donc TOUT dossier ouvrant cet écran aujourd'hui lit
+// une projection plate à zéro. Le module a raison de rendre 0 ; ce qui manquait est que l'écran
+// distingue ce zéro-là d'un zéro observé.
+describe('FinancementTab — ce sur quoi la projection repose', () => {
+  function ecritureBanque(mois: string, montant: number) {
+    return { date: `${mois}-15`, sens: 'debit', montant }
+  }
+  // Les six mois complets qui précèdent le mois en cours — ceux que la moyenne regarde.
+  function sixMoisServis() {
+    return [1, 2, 3, 4, 5, 6].map((d) => ecritureBanque(ajouterMois(premierJourDuMoisCourant(), -d).slice(0, 7), 600))
+  }
+
+  async function ouvrir(carte: string) {
+    render(<FinancementTab dossierId="d" />)
+    const titre = await screen.findByRole('heading', { name: carte, level: 3 })
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    return screen.getByRole('heading', { name: carte, level: 2 }).closest('.card') as HTMLElement
+  }
+
+  it('dit que la moyenne ne repose sur rien quand aucune écriture bancaire n’a été lue', async () => {
+    faux.ecritures = []
+    const modale = await ouvrir('Plan de trésorerie')
+    expect(within(modale).getByText(/ne repose sur rien/)).toBeTruthy()
+    // La cause est actionnable, et c'est le piège du dossier réel : le relevé est importé, mais les
+    // écritures ne sont pas générées — l'écran lit les secondes.
+    expect(within(modale).getByText(/écritures générées/)).toBeTruthy()
+  })
+
+  it('se tait quand les six mois demandés sont servis', async () => {
+    // GARDE SYMÉTRIQUE : sans lui, « l'écran prévient » serait satisfait par un écran qui prévient
+    // TOUJOURS, et la mise en garde cesserait d'être lue.
+    faux.ecritures = sixMoisServis()
+    const modale = await ouvrir('Plan de trésorerie')
+    expect(within(modale).queryAllByText(/ne repose sur rien/)).toHaveLength(0)
+    expect(within(modale).queryAllByText(/de ces 6 mois/)).toHaveLength(0)
+  })
+
+  it('annonce une assiette plus courte que l’étiquette quand l’historique est partiel', async () => {
+    faux.ecritures = sixMoisServis().slice(0, 2)
+    const modale = await ouvrir('Plan de trésorerie')
+    expect(within(modale).getByText(/2 de ces 6 mois/)).toBeTruthy()
+    expect(within(modale).getByText(/sous-estimée/)).toBeTruthy()
+  })
+
+  it('dit POURQUOI le taux d’endettement est à « — »', async () => {
+    // Ce ratio est le premier qu'une banque regarde, et son « — » ne distinguait pas « pas encore
+    // d'historique » de « le rythme est nul ».
+    faux.ecritures = []
+    const modale = await ouvrir('Dettes & ratios bancaires')
+    expect(within(modale).getByText(/ne repose sur rien/)).toBeTruthy()
+  })
+
+  it('laisse le taux d’endettement sans réserve quand la moyenne est servie', async () => {
+    faux.ecritures = sixMoisServis()
+    const modale = await ouvrir('Dettes & ratios bancaires')
+    expect(within(modale).queryAllByText(/ne repose sur rien/)).toHaveLength(0)
+  })
+})

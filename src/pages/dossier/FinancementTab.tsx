@@ -5,7 +5,7 @@ import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '..
 import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire, moisEcoulesDeLAnnee } from '../../lib/situationIntermediaire'
-import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, type EcheanceConnue } from '../../lib/planTresorerie'
+import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, type EcheanceConnue } from '../../lib/planTresorerie'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
@@ -289,6 +289,10 @@ function DettesRatiosModal({ piecesValidees, categories, immobilisations, cotisa
   // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
   const plan = calculerPlanTresorerie(lignesBanque, 0, 6, 1)
   const ratios = calculerRatiosBancaires(situationAnnee, moisEcoules, capitalRestantTotal, mensualiteTotale, plan.moyenneEncaissements)
+  // Le « — » du taux d'endettement ne dit pas POURQUOI : sans cette réserve, « pas encore assez
+  // d'historique » et « le rythme est à zéro » se lisent pareil, sur un ratio qu'une banque regarde
+  // en premier.
+  const reserveMoyenne = reserveSurMoyenne(plan)
 
   const finPeriode = ajouterMois(aujourdHui, 6)
   const echeances: EcheanceConnue[] = [
@@ -330,7 +334,10 @@ function DettesRatiosModal({ piecesValidees, categories, immobilisations, cotisa
           <div className="card" style={{ flex: '1 1 220px' }}>
             <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Taux d'endettement mensuel</span>
             <strong style={{ fontSize: '1.2rem' }}>{ratios.tauxEndettementMensuel === null ? '—' : `${ratios.tauxEndettementMensuel} %`}</strong>
-            <div className="muted" style={{ fontSize: '0.78rem' }}>Mensualités / moyenne des encaissements mensuels.</div>
+            <div className="muted" style={{ fontSize: '0.78rem' }}>
+              Mensualités / moyenne des encaissements mensuels des 6 derniers mois complets.
+              {reserveMoyenne && <span style={{ color: 'var(--color-danger, #c0392b)' }}> {reserveMoyenne}</span>}
+            </div>
           </div>
         </div>
 
@@ -369,6 +376,8 @@ function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations,
   const [nbMoisProjection, setNbMoisProjection] = useState(6)
 
   const plan = calculerPlanTresorerie(lignesBanque, soldeActuel, nbMoisHistorique, nbMoisProjection)
+  // Une projection bâtie sur rien a exactement la même tête qu'une projection bâtie sur six mois.
+  const reserve = reserveSurMoyenne(plan)
   const debutProjection = plan.lignes[0]?.mois ? `${plan.lignes[0].mois}-01` : aujourdHuiSql()
   // "-31" plutôt que le vrai dernier jour du mois : comparaison de chaînes (YYYY-MM-DD), pas de
   // date réelle — sert seulement de borne haute, valide même pour un mois de moins de 31 jours.
@@ -397,6 +406,9 @@ function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations,
           {formatMoney(plan.moyenneDecaissements)} de décaissements — mensualités d'emprunts et cotisations déjà payées comprises, puisqu'elles
           transitent par le même compte banque.
         </p>
+        {reserve && (
+          <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserve}</p>
+        )}
 
         <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8, marginBottom: 20 }}>
           <table>
