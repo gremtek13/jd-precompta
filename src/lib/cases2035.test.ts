@@ -11,7 +11,7 @@ import {
   valeursDesCases,
 } from './cases2035'
 import {
-  calculerDeclaration2035, POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM,
+  calculerDeclaration2035, POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
 } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
 import type { Categorie, Piece, VehiculeDossier } from './types'
@@ -133,6 +133,23 @@ describe('répartition d’une déclaration dans les cases', () => {
     expect(cases[0].montant).toBe(500)
     expect(cases[0].nbPieces).toBe(24)
     expect(cases[0].postes).toHaveLength(2)
+  })
+
+  it('LA CSG DÉDUCTIBLE ATTERRIT EN BV, SÉPARÉE DE LA LIGNE 25', () => {
+    // Sans ce test, retirer le rattachement `POSTE_CSG_DEDUCTIBLE → BV` laissait TOUT vert : le
+    // moteur calculait bien les 680 €, et ils tombaient dans `postesSansCase` sans que rien ne le
+    // vérifie — donc absents du formulaire, sur la case même que ce chantier existe pour remplir.
+    const { cases, postesSansCase } = repartirEnCases(declaration({
+      depenses: [
+        ligne({ poste: POSTE_COTISATIONS, montant: 4030 }),
+        ligne({ poste: POSTE_CSG_DEDUCTIBLE, montant: 680 }),
+      ],
+    }))
+    expect(postesSansCase).toHaveLength(0)
+    expect(cases.find((c) => c.case.code === 'BV')?.montant).toBe(680)
+    // Et surtout PAS fondues dans la même case : BK et BV entrent toutes deux dans le total des
+    // lignes 8 à 32, donc la CSG comptée dans les deux serait déduite deux fois.
+    expect(cases.find((c) => c.case.code === 'BK')?.montant).toBe(4030)
   })
 
   it('remonte un poste sans case au lieu de le perdre', () => {

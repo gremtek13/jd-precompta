@@ -17,6 +17,9 @@ import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDoss
 
 export const POSTE_AMORTISSEMENTS = 'Amortissements'
 export const POSTE_COTISATIONS = 'Cotisations sociales personnelles'
+// Ligne 14 du 2035-A (case BV). Un poste À PART de POSTE_COTISATIONS, parce que le formulaire les
+// sépare : la CSG déductible ne transite pas par la ligne 25.
+export const POSTE_CSG_DEDUCTIBLE = 'CSG déductible'
 // Le « total A » du cadre 7 du 2035-B, que le bas du formulaire envoie ligne 23 du 2035-A. Un poste
 // à lui, et non un ajout au poste « Frais de véhicules » des pièces : les deux arrivent dans la même
 // case BJ mais n'ont pas la même origine, et les confondre rendrait la case impossible à justifier —
@@ -154,11 +157,26 @@ export function dotationsNonProratisees(immobilisations: Immobilisation[], annee
 // Cotisations le saisit — il affichait même la part déductible, avec ces deux taux écrits en dur
 // dans le composant. Le moteur, lui, l'ignorait entièrement.
 //
-// ON LE SIGNALE, ON NE LE CORRIGE PAS, et c'est la ligne de conduite de ce moteur, écrite dans son
-// en-tête : il totalise, il ne déclare pas. Même parti pris que `doublonFraisVehicules`, qui nomme
-// une dépense comptée deux fois sans choisir laquelle retirer, et que `dotationsNonProratisees`.
-// Retrancher d'office changerait un total que le cabinet lit depuis le début, sur le seul document
-// qu'il signe.
+// ON LE CORRIGE DÉSORMAIS, ET C'EST UNE PRÉSENTATION ÉTABLIE SUR PIÈCE, PAS UN ARBITRAGE DU CODE
+// (22/09/2026). La version précédente de ce commentaire disait « on signale, on ne corrige pas » —
+// c'était juste tant que la présentation retenue par le cabinet n'était pas connue, deux étant
+// admises et donnant le même résultat imposable. Une 2035 réelle l'a tranchée, cases relevées à
+// leurs coordonnées sur le formulaire déposé :
+//
+//   - case BV (2035-A ligne 14, « Contribution sociale généralisée déductible ») : REMPLIE ;
+//   - case CC (2035-B ligne 36, « Divers à réintégrer ») : VIDE, donc aucune réintégration ;
+//   - ligne 25 : BT « dont obligatoires » + BZ « dont facultatives » = BK au centime, et la CSG
+//     n'y est pas.
+//
+// Et c'est FORCÉ PAR LE FORMULAIRE, pas seulement observé : BK entre dans le total des lignes 8 à 32
+// et BV y entre aussi par la ligne 14 — la CSG présente dans les deux serait déduite deux fois.
+// Côté tenue de comptes, l'expert-comptable passe la CSG-CRDS ENTIÈRE au compte 108 (compte de
+// l'exploitant), donc hors résultat ; seule la part déductible est réintroduite en BV. Les deux
+// moitiés se tiennent, et la part non déductible n'apparaît alors nulle part.
+//
+// CE QUI RESTE SIGNALÉ SANS ÊTRE CORRIGÉ : une cotisation dont `montant_csg_crds` n'est pas saisi.
+// On ne peut alors rien ventiler — sa part non déductible continue de partir en déduction, et
+// AUCUN calcul ne peut la retrouver. C'est une SAISIE qui manque, pas un arbitrage ; l'écran le dit.
 export const TAUX_CSG_DEDUCTIBLE = 6.8
 export const TAUX_CSG_CRDS_TOTAL = 9.7
 
@@ -280,11 +298,24 @@ export function calculerDeclaration2035(
   // Le montant réellement versé fait foi ; à défaut, l'appel. Une cotisation appelée mais non payée
   // reste une charge de l'exercice en comptabilité d'engagement — et ce dossier suit l'appel tant
   // que le versement n'est pas saisi, plutôt que d'oublier la ligne.
-  const totalCotisations = cotisations.reduce((somme, c) => {
+  const totalCotisationsBrut = cotisations.reduce((somme, c) => {
     if (anneeDe(c.echeance) !== annee) return somme
     return somme + (c.montant_verse ?? c.montant_appele)
   }, 0)
+
+  // LA CSG-CRDS SORT DE LA LIGNE 25 ET SA PART DÉDUCTIBLE REJOINT LA LIGNE 14 (voir plus haut).
+  //
+  // Les deux chiffres viennent de `partCsgNonDeductible` plutôt que d'un second calcul : c'est la
+  // MÊME fonction qui alimente l'avertissement de Clôture, donc l'écran et le formulaire ne peuvent
+  // pas annoncer deux montants à un centime près. Une règle recopiée deux fois n'attend pas de
+  // diverger (règle du projet, payée sur `analyserEcritures` et sur `calculerLigne`).
+  //
+  // Une cotisation sans ventilation laisse sa CSG dans la ligne 25 — on ne sait pas l'en extraire,
+  // et inventer un taux sur le montant total serait une valeur plausible et fausse.
+  const csg = partCsgNonDeductible(cotisations, annee)
+  const totalCotisations = arrondi(totalCotisationsBrut - (csg?.totalCsgCrds ?? 0))
   if (totalCotisations > 0) ajouter(POSTE_COTISATIONS, 'depense', totalCotisations, 0)
+  if (csg && csg.csgDeductible > 0) ajouter(POSTE_CSG_DEDUCTIBLE, 'depense', csg.csgDeductible, 0)
 
   // Cadre 7 du 2035-B → ligne 23 du 2035-A. Le kilométrage est propre à un exercice (l'option pour
   // le forfait se prend au 1er janvier et vaut l'année entière, notice renvoi 12), d'où le filtre sur

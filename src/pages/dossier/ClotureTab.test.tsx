@@ -178,32 +178,53 @@ describe('ClotureTab — la première annuité d’amortissement à reprendre', 
   })
 })
 
-// LA CSG-CRDS NON DÉDUCTIBLE, DITE SUR L'ÉCRAN QUI REMPLIT LE FORMULAIRE.
+// CE QUI RESTE À SAISIR SUR LA CSG-CRDS, DIT SUR L'ÉCRAN QUI REMPLIT LE FORMULAIRE.
 //
-// Le moteur porte la cotisation ENTIÈRE en case BK (ligne 25), CSG non déductible et CRDS
-// comprises. `partCsgNonDeductible` est juste et testée à part ; ce que ce test garde, c'est que
-// l'écran l'APPELLE — et qu'il distingue ce qu'on sait chiffrer de ce qu'on ne sait pas.
-describe('ClotureTab — la CSG-CRDS non déductible', () => {
-  it('chiffre la part à réintégrer quand la ventilation est saisie', async () => {
+// Depuis le 22/09/2026 le moteur SORT la CSG-CRDS saisie de la ligne 25 et porte ses 6,8 points
+// déductibles en case BV (ligne 14) — présentation relevée sur une 2035 réelle, BV remplie et case CC
+// vide. Une cotisation ventilée n'a donc plus rien à signaler.
+//
+// Ce que cet écran garde, c'est le cas qu'aucun calcul ne peut rattraper : une cotisation dont
+// `montant_csg_crds` n'est pas saisi reste portée en entier ligne 25. `partCsgNonDeductible` est
+// juste et testée à part ; ici c'est le CÂBLAGE — que l'écran se taise quand il n'y a rien à dire, et
+// parle quand la saisie manque.
+describe('ClotureTab — ce qui reste à saisir sur la CSG-CRDS', () => {
+  const TITRE = /Cotisations dont la CSG-CRDS n’est pas saisie/
+
+  it('SE TAIT quand la ventilation est saisie — le moteur s’en charge', async () => {
+    // Le code TEL QU'IL ÉTAIT criait ici : la carte listait « à réintégrer 290,00 € » alors que le
+    // moteur retire désormais ces 290 € du résultat tout seul. Redire une chose déjà faite est la
+    // mise en garde permanente que ce dépôt refuse.
     poser({}, [], [cotisation('c1', { montant_csg_crds: 970 })])
     monter()
 
-    const titre = await screen.findByText(/CSG-CRDS non déductible comprise dans la ligne 25/)
-    const carte = within(titre.closest('.card')!)
-    carte.getByText(/^970,00\s€$/)
-    carte.getByText(/^680,00\s€$/)
-    carte.getByText(/^290,00\s€$/)
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 
-  it('dit qu’il ne peut PAS la chiffrer plutôt que d’annoncer zéro', async () => {
+  it('PARLE quand la saisie manque, et dit qu’il ne peut pas chiffrer', async () => {
     // Le cas de toute la production aujourd'hui : `montant_csg_crds` n'est renseigné nulle part.
     // Se taire reviendrait à dire « rien à réintégrer » — la famille des résultats vides qui
     // ressemblent à une réponse, appliquée cette fois à une saisie manquante.
     poser({}, [], [cotisation('c1'), cotisation('c2')])
     monter()
 
-    const titre = await screen.findByText(/CSG-CRDS non déductible comprise dans la ligne 25/)
+    const titre = await screen.findByText(TITRE)
     within(titre.closest('.card')!).getByText(/2 — part non déductible non chiffrable/)
+  })
+
+  it('montre ce qui EST ventilé sur un exercice où il reste des cotisations sans CSG', async () => {
+    // L'assiette du tableau porte sur l'exercice entier : une cotisation ventilée et une autre sans
+    // saisie coexistent, et les deux chiffres doivent se lire ensemble — sinon l'opérateur ne sait
+    // pas ce qui a déjà été traité.
+    poser({}, [], [cotisation('c1', { montant_csg_crds: 970 }), cotisation('c2')])
+    monter()
+
+    const titre = await screen.findByText(TITRE)
+    const carte = within(titre.closest('.card')!)
+    carte.getByText(/^970,00\s€$/)
+    carte.getByText(/^680,00\s€$/)
+    carte.getByText(/1 — part non déductible non chiffrable/)
   })
 
   it('se tait sur un exercice sans aucune cotisation', async () => {
@@ -211,7 +232,7 @@ describe('ClotureTab — la CSG-CRDS non déductible', () => {
     monter()
 
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
-    expect(screen.queryAllByText(/CSG-CRDS non déductible/)).toHaveLength(0)
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 
   it('se tait quand toutes les cotisations sont ventilées à zéro de CSG', async () => {
@@ -222,6 +243,6 @@ describe('ClotureTab — la CSG-CRDS non déductible', () => {
     monter()
 
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
-    expect(screen.queryAllByText(/CSG-CRDS non déductible/)).toHaveLength(0)
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 })

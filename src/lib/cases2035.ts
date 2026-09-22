@@ -1,4 +1,4 @@
-import { POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM } from './declaration2035'
+import { POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
 
 // Rattachement des postes du moteur (voir declaration2035.ts) aux cases du formulaire officiel.
@@ -164,7 +164,10 @@ const RATTACHEMENTS: [string, string][] = [
   ['Autres impôts', 'BS'],
   ['Impôts et taxes', 'BS'],
   ['Contribution sociale généralisée déductible', 'BV'],
-  ['CSG déductible', 'BV'],
+  // Poste IMPORTÉ, jamais réécrit : une chaîne recopiée ici se désynchroniserait d'un renommage
+  // côté declaration2035.ts, et le rattachement tomberait en silence (même piège que
+  // POSTE_AMORTISSEMENTS dans ratiosBancaires).
+  [POSTE_CSG_DEDUCTIBLE, 'BV'],
   ['Loyer et charges locatives', 'BF'],
   ['Loyers et charges locatives', 'BF'],
   ['Location de matériel et de mobilier', 'BG'],

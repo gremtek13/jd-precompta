@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   calculerDeclaration2035, dotationPourAnnee, dotationsNonProratisees, RESERVE_PRORATA_TEMPORIS,
   csgDeductible, partCsgNonDeductible,
-  POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_INDEMNITES_KM,
+  POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
 } from './declaration2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
 
@@ -195,6 +195,78 @@ describe('amortissements et cotisations', () => {
       cotis: [{ echeance: '2024-05-05', montant_appele: 500, montant_verse: 500 } as CotisationDeclaree],
     })
     expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)).toBeUndefined()
+  })
+})
+
+// LA CSG-CRDS SORT DE LA LIGNE 25, SA PART DÉDUCTIBLE VA EN LIGNE 14 (case BV).
+//
+// Présentation relevée sur une 2035 réelle déposée par le cabinet : BV remplie, case CC (« Divers à
+// réintégrer ») vide, et BT + BZ = BK au centime sans la CSG. Elle est forcée par le formulaire —
+// BK et BV entrent tous deux dans le total des lignes 8 à 32, donc la CSG présente dans les deux
+// serait déduite deux fois.
+describe('calculerDeclaration2035 — la CSG-CRDS ventilée', () => {
+  const cotis = (o: Partial<CotisationDeclaree>): CotisationDeclaree =>
+    ({ echeance: '2025-05-05', montant_appele: 0, montant_verse: null, montant_csg_crds: null, ...o } as CotisationDeclaree)
+
+  it('retire la CSG-CRDS ENTIÈRE de la ligne 25', () => {
+    // 5 000 de cotisation dont 970 de CSG-CRDS : la ligne 25 n'en porte que 4 030. Les 970 entiers
+    // sortent — pas seulement la part non déductible : c'est ce que « tout au compte 108 » veut dire.
+    const d = calcul({ cotis: [cotis({ montant_verse: 5000, montant_csg_crds: 970 })] })
+    expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)?.montant).toBe(4030)
+  })
+
+  it('porte les 6,8 points déductibles sur son PROPRE poste', () => {
+    const d = calcul({ cotis: [cotis({ montant_verse: 5000, montant_csg_crds: 970 })] })
+    expect(d.depenses.find((l) => l.poste === POSTE_CSG_DEDUCTIBLE)?.montant).toBe(680)
+  })
+
+  it('ne déduit plus les 2,9 points non déductibles — c’est tout l’objet', () => {
+    // Le code TEL QU'IL ÉTAIT déduisait 5 000. Il déduit maintenant 4 030 + 680 = 4 710, soit
+    // exactement 290 de moins : la part non déductible de 970.
+    const d = calcul({ cotis: [cotis({ montant_verse: 5000, montant_csg_crds: 970 })] })
+    expect(d.totalDepenses).toBe(4710)
+  })
+
+  it('LAISSE la cotisation entière quand la CSG-CRDS n’est pas saisie', () => {
+    // Garde symétrique, et c'est l'état de toute la production : inventer un taux sur le montant
+    // total d'un appel donnerait une valeur plausible et fausse.
+    const d = calcul({ cotis: [cotis({ montant_verse: 5000 })] })
+    expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)?.montant).toBe(5000)
+    expect(d.depenses.find((l) => l.poste === POSTE_CSG_DEDUCTIBLE)).toBeUndefined()
+  })
+
+  it('ne crée pas de poste BV pour une CSG-CRDS saisie à zéro', () => {
+    // Un appel de retraite ventilé à zéro de CSG est un cas réel : une ligne « CSG déductible 0,00 € »
+    // sur le formulaire serait du bruit.
+    const d = calcul({ cotis: [cotis({ montant_verse: 5000, montant_csg_crds: 0 })] })
+    expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)?.montant).toBe(5000)
+    expect(d.depenses.find((l) => l.poste === POSTE_CSG_DEDUCTIBLE)).toBeUndefined()
+  })
+
+  it('ne retire que la CSG de l’EXERCICE demandé', () => {
+    const d = calcul({
+      cotis: [
+        cotis({ montant_verse: 5000, montant_csg_crds: 970 }),
+        cotis({ echeance: '2024-05-05', montant_verse: 9000, montant_csg_crds: 9700 }),
+      ],
+    })
+    expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)?.montant).toBe(4030)
+    expect(d.depenses.find((l) => l.poste === POSTE_CSG_DEDUCTIBLE)?.montant).toBe(680)
+  })
+
+  it('S’ACCORDE AU CENTIME AVEC L’AVERTISSEMENT DE CLÔTURE', () => {
+    // Les deux viennent de `partCsgNonDeductible`, et c'est pour ça : sommer puis arrondir, ou
+    // arrondir chaque cotisation puis sommer, ne donnent pas le même centime. L'écran et le
+    // formulaire annonceraient alors deux montants différents pour la même chose.
+    const lot = [
+      cotis({ montant_verse: 1000, montant_csg_crds: 33.33 }),
+      cotis({ montant_verse: 1000, montant_csg_crds: 33.33 }),
+      cotis({ montant_verse: 1000, montant_csg_crds: 33.34 }),
+    ]
+    const d = calcul({ cotis: lot })
+    const part = partCsgNonDeductible(lot, 2025)!
+    expect(d.depenses.find((l) => l.poste === POSTE_CSG_DEDUCTIBLE)?.montant).toBe(part.csgDeductible)
+    expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)?.montant).toBe(3000 - part.totalCsgCrds)
   })
 })
 

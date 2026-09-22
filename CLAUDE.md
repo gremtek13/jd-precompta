@@ -239,9 +239,20 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `natures_immobilisation` — et un visiteur non connecté lisait les 10 catégories
   comptables et les 8 natures du cabinet. Relues plusieurs fois sans que personne
   ne voie la clause manquante ; il a fallu l'EXÉCUTER pour la voir (migration
-  `categories_et_natures_reservees_aux_connectes`). Toute policy porte donc
-  désormais son `to authenticated` explicite, et `supabase/essais/rls.sql` le
-  vérifie sur l'intégralité du schéma.
+  `categories_et_natures_reservees_aux_connectes`).
+  **MAIS « toute policy porte désormais son `to authenticated` explicite » ÉTAIT FAUX** — mesuré le
+  22/09/2026 : **70 des 73 policies du schéma portent `roles = {public}`**. La règle a été énoncée,
+  elle n'a été APPLIQUÉE qu'aux deux policies qui fuyaient. **Ce n'est pas une faille**, et c'est
+  pourquoi elle a pu rester fausse si longtemps : ce qui ferme l'accès est le PRÉDICAT, et
+  `admin_du_dossier(...)` rend `false` sans session. Les deux policies de `categories` et
+  `natures_immobilisation` étaient dangereuses parce que leur `using` commençait par
+  `dossier_id is null or` — vrai sans session. `rls.sql` le dit d'ailleurs noir sur blanc pour le
+  stockage (« toutes portent `roles = public`. Ici les prédicats sauvent la mise ») ; c'est cette
+  phrase-ci qui promettait plus que le schéma ne tient.
+  **La règle qui vaut donc, et qui est la vraie** : un prédicat de policy ne doit JAMAIS pouvoir être
+  vrai sans session — c'est ce que `rls.sql` éprouve réellement, par impersonation, sur toute table du
+  schéma. `to authenticated` reste la ceinture recommandée pour toute NOUVELLE policy, et les
+  nouvelles la portent ; réécrire les 70 existantes ne changerait rien à ce qui est accessible.
 - **ET CE QUI CONTOURNE LA RLS N'ÉTAIT REJOUÉ QU'À MOITIÉ** (21/09/2026). `rls.sql` éprouvait
   `prochain_numero_facture` — la fonction `SECURITY DEFINER` qui consomme un numéro — pour le seul
   profil ANONYME. Or **aucun écran n'appelle celle-là** : `FactureAvoirModal` appelle
@@ -1700,13 +1711,37 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   « rien à réintégrer » sur un dossier qui n'a jamais renseigné le détail, **ce qui est le cas de toute
   la production aujourd'hui** (mesuré : 43 cotisations en base, 0 ventilée). Famille des résultats
   vides qui ressemblent à une réponse, appliquée cette fois à une SAISIE manquante.
-  **CE QUI RESTE OUVERT, ET QUI EST UNE DÉCISION DE L'UTILISATEUR, PAS DU CODE** : la case **BV**
-  (2035-A, ligne 14, « Contribution sociale généralisée déductible ») existe dans la liste des cases
-  ET dans le rattachement poste → case, et **rien ne l'alimente jamais** — aucun poste « CSG
-  déductible » n'est produit par le chemin des cotisations. Deux traitements sont admis en pratique
-  (sortir la CSG déductible de la ligne 25 pour la porter ligne 14, ou tout laisser en 25 et
-  réintégrer le non déductible en case CC) ; ils donnent le même résultat et la présentation diffère.
-  Le moteur n'en choisit aucun, et l'écran dit maintenant ce qu'il faut savoir pour trancher.
+  **ET LA QUESTION OUVERTE A ÉTÉ TRANCHÉE SUR PIÈCE LE 22/09/2026 — LE MOTEUR CORRIGE DÉSORMAIS.**
+  Il était écrit ici que deux présentations sont admises et que le moteur n'en choisissait aucune.
+  Une 2035 réelle déposée par le cabinet a tranché, cases relevées à leurs COORDONNÉES sur le PDF
+  (le texte joint n'attribue aucun montant à aucune case — il a fallu extraire les positions) :
+  - **BV** (2035-A ligne 14, « Contribution sociale généralisée déductible ») : **remplie** ;
+  - **CC** (2035-B ligne 36, « Divers à réintégrer ») : **vide**, donc aucune réintégration ;
+  - ligne 25 : BT « dont obligatoires » + BZ « dont facultatives » = BK **au centime**, sans la CSG —
+    c'est cette égalité qui prouve que chaque montant a été attribué à la bonne case.
+  **ET C'EST FORCÉ PAR LE FORMULAIRE, pas seulement observé** : BK entre dans le total des lignes 8 à
+  32 et BV y entre aussi par la ligne 14, donc la CSG présente dans les deux serait déduite DEUX FOIS.
+  Côté tenue de comptes, l'expert-comptable passe la CSG-CRDS **entière au compte 108** (compte de
+  l'exploitant), donc hors résultat ; seule la part déductible est réintroduite en BV. Les deux
+  moitiés se tiennent, et la part non déductible n'apparaît alors nulle part.
+  **Le moteur sort donc la CSG-CRDS ENTIÈRE de la ligne 25** et porte ses 6,8 points sur un poste à
+  part, `POSTE_CSG_DEDUCTIBLE`, rattaché à BV. Retirer seulement le non déductible serait l'erreur
+  tentante — une mutation la garde.
+  **Les deux chiffres viennent de `partCsgNonDeductible`, jamais d'un second calcul** : c'est la même
+  fonction qui alimente l'avertissement de Clôture, donc l'écran et le formulaire ne peuvent pas
+  annoncer deux montants à un centime près (sommer puis arrondir n'est pas arrondir puis sommer, et
+  un test le prouve sur trois cotisations à 33,33 / 33,33 / 33,34).
+  **CE QUI RESTE SIGNALÉ SANS ÊTRE CORRIGÉ, et c'est tout ce qui reste** : une cotisation dont
+  `montant_csg_crds` n'est pas saisi. On ne peut alors rien ventiler — le taux ne s'applique pas au
+  montant total d'un appel — donc sa part non déductible continue de partir en déduction. **C'est
+  l'état de 100 % de la production** (43 cotisations, 0 ventilée) : le correctif est juste et INERTE
+  tant que personne ne saisit la CSG-CRDS. L'écran ne parle plus que de ce cas-là, et se tait sur
+  une cotisation ventilée — redire une chose déjà faite est la mise en garde permanente qu'on refuse.
+  **Six mutations, et la sixième a d'abord SURVÉCU** : retirer le rattachement `POSTE_CSG_DEDUCTIBLE →
+  BV` laissait TOUT vert. Le moteur calculait bien les 680 €, ils tombaient dans `postesSansCase`, et
+  rien ne le vérifiait — donc absents du formulaire, sur la case même que ce chantier existe pour
+  remplir. Le garde vit désormais dans `cases2035.test.ts`, et `cases2035.ts` IMPORTE la constante au
+  lieu de retaper la chaîne, pour qu'un renommage ne puisse pas casser le rattachement en silence.
   **Neuf mutations posées, huit mordent** — et la neuvième est à garder telle quelle : le commentaire
   qui l'annonçait était FAUX. Il était écrit que calculer le non déductible sur 2,9/9,7 plutôt que par
   complément laisserait un centime d'écart. **Mesuré sur les 20 000 000 de montants au centime de
@@ -3570,7 +3605,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1311 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1320 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
