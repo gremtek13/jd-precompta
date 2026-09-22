@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculerSituationIntermediaire, fractionDeLAnnee } from './situationIntermediaire'
+import { calculerSituationIntermediaire, fractionDeLAnnee, moisEcoulesDeLAnnee } from './situationIntermediaire'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
 
 const categorie = { id: 'c1', libelle: 'Achats', poste_2035: 'Achats', compte_comptable: '606100' } as Categorie
@@ -118,6 +118,29 @@ describe('calculerSituationIntermediaire', () => {
         [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-12-31')
       expect(dotation(s)).toBe(-2400)
       expect(s.resultat).toBe(7600)
+    })
+  })
+
+  // LE DIVISEUR QUI ANNUALISE LA CAF — l'écran lisait le NUMÉRO du mois courant.
+  //
+  // `new Date().getMonth() + 1` n'est exact que le DERNIER jour de chaque mois. Le libellé de
+  // l'écran reprend ce nombre (« sur N mois écoulés cette année »), donc il affirmait aussi que neuf
+  // mois s'étaient écoulés au 1er septembre.
+  describe('moisEcoulesDeLAnnee', () => {
+    it('compte les mois réellement écoulés, pas le numéro du mois', () => {
+      expect(moisEcoulesDeLAnnee('2026-01-31')).toBeCloseTo(1, 10)
+      expect(moisEcoulesDeLAnnee('2026-02-01')).toBeCloseTo(31 / 30, 10)   // et non 2
+      expect(moisEcoulesDeLAnnee('2026-06-30')).toBeCloseTo(6, 10)
+      expect(moisEcoulesDeLAnnee('2026-09-01')).toBeCloseTo(241 / 30, 10)  // et non 9
+      expect(moisEcoulesDeLAnnee('2026-12-31')).toBeCloseTo(12, 10)
+    })
+
+    it('ne dépasse jamais douze, et vaut presque zéro au 1er janvier', () => {
+      // La garde symétrique du diviseur : une année entière doit valoir exactement 12, sinon la CAF
+      // d'un exercice clos serait elle aussi faussée. Et le 1er janvier ne vaut PAS un mois — c'est
+      // ce que `ratiosBancaires` refuse d'annualiser.
+      expect(moisEcoulesDeLAnnee('2026-12-31')).toBe(12)
+      expect(moisEcoulesDeLAnnee('2026-01-01')).toBeCloseTo(1 / 30, 10)
     })
   })
 

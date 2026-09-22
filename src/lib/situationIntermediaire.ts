@@ -42,6 +42,19 @@ export function fractionDeLAnnee(periodeDebut: string, periodeFin: string): numb
   return Math.max(0, jours(periodeFin, true) - jours(periodeDebut, false)) / 360
 }
 
+// Les mois écoulés depuis le 1er janvier, en 30/360 — le diviseur qui annualise un chiffre observé
+// sur une partie de l'année (voir ratiosBancaires.ts).
+//
+// L'écran lisait `new Date().getMonth() + 1`, c'est-à-dire le NUMÉRO du mois courant. Ce nombre
+// n'est exact que le DERNIER jour de chaque mois : le 1er septembre il annonce 9 quand 8 sont
+// écoulés, et le 1er février il annonce 2 pour un seul. Mesuré sur la CAF, qu'il divise : la valeur
+// annoncée valait 52 % de la juste au 1er février, 84 % au 1er juin — toujours dans le sens
+// pessimiste, donc jamais flatteuse, mais jamais vraie non plus, et le libellé de l'écran REPREND ce
+// nombre (« sur N mois écoulés cette année »).
+export function moisEcoulesDeLAnnee(dateDuJour: string): number {
+  return fractionDeLAnnee(`${anneeDe(dateDuJour)}-01-01`, dateDuJour) * 12
+}
+
 export function calculerSituationIntermediaire(
   pieces: Piece[], categories: Categorie[], immobilisations: Immobilisation[], cotisations: CotisationDeclaree[],
   periodeDebut: string, periodeFin: string,

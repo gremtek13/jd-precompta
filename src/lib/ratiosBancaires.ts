@@ -32,7 +32,12 @@ export function calculerRatiosBancaires(
   // que rien ne le signale, et c'est exactement le piège que ce dépôt nomme sous « une contrainte
   // justifiée par un appelant ». Un test fige désormais l'invariance plutôt qu'une phrase.
   const resultatHorsAmortissement = situationAnnee.resultat - posteAmortissements
-  const cafAnnuelleEstimee = moisEcoules > 0 ? Math.round((resultatHorsAmortissement * 12 / moisEcoules) * 100) / 100 : 0
+  // AU MOINS UN MOIS D'OBSERVATION, sinon on ne rend pas de ratio du tout. Annualiser dix jours
+  // revient à multiplier par 36 : le chiffre bouge alors d'un facteur dix à chaque facture saisie,
+  // et c'est une capacité de remboursement montrée à une banque. L'écran affiche déjà « — » quand
+  // la CAF ne se calcule pas — dire qu'on ne sait pas encore vaut mieux qu'un nombre qui n'a de
+  // stable que son apparence.
+  const cafAnnuelleEstimee = moisEcoules >= 1 ? Math.round((resultatHorsAmortissement * 12 / moisEcoules) * 100) / 100 : 0
 
   return {
     cafAnnuelleEstimee,

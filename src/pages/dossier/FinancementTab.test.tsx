@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
 import type { Categorie, Immobilisation, Piece } from '../../lib/types'
 
@@ -81,6 +81,8 @@ function totalDuPoste(modale: HTMLElement, poste: string): string | null {
   return cellule ? (cellule.nextElementSibling?.textContent ?? null) : null
 }
 
+afterEach(() => { vi.useRealTimers() })
+
 describe('FinancementTab — situation intermédiaire', () => {
   it('rapporte la dotation à la période de l’état, pas à l’année', async () => {
     faux.pieces = [recette()]
@@ -131,4 +133,37 @@ describe('FinancementTab — situation intermédiaire', () => {
 
     expect(totalDuPoste(modale, 'Amortissements')).toMatch(/^-2\s?400,00\s€$/)
   })
+
+  // LE DIVISEUR QUI ANNUALISE LA CAF, et l'étiquette qui l'annonce.
+  //
+  // L'écran lisait `new Date().getMonth() + 1` — le NUMÉRO du mois courant — et l'écrivait tel quel
+  // sous les ratios : « sur 9 mois écoulés cette année » un 1er septembre, quand huit le sont. Le
+  // nombre n'est exact que le DERNIER jour de chaque mois, et il DIVISE la CAF : au 1er février, la
+  // valeur annoncée valait la moitié de la juste, sur un chiffre montré à une banque.
+  //
+  // Le temps est FIXÉ ici : lu sur l'horloge, ce test dirait autre chose chaque jour — et serait
+  // juste par hasard le 30 du mois, c'est-à-dire précisément le jour où l'ancien calcul l'était.
+  it('annonce les mois réellement écoulés, pas le numéro du mois', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 8, 1, 12, 0, 0))   // 1er septembre 2026, midi (heure locale)
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+
+    render(<FinancementTab dossierId="d" />)
+
+    // Le libellé est coupé en plusieurs nœuds par le `<strong>` du montant : on lit le texte du
+    // paragraphe entier plutôt qu'un nœud, sinon le test échoue pour une raison qui n'est pas la
+    // sienne.
+    const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+
+    // Le libellé est coupé en plusieurs nœuds par le `<strong>` du montant : on lit le texte du
+    // paragraphe entier plutôt qu'un nœud, sinon le test échoue pour une raison qui n'est pas la
+    // sienne.
+    const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
+    expect(ligne).toMatch(/sur 8,0 mois écoulés cette année/)
+    expect(ligne).not.toMatch(/sur 9,0/)
+  })
 })
+

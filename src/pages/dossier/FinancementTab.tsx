@@ -4,7 +4,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
-import { calculerSituationIntermediaire } from '../../lib/situationIntermediaire'
+import { calculerSituationIntermediaire, moisEcoulesDeLAnnee } from '../../lib/situationIntermediaire'
 import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, type EcheanceConnue } from '../../lib/planTresorerie'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
@@ -280,7 +280,9 @@ function DettesRatiosModal({ piecesValidees, categories, immobilisations, cotisa
 }) {
   const aujourdHui = aujourdHuiSql()
   const debutAnnee = `${new Date().getFullYear()}-01-01`
-  const moisEcoules = new Date().getMonth() + 1
+  // Les mois RÉELLEMENT écoulés, et non le numéro du mois courant : c'est le diviseur qui annualise
+  // la CAF, et l'étiquette qui l'annonce juste en dessous (voir moisEcoulesDeLAnnee).
+  const moisEcoules = moisEcoulesDeLAnnee(aujourdHui)
 
   const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui)
   // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
@@ -313,7 +315,8 @@ function DettesRatiosModal({ piecesValidees, categories, immobilisations, cotisa
           </div>
         </div>
         <p className="muted" style={{ fontSize: '0.85rem', marginTop: 0, marginBottom: 20 }}>
-          CAF annuelle estimée (sur {moisEcoules} mois écoulés cette année, ramenée à 12) : <strong>{formatMoney(ratios.cafAnnuelleEstimee)}</strong>
+          CAF annuelle estimée (sur {moisEcoules.toFixed(1).replace('.', ',')} mois écoulés cette année,
+          ramenée à 12) : <strong>{ratios.cafAnnuelleEstimee === 0 ? '—' : formatMoney(ratios.cafAnnuelleEstimee)}</strong>
         </p>
 
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 20 }}>

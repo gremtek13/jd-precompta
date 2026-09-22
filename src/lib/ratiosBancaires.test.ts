@@ -49,6 +49,18 @@ describe('calculerRatiosBancaires', () => {
     expect(ratios.capaciteRemboursementAnnees).toBeNull()
   })
 
+  it('refuse d’annualiser moins d’un mois d’observation', () => {
+    // Dix jours annualisés, c'est une multiplication par 36 : le chiffre bouge d'un facteur dix à
+    // chaque facture saisie, sur une capacité de remboursement montrée à une banque. L'écran affiche
+    // « — », ce qui dit qu'on ne sait pas encore plutôt qu'un nombre dont seule l'apparence est
+    // stable. Le diviseur vient de `moisEcoulesDeLAnnee`, qui rend 1/30 au 1er janvier.
+    expect(calculerRatiosBancaires(situation(30000), 1 / 3, 120000, 1250, 5000).cafAnnuelleEstimee).toBe(0)
+    expect(calculerRatiosBancaires(situation(30000), 0.99, 120000, 1250, 5000).capaciteRemboursementAnnees).toBeNull()
+    // GARDE SYMÉTRIQUE : à partir d'un mois, le ratio revient — sans quoi « refuse » serait satisfait
+    // par un écran qui n'affiche plus jamais de CAF.
+    expect(calculerRatiosBancaires(situation(30000), 1, 0, 0, 0).cafAnnuelleEstimee).toBe(360000)
+  })
+
   // L'INVARIANT QUI REMPLACE UN COMMENTAIRE DEVENU FAUX.
   //
   // Il était écrit dans `ratiosBancaires.ts` que la dotation est « déjà comptée pour l'année
