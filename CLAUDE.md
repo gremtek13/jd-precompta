@@ -1541,6 +1541,28 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   l'année pleine, et **la période qui déborde sur l'exercice précédent, qui a d'abord SURVÉCU** :
   le jeu d'essai ne portait aucune pièce de l'année d'avant, donc l'autre borne n'était gardée par
   rien. Une mutation qui ne mord pas accuse d'abord le jeu d'essai.
+- **ET LE MÊME ÉCRAN DIVISAIT PAR LE NUMÉRO DU MOIS** (22/09/2026, trouvé dans la foulée du
+  précédent — c'est l'autre moitié de la même question de période). La CAF annuelle estimée est un
+  chiffre observé sur une partie de l'année puis ramené à douze mois, et le diviseur était
+  `new Date().getMonth() + 1`. **Ce nombre n'est exact que le DERNIER jour de chaque mois.**
+  **Mesuré** : la CAF annoncée valait **52 % de la juste au 1er février**, 84 % au 1er juin, 89 % au
+  1er septembre. Toujours dans le sens pessimiste — jamais flatteuse, donc jamais dangereuse au sens
+  de la « bonne nouvelle fabriquée » — mais jamais vraie non plus, sur la capacité de remboursement
+  qu'une banque regarde en premier.
+  **Et l'écran ÉCRIVAIT ce nombre**, « sur 9 mois écoulés cette année » un 1er septembre : ce
+  n'était pas seulement un diviseur faux, c'était une affirmation fausse. CLAUDE.md citait d'ailleurs
+  cette étiquette parmi les « chiffres ÉTIQUETÉS de leur année » du balayage `useAnnee` — elle était
+  bien étiquetée, l'étiquette était fausse.
+  **CE QUE LE CORRECTIF COÛTE, ET IL EST BORNÉ** : en janvier, annualiser dix jours revient à
+  multiplier par 36, et le chiffre bougerait d'un facteur dix à chaque facture saisie.
+  `ratiosBancaires` refuse donc d'annualiser moins d'un mois d'observation, et l'écran affiche
+  « — » — dire qu'on ne sait pas encore vaut mieux qu'un nombre dont seule l'apparence est stable.
+  C'est le même arbitrage que « mieux vaut un contrôle qui ne tourne pas qu'un import qui perd des
+  recettes ».
+  **Le test d'écran FIXE l'horloge**, et c'est ce qui décide de ce qu'il garde : lu sur l'heure
+  courante, il dirait autre chose chaque jour — et serait vert par hasard le 30 du mois, c'est-à-dire
+  précisément le jour où l'ancien calcul était juste. Quatre mutations mordent, dont le code tel
+  qu'il était et la garde symétrique du plancher.
 - **ET LA MÊME QUESTION POSÉE AUX COTISATIONS A RENDU UNE DÉDUCTION DE TROP** (21/09/2026).
   `calculerDeclaration2035` porte la cotisation **complète** au poste « Cotisations sociales
   personnelles » (case BK, ligne 25). Or la CSG-CRDS d'un travailleur non salarié se décompose en
@@ -3427,7 +3449,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1279 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1283 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
