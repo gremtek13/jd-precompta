@@ -178,11 +178,26 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const moisManquants = Array.from({ length: moisEcoules }, (_, i) => i + 1).filter((m) => !moisPresents.has(m))
 
   const cotisationsAnnee = cotisations.filter((c) => anneeDe(c.echeance) === anneeCourante)
-  // Toutes les pièces reçues cette année, validées ou non : ce point vérifie que le client a bien
-  // envoyé quelque chose, pas que le cabinet a fini de le vérifier (ce serait plutôt "confiance-basse"
-  // ci-dessus) — se limiter aux pièces validées faisait dire "aucune pièce déposée" alors que des
-  // pièces fraîchement importées, encore à valider, étaient déjà bien là.
-  const piecesAnnee = [...piecesValidees, ...piecesAValider].filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
+  // Les pièces DATÉES de cette année, validées ou non — se limiter aux validées faisait dire "aucune
+  // pièce déposée" alors que des pièces fraîchement importées, encore à valider, étaient déjà bien là.
+  //
+  // C'EST LA DATE DU DOCUMENT, PAS CELLE DU DÉPÔT, et le commentaire qui vivait ici disait l'inverse
+  // (« toutes les pièces REÇUES cette année »). Les deux ne se ressemblent pas : mesuré sur le dossier
+  // vivant, 43 pièces déposées en 2026 et UNE SEULE datée de 2026, le dépôt suivant la date de pièce
+  // de 549 jours en médiane. La date du document est le bon critère ICI — le point demande si le
+  // cabinet a de quoi travailler sur l'exercice, et le bouton mène à Pièces, dont le filtre d'exercice
+  // lit lui aussi `date_piece`. Les écrans CLIENT posent l'autre question (« ai-je envoyé quelque
+  // chose ? ») et comptent donc les dépôts : deux questions voisines, désormais dites distinctement.
+  //
+  // ET UNE PIÈCE SANS DATE N'EST SOUS AUCUN EXERCICE, donc comptée ici pour aucune année. Le taire
+  // ferait afficher « Aucune pièce déposée » alors que le client a bien envoyé — et le cabinet le
+  // relancerait pour des documents déjà reçus, pendant que l'écran du client les compte.
+  const toutesPieces = [...piecesValidees, ...piecesAValider]
+  const piecesAnnee = toutesPieces.filter((p) => p.date_piece && anneeDe(p.date_piece) === anneeCourante)
+  const piecesSansDate = toutesPieces.filter((p) => !p.date_piece)
+  const mentionSansDate = piecesSansDate.length > 0
+    ? ` — ${piecesSansDate.length} pièce(s) sans date, rattachée(s) à aucun exercice`
+    : ''
 
   // "Points à traiter" — regroupe en un seul endroit les anomalies déjà détectées séparément dans
   // Pièces (confiance basse), Écritures (comptes manquants, TVA, désynchronisation, déséquilibre) et
@@ -348,7 +363,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       id: 'factures',
       label: `Factures / pièces ${anneeCourante}`,
       ok: piecesAnnee.length > 0,
-      detail: piecesAnnee.length > 0 ? `${piecesAnnee.length} pièce(s) déposée(s)` : 'Aucune pièce déposée pour cette année',
+      detail: (piecesAnnee.length > 0
+        ? `${piecesAnnee.length} pièce(s) datée(s) de cette année`
+        : 'Aucune pièce datée de cette année') + mentionSansDate,
       cible: 'pieces',
       action: 'Voir les pièces',
     },

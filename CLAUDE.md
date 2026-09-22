@@ -1657,6 +1657,33 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   repart à zéro sur la nouvelle année et cesse d'un coup de réclamer décembre de l'année révolue — vrai
   avant comme après ce correctif, et c'est précisément le moment où un cabinet court après les pièces de
   l'exercice qu'il clôture. À trancher avec l'utilisateur, pas en passant.
+- **ET « LES TROIS ÉCRANS DISENT LA MÊME CHOSE » N'ÉTAIT VRAI QUE DE DEUX POINTS SUR TROIS**
+  (22/09/2026, trouvé en vérifiant l'invariant que le correctif ci-dessus venait de rétablir).
+  Relevés bancaires et cotisations : identiques au caractère près dans `ClientHome`, `ClientUpload` et
+  `ChecklistTab`. **Le troisième point ne compte pas la même chose** — les écrans CLIENT comptent les
+  DÉPÔTS (`created_at`), la Checklist compte les pièces DATÉES de l'année (`date_piece`).
+  **Mesuré sur le dossier vivant : 43 pièces déposées en 2026, UNE SEULE datée de 2026.** Le dépôt suit
+  la date de pièce de 549 jours en médiane (chiffre déjà établi ici) : les deux questions n'ont donc pas
+  des réponses voisines, elles ont des réponses d'un ordre de grandeur d'écart, sous des libellés
+  presque identiques — « Factures et documents 2026 » contre « Factures / pièces 2026 ».
+  **LES DEUX FILTRES SONT JUSTES, ET AUCUN N'EST CHANGÉ** : le client demande « ai-je envoyé quelque
+  chose ? », le cabinet « ai-je de quoi travailler sur l'exercice ? », et le bouton de la Checklist mène
+  à Pièces, dont le filtre d'exercice lit lui aussi `date_piece`. Trancher autrement serait une décision
+  produit. Ce qui est corrigé est **ce que chaque écran AFFIRME** : la Checklist disait
+  « N pièce(s) déposée(s) », elle dit « N pièce(s) datée(s) de cette année ».
+  **ET SON COMMENTAIRE DISAIT L'AUTRE QUESTION** — « toutes les pièces REÇUES cette année : ce point
+  vérifie que le client a bien envoyé quelque chose ». C'est mot pour mot la sémantique des écrans
+  client, au-dessus d'un code qui filtre sur la date du document. Famille connue de ce dépôt (« un nom
+  qui ment sur son filtre », « une mise en garde au-dessus d'un code qui la contredit »).
+  **LE DÉFAUT QUI COÛTE, LATENT** : `p.date_piece && …` écarte les pièces sans date, donc le point
+  affichait « Aucune pièce déposée pour cette année » alors que le client venait d'envoyer — et l'écran
+  du CLIENT, lui, les comptait. Le cabinet relance pour des documents déjà reçus, sur le seul écran qui
+  prétend dire ce qui manque. **Mesuré : zéro pièce sans date en base aujourd'hui** (la campagne du
+  20/09 les a comblées), donc non producible — l'état revient au premier dépôt dont l'OCR ne lit pas la
+  date. La mention est calculée, donc vide quand elle n'apprend rien.
+  **Quatre mutations mordent, et la quatrième a d'abord SURVÉCU** : retirer le filtre d'année laissait
+  tout vert, le jeu d'essai ne portant que des pièces de l'année en cours — l'assiette n'était gardée
+  par rien. Une mutation qui ne mord pas accuse d'abord le jeu d'essai.
 - **ET LA MÊME QUESTION POSÉE AUX COTISATIONS A RENDU UNE DÉDUCTION DE TROP** (21/09/2026).
   `calculerDeclaration2035` porte la cotisation **complète** au poste « Cotisations sociales
   personnelles » (case BK, ligne 25). Or la CSG-CRDS d'un travailleur non salarié se décompose en
@@ -3543,7 +3570,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1307 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1311 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

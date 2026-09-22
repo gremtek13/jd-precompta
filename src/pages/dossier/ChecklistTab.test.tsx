@@ -170,3 +170,53 @@ describe('ChecklistTab — une pièce SANS date n’est sous aucun exercice, et 
     expect(screen.getByText(/Elle est sans date/)).toBeDefined()
   })
 })
+
+// LE POINT « FACTURES / PIÈCES » NE COMPTE PAS CE QUE LE CLIENT CROIT AVOIR ENVOYÉ.
+//
+// Il filtre sur `date_piece` (la date du DOCUMENT) ; `ClientHome` et `ClientUpload` comptent les
+// DÉPÔTS. Mesuré sur le dossier vivant : 43 pièces déposées en 2026, UNE SEULE datée de 2026 — le
+// dépôt suit la date de pièce de 549 jours en médiane. Les deux questions sont légitimes, elles ne
+// doivent simplement plus se dire dans les mêmes mots ; et le commentaire du composant affirmait
+// « toutes les pièces REÇUES cette année », soit exactement l'autre.
+describe('ChecklistTab — le point « factures » dit ce qu’il compte', () => {
+  const ANNEE = new Date().getFullYear()
+
+  it('annonce des pièces DATÉES de l’année, jamais « déposées »', async () => {
+    poser({ validees: [piece({ id: 'a', statut: 'validee', date_piece: `${ANNEE}-03-04` })] })
+    monter()
+    expect(await screen.findByText(/1 pièce\(s\) datée\(s\) de cette année/)).toBeTruthy()
+  })
+
+  it('NE DIT PLUS « aucune pièce déposée » quand le client a envoyé des pièces sans date', async () => {
+    // Le cas qui envoie le cabinet relancer un client qui a déjà envoyé : l'écran du client compte
+    // ces dépôts, celui du cabinet les ignorait en silence.
+    poser({ aValider: [piece({ id: 'b', statut: 'a_valider', date_piece: null })] })
+    monter()
+    expect(await screen.findByText(/1 pièce\(s\) sans date, rattachée\(s\) à aucun exercice/)).toBeTruthy()
+    expect(screen.queryAllByText(/Aucune pièce déposée/)).toHaveLength(0)
+  })
+
+  it('NE COMPTE PAS une pièce d’un autre exercice', async () => {
+    // Sans ce cas, retirer le filtre d'année laissait les trois tests précédents VERTS : ils ne
+    // posaient que des pièces de l'année en cours, donc l'assiette n'était gardée par rien. Une
+    // mutation qui ne mord pas accuse d'abord le jeu d'essai.
+    poser({
+      validees: [
+        piece({ id: 'ici', statut: 'validee', date_piece: `${ANNEE}-02-02` }),
+        piece({ id: 'ailleurs', statut: 'validee', date_piece: `${ANNEE - 3}-02-02` }),
+      ],
+    })
+    monter()
+    expect(await screen.findByText(/1 pièce\(s\) datée\(s\) de cette année/)).toBeTruthy()
+    expect(screen.queryAllByText(/2 pièce\(s\) datée\(s\)/)).toHaveLength(0)
+  })
+
+  it('SE TAIT sur les pièces sans date quand il n’y en a aucune', async () => {
+    // Garde symétrique : sans lui, « l'écran le signale » serait satisfait par un écran qui le
+    // signale TOUJOURS — et une mise en garde permanente cesse d'être lue.
+    poser({ validees: [piece({ id: 'c', statut: 'validee', date_piece: `${ANNEE}-05-05` })] })
+    monter()
+    await screen.findByText(/1 pièce\(s\) datée\(s\) de cette année/)
+    expect(screen.queryAllByText(/sans date, rattachée/)).toHaveLength(0)
+  })
+})
