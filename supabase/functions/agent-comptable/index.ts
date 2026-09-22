@@ -218,6 +218,64 @@ interface PlafondResultat {
 // cache : un compteur figé laisserait passer un dossier au-delà du plafond entre deux rafraîchissements.
 // Mois calendaire UTC (comme tokens_entree/tokens_sortie, écrits en UTC par Postgres) — pas le fuseau
 // du navigateur, qui décalerait la frontière du mois de quelques heures selon l'endroit d'où on se connecte.
+// ── DÉBUT PAGINATION ─────────────────────────────────────────────────────────────────────────────
+// PostgREST plafonne le nombre de lignes rendues par requête (réglage « Max rows », 1 000 par
+// défaut) et ne le signale PAS : la réponse est une liste valide, simplement plus courte que la
+// réalité. Copie auto-portée de `src/lib/lectureComplete.ts` (une Edge Function n'importe rien de
+// `src/`), gardée par un test qui EXTRAIT cette boucle et l'exécute contre la copie de `src/`.
+//
+// Les trois décisions sont celles de l'original :
+//   • on avance de ce qui a été RENDU, jamais de la taille demandée — un plafond serveur plus petit
+//     que la tranche rend une tranche courte qui n'est PAS la fin de la table ;
+//   • le compte annoncé (`count: "exact"`, qui ne rapatrie aucune ligne) fait foi, et son absence
+//     vaut INCOMPLET — sans lui, « rien de plus à lire » et « le serveur ne rend plus rien » sont
+//     indiscernables. L'arrêt sur tranche vide empêche un compte trop grand de boucler sans fin ;
+//   • le tri doit être TOTAL, sinon deux tranches se recouvrent ou sautent des lignes en silence.
+interface TrancheLue<T> {
+  data: T[] | null
+  error: { message: string } | null
+  count: number | null
+}
+
+interface LectureComplete<T> {
+  lignes: T[]
+  complete: boolean
+  motif: string | null
+}
+
+const TAILLE_TRANCHE = 500
+
+async function lireTout<T>(
+  tranche: (debut: number, fin: number) => PromiseLike<TrancheLue<T>>,
+  taille: number = TAILLE_TRANCHE,
+): Promise<LectureComplete<T>> {
+  const lignes: T[] = []
+  let annonce: number | null = null
+
+  for (;;) {
+    const { data, error, count } = await tranche(lignes.length, lignes.length + taille - 1)
+    if (error) {
+      return { lignes, complete: false, motif: `lecture interrompue après ${lignes.length} ligne(s) : ${error.message}` }
+    }
+    if (count != null) annonce = count
+    const lot = data ?? []
+    lignes.push(...lot)
+
+    if (lot.length === 0) break
+    if (annonce != null && lignes.length >= annonce) break
+    if (annonce == null && lot.length < taille) break
+  }
+
+  if (annonce == null) {
+    return { lignes, complete: false, motif: `la base n'a pas annoncé de total : ${lignes.length} ligne(s) lue(s), sans garantie que ce soit tout` }
+  }
+  if (lignes.length !== annonce) {
+    return { lignes, complete: false, motif: `${lignes.length} ligne(s) lue(s) sur ${annonce} annoncée(s)` }
+  }
+  return { lignes, complete: true, motif: null }
+}
+// ── FIN PAGINATION ───────────────────────────────────────────────────────────────────────────────
+
 async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, cabinetId: string): Promise<PlafondResultat> {
   const { data: cabinet, error: erreurCabinet } = await admin
     .from("cabinets")
@@ -237,31 +295,40 @@ async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, ca
     return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd: null, limiteBlocageUsd: null, indetermine: null }
   }
 
-  const { data: dossiersCabinet, error: erreurDossiers } = await admin.from("dossiers").select("id").eq("cabinet_id", cabinetId)
-  if (erreurDossiers) {
-    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: erreurDossiers.message }
+  // TRONQUÉE, cette liste ne vide pas le compteur : elle le SOUS-ESTIME, en retirant les dossiers
+  // qui tombent au-delà de la coupure. Un plafond qui sous-estime cesse de protéger sans le dire,
+  // donc une lecture incomplète vaut ici exactement une lecture refusée.
+  const lectureDossiers = await lireTout<{ id: string }>((debut, fin) =>
+    admin.from("dossiers").select("id", { count: "exact" }).eq("cabinet_id", cabinetId).order("id").range(debut, fin))
+  if (!lectureDossiers.complete) {
+    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: lectureDossiers.motif }
   }
-  const dossierIds = ((dossiersCabinet ?? []) as { id: string }[]).map((d) => d.id)
+  const dossierIds = lectureDossiers.lignes.map((d) => d.id)
   if (dossierIds.length === 0) {
     return { bloque: false, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: null }
   }
 
   const maintenant = new Date()
   const debutMois = new Date(Date.UTC(maintenant.getUTCFullYear(), maintenant.getUTCMonth(), 1)).toISOString()
-  const { data: conversations, error: erreurUsage } = await admin
-    .from("agent_conversations")
-    .select("tokens_entree, tokens_sortie")
-    .eq("role", "assistant")
-    .in("dossier_id", dossierIds)
-    .gte("created_at", debutMois)
+  const lectureUsage = await lireTout<{ tokens_entree: number | null; tokens_sortie: number | null }>((debut, fin) =>
+    admin
+      .from("agent_conversations")
+      .select("tokens_entree, tokens_sortie", { count: "exact" })
+      .eq("role", "assistant")
+      .in("dossier_id", dossierIds)
+      .gte("created_at", debutMois)
+      .order("id")
+      .range(debut, fin))
   // C'est la table que CLAUDE.md désigne déjà comme celle dont la troncature « ne vide pas le
   // compteur de coût IA, elle le SOUS-ESTIME, ce qui est la façon exacte dont un plafond cesse de
   // protéger ». Une lecture REFUSÉE, elle, le met à zéro : la même phrase en pire.
-  if (erreurUsage) {
-    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: erreurUsage.message }
+  // Et c'est LA table qui grandit le plus vite du projet — une ligne par message. Elle est donc la
+  // première à franchir le plafond de PostgREST, sur le seul mécanisme qui borne une dépense.
+  if (!lectureUsage.complete) {
+    return { bloque: true, alerte: false, coutMoisUsd: 0, limiteAlerteUsd, limiteBlocageUsd, indetermine: lectureUsage.motif }
   }
 
-  const lignesUsage = (conversations ?? []) as { tokens_entree: number | null; tokens_sortie: number | null }[]
+  const lignesUsage = lectureUsage.lignes
   const totalEntree = lignesUsage.reduce((s, c) => s + (c.tokens_entree ?? 0), 0)
   const totalSortie = lignesUsage.reduce((s, c) => s + (c.tokens_sortie ?? 0), 0)
   const coutMoisUsd = totalEntree * PRIX_TOKEN_ENTREE_USD + totalSortie * PRIX_TOKEN_SORTIE_USD
@@ -389,28 +456,43 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),
       admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee"),
       admin.from("ecritures_brouillon").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId),
-      admin.from("ecritures_brouillon").select("date").eq("dossier_id", dossierId),
+      lireTout<{ date: string }>((debut, fin) =>
+        admin.from("ecritures_brouillon").select("date", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(debut, fin)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : une lecture échouée ne doit jamais
     // retomber silencieusement sur 0 (count/data valent alors null) — l'agent répondrait avec
     // assurance sur un chiffre faux ("aucune pièce à valider") au lieu de dire qu'il ne sait pas.
-    const erreurs = [r1.error, r2.error, r3.error, r4.error].filter((e): e is NonNullable<typeof e> => !!e)
+    const erreurs = [r1.error, r2.error, r3.error].filter((e): e is NonNullable<typeof e> => !!e)
     if (erreurs.length > 0) {
       return { erreur: `Lecture partielle : ${erreurs.map((e) => e.message).join(" ; ")} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
     }
-    const annees = [...new Set(((r4.data ?? []) as { date: string }[]).map((r) => r.date.slice(0, 4)))].sort()
+    // Les trois premières ne rapatrient AUCUNE ligne (`head: true`) : leur compte est exact par
+    // construction. La quatrième, elle, lit des lignes — tronquée, elle ferait disparaître un
+    // EXERCICE de la liste des années, donc laisserait le modèle affirmer qu'aucune écriture n'y
+    // existe. Même refus que pour une lecture ratée.
+    if (!r4.complete) {
+      return { erreur: `Lecture partielle : ${r4.motif} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
+    }
+    const annees = [...new Set(r4.lignes.map((r) => r.date.slice(0, 4)))].sort()
     return { nom: dossier.nom, assujetti_tva: dossier.assujetti_tva, pieces_a_valider: r1.count ?? 0, pieces_validees: r2.count ?? 0, ecritures_brouillon: r3.count ?? 0, annees_avec_ecritures: annees }
   }
 
   if (nom === "lister_comptes") {
     const annee = typeof input.annee === "number" ? input.annee : undefined
     const { date_debut, date_fin } = bornesAnnee(annee)
-    let q = admin.from("ecritures_brouillon").select("compte, sens, montant").eq("dossier_id", dossierId)
-    if (date_debut) q = q.gte("date", date_debut).lte("date", date_fin!)
-    const { data, error } = await q
-    if (error) return { erreur: error.message }
+    // « Une liste plafonnée dit qu'elle l'est » vaut pour les listes RENDUES au modèle, qui portent
+    // déjà leur drapeau `tronque`. Ici les lignes alimentent un TOTAL par compte : un total tronqué
+    // n'est pas une liste plus courte, c'est un CHIFFRE FAUX, annoncé en français à un comptable qui
+    // n'ira pas vérifier. La requête se CONSTRUIT dans la fermeture, sinon la tranche s'appliquerait
+    // à un constructeur déjà consommé.
+    const lu = await lireTout<{ compte: string; sens: "debit" | "credit"; montant: number }>((debut, fin) => {
+      let q = admin.from("ecritures_brouillon").select("compte, sens, montant", { count: "exact" }).eq("dossier_id", dossierId)
+      if (date_debut) q = q.gte("date", date_debut).lte("date", date_fin!)
+      return q.order("id").range(debut, fin)
+    })
+    if (!lu.complete) return { erreur: `Comptes illisibles (${lu.motif}) — ne conclus rien sur les totaux de ce dossier.` }
     const parCompte = new Map<string, { debit: number; credit: number }>()
-    for (const r of (data ?? []) as { compte: string; sens: "debit" | "credit"; montant: number }[]) {
+    for (const r of lu.lignes) {
       const c = parCompte.get(r.compte) ?? { debit: 0, credit: 0 }
       if (r.sens === "debit") c.debit += r.montant; else c.credit += r.montant
       parCompte.set(r.compte, c)
@@ -447,9 +529,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // « Sans catégorie » est une AFFIRMATION, et elle part en français à un comptable qui n'ira pas
     // vérifier : une lecture refusée rendait toutes les pièces `categorie: null`, y compris celles
     // que le cabinet a arbitrées une par une. On dit qu'on ne sait pas, comme resume_dossier.
-    const { data: categories, error: erreurCategories } = await admin.from("categories").select("id, libelle").or(`dossier_id.eq.${dossierId},dossier_id.is.null`)
-    if (erreurCategories) return { erreur: `Catégories illisibles : ${erreurCategories.message} — ne conclus rien sur la catégorisation des pièces de ce dossier.` }
-    const libelleParCategorie = new Map(((categories ?? []) as { id: string; libelle: string }[]).map((c) => [c.id, c.libelle]))
+    const lectureCategories = await lireTout<{ id: string; libelle: string }>((debut, fin) =>
+      admin.from("categories").select("id, libelle", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(debut, fin))
+    if (!lectureCategories.complete) return { erreur: `Catégories illisibles : ${lectureCategories.motif} — ne conclus rien sur la catégorisation des pièces de ce dossier.` }
+    const libelleParCategorie = new Map(lectureCategories.lignes.map((c) => [c.id, c.libelle]))
     const avecCategorie = ((data ?? []) as Record<string, unknown>[]).map(({ categorie_id, ...reste }) => ({
       ...reste,
       categorie: typeof categorie_id === "string" ? libelleParCategorie.get(categorie_id) ?? null : null,
@@ -459,41 +542,46 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
 
   if (nom === "points_a_traiter") {
     const [rPieces, rPiecesAValider, rCategories, rEcritures, rDeclarationsTva, rImmobilisations] = await Promise.all([
-      admin.from("pieces").select("id, montant_ttc, montant_tva, categorie_id, type_piece").eq("dossier_id", dossierId).eq("statut", "validee"),
-      admin.from("pieces").select("confiance").eq("dossier_id", dossierId).eq("statut", "a_valider"),
-      admin.from("categories").select("id, libelle, compte_comptable, poste_2035").or(`dossier_id.eq.${dossierId},dossier_id.is.null`),
-      admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id").eq("dossier_id", dossierId),
-      admin.from("declarations_tva").select("periode_debut, periode_fin, tva_declaree").eq("dossier_id", dossierId),
-      admin.from("immobilisations").select("piece_id").eq("dossier_id", dossierId),
+      lireTout<PieceRow>((d, f) =>
+        admin.from("pieces").select("id, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
+      lireTout<{ confiance: string | null }>((d, f) =>
+        admin.from("pieces").select("confiance", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "a_valider").order("id").range(d, f)),
+      lireTout<CategorieRow>((d, f) =>
+        admin.from("categories").select("id, libelle, compte_comptable, poste_2035", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
+      lireTout<EcritureRow>((d, f) =>
+        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<DeclarationTvaRow>((d, f) =>
+        admin.from("declarations_tva").select("periode_debut, periode_fin, tva_declaree", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<{ piece_id: string | null }>((d, f) =>
+        admin.from("immobilisations").select("piece_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces six lectures alimentent des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
     // retombant silencieusement sur un tableau vide masquerait une vraie anomalie derrière un faux
     // "tout va bien" plutôt que de dire que le contrôle n'a pas pu être fait.
-    const erreurs = [rPieces.error, rPiecesAValider.error, rCategories.error, rEcritures.error, rDeclarationsTva.error, rImmobilisations.error]
-      .filter((e): e is NonNullable<typeof e> => !!e)
-    if (erreurs.length > 0) {
-      return { erreur: `Lecture partielle : ${erreurs.map((e) => e.message).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
+    // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
+    // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
+    // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rDeclarationsTva, rImmobilisations]
+      .filter((r) => !r.complete)
+    if (incompletes.length > 0) {
+      return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
     }
-    const { data: pieces } = rPieces
-    const { data: piecesAValider } = rPiecesAValider
-    const { data: categories } = rCategories
-    const { data: ecritures } = rEcritures
-    const { data: declarationsTva } = rDeclarationsTva
-    const { data: immobilisations } = rImmobilisations
-    const piecesTyped = (pieces ?? []) as PieceRow[]
-    const categoriesTyped = (categories ?? []) as CategorieRow[]
-    const ecrituresTyped = (ecritures ?? []) as EcritureRow[]
+    const piecesAValider = rPiecesAValider.lignes
+    const declarationsTva = rDeclarationsTva.lignes
+    const piecesTyped = rPieces.lignes
+    const categoriesTyped = rCategories.lignes
+    const ecrituresTyped = rEcritures.lignes
     const immobilisationPieceIds = new Set(
-      ((immobilisations ?? []) as { piece_id: string | null }[]).map((i) => i.piece_id).filter((id): id is string => !!id),
+      rImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id),
     )
     const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, immobilisationPieceIds)
     const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser)
-    const piecesConfianceBasse = ((piecesAValider ?? []) as { confiance: string | null }[]).filter((p) => p.confiance === "basse")
+    const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped)
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped)
     const sansTva = piecesSansTva(piecesTyped, dossier.assujetti_tva)
-    const declarationsEnEcart = ((declarationsTva ?? []) as DeclarationTvaRow[]).filter(
+    const declarationsEnEcart = declarationsTva.filter(
       (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecrituresTyped, d.periode_debut, d.periode_fin)) > 1,
     )
 

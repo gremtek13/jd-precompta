@@ -1555,6 +1555,50 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Dix mutations, toutes mordent** — dont le défaut d'origine TEL QU'IL ÉTAIT (`source.split('\n')`),
   l'écriture multi-ligne réelle, chaque porte rendue aveugle, le scanner qui crie au loup, la porte
   `Promise.all` retirée, les commentaires non coupés et l'exception INVENTÉE.
+- **ET LE PLAFOND DE COÛT IA SE SOUS-ESTIMAIT — `lecturesPaginees` S'ÉTAIT ARRÊTÉ À `src/` LUI AUSSI**
+  (22/09/2026, QUATRIÈME demi-chemin en deux jours : les écritures des Edge Functions portées le
+  21/09, leurs lectures le 22/09 au matin, la FORME de leur scanner d'écritures à midi — et la
+  PAGINATION, jamais).
+  **Mesuré : 16 lectures de collection non bornées dans les Edge Functions, 12 en faute.**
+  - **LE PLAFOND DE COÛT IA, par ses DEUX lectures** (`dossiers` du cabinet, puis `agent_conversations`
+    du mois) — des `select` nus. Tronquées, elles ne vident pas le compteur, elles le **SOUS-ESTIMENT**,
+    en retirant ce qui tombe au-delà de la coupure. **Et le commentaire posé LA VEILLE juste sous cette
+    lecture CITE cette phrase de CLAUDE.md** (« la façon exacte dont un plafond cesse de protéger »),
+    au-dessus d'un code qui ne la tenait pas : la famille « une mise en garde écrite au-dessus d'un code
+    qui ne la tient pas », quatrième occurrence, fabriquée dans la session qui l'avait nommée.
+    `agent_conversations` est **la table qui grandit le plus vite du projet** — une ligne par message —
+    donc la première à franchir le plafond de PostgREST.
+  - **`superpdp-sync`** — la liste des factures DÉJÀ importées. VIDE, elle faisait réimporter toute la
+    page (corrigé le matin même) ; **TRONQUÉE, elle fait exactement pareil** pour tout ce qui dépasse
+    la coupure. Même raisonnement que `chargerHashsExistants`, qui LÈVE pour cette raison précise.
+  - **Les quatre outils de l'assistant** (`resume_dossier`, `lister_comptes`, `points_a_traiter`, les
+    catégories de `lister_pieces`). **« Une liste plafonnée dit qu'elle l'est » ne les couvre PAS** :
+    cette règle vise les listes RENDUES au modèle, qui portent déjà leur drapeau `tronque`. Ici les
+    lignes alimentent des COMPTEURS — un total par compte, un nombre d'anomalies — et un compteur
+    tronqué n'est pas une liste plus courte, c'est un **CHIFFRE FAUX** annoncé en français à un
+    comptable qui n'ira pas vérifier. `points_a_traiter` répondrait « rien à signaler » sur un dossier
+    portant une anomalie au-delà de la coupure.
+  **QUATRE LECTURES RESTENT NON BORNÉES, ET C'EST LÉGITIME — résultat à garder** : les lignes d'UNE
+  facture (`send-email`, `superpdp-emit`), bornées par le modèle ; et les `dossiers` du cabinet dans
+  `appartientDejaAuCabinet` (deux copies), dont la troncature fait REFUSER en 409 — le côté FERMÉ.
+  **LATENT, et mesuré** : 2 lignes d'`agent_conversations`, 4 dossiers, 78 pièces, 3 écritures,
+  10 catégories. Le critère du projet ne regarde pas le nombre de lignes d'aujourd'hui mais « cette
+  collection peut-elle grandir ? ».
+  **`lireTout` est DUPLIQUÉ dans les deux fonctions** (auto-portées), donc gardé comme les autres
+  copies : `edgeFunctionsPaginees.test.ts` EXTRAIT la boucle entre ses bornes `── DÉBUT/FIN
+  PAGINATION`, la **transpile avec le compilateur du projet** (le bloc est du TypeScript — un retrait
+  de types écrit à la main mentirait au premier cas tordu) et l'EXÉCUTE contre six faux serveurs.
+  **ET LA MUTATION DE LA TAUTOLOGIE SURVIT SEULE, CE QUI EST LE RÉSULTAT** : comparer la copie à
+  elle-même laisse les 23 tests verts — évidemment — mais la même tautologie PLUS une vraie dérive
+  plantée dans la copie déployée (avancer de la taille demandée au lieu du rendu) les laisse verts
+  AUSSI, alors que la dérive seule en fait tomber un. C'est l'aveuglement d'`agentComptableAnalyse`
+  démontré plutôt qu'affirmé, et c'est pourquoi la référence est celle de `src/lib`, extérieure aux
+  deux copies.
+  **Douze mutations, onze mordent** — les trois défauts d'origine replantés (les deux du plafond, celle
+  de `superpdp-sync`), le scanner aveugle, le scanner qui crie au loup, la borne au `.from(` suivant,
+  l'exception INVENTÉE, les commentaires non coupés, la copie déployée qui avance de la taille
+  demandée, celle qui se déclare complète sans compte annoncé, et une SECONDE définition de `lireTout`
+  dans la même fonction.
 - **ET LE TROISIÈME JEU D'ESSAI D'ÉCRAN N'ÉTAIT PAS TYPÉ — cinq colonnes manquantes** (21/09/2026).
   Le remède de la contrainte de type avait été appliqué à `ChecklistTab` et `BanqueTab`, pas à
   `PiecesTab`, dont le `piece()` restait un `Record<string, unknown>`. Typé `Partial<Piece> => Piece`
@@ -3937,7 +3981,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1387 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1410 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

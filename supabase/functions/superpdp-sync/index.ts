@@ -60,6 +60,57 @@ interface EnInvoice {
 interface InvoiceListItem { id: number; direction: "in" | "out" }
 interface InvoiceDetail { id: number; direction: "in" | "out"; en_invoice?: EnInvoice }
 
+// ── DÉBUT PAGINATION ─────────────────────────────────────────────────────────────────────────────
+// PostgREST plafonne le nombre de lignes rendues par requête (réglage « Max rows », 1 000 par
+// défaut) et ne le signale PAS. Copie auto-portée de `src/lib/lectureComplete.ts` (une Edge Function
+// n'importe rien de `src/`), gardée par un test qui EXTRAIT cette boucle et l'exécute contre la
+// copie de `src/` — les trois décisions de l'original sont conservées mot pour mot : on avance de ce
+// qui a été RENDU, le compte annoncé fait foi (et son absence vaut incomplet), le tri est TOTAL.
+interface TrancheLue<T> {
+  data: T[] | null
+  error: { message: string } | null
+  count: number | null
+}
+
+interface LectureComplete<T> {
+  lignes: T[]
+  complete: boolean
+  motif: string | null
+}
+
+const TAILLE_TRANCHE = 500
+
+async function lireTout<T>(
+  tranche: (debut: number, fin: number) => PromiseLike<TrancheLue<T>>,
+  taille: number = TAILLE_TRANCHE,
+): Promise<LectureComplete<T>> {
+  const lignes: T[] = []
+  let annonce: number | null = null
+
+  for (;;) {
+    const { data, error, count } = await tranche(lignes.length, lignes.length + taille - 1)
+    if (error) {
+      return { lignes, complete: false, motif: `lecture interrompue après ${lignes.length} ligne(s) : ${error.message}` }
+    }
+    if (count != null) annonce = count
+    const lot = data ?? []
+    lignes.push(...lot)
+
+    if (lot.length === 0) break
+    if (annonce != null && lignes.length >= annonce) break
+    if (annonce == null && lot.length < taille) break
+  }
+
+  if (annonce == null) {
+    return { lignes, complete: false, motif: `la base n'a pas annoncé de total : ${lignes.length} ligne(s) lue(s), sans garantie que ce soit tout` }
+  }
+  if (lignes.length !== annonce) {
+    return { lignes, complete: false, motif: `${lignes.length} ligne(s) lue(s) sur ${annonce} annoncée(s)` }
+  }
+  return { lignes, complete: true, motif: null }
+}
+// ── FIN PAGINATION ───────────────────────────────────────────────────────────────────────────────
+
 async function obtenirToken(clientId: string, clientSecret: string): Promise<string> {
   const resp = await fetch(`${SUPERPDP_ENDPOINT}/oauth2/token`, {
     method: "POST",
@@ -180,17 +231,25 @@ Deno.serve(async (req: Request) => {
     // présentes — jusqu'à MAX_FACTURES_PAR_SYNC pièces en double, venues d'une plateforme agréée
     // DGFiP, donc autant de charges comptées deux fois. Et rien ne l'aurait dit : la fonction
     // répond « N importées », ce qui est vrai.
-    const { data: dejaImportees, error: erreurDeja } = await admin
-      .from("pieces")
-      .select("superpdp_invoice_id")
-      .eq("dossier_id", dossierId)
-      .not("superpdp_invoice_id", "is", null)
-    if (erreurDeja) {
+    // ET UNE LISTE TRONQUÉE FAIT LE MÊME DÉGÂT QU'UNE LISTE VIDE, en moins visible : un dossier qui
+    // dépasse le plafond de PostgREST réimporte tout ce qui tombe au-delà de la coupure. C'est le
+    // raisonnement de `chargerHashsExistants`, qui LÈVE pour cette raison exacte — une liste
+    // d'empreintes tronquée n'est pas une liste plus courte, c'est un dédoublonnage qui laisse
+    // passer tout ce qu'elle ne contient pas.
+    const lectureDeja = await lireTout<{ superpdp_invoice_id: number }>((debut, fin) =>
+      admin
+        .from("pieces")
+        .select("superpdp_invoice_id", { count: "exact" })
+        .eq("dossier_id", dossierId)
+        .not("superpdp_invoice_id", "is", null)
+        .order("id")
+        .range(debut, fin))
+    if (!lectureDeja.complete) {
       return json({
-        error: `Les factures déjà importées n'ont pas pu être lues (${erreurDeja.message}). La synchronisation est interrompue : sans cette liste, elle réimporterait celles qui sont déjà là. Réessaie dans un instant.`,
+        error: `Les factures déjà importées n'ont pas pu être lues en entier (${lectureDeja.motif}). La synchronisation est interrompue : sans cette liste, elle réimporterait celles qui sont déjà là. Réessaie dans un instant.`,
       }, 503)
     }
-    const idsConnus = new Set(((dejaImportees ?? []) as { superpdp_invoice_id: number }[]).map((p) => p.superpdp_invoice_id))
+    const idsConnus = new Set(lectureDeja.lignes.map((p) => p.superpdp_invoice_id))
 
     const aTraiter = factures.filter((i) => !idsConnus.has(i.id))
 
