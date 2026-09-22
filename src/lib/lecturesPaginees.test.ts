@@ -56,6 +56,8 @@ const EXCEPTIONS: Record<string, string> = {
     "les dossiers de CES memberships-là (`.in('id', ids)`), donc la même borne",
   "src/pages/dossier/AccesTab.tsx [memberships]":
     "les accès client d'UN dossier : une poignée de personnes, pas une base d'utilisateurs",
+  "src/pages/dossier/ClotureTab.tsx [exercices_clotures]":
+    "les exercices déjà clôturés d'UN dossier — au plus une ligne par année civile, jamais mille",
 }
 
 function fichiersSource(dossier: string): string[] {

@@ -668,6 +668,21 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `lib/tableauPilotage.ts`) ; navigation clarifiée (Justificatifs/Documents
   administratifs/Factures émises) et paragraphes d'intro longs raccourcis
   avec le détail replié en `<details>`.
+- **Purge du texte OCR des pièces sensibles après clôture d'exercice (22/09/2026)**, décision du
+  cabinet tranchée dans « Décisions en attente » : option B (purger après clôture), restreinte aux
+  pièces sensibles — les justificatifs de recette (bordereaux de télétransmission), seule famille à
+  porter des données de patients. `ClotureTab` porte un bouton « Clôturer l'exercice » par exercice
+  affiché : il pose une ligne dans la nouvelle table `exercices_clotures` (RLS vérifiée par
+  impersonation réelle, convention `admin_du_dossier` habituelle) puis supprime `piece_textes_ocr`
+  des pièces validées de cet exercice dont `type_piece = 'vente'` — jamais les fichiers déposés, et
+  jamais une facture ordinaire. Rejouer le bouton sur un exercice déjà clôturé rattrape les pièces
+  sensibles validées depuis, sans reposer une seconde ligne de clôture. Ce geste n'est PAS une
+  clôture comptable réelle (voir le bandeau brouillon de l'écran) : `exercices_clotures` ne porte
+  qu'une date, celle de la demande de purge. Détail dans `src/lib/clotureExercice.ts` et RGPD.md
+  §8.3. La lecture des pièces sensibles à purger passe par `lireTout`, jamais un `select` nu : une
+  purge qui croirait avoir tout supprimé sur une lecture tronquée serait pire que pas de purge, et
+  se refuse donc plutôt que de n'en faire qu'une partie. Deux mutations délibérées confirment que la
+  fonction mord (le second appel n'insère pas de doublon, une lecture incomplète bloque la purge).
 
 ## Fonctionnalités actuellement en cours
 
@@ -2247,7 +2262,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1035 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1044 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

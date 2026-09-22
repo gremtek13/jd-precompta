@@ -56,7 +56,7 @@ toujours « à valider », et la catégorie reste un arbitrage humain.
 | **AWS Textract** | OCR des pièces déposées | `eu-central-1` (Francfort), repli du code **gardé par un test** | Non, **sauf si le secret `AWS_REGION` dit autre chose — §8.1** |
 | **AWS Bedrock** | Assistant comptable (Claude) | `eu-west-1` (Irlande), **gardé par un test** | Non |
 | **Super PDP** | Plateforme de dématérialisation agréée DGFiP | France | Non |
-| **Resend** | Envoi et réception d'e-mails | **À établir — voir §8.2** | **À établir** |
+| **Resend** | Envoi et réception d'e-mails | `eu-west-1` (Irlande), confirmé par le cabinet le 22/09/2026 | Non, **sous réserve du DPA — voir §8.2** |
 | **GitHub Pages** | Hébergement du front (fichiers statiques) | — | Aucune donnée de dossier n'y transite |
 | **API SIRENE** | Code NAF depuis un SIRET | France (service public) | Non |
 
@@ -227,19 +227,46 @@ défini côté Supabase, il l'emporte sur le repli du code, et aucun fichier de 
 savoir. À lire dans Supabase → Edge Functions → Secrets, et à confirmer ici. S'il n'est pas défini,
 le repli `eu-central-1` s'applique et ce point est clos.
 
-### 8.2 — Établir le statut de Resend *(à faire)*
+### 8.2 — Établir le statut de Resend *(partiellement fait — deux points restent)*
 
 Les e-mails sortants (factures, relances) et surtout les **pièces jointes entrantes** transitent par
-Resend. Trois points à établir avec eux : où les données sont traitées, ce que dit leur accord de
-sous-traitance, et combien de temps ils conservent les messages. Tant que ce n'est pas écrit, la
-case « transfert hors UE » du §3 reste ouverte.
+Resend. Trois points étaient à établir : où les données sont traitées, ce que dit leur accord de
+sous-traitance, et combien de temps ils conservent les messages.
 
-### 8.3 — Trancher la durée de conservation du texte OCR *(décision du cabinet)*
+**La région est confirmée le 22/09/2026 (réponse du cabinet dans « Décisions en attente ») :
+`eu-west-1`.** Ce n'est donc pas un transfert hors UE au sens du traitement géographique — la case
+« transfert hors UE » du §3 se referme sur ce point précis.
 
-Combien de temps garder `piece_textes_ocr` après validation d'une pièce ? C'est le seul levier de
-minimisation réellement disponible aujourd'hui, et il ne coûte rien à la comptabilité. Trois
-options : le garder indéfiniment (état actuel), le purger après la clôture de l'exercice, ou le
-purger après validation de la pièce. **L'application ne doit pas choisir à la place du cabinet.**
+**Ce qui reste ouvert, et ce n'est pas la même question** : le contenu de l'accord de
+sous-traitance (DPA) avec Resend, et la durée pendant laquelle ils conservent les messages et leurs
+pièces jointes une fois traités. Une région correcte ne dit rien de la durée de rétention côté
+Resend ni des garanties contractuelles — les deux restent à obtenir directement auprès d'eux avant
+de clore ce point.
+
+### 8.3 — Durée de conservation du texte OCR *(tranchée le 22/09/2026, implémentée le même jour)*
+
+Le cabinet a choisi l'option B — purger après clôture de l'exercice — restreinte aux pièces
+sensibles (celles qui portent des données de patients) : « Comme ta préférence, le B, et que pour
+les documents sensibles » (« Décisions en attente »).
+
+**Ce que « sensible » veut dire ici** : les justificatifs de recette (bordereaux de
+télétransmission), seule famille de pièces à porter des noms de patients — voir §4 et §6. Une
+facture EDF n'a aucune raison d'être purgée, et ne l'est pas.
+
+**Le geste** : `ClotureTab` porte un bouton « Clôturer l'exercice » par exercice affiché. Il pose une
+ligne dans `exercices_clotures` (date de la demande, pas un vrai calcul de résultat — ce reste un
+brouillon, voir le bandeau de l'écran) puis supprime le texte OCR (`piece_textes_ocr`) des pièces
+validées de cet exercice dont `type_piece = 'vente'`. **Les fichiers déposés ne sont pas touchés** —
+seul le texte déjà lu, la copie dérivée sans durée légale propre (voir §4), disparaît. Rejouer le
+bouton sur un exercice déjà clôturé rattrape les pièces sensibles validées depuis, sans reposer une
+seconde ligne de clôture.
+
+**Ce que ce geste n'est PAS** : une clôture comptable réelle. `exercices_clotures` ne porte qu'une
+date, exactement ce qu'il faut pour décider si la purge a été demandée — rien de plus.
+
+Voir `src/lib/clotureExercice.ts` (logique, testée par mutation) et la migration
+`20260922071331_creation_exercices_clotures` (RLS vérifiée par impersonation réelle : anonyme et
+utilisateur étranger au dossier refusés, admin du dossier autorisé en lecture/écriture/suppression).
 
 ### 8.4 — Contrats de sous-traitance *(à faire avant le second cabinet)*
 

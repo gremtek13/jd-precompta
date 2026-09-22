@@ -7,6 +7,7 @@ import { calculerDeclaration2035 } from '../../lib/declaration2035'
 import { CASES_2035, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
 import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
 import { remplir2035 } from '../../lib/remplir2035'
+import { cloturerExercice } from '../../lib/clotureExercice'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
@@ -39,6 +40,10 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // décalerait tout le numéro d'un cran, ce qui est pire qu'une grille vide.
   const [dossier, setDossier] = useState<{ nom: string | null; libelle_naf: string | null; siret: string | null } | null>(null)
   const [genere, setGenere] = useState<number | null>(null)
+  // Exercices déjà marqués clôturés (table exercices_clotures) — petite lecture non paginée : au
+  // plus une ligne par année civile pour ce dossier, jamais mille (voir lecturesPaginees.test.ts).
+  const [cloturesConnues, setCloturesConnues] = useState<Set<number>>(new Set())
+  const [clotureMessage, setClotureMessage] = useState<string | null>(null)
   // Exercice partagé avec Pièces/Banque/Écritures/Statistiques, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici. Sa valeur par défaut (voir DossierDetail,
   // calculerAnneeParDefaut) est déjà un exercice précis plutôt que "toutes", justement pour éviter
@@ -54,7 +59,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     // cotisation ou une immobilisation manquante est tout aussi plausible, fausse et signée.
     // Le tri est TOTAL partout (`id` en départage) : sans clé unique, deux tranches se recouvrent
     // ou sautent des lignes, et rien ne le signale.
-    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, { data: dossierData }] = await Promise.all([
+    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, { data: dossierData }, { data: clotureData }] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -77,8 +82,10 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
       supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
+      supabase.from('exercices_clotures').select('annee').eq('dossier_id', dossierId),
     ])
     setDossier(dossierData ?? null)
+    setCloturesConnues(new Set((clotureData ?? []).map((c: { annee: number }) => c.annee)))
     setVehicules(lectureVehicules.lignes)
     setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
@@ -206,6 +213,39 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
       setError(messageErreur(e, 'Génération du formulaire impossible'))
     } finally {
       generationEnCours.current = false
+    }
+  }
+
+  // Verrou par exercice, posé avant le `try` — un `disabled` piloté par un état React laisse passer
+  // un second clic dans le même rendu (voir ImportDossierModal, FactureAvoirModal et les autres
+  // porteurs de ce motif recensés dans CLAUDE.md).
+  const cloturesEnCours = useRef<Set<number>>(new Set())
+
+  async function handleCloturer(annee: number) {
+    if (cloturesEnCours.current.has(annee)) return
+    cloturesEnCours.current.add(annee)
+    setError(null)
+    setClotureMessage(null)
+    const dejaCloture = cloturesConnues.has(annee)
+    const confirmation = dejaCloture
+      ? `Relancer la purge des pièces sensibles de l'exercice ${annee} ? Cet exercice est déjà clôturé — cette action rattrape seulement les pièces validées depuis.`
+      : `Clôturer l'exercice ${annee} ? Cette action est irréversible : le texte OCR déjà lu des justificatifs de recette (bordereaux de télétransmission) de cet exercice sera supprimé définitivement. Les fichiers déposés, eux, ne sont pas touchés.`
+    if (!window.confirm(confirmation)) {
+      cloturesEnCours.current.delete(annee)
+      return
+    }
+    try {
+      const resultat = await cloturerExercice(dossierId, annee)
+      setCloturesConnues((prev) => new Set(prev).add(annee))
+      setClotureMessage(
+        resultat.piecesPurgees > 0
+          ? `Exercice ${annee} clôturé — texte OCR supprimé pour ${resultat.piecesPurgees} pièce(s) sensible(s).`
+          : `Exercice ${annee} clôturé — aucune pièce sensible à purger pour l'instant.`,
+      )
+    } catch (e) {
+      setError(messageErreur(e, "Impossible de clôturer l'exercice."))
+    } finally {
+      cloturesEnCours.current.delete(annee)
     }
   }
 
@@ -460,6 +500,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
       )}
 
       {error && <p className="error-text">{error}</p>}
+      {clotureMessage && <p className="muted">{clotureMessage}</p>}
 
       {loading ? (
         <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
@@ -474,6 +515,8 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
             genere={genere === f.declaration.annee}
             onTelecharger={() => telechargerFormulaire(f.declaration.annee, f.valeurs)}
             blocage={lectureIncomplete}
+            cloture={cloturesConnues.has(f.declaration.annee)}
+            onCloturer={() => handleCloturer(f.declaration.annee)}
           />
         ))
       )}
@@ -484,7 +527,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 // Un exercice rendu dans la forme du formulaire : une ligne par case, dans l'ordre imprimé, avec son
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
-function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage }: {
+function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage, cloture, onCloturer }: {
   annee: number
   valeurs: Map<string, number>
   genere: boolean
@@ -492,6 +535,10 @@ function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage }: {
   // Non nul quand la lecture des pièces n'a pas pu se dire complète : le bouton est alors grisé et
   // dit pourquoi, plutôt que de produire un formulaire qu'on croirait complet.
   blocage: string | null
+  // Vrai si le cabinet a déjà demandé la clôture de cet exercice — le bouton change de libellé mais
+  // reste actif, pour rattraper une pièce sensible validée après coup (voir clotureExercice.ts).
+  cloture: boolean
+  onCloturer: () => void
 }) {
   // Une case à zéro que personne n'a alimentée n'apprend rien et noie le reste : on ne montre que
   // les cases qui portent un montant, plus les totaux, toujours affichés parce que c'est sur eux que
@@ -507,14 +554,26 @@ function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage }: {
             2035-A-SD et 2035-B-SD — à relire case par case avant dépôt
           </span>
         </div>
-        <button
-          className="btn btn-primary btn-sm"
-          onClick={onTelecharger}
-          disabled={blocage !== null}
-          title={blocage ? `Lecture partielle d'une des collections de la déclaration (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.` : undefined}
-        >
-          {genere ? '↻ Regénérer le formulaire' : '⬇ Remplir le formulaire officiel'}
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {cloture && <span className="badge badge-neutral">exercice clôturé</span>}
+          <button
+            className="btn btn-outline btn-sm"
+            onClick={onCloturer}
+            title={cloture
+              ? "Rattraper la purge du texte OCR pour les pièces sensibles validées depuis la clôture."
+              : "Marque l'exercice comme clôturé et supprime définitivement le texte OCR déjà lu des justificatifs de recette (bordereaux de télétransmission) de cet exercice."}
+          >
+            {cloture ? '↻ Rattraper la purge' : '🔒 Clôturer l’exercice'}
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={onTelecharger}
+            disabled={blocage !== null}
+            title={blocage ? `Lecture partielle d'une des collections de la déclaration (${blocage}) — le formulaire ne peut pas dire qu'il est amputé.` : undefined}
+          >
+            {genere ? '↻ Regénérer le formulaire' : '⬇ Remplir le formulaire officiel'}
+          </button>
+        </div>
       </div>
       <div className="table-scroll">
       <table>
