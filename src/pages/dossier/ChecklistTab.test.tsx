@@ -18,6 +18,10 @@ const faux = vi.hoisted(() => ({
   // et « aucun exercice n'est clos » rendent exactement le même écran — or c'est précisément ce
   // que la réserve existe pour distinguer.
   refusees: new Set<string>(),
+  // Tables dont le serveur ANNONCE plus de lignes qu'il n'en rend : c'est la forme exacte du plafond
+  // de PostgREST (voir lib/lectureComplete.ts), et le seul levier qui produise une lecture
+  // INCOMPLÈTE plutôt qu'une lecture refusée. Les deux ne disent pas la même chose à l'écran.
+  tronquees: new Set<string>(),
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -47,7 +51,7 @@ vi.mock('../../lib/supabase', () => ({
           return Promise.resolve({
             data: toutes.slice(debut, debut + (fin - debut + 1)),
             error: null,
-            count: toutes.length,
+            count: faux.tronquees.has(table) ? toutes.length + 5 : toutes.length,
           }).then(suite)
         },
       })
@@ -83,6 +87,7 @@ function poser(pieces: {
   aValider?: unknown[]
   clotures?: { annee: number }[]
   clotureRefusee?: boolean
+  tronquees?: string[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
@@ -94,6 +99,7 @@ function poser(pieces: {
     exercices_clotures: pieces.clotures ?? [],
   }
   faux.refusees = new Set(pieces.clotureRefusee ? ['exercices_clotures'] : [])
+  faux.tronquees = new Set(pieces.tronquees ?? [])
 }
 
 function monter() {
@@ -320,5 +326,30 @@ describe('ChecklistTab — le 1er janvier, l’exercice révolu reste réclamé 
 
     await screen.findByText('Relevés bancaires 2026')
     expect(screen.queryAllByText(/Impossible de vérifier si l'exercice/)).toHaveLength(0)
+  })
+
+  it('UNE LECTURE TRONQUÉE DES CATÉGORIES ALLUME LE BANDEAU', async () => {
+    // `categoriesSansCompte` et `categoriesSansPoste` partent des CATÉGORIES, `ecrituresSansObjet`
+    // des immobilisations, le contrôle de TVA des déclarations : tronquée, aucune de ces listes ne
+    // raccourcit un affichage — elle fait TAIRE un point de cette liste, et se taire est exactement
+    // ce que cet écran fait quand tout va bien. Le drapeau `lectureIncomplete` ne couvrait que
+    // quatre des neuf lectures, dont aucune de celles-là.
+    poser({
+      validees: [piece({ id: 'v1', statut: 'validee', date_piece: '2026-03-10' })],
+      tronquees: ['categories'],
+    })
+    monter()
+
+    expect(await screen.findByText(/n'ont pas pu être lues en entier/)).toBeTruthy()
+  })
+
+  it('SE TAIT quand toutes ses lectures sont complètes', async () => {
+    // Garde symétrique : sans elle, « l'écran signale une lecture partielle » serait satisfait par
+    // un écran qui l'annonce TOUJOURS — et une mise en garde permanente cesse d'être lue.
+    poser({ validees: [piece({ id: 'v1', statut: 'validee', date_piece: '2026-03-10' })] })
+    monter()
+
+    await screen.findByText('Relevés bancaires 2026')
+    expect(screen.queryAllByText(/n'ont pas pu être lues en entier/)).toHaveLength(0)
   })
 })

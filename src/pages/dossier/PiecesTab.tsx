@@ -78,6 +78,10 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // chose pour une liste de pièces tronquée que pour un fil de précisions tronqué. Les fondre en un
   // seul afficherait, sur l'un des deux cas, une conséquence qui n'est pas la sienne.
   const [commentairesIncomplets, setCommentairesIncomplets] = useState<string | null>(null)
+  // Troisième drapeau : les listes de référence (rapprochements, catégories, sous-dossiers, règles
+  // apprises). Les fondre avec `lectureIncomplete` ferait porter aux pièces une conséquence qui
+  // n'est pas la leur.
+  const [referencesIncompletes, setReferencesIncompletes] = useState<string | null>(null)
   const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[]>([])
   // Le texte de la pièce dépliée, chargé à la demande. Une seule à la fois : c'est une consultation
   // ponctuelle pour lever un doute, pas une colonne du tableau.
@@ -128,6 +132,16 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     const lectureTiersCabinet = await lireTout<TiersCategorieCabinet>((debut, fin) =>
       supabase.from('tiers_categories_cabinet').select('*', { count: 'exact' })
         .order('id').range(debut, fin),
+    )
+    // Le commentaire ci-dessus NOMMAIT le dégât — « les règles absentes cessent simplement de
+    // s'appliquer » — au-dessus d'un code qui jetait le drapeau permettant de le voir. Les cinq
+    // listes de référence partagent une même conséquence, distincte de celle des pièces : elles ne
+    // raccourcissent pas la liste, elles font paraître une pièce MOINS TRAITÉE qu'elle ne l'est
+    // (`sousDossierLabel` rend « — » pour un sous-dossier absent, le badge de rapprochement retombe
+    // sur « non rapprochée »), ou taisent une catégorie déjà arbitrée.
+    setReferencesIncompletes(
+      [lectureRapprochees, lectureCategories, lectureSousDossiers, lectureTiersCategories, lectureTiersCabinet]
+        .find((l) => !l.complete)?.motif ?? null,
     )
 
     // Les précisions portées par le client sur ses dépôts. Chargées ici, en une requête pour tout le
@@ -429,6 +443,16 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
           'Une pièce peut donc porter une précision sans qu’elle apparaisse sur sa ligne — et c’est ' +
           'l’appel au client que ces précisions existent pour éviter. Vérifie dans la fiche avant ' +
           'de catégoriser.'
+        }
+      />
+
+      <BandeauLecturePartielle
+        quoi="Les listes de référence du dossier"
+        motif={referencesIncompletes}
+        consequence={
+          'Une pièce peut donc paraître sans catégorie, sans sous-dossier ou non rapprochée alors ' +
+          'qu’elle l’est, et une règle déjà arbitrée cesse de proposer sa catégorie. Recharge la ' +
+          'page avant d’arbitrer.'
         }
       />
 

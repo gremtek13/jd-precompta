@@ -57,6 +57,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const [regenerating, setRegenerating] = useState<string | null>(null)
   const [retrait, setRetrait] = useState<string | null>(null)
   const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
+  const [declarationsIncompletes, setDeclarationsIncompletes] = useState<string | null>(null)
   const [periodeDebut, setPeriodeDebut] = useState('')
   const [periodeFin, setPeriodeFin] = useState('')
   const [tvaDeclaree, setTvaDeclaree] = useState('')
@@ -118,6 +119,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         .find((l) => !l.complete)?.motif ?? null,
     )
     setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
+    // PAS dans `brouillonIncomplet`, et c'est le point : ce drapeau-là BLOQUE les exports FEC et
+    // piste d'audit, or une lecture tronquée des déclarations de TVA n'a aucune raison d'empêcher
+    // un FEC juste. Sa conséquence est ailleurs — un contrôle de TVA qui ne voit pas une période
+    // n'annonce aucun écart dessus, c'est-à-dire la bonne nouvelle que ce tableau existe pour
+    // démentir.
+    setDeclarationsIncompletes(lectureDeclarations.complete ? null : lectureDeclarations.motif)
     setDeclarationsTva(lectureDeclarations.lignes)
     setLoading(false)
   }
@@ -648,6 +655,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             {savingDeclaration ? 'Enregistrement…' : 'Enregistrer'}
           </button>
         </form>
+
+        {declarationsIncompletes && (
+          <p className="error-text" style={{ marginTop: 12 }}>
+            Les déclarations de TVA n'ont pas pu être lues en entier ({declarationsIncompletes}).
+            Une période absente du tableau ci-dessous n'est pas une période sans écart — elle n'a
+            pas été comparée du tout.
+          </p>
+        )}
 
         {declarationsTva.length > 0 && (
           <table style={{ marginTop: 16 }}>

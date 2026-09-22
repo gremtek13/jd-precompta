@@ -1555,6 +1555,74 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Dix mutations, toutes mordent** — dont le défaut d'origine TEL QU'IL ÉTAIT (`source.split('\n')`),
   l'écriture multi-ligne réelle, chaque porte rendue aveugle, le scanner qui crie au loup, la porte
   `Promise.all` retirée, les commentaires non coupés et l'exception INVENTÉE.
+- **ET RECEVOIR LE DRAPEAU N'EST PAS LE LIRE : HUIT ÉCRANS PROMETTAIENT DE SIGNALER UNE LECTURE
+  PARTIELLE ET NE TENAIENT LA PROMESSE QUE POUR UNE LECTURE SUR DEUX** (22/09/2026). Tout ce qui
+  précède garantit qu'une lecture de collection est PAGINÉE et qu'elle REND `complete`. Rien ne
+  garantissait qu'on le lise — et l'en-tête de `lireTout` promet pourtant que l'appelant « ne peut
+  plus l'ignorer par omission ».
+  **Mesuré : 110 sites d'appel, 52 dont le drapeau n'est lu nulle part.** Ils se coupent net en deux,
+  et c'est la coupure qui décide du chantier : **23 sur huit écrans qui portent DÉJÀ un
+  `BandeauLecturePartielle`** (ou refusent un export), donc qui ont déjà décidé de signaler ; 29 sur
+  neuf écrans qui ne signalent rien du tout, ce qui est une autre question.
+  **C'est mot pour mot le défaut de `ClotureTab`**, corrigé plus haut dans ce fichier — « en n'ayant
+  vérifié QUE les pièces, soit une entrée sur cinq… le garde-fou promettait "ce formulaire est bâti
+  sur tout" sans pouvoir le tenir ». Corrigé là, resté entier sur les huit voisins : `ChecklistTab`
+  4 lues sur 9, `PiecesTab` 1 sur 6, `EstimationTab` 2 sur 7, `BanqueTab` 2 sur 4, `ClientHome` et
+  `ClientUpload` 2 sur 4, `DocumentsTab` 1 sur 2, `EcrituresTab` 6 sur 7.
+  **Un bandeau éteint n'est pas une information neutre : son silence se lit « tout a été lu ».**
+  `ChecklistTab` est le cas le plus coûteux pour la raison que son propre commentaire énonce — « cet
+  écran est précisément celui qui prétend dire ce qui MANQUE… la panne est indiscernable du succès ».
+  Ses cinq lectures jetées commandent des points de la liste : `categoriesSansCompte` et
+  `categoriesSansPoste` partent des CATÉGORIES, `ecrituresSansObjet` des IMMOBILISATIONS, le contrôle
+  de TVA des DÉCLARATIONS. Une seule tronquée et le point correspondant se TAIT.
+  **ET LE COMMENTAIRE DE `PiecesTab` NOMMAIT LE DÉGÂT AU-DESSUS DU CODE QUI JETAIT LE DRAPEAU
+  PERMETTANT DE LE VOIR** — « tronquée, elle ne se signale pas : les règles absentes cessent
+  simplement de s'appliquer, et l'opérateur recatégorise à la main un fournisseur qu'il a déjà
+  arbitré dix fois ». Famille déjà nommée trois fois ici (`chargerCommentaires`, `formatDate`,
+  la confirmation de clôture), et c'est la quatrième.
+  **LA CONSÉQUENCE LA PLUS DURE N'EST PAS UN AFFICHAGE, C'EST UNE ÉCRITURE** : les règles
+  « toujours ignorer » de `BanqueTab` décident du `statut` ÉCRIT EN BASE à l'import d'un relevé
+  (`statutPourLibelle`, deux sites). Une liste tronquée n'affiche donc pas de travers — elle importe
+  des mouvements « à traiter » qu'une règle couvre, et **aucun rechargement ne le répare ensuite**.
+  C'est le seul des 23 dont le dégât survive à la lecture suivante.
+  **LES CONSÉQUENCES NE SE FONDENT PAS**, et trois bandeaux ont donc été ajoutés plutôt qu'un
+  drapeau élargi : sur `BanqueTab` (cotisations et règles — « un mouvement reste à traiter alors
+  qu'une règle le couvre »), sur `PiecesTab` et `DocumentsTab` (listes de référence — `sousDossierLabel`
+  rend « — » pour un sous-dossier absent, et cette colonne part dans l'export CSV). Et
+  `lectureDeclarations` a son propre drapeau dans `EcrituresTab` PLUTÔT QUE `brouillonIncomplet` :
+  celui-là BLOQUE les exports FEC et piste d'audit, or une lecture tronquée des déclarations de TVA
+  n'a aucune raison d'empêcher un FEC juste.
+  **MON PROPRE DÉTECTEUR A MENTI TROIS FOIS AVANT DE MESURER JUSTE, et les trois sont des rechutes
+  connues de ce dépôt :** il lisait « la ligne » et non l'EXPRESSION (une entrée de `Promise.all`
+  s'écrit sans `await`) ; il découpait les entrées sur la virgule SANS retirer les commentaires, or
+  les tableaux `Promise.all` d'ici en portent de longs, à virgules — l'appariement entrée ↔ nom
+  glissait d'un cran ; et surtout **il ne cherchait que `complete` alors que quatre écrans corrects
+  lisent `motif`**, qui vaut `null` SI ET SEULEMENT SI `complete` est vrai. Il rendait alors 86
+  fautes sur 110, dont l'essentiel était faux. Un taux qui accuse d'abord le détecteur.
+  **`lecturesSignalees.test.ts` fait de la règle un contrôle**, et son invariant est « TOUTES OU
+  AUCUNE » plutôt que « toutes, point » : les neuf écrans sans signal posent une question de produit
+  (que dit-on au client ? faut-il bloquer un export ?) et non une correction, et un scanner qui
+  crierait sur leurs 29 lectures serait du bruit. Il mord exactement sur la promesse tenue à moitié,
+  et se met à mordre tout seul sur un écran le jour où il gagne son premier signal. Le compte des
+  fichiers qui signalent est un PLANCHER (23), sans quoi « toutes ou aucune » serait satisfait en
+  retirant le dernier contrôle de chaque écran.
+  **DOUZE MUTATIONS, ONZE MORDENT**, et la discrimination est le résultat : le défaut d'origine
+  replanté fait tomber À LA FOIS le scanner et le test d'écran — donc la FORME et le CÂBLAGE sont
+  gardés séparément —, tandis que **retirer le bandeau du JSX en gardant le drapeau lu laisse le
+  scanner VERT** et ne fait tomber que le test d'écran. Un scanner de source ne peut pas voir un
+  rendu, et c'est dit plutôt que laissé croire.
+  **La douzième survit à juste titre et c'est écrit dans le test** : retirer la virgule de queue du
+  découpage ne change rien, une entrée vide n'apparaissant qu'en FIN de liste, donc ne décalant
+  jamais un indice antérieur. Ce qui garde réellement l'appariement est la mutation qui décale
+  `noms[k]` d'un cran, et celle-là mord.
+  **LES 29 LECTURES RESTANTES SONT NOMMÉES PLUTÔT QUE LAISSÉES CROIRE COUVERTES** — neuf écrans qui
+  ne signalent rien : `FinancementTab` (6, dont `emprunts` et le solde bancaire, sur le document
+  qu'un cabinet montre à une banque), `SuperAdminPage` (5, dont `agent_conversations`, que ce fichier
+  désigne déjà comme « la façon exacte dont un plafond cesse de protéger » — l'autre moitié de ce
+  nombre a été corrigée le matin même dans `agent-comptable`), `ClientSimulation` (4),
+  `SupplementsTab` (4, dont `mouvements_cca`, « tronqué, c'est un solde faux, pas un historique plus
+  court »), `ImmobilisationsTab` (3), `EquipePage` (3), `CotisationsTab` (2), `AssistantTab` (1),
+  `FacturesTab` (1). Leur donner un signal est une décision par écran, pas une correction.
 - **ET LE PLAFOND DE COÛT IA SE SOUS-ESTIMAIT — `lecturesPaginees` S'ÉTAIT ARRÊTÉ À `src/` LUI AUSSI**
   (22/09/2026, QUATRIÈME demi-chemin en deux jours : les écritures des Edge Functions portées le
   21/09, leurs lectures le 22/09 au matin, la FORME de leur scanner d'écritures à midi — et la
@@ -3995,7 +4063,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1410 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1421 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

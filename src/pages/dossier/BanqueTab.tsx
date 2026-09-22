@@ -49,6 +49,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   // Les PIÈCES sont l'autre moitié du rapprochement, et leur lecture était restée en `select('*')`
   // nu quand celle des mouvements est passée par `lireTout` — la copie oubliée du portage.
   const [piecesIncompletes, setPiecesIncompletes] = useState<string | null>(null)
+  // À part des deux autres : une cotisation ou une règle manquante ne rend pas le relevé
+  // partiel, elle laisse un mouvement à traiter que quelque chose couvrait déjà.
+  const [referencesIncompletes, setReferencesIncompletes] = useState<string | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
@@ -112,6 +115,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     const lectureRegles = await lireTout<RegleBancaireIgnoree>((debut, fin) =>
       supabase.from('regles_bancaires_ignorees').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('motif').order('id').range(debut, fin),
+    )
+    // Troisième drapeau, et sa conséquence n'est celle d'aucun des deux autres. Les cotisations sont
+    // des CANDIDATES au rapprochement automatique et alimentent le compte « sans mouvement » ; les
+    // règles, elles, décident du `statut` ÉCRIT EN BASE à l'import d'un relevé
+    // (`statutPourLibelle`). Une liste de règles tronquée n'affiche donc pas seulement de travers :
+    // elle importe des mouvements « à traiter » qu'une règle couvre, et aucun rechargement ne le
+    // répare ensuite.
+    setReferencesIncompletes(
+      [lectureCotisations, lectureRegles].find((l) => !l.complete)?.motif ?? null,
     )
 
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
@@ -468,6 +480,16 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         consequence={
           'Des justificatifs manquent donc dans les candidats au rapprochement : un mouvement peut ' +
           'ressortir « sans pièce » alors que la pièce existe. Recharge la page avant d’arbitrer.'
+        }
+      />
+
+      <BandeauLecturePartielle
+        quoi="Les cotisations et les règles « toujours ignorer »"
+        motif={referencesIncompletes}
+        consequence={
+          'Un mouvement peut donc rester « à traiter » alors qu’une cotisation ou une règle le ' +
+          'couvre — et à l’import d’un relevé, le statut écrit en base suit cette liste tronquée. ' +
+          'Recharge la page avant d’importer.'
         }
       />
 

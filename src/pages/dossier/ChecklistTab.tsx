@@ -153,8 +153,16 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     setPiecesAValider(lectureAValider.lignes)
     setCotisations(lectureCotisations.lignes)
     setLignes(lectureLignes.lignes)
+    // TOUTES les collections dont dépend un point de cette liste, pas seulement les quatre grosses.
+    // `categoriesSansCompte` et `categoriesSansPoste` partent des CATÉGORIES, `ecrituresSansObjet` des
+    // IMMOBILISATIONS, le contrôle de TVA des DÉCLARATIONS : une seule tronquée et le point
+    // correspondant se TAIT — or se taire est exactement ce que cet écran fait quand tout va bien.
+    // C'est le défaut de `ClotureTab`, qui refusait la 2035 « en n'ayant vérifié QUE les pièces ».
     setLectureIncomplete(
-      [lectureValidees, lectureAValider, lectureLignes, lectureEcritures].find((l) => !l.complete)?.motif ?? null,
+      [
+        lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
+        lectureNatures, lectureCategories, lectureEcritures, lectureDeclarations,
+      ].find((l) => !l.complete)?.motif ?? null,
     )
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
@@ -506,7 +514,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   return (
     <>
       <BandeauLecturePartielle
-        quoi="Les pièces, les mouvements ou les écritures"
+        quoi="Les données du dossier"
         motif={lectureIncomplete}
         consequence={
           'Les points ci-dessous portent donc sur une partie du dossier : leur SILENCE ne prouve ' +

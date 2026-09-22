@@ -94,7 +94,13 @@ export default function ClientHome() {
     setPieces(lecturePieces.lignes)
     setDocuments(lectureDocuments.lignes)
     setLignes(lectureLignes.lignes)
-    setLectureIncomplete(lecturePieces.motif ?? lectureLignes.motif)
+    // Les QUATRE collections de « ce qu'il reste à envoyer », pas seulement deux : les documents et
+    // les cotisations comptent autant que les pièces et les relevés. Tronquée, l'une d'elles fait
+    // réclamer un document déjà envoyé — c'est exactement ce que le bandeau ci-dessous annonce.
+    setLectureIncomplete(
+      [lecturePieces, lectureDocuments, lectureLignes, lectureCotisations]
+        .find((l) => !l.complete)?.motif ?? null,
+    )
     setCotisations(lectureCotisations.lignes)
     setAnneesCloturees(clotures.annees)
     setClotureInconnue(clotures.erreur)

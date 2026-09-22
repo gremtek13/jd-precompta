@@ -96,7 +96,16 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setCotisations(lectureCotisations.lignes)
     setRecettesValidees(lectureRecettes.lignes)
     setPiecesValidees(lecturePieces.lignes)
-    setLectureIncomplete(lectureRecettes.motif ?? lecturePieces.motif)
+    // Les SEPT collections qui entrent dans l'estimation, pas seulement les pièces : les catégories
+    // décident du poste 2035 de chaque dépense, les immobilisations de quelles pièces n'en sont pas
+    // une, les cotisations et les références de l'assiette. Tronquée, n'importe laquelle rend une
+    // estimation plausible et BASSE — ce que le bandeau nomme déjà comme « l'air d'une bonne nouvelle ».
+    setLectureIncomplete(
+      [
+        lectureCotisations, lectureRecettes, lecturePieces, lectureCategories, lectureImmobilisations,
+        lectureReferences, lectureReferencesPostes,
+      ].find((l) => !l.complete)?.motif ?? null,
+    )
     setCategories(lectureCategories.lignes)
     setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
     setReferences(lectureReferences.lignes)

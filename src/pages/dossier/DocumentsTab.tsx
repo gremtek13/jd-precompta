@@ -46,6 +46,7 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
   const [presenceTexteIncertaine, setPresenceTexteIncertaine] = useState<string | null>(null)
   // Non nul quand la liste des documents n'a pas pu être lue en entier (voir lib/lectureComplete.ts).
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  const [referencesIncompletes, setReferencesIncompletes] = useState<string | null>(null)
   const [ocrOuvert, setOcrOuvert] = useState<{ documentId: string; texte: string | null } | null>(null)
   const [relecture, setRelecture] = useState<{ fait: number; total: number; nomFichier: string } | null>(null)
   // Le verrou est un ref, jamais l'état ci-dessus : `setRelecture` ne prend effet qu'au rendu
@@ -98,6 +99,11 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
     ])
     setDocuments(lectureDocuments.lignes)
     setLectureIncomplete(lectureDocuments.complete ? null : lectureDocuments.motif)
+    // À part de `lectureIncomplete` : une liste de sous-dossiers tronquée ne raccourcit pas la liste
+    // des documents, elle fait AFFIRMER qu'un document n'est rangé nulle part — `sousDossierLabel`
+    // rend « — » pour un sous-dossier absent, et cette colonne part telle quelle dans l'export CSV.
+    // Même drapeau que sur `PiecesTab`, qui lit la même table pour la même raison.
+    setReferencesIncompletes(lectureSousDossiers.complete ? null : lectureSousDossiers.motif)
     setSousDossiers(lectureSousDossiers.lignes)
     const presence = await documentsAvecTexteOcr(dossierId)
     setAvecTexteOcr(presence.avecTexte)
@@ -379,6 +385,14 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
         quoi="Les documents du dossier"
         motif={lectureIncomplete}
         consequence="La liste ci-dessous n’est donc pas complète — recharge la page avant de t’y fier."
+      />
+
+      <BandeauLecturePartielle
+        quoi="La liste des sous-dossiers"
+        motif={referencesIncompletes}
+        consequence={
+          'Un document peut donc s’afficher — et s’exporter — sans sous-dossier alors qu’il en a un.'
+        }
       />
 
       {presenceTexteIncertaine && (
