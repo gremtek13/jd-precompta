@@ -17,6 +17,7 @@ import MonthlyBars from '../../components/widgets/MonthlyBars'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { lireTout } from '../../lib/lectureComplete'
 import { lireAnneesCloturees } from '../../lib/clotureExercice'
+import { chargerInformationsDossier } from '../../lib/informationsDossier'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../../lib/resteAEnvoyer'
 
 const NB_MOIS_TRESORERIE = 12
@@ -60,6 +61,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
   const [info, setInfo] = useState<InformationsDossier | null>(null)
+  // Non nul = on ne SAIT PAS ce que le dossier porte comme informations. Sans ce drapeau, l'écran
+  // qui prétend dire ce qui MANQUE affirmait « à renseigner » sur une lecture refusée — et passait
+  // aussi sous silence les contrôles véhicule qui en dépendent.
+  const [infoInconnue, setInfoInconnue] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   // Non nul quand l'une des grosses collections n'a pas pu être lue en entier : les points ci-dessous
   // portent alors sur une partie du dossier, et leur SILENCE ne prouve plus rien.
@@ -82,7 +87,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       lectureCategories,
       lectureEcritures,
       lectureDeclarations,
-      { data: infoData },
+      lectureInfos,
       clotures,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
@@ -126,7 +131,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         supabase.from('declarations_tva').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      supabase.from('informations_dossier').select('*').eq('dossier_id', dossierId).maybeSingle(),
+      // Par le module partagé, qui REND son erreur : c'est la troisième copie de cette lecture
+      // (InformationsTab et ClientInformations sont les deux autres), et la seule qui la jetait
+      // encore — parce qu'une entrée de `Promise.all` s'écrit sans `await`, donc hors de portée du
+      // scanner qui a corrigé les deux premières.
+      chargerInformationsDossier(dossierId),
       lireAnneesCloturees(dossierId),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
@@ -152,7 +161,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     setCategories(lectureCategories.lignes)
     setEcritures(lectureEcritures.lignes)
     setDeclarationsTva(lectureDeclarations.lignes)
-    setInfo(infoData ?? null)
+    setInfo(lectureInfos.informations)
+    setInfoInconnue(lectureInfos.erreur)
     setAnneesCloturees(clotures.annees)
     setClotureInconnue(clotures.erreur)
     setLoading(false)
@@ -404,15 +414,23 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // pas ce qui a déjà été reçu il y a un an (voir pointsUtiles).
   const items: ItemChecklist[] = pointsUtiles(pointsParExercice, anneeCourante)
 
+  // `!info && !infoInconnue` : « il n'y a rien » et « on n'a pas lu » ne donnent pas le même point.
+  // Le second est dit à part (voir le bandeau), parce que le contraire — réclamer des informations
+  // déjà saisies — enverrait le cabinet relancer un client pour rien, sur l'écran dont c'est
+  // justement le métier de dire ce qui manque.
   if (!info) {
-    items.push({
-      id: 'informations',
-      label: 'Informations complémentaires du client',
-      ok: false,
-      detail: 'Véhicule, tickets restaurant, chèques vacances… à renseigner une fois',
-      cible: 'informations',
-      action: 'Compléter les informations',
-    })
+    // Le point n'est poussé QUE si l'absence est démontrée. Une lecture refusée se dit dans le
+    // bandeau, jamais ici : les deux se ressembleraient trop dans une liste de points à traiter.
+    if (!infoInconnue) {
+      items.push({
+        id: 'informations',
+        label: 'Informations complémentaires du client',
+        ok: false,
+        detail: 'Véhicule, tickets restaurant, chèques vacances… à renseigner une fois',
+        cible: 'informations',
+        action: 'Compléter les informations',
+      })
+    }
   } else {
     if (info.vehicule_type === 'societe') {
       const vehiculeTrouve = immobilisations.some((i) => {
@@ -497,6 +515,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       />
       {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (
         <p className="error-text">{reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true })}</p>
+      )}
+      {infoInconnue && (
+        <p className="error-text">
+          {infoInconnue} Les points qui en dépendent sont donc absents de la liste ci-dessous —
+          véhicule, tickets restaurant, chèques vacances : ni réclamés, ni déclarés à jour.
+        </p>
       )}
       <div className="bento">
         <div className="span-3">

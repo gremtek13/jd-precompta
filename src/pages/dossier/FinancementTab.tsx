@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
+import { messageErreur } from '../../lib/messageErreur'
 import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
@@ -33,6 +34,9 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   const [tresorerieOuverte, setTresorerieOuverte] = useState(false)
   const [dettesOuvertes, setDettesOuvertes] = useState(false)
   const [previsionnel, setPrevisionnel] = useState<PrevisionnelBancaire | null>(null)
+  // Non nul = on ne SAIT PAS s'il existe un prévisionnel enregistré. Distinct de « il n'y en a
+  // pas » : l'enregistrement est un upsert qui porte TOUS les champs (voir PrevisionnelModal).
+  const [previsionnelIllisible, setPrevisionnelIllisible] = useState<string | null>(null)
   const [previsionnelOuvert, setPrevisionnelOuvert] = useState(false)
 
   async function load() {
@@ -44,7 +48,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       lectureImmobilisations,
       lectureCotisations,
       lectureBanque,
-      { data: previsionnelData },
+      { data: previsionnelData, error: previsionnelError },
     ] = await Promise.all([
       lireTout<Emprunt>((debut, fin) =>
         supabase.from('emprunts').select('*', { count: 'exact' })
@@ -76,6 +80,13 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
         supabase.from('ecritures_brouillon').select('date, sens, montant', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE).order('id').range(debut, fin),
       ),
+      // QUATRIÈME COPIE DE « LECTURE → FORMULAIRE → UPSERT DE TOUS LES CHAMPS », par la porte que
+      // le scanner ne regardait pas : une entrée de `Promise.all` s'écrit sans `await`. Les trois
+      // premières (InformationsTab, ClientInformations, CabinetBrandingPage) sont corrigées depuis
+      // le 21/09/2026 ; celle-ci jetait encore son erreur, donc une lecture refusée rendait
+      // `previsionnel` nul — exactement l'écran d'un dossier qui n'a jamais rien enregistré, bouton
+      // « Générer » compris — et le premier enregistrement écrasait les deux taux ET
+      // `note_hypotheses`, du texte libre que personne ne relit donc que personne ne verrait partir.
       supabase.from('previsionnels_bancaires').select('*').eq('dossier_id', dossierId).maybeSingle(),
     ])
     setEmprunts(lectureEmprunts.lignes)
@@ -84,6 +95,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
     setImmobilisations(lectureImmobilisations.lignes)
     setCotisations(lectureCotisations.lignes)
     setLignesBanque(lectureBanque.lignes as LigneBanque[])
+    setPrevisionnelIllisible(previsionnelError ? messageErreur(previsionnelError, "Le prévisionnel enregistré n'a pas pu être lu.") : null)
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
     setLoading(false)
   }
@@ -157,7 +169,10 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6, flexWrap: 'wrap', gap: 10 }}>
         <h3 style={{ margin: 0 }}>Prévisionnel à 3 ans</h3>
-        <button className="btn btn-outline btn-sm" onClick={() => setPrevisionnelOuvert(true)}>
+        <button
+          className="btn btn-outline btn-sm" onClick={() => setPrevisionnelOuvert(true)}
+          disabled={!!previsionnelIllisible}
+        >
           {previsionnel ? 'Modifier' : 'Générer'}
         </button>
       </div>
@@ -168,6 +183,13 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
           <> Dernière hypothèse enregistrée : {previsionnel.taux_croissance_ca} % CA / {previsionnel.taux_croissance_charges} % charges par an.</>
         )}
       </p>
+      {previsionnelIllisible && (
+        <p className="error-text" style={{ marginTop: -20, marginBottom: 26 }}>
+          {previsionnelIllisible} Le formulaire reste fermé : il s'enregistre en remplaçant tous ses
+          champs, note d'hypothèses comprise, donc l'ouvrir sans avoir lu ce qui existe reviendrait à
+          l'effacer. Ce n'est pas « aucun prévisionnel », c'est « on ne sait pas ».
+        </p>
+      )}
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <h3 style={{ margin: 0 }}>Emprunts</h3>

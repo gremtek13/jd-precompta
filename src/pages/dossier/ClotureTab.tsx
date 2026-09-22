@@ -8,7 +8,7 @@ import { calculerDeclaration2035, dotationsNonProratisees, partCsgNonDeductible,
 import { CASES_2035, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
 import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
 import { remplir2035 } from '../../lib/remplir2035'
-import { cloturerExercice } from '../../lib/clotureExercice'
+import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
@@ -41,9 +41,14 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // décalerait tout le numéro d'un cran, ce qui est pire qu'une grille vide.
   const [dossier, setDossier] = useState<{ nom: string | null; libelle_naf: string | null; siret: string | null } | null>(null)
   const [genere, setGenere] = useState<number | null>(null)
-  // Exercices déjà marqués clôturés (table exercices_clotures) — petite lecture non paginée : au
-  // plus une ligne par année civile pour ce dossier, jamais mille (voir lecturesPaginees.test.ts).
+  // Exercices déjà marqués clôturés (table exercices_clotures), lus par `lireAnneesCloturees` —
+  // seule copie de cette lecture depuis le 22/09/2026, pour que les trois écrans qui s'en servent
+  // en tirent la même chose au même moment, son erreur comprise.
   const [cloturesConnues, setCloturesConnues] = useState<Set<number>>(new Set())
+  // Non nul = on ne sait PAS lesquels sont clôturés, ce qui n'est pas « aucun ». Le bouton propose
+  // alors « Clôturer » sur un exercice peut-être déjà bouclé : le geste reste sûr (rejouer la purge
+  // ne repose pas de seconde ligne, voir lib/clotureExercice.ts) mais l'écran doit le DIRE.
+  const [cloturesInconnues, setCloturesInconnues] = useState<string | null>(null)
   const [clotureMessage, setClotureMessage] = useState<string | null>(null)
   // Exercice partagé avec Pièces/Banque/Écritures/Statistiques, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici. Sa valeur par défaut (voir DossierDetail,
@@ -60,7 +65,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     // cotisation ou une immobilisation manquante est tout aussi plausible, fausse et signée.
     // Le tri est TOTAL partout (`id` en départage) : sans clé unique, deux tranches se recouvrent
     // ou sautent des lignes, et rien ne le signale.
-    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, { data: dossierData }, { data: clotureData }] = await Promise.all([
+    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, { data: dossierData, error: dossierError }, clotures] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -83,18 +88,28 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
       supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
-      supabase.from('exercices_clotures').select('annee').eq('dossier_id', dossierId),
+      // Par `lireAnneesCloturees`, qui REND son erreur — plutôt qu'une lecture nue de plus. Les
+      // trois écrans qui lisent cette table doivent en tirer la même chose au même moment.
+      lireAnneesCloturees(dossierId),
     ])
     setDossier(dossierData ?? null)
-    setCloturesConnues(new Set((clotureData ?? []).map((c: { annee: number }) => c.annee)))
+    setCloturesInconnues(clotures.erreur)
+    setCloturesConnues(new Set(clotures.annees))
     setVehicules(lectureVehicules.lignes)
     setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
     // Un seul drapeau pour les quatre : l'écran n'a rien de plus utile à dire selon laquelle a
     // manqué, et le formulaire se refuse dans tous les cas.
+    //
+    // L'IDENTITÉ DU DOSSIER Y REJOINT LES COLLECTIONS (22/09/2026) : `nom`, `libelle_naf` et
+    // `siret` sont recopiés tels quels dans le formulaire (voir `remplir`), et une lecture refusée
+    // les rendait tous trois nuls — donc une 2035 SIGNÉE sans identité de déclarant, sans qu'aucun
+    // écran ne le dise. Ce n'est pas une lecture « partielle » au sens du plafond PostgREST, mais
+    // le refus qu'elle appelle est exactement le même.
     setLectureIncomplete(
       [lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules]
-        .find((l) => !l.complete)?.motif ?? null,
+        .find((l) => !l.complete)?.motif
+      ?? (dossierError ? messageErreur(dossierError, "l'identité du dossier n'a pas pu être lue") : null),
     )
     setImmobilisations(lectureImmobilisations.lignes)
     setCotisations(lectureCotisations.lignes)
@@ -602,10 +617,19 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
+      {cloturesInconnues && (
+        <p className="error-text">
+          {cloturesInconnues} On ne sait donc pas quels exercices sont déjà clôturés : le bouton
+          ci-dessous propose « Clôturer » même si ça a déjà été fait. Le rejouer ne pose pas de
+          seconde clôture — il rattrape seulement les pièces validées depuis.
+        </p>
+      )}
+
       {lectureIncomplete && (
         <p className="error-text">
-          Une des collections dont dépend la déclaration n'a pas pu être lue en entier
-          ({lectureIncomplete}) — pièces, catégories, immobilisations, cotisations ou véhicules. Les
+          Une des entrées dont dépend la déclaration n'a pas pu être lue en entier
+          ({lectureIncomplete}) — pièces, catégories, immobilisations, cotisations, véhicules ou
+          l'identité du dossier. Les
           montants ci-dessous portent donc sur une partie du dossier, et le remplissage du
           formulaire est bloqué : une 2035 calculée sur une lecture partielle est plausible, fausse,
           et signée.

@@ -45,12 +45,31 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
   const [enregistrerAdresseDossier, setEnregistrerAdresseDossier] = useState(false)
   const [lignes, setLignes] = useState<LigneEdit[]>([ligneVide()])
   const [chargementLignes, setChargementLignes] = useState(!!facture)
+  // Non nul = on ne SAIT PAS ce que cette facture porte comme lignes. Voir l'effet ci-dessous :
+  // ce n'est pas la même chose que « elle n'en a aucune », et le formulaire ne doit pas le confondre.
+  const [lignesIllisibles, setLignesIllisibles] = useState<string | null>(null)
   const [saving, setSaving] = useState<'brouillon' | 'validation' | null>(null)
   const [error, setError] = useState<string | null>(null)
 
+  // UNE LECTURE REFUSÉE NE DOIT PAS PASSER POUR « CETTE FACTURE N'A AUCUNE LIGNE ».
+  //
+  // L'erreur était jetée et `data ?? []` rendait alors une ligne vide, c'est-à-dire exactement le
+  // formulaire d'une facture neuve — avec un total à 0,00 € sous un en-tête qui, lui, porte de
+  // vrais montants. Or `enregistrerFacture` REMPLACE le jeu de lignes : le seul geste que cet
+  // écran propose alors (les retaper) détruit celles qu'on n'a pas su lire, et recalcule l'en-tête
+  // sur ce qu'on vient d'inventer.
+  //
+  // On refuse donc d'ouvrir le formulaire plutôt que d'écraser ce qu'on n'a pas lu — même posture
+  // que `packGenerator` sur une lecture partielle. Ce que ça n'attrape pas, et c'est dit plutôt que
+  // laissé croire : un refus RLS rend zéro ligne SANS erreur (mesuré, voir lib/informationsDossier).
   useEffect(() => {
     if (!facture) return
-    supabase.from('facture_lignes').select('*').eq('facture_id', facture.id).order('ordre').then(({ data }) => {
+    supabase.from('facture_lignes').select('*').eq('facture_id', facture.id).order('ordre').then(({ data, error: lectureError }) => {
+      if (lectureError) {
+        setLignesIllisibles(messageErreur(lectureError, "Les lignes de cette facture n'ont pas pu être lues."))
+        setChargementLignes(false)
+        return
+      }
       const l = (data ?? []) as FactureLigne[]
       setLignes(l.length > 0
         ? l.map((x) => ({ id: x.id, designation: x.designation, quantite: String(x.quantite), prix_unitaire_ht: String(x.prix_unitaire_ht), taux_tva: String(x.taux_tva) }))
@@ -143,6 +162,17 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
         <h2 style={{ marginTop: 0 }}>{facture ? 'Modifier le brouillon' : 'Nouvelle facture'}</h2>
         {chargementLignes ? (
           <p className="muted">Chargement…</p>
+        ) : lignesIllisibles ? (
+          <>
+            <p className="error-text">
+              {lignesIllisibles} Le formulaire reste fermé : l'enregistrement remplace les lignes de
+              la facture, donc ouvrir ce brouillon sans les avoir lues reviendrait à les effacer.
+              Réessaie — la facture, elle, n'est pas touchée.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+            </div>
+          </>
         ) : (
           <form onSubmit={handleSubmit}>
             <div className="field">

@@ -43,11 +43,31 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
   const [mentionsLegales, setMentionsLegales] = useState(factureOrigine.mentions_legales ?? '')
   const [lignes, setLignes] = useState<LigneAvoirEdit[]>([])
   const [chargement, setChargement] = useState(true)
+  // Non nul = on ne SAIT PAS ce que la facture d'origine porte. Distinct d'un tableau vide, qui
+  // voudrait dire « il n'y a rien à créditer » — voir l'effet ci-dessous.
+  const [lignesIllisibles, setLignesIllisibles] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // UNE LECTURE REFUSÉE NE DOIT PAS PASSER POUR « RIEN À CRÉDITER ».
+  //
+  // L'erreur était jetée, donc `lignes` restait VIDE — et cet écran n'a aucun bouton « + Ligne » :
+  // le tableau s'affichait vide sous un paragraphe qui annonce « les lignes ci-dessous sont
+  // pré-remplies pour un avoir total », et « Valider l'avoir » répondait « Au moins une ligne avec
+  // une quantité doit rester à créditer », c'est-à-dire un reproche à l'opérateur pour une panne
+  // de lecture.
+  //
+  // Rectification de ce que j'avais écrit avant de l'exécuter : cette garde EST en place et elle
+  // tient — aucun numéro de la série « A » n'est consommé, aucun avoir vide n'est créé. Ce que ça
+  // coûte est plus étroit et reste réel : la seule façon légale de corriger une facture validée
+  // (CLAUDE.md) paraît impossible, sur un motif faux, et rien ne dit à l'opérateur de réessayer.
   useEffect(() => {
-    supabase.from('facture_lignes').select('*').eq('facture_id', factureOrigine.id).order('ordre').then(({ data }) => {
+    supabase.from('facture_lignes').select('*').eq('facture_id', factureOrigine.id).order('ordre').then(({ data, error: lectureError }) => {
+      if (lectureError) {
+        setLignesIllisibles(messageErreur(lectureError, "Les lignes de la facture d'origine n'ont pas pu être lues."))
+        setChargement(false)
+        return
+      }
       const l = (data ?? []) as FactureLigne[]
       setLignes(l.map((x) => ({
         designation: x.designation,
@@ -151,6 +171,16 @@ export default function FactureAvoirModal({ dossierId, factureOrigine, onClose, 
         </p>
         {chargement ? (
           <p className="muted">Chargement…</p>
+        ) : lignesIllisibles ? (
+          <>
+            <p className="error-text">
+              {lignesIllisibles} Un avoir ne peut pas être créé sans elles : ce n'est pas que cette
+              facture n'ait rien à créditer, c'est qu'on ne l'a pas lue. Réessaie.
+            </p>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button type="button" className="btn btn-outline" onClick={onClose}>Fermer</button>
+            </div>
+          </>
         ) : (
           <>
             <div className="field">

@@ -1334,6 +1334,89 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   c'est-à-dire le formatage normal de ce dépôt. **Troisième fois qu'un scanner de ce projet se fait
   prendre par le retour à la ligne** (après le grep des lectures paginées, puis le test qui l'a
   remplacé). Six mutations mordent, dont ce défaut-là replanté et l'exception INVENTÉE.
+- **ET CE SCANNER-LÀ NE REGARDAIT QU'UNE LECTURE SUR DEUX FORMES — HUIT FAUTES DERRIÈRE, DONT UNE
+  QU'IL AVAIT CORRIGÉE LA VEILLE À SIX LIGNES DE LÀ** (22/09/2026). `lecturesVerifiees.test.ts` part
+  de `await supabase`. Or **une lecture s'écrit aussi SANS `await`** : comme entrée d'un
+  `Promise.all([...])` — le chargement normal d'un écran de ce dépôt — et comme chaîne
+  `.then(({ data }) => …)` dans un `useEffect`. C'est la panne que ce dépôt connaît sous cinq autres
+  noms : **son silence était indiscernable d'un dépôt sain**.
+  **Mesuré : 14 lectures nues, 8 en faute**, toutes de la famille que ce scanner existe pour garder.
+  - **`FinancementTab` était la QUATRIÈME copie de « lecture → formulaire → upsert de tous les
+    champs »**, et c'est ce qui rend le trou coûteux plutôt qu'embarrassant : les trois premières
+    (`InformationsTab`, `ClientInformations`, `CabinetBrandingPage`) ont été corrigées le 21/09/2026
+    PAR CE SCANNER, et celle-ci a survécu un jour de plus **dans le même `Promise.all` que six
+    lectures qu'il voyait**. Une lecture refusée rendait `previsionnel` nul — exactement l'écran
+    d'un dossier qui n'a jamais rien enregistré, bouton « Générer » compris — et le premier
+    enregistrement écrasait les deux taux ET `note_hypotheses`, du texte libre que personne ne relit
+    donc que personne ne verrait partir. Sur le document qu'un cabinet montre à une banque.
+  - **`ClotureTab` produisait une 2035 SIGNÉE sans identité de déclarant.** `nom`, `libelle_naf` et
+    `siret` sont recopiés tels quels dans le formulaire ; la lecture refusée les rendait nuls, et
+    rien ne le disait. Son échec rejoint donc `lectureIncomplete`, le drapeau qui refuse déjà le
+    remplissage — ce n'est pas une lecture « partielle » au sens du plafond PostgREST, mais le refus
+    qu'elle appelle est exactement le même. Sa seconde lecture nue (`exercices_clotures`) passe
+    désormais par `lireAnneesCloturees`, qui rend son erreur : **une table lue par trois écrans ne
+    doit pas avoir une copie qui la lit autrement**.
+  - **`FactureApercu` imprimait une facture SANS LIGNES sous des totaux bien présents** — un
+    document qui se contredit lui-même, sur le seul artefact légal que cet écran produise, et qui
+    part au client par la boîte d'impression du navigateur.
+  - **`FactureFormModal`** affirmait « cette facture n'a aucune ligne » : `enregistrerFacture`
+    REMPLACE le jeu de lignes, donc le seul geste que l'écran propose alors — les retaper — détruit
+    celles qu'on n'a pas su lire et recalcule l'en-tête dessus. Le formulaire ne s'ouvre plus.
+  - **`FactureAvoirModal`, et ici je me suis corrigé par l'exécution** : j'avais écrit qu'il créait
+    un avoir vide en consommant un numéro de la série « A ». **C'est FAUX** — la garde
+    `lignesValides.length === 0` est posée AVANT `attribuerNumeroFacture` et elle tient. Ce que ça
+    coûte est plus étroit et reste réel : cet écran n'a aucun bouton « + Ligne », donc un tableau
+    vide sous « les lignes ci-dessous sont pré-remplies pour un avoir total », et un refus qui dit
+    « Au moins une ligne avec une quantité doit rester à créditer » — **un reproche à l'opérateur
+    pour une panne de lecture**, sur la seule façon légale de corriger une facture validée.
+  - **`ChecklistTab`** réclamait « Informations complémentaires du client » sur une lecture refusée,
+    c'est-à-dire envoyait relancer un client pour des informations déjà saisies, sur l'écran dont
+    c'est le métier de dire ce qui manque. Il passe par `chargerInformationsDossier`, le module écrit
+    pour les deux premières copies — **troisième copie, et la seule qui jetait encore son erreur**.
+  **LA RÈGLE EST LA MÊME POUR LES TROIS PORTES, et elle tient en une phrase : qui prend `data` prend
+  `error`.** Un résultat gardé ENTIER (`const r = …`, puis `r.error`) reste légitime — c'est ce que
+  fait `fichierDejaPresent`, et un test synthétique garde ce cas pour que le scanner ne le crie pas.
+  **CINQ LECTURES NUES SONT LÉGITIMES, résultat à garder pour ne pas les réenquêter** : `branding`
+  (sans réponse, la charte PAR DÉFAUT s'applique — et l'écran qui l'ÉCRIT lit bien son erreur),
+  `DossierDetail` (l'écran garde ses SQUELETTES, il n'affirme rien), `ClientHome` (le dossier n'y
+  sert qu'à la ligne d'accueil), `extraction.fichierDejaPresent` (résultat gardé entier) et
+  `sauvegardeDonnees.requeteDeBase` (un CONSTRUCTEUR de requête, pas un résultat).
+  **ET L'EXCEPTION PORTE DÉSORMAIS UN NOMBRE, pas seulement une raison** — la leçon de
+  `datesUtc.test.ts` reprise ici parce qu'elle était devenue nécessaire : les fichiers dispensés
+  portent AUSSI des lectures correctes, et deux d'entre eux ont gagné une lecture en faute le jour
+  même. Une de plus est une rechute, une de moins est une raison morte. **Et le compte a mordu tout
+  de suite** : j'avais inscrit `sauvegardeDonnees` en exception, le garde l'a refusée puisque le
+  scanner ne la voit pas du tout — donc rien n'y était dispensé.
+  **CE QUI RESTE INVISIBLE EST DIT PLUTÔT QUE LAISSÉ CROIRE** : une requête CONSTRUITE d'un côté et
+  attendue de l'autre (`const requete = requeteDeBase(table)` … `await requete.range(…)`) n'a plus
+  l'ancre `supabase` sur le site qui attend. Une seule dans le dépôt, et son site d'attente lit bien
+  son erreur — vérifié en l'ouvrant, pas en la comptant.
+  **LA PORTE 2 A TROUVÉ UNE CINQUIÈME LECTURE DANS `AuthContext`** que la porte 1 ne pouvait pas
+  voir : `supabase.auth.getSession().then(({ data }) => …)`. Elle est exemptée pour la même raison
+  que `getUser` — sans réponse on n'est pas connecté, donc du côté FERMÉ — et l'exemption reste
+  NOMMÉE, jamais `.auth.` en entier : `auth.admin.*` écrit des comptes, et c'est là qu'un mot de
+  passe jamais posé s'est caché derrière un « ok ». Un cas synthétique garde cette frontière sur
+  chaque porte.
+  **LATENTS, et mesuré** : 0 facture en brouillon (donc `FactureFormModal` ne s'ouvre même pas
+  aujourd'hui), 0 prévisionnel, 0 exercice clôturé ; 6 factures validées, 3 informations de dossier
+  et 4 dossiers, eux, rendent les quatre autres producibles dès maintenant. Comme toute cette
+  famille, ce qui les rend dignes d'être corrigés n'est pas un préjudice constaté mais qu'aucun ne
+  PEUT se voir une fois arrivé.
+  **Neuf mutations, toutes mordent**, et la répartition est le résultat : les deux défauts d'origine
+  replantés font tomber À LA FOIS le scanner et le test d'écran — donc la FORME et le CÂBLAGE sont
+  gardés séparément, là où une seule assertion aurait laissé croire que l'un couvre l'autre. Les
+  sept autres visent le scanner lui-même : chaque porte rendue aveugle (une mutation par porte), les
+  accolades appariées ramenées à `[^}]*` (**sixième fois** que ce dépôt se ferait prendre par la
+  portée d'une expression régulière — ici sur une destructuration imbriquée, donc une faute INVENTÉE
+  sur du code correct), le corps de la porte 2 qui ne s'arrête plus au `supabase` suivant,
+  l'exemption élargie à `.auth.`, le compte d'une exception menti d'une unité, et l'exception
+  INVENTÉE.
+  **ET LE TEST D'ÉCRAN QUE JE VENAIS D'ÉCRIRE ÉTAIT LUI-MÊME INSTABLE — une fois sur trois** :
+  il s'ancrait sur un TITRE, présent dès le premier rendu, donc avant que `load()` ait résolu son
+  `Promise.all`. C'est la pire forme d'échec, assez rare pour passer pour du bruit de CI. Il attend
+  désormais la fin du chargement par le seul signal que l'écran en donne — la tuile « Trésorerie
+  actuelle », qui affiche « — » tant que `loading` est vrai. Trouvé en rejouant `test:fuseaux`
+  plutôt qu'en le relisant, et vérifié par huit passages complets sur quatre fuseaux.
 - **ET LE TROISIÈME JEU D'ESSAI D'ÉCRAN N'ÉTAIT PAS TYPÉ — cinq colonnes manquantes** (21/09/2026).
   Le remède de la contrainte de type avait été appliqué à `ChecklistTab` et `BanqueTab`, pas à
   `PiecesTab`, dont le `piece()` restait un `Record<string, unknown>`. Typé `Partial<Piece> => Piece`
@@ -3716,7 +3799,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1357 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1365 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

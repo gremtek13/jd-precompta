@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
 import type { Categorie, Immobilisation, Piece } from '../../lib/types'
@@ -19,6 +19,9 @@ const faux = vi.hoisted(() => ({
   categories: [] as unknown[],
   immobilisations: [] as unknown[],
   ecritures: [] as unknown[],
+  // Les tables dont la lecture ÉCHOUE. Un faux client qui ne sait pas refuser ne peut rien dire de
+  // la famille « le vide est une affirmation » : il rend le même objet dans les deux cas.
+  refusees: new Set<string>(),
 }))
 
 vi.mock('../../lib/supabase', () => {
@@ -26,7 +29,9 @@ vi.mock('../../lib/supabase', () => {
     const c: Record<string, unknown> = {}
     Object.assign(c, {
       select: () => c, eq: () => c, or: () => c, order: () => c, range: () => c,
-      maybeSingle: () => Promise.resolve({ data: null, error: null }),
+      maybeSingle: () => Promise.resolve(faux.refusees.has(table)
+        ? { data: null, error: { message: 'JWT expired' } }
+        : { data: null, error: null }),
       then: (suite: (r: unknown) => unknown) => {
         const donnees = table === 'pieces' ? faux.pieces
           : table === 'categories' ? faux.categories
@@ -90,7 +95,13 @@ function occurrences(racine: HTMLElement, phrase: string): number {
   return (racine.textContent ?? '').split(phrase).length - 1
 }
 
-afterEach(() => { vi.useRealTimers() })
+afterEach(() => {
+  vi.useRealTimers()
+  // Le faux client est partagé par tout le fichier : une table laissée en refus contaminerait les
+  // tests suivants, et le symptôme (un écran qui ne charge pas) ne ressemble à aucun des défauts
+  // gardés ici.
+  faux.refusees = new Set()
+})
 
 describe('FinancementTab — situation intermédiaire', () => {
   it('rapporte la dotation à la période de l’état, pas à l’année', async () => {
@@ -256,5 +267,63 @@ describe('FinancementTab — ce sur quoi la projection repose', () => {
     faux.ecritures = sixMoisServis()
     const modale = await ouvrir('Dettes & ratios bancaires')
     expect(within(modale).queryAllByText(/ne repose sur rien/)).toHaveLength(0)
+  })
+})
+
+// UNE LECTURE REFUSÉE N'EST PAS « AUCUN PRÉVISIONNEL » (22/09/2026).
+//
+// QUATRIÈME COPIE DE « LECTURE → FORMULAIRE → UPSERT DE TOUS LES CHAMPS », et elle est arrivée par
+// la porte que le scanner ne regardait pas : `lecturesVerifiees.test.ts` part de `await supabase`,
+// or une entrée de `Promise.all` s'écrit sans `await`. Les trois premières copies
+// (InformationsTab, ClientInformations, CabinetBrandingPage) ont été corrigées le 21/09/2026 par ce
+// scanner même ; celle-ci a survécu un jour de plus, à six lignes d'une lecture qu'il voyait.
+//
+// Ce que ça coûtait : `previsionnel` nul est EXACTEMENT l'écran d'un dossier qui n'a jamais rien
+// enregistré — bouton « Générer », pas de ligne « Dernière hypothèse enregistrée ». Le premier
+// enregistrement écrase alors les deux taux ET `note_hypotheses`, du texte libre que personne ne
+// relit, donc que personne ne verrait partir. Sur le document qu'un cabinet montre à une banque.
+//
+// Le module `lib/previsionnel.ts` est juste et le reste : ce qui se joue ici est le CÂBLAGE, qu'aucun
+// test de `src/lib` ne peut voir.
+describe('FinancementTab — le prévisionnel ne s’enregistre pas sur une lecture refusée', () => {
+  // ON ATTEND QUE LE CHARGEMENT AIT ATTERRI, PAS QU'UN TITRE SOIT LÀ.
+  //
+  // Les titres de cet écran sont rendus dès le PREMIER rendu, avant que `load()` n'ait résolu son
+  // `Promise.all` : s'y ancrer rend un test qui passe ou échoue selon l'ordonnancement des
+  // microtâches — le mien a échoué une fois sur trois exécutions de `test:fuseaux`, ce qui est la
+  // pire forme (assez rare pour passer pour du bruit de CI). La tuile « Trésorerie actuelle » affiche
+  // « — » tant que `loading` est vrai : c'est le seul signal de fin de chargement que l'écran donne.
+  async function attendreChargement() {
+    const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
+    await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
+  }
+
+  function carteDuPrevisionnel() {
+    const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
+    return { titre, entete: titre.parentElement as HTMLElement }
+  }
+
+  it('dit qu’on n’a pas lu, et ferme le formulaire', async () => {
+    faux.refusees = new Set(['previsionnels_bancaires'])
+    render(<FinancementTab dossierId="d" />)
+    await attendreChargement()
+
+    const { entete } = carteDuPrevisionnel()
+    expect(screen.getByText(/JWT expired/)).toBeTruthy()
+    expect(screen.getByText(/ce n'est pas « aucun prévisionnel »/i)).toBeTruthy()
+    expect(within(entete).getByRole('button').hasAttribute('disabled')).toBe(true)
+  })
+
+  // LE GARDE SYMÉTRIQUE : sans lui, « le bouton est fermé » serait satisfait par un bouton toujours
+  // fermé — et aucun des tests de situation intermédiaire ci-dessus ne le remarquerait, ils passent
+  // par le bouton de l'AUTRE carte.
+  it('mais laisse générer quand la lecture a réussi', async () => {
+    faux.refusees = new Set()
+    render(<FinancementTab dossierId="d" />)
+    await attendreChargement()
+
+    const { entete } = carteDuPrevisionnel()
+    expect(within(entete).getByRole('button').hasAttribute('disabled')).toBe(false)
+    expect(screen.queryByText(/JWT expired/)).toBeNull()
   })
 })

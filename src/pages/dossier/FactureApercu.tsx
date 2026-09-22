@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from 'react'
 import { supabase } from '../../lib/supabase'
+import { messageErreur } from '../../lib/messageErreur'
 import { calculerLigne } from '../../lib/factures'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { FactureEmise, FactureLigne } from '../../lib/types'
@@ -15,16 +16,30 @@ export default function FactureApercu({ facture, onClose }: { facture: FactureEm
   // requête à part plutôt qu'une jointure : FacturesTab connaît déjà cette info pour ses propres
   // lignes de tableau (elle a toute la liste en mémoire), mais l'aperçu peut aussi être ouvert seul.
   const [numeroOrigine, setNumeroOrigine] = useState<string | null>(null)
+  const [lignesIllisibles, setLignesIllisibles] = useState<string | null>(null)
 
+  // CET APERÇU EST LE DOCUMENT QU'ON IMPRIME ET QU'ON ENVOIE (voir .facture-imprimable).
+  // `data ?? []` sur une lecture refusée y produisait un tableau de lignes VIDE sous des totaux
+  // bien présents — une facture qui se contredit elle-même, sur le seul document légal que cet
+  // écran produise. On dit qu'on n'a pas lu, plutôt que d'imprimer un vide qui ressemble à zéro.
   useEffect(() => {
     supabase.from('facture_lignes').select('*').eq('facture_id', facture.id).order('ordre')
-      .then(({ data }) => setLignes((data ?? []) as FactureLigne[]))
+      .then(({ data, error }) => {
+        if (error) {
+          setLignesIllisibles(messageErreur(error, "Les lignes n'ont pas pu être lues."))
+          return
+        }
+        setLignesIllisibles(null)
+        setLignes((data ?? []) as FactureLigne[])
+      })
   }, [facture.id])
 
+  // Le numéro de la facture corrigée : sur un avoir, c'est une référence qui part au client. Une
+  // lecture refusée le faisait simplement disparaître de l'aperçu, donc de l'impression.
   useEffect(() => {
     if (!facture.facture_origine_id) { setNumeroOrigine(null); return }
     supabase.from('factures_emises').select('numero').eq('id', facture.facture_origine_id).maybeSingle()
-      .then(({ data }) => setNumeroOrigine(data?.numero ?? null))
+      .then(({ data, error }) => setNumeroOrigine(error ? '— non lu' : (data?.numero ?? null)))
   }, [facture.facture_origine_id])
 
   return (
@@ -64,7 +79,9 @@ export default function FactureApercu({ facture, onClose }: { facture: FactureEm
               <tr><th>Désignation</th><th>Qté</th><th>PU HT</th><th>TVA</th><th>Total HT</th><th>Total TTC</th></tr>
             </thead>
             <tbody>
-              {lignes === null ? (
+              {lignesIllisibles ? (
+                <tr><td colSpan={6} className="error-text">{lignesIllisibles}</td></tr>
+              ) : lignes === null ? (
                 <tr><td colSpan={6} className="muted">Chargement…</td></tr>
               ) : (
                 lignes.map((l) => {

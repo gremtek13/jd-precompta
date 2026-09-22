@@ -56,10 +56,9 @@ const EXCEPTIONS: Record<string, string> = {
     "les dossiers de CES memberships-là (`.in('id', ids)`), donc la même borne",
   "src/pages/dossier/AccesTab.tsx [memberships]":
     "les accès client d'UN dossier : une poignée de personnes, pas une base d'utilisateurs",
-  "src/pages/dossier/ClotureTab.tsx [exercices_clotures]":
-    "les exercices déjà clôturés d'UN dossier — au plus une ligne par année civile, jamais mille",
   "src/lib/clotureExercice.ts [exercices_clotures]":
-    "la même borne, lue ici pour les trois écrans « ce qu'il reste à envoyer » : une ligne par année",
+    "les exercices déjà clôturés d'UN dossier — au plus une ligne par année civile, jamais mille. " +
+    "Seule copie depuis le 22/09/2026 : ClotureTab lisait la sienne, nue, et passe par celle-ci",
 }
 
 function fichiersSource(dossier: string): string[] {

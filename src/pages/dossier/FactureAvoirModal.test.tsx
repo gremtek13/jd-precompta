@@ -13,6 +13,9 @@ const faux = vi.hoisted(() => ({
   // La promesse du premier appel RPC reste EN ATTENTE : c'est la fenêtre réelle pendant laquelle
   // un clic surnuméraire arrive. La résoudre tout de suite supprimerait la fenêtre que le verrou ferme.
   resoudreRpc: null as null | ((v: unknown) => void),
+  // Mise à true, la lecture des lignes de la facture d'origine ÉCHOUE — ce qui n'est pas la même
+  // chose que « cette facture n'a pas de lignes », et c'est tout l'objet du second bloc de tests.
+  lectureLignesRefusee: false,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -24,9 +27,10 @@ vi.mock('../../lib/supabase', () => ({
             eq: () => ({
               order: () => ({
                 then: (resolve: (v: unknown) => void) =>
-                  Promise.resolve({
-                    data: [{ designation: 'Consultation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }],
-                  }).then(resolve),
+                  Promise.resolve(faux.lectureLignesRefusee
+                    ? { data: null, error: { message: 'JWT expired' } }
+                    : { data: [{ designation: 'Consultation', quantite: 1, prix_unitaire_ht: 100, taux_tva: 20 }], error: null },
+                  ).then(resolve),
               }),
             }),
           }),
@@ -85,6 +89,7 @@ const factureOrigine: FactureEmise = {
 async function monter() {
   faux.appelsRpc = []
   faux.resoudreRpc = null
+  faux.lectureLignesRefusee = false
   render(
     <FactureAvoirModal dossierId="d1" factureOrigine={factureOrigine} onClose={() => {}} onCreated={() => {}} />,
   )
@@ -128,5 +133,42 @@ describe('FactureAvoirModal — le verrou de création d’un avoir', () => {
 
     await act(async () => { screen.getByRole('button', { name: "Valider l'avoir" }).click() })
     expect(faux.appelsRpc).toHaveLength(2)
+  })
+})
+
+// UNE LECTURE REFUSÉE N'EST PAS « RIEN À CRÉDITER » (22/09/2026).
+//
+// L'erreur de cette lecture était jetée : `lignes` restait vide, et cet écran n'ayant aucun bouton
+// « + Ligne », le tableau s'affichait vide SOUS un paragraphe qui annonce « les lignes ci-dessous
+// sont pré-remplies pour un avoir total ». « Valider l'avoir » répondait alors « Au moins une ligne
+// avec une quantité doit rester à créditer » — un reproche à l'opérateur pour une panne de lecture.
+//
+// Ce que ça coûtait est étroit et réel, et c'est la rectification d'une phrase que j'avais écrite
+// AVANT de l'exécuter : la garde `lignesValides.length === 0` tient, donc aucun numéro de la série
+// « A » n'est consommé et aucun avoir vide n'est créé. Ce qui est perdu est la seule façon légale de
+// corriger une facture validée, sur un motif faux, sans que rien ne dise de réessayer.
+//
+// Aucun test de `src/lib` ne peut le voir : il n'y a pas de calcul ici, seulement un écran qui
+// affirme ou n'affirme pas.
+describe('FactureAvoirModal — une lecture refusée ne passe pas pour « rien à créditer »', () => {
+  it('dit qu’on n’a pas lu, et ne propose pas de valider', async () => {
+    faux.appelsRpc = []
+    faux.lectureLignesRefusee = true
+    render(
+      <FactureAvoirModal dossierId="d1" factureOrigine={factureOrigine} onClose={() => {}} onCreated={() => {}} />,
+    )
+    expect(await screen.findByText(/JWT expired/)).toBeTruthy()
+    expect(screen.getByText(/on ne l'a pas lue/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: "Valider l'avoir" })).toBeNull()
+    expect(faux.appelsRpc).toHaveLength(0)
+  })
+
+  // LE GARDE SYMÉTRIQUE, sans lequel « l'écran refuse de valider » serait satisfait par un écran qui
+  // ne valide JAMAIS — et les trois tests du verrou ci-dessus passeraient encore, puisqu'ils
+  // comptent des appels RPC et non des boutons.
+  it('mais laisse valider quand la lecture a réussi', async () => {
+    const bouton = await monter()
+    expect(bouton).toBeTruthy()
+    expect(screen.queryByText(/on ne l'a pas lue/)).toBeNull()
   })
 })
