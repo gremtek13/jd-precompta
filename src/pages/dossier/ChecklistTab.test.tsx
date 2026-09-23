@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
-import type { Piece } from '../../lib/types'
+import type { LigneBancaire, Piece } from '../../lib/types'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -82,9 +82,21 @@ function piece(o: Partial<Piece> = {}): Piece {
   }
 }
 
+// TYPÉ sans `as`, pour la même raison que `piece()` ci-dessus : c'est le compilateur qui confronte
+// le jeu d'essai à la table.
+function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
+  return {
+    id: 'l1', dossier_id: 'dossier-de-test', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
+    montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null,
+    prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+    created_at: '2026-03-10T00:00:00Z', ...o,
+  }
+}
+
 function poser(pieces: {
   validees?: unknown[]
   aValider?: unknown[]
+  lignes?: unknown[]
   clotures?: { annee: number }[]
   clotureRefusee?: boolean
   tronquees?: string[]
@@ -93,7 +105,7 @@ function poser(pieces: {
     'pieces:validee': pieces.validees ?? [],
     'pieces:a_valider': pieces.aValider ?? [],
     pieces: [...(pieces.validees ?? []), ...(pieces.aValider ?? [])],
-    cotisations_declarees: [], lignes_bancaires: [], immobilisations: [],
+    cotisations_declarees: [], lignes_bancaires: pieces.lignes ?? [], immobilisations: [],
     natures_immobilisation: [], categories: [], ecritures_brouillon: [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
     exercices_clotures: pieces.clotures ?? [],
@@ -351,5 +363,46 @@ describe('ChecklistTab — le 1er janvier, l’exercice révolu reste réclamé 
 
     await screen.findByText('Relevés bancaires 2026')
     expect(screen.queryAllByText(/n'ont pas pu être lues en entier/)).toHaveLength(0)
+  })
+})
+
+// LE POINT QUI MANQUAIT À CET ÉCRAN — et le pire silence possible pour lui. La Checklist comptait
+// les mouvements `non_rapprochee` et rien d'autre : un mouvement que le dossier DIT rapproché et qui
+// ne désigne plus rien lui était donc invisible, sur l'écran dont le métier est de dire ce qui
+// manque. Les deux clés du côté banque sont en `ON DELETE SET NULL` : supprimer la pièce ou
+// l'échéance de cotisation défait le lien sans un mot et laisse `statut` à `'rapprochee'`.
+//
+// Une cotisation n'engendre aucune écriture — la piste d'audit et les contrôles d'Écritures partent
+// tous de l'écriture ou de la pièce, jamais du mouvement. Personne d'autre n'en parlerait.
+describe('ChecklistTab — un mouvement rapproché qui ne désigne plus rien', () => {
+  const POINT = /rapproché\(s\) sans justificatif/
+
+  it('le compte', async () => {
+    poser({ lignes: [ligne({ id: 'orphelin', piece_id: null, cotisation_id: null })] })
+    monter()
+
+    const trouve = await screen.findByText(POINT)
+    expect(trouve.textContent).toMatch(/^1 /)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la Checklist compte les orphelins » serait satisfait par un
+  // point qui compte TOUS les mouvements rapprochés — et un point qui crie sur un dossier en ordre
+  // finit par ne plus être lu, en emportant ses voisins.
+  it('se tait sur un rapprochement qui désigne bien une pièce, et sur un mouvement à traiter', async () => {
+    poser({
+      lignes: [
+        ligne({ id: 'sur-piece', piece_id: 'p1' }),
+        ligne({ id: 'sur-cotisation', piece_id: null, cotisation_id: 'c1' }),
+        // Celui-ci a son propre point, « ligne(s) bancaire(s) non rapprochée(s) » : le compter ici
+        // aussi ferait dire deux fois la même chose, sous deux gravités différentes.
+        ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null, cotisation_id: null }),
+      ],
+    })
+    monter()
+
+    // Ancré sur un point que ce jeu d'essai déclenche forcément : vérifier une ABSENCE sur un écran
+    // encore en chargement rendrait le test vert pour une raison fausse.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
   })
 })

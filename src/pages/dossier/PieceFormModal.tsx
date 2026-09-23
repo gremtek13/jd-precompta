@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import { suggererCategorie } from '../../lib/tiersCategories'
-import { LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
+import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT, LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
 import { convertirMontants, deviseDuTexte, DEVISE_PIVOT, libelleConversion } from '../../lib/devises'
 import { tauxBce } from '../../lib/tauxChange'
 import { useAuth } from '../../context/AuthContext'
@@ -381,17 +381,24 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
 
   async function handleDelete() {
     if (!piece) return
-    if (!window.confirm(`Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.`)) return
+    if (!window.confirm(
+      `Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.\n\n${AVERTISSEMENT_RAPPROCHEMENT_DEFAIT}`,
+    )) return
     setDeleting(true)
     setError(null)
     try {
       const { error: deleteError } = await supabase.from('pieces').delete().eq('id', piece.id)
       if (deleteError) {
-        // Contrainte de clé étrangère (23503) : la pièce est encore référencée ailleurs (rapprochement
-        // bancaire, pack déjà généré) — message clair plutôt que l'erreur Postgres brute.
+        // Contrainte de clé étrangère (23503) : la pièce est encore référencée par une table qui
+        // REFUSE la suppression. Gardé comme garde-fou, mais ce chemin ne peut pas se lever
+        // aujourd'hui — mesuré le 23/09/2026, les cinq clés entrantes de `pieces` sont en SET NULL
+        // ou CASCADE, et `packs` n'a aucune clé entrante (`pack_pieces` a été supprimée). Le message
+        // d'avant nommait justement ces deux liens-là et envoyait « retirer » ce qui ne bloque rien ;
+        // il ne devine donc plus la cause, il dit ce qu'on sait et rend la raison de Postgres.
         if (deleteError.code === '23503') {
           throw new Error(
-            "Impossible de supprimer : cette pièce est liée à un rapprochement bancaire ou à un pack déjà généré. Retire d'abord ce lien avant de la supprimer."
+            'Impossible de supprimer : cette pièce est encore référencée ailleurs dans la base. '
+            + `Raison rendue par la base : ${messageErreur(deleteError, 'aucune')}`,
           )
         }
         throw deleteError

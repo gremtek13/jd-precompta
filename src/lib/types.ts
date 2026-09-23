@@ -78,7 +78,16 @@ export interface LigneBancaire {
   piece_id: string | null
   // Rattache le mouvement à une échéance de cotisations_declarees plutôt qu'à une pièce — un
   // prélèvement URSSAF/CARPIMKO n'a pas de facture, juste un montant appelé sur un échéancier.
-  // Mutuellement exclusif avec piece_id (contrainte en base).
+  //
+  // MUTUELLEMENT EXCLUSIF AVEC `piece_id`, ET C'EST L'APPLICATION QUI LE TIENT, PAS LA BASE. Ce
+  // commentaire disait « contrainte en base » ; mesuré le 23/09/2026, `lignes_bancaires` ne porte
+  // AUCUNE contrainte CHECK, et 0 ligne porte les deux. Les quatre écrivains posent bien l'un en
+  // annulant l'autre (BanqueTab : rapprocher sur une pièce, sur une cotisation, annuler, virement
+  // personnel) et `planRapprochementAutomatique` ne rend jamais les deux.
+  // Porter la garantie dans la base demanderait une migration sur `lignes_bancaires`, qui est l'une
+  // des douze tables du socle (supabase/schema/socle/) : la contrainte se retrouverait alors à la
+  // fois dans une migration et dans l'export du socle, donc rejouée deux fois le jour d'une reprise.
+  // C'est une passe à part, pas un ajout en passant — voir CLAUDE.md.
   cotisation_id: string | null
   // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
   // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.

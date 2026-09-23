@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, moisEnDoubleSurAbonnement, mouvementRapprocheSansObjet, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import { aujourdHuiSql, ajouterJours, dateLocaleDe } from './format'
-import type { Categorie, Piece } from './types'
+import type { Categorie, LigneBancaire, Piece } from './types'
 
 const categorie = (o: Partial<Categorie>): Categorie =>
   ({ id: 'c1', dossier_id: null, libelle: 'Achats', code: 'achats', compte_comptable: '606100',
@@ -402,5 +402,65 @@ describe('moisEnDoubleSurAbonnement', () => {
 
   it('rend une liste vide sur un abonnement sain', () => {
     expect(moisEnDoubleSurAbonnement(abonnement(['2025-03', '2025-04', '2025-05', '2025-06']))).toEqual([])
+  })
+})
+
+// TYPÉ, et sans `as` : le compilateur vérifie alors chaque champ contre `LigneBancaire`, donc contre
+// la table. C'est le même remède que le `piece()` de PiecesTab, où il avait sorti cinq colonnes
+// manquantes qu'aucune relecture ne montrait.
+const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
+  id: 'l1', dossier_id: 'd1', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
+  montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null,
+  prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+  created_at: '2026-03-10T00:00:00Z', ...o,
+})
+
+describe('mouvementsRapprochesSansObjet', () => {
+  it('signale le mouvement qui se dit rapproché et ne désigne plus rien', () => {
+    // L'état exact que laisse une suppression de pièce ou d'échéance : les deux clés du côté banque
+    // sont en `ON DELETE SET NULL`, donc Postgres défait le lien et `statut` ne bouge pas.
+    const trouves = mouvementsRapprochesSansObjet([
+      ligne({ id: 'orphelin', piece_id: null, cotisation_id: null }),
+    ])
+    expect(trouves.map((l) => l.id)).toEqual(['orphelin'])
+  })
+
+  it('se tait sur un rapprochement qui désigne bien une pièce ou une cotisation', () => {
+    expect(mouvementsRapprochesSansObjet([
+      ligne({ id: 'sur-piece', piece_id: 'p1', cotisation_id: null }),
+      ligne({ id: 'sur-cotisation', piece_id: null, cotisation_id: 'c1' }),
+    ])).toEqual([])
+  })
+
+  it("se tait sur un mouvement non rapproché, qui n'affirme rien", () => {
+    // LE CAS NORMAL, et de très loin le plus fréquent : 922 des 954 lignes en base sont dans cet
+    // état. Un contrôle qui les signalerait ne serait pas bruyant, il serait inutilisable.
+    expect(mouvementsRapprochesSansObjet([
+      ligne({ statut: 'non_rapprochee', piece_id: null, cotisation_id: null }),
+      ligne({ statut: 'ignoree', piece_id: null, cotisation_id: null }),
+    ])).toEqual([])
+  })
+
+  it('signale aussi un virement personnel qui se dirait rapproché', () => {
+    // DÉFENSIF, et annoncé comme tel plutôt que déguisé en cas réel : un virement personnel est
+    // classé `'ignoree'` par BanqueTab, donc cette combinaison n'existe pas en base (mesuré : les 3
+    // prélèvements personnels y sont tous `'ignoree'`). Le prédicat porte sur ce que la ligne
+    // AFFIRME, et un virement personnel « rapproché » n'affirme pas quelque chose de plus vrai.
+    expect(mouvementsRapprochesSansObjet([
+      ligne({ id: 'perso', prelevement_personnel: true, piece_id: null, cotisation_id: null }),
+    ]).map((l) => l.id)).toEqual(['perso'])
+  })
+
+  it('le prédicat unitaire et la version tableau disent la même chose', () => {
+    // L'onglet Banque a besoin du prédicat LIGNE PAR LIGNE pour sa pastille, la Checklist du
+    // tableau : deux règles séparées finiraient par diverger, et la pastille verte reviendrait
+    // sous un point de Checklist qui, lui, compterait bien.
+    const lignes = [
+      ligne({ id: 'a', piece_id: null, cotisation_id: null }),
+      ligne({ id: 'b', piece_id: 'p1' }),
+      ligne({ id: 'c', statut: 'non_rapprochee', piece_id: null, cotisation_id: null }),
+      ligne({ id: 'd', piece_id: null, cotisation_id: 'c1' }),
+    ]
+    expect(mouvementsRapprochesSansObjet(lignes)).toEqual(lignes.filter(mouvementRapprocheSansObjet))
   })
 })

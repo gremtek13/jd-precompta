@@ -2,7 +2,8 @@ import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
-import { LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesTvaImpossible } from '../../lib/controles'
+import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT, LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesTvaImpossible } from '../../lib/controles'
+import { messageErreur } from '../../lib/messageErreur'
 import { DEVISE_PIVOT } from '../../lib/devises'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
 import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
@@ -326,19 +327,30 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     }
   }
 
-  // Suppression ligne par ligne (pas un .in() groupé) : une pièce encore liée à un rapprochement
-  // bancaire ou à un pack déjà généré bloque sur une contrainte de clé étrangère (23503) — ça ne doit
-  // pas empêcher de supprimer le reste de la sélection, juste être compté à part.
+  // Suppression ligne par ligne (pas un `.in()` groupé) : l'échec sur une pièce ne doit pas empêcher
+  // de supprimer le reste de la sélection, juste être compté à part.
+  //
+  // LE MOTIF D'ORIGINE ÉTAIT FAUX, ET SON MESSAGE ENVOYAIT CHERCHER UN LIEN QUI NE BLOQUE RIEN. Il
+  // annonçait une contrainte de clé étrangère (23503) « rapprochement bancaire ou pack déjà généré ».
+  // Mesuré le 23/09/2026 : les CINQ clés étrangères entrantes de `pieces` sont en SET NULL ou
+  // CASCADE, aucune en NO ACTION — une suppression de pièce ne peut donc JAMAIS lever 23503 ; et
+  // `packs` n'a aucune clé entrante du tout, `pack_pieces` ayant été supprimée. « Retire d'abord ce
+  // lien » ne désignait donc rien à retirer, pendant que la vraie conséquence — le rapprochement
+  // bancaire défait en silence — n'était nommée nulle part.
+  //
+  // Le compte reste (un refus RLS, une coupure), mais il RAPPORTE sa raison au lieu de l'inventer.
   async function deleteSelection() {
     if (selected.size === 0) return
-    if (!window.confirm(`Supprimer définitivement ${selected.size} pièce(s) ? Cette action est irréversible.`)) return
+    if (!window.confirm(
+      `Supprimer définitivement ${selected.size} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_RAPPROCHEMENT_DEFAIT}`,
+    )) return
     let supprimees = 0
-    let bloquees = 0
+    const echecs: string[] = []
     for (const id of selected) {
       const piece = pieces.find((p) => p.id === id)
       const { error } = await supabase.from('pieces').delete().eq('id', id)
       if (error) {
-        bloquees++
+        echecs.push(messageErreur(error))
         continue
       }
       if (piece?.storage_path) {
@@ -348,9 +360,11 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     }
     setSelected(new Set())
     load()
-    if (bloquees > 0) {
+    if (echecs.length > 0) {
+      // La RAISON plutôt qu'une cause devinée : les motifs distincts, sans les répéter autant de
+      // fois qu'il y a de pièces (un refus RLS les frappe toutes de la même façon).
       window.alert(
-        `${supprimees} pièce(s) supprimée(s). ${bloquees} n'ont pas pu l'être (liées à un rapprochement bancaire ou à un pack déjà généré) — retire d'abord ce lien.`,
+        `${supprimees} pièce(s) supprimée(s). ${echecs.length} n'ont pas pu l'être :\n${[...new Set(echecs)].join('\n')}`,
       )
     }
   }

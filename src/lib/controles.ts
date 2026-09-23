@@ -1,5 +1,5 @@
 import { ajouterJours, aujourdHuiSql, cleFournisseur, dateLocaleDe } from './format'
-import type { Categorie, Piece } from './types'
+import type { Categorie, LigneBancaire, Piece } from './types'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
 // où ces règles vivent, utilisés à la fois là où ils bloquent une action (Écritures, Clôture) et dans
@@ -316,6 +316,56 @@ export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonn
   }
 
   return trouves.sort((a, b) => a.mois.localeCompare(b.mois) || a.tiers.localeCompare(b.tiers))
+}
+
+// UN MOUVEMENT BANCAIRE QUI SE DIT RAPPROCHÉ ET NE DÉSIGNE RIEN. Cinquième frappe de « un contrôle
+// qui part d'un côté d'une relation ne voit pas ce qui manque de l'autre » (voir CLAUDE.md), et la
+// première qui parte du MOUVEMENT : les quatre précédentes partaient de la pièce, de l'écriture ou
+// de la catégorie. Le côté banque a pourtant ses deux clés à lui, et elles sont TOUTES DEUX en
+// `ON DELETE SET NULL` — mesuré : les 5 clés étrangères entrantes de `pieces` et les 2 de
+// `cotisations_declarees` sont en SET NULL ou CASCADE, aucune en NO ACTION. Supprimer une pièce ou
+// une échéance de cotisation ne bloque donc JAMAIS : Postgres défait le lien sans un mot, et
+// `statut` reste `'rapprochee'`.
+//
+// CE QUE ÇA COÛTE, et c'est la forme la plus chère de cette famille — le vide est une AFFIRMATION :
+//   - la Checklist ne compte que les `non_rapprochee`, donc elle se TAIT sur ce mouvement, sur
+//     l'écran dont le métier est de dire ce qui manque ;
+//   - l'onglet Banque affiche une pastille VERTE « Rapproché » — et elle est indiscernable d'un vrai
+//     rapprochement, une pièce sans tiers rendant exactement le même libellé nu ;
+//   - la piste d'audit part de l'écriture et du justificatif, jamais du mouvement : une cotisation
+//     ne produit aucune écriture, donc rien nulle part ne le mentionne.
+// Le rapprochement était la seule chose qui rattachait cet euro à un justificatif ; une fois le lien
+// nul, plus aucun écran ne peut le retrouver.
+//
+// SEUL LE LIEN NUL EST RETENU, jamais « désigne une pièce absente du jeu chargé » — c'est la règle
+// déjà posée pour `rupturesPisteAudit` : ce signal-là ne dépend d'aucun jeu de données à côté, donc
+// il ne peut pas crier au loup sur un artefact de filtrage.
+//
+// `prelevement_personnel` n'est PAS écarté du prédicat, délibérément : un virement personnel est
+// classé `'ignoree'` (voir BanqueTab), donc il n'y entre pas de toute façon, et l'écarter laisserait
+// croire qu'un virement personnel « rapproché » serait légitime. Il ne l'est pas davantage.
+//
+// LATENT, et mesuré le 23/09/2026 : 26 lignes rapprochées en base, 12 sur une pièce et 14 sur une
+// cotisation, ZÉRO orpheline. Ce qui le rend digne d'être corrigé n'est pas un préjudice constaté
+// mais qu'il ne PEUT pas se voir une fois arrivé — et que deux gestes de l'interface le produisent.
+//
+// Le prédicat est exporté À L'UNITÉ parce que l'onglet Banque en a besoin LIGNE PAR LIGNE, pour sa
+// pastille : le réécrire là-bas serait une règle recopiée deux fois, qui n'attend pas de diverger.
+export function mouvementRapprocheSansObjet(ligne: LigneBancaire): boolean {
+  return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id
+}
+
+// Ce que TOUTE suppression d'une pièce ou d'une échéance de cotisation fait au rapprochement qui
+// la désignait, dit à l'opérateur AVANT qu'il confirme — la règle du projet est qu'une confirmation
+// nomme ce qu'on perd. Ici, elle vit à côté du contrôle qui la rend vraie plutôt que recopiée dans
+// les trois écrans qui l'affichent : la même phrase écrite trois fois n'attend pas de diverger.
+export const AVERTISSEMENT_RAPPROCHEMENT_DEFAIT =
+  'Si un mouvement bancaire est rapproché dessus, le lien est défait sans que le mouvement '
+  + 'redevienne à traiter : il restera marqué rapproché sans justificatif, et signalé comme tel '
+  + 'dans Banque et dans la Checklist.'
+
+export function mouvementsRapprochesSansObjet(lignes: LigneBancaire[]): LigneBancaire[] {
+  return lignes.filter(mouvementRapprocheSansObjet)
 }
 
 function indexMois(dateSql: string): number {

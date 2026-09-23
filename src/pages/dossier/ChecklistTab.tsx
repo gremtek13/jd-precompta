@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -286,6 +286,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // écritures) : un mouvement bancaire importé mais jamais rattaché à une pièce, une cotisation, ou
   // marqué personnel/à ignorer — le seul cycle du dossier qui manquait encore à ce tableau de bord.
   const lignesNonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
+  // L'AUTRE MOITIÉ, et celle qui ne se voyait nulle part : un mouvement que le dossier DIT rapproché
+  // et qui ne désigne plus rien. Le point ci-dessus ne compte que les `non_rapprochee`, donc il se
+  // tait exactement dessus — sur l'écran dont le métier est de dire ce qui manque. Voir
+  // `mouvementsRapprochesSansObjet` : les deux clés du côté banque sont en `ON DELETE SET NULL`.
+  const rapprochesSansObjet = mouvementsRapprochesSansObjet(lignes)
   // Signal plus grave que « en attente de rapprochement » : un montant qui n'apparaît nulle part dans
   // le relevé importé, à aucune date, révèle soit un relevé incomplet soit un montant faux — voir
   // lib/appariementBanque.ts. Ne porte que sur les pièces jamais rattachées à un mouvement, comme
@@ -350,6 +355,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // Avant les autres points d'Écritures : ceux-là disent qu'il MANQUE quelque chose, celui-ci que
     // le brouillon compte quelque chose de faux — une charge immobilisée y est comptée deux fois.
     { id: 'ecritures-sans-objet', label: 'écriture(s) que la pièce ne justifie plus', action: "Retirer l'écriture ou corriger la pièce", nb: ecrituresSansObjetDuDossier.length, cible: 'ecritures', severite: 'erreur' },
+    // Même famille qu'« écriture(s) que la pièce ne justifie plus », de l'autre côté de la relation :
+    // là c'est le brouillon qui compte quelque chose de faux, ici c'est le relevé qui AFFIRME être
+    // justifié. En « erreur » parce que ce n'est pas un travail en retard mais une donnée démontrée
+    // fausse — et parce que le mouvement est sorti de tous les écrans qui auraient pu le rattraper.
+    { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
     { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention', detail: detailPiecesSansDate(piecesConfianceBasse) },
     { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', action: 'Compléter le compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },

@@ -2,7 +2,7 @@ import { act, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
-import type { Piece } from '../../lib/types'
+import type { LigneBancaire, Piece } from '../../lib/types'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
 // `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
@@ -10,7 +10,7 @@ import type { Piece } from '../../lib/types'
 // donc deux fois dans le même lot — même défaut que VehiculesCard, ImportDossierModal et « C'est une
 // facture » (DocumentsTab), retrouvé ici en écrivant le test plutôt qu'en relisant le code.
 const faux = vi.hoisted(() => ({
-  lignes: [] as Record<string, unknown>[],
+  lignes: [] as LigneBancaire[],
   pieces: [] as unknown[],
   updatesLignes: [] as Record<string, unknown>[],
   // La promesse de la première mise à jour de ligne bancaire est gardée en attente : c'est la
@@ -54,7 +54,9 @@ vi.mock('../../lib/supabase', () => {
           // "non_rapprochee" et le bouton réapparaîtrait à tort.
           return new Promise((resoudre) => {
             faux.resoudreUpdateLigne = () => {
-              faux.lignes = faux.lignes.map((l) => (l.id === idFiltre ? { ...l, ...valeurMaj } : l))
+              // `as` ici seulement : on simule le serveur qui applique un `update` partiel. La FABRIQUE,
+              // elle, reste typée sans `as` — c'est là que le compilateur doit mordre.
+              faux.lignes = faux.lignes.map((l) => (l.id === idFiltre ? { ...l, ...valeurMaj } as LigneBancaire : l))
               resoudre({ data: null, error: null })
             }
           }).then(suite)
@@ -63,13 +65,18 @@ vi.mock('../../lib/supabase', () => {
           return Promise.resolve({ data: faux.lignes, error: null, count: faux.lignes.length }).then(suite)
         }
         if (table === 'pieces') {
-          return Promise.resolve({ data: faux.pieces, error: null }).then(suite)
+          // Le `count` est OBLIGATOIRE ici : sans total annoncé, `lireTout` déclare la lecture
+          // INCOMPLÈTE (voir lib/lectureComplete.ts) et l'écran bascule sur son bandeau de lecture
+          // partielle. Les tests d'avant passaient dans cet état dégradé — donc pour une raison qui
+          // n'était pas celle qu'ils annonçaient. C'est le coût récurrent de `lireTout`, et il se
+          // paie une fois par faux client.
+          return Promise.resolve({ data: faux.pieces, error: null, count: faux.pieces.length }).then(suite)
         }
         // cotisations_declarees, regles_bancaires_ignorees, controles_releves_bancaires,
         // ecritures_brouillon (lu avant contrepartie — vide fait renoncer à l'insertion, ce qui
         // évite d'avoir à modéliser aussi cette écriture ici) : rien de tout ça n'intervient dans
         // ce que ce test vérifie.
-        return Promise.resolve({ data: [], error: null }).then(suite)
+        return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
       },
     })
     return c
@@ -77,11 +84,15 @@ vi.mock('../../lib/supabase', () => {
   return { supabase: { from: (table: string) => chaine(table) } }
 })
 
-function ligneDeTest() {
+// TYPÉ, et sans `as`, comme `pieceDeTest` juste en dessous : le compilateur confronte alors chaque
+// champ à `LigneBancaire`, donc à la table. Il a sorti `created_at`, absent depuis toujours de ce
+// jeu d'essai — même remède que les cinq colonnes manquantes du `piece()` de PiecesTab.
+function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -100,
     libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, prelevement_personnel: false, source_fichier: null,
+    created_at: '2025-06-02T09:00:00Z', ...o,
   }
 }
 
@@ -170,5 +181,61 @@ describe('BanqueTab — Tout rapprocher automatiquement', () => {
 
     await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
     expect(screen.queryByText(/plusieurs pièces ou échéances possibles/)).toBeNull()
+  })
+})
+
+// UNE PASTILLE VERTE QUI SURVIT À CE QU'ELLE AFFIRMAIT. Les deux clés du côté banque
+// (`piece_id`, `cotisation_id`) sont en `ON DELETE SET NULL` : supprimer la pièce ou l'échéance ne
+// bloque pas, elle défait le lien en silence et `statut` reste `'rapprochee'`. L'écran affichait
+// alors « Rapproché » en vert, indiscernable d'un vrai rapprochement — une pièce sans tiers rend
+// exactement le même libellé nu — pendant que la Checklist, qui ne compte que les
+// `non_rapprochee`, se taisait.
+//
+// Aucun test de `src/lib` ne peut le voir : `mouvementRapprocheSansObjet` est juste, c'est son
+// CÂBLAGE à la pastille qui décide de ce que l'opérateur lit.
+describe('BanqueTab — un mouvement rapproché qui ne désigne plus rien', () => {
+  it("le dit au lieu d'afficher la pastille verte", async () => {
+    reinitialiser()
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: null, cotisation_id: null })]
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+
+    // L'écran s'ouvre sur « Non rapprochés » : c'est justement ce filtre qui fait disparaître le
+    // mouvement orphelin de la vue par défaut, une raison de plus pour que sa pastille dise vrai.
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+
+    await screen.findByText('Rapproché sans justificatif')
+    expect(screen.queryAllByText(/^Rapproché$/)).toHaveLength(0)
+
+    // LE PANNEAU EST UNE SECONDE COPIE DE LA MÊME PASTILLE, et il faut l'OUVRIR pour la voir : une
+    // assertion qui reste sur la liste laisserait le panneau mentir tout seul, et la mutation qui
+    // ne corrige qu'un des deux sites passerait au vert.
+    await act(async () => { screen.getByText('PRLV SEPA FOURNISSEUR').click() })
+    expect(screen.queryAllByText('Rapproché sans justificatif')).toHaveLength(2)
+    expect(screen.queryAllByText(/^Rapproché$/)).toHaveLength(0)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la pastille ne ment plus » serait satisfait par un écran qui
+  // crierait au justificatif manquant sur TOUS les rapprochements, y compris les vrais.
+  it('laisse la pastille verte à un rapprochement qui désigne bien une pièce', async () => {
+    reinitialiser()
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1' })]
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+
+    await screen.findByText(/Rapproché — Fournisseur/)
+    expect(screen.queryAllByText('Rapproché sans justificatif')).toHaveLength(0)
+
+    await act(async () => { screen.getByText('PRLV SEPA FOURNISSEUR').click() })
+    expect(screen.queryAllByText(/Rapproché — Fournisseur/)).toHaveLength(2)
+    expect(screen.queryAllByText('Rapproché sans justificatif')).toHaveLength(0)
   })
 })

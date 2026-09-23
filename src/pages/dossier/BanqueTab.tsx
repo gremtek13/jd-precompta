@@ -16,6 +16,7 @@ import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE_RAPPROCHEMENT,
   libelleExploitable, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
+import { mouvementRapprocheSansObjet } from '../../lib/controles'
 import { reglerPieceSurBanque } from '../../lib/reglementDevise'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -751,7 +752,14 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                     <td>{formatMoney(l.montant)}</td>
                     <td>
                       {l.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && (
+                      {/* Une pastille VERTE sur un mouvement qui ne désigne plus rien est une
+                          affirmation fausse, et elle est indiscernable d'un vrai rapprochement : une
+                          pièce sans tiers rend exactement le même libellé nu. Voir
+                          `mouvementRapprocheSansObjet` pour ce qui la produit. */}
+                      {!l.prelevement_personnel && mouvementRapprocheSansObjet(l) && (
+                        <span className="badge badge-danger">Rapproché sans justificatif</span>
+                      )}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !mouvementRapprocheSansObjet(l) && (
                         <span className="badge badge-ok">
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
@@ -866,7 +874,10 @@ function PanneauLigne({
 
         <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           {ligne.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && (
+          {!ligne.prelevement_personnel && mouvementRapprocheSansObjet(ligne) && (
+            <span className="badge badge-danger">Rapproché sans justificatif</span>
+          )}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !mouvementRapprocheSansObjet(ligne) && (
             <span className="badge badge-ok">
               Rapproché
               {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}

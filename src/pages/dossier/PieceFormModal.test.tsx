@@ -1,6 +1,8 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import PieceFormModal from './PieceFormModal'
+import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
+import type { Piece } from '../../lib/types'
 
 // Le verrou d'exécution de l'enregistrement d'une pièce (CLAUDE.md, « un verrou d'exécution est un
 // `useRef`, jamais un état React »). C'est le dernier des quatre verrous corrigés le 20/09/2026 à
@@ -18,6 +20,7 @@ import PieceFormModal from './PieceFormModal'
 const faux = vi.hoisted(() => ({
   inserts: [] as unknown[],
   uploads: [] as string[],
+  suppressions: [] as unknown[],
   // La promesse du premier `insert` reste EN ATTENTE : c'est la fenêtre réelle pendant laquelle un
   // second envoi arrive. La résoudre tout de suite supprimerait la fenêtre que le verrou ferme.
   resoudreInsert: null as null | ((v: unknown) => void),
@@ -33,6 +36,12 @@ vi.mock('../../lib/supabase', () => ({
             return new Promise((resolve) => { faux.resoudreInsert = resolve })
           },
           update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+          delete: () => ({
+            eq: (_c: string, id: unknown) => {
+              faux.suppressions.push(id)
+              return Promise.resolve({ error: null })
+            },
+          }),
         }
       }
       // Volontairement bruyant : une table inattendue doit nommer ce que le test n'avait pas prévu,
@@ -149,5 +158,73 @@ describe('PieceFormModal — le verrou d’enregistrement d’une pièce', () =>
     const brouillon = screen.getByRole('button', { name: 'Enregistrer brouillon' })
     await act(async () => { brouillon.click(); brouillon.click(); brouillon.click() })
     expect(faux.inserts).toHaveLength(1)
+  })
+})
+
+// UNE CONFIRMATION NOMME CE QU'ON PERD — et celle-ci ne le faisait pas, sur le seul effet de la
+// suppression qui ne se voit nulle part ensuite. `lignes_bancaires.piece_id` est en
+// `ON DELETE SET NULL` : le mouvement rapproché sur cette pièce garde `statut = 'rapprochee'` et ne
+// désigne plus rien. Le message d'avant disait même l'inverse — « cette pièce est liée à un
+// rapprochement bancaire […] retire d'abord ce lien » — alors que ce lien ne bloque RIEN : mesuré le
+// 23/09/2026, aucune des cinq clés entrantes de `pieces` n'est en NO ACTION, donc 23503 ne peut pas
+// se lever ici.
+function pieceDeTest(o: Partial<Piece> = {}): Piece {
+  return {
+    id: 'piece-1', dossier_id: 'd1', uploaded_by: null, source: 'upload',
+    storage_path: 'd1/facture.pdf', nom_fichier: 'facture.pdf', storage_hash: null,
+    date_piece: '2026-03-10', tiers: 'Fournisseur', montant_ht: null, montant_tva: null,
+    montant_ttc: 120, devise: 'EUR', montant_devise: null, taux_change: null,
+    conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    created_at: '2026-03-10T09:00:00Z', updated_at: '2026-03-10T09:00:00Z', ...o,
+  }
+}
+
+function monterSurPieceExistante() {
+  faux.inserts = []
+  faux.uploads = []
+  faux.suppressions = []
+  render(
+    <PieceFormModal
+      dossierId="d1"
+      categories={[]}
+      sousDossiers={[]}
+      tiersCategories={[]}
+      tiersCategoriesCabinet={[]}
+      tiersConnus={[]}
+      piece={pieceDeTest()}
+      commentaires={[]}
+      onClose={() => {}}
+      onSaved={() => {}}
+      onCommentaireAjoute={() => {}}
+      onCommentaireSupprime={() => {}}
+    />,
+  )
+  return screen.getByRole('button', { name: /Supprimer/ })
+}
+
+describe('PieceFormModal — supprimer une pièce dit ce que ça défait', () => {
+  it('nomme le rapprochement bancaire défait dans la confirmation', async () => {
+    const bouton = monterSurPieceExistante()
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return false })
+
+    await act(async () => { bouton.click() })
+
+    expect(message).toContain(AVERTISSEMENT_RAPPROCHEMENT_DEFAIT)
+    expect(faux.suppressions).toHaveLength(0)
+    // Le message d'avant envoyait chercher un lien à retirer qui ne bloque rien.
+    expect(message).not.toMatch(/Retire d.abord ce lien/)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la confirmation nomme ce qu'on perd » serait satisfait par un
+  // bouton qui ne supprime JAMAIS.
+  it('supprime bien quand on confirme', async () => {
+    const bouton = monterSurPieceExistante()
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    await act(async () => { bouton.click() })
+
+    expect(faux.suppressions).toEqual(['piece-1'])
   })
 })

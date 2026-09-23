@@ -14,6 +14,7 @@ import { messageErreur } from '../../lib/messageErreur'
 // même endroit que le contrôle qui s'en sert (voir `partCsgNonDeductible`) : une règle recopiée
 // deux fois n'attend pas de diverger, elle attend un troisième appelant.
 import { csgDeductible as partDeductible } from '../../lib/declaration2035'
+import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
 import { ouvrirApercu } from '../../lib/apercu'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
@@ -97,8 +98,12 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     }
   }
 
+  // `lignes_bancaires.cotisation_id` est en `ON DELETE SET NULL` : retirer une échéance défait en
+  // silence le rapprochement du prélèvement qui la payait, et `statut` reste `'rapprochee'`. La
+  // confirmation le NOMME — c'est la seule occasion de le dire, et une cotisation n'engendre aucune
+  // écriture, donc aucun autre contrôle du dossier ne parlerait de ce mouvement.
   async function supprimer(id: string) {
-    if (!window.confirm('Retirer cette échéance ?')) return
+    if (!window.confirm(`Retirer cette échéance ?\n\n${AVERTISSEMENT_RAPPROCHEMENT_DEFAIT}`)) return
     await supabase.from('cotisations_declarees').delete().eq('id', id)
     load()
   }

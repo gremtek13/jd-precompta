@@ -1,8 +1,9 @@
-import { render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import PiecesTab from './PiecesTab'
 import type { Piece, PieceCommentaire } from '../../lib/types'
+import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
 
 // L'ÉCRAN OÙ LA PIÈCE SE CORRIGE. Cinq contrôles de la famille « donnée démontrée fausse » y
 // envoient l'opérateur depuis la Checklist (`cible: 'pieces'`), et trois seulement marquaient la
@@ -17,24 +18,38 @@ const faux = vi.hoisted(() => ({
   // total : c'est ce qui produit une lecture incomplète, pas une tranche plus courte (que
   // `lireTout` recolle, à juste titre).
   muetApres: {} as Record<string, number>,
+  suppressions: [] as unknown[],
+  // La base REFUSE la suppression : c'est le seul chemin qui allume l'alerte de fin de lot, et
+  // c'est elle qui inventait une cause (« liées à un rapprochement bancaire ou à un pack déjà
+  // généré ») au lieu de rendre la raison.
+  refusSuppression: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
+      let operation = 'select'
       let debut = 0
       let fin = Number.MAX_SAFE_INTEGER
       Object.assign(chaine, {
         select: () => chaine,
-        eq: () => chaine,
+        delete: () => { operation = 'delete'; return chaine },
+        eq: (colonne: string, valeur: unknown) => {
+          if (operation === 'delete' && colonne === 'id') faux.suppressions.push(valeur)
+          return chaine
+        },
         is: () => chaine,
         not: () => chaine,
         or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
         maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+        then: (suite: (r: { data: unknown[]; error: { message: string } | null; count: number }) => unknown) => {
+          if (operation === 'delete') {
+            const erreur = faux.refusSuppression ? { message: faux.refusSuppression } : null
+            return Promise.resolve({ data: [], error: erreur, count: 0 }).then(suite)
+          }
           const toutes = faux.parTable[table] ?? []
           const plafond = faux.muetApres[table]
           const finReelle = plafond === undefined ? debut + (fin - debut + 1) : Math.min(debut + (fin - debut + 1), plafond)
@@ -87,6 +102,8 @@ function piece(o: Partial<Piece> = {}): Piece {
 
 function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
   faux.muetApres = {}
+  faux.suppressions = []
+  faux.refusSuppression = null
   faux.parTable = {
     pieces, categories: [], sous_dossiers: [], tiers_categories: [],
     tiers_categories_cabinet: [], piece_commentaires: commentaires, lignes_bancaires: [],
@@ -170,5 +187,62 @@ describe('PiecesTab — une précision manquante ne doit pas ressembler à un cl
 
     expect(await screen.findByText(/Les pièces du dossier/)).toBeDefined()
     expect(screen.queryAllByText(/Les précisions déposées par le client/)).toHaveLength(0)
+  })
+})
+
+// SUPPRIMER UNE SÉLECTION DISAIT LE CONTRAIRE DE CE QU'ELLE FAIT. Le message annonçait que les
+// pièces « liées à un rapprochement bancaire ou à un pack déjà généré » n'avaient pas pu être
+// supprimées, et envoyait « retirer d'abord ce lien ». Mesuré le 23/09/2026 : les CINQ clés
+// étrangères entrantes de `pieces` sont en SET NULL ou CASCADE, aucune en NO ACTION — une
+// suppression de pièce ne peut donc JAMAIS lever 23503 —, et `packs` n'a plus aucune clé entrante,
+// `pack_pieces` ayant été supprimée. La vraie conséquence, elle, n'était nommée nulle part : le
+// mouvement rapproché sur cette pièce garde `statut = 'rapprochee'` et ne désigne plus rien.
+describe('PiecesTab — supprimer une sélection dit ce que ça défait', () => {
+  async function selectionner() {
+    monter(2026)
+    const cases = await screen.findAllByRole('checkbox')
+    // La première case est « tout sélectionner » (en-tête) ; celle de la ligne vient après.
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    return screen.findByRole('button', { name: /Supprimer la sélection/ })
+  }
+
+  it('nomme le rapprochement bancaire défait dans la confirmation', async () => {
+    poser([piece({ id: 'p1' })])
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return false })
+
+    const bouton = await selectionner()
+    await act(async () => { bouton.click() })
+
+    expect(message).toContain(AVERTISSEMENT_RAPPROCHEMENT_DEFAIT)
+    expect(faux.suppressions).toHaveLength(0)
+    expect(message).not.toMatch(/pack déjà généré/)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la confirmation nomme ce qu'on perd » serait satisfait par un
+  // bouton qui ne supprime JAMAIS.
+  it('supprime bien quand on confirme', async () => {
+    poser([piece({ id: 'p1' })])
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+
+    const bouton = await selectionner()
+    await act(async () => { bouton.click() })
+
+    expect(faux.suppressions).toEqual(['p1'])
+  })
+
+  it("rend la RAISON d'un échec au lieu d'en inventer une", async () => {
+    poser([piece({ id: 'p1' })])
+    faux.refusSuppression = 'new row violates row-level security policy'
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let alerte = ''
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alerte = String(m ?? '') })
+
+    const bouton = await selectionner()
+    await act(async () => { bouton.click() })
+
+    expect(alerte).toContain('new row violates row-level security policy')
+    // La cause inventée d'avant : un lien qui ne bloque rien, et une table qui n'existe plus.
+    expect(alerte).not.toMatch(/pack déjà généré/)
   })
 })

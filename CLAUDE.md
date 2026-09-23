@@ -2516,6 +2516,80 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   bon texte ferait entrer tout ce qu'on lui accroche — un `content` en blocs, un `cache_control`, un
   champ que le SDK lira demain — et **les neuf autres tests restaient verts**.
 
+- **« RAPPROCHÉ » EST UNE AFFIRMATION, ET ELLE SURVIT À CE QUI LA JUSTIFIAIT — CINQUIÈME FRAPPE DE
+  « un contrôle qui part d'un côté d'une relation ne voit pas ce qui manque de l'autre », LA PREMIÈRE
+  QUI PARTE DU MOUVEMENT BANCAIRE** (23/09/2026). Les quatre précédentes partaient de la pièce, de
+  l'écriture ou de la catégorie. Le côté banque a pourtant ses deux clés à lui, `piece_id` et
+  `cotisation_id`, et **toutes deux sont en `ON DELETE SET NULL`**.
+  **MESURÉ AVANT D'ÉCRIRE QUOI QUE CE SOIT, et c'est la mesure qui a ouvert le chantier** : les CINQ
+  clés étrangères entrantes de `pieces` (écritures, immobilisations, lignes bancaires, commentaires,
+  textes OCR) et les DEUX de `cotisations_declarees` sont en SET NULL ou CASCADE — **aucune en
+  NO ACTION**. Supprimer une pièce ou une échéance ne bloque donc JAMAIS : Postgres défait le lien
+  sans un mot, et `statut` reste `'rapprochee'`.
+  **CE QUE ÇA COÛTE, et c'est la forme la plus chère de la famille — le vide est une AFFIRMATION** :
+  - la **Checklist** ne comptait que les `non_rapprochee`, donc elle se TAISAIT exactement dessus,
+    sur l'écran dont le métier est de dire ce qui manque ;
+  - l'onglet **Banque** affichait une pastille VERTE « Rapproché », **indiscernable d'un vrai
+    rapprochement** : une pièce sans tiers rend exactement le même libellé nu (`piecePayee.tiers ?? ''`).
+    Le mouvement est en prime sorti du filtre « Non rapprochés », donc de la vue par défaut ;
+  - la **piste d'audit** part de l'écriture et du justificatif, jamais du mouvement — et une
+    cotisation n'engendre AUCUNE écriture, donc sur ce chemin-là rien nulle part n'en parlerait.
+  Le rapprochement était la seule chose qui rattachait cet euro à un justificatif ; le lien nul, plus
+  aucun écran ne peut le retrouver.
+  **LATENT, et mesuré** : 26 lignes rapprochées en base, 12 sur une pièce, 14 sur une cotisation,
+  **ZÉRO orpheline**. Comme toute cette famille, ce qui le rend digne d'être corrigé n'est pas un
+  préjudice constaté mais qu'il ne PEUT pas se voir une fois arrivé — et **deux gestes de l'interface
+  le produisent aujourd'hui**, sur 26 lignes exposées.
+  **ET LE MESSAGE QUI DEVAIT L'EMPÊCHER DISAIT LE CONTRAIRE DE LA VÉRITÉ.** `PiecesTab.deleteSelection`
+  annonçait les pièces « liées à un rapprochement bancaire ou à un pack déjà généré » comme n'ayant
+  pas pu être supprimées, et envoyait « retire d'abord ce lien ». **Les deux moitiés sont fausses** :
+  23503 ne peut pas se lever sur `pieces` (aucune clé entrante en NO ACTION), et `packs` n'a plus
+  aucune clé entrante du tout — `pack_pieces`, qui la portait, a été supprimée. Le compte `bloquees`
+  restait atteignable (un refus RLS, une coupure) mais son EXPLICATION était inventée : une
+  « contrainte justifiée par un appelant qui a disparu », la famille de `parseDate`, doublée d'une
+  mise en garde au-dessus d'un code qui ne la tient pas. **La même phrase vivait en DEUX copies**
+  (`PiecesTab` et `PieceFormModal`) — chercher toutes les copies avant de corriger la première.
+  **LE REMÈDE EST DÉTECTER, PAS BLOQUER, et l'arbitrage est écrit plutôt que tu.** Une contrainte
+  `check (statut <> 'rapprochee' or piece_id is not null or cotisation_id is not null)` ferait ÉCHOUER
+  la suppression d'une pièce rapprochée — ce qui rendrait vraie la vieille phrase « retire d'abord ce
+  lien ». Mais ce serait interdire un geste que l'interface permet aujourd'hui, donc une décision
+  produit, pas une correction : **à poser avec l'utilisateur, jamais en passant**. Le précédent du
+  projet est `ecrituresSansObjet`, qui SIGNALE et laisse le geste de réparation (« Annuler le
+  rapprochement », déjà présent dans le panneau).
+  **`mouvementsRapprochesSansObjet` (lib/controles.ts)** part donc du MOUVEMENT. Trois décisions :
+  - **Le prédicat est exporté à l'unité** (`mouvementRapprocheSansObjet`) parce que l'onglet Banque
+    en a besoin LIGNE PAR LIGNE pour sa pastille : le réécrire là-bas serait une règle recopiée deux
+    fois, et c'est la pastille verte qui reviendrait sous un point de Checklist qui, lui, compterait.
+  - **Seul le lien NUL est retenu**, jamais « désigne une pièce absente du jeu chargé » — la règle
+    déjà posée pour `rupturesPisteAudit` : ce signal-là ne dépend d'aucun jeu de données à côté, donc
+    il ne peut pas crier au loup sur un artefact de filtrage.
+  - **`prelevement_personnel` n'est PAS écarté du prédicat** : un virement personnel est classé
+    `'ignoree'` (mesuré : les 3 de la base le sont), donc il n'y entre pas de toute façon, et
+    l'écarter laisserait croire qu'un virement personnel « rapproché » serait légitime.
+  **ET LE COMMENTAIRE DE `types.ts` PROMETTAIT UNE CONTRAINTE QUI N'EXISTE PAS** : `cotisation_id`
+  s'annonçait « mutuellement exclusif avec piece_id (**contrainte en base**) ». Mesuré :
+  `lignes_bancaires` ne porte **AUCUNE contrainte CHECK**, et 0 ligne porte les deux. La garantie est
+  tenue par l'APPLICATION — les quatre écrivains de BanqueTab posent l'un en annulant l'autre, et
+  `planRapprochementAutomatique` ne rend jamais les deux — et le commentaire le dit maintenant.
+  **Pourquoi elle n'est PAS portée dans la base** : `lignes_bancaires` est l'une des douze tables du
+  socle (`supabase/schema/socle/`), donc la contrainte se retrouverait à la fois dans une migration
+  et dans l'export du socle, **rejouée deux fois le jour d'une reprise** — c'est-à-dire un plan de
+  reprise qui casse au moment où on s'en sert. Une passe à part, pas un ajout en passant.
+  **TREIZE MUTATIONS, TOUTES MORDENT, et la DISCRIMINATION est le résultat** : la pastille de la
+  LISTE et celle du PANNEAU font tomber UN test chacune, donc les deux copies sont gardées
+  séparément — et il a fallu OUVRIR le panneau dans le test pour ça, une assertion restée sur la
+  liste l'aurait laissé mentir tout seul. Le point de Checklist retiré et le point qui compte TOUS
+  les mouvements font tomber un test chacun (les deux gardes symétriques). Les trois confirmations
+  (`PiecesTab` en lot, `PieceFormModal` à l'unité, `CotisationsTab`) sont gardées une par une, et
+  **l'alerte de lot TELLE QU'ELLE ÉTAIT** — la cause inventée — mord aussi.
+  **Deux jeux d'essai ont été TYPÉS au passage, sans `as`** (`ligneDeTest` de BanqueTab, la fabrique
+  de ChecklistTab) : le compilateur a sorti `created_at`, absent depuis toujours du premier. Même
+  remède que les cinq colonnes du `piece()` de PiecesTab.
+  **Et le faux client de BanqueTab n'annonçait pas de `count` sur `pieces`** : ses trois tests
+  d'avant tournaient donc sur une lecture déclarée INCOMPLÈTE, avec le bandeau à la place de la
+  liste — verts pour une raison qui n'était pas celle qu'ils annonçaient. C'est le coût récurrent de
+  `lireTout`, et il se paie une fois par faux client.
+
   **Le motif « filtre de période sur une colonne NULLABLE » est désormais borné par le SCHÉMA et
   non par un grep** : sur les quatre colonnes filtrées en `gte`/`lte` dans le code (`date_piece`,
   `date`, `echeance`, `created_at`), `pieces.date_piece` est la SEULE nullable — toutes les autres
@@ -4319,12 +4393,12 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 14 testés** — banque,
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 15 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations,
-  suppléments, accès, immobilisations, estimation (21/09/2026) et financement (22/09/2026) — donc
-  **3 sans aucun test de rendu** : factures, cotisations, virements. Suppléments, Accès,
-  Immobilisations, Estimation et Financement y sont entrés comme Informations : par un défaut
-  trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  suppléments, accès, immobilisations, estimation (21/09/2026), financement (22/09/2026) et
+  cotisations (23/09/2026) — donc **2 sans aucun test de rendu** : factures et virements.
+  Suppléments, Accès, Immobilisations, Estimation, Financement et Cotisations y sont entrés comme
+  Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
   `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une
@@ -4387,7 +4461,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1459 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1475 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
