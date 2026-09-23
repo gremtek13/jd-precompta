@@ -173,9 +173,18 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
     }
   }
 
-  async function retirer(id: string) {
-    if (!window.confirm('Retirer cette immobilisation ? La pièce redevient une charge courante ordinaire.')) return
-    await supabase.from('immobilisations').delete().eq('id', id)
+  async function retirer(i: Immobilisation) {
+    // La phrase « la pièce redevient une charge » suppose qu'il RESTE une pièce. Sur une
+    // immobilisation dont le justificatif a été supprimé — l'état que signale
+    // `immobilisationSansJustificatif`, et dont l'action recommandée EST ce bouton — elle est
+    // fausse, et elle rassure à l'envers : rien ne redevient une charge, et le retrait efface la
+    // dernière trace comptable de la dépense (plus de pièce, donc plus d'amortissement non plus).
+    const confirmation = immobilisationSansJustificatif(i)
+      ? 'Retirer cette immobilisation ? Son justificatif a déjà été supprimé : l’amortissement '
+        + 'disparaît de la 2035 et rien ne le remplace — cette dépense ne sera plus comptée nulle part.'
+      : 'Retirer cette immobilisation ? La pièce redevient une charge courante ordinaire.'
+    if (!window.confirm(confirmation)) return
+    await supabase.from('immobilisations').delete().eq('id', i.id)
     load()
   }
 
@@ -328,7 +337,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
                   <td>{i.duree_annees} an{i.duree_annees > 1 ? 's' : ''}</td>
                   <td>{formatMoney(i.valeur / i.duree_annees)}</td>
                   <td onClick={(e) => e.stopPropagation()}>
-                    <button className="btn btn-danger btn-sm" onClick={() => retirer(i.id)}>Retirer</button>
+                    <button className="btn btn-danger btn-sm" onClick={() => retirer(i)}>Retirer</button>
                   </td>
                 </tr>
               ))}

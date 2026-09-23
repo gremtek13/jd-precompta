@@ -2630,6 +2630,71 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   registre, le cadrage sur l'exercice sauté (qui ne fait tomber que le test du bien déjà amorti), et
   la carte de Clôture retirée.
 
+- **LA FAMILLE `ON DELETE SET NULL` EST CLOSE — LES TREIZE RELATIONS ADJUGÉES UNE PAR UNE**
+  (23/09/2026). Les deux chantiers ci-dessus avaient été ouverts un par un ; s'arrêter là aurait
+  laissé la question se reposer au prochain audit. Relevé dans `pg_constraint` : **13 clés en
+  `SET NULL`**, et le critère est toujours le même — une fois le lien défait, **quelque chose
+  AFFIRME-t-il une chose fausse que plus rien ne peut démentir ?**
+  **CINQ colonnes étaient en faute, les cinq sont gardées** : `ecritures_brouillon.piece_id` et
+  `.ligne_bancaire_id` par `rupturesPisteAudit` (de longue date), `lignes_bancaires.piece_id` et
+  `.cotisation_id` par `mouvementsRapprochesSansObjet`, `immobilisations.piece_id` par
+  `immobilisationsSansJustificatif` — les trois dernières le jour même.
+  **LES HUIT AUTRES SONT BÉNIGNES, POUR TROIS RAISONS DISTINCTES — résultat négatif à garder, pour
+  ne pas les réenquêter :**
+  - **le vide devient VRAI** : `documents_divers.attached_to_cotisation_id` (le document repasse
+    dans « documents non rattachés », ce qu'il est), `pieces.sous_dossier_id` (`sousDossierLabel`
+    rend « — », soit « rangé nulle part », ce qu'il est — et **aucune suppression de sous-dossier
+    n'existe dans l'application**, donc le geste ne peut pas se produire), `supplements.facture_id`
+    (**lien facultatif par CONCEPTION**, vérifié dans l'écran plutôt que cru sur ce fichier :
+    `facture_id: factureId || null`, on marque « facturée » sans facture).
+  - **la colonne n'est AFFIRMÉE nulle part** : `agent_conversations.created_by`,
+    `emprunts.created_by`, `emails_envoyes.envoye_par` et `.facture_id` — aucun écran ne les lit, et
+    `types.ts` dit déjà « created_by n'est qu'un repère d'audit ».
+  - **l'affirmation vient d'une AUTRE colonne, NOT NULL** : `piece_commentaires.auteur_id` —
+    `FilCommentaires` affiche « Cabinet »/« Client » depuis `origine`, jamais depuis l'auteur.
+  **ET LE MIROIR NO ACTION EST PROPRE LUI AUSSI** : le seul parent NO ACTION dont la suppression
+  soit atteignable depuis un écran est `factures_emises` (`FacturesTab`), et son bouton est gardé
+  sur `statut === 'brouillon'` — or un avoir naît VALIDÉ avec son numéro, donc `facture_origine_id`
+  ne peut jamais bloquer et **la numérotation légale n'est pas exposée**. Les trois `created_by` que
+  `sauvegarde.ts` déclare (`comptes_courants_associes`, `mouvements_cca`, `supplements`) sont en
+  NO ACTION et non en SET NULL : ils BLOQUENT au lieu de détacher, donc du côté sûr.
+  **DEUX ASYMÉTRIES RELEVÉES, aucune atteignable aujourd'hui, écrites pour le jour où elles le
+  deviendront** : `pieces.sous_dossier_id` est en SET NULL quand `documents_divers.sous_dossier_id`
+  est en NO ACTION — **la même relation depuis deux tables sœurs, avec des comportements opposés**,
+  donc le jour où « Supprimer ce sous-dossier » existera, il réussira ou échouera selon ce qu'il
+  contient et personne ne s'y attendra. Et retirer un membre du cabinet ne supprime PAS ses
+  `dossier_assignations` : la confirmation dit vrai — `admin_du_dossier` EXIGE une ligne
+  `cabinet_admins` (vérifié dans la définition de la fonction en base, pas supposé), donc l'accès
+  est bien coupé — mais **le réinscrire lui rendrait en silence ses anciens dossiers**. Mesuré :
+  0 assignation, 0 membre d'équipe ; la fonctionnalité n'a jamais été exercée, et trancher serait
+  une décision produit, pas une correction.
+- **ET LA CONFIRMATION DE RETRAIT D'UNE IMMOBILISATION PROMETTAIT UNE PIÈCE QUI N'EXISTE PLUS**
+  (23/09/2026, queue du chantier ci-dessus — « chercher toutes les copies » appliqué à mon propre
+  travail du jour). « Retirer cette immobilisation ? **La pièce redevient une charge courante
+  ordinaire.** » suppose qu'il RESTE une pièce. Sur une immobilisation dont le justificatif a été
+  supprimé — l'état que `immobilisationSansJustificatif` venait de faire signaler, et dont l'action
+  recommandée par la Checklist EST ce bouton — la phrase est fausse, **et elle rassure à l'envers** :
+  rien ne redevient une charge, et le retrait efface la DERNIÈRE trace comptable de la dépense
+  (plus de pièce, donc plus d'amortissement non plus). L'opérateur qui suit le conseil de mon propre
+  contrôle lisait un mensonge. Le message nomme désormais ce qui se passe vraiment.
+  Même famille que l'alerte de `PiecesTab` corrigée le même jour, qui inventait une cause de blocage
+  impossible : **une mise en garde se vérifie contre ce que le code FAIT, pas contre ce qu'elle a
+  voulu dire.**
+  **Trouvé par un balayage des VINGT-SIX confirmations de `src/`, et c'était la seule en faute —
+  résultat négatif à garder.** Les vingt-cinq autres disent vrai, y compris les cinq qui portent une
+  promesse VÉRIFIABLE : « et tous ses mouvements » (`mouvements_cca` est bien en CASCADE), « le
+  brouillon de facture » (bouton gardé sur `statut === 'brouillon'`), « son compte de connexion
+  n'est pas supprimé » (aucun `auth.admin.deleteUser` dans tout le dépôt), « la synchronisation ne
+  sera plus possible », et « personne ne pourra plus le lire » (`piece_commentaires` n'a aucune
+  policy `UPDATE`).
+  **Le balayage doit lire les confirmations MULTI-LIGNES** : une extraction par littéral simple n'en
+  rend que quinze sur vingt-six, et la fautive de la veille était justement coupée sur trois
+  lignes — **neuvième fois que ce dépôt se ferait prendre par un retour à la ligne**.
+  **Quatre mutations mordent, et la DISCRIMINATION est le résultat** : le code TEL QU'IL ÉTAIT n'en
+  fait tomber qu'UNE, celle écrite pour lui ; la condition inversée en fait tomber DEUX, avec le
+  garde symétrique sans lequel « la confirmation dit le cas détaché » serait satisfait par un écran
+  qui annoncerait TOUJOURS la disparition de la dépense ; et la phrase fausse simplement AJOUTÉE à
+  la nouvelle est attrapée à part — c'est elle le défaut, pas l'absence de la nouvelle.
   **Le motif « filtre de période sur une colonne NULLABLE » est désormais borné par le SCHÉMA et
   non par un grep** : sur les quatre colonnes filtrées en `gte`/`lte` dans le code (`date_piece`,
   `date`, `echeance`, `created_at`), `pieces.date_piece` est la SEULE nullable — toutes les autres
@@ -3358,6 +3423,14 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   `dossier_id`/`cabinet_id`, qui sont le cadrage d'un écran et non une restriction : les signaler
   tous noierait le signal (la première version du balayage le faisait, et rendait quatorze lignes
   dont aucune n'était un défaut).
+  **REJOUÉ LE 23/09/2026, TROISIÈME PASSAGE : QUATORZE lectures filtrées, ZÉRO en faute** — toutes
+  alimentent un `piecesValidees`, `recettesValidees`, `piecesAValider`, `piecesRapprochees` ou un
+  `sansDate`. Le seul cas qui a demandé une VÉRIFICATION plutôt qu'une lecture est `BanqueTab`, dont
+  le `.in('statut', ['a_valider', 'validee'])` a toutes les apparences d'un sous-ensemble et couvre
+  en réalité **tout** le type `Statut`, qui n'a que ces deux valeurs : son état s'appelle donc
+  `pieces` à juste titre. **À connaître pour le jour où une troisième valeur s'ajouterait** : cette
+  énumération est une liste d'inclusion, et elle se tairait — la panne que ce dépôt connaît sous
+  cinq autres noms.
 - **UNE LECTURE PLUS LENTE ÉCRIT EN DERNIER, ET L'ÉCRAN MENT SANS LE DIRE** (`PacksTab`, corrigé le
   21/09/2026). Trente et un `useEffect` du projet relancent un chargement quand leurs dépendances
   changent, et **trente n'ont aucune annulation** — mais ce n'est pas une liste de trente défauts :
@@ -4501,7 +4574,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1486 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1488 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

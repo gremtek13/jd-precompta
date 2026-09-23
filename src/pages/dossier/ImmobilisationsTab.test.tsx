@@ -162,3 +162,50 @@ describe('ImmobilisationsTab — une immobilisation dont le justificatif a été
     expect(screen.queryAllByText('Justificatif supprimé')).toHaveLength(0)
   })
 })
+
+// LA CONFIRMATION DE RETRAIT PROMETTAIT UNE PIÈCE QUI N'EXISTE PLUS.
+//
+// « La pièce redevient une charge courante ordinaire » suppose qu'il RESTE une pièce. Sur une
+// immobilisation dont le justificatif a été supprimé — l'état que `immobilisationSansJustificatif`
+// signale, et dont l'action recommandée par la Checklist EST ce bouton — la phrase est fausse dans
+// le sens qui rassure : rien ne redevient une charge, et le retrait efface la DERNIÈRE trace
+// comptable de la dépense, l'amortissement quittant la case CH sans qu'aucune charge le remplace.
+//
+// L'opérateur qui suit le conseil de mon propre contrôle lisait donc un mensonge. Même famille que
+// l'alerte de `PiecesTab`, qui inventait une cause de blocage impossible : une mise en garde se
+// vérifie contre ce que le code fait, pas contre ce qu'elle a voulu dire.
+describe('ImmobilisationsTab — ce que la confirmation de retrait promet', () => {
+  function cliquerRetirer(libelle: string) {
+    const ligne = screen.getByText(libelle).closest('tr')!
+    fireEvent.click(within(ligne).getByRole('button', { name: 'Retirer' }))
+  }
+
+  it('annonce le retour en charge courante quand le justificatif est là', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « la confirmation dit le cas détaché » serait satisfait par un
+    // écran qui annoncerait TOUJOURS la disparition de la dépense, y compris sur le cas normal.
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    poser([immobilisation({ libelle: 'Ordinateur' })])
+    monter()
+    await screen.findByText('Ordinateur')
+
+    cliquerRetirer('Ordinateur')
+    expect(confirm.mock.calls[0][0]).toMatch(/redevient une charge courante ordinaire/)
+    confirm.mockRestore()
+  })
+
+  it('dit que la dépense ne sera plus comptée nulle part quand le justificatif a été supprimé', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    poser([immobilisation({ libelle: 'Ordinateur', piece_id: null })])
+    monter()
+    await screen.findByText('Ordinateur')
+
+    cliquerRetirer('Ordinateur')
+    const message = String(confirm.mock.calls[0][0])
+    expect(message).toMatch(/justificatif a déjà été supprimé/)
+    expect(message).toMatch(/plus comptée nulle part/)
+    // Et surtout : la phrase FAUSSE ne doit plus être là. C'est elle le défaut, pas l'absence de
+    // la nouvelle — un message qui dirait les deux rassurerait encore.
+    expect(message).not.toMatch(/redevient une charge courante ordinaire/)
+    confirm.mockRestore()
+  })
+})
