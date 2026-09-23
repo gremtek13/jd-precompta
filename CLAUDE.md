@@ -2590,6 +2590,46 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   liste — verts pour une raison qui n'était pas celle qu'ils annonçaient. C'est le coût récurrent de
   `lireTout`, et il se paie une fois par faux client.
 
+- **ET LA MÊME CLÉ EN `ON DELETE SET NULL` FRAPPAIT UNE TROISIÈME FOIS — UN AMORTISSEMENT SANS
+  JUSTIFICATIF SUR UNE 2035 SIGNÉE** (23/09/2026, trouvé en appliquant au chantier ci-dessus la
+  règle qu'il invoquait : **chercher toutes les copies**). `pieces` a trois clés entrantes en SET
+  NULL — `ecritures_brouillon.piece_id` (gardée par `rupturesPisteAudit` depuis longtemps),
+  `lignes_bancaires.piece_id` (ci-dessus) et **`immobilisations.piece_id`, que personne ne
+  regardait**.
+  **`piece_id` NUL N'EST PAS UN ÉTAT LÉGITIME ICI, et c'est ce qui rend le contrôle sans
+  ambiguïté** : `ImmobilisationsTab` n'a qu'UN chemin de création et il pose toujours
+  `piece_id: piece.id` — une immobilisation naît d'une pièce validée, jamais d'une saisie libre.
+  Un `piece_id` nul ne peut donc venir que de la suppression de cette pièce.
+  **CE QUE ÇA COÛTE, et c'est pire que les deux précédents** : `calculerDeclaration2035` totalise
+  `dotationPourAnnee` sur TOUTES les immobilisations sans regarder ce lien, donc la dotation part en
+  **case CH d'une 2035 SIGNÉE** alors que le justificatif n'existe plus — et son fichier non plus.
+  La piste d'audit ne peut rien en dire : elle part de l'écriture et du justificatif, et une
+  immobilisation n'y a **aucune ligne**. Le registre, lui, affichait la colonne « Dotation
+  annuelle » sans un mot sur le lien manquant.
+  **LATENT, et mesuré** : 2 immobilisations en base, toutes deux rattachées.
+  **ANNÉE-LIBRE DANS LE CONTRÔLE, CADRÉ SUR L'EXERCICE À CLÔTURE, et c'est la moitié qui se raconte
+  mal** : un bien détaché l'est quelle que soit l'année, donc la Checklist le compte sur le dossier
+  entier ; mais sa CONSÉQUENCE est datée — un bien amorti jusqu'en 2019 n'envoie plus rien en case CH
+  de la 2035 de 2025, et le signaler là serait crier au loup sur le document qu'on signe. D'où le
+  filtre `dotationPourAnnee(i, d.annee) > 0` **dans l'écran et pas dans le contrôle**.
+  Trois écrans, comme `dotationsNonProratisees` dont c'est le précédent exact : pastille sur la ligne
+  du registre, point « erreur » en Checklist (cible `immobilisations`), et carte chiffrée à Clôture,
+  là où la déclaration se produit.
+  **ET LES DEUX JEUX D'ESSAI DES ÉCRANS CONCERNÉS ÉTAIENT INFIDÈLES DE LA MÊME FAÇON** :
+  `ImmobilisationsTab.test.tsx` et `ClotureTab.test.tsx` posaient tous deux `piece_id: null` **par
+  défaut** — l'état que la production ne produit jamais. C'était INERTE tant que rien ne lisait ce
+  champ, exactement comme le `devise: null` de `ChecklistTab` avant lui.
+  **DIX MUTATIONS, TOUTES MORDENT — et les deux dernières n'ont mordu qu'après correction du TEST.**
+  Remettre le défaut de fabrique à `null` laissait d'abord les 100 tests VERTS : les gardes
+  symétriques passaient un `piece_id` EXPLICITE, donc le défaut n'atteignait aucune assertion et
+  l'infidélité redevenait inerte. Une mutation qui ne mord pas accuse d'abord la mutation, puis le
+  jeu d'essai — ici c'est le second. Les deux gardes s'appuient désormais sur le DÉFAUT de la
+  fabrique, ce qui fait de la correction quelque chose de gardé plutôt que de seulement fait.
+  Les huit autres : le contrôle qui ne mord jamais, celui qui mord toujours, le prédicat inversé, la
+  ligne du registre TELLE QU'ELLE ÉTAIT, le point de Checklist retiré, le même comptant TOUT le
+  registre, le cadrage sur l'exercice sauté (qui ne fait tomber que le test du bien déjà amorti), et
+  la carte de Clôture retirée.
+
   **Le motif « filtre de période sur une colonne NULLABLE » est désormais borné par le SCHÉMA et
   non par un grep** : sur les quatre colonnes filtrées en `gte`/`lte` dans le code (`date_piece`,
   `date`, `echeance`, `created_at`), `pieces.date_piece` est la SEULE nullable — toutes les autres
@@ -4461,7 +4501,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1475 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1486 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

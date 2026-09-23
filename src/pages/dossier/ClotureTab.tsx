@@ -3,11 +3,12 @@ import { supabase } from '../../lib/supabase'
 import { anneeDe, formatMoney, formatDate } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
-import { calculerDeclaration2035, dotationsNonProratisees, partCsgNonDeductible, RESERVE_PRORATA_TEMPORIS,
+import { calculerDeclaration2035, dotationPourAnnee, dotationsNonProratisees, partCsgNonDeductible, RESERVE_PRORATA_TEMPORIS,
   type DotationNonProratisee, type PartCsgNonDeductible } from '../../lib/declaration2035'
 import { CASES_2035, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
 import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
 import { remplir2035 } from '../../lib/remplir2035'
+import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -213,6 +214,18 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   const dotationsAReprendre: { annee: number; dotations: DotationNonProratisee[] }[] = declarations
     .map((d) => ({ annee: d.annee, dotations: dotationsNonProratisees(immobilisations, d.annee) }))
     .filter((x) => x.dotations.length > 0)
+
+  // UNE DOTATION SANS JUSTIFICATIF SUR LE DOCUMENT QU'ON SIGNE. `immobilisations.piece_id` est en
+  // `ON DELETE SET NULL` : supprimer la pièce détache l'immobilisation sans un mot, et
+  // `calculerDeclaration2035` totalise la dotation sans regarder ce lien. CADRÉ SUR L'EXERCICE de
+  // chaque déclaration affichée — le contrôle, lui, est année-libre (voir `immobilisationsSans-
+  // Justificatif`) : ce qui compte ici est la dotation qui part RÉELLEMENT en case CH cette
+  // année-là, pas un bien amorti depuis longtemps.
+  const amortissementsSansJustificatif = declarations.flatMap((d) =>
+    immobilisationsSansJustificatif(immobilisations)
+      .filter((i) => dotationPourAnnee(i, d.annee) > 0)
+      .map((i) => ({ annee: d.annee, immo: i, dotation: dotationPourAnnee(i, d.annee) })),
+  )
 
   // Véhicules dont l'indemnité n'a pas pu être calculée : leur déduction manque sur le formulaire,
   // et rien sur le PDF ne le dirait.
@@ -465,6 +478,39 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
                   <td style={{ color: 'var(--color-danger)' }}>
                     {`${part.nbSansVentilation} — part non déductible non chiffrable, à saisir dans Cotisations (« dont CSG-CRDS »)`}
                   </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {amortissementsSansJustificatif.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-danger)' }}>
+          <h3 style={{ marginTop: 0 }}>
+            Amortissement(s) sans justificatif ({amortissementsSansJustificatif.length})
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            La pièce qui justifiait ce bien a été supprimée : le lien est défait en silence et la dotation
+            part quand même en case CH. Retrouve le justificatif, ou retire l’immobilisation depuis
+            l’onglet Immobilisations avant de déposer cette déclaration.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Exercice</th>
+                <th>Bien</th>
+                <th>Acquisition</th>
+                <th style={{ textAlign: 'right' }}>Dotation comptée</th>
+              </tr>
+            </thead>
+            <tbody>
+              {amortissementsSansJustificatif.map(({ annee, immo, dotation }) => (
+                <tr key={`${annee}-${immo.id}`}>
+                  <td>{annee}</td>
+                  <td>{immo.libelle}</td>
+                  <td>{formatDate(immo.date_acquisition)}</td>
+                  <td style={{ textAlign: 'right' }}>{formatMoney(dotation)}</td>
                 </tr>
               ))}
             </tbody>

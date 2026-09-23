@@ -45,8 +45,15 @@ vi.mock('../../lib/supabase', () => ({
 // Typé `Partial<Immobilisation> => Immobilisation` SANS `as` : le compilateur vérifie alors chaque
 // champ contre la table, exhaustivement. C'est ce qui a trouvé, sur trois autres écrans, des jeux
 // d'essai qui posaient des valeurs que la production ne produit jamais.
+//
+// ET SON DÉFAUT ÉTAIT INFIDÈLE : `piece_id: null`, alors que cet écran n'a qu'UN chemin de création
+// et qu'il pose toujours le lien — un `piece_id` nul ne peut venir que d'une pièce supprimée. C'était
+// INERTE tant que rien ne lisait ce champ ; depuis `immobilisationSansJustificatif`, chaque ligne du
+// jeu d'essai porterait la pastille « Justificatif supprimé ». Même famille que le `devise: null` de
+// ChecklistTab : un jeu d'essai infidèle ne fait pas qu'affaiblir un test, il lui fait prouver autre
+// chose.
 const immobilisation = (o: Partial<Immobilisation> = {}): Immobilisation => ({
-  id: 'i-1', dossier_id: 'dossier-de-test', piece_id: null, nature_id: null,
+  id: 'i-1', dossier_id: 'dossier-de-test', piece_id: 'piece-1', nature_id: null,
   libelle: 'Ordinateur', valeur: 12000, date_acquisition: '2025-01-01', duree_annees: 5,
   created_at: '2025-01-01T09:00:00Z', ...o,
 })
@@ -125,5 +132,33 @@ describe('ImmobilisationsTab — la première annuité à reprendre', () => {
     fireEvent.click(screen.getByRole('tab', { name: '2024' }))
     const titre = await screen.findByText(/Première annuité à reprendre \(1\)/)
     within(titre.closest('.card')!).getByText('Bureau')
+  })
+})
+
+// LA TROISIÈME CLÉ EN `ON DELETE SET NULL` DE `pieces`. Supprimer une pièce immobilisée détache son
+// immobilisation sans un mot, et le registre affichait la dotation comme si de rien n'était — alors
+// que `calculerDeclaration2035` la totalise en case CH d'une 2035 signée, et que la piste d'audit
+// ne couvre pas les immobilisations.
+describe('ImmobilisationsTab — une immobilisation dont le justificatif a été supprimé', () => {
+  it('le dit sur la ligne', async () => {
+    poser([immobilisation({ piece_id: null, libelle: 'Ordinateur' })])
+    monter()
+
+    await screen.findByText('Justificatif supprimé')
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la ligne le dit » serait satisfait par un écran qui le dit de
+  // TOUTES les lignes — et le registre entier deviendrait rouge sur un dossier en ordre.
+  //
+  // ET ELLE S'APPUIE SUR LE DÉFAUT DE LA FABRIQUE, délibérément : sans cela, corriger ce défaut
+  // n'était gardé par rien — la mutation qui le remet à `null` laissait les 100 tests VERTS, parce
+  // que les autres tests du fichier n'assertent rien sur la pastille. Un jeu d'essai infidèle
+  // redevient alors inerte, ce qui est exactement la forme du défaut d'origine.
+  it('se tait sur une immobilisation qui désigne bien sa pièce', async () => {
+    poser([immobilisation({ libelle: 'Ordinateur' })])
+    monter()
+
+    await screen.findByText('Ordinateur')
+    expect(screen.queryAllByText('Justificatif supprimé')).toHaveLength(0)
   })
 })

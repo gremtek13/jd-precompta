@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
 import { dotationsNonProratisees, RESERVE_PRORATA_TEMPORIS } from '../../lib/declaration2035'
+import { immobilisationSansJustificatif } from '../../lib/controles'
 import type { Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
@@ -312,7 +313,15 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
             <tbody>
               {immobilisationsAffichees.map((i) => (
                 <tr key={i.id}>
-                  <td>{i.libelle}</td>
+                  <td>
+                    {i.libelle}
+                    {/* `piece_id` nul ne peut venir que d'une pièce supprimée : le seul chemin de
+                        création de cet écran pose toujours le lien. La dotation, elle, continue de
+                        partir en case CH — voir `immobilisationSansJustificatif`. */}
+                    {immobilisationSansJustificatif(i) && (
+                      <span className="badge badge-danger" style={{ marginLeft: 8 }}>Justificatif supprimé</span>
+                    )}
+                  </td>
                   <td>{natureLabel(i.nature_id)}</td>
                   <td>{formatMoney(i.valeur)}</td>
                   <td>{formatDate(i.date_acquisition)}</td>

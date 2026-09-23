@@ -1,5 +1,5 @@
 import { ajouterJours, aujourdHuiSql, cleFournisseur, dateLocaleDe } from './format'
-import type { Categorie, LigneBancaire, Piece } from './types'
+import type { Categorie, Immobilisation, LigneBancaire, Piece } from './types'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
 // où ces règles vivent, utilisés à la fois là où ils bloquent une action (Écritures, Clôture) et dans
@@ -366,6 +366,35 @@ export const AVERTISSEMENT_RAPPROCHEMENT_DEFAIT =
 
 export function mouvementsRapprochesSansObjet(lignes: LigneBancaire[]): LigneBancaire[] {
   return lignes.filter(mouvementRapprocheSansObjet)
+}
+
+// UNE IMMOBILISATION DONT LE JUSTIFICATIF A ÉTÉ SUPPRIMÉ CONTINUE D'AMORTIR — la TROISIÈME clé en
+// `ON DELETE SET NULL` de `pieces`, trouvée en appliquant à `mouvementsRapprochesSansObjet` la règle
+// qu'il invoquait : chercher toutes les copies. Les trois sont `ecritures_brouillon.piece_id` (déjà
+// gardée par `rupturesPisteAudit`), `lignes_bancaires.piece_id` (ci-dessus) et celle-ci.
+//
+// `piece_id` nul N'EST PAS UN ÉTAT LÉGITIME ICI, et c'est ce qui rend le contrôle sans ambiguïté :
+// `ImmobilisationsTab` n'a qu'UN chemin de création, et il pose toujours `piece_id: piece.id` — une
+// immobilisation naît d'une pièce validée, jamais d'une saisie libre. Un `piece_id` nul ne peut donc
+// venir que de la suppression de cette pièce.
+//
+// CE QUE ÇA COÛTE : `calculerDeclaration2035` totalise `dotationPourAnnee` sur TOUTES les
+// immobilisations sans regarder ce lien, donc la dotation part en case CH d'une 2035 **signée** alors
+// que le justificatif n'existe plus — et son fichier non plus. La piste d'audit ne peut rien en dire :
+// elle part de l'écriture et du justificatif, et une immobilisation n'y a aucune ligne. L'écran du
+// registre, lui, affichait la dotation sans un mot sur le lien manquant.
+//
+// ANNÉE-LIBRE, délibérément : une immobilisation sans justificatif l'est quelle que soit l'année. La
+// CONSÉQUENCE, elle, est datée (la dotation ne tombe que dans les années de la durée) — c'est donc à
+// Clôture de cadrer sur son exercice, comme la Balance des comptes cadre ses propres chiffres.
+//
+// LATENT, et mesuré le 23/09/2026 : 2 immobilisations en base, toutes deux rattachées à leur pièce.
+export function immobilisationSansJustificatif(immo: Immobilisation): boolean {
+  return immo.piece_id == null
+}
+
+export function immobilisationsSansJustificatif(immobilisations: Immobilisation[]): Immobilisation[] {
+  return immobilisations.filter(immobilisationSansJustificatif)
 }
 
 function indexMois(dateSql: string): number {

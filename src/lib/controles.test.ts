@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, moisEnDoubleSurAbonnement, mouvementRapprocheSansObjet, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationSansJustificatif, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementRapprocheSansObjet, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from './controles'
 import { aujourdHuiSql, ajouterJours, dateLocaleDe } from './format'
-import type { Categorie, LigneBancaire, Piece } from './types'
+import type { Categorie, Immobilisation, LigneBancaire, Piece } from './types'
 
 const categorie = (o: Partial<Categorie>): Categorie =>
   ({ id: 'c1', dossier_id: null, libelle: 'Achats', code: 'achats', compte_comptable: '606100',
@@ -462,5 +462,43 @@ describe('mouvementsRapprochesSansObjet', () => {
       ligne({ id: 'd', piece_id: null, cotisation_id: 'c1' }),
     ]
     expect(mouvementsRapprochesSansObjet(lignes)).toEqual(lignes.filter(mouvementRapprocheSansObjet))
+  })
+})
+
+// TYPÉ sans `as` : le compilateur confronte chaque champ à `Immobilisation`, donc à la table.
+const immobilisation = (o: Partial<Immobilisation> = {}): Immobilisation => ({
+  id: 'i1', dossier_id: 'd1', piece_id: 'p1', nature_id: null, libelle: 'Ordinateur portable',
+  valeur: 1200, date_acquisition: '2026-03-10', duree_annees: 3,
+  created_at: '2026-03-10T00:00:00Z', ...o,
+})
+
+describe('immobilisationsSansJustificatif', () => {
+  it("signale l'immobilisation dont la pièce a été supprimée", () => {
+    // `immobilisations.piece_id` est en `ON DELETE SET NULL` : supprimer la pièce laisse
+    // exactement cet état, et la dotation continue de partir en case CH.
+    expect(immobilisationsSansJustificatif([
+      immobilisation({ id: 'detachee', piece_id: null }),
+    ]).map((i) => i.id)).toEqual(['detachee'])
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « le registre signale les détachées » serait satisfait par un
+  // contrôle qui signale TOUTES les immobilisations — et une alerte permanente cesse d'être lue.
+  it('se tait sur une immobilisation qui désigne bien sa pièce', () => {
+    expect(immobilisationsSansJustificatif([immobilisation({ piece_id: 'p1' })])).toEqual([])
+  })
+
+  it("ne regarde PAS l'année : un bien détaché l'est quel que soit l'exercice", () => {
+    // La conséquence, elle, est datée — c'est à Clôture de cadrer sur son exercice. Un contrôle
+    // année-libre permet à la Checklist de compter sur le dossier entier sans second calcul.
+    const vieux = immobilisation({ id: 'vieux', piece_id: null, date_acquisition: '2015-01-01', duree_annees: 3 })
+    expect(immobilisationsSansJustificatif([vieux]).map((i) => i.id)).toEqual(['vieux'])
+  })
+
+  it('le prédicat unitaire et la version tableau disent la même chose', () => {
+    const liste = [
+      immobilisation({ id: 'a', piece_id: null }),
+      immobilisation({ id: 'b', piece_id: 'p2' }),
+    ]
+    expect(immobilisationsSansJustificatif(liste)).toEqual(liste.filter(immobilisationSansJustificatif))
   })
 })

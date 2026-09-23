@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
-import type { LigneBancaire, Piece } from '../../lib/types'
+import type { Immobilisation, LigneBancaire, Piece } from '../../lib/types'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -93,10 +93,21 @@ function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   }
 }
 
+// Typé sans `as`, comme les deux fabriques ci-dessus. Le défaut porte SON LIEN : `piece_id` nul
+// n'est pas un état que la production produit, c'est celui que laisse une pièce supprimée.
+function immobilisation(o: Partial<Immobilisation> = {}): Immobilisation {
+  return {
+    id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: null,
+    libelle: 'Ordinateur', valeur: 1200, date_acquisition: '2026-03-10', duree_annees: 3,
+    created_at: '2026-03-10T00:00:00Z', ...o,
+  }
+}
+
 function poser(pieces: {
   validees?: unknown[]
   aValider?: unknown[]
   lignes?: unknown[]
+  immos?: unknown[]
   clotures?: { annee: number }[]
   clotureRefusee?: boolean
   tronquees?: string[]
@@ -105,7 +116,7 @@ function poser(pieces: {
     'pieces:validee': pieces.validees ?? [],
     'pieces:a_valider': pieces.aValider ?? [],
     pieces: [...(pieces.validees ?? []), ...(pieces.aValider ?? [])],
-    cotisations_declarees: [], lignes_bancaires: pieces.lignes ?? [], immobilisations: [],
+    cotisations_declarees: [], lignes_bancaires: pieces.lignes ?? [], immobilisations: pieces.immos ?? [],
     natures_immobilisation: [], categories: [], ecritures_brouillon: [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
     exercices_clotures: pieces.clotures ?? [],
@@ -402,6 +413,36 @@ describe('ChecklistTab — un mouvement rapproché qui ne désigne plus rien', (
 
     // Ancré sur un point que ce jeu d'essai déclenche forcément : vérifier une ABSENCE sur un écran
     // encore en chargement rendrait le test vert pour une raison fausse.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+})
+
+// LA TROISIÈME CLÉ EN `ON DELETE SET NULL` DE `pieces`, vue depuis l'écran qui prétend dire ce qui
+// manque. La dotation d'une immobilisation détachée part en case CH d'une 2035 signée, et la piste
+// d'audit ne couvre pas les immobilisations : sans ce point, plus rien ne pourrait la nommer.
+describe('ChecklistTab — une immobilisation dont le justificatif a été supprimé', () => {
+  const POINT = /justificatif a été supprimé/
+
+  it('le compte', async () => {
+    poser({ immos: [immobilisation({ id: 'detachee', piece_id: null })] })
+    monter()
+
+    const trouve = await screen.findByText(POINT)
+    expect(trouve.textContent).toMatch(/^1 /)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la Checklist compte les détachées » serait satisfait par un
+  // point qui compte TOUTES les immobilisations du registre.
+  it('se tait sur une immobilisation qui désigne bien sa pièce', async () => {
+    poser({
+      immos: [immobilisation({ piece_id: 'p1' })],
+      lignes: [ligne({ statut: 'non_rapprochee', piece_id: null, cotisation_id: null })],
+    })
+    monter()
+
+    // Ancré sur un point que ce jeu d'essai déclenche forcément : une ABSENCE vérifiée sur un écran
+    // encore en chargement serait verte pour une raison fausse.
     await screen.findByText(/non rapprochée\(s\)/)
     expect(screen.queryAllByText(POINT)).toHaveLength(0)
   })

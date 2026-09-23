@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -291,6 +291,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // tait exactement dessus — sur l'écran dont le métier est de dire ce qui manque. Voir
   // `mouvementsRapprochesSansObjet` : les deux clés du côté banque sont en `ON DELETE SET NULL`.
   const rapprochesSansObjet = mouvementsRapprochesSansObjet(lignes)
+  // La TROISIÈME clé en `ON DELETE SET NULL` de `pieces` : supprimer une pièce immobilisée détache
+  // son immobilisation sans un mot, et la dotation continue de partir en case CH d'une 2035 signée.
+  const immosSansJustificatif = immobilisationsSansJustificatif(immobilisations)
   // Signal plus grave que « en attente de rapprochement » : un montant qui n'apparaît nulle part dans
   // le relevé importé, à aucune date, révèle soit un relevé incomplet soit un montant faux — voir
   // lib/appariementBanque.ts. Ne porte que sur les pièces jamais rattachées à un mouvement, comme
@@ -359,6 +362,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // là c'est le brouillon qui compte quelque chose de faux, ici c'est le relevé qui AFFIRME être
     // justifié. En « erreur » parce que ce n'est pas un travail en retard mais une donnée démontrée
     // fausse — et parce que le mouvement est sorti de tous les écrans qui auraient pu le rattraper.
+    // En « erreur » et non « attention » : ce n'est pas un travail en retard, c'est une déduction
+    // qui part sur un document signé sans pièce derrière — et le registre est le seul écran qui
+    // puisse encore la montrer, la piste d'audit ne couvrant pas les immobilisations.
+    { id: 'immos-sans-justificatif', label: 'immobilisation(s) dont le justificatif a été supprimé', action: "Retrouver le justificatif ou retirer l'immobilisation", nb: immosSansJustificatif.length, cible: 'immobilisations', severite: 'erreur' },
     { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
     { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention', detail: detailPiecesSansDate(piecesConfianceBasse) },

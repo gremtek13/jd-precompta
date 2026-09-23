@@ -2,6 +2,7 @@ import { render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import ClotureTab from './ClotureTab'
+import type { Immobilisation } from '../../lib/types'
 
 // L'ONGLET QUI PRODUIT LE SEUL DOCUMENT QUE LE CABINET SIGNE — la 2035. Son garde-fou refuse de
 // remplir le formulaire sur une lecture partielle, et c'est la bonne règle : une déclaration bâtie
@@ -75,9 +76,13 @@ function cotisation(id: string, o: Record<string, unknown> = {}) {
   }
 }
 
-function immobilisation(o: Record<string, unknown> = {}) {
+// TYPÉ sans `as` — et son `piece_id` était INFIDÈLE : nul, alors qu'une immobilisation naît toujours
+// d'une pièce validée (`ImmobilisationsTab` n'a qu'un chemin de création). C'était inerte tant que
+// rien ne lisait ce lien ; depuis `immobilisationsSansJustificatif`, les deux tests de la réserve
+// prorata afficheraient AUSSI la carte « Amortissement(s) sans justificatif ».
+function immobilisation(o: Partial<Immobilisation> = {}): Immobilisation {
   return {
-    id: 'i1', dossier_id: 'dossier-de-test', piece_id: null, nature_id: null,
+    id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: null,
     libelle: 'Ordinateur', valeur: 12000, date_acquisition: '2025-01-01', duree_annees: 5,
     created_at: '2025-01-01T09:00:00Z', ...o,
   }
@@ -85,7 +90,7 @@ function immobilisation(o: Record<string, unknown> = {}) {
 
 function poser(
   muet: Record<string, number> = {},
-  immos: Record<string, unknown>[] = [],
+  immos: Immobilisation[] = [],
   cotis: Record<string, unknown>[] = [cotisation('c1'), cotisation('c2')],
 ) {
   faux.muetApresParTable = muet
@@ -293,5 +298,46 @@ describe('ClotureTab — la confirmation de clôture NOMME ses deux conséquence
     expect(await screen.findByRole('button', { name: /Clôturer l’exercice/ })).toBeTruthy()
     expect(screen.queryAllByText(/clôturé —/)).toHaveLength(0)
     vi.restoreAllMocks()
+  })
+})
+
+// LA DOTATION D'UN BIEN SANS JUSTIFICATIF PART EN CASE CH D'UNE 2035 SIGNÉE.
+// `immobilisations.piece_id` est en `ON DELETE SET NULL` : supprimer la pièce détache le bien sans
+// un mot, et `calculerDeclaration2035` totalise la dotation sans regarder ce lien. La piste d'audit
+// ne couvre pas les immobilisations — cet écran est le dernier qui puisse encore le dire.
+describe('ClotureTab — un amortissement dont le justificatif a été supprimé', () => {
+  const TITRE = /Amortissement\(s\) sans justificatif/
+
+  it('le dit avant de laisser déposer la déclaration', async () => {
+    poser({}, [immobilisation({ piece_id: null })])
+    monter()
+
+    const titre = await screen.findByText(/Amortissement\(s\) sans justificatif \(1\)/)
+    const carte = within(titre.closest('.card')!)
+    // La dotation RÉELLEMENT comptée cette année-là : 12 000 / 5.
+    expect(carte.getByText(/2\s?400,00/)).toBeDefined()
+  })
+
+  // CADRÉ SUR L'EXERCICE, et c'est la moitié du correctif qui se raconte mal : un bien amorti
+  // jusqu'en 2019 n'envoie plus rien en case CH de la 2035 de 2025. Le signaler ici serait crier au
+  // loup sur le document qu'on signe — la Checklist, elle, le compte quand même, et c'est son rôle.
+  it("ne signale pas un bien entièrement amorti avant l'exercice affiché", async () => {
+    poser({}, [immobilisation({ piece_id: null, date_acquisition: '2015-01-01', duree_annees: 3 })])
+    monter()
+
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « l'écran prévient » serait satisfait par un écran qui prévient
+  // TOUJOURS, y compris sur un registre parfaitement rattaché.
+  // Elle s'appuie sur le DÉFAUT de la fabrique, comme celle d'ImmobilisationsTab : c'est ce qui rend
+  // la correction du `piece_id` infidèle gardée plutôt que seulement faite.
+  it('se tait sur une immobilisation qui désigne bien sa pièce', async () => {
+    poser({}, [immobilisation()])
+    monter()
+
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 })
