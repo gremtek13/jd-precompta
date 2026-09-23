@@ -600,6 +600,43 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   return { erreur: `Outil inconnu : ${nom}` }
 }
 
+// ── DÉBUT HISTORIQUE ─────────────────────────────────────────────────────────────────────────────
+// LA SEULE BARRIÈRE ENTRE LE NAVIGATEUR ET LE PROMPT DU MODÈLE.
+//
+// Le fil n'est jamais relu en base : c'est le navigateur qui l'envoie à chaque tour (`payload
+// .historique`), et il part tel quel dans `messages` à côté du prompt système. Rien d'autre ne le
+// filtre, donc tout ce qui n'est pas retenu ici entre dans la conversation.
+//
+// Trois garanties, et chacune ferme une porte différente :
+//   • SEULS `user` et `assistant` passent. Un rôle "system" forgé depuis le client serait une
+//     instruction d'opérateur — sur un assistant qui lit la comptabilité d'un dossier et répond en
+//     français à un comptable qui n'ira pas vérifier.
+//   • `texte` doit être une CHAÎNE. Un bloc structuré (`content` en tableau, image, appel d'outil)
+//     est refusé : le navigateur ne compose pas les messages, il en propose le texte.
+//   • La fenêtre est BORNÉE (20 tours, 4 000 caractères) — un fil forgé ne peut pas faire exploser
+//     la facture d'un cabinet en un appel.
+//
+// Le bloc est ENTRE BORNES et rendu EXÉCUTABLE (`agentComptableHistorique.test.ts` l'extrait, le
+// transpile et lui donne de vrais payloads forgés) parce qu'aucun autre contrôle de ce dépôt ne peut
+// le voir : une Edge Function n'est appelée par aucun test, et un scanner de texte ne distingue pas
+// un filtre qui tient d'un filtre qu'on a élargi d'un mot.
+const MAX_TOURS_HISTORIQUE = 20
+const MAX_CARACTERES_TOUR = 4000
+
+type TourHistorique = { role: "user" | "assistant"; texte: string }
+
+function historiqueDuClient(brut: unknown): TourHistorique[] {
+  const liste: unknown[] = Array.isArray(brut) ? brut : []
+  return liste
+    .filter((h): h is TourHistorique =>
+      !!h && typeof h === "object"
+      && ((h as { role?: unknown }).role === "user" || (h as { role?: unknown }).role === "assistant")
+      && typeof (h as { texte?: unknown }).texte === "string")
+    .slice(-MAX_TOURS_HISTORIQUE)
+    .map((h) => ({ role: h.role, texte: h.texte.slice(0, MAX_CARACTERES_TOUR) }))
+}
+// ── FIN HISTORIQUE ───────────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { headers: corsHeaders })
@@ -682,16 +719,7 @@ Deno.serve(async (req: Request) => {
     }, 402)
   }
 
-  // Historique : uniquement du texte brut, jamais des blocs structurés que le navigateur pourrait
-  // forger — et jamais un rôle "system", qui permettrait sinon d'injecter une instruction opérateur
-  // depuis le client. Fenêtre bornée (20 derniers tours, 4000 caractères chacun) par sécurité de coût.
-  const historiqueBrut = Array.isArray(payload.historique) ? payload.historique : []
-  const historique = historiqueBrut
-    .filter((h): h is { role: "user" | "assistant"; texte: string } =>
-      !!h && typeof h === "object" && ((h as { role?: unknown }).role === "user" || (h as { role?: unknown }).role === "assistant")
-      && typeof (h as { texte?: unknown }).texte === "string")
-    .slice(-20)
-    .map((h) => ({ role: h.role, texte: h.texte.slice(0, 4000) }))
+  const historique = historiqueDuClient(payload.historique)
 
   const aujourdhui = aujourdHuiCabinet()
   const systemPrompt = `Tu es l'assistant comptable interne du cabinet JD Consult, pour le dossier "${dossierRow.nom}" (précomptabilité — un brouillon à vérifier, jamais une comptabilité tenue).

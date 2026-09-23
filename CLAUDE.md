@@ -2476,6 +2476,46 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   gardé par rien, non porté ici parce qu'il demanderait de modifier et redéployer la fonction pour
   un défaut qui ne peut pas survenir aujourd'hui. Même arbitrage que les huit ternaires interdits.
 
+- **ET LE SEUL INVARIANT DE SÉCURITÉ DU DÉPÔT GARDÉ PAR RIEN A ÉTÉ PORTÉ LE JOUR MÊME**
+  (23/09/2026, décision du cabinet). L'entrée ci-dessus le laissait de côté — « un défaut qui ne peut
+  pas survenir aujourd'hui » — et l'arbitrage a été renversé sur le bon critère : **revenir dessus le
+  jour où quelqu'un aura touché au filtre coûte plus cher que de le poser maintenant**, parce qu'à ce
+  moment-là plus rien ne dirait que la barrière a bougé.
+  **CE QUE LE FILTRE GARDE.** `agent-comptable` reçoit le fil de conversation du NAVIGATEUR à chaque
+  tour (`payload.historique`) : il ne le relit JAMAIS en base — sa seule lecture d'`agent_conversations`
+  sert au plafond de coût, pas au contexte, et c'est vérifié plutôt que supposé. Le filtre est donc la
+  seule barrière entre ce que le client poste et ce qui part dans `messages`, à côté du prompt système,
+  sur un assistant qui lit la comptabilité d'un dossier. Trois portes : seuls `user` et `assistant`
+  passent (un rôle « system » forgé serait une instruction d'opérateur) ; `texte` doit être une CHAÎNE
+  (pas de bloc structuré) ; la fenêtre est bornée (20 tours, 4 000 caractères).
+  **AUCUN DES SIX SCANNERS EXISTANTS NE POUVAIT LE VOIR** : ils lisent du TEXTE, et un filtre élargi
+  d'un mot leur est indiscernable d'un filtre qui tient. Une Edge Function n'est appelée par aucun
+  test, et rien ne recharge derrière. Le seul contrôle possible est celui des fonctions auto-portées,
+  poussé d'un cran : **EXTRAIRE le bloc de la vraie source, le transpiler avec le compilateur du
+  projet, et lui donner de vrais payloads forgés** — l'idiome d'`extractPiecePagination`, appliqué à
+  une barrière de sécurité.
+  **LA PRODUCTION A DONC ÉTÉ MODIFIÉE, et c'est ce que la décision achetait** : le filtre inline est
+  devenu `historiqueDuClient` entre bornes `── DÉBUT/FIN HISTORIQUE`, avec ses deux plafonds NOMMÉS
+  (`MAX_TOURS_HISTORIQUE`, `MAX_CARACTERES_TOUR`). Sans bornes déclarées, la limite d'extraction serait
+  une instruction voisine arbitraire — un réarrangement changerait en silence ce qui est testé.
+  **`agent-comptable` v23 EN PRODUCTION** le jour même : `verify_jwt` relu (`false`) et repassé
+  explicitement, déployé comparé au dépôt AVANT écrasement (**identique à HEAD**, donc personne n'avait
+  modifié la production à la main et aucun correctif n'attendait), aller-retour après : **zéro
+  différence résiduelle sur 856 lignes**.
+  **LE CÂBLAGE EST GARDÉ À PART DE LA FORME**, comme partout ailleurs : le bloc peut rester parfait
+  pendant que le gestionnaire cesse de l'appeler. Ici il n'y a pas d'écran, donc c'est la source qui
+  répond — le filtre est appelé, et `payload.historique` n'est lu NULLE PART ailleurs (une seconde
+  lecture serait une seconde porte).
+  **Dix mutations, toutes mordent, et la DISCRIMINATION est le résultat** : le rôle « system » admis
+  et la liste blanche perdue en font tomber deux chacune ; le `texte` non exigé chaîne, la fenêtre
+  prise à l'envers, la troncature élargie et l'historique non-tableau n'en font tomber qu'UNE chacune,
+  celle écrite pour elles ; les deux mutations de câblage ne touchent que les tests de câblage ; et les
+  bornes retirées font échouer le FICHIER ENTIER, qui est le plancher.
+  **LA MUTATION QUI COMPTE EST CELLE QUE LA RELECTURE NE SUGGÈRE PAS** : le `.map` final ne met pas en
+  forme, il RECONSTRUIT l'objet `{ role, texte }`. Remplacé par un `{ ...h }`, un tour au bon rôle et au
+  bon texte ferait entrer tout ce qu'on lui accroche — un `content` en blocs, un `cache_control`, un
+  champ que le SDK lira demain — et **les neuf autres tests restaient verts**.
+
   **Le motif « filtre de période sur une colonne NULLABLE » est désormais borné par le SCHÉMA et
   non par un grep** : sur les quatre colonnes filtrées en `gte`/`lte` dans le code (`date_piece`,
   `date`, `echeance`, `created_at`), `pieces.date_piece` est la SEULE nullable — toutes les autres
@@ -4347,7 +4387,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1449 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1459 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
