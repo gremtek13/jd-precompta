@@ -2187,6 +2187,22 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   trois clics, exactement la discrimination qu'il est censé apporter.
   **Deux des quatre verrous corrigés le 20/09 restent sans test d'écran** :
   `SuperPdpFactureModal.appeler` et `PieceFormModal.save`.
+  **23/09/2026 — LES DEUX DERNIERS SONT COUVERTS, ET L'UN D'EUX AVAIT UN SECOND DÉFAUT RÉEL.**
+  `PieceFormModal.save` (trois tests) n'avait besoin d'aucun correctif : le verrou y était déjà posé
+  avant le `try` et relâché dans un `finally`, exactement le patron attendu — seul le test manquait.
+  `SuperPdpFactureModal.appeler` (quatre tests), lui, avait le patron de la version FAUTIVE encore en
+  place : les deux lignes de relâchement (`setEnCours(false)`, `appelEnCours.current = false`)
+  vivaient juste après le premier `await` (l'appel à `superpdp-emit`), donc AVANT la relecture des
+  événements (`charger()`) et `onUpdated()` — sans `try`/`finally` autour de l'ensemble. Le bouton
+  redevenait cliquable pendant la relecture qui suit une transmission réussie, une fenêtre où un
+  second clic aurait transmis une seconde fois la même facture à une plateforme agréée DGFiP, avant
+  même que la première transmission n'ait fini de se refléter à l'écran. Corrigé en enveloppant tout
+  le corps de `appeler()` (l'appel, la relecture, `onUpdated()`) dans un `try`/`finally` qui ne
+  relâche le verrou qu'à la toute fin — même patron que `PieceFormModal.save`, `FactureAvoirModal`
+  et consorts. Quatre mutations tuées : retirer la garde initiale (deux tests tombent), et rétablir
+  précisément l'ancien relâchement prématuré — le seul test qui le distingue est celui qui clique
+  PENDANT la relecture, pas les tests à deux ou trois clics rapprochés, qui restaient verts dans les
+  deux versions. Seize fichiers de test d'écran désormais, sur 1051 tests répartis en 81 fichiers.
   **`EcrituresTab` a rejoint la liste le 20/09/2026**, et c'est l'onglet qui le méritait le plus :
   il produit les deux seuls fichiers officiels du projet, le FEC et la piste d'audit. Quatre tests,
   cinq mutations, toutes mordent — dont celle qui compte vraiment : rebrancher `ecrituresSansObjet`
@@ -2262,7 +2278,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1044 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1051 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

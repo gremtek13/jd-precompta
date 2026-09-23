@@ -44,17 +44,20 @@ export default function SuperPdpFactureModal({ dossierId, facture, onClose, onUp
     appelEnCours.current = true
     setEnCours(true)
     setErreur(null)
-    const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('superpdp-emit', {
-      body: { dossierId, factureId: facture.id, action },
-    })
-    setEnCours(false)
-    appelEnCours.current = false
-    if (data?.error || invokeError) {
-      setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'appel à Super PDP."))
-      return
+    try {
+      const { data, error: invokeError } = await supabase.functions.invoke<{ ok?: boolean; error?: string }>('superpdp-emit', {
+        body: { dossierId, factureId: facture.id, action },
+      })
+      if (data?.error || invokeError) {
+        setErreur(data?.error ?? await extraireErreurFonction(invokeError, "Échec de l'appel à Super PDP."))
+        return
+      }
+      await charger()
+      onUpdated()
+    } finally {
+      setEnCours(false)
+      appelEnCours.current = false
     }
-    await charger()
-    onUpdated()
   }
 
   const dernierCode = evenements && evenements.length > 0 ? evenements[evenements.length - 1].status_code : facture.superpdp_dernier_statut
