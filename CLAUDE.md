@@ -2415,6 +2415,67 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   mécanisme dont la justesse dépend de la petitesse des données tombera le jour où elles
   grandissent, et c'est pour ça qu'une exception doit porter une RAISON et pas un comptage.
 
+- **ET TOUS CES GARDES RÉPONDENT À « LA LECTURE EST-ELLE COMPLÈTE ? » — AUCUN À « EST-CE LES BONNES
+  LIGNES ? »** (23/09/2026). La règle du tri TOTAL est écrite depuis le portage et répétée dans trois
+  commentaires de production (`lectureComplete.ts`, `exportCabinet.ts`, `agent-comptable`) : « sans clé
+  de départage, deux tranches se recouvrent ou sautent des lignes, et rien ne le signale ». Elle
+  n'était gardée NULLE PART.
+  **Ce qui la rend différente de tout ce que ce dépôt garde déjà** : `lireTout` reçoit une FERMETURE.
+  Il ne voit pas la requête, donc il ne peut pas exiger le tri — la règle vit entièrement dans les
+  cent vingt sites d'appel, réécrite à la main à chaque fois.
+  **ET LA CONSÉQUENCE EST PIRE QUE LA TRONCATURE ORDINAIRE, ce qui est le cœur du chantier.** Postgres
+  ne garantit aucun ordre stable entre deux `range()` quand l'`ORDER BY` a des ex æquo : une ligne
+  peut revenir deux fois pendant qu'une autre n'est jamais servie. La boucle accumule alors
+  exactement le nombre de lignes ANNONCÉ, s'arrête, et `lignes.length === annonce` — donc
+  **`complete: true`, `motif: null`**, sur un jeu qui porte un doublon et à qui il manque une ligne.
+  `lecturesPaginees` (annonce-t-on un compte ?), `lecturesSignalees` (lit-on le drapeau ?),
+  `lecturesVerifiees` (lit-on l'erreur ?) et `BandeauLecturePartielle` (le dit-on à l'opérateur ?)
+  sont tous aveugles à ce cas **par construction** : le drapeau dit vrai sur la LONGUEUR, c'est le
+  CONTENU qui est faux. Un FEC, une balance ou une piste d'audit bâtis là-dessus sont une bonne
+  nouvelle fabriquée, la pire forme de cette famille. Le test l'EXÉCUTE contre un faux serveur plutôt
+  que de l'affirmer, avec sa garde symétrique (une troncature ordinaire, elle, se signale bien).
+  **MESURÉ AVANT D'ÉCRIRE QUOI QUE CE SOIT : 123 sites d'appel, 117 écrivent leur tri à la main, et
+  les 117 terminent par la clé primaire.** Zéro faute — `dossiers` trié `nom, id`, `pieces` trié
+  `date_piece, id`, `cabinet_admins` sur `user_id` qui EST sa clé. Ce contrôle ne corrige donc rien.
+  Comme `edgeFunctionsCodeMort`, il est refermé sur un trou DÉMONTRÉ et non sur un défaut trouvé, et
+  la différence mérite d'être écrite : ce qui le justifie est que la 118e lecture s'écrira à la main
+  comme les autres, et que rien ne la regarderait.
+  **DEUX PAGINEURS, ET UN SEUL EST À LA MERCI DE QUI ÉCRIT** — d'où deux portes. `lireTout(fermeture)`
+  porte son tri dans la fermeture : c'est la porte 1, les 117 sites. `lireToutesLesLignes(table, …)`
+  (socle de sauvegarde) le DÉRIVE de `CLES_PRIMAIRES`, colonne par colonne — ce qui compte pour les
+  six tables à clé composite, où trier sur la première ne départage rien : la porte 2 vérifie cette
+  dérivation plutôt que ses six sites, le CONTENU de `CLES_PRIMAIRES` étant déjà épinglé au schéma
+  par `sauvegardeClesPrimaires.test.ts`. Elle interdit aussi tout `.order(` littéral dans le socle.
+  **UNE TABLE NON RECONNUE EST UNE FAUTE, JAMAIS UN SAUT** : sans cette décision, une lecture écrite
+  d'une forme que le détecteur ne sait pas lire passerait en silence — la panne que ce dépôt connaît
+  sous six noms. Et la dérivation des clés primaires a été SORTIE du test d'hier vers
+  `src/test/schema.ts` plutôt que recopiée : une clé primaire lue de deux façons différentes est
+  exactement ce qu'aucun test ne verrait.
+  **LA RÈGLE DU NOMBRE EST EXERCÉE ALORS QU'AUCUNE EXCEPTION N'EXISTE**, sur une source synthétique,
+  et c'est délibéré : un comptage que rien n'a jamais fait tourner est faux le jour où quelqu'un
+  inscrit la première dispense — c'est mot pour mot ce qui venait d'être trouvé sur trois scanners
+  le 22/09/2026.
+  **Dix mutations mordent, et la ONZIÈME SURVIT — c'est elle le résultat.** Pointer le balayage sur
+  AUCUN dossier réel ne fait tomber QUE le plancher (les cas synthétiques s'injectent dans le
+  scanner et continuent de mordre) ; la même mutation AVEC les trois bornes du plancher neutralisées
+  ne fait tomber PLUS RIEN. Le plancher est donc la seule chose qui distingue « zéro faute »
+  d'« aveugle », démontré plutôt qu'affirmé. Les neuf autres : le défaut replanté dans un vrai site
+  (`exportCabinet`), le scanner aveugle, le scanner qui crie au loup, les définitions comptées comme
+  des appels, la clé primaire non dérivée du schéma, le corps lu « à la ligne » (**huitième** fois
+  que ce dépôt se ferait prendre par un retour à la ligne), la table inconnue sautée, l'exception
+  inventée, et le socle qui ne trie plus que sur la première colonne.
+  **Trouvé par un balayage dont la forme vaut plus que la prise** : les commentaires de production
+  qui NOMMENT un dégât — « sinon », « en silence », « indiscernable », « sans que rien ne le
+  signale » — 147 dans 63 fichiers. La plupart sont rétrospectifs (un défaut déjà corrigé, et
+  gardé) ; ce qui compte est le petit reste PRESCRIPTIF, une propriété qu'une édition future
+  casserait. Trois résultats négatifs à garder, pour ne pas les réenquêter : les invariants d'ordre
+  de `sauvegarde.ts` sont rejoués sur le plan RÉEL **et** re-vérifiés à l'exécution
+  (`sauvegardeDonnees.ts:194`) ; `nonCalcules` remonte bien jusqu'aux deux écrans (`ClotureTab:549`,
+  `VehiculesCard`) ; et le filtre d'historique d'`agent-comptable` (jamais de rôle « system », jamais
+  de bloc structuré) est correct — il reste le seul invariant de sécurité nommé en commentaire et
+  gardé par rien, non porté ici parce qu'il demanderait de modifier et redéployer la fonction pour
+  un défaut qui ne peut pas survenir aujourd'hui. Même arbitrage que les huit ternaires interdits.
+
   **Le motif « filtre de période sur une colonne NULLABLE » est désormais borné par le SCHÉMA et
   non par un grep** : sur les quatre colonnes filtrées en `gte`/`lte` dans le code (`date_piece`,
   `date`, `echeance`, `created_at`), `pieces.date_piece` est la SEULE nullable — toutes les autres
@@ -4286,7 +4347,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1437 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1449 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
