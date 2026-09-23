@@ -1,4 +1,4 @@
-import { useState, type ChangeEvent, type CSSProperties, type DragEvent } from 'react'
+import { useRef, useState, type ChangeEvent, type CSSProperties, type DragEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { chargerHashsExistants, estFichierSupporte, importerFichierDossier } from '../../lib/importFichiers'
 import type { SousDossier } from '../../lib/types'
@@ -30,6 +30,7 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
   const [sousDossierId, setSousDossierId] = useState('')
   const [running, setRunning] = useState(false)
   const [done, setDone] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
 
   async function ajouterFichiers(liste: FileList | File[]) {
@@ -63,9 +64,37 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
     setFichiers((prev) => prev.map((f, i) => (i === index ? { ...f, statut, message } : f)))
   }
 
+  // Verrou en `useRef`, et POSÉ AVANT LE `try` : `running` est un état React, donc le rendu
+  // conditionnel du bouton (`peutImporter && !running`) ne prend effet qu'au rendu SUIVANT et laisse
+  // passer deux clics rapprochés (CLAUDE.md). Dans le `try`, le `return` du deuxième sortirait par
+  // le `finally`, qui relâcherait le verrou du PREMIER, encore en cours.
+  //
+  // Le doublon coûte exactement ce qu'il a coûté à l'origine du projet : chaque exécution repart
+  // avec SON `chargerHashsExistants`, donc deux boucles parallèles aveugles l'une à l'autre — le
+  // dédoublonnage ne rattrape alors que les paires où le minutage joue en sa faveur (141 lignes
+  // importées pour 78 fichiers). Ici c'est le point d'entrée quotidien, ouvert depuis Pièces comme
+  // depuis Documents, pas l'import d'arborescence.
+  const importEnCours = useRef(false)
+
+  // UN IMPORT QUI ÉCHOUE AVANT LA BOUCLE NE DISAIT RIEN, ET SE DÉCLARAIT TERMINÉ.
+  //
+  // `chargerHashsExistants` LÈVE délibérément quand les empreintes ne peuvent pas se dire complètes
+  // (lib/importFichiers : « mieux vaut lever que conclure "pas encore importé" ») — et ce `try`
+  // n'avait AUCUN `catch`. L'exception s'échappait donc d'un gestionnaire d'`onClick`, que personne
+  // n'attend : rejet non capturé, aucun message, et le `finally` posait quand même `done`, c'est-à-
+  // dire l'affichage de fin. L'opérateur voyait une modale terminée, ses fichiers restés « en
+  // attente », et aucune raison ; recliquer rendait le même silence (le défaut de
+  // `SuperPdpModal.retirer`, CLAUDE.md).
+  //
+  // `done` ne se pose donc plus que sur un parcours réellement mené à son terme, et la cause est
+  // NOMMÉE. `onImported()` reste dans le `finally` : un échec survenu en cours de boucle laisse de
+  // vrais imports derrière lui, que l'écran parent doit relire.
   async function lancerImport() {
+    if (importEnCours.current) return
+    importEnCours.current = true
     setRunning(true)
     setDone(false)
+    setErreur(null)
     try {
       const hashsConnus = await chargerHashsExistants(dossierId)
       const { data: userData } = await supabase.auth.getUser()
@@ -85,9 +114,12 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
           setStatutFichier(i, 'erreur', messageErreur(err, "Échec de l'import"))
         }
       }
-    } finally {
-      setRunning(false)
       setDone(true)
+    } catch (err) {
+      setErreur(messageErreur(err, "L'import n'a pas pu démarrer."))
+    } finally {
+      importEnCours.current = false
+      setRunning(false)
       onImported()
     }
   }
@@ -174,6 +206,13 @@ export default function AjouterDocumentsModal({ dossierId, sousDossiers, onClose
               </table>
             </div>
           </>
+        )}
+
+        {erreur && (
+          <p className="error-text" style={{ marginTop: 12 }}>
+            {erreur} Aucun fichier n'a été importé et rien n'a été créé : seule la lecture des
+            empreintes déjà connues a échoué, avant le premier dépôt. Réessaie.
+          </p>
         )}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>

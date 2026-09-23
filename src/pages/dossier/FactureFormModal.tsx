@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { calculerLigne, calculerTotaux, enregistrerFacture, mentionsLegalesParDefaut } from '../../lib/factures'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
@@ -97,6 +97,23 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
   const totaux = calculerTotaux(lignesNumeriques)
   const lignesValides = lignesNumeriques.filter((l) => l.designation.trim() && l.quantite > 0)
 
+  // Verrou en `useRef`, et POSÉ AVANT LE `try` : `saving` est un état React, donc `disabled={!!saving}`
+  // ne prend effet qu'au rendu SUIVANT et laisse passer deux envois rapprochés (CLAUDE.md). Dans le
+  // `try`, le `return` du deuxième sortirait par le `finally`, qui relâcherait le verrou du PREMIER,
+  // encore en cours — il faut trois envois pour le voir, et deux suffisent à croire la version
+  // fautive correcte.
+  //
+  // Le doublon ne coûte pas une ligne de trop. Sur une facture NEUVE, `p_facture_id` vaut `null` aux
+  // deux appels : `enregistrer_facture` prend sa branche INSERT deux fois, et chacune consomme son
+  // propre numéro de la suite annuelle. Ce sont DEUX factures validées, identiques, immuables — la
+  // suppression n'est offerte que sur un brouillon, et la seule sortie légale est un avoir.
+  // Sur un brouillon existant, la base rattrape (le `select … for update` sérialise, et le second
+  // appel se fait refuser) ; c'est la création qui n'a aucun filet.
+  //
+  // ET LE FORMULAIRE EST LE PIRE DÉCLENCHEUR : « Enregistrer le brouillon » est un `type="submit"`,
+  // donc deux « Entrée » rapprochés suffisent, geste plus banal que deux clics.
+  const enregistrementEnCours = useRef(false)
+
   async function enregistrer(statutCible: 'brouillon' | 'validee') {
     if (!tiersNom.trim()) {
       setError('Le nom du client est obligatoire.')
@@ -106,6 +123,8 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
       setError('Ajoute au moins une ligne avec une désignation et une quantité.')
       return
     }
+    if (enregistrementEnCours.current) return
+    enregistrementEnCours.current = true
     setSaving(statutCible === 'validee' ? 'validation' : 'brouillon')
     setError(null)
     try {
@@ -147,6 +166,7 @@ export default function FactureFormModal({ dossierId, dossierNom, dossierSiret, 
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      enregistrementEnCours.current = false
       setSaving(null)
     }
   }

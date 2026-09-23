@@ -43,6 +43,7 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
   const [ignores, setIgnores] = useState<string[]>([])
   const [running, setRunning] = useState(false)
   const [done, setDone] = useState(false)
+  const [erreur, setErreur] = useState<string | null>(null)
   // Verrou d'exécution, volontairement un ref et non l'état `running` : `setRunning(true)` ne prend
   // effet qu'au rendu suivant, donc `disabled={running}` laisse passer deux clics rapprochés. Les
   // deux appels entraient alors dans lancerImport(), chacun repartant avec SON ensemble d'empreintes
@@ -86,12 +87,30 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
     setFichiers((prev) => prev.map((f, i) => (i === index ? { ...f, statut, message } : f)))
   }
 
+  // UN IMPORT QUI ÉCHOUE AVANT LA BOUCLE NE DISAIT RIEN, ET SE DÉCLARAIT TERMINÉ.
+  //
+  // `chargerHashsExistants` LÈVE délibérément quand les empreintes ne peuvent pas se dire complètes
+  // (lib/importFichiers : « mieux vaut lever que conclure "pas encore importé" ») — et ce `try`
+  // n'avait AUCUN `catch`. L'exception s'échappait donc d'un gestionnaire d'`onClick`, que personne
+  // n'attend : rejet non capturé, aucun message, et le `finally` posait quand même `done`, c'est-à-
+  // dire l'affichage de fin. L'opérateur voyait une modale terminée, ses fichiers restés « en
+  // attente », et aucune raison ; recliquer rendait le même silence (le défaut de
+  // `SuperPdpModal.retirer`, CLAUDE.md).
+  //
+  // `done` ne se pose donc plus que sur un parcours réellement mené à son terme, et la cause est
+  // NOMMÉE. `onImported()` reste dans le `finally` : un échec survenu en cours de boucle laisse de
+  // vrais imports derrière lui, que l'écran parent doit relire.
+  //
+  // Ici la fausse bonne nouvelle était ÉCRITE : le résumé ne s'affiche que si `done`, et il annonçait
+  // « 0 importé(s), 0 déjà importé(s), 0 en erreur » — zéro erreur, précisément quand tout avait
+  // échoué.
   async function lancerImport() {
     // Posé avant tout `await` : c'est ce qui rend le verrou effectif contre un double clic.
     if (enCours.current) return
     enCours.current = true
     setRunning(true)
     setDone(false)
+    setErreur(null)
     try {
       const sousDossierParChemin = await resoudreSousDossiers()
       const hashsConnus = await chargerHashsExistants(dossierId)
@@ -113,10 +132,12 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
           setStatutFichier(i, 'erreur', messageErreur(err, "Échec de l'import"))
         }
       }
+      setDone(true)
+    } catch (err) {
+      setErreur(messageErreur(err, "L'import n'a pas pu démarrer."))
     } finally {
       enCours.current = false
       setRunning(false)
-      setDone(true)
       onImported()
     }
   }
@@ -191,6 +212,14 @@ export default function ImportDossierModal({ dossierId, sousDossiers, onClose, o
               </table>
             </div>
           </>
+        )}
+
+        {erreur && (
+          <p className="error-text" style={{ marginTop: 12 }}>
+            {erreur} Aucun fichier n'a été importé. Des sous-dossiers ont pu être créés au
+            passage : `sous_dossiers` porte un index unique (dossier_id, nom), donc un nouvel essai
+            les réutilise au lieu de les dupliquer.
+          </p>
         )}
 
         <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>

@@ -1100,6 +1100,80 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   donc deux « Entrée » rapprochés sur « Créer l'accès » (un `<form>`, le pire déclencheur) ne peuvent
   PAS produire deux accès — la base rattrape, et ce site n'a pas besoin d'un verrou. Ne pas le
   réenquêter.
+- **ET LE BALAYAGE QUI A TROUVÉ QUATRE VERROUS EN ÉTAIT AVEUGLE À DEUX, PAR DEUX PORTES
+  DIFFÉRENTES — DONT CELLE QUI CONSOMME UN NUMÉRO DE FACTURE** (23/09/2026). L'audit du 20/09/2026
+  cherchait, dit ce fichier, « les gestionnaires `async` qui **dupliquent** quelque chose
+  (`.insert(`, `functions.invoke`, `storage…upload`) et ne portent aucun `.current` ». Il rendait
+  36 candidats et en retenait quatre. **Il ne pouvait pas en voir deux**, et les deux raisons sont
+  indépendantes :
+  - **la porte `.rpc(`** — `FactureFormModal.enregistrer` écrit par `enregistrer_facture`, une
+    fonction SQL. C'est MOT POUR MOT la porte qu'`edgeFunctionsEcritures` avait manquée le
+    21/09/2026 (« un client Supabase écrit par QUATRE portes »), manquée une seconde fois par un
+    autre balayage ;
+  - **le corps du gestionnaire au lieu de ce qu'il APPELLE** — `AjouterDocumentsModal.lancerImport`
+    n'écrit rien lui-même : `importerFichierDossier` (src/lib) le fait pour lui. Le balayage lisait
+    le texte du gestionnaire, donc ne voyait aucune écriture.
+  Une seule panne sous deux noms, et c'est celle que ce dépôt connaît sous six autres : **une liste
+  d'inclusion tenue à la main ne contient que ce à quoi quelqu'un a pensé**, et son silence est
+  indiscernable d'un dépôt sain.
+  **LE DIXIÈME PORTEUR EST LE PLUS CHER DES ONZE.** Deux « Valider la facture » rapprochés sur une
+  facture NEUVE partent tous deux avec `p_facture_id = null` : `enregistrer_facture` prend sa branche
+  INSERT deux fois, et chacune consomme son propre numéro de la suite annuelle
+  (`attribuer_numero_facture`, upsert +1). **DEUX factures validées, identiques, numérotées à la
+  suite, toutes deux IMMUABLES** — l'écran ne propose la suppression que sur un brouillon, et la
+  seule sortie légale est un avoir. C'est le dégât que le commentaire de `FactureAvoirModal` nomme
+  pour justifier SON verrou, sur le document plus gros des deux, dans le fichier voisin.
+  **Sur un brouillon EXISTANT la base rattrape**, et c'est mesuré dans la définition de la fonction
+  plutôt que supposé : le `select … for update` sérialise les deux appels, et le second se fait
+  refuser « Une facture validée ne peut plus être modifiée ». C'est la création qui n'a aucun filet —
+  même arbitrage que `memberships UNIQUE (user_id, dossier_id)`, qui rattrape « Créer l'accès ».
+  **LE ONZIÈME EST LE JUMEAU EXACT DU DÉFAUT D'ORIGINE DE CETTE FAMILLE**, à une nuance de forme
+  près : le bouton d'`AjouterDocumentsModal` n'est pas `disabled`, il est RENDU SOUS CONDITION
+  (`peutImporter && !running`) — `running` étant un état React, les deux clics du même rendu le
+  voient tous deux. Chaque exécution repart alors avec SON `chargerHashsExistants`, donc deux boucles
+  parallèles aveugles l'une à l'autre : le dédoublonnage ne rattrape que les paires où le minutage
+  joue en sa faveur (**141 lignes pour 78 fichiers** sur l'import réel qui a fait naître la famille).
+  **Et c'est pire qu'à l'origine** : `ImportDossierModal` importe une arborescence, geste rare et
+  délibéré ; celui-ci est le POINT D'ENTRÉE UNIQUE, ouvert depuis Pièces comme depuis Documents.
+  **ET LE TEST A FAIT SORTIR UN TROISIÈME DÉFAUT, EN DEUX COPIES — LES DEUX MODALES D'IMPORT
+  AVALAIENT L'EXCEPTION QUE `chargerHashsExistants` LÈVE EXPRÈS.** Leur `try` n'avait AUCUN `catch` :
+  sur une lecture d'empreintes tronquée ou refusée — le cas pour lequel cette fonction a été écrite
+  pour lever, « mieux vaut lever que conclure pas encore importé » — l'exception s'échappait d'un
+  gestionnaire d'`onClick`, que personne n'attend. Rejet non capturé, **aucun message** (ni l'une ni
+  l'autre n'avait d'état d'erreur), et le `finally` posait quand même `done`, c'est-à-dire
+  l'affichage de FIN : zone de dépôt masquée, bouton de gauche passé à « Fermer », fichiers restés
+  « en attente ». Recliquer rendait le même silence — le défaut de `SuperPdpModal.retirer`.
+  **Dans `ImportDossierModal` la fausse bonne nouvelle était ÉCRITE** : son résumé ne s'affiche que
+  si `done`, et il annonçait alors « 0 importé(s), 0 déjà importé(s), **0 en erreur** » — zéro
+  erreur, précisément quand tout avait échoué. Le pire sens de « le vide est une AFFIRMATION ».
+  `done` ne se pose plus que sur un parcours mené à son terme, et la cause est nommée. `onImported()`
+  reste dans le `finally` : un échec en cours de boucle laisse de vrais imports derrière lui.
+  **CE TROISIÈME MOTIF NE DEVIENT PAS UN SCANNER, et c'est MESURÉ plutôt que supposé** : la forme
+  `try { … } finally { … }` sans `catch` dans un gestionnaire async existe **sept fois** ailleurs
+  dans `src/`, et **les sept sont correctes**. Le critère n'est pas la forme mais « ce corps
+  peut-il lever jusqu'ici ? » — `relireDocuments` et `relireTextesDocuments` attrapent par document
+  (un échec n'interrompt pas le lot, règle écrite), `rapprocherTout` passe par `Promise.allSettled`
+  et annonce ses échecs, et les quatre autres n'appellent rien qui lève. Un contrôle qui crierait
+  sur les sept serait du bruit, et un avertissement qui se trompe finit par ne plus être lu.
+  **LATENT, et mesuré** : 6 factures en base, toutes validées, aucune en double ; 0 avoir.
+  Comme toute cette famille, ce qui les rend dignes d'être corrigés n'est pas un préjudice constaté
+  mais qu'aucun ne PEUT se voir une fois arrivé.
+  **ONZE MUTATIONS, TOUTES MORDENT, et la DISCRIMINATION est le résultat** : le code TEL QU'IL ÉTAIT
+  fait tomber trois tests côté facture et deux côté import ; le verrou posé DANS le `try` n'en fait
+  tomber qu'UN de chaque côté, celui à trois envois — exactement ce qu'il est censé distinguer ; le
+  verrou jamais relâché, le `catch` retiré, `done` reposé dans le `finally` et les deux gardes
+  symétriques en font tomber un chacun.
+  **ET UNE MUTATION A SURVÉCU D'ABORD, ACCUSANT MON ASSERTION** : le garde symétrique
+  d'`AjouterDocumentsModal` visait le REPLI de `messageErreur` (« L'import n'a pas pu démarrer »),
+  qui n'apparaît que si l'erreur est renseignée — donc un paragraphe d'erreur affiché en PERMANENCE
+  avec un message vide passait. Il porte désormais sur la phrase que ce paragraphe porte TOUJOURS.
+  **ET LE TEST DE RELÂCHEMENT A DÛ CHANGER DE SCÉNARIO**, la première mutation ne mordant pas :
+  reprendre un SECOND LOT n'est pas producible (la zone de dépôt est masquée par `done`, donc ajouter
+  des fichiers demande de rouvrir la modale, ce qui remonte le composant et remet le `useRef` à
+  zéro). Le seul chemin où l'import se rejoue dans le même montage est celui de l'ÉCHEC, où les
+  fichiers restent « en attente » et le bouton revient — c'est-à-dire le chemin du troisième défaut
+  ci-dessus, trouvé en cherchant à faire mordre une mutation.
+
 - **UNE SUPPRESSION SE CONFIRME, ET LA CONFIRMATION NOMME CE QU'ON PERD** (balayage du 21/09/2026,
   jamais fait jusque-là). Vingt-six suppressions dans `src/`, **neuf sans confirmation** — et sept
   s'expliquent : trois vivent dans `src/lib` et sont confirmées par l'écran qui les appelle
@@ -3563,20 +3637,13 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   en parallèle le 20/09/2026 ont écrit « troisième » et « cinquième » pour ce motif dans ce fichier.
   Un rang inscrit au fil du texte oblige à recompter à chaque ajout, sur des paragraphes que
   personne ne relit ensemble : la liste vit donc en un seul endroit, celui-ci.
-  **Dix fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
+  **Onze fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
   (`PiecesTab` et `DocumentsTab`), « C'est une facture » (`DocumentsTab`, qui n'avait aucun verrou),
   « Tout rapprocher automatiquement » (`BanqueTab`), puis quatre trouvés d'un coup par l'audit
   ci-dessous (20/09/2026) : `EnvoyerEmailModal.envoyer`, `SuperPdpFactureModal.appeler`,
-  `FactureAvoirModal.creerAvoir` et `PieceFormModal.save`. **`AccesTab.handleCreateAccess`
-  s'ajoute le 24/09/2026** — trouvé en fermant un des huit onglets encore sans test de rendu, pas
-  par un nouveau balayage : il figurait pourtant déjà parmi les 36 candidats du balayage ci-dessous
-  (`functions.invoke` sans `.current`), classé avec les 32 laissés de côté comme « leur doublon crée
-  une LIGNE, qu'un cabinet voit et supprime ». Ce classement était faux pour celui-là : la ligne
-  `memberships` est protégée par une contrainte unique (la fonction la détecte et rend 409), donc le
-  doublon ne crée pas de ligne en trop — il fait courir deux appels `auth.admin.createUser` pour la
-  même adresse, avec au bout un message d'erreur qui laisse croire à un échec alors que l'accès vient
-  d'être créé par l'autre requête. Un candidat écarté par la classification du balayage reste donc un
-  candidat à revérifier au cas par cas, pas un candidat clos.
+  `FactureAvoirModal.creerAvoir` et `PieceFormModal.save` — et deux de plus le 23/09/2026,
+  `FactureFormModal.enregistrer` et `AjouterDocumentsModal.lancerImport`, que cet audit ne POUVAIT
+  pas voir (entrée dédiée plus bas).
   **CE MOTIF SE CHERCHE, IL NE S'ATTEND PAS.** Les cinq premiers ont été trouvés un par un, en
   travaillant sur autre chose. Un balayage a rendu les quatre suivants en une fois, et la requête
   vaut plus que la prise — à rejouer avant de croire le motif épuisé : les gestionnaires `async` qui
@@ -4570,10 +4637,13 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   suppléments, accès, immobilisations, estimation (21/09/2026), financement (22/09/2026),
   cotisations et virements (23/09/2026) — donc **1 seul sans aucun test de rendu** : factures.
   Suppléments, Accès, Immobilisations, Estimation, Financement et Cotisations y sont entrés comme
-  Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  Informations : par un défaut trouvé, jamais par méthode. DIX CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
-  `SuperPdpFactureModal` (21/09/2026) — HUIT au total. Un onglet n'est donc pas « testé » parce qu'une
+  `SuperPdpFactureModal` (21/09/2026), `FactureFormModal` et `AjouterDocumentsModal` (23/09/2026) —
+  DIX au total. **Les deux derniers ne font PAS entrer Factures dans les onglets testés** : un onglet
+  n'est pas testé parce qu'une de ses modales l'est, et `FacturesTab` lui-même reste le seul des dix-sept
+  sans test de rendu. Un onglet n'est donc pas « testé » parce qu'une
   de ses cartes l'est : Informations est resté dans les non-testés jusqu'à ce qu'il gagne son propre
   test de rendu, le 21/09/2026, sur ce que la suppression d'un dossier laisse dans le stockage.
   **La liste des dossiers a rejoint les écrans testés le 20/09/2026** (`DossiersList.test.tsx`) :
@@ -4633,7 +4703,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1491 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1502 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
