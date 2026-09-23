@@ -2700,6 +2700,50 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   `date`, `echeance`, `created_at`), `pieces.date_piece` est la SEULE nullable — toutes les autres
   sont NOT NULL (vérifié dans `information_schema.columns`). Il n'y a donc que deux sites possibles,
   et tous deux sont traités.
+- **UN « TOTAL PRÉLEVÉ » QUI SOMMAIT DES VALEURS ABSOLUES** (23/09/2026, `VirementsTab` — le dernier
+  écran à logique propre qu'aucune session n'avait ouvert). Le bouton « Virement personnel » de
+  l'onglet Banque n'est borné par AUCUN signe, et c'est le seul qui nomme la situation d'un mouvement
+  venu du compte personnel de l'exploitant : un APPORT marqué ainsi faisait **MONTER** le total au
+  lieu de le réduire. 1 000 € sortis et 300 € entrés affichaient « Total prélevé 1 300,00 € ».
+  **LE SIGNE SE PERD DANS LE TOTAL, ET NULLE PART AILLEURS** : la ligne rend `formatMoney(montant)`,
+  donc l'entrée s'y voit ; c'est le total qui l'absorbe — et un total faux a exactement l'air d'un
+  total, la ligne fautive étant noyée dans une liste.
+  **LATENT, et mesuré** : 3 lignes marquées en base, **toutes des sorties** (net −7 500 €, somme des
+  valeurs absolues 7 500 € — identiques), 0 au statut inattendu, 0 portant un lien. Le correctif ne
+  change donc aucun chiffre existant.
+  **ON NE TRANCHE PAS CE QU'EST UN APPORT** : le distinguer vraiment (compte 108 de l'exploitant
+  porte les deux sens) serait une décision produit, pas une correction. On l'écarte d'un total qui ne
+  le désigne pas, et on le DIT — la mention étant **rendue vide quand elle n'apprend rien**, comme
+  `dotationsNonProratisees` et `reserveSurMoyenne`.
+  **Le calcul reste DANS l'écran, et c'est écrit plutôt que laissé deviner** : une partition par
+  signe n'est pas une règle métier et ne duplique rien de `src/lib` (le balayage du 21/09/2026 sur
+  les calculs définis dans les écrans vaut pour les fonctions LONGUES, pas pour deux `filter`). Le
+  test d'écran garde donc le calcul ET le câblage ensemble.
+  **Cinq mutations, toutes mordent, et la DISCRIMINATION est le résultat** : le code TEL QU'IL ÉTAIT
+  et la mention retirée tombent chacun sur le test écrit pour eux ; la partition inversée en fait
+  tomber DEUX ; la mention affichée TOUJOURS ne touche que le garde symétrique ; et le montant
+  annoncé pris sur les sorties est attrapé à part — sans quoi « l'écran nomme l'apport » serait
+  satisfait par un écran qui en annonce un autre.
+  **Résultat négatif du même passage, à garder** : le reste de `VirementsTab` est juste — lecture
+  paginée, total qui échappe à la recherche, bandeau de lecture partielle, et `retirer` qui écrit la
+  même transition que son jumeau de `BanqueTab` (les `piece_id`/`cotisation_id` qu'il ne remet pas à
+  null sont déjà nuls par construction, le marquage les ayant effacés). Ne pas le réenquêter.
+- **LES LECTURES D'UNE SEULE LIGNE N'ONT PAS DE SCANNER, ET N'EN ONT PAS BESOIN** (balayage du
+  23/09/2026, résultat négatif à garder). Six scanners gardent les lectures de COLLECTION — compte
+  annoncé, erreur lue, drapeau signalé, tri total, de part et d'autre de `src/` ; les **39** lectures
+  d'UNE ligne (`.single()`, `.maybeSingle()`, `.limit(1)`) n'étaient couvertes par aucun, ce qui
+  avait tout l'air d'un trou de la même famille que les cinq demi-chemins déjà payés ici.
+  **Ce n'en est pas un, et pour deux raisons distinctes** : les deux `.limit(1)` sont des tests
+  d'EXISTENCE (`appartientDejaAuCabinet`, dans ses deux copies), donc l'absence de tri n'y décide de
+  rien — c'est « est-ce les BONNES lignes ? » posé à une lecture qui n'en veut aucune en
+  particulier ; et tout le reste est déjà gardé par les scanners d'ERREUR, **« qui prend `data` prend
+  `error` » valant pour une ligne comme pour mille**.
+  **Un seul point relevé, et il n'est pas producible** : `FactureApercu` rend `numeroOrigine ?? '…'`,
+  donc la MÊME ellipse pour « en cours de chargement » et pour « lu, mais absent », sur un AVOIR
+  imprimé qui part au client. La branche ERREUR est bien traitée (`'— non lu'`, corrigée en son
+  temps), et `factures_emises.facture_origine_id` est en NO ACTION avec un bouton de suppression
+  gardé sur `statut === 'brouillon'` alors qu'un avoir naît VALIDÉ : la ligne d'origine ne peut pas
+  disparaître. Noté pour ne pas le réenquêter.
 - **Un filtre de période écarte les NULL sans le dire.** En SQL, une comparaison avec NULL n'est
   jamais vraie : `gte`/`lte` sur `date_piece` excluait donc les pièces validées sans date de
   *toutes* les périodes à la fois — absentes du ZIP, du récapitulatif et du total de chaque pack,
@@ -4521,10 +4565,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 15 testés** — banque,
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 16 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations,
-  suppléments, accès, immobilisations, estimation (21/09/2026), financement (22/09/2026) et
-  cotisations (23/09/2026) — donc **2 sans aucun test de rendu** : factures et virements.
+  suppléments, accès, immobilisations, estimation (21/09/2026), financement (22/09/2026),
+  cotisations et virements (23/09/2026) — donc **1 seul sans aucun test de rendu** : factures.
   Suppléments, Accès, Immobilisations, Estimation, Financement et Cotisations y sont entrés comme
   Informations : par un défaut trouvé, jamais par méthode. HUIT CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
@@ -4589,7 +4633,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1488 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1491 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

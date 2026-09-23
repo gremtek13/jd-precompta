@@ -52,7 +52,17 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
   const affichees = filtered.filter((l) =>
     correspondALaRecherche([l.libelle, l.montant, l.date, formatDate(l.date)], recherche),
   )
-  const total = filtered.reduce((s, l) => s + Math.abs(l.montant), 0)
+  // LE SIGNE SE PERD DANS LE TOTAL, ET NULLE PART AILLEURS. La ligne affiche `formatMoney(montant)`,
+  // donc une entrée s'y voit ; le total, lui, sommait des VALEURS ABSOLUES. Or le bouton « Virement
+  // personnel » de l'onglet Banque n'est borné par aucun signe, et c'est le seul qui nomme la
+  // situation d'un mouvement venu du compte personnel — un apport marqué ainsi FAISAIT MONTER le
+  // « Total prélevé » au lieu de le réduire, sous un libellé qui dit l'inverse.
+  // On ne tranche PAS ce que le cabinet doit faire d'un apport (le distinguer vraiment serait une
+  // décision produit, compte 108) : on l'écarte d'un total qui ne le désigne pas, et on le DIT.
+  const prelevements = filtered.filter((l) => l.montant < 0)
+  const apports = filtered.filter((l) => l.montant > 0)
+  const total = prelevements.reduce((s, l) => s + Math.abs(l.montant), 0)
+  const totalApports = apports.reduce((s, l) => s + l.montant, 0)
 
   return (
     <>
@@ -74,6 +84,15 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
         <div className="card" style={{ marginBottom: 20 }}>
           <span className="muted" style={{ display: 'block' }}>Total prélevé{anneeFilter !== 'toutes' ? ` en ${anneeFilter}` : ''}</span>
           <strong style={{ fontSize: '1.3rem' }}>{formatMoney(total)}</strong>
+          {/* Rendu seulement quand il apprend quelque chose — une mise en garde permanente cesse
+              d'être lue, puis emporte ses voisines (voir `dotationsNonProratisees`). */}
+          {apports.length > 0 && (
+            <p className="muted" style={{ marginTop: 8, marginBottom: 0, color: 'var(--color-danger)' }}>
+              {apports.length} mouvement(s) ENTRANT(s), pour {formatMoney(totalApports)}, ne sont pas
+              comptés ci-dessus : un virement <em>vers</em> le compte pro est un apport, pas un
+              prélèvement. Vérifie ce marquage dans l'onglet Banque.
+            </p>
+          )}
         </div>
       )}
 
