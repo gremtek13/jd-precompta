@@ -4002,6 +4002,21 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **totale** donne la même sémantique sans le piège : deux NULL ne sont jamais égaux en SQL, donc les
   relevés anonymes s'empilent de toute façon. Vérifié par un aller-retour réel en base, pas par le
   faux client — un mock ne peut pas prouver qu'une contrainte existe.
+  **BALAYÉ EN ENTIER LE 23/09/2026, ZÉRO FAUTE — résultat négatif à garder.** Ce dépôt a payé DEUX
+  fois ce motif (la règle tiers → catégorie muette des mois durant, l'index partiel de cette table),
+  et rien ne le rejouait. Les **onze upserts** de `src/` et des Edge Functions ont été croisés avec
+  les index uniques RÉELS de `pg_index` : tous désignent un index qui existe — et les deux qui
+  n'écrivent aucun `onConflict` (`superpdp_credentials`, et `previsionnels_bancaires` avant qu'il ne
+  le porte) retombent sur une clé primaire que leur payload renseigne. **Aucun index unique du
+  schéma n'est partiel**, donc le piège de cette entrée n'a aujourd'hui aucune instance vivante. Et
+  le cas historique est refermé des DEUX côtés : `cabinet_id` figure bien dans le payload de
+  `PieceFormModal` comme de `CategoriserTiersModal`.
+  **CE MOTIF NE DEVIENT PAS UN SCANNER, et c'est dit plutôt que laissé deviner** : ce qui l'avait
+  rendu invisible était le résultat JETÉ, pas la forme de l'`onConflict` — un `onConflict` qui ne
+  désigne rien rend aujourd'hui un 42P10 que `lecturesVerifiees` et `edgeFunctionsEcritures`
+  garantissent lu. Le seul reste silencieux serait `ignoreDuplicates: true` posé sur une ligne qu'on
+  voulait METTRE À JOUR ; il n'y en a qu'un dans le dépôt (`facture_superpdp_events`), où des
+  événements ne se réécrivent pas. Un contrôle pour un site unique et correct serait du bruit.
 - **Ces deux lignes servent à contrôler le relevé, pas seulement à être écartées.** Solde
   d'ouverture + somme des mouvements doit donner le solde de clôture ; sinon le fichier est
   incomplet, et le cabinet doit l'apprendre avant de bâtir une comptabilité dessus. Le contrôle
