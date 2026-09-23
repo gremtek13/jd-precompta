@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser, tvaNettePourPeriode } from '../../lib/ecritures'
-import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, rapprochementsEcartImportant, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -291,6 +291,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // tait exactement dessus — sur l'écran dont le métier est de dire ce qui manque. Voir
   // `mouvementsRapprochesSansObjet` : les deux clés du côté banque sont en `ON DELETE SET NULL`.
   const rapprochesSansObjet = mouvementsRapprochesSansObjet(lignes)
+  // L'AUTRE MOITIÉ DE « LA BANQUE FAIT FOI » (décision du cabinet, 23/09/2026) : sous le seuil la
+  // pièce est ALIGNÉE au rapprochement et il n'y a rien à dire ; au-dessus, un écart large est
+  // presque toujours un paiement partiel ou groupé, donc on le signale sans rien écraser.
+  // Il ne se voit nulle part ailleurs tant que les écritures ne sont pas générées — voir
+  // `rapprochementsEcartImportant`.
+  const ecartsRapprochement = rapprochementsEcartImportant(lignes, piecesValidees)
   // La TROISIÈME clé en `ON DELETE SET NULL` de `pieces` : supprimer une pièce immobilisée détache
   // son immobilisation sans un mot, et la dotation continue de partir en case CH d'une 2035 signée.
   const immosSansJustificatif = immobilisationsSansJustificatif(immobilisations)
@@ -366,6 +372,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     // qui part sur un document signé sans pièce derrière — et le registre est le seul écran qui
     // puisse encore la montrer, la piste d'audit ne couvrant pas les immobilisations.
     { id: 'immos-sans-justificatif', label: 'immobilisation(s) dont le justificatif a été supprimé', action: "Retrouver le justificatif ou retirer l'immobilisation", nb: immosSansJustificatif.length, cible: 'immobilisations', severite: 'erreur' },
+    { id: 'ecart-rapprochement', label: 'rapprochement(s) dont le montant ne correspond pas au mouvement', action: 'Vérifier le montant ou le rapprochement', nb: ecartsRapprochement.length, cible: 'banque', severite: 'erreur' },
     { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
     { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention', detail: detailPiecesSansDate(piecesConfianceBasse) },

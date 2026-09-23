@@ -3907,6 +3907,51 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   formes passant par minuit UTC. Ce que `jourDe` apporte est de la FORME (il ne peut pas se mettre à
   dépendre d'un fuseau), pas du comportement, et c'est écrit dans le test plutôt que maquillé en
   assertion de complaisance.
+- **LA BANQUE FAIT FOI, MAIS SOUS UN SEUIL — décision du cabinet, 23/09/2026** (« Décisions en
+  attente » : « quand une pièce est rapprochée d'un mouvement bancaire, est-ce que le montant de la
+  banque doit écraser celui de la pièce ? » → oui, en alignant sous un petit écart et en SIGNALANT
+  au-delà).
+  **CE QUI EXISTAIT DÉJÀ, ET POURQUOI IL NE COUVRAIT QU'UN CAS** : `reglerPieceSurBanque` alignait
+  les seules pièces en DEVISE, et sans seuil — là c'est indéniable, la valeur posée au dépôt au taux
+  BCE n'étant qu'un provisoire. Une pièce en EUROS, elle, porte déjà un montant que quelqu'un a lu
+  sur un document.
+  **POURQUOI LE SEUIL PLUTÔT QU'UN ALIGNEMENT SEC, et c'est l'arbitrage qui a été remis au cabinet
+  avant d'écrire une ligne** : les données ne distinguent pas un frais bancaire d'un PAIEMENT
+  PARTIEL. Aligner sans seuil enregistrerait une facture de 1 000 € payée en deux fois comme une
+  dépense de 500 €, sur une pièce le plus souvent déjà validée, et le montant d'origine serait perdu.
+  Le seuil est `min(2 % du TTC, 5 €)` : relatif parce qu'un centime sur 12 € et sur 12 000 € ne
+  disent pas la même chose, plafonné parce que 2 % d'une grosse facture (100 € sur 5 000 €) est
+  largement de quoi couvrir un acompte. **Pas de plancher, et c'est mesuré** : 2 % couvre déjà un
+  centime dès 0,50 €.
+  **ET L'ÉCART NE SE VOYAIT NULLE PART TANT QUE LES ÉCRITURES N'ÉTAIENT PAS GÉNÉRÉES.**
+  `synchroniserContrepartieBanque` écrit la contrepartie sur `Math.abs(ligne.montant)` et la charge
+  sur le TTC de la pièce, donc un écart déséquilibre le groupe et `groupesDesequilibres` finit par le
+  dire — mais elle SORT avant d'écrire quoi que ce soit tant que la pièce n'a pas sa ligne de charge
+  (catégorie sans compte, « Générer » pas lancé). Et le menu « Associer à… » de Banque est un SCORE,
+  pas un filtre : rien n'empêche de relier une pièce de 1 000 € à un mouvement de 500 €.
+  `rapprochementsEcartImportant` (lib/controles.ts) le signale — pastille dans la liste ET dans le
+  panneau de Banque, point « erreur » en Checklist.
+  **LE MODULE A ÉTÉ RENOMMÉ `reglementBanque.ts`** : `reglementDevise` aurait menti sur ce qu'il
+  fait, et c'est le piège que ce fichier nomme sous « un nom qui ment sur son filtre » — le
+  compilateur a énuméré les appelants exhaustivement.
+  **Trois décisions de forme** : le calcul pur vit à part (`alignementBanque.ts`, sans `supabase`,
+  donc testable) ; on compare les VALEURS ABSOLUES, une pièce d'achat étant positive et son mouvement
+  négatif ; et une pièce en euros ne reçoit NI `taux_change` NI `conversion_source` — lui en écrire
+  un la ferait passer pour convertie, donc afficher un cours qui n'a jamais existé sur un document
+  en euros.
+  **LATENT, et mesuré** : 12 lignes rapprochées sur une pièce, **zéro dont le montant diffère**. Le
+  correctif ne change donc aucun chiffre existant.
+  **DIX-HUIT MUTATIONS, TOUTES MORDENT — et la PREMIÈRE a survécu, accusant le jeu d'essai.**
+  « Le code tel qu'il était » (aucun alignement en euros) laissait les seize tests du chantier au
+  VERT : le CALCUL était couvert, le SIGNAL aussi (les deux écrans), et personne ne vérifiait que la
+  pièce soit RÉELLEMENT ÉCRITE — c'est-à-dire précisément ce que la décision du cabinet demandait.
+  `reglementBanque.test.ts` ferme ce trou, et deux mutations de plus y mordent (le taux de change
+  écrit sur une pièce en euros, le chemin devise routé vers le seuil).
+  La discrimination est le reste du résultat : la pastille de la LISTE et celle du PANNEAU font
+  tomber un test chacune (deux copies, gardées séparément), le point de Checklist un autre, et les
+  gardes symétriques des trois côtés — sans lesquels « l'écran signale l'écart » serait satisfait par
+  un écran qui crie sur TOUS les rapprochements.
+
 - **Un rapprochement qui hésite dit un symptôme, pas une cause.** `analyserAppariements` a été exécuté
   sur les données réelles du dossier `test` (41 pièces, les 26 mouvements non rapprochés qui pouvaient
   former une paire) : 6 appariements certains, 6 à arbitrer, et **chacun des six refus est juste** —
@@ -4703,7 +4748,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1502 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1528 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

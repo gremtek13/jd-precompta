@@ -447,3 +447,43 @@ describe('ChecklistTab — une immobilisation dont le justificatif a été suppr
     expect(screen.queryAllByText(POINT)).toHaveLength(0)
   })
 })
+
+// L'AUTRE MOITIÉ DE « LA BANQUE FAIT FOI » (décision du cabinet, 23/09/2026), vue depuis l'écran
+// qui prétend dire ce qui manque. Sous le seuil la pièce est alignée au rapprochement et il n'y a
+// rien à compter ; au-dessus, un écart large est presque toujours un paiement partiel ou groupé, on
+// ne touche à rien, et sans ce point plus rien ne le nommerait tant que les écritures ne sont pas
+// générées.
+describe('ChecklistTab — un rapprochement dont le montant ne correspond pas', () => {
+  const POINT = /le montant ne correspond pas au mouvement/
+
+  it('le compte', async () => {
+    poser({
+      validees: [piece({ id: 'p1', statut: 'validee', montant_ttc: 1000, date_piece: '2026-03-10' })],
+      lignes: [ligne({ statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -500 })],
+    })
+    monter()
+
+    const trouve = await screen.findByText(POINT)
+    expect(trouve.textContent).toMatch(/^1 /)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la Checklist compte les écarts » serait satisfait par un point
+  // qui compte TOUS les rapprochements — y compris les exacts et ceux que le seuil absorbe, donc un
+  // écran rouge en permanence.
+  it('se tait sur un rapprochement exact et sur un écart sous le seuil', async () => {
+    poser({
+      validees: [piece({ id: 'p1', statut: 'validee', montant_ttc: 100, date_piece: '2026-03-10' })],
+      lignes: [
+        ligne({ id: 'l1', statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -100 }),
+        ligne({ id: 'l2', statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -100.03 }),
+        ligne({ id: 'l3', statut: 'non_rapprochee', piece_id: null, cotisation_id: null }),
+      ],
+    })
+    monter()
+
+    // Ancré sur un point que ce jeu d'essai déclenche forcément : une ABSENCE vérifiée sur un écran
+    // encore en chargement serait verte pour une raison fausse.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+})

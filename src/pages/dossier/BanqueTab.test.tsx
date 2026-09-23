@@ -239,3 +239,54 @@ describe('BanqueTab — un mouvement rapproché qui ne désigne plus rien', () =
     expect(screen.queryAllByText('Rapproché sans justificatif')).toHaveLength(0)
   })
 })
+
+// LA BANQUE FAIT FOI, MAIS SOUS UN SEUIL (décision du cabinet, 23/09/2026). Sous le seuil la pièce
+// est ALIGNÉE au rapprochement, donc il ne reste aucun écart à montrer ; au-dessus on ne touche à
+// rien — un écart large est presque toujours un paiement partiel ou groupé — et c'est cette pastille
+// qui le dit.
+//
+// Aucun test de `src/lib` ne peut le voir : `ecartAvecBanque` est juste, c'est son CÂBLAGE qui
+// décide de ce que l'opérateur lit. Et rien d'autre ne le dirait tant que les écritures ne sont pas
+// générées : `synchroniserContrepartieBanque` sort avant d'écrire quoi que ce soit tant que la pièce
+// n'a pas sa ligne de charge, donc `groupesDesequilibres` reste muet.
+describe('BanqueTab — un rapprochement dont le montant ne correspond pas', () => {
+  it("affiche l'écart, dans la liste ET dans le panneau", async () => {
+    reinitialiser()
+    faux.pieces = [pieceDeTest({ montant_ttc: 1000 })]
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1', montant: -500 })]
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await screen.findByText(/Écart de .*500,00.*avec la pièce/)
+
+    // LE PANNEAU EST UNE SECONDE COPIE, et il faut l'OUVRIR : une assertion restée sur la liste
+    // laisserait le panneau mentir tout seul, et la mutation qui ne corrige qu'un des deux sites
+    // passerait au vert.
+    await act(async () => { screen.getByText('PRLV SEPA FOURNISSEUR').click() })
+    expect(screen.queryAllByText(/Écart de .*500,00.*avec la pièce/)).toHaveLength(2)
+  })
+
+  // GARDE SYMÉTRIQUE — sans elle, « l'écran signale l'écart » serait satisfait par un écran qui
+  // crie sur TOUS les rapprochements, y compris les exacts et ceux que le seuil absorbe.
+  it('se tait sur un rapprochement exact et sur un écart sous le seuil', async () => {
+    reinitialiser()
+    faux.pieces = [pieceDeTest({ montant_ttc: 100 })]
+    faux.lignes = [
+      ligneDeTest({ id: 'ligne-1', statut: 'rapprochee', piece_id: 'piece-1', montant: -100 }),
+      ligneDeTest({ id: 'ligne-2', statut: 'rapprochee', piece_id: 'piece-1', montant: -100.03, libelle: 'PRLV AVEC FRAIS' }),
+    ]
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await screen.findByText('PRLV AVEC FRAIS')
+    expect(screen.queryAllByText(/Écart de/)).toHaveLength(0)
+  })
+})

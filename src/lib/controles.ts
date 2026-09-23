@@ -1,5 +1,6 @@
 import { ajouterJours, aujourdHuiSql, cleFournisseur, dateLocaleDe } from './format'
 import type { Categorie, Immobilisation, LigneBancaire, Piece } from './types'
+import { ecartAvecBanque, type EcartBanque } from './alignementBanque'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
 // où ces règles vivent, utilisés à la fois là où ils bloquent une action (Écritures, Clôture) et dans
@@ -366,6 +367,46 @@ export const AVERTISSEMENT_RAPPROCHEMENT_DEFAIT =
 
 export function mouvementsRapprochesSansObjet(lignes: LigneBancaire[]): LigneBancaire[] {
   return lignes.filter(mouvementRapprocheSansObjet)
+}
+
+// UNE PIÈCE RAPPROCHÉE D'UN MOUVEMENT D'UN AUTRE MONTANT — le reste de la décision « la banque
+// fait foi » (23/09/2026, choix du cabinet). Sous le seuil, `reglementBanque` ALIGNE la pièce et il
+// n'y a plus d'écart à signaler ; au-dessus, on ne touche à rien et c'est ici que ça se dit.
+//
+// CE QUE ÇA COÛTE, ET POURQUOI ALIGNER SERAIT PIRE QUE SE TAIRE : un écart large est presque
+// toujours un paiement PARTIEL ou un règlement GROUPÉ. Écraser la pièce enregistrerait alors une
+// facture de 1 000 € comme une dépense de 500 €, sur une pièce déjà validée, et le montant d'origine
+// serait perdu. On signale, on ne corrige pas — le parti pris de `doublonFraisVehicules` et de
+// `dotationsNonProratisees`.
+//
+// ET L'ÉCART NE SE VOIT NULLE PART AILLEURS TANT QUE LES ÉCRITURES N'ONT PAS ÉTÉ GÉNÉRÉES :
+// `synchroniserContrepartieBanque` écrit la contrepartie sur `Math.abs(ligne.montant)` et la charge
+// sur le TTC de la pièce, donc le groupe cesse d'être équilibré et `groupesDesequilibres` finit par
+// le dire. Mais elle sort AVANT d'écrire quoi que ce soit tant que la pièce n'a pas sa ligne de
+// charge (catégorie sans compte, « Générer les écritures » pas encore lancé) — et le menu
+// « Associer à… » de Banque est un SCORE, pas un filtre : rien n'empêche de relier une pièce de
+// 1 000 € à un mouvement de 500 €.
+//
+// Seules les pièces FOURNIES sont examinées : une pièce hors du jeu chargé n'est pas une anomalie
+// mais un artefact de filtrage, exactement la règle posée pour `rupturesPisteAudit`.
+export interface EcartRapprochement {
+  ligne: LigneBancaire
+  piece: Piece
+  ecart: EcartBanque
+}
+
+export function rapprochementsEcartImportant(lignes: LigneBancaire[], pieces: Piece[]): EcartRapprochement[] {
+  const parId = new Map(pieces.map((p) => [p.id, p]))
+  const resultats: EcartRapprochement[] = []
+  for (const ligne of lignes) {
+    if (ligne.statut !== 'rapprochee' || !ligne.piece_id) continue
+    const piece = parId.get(ligne.piece_id)
+    if (!piece) continue
+    const ecart = ecartAvecBanque(piece, ligne)
+    if (!ecart || ecart.ecart === 0 || ecart.alignable) continue
+    resultats.push({ ligne, piece, ecart })
+  }
+  return resultats
 }
 
 // UNE IMMOBILISATION DONT LE JUSTIFICATIF A ÉTÉ SUPPRIMÉ CONTINUE D'AMORTIR — la TROISIÈME clé en

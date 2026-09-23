@@ -17,7 +17,8 @@ import {
   libelleExploitable, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
-import { reglerPieceSurBanque } from '../../lib/reglementDevise'
+import { ecartAvecBanque } from '../../lib/alignementBanque'
+import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
@@ -743,6 +744,8 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
             <tbody>
               {filtered.map((l) => {
                 const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
+                const ecartMontant = piecePayee && l.statut === 'rapprochee' ? ecartAvecBanque(piecePayee, l) : null
+                const ecartImportant = ecartMontant && ecartMontant.ecart > 0 && !ecartMontant.alignable ? ecartMontant : null
                 const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
                 const aUneSuggestion = l.statut === 'non_rapprochee' && !!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
                 return (
@@ -764,6 +767,15 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
                           {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
+                        </span>
+                      )}
+                      {/* Sous le seuil la pièce a été ALIGNÉE sur la banque, donc il ne reste aucun
+                          écart à montrer. Au-dessus, on n'a rien écrasé — et sans cette pastille la
+                          seule chose qui le dirait est le déséquilibre des écritures, qui n'existe
+                          pas tant qu'elles n'ont pas été générées. */}
+                      {ecartImportant && (
+                        <span className="badge badge-danger">
+                          Écart de {formatMoney(ecartImportant.ecart)} avec la pièce
                         </span>
                       )}
                       {!l.prelevement_personnel && l.statut === 'non_rapprochee' && (
@@ -833,6 +845,14 @@ function PanneauLigne({
   const proposeCotisation = !propose ? suggestionCotisation(ligne) : null
   const proposeRecurrent = !propose && !proposeCotisation ? suggestionRecurrente(ligne) : null
   const piecePayee = ligne.piece_id ? pieces.find((p) => p.id === ligne.piece_id) : null
+  // Seconde copie de la pastille de la liste, et gardée par son propre test : le panneau est l'écran
+  // où l'on ARBITRE, donc celui où l'écart doit se lire — une assertion restée sur la liste le
+  // laisserait mentir tout seul (leçon de `mouvementRapprocheSansObjet`, corrigé la veille).
+  const ecartPanneau = (() => {
+    if (!piecePayee || ligne.statut !== 'rapprochee') return null
+    const e = ecartAvecBanque(piecePayee, ligne)
+    return e && e.ecart > 0 && !e.alignable ? e : null
+  })()
   const cotisationPayee = ligne.cotisation_id ? cotisations.find((c) => c.id === ligne.cotisation_id) : null
   const piecesTriees = ligne.statut === 'non_rapprochee'
     ? [...pieces].filter((p) => !piecesRapprochees.has(p.id))
@@ -882,6 +902,11 @@ function PanneauLigne({
               Rapproché
               {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
               {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
+            </span>
+          )}
+          {ecartPanneau && (
+            <span className="badge badge-danger">
+              Écart de {formatMoney(ecartPanneau.ecart)} avec la pièce
             </span>
           )}
           {!ligne.prelevement_personnel && ligne.statut === 'non_rapprochee' && <span className="badge badge-warning">Non rapproché</span>}
