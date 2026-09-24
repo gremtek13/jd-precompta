@@ -24,8 +24,12 @@ le OR de chaque fonction d'accès), devient à ce moment-là un pouvoir à encad
 seulement par le code.
 
 Un troisième acteur existe et n'est utilisateur de rien : **le patient**. Son nom, sa date de
-naissance et parfois son NIR figurent sur les bordereaux de télétransmission que le praticien
-dépose. Il n'a aucun compte, aucun écran, aucun moyen de savoir que ses données sont là. Voir §6.
+naissance et parfois son NIR figurent sur les bordereaux de télétransmission du praticien — et
+**ces bordereaux n'ont pas à être transmis au cabinet** : ils relèvent du secret médical, et c'est
+le relevé SNIR, sans identité de patient, qui justifie les recettes auprès de l'expert-comptable
+(règle rappelée par le cabinet le 24/09/2026). Le patient n'entre donc dans l'application que si un
+bordereau y est déposé par erreur. Il n'a alors aucun compte, aucun écran, aucun moyen de savoir que
+ses données sont là. Voir §6 et §8.7.
 
 ---
 
@@ -34,7 +38,7 @@ dépose. Il n'a aucun compte, aucun écran, aucun moyen de savoir que ses donné
 | Traitement | Finalité | Base légale | Personnes concernées | Données |
 |---|---|---|---|---|
 | **Tenue de la pré-comptabilité** | Produire la comptabilité et les déclarations d'un client | Obligation légale du client (Code de commerce L123-12 et s., CGI) + exécution du contrat de mission | Client, ses fournisseurs, ses clients | Identité, SIRET, adresse, montants, mouvements bancaires |
-| **Collecte des justificatifs** | Rassembler les pièces (dépôt, e-mail, Super PDP) | Exécution du contrat de mission | Client, tiers figurant sur les pièces, **patients** sur les bordereaux | Fichiers, empreintes SHA-256, horodatages |
+| **Collecte des justificatifs** | Rassembler les pièces (dépôt, e-mail, Super PDP) | Exécution du contrat de mission | Client, tiers figurant sur les pièces — des **patients** seulement si un bordereau est déposé par erreur (§8.7) | Fichiers, empreintes SHA-256, horodatages |
 | **Extraction automatique (OCR)** | Lire tiers, date et montants pour éviter la ressaisie | Intérêt légitime du cabinet (réduction de la saisie) | Idem collecte | Texte intégral du document (`piece_textes_ocr`) |
 | **Assistant comptable** | Répondre à des questions sur un dossier, en lecture seule | Intérêt légitime du cabinet | Client | Question, réponse, comptage de tokens |
 | **Facturation et relances** | Émettre et transmettre les factures d'honoraires | Exécution du contrat + obligation légale (facturation) | Client | Identité, adresse, e-mail, montants |
@@ -99,7 +103,8 @@ Mesuré le 19/09/2026, en comptant sans jamais extraire :
 - **0 commentaire** de pièce, **0 e-mail journalisé**, **2 messages** d'assistant.
 
 **Ce que ces chiffres disent, et c'est la conclusion utile : les données de patients sont dans les
-FICHIERS, pas dans la base.** Un bordereau déposé porte des noms et des numéros ; sa ligne en base
+FICHIERS, pas dans la base.** Un bordereau déposé — par erreur, il n'a pas à l'être (§8.7) — porte
+des noms et des numéros ; sa ligne en base
 ne porte qu'un chemin, un montant et une date. Le seul endroit où le contenu d'un document entre en
 base est `piece_textes_ocr`, et il n'y en a aujourd'hui qu'un seul de cette famille.
 
@@ -161,10 +166,17 @@ Pour le **patient**, non. Et il faut le dire plutôt que de le contourner :
 - aucune recherche de l'application ne permet aujourd'hui de retrouver « toutes les pièces où
   figure Monsieur X » — l'application n'indexe pas les patients, et c'est heureux.
 
-La position défendable, et celle qui correspond à la réalité : **le praticien reste responsable de
-traitement pour les données de ses patients**, le cabinet comptable les traite pour son compte au
-titre de la mission, et la minimisation (§5) est la vraie réponse — moins ces données entrent, moins
-la question se pose.
+**La position qui correspond à la pratique, rappelée par le cabinet le 24/09/2026 : ces données
+n'ont pas à entrer du tout.** Le praticien reste seul responsable des données de ses patients, et il
+n'a pas le droit de transmettre ses bordereaux à son expert-comptable — c'est le relevé SNIR, qui
+totalise les honoraires sans identifier personne, qui justifie les recettes. Le cabinet ne traite
+donc aucune donnée de patient au titre de sa mission : un bordereau reçu est une erreur d'envoi, pas
+un flux du traitement.
+
+*Cette section disait auparavant que le cabinet traitait ces données « pour le compte » du
+praticien.* C'est cette rédaction qui plaçait l'application dans le champ de l'hébergement de
+données de santé (§8.7) : elle décrivait l'erreur d'envoi comme si c'était la règle. La
+minimisation (§5) reste la réponse pour ce qui arrive malgré la consigne.
 
 ---
 
@@ -257,7 +269,9 @@ les documents sensibles » (« Décisions en attente »).
 
 **Ce que « sensible » veut dire ici** : les justificatifs de recette (bordereaux de
 télétransmission), seule famille de pièces à porter des noms de patients — voir §4 et §6. Une
-facture EDF n'a aucune raison d'être purgée, et ne l'est pas.
+facture EDF n'a aucune raison d'être purgée, et ne l'est pas. **Depuis le 24/09/2026, ces
+bordereaux n'ont plus vocation à entrer (§8.7)** : la purge reste en place comme défense en
+profondeur, pour ceux qui arriveraient malgré la consigne.
 
 **Le geste** : `ClotureTab` porte un bouton « Clôturer l'exercice » par exercice affiché. Il pose une
 ligne dans `exercices_clotures` (date de la demande, pas un vrai calcul de résultat — ce reste un
@@ -325,3 +339,38 @@ que Postgres l'applique — seulement qu'aucune migration ne l'a supprimée ni �
 **Pour le démontrer vraiment, il faut passer par l'API Storage**, qu'un script SQL ne peut pas
 appeler : c'est un essai manuel, depuis un client authentifié. À faire une fois, et à refaire le jour
 où les policies du stockage changent.
+
+### 8.7 — Hébergement de données de santé (HDS) *(tranché le 24/09/2026 : non requis, sous condition)*
+
+**La question** : l'article L.1111-8 du Code de la santé publique impose un hébergeur certifié HDS à
+« toute personne qui héberge pour le compte de tiers des données de santé […] recueillies à
+l'occasion d'activités de […] soins ». Supabase n'est pas certifié HDS. Tant que ce registre disait
+que le cabinet traite les données des patients « pour le compte » du praticien (ancienne rédaction
+du §6), l'application était dans le cas prévu par ce texte.
+
+**La réponse du cabinet** : le praticien n'a pas le droit de transmettre ses bordereaux de
+télétransmission à son expert-comptable, et n'en a pas besoin — le relevé SNIR justifie les recettes
+sans identifier aucun patient. Aucune donnée de santé n'a donc vocation à entrer dans l'application,
+et l'HDS n'est pas requis.
+
+**La condition, écrite plutôt que sous-entendue** : c'est vrai tant qu'aucun bordereau n'entre, et
+aujourd'hui **seule la consigne donnée aux clients le garantit, pas le code**. L'application accepte
+toujours les bordereaux : `extract-piece` les reconnaît à leur titre, `orientationDe` les range en
+Pièces comme recettes, la fiche pièce annonce à l'opérateur « un justificatif de RECETTE, pas une
+dépense », et la purge du §8.3 a été construite autour d'eux. **Décision du cabinet, le 24/09/2026 :
+ne rien changer au code.** Deux options avaient été proposées et écartées — refuser le bordereau à
+l'arrivée (détectable à son titre, et même dans le navigateur avant tout envoi pour un PDF généré
+par le logiciel de télétransmission), ou l'accepter en le signalant comme à supprimer.
+
+**Ce qui rouvrirait la question** : un bordereau, ou tout autre document portant des patients,
+constaté dans un dossier réel. Le remède serait alors l'une des deux options ci-dessus, pas un
+changement d'hébergeur.
+
+**Pour mémoire, si un hébergement HDS devenait un jour nécessaire** (recherché le 24/09/2026) :
+411 hébergeurs certifiés en mai 2026, liste tenue par l'Agence du Numérique en Santé ; depuis le
+16/05/2026 seuls comptent les certificats au référentiel v2, qui impose l'Espace économique européen
+et la déclaration de toute exposition à une loi extraterritoriale comme le CLOUD Act. Clever Cloud
+est le seul hébergeur vérifié à proposer du PostgreSQL managé dans sa région HDS ; Scaleway certifie
+son stockage objet mais pas ses bases managées ; chaque offre impose un contrat HDS et un support
+payant, de l'ordre de 200 à 300 € par mois avant la première ressource. AWS n'est certifié que pour
+une liste de services et de régions : il faudrait y vérifier Textract.

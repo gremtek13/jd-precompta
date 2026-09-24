@@ -666,6 +666,14 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   conservés, zéro NIR et zéro date de naissance) ; le texte OCR est une copie dérivée SANS durée
   légale propre, donc le seul levier de minimisation réellement disponible ; et aucune pièce n'a
   encore dépassé l'obligation de 10 ans, la première purge possible n'étant pas avant 2033.
+- **Aucune donnée de patient n'a vocation à entrer, donc pas d'hébergement HDS** (tranché le
+  24/09/2026, RGPD.md §8.7). Un praticien n'a pas le droit de transmettre ses bordereaux de
+  télétransmission à son expert-comptable — secret médical — et n'en a pas besoin : le relevé SNIR
+  justifie les recettes sans identifier personne. **La condition est tenue par la consigne donnée
+  aux clients, pas par le code** : l'application accepte toujours un bordereau déposé par erreur et
+  le range en Pièces comme recette. Décision du cabinet : ne rien changer au code. Ne pas le
+  « corriger » sans le lui redemander, et ne pas réenquêter l'HDS au prochain audit — ce qui
+  rouvrirait la question est un bordereau constaté dans un dossier réel.
 - **Où partent les données quand elles quittent Supabase, c'est un test qui le dit.**
   `edgeFunctionsRegions.test.ts` lit la vraie source des Edge Functions et refuse toute région AWS
   hors UE — Textract comme Bedrock — et exige que les deux clients Textract d'`extract-piece`
@@ -4342,6 +4350,11 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   tard sur le compte. En BNC (recettes-dépenses), la recette se reconnaît à l'encaissement — la pièce
   sert donc de justificatif à rapprocher du virement de la caisse, et c'est la date de l'encaissement
   qui fait foi si elle diffère. L'écran le dit à l'arbitrage.
+  **ET CE DOCUMENT N'A PAS À ARRIVER DU TOUT (24/09/2026)** : un praticien n'a pas le droit de
+  transmettre ses bordereaux au cabinet, c'est le relevé SNIR qui justifie les recettes. Ce qui est
+  décrit ici est donc le traitement d'un dépôt fait PAR ERREUR, pas un flux normal de la mission —
+  et le libellé « justificatif de RECETTE » de la fiche pièce le présente à tort comme légitime. Le
+  code reste en l'état par décision du cabinet (voir « Contraintes de sécurité et RGPD »).
 - **Le sens d'une pièce est décidé par la classification, jamais par l'appelant.** `orientationDe`
   (lib/extraction.ts) rend en un seul endroit la destination (Pièces / Documents) **et** le
   `type_piece`. `depot.ts` (client) et `importFichiers.ts` (cabinet) sont des jumeaux assumés et
