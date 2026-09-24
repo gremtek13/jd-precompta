@@ -1436,11 +1436,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   en parallèle le 20/09/2026 ont écrit « troisième » et « cinquième » pour ce motif dans ce fichier.
   Un rang inscrit au fil du texte oblige à recompter à chaque ajout, sur des paragraphes que
   personne ne relit ensemble : la liste vit donc en un seul endroit, celui-ci.
-  **Neuf fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
+  **Dix fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
   (`PiecesTab` et `DocumentsTab`), « C'est une facture » (`DocumentsTab`, qui n'avait aucun verrou),
   « Tout rapprocher automatiquement » (`BanqueTab`), puis quatre trouvés d'un coup par l'audit
   ci-dessous (20/09/2026) : `EnvoyerEmailModal.envoyer`, `SuperPdpFactureModal.appeler`,
-  `FactureAvoirModal.creerAvoir` et `PieceFormModal.save`.
+  `FactureAvoirModal.creerAvoir` et `PieceFormModal.save`. **`AccesTab.handleCreateAccess`
+  s'ajoute le 24/09/2026** — trouvé en fermant un des huit onglets encore sans test de rendu, pas
+  par un nouveau balayage : il figurait pourtant déjà parmi les 36 candidats du balayage ci-dessous
+  (`functions.invoke` sans `.current`), classé avec les 32 laissés de côté comme « leur doublon crée
+  une LIGNE, qu'un cabinet voit et supprime ». Ce classement était faux pour celui-là : la ligne
+  `memberships` est protégée par une contrainte unique (la fonction la détecte et rend 409), donc le
+  doublon ne crée pas de ligne en trop — il fait courir deux appels `auth.admin.createUser` pour la
+  même adresse, avec au bout un message d'erreur qui laisse croire à un échec alors que l'accès vient
+  d'être créé par l'autre requête. Un candidat écarté par la classification du balayage reste donc un
+  candidat à revérifier au cas par cas, pas un candidat clos.
   **CE MOTIF SE CHERCHE, IL NE S'ATTEND PAS.** Les cinq premiers ont été trouvés un par un, en
   travaillant sur autre chose. Un balayage a rendu les quatre suivants en une fois, et la requête
   vaut plus que la prise — à rejouer avant de croire le motif épuisé : les gestionnaires `async` qui
@@ -2275,10 +2284,22 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   tient à une règle écrite et non à un automatisme ; et la SUPPRESSION d'un fichier n'est pas
   démontrable en SQL (voir RGPD.md §8.6), elle est gardée par une lecture du catalogue, plus
   faible et annoncée comme telle.
+  **24/09/2026 — `AccesTab` rejoint la liste**, trouvé en balayant les huit onglets encore sans
+  aucun test de rendu (voir la feuille de route Notion). Son formulaire « Donner un accès client »
+  ne se protégeait que par l'état React `inviting` — même défaut, dixième porteur du motif
+  « un verrou d'exécution est un `useRef`, jamais un état React ». Le doublon n'aurait pas créé
+  une ligne de trop : `create-client-access` appelle `auth.admin.createUser` deux fois pour la
+  même adresse, une course entre les deux appels que la fonction ne peut pas fermer elle-même —
+  au mieux un message incompréhensible pour un accès qui vient pourtant d'être créé, au pire deux
+  appels admin facturés pour rien. Trois tests, trois mutations, toutes mordent (même patron que
+  `FactureAvoirModal` : verrou retiré, déplacé dans le `try`, non relâché dans le `finally`).
+  Dix-sept fichiers de test d'écran désormais, sur 1054 tests répartis en 82 fichiers. Reste sept
+  onglets sans aucun test de rendu : factures, immobilisations, cotisations, estimation,
+  financement, suppléments, virements.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1051 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1054 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
