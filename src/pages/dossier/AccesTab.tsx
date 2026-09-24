@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import { extraireErreurFonction } from '../../lib/invokeErreur'
@@ -24,6 +24,20 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
   const [copie, setCopie] = useState(false)
   const [relanceDe, setRelanceDe] = useState<MembershipRow | null>(null)
 
+  // Verrou d'exécution en `useRef`, pas en état React : `setInviting(true)` ne prend effet qu'au
+  // rendu suivant, donc `disabled={inviting}` laisse passer deux soumissions rapprochées — sur un
+  // FORMULAIRE le déclencheur n'est même pas le double clic mais deux « Entrée » (CLAUDE.md, motif
+  // déjà vu sur EnvoyerEmailModal, FactureAvoirModal et consorts). Posé AVANT le `try` : dedans, le
+  // `return` du deuxième clic sortirait par le `finally`, qui relâcherait le verrou du PREMIER,
+  // encore en cours.
+  //
+  // Le doublon ne crée pas qu'une ligne en trop : create-client-access appelle
+  // `auth.admin.createUser` deux fois pour la même adresse, une course entre les deux appels que la
+  // fonction ne peut pas fermer elle-même (elle ne voit rien de la seconde requête pendant que la
+  // première est en vol) — au mieux un message d'erreur incompréhensible pour un accès qui vient
+  // pourtant d'être créé, au pire deux appels admin facturés pour rien.
+  const creationEnCours = useRef(false)
+
   async function load() {
     const { data } = await supabase.from('memberships').select('id, user_id, email').eq('dossier_id', dossierId)
     setRows(data ?? [])
@@ -33,6 +47,8 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
 
   async function handleCreateAccess(e: FormEvent) {
     e.preventDefault()
+    if (creationEnCours.current) return
+    creationEnCours.current = true
     setInviting(true)
     setError(null)
     try {
@@ -58,6 +74,7 @@ export default function AccesTab({ dossierId, dossierNom, codeEmail }: { dossier
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      creationEnCours.current = false
       setInviting(false)
     }
   }
