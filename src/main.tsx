@@ -14,6 +14,11 @@ import '@fontsource/inter/700.css'
 import '@fontsource/inter/800.css'
 import './index.css'
 import App from './App.tsx'
+import { ecouterInstallation } from './lib/installation'
+
+// Avant tout rendu : l'invite d'installation du navigateur n'arrive qu'une fois par chargement de page,
+// et la barre latérale qui la propose n'est pas encore montée (voir lib/installation.ts).
+ecouterInstallation()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

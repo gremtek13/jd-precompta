@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from './Layout'
 import { signalerMajDossiers } from '../lib/listeDossiers'
 
@@ -66,7 +66,12 @@ vi.mock('../context/AuthContext', () => ({
     signOut: async () => {},
   }),
 }))
-vi.mock('../lib/branding', () => ({ useCabinetBranding: () => null }))
+// La charte du cabinet : nulle par défaut, un logo dans le test qui vérifie sous quel nom
+// l'application s'installe.
+const charte = vi.hoisted(() => ({
+  valeur: null as null | { nom: string; couleurPrimaire: null; policeGoogleFont: null; logoUrl: string | null },
+}))
+vi.mock('../lib/branding', () => ({ useCabinetBranding: () => charte.valeur }))
 vi.mock('../lib/theme', () => ({ useTheme: () => ({ theme: 'light', toggleTheme: () => {} }) }))
 
 async function afficher(chemin: string) {
@@ -86,6 +91,7 @@ async function afficher(chemin: string) {
 
 beforeEach(() => {
   localStorage.clear()
+  charte.valeur = null
   faux.dossiers = [
     { id: 'd1', nom: 'Cabinet Hélène' },
     { id: 'd2', nom: 'Bravo Santé' },
@@ -217,5 +223,28 @@ describe('Barre latérale — réduite à ses icônes', () => {
     await afficher('/dossiers')
     fireEvent.click(screen.getByRole('button', { name: 'Rechercher un dossier' }))
     expect(document.activeElement).toBe(screen.getByLabelText('Rechercher un dossier'))
+  })
+})
+
+describe('Barre latérale — installer l’application', () => {
+  const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
+  afterEach(() => { delete (navigator as { userAgent?: string }).userAgent })
+
+  function consigne(): string {
+    fireEvent.click(screen.getByRole('button', { name: /Installer l'application/ }))
+    return screen.getByRole('note').textContent ?? ''
+  }
+
+  it('propose l’installation sous le nom de JD Precompta quand le cabinet n’a pas de logo', async () => {
+    Object.defineProperty(navigator, 'userAgent', { value: CHROME, configurable: true })
+    await afficher('/dossiers')
+    expect(consigne()).toContain('« JD Precompta »')
+  })
+
+  it('sous le nom du cabinet quand il a son logo, celui du manifeste qu’il reçoit', async () => {
+    Object.defineProperty(navigator, 'userAgent', { value: CHROME, configurable: true })
+    charte.valeur = { nom: 'Cabinet Exemple', couleurPrimaire: null, policeGoogleFont: null, logoUrl: 'https://stockage.exemple.test/logo.png' }
+    await afficher('/dossiers')
+    expect(consigne()).toContain('« Cabinet Exemple »')
   })
 })

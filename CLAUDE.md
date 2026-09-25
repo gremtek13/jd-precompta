@@ -227,6 +227,8 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
                   d'emploi en tête de vitrine.mjs ; images dans sorties/, ignoré par git.
                   debordements.mjs y liste, onglet par onglet, ce qui déborde du panneau
                   central (panneau de droite ouvert ou fermé) et rend un code d'erreur.
+                  installable.mjs demande à Chromium si l'application est installable, avec
+                  et sans logo de cabinet, et rend un code d'erreur.
 ```
 
 ## Conventions de développement
@@ -1014,6 +1016,35 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   (artefact « Nouvelle interface PC »). Chaque étape part en ligne sur accord du cabinet, et c'est la
   feuille de route Notion (lignes 18.8 et 18.9) qui dit laquelle l'est : ce fichier voyage avec le
   code, donc il ne peut pas savoir si le commit qui le porte a été publié.
+- **Application installable depuis le navigateur (PWA), 25/09/2026** — choix du cabinet, contre un
+  fichier d'installation .exe/.dmg (plusieurs jours de travail, puis des avertissements à
+  l'installation ou des certificats payants chaque année). « Installer l'application » vit en bas de
+  la barre latérale d'ordinateur (`components/BoutonInstallation.tsx`, `lib/installation.ts`) et
+  disparaît dans l'application installée. Edge et Chrome ouvrent leur propre fenêtre d'installation
+  par l'invite `beforeinstallprompt`, qu'ils n'émettent qu'après un peu d'usage de la page et jamais
+  une fois l'application installée : en attendant, le bouton donne une consigne (l'icône de la barre
+  d'adresse). Safari reçoit le chemin de son menu (Fichier, puis « Ajouter au Dock », macOS 14 et
+  plus) ; Firefox, qui ne sait pas installer d'application, le conseil d'un autre navigateur. Aucun
+  appel réseau, et l'installation reste un clic de l'utilisateur.
+  **LE MANIFESTE D'UN CABINET QUI A SON LOGO N'ÉTAIT PAS INSTALLABLE — ET C'EST CELUI DE JD CONSULT.**
+  Quand le cabinet a un logo, `branding.ts` remplace le manifeste statique par un manifeste construit
+  à la volée et servi en `blob:`. Son `start_url: '/'` se résolvait contre `blob:https://…/<uuid>`,
+  une URL sans chemin hiérarchique : Chrome l'écartait (« URL is invalid ») et refusait l'installation
+  (`start-url-not-valid`), avec pour seule trace un avertissement en console. Vérifier le manifeste
+  statique ne suffit donc pas : c'est l'autre que reçoit un cabinet en marque blanche. Toute adresse y
+  est désormais absolue (`lib/manifesteCabinet.ts`), et son `id` est celui du manifeste statique, pour
+  qu'une application installée garde son identité quand le cabinet pose ou retire son logo.
+  **Mesuré par le navigateur, pas relu** : `outils/captures/installable.mjs` demande à Chromium
+  (`Page.getInstallabilityErrors`) si la page est installable, sans logo, avec un logo carré, avec un
+  logo large, et avec un logo introuvable qui DOIT échouer (`no-acceptable-icon` : Chrome exige une
+  icône d'au moins 144 pixels). En navigation privée Chrome refuse toute installation (`in-incognito`),
+  d'où un profil jetable par cas. Le défaut d'origine replanté le fait sortir en erreur. Le vrai logo
+  du cabinet (512 × 512, servi avec `Access-Control-Allow-Origin: *`) remplit la même exigence.
+  Côté tests, treize mutations mordent, dont le défaut d'origine (trois tests tombent), l'invite
+  ouverte deux fois par deux clics rapprochés (un second `prompt()` lève) et le bouton resté affiché
+  dans l'application installée.
+  **Ce qui reste, dit plutôt que promis** : le titre de la fenêtre reste « JD Precompta », le `<title>`
+  étant commun à tous les cabinets, et un logo non carré s'installe tel quel, sans être recadré.
 - **Purge du texte OCR des pièces sensibles après clôture d'exercice (22/09/2026)**, décision du
   cabinet tranchée dans « Décisions en attente » : option B (purger après clôture), restreinte aux
   pièces sensibles — les justificatifs de recette (bordereaux de télétransmission), seule famille à
@@ -5132,7 +5163,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1651 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1684 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -5276,6 +5307,16 @@ n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que
   arbres (`git rev-parse HEAD^{tree}`) se contrôle avant de pousser** : c'est elle qui garantit que
   ce qui part en production est exactement ce que la barrière a vérifié, et non une résolution de
   conflits refaite à l'aveugle par le rejeu.
+- **`main` est protégée depuis le 25/09/2026** — GitHub la rend `protected: true`. Rien n'y arrive
+  sans une demande de fusion, que le cabinet fusionne en « Rebase and merge » une fois `verifier` (le
+  travail de `tests.yml`) au vert. Réglages demandés ce jour-là : demande de fusion obligatoire SANS
+  approbation exigée — le cabinet est le seul membre du dépôt, et les sessions ouvrent leurs demandes
+  sous son compte, or GitHub interdit d'approuver la sienne ; `verifier` obligatoire ; historique
+  linéaire ; et aucune dérogation pour les administrateurs, sans quoi une session agissant sous le
+  compte du cabinet pourrait encore pousser directement. **Aucun outil de ce dépôt ne lit ces
+  réglages** : seul `protected: true` a été constaté. Une session pousse sur SA branche et n'ouvre la
+  demande que si le cabinet la demande. Après une fusion « Rebase and merge », les commits de la
+  branche existent dans `main` sous d'autres empreintes : le travail suivant repart de `origin/main`.
 - **La Routine quotidienne « avancer un chantier » (`trig_011WworgC5Yw9whbjhNq8WA5`) est DÉSACTIVÉE
   depuis le 25/09/2026, par décision du cabinet.** Elle poussait directement sur `main` pendant
   qu'une session travaillait sur sa branche, et les deux ne se voyaient pas : la branche a fini par
@@ -5285,7 +5326,8 @@ n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que
   branche qui doit y finir. **Et pendant ce temps la production était DÉCALÉE** : les Edge Functions
   et les migrations, déployées par MCP depuis la branche, tournaient en avance sur les écrans, qui ne
   partent que de `main` — une autre forme de « un commit n'est pas un déploiement ». La réactiver
-  est une décision du cabinet, à prendre en disant qui écrit sur `main`.
+  est une décision du cabinet, à prendre en disant qui écrit sur `main` — et depuis que `main` est
+  protégée, elle ne pourrait plus y pousser : il lui faudrait ouvrir des demandes de fusion.
 - Avant de supprimer une table jugée morte, réunir les six preuves plutôt
   qu'une seule : 0 ligne, 0 clé étrangère entrante, 0 vue dépendante, 0
   trigger, 0 fonction la mentionnant (`pg_proc.prosrc`), 0 référence dans le
