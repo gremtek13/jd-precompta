@@ -71,9 +71,17 @@ découvre avant.
 2. **La ligne du cabinet** (`cabinets`). Une sauvegarde est par dossier ; elle suppose son cabinet
    déjà présent. Le manifeste donne son identifiant, et la restauration refuse de commencer s'il
    manque.
-3. **Les secrets de fonctions** : `RESEND_API_KEY`, les identifiants Bedrock. À reposer dans les
-   secrets Supabase.
-4. **Le domaine d'envoi et de réception** `precompta.jdarnis.fr` chez Resend (vérification DNS).
+3. **Les secrets de fonctions** — à reposer à la main dans les secrets du projet, et listés un par
+   un au bas de cette section (« Les variables d'environnement, une par une »). Ce point tenait en
+   une ligne jusqu'au 25/09/2026 — « `RESEND_API_KEY`, les identifiants Bedrock » — et en oubliait
+   quatre, dont `AWS_TEXTRACT_BUCKET`, sans lequel aucun PDF ne se lit.
+4. **Le domaine d'envoi et de réception** `precompta.jdarnis.fr` chez Resend (vérification DNS),
+   **et le webhook de réception.** Celui-ci appelle `https://<projet>.supabase.co/functions/v1/receive-email`
+   (un seul webhook, sur `email.received`, vérifié le 21/09/2026) : un projet recréé change cette
+   adresse, il faut donc le repointer. Et le secret de signature appartient au WEBHOOK, pas au
+   compte : un webhook recréé en porte un nouveau, à reposer dans `RESEND_WEBHOOK_SECRET` — sans quoi
+   chaque e-mail entrant est refusé en 401 (« Signature invalide ») et les pièces envoyées par les
+   clients n'arrivent plus dans l'application.
 5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan, elle est fermée.**
    Les 58 migrations du projet sont exportées dans `supabase/schema/`, une par fichier, telles que
    la base les a enregistrées, et vérifiées par empreinte agrégée. Elles restent un EXPORT : la
@@ -89,6 +97,46 @@ découvre avant.
    SCHÉMA. Le trou est comblé par `supabase/schema/socle/tables_sans_migration.sql` (instantané
    généré depuis `pg_catalog`, éprouvé par `supabase/essais/socle.py`), et gardé à chaque build par
    `src/lib/sauvegardeTables.test.ts`.
+6. **Les réglages d'authentification** du tableau de bord Supabase (règles de mot de passe
+   notamment) : aucun fichier de ce dépôt ne les porte. L'application n'envoie en revanche aucun lien
+   par e-mail — les comptes sont créés avec leur mot de passe par `create-cabinet`,
+   `create-team-member` et `create-client-access` —, donc l'URL du site et les adresses de
+   redirection n'y jouent aucun rôle.
+
+### Les variables d'environnement, une par une
+
+Tirées du CODE, et gardées par `src/lib/variablesEnvironnement.test.ts` : une variable lue par une
+Edge Function ou par l'application web et absente d'ici fait échouer la suite, comme une ligne d'ici
+que plus rien ne lit, ou une colonne « Lue par » qui ne dit plus vrai.
+
+Ce que ce test ne peut PAS dire : quelles valeurs sont réellement posées dans le projet. Elles vivent
+dans le tableau de bord (Edge Functions → Secrets), qu'aucun outil de ce dépôt ne lit. Les NOMS sont
+gardés ; la présence des VALEURS se vérifie à la main, au moment de la reprise.
+
+<!-- DÉBUT DE L'INVENTAIRE — tenu par src/lib/variablesEnvironnement.test.ts -->
+
+**À poser à la main**, dans les secrets du projet :
+
+| Variable | Lue par | Ce qu'il faut savoir |
+|---|---|---|
+| `AWS_ACCESS_KEY_ID` | `agent-comptable`, `evaluer-extraction`, `extract-piece` | Identifiant de l'utilisateur IAM `jd-precompta-textract`. Les trois fonctions partagent les MÊMES identifiants : sa policy doit donc autoriser Textract, S3 et Bedrock, ce dernier dans deux régions (celle de `AWS_REGION`, et `eu-west-1` pour l'assistant). La liste exacte des actions : `src/lib/edgeFunctionsIam.test.ts`. |
+| `AWS_SECRET_ACCESS_KEY` | `agent-comptable`, `evaluer-extraction`, `extract-piece` | Le secret qui va avec. |
+| `AWS_SESSION_TOKEN` | `agent-comptable` | À laisser vide. Il ne sert qu'à des identifiants temporaires, et seul l'assistant le transmet : avec de tels identifiants, l'assistant marcherait et la lecture des pièces échouerait. Ceux d'un utilisateur IAM sont permanents. |
+| `AWS_REGION` | `evaluer-extraction`, `extract-piece` | Région de la lecture (Textract) et de la citation (Bedrock) : `eu-central-1`, mesuré le 21/09/2026. Absente, le code retombe sur la même ; une région hors de l'UE serait un transfert (RGPD.md §8.1). L'assistant ne la lit pas : sa région est écrite dans son code. |
+| `AWS_TEXTRACT_BUCKET` | `extract-piece` | Seau S3 où un PDF séjourne le temps de sa lecture, dans la région de `AWS_REGION`. Sans lui, les images se lisent et **aucun PDF** — c'est-à-dire la plupart des dépôts. |
+| `RESEND_API_KEY` | `receive-email`, `send-email` | Clé d'API Resend. Absente, plus aucun e-mail ne part, et aucun n'est accepté à l'arrivée. |
+| `RESEND_WEBHOOK_SECRET` | `receive-email` | Secret de signature du webhook de réception (`whsec_…`) — il change quand le webhook est recréé, voir le point 4. |
+
+**Fournies par Supabase**, rien à poser : `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+
+**Côté application web** : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Elles vivent dans
+`.env.production`, suivi par Git — la clé publique n'est pas un secret, c'est la RLS qui protège. Le
+build les ÉCRIT dans l'application : un projet recréé change les deux, et une application qui n'a pas
+été reconstruite continue de parler à l'ancien (§4, étape 9).
+
+<!-- FIN DE L'INVENTAIRE -->
+
+La CI ne porte aucun secret : ni `deploy.yml` ni `tests.yml` n'en lit.
 
 ---
 
@@ -97,7 +145,9 @@ découvre avant.
 Chaque étape suppose la précédente. Les sauter, c'est buter sur une erreur de clé étrangère
 incompréhensible trois étapes plus loin.
 
-1. **Le projet Supabase** — recréer, région `eu-west-1` (RGPD, et c'est là que tourne Bedrock).
+1. **Le projet Supabase** — recréer, région `eu-west-1` (RGPD). Les appels à AWS ne suivent pas
+   cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
+   (inventaire du §3).
 2. **Le schéma** — appliquer les 58 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
    un (`apply_migration`). Ils se suivent : plusieurs suppriment et recréent ce que les précédentes
    ont posé, les rejouer dans le désordre ne donne pas le même schéma. **Puis, et seulement
@@ -114,8 +164,14 @@ incompréhensible trois étapes plus loin.
    pointant une ligne manquante.
 6. **Les fichiers** — reverser le contenu des packs dans le seau `pieces`, aux chemins que portent
    les lignes restaurées (`pieces.storage_path`).
-7. **Les secrets et le domaine d'envoi** (§3.3 et §3.4).
-8. **Les Edge Functions** — redéployer depuis `supabase/functions/` via l'outil MCP.
+7. **Les secrets, le domaine d'envoi et le webhook de réception** (§3.3, §3.4 et l'inventaire des
+   variables en fin de §3).
+8. **Les Edge Functions** — redéployer depuis `supabase/functions/` via l'outil MCP, chacune avec
+   le `verify_jwt` que porte `supabase/config.toml`. L'outil met `true` quand on omet ce paramètre,
+   et `receive-email` refuserait alors tous les e-mails entrants à la passerelle, sans un log.
+9. **L'application web** — remplacer dans `.env.production` l'URL et la clé publique du nouveau
+   projet, puis pousser sur `main` : c'est le build qui les écrit dans l'application (inventaire du
+   §3). Tant que ce n'est pas fait, l'application en ligne parle à l'ancien projet — ou à rien.
 
 ---
 
