@@ -1801,6 +1801,47 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   queue du découpage ne change rien, une entrée vide n'apparaissant qu'en FIN de liste, donc ne
   décalant jamais un indice antérieur. Ce qui garde réellement l'appariement est la mutation qui
   décale `noms[k]` d'un cran, et celle-là mord.
+- **ET CE SCANNER NE LISAIT QUE TROIS FORMES D'ÉCRITURE — HUIT APPELS SUR 118 LUI ÉCHAPPAIENT, ET UN
+  NOM LU DANS LA FONCTION VOISINE EN MASQUAIT UN AUTRE** (25/09/2026). `lecturesSignalees` liait
+  `const X = await lireTout(…)`, sa forme déstructurée et l'entrée d'un
+  `const [...] = await Promise.all([…])`. Or **huit appels** s'écrivaient `lireTout(…).then((lecture) => …)`
+  ou `Promise.all([…]).then(([a, b]) => …)` : ni comptés, ni vérifiés. **Cinq jetaient leur drapeau** —
+  les TROIS lectures qui font la liste des exercices d'un dossier, sous un commentaire qui décrivait
+  déjà le dégât (« elles font disparaître un EXERCICE du sélecteur, et tout ce que le cabinet regarde
+  ensuite est filtré par lui ») ; les relevés déjà classés que l'import bancaire propose de
+  réutiliser ; les catégories de la Balance des comptes, que `brouillon.motif ?? lecturePieces.motif`
+  oubliait dans le même `Promise.all`. **Le « 110 sites » de l'entrée ci-dessus était vrai des formes
+  connues, pas du dépôt** — le silence d'un scanner qui ne voit pas ressemble exactement à un dépôt
+  sain, et c'est la huitième fois que ce dépôt le paie.
+  **LE RECENSEMENT FAIT DÉSORMAIS FOI** : le scanner part de TOUS les appels de `lireTout` (sa
+  définition exclue — elle vit à trois endroits) et compte en FAUTE tout appel qu'aucune forme ne lie.
+  La prochaine forme d'écriture se signalera d'elle-même au lieu de passer en silence — la règle
+  « une table non reconnue est une faute, jamais un saut » de `triTotal`, appliquée ici.
+  **ET LA MESURE EN A TROUVÉ UN SIXIÈME, QUE LA PREMIÈRE CORRECTION NE VOYAIT PAS** : le scanner jugeait
+  un nom « couvert » s'il était lu N'IMPORTE OÙ dans le fichier. `PacksTab` déclare
+  `const lecture = await lireTout(…)` dans DEUX fonctions, et seul l'aperçu lit son drapeau :
+  l'historique des packs jetait le sien depuis le portage, sous un nom couvert par sa voisine.
+  Tronqué, il cache un pack déjà généré — donc peut-être déjà envoyé — et invite à le régénérer : les
+  mêmes pièces partiraient deux fois au comptable. Refusé, il affirmait « Aucun pack généré », le
+  pire sens. Le drapeau doit donc être lu dans le BLOC de la déclaration, ou dans le RAPPEL pour les
+  formes `.then` : dans `BanqueTab`, `lecture.complete` est lu par la lecture des mouvements et pas
+  par celle des relevés, et un contrôle à l'échelle du fichier l'aurait laissée passer.
+  **Six lectures signalées, quatre bandeaux, chacun avec SA conséquence** : les exercices (un
+  exercice absent du sélecteur n'est pas forcément vide), les relevés (un relevé peut manquer à la
+  liste sans être absent de Documents), les catégories (un compte peut s'afficher sans libellé, mais
+  AUCUN montant n'en dépend — le bandeau des totaux reste donc éteint, et une mutation qui les fond
+  est attrapée), les packs (ne pas en régénérer un sans vérifier qu'il n'est pas déjà parti).
+  **ET LE BANDEAU LUI-MÊME FAISAIT DES FAUTES D'ACCORD** : il écrivait « n'ont pas pu être lues »
+  quel que soit le sujet — « L'historique des échanges n'ont pas pu être lues », « Les mouvements
+  bancaires … lues ». Il prend désormais un `accord` explicite (`lues` par défaut, la forme d'avant) :
+  le deviner d'un nom français serait un pari, et une faute dans une alerte la fait passer pour une
+  négligence. Les deux nouveaux bandeaux masculins l'utilisent dès leur création.
+  **Seize mutations, toutes mordent** : chaque forme `.then` retirée, l'appel non lié sauté (seul le
+  cas synthétique le voit, puisque sur le dépôt corrigé tous les appels sont liés), le rappel puis la
+  déclaration jugés à l'échelle du fichier, la définition prise pour un appel, le recensement aveugle
+  (le plancher passe de 110 à 118), chaque bandeau retiré, le bandeau des packs toujours allumé,
+  « Aucun pack » affirmé sur une panne, les catégories fondues dans les totaux, l'accord ignoré et
+  l'auxiliaire toujours au pluriel.
 - **ET LE PLAFOND DE COÛT IA SE SOUS-ESTIMAIT — `lecturesPaginees` S'ÉTAIT ARRÊTÉ À `src/` LUI AUSSI**
   (22/09/2026, QUATRIÈME demi-chemin en deux jours : les écritures des Edge Functions portées le
   21/09, leurs lectures le 22/09 au matin, la FORME de leur scanner d'écritures à midi — et la
@@ -4949,7 +4990,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1578 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1596 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import StatistiquesTab from './StatistiquesTab'
 
@@ -15,6 +15,8 @@ const faux = vi.hoisted(() => ({
   // Plafond du serveur : nombre maximum de lignes rendues par requête, quoi qu'on demande. C'est le
   // « Max rows » de PostgREST, qui ne se signale pas (voir lib/lectureComplete.ts).
   plafond: null as number | null,
+  // Les tables dont la lecture est refusée, avec le message rendu.
+  erreurs: {} as Record<string, string>,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -31,7 +33,10 @@ vi.mock('../../lib/supabase', () => ({
         or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+        then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown) => {
+          if (faux.erreurs[table]) {
+            return Promise.resolve({ data: null, error: { message: faux.erreurs[table] }, count: null }).then(suite)
+          }
           const toutes = faux.parTable[table] ?? []
           const demande = fin - debut + 1
           const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
@@ -60,6 +65,8 @@ function piedDuTableau(): HTMLTableRowElement {
   if (!pied) throw new Error('Pied de tableau introuvable — la balance ne s’est pas affichée.')
   return pied as HTMLTableRowElement
 }
+
+beforeEach(() => { faux.erreurs = {} })
 
 describe('StatistiquesTab — Balance des comptes', () => {
   it("recolle les tranches quand le serveur plafonne, sans fabriquer d'écart", async () => {
@@ -121,5 +128,30 @@ describe('StatistiquesTab — Balance des comptes', () => {
     expect([pied.children[1].textContent, pied.children[2].textContent]).toEqual(totauxAvant)
     expect(pied.children[3].textContent).toContain('équilibré')
     expect(pied.children[3].textContent).not.toContain('écart')
+  })
+})
+
+// LES CATÉGORIES LUES EN PARTIE LE DISENT — à part des écritures, parce que la conséquence n'est pas
+// la même. Elles ne donnent que les LIBELLÉS des comptes : aucun montant n'en dépend, et le bandeau
+// des totaux doit se taire. Leur drapeau était jeté : `brouillon.motif ?? lecturePieces.motif`
+// oubliait la troisième lecture du même `Promise.all([…]).then(…)`, forme que le scanner ne voyait pas.
+describe('StatistiquesTab — les catégories du cabinet', () => {
+  it('lues en partie, elles le disent, sans allumer le bandeau des totaux', async () => {
+    faux.plafond = null
+    faux.erreurs = { categories: 'refus simulé' }
+    faux.parTable.ecritures_brouillon = [ecriture('606100', 'debit', 120), ecriture('512000', 'credit', 120)]
+    faux.parTable.categories = []
+    faux.parTable.pieces = []
+
+    render(
+      <AnneeProvider defaut="toutes">
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} />
+      </AnneeProvider>,
+    )
+
+    await screen.findByText('606100')
+    expect(screen.getByText(/Les catégories du cabinet n'ont pas pu être lues en entier \(lecture interrompue après 0 ligne\(s\) : refus simulé\)/)).toBeTruthy()
+    expect(screen.queryAllByText(/Les écritures du brouillon n'ont pas pu être lues/)).toHaveLength(0)
+    expect(piedDuTableau().children[3].textContent).toContain('équilibré')
   })
 })

@@ -31,6 +31,9 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
   // Non nul quand le brouillon ou les pièces n'ont pas pu être lus en entier — les totaux affichés
   // portent alors sur une partie du dossier (voir lib/lectureComplete.ts).
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // À part, parce que la conséquence n'est pas la même : les catégories ne donnent que les LIBELLÉS
+  // des comptes, aucun montant n'en dépend.
+  const [lectureCategoriesIncomplete, setLectureCategoriesIncomplete] = useState<string | null>(null)
   // Exercice partagé avec Pièces/Banque/Écritures/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
@@ -60,6 +63,7 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
       setCategories(lectureCategories.lignes)
       setPieces(lecturePieces.lignes)
       setLectureIncomplete(brouillon.motif ?? lecturePieces.motif)
+      setLectureCategoriesIncomplete(lectureCategories.motif)
       setLoading(false)
     })
   }, [dossierId])
@@ -101,6 +105,14 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
         consequence={
           'Les totaux débit/crédit et le badge d’équilibre ci-dessous portent donc sur une partie ' +
           'des écritures : un écart affiché ici ne prouverait rien.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les catégories du cabinet"
+        motif={lectureCategoriesIncomplete}
+        consequence={
+          'Un compte peut donc s’afficher sans son libellé (« — »), et une recherche par le nom de sa ' +
+          'catégorie ne pas le trouver. Les montants, eux, ne dépendent pas de cette lecture.'
         }
       />
 

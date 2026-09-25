@@ -26,6 +26,7 @@ const faux = vi.hoisted(() => ({
   // aussi être retenue.
   datesPieces: {} as Record<string, string[]>,
   retenuesAnnees: {} as Record<string, Promise<void>>,
+  erreurAnnees: null as string | null,
   // La mise à jour d'un dossier (la bascule TVA de l'en-tête), retenue puis refusée à la demande.
   retenueMaj: null as Promise<void> | null,
   erreurMaj: null as { message: string } | null,
@@ -72,7 +73,10 @@ vi.mock('../lib/supabase', () => ({
           if (table === 'pieces') {
             const pieces = (faux.datesPieces[dossierId] ?? []).map((date, i) => ({ id: `p${i}`, date_piece: date }))
             return (faux.retenuesAnnees[dossierId] ?? Promise.resolve())
-              .then(() => ({ data: pieces, error: null, count: pieces.length })).then(suite)
+              .then(() => (faux.erreurAnnees
+                ? { data: null, error: { message: faux.erreurAnnees }, count: null }
+                : { data: pieces, error: null, count: pieces.length }))
+              .then(suite)
           }
           return Promise.resolve({ data: [], error: null, count: 0 }).then(suite)
         },
@@ -165,6 +169,7 @@ beforeEach(() => {
   // mêmes : c'est ce qui permet de voir d'où vient l'exercice proposé.
   faux.datesPieces = { d1: ['2025-03-01', '2026-02-01'], d2: ['2023-05-01', '2024-06-01'] }
   faux.retenuesAnnees = {}
+  faux.erreurAnnees = null
   faux.retenueMaj = null
   faux.erreurMaj = null
 })
@@ -310,5 +315,23 @@ describe('Page d’un dossier — l’identité est toujours celle du dossier de
     faux.erreurIdentite = null
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Réessayer' })) })
     expect(screen.getByText('Formulaire d’identité — SIRET 11111111111111')).toBeTruthy()
+  })
+})
+
+// LES EXERCICES DU SÉLECTEUR, LUS EN PARTIE, LE DISENT. Le commentaire au-dessus de ces trois
+// lectures décrivait le dégât depuis le début — un exercice qui disparaît du sélecteur, et tout ce
+// que le cabinet regarde ensuite filtré par lui — pendant que leur drapeau partait à la poubelle :
+// écrites en `Promise.all([…]).then(…)`, elles échappaient au scanner qui garde cette règle.
+describe('Page d’un dossier — les exercices du sélecteur', () => {
+  it('lus en partie, ils le disent : un exercice peut manquer au sélecteur', async () => {
+    faux.erreurAnnees = 'refus simulé'
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByText(/Les dates des justificatifs, relevés et écritures n'ont pas pu être lues en entier \(lecture interrompue après 0 ligne\(s\) : refus simulé\)/)).toBeTruthy()
+  })
+
+  it('lus en entier, ils se taisent', async () => {
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByRole('heading', { level: 1, name: 'Cabinet Hélène' })).toBeTruthy()
+    expect(screen.queryAllByText(/n'ont pas pu être lues en entier/)).toHaveLength(0)
   })
 })

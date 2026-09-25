@@ -30,6 +30,10 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   // « 4 pièces », et apprenait après génération qu'il en existait 18 autres.
   const [preview, setPreview] = useState<{ nbValidees: number; nbAValider: number; total: number; sansDate: number } | null>(null)
   const [previewIncomplet, setPreviewIncomplet] = useState<string | null>(null)
+  // L'historique des packs, lu en entier ou non. Tronqué, il cache un pack déjà généré — donc déjà
+  // envoyé au comptable, peut-être — et invite à le régénérer : les mêmes pièces lui partiraient
+  // deux fois. Vide sur une lecture refusée, il affirmait « aucun pack » au lieu de le dire.
+  const [motifPacks, setMotifPacks] = useState<string | null>(null)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -39,6 +43,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
         .eq('dossier_id', dossierId).order('generated_at', { ascending: false }).order('id').range(debut, fin),
     )
     setPacks(lecture.lignes)
+    setMotifPacks(lecture.complete ? null : lecture.motif)
   }
 
   // L'APERÇU EST ANNULABLE, et c'est ce qui manquait. Ses dépendances ne sont pas `dossierId`
@@ -194,9 +199,22 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
       </div>
 
       <h3>Historique</h3>
+      <BandeauLecturePartielle
+        quoi="Les packs déjà générés"
+        accord="lus"
+        motif={motifPacks}
+        consequence={
+          'Un pack peut donc manquer à l’historique ci-dessous sans avoir disparu : avant d’en ' +
+          'régénérer un pour une période, vérifie qu’il n’a pas déjà été envoyé.'
+        }
+      />
       <div className="card table-scroll" style={{ padding: 0 }}>
         {packs.length === 0 ? (
-          <div className="empty-state">Aucun pack généré pour l'instant.</div>
+          // « Aucun pack » seulement sur une lecture COMPLÈTE : une lecture refusée rend aussi une
+          // liste vide, et l'affirmation deviendrait fausse au lieu d'une panne dite.
+          <div className="empty-state">
+            {motifPacks ? 'L’historique n’a pas pu être lu.' : 'Aucun pack généré pour l\'instant.'}
+          </div>
         ) : (
           <table>
             <thead>
