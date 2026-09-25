@@ -22,6 +22,9 @@
   --color-warning-light: #fbf1dc;
   --color-neutral-bg: #eceeea;
   --color-neutral-text: #555c58;
+  /* Fond de la coque — derrière la barre latérale et autour du panneau central — un cran plus
+     soutenu que --color-bg : c'est ce contraste qui fait se détacher le panneau de travail. */
+  --color-shell: #e8ebe5;
 
   /* Teintes dérivées — toujours calculées, jamais fixées (voir en-tête). */
   --tint-primary: color-mix(in srgb, var(--color-primary) 9%, transparent);
@@ -29,6 +32,10 @@
   --ring-primary: color-mix(in srgb, var(--color-primary) 28%, transparent);
   --glow-primary: color-mix(in srgb, var(--color-primary) 32%, transparent);
   --wash-primary: color-mix(in srgb, var(--color-primary) 6%, transparent);
+  /* Texte discret de la barre latérale. Le gris de --color-text-light n'atteint pas 4,5:1 sur le fond
+     de la coque (4,3 calculé) : il est tiré vers la couleur du texte — ce qui l'assombrit en clair et
+     l'éclaircit en sombre, le bon sens dans les deux thèmes. */
+  --color-text-barre: color-mix(in srgb, var(--color-text-light) 85%, var(--color-text));
 
   /* Échelle d'espacement — valeurs rondes seulement, jamais un chiffre choisi au pif : la rigueur ne
      se voit pas élément par élément, mais l'œil sent la cohérence à l'échelle de toute l'appli. */
@@ -225,17 +232,24 @@ tr.clickable:hover { background: var(--tint-primary); }
 .td-actions { display: flex; gap: 6px; flex-wrap: wrap; }
 
 /* ---------- Coque de l'application ---------- */
-.app-shell { display: flex; min-height: 100vh; }
+/* Sur ordinateur, trois volets à la manière des applications récentes : la barre latérale posée sur
+   le fond de la coque, le travail dans un panneau clair aux coins arrondis, et — étape suivante — un
+   panneau contextuel à droite. Sur mobile rien ne change (voir la media query). */
+.app-shell { display: flex; min-height: 100vh; background: var(--color-shell); }
 .sidebar {
-  width: 236px;
-  background: color-mix(in srgb, var(--color-surface) 72%, var(--color-bg));
-  border-right: 1px solid var(--color-border);
-  padding: 22px 14px;
+  width: 264px; flex-shrink: 0; box-sizing: border-box;
+  /* Transparente : c'est le fond de la coque qui la porte. Et surtout pas de transform/filter ici —
+     elle est l'ancêtre de la nav fixée en bas sur mobile (voir la media query). */
+  background: transparent;
+  padding: 14px 12px 12px;
   display: flex;
   flex-direction: column;
+  gap: 2px;
   position: sticky; top: 0; height: 100vh;
+  transition: width var(--duree) var(--ease), padding var(--duree) var(--ease);
 }
-.sidebar .logo { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 1.02rem; letter-spacing: -0.015em; margin-bottom: 28px; color: var(--color-text); padding: 0 4px; }
+.sidebar .logo { display: flex; align-items: center; gap: 10px; min-height: 36px; font-weight: 800; font-size: 1.02rem; letter-spacing: -0.015em; margin-bottom: 10px; color: var(--color-text); padding: 0 0 0 6px; }
+.logo-nom { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* Marque de marque (initiales sur pastille), sidebar et page de connexion. */
 .brand-mark {
@@ -253,30 +267,140 @@ tr.clickable:hover { background: var(--tint-primary); }
   height: 32px; max-width: 140px; object-fit: contain; flex-shrink: 0;
   border-radius: 8px; background: #fff; padding: 2px;
 }
-.sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 1; }
+.sidebar nav { display: flex; flex-direction: column; gap: 2px; flex: 0 0 auto; margin-top: 4px; }
 .sidebar nav a {
   position: relative;
   display: flex; align-items: center; gap: 10px;
-  padding: 9px 12px;
+  padding: 8px 10px;
   border-radius: var(--radius-sm);
-  color: var(--color-text-light);
+  color: var(--color-text-barre);
   text-decoration: none;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 500;
   transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
 }
 .sidebar nav a:hover { background: var(--tint-primary); color: var(--color-text); }
-/* Entrée active : fond teinté + texte accent, plus un petit trait vertical à gauche — lisible sans un
-   gros pavé de couleur pleine dans la barre latérale. */
-.sidebar nav a.active { background: var(--tint-primary-strong); color: var(--color-primary); font-weight: 600; }
-.sidebar nav a.active::before {
-  content: ''; position: absolute; left: 0; top: 9px; bottom: 9px; width: 3px; border-radius: 3px;
-  background: var(--color-primary);
+/* Entrée active : fond teinté et texte accent. Accent FONCÉ (-hover, assombri par construction dans la
+   charte d'un cabinet, éclairci en sombre) : l'accent nu sur fond teinté tombe à 3,4:1 sur la coque. */
+.sidebar nav a.active { background: var(--tint-primary-strong); color: var(--color-primary-hover); font-weight: 600; }
+
+/* ---------- Barre latérale (ordinateur) : nouveau dossier, recherche, dossiers ---------- */
+.barre-replier {
+  margin-left: auto; flex-shrink: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; padding: 0; border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--color-text-barre); cursor: pointer;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
+}
+.barre-bouton-rail {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 40px; height: 40px; padding: 0; border: none; border-radius: var(--radius-sm);
+  background: transparent; color: var(--color-text-barre); cursor: pointer;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
+}
+.barre-replier:hover, .barre-bouton-rail:hover { background: var(--tint-primary); color: var(--color-text); }
+.barre-nouveau {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px; border-radius: var(--radius-sm);
+  color: var(--color-text); text-decoration: none; font-size: 0.9rem; font-weight: 700;
+  transition: background-color var(--duree) var(--ease);
+}
+.barre-nouveau:hover { background: var(--tint-primary); }
+.barre-nouveau-pastille {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--color-primary); color: #fff;
+  box-shadow: 0 4px 10px -4px var(--glow-primary);
+}
+.barre-recherche {
+  display: flex; align-items: center; gap: 8px;
+  margin: 6px 0 4px; padding: 0 10px; height: 36px; box-sizing: border-box;
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--color-surface) 65%, transparent);
+  color: var(--color-text-barre);
+  transition: border-color var(--duree) var(--ease), box-shadow var(--duree) var(--ease);
+}
+.barre-recherche:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--ring-primary); }
+.barre-recherche input {
+  flex: 1; min-width: 0; height: 100%; padding: 0;
+  border: none; outline: none; background: transparent;
+  font: inherit; font-size: 0.86rem; color: var(--color-text);
 }
 
-/* Anciennement en style inline (display:flex) — un style inline gagne contre une media query et
-   empêchait le masquage sur mobile. */
-.sidebar-actions { display: flex; gap: 8px; }
+.barre-dossiers {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  display: flex; flex-direction: column; gap: 2px;
+  margin: 4px -6px 0; padding: 0 6px 8px;
+  scrollbar-width: thin;
+}
+.barre-section { display: flex; flex-direction: column; gap: 1px; }
+.barre-titre {
+  padding: 14px 10px 6px;
+  font-size: 0.68rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--color-text-barre);
+}
+.barre-dossier {
+  display: flex; align-items: center; gap: 10px;
+  padding: 5px 8px; border-radius: var(--radius-sm);
+  color: var(--color-text); text-decoration: none; font-size: 0.86rem; font-weight: 500;
+  transition: background-color var(--duree) var(--ease);
+}
+.barre-dossier:hover { background: var(--tint-primary); }
+.barre-dossier-ouvert { font-weight: 700; }
+.barre-dossier .avatar { border-radius: 8px; }
+.barre-avatar-attente { width: 26px; height: 26px; border-radius: 8px; flex-shrink: 0; }
+.barre-nom { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* L'arborescence du dossier ouvert : un filet vertical la rattache au dossier, sans pavé ni puce. */
+.barre-arbre {
+  display: flex; flex-direction: column; gap: 1px;
+  margin: 2px 0 6px 20px; padding-left: 10px;
+  border-left: 1px solid var(--color-border-strong);
+}
+.barre-lien {
+  display: flex; align-items: center;
+  padding: 6px 10px; border-radius: var(--radius-xs);
+  color: var(--color-text-barre); text-decoration: none; font-size: 0.86rem; font-weight: 500;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
+}
+.barre-lien:hover { background: var(--tint-primary); color: var(--color-text); }
+.barre-lien.active { background: var(--tint-primary-strong); color: var(--color-primary-hover); font-weight: 700; }
+.barre-groupe { display: flex; flex-direction: column; gap: 1px; }
+.barre-groupe-titre {
+  display: flex; align-items: center; gap: 6px; width: 100%;
+  margin-top: 6px; padding: 5px 10px;
+  border: none; border-radius: var(--radius-xs); background: none;
+  color: var(--color-text-barre); font: inherit; font-size: 0.68rem; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; text-align: left; cursor: pointer;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
+}
+.barre-groupe-titre span { flex: 1; }
+.barre-groupe-titre:hover { background: var(--tint-primary); color: var(--color-text); }
+/* Groupe replié qui contient l'écran affiché : son titre le dit, sinon l'opérateur ne voit plus où il
+   se trouve dans la barre. */
+.barre-groupe-titre.contient-actif { color: var(--color-primary-hover); }
+.barre-chevron { flex-shrink: 0; transition: transform var(--duree) var(--ease); }
+.barre-chevron.deplie { transform: rotate(90deg); }
+.barre-alerte { margin: 2px 10px 6px; font-size: 0.78rem; line-height: 1.4; color: var(--color-danger); }
+.barre-vide { margin: 4px 10px; font-size: 0.8rem; color: var(--color-text-barre); }
+.barre-chargement { display: flex; flex-direction: column; padding: 0 10px; }
+
+/* Barre réduite : les dossiers en pastilles, leur nom en infobulle. */
+.barre-dossiers-rail { align-items: center; gap: 6px; margin: 4px 0 0; padding: 0 0 8px; }
+.barre-separateur { width: 28px; height: 1px; margin: 6px 0; flex-shrink: 0; background: var(--color-border-strong); }
+.barre-dossier-rail {
+  display: inline-flex; flex-shrink: 0; padding: 2px;
+  border: 2px solid transparent; border-radius: 13px; text-decoration: none;
+  transition: border-color var(--duree) var(--ease);
+}
+.barre-dossier-rail .avatar { border-radius: 9px; }
+.barre-dossier-rail:hover { border-color: var(--color-border-strong); }
+.barre-dossier-rail.actif { border-color: var(--color-primary); }
+.barre-alerte-rail {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--color-danger-light); color: var(--color-danger);
+  font-size: 0.78rem; font-weight: 800; cursor: help;
+}
 
 /* Menu "..." (thème + déconnexion) — mobile seulement (voir media query). */
 .sidebar-actions-mobile { display: none; }
@@ -287,7 +411,23 @@ tr.clickable:hover { background: var(--tint-primary); }
   box-shadow: var(--shadow-lg);
 }
 
-.main { flex: 1; padding: 32px 36px 40px; max-width: 1200px; min-width: 0; }
+/* Le travail, dans un panneau posé sur la coque : c'est ce contraste — la coque plus soutenue, le
+   panneau plus clair aux coins arrondis — qui dessine les volets, sans bordure lourde. Le lavis de la
+   couleur du cabinet, autrefois sur la page entière, vit maintenant dans ce panneau. Aucun
+   transform/filter/overflow ici non plus : il contient la barre d'onglets fixée en bas sur mobile. */
+.main {
+  flex: 1; min-width: 0; box-sizing: border-box;
+  margin: 8px 8px 8px 0;
+  min-height: calc(100vh - 16px);
+  padding: 30px 34px 40px;
+  background:
+    radial-gradient(900px 420px at 8% -10%, var(--wash-primary), transparent 70%),
+    var(--color-bg);
+  border: 1px solid color-mix(in srgb, var(--color-border-strong) 70%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-xs);
+}
+.main-contenu { max-width: 1200px; margin: 0 auto; }
 
 .topbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 24px; }
 .topbar h1 { margin: 0; font-size: 1.6rem; font-weight: 800; letter-spacing: -0.025em; line-height: 1.15; }
@@ -446,6 +586,7 @@ tr.clickable:hover { background: var(--tint-primary); }
   --color-warning-light: rgba(224, 171, 74, 0.16);
   --color-neutral-bg: #262e2a;
   --color-neutral-text: #b7c2bb;
+  --color-shell: #0a0e0c;
   --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.35);
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35), 0 2px 8px rgba(0, 0, 0, 0.3);
   --shadow-md: 0 2px 4px rgba(0, 0, 0, 0.35), 0 12px 32px -8px rgba(0, 0, 0, 0.6);
@@ -686,12 +827,44 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 
 /* ---------- Bloc utilisateur (bas de la barre latérale) ---------- */
 .sidebar-user {
-  display: flex; align-items: center; gap: 10px; padding: 10px 8px; margin-bottom: 10px;
-  border-top: 1px solid var(--color-border); padding-top: 14px;
+  position: relative; margin-top: auto; padding-top: 8px;
+  border-top: 1px solid var(--color-border-strong);
 }
-.sidebar-user-texte { min-width: 0; flex: 1; }
+.barre-compte {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 6px 8px; border: none; border-radius: var(--radius-sm); background: transparent;
+  color: var(--color-text); font: inherit; text-align: left; cursor: pointer;
+  transition: background-color var(--duree) var(--ease);
+}
+.barre-compte:hover, .barre-compte[aria-expanded="true"] { background: var(--tint-primary); }
+.barre-compte .avatar { border-radius: 50%; }
+.sidebar-user-texte { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .sidebar-user-nom { font-size: 0.82rem; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sidebar-user-role { font-size: 0.72rem; color: var(--color-text-light); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar-user-role { font-size: 0.72rem; color: var(--color-text-barre); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Le menu du compte s'ouvre AU-DESSUS du bloc : il est en bas de l'écran. */
+.options-menu-compte { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; }
+
+/* Barre réduite à ses icônes (ordinateur seulement). Tout est en CSS sauf ce qui change de nature :
+   la recherche devient un bouton, les dossiers deviennent des pastilles (voir Layout, BarreDossiers). */
+@media (min-width: 721px) {
+  .app-shell.barre-reduite .sidebar { width: 68px; padding: 12px 10px; align-items: center; }
+  .app-shell.barre-reduite .sidebar .logo { justify-content: center; margin-bottom: 8px; padding: 0; }
+  .app-shell.barre-reduite .sidebar .logo .brand-mark,
+  .app-shell.barre-reduite .sidebar .logo .brand-logo,
+  .app-shell.barre-reduite .logo-nom,
+  .app-shell.barre-reduite .barre-libelle,
+  .app-shell.barre-reduite .sidebar nav .nav-label-full { display: none; }
+  .app-shell.barre-reduite .barre-replier { margin-left: 0; width: 40px; height: 40px; }
+  .app-shell.barre-reduite .barre-nouveau { padding: 7px; }
+  .app-shell.barre-reduite .sidebar nav { width: 100%; align-items: center; }
+  .app-shell.barre-reduite .sidebar nav a { justify-content: center; width: 40px; height: 40px; padding: 0; }
+  .app-shell.barre-reduite .sidebar-user { align-self: stretch; display: flex; justify-content: center; }
+  .app-shell.barre-reduite .barre-compte { width: auto; padding: 4px; }
+  /* Déployée, la barre montre déjà les écrans du dossier ouvert : la barre d'onglets du dossier
+     ferait doublon. Réduite, elle revient — c'est alors le seul chemin vers ces écrans. */
+  .app-shell:not(.barre-reduite) .nav-groupes { display: none; }
+  .retour-tableau { display: none; }
+}
 
 /* Sélecteur de société (client multi-sociétés) — pilule discrète au-dessus du contenu. */
 .selecteur-societe { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px; }
@@ -832,8 +1005,11 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
    native, formulaires en une colonne, marges réduites.
    ============================================================================ */
 @media (max-width: 720px) {
-  .app-shell { flex-direction: column; min-height: auto; }
+  .app-shell { flex-direction: column; min-height: auto; background: none; }
   body { background-attachment: scroll; }
+  /* Ce que la barre latérale d'ordinateur ajoute n'a pas sa place dans la barre du haut : nouveau
+     dossier, recherche et liste des dossiers passent par le tableau de bord, comme avant. */
+  .barre-replier, .barre-nouveau, .barre-recherche, .barre-bouton-rail, .barre-dossiers { display: none; }
 
   .sidebar {
     width: 100%; height: auto;
@@ -877,10 +1053,13 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   .sidebar nav a.active svg { background: var(--tint-primary-strong); border-radius: 10px; padding: 3px 9px; box-sizing: content-box; }
   .sidebar nav.app-nav-en-dossier { display: none; }
 
-  .sidebar-actions { display: none; }
   .sidebar-actions-mobile { display: block; position: relative; flex-shrink: 0; margin-left: 10px; }
 
-  .main { padding: 16px 16px 84px; max-width: 100%; }
+  .main {
+    padding: 16px 16px 84px; max-width: 100%;
+    margin: 0; min-height: 0; background: none; border: none; border-radius: 0; box-shadow: none;
+  }
+  .main-contenu { max-width: none; }
 
   .topbar { flex-wrap: wrap; gap: 10px; }
   .topbar h1 { font-size: 1.3rem; }

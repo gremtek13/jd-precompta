@@ -205,6 +205,23 @@ export const IconChevron = (p: IconProps) => base(<>
   <path d="M9.5 5.5l6.5 6.5-6.5 6.5" />
 </>, p)
 
+// Barre latérale déployée / réduite — un cadre et sa colonne de gauche, la convention des
+// applications dont la barre se replie en une colonne d'icônes.
+export const IconPanneauLateral = (p: IconProps) => base(<>
+  <rect x="3.5" y="4.5" width="17" height="15" rx="2.5" />
+  <path d="M9.5 4.5v15" />
+</>, p)
+
+export const IconPlus = (p: IconProps) => base(<>
+  <path d="M12 5.5v13" />
+  <path d="M5.5 12h13" />
+</>, p)
+
+export const IconRecherche = (p: IconProps) => base(<>
+  <circle cx="11" cy="11" r="6" />
+  <path d="M20 20l-4.5-4.5" />
+</>, p)
+
 export const ICONES_PARCOURS: Record<string, IconComponent> = {
   checklist: IconChecklist,
   documents: IconDocuments,

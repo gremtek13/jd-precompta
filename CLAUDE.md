@@ -52,6 +52,22 @@ Conséquences pratiques :
   L'onglet actif d'un dossier fait partie de l'URL (`/dossiers/:id/:tab`),
   pas d'un simple état React, pour que "retour navigateur" après avoir ouvert
   une pièce dans un nouvel onglet revienne au bon endroit.
+- **Coque d'ordinateur en trois volets** (25/09/2026, étape 1 livrée, à la demande du cabinet :
+  « calquer l'interface PC sur celle de Claude ») : une barre latérale posée sur le fond de la coque
+  (`--color-shell`), le travail dans un panneau clair aux coins arrondis (`.main`), et — étape 2, à
+  faire — un panneau contextuel à droite qui remplacera les modales (fiche pièce, rapprochement,
+  assistant). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
+  formulaire du tableau de bord par `?nouveau=1`), la recherche de dossiers (`lib/recherche.ts`), la
+  navigation globale, le dossier ouvert avec TOUS ses écrans en arborescence, les autres dossiers,
+  et le compte en bas (thème, déconnexion). Réductible en colonne d'icônes, préférence retenue par
+  navigateur (`localStorage`, comme le thème) ; réduite, la barre d'onglets du dossier
+  (`DossierParcours`) réapparaît en haut du dossier, seul chemin vers ses écrans. **Le mobile ne
+  change pas** : barre du haut, navigation en bas, et tout ce que la barre d'ordinateur ajoute y est
+  masqué. La liste des dossiers (`lib/listeDossiers.ts`) ne se relit PAS à chaque navigation : au
+  retour sur le tableau de bord, sur un dossier ouvert inconnu (une fois par identifiant, pour ne pas
+  boucler sur une liste incomplète) et sur `signalerMajDossiers()` après une création. Une lecture
+  tronquée ou refusée le DIT (« Liste des dossiers incomplète ») au lieu de passer pour la liste
+  entière.
 - **Hébergement** : GitHub Pages, déployé automatiquement par
   `.github/workflows/deploy.yml` (Node 22 → `npm ci && npm run build` →
   `actions/upload-pages-artifact` + `actions/deploy-pages`) à chaque push sur
@@ -118,9 +134,10 @@ src/
                   Écritures, Statistiques, Immobilisations, Cotisations,
                   Clôture, Estimation, Financement, Informations, Virements,
                   Accès, Checklist, Documents) + leurs modales associées.
-                  Liste et ordre des onglets : src/components/DossierParcours.tsx
-                  (type DossierTab) — toute nouvelle vue de dossier doit y être
-                  ajoutée pour apparaître dans la navigation et l'URL.
+                  Liste et ordre des onglets : src/lib/ongletsDossier.ts
+                  (GROUPES_PARCOURS, type DossierTab), source UNIQUE de la barre
+                  latérale et de la barre d'onglets du dossier — toute nouvelle vue
+                  de dossier doit y être ajoutée pour apparaître dans les deux.
 supabase/
   functions/      une Edge Function par sous-dossier, chacune auto-portante
                   (voir "Décisions techniques").
@@ -142,6 +159,9 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
                   pas dans Notion ni dans l'application : un plan de reprise hébergé sur
                   ce dont il faut se passer n'est pas un plan de reprise.
 .github/workflows/deploy.yml   déploiement continu sur push vers main.
+outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par Vite avec un
+                  faux Supabase à données fictives, photographiée par Playwright — mode
+                  d'emploi en tête de vitrine.mjs ; images dans sorties/, ignoré par git.
 ```
 
 ## Conventions de développement
@@ -166,9 +186,17 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `.check-dot`) ; couleurs de statut réservées, jamais réutilisées comme série. Police par défaut
   Manrope (Inter en repli). En-tête de dossier en "cockpit" (`.cockpit`, avatar + badges + sélecteur
   d'exercice à droite). Chargements en squelettes (`.skeleton*`), jamais un simple "Chargement…" sur
-  un tableau de bord. Vérification visuelle : `scratchpad/captures/rendu.tsx` (react-dom/server sur
-  les vrais composants, bundlé par rolldown) + `vitrine.js` (Playwright, PC 1280 / mobile 390, clair
-  et sombre) — à rejouer après toute modification de `index.css`.
+  un tableau de bord. Vérification visuelle : `outils/captures/` (la vraie application servie avec un
+  faux Supabase à données fictives, photographiée par Playwright — PC 1440/1280, mobile 390, clair et
+  sombre, barre réduite) — à rejouer après toute modification de `index.css` ou de la coque. L'ancien
+  banc vivait dans un dossier temporaire de session et avait disparu : celui-ci est versionné pour ne
+  pas se perdre de même. Piège payé : ne JAMAIS donner au navigateur le mandataire de l'environnement,
+  il y enverrait aussi le serveur local (voir l'en-tête de `vitrine.mjs`).
+- **Dans `.sidebar`, une seule balise `<nav>`** : sur mobile, `.sidebar nav` devient la barre fixée en
+  bas de l'écran. Toute section ajoutée à la barre latérale (dossiers, arborescence d'un dossier) est
+  une `<section>` ou un `<div>`, sinon elle viendrait se coller en bas du téléphone. Et le texte
+  discret de la barre passe par `--color-text-barre` : le gris `--color-text-light` n'atteint pas
+  4,5:1 sur le fond de la coque (4,3 calculé).
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
@@ -889,6 +917,10 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
   `lib/tableauPilotage.ts`) ; navigation clarifiée (Justificatifs/Documents
   administratifs/Factures émises) et paragraphes d'intro longs raccourcis
   avec le détail replié en `<details>`.
+- **Interface d'ordinateur en trois volets, étape 1 (25/09/2026)** : barre latérale avec les
+  dossiers et tous les écrans du dossier ouvert, réductible — voir « Architecture actuelle ». Reste
+  l'étape 2 : le panneau contextuel à droite (fiche pièce, rapprochement bancaire, assistant), tel que
+  le montre la maquette validée par le cabinet (artefact « Nouvelle interface PC »).
 - **Purge du texte OCR des pièces sensibles après clôture d'exercice (22/09/2026)**, décision du
   cabinet tranchée dans « Décisions en attente » : option B (purger après clôture), restreinte aux
   pièces sensibles — les justificatifs de recette (bordereaux de télétransmission), seule famille à
@@ -4767,6 +4799,12 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   exactement celui écrit pour elles. **Le doublage d'`AuthContext` est le même que celui de
   `PiecesTab`** (monter un `AuthProvider` complet ferait dépendre le test d'une session Supabase), et
   l'écran a besoin d'un `MemoryRouter`, ses tuiles portant des `Link`.
+  **ET LA COQUE LE 25/09/2026 (`Layout.test.tsx`)** — ni onglet, ni carte, ni page : le compte des
+  17 onglets ne bouge pas. Quatorze tests sur la barre latérale, seize mutations, toutes mordent —
+  dont la liste tronquée ou refusée qui se tairait, la recherche qui exigerait les accents, l'écran
+  affiché que la barre ne désignerait plus, et la relecture en boucle sur un dossier introuvable
+  (garde retirée, React lève « trop de rendus »). Trois de plus dans `DossiersList.test.tsx` gardent
+  ce qui relie les deux écrans : `?nouveau=1` ouvre le formulaire, et la création prévient la barre.
   **Les deux écrans client restants (`ClientUpload`, `ClientInformations`, `ClientSimulation`) n'ont
   toujours aucun test de rendu** — dit plutôt que laissé compter : `ClientUpload` porte le MÊME
   câblage que `ClientHome`, donc son risque est le plus faible des trois maintenant que le calcul
@@ -4810,7 +4848,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1535 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1552 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -4922,7 +4960,8 @@ pas de Supabase CLI configurée dans ce dépôt.
   par Postgres (voir « Décisions techniques »). `erreursSupabase.test.ts` le vérifie
   sur toute source de production, sans exception.
 - Tout nouvel onglet de dossier doit être ajouté à `TABS_VALIDES` dans
-  `DossierDetail.tsx` et à `DossierParcours.tsx` pour être routable.
+  `DossierDetail.tsx` et à `GROUPES_PARCOURS` dans `lib/ongletsDossier.ts` pour être
+  routable et apparaître dans les deux navigations (barre latérale, barre d'onglets).
 - Ne jamais rendre une action réseau externe (API tierce, IA, Super PDP)
   automatique/silencieuse : toujours déclenchée par un clic explicite.
 - Ne jamais modifier en place une facture déjà validée — passer par un avoir

@@ -26,3 +26,6 @@ dist-ssr
 
 # Fichier de travail du CLI Supabase (version disponible), régénéré à chaque appel.
 supabase/.temp/
+
+# Captures produites par outils/captures/vitrine.mjs — des images, pas des sources.
+outils/captures/sorties/

@@ -191,7 +191,9 @@ export default function DossierDetail() {
 
   return (
     <>
-      <Link to="/dossiers" className="retour">&larr; Tableau de bord</Link>
+      {/* Le chemin de retour sur MOBILE : sur ordinateur la barre latérale mène déjà partout, et ce
+          lien s'y masque (voir .retour-tableau dans index.css). */}
+      <Link to="/dossiers" className="retour retour-tableau">&larr; Tableau de bord</Link>
 
       {anneesDisponibles === null ? (
         <>

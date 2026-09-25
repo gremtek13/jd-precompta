@@ -16,7 +16,11 @@ import DossiersList from './DossiersList'
 // les formes fautives (`X.reduce`, `X.filter(…).length`, `total={X.length}`) ; il ne peut rien dire
 // d'un `valeur={filtered.length - nbAvecAlerte}`, où `filtered.length` est par ailleurs parfaitement
 // légitime. Seul le rendu le montre : on tape, et le tableau de bord ne bouge pas.
-const faux = vi.hoisted(() => ({ parTable: {} as Record<string, unknown[]> }))
+const faux = vi.hoisted(() => ({ parTable: {} as Record<string, unknown[]>, signaux: 0 }))
+
+// La barre latérale tient sa propre liste des dossiers (voir lib/listeDossiers.ts) ; ce qui compte
+// ici est que la création la PRÉVIENNE — on compte les signaux au lieu de monter la barre.
+vi.mock('../lib/listeDossiers', () => ({ signalerMajDossiers: () => { faux.signaux++ } }))
 
 vi.mock('../lib/supabase', () => ({
   supabase: {
@@ -207,5 +211,40 @@ describe('DossiersList — l’année affichée est celle des chiffres, pas cell
     await monter()
 
     expect(await screen.findByText('Relevés 2027')).toBeTruthy()
+  })
+})
+
+// Ce qui relie le tableau de bord à la barre latérale, et qu'aucun test de la barre seule ne peut
+// voir : « Nouveau dossier » y arrive par l'URL, et la création doit prévenir la barre, qui ne
+// « revient » pas au tableau de bord pour se relire puisqu'on y est déjà.
+describe('DossiersList — le formulaire de création et la barre latérale', () => {
+  beforeEach(() => {
+    faux.parTable = { dossiers: [dossier('alpha', 'Alpha Santé')] }
+    faux.signaux = 0
+  })
+
+  it('`?nouveau=1` ouvre le formulaire : c’est ce qu’envoie « Nouveau dossier » depuis la barre', async () => {
+    await act(async () => {
+      render(<MemoryRouter initialEntries={['/dossiers?nouveau=1']}><DossiersList /></MemoryRouter>)
+    })
+    expect(screen.getByLabelText('Nom du client')).toBeTruthy()
+  })
+
+  // Garde symétrique : sans lui, « le paramètre ouvre le formulaire » serait satisfait par un
+  // formulaire toujours ouvert.
+  it('sans le paramètre, le formulaire reste fermé', async () => {
+    await act(async () => { render(<MemoryRouter initialEntries={['/dossiers']}><DossiersList /></MemoryRouter>) })
+    expect(screen.queryByLabelText('Nom du client')).toBeNull()
+  })
+
+  it('créer un dossier prévient la barre latérale, puis referme le formulaire', async () => {
+    await act(async () => { render(<MemoryRouter initialEntries={['/dossiers']}><DossiersList /></MemoryRouter>) })
+    await act(async () => { screen.getByRole('button', { name: '+ Nouveau dossier' }).click() })
+    const champ = screen.getByLabelText('Nom du client')
+    await act(async () => { fireEvent.change(champ, { target: { value: 'Charlie Soins' } }) })
+    await act(async () => { fireEvent.submit(champ.closest('form')!) })
+
+    expect(faux.signaux).toBe(1)
+    expect(screen.queryByLabelText('Nom du client')).toBeNull()
   })
 })

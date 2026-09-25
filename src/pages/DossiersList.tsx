@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
 import { correspondALaRecherche } from '../lib/recherche'
@@ -10,6 +10,7 @@ import Widget from '../components/widgets/Widget'
 import Avatar from '../components/widgets/Avatar'
 import { IconChevron, IconPieces } from '../components/icons'
 import { lireTout } from '../lib/lectureComplete'
+import { signalerMajDossiers } from '../lib/listeDossiers'
 
 interface DossierRow extends Dossier {
   nbAValider: number
@@ -61,7 +62,11 @@ export default function DossiersList() {
   const [depotsRecents, setDepotsRecents] = useState<DepotRecent[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [showNew, setShowNew] = useState(false)
+  // « Nouveau dossier » s'ouvre depuis l'URL (`?nouveau=1`) plutôt que depuis un état local : c'est ce
+  // qui permet à la barre latérale de l'ouvrir de n'importe quel écran (voir Layout), et au bouton
+  // retour du navigateur de le refermer — même principe que l'onglet d'un dossier, qui vit dans l'URL.
+  const [parametres, setParametres] = useSearchParams()
+  const showNew = parametres.get('nouveau') === '1'
   // Distingue deux pannes possibles (voir audit ergonomie) : la liste des dossiers elle-même
   // (indispensable, rien de fiable à afficher sans elle) et les requêtes d'indicateurs secondaires
   // (pièces à valider, mois couverts, cotisations, dépôts récents) — un échec sur ces dernières ne doit
@@ -207,7 +212,7 @@ export default function DossiersList() {
           <p className="page-sous-titre" style={{ textTransform: 'capitalize' }}>{aujourdhui}</p>
         </div>
         <div className="page-entete-actions">
-          <button className="btn btn-primary" onClick={() => setShowNew(true)}>+ Nouveau dossier</button>
+          <button className="btn btn-primary" onClick={() => setParametres({ nouveau: '1' })}>+ Nouveau dossier</button>
         </div>
       </div>
 
@@ -406,7 +411,15 @@ export default function DossiersList() {
         </>
       )}
 
-      {showNew && <NewDossierModal onClose={() => setShowNew(false)} onCreated={load} />}
+      {showNew && (
+        <NewDossierModal
+          onClose={() => setParametres({}, { replace: true })}
+          // La barre latérale tient sa propre liste des dossiers : la création reste sur le tableau de
+          // bord, donc ne l'y ramène pas — sans ce signal, le nouveau dossier n'y apparaîtrait qu'au
+          // prochain rechargement de la page.
+          onCreated={() => { load(); signalerMajDossiers() }}
+        />
+      )}
     </>
   )
 }

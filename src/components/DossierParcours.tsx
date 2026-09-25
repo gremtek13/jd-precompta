@@ -1,90 +1,23 @@
 import { useEffect, useRef, useState } from 'react'
 import { ICONES_PARCOURS, IconChecklist, IconDocuments, IconEcritures, IconInformations, type IconComponent } from './icons'
+import { GROUPES_PARCOURS, type DossierTab, type GroupeParcours, type IdGroupeParcours } from '../lib/ongletsDossier'
 
-export type DossierTab =
-  | 'checklist'
-  | 'documents'
-  | 'pieces'
-  | 'factures'
-  | 'banque'
-  | 'ecritures'
-  | 'statistiques'
-  | 'immobilisations'
-  | 'cotisations'
-  | 'cloture'
-  | 'estimation'
-  | 'financement'
-  | 'supplements'
-  | 'packs'
-  | 'informations'
-  | 'virements'
-  | 'acces'
+export type { DossierTab } from '../lib/ongletsDossier'
 
-interface Enfant { id: DossierTab; label: string }
-
-// Un groupe est soit une destination directe (cible renseignée, clic = navigation immédiate), soit un
-// regroupement qui déroule ses enfants au clic. Remplace l'ancienne liste à plat de 13 destinations
-// (8 "étapes" reliées par des traits + 5 "outils" séparés) — le doute constaté ("je me perds dans les
-// onglets", voir audit ergonomie) venait moins du nombre réel de fonctions que du fait qu'elles étaient
-// toutes visibles en même temps, sans hiérarchie. Ici, 5 boutons au premier niveau seulement ; les
-// fonctions moins fréquentes (immobilisations, cotisations, clôture, estimation, réglages du cabinet)
-// restent à un clic de plus plutôt que de saturer la barre.
-//
-// L'ancien visuel "étapes reliées par un trait" a été abandonné : il suggérait une progression
-// séquentielle (comme un tunnel de commande) alors que ce n'en est pas une — les pièces et le
-// rapprochement bancaire continuent d'arriver toute l'année, aucun onglet n'est jamais vraiment
-// "terminé" avant la clôture (voir l'ancien commentaire sur ETAPES, qui le disait déjà).
-interface Groupe {
-  id: string
-  label: string
-  // Libellé court réservé à la barre de navigation mobile (voir media query) — en bas d'écran façon
-  // appli native (inspiré de Binance : navigation principale accessible au pouce, en bas), 5 colonnes
-  // étroites ne laissent la place que pour un mot, jamais "Vue d'ensemble" ou "Comptabilité" en entier.
-  labelCourt: string
-  icone: IconComponent
-  cible?: DossierTab
-  enfants?: Enfant[]
+// La liste des écrans vit dans lib/ongletsDossier.ts, partagée avec la barre latérale ; ce composant
+// n'en garde que l'habillage — une icône par destination de premier niveau. Un `Record` sur les
+// identifiants fermés : un groupe ajouté sans son icône ne compile pas.
+const ICONES_GROUPES: Record<IdGroupeParcours, IconComponent> = {
+  checklist: IconChecklist,
+  'documents-groupe': IconDocuments,
+  banque: ICONES_PARCOURS.banque,
+  comptabilite: IconEcritures,
+  cabinet: IconInformations,
 }
 
-const GROUPES: Groupe[] = [
-  { id: 'checklist', label: "Vue d'ensemble", labelCourt: 'Vue', icone: IconChecklist, cible: 'checklist' },
-  {
-    id: 'documents-groupe', label: 'Documents', labelCourt: 'Docs', icone: IconDocuments,
-    // Libellés distingués suite à un audit comparatif (confusion "Pièces" vs "Documents" relevée) :
-    // Justificatifs (factures/reçus d'achat ou de vente à ventiler comptablement), Documents
-    // administratifs (archive sans ventilation — relevés, attestations...), Factures émises (la
-    // facturation du dossier lui-même, jamais confondue avec les pièces reçues des tiers).
-    enfants: [
-      { id: 'pieces', label: 'Justificatifs' },
-      { id: 'documents', label: 'Documents administratifs' },
-      { id: 'factures', label: 'Factures émises' },
-    ],
-  },
-  { id: 'banque', label: 'Banque', labelCourt: 'Banque', icone: ICONES_PARCOURS.banque, cible: 'banque' },
-  {
-    id: 'comptabilite', label: 'Comptabilité', labelCourt: 'Compta', icone: IconEcritures,
-    enfants: [
-      { id: 'ecritures', label: 'Écritures' },
-      { id: 'statistiques', label: 'Balance des comptes' },
-      { id: 'immobilisations', label: 'Immobilisations' },
-      { id: 'cotisations', label: 'Cotisations' },
-      { id: 'cloture', label: 'Clôture' },
-      { id: 'estimation', label: 'Estimation' },
-      { id: 'financement', label: 'Financement' },
-      { id: 'supplements', label: 'Suppléments' },
-    ],
-  },
-  {
-    id: 'cabinet', label: 'Cabinet', labelCourt: 'Cabinet', icone: IconInformations,
-    enfants: [
-      { id: 'informations', label: 'Informations du dossier' },
-      { id: 'acces', label: 'Accès client' },
-      { id: 'virements', label: 'Virements' },
-      { id: 'packs', label: 'Packs' },
-    ],
-  },
-]
-
+// Barre d'onglets du dossier : fixée en bas de l'écran sur mobile, et en haut du dossier sur
+// ordinateur quand la barre latérale est RÉDUITE — déployée, c'est elle qui montre les écrans du
+// dossier ouvert, et cette barre-ci se masque (voir index.css, .nav-groupes).
 export default function DossierParcours({ tab, onChange }: { tab: DossierTab; onChange: (t: DossierTab) => void }) {
   const [ouvert, setOuvert] = useState<string | null>(null)
   const racineRef = useRef<HTMLDivElement>(null)
@@ -99,12 +32,12 @@ export default function DossierParcours({ tab, onChange }: { tab: DossierTab; on
     return () => document.removeEventListener('mousedown', surClicExterieur)
   }, [])
 
-  function estGroupeActif(groupe: Groupe): boolean {
+  function estGroupeActif(groupe: GroupeParcours): boolean {
     if (groupe.cible) return groupe.cible === tab
     return groupe.enfants?.some((e) => e.id === tab) ?? false
   }
 
-  function cliquerGroupe(groupe: Groupe) {
+  function cliquerGroupe(groupe: GroupeParcours) {
     if (groupe.cible) {
       onChange(groupe.cible)
       setOuvert(null)
@@ -115,8 +48,8 @@ export default function DossierParcours({ tab, onChange }: { tab: DossierTab; on
 
   return (
     <div className="nav-groupes" ref={racineRef}>
-      {GROUPES.map((groupe) => {
-        const Icone = groupe.icone
+      {GROUPES_PARCOURS.map((groupe) => {
+        const Icone = ICONES_GROUPES[groupe.id]
         const actif = estGroupeActif(groupe)
         return (
           <div className="nav-groupe" key={groupe.id}>
