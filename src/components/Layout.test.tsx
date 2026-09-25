@@ -54,12 +54,14 @@ vi.mock('../lib/supabase', () => ({
 
 // Monter un `AuthProvider` complet ferait dépendre ce test d'une session Supabase ; la charte et le
 // thème, eux, touchent au navigateur (`matchMedia` n'existe pas sous jsdom).
+// Le chef de cabinet par défaut ; un comptable dans le test qui vérifie à qui l'apparence est réservée.
+const compte = vi.hoisted(() => ({ estChef: true }))
 vi.mock('../context/AuthContext', () => ({
   useAuth: () => ({
     session: { user: { email: 'chef@cabinet-de-test.fr' } },
     role: 'cabinet',
     isSuperAdmin: false,
-    estChef: true,
+    estChef: compte.estChef,
     mesSocietes: [],
     dossierActifId: null,
     setDossierActifId: () => {},
@@ -82,6 +84,9 @@ async function afficher(chemin: string) {
           <Route element={<Layout />}>
             <Route path="/dossiers" element={<p>Écran du tableau de bord</p>} />
             <Route path="/dossiers/:id/:tab" element={<p>Écran du dossier</p>} />
+            {/* Sans elle, choisir « Apparence » démonterait toute la coque — et un menu qui ne se
+                refermerait pas disparaîtrait quand même, pour une raison qui n'est pas la bonne. */}
+            <Route path="/apparence" element={<p>Écran de l'apparence</p>} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -226,14 +231,67 @@ describe('Barre latérale — réduite à ses icônes', () => {
   })
 })
 
+// L'APPARENCE ET L'INSTALLATION VIVENT DANS LE MENU DU COMPTE, à côté du thème et de la déconnexion —
+// là où le cabinet les a voulues, plutôt qu'en lien permanent dans la navigation et en bouton au-dessus
+// du compte. Les deux menus (le bas de la barre sur ordinateur, « … » sur téléphone) portent les MÊMES
+// entrées : écrites une fois, elles ne peuvent pas diverger.
+describe('Barre latérale — le menu du compte', () => {
+  afterEach(() => { compte.estChef = true })
+
+  const ouvrirLeCompte = () => fireEvent.click(screen.getByRole('button', { name: 'Compte de chef@cabinet-de-test.fr' }))
+  const ouvrirLeMenuMobile = () => fireEvent.click(screen.getByRole('button', { name: "Plus d'options" }))
+
+  it('porte l’apparence du cabinet, qui a quitté la navigation', async () => {
+    await afficher('/dossiers')
+    expect(within(screen.getByRole('navigation')).queryByRole('link', { name: /Apparence/ })).toBeNull()
+
+    ouvrirLeCompte()
+    const lien = screen.getByRole('link', { name: 'Apparence' })
+    expect(lien.getAttribute('href')).toBe('/apparence')
+    screen.getByRole('button', { name: 'Mode sombre' })
+    screen.getByRole('button', { name: 'Déconnexion' })
+  })
+
+  it('et le menu « … » du téléphone porte les mêmes entrées', async () => {
+    await afficher('/dossiers')
+    ouvrirLeMenuMobile()
+    screen.getByRole('link', { name: 'Apparence' })
+    screen.getByRole('button', { name: 'Déconnexion' })
+  })
+
+  it('réserve l’apparence au chef de cabinet, comme sa page', async () => {
+    compte.estChef = false
+    await afficher('/dossiers')
+    ouvrirLeCompte()
+    expect(screen.queryByRole('link', { name: 'Apparence' })).toBeNull()
+    screen.getByRole('button', { name: 'Déconnexion' })
+  })
+
+  it('se referme quand on choisit l’apparence', async () => {
+    await afficher('/dossiers')
+    ouvrirLeCompte()
+    fireEvent.click(screen.getByRole('link', { name: 'Apparence' }))
+    screen.getByText("Écran de l'apparence")
+    expect(screen.queryByRole('button', { name: 'Déconnexion' })).toBeNull()
+  })
+})
+
 describe('Barre latérale — installer l’application', () => {
   const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'
   afterEach(() => { delete (navigator as { userAgent?: string }).userAgent })
 
+  // L'entrée vit dans le menu du compte : on l'ouvre d'abord, comme l'utilisateur.
   function consigne(): string {
+    fireEvent.click(screen.getByRole('button', { name: 'Compte de chef@cabinet-de-test.fr' }))
     fireEvent.click(screen.getByRole('button', { name: /Installer l'application/ }))
     return screen.getByRole('note').textContent ?? ''
   }
+
+  it('n’est plus un bouton permanent de la barre, menu fermé', async () => {
+    Object.defineProperty(navigator, 'userAgent', { value: CHROME, configurable: true })
+    await afficher('/dossiers')
+    expect(screen.queryByRole('button', { name: /Installer l'application/ })).toBeNull()
+  })
 
   it('propose l’installation sous le nom de JD Precompta quand le cabinet n’a pas de logo', async () => {
     Object.defineProperty(navigator, 'userAgent', { value: CHROME, configurable: true })

@@ -25,8 +25,8 @@ const revision = existsSync(RACINE_NAVIGATEURS)
 const executable = process.env.CHROMIUM ?? (revision ? `${RACINE_NAVIGATEURS}/${revision}/chrome-linux/chrome` : undefined)
 
 // Le Chromium du banc se présente comme « HeadlessChrome », que la barre latérale ne reconnaît pas
-// (voir lib/installation.ts) : sans une signature ordinaire, les captures ne montreraient pas le
-// bouton « Installer l'application » qu'un utilisateur d'Edge ou de Chrome voit dans son onglet.
+// (voir lib/installation.ts) : sans une signature ordinaire, les captures ne montreraient pas l'entrée
+// « Installer l'application » qu'un utilisateur d'Edge ou de Chrome voit dans le menu du compte.
 const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
 
 const filtre = process.argv[2] ?? ''
@@ -56,11 +56,14 @@ const VUES = [
   { nom: 'pc-mouvement-1280', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
   { nom: 'pc-mouvement-rapproche', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'PRLV ENERGIE SERVICES' },
   { nom: 'mobile-mouvement-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
-  // « Installer l'application », en bas de la barre : la consigne ouverte (le navigateur n'a pas
-  // encore annoncé d'invite), déployée, sombre, puis réduite — où le bouton ne garde que son icône.
-  { nom: 'pc-installer-clair', chemin: '#/dossiers', l: 1440, h: 900, theme: 'light', reduite: false, clic: "Installer l'application" },
-  { nom: 'pc-installer-sombre', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'dark', reduite: false, clic: "Installer l'application" },
-  { nom: 'pc-installer-reduite', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: true, clic: "Installer l'application sur cet ordinateur" },
+  // Le menu du compte (apparence, installation, thème, déconnexion), ouvert tel quel, puis avec la
+  // consigne d'installation dépliée (le navigateur n'a pas encore annoncé d'invite) : déployé, sombre,
+  // réduit — où le menu s'ouvre au-dessus de l'avatar seul — et le menu « … » du téléphone.
+  { nom: 'pc-compte-clair', chemin: '#/dossiers', l: 1440, h: 900, theme: 'light', reduite: false, compte: true },
+  { nom: 'pc-installer-clair', chemin: '#/dossiers', l: 1440, h: 900, theme: 'light', reduite: false, compte: true, clic: "Installer l'application" },
+  { nom: 'pc-installer-sombre', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'dark', reduite: false, compte: true, clic: "Installer l'application" },
+  { nom: 'pc-installer-reduite', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: true, compte: true, clic: "Installer l'application" },
+  { nom: 'mobile-menu-clair', chemin: '#/dossiers', l: 390, h: 844, theme: 'light', reduite: false, clic: "Plus d'options" },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -83,6 +86,11 @@ for (const v of VUES) {
   page.on('console', (m) => { if (m.type() === 'error') erreurs.push(m.text().slice(0, 160)) })
   await page.goto(BASE + v.chemin, { waitUntil: 'load' })
   await page.waitForTimeout(1500)
+  // Le menu du compte, en bas de la barre : son bouton porte l'adresse de la personne connectée.
+  if (v.compte) {
+    await page.getByRole('button', { name: /^Compte de / }).click()
+    await page.waitForTimeout(300)
+  }
   if (v.clic) {
     await page.getByRole('button', { name: v.clic, exact: true }).click()
     await page.waitForTimeout(600)
