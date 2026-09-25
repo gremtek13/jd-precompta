@@ -5395,15 +5395,31 @@ n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que
   ce qui part en production est exactement ce que la barrière a vérifié, et non une résolution de
   conflits refaite à l'aveugle par le rejeu.
 - **`main` est protégée depuis le 25/09/2026** — GitHub la rend `protected: true`. Rien n'y arrive
-  sans une demande de fusion, que le cabinet fusionne en « Rebase and merge » une fois `verifier` (le
-  travail de `tests.yml`) au vert. Réglages demandés ce jour-là : demande de fusion obligatoire SANS
+  sans une demande de fusion, fusionnée en « Rebase and merge » une fois `verifier` (le travail de
+  `tests.yml`) au vert. Réglages demandés ce jour-là : demande de fusion obligatoire SANS
   approbation exigée — le cabinet est le seul membre du dépôt, et les sessions ouvrent leurs demandes
   sous son compte, or GitHub interdit d'approuver la sienne ; `verifier` obligatoire ; historique
   linéaire ; et aucune dérogation pour les administrateurs, sans quoi une session agissant sous le
   compte du cabinet pourrait encore pousser directement. **Aucun outil de ce dépôt ne lit ces
-  réglages** : seul `protected: true` a été constaté. Une session pousse sur SA branche et n'ouvre la
-  demande que si le cabinet la demande. Après une fusion « Rebase and merge », les commits de la
-  branche existent dans `main` sous d'autres empreintes : le travail suivant repart de `origin/main`.
+  réglages** : seul `protected: true` a été constaté.
+  **C'EST LA SESSION QUI FUSIONNE, PAS LE CABINET** — décision du cabinet le même jour, pour ne pas
+  perdre l'autonomie des sessions. La protection garde ce qui compte, qu'aucun code n'arrive sur
+  `main` sans que `verifier` ait passé sur exactement ce qui part ; un clic de plus n'y ajoutait
+  qu'une attente. Une session pousse sur SA branche, ouvre la demande quand son travail a passé la
+  barrière en local (`tsc -b`, lint, `test:fuseaux`, build), et la fusionne elle-même quand
+  `verifier` est vert sur la tête de la demande, sans conflit ni fil de revue ouvert — en passant
+  `expectedHeadSha`, pour qu'une poussée arrivée entre-temps ne parte pas sans avoir été vérifiée.
+  **« Rebase and merge » seulement**, jamais squash ni commit de fusion. Puis elle vérifie la mise en
+  ligne (le site sert le paquet construit en local : même nom de fichier, donc même empreinte), tient
+  la feuille de route Notion, et dit au cabinet ce qui est parti. Si la fusion est refusée — droits,
+  outil, sécurité de l'environnement —, elle le dit, et le clic du cabinet reste le recours : jamais
+  un contournement (poussée directe, protection assouplie). C'est aussi ce qui referme le décalage
+  décrit juste en dessous : une Edge Function ou une migration déployée depuis la branche n'attend
+  plus un clic pour que sa source rejoigne `main`.
+  Après une fusion « Rebase and merge », les commits de la branche existent dans `main` sous d'autres
+  empreintes : la branche se réaligne sur `origin/main` (égalité des arbres vérifiée, puis
+  `--force-with-lease`, puisqu'elle ne porte plus que de l'historique fusionné), et le travail suivant
+  en repart.
 - **La Routine quotidienne « avancer un chantier » (`trig_011WworgC5Yw9whbjhNq8WA5`) est DÉSACTIVÉE
   depuis le 25/09/2026, par décision du cabinet.** Elle poussait directement sur `main` pendant
   qu'une session travaillait sur sa branche, et les deux ne se voyaient pas : la branche a fini par
@@ -5414,7 +5430,9 @@ n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que
   et les migrations, déployées par MCP depuis la branche, tournaient en avance sur les écrans, qui ne
   partent que de `main` — une autre forme de « un commit n'est pas un déploiement ». La réactiver
   est une décision du cabinet, à prendre en disant qui écrit sur `main` — et depuis que `main` est
-  protégée, elle ne pourrait plus y pousser : il lui faudrait ouvrir des demandes de fusion.
+  protégée, elle ne pourrait plus y pousser : il lui faudrait ouvrir des demandes de fusion et les
+  fusionner, comme une session. Deux écrivains qui fusionnent chacun les leurs, c'est exactement le
+  problème décrit ici, protection ou pas.
 - Avant de supprimer une table jugée morte, réunir les six preuves plutôt
   qu'une seule : 0 ligne, 0 clé étrangère entrante, 0 vue dépendante, 0
   trigger, 0 fonction la mentionnant (`pg_proc.prosrc`), 0 référence dans le
