@@ -161,8 +161,14 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
       load()
     } catch (err) {
       // Contrainte unique sur piece_id (voir migration immobilisations_piece_id_unique) : deux onglets
-      // ouverts ou un double-clic peuvent tenter d'enregistrer la même pièce deux fois.
-      if (err instanceof Error && /duplicate|unique/i.test(err.message)) {
+      // ouverts, un double-clic ou une liste d'immobilisations lue à moitié peuvent tenter
+      // d'enregistrer la même pièce deux fois.
+      //
+      // Reconnue à son CODE, jamais à l'héritage : l'erreur arrive ici par `throw insertError`, un
+      // objet Postgrest NU, qui n'est pas une instance d'`Error`. Le test `err instanceof Error`
+      // d'avant rendait donc ce message impossible — l'opérateur lisait la phrase brute de Postgres,
+      // et la liste n'était pas relue (voir lib/messageErreur.ts, même défaut sous une autre forme).
+      if ((err as { code?: unknown } | null)?.code === '23505') {
         setError('Cette pièce a déjà été enregistrée comme immobilisation.')
         load()
         return

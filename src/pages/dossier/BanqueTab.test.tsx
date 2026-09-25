@@ -1,5 +1,5 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
@@ -30,19 +30,27 @@ const faux = vi.hoisted(() => ({
   resoudreLectureLignes: null as null | (() => void),
   updatesPieces: [] as Record<string, unknown>[],
   insertions: [] as { table: string; valeur: Record<string, unknown> }[],
+  // Le serveur qui cesse de rendre au-delà de N lignes d'une table tout en annonçant le vrai total :
+  // la panne qui produit une lecture INCOMPLÈTE (voir lib/lectureComplete.ts). Par table, parce que
+  // chaque lot ne regarde pas les mêmes lectures.
+  muet: {} as Record<string, number>,
+  // Ce que « lit » le faux pdf.js : des lignes de texte avec l'abscisse de leur montant.
+  lignesPdf: [] as { texte: string; xFin: number }[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
 // DOM dès l'import (voir CLAUDE.md, « Même règle pour les dépendances navigateur ») et lève sous
 // jsdom faute de `DOMMatrix`. Aucune fonctionnalité PDF n'est exercée par ce test : le module est
 // donc remplacé, exactement comme `lib/supabase` l'est ci-dessous pour ce qui parle à la base.
-vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => [] }))
+vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => faux.lignesPdf }))
 
 vi.mock('../../lib/supabase', () => {
   function chaine(table: string) {
     let operation = 'select'
     let idFiltre: unknown = null
     let valeurMaj: Record<string, unknown> = {}
+    let debut = 0
+    let fin = Number.MAX_SAFE_INTEGER
     const c: Record<string, unknown> = {}
     Object.assign(c, {
       select: () => c,
@@ -64,8 +72,14 @@ vi.mock('../../lib/supabase', () => {
         faux.insertions.push({ table, valeur })
         return c
       },
-      range: () => c,
+      range: (d: number, f: number) => { debut = d; fin = f; return c },
       then: (suite: (r: unknown) => unknown) => {
+        const muet = faux.muet[table]
+        if (operation === 'select' && muet != null) {
+          const toutes = table === 'lignes_bancaires' ? faux.lignes : table === 'pieces' ? faux.pieces : []
+          const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
+          return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
+        }
         if (table === 'lignes_bancaires' && operation === 'update' && faux.erreurMajLigne) {
           return Promise.resolve({ data: null, error: { message: faux.erreurMajLigne } }).then(suite)
         }
@@ -160,6 +174,8 @@ function reinitialiser() {
   faux.resoudreLectureLignes = null
   faux.updatesPieces = []
   faux.insertions = []
+  faux.muet = {}
+  faux.lignesPdf = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -581,5 +597,162 @@ describe('BanqueTab — Tout rapprocher règle la pièce sur la banque', () => {
     const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
     await act(async () => { bouton.click() })
     await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ conversion_source: 'banque' })]))
+  })
+})
+
+// UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. Les bandeaux disaient déjà que les mouvements, les
+// pièces ou les règles n'avaient été lus qu'en partie ; les boutons qui ÉCRIVENT à partir de ces
+// listes restaient ouverts. L'import dédoublonne contre les mouvements LUS — et aucun écran ne permet
+// de retirer un mouvement bancaire ; les deux lots n'écrivent que ce qui n'a qu'UN candidat, et une
+// unicité ne se juge que sur tout ce qui existe.
+describe('BanqueTab — import d’un relevé', () => {
+  // Un import qui écarte des doublons le DIT par une alerte : c'est elle qui prouve, dans le cas
+  // passant, que le dédoublonnage a bien tourné contre les mouvements lus.
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+
+  const CSV = 'Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n05/06/2025;VIR CLIENT DUPONT;250,00\n'
+
+  async function deposer() {
+    const fichier = new File([CSV], 'releve-juin.csv', { type: 'text/csv' })
+    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
+    return screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+  }
+
+  // La garde posée DANS les gestionnaires (`if (lectureIncomplete) return`) n'est atteinte par aucun
+  // clic, le bouton étant déjà grisé : la retirer laisse ces tests verts, et c'est attendu. C'est une
+  // seconde ceinture, comme le refus côté gestionnaire de ClotureTab — la dire gardée serait faux.
+  it('se suspend sur un relevé lu à moitié, plutôt que de réimporter ce qu’il n’a pas lu', async () => {
+    reinitialiser()
+    // Le mouvement du 02/06 est en base, mais la lecture n'en rend rien : le dédoublonnage le
+    // croirait absent, et l'importerait une seconde fois.
+    faux.muet = { lignes_bancaires: 0 }
+    rendre()
+
+    const bouton = await deposer()
+    expect(screen.getByText(/Import suspendu/)).toBeTruthy()
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.insertions.filter((i) => i.table === 'lignes_bancaires')).toHaveLength(0)
+  })
+
+  it('importe, sur une lecture complète, la seule ligne qui manque', async () => {
+    // Le garde symétrique : sans lui, « l'import se suspend » serait satisfait par un import qui ne
+    // part JAMAIS.
+    reinitialiser()
+    rendre()
+
+    const bouton = await deposer()
+    expect(screen.queryByText(/Import suspendu/)).toBeNull()
+    await act(async () => { bouton.click() })
+
+    const lot = faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+    expect(lot).toHaveLength(1)
+    expect(lot[0].valeur).toEqual([expect.objectContaining({ libelle: 'VIR CLIENT DUPONT', montant: 250 })])
+    expect(alertes).toEqual([expect.stringContaining('1 déjà présente(s), ignorée(s)')])
+  })
+
+  // Le chemin PDF porte la même garde et le même verrou que le CSV — un chemin qu'on ne teste pas
+  // est celui où une mutation passe inaperçue.
+  async function deposerPdf() {
+    faux.lignesPdf = [
+      { texte: '02/06/2025 PRLV SEPA FOURNISSEUR -100,00', xFin: 0 },
+      { texte: '05/06/2025 VIR CLIENT DUPONT 250,00', xFin: 0 },
+    ]
+    await act(async () => { (await screen.findByRole('button', { name: 'PDF' })).click() })
+    const fichier = new File(['%PDF'], 'releve-juin.pdf', { type: 'application/pdf' })
+    const champ = document.querySelector('input[type=file][accept=".pdf,application/pdf"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
+    return screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+  }
+
+  it('se suspend aussi par le chemin PDF', async () => {
+    reinitialiser()
+    faux.muet = { lignes_bancaires: 0 }
+    rendre()
+
+    const bouton = await deposerPdf()
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.insertions.filter((i) => i.table === 'lignes_bancaires')).toHaveLength(0)
+  })
+
+  it("n'importe qu'une fois un relevé PDF cliqué trois fois", async () => {
+    reinitialiser()
+    rendre()
+
+    const bouton = await deposerPdf()
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    const lot = faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+    expect(lot).toHaveLength(1)
+    expect(lot[0].valeur).toEqual([expect.objectContaining({ libelle: 'VIR CLIENT DUPONT', montant: 250 })])
+  })
+
+  it("trois clics rapprochés n'importent le relevé qu'une fois", async () => {
+    // Chaque clic dédoublonnait contre la MÊME liste d'avant : deux imports partis dans le même rendu
+    // inséraient tous deux le relevé entier. Trois et non deux : un verrou posé dans le `try` serait
+    // relâché par le deuxième clic et laisserait passer le troisième.
+    reinitialiser()
+    rendre()
+
+    const bouton = await deposer()
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.insertions.filter((i) => i.table === 'lignes_bancaires')).toHaveLength(1)
+  })
+})
+
+describe('BanqueTab — les lots de rapprochement sur une lecture partielle', () => {
+  it('suspend « Tout rapprocher » quand la jumelle d’une pièce peut ne pas avoir été lue', async () => {
+    // Deux dépôts du même document : lus ensemble, le plan refuse de trancher (test plus haut). Lus
+    // à moitié, la seconde disparaît et la première paraît seule candidate.
+    reinitialiser()
+    faux.pieces = [
+      pieceDeTest({ id: 'piece-1', nom_fichier: 'mai.pdf' }),
+      pieceDeTest({ id: 'piece-2', nom_fichier: 'juin.pdf' }),
+    ]
+    faux.muet = { pieces: 1 }
+    rendre()
+
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/Rapprochement automatique suspendu/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(faux.updatesLignes).toHaveLength(0)
+  })
+
+  it('suspend la validation en lot, qui validerait la pièce sur cette fausse certitude', async () => {
+    reinitialiser()
+    faux.pieces = [
+      pieceDeTest({ id: 'piece-1', nom_fichier: 'mai.pdf', statut: 'a_valider' }),
+      pieceDeTest({ id: 'piece-2', nom_fichier: 'juin.pdf', statut: 'a_valider' }),
+    ]
+    faux.muet = { pieces: 1 }
+    rendre()
+
+    const bouton = await screen.findByRole('button', { name: /Valider et rapprocher les 1/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/Validation en lot suspendue/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(faux.updatesPieces).toHaveLength(0)
+    expect(faux.updatesLignes).toHaveLength(0)
+  })
+
+  it('valide en lot, sur une lecture complète, la pièce qui n’a qu’un mouvement possible', async () => {
+    // Le garde symétrique du précédent.
+    reinitialiser()
+    faux.majImmediate = true
+    faux.pieces = [pieceDeTest({ id: 'piece-1', statut: 'a_valider' })]
+    rendre()
+
+    const bouton = await screen.findByRole('button', { name: /Valider et rapprocher les 1/ })
+    expect(screen.queryByText(/Validation en lot suspendue/)).toBeNull()
+    await act(async () => { bouton.click() })
+    await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ statut: 'validee' })]))
   })
 })

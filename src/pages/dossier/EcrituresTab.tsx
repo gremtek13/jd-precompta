@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
@@ -70,6 +70,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // seul signal ne paraisse. Le format FEC étant rigide, il ne peut pas porter l'avertissement —
   // l'export se refuse donc, plutôt que de produire un fichier fiscal faux.
   const [brouillonIncomplet, setBrouillonIncomplet] = useState<string | null>(null)
+  // Verrou d'exécution de la génération : `generating` est un état React, qui ne prend effet qu'au
+  // rendu suivant — un double clic du même rendu passerait les deux, et chaque pièce en attente
+  // recevrait deux jeux d'écritures, c'est-à-dire sa charge en double dans le FEC et la balance.
+  const generationEnCours = useRef(false)
 
   async function load() {
     setLoading(true)
@@ -164,8 +168,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     .filter(({ piece }) => !ecritures.some((e) => e.piece_id === piece.id))
     .map(({ piece }) => piece)
 
+  // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. `enAttente`, ce sont les pièces à
+  // comptabiliser MOINS celles dont on a LU l'écriture : sur un brouillon lu à moitié, il porte des
+  // pièces déjà comptabilisées, et générer doublerait leur charge — dans le FEC comme dans la
+  // balance, et seul « Régénérer », pièce par pièce, saurait la défaire. Des immobilisations lues à
+  // moitié feraient pire : une charge pour un bien qui s'amortit déjà. `brouillonIncomplet` couvre
+  // les cinq lectures dont dépend la génération, les mêmes que celles des deux exports.
   async function genererEcritures() {
-    if (enAttente.length === 0) return
+    if (enAttente.length === 0 || brouillonIncomplet !== null || generationEnCours.current) return
+    generationEnCours.current = true
     setGenerating(true)
     setError(null)
     try {
@@ -183,10 +194,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           return ligne ? synchroniserContrepartieBanque(dossierId, p, ligne) : Promise.resolve()
         }),
       )
-      load()
+      // Relu AVANT de relâcher le verrou : relâché plus tôt, `enAttente` porterait encore les pièces
+      // qu'on vient de comptabiliser le temps que la relecture revienne, et un clic à ce moment-là
+      // les générerait une seconde fois.
+      await load()
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      generationEnCours.current = false
       setGenerating(false)
     }
   }
@@ -700,7 +715,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <p className="muted" style={{ margin: 0 }}>
           {ecritures.length} écriture{ecritures.length > 1 ? 's' : ''} proposée{ecritures.length > 1 ? 's' : ''}
-          {enAttente.length > 0 && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
+          {/* Sur une lecture partielle, ce compte n'est plus celui des pièces en attente : il y met
+              aussi celles dont on n'a pas pu lire l'écriture. Il se tait plutôt que de l'affirmer. */}
+          {enAttente.length > 0 && brouillonIncomplet === null && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
           {nbSansContrepartie > 0 && (
             <> — <span className="badge badge-warning">{nbSansContrepartie} en attente de rapprochement bancaire</span></>
           )}
@@ -711,18 +728,31 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             <> — <span className="badge badge-danger">{groupesDesequilibres.length} déséquilibrée{groupesDesequilibres.length > 1 ? 's' : ''}</span></>
           )}
         </p>
-        <button className="btn btn-primary btn-sm" disabled={generating || enAttente.length === 0} onClick={genererEcritures}>
-          {generating ? 'Génération…' : `Générer les écritures manquantes${enAttente.length > 0 ? ` (${enAttente.length})` : ''}`}
+        <button
+          className="btn btn-primary btn-sm"
+          disabled={generating || enAttente.length === 0 || brouillonIncomplet !== null}
+          title={
+            brouillonIncomplet
+              ? `Lecture incomplète (${brouillonIncomplet}) — générer maintenant pourrait doubler des écritures déjà passées.`
+              : undefined
+          }
+          onClick={genererEcritures}
+        >
+          {generating
+            ? 'Génération…'
+            : `Générer les écritures manquantes${enAttente.length > 0 && brouillonIncomplet === null ? ` (${enAttente.length})` : ''}`}
         </button>
       </div>
 
       {brouillonIncomplet && (
-        // Dit en clair ce que les deux boutons grisés ne peuvent qu'insinuer : les totaux affichés
+        // Dit en clair ce que les trois boutons grisés ne peuvent qu'insinuer : les totaux affichés
         // eux-mêmes portent sur une lecture partielle.
         <p className="error-text">
           Le brouillon n'a pas pu être lu en entier ({brouillonIncomplet}). Les totaux ci-dessous
-          portent donc sur une partie des écritures, et les exports FEC et piste d'audit sont
-          bloqués — un fichier fiscal amputé ne peut pas dire qu'il l'est.
+          portent donc sur une partie des écritures. La génération est suspendue — elle pourrait
+          doubler des écritures déjà passées, ou comptabiliser un bien immobilisé — et les exports
+          FEC et piste d'audit sont bloqués : un fichier fiscal amputé ne peut pas dire qu'il l'est.
+          Recharge la page.
         </p>
       )}
 

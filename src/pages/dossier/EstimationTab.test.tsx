@@ -18,11 +18,17 @@ const faux = vi.hoisted(() => ({
   categories: [] as unknown[],
   immobilisations: [] as unknown[],
   upserts: [] as Record<string, unknown>[],
+  upsertsAnnuels: [] as Record<string, unknown>[],
+  // Le serveur qui cesse de rendre les pièces au-delà de N tout en annonçant le vrai total : la
+  // panne qui produit une lecture INCOMPLÈTE (voir lib/lectureComplete.ts).
+  muetPieces: null as number | null,
 }))
 
 vi.mock('../../lib/supabase', () => {
   function chaine(table: string) {
     let venteSeulement = false
+    let debut = 0
+    let fin = Number.MAX_SAFE_INTEGER
     const c: Record<string, unknown> = {}
     Object.assign(c, {
       select: () => c,
@@ -30,9 +36,11 @@ vi.mock('../../lib/supabase', () => {
         if (colonne === 'type_piece' && valeur === 'vente') venteSeulement = true
         return c
       },
-      or: () => c, order: () => c, in: () => c, range: () => c, delete: () => c,
+      or: () => c, order: () => c, in: () => c, delete: () => c,
+      range: (d: number, f: number) => { debut = d; fin = f; return c },
       upsert: (valeur: Record<string, unknown>) => {
         if (table === 'references_postes_annuels') faux.upserts.push(valeur)
+        if (table === 'references_annuelles') faux.upsertsAnnuels.push(valeur)
         return c
       },
       then: (suite: (r: unknown) => unknown) => {
@@ -43,6 +51,10 @@ vi.mock('../../lib/supabase', () => {
           ? (venteSeulement ? faux.pieces.filter((p) => (p as Piece).type_piece === 'vente') : faux.pieces)
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations : []
+        if (table === 'pieces' && faux.muetPieces != null) {
+          const rendu = donnees.slice(debut, Math.min(fin + 1, faux.muetPieces))
+          return Promise.resolve({ data: rendu, error: null, count: donnees.length }).then(suite)
+        }
         return Promise.resolve({ data: donnees, error: null, count: donnees.length }).then(suite)
       },
     })
@@ -140,5 +152,45 @@ describe('EstimationTab — détail par poste', () => {
 
     expect(faux.upserts).toHaveLength(0)
     await screen.findByText(/Aucune pièce avec un poste 2035 renseigné/)
+  })
+})
+
+// UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. Les deux calculs ENREGISTRENT leur résultat comme
+// repère annuel : faits sur une partie des pièces, ils gravaient un chiffre trop bas, qui survivait au
+// rechargement de la page alors que le bandeau, lui, disparaissait avec la panne.
+describe('EstimationTab — les repères ne se calculent pas sur une lecture partielle', () => {
+  function poser() {
+    faux.pieces = [pieceDeTest({ id: 'p1' }), pieceDeTest({ id: 'p2', montant_ht: 300 })]
+    faux.categories = [categorieDeTest()]
+    faux.immobilisations = []
+    faux.upserts = []
+    faux.upsertsAnnuels = []
+    faux.muetPieces = null
+  }
+
+  it('grise les deux calculs et n’enregistre rien', async () => {
+    poser()
+    faux.muetPieces = 1
+    await rendre()
+
+    await screen.findByText(/Calcul suspendu/)
+    const postes = screen.getByRole('button', { name: 'Calculer le détail par poste' })
+    const annuel = screen.getByRole('button', { name: 'Calculer CA + cotisations' })
+    expect(postes.hasAttribute('disabled')).toBe(true)
+    expect(annuel.hasAttribute('disabled')).toBe(true)
+    await act(async () => { postes.click(); annuel.click() })
+    expect(faux.upserts).toHaveLength(0)
+    expect(faux.upsertsAnnuels).toHaveLength(0)
+  })
+
+  it('calcule le repère annuel sur une lecture complète', async () => {
+    // Garde symétrique pour le second bouton — le premier a les siens plus haut.
+    poser()
+    await rendre()
+    expect(screen.queryByText(/Calcul suspendu/)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    // L'année proposée est celle d'avant l'année en cours : lue ici comme l'écran la lit, pour que ce
+    // test ne dépende pas du jour où il tourne.
+    expect(faux.upsertsAnnuels).toEqual([expect.objectContaining({ annee: new Date().getFullYear() - 1, source: 'calculee' })])
   })
 })

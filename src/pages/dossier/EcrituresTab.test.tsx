@@ -26,6 +26,17 @@ const faux = vi.hoisted(() => ({
   // qui est le comportement réel : `supabase.from(...).delete()` ne lève pas, l'échec se lit dans
   // `{ error }`.
   refusSuppression: null as string | null,
+  // Même panne que `muetApres`, sur UNE table seulement : c'est ce qui sépare « le brouillon a
+  // manqué » de « tout a manqué », et la génération ne se trompe que dans le premier cas.
+  muetParTable: {} as Record<string, number>,
+  // Les insertions réellement envoyées, dans l'ordre. Elles MORDENT sur la table du faux, comme la
+  // suppression : la relecture qui suit voit les écritures créées.
+  insertions: [] as { table: string; lignes: Record<string, unknown>[] }[],
+  // Retient les LECTURES qui suivent une insertion jusqu'à ce que le test relâche : c'est la fenêtre
+  // de la relecture, pendant laquelle un second clic ne doit rien renvoyer.
+  retenirApresInsertion: false,
+  retenue: null as Promise<void> | null,
+  relacher: null as (() => void) | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -39,10 +50,15 @@ vi.mock('../../lib/supabase', () => ({
       // disparaît » plutôt que « la bonne méthode a été appelée » — et ce qui permet de voir qu'une
       // ligne oubliée en produit une autre, ailleurs.
       let suppression = false
+      let insertion: Record<string, unknown>[] | null = null
       const filtres: [string, unknown][] = []
       Object.assign(chaine, {
         select: () => chaine,
         delete: () => { suppression = true; return chaine },
+        insert: (lignes: Record<string, unknown> | Record<string, unknown>[]) => {
+          insertion = Array.isArray(lignes) ? lignes : [lignes]
+          return chaine
+        },
         eq: (colonne: string, valeur: unknown) => { filtres.push([colonne, valeur]); return chaine },
         neq: (colonne: string, valeur: unknown) => { filtres.push([`!${colonne}`, valeur]); return chaine },
         is: () => chaine,
@@ -51,6 +67,14 @@ vi.mock('../../lib/supabase', () => ({
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
         then: (suite: (r: { data: unknown[] | null; error: unknown; count: number }) => unknown) => {
+          if (insertion) {
+            faux.insertions.push({ table, lignes: insertion })
+            faux.parTable[table] = [...(faux.parTable[table] ?? []), ...insertion.map((l, i) => ({ id: `ins-${faux.insertions.length}-${i}`, ...l }))]
+            if (faux.retenirApresInsertion) {
+              faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+            }
+            return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
+          }
           if (suppression) {
             if (faux.refusSuppression) {
               return Promise.resolve({ data: null, error: { message: faux.refusSuppression }, count: 0 }).then(suite)
@@ -63,10 +87,12 @@ vi.mock('../../lib/supabase', () => ({
           const toutes = faux.parTable[table] ?? []
           const demande = fin - debut + 1
           const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
-          const rendu = faux.muetApres == null
+          const muet = faux.muetParTable[table] ?? faux.muetApres
+          const rendu = muet == null
             ? toutes.slice(debut, debut + taille)
-            : toutes.slice(debut, Math.min(debut + taille, faux.muetApres))
-          return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
+            : toutes.slice(debut, Math.min(debut + taille, muet))
+          const reponse = { data: rendu, error: null, count: toutes.length }
+          return (faux.retenue ?? Promise.resolve()).then(() => reponse).then(suite)
         },
         maybeSingle: () => Promise.resolve({ data: null, error: null }),
       })
@@ -111,6 +137,11 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.plafond = null
   faux.muetApres = null
   faux.refusSuppression = null
+  faux.muetParTable = {}
+  faux.insertions = []
+  faux.retenirApresInsertion = false
+  faux.retenue = null
+  faux.relacher = null
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
     immobilisations: [], lignes_bancaires: [], declarations_tva: [],
@@ -309,5 +340,85 @@ describe("EcrituresTab — retrait d'une écriture sans objet", () => {
 
     expect(faux.parTable.ecritures_brouillon).toHaveLength(2)
     vi.unstubAllGlobals()
+  })
+})
+
+describe('EcrituresTab — une lecture partielle ne commande pas la génération', () => {
+  // `enAttente`, ce sont les pièces à comptabiliser MOINS celles dont on a LU l'écriture. Sur un
+  // brouillon lu à moitié, il porte donc des pièces déjà comptabilisées — et « Générer » doublait
+  // leur charge dans le FEC et la balance. Les exports se refusaient déjà sur cette lecture ; la
+  // génération, qui ÉCRIT, restait ouverte.
+  function poserDeuxPiecesComptabilisees() {
+    poser({
+      pieces: [piece({ id: 'p1' }), piece({ id: 'p2', tiers: 'SECOND FOURNISSEUR' })],
+      ecritures_brouillon: [ecriture({ id: 'e1', piece_id: 'p1' }), ecriture({ id: 'e2', piece_id: 'p2', libelle: 'SECOND FOURNISSEUR' })],
+    })
+  }
+
+  it("grise la génération sur un brouillon lu à moitié, et n'écrit rien", async () => {
+    poserDeuxPiecesComptabilisees()
+    // Le serveur rend l'écriture de p1 et se tait sur celle de p2 : p2 a l'air « en attente ».
+    faux.muetParTable = { ecritures_brouillon: 1 }
+    monter()
+
+    await screen.findByText(/La génération est suspendue/)
+    const bouton = screen.getByRole('button', { name: /Générer les écritures manquantes/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    // Le compte se tait plutôt que d'annoncer une pièce « en attente » qui ne l'est pas.
+    expect(bouton.textContent).not.toMatch(/\(\d+\)/)
+    expect(screen.queryByText(/en attente de génération/)).toBeNull()
+
+    await act(async () => { bouton.click() })
+    expect(faux.insertions).toHaveLength(0)
+  })
+
+  it('génère, sur une lecture complète, les écritures de la seule pièce qui en manque', async () => {
+    // Le garde symétrique : sans lui, « on ne génère pas sur une lecture partielle » serait satisfait
+    // par un bouton qui ne génère JAMAIS.
+    poser({
+      pieces: [piece({ id: 'p1' }), piece({ id: 'p2', tiers: 'SECOND FOURNISSEUR' })],
+      ecritures_brouillon: [ecriture({ id: 'e1', piece_id: 'p1' })],
+    })
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+
+    expect(faux.insertions).toHaveLength(1)
+    expect(faux.insertions[0].table).toBe('ecritures_brouillon')
+    expect(faux.insertions[0].lignes.every((l) => l.piece_id === 'p2')).toBe(true)
+  })
+
+  it("trois clics rapprochés ne génèrent qu'une fois", async () => {
+    // Trois et non deux : un verrou posé DANS le `try` serait relâché par le `finally` du deuxième
+    // clic, refusé, et laisserait passer le troisième.
+    poser({ pieces: [piece({ id: 'p1' })], ecritures_brouillon: [] })
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+
+    expect(faux.insertions).toHaveLength(1)
+  })
+
+  it('reste fermée pendant la relecture qui suit une génération', async () => {
+    // Relâché avant la relecture, le bouton redevenait cliquable sur un `enAttente` qui portait
+    // encore la pièce qu'on venait de comptabiliser : un clic à ce moment la générait une seconde fois.
+    poser({ pieces: [piece({ id: 'p1' })], ecritures_brouillon: [] })
+    faux.retenirApresInsertion = true
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+    expect(faux.insertions).toHaveLength(1)
+
+    // La relecture est retenue : l'écran n'a pas encore vu l'écriture créée.
+    await act(async () => { screen.getByRole('button', { name: /Génération…|Générer les écritures manquantes/ }).click() })
+    expect(faux.insertions).toHaveLength(1)
+
+    faux.retenirApresInsertion = false
+    await act(async () => { faux.relacher?.() })
+    faux.retenue = null
+    expect(faux.insertions).toHaveLength(1)
   })
 })

@@ -13,6 +13,7 @@ import { badgeClasseStatutSuperpdp, libelleStatutSuperpdp } from '../../lib/supe
 import EnvoyerEmailModal from '../../components/EnvoyerEmailModal'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { messageErreur } from '../../lib/messageErreur'
 
 interface Props {
   dossierId: string
@@ -39,6 +40,7 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
   const [avoirDe, setAvoirDe] = useState<FactureEmise | null>(null)
   const [superpdpDe, setSuperpdpDe] = useState<FactureEmise | null>(null)
   const [emailDe, setEmailDe] = useState<FactureEmise | null>(null)
+  const [erreur, setErreur] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -61,9 +63,15 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
     correspondALaRecherche([f.numero, f.tiers_nom, f.statut, f.date_emission, formatDate(f.date_emission), f.montant_ttc], recherche),
   )
 
+  // Le résultat de la suppression est LU : le `load()` qui suit fait bien réapparaître un brouillon
+  // refusé, mais sans un mot, sur un geste que l'opérateur vient de CONFIRMER — le réflexe est alors
+  // de reconfirmer, et d'obtenir le même silence (le défaut de `SuperPdpModal.retirer`, corrigé de
+  // même sur `SupplementsTab` et `AccesTab`).
   async function supprimer(f: FactureEmise) {
     if (!window.confirm(`Supprimer le brouillon de facture pour "${f.tiers_nom}" ? Cette action est irréversible.`)) return
-    await supabase.from('factures_emises').delete().eq('id', f.id)
+    setErreur(null)
+    const { error: suppressionError } = await supabase.from('factures_emises').delete().eq('id', f.id)
+    if (suppressionError) setErreur(messageErreur(suppressionError, 'Le brouillon n’a pas pu être supprimé.'))
     load()
   }
 
@@ -113,12 +121,19 @@ export default function FacturesTab({ dossierId, dossierNom, dossierSiret, dossi
         <button className="btn btn-primary btn-sm" onClick={() => setEditing('new')}>+ Nouvelle facture</button>
       </div>
 
+      {erreur && <p className="error-text">{erreur}</p>}
+
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (
+          // « Aucune facture » seulement sur une lecture COMPLÈTE : une lecture refusée rend aussi une
+          // liste vide, et l'affirmation deviendrait fausse au lieu d'une panne dite — sur la suite de
+          // numéros qu'un cabinet doit pouvoir présenter sans trou (même règle que PacksTab).
           <div className="empty-state">
-            {recherche.trim() ? `Aucune facture ne correspond à « ${recherche.trim()} ».` : 'Aucune facture.'}
+            {recherche.trim()
+              ? `Aucune facture ne correspond à « ${recherche.trim()} ».`
+              : lectureIncomplete ? 'La liste des factures n’a pas pu être lue.' : 'Aucune facture.'}
           </div>
         ) : (
           <table>

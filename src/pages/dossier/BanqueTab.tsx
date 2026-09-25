@@ -396,12 +396,22 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   )
   const certainsAValider = appariementsCertains.filter((a) => a.piece.statut !== 'validee')
 
+  // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. Les deux lots ci-dessous n'écrivent que ce
+  // qu'aucun doute ne sépare, et « aucun doute » veut dire UN SEUL candidat de part et d'autre. Or une
+  // unicité se juge sur ce qu'on a LU : que la jumelle d'une pièce (deux factures mensuelles
+  // identiques) ou d'un mouvement tombe au-delà d'une lecture tronquée, et l'autre paraît seule —
+  // le lot rattache alors le mauvais justificatif, et le second lot VALIDE la pièce sur cette
+  // fausse certitude. Le rapprochement ligne à ligne, lui, reste ouvert : c'est l'opérateur qui y
+  // tranche, bandeaux sous les yeux.
+  const lotAutomatiqueSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes
+  const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes
+
   // Valide la pièce ET rapproche le mouvement, en une passe. Les deux vont ensemble : c'est la
   // concordance avec la banque qui justifie la validation, la séparer n'aurait pas de sens.
   // Sous le verrou partagé (voir `sousVerrou`) : un double clic enverrait sinon deux fois les mêmes
   // écritures de contrepartie (voir ImportDossierModal, même correctif).
   async function validerEtRapprocherLot() {
-    if (certainsAValider.length === 0) return
+    if (certainsAValider.length === 0 || lotCertainSuspendu) return
     await sousVerrou(setRapprochementAuto, async () => {
       const echecs: string[] = []
       for (const a of certainsAValider) {
@@ -449,7 +459,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   // alors que le test existait déjà — une promesse qu'on ne peut pas vérifier en la lisant.
   async function rapprocherTout() {
     const maj = planAuto.retenus
-    if (maj.length === 0) return
+    if (maj.length === 0 || lotAutomatiqueSuspendu) return
     await sousVerrou(setRapprochementAuto, async () => {
       const resultats = await Promise.all(
         maj.map((m) =>
@@ -537,7 +547,8 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         motif={lignesIncompletes}
         consequence={
           'Les totaux, le contrôle de solde et le rapprochement ci-dessous portent donc sur une ' +
-          'partie du relevé. Recharge la page avant de t’appuyer dessus.'
+          'partie du relevé, et l’import comme les rapprochements en lot sont suspendus. Recharge ' +
+          'la page avant de t’appuyer dessus.'
         }
       />
 
@@ -548,7 +559,8 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         motif={piecesIncompletes}
         consequence={
           'Des justificatifs manquent donc dans les candidats au rapprochement : un mouvement peut ' +
-          'ressortir « sans pièce » alors que la pièce existe. Recharge la page avant d’arbitrer.'
+          'ressortir « sans pièce » alors que la pièce existe, et les rapprochements en lot sont ' +
+          'suspendus. Recharge la page avant d’arbitrer.'
         }
       />
 
@@ -557,12 +569,18 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         motif={referencesIncompletes}
         consequence={
           'Un mouvement peut donc rester « à traiter » alors qu’une cotisation ou une règle le ' +
-          'couvre — et à l’import d’un relevé, le statut écrit en base suit cette liste tronquée. ' +
-          'Recharge la page avant d’importer.'
+          'couvre. L’import d’un relevé, dont le statut écrit en base suivrait cette liste tronquée, ' +
+          'et le rapprochement automatique sont suspendus. Recharge la page.'
         }
       />
 
-      <ImportCsv dossierId={dossierId} onImported={load} regles={regles} lignesExistantes={lignes} />
+      <ImportCsv
+        dossierId={dossierId}
+        onImported={load}
+        regles={regles}
+        lignesExistantes={lignes}
+        lectureIncomplete={lignesIncompletes ?? referencesIncompletes}
+      />
 
       {relevesIncoherents.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
@@ -629,11 +647,18 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
             type="button"
             className="btn btn-primary btn-sm"
             style={{ marginTop: 10 }}
-            disabled={rapprochementAuto || actionMouvementEnCours}
+            disabled={rapprochementAuto || actionMouvementEnCours || lotAutomatiqueSuspendu !== null}
             onClick={rapprocherTout}
           >
             {rapprochementAuto ? 'Rapprochement…' : `Tout rapprocher automatiquement (${suggestionsAutomatiques.length})`}
           </button>
+        )}
+        {suggestionsAutomatiques.length > 0 && lotAutomatiqueSuspendu && (
+          <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>
+            Rapprochement automatique suspendu : une lecture est incomplète ({lotAutomatiqueSuspendu}).
+            Un mouvement qui paraît n'avoir qu'une pièce possible peut en avoir une seconde qu'on n'a
+            pas lue. Recharge la page.
+          </p>
         )}
         {/* Un bouton qui annonce N en en traitant moins ne dit pas où sont passées les autres — même
             règle que la feuille « Pièces manquantes » d'un pack. Ces lignes-là ont bien des
@@ -676,10 +701,22 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                 le libellé du mouvement. Les relire une par une n'apprendrait rien.
               </p>
             </div>
-            <button type="button" className="btn btn-primary" disabled={rapprochementAuto || actionMouvementEnCours} onClick={validerEtRapprocherLot}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={rapprochementAuto || actionMouvementEnCours || lotCertainSuspendu !== null}
+              onClick={validerEtRapprocherLot}
+            >
               {rapprochementAuto ? 'Traitement…' : `Valider et rapprocher les ${certainsAValider.length}`}
             </button>
           </div>
+          {lotCertainSuspendu && (
+            <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>
+              Validation en lot suspendue : une lecture est incomplète ({lotCertainSuspendu}). « Un seul
+              rapprochement possible » ne se juge que sur tout le relevé et toutes les pièces. Recharge
+              la page.
+            </p>
+          )}
           <div className="table-scroll" style={{ marginTop: 12 }}>
             <table>
               <thead>
@@ -894,7 +931,15 @@ function statutPourLibelle(libelle: string, regles: RegleBancaireIgnoree[]): Sta
   return regles.some((r) => l.includes(r.motif)) ? 'ignoree' : 'non_rapprochee'
 }
 
-function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossierId: string; onImported: () => void; regles: RegleBancaireIgnoree[]; lignesExistantes: LigneBancaire[] }) {
+// `lectureIncomplete` : ce que l'import ne peut pas voir. Le dédoublonnage compare le relevé aux
+// mouvements LUS, et le statut de chaque ligne suit les règles LUES : sur une lecture tronquée, un
+// mouvement déjà importé le serait une seconde fois — et aucun écran ne permet de retirer un
+// mouvement bancaire. L'import se refuse donc, comme `chargerHashsExistants` lève plutôt que de
+// laisser passer un fichier « pas encore importé » sur une liste d'empreintes incomplète.
+function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureIncomplete }: {
+  dossierId: string; onImported: () => void; regles: RegleBancaireIgnoree[]; lignesExistantes: LigneBancaire[]
+  lectureIncomplete: string | null
+}) {
   const [source, setSource] = useState<'csv' | 'pdf'>('csv')
   const [rows, setRows] = useState<string[][] | null>(null)
   const [colDate, setColDate] = useState(0)
@@ -905,6 +950,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
   const [colCredit, setColCredit] = useState(3)
   const [hasHeader, setHasHeader] = useState(true)
   const [importing, setImporting] = useState(false)
+  // Verrou d'exécution des deux imports : `importing` est un état React, qui ne prend effet qu'au
+  // rendu suivant — deux clics du même rendu importaient deux fois le relevé entier, chacun
+  // dédoublonnant contre la même liste d'avant.
+  const importEnCours = useRef(false)
   const [error, setError] = useState<string | null>(null)
 
   const [pdfRows, setPdfRows] = useState<LigneExtraite[] | null>(null)
@@ -1032,7 +1081,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
   }
 
   async function handleImportPdfRows() {
-    if (!pdfRows || pdfRows.length === 0) return
+    if (!pdfRows || pdfRows.length === 0 || importEnCours.current) return
+    if (lectureIncomplete) return
+    importEnCours.current = true
     setImporting(true)
     setError(null)
     try {
@@ -1088,12 +1139,15 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))
     } finally {
+      importEnCours.current = false
       setImporting(false)
     }
   }
 
   async function handleImport() {
-    if (!rows) return
+    if (!rows || importEnCours.current) return
+    if (lectureIncomplete) return
+    importEnCours.current = true
     setImporting(true)
     setError(null)
     try {
@@ -1185,6 +1239,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))
     } finally {
+      importEnCours.current = false
       setImporting(false)
     }
   }
@@ -1192,6 +1247,13 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
   return (
     <div className="card" style={{ marginBottom: 20 }}>
       <h3 style={{ marginTop: 0 }}>Importer un relevé bancaire</h3>
+      {lectureIncomplete && (
+        <p className="error-text">
+          Import suspendu : une lecture est incomplète ({lectureIncomplete}). Le dédoublonnage ne
+          verrait qu'une partie des mouvements déjà en base, et un mouvement importé une seconde fois
+          ne pourrait plus être retiré. Recharge la page.
+        </p>
+      )}
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14 }}>
         <button type="button" className={`btn btn-sm ${source === 'csv' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSource('csv')}>CSV</button>
@@ -1298,7 +1360,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
             </div>
           )}
 
-          <button className="btn btn-primary" onClick={handleImport} disabled={importing}>
+          <button className="btn btn-primary" onClick={handleImport} disabled={importing || lectureIncomplete !== null}>
             {importing ? 'Import…' : `Importer ${dataRows.length} ligne(s)`}
           </button>
         </>
@@ -1385,7 +1447,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
               <button
                 className="btn btn-primary"
                 onClick={handleImportPdfRows}
-                disabled={importing || pdfRows.filter((r) => !r.estSolde).length === 0}
+                disabled={importing || lectureIncomplete !== null || pdfRows.filter((r) => !r.estSolde).length === 0}
               >
                 {importing ? 'Import…' : `Importer ${pdfRows.filter((r) => !r.estSolde).length} ligne(s)`}
               </button>
