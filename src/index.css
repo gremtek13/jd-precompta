@@ -183,16 +183,6 @@ h3 { font-size: 1.02rem; }
 .field-row { display: flex; flex-wrap: wrap; gap: 0 12px; }
 .field-row .field { flex: 1; }
 
-/* Fiche pièce (PieceFormModal) — justificatif à gauche, champs à droite dès qu'il y a assez de
-   place ; une seule colonne sinon (mobile, ou fenêtre étroite). Pied de formulaire à part (hors du
-   bloc qui défile) : les boutons d'action restent toujours atteignables sans avoir à faire défiler
-   tout le formulaire, même avec un long aperçu PDF au-dessus (voir audit comparatif). */
-.piece-modal-grid { display: grid; grid-template-columns: 1fr; gap: 20px; }
-@media (min-width: 760px) {
-  .piece-modal-grid { grid-template-columns: 320px 1fr; align-items: start; }
-}
-.piece-modal-footer { display: flex; gap: 10px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
-
 /* ---------- Badges ---------- */
 .badge {
   display: inline-flex;
@@ -228,6 +218,10 @@ tbody tr { transition: background-color var(--duree) var(--ease); }
 tbody tr:hover { background: var(--color-surface-2); }
 tr.clickable { cursor: pointer; }
 tr.clickable:hover { background: var(--tint-primary); }
+/* La ligne dont la fiche est ouverte dans le panneau de droite : la liste reste visible à côté, encore
+   faut-il y retrouver la pièce qu'on regarde. Plus soutenue que le survol, qui passe d'une ligne à
+   l'autre. */
+tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong); }
 
 /* Cellule d'actions (plusieurs boutons dans une même colonne, ex. DocumentsTab) — en ligne sur
    ordinateur ; empilée sur mobile (voir media query), sinon des boutons pleine largeur forcée dans une
@@ -659,6 +653,48 @@ tr.clickable:hover { background: var(--tint-primary); }
 }
 .panneau-bouton-icone:hover { background: var(--color-neutral-bg); }
 .panneau-bouton-icone:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.panneau-bouton-icone:disabled { opacity: 0.35; cursor: default; background: transparent; }
+
+/* La fiche d'une pièce dans le volet (voir FichePiece) : l'en-tête du volet, un corps qui défile, un
+   pied fixe — les boutons d'action restent atteignables quelle que soit la longueur du justificatif,
+   ce qui était déjà la raison du pied à part dans la fenêtre qu'elle remplace (voir audit comparatif). */
+.fiche-piece, .fiche-piece-formulaire { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.fiche-piece-corps { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px 8px; }
+.fiche-piece-pied {
+  flex-shrink: 0; display: flex; gap: 8px; justify-content: space-between; align-items: center; flex-wrap: wrap;
+  padding: 12px 18px; border-top: 1px solid var(--color-border);
+}
+.fiche-piece-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.fiche-piece-apercu img {
+  display: block; max-width: 100%; max-height: 280px; object-fit: contain;
+  border-radius: var(--radius-sm); border: 1px solid var(--color-border);
+}
+.fiche-piece-apercu iframe {
+  display: block; width: 100%; height: 360px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+}
+.fiche-piece-apercu a { display: inline-block; margin-top: 6px; }
+.fiche-piece-rapprochee { margin: 0 0 12px; font-size: 0.85rem; color: var(--color-text-light); }
+/* Les trois montants côte à côte, dans l'ordre du document (HT, TVA, TTC) : empilés, ils prenaient
+   trois lignes du volet pour trois nombres. `min-width: 0`, sinon la largeur propre d'un champ
+   numérique les renvoie chacun à la ligne. */
+.fiche-piece-montants > .field, .fiche-piece-montants input { min-width: 0; }
+
+/* La liste des pièces suit la place que lui laisse le volet de droite, pas la largeur de la fenêtre :
+   volet ouvert, le panneau central perd 400 pixels, et le statut de la pièce — la colonne qui compte
+   quand on valide à la chaîne — passait sous le bord. Les colonnes secondaires s'effacent alors,
+   comme sur téléphone. Le conteneur est la carte du tableau et ELLE SEULE : posé sur le panneau
+   central, `container-type` en ferait la référence des éléments `position: fixed` qu'il contient —
+   les fenêtres superposées des onglets —, le piège que `transform` pose déjà sur la barre latérale. */
+.liste-pieces { container-type: inline-size; }
+@container (max-width: 760px) {
+  .liste-pieces .hide-etroit { display: none; }
+}
+/* Plus étroit encore (un écran de 1 280 pixels, volet ouvert) : la catégorie s'efface à son tour —
+   la fiche ouverte à côté la montre, et le statut reste lisible. */
+@container (max-width: 620px) {
+  .liste-pieces .hide-tres-etroit { display: none; }
+}
 
 /* Le bouton « Assistant » de l'en-tête du dossier (voir AssistantDossier) — enfoncé tant que
    l'assistant occupe le panneau. Sur mobile c'est la bulle qui l'ouvre (voir la media query). */
@@ -1187,12 +1223,6 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 
   .field-row { flex-direction: column; gap: 0; }
 
-  /* Pied de la fiche pièce — "Supprimer" (si présent) au-dessus, puis Annuler/Brouillon/Valider
-     empilés en pleine largeur plutôt que 3-4 boutons côte à côte trop serrés. */
-  .piece-modal-footer { flex-direction: column-reverse; align-items: stretch; }
-  .piece-modal-footer .piece-modal-actions { flex-direction: column; }
-  .piece-modal-footer .piece-modal-actions .btn { width: 100%; }
-
   /* Empêche le zoom automatique de Safari iOS à la mise au point d'un champ en dessous de 16px. */
   .field input, .field select, .field textarea { font-size: 16px; }
 
@@ -1332,6 +1362,15 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
     margin: 0; align-self: auto;
     box-shadow: var(--shadow-lg);
   }
+  /* Une fiche de pièce a besoin de tout l'écran : l'aperçu du justificatif et ses champs ne tiennent
+     pas dans la carte de l'assistant. Elle recouvre la barre du bas, comme la fenêtre qu'elle
+     remplace — et c'est l'emplacement qui dit qui l'occupe (voir EmplacementPanneauDroit). */
+  .panneau-droit[data-occupant="piece"] {
+    top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom));
+    left: 8px; right: 8px; width: auto; height: auto; z-index: 50;
+  }
+  /* Trois nombres tiennent sur la largeur d'un téléphone : les montants restent côte à côte. */
+  .field-row.fiche-piece-montants { flex-direction: row; gap: 0 10px; }
   /* 16 px au moins, sinon Safari sur iPhone zoome toute la page au premier toucher du champ — même
      règle que .field (voir plus haut). */
   .assistant-saisie-champ textarea { font-size: 16px; }

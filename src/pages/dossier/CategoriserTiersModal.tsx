@@ -77,7 +77,7 @@ export default function CategoriserTiersModal({
 
         // Catégorie globale (dossier_id null) : la correspondance vaut au-delà de ce client — une
         // mutuelle, une banque reviennent d'un dossier à l'autre. Même raisonnement que
-        // PieceFormModal, d'où la règle cabinet en plus.
+        // FichePiece, d'où la règle cabinet en plus.
         const categorieChoisie = categories.find((c) => c.id === categorieId)
         if (cabinetId && categorieChoisie && categorieChoisie.dossier_id === null) {
           const { error: erreurCabinet } = await supabase.from('tiers_categories_cabinet').upsert(

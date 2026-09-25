@@ -65,7 +65,7 @@ describe('retirerFichiers', () => {
     // traiter que le premier cas laisserait l'exception remonter dans un gestionnaire qui ne
     // l'attend pas, et couperait le `load()` qui suit.
     etat.leve = true
-    const messages = await dit(() => retirerFichiers('pieces', ['d1/a.pdf'], 'PieceFormModal'))
+    const messages = await dit(() => retirerFichiers('pieces', ['d1/a.pdf'], 'FichePiece'))
     expect(messages).toHaveLength(1)
     expect(messages[0]).toContain('réseau coupé')
   })

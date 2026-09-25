@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import PieceFormModal from './PieceFormModal'
+import FichePiece from './FichePiece'
 import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
 import type { Piece } from '../../lib/types'
 
@@ -79,7 +79,7 @@ function monter() {
   faux.uploads = []
   faux.resoudreInsert = null
   render(
-    <PieceFormModal
+    <FichePiece
       dossierId="d1"
       categories={[]}
       sousDossiers={[]}
@@ -109,7 +109,7 @@ beforeEach(() => {
   URL.revokeObjectURL = () => {}
 })
 
-describe('PieceFormModal — le verrou d’enregistrement d’une pièce', () => {
+describe('FichePiece — le verrou d’enregistrement d’une pièce', () => {
   it("n'enregistre qu'une seule pièce quand le formulaire part deux fois de suite", async () => {
     const bouton = monter()
 
@@ -185,7 +185,7 @@ function monterSurPieceExistante() {
   faux.uploads = []
   faux.suppressions = []
   render(
-    <PieceFormModal
+    <FichePiece
       dossierId="d1"
       categories={[]}
       sousDossiers={[]}
@@ -203,7 +203,7 @@ function monterSurPieceExistante() {
   return screen.getByRole('button', { name: /Supprimer/ })
 }
 
-describe('PieceFormModal — supprimer une pièce dit ce que ça défait', () => {
+describe('FichePiece — supprimer une pièce dit ce que ça défait', () => {
   it('nomme le rapprochement bancaire défait dans la confirmation', async () => {
     const bouton = monterSurPieceExistante()
     let message = ''

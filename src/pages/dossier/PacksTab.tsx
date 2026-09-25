@@ -62,7 +62,7 @@ export default function PacksTab({ dossierId, dossierNom }: { dossierId: string;
   // générateur qui allait refuser juste après » — et `previewIncomplet` se trompe de la même façon,
   // une lecture périmée pouvant effacer le bandeau d'une période réellement partielle.
   //
-  // Le garde est le drapeau d'annulation déjà utilisé par l'aperçu de `PieceFormModal` : la lecture
+  // Le garde est le drapeau d'annulation déjà utilisé par l'aperçu de `FichePiece` : la lecture
   // continue (on ne peut pas rappeler une requête partie), mais elle n'écrit plus.
   async function loadPreview(estPerimee: () => boolean = () => false) {
     // Lue par tranches : l'aperçu annonce ce que contiendra un livrable envoyé au comptable, et

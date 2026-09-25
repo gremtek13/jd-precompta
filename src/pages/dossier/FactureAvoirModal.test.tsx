@@ -114,7 +114,7 @@ describe('FactureAvoirModal — le verrou de création d’un avoir', () => {
   // IL FAUT TROIS CLICS pour distinguer un verrou posé avant le `try` d'un verrou posé dedans : si
   // la vérification/pose du verrou vivait DANS le `try`, le `return` du deuxième clic sortirait par
   // le `finally`, qui relâcherait le verrou du PREMIER — encore en cours — et le troisième clic
-  // repartirait pour un second numéro (CLAUDE.md, motif déjà vu sur PieceFormModal.save et consorts).
+  // repartirait pour un second numéro (CLAUDE.md, motif déjà vu sur FichePiece.save et consorts).
   it("un troisième clic ne consomme pas de second numéro", async () => {
     const bouton = await monter()
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })

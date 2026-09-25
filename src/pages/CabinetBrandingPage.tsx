@@ -62,7 +62,7 @@ export default function CabinetBrandingPage() {
   useEffect(() => { charger() }, [monCabinetId])
 
   // Aperçu local du logo choisi avant tout enregistrement, ou aperçu du logo déjà en place sinon —
-  // même logique que PieceFormModal pour la pièce jointe.
+  // même logique que FichePiece pour la pièce jointe.
   useEffect(() => {
     if (logoFile) {
       const url = URL.createObjectURL(logoFile)

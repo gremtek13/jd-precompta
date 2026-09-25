@@ -177,7 +177,7 @@ export function textractPeutLire(nomFichier: string): boolean {
   return FORMATS_TEXTRACT.includes(nomFichier.slice(point + 1).toLowerCase())
 }
 
-// Point d'entrée partagé entre la saisie d'une pièce (PieceFormModal) et l'import en masse d'un
+// Point d'entrée partagé entre la saisie d'une pièce (FichePiece) et l'import en masse d'un
 // dossier de fichiers (ImportDossierModal) — même normalisation, même appel à la fonction Edge.
 export async function extractPiece(source: Blob, name: string): Promise<ExtractionResult> {
   const normalized = await normalizeForExtraction(source, name)

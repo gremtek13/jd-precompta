@@ -38,6 +38,12 @@ const VUES = [
   { nom: 'pc-assistant-1280', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant' },
   { nom: 'pc-assistant-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, clic: 'Assistant' },
   { nom: 'mobile-assistant-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, clic: "Ouvrir l'assistant" },
+  // La fiche d'une pièce dans le panneau de droite : ouverte par un clic sur sa ligne.
+  { nom: 'pc-fiche-clair', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
+  { nom: 'pc-fiche-sombre', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'dark', reduite: false, cellule: 'Pharma Distrib Sud' },
+  { nom: 'pc-fiche-1280', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
+  { nom: 'pc-fiche-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
+  { nom: 'mobile-fiche-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
 ].filter((v) => v.nom.includes(filtre))
 
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'
@@ -71,6 +77,11 @@ for (const v of VUES) {
   await page.waitForTimeout(1500)
   if (v.clic) {
     await page.getByRole('button', { name: v.clic, exact: true }).click()
+    await page.waitForTimeout(600)
+  }
+  // Une ligne de liste, désignée par le texte d'une de ses cellules.
+  if (v.cellule) {
+    await page.getByRole('cell', { name: v.cellule }).first().click()
     await page.waitForTimeout(600)
   }
   await page.evaluate(() => document.fonts.ready)

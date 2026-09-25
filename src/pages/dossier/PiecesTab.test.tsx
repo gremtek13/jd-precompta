@@ -1,6 +1,7 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
+import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import PiecesTab from './PiecesTab'
 import type { Piece, PieceCommentaire } from '../../lib/types'
 import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
@@ -23,6 +24,10 @@ const faux = vi.hoisted(() => ({
   // c'est elle qui inventait une cause (« liées à un rapprochement bancaire ou à un pack déjà
   // généré ») au lieu de rendre la raison.
   refusSuppression: null as string | null,
+  // Les mises à jour de pièces envoyées par la fiche, et de quoi retenir la réponse : c'est la
+  // fenêtre pendant laquelle l'opérateur peut ouvrir une autre pièce.
+  majPieces: [] as { id: unknown; valeur: Record<string, unknown> }[],
+  retenueMaj: null as Promise<void> | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -32,11 +37,14 @@ vi.mock('../../lib/supabase', () => ({
       let operation = 'select'
       let debut = 0
       let fin = Number.MAX_SAFE_INTEGER
+      let valeurMaj: Record<string, unknown> = {}
       Object.assign(chaine, {
         select: () => chaine,
         delete: () => { operation = 'delete'; return chaine },
+        update: (valeur: Record<string, unknown>) => { operation = 'update'; valeurMaj = valeur; return chaine },
         eq: (colonne: string, valeur: unknown) => {
           if (operation === 'delete' && colonne === 'id') faux.suppressions.push(valeur)
+          if (operation === 'update' && colonne === 'id') faux.majPieces.push({ id: valeur, valeur: valeurMaj })
           return chaine
         },
         is: () => chaine,
@@ -48,7 +56,20 @@ vi.mock('../../lib/supabase', () => ({
         then: (suite: (r: { data: unknown[]; error: { message: string } | null; count: number }) => unknown) => {
           if (operation === 'delete') {
             const erreur = faux.refusSuppression ? { message: faux.refusSuppression } : null
+            if (!erreur) {
+              faux.parTable[table] = (faux.parTable[table] ?? []).filter((l) => !faux.suppressions.includes((l as { id: unknown }).id))
+            }
             return Promise.resolve({ data: [], error: erreur, count: 0 }).then(suite)
+          }
+          if (operation === 'update') {
+            // Le serveur applique vraiment la mise à jour, pour que la relecture qui suit la voie.
+            const derniere = faux.majPieces[faux.majPieces.length - 1]
+            return (faux.retenueMaj ?? Promise.resolve()).then(() => {
+              faux.parTable[table] = (faux.parTable[table] ?? []).map((l) => (
+                (l as { id: unknown }).id === derniere.id ? { ...(l as object), ...derniere.valeur } : l
+              ))
+              return { data: [], error: null, count: 0 }
+            }).then(suite)
           }
           const toutes = faux.parTable[table] ?? []
           const plafond = faux.muetApres[table]
@@ -61,6 +82,12 @@ vi.mock('../../lib/supabase', () => ({
         },
       })
       return chaine
+    },
+    // La fiche d'une pièce enregistre sous l'identité de l'utilisateur, et son aperçu demande une URL
+    // signée : les deux répondent sans rien faire ici.
+    auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
+    storage: {
+      from: () => ({ createSignedUrl: () => Promise.resolve({ data: null, error: { message: 'non utilisé' } }) }),
     },
   },
 }))
@@ -104,17 +131,24 @@ function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
   faux.muetApres = {}
   faux.suppressions = []
   faux.refusSuppression = null
+  faux.majPieces = []
+  faux.retenueMaj = null
   faux.parTable = {
     pieces, categories: [], sous_dossiers: [], tiers_categories: [],
     tiers_categories_cabinet: [], piece_commentaires: commentaires, lignes_bancaires: [],
   }
 }
 
+// Dans la coque du panneau de droite : la fiche d'une pièce s'y ouvre, et `usePanneauDroit` lève hors
+// d'elle plutôt que d'offrir des lignes qui ne feraient rien.
 function monter(annee: number | 'toutes') {
   return render(
-    <AnneeProvider defaut={annee}>
-      <PiecesTab dossierId="dossier-de-test" />
-    </AnneeProvider>,
+    <FournisseurPanneauDroit>
+      <AnneeProvider defaut={annee}>
+        <PiecesTab dossierId="dossier-de-test" />
+      </AnneeProvider>
+      <EmplacementPanneauDroit />
+    </FournisseurPanneauDroit>,
   )
 }
 
@@ -244,5 +278,198 @@ describe('PiecesTab — supprimer une sélection dit ce que ça défait', () => 
     expect(alerte).toContain('new row violates row-level security policy')
     // La cause inventée d'avant : un lien qui ne bloque rien, et une table qui n'existe plus.
     expect(alerte).not.toMatch(/pack déjà généré/)
+  })
+})
+
+// LA FICHE D'UNE PIÈCE DANS LE PANNEAU DE DROITE (étape 2 de l'interface d'ordinateur). La liste
+// reste visible et CLIQUABLE à côté — c'est le gain, et c'est aussi ce que la fenêtre modale d'avant
+// interdisait : une autre ligne, « suivante » ou la croix peuvent maintenant chasser une saisie. Ce
+// qui la ferait mentir : une fiche qui n'est pas celle de la ligne cliquée, un parcours qui sort de la
+// liste affichée, une saisie qui part sans un mot, une validation qui n'enchaîne pas — ou qui
+// enchaîne depuis une pièce que l'opérateur a déjà quittée.
+describe('PiecesTab — la fiche d’une pièce dans le panneau de droite', () => {
+  const trois = () => [
+    piece({ id: 'p1', tiers: 'ALPHA', date_piece: '2026-03-01' }),
+    piece({ id: 'p2', tiers: 'BETA', date_piece: '2026-03-02', statut: 'validee' }),
+    piece({ id: 'p3', tiers: 'GAMMA', date_piece: '2026-03-03' }),
+  ]
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  const titreFiche = () => within(volet()).queryByRole('heading', { level: 2 })?.textContent ?? null
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const ttc = () => within(volet()).getByLabelText('Montant TTC') as HTMLInputElement
+
+  it('ouvre la fiche de la ligne cliquée, avec sa place dans la liste affichée', async () => {
+    poser(trois())
+    monter('toutes')
+    await ouvrir('BETA')
+
+    expect(titreFiche()).toBe('Justificatif 2 sur 3')
+    expect(within(volet()).getByText('BETA')).toBeTruthy()
+    expect(screen.getByText('BETA', { selector: 'td' }).closest('tr')!.className).toContain('ligne-ouverte')
+  })
+
+  it('« précédent » et « suivant » parcourent la liste affichée, et s’arrêtent à ses bouts', async () => {
+    poser(trois())
+    monter('toutes')
+    await ouvrir('BETA')
+
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Justificatif suivant' })) })
+    expect(titreFiche()).toBe('Justificatif 3 sur 3')
+    expect(within(volet()).getByRole('button', { name: 'Justificatif suivant' })).toHaveProperty('disabled', true)
+
+    const precedent = () => within(volet()).getByRole('button', { name: 'Justificatif précédent' })
+    await act(async () => { fireEvent.click(precedent()) })
+    await act(async () => { fireEvent.click(precedent()) })
+    expect(titreFiche()).toBe('Justificatif 1 sur 3')
+    expect(precedent()).toHaveProperty('disabled', true)
+  })
+
+  it('une saisie non enregistrée ne part pas sans un mot — et la suivante repart de SES valeurs', async () => {
+    poser(trois())
+    monter('toutes')
+    await ouvrir('ALPHA')
+    await act(async () => { fireEvent.change(ttc(), { target: { value: '99.99' } }) })
+
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Justificatif suivant' })) })
+      expect(confirmation).toHaveBeenCalledTimes(1)
+      expect(titreFiche()).toBe('Justificatif 1 sur 3')
+      expect(ttc().value).toBe('99.99')
+
+      // Une autre LIGNE passe par la même garde que « suivant ».
+      await ouvrir('GAMMA')
+      expect(confirmation).toHaveBeenCalledTimes(2)
+      expect(titreFiche()).toBe('Justificatif 1 sur 3')
+
+      confirmation.mockReturnValue(true)
+      await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Justificatif suivant' })) })
+      expect(titreFiche()).toBe('Justificatif 2 sur 3')
+      expect(ttc().value).toBe('120')
+    } finally {
+      confirmation.mockRestore()
+    }
+  })
+
+  it('sans saisie, on passe d’une pièce à l’autre sans qu’on demande rien', async () => {
+    // Garde SYMÉTRIQUE : sans elle, « la saisie ne part pas sans un mot » serait satisfait par une
+    // fiche qui demande à chaque pas — une question posée à tort finit par ne plus être lue.
+    poser(trois())
+    monter('toutes')
+    await ouvrir('ALPHA')
+    const confirmation = vi.spyOn(window, 'confirm')
+    try {
+      await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Justificatif suivant' })) })
+      expect(titreFiche()).toBe('Justificatif 2 sur 3')
+      expect(confirmation).not.toHaveBeenCalled()
+    } finally {
+      confirmation.mockRestore()
+    }
+  })
+
+  it('« Valider » enchaîne sur la prochaine pièce À VALIDER de la liste', async () => {
+    poser(trois())
+    monter('toutes')
+    await ouvrir('ALPHA')
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Valider' })) })
+
+    expect(faux.majPieces.map((m) => [m.id, m.valeur.statut])).toEqual([['p1', 'validee']])
+    // BETA est déjà validée : l'enchaînement la saute.
+    expect(await within(volet()).findByText('GAMMA')).toBeTruthy()
+  })
+
+  it('plus aucune pièce à valider : la fiche se ferme', async () => {
+    poser([piece({ id: 'p1', tiers: 'ALPHA' }), piece({ id: 'p2', tiers: 'BETA', statut: 'validee' })])
+    monter('toutes')
+    await ouvrir('ALPHA')
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Valider' })) })
+
+    expect(faux.majPieces).toHaveLength(1)
+    expect(volet().childElementCount).toBe(0)
+  })
+
+  it('un brouillon enregistré ferme la fiche sans demander d’abandonner ce qui vient d’être enregistré', async () => {
+    poser(trois())
+    monter('toutes')
+    await ouvrir('ALPHA')
+    await act(async () => { fireEvent.change(ttc(), { target: { value: '99.99' } }) })
+    const confirmation = vi.spyOn(window, 'confirm')
+    try {
+      await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Enregistrer brouillon' })) })
+      expect(faux.majPieces).toHaveLength(1)
+      expect(confirmation).not.toHaveBeenCalled()
+      expect(volet().childElementCount).toBe(0)
+    } finally {
+      confirmation.mockRestore()
+    }
+  })
+
+  it('la croix passe par la même garde : une saisie non enregistrée n’est pas fermée sans un mot', async () => {
+    poser(trois())
+    monter('toutes')
+    await ouvrir('ALPHA')
+    await act(async () => { fireEvent.change(ttc(), { target: { value: '99.99' } }) })
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    try {
+      await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Fermer le panneau' })) })
+      expect(confirmation).toHaveBeenCalledTimes(1)
+      expect(titreFiche()).toBe('Justificatif 1 sur 3')
+    } finally {
+      confirmation.mockRestore()
+    }
+  })
+
+  it('pendant un enregistrement, « précédent » et « suivant » sont grisés', async () => {
+    // La fiche changerait de pièce sous une réponse encore attendue, et l'enchaînement qui suit une
+    // validation partirait de la mauvaise.
+    poser(trois())
+    let relacher: () => void = () => {}
+    faux.retenueMaj = new Promise<void>((resolve) => { relacher = resolve })
+    monter('toutes')
+    await ouvrir('BETA')
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Valider' })) })
+
+    expect(within(volet()).getByRole('button', { name: 'Justificatif suivant' })).toHaveProperty('disabled', true)
+    expect(within(volet()).getByRole('button', { name: 'Justificatif précédent' })).toHaveProperty('disabled', true)
+    await act(async () => { relacher() })
+  })
+
+  it('une pièce supprimée depuis la liste emporte sa fiche', async () => {
+    // Possible maintenant que la liste reste cliquable à côté de la fiche — et une fiche restée
+    // ouverte sur une pièce disparue enregistrerait dans le vide : une mise à jour qui ne touche
+    // aucune ligne ne lève rien.
+    poser(trois())
+    monter('toutes')
+    await ouvrir('ALPHA')
+    const caseAlpha = within(screen.getByText('ALPHA', { selector: 'td' }).closest('tr')!).getByRole('checkbox')
+    await act(async () => { fireEvent.click(caseAlpha) })
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    try {
+      await act(async () => { screen.getByRole('button', { name: /Supprimer la sélection/ }).click() })
+      expect(faux.suppressions).toEqual(['p1'])
+      expect(volet().childElementCount).toBe(0)
+    } finally {
+      confirmation.mockRestore()
+    }
+  })
+
+  it('une validation qui répond après qu’on a ouvert une autre pièce ne déplace pas la fiche', async () => {
+    poser(trois())
+    let relacher: () => void = () => {}
+    faux.retenueMaj = new Promise<void>((resolve) => { relacher = resolve })
+    monter('toutes')
+    await ouvrir('ALPHA')
+    await act(async () => { fireEvent.click(within(volet()).getByRole('button', { name: 'Valider' })) })
+
+    // Pendant l'enregistrement, l'opérateur ouvre une autre ligne : la liste reste cliquable.
+    await ouvrir('BETA')
+    expect(titreFiche()).toBe('Justificatif 2 sur 3')
+
+    await act(async () => { relacher() })
+    expect(titreFiche()).toBe('Justificatif 2 sur 3')
+    expect(within(volet()).getByText('BETA')).toBeTruthy()
   })
 })
