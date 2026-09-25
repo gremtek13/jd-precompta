@@ -148,6 +148,13 @@ function jourDe(iso: string): number {
   return Date.UTC(Number(iso.slice(0, 4)), Number(iso.slice(5, 7)) - 1, Number(iso.slice(8, 10))) / 86_400_000
 }
 
+// L'écart en jours entre deux dates `AAAA-MM-JJ`, tel que ce module le compte pour ses tolérances —
+// exporté pour que le panneau d'un mouvement annonce l'écart même que le rapprochement a mesuré,
+// plutôt qu'un calcul voisin qui dépendrait du fuseau de qui regarde.
+export function ecartEnJours(a: string, b: string): number {
+  return Math.abs(jourDe(a) - jourDe(b))
+}
+
 // L'égalité des montants au centime est le premier des trois signaux — sauf pour une pièce libellée
 // en devise étrangère, où elle ne peut JAMAIS être vraie : la facture dit 24,00 USD, la banque débite
 // 20,68 € à son propre cours, frais compris. Exiger l'égalité reviendrait à ne jamais rapprocher une
@@ -174,7 +181,10 @@ function montantCompatible(piece: Piece, ligne: LigneBancaire): boolean {
   return Math.abs(Math.abs(piece.montant_ttc!) - Math.abs(ligne.montant)) <= 0.01
 }
 
-function sensCoherent(piece: Piece, ligne: LigneBancaire): boolean {
+// Exporté pour le panneau d'un mouvement : `candidatsPieces` compare les montants en valeur absolue,
+// donc un remboursement du même montant se voit proposer l'achat qu'il annule. Le panneau le DIT
+// plutôt que d'aligner trois coches sous une pièce que le rapprochement certain refuserait.
+export function sensCoherent(piece: Piece, ligne: LigneBancaire): boolean {
   // Une pièce à montant négatif est un avoir : il revient sur le compte, donc en crédit pour un achat.
   const montantPiece = piece.montant_ttc ?? 0
   const attenduPositif = (piece.type_piece === 'vente') !== (montantPiece < 0)
@@ -338,12 +348,12 @@ export function candidatsPieces(
  * pour son montant appelé exact (régularisation, paiement partiel) — sinon au montant appelé, seul
  * chiffre disponible avant paiement.
  */
-export function candidatsCotisations(
+export function candidatsCotisations<C extends CotisationRapprochable>(
   ligne: LigneBancaire,
-  cotisations: CotisationRapprochable[],
+  cotisations: C[],
   dejaRapprochees: ReadonlySet<string>,
   joursTolerance = JOURS_TOLERANCE_RAPPROCHEMENT,
-): CotisationRapprochable[] {
+): C[] {
   return cotisations.filter((c) =>
     !dejaRapprochees.has(c.id)
     && montantEgal(c.montant_verse ?? c.montant_appele, ligne.montant)

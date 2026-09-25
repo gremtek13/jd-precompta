@@ -222,6 +222,19 @@ export const IconPrecedent = (p: IconProps) => base(<>
   <path d="M14.5 5.5L8 12l6.5 6.5" />
 </>, p)
 
+// Les signaux d'un rapprochement proposé (panneau d'un mouvement bancaire) : une coche pour ce que la
+// banque confirme, un point d'exclamation cerclé pour ce qu'elle ne confirme pas. Le texte à côté
+// garde sa couleur de texte ; c'est l'icône qui porte le statut (règle du guide de visualisation).
+export const IconCoche = (p: IconProps) => base(<>
+  <path d="M5 12.5l4.2 4.2L19 7" />
+</>, p)
+
+export const IconAttention = (p: IconProps) => base(<>
+  <circle cx="12" cy="12" r="8.5" />
+  <path d="M12 7.5v5.5" />
+  <circle cx="12" cy="16.4" r="0.9" fill="currentColor" stroke="none" />
+</>, p)
+
 // Barre latérale déployée / réduite — un cadre et sa colonne de gauche, la convention des
 // applications dont la barre se replie en une colonne d'icônes.
 export const IconPanneauLateral = (p: IconProps) => base(<>

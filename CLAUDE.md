@@ -52,11 +52,11 @@ Conséquences pratiques :
   L'onglet actif d'un dossier fait partie de l'URL (`/dossiers/:id/:tab`),
   pas d'un simple état React, pour que "retour navigateur" après avoir ouvert
   une pièce dans un nouvel onglet revienne au bon endroit.
-- **Coque d'ordinateur en trois volets** (25/09/2026, étape 1 livrée, à la demande du cabinet :
-  « calquer l'interface PC sur celle de Claude ») : une barre latérale posée sur le fond de la coque
-  (`--color-shell`), le travail dans un panneau clair aux coins arrondis (`.main`), et un panneau
-  contextuel à droite (étape 2, en cours : l'assistant et la fiche d'une pièce y vivent ; le
-  rapprochement bancaire y viendra à la place de sa modale). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
+- **Coque d'ordinateur en trois volets** (25/09/2026, deux étapes livrées le même jour, à la demande
+  du cabinet : « calquer l'interface PC sur celle de Claude ») : une barre latérale posée sur le fond
+  de la coque (`--color-shell`), le travail dans un panneau clair aux coins arrondis (`.main`), et un
+  panneau contextuel à droite (étape 2 : l'assistant, la fiche d'une pièce et le rapprochement d'un
+  mouvement bancaire y vivent, à la place des fenêtres qui assombrissaient l'écran). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
   formulaire du tableau de bord par `?nouveau=1`), la recherche de dossiers (`lib/recherche.ts`), la
   navigation globale, le dossier ouvert avec TOUS ses écrans en arborescence, les autres dossiers,
   et le compte en bas (thème, déconnexion). Réductible en colonne d'icônes, préférence retenue par
@@ -76,7 +76,8 @@ Conséquences pratiques :
   s'il occupe encore le volet. Vide, l'emplacement n'existe pas (`:empty`) : un contenu qui quitte
   l'écran — le dossier qu'on referme — l'emporte avec lui. Sous 1 280 px le volet se pose PAR-DESSUS
   le panneau central au lieu de l'écraser ; sur mobile il redevient la carte flottante d'avant — sauf
-  pour la fiche d'une pièce, qui y prend tout l'écran (l'emplacement porte le nom de son occupant,
+  pour la fiche d'une pièce et le rapprochement d'un mouvement, qui y prennent tout l'écran
+  (l'emplacement porte le nom de son occupant,
   `data-occupant`, pour que le style le sache). Hors de la coque, `usePanneauDroit` LÈVE plutôt que
   d'offrir un bouton qui ne fait rien.
   **ET UNE GARDE DE SORTIE, parce que le volet laisse le reste de l'écran cliquable** — c'est tout son
@@ -102,6 +103,23 @@ Conséquences pratiques :
   statut lisible, par une requête de CONTENEUR posée sur la seule carte du tableau (`.liste-pieces`) :
   posé sur le panneau central, `container-type` en ferait la référence des éléments `position: fixed`
   qu'il contient — les fenêtres superposées des onglets —, le piège déjà nommé pour la barre latérale.
+  **Le rapprochement d'un mouvement bancaire** (`pages/dossier/FicheMouvement.tsx`, ex-`PanneauLigne`
+  de `BanqueTab`) suit la maquette validée : ouvert par un clic sur la ligne du relevé, « Mouvement 3
+  sur 12 » et précédent / suivant comme la fiche, le libellé en entier en tête du corps. **La pièce
+  proposée se JUSTIFIE** par les signaux que le rapprochement mesure — montant au centime, écart de
+  date, fournisseur retrouvé dans le libellé — et ce que la banque ne confirme pas est DIT (fournisseur
+  non retrouvé, sens contraire) au lieu d'être coché : trois coches sous une pièce que le rapprochement
+  certain refuserait feraient d'une ressemblance une preuve. **Quand plusieurs pièces conviennent aussi
+  bien, aucune n'est « proposée »** : toutes sont montrées, chacune avec son justificatif et son
+  bouton — c'est le cas que « Tout rapprocher » refuse de trancher, et mettre la première en avant le
+  trancherait par l'ordre de tri. **Après une action, le mouvement RESTE affiché** dans son nouvel état
+  (« Rapproché avec… », annulation à portée de main), comme dans la maquette — c'est pourquoi l'onglet
+  retient l'IDENTIFIANT du mouvement ouvert et relit la ligne dans le relevé à chaque rendu, au lieu de
+  garder la copie prise au clic. Sorti de la liste (rapproché sous « Non rapprochés », le cas courant),
+  « Suivant » mène au mouvement qui a pris sa place. Pas de garde de sortie : rien ne s'y saisit qui se
+  perdrait. Et **le choix à la main ne s'applique plus au changement de la liste déroulante**, seulement
+  au clic sur « Associer » : sur une liste qui a le focus, les flèches du clavier changent la valeur,
+  donc la fenêtre d'avant rapprochait la première pièce venue.
   **Cette page ne se remonte pas d'un dossier à l'autre** : la barre latérale mène directement du
   dossier A au dossier B, et `DossierDetail` reste monté (même route, autre `:id`). Les onglets sont
   sous un `AnneeProvider key={id}` et repartent de zéro ; ce qui vit HORS de ce bloc doit être clé par
@@ -975,11 +993,12 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   administratifs/Factures émises) et paragraphes d'intro longs raccourcis
   avec le détail replié en `<details>`.
 - **Interface d'ordinateur en trois volets, étape 1 (25/09/2026)** : barre latérale avec les
-  dossiers et tous les écrans du dossier ouvert, réductible — voir « Architecture actuelle ». Étape 2
-  commencée le même jour : le panneau contextuel à droite existe, et l'assistant y vit (bouton
-  « Assistant » dans l'en-tête du dossier, sur mobile la bulle et la carte flottante d'avant). Restent
-  la fiche pièce et le rapprochement bancaire, tels que les montre la maquette validée par le cabinet
-  (artefact « Nouvelle interface PC »).
+  dossiers et tous les écrans du dossier ouvert, réductible — voir « Architecture actuelle ». **Étape 2
+  livrée le même jour** : le panneau contextuel à droite porte l'assistant (bouton « Assistant » dans
+  l'en-tête du dossier, sur mobile la bulle et la carte flottante d'avant), la fiche d'une pièce et le
+  rapprochement d'un mouvement bancaire, tels que les montre la maquette validée par le cabinet
+  (artefact « Nouvelle interface PC »). Les deux étapes sont en ligne, chacune publiée sur accord du
+  cabinet.
 - **Purge du texte OCR des pièces sensibles après clôture d'exercice (22/09/2026)**, décision du
   cabinet tranchée dans « Décisions en attente » : option B (purger après clôture), restreinte aux
   pièces sensibles — les justificatifs de recette (bordereaux de télétransmission), seule famille à
@@ -3896,8 +3915,10 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Et le formulaire est le pire déclencheur, pas le double clic.** `EnvoyerEmailModal` soumet un
   `<form>` : deux « Entrée » rapprochés suffisent, geste bien plus banal que deux clics.
   **Et porter un verrou n'est pas la même chose qu'avoir porté le défaut** — c'est ce qui a fait
-  écrire « six » à la première tentative de ce recensement. Dix-huit verrous existent aujourd'hui
-  dans `src` (dix-sept `useRef` booléens et l'ensemble par document de « C'est une facture »), et
+  écrire « six » à la première tentative de ce recensement. Dix-sept verrous existent aujourd'hui
+  dans `src` (seize `useRef` booléens — les deux verrous des lots de `BanqueTab` n'en font plus qu'un
+  depuis le 25/09/2026, partagé avec le panneau d'un mouvement — et l'ensemble par document de
+  « C'est une facture »), et
   six sont nés corrects avec leur fonctionnalité (`VehiculesCard`, `ClotureTab`,
   `SauvegardeCard`, `RestaurationCard`, `FilCommentaires`, et le `validerEtRapprocherLot` de
   `BanqueTab` — vérifié par `git log -S` sur chaque fichier, pas par relecture). Compter les verrous
@@ -4189,6 +4210,33 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   tomber un test chacune (deux copies, gardées séparément), le point de Checklist un autre, et les
   gardes symétriques des trois côtés — sans lesquels « l'écran signale l'écart » serait satisfait par
   un écran qui crie sur TOUS les rapprochements.
+- **LE VOLET A OUVERT UNE COURSE QUE LA FENÊTRE INTERDISAIT : un lot et une action du panneau sur le
+  même mouvement** (25/09/2026, en portant le rapprochement dans le panneau de droite). Tant que le
+  rapprochement vivait dans une fenêtre qui recouvrait l'écran, on ne pouvait pas lancer « Tout
+  rapprocher » ou « Valider et rapprocher les N » en arbitrant une ligne. Le volet laisse la liste
+  cliquable — c'est tout son intérêt —, donc les deux peuvent se croiser sur le même mouvement, et deux
+  écritures qui se croisent laissent une contrepartie banque pour une pièce que le mouvement ne
+  désigne plus. Aucun des trois chemins n'était en faute pris seul : chacun avait un verrou juste, et
+  aucun ne voyait les deux autres.
+  **UN SEUL VERROU pour toutes les écritures de rapprochement de l'écran** (`ecritureEnCours`, par
+  `sousVerrou`), à la place des deux verrous des lots. Il se relâche APRÈS la relecture du relevé :
+  relâché avant, le panneau — qui reste désormais sur le mouvement — montrerait « Associer cette
+  pièce » sur un mouvement déjà rapproché le temps que la relecture revienne, et un second clic
+  referait le rapprochement. Chaque action dit si elle a écrit, et `ignorer` comme
+  `marquerVirementPersonnel` LISENT leur erreur : sans conséquence tant que la fenêtre se fermait sur
+  l'action, le silence devient trompeur quand le panneau reste sur un mouvement qu'on croit classé.
+  **ET LE TROISIÈME CHEMIN DE RAPPROCHEMENT NE RÉGLAIT PAS LA PIÈCE SUR LA BANQUE** — trouvé en
+  réécrivant ce bloc. Le rapprochement à la main et le lot « sans doute possible » appellent
+  `reglerPieceSurBanque` avant la contrepartie ; « Tout rapprocher automatiquement » ne l'a jamais
+  fait, parce qu'il n'avait aucun candidat en devise le jour où le règlement est né (18/09/2026). Une
+  pièce en devise rapprochée par lui restait donc « provisoire » au cours BCE alors que la banque
+  venait de donner son montant réel : un jumeau corrigé de deux côtés sur trois. **LATENT, et mesuré** :
+  quatre pièces en devise en base, toutes provisoires, aucune rapprochée.
+  **Quinze mutations, toutes mordent** (`BanqueTab.test.tsx`), dont le code TEL QU'IL ÉTAIT sur les
+  quatre points — le choix appliqué au changement de la liste, l'erreur d'« Ignorer » non lue, « Tout
+  rapprocher » sans règlement, le panneau qui se ferme après l'action —, le verrou posé dans le `try`
+  (trois clics), le verrou du panneau séparé de celui des lots (qui fait tomber les deux sens), et le
+  verrou relâché avant la relecture.
 
 - **Un rapprochement qui hésite dit un symptôme, pas une cause.** `analyserAppariements` a été exécuté
   sur les données réelles du dossier `test` (41 pièces, les 26 mouvements non rapprochés qui pouvaient
@@ -4988,6 +5036,17 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   tomber trois tests, dont celui où la suivante reprenait la saisie de la précédente ; le code TEL
   QU'IL ÉTAIT (valider ferme au lieu d'enchaîner) en fait tomber deux. `FichePiece.test.tsx` garde
   toujours le verrou d'enregistrement, inchangé.
+  **ET LE RAPPROCHEMENT D'UN MOUVEMENT DANS LE VOLET, LE MÊME JOUR** — `BanqueTab.test.tsx` monte à son
+  tour l'onglet dans la coque du panneau, et gagne quatorze cas : l'association qui RESTE sur le
+  mouvement dans son nouvel état, la ligne ouverte surlignée, les signaux dits et ceux que la banque ne
+  confirme pas, deux pièces qui conviennent aussi bien montrées toutes les deux, le choix à la main qui
+  n'agit qu'au clic, trois clics qui n'associent qu'une fois, le verrou partagé dans les deux sens, le
+  verrou tenu pendant la relecture, un refus dit, « Suivant » après une association, un mouvement
+  ignoré remis à traiter, et le règlement par « Tout rapprocher ». Quinze mutations, toutes mordent.
+  **Piège de test à connaître** : un élément qui n'apparaît qu'APRÈS le chargement se cherche HORS de
+  l'`act` — dedans, React retient les mises à jour jusqu'à la sortie, et `findBy…` expire sur un écran
+  qui, lui, fonctionne. Le même libellé vivant aussi dans les tableaux « Sans doute possible » et « À
+  trancher », une ligne du relevé se désigne par la sienne (`tr.clickable`).
   **`ClientInformations` a reçu son premier test de rendu le 25/09/2026**, par un défaut trouvé lui
   aussi : les réponses d'une société écrites dans une autre (même entrée). **Deux écrans client
   (`ClientUpload`, `ClientSimulation`) n'ont toujours aucun test de rendu** — dit plutôt que laissé
@@ -5033,7 +5092,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1613 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1629 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

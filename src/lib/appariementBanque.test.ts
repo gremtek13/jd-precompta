@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   JOURS_TOLERANCE,
   analyserAppariements,
+  ecartEnJours,
   libelleExploitable,
   motsIdentifiants,
   piecesMontantIntrouvableEnBanque,
@@ -528,5 +529,22 @@ describe('planRapprochementAutomatique', () => {
         [ligne({ id: 'l1' })], [piece({ id: 'p', statut: 'validee' })], [cot({})], vide)
       expect(plan.retenus).toEqual([{ ligneId: 'l1', pieceId: 'p' }])
     })
+  })
+})
+
+// L'écart que le panneau d'un mouvement ANNONCE (« 3 jours d'écart avec la pièce ») doit être celui
+// que le rapprochement MESURE : en jours civils, sans heure ni fuseau. Le passage à l'heure d'été
+// (30/03/2025 à Paris) est le piège d'un calcul en millisecondes locales — 23 heures ne font pas un
+// jour de moins.
+describe('ecartEnJours', () => {
+  it('compte des jours civils, dans les deux sens', () => {
+    expect(ecartEnJours('2025-03-29', '2025-03-31')).toBe(2)
+    expect(ecartEnJours('2025-03-31', '2025-03-29')).toBe(2)
+    expect(ecartEnJours('2025-06-02', '2025-06-02')).toBe(0)
+  })
+
+  it('traverse un changement de mois et d’année', () => {
+    expect(ecartEnJours('2024-12-30', '2025-01-02')).toBe(3)
+    expect(ecartEnJours('2024-02-28', '2024-03-01')).toBe(2)
   })
 })
