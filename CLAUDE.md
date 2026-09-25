@@ -215,6 +215,8 @@ supabase/
   schema/         export du schéma, une migration par fichier — voir PLAN_DE_REPRISE.md.
                   Ce n'est PAS la source de vérité : la base l'est, et les migrations
                   continuent de s'appliquer par l'outil MCP.
+  config.toml     le réglage `verify_jwt` de chaque Edge Function, et rien d'autre — la
+                  référence à passer au déploiement (voir « Problèmes connus »).
 public/CNAME      domaine personnalisé GitHub Pages (compta.jdarnis.fr).
 PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dépôt Git et
                   pas dans Notion ni dans l'application : un plan de reprise hébergé sur
@@ -301,7 +303,12 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   immédiatement, on annule et on affiche l'erreur si l'appel Supabase échoue.
 - **Aucun appel réseau externe silencieux** : toute action qui interroge une
   API tierce (SIRENE, Super PDP, IA) est déclenchée par un clic explicite de
-  l'utilisateur, jamais automatiquement au chargement d'un écran.
+  l'utilisateur, jamais automatiquement au chargement d'un écran. **Les polices
+  comprises** : elles sont servies par l'application (`main.tsx`, `lib/polices.ts`,
+  paquets @fontsource). Jusqu'au 25/09/2026, Google Fonts recevait l'adresse IP de
+  chaque utilisateur à chaque ouverture, et RGPD.md affirmait le contraire ;
+  `polices.test.ts` refuse désormais toute adresse Google Fonts dans ce que le
+  navigateur reçoit.
 - **Rien n'est jamais validé/importé automatiquement** : un document importé
   (dépôt manuel, import en masse, synchronisation Super PDP) arrive toujours
   au statut "à valider" ; la validation reste un geste humain.
@@ -821,6 +828,13 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   usage), jamais exposés au bundle client. `superpdp_credentials` contient un
   `client_secret` par dossier — à traiter comme une donnée sensible standard,
   jamais loguée en clair.
+- **La liste des variables d'environnement est tirée du code** : PLAN_DE_REPRISE.md (fin du §3) nomme
+  chacune, avec les fonctions qui la lisent et ce qu'il faut savoir pour la reposer, et
+  `variablesEnvironnement.test.ts` la compare à chaque `Deno.env.get("…")` des Edge Functions et à
+  chaque `import.meta.env.…` de l'application. Une variable ajoutée dans le code s'inscrit donc là, ou
+  la suite échoue. Jusqu'au 25/09/2026 le plan en nommait deux familles et en oubliait quatre, dont
+  `AWS_TEXTRACT_BUCKET` — sans lui, aucun PDF ne se lit. Les VALEURS posées dans le projet, elles, ne
+  se vérifient qu'à la main : aucun outil de ce dépôt ne lit les secrets de production.
 - Les données de dossiers **seront** des données comptables de clients réels (professions de santé
   notamment) ; elles sont fictives aujourd'hui (voir « État des données »). La règle ne change pas
   pour autant, et c'est délibéré : traiter dès maintenant toute pièce, e-mail ou export comme
@@ -1047,6 +1061,18 @@ Ajouter une ligne quand un chantier apparaît en cours de route. Le cas le plus
 fréquent est celui d'un défaut trouvé en travaillant sur autre chose — c'est
 ainsi que les 56 paiements par carte incapables de confirmer leur fournisseur
 ont été découverts, en cherchant à apparier une facture en dollars.
+
+**Installation sur site : évaluée, puis mise en attente par décision du cabinet (25/09/2026).**
+La page Notion « Rester migrable vers une installation sur site » porte l'évaluation : quatre
+règles, dont une enfreinte (Bedrock appelé dans trois fonctions, Textract dans une, sans module
+commun), et deux à trois mois de développement pour une première installation. Le cabinet a tranché :
+ne faire maintenant que ce qui est utile et peu coûteux — l'inventaire des variables, `verify_jwt`
+inscrit dans le dépôt et les polices servies par l'application, faits le jour même — et reprendre le
+reste quand l'application tiendra les promesses qui permettront de la commercialiser. **Ne pas
+ouvrir ce chantier en passant** : pas de module OCR ou LLM commun, pas de file d'attente, pas de
+SMTP avant cette décision. Seule exception admise, et c'est la page qui la nomme : quand une fonction
+est redéployée pour une AUTRE raison, son domaine, son modèle ou sa région peuvent passer en variable
+d'environnement dans la même édition.
 
 ## Problèmes connus importants
 
@@ -1989,10 +2015,23 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   `delete-cabinet`, `send-email`, `superpdp-credentials`, `superpdp-sync`, et `bright-task`. Les
   quatre autres sont à `true` (`extract-piece`, `superpdp-emit`, `taux-change-bce`,
   `evaluer-extraction`).
-  **RÈGLE : tout appel à `deploy_edge_function` passe `verify_jwt` EXPLICITEMENT**, à la valeur que
-  `list_edge_functions` rend pour cette fonction — jamais au jugé, jamais par omission. Le relire
-  AVANT de déployer fait désormais partie de la comparaison déployé/dépôt, au même titre que la
-  source : un déploiement ne change pas que du code.
+  **RÈGLE : tout appel à `deploy_edge_function` passe `verify_jwt` EXPLICITEMENT** — jamais au jugé,
+  jamais par omission. Le relire AVANT de déployer fait partie de la comparaison déployé/dépôt, au
+  même titre que la source : un déploiement ne change pas que du code.
+  **ET LA VALEUR A DÉSORMAIS UNE RÉFÉRENCE DANS LE DÉPÔT** (25/09/2026) : `supabase/config.toml`,
+  une section par fonction, au format de la CLI Supabase. La règle disait jusque-là de reprendre ce
+  que rend `list_edge_functions`, c'est-à-dire de recopier la production sur elle-même : un drapeau
+  retourné par erreur y serait devenu la nouvelle référence au déploiement suivant. On passe
+  maintenant la valeur du fichier, après avoir vérifié que `list_edge_functions` rend la même — une
+  divergence est un incident à comprendre, pas une valeur à recopier. `configFonctions.test.ts`
+  garde le fichier : une section par dossier de `supabase/functions/` et aucune autre, la clé
+  exacte, et `receive-email` à `false`. **La clé exacte est le piège qui rend ce test nécessaire** :
+  vérifié avec la CLI 2.117, une valeur non booléenne est refusée, mais une clé mal orthographiée
+  (`verify_jwts`) est acceptée EN SILENCE et retombe sur `true`. Le fichier ne porte que ce réglage,
+  et son lecteur refuse toute autre clé : une configuration d'authentification écrite là aurait l'air
+  de faire foi sans que rien la compare à la production. Dix mutations posées, neuf mordent ; la
+  dixième (retirer l'invariant de `receive-email` en le passant à `true`) survit, et c'est attendu :
+  cet invariant est le seul garde de cette valeur.
 - **UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA — DOUZE TABLES N'Y EXISTAIENT PAS** (22/09/2026,
   quatrième membre de la famille « un commit n'est pas un déploiement »). `supabase/schema/` porte un
   export de l'historique de migrations, et PLAN_DE_REPRISE.md en tirait la promesse qu'un schéma
@@ -5093,7 +5132,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1629 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1651 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -5176,8 +5215,9 @@ Déploiement : automatique sur push vers `main` (GitHub Actions →
 GitHub Pages). Aucune commande manuelle de déploiement du front.
 
 Edge Functions et migrations : exclusivement via les outils MCP Supabase
-(`deploy_edge_function`, `apply_migration`, `execute_sql`, `query_logs`) —
-pas de Supabase CLI configurée dans ce dépôt.
+(`deploy_edge_function`, `apply_migration`, `execute_sql`, `query_logs`). La CLI Supabase
+n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que le réglage
+`verify_jwt` de chaque fonction (voir « Problèmes connus »).
 
 ## Règles importantes pour les futures modifications
 
@@ -5194,10 +5234,12 @@ pas de Supabase CLI configurée dans ce dépôt.
   les sept MUTATIONS mordent toujours. Ce n'est pas automatisé : la CI n'a pas
   d'accès à la base.
 - Toute nouvelle Edge Function reste auto-porteuse (pas d'import `src/`).
-- Tout déploiement d'Edge Function passe `verify_jwt` EXPLICITEMENT, à la valeur que rend
-  `list_edge_functions` pour cette fonction : le paramètre a `true` pour défaut et REMPLACE la valeur
-  en place quand on l'omet. Sur `receive-email` (webhook Resend, sans JWT), l'oubli coupe les e-mails
-  entrants sans le moindre signal. Voir « Problèmes connus ».
+- Tout déploiement d'Edge Function passe `verify_jwt` EXPLICITEMENT, à la valeur que porte
+  `supabase/config.toml` pour cette fonction, après avoir vérifié que `list_edge_functions` rend la
+  même : le paramètre a `true` pour défaut et REMPLACE la valeur en place quand on l'omet. Sur
+  `receive-email` (webhook Resend, sans JWT), l'oubli coupe les e-mails entrants sans le moindre
+  signal. Une nouvelle fonction reçoit sa section dans ce fichier avant son premier déploiement.
+  Voir « Problèmes connus ».
 - Tout nouvel appel à `supabase.functions.invoke()` doit gérer l'erreur via
   `extraireErreurFonction()`.
 - Tout message d'erreur issu d'un `{ error }` Supabase passe par `messageErreur()` —
