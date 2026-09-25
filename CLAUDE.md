@@ -164,6 +164,9 @@ Conséquences pratiques :
     domaine `precompta.jdarnis.fr` via Resend.
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — facturation
     électronique via Super PDP (voir section dédiée plus bas).
+  - `evaluer-extraction` — harnais de MESURE, pas une fonctionnalité : rejoue la citation des
+    champs ou la proposition de catégorie sur les textes OCR d'un dossier, et ne facture que pendant
+    une fenêtre datée (voir « Problèmes connus »).
 
 ## Stack technique
 
@@ -744,6 +747,45 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   de cotisation. **C'est l'APPELANT qui sait ce dont il a besoin**, pas la classification : le jour
   où ce chantier se rouvre, il passe par un paramètre du contrat, pas par une heuristique interne.
   Trouvé en regardant les trois appelants, pas en relisant le gestionnaire.
+- **UN MODÈLE PEUT PROPOSER UNE CATÉGORIE : DANS UNE LISTE FERMÉE, JUSTIFIÉE PAR UNE CITATION, ET
+  UN HUMAIN TRANCHE** (`src/lib/categorisationIa.ts`, ligne 25 de la feuille de route — MESURÉ le
+  25/09/2026, le bouton n'est pas construit). Les règles tiers → catégorie n'apprennent qu'après un
+  premier arbitrage et ne disent rien d'un fournisseur inconnu ; le texte OCR, lui, dit souvent ce
+  qui a été acheté. Le contrat est celui de la citation des champs : le modèle rend le CODE d'une
+  catégorie de la liste proposée et un INDICE recopié d'une ligne du document ; le code refuse un code
+  hors de cette liste et un indice absent du texte (blancs réduits, casse ignorée, accents conservés,
+  au moins un mot de trois lettres — « 12,00 » ou « € » se retrouvent partout et ne montrent rien) ;
+  rien n'est écrit sans le clic de l'opérateur. **Ce que la vérification ne prouve pas** : qu'un
+  indice retrouvé justifie vraiment la catégorie. Elle garantit que la proposition repose sur le
+  document ; la justesse, c'est l'humain qui la juge, et c'est pourquoi l'indice lui est montré.
+  **LA LISTE EST FILTRÉE SUR LE SENS DE LA PIÈCE, ET C'EST LA MESURE QUI L'A IMPOSÉ.** Sans le sens,
+  4 factures de télésecrétariat sur 16 sont revenues en « Ventes / prestations », avec un indice bien
+  imprimé : le fournisseur y facture des « prestations », et le modèle lisait le mot du côté de celui
+  qui VEND. Une charge proposée en recette compte deux fois à l'envers dans le résultat, et la
+  vérification de l'indice ne peut pas le voir. Le prompt dit désormais le sens du point de vue du
+  professionnel (`sensDePiece`), seules les catégories de cette nature sont proposées — nature lue au
+  COMPTE, classe 6 ou 7, un invariant du PCG et non un libellé —, et un code de l'autre nature revient
+  en « code inconnu ».
+  **Les réglages de l'appel vivent dans le bloc copié** (`REGLAGES_MODELE`, température 0) : la mesure
+  et la production partagent la question ET la façon de la poser. Passer à zéro n'a changé qu'une
+  réponse sur 42 ; la dispersion vue sur un même fournisseur vient des documents, pas du tirage.
+  **MESURÉ** (Haiku 4.5, `eu-central-1`, les 42 textes du dossier `test`, 10 catégories dont 8 de
+  dépense) : 19 propositions retenues, 22 abstentions, 1 indice absent du texte — **zéro code
+  inventé, zéro réponse illisible, zéro inversion de sens**. Contre les décisions DÉJÀ PRISES par le
+  cabinet (ses règles apprises couvrent 5 fournisseurs et 20 pièces du dossier) : 7 propositions,
+  **6 conformes** ; la septième range en « Autre » une facture Transmedical que la règle range en
+  « Honoraires », et les 13 autres pièces restent sans proposition. **Et ce sont justement les pièces
+  que le modèle ne verrait pas** : il ne sert que pour un fournisseur qu'aucune règle ne connaît. Sur
+  les 22 autres, 12 propositions et 10 abstentions (dont les 4 factures OpenAI, un abonnement
+  logiciel qu'aucune des dix catégories ne nomme). Aucune référence n'existe pour juger ces 12-là :
+  leur vraisemblance se lit au nom du fournisseur (restaurants en notes de frais, MACSF et RC Pro en
+  assurance, badge de péage en déplacements), ce qui est une lecture et non une mesure.
+  **Coût** : environ 1 950 tokens d'entrée par pièce, le texte OCR dominant, soit 0,0026 $ la pièce
+  aux tarifs première partie (Bedrock a sa propre grille). Les trois passes ont coûté 0,32 $ en tout.
+  **Ce qu'un bouton devra respecter** : les règles d'abord, le modèle seulement pour ce qu'aucune
+  règle ne connaît ; la proposition MONTRÉE avec son indice, jamais appliquée ; un appel sur clic
+  explicite ; un plafond de coût distinct de celui de l'assistant, comme pour l'extraction ; et la
+  fonction qui l'appellera rejoint la liste des copies gardées par `categorisationIaCopie.test.ts`.
 - **N° de TVA intracommunautaire français** calculé déterministiquement à
   partir du SIREN (formule CGI art. 286 ter : `clé = (12 + 3×(SIREN mod 97))
   mod 97`, puis `FR` + clé 2 chiffres + SIREN) plutôt que demandé comme champ
@@ -1078,6 +1120,8 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
 
 ## Fonctionnalités actuellement en cours
 
+- Proposition de catégorie par un modèle (ligne 25 de la feuille de route) : contrat et mesure
+  livrés le 25/09/2026 (voir « Décisions techniques »). Le bouton reste à construire.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -2140,6 +2184,23 @@ d'environnement dans la même édition.
   de faire foi sans que rien la compare à la production. Dix mutations posées, neuf mordent ; la
   dixième (retirer l'invariant de `receive-email` en le passant à `true`) survit, et c'est attendu :
   cet invariant est le seul garde de cette valeur.
+- **LE HARNAIS DE MESURE ÉTAIT UNE PORTE PUBLIQUE QUI FACTURE — REFERMÉE LE 25/09/2026.**
+  `evaluer-extraction` est en `verify_jwt: true`, et ça ne la protégeait de rien : la clé publique du
+  projet, servie avec l'application, EST un jeton valide. Le dépôt étant public, le nom de la fonction
+  et l'identifiant du dossier `test` (en clair dans `supabase/essais/`) l'étaient aussi. N'importe qui
+  pouvait donc lancer l'essai en boucle et faire payer au cabinet un appel au modèle par pièce, de
+  l'ordre de 0,11 $ par appel sur ce dossier et sans limite de fréquence. **Le trou existait depuis
+  la création du harnais** ; c'est l'ajout de la question « categorie » qui l'a fait voir.
+  **Remède : une fenêtre datée**, `ESSAI_OUVERT_JUSQU_A`. Passé cette date, la fonction ne répond
+  plus qu'à `limite: 0`, qui ne facture rien et relit toujours la région et le modèle de la
+  production ; tout autre appel rend 403 en disant pourquoi. **Vérifié en production après la
+  fermeture** : 403 sur les deux questions, 200 sur `limite: 0`.
+  **Mesurer de nouveau** : poser une date une heure devant, déployer (comparaison avant écrasement,
+  `verify_jwt` explicite, aller-retour), mesurer, attendre que la date passe, PUIS commiter.
+  `categorisationIaCopie.test.ts` refuse une fenêtre encore ouverte, donc la barrière ne laisse pas
+  partir le code avant, et il vérifie que la garde précède tout appel au modèle dans le gestionnaire.
+  Au passage, `dossierId` est validé comme UUID avant d'être interpolé dans le filtre PostgREST
+  `.or(…)` des catégories, la fonction lisant avec la clé de service.
 - **UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA — DOUZE TABLES N'Y EXISTAIENT PAS** (22/09/2026,
   quatrième membre de la famille « un commit n'est pas un déploiement »). `supabase/schema/` porte un
   export de l'historique de migrations, et PLAN_DE_REPRISE.md en tirait la promesse qu'un schéma
@@ -5278,7 +5339,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1745 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1779 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -5289,7 +5350,8 @@ la génération des packs et l'export d'un cabinet
 (`packGenerator.ts`, `exportCabinet.ts`), la sauvegarde et la restauration d'un dossier
 (`sauvegarde.ts`, `sauvegardeDonnees.ts`, `sauvegardeFichier.ts`) et le dépôt de fichiers côté client
 (`depot.ts`) comme côté cabinet (`importFichiers.ts`), et le moteur de recherche partagé
-par tous les écrans (`recherche.ts`) — les fichiers `*.test.ts` sont
+par tous les écrans (`recherche.ts`), et le contrat de la proposition de catégorie
+(`categorisationIa.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 **Deux projets Vitest, et la séparation porte une règle** (`vitest.config.ts`) : « logique »
