@@ -44,6 +44,13 @@ const VUES = [
   { nom: 'pc-fiche-1280', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
   { nom: 'pc-fiche-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
   { nom: 'mobile-fiche-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
+  // Le rapprochement d'un mouvement dans le panneau de droite : une pièce proposée (Papeterie Moderne,
+  // validée), puis un mouvement déjà rapproché — ouvert après être passé sur « Tous ».
+  { nom: 'pc-mouvement-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
+  { nom: 'pc-mouvement-sombre', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'dark', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
+  { nom: 'pc-mouvement-1280', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
+  { nom: 'pc-mouvement-rapproche', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'PRLV ENERGIE SERVICES' },
+  { nom: 'mobile-mouvement-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
 ].filter((v) => v.nom.includes(filtre))
 
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'

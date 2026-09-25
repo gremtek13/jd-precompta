@@ -1,11 +1,10 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parseMontantBancaire } from '../../lib/csv'
 import { extractPdfLignes } from '../../lib/pdfText'
 import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
-import { ouvrirJustificatif } from '../../lib/depot'
 import type { ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -21,6 +20,9 @@ import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import PanneauDroit from '../../components/PanneauDroit'
+import { usePanneauDroit } from '../../lib/panneauDroit'
+import FicheMouvement from './FicheMouvement'
 import { messageErreur } from '../../lib/messageErreur'
 
 const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juillet', 'Août', 'Septembre', 'Octobre', 'Novembre', 'Décembre']
@@ -31,17 +33,6 @@ const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juill
 // vrai doublon.
 function signatureLigne(l: { date: string; libelle: string; montant: number }): string {
   return `${l.date}|${l.libelle}|${l.montant.toFixed(2)}`
-}
-
-// Trie les pièces/cotisations candidates du menu "Associer à…" par plausibilité pour cette ligne —
-// montant identique d'abord, puis proximité de date — plutôt que dans l'ordre de la requête, qui
-// mélangeait sans distinction une pièce de l'année en cours avec une pièce de deux ans plus tôt (voir
-// audit ergonomie). Un score, pas un filtre : aucune candidate n'est retirée, on peut toujours associer
-// une pièce d'une autre année, juste plus bas dans la liste plutôt qu'au hasard.
-function scoreCorrespondance(montantRef: number | null, dateRef: string | null, ligne: LigneBancaire): number {
-  const montantOk = montantRef != null && Math.abs(Math.abs(montantRef) - Math.abs(ligne.montant)) <= 0.01
-  const jours = dateRef ? Math.abs(new Date(dateRef).getTime() - new Date(ligne.date).getTime()) / 86_400_000 : Number.MAX_SAFE_INTEGER
-  return (montantOk ? 0 : 1_000_000) + jours
 }
 
 export default function BanqueTab({ dossierId }: { dossierId: string }) {
@@ -68,11 +59,16 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   useEffect(() => { setMoisFilter('tous') }, [anneeFilter])
   const [recherche, setRecherche] = useState('')
   const [rapprochementAuto, setRapprochementAuto] = useState(false)
-  // Ligne ouverte dans le panneau de détail (voir plus bas) — le tableau lui-même reste compact
-  // (date/libellé/montant/statut uniquement) : sur un dossier avec plusieurs centaines de mouvements,
-  // afficher les boutons et menus de rapprochement sur chaque ligne rendait l'écran interminable
-  // (voir audit ergonomie). Toutes les actions vivent maintenant dans ce panneau, une ligne à la fois.
-  const [ligneOuverte, setLigneOuverte] = useState<LigneBancaire | null>(null)
+  // Le mouvement ouvert dans le panneau de droite (voir FicheMouvement) — le tableau lui-même reste
+  // compact (date/libellé/montant/statut) : sur un dossier de plusieurs centaines de mouvements, les
+  // boutons et menus de rapprochement répétés sur chaque ligne rendaient l'écran interminable (voir
+  // audit ergonomie). Retenu par son IDENTIFIANT, jamais par une copie de la ligne : le panneau relit
+  // le mouvement dans `lignes` à chaque rendu, donc montre son état APRÈS une action (« Rapproché
+  // avec… ») au lieu de celui du clic. `rang` est sa place dans la liste affichée à l'ouverture — il
+  // la quitte souvent (rapproché sous le filtre « Non rapprochés »), et « Suivant » mène alors au
+  // mouvement qui l'a prise.
+  const panneauMouvement = usePanneauDroit('mouvement')
+  const [mouvementOuvert, setMouvementOuvert] = useState<{ id: string; rang: number } | null>(null)
   // Relevés dont l'arithmétique ne tombe pas juste. Affichés en permanence, pas seulement à l'import :
   // c'est toute la raison d'être de leur conservation en base (voir lib/controlesReleves.ts).
   const [relevesIncoherents, setRelevesIncoherents] = useState<ControleReleveBancaire[]>([])
@@ -201,7 +197,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
   function suggestionCotisation(ligne: LigneBancaire): CotisationDeclaree | null {
     if (ligne.statut !== 'non_rapprochee') return null
-    return (candidatsCotisations(ligne, cotisations, cotisationsRapprochees)[0] as CotisationDeclaree | undefined) ?? null
+    return candidatsCotisations(ligne, cotisations, cotisationsRapprochees)[0] ?? null
   }
 
   // Un prélèvement récurrent (assurance, virement personnel...) sans règle "Toujours ignorer" — soit
@@ -235,18 +231,56 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     return null
   }
 
+  // UN SEUL verrou pour toutes les écritures de rapprochement de l'écran : le lot « sans doute
+  // possible », « Tout rapprocher automatiquement » et les actions du panneau d'un mouvement. Tant que
+  // le rapprochement vivait dans une fenêtre qui recouvrait l'écran, on ne pouvait pas lancer un lot
+  // en arbitrant une ligne. Le panneau de droite laisse la liste cliquable à côté — c'est tout son
+  // intérêt — donc les deux peuvent désormais se croiser sur le même mouvement, et deux écritures qui
+  // se croisent laissent une contrepartie banque pour une pièce que le mouvement ne désigne plus.
+  //
+  // Un `useRef` posé avant tout `await` (un état React ne prend effet qu'au rendu suivant, deux clics
+  // du même rendu passeraient), relâché dans un `finally` — et APRÈS la relecture du relevé : relâché
+  // avant, le panneau montrerait encore « Associer cette pièce » sur un mouvement déjà rapproché le
+  // temps que la relecture revienne, et un second clic referait le rapprochement.
+  const ecritureEnCours = useRef(false)
+  const [actionMouvementEnCours, setActionMouvementEnCours] = useState(false)
+
+  // `ecrire` rend `true` quand il a écrit quelque chose — c'est alors seulement qu'on relit le relevé.
+  // Une exception est dite, et suivie d'une relecture : une écriture interrompue a pu aller à mi-chemin,
+  // et le panneau ne doit pas rester sur un état qu'on ne connaît plus. Elle ne remonte pas au-delà :
+  // un gestionnaire de clic d'où s'échappe une exception n'affiche rien (voir CLAUDE.md, les deux
+  // modales d'import qui avalaient celle de `chargerHashsExistants`).
+  async function sousVerrou(marquer: (enCours: boolean) => void, ecrire: () => Promise<boolean>) {
+    if (ecritureEnCours.current) return
+    ecritureEnCours.current = true
+    marquer(true)
+    try {
+      if (await ecrire()) await load()
+    } catch (err) {
+      window.alert(`L'opération n'a pas pu aller à son terme : ${messageErreur(err, 'raison inconnue')}`)
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      marquer(false)
+    }
+  }
+
+  function agirSurMouvement(ecrire: () => Promise<boolean>) {
+    return sousVerrou(setActionMouvementEnCours, ecrire)
+  }
+
   // Correctif audit sécurité (rapprochements, Importante) : le résultat de la mise à jour de
   // lignes_bancaires était ignoré — en cas d'échec (RLS, réseau...), le code créait quand même la
   // contrepartie banque comme si le rapprochement avait réussi, laissant une écriture de contrepartie
   // pour un mouvement qui, en base, n'est pas réellement marqué rapproché. On vérifie maintenant
   // l'erreur avant d'enchaîner sur l'opération dépendante, et on la signale plutôt que de la taire.
-  async function rapprocher(ligneId: string, pieceId: string) {
+  async function rapprocher(ligneId: string, pieceId: string): Promise<boolean> {
     const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId, cotisation_id: null }).eq('id', ligneId)
-    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return }
+    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return false }
     const ligne = lignes.find((l) => l.id === ligneId)
     const pieceAvant = pieces.find((p) => p.id === pieceId)
     // Le règlement AVANT la contrepartie : celle-ci reprend les montants de la pièce, et les
-    // écrirait donc avec la valeur provisoire si l'ordre était inversé (voir lib/reglementDevise.ts).
+    // écrirait donc avec la valeur provisoire si l'ordre était inversé (voir lib/reglementBanque.ts).
     const piece = ligne && pieceAvant ? await reglerPieceSurBanque(pieceAvant, ligne) : pieceAvant
     // Le rapprochement est enregistré ; seule la contrepartie comptable a pu échouer. On le dit sans
     // annuler ce qui a réussi — la contrepartie se recréera au prochain passage, elle est idempotente.
@@ -257,21 +291,23 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         window.alert(`Le rapprochement est enregistré, mais l'écriture de contrepartie banque n'a pas pu être créée : ${messageErreur(err, 'raison inconnue')}`)
       }
     }
-    load()
+    return true
   }
 
-  async function rapprocherCotisation(ligneId: string, cotisationId: string) {
+  async function rapprocherCotisation(ligneId: string, cotisationId: string): Promise<boolean> {
     const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', cotisation_id: cotisationId, piece_id: null }).eq('id', ligneId)
-    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return }
-    load()
+    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return false }
+    return true
   }
 
-  async function annulerRapprochement(ligneId: string) {
+  // Défait un rapprochement comme un classement (ignoré, virement personnel) : dans les trois cas le
+  // mouvement redevient « à traiter », sans rien qui le rattache.
+  async function remettreATraiter(ligneId: string): Promise<boolean> {
     const ancienPieceId = lignes.find((l) => l.id === ligneId)?.piece_id ?? null
     const { error } = await supabase.from('lignes_bancaires').update({
       statut: 'non_rapprochee', piece_id: null, cotisation_id: null, prelevement_personnel: false,
     }).eq('id', ligneId)
-    if (error) { window.alert(`L'annulation du rapprochement n'a pas pu être enregistrée : ${error.message}`); return }
+    if (error) { window.alert(`Le mouvement n'a pas pu être remis à traiter : ${error.message}`); return false }
     // Ici l'échec compte double : l'annulation est enregistrée mais la contrepartie banque reste,
     // donc une écriture de paiement subsiste pour un mouvement qui n'est plus rapproché.
     if (ancienPieceId) {
@@ -281,47 +317,52 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         window.alert(`Le rapprochement est annulé, mais l'écriture de contrepartie banque n'a pas pu être retirée : ${messageErreur(err, 'raison inconnue')}\n\nElle reste dans le brouillon d'écritures.`)
       }
     }
-    load()
+    return true
   }
 
-  async function ignorer(ligneId: string) {
-    await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).eq('id', ligneId)
-    load()
+  // L'erreur est lue, et plus seulement suivie d'une relecture : le panneau reste sur le mouvement
+  // après l'action, donc un échec muet laisserait l'opérateur croire le mouvement classé.
+  async function ignorer(ligneId: string): Promise<boolean> {
+    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).eq('id', ligneId)
+    if (error) { window.alert(`Le mouvement n'a pas pu être ignoré : ${error.message}`); return false }
+    return true
   }
 
   // Virement du compte pro vers le compte personnel — n'a ni pièce ni échéance à rattacher (ce n'est
   // pas une charge), donc classé "ignoree" comme n'importe quel mouvement sans justificatif, mais avec
   // ce drapeau à part pour rester identifiable dans l'onglet Virements plutôt que de se perdre parmi
   // les autres lignes ignorées (assurance, etc.).
-  async function marquerVirementPersonnel(ligneId: string) {
-    await supabase.from('lignes_bancaires').update({
+  async function marquerVirementPersonnel(ligneId: string): Promise<boolean> {
+    const { error } = await supabase.from('lignes_bancaires').update({
       statut: 'ignoree', piece_id: null, cotisation_id: null, prelevement_personnel: true,
     }).eq('id', ligneId)
-    load()
+    if (error) { window.alert(`Le mouvement n'a pas pu être classé en virement personnel : ${error.message}`); return false }
+    return true
   }
 
   // Ignore cette ligne ET mémorise un mot-clé pour que toutes les lignes similaires (déjà importées
   // ou futures) soient automatiquement classées "ignorées" — utile pour les prélèvements récurrents
   // (assurance, cotisations) qui n'ont pas de pièce à fournir à chaque échéance.
-  async function toujoursIgnorer(ligne: LigneBancaire) {
+  async function toujoursIgnorer(ligne: LigneBancaire): Promise<boolean> {
     const motif = window.prompt(
       'Mot-clé stable qui identifie ce type de mouvement récurrent (ex. "MACSF", "SWISSLIFE") — toute future ligne contenant ce mot sera automatiquement ignorée.',
       ligne.libelle,
     )
-    if (!motif || !motif.trim()) return
+    if (!motif || !motif.trim()) return false
     const motifNormalise = motif.trim().toLowerCase()
 
     const { error } = await supabase.from('regles_bancaires_ignorees').insert({ dossier_id: dossierId, motif: motifNormalise })
     if (error) {
-      window.alert(error.message)
-      return
+      window.alert(`La règle n'a pas pu être enregistrée : ${error.message}`)
+      return false
     }
 
     const aMettreAJour = lignes.filter((l) => l.statut === 'non_rapprochee' && l.libelle.toLowerCase().includes(motifNormalise))
     if (aMettreAJour.length > 0) {
-      await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).in('id', aMettreAJour.map((l) => l.id))
+      const { error: errMaj } = await supabase.from('lignes_bancaires').update({ statut: 'ignoree', piece_id: null }).in('id', aMettreAJour.map((l) => l.id))
+      if (errMaj) window.alert(`La règle est enregistrée, mais les mouvements déjà importés n'ont pas pu être ignorés : ${errMaj.message}`)
     }
-    load()
+    return true
   }
 
   async function retirerRegle(id: string) {
@@ -355,18 +396,14 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   )
   const certainsAValider = appariementsCertains.filter((a) => a.piece.statut !== 'validee')
 
-  // Verrou posé avant tout `await` : un double clic sur un lot enverrait deux fois les mêmes
-  // écritures de contrepartie (voir ImportDossierModal, même correctif).
-  const lotEnCours = useRef(false)
-
   // Valide la pièce ET rapproche le mouvement, en une passe. Les deux vont ensemble : c'est la
   // concordance avec la banque qui justifie la validation, la séparer n'aurait pas de sens.
+  // Sous le verrou partagé (voir `sousVerrou`) : un double clic enverrait sinon deux fois les mêmes
+  // écritures de contrepartie (voir ImportDossierModal, même correctif).
   async function validerEtRapprocherLot() {
-    if (lotEnCours.current || certainsAValider.length === 0) return
-    lotEnCours.current = true
-    setRapprochementAuto(true)
-    const echecs: string[] = []
-    try {
+    if (certainsAValider.length === 0) return
+    await sousVerrou(setRapprochementAuto, async () => {
+      const echecs: string[] = []
       for (const a of certainsAValider) {
         const { error: errPiece } = await supabase.from('pieces').update({ statut: 'validee' }).eq('id', a.piece.id)
         if (errPiece) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errPiece.message}`); continue }
@@ -391,25 +428,19 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       if (echecs.length > 0) {
         window.alert(`${certainsAValider.length - echecs.length} pièce(s) validée(s) et rapprochée(s).\n\nÉchecs :\n${echecs.join('\n')}`)
       }
-      load()
-    } finally {
-      lotEnCours.current = false
-      setRapprochementAuto(false)
-    }
+      return true
+    })
   }
-
-
-  // Verrou posé avant tout `await`, comme pour `validerEtRapprocherLot` juste au-dessus : ce bouton
-  // ne portait que `rapprochementAuto`, un ÉTAT React, pour se désactiver — or un état ne prend effet
-  // qu'au rendu suivant, donc un double clic passait les deux dans le même rendu et enverrait deux
-  // fois les mêmes écritures de contrepartie. Même défaut que VehiculesCard, ImportDossierModal et
-  // « C'est une facture » (DocumentsTab) — un cinquième porteur du même motif, trouvé en écrivant le
-  // test de cet onglet plutôt qu'en le relisant.
-  const rapprochementEnCours = useRef(false)
 
   // Applique en une fois tous les rapprochements sûrs (montant + date proches, un seul candidat
   // disponible DE PART ET D'AUTRE) — rien n'est écrit sans ce clic explicite, et le tableau reste
   // modifiable/annulable ligne par ligne ensuite comme n'importe quel rapprochement.
+  //
+  // Sous le verrou partagé : ce bouton ne portait d'abord que `rapprochementAuto`, un ÉTAT React, pour
+  // se désactiver — or un état ne prend effet qu'au rendu suivant, donc un double clic passait les
+  // deux dans le même rendu et enverrait deux fois les mêmes écritures de contrepartie. Même défaut
+  // que VehiculesCard, ImportDossierModal et « C'est une facture » (DocumentsTab), trouvé en écrivant
+  // le test de cet onglet plutôt qu'en le relisant.
   //
   // « Un seul candidat disponible » était annoncé ici bien avant d'être vrai : le tri décidait à la
   // place de l'opérateur quand plusieurs pièces convenaient. C'est `planRapprochementAutomatique`
@@ -417,12 +448,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
   // `planRapprochementAutomatique`, avec ses gardes symétriques). La phrase était au FUTUR
   // alors que le test existait déjà — une promesse qu'on ne peut pas vérifier en la lisant.
   async function rapprocherTout() {
-    if (rapprochementEnCours.current) return
     const maj = planAuto.retenus
     if (maj.length === 0) return
-    rapprochementEnCours.current = true
-    setRapprochementAuto(true)
-    try {
+    await sousVerrou(setRapprochementAuto, async () => {
       const resultats = await Promise.all(
         maj.map((m) =>
           supabase
@@ -444,13 +472,20 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
       }
       // `allSettled` et non `all` : une contrepartie en échec ne doit pas empêcher les autres d'être
       // créées. Les échecs sont comptés et annoncés en une fois, comme les rapprochements ci-dessus.
+      //
+      // Le règlement sur le montant bancaire AVANT la contrepartie, comme les deux autres chemins de
+      // rapprochement de cet écran. Il manquait à celui-ci depuis qu'il existe : une pièce en devise
+      // rapprochée par le lot restait « provisoire » au cours BCE alors que la banque venait de donner
+      // son montant réel — un jumeau qu'on corrige d'un seul côté (voir lib/reglementBanque.ts).
       const contreparties = await Promise.allSettled(
         reussies
           .filter((m): m is { ligneId: string; pieceId: string } => !!m.pieceId)
-          .map((m) => {
+          .map(async (m) => {
             const ligne = lignes.find((l) => l.id === m.ligneId)
-            const piece = pieces.find((p) => p.id === m.pieceId)
-            return ligne && piece ? synchroniserContrepartieBanque(dossierId, piece, ligne) : Promise.resolve()
+            const pieceAvant = pieces.find((p) => p.id === m.pieceId)
+            if (!ligne || !pieceAvant) return
+            const piece = await reglerPieceSurBanque(pieceAvant, ligne)
+            await synchroniserContrepartieBanque(dossierId, piece, ligne)
           }),
       )
       const contrepartiesEnEchec = contreparties.filter((r) => r.status === 'rejected')
@@ -460,11 +495,38 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
           `${contrepartiesEnEchec.length} écriture${contrepartiesEnEchec.length > 1 ? 's' : ''} de contrepartie banque n'${contrepartiesEnEchec.length > 1 ? 'ont' : 'a'} pas pu être créée${contrepartiesEnEchec.length > 1 ? 's' : ''} (${messageErreur(premier.reason, 'raison inconnue')}) — les rapprochements, eux, sont enregistrés.`,
         )
       }
-    } finally {
-      rapprochementEnCours.current = false
-      setRapprochementAuto(false)
-      load()
-    }
+      return true
+    })
+  }
+
+  // Le mouvement ouvert, relu dans `lignes` à chaque rendu — voir `mouvementOuvert`.
+  const ligneOuverte = mouvementOuvert ? lignes.find((l) => l.id === mouvementOuvert.id) ?? null : null
+  const mouvementVisible = ligneOuverte !== null && panneauMouvement.ouvert
+
+  function ouvrirMouvement(ligne: LigneBancaire, rang: number) {
+    if (!panneauMouvement.ouvrir()) return
+    setMouvementOuvert({ id: ligne.id, rang })
+  }
+
+  function fermerMouvement() {
+    if (panneauMouvement.fermer()) setMouvementOuvert(null)
+  }
+
+  // « Mouvement N sur M » sur la liste AFFICHÉE, comme la fiche d'une pièce. Un mouvement qui en est
+  // sorti — rapproché sous le filtre « Non rapprochés », le cas courant — a laissé sa place à son
+  // suivant : « Suivant » mène à celui-là, et on enchaîne sans revenir à la liste.
+  const rangAffiche = ligneOuverte ? filtered.findIndex((l) => l.id === ligneOuverte.id) : -1
+  const rangRepere = rangAffiche !== -1 ? rangAffiche : mouvementOuvert?.rang ?? -1
+  const rangPrecedent = rangRepere - 1
+  const rangSuivant = rangAffiche !== -1 ? rangAffiche + 1 : rangRepere
+  const navigationMouvement = {
+    position: rangAffiche === -1 ? 'Mouvement hors de la liste affichée' : `Mouvement ${rangAffiche + 1} sur ${filtered.length}`,
+    precedent: rangPrecedent >= 0 && rangPrecedent < filtered.length
+      ? () => ouvrirMouvement(filtered[rangPrecedent], rangPrecedent)
+      : null,
+    suivant: rangSuivant >= 0 && rangSuivant < filtered.length
+      ? () => ouvrirMouvement(filtered[rangSuivant], rangSuivant)
+      : null,
   }
 
   return (
@@ -567,7 +629,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
             type="button"
             className="btn btn-primary btn-sm"
             style={{ marginTop: 10 }}
-            disabled={rapprochementAuto}
+            disabled={rapprochementAuto || actionMouvementEnCours}
             onClick={rapprocherTout}
           >
             {rapprochementAuto ? 'Rapprochement…' : `Tout rapprocher automatiquement (${suggestionsAutomatiques.length})`}
@@ -614,7 +676,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
                 le libellé du mouvement. Les relire une par une n'apprendrait rien.
               </p>
             </div>
-            <button type="button" className="btn btn-primary" disabled={rapprochementAuto} onClick={validerEtRapprocherLot}>
+            <button type="button" className="btn btn-primary" disabled={rapprochementAuto || actionMouvementEnCours} onClick={validerEtRapprocherLot}>
               {rapprochementAuto ? 'Traitement…' : `Valider et rapprocher les ${certainsAValider.length}`}
             </button>
           </div>
@@ -745,14 +807,18 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
               </tr>
             </thead>
             <tbody>
-              {filtered.map((l) => {
+              {filtered.map((l, rang) => {
                 const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
                 const ecartMontant = piecePayee && l.statut === 'rapprochee' ? ecartAvecBanque(piecePayee, l) : null
                 const ecartImportant = ecartMontant && ecartMontant.ecart > 0 && !ecartMontant.alignable ? ecartMontant : null
                 const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
                 const aUneSuggestion = l.statut === 'non_rapprochee' && !!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
                 return (
-                  <tr key={l.id} className="clickable" onClick={() => setLigneOuverte(l)}>
+                  <tr
+                    key={l.id}
+                    className={`clickable${mouvementVisible && ligneOuverte?.id === l.id ? ' ligne-ouverte' : ''}`}
+                    onClick={() => ouvrirMouvement(l, rang)}
+                  >
                     <td>{formatDate(l.date)}</td>
                     <td>{l.libelle}</td>
                     <td>{formatMoney(l.montant)}</td>
@@ -794,222 +860,33 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
         )}
       </div>
 
-      {ligneOuverte && (
-        <PanneauLigne
-          ligne={ligneOuverte}
-          pieces={pieces}
-          cotisations={cotisations}
-          piecesRapprochees={piecesRapprochees}
-          cotisationsRapprochees={cotisationsRapprochees}
-          suggestion={suggestion}
-          suggestionCotisation={suggestionCotisation}
-          suggestionRecurrente={suggestionRecurrente}
-          onClose={() => setLigneOuverte(null)}
-          onRapprocher={(pieceId) => { rapprocher(ligneOuverte.id, pieceId); setLigneOuverte(null) }}
-          onRapprocherCotisation={(cotisationId) => { rapprocherCotisation(ligneOuverte.id, cotisationId); setLigneOuverte(null) }}
-          onVirementPersonnel={() => { marquerVirementPersonnel(ligneOuverte.id); setLigneOuverte(null) }}
-          onIgnorer={() => { ignorer(ligneOuverte.id); setLigneOuverte(null) }}
-          onToujoursIgnorer={() => { toujoursIgnorer(ligneOuverte); setLigneOuverte(null) }}
-          onAnnuler={() => { annulerRapprochement(ligneOuverte.id); setLigneOuverte(null) }}
-        />
+      {ligneOuverte && mouvementVisible && (
+        <PanneauDroit nom="mouvement">
+          {/* `key` : un panneau par mouvement. Passer au suivant repart de SON état — le choix fait à
+              la main dans la liste déroulante du précédent ne le suit pas. */}
+          <FicheMouvement
+            key={ligneOuverte.id}
+            ligne={ligneOuverte}
+            pieces={pieces}
+            piecesValidees={piecesValidees}
+            cotisations={cotisations}
+            piecesRapprochees={piecesRapprochees}
+            cotisationsRapprochees={cotisationsRapprochees}
+            recurrence={suggestionRecurrente(ligneOuverte)}
+            navigation={navigationMouvement}
+            occupe={actionMouvementEnCours || rapprochementAuto}
+            onFermer={fermerMouvement}
+            onRapprocher={(pieceId) => agirSurMouvement(() => rapprocher(ligneOuverte.id, pieceId))}
+            onRapprocherCotisation={(cotisationId) => agirSurMouvement(() => rapprocherCotisation(ligneOuverte.id, cotisationId))}
+            onVirementPersonnel={() => agirSurMouvement(() => marquerVirementPersonnel(ligneOuverte.id))}
+            onIgnorer={() => agirSurMouvement(() => ignorer(ligneOuverte.id))}
+            onToujoursIgnorer={() => agirSurMouvement(() => toujoursIgnorer(ligneOuverte))}
+            onRemettreATraiter={() => agirSurMouvement(() => remettreATraiter(ligneOuverte.id))}
+          />
+        </PanneauDroit>
       )}
     </>
   )
-}
-
-interface PanneauLigneProps {
-  ligne: LigneBancaire
-  pieces: Piece[]
-  cotisations: CotisationDeclaree[]
-  piecesRapprochees: Set<string | null>
-  cotisationsRapprochees: Set<string | null>
-  suggestion: (l: LigneBancaire) => Piece | null
-  suggestionCotisation: (l: LigneBancaire) => CotisationDeclaree | null
-  suggestionRecurrente: (l: LigneBancaire) => { action: 'ignorer' | 'virement_personnel'; occurrences: number } | null
-  onClose: () => void
-  onRapprocher: (pieceId: string) => void
-  onRapprocherCotisation: (cotisationId: string) => void
-  onVirementPersonnel: () => void
-  onIgnorer: () => void
-  onToujoursIgnorer: () => void
-  onAnnuler: () => void
-}
-
-// Panneau de détail ouvert au clic sur une ligne (voir le tableau compact ci-dessus) : regroupe tout
-// ce qui était avant étalé sur chaque ligne du tableau (suggestion, menus d'association, ignorer...).
-// Une seule ligne ouverte à la fois, jamais de rapprochement fait par erreur en glissant sur le
-// tableau — l'utilisateur doit explicitement ouvrir puis choisir une action.
-function PanneauLigne({
-  ligne, pieces, cotisations, piecesRapprochees, cotisationsRapprochees,
-  suggestion, suggestionCotisation, suggestionRecurrente,
-  onClose, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onAnnuler,
-}: PanneauLigneProps) {
-  const propose = suggestion(ligne)
-  const proposeCotisation = !propose ? suggestionCotisation(ligne) : null
-  const proposeRecurrent = !propose && !proposeCotisation ? suggestionRecurrente(ligne) : null
-  const piecePayee = ligne.piece_id ? pieces.find((p) => p.id === ligne.piece_id) : null
-  // Seconde copie de la pastille de la liste, et gardée par son propre test : le panneau est l'écran
-  // où l'on ARBITRE, donc celui où l'écart doit se lire — une assertion restée sur la liste le
-  // laisserait mentir tout seul (leçon de `mouvementRapprocheSansObjet`, corrigé la veille).
-  const ecartPanneau = (() => {
-    if (!piecePayee || ligne.statut !== 'rapprochee') return null
-    const e = ecartAvecBanque(piecePayee, ligne)
-    return e && e.ecart > 0 && !e.alignable ? e : null
-  })()
-  const cotisationPayee = ligne.cotisation_id ? cotisations.find((c) => c.id === ligne.cotisation_id) : null
-  const piecesTriees = ligne.statut === 'non_rapprochee'
-    ? [...pieces].filter((p) => !piecesRapprochees.has(p.id))
-        .sort((a, b) => scoreCorrespondance(a.montant_ttc, a.date_piece, ligne) - scoreCorrespondance(b.montant_ttc, b.date_piece, ligne))
-    : []
-  const cotisationsTriees = ligne.statut === 'non_rapprochee'
-    ? [...cotisations].filter((c) => !cotisationsRapprochees.has(c.id))
-        .sort((a, b) =>
-          scoreCorrespondance(a.montant_verse ?? a.montant_appele, a.echeance, ligne)
-          - scoreCorrespondance(b.montant_verse ?? b.montant_appele, b.echeance, ligne))
-    : []
-  // Explique explicitement pourquoi rien n'est proposé (voir audit ergonomie comparatif) — sans ça,
-  // deux listes vides et aucune suggestion laissaient deviner si le dossier n'a tout simplement rien
-  // à associer, ou si tout existe déjà mais est rapproché ailleurs.
-  const aucunePieceEnregistree = pieces.length === 0 && cotisations.length === 0
-  const toutDejaRapprocheAilleurs = !aucunePieceEnregistree && piecesTriees.length === 0 && cotisationsTriees.length === 0
-
-  return (
-    <div style={overlayStyle} onClick={onClose}>
-      <div className="card" style={{ width: 'min(480px, 92vw)', maxHeight: '85vh', overflowY: 'auto' }} onClick={(e) => e.stopPropagation()}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
-          <div>
-            <h2 style={{ margin: 0 }}>{formatMoney(ligne.montant)}</h2>
-            <p className="muted" style={{ margin: '4px 0 0' }}>{formatDate(ligne.date)} — {ligne.libelle}</p>
-          </div>
-          <button type="button" className="btn btn-outline btn-sm" onClick={onClose}>Fermer</button>
-        </div>
-
-        {/* Traçabilité de l'import (voir audit ergonomie) — surtout utile quand libelle est retombé
-            sur le générique "Mouvement bancaire" : de quoi retrouver le fichier et la ligne d'origine
-            sans devoir rouvrir le relevé. Absent sur tout import antérieur à cet ajout. */}
-        {(ligne.source_fichier || (ligne.libelle_brut && ligne.libelle_brut !== ligne.libelle)) && (
-          <p className="muted" style={{ fontSize: '0.78rem', marginTop: 6 }}>
-            {ligne.source_fichier && <>Importé depuis « {ligne.source_fichier} »</>}
-            {ligne.source_fichier && ligne.libelle_brut && ligne.libelle_brut !== ligne.libelle && ' — '}
-            {ligne.libelle_brut && ligne.libelle_brut !== ligne.libelle && <>ligne brute : {ligne.libelle_brut}</>}
-          </p>
-        )}
-
-        <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          {ligne.prelevement_personnel && <span className="badge badge-neutral">Virement personnel</span>}
-          {!ligne.prelevement_personnel && mouvementRapprocheSansObjet(ligne) && (
-            <span className="badge badge-danger">Rapproché sans justificatif</span>
-          )}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !mouvementRapprocheSansObjet(ligne) && (
-            <span className="badge badge-ok">
-              Rapproché
-              {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
-              {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
-            </span>
-          )}
-          {ecartPanneau && (
-            <span className="badge badge-danger">
-              Écart de {formatMoney(ecartPanneau.ecart)} avec la pièce
-            </span>
-          )}
-          {!ligne.prelevement_personnel && ligne.statut === 'non_rapprochee' && <span className="badge badge-warning">Non rapproché</span>}
-          {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
-          {/* Consulter le justificatif sans quitter cet écran (voir audit ergonomie comparatif) — avant,
-              seul le tiers et le montant étaient visibles, jamais le document lui-même. */}
-          {piecePayee && (
-            <button type="button" className="btn btn-outline btn-sm" onClick={() => ouvrirJustificatif(piecePayee.storage_path)}>
-              👁 Voir le justificatif
-            </button>
-          )}
-        </div>
-
-        {ligne.statut === 'non_rapprochee' && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
-            {propose && (
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button className="btn btn-outline" style={{ flex: 1 }} onClick={() => onRapprocher(propose.id)}>
-                  Rapprocher avec {propose.tiers ?? 'cette pièce'} ({formatMoney(propose.montant_ttc)})
-                </button>
-                <button type="button" className="btn btn-outline" onClick={() => ouvrirJustificatif(propose.storage_path)} title="Voir le justificatif avant de confirmer">
-                  👁
-                </button>
-              </div>
-            )}
-            {proposeCotisation && (
-              <button className="btn btn-outline" onClick={() => onRapprocherCotisation(proposeCotisation.id)}>
-                Rapprocher avec l'échéance du {formatDate(proposeCotisation.echeance)} ({formatMoney(proposeCotisation.montant_verse ?? proposeCotisation.montant_appele)})
-              </button>
-            )}
-            {proposeRecurrent && (
-              <button
-                className="btn btn-outline"
-                onClick={() => proposeRecurrent.action === 'virement_personnel' ? onVirementPersonnel() : onIgnorer()}
-                title={`Même montant, même période du mois que ${proposeRecurrent.occurrences} mouvement(s) déjà classé(s) ainsi`}
-              >
-                {proposeRecurrent.action === 'virement_personnel' ? 'Virement personnel' : 'Ignorer'} (récurrent, {proposeRecurrent.occurrences}×)
-              </button>
-            )}
-
-            <div className="field">
-              <label htmlFor="associer-piece">Associer à une pièce</label>
-              <select id="associer-piece" defaultValue="" onChange={(e) => e.target.value && onRapprocher(e.target.value)}>
-                <option value="">— Choisir —</option>
-                {piecesTriees.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {formatDate(p.date_piece)} — {p.tiers ?? '—'} — {formatMoney(p.montant_ttc)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="field">
-              <label htmlFor="associer-cotisation">Associer à une cotisation</label>
-              <select id="associer-cotisation" defaultValue="" onChange={(e) => e.target.value && onRapprocherCotisation(e.target.value)}>
-                <option value="">— Choisir —</option>
-                {cotisationsTriees.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {formatDate(c.echeance)} — {formatMoney(c.montant_verse ?? c.montant_appele)}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {aucunePieceEnregistree && (
-              <p className="muted" style={{ fontSize: '0.82rem', marginTop: -4 }}>
-                Aucune pièce validée ni échéance de cotisation enregistrée dans ce dossier pour
-                l'instant — dépose et valide d'abord le justificatif correspondant (onglet Pièces),
-                ou déclare l'échéance (onglet Cotisations).
-              </p>
-            )}
-            {toutDejaRapprocheAilleurs && (
-              <p className="muted" style={{ fontSize: '0.82rem', marginTop: -4 }}>
-                Toutes les pièces et échéances de ce dossier sont déjà rapprochées à un autre
-                mouvement — si aucune ne correspond en réalité, vérifie un éventuel rapprochement fait
-                par erreur ailleurs.
-              </p>
-            )}
-
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn btn-outline btn-sm" onClick={onVirementPersonnel}>Virement personnel</button>
-              <button className="btn btn-outline btn-sm" onClick={onIgnorer}>Ignorer</button>
-              <button className="btn btn-outline btn-sm" onClick={onToujoursIgnorer}>Toujours ignorer ce type…</button>
-            </div>
-          </div>
-        )}
-
-        {ligne.statut !== 'non_rapprochee' && (
-          <div style={{ marginTop: 16 }}>
-            <button className="btn btn-outline" onClick={onAnnuler}>Annuler le rapprochement</button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-const overlayStyle: CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20,
 }
 
 function statutPourLibelle(libelle: string, regles: RegleBancaireIgnoree[]): StatutLigneBancaire {

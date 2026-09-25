@@ -680,6 +680,68 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    numérique les renvoie chacun à la ligne. */
 .fiche-piece-montants > .field, .fiche-piece-montants input { min-width: 0; }
 
+/* Le rapprochement d'un mouvement bancaire dans le volet (voir FicheMouvement) : même charpente que la
+   fiche d'une pièce — en-tête du volet, corps qui défile, pied fixe portant l'action principale. */
+.fiche-mouvement { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.fiche-mouvement-corps {
+  flex: 1; min-height: 0; overflow-y: auto; padding: 16px 18px 12px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.fiche-mouvement-pied {
+  flex-shrink: 0; display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  padding: 12px 18px; border-top: 1px solid var(--color-border);
+}
+.fiche-mouvement-libelle { margin: 0; font-weight: 700; line-height: 1.35; overflow-wrap: anywhere; }
+.fiche-mouvement-tuiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.fiche-mouvement-tuile {
+  display: flex; flex-direction: column; gap: 4px; padding: 10px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+}
+.fiche-mouvement-tuile > span { font-size: 0.75rem; font-weight: 600; color: var(--color-text-light); }
+.fiche-mouvement-tuile > strong { font-size: 1rem; font-variant-numeric: tabular-nums; }
+.fiche-mouvement-etat { display: flex; gap: 6px; flex-wrap: wrap; }
+.fiche-mouvement-section { display: flex; flex-direction: column; gap: 8px; }
+.fiche-mouvement-section > h3 { margin: 0; font-size: 0.82rem; font-weight: 700; color: var(--color-text-light); }
+.fiche-mouvement-section > .field { margin-bottom: 0; }
+.fiche-mouvement-note { margin: 0; font-size: 0.82rem; line-height: 1.45; color: var(--color-text-light); }
+.fiche-mouvement-vide {
+  margin: 0; padding: 12px 14px; border-radius: var(--radius-sm);
+  background: var(--color-neutral-bg); font-size: 0.86rem; color: var(--color-text);
+}
+.fiche-mouvement-alerte {
+  margin: 0; padding: 12px 14px; border-radius: var(--radius-sm);
+  background: var(--color-danger-light); font-size: 0.86rem; line-height: 1.45; color: var(--color-text);
+}
+.fiche-mouvement-choix { display: flex; gap: 8px; align-items: center; }
+.fiche-mouvement-choix select { flex: 1; min-width: 0; }
+.fiche-mouvement-boutons { display: flex; gap: 8px; flex-wrap: wrap; }
+.fiche-mouvement-origine { margin: 0; font-size: 0.75rem; color: var(--color-text-light); overflow-wrap: anywhere; }
+
+/* Une pièce (ou une échéance) face au mouvement : ce qu'elle est, et ce qui la rattache au relevé. */
+.carte-rapprochement {
+  display: flex; flex-direction: column; gap: 10px; padding: 12px 14px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface);
+}
+.carte-rapprochement-entete { display: flex; align-items: flex-start; gap: 12px; }
+.carte-rapprochement-titres { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.carte-rapprochement-titres > strong { overflow-wrap: anywhere; }
+.carte-rapprochement-titres > span { font-size: 0.82rem; color: var(--color-text-light); }
+.carte-rapprochement-montant { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.carte-rapprochement-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.carte-rapprochement-lien {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 0.82rem; font-weight: 700; color: var(--color-primary);
+  text-decoration: underline; text-underline-offset: 2px;
+}
+.carte-rapprochement-lien:hover { color: var(--color-primary-hover); }
+/* Le texte garde sa couleur de texte ; c'est l'icône qui porte le statut — une coche pour ce que la
+   banque confirme, un point d'exclamation pour ce qu'elle ne confirme pas. */
+.signaux-rapprochement { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
+.signaux-rapprochement li { display: flex; align-items: flex-start; gap: 8px; font-size: 0.84rem; line-height: 1.35; }
+.signaux-rapprochement svg { flex-shrink: 0; margin-top: 1px; }
+.signal-concordant svg { color: var(--color-primary); }
+.signal-reserve svg { color: var(--color-warning); }
+
 /* La liste des pièces suit la place que lui laisse le volet de droite, pas la largeur de la fenêtre :
    volet ouvert, le panneau central perd 400 pixels, et le statut de la pièce — la colonne qui compte
    quand on valide à la chaîne — passait sous le bord. Les colonnes secondaires s'effacent alors,
@@ -1363,9 +1425,10 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
     box-shadow: var(--shadow-lg);
   }
   /* Une fiche de pièce a besoin de tout l'écran : l'aperçu du justificatif et ses champs ne tiennent
-     pas dans la carte de l'assistant. Elle recouvre la barre du bas, comme la fenêtre qu'elle
-     remplace — et c'est l'emplacement qui dit qui l'occupe (voir EmplacementPanneauDroit). */
-  .panneau-droit[data-occupant="piece"] {
+     pas dans la carte de l'assistant. Le rapprochement d'un mouvement non plus — les pièces proposées,
+     leurs signaux et le choix à la main. Elles recouvrent la barre du bas, comme la fenêtre qu'elles
+     remplacent — et c'est l'emplacement qui dit qui l'occupe (voir EmplacementPanneauDroit). */
+  .panneau-droit[data-occupant="piece"], .panneau-droit[data-occupant="mouvement"] {
     top: max(8px, env(safe-area-inset-top)); bottom: max(8px, env(safe-area-inset-bottom));
     left: 8px; right: 8px; width: auto; height: auto; z-index: 50;
   }
