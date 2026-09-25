@@ -27,7 +27,11 @@ export default function AssistantFlottant({ dossierId }: { dossierId: string }) 
             </button>
           </div>
           <div style={{ flex: 1, minHeight: 0 }}>
-            <AssistantTab dossierId={dossierId} />
+            {/* `key` : une conversation par dossier. La page ne se remonte pas quand la barre latérale
+                mène d'un dossier à l'autre, et la bulle reste ouverte — sans la clé, le fil du dossier
+                précédent restait en mémoire (la question tapée, les fils du menu, une réponse encore en
+                route), et une lecture plus lente de son historique pouvait remplacer la nouvelle. */}
+            <AssistantTab key={dossierId} dossierId={dossierId} />
           </div>
         </div>
       )}

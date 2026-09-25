@@ -27,6 +27,7 @@ import { AnneeProvider, useAnnee } from '../context/AnneeContext'
 import Avatar from '../components/widgets/Avatar'
 import { anneeDe } from '../lib/format'
 import { lireTout } from '../lib/lectureComplete'
+import { messageErreur } from '../lib/messageErreur'
 
 // L'onglet actif fait partie de l'URL (voir la route /dossiers/:id/:tab dans App.tsx) plutôt qu'un
 // simple état React : sans ça, ouvrir une pièce dans un nouvel onglet puis faire "retour" ramenait
@@ -60,9 +61,30 @@ export default function DossierDetail() {
   const { id, tab: tabParam } = useParams<{ id: string; tab?: string }>()
   const navigate = useNavigate()
   const tab: DossierTab = TABS_VALIDES.includes(tabParam as DossierTab) ? (tabParam as DossierTab) : 'checklist'
-  const [dossier, setDossier] = useState<Dossier | null>(null)
+  // Le dossier lu, AVEC l'identifiant pour lequel il l'a été — et de même pour les années. Cette page
+  // ne se remonte pas quand la barre latérale mène d'un dossier à l'autre (même route, autre :id) :
+  // un état gardé seul désignerait encore l'ANCIEN dossier jusqu'à la fin de la lecture du nouveau,
+  // et pour de bon si celle de l'ancien arrivait la dernière. Son SIRET partirait sur une facture,
+  // son code dans les consignes d'accès du client, et « TVA » basculerait l'ancien dossier. Ce qui
+  // n'appartient pas au dossier de l'URL ne s'affiche donc pas : il vaut nul, et l'écran attend.
+  const [lu, setLu] = useState<{ id: string; dossier: Dossier | null; erreur: string | null } | null>(null)
+  const dossier = lu && lu.id === id ? lu.dossier : null
+  const erreurDossier = lu && lu.id === id ? lu.erreur : null
+  const [essaiDossier, setEssaiDossier] = useState(0)
   const [detectingNaf, setDetectingNaf] = useState(false)
-  const [anneesDisponibles, setAnneesDisponibles] = useState<number[] | null>(null)
+  const [annees, setAnnees] = useState<{ id: string; liste: number[] } | null>(null)
+  const anneesDisponibles = annees && annees.id === id ? annees.liste : null
+  // Les onglets ET le sélecteur d'exercice de l'en-tête — qui lit le même AnneeProvider — ne se
+  // montent qu'une fois l'identité et les années du dossier de l'URL connues, jamais l'une sans
+  // l'autre : les années arrivent souvent AVANT l'identité, et l'en-tête se rend aussi pendant
+  // l'attente, hors de ce fournisseur, où le sélecteur lèverait et emporterait toute la page.
+  const pret = !erreurDossier && dossier !== null && anneesDisponibles !== null
+
+  // Change ce dossier-là et lui seul : une réponse qui revient après qu'on a changé de dossier ne
+  // doit pas écrire l'ancien sur le nouveau.
+  function modifierDossier(dossierId: string, modification: Partial<Dossier>) {
+    setLu((l) => (l?.id === dossierId && l.dossier ? { ...l, dossier: { ...l.dossier, ...modification } } : l))
+  }
 
   // URL toujours explicite (avec son onglet) une fois montée — évite d'avoir deux URLs différentes
   // (/dossiers/:id et /dossiers/:id/checklist) pour le même écran.
@@ -76,8 +98,18 @@ export default function DossierDetail() {
 
   useEffect(() => {
     if (!id) return
-    supabase.from('dossiers').select('*').eq('id', id).single().then(({ data }) => setDossier(data))
-  }, [id])
+    let annule = false
+    supabase.from('dossiers').select('*').eq('id', id).single().then(({ data, error }) => {
+      if (annule) return
+      // Aucune ligne (dossier supprimé, ou hors de portée de ce compte) rend PGRST116 : le message
+      // brut de PostgREST ne dirait rien à l'opérateur.
+      const erreur = !error ? null
+        : error.code === 'PGRST116' ? 'ce dossier est introuvable, ou ce compte n’y a pas accès'
+        : messageErreur(error, 'erreur inconnue')
+      setLu({ id, dossier: error ? null : data, erreur })
+    })
+    return () => { annule = true }
+  }, [id, essaiDossier])
 
   // Années réellement disponibles sur les trois sources datées qui alimentent les onglets partageant
   // l'exercice (voir TABS_AVEC_EXERCICE) — juste la colonne date de chacune, pas les lignes entières :
@@ -86,7 +118,6 @@ export default function DossierDetail() {
   useEffect(() => {
     if (!id) return
     let annule = false
-    setAnneesDisponibles(null)
     Promise.all([
       // Lues par tranches : tronquées, elles ne perdent pas des lignes visibles — elles font
       // disparaître un EXERCICE du sélecteur, et tout ce que le cabinet regarde ensuite est filtré
@@ -109,7 +140,7 @@ export default function DossierDetail() {
       for (const p of pcs.lignes) if (p.date_piece) annees.add(anneeDe(p.date_piece))
       for (const l of lgs.lignes) annees.add(anneeDe(l.date))
       for (const e of ecr.lignes) annees.add(anneeDe(e.date))
-      setAnneesDisponibles([...annees].sort((a, b) => b - a))
+      setAnnees({ id, liste: [...annees].sort((a, b) => b - a) })
     })
     return () => { annule = true }
   }, [id])
@@ -119,10 +150,10 @@ export default function DossierDetail() {
   async function toggleAssujettiTva() {
     if (!dossier) return
     const nouvelleValeur = !dossier.assujetti_tva
-    setDossier({ ...dossier, assujetti_tva: nouvelleValeur }) // optimiste, un dossier à la fois
+    modifierDossier(dossier.id, { assujetti_tva: nouvelleValeur }) // optimiste, un dossier à la fois
     const { error } = await supabase.from('dossiers').update({ assujetti_tva: nouvelleValeur }).eq('id', dossier.id)
     if (error) {
-      setDossier({ ...dossier, assujetti_tva: !nouvelleValeur }) // annule si l'enregistrement échoue
+      modifierDossier(dossier.id, { assujetti_tva: !nouvelleValeur }) // annule si l'enregistrement échoue
       window.alert(error.message)
     }
   }
@@ -144,7 +175,7 @@ export default function DossierDetail() {
       window.alert(error.message)
       return
     }
-    setDossier({ ...dossier, code_naf: infos.codeNaf, libelle_naf: infos.libelleNaf })
+    modifierDossier(dossier.id, { code_naf: infos.codeNaf, libelle_naf: infos.libelleNaf })
   }
 
   // "Cockpit" du dossier : avatar, nom, identifiants et réglages en pastilles, sélecteur d'exercice à
@@ -181,7 +212,7 @@ export default function DossierDetail() {
           </div>
         </div>
       </div>
-      {anneesDisponibles !== null && TABS_AVEC_EXERCICE.includes(tab) && (
+      {pret && TABS_AVEC_EXERCICE.includes(tab) && (
         <div className="cockpit-droite">
           <SelecteurExerciceEntete annees={anneesDisponibles} />
         </div>
@@ -195,7 +226,23 @@ export default function DossierDetail() {
           lien s'y masque (voir .retour-tableau dans index.css). */}
       <Link to="/dossiers" className="retour retour-tableau">&larr; Tableau de bord</Link>
 
-      {anneesDisponibles === null ? (
+      {/* Les onglets ne se montent qu'avec l'identité du dossier de l'URL : plusieurs la RECOPIENT au
+          montage (le formulaire d'Informations, par exemple), et montés trop tôt ils garderaient un
+          SIRET vide — ou celui du dossier précédent — que le premier « Enregistrer » écrirait. */}
+      {erreurDossier ? (
+        <>
+          {cockpit}
+          <div className="card">
+            <p className="error-text" style={{ marginTop: 0 }}>
+              Ce dossier n’a pas pu être lu ({erreurDossier}). Ses écrans ne s’affichent pas : ils
+              partiraient d’une identité vide — un SIRET vide sur une facture, par exemple.
+            </p>
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setEssaiDossier((n) => n + 1)}>
+              Réessayer
+            </button>
+          </div>
+        </>
+      ) : !pret ? (
         <>
           {cockpit}
           <DossierParcours tab={tab} onChange={allerA} />
@@ -220,7 +267,7 @@ export default function DossierDetail() {
               dossierSiret={dossier?.siret ?? null}
               dossierAdresse={dossier?.adresse ?? null}
               assujettiTva={dossier?.assujetti_tva ?? false}
-              onAdresseUpdated={(adresse) => dossier && setDossier({ ...dossier, adresse })}
+              onAdresseUpdated={(adresse) => modifierDossier(id, { adresse })}
             />
           )}
           {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
@@ -240,7 +287,7 @@ export default function DossierDetail() {
               dossierNom={dossier?.nom ?? ''}
               dossierSiret={dossier?.siret ?? null}
               dossierAdresse={dossier?.adresse ?? null}
-              onIdentiteUpdated={(siret, adresse) => dossier && setDossier({ ...dossier, siret, adresse })}
+              onIdentiteUpdated={(siret, adresse) => modifierDossier(id, { siret, adresse })}
             />
           )}
           {tab === 'virements' && <VirementsTab dossierId={id} />}

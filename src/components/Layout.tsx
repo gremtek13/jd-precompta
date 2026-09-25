@@ -323,7 +323,12 @@ export default function Layout() {
               </select>
             </div>
           )}
-          <Outlet />
+          {/* Une société, un montage. Changer de société ne quitte pas l'écran (même route), et un
+              écran client resté monté gardait l'état de la précédente : ses réponses dans le
+              formulaire de « Mes informations », qu'« Enregistrer » écrivait dans la nouvelle — ou
+              une lecture de la précédente, plus lente, arrivée après celle de la nouvelle. La clé
+              fait repartir l'écran de zéro ; une réponse de l'ancien montage n'écrit plus nulle part. */}
+          <Outlet key={role === 'client' ? dossierActifId ?? '' : undefined} />
         </div>
       </main>
     </div>

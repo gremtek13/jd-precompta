@@ -85,13 +85,6 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
       'affirmée, et l’écran qui ÉCRIT cette charte (CabinetBrandingPage) lit bien son erreur depuis ' +
       'le 21/09/2026 — c’est lui qui pouvait l’effacer',
   },
-  'pages/DossierDetail.tsx': {
-    nombre: 1,
-    raison:
-      'l’en-tête du dossier. Sans réponse, `dossier` reste nul et l’écran garde ses SQUELETTES : il ' +
-      'n’affirme rien, il ne finit pas de charger — ce qui se voit. Le sélecteur d’exercice et la ' +
-      'bascule TVA, qui eux écriraient, ne sont pas rendus tant qu’il est nul',
-  },
   'pages/ClientHome.tsx': {
     nombre: 1,
     raison:

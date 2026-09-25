@@ -68,6 +68,15 @@ Conséquences pratiques :
   boucler sur une liste incomplète) et sur `signalerMajDossiers()` après une création. Une lecture
   tronquée ou refusée le DIT (« Liste des dossiers incomplète ») au lieu de passer pour la liste
   entière.
+  **Cette page ne se remonte pas d'un dossier à l'autre** : la barre latérale mène directement du
+  dossier A au dossier B, et `DossierDetail` reste monté (même route, autre `:id`). Les onglets sont
+  sous un `AnneeProvider key={id}` et repartent de zéro ; ce qui vit HORS de ce bloc doit être clé par
+  dossier lui-même — l'assistant l'est (`key={dossierId}`), sans quoi le fil du dossier précédent
+  restait sélectionné et une lecture plus lente de son historique pouvait remplacer la nouvelle — ou
+  garder ce qu'il lit AVEC l'identifiant pour lequel il l'a lu, comme la page le fait de l'identité du
+  dossier et de ses années (voir « la barre latérale a rouvert une course » dans « Problèmes
+  connus »). Même règle côté client : changer de société ne quitte pas l'écran non plus, d'où le
+  `<Outlet key>` de la coque.
 - **Hébergement** : GitHub Pages, déployé automatiquement par
   `.github/workflows/deploy.yml` (Node 22 → `npm ci && npm run build` →
   `actions/upload-pages-artifact` + `actions/deploy-pages`) à chaque push sur
@@ -808,7 +817,9 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   un sélecteur dans son espace (`AuthContext.mesSocietes`/`dossierActifId`,
   voir `Layout.tsx`) — les 4 écrans client (accueil, pièces, informations,
   simulation) suivent la société sélectionnée plutôt que la première par
-  défaut.
+  défaut, et repartent de zéro à chaque changement (`<Outlet key>` dans la
+  coque — sans quoi « Mes informations » gardait les réponses de la société
+  précédente et « Enregistrer » les écrivait dans la nouvelle).
 - L'accueil client (`ClientHome`) est aussi un petit tableau de bord : tuiles
   d'action d'abord (la photo en tête), puis quatre tuiles chiffrées (envois de
   l'année avec tendance sur 12 mois, pièces en cours de vérification, relevés
@@ -1530,11 +1541,14 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **LA RÈGLE EST LA MÊME POUR LES TROIS PORTES, et elle tient en une phrase : qui prend `data` prend
   `error`.** Un résultat gardé ENTIER (`const r = …`, puis `r.error`) reste légitime — c'est ce que
   fait `fichierDejaPresent`, et un test synthétique garde ce cas pour que le scanner ne le crie pas.
-  **CINQ LECTURES NUES SONT LÉGITIMES, résultat à garder pour ne pas les réenquêter** : `branding`
+  **QUATRE LECTURES NUES SONT LÉGITIMES, résultat à garder pour ne pas les réenquêter** : `branding`
   (sans réponse, la charte PAR DÉFAUT s'applique — et l'écran qui l'ÉCRIT lit bien son erreur),
-  `DossierDetail` (l'écran garde ses SQUELETTES, il n'affirme rien), `ClientHome` (le dossier n'y
-  sert qu'à la ligne d'accueil), `extraction.fichierDejaPresent` (résultat gardé entier) et
-  `sauvegardeDonnees.requeteDeBase` (un CONSTRUCTEUR de requête, pas un résultat).
+  `ClientHome` (le dossier n'y sert qu'à la ligne d'accueil), `extraction.fichierDejaPresent`
+  (résultat gardé entier) et `sauvegardeDonnees.requeteDeBase` (un CONSTRUCTEUR de requête, pas un
+  résultat). **Il y en avait CINQ, et la cinquième raison était fausse** : `DossierDetail`, dispensé
+  parce que « l'écran garde ses SQUELETTES, il n'affirme rien ». Vrai de l'en-tête, et de lui seul —
+  ses ONGLETS recevaient cette identité vide en props et l'écrivaient (voir « la barre latérale a
+  rouvert une course », 25/09/2026). La dispense est retirée, la lecture prend son erreur.
   **ET L'EXCEPTION PORTE DÉSORMAIS UN NOMBRE, pas seulement une raison** — la leçon de
   `datesUtc.test.ts` reprise ici parce qu'elle était devenue nécessaire : les fichiers dispensés
   portent AUSSI des lectures correctes, et deux d'entre eux ont gagné une lecture en faute le jour
@@ -3653,6 +3667,57 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   réponses, aucun signal) **mais « de quoi dépend l'effet »** : une dépendance que l'utilisateur
   change à la main, écran ouvert, est la seule qui puisse courir contre elle-même. À rejouer sous
   cette forme quand un écran gagne un filtre.
+- **LA BARRE LATÉRALE A ROUVERT UNE COURSE QUE LE TABLEAU DE BORD FERMAIT** (`DossierDetail`,
+  25/09/2026). Avant l'étape 1, changer de dossier passait par le tableau de bord, donc DÉMONTAIT la
+  page d'un dossier. La barre latérale mène désormais directement de A à B, même route, autre `:id`,
+  et la page reste montée. L'entrée ci-dessus dit des trente effets sans annulation que
+  « `dossierId` ne change qu'à la navigation » : c'est resté vrai de tout ce qui vit SOUS
+  `AnneeProvider key={id}`, dont les onglets se remontent, et c'est devenu faux de ce qui vit
+  au-dessus — l'identité du dossier et ses années, lues par la page elle-même.
+  **EN PRODUCTION du déploiement de l'étape 1 (25/09/2026, 11 h 37) jusqu'à celui de ce correctif.**
+  Pendant la lecture de B, l'en-tête et les onglets portaient l'identité de A ; une réponse de A
+  arrivée APRÈS celle de B la remplaçait pour de bon, faute d'annulation. Et trois gestes
+  élargissaient la fenêtre bien au-delà d'une lecture lente : « Détecter la profession » (un appel à
+  une API extérieure), la bascule TVA refusée, et les deux rappels d'identité des onglets — chacun
+  réécrivait l'objet de A, CAPTURÉ au clic, sur la page de B.
+  **Ce que ça coûte n'est pas un affichage : plusieurs onglets RECOPIENT l'identité reçue.**
+  `FactureFormModal` fige `emetteur_nom` et `emetteur_siret` dans la facture validée — IMMUABLE,
+  corrigeable seulement par un avoir ; le formulaire d'identité d'`InformationsTab` recopie SIRET et
+  adresse au montage et les ÉCRIT à l'enregistrement ; `AccesTab` copie l'adresse de collecte par
+  e-mail — celle de A, donnée au client de B, enverrait ses pièces dans le dossier A.
+  **ET LE DÉFAUT D'ORIGINE PRÉCÉDAIT LA BARRE** : les onglets se montaient dès que les années étaient
+  lues, identité lue ou non. Trois lectures contre une seule, l'identité arrive d'ordinaire la
+  première ; mais REFUSÉE, elle laissait les onglets montés pour de bon sur une identité vide — une
+  facture validée sans émetteur, un formulaire d'identité qu'« Enregistrer » vidait. C'est la
+  cinquième forme de « lecture → formulaire → écriture de tous les champs », dans un écran qui
+  portait déjà la première, arrivée cette fois par les PROPS.
+  **Le remède** : l'identité et les années sont gardées AVEC l'identifiant pour lequel elles ont été
+  lues, et ne valent que pour celui de l'URL — ce qui appartient à un autre dossier vaut nul, et
+  l'écran attend. Les onglets ET le sélecteur d'exercice ne se montent qu'avec les deux (`pret`) :
+  le sélecteur lit l'`AnneeProvider`, et rendu dans l'en-tête pendant l'attente, HORS de ce
+  fournisseur, il LEVAIT et emportait la page entière — défaut introduit par le premier jet de ce
+  correctif et trouvé en relisant, les tests d'alors ne passant que par des écrans sans exercice.
+  Une modification (TVA, NAF, identité) ne touche que le dossier qu'elle vise. Une lecture refusée
+  le DIT — « Réessayer » relit — au lieu de laisser des squelettes indéfinis, et la dispense de
+  `lecturesVerifiees` qui la couvrait est retirée : sa raison ne regardait que l'en-tête.
+  **Neuf tests, douze mutations, toutes mordent, et le code TEL QU'IL ÉTAIT fait tomber huit des dix
+  tests du fichier.** Chacune des trois dérivations sans identifiant (identité, erreur, années) ne
+  fait tomber que le test écrit pour elle.
+  **LE MÊME DÉFAUT VIVAIT CÔTÉ CLIENT, ET SANS AUCUNE COURSE.** Le sélecteur de société ne quitte pas
+  l'écran non plus, et `ClientInformations` ne remettait pas son formulaire à zéro sur une société
+  qui n'avait encore rien répondu : il gardait les réponses de la précédente, qu'« Enregistrer »
+  écrivait dans la nouvelle — `vehicule_type` compris, qui décide de la case BJ de la 2035. Antérieur
+  à l'étape 1 et déterministe : il suffisait de changer de société. La coque clé désormais l'écran
+  client par société (`<Outlet key>`), ce qui ferme aussi la course de lecture des quatre écrans
+  client. `ClientInformations.test.tsx` garde les deux cas, et les trois mutations mordent (clé
+  retirée, posée côté cabinet, constante).
+  **La question qui en sort, à poser à chaque navigation ajoutée** : non plus « de quoi dépend
+  l'effet ? » mais « ce composant se REMONTE-t-il quand cette dépendance change ? ». Sous une clé,
+  un effet sans annulation écrit dans un composant démonté, ce que React ignore ; au-dessus, il
+  écrit dans l'écran affiché. Balayé le 25/09/2026 : la page d'un dossier et les écrans client
+  étaient les deux cas, l'assistant flottant un troisième, moindre — ouvert pendant qu'on change de
+  dossier, il gardait la conversation du précédent ; il est clé par dossier dans la même correction.
+  La barre, elle, relit sa liste une fois par identifiant.
 - **Et le frère du verrou a rendu un résultat NÉGATIF, mesuré le 21/09/2026** : un drapeau « en
   cours » (`setLoading`, `setSaving`…) relâché hors d'un `finally` a la même conséquence qu'un
   verrou — écran figé, bouton grisé ou spinner éternel. Le balayage brut rend 43 sites et ne dit
@@ -4805,11 +4870,16 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   affiché que la barre ne désignerait plus, et la relecture en boucle sur un dossier introuvable
   (garde retirée, React lève « trop de rendus »). Trois de plus dans `DossiersList.test.tsx` gardent
   ce qui relie les deux écrans : `?nouveau=1` ouvre le formulaire, et la création prévient la barre.
-  **Les deux écrans client restants (`ClientUpload`, `ClientInformations`, `ClientSimulation`) n'ont
-  toujours aucun test de rendu** — dit plutôt que laissé compter : `ClientUpload` porte le MÊME
-  câblage que `ClientHome`, donc son risque est le plus faible des trois maintenant que le calcul
-  est partagé et que l'un des deux est gardé. Elle y est
-  entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre l'affichage » plus haut.
+  **ET LA PAGE D'UN DOSSIER LE MÊME JOUR (`DossierDetail.test.tsx`)**, la vraie page dans la vraie
+  coque : l'IDENTITÉ du dossier d'un dossier à l'autre (neuf tests) et l'assistant flottant qui
+  repart sur le dossier de l'URL — voir « la barre latérale a rouvert une course ».
+  **`ClientInformations` a reçu son premier test de rendu le 25/09/2026**, par un défaut trouvé lui
+  aussi : les réponses d'une société écrites dans une autre (même entrée). **Deux écrans client
+  (`ClientUpload`, `ClientSimulation`) n'ont toujours aucun test de rendu** — dit plutôt que laissé
+  compter : `ClientUpload` porte le MÊME câblage que `ClientHome`, donc son risque est le plus
+  faible des deux maintenant que le calcul est partagé et que l'un des deux est gardé. La liste des
+  dossiers, elle, y est entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre
+  l'affichage » plus haut.
   **Deux doublures à connaître avant d'écrire le prochain test d'écran** : `PiecesTab` lit
   `monCabinetId` d'`AuthContext` (monter un `AuthProvider` complet ferait dépendre le test d'une
   session Supabase), et `piecesAvecTexteOcr` doit rendre sa forme EXACTE
@@ -4848,7 +4918,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1552 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1564 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
