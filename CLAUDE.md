@@ -59,7 +59,10 @@ Conséquences pratiques :
   mouvement bancaire y vivent, à la place des fenêtres qui assombrissaient l'écran). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
   formulaire du tableau de bord par `?nouveau=1`), la recherche de dossiers (`lib/recherche.ts`), la
   navigation globale, le dossier ouvert avec TOUS ses écrans en arborescence, les autres dossiers,
-  et le compte en bas (thème, déconnexion). Réductible en colonne d'icônes, préférence retenue par
+  et le compte en bas. Son menu porte l'apparence du cabinet (au chef seulement, comme sa page),
+  l'installation de l'application, le thème et la déconnexion — rangés là à la demande du cabinet
+  plutôt qu'en lien de navigation et en bouton permanent — et le menu « … » du téléphone porte les
+  MÊMES entrées, écrites une seule fois (`entreesDuCompte`). Réductible en colonne d'icônes, préférence retenue par
   navigateur (`localStorage`, comme le thème) ; réduite, la barre d'onglets du dossier
   (`DossierParcours`) réapparaît en haut du dossier, seul chemin vers ses écrans. **Le mobile ne
   change pas** : barre du haut, navigation en bas, et tout ce que la barre d'ordinateur ajoute y est
@@ -1018,14 +1021,17 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   code, donc il ne peut pas savoir si le commit qui le porte a été publié.
 - **Application installable depuis le navigateur (PWA), 25/09/2026** — choix du cabinet, contre un
   fichier d'installation .exe/.dmg (plusieurs jours de travail, puis des avertissements à
-  l'installation ou des certificats payants chaque année). « Installer l'application » vit en bas de
-  la barre latérale d'ordinateur (`components/BoutonInstallation.tsx`, `lib/installation.ts`) et
+  l'installation ou des certificats payants chaque année). « Installer l'application » est une entrée
+  du menu du compte (`components/BoutonInstallation.tsx`, `lib/installation.ts`) — d'abord un bouton
+  permanent au-dessus du compte, rangée dans le menu le jour même à la demande du cabinet — et
   disparaît dans l'application installée. Edge et Chrome ouvrent leur propre fenêtre d'installation
   par l'invite `beforeinstallprompt`, qu'ils n'émettent qu'après un peu d'usage de la page et jamais
-  une fois l'application installée : en attendant, le bouton donne une consigne (l'icône de la barre
-  d'adresse). Safari reçoit le chemin de son menu (Fichier, puis « Ajouter au Dock », macOS 14 et
-  plus) ; Firefox, qui ne sait pas installer d'application, le conseil d'un autre navigateur. Aucun
-  appel réseau, et l'installation reste un clic de l'utilisateur.
+  une fois l'application installée : en attendant, l'entrée déplie une consigne sous elle, menu
+  ouvert (l'icône de la barre d'adresse). Safari reçoit le chemin de son menu (Fichier, puis
+  « Ajouter au Dock », macOS 14 et plus) ; Firefox, qui ne sait pas installer d'application, le
+  conseil d'un autre navigateur. Aucun appel réseau, et l'installation reste un clic de l'utilisateur.
+  La consigne a une largeur FIXE : sous la barre réduite, le menu s'ouvre au-dessus d'un avatar seul,
+  et une largeur libre la tassait en colonne de deux mots — vu sur capture, pas en relisant.
   **LE MANIFESTE D'UN CABINET QUI A SON LOGO N'ÉTAIT PAS INSTALLABLE — ET C'EST CELUI DE JD CONSULT.**
   Quand le cabinet a un logo, `branding.ts` remplace le manifeste statique par un manifeste construit
   à la volée et servi en `blob:`. Son `start_url: '/'` se résolvait contre `blob:https://…/<uuid>`,

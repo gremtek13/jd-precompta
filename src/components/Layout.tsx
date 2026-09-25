@@ -57,6 +57,32 @@ function Coque() {
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
   const { pathname } = useLocation()
+  // Les entrées du menu du compte, les MÊMES dans le menu du bas de la barre (ordinateur) et dans le
+  // menu « … » (téléphone) : les écrire deux fois, c'est attendre le jour où l'un gagne une entrée que
+  // l'autre n'a pas. L'apparence du cabinet est réservée au chef, comme sa page ; l'installation
+  // s'efface d'elle-même là où elle n'a pas de sens (voir BoutonInstallation). Elle s'installe sous le
+  // nom que montre la barre — celui du cabinet quand il a son logo (voir lib/manifesteCabinet.ts).
+  function entreesDuCompte(fermer: () => void) {
+    return (
+      <>
+        {role === 'cabinet' && estChef && (
+          <NavLink to="/apparence" className={({ isActive }) => `nav-menu-item${isActive ? ' active' : ''}`} onClick={fermer}>
+            <IconApparence width={16} height={16} />
+            Apparence
+          </NavLink>
+        )}
+        <BoutonInstallation nomApplication={branding?.logoUrl ? branding.nom : 'JD Precompta'} fermerMenu={fermer} />
+        <button type="button" className="nav-menu-item" onClick={() => { toggleTheme(); fermer() }}>
+          {theme === 'dark' ? <IconSun width={16} height={16} /> : <IconMoon width={16} height={16} />}
+          {theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
+        </button>
+        <button type="button" className="nav-menu-item" onClick={() => { fermer(); signOut() }}>
+          <IconLogout width={16} height={16} />
+          Déconnexion
+        </button>
+      </>
+    )
+  }
   // Charte graphique du cabinet (voir lib/branding.ts, CabinetBrandingPage) — appliquée ici pour
   // comptables et clients à la fois, puisque les deux passent par ce même Layout. branding reste null
   // (repli sur le logo/couleur JD Precompta par défaut) pour un cabinet qui n'a rien configuré.
@@ -207,13 +233,6 @@ function Coque() {
                 <span className="nav-label-court">Équipe</span>
               </NavLink>
             )}
-            {role === 'cabinet' && estChef && (
-              <NavLink to="/apparence" title="Apparence" className={({ isActive }) => (isActive ? 'active' : '')}>
-                <IconApparence width={18} height={18} />
-                <span className="nav-label-full">Apparence</span>
-                <span className="nav-label-court">Apparence</span>
-              </NavLink>
-            )}
             {role === 'cabinet' && isSuperAdmin && (
               <NavLink to="/comptes-master" title="Comptes master" className={({ isActive }) => (isActive ? 'active' : '')}>
                 <IconComptesMaster width={18} height={18} />
@@ -260,14 +279,10 @@ function Coque() {
           />
         )}
 
-        {/* Installer l'application sur cet ordinateur, juste au-dessus du compte : s'efface dans
-            l'application installée. Elle s'installe sous le nom que montre la barre — celui du
-            cabinet quand il a son logo (voir lib/manifesteCabinet.ts). */}
-        <BoutonInstallation nomApplication={branding?.logoUrl ? branding.nom : 'JD Precompta'} />
-
         {/* Qui est connecté, en bas de la barre latérale (ordinateur seulement — sur mobile la barre
-            du haut n'a pas la place ; le menu "…" garde la déconnexion). Un clic ouvre le menu du
-            compte : thème et déconnexion, rangés là plutôt qu'en boutons permanents. */}
+            du haut n'a pas la place ; le menu "…" porte les mêmes entrées). Un clic ouvre le menu du
+            compte : apparence du cabinet, installation, thème et déconnexion, rangés là plutôt qu'en
+            boutons permanents. */}
         {email && (
           <div className="sidebar-user" ref={compteRef}>
             <button
@@ -286,14 +301,7 @@ function Coque() {
             </button>
             {menuCompte && (
               <div className="options-menu options-menu-compte">
-                <button type="button" className="nav-menu-item" onClick={() => { toggleTheme(); setMenuCompte(false) }}>
-                  {theme === 'dark' ? <IconSun width={16} height={16} /> : <IconMoon width={16} height={16} />}
-                  {theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
-                </button>
-                <button type="button" className="nav-menu-item" onClick={() => { setMenuCompte(false); signOut() }}>
-                  <IconLogout width={16} height={16} />
-                  Déconnexion
-                </button>
+                {entreesDuCompte(() => setMenuCompte(false))}
               </div>
             )}
           </div>
@@ -311,14 +319,7 @@ function Coque() {
           </button>
           {menuOuvert && (
             <div className="options-menu">
-              <button type="button" className="nav-menu-item" onClick={() => { toggleTheme(); setMenuOuvert(false) }}>
-                {theme === 'dark' ? <IconSun width={16} height={16} /> : <IconMoon width={16} height={16} />}
-                {theme === 'dark' ? 'Mode clair' : 'Mode sombre'}
-              </button>
-              <button type="button" className="nav-menu-item" onClick={() => { setMenuOuvert(false); signOut() }}>
-                <IconLogout width={16} height={16} />
-                Déconnexion
-              </button>
+              {entreesDuCompte(() => setMenuOuvert(false))}
             </div>
           )}
         </div>

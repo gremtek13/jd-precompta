@@ -3,11 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import BoutonInstallation from './BoutonInstallation'
 import { ecouterInstallation, oublierInstallation } from '../lib/installation'
 
-// « Installer l'application », tel que le voit l'utilisateur. Ce qui le ferait mentir sans que rien ne
-// casse ailleurs : ouvrir deux fois la fenêtre d'installation sur deux clics rapprochés (le second
-// `prompt()` lève), rester affiché une fois l'application installée, ou disparaître sans rien dire
-// dans un navigateur qui n'a pas encore annoncé d'invite — le cas de tout premier affichage dans Edge
-// et Chrome, qui ne l'annoncent qu'après un peu d'usage.
+// « Installer l'application », l'entrée du menu du compte, telle que la voit l'utilisateur. Ce qui la
+// ferait mentir sans que rien ne casse ailleurs : ouvrir deux fois la fenêtre d'installation sur deux
+// clics rapprochés (le second `prompt()` lève), rester affichée une fois l'application installée, ou
+// disparaître sans rien dire dans un navigateur qui n'a pas encore annoncé d'invite — le cas de tout
+// premier affichage dans Edge et Chrome, qui ne l'annoncent qu'après un peu d'usage.
 
 const UA = {
   chrome: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36',
@@ -38,8 +38,10 @@ function annoncer(choix: 'accepted' | 'dismissed' = 'accepted') {
 const bouton = () => screen.queryByRole('button', { name: /Installer l'application/ })
 
 let arreter: () => void
+let fermer: ReturnType<typeof vi.fn<() => void>>
 beforeEach(() => {
   arreter = ecouterInstallation(window)
+  fermer = vi.fn<() => void>()
 })
 afterEach(() => {
   arreter()
@@ -51,18 +53,20 @@ afterEach(() => {
 describe('Installer l’application — Edge et Chrome', () => {
   it('ouvre la fenêtre du navigateur une seule fois, même sur deux clics rapprochés, puis s’efface', async () => {
     signature(UA.chrome)
-    render(<BoutonInstallation nomApplication="JD Precompta" />)
+    render(<BoutonInstallation nomApplication="JD Precompta" fermerMenu={fermer} />)
     const invite = annoncer('accepted')
     const b = bouton()!
     await act(async () => { b.click(); b.click() })
     expect(invite.prompt).toHaveBeenCalledTimes(1)
+    // Le menu se referme : c'est la fenêtre du navigateur qui prend la suite.
+    expect(fermer).toHaveBeenCalledTimes(1)
     act(() => { window.dispatchEvent(new Event('appinstalled')) })
     expect(bouton()).toBeNull()
   })
 
   it('refusée, l’invite laisse la place à la consigne', async () => {
     signature(UA.chrome)
-    render(<BoutonInstallation nomApplication="JD Precompta" />)
+    render(<BoutonInstallation nomApplication="JD Precompta" fermerMenu={fermer} />)
     const invite = annoncer('dismissed')
     await act(async () => { bouton()!.click() })
     expect(invite.prompt).toHaveBeenCalledTimes(1)
@@ -73,7 +77,7 @@ describe('Installer l’application — Edge et Chrome', () => {
 
   it('avant toute invite, dit où est l’icône et sous quel nom chercher l’application', () => {
     signature(UA.chrome)
-    render(<BoutonInstallation nomApplication="Cabinet Exemple" />)
+    render(<BoutonInstallation nomApplication="Cabinet Exemple" fermerMenu={fermer} />)
     fireEvent.click(bouton()!)
     const consigne = screen.getByRole('note').textContent ?? ''
     expect(consigne).toContain('barre d\'adresse')
@@ -81,15 +85,16 @@ describe('Installer l’application — Edge et Chrome', () => {
     expect(bouton()!.getAttribute('aria-expanded')).toBe('true')
   })
 
-  it('la consigne se referme au clic ailleurs et sur Échap', () => {
+  it('la consigne se déplie dans le menu, qui reste ouvert, et se replie au second clic', () => {
+    // Une phrase à lire, pas une action : refermer le menu l'emporterait avec lui.
     signature(UA.chrome)
-    render(<BoutonInstallation nomApplication="JD Precompta" />)
+    render(<BoutonInstallation nomApplication="JD Precompta" fermerMenu={fermer} />)
     fireEvent.click(bouton()!)
-    fireEvent.mouseDown(document.body)
-    expect(screen.queryByRole('note')).toBeNull()
+    expect(screen.getByRole('note')).toBeTruthy()
+    expect(fermer).not.toHaveBeenCalled()
     fireEvent.click(bouton()!)
-    fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('note')).toBeNull()
+    expect(bouton()!.getAttribute('aria-expanded')).toBe('false')
   })
 })
 
@@ -97,21 +102,21 @@ describe('Installer l’application — ailleurs', () => {
   it('dans l’application installée, ne propose rien, même avec une invite', () => {
     signature(UA.chrome)
     enApplication()
-    render(<BoutonInstallation nomApplication="JD Precompta" />)
+    render(<BoutonInstallation nomApplication="JD Precompta" fermerMenu={fermer} />)
     annoncer()
     expect(bouton()).toBeNull()
   })
 
   it('donne à Safari le chemin de son menu', () => {
     signature(UA.safari)
-    render(<BoutonInstallation nomApplication="JD Precompta" />)
+    render(<BoutonInstallation nomApplication="JD Precompta" fermerMenu={fermer} />)
     fireEvent.click(bouton()!)
     expect(screen.getByRole('note').textContent).toContain('Ajouter au Dock')
   })
 
   it('dit à Firefox d’ouvrir cette adresse dans un autre navigateur', () => {
     signature(UA.firefox)
-    render(<BoutonInstallation nomApplication="JD Precompta" />)
+    render(<BoutonInstallation nomApplication="JD Precompta" fermerMenu={fermer} />)
     fireEvent.click(bouton()!)
     const consigne = screen.getByRole('note').textContent ?? ''
     expect(consigne).toContain(window.location.origin)
@@ -119,7 +124,7 @@ describe('Installer l’application — ailleurs', () => {
   })
 
   it('ne montre rien dans un navigateur dont il ne sait rien dire de juste', () => {
-    render(<BoutonInstallation nomApplication="JD Precompta" />)
+    render(<BoutonInstallation nomApplication="JD Precompta" fermerMenu={fermer} />)
     expect(bouton()).toBeNull()
   })
 })
