@@ -12,6 +12,7 @@ import {
 } from './icons'
 import Avatar from './widgets/Avatar'
 import BarreDossiers from './BarreDossiers'
+import BoutonInstallation from './BoutonInstallation'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from './PanneauDroit'
 
 // Barre latérale déployée ou réduite à ses icônes — préférence d'affichage de ce navigateur, pas un
@@ -258,6 +259,11 @@ function Coque() {
             reduite={reduite}
           />
         )}
+
+        {/* Installer l'application sur cet ordinateur, juste au-dessus du compte : s'efface dans
+            l'application installée. Elle s'installe sous le nom que montre la barre — celui du
+            cabinet quand il a son logo (voir lib/manifesteCabinet.ts). */}
+        <BoutonInstallation nomApplication={branding?.logoUrl ? branding.nom : 'JD Precompta'} />
 
         {/* Qui est connecté, en bas de la barre latérale (ordinateur seulement — sur mobile la barre
             du haut n'a pas la place ; le menu "…" garde la déconnexion). Un clic ouvre le menu du

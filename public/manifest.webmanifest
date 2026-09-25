@@ -1,8 +1,11 @@
 {
+  "id": "/",
   "name": "JD Precompta",
   "short_name": "JD Precompta",
   "description": "Pré-comptabilité JD Consult",
+  "lang": "fr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#F7F5F0",
   "theme_color": "#0F2438",

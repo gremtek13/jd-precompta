@@ -24,6 +24,11 @@ const revision = existsSync(RACINE_NAVIGATEURS)
   : undefined
 const executable = process.env.CHROMIUM ?? (revision ? `${RACINE_NAVIGATEURS}/${revision}/chrome-linux/chrome` : undefined)
 
+// Le Chromium du banc se présente comme « HeadlessChrome », que la barre latérale ne reconnaît pas
+// (voir lib/installation.ts) : sans une signature ordinaire, les captures ne montreraient pas le
+// bouton « Installer l'application » qu'un utilisateur d'Edge ou de Chrome voit dans son onglet.
+const CHROME = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36'
+
 const filtre = process.argv[2] ?? ''
 const VUES = [
   { nom: 'pc-dossier-clair', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false },
@@ -51,11 +56,16 @@ const VUES = [
   { nom: 'pc-mouvement-1280', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
   { nom: 'pc-mouvement-rapproche', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'PRLV ENERGIE SERVICES' },
   { nom: 'mobile-mouvement-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
+  // « Installer l'application », en bas de la barre : la consigne ouverte (le navigateur n'a pas
+  // encore annoncé d'invite), déployée, sombre, puis réduite — où le bouton ne garde que son icône.
+  { nom: 'pc-installer-clair', chemin: '#/dossiers', l: 1440, h: 900, theme: 'light', reduite: false, clic: "Installer l'application" },
+  { nom: 'pc-installer-sombre', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'dark', reduite: false, clic: "Installer l'application" },
+  { nom: 'pc-installer-reduite', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: true, clic: "Installer l'application sur cet ordinateur" },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
 for (const v of VUES) {
-  const contexte = await navigateur.newContext({ viewport: { width: v.l, height: v.h } })
+  const contexte = await navigateur.newContext({ viewport: { width: v.l, height: v.h }, userAgent: CHROME })
   await contexte.addInitScript(({ theme, reduite }) => {
     localStorage.setItem('jd-precompta-theme', theme)
     localStorage.setItem('jd-precompta-barre-reduite', reduite ? '1' : '0')

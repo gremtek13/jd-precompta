@@ -107,7 +107,7 @@ h3 { font-size: 1.02rem; }
 .home-tile:focus-visible, tr.clickable:focus-visible {
   outline: none; box-shadow: 0 0 0 3px var(--ring-primary);
 }
-.sidebar nav a:focus-visible, .tabs button:focus-visible {
+.sidebar nav a:focus-visible, .tabs button:focus-visible, .barre-installer:focus-visible {
   outline: none; box-shadow: 0 0 0 3px var(--ring-primary); border-radius: var(--radius-sm);
 }
 
@@ -1059,6 +1059,27 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 /* Le menu du compte s'ouvre AU-DESSUS du bloc : il est en bas de l'écran. */
 .options-menu-compte { top: auto; bottom: calc(100% + 6px); left: 0; right: auto; }
 
+/* Installer l'application (voir BoutonInstallation), juste au-dessus du compte. C'est elle qui porte
+   la marge automatique quand elle est là : avec deux marges automatiques, la barre partagerait l'espace
+   libre entre les deux et le bouton flotterait au milieu. */
+.barre-installation { position: relative; margin-top: auto; padding-top: 6px; }
+.barre-installation + .sidebar-user { margin-top: 6px; }
+.barre-installer {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 8px 10px; border: none; border-radius: var(--radius-sm); background: transparent;
+  color: var(--color-text-barre); font: inherit; font-size: 0.88rem; font-weight: 500;
+  text-align: left; cursor: pointer;
+  transition: background-color var(--duree) var(--ease), color var(--duree) var(--ease);
+}
+.barre-installer:hover, .barre-installer[aria-expanded="true"] { background: var(--tint-primary); color: var(--color-text); }
+/* La consigne s'ouvre au-dessus, comme le menu du compte. */
+.consigne-installation {
+  top: auto; bottom: calc(100% + 6px); left: 0; right: auto;
+  width: 270px; gap: 6px; padding: 12px 14px; white-space: normal;
+}
+.consigne-installation strong { font-size: 0.86rem; color: var(--color-text); }
+.consigne-installation p { margin: 0; font-size: 0.82rem; line-height: 1.5; color: var(--color-text-light); }
+
 /* Barre réduite à ses icônes (ordinateur seulement). Tout est en CSS sauf ce qui change de nature :
    la recherche devient un bouton, les dossiers deviennent des pastilles (voir Layout, BarreDossiers). */
 @media (min-width: 721px) {
@@ -1075,6 +1096,8 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   .app-shell.barre-reduite .sidebar nav a { justify-content: center; width: 40px; height: 40px; padding: 0; }
   .app-shell.barre-reduite .sidebar-user { align-self: stretch; display: flex; justify-content: center; }
   .app-shell.barre-reduite .barre-compte { width: auto; padding: 4px; }
+  .app-shell.barre-reduite .barre-installation { align-self: stretch; display: flex; justify-content: center; }
+  .app-shell.barre-reduite .barre-installer { width: 40px; height: 40px; padding: 0; justify-content: center; }
   /* Déployée, la barre montre déjà les écrans du dossier ouvert : la barre d'onglets du dossier
      ferait doublon. Réduite, elle revient — c'est alors le seul chemin vers ces écrans. */
   .app-shell:not(.barre-reduite) .nav-groupes { display: none; }
@@ -1225,7 +1248,7 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
   body { background-attachment: scroll; }
   /* Ce que la barre latérale d'ordinateur ajoute n'a pas sa place dans la barre du haut : nouveau
      dossier, recherche et liste des dossiers passent par le tableau de bord, comme avant. */
-  .barre-replier, .barre-nouveau, .barre-recherche, .barre-bouton-rail, .barre-dossiers { display: none; }
+  .barre-replier, .barre-nouveau, .barre-recherche, .barre-bouton-rail, .barre-dossiers, .barre-installation { display: none; }
 
   .sidebar {
     width: 100%; height: auto;

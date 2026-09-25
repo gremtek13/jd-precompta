@@ -252,6 +252,13 @@ export const IconRecherche = (p: IconProps) => base(<>
   <path d="M20 20l-4.5-4.5" />
 </>, p)
 
+// Installer l'application sur cet ordinateur : un écran, et une flèche qui y descend.
+export const IconInstaller = (p: IconProps) => base(<>
+  <rect x="3" y="4" width="18" height="12.5" rx="2" />
+  <path d="M8.5 20.5h7M12 16.5v4" />
+  <path d="M12 7.5v5M9.5 10.5l2.5 2.5 2.5-2.5" />
+</>, p)
+
 export const ICONES_PARCOURS: Record<string, IconComponent> = {
   checklist: IconChecklist,
   documents: IconDocuments,

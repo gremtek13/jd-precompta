@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import { useAuth } from '../context/AuthContext'
 import { assombrir, eclaircir, estCouleurHexValide } from './colors'
+import { manifesteDuCabinet } from './manifesteCabinet'
 import { chargerPoliceCabinet, estPoliceCabinet } from './polices'
 
 export interface CabinetBranding {
@@ -53,18 +54,11 @@ function appliquerFaviconCabinet(logoUrl: string | null, nom: string | null, cou
       document.head.appendChild(lien)
     }
     // Le manifest statique (public/manifest.webmanifest) ne peut pas varier par cabinet — une seule
-    // build pour toute la plateforme — donc reconstruit ici à la volée et servi via une URL blob,
-    // uniquement pour l'icône d'ajout à l'écran d'accueil Android/Chrome (iOS s'appuie sur
-    // apple-touch-icon ci-dessus, pas sur le manifest).
-    const manifest = {
-      name: nom || 'JD Precompta',
-      short_name: nom || 'JD Precompta',
-      start_url: '/',
-      display: 'standalone',
-      background_color: '#F7F5F0',
-      theme_color: couleurPrimaire && estCouleurHexValide(couleurPrimaire) ? couleurPrimaire : '#0F2438',
-      icons: [{ src: logoUrl, sizes: 'any', purpose: 'any' }],
-    }
+    // build pour toute la plateforme — donc reconstruit ici à la volée et servi via une URL blob. C'est
+    // lui qui décide du nom et de l'icône de l'application INSTALLÉE (ordinateur comme Android) ; iOS
+    // s'appuie sur apple-touch-icon ci-dessus. Ses adresses doivent être absolues : voir
+    // lib/manifesteCabinet.ts, où vit la raison.
+    const manifest = manifesteDuCabinet({ origine: window.location.origin, nom, logoUrl, couleurPrimaire })
     if (dernierManifestBlobUrl) URL.revokeObjectURL(dernierManifestBlobUrl)
     dernierManifestBlobUrl = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/json' }))
     if (ancienLienManifest) ancienLienManifest.href = dernierManifestBlobUrl
