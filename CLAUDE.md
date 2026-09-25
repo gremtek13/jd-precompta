@@ -1104,10 +1104,13 @@ ont été découverts, en cherchant à apparier une facture en dollars.
     dit. **Journalisé plutôt que remonté**, et l'arbitrage est écrit : dans le cas courant l'écran
     est déjà reparti à la connexion, donc un message n'aurait personne à qui parler — mais l'avaler
     sans trace rendrait ce chemin indiagnosticable. C'est le précédent `tauxChange.tauxBce`.
-  **Résultat négatif à garder, mesuré en base** : `memberships` porte `UNIQUE (user_id, dossier_id)`,
-  donc deux « Entrée » rapprochés sur « Créer l'accès » (un `<form>`, le pire déclencheur) ne peuvent
-  PAS produire deux accès — la base rattrape, et ce site n'a pas besoin d'un verrou. Ne pas le
-  réenquêter.
+  **Mesuré en base, et à moitié juste** : `memberships` porte `UNIQUE (user_id, dossier_id)`, donc
+  deux « Entrée » rapprochés sur « Créer l'accès » (un `<form>`, le pire déclencheur) ne peuvent pas
+  produire deux ACCÈS — la base rattrape. Il était écrit ici que ce site n'avait donc pas besoin de
+  verrou ; **c'était faux**, et la Routine du 24/09/2026 l'a corrigé sur `main` : la base ne rattrape
+  pas le doublon d'APPEL. Les deux `create-client-access` courent pour la même adresse, et le second
+  échoue sur le compte que le premier vient de créer — un message d'erreur sur un accès bien créé.
+  Le verrou existe depuis (voir la liste des porteurs plus bas).
 - **ET LE BALAYAGE QUI A TROUVÉ QUATRE VERROUS EN ÉTAIT AVEUGLE À DEUX, PAR DEUX PORTES
   DIFFÉRENTES — DONT CELLE QUI CONSOMME UN NUMÉRO DE FACTURE** (23/09/2026). L'audit du 20/09/2026
   cherchait, dit ce fichier, « les gestionnaires `async` qui **dupliquent** quelque chose
@@ -3673,13 +3676,22 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   en parallèle le 20/09/2026 ont écrit « troisième » et « cinquième » pour ce motif dans ce fichier.
   Un rang inscrit au fil du texte oblige à recompter à chaque ajout, sur des paragraphes que
   personne ne relit ensemble : la liste vit donc en un seul endroit, celui-ci.
-  **Onze fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
+  **Douze fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
   (`PiecesTab` et `DocumentsTab`), « C'est une facture » (`DocumentsTab`, qui n'avait aucun verrou),
   « Tout rapprocher automatiquement » (`BanqueTab`), puis quatre trouvés d'un coup par l'audit
   ci-dessous (20/09/2026) : `EnvoyerEmailModal.envoyer`, `SuperPdpFactureModal.appeler`,
-  `FactureAvoirModal.creerAvoir` et `PieceFormModal.save` — et deux de plus le 23/09/2026,
+  `FactureAvoirModal.creerAvoir` et `PieceFormModal.save` — deux de plus le 23/09/2026,
   `FactureFormModal.enregistrer` et `AjouterDocumentsModal.lancerImport`, que cet audit ne POUVAIT
-  pas voir (entrée dédiée plus bas).
+  pas voir (entrée dédiée plus bas) — et `AccesTab.handleCreateAccess` le 24/09/2026, posé par la
+  Routine du matin sur `main` et réuni à cette branche le 25/09/2026. Celui-là figurait pourtant
+  parmi les 36 candidats du balayage ci-dessous (`functions.invoke` sans `.current`), classé avec les
+  32 laissés de côté comme « leur doublon crée une LIGNE, qu'un cabinet voit et supprime ». Ce
+  classement était faux pour lui : la ligne `memberships` est protégée par une contrainte unique (la
+  fonction la détecte et rend 409), donc le doublon ne crée pas de ligne en trop — il fait courir
+  deux appels `auth.admin.createUser` pour la même adresse, avec au bout un message d'erreur qui
+  laisse croire à un échec alors que l'accès vient d'être créé par l'autre requête. **Un candidat
+  écarté par la classification d'un balayage reste un candidat à revérifier au cas par cas, pas un
+  candidat clos.**
   **CE MOTIF SE CHERCHE, IL NE S'ATTEND PAS.** Les cinq premiers ont été trouvés un par un, en
   travaillant sur autre chose. Un balayage a rendu les quatre suivants en une fois, et la requête
   vaut plus que la prise — à rejouer avant de croire le motif épuisé : les gestionnaires `async` qui
@@ -3695,8 +3707,9 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   **Et le formulaire est le pire déclencheur, pas le double clic.** `EnvoyerEmailModal` soumet un
   `<form>` : deux « Entrée » rapprochés suffisent, geste bien plus banal que deux clics.
   **Et porter un verrou n'est pas la même chose qu'avoir porté le défaut** — c'est ce qui a fait
-  écrire « six » à la première tentative de ce recensement. Onze `useRef` de verrouillage existent
-  dans `src`, et six sont nés corrects avec leur fonctionnalité (`VehiculesCard`, `ClotureTab`,
+  écrire « six » à la première tentative de ce recensement. Dix-huit verrous existent aujourd'hui
+  dans `src` (dix-sept `useRef` booléens et l'ensemble par document de « C'est une facture »), et
+  six sont nés corrects avec leur fonctionnalité (`VehiculesCard`, `ClotureTab`,
   `SauvegardeCard`, `RestaurationCard`, `FilCommentaires`, et le `validerEtRapprocherLot` de
   `BanqueTab` — vérifié par `git log -S` sur chaque fichier, pas par relecture). Compter les verrous
   surestime donc le défaut ; c'est la liste ci-dessus qui fait foi. Le motif n'est pas épuisé pour
@@ -4681,6 +4694,17 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   se relâche DANS un `finally` — jamais en clair après l'`await`. La première moitié était écrite
   depuis longtemps ; la seconde était seulement pratiquée, donc elle a fini par être oubliée une
   fois.
+  **ET LA ROUTINE A TROUVÉ, DE SON CÔTÉ, LA SECONDE CONSÉQUENCE DU MÊME CODE** (23/09/2026, sur
+  `main`, qui n'avait pas encore ces tests). Un relâchement posé en clair après le PREMIER `await` ne
+  coûte pas seulement le verrou sur une exception : il tombe AVANT la relecture des événements
+  (`charger()`) et `onUpdated()`, donc le bouton redevenait cliquable pendant la relecture qui suit
+  une transmission réussie — une seconde transmission de la même facture, avant même que la première
+  se soit reflétée à l'écran. Le correctif de cette branche fermait déjà cette fenêtre (le `finally`
+  enveloppe tout le corps), mais **aucun test ne la gardait** : le cas « reste verrouillé pendant la
+  relecture » a été reporté ici à la fusion du 25/09/2026, et rétablir le relâchement prématuré ne
+  fait tomber QUE lui — aucun des quatre autres ne sépare ces deux placements. La version de `main`
+  n'avait pas le `catch` : une exception y sortait du gestionnaire de clic sans aucun message, c'est
+  donc le code de cette branche qui a été gardé.
   **`EcrituresTab` a rejoint la liste le 20/09/2026**, et c'est l'onglet qui le méritait le plus :
   il produit les deux seuls fichiers officiels du projet, le FEC et la piste d'audit. Quatre tests,
   cinq mutations, toutes mordent — dont celle qui compte vraiment : rebrancher `ecrituresSansObjet`
@@ -4774,18 +4798,15 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   tient à une règle écrite et non à un automatisme ; et la SUPPRESSION d'un fichier n'est pas
   démontrable en SQL (voir RGPD.md §8.6), elle est gardée par une lecture du catalogue, plus
   faible et annoncée comme telle.
-  **24/09/2026 — `AccesTab` rejoint la liste**, trouvé en balayant les huit onglets encore sans
-  aucun test de rendu (voir la feuille de route Notion). Son formulaire « Donner un accès client »
-  ne se protégeait que par l'état React `inviting` — même défaut, dixième porteur du motif
-  « un verrou d'exécution est un `useRef`, jamais un état React ». Le doublon n'aurait pas créé
-  une ligne de trop : `create-client-access` appelle `auth.admin.createUser` deux fois pour la
-  même adresse, une course entre les deux appels que la fonction ne peut pas fermer elle-même —
-  au mieux un message incompréhensible pour un accès qui vient pourtant d'être créé, au pire deux
-  appels admin facturés pour rien. Trois tests, trois mutations, toutes mordent (même patron que
-  `FactureAvoirModal` : verrou retiré, déplacé dans le `try`, non relâché dans le `finally`).
-  Dix-sept fichiers de test d'écran désormais, sur 1054 tests répartis en 82 fichiers. Reste sept
-  onglets sans aucun test de rendu : factures, immobilisations, cotisations, estimation,
-  financement, suppléments, virements.
+  **24/09/2026 — le verrou de création d'`AccesTab`**, posé par la Routine du matin sur `main`
+  (commit fa0454a) et réuni à cette branche le 25/09/2026. Son formulaire « Donner un accès client »
+  ne se protégeait que par l'état React `inviting` — douzième porteur du motif « un verrou
+  d'exécution est un `useRef`, jamais un état React » (voir la liste plus haut, et pourquoi la base
+  ne suffisait pas). Trois tests, trois mutations, toutes mordent (verrou retiré, déplacé dans le
+  `try`, non relâché dans le `finally`). **À la fusion, ses trois cas ont rejoint les six
+  d'`AccesTab.test.tsx`** (lecture refusée, retrait confirmé) sur un seul faux client — et c'était à
+  revérifier plutôt qu'à supposer, un faux client qui change pouvant faire passer un test pour une
+  autre raison : la garde retirée fait toujours tomber exactement les deux cas du verrou.
 
 ## Tests
 

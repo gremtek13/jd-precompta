@@ -19,13 +19,30 @@ const faux = vi.hoisted(() => ({
   // surnuméraire arrive. La résoudre tout de suite supprimerait la fenêtre que le verrou ferme.
   resoudre: null as null | ((v: unknown) => void),
   rejeter: null as null | ((e: unknown) => void),
+  // La relecture des événements APRÈS une transmission réussie peut, elle aussi, rester en attente :
+  // c'est la seconde fenêtre que le verrou doit couvrir (voir le cas dédié plus bas).
+  appelsCharger: 0,
+  suspendreRelecture: false,
+  resoudreCharger: null as null | ((v: unknown) => void),
 }))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
     from: (table: string) => {
       if (table === 'facture_superpdp_events') {
-        return { select: () => ({ eq: () => ({ order: () => Promise.resolve({ data: [] }) }) }) }
+        return {
+          select: () => ({
+            eq: () => ({
+              order: () => {
+                faux.appelsCharger += 1
+                if (faux.appelsCharger > 1 && faux.suspendreRelecture) {
+                  return new Promise((resolve) => { faux.resoudreCharger = resolve })
+                }
+                return Promise.resolve({ data: [] })
+              },
+            }),
+          }),
+        }
       }
       throw new Error(`Table non attendue dans ce test : ${table}`)
     },
@@ -70,6 +87,9 @@ async function monter() {
   faux.appels = []
   faux.resoudre = null
   faux.rejeter = null
+  faux.appelsCharger = 0
+  faux.suspendreRelecture = false
+  faux.resoudreCharger = null
   render(
     <SuperPdpFactureModal dossierId="d1" facture={facture} onClose={() => {}} onUpdated={() => {}} />,
   )
@@ -100,6 +120,26 @@ describe('SuperPdpFactureModal — le verrou de transmission', () => {
     const bouton = await monter()
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
     expect(faux.appels).toHaveLength(1)
+  })
+
+  // LE VERROU DOIT TENIR JUSQU'APRÈS LA RELECTURE, pas seulement jusqu'à la réponse de `invoke` —
+  // cas repris de la Routine du 23/09/2026 (commit ac8ce91 sur `main`), qui l'avait écrit
+  // indépendamment. L'ancien code relâchait le verrou juste après ce premier `await`, AVANT de
+  // relire les événements : un clic pendant la relecture qui suit un envoi réussi transmettait alors
+  // une seconde fois la même facture. Aucun des autres cas ne sépare ces deux placements.
+  it('reste verrouillé pendant la relecture qui suit une transmission réussie', async () => {
+    const bouton = await monter()
+    faux.suspendreRelecture = true
+    await act(async () => { bouton.click() })
+    expect(faux.appels).toHaveLength(1)
+
+    await act(async () => { faux.resoudre?.({ data: { ok: true }, error: null }) })
+    expect(faux.appelsCharger).toBe(2)
+
+    await act(async () => { screen.getByRole('button', { name: /Envoi…/ }).click() })
+    expect(faux.appels).toHaveLength(1)
+
+    await act(async () => { faux.resoudreCharger?.({ data: [] }) })
   })
 
   it('relâche le verrou sur une erreur rendue par la fonction, pour laisser réessayer', async () => {
