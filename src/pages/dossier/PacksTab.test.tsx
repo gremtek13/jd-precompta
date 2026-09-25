@@ -18,7 +18,7 @@ import PacksTab from './PacksTab'
 // Aucun test de `src/lib` ne peut voir ça : `lireTout` est juste, `packGenerator` est juste, c'est
 // l'ORDRE D'ARRIVÉE de deux appels corrects qui produit le mensonge.
 
-type Reponse = { data: unknown[]; count: number; error: null }
+type Reponse = { data: unknown[] | null; count: number | null; error: { message: string } | null }
 
 const faux = vi.hoisted(() => ({
   // Une file d'attente par période demandée : le test décide QUAND chaque lecture répond, donc dans
@@ -27,6 +27,8 @@ const faux = vi.hoisted(() => ({
   periodesDemandees: [] as string[],
   // Les packs déjà générés, que l'écran liste avec leurs deux boutons de téléchargement.
   packs: [] as unknown[],
+  // La lecture de l'historique des packs, refusée à la demande.
+  erreurPacks: null as string | null,
   // Ce que le point unique d'ouverture rend. Le doublure vaut mieux qu'un vrai `window.open` ici :
   // ce test garde le CÂBLAGE (l'écran dit-il l'échec ?), le comportement du point unique étant
   // gardé à part par `apercu.test.ts`.
@@ -57,7 +59,11 @@ vi.mock('../../lib/supabase', () => {
       }
     }
     self.then = (resolve: (r: Reponse) => void) => {
-      if (table === 'packs') return resolve({ data: faux.packs, count: faux.packs.length, error: null })
+      if (table === 'packs') {
+        return faux.erreurPacks
+          ? resolve({ data: null, count: null, error: { message: faux.erreurPacks } })
+          : resolve({ data: faux.packs, count: faux.packs.length, error: null })
+      }
       // Les pièces sans date ne dépendent d'aucune période : elles répondent tout de suite, pour
       // que le test n'ait à ordonner QUE les deux lectures qui courent l'une contre l'autre.
       if (etat.estSansDate) return resolve({ data: [], count: 0, error: null })
@@ -89,6 +95,7 @@ beforeEach(() => {
   faux.enAttente = []
   faux.periodesDemandees = []
   faux.packs = []
+  faux.erreurPacks = null
   faux.apercu = { ok: true }
   faux.cheminsDemandes = []
 })
@@ -181,5 +188,30 @@ describe('PacksTab — le téléchargement d’un pack', () => {
 
     expect(faux.cheminsDemandes).toEqual(['d1/p/recap.xlsx'])
     expect(screen.queryAllByText(/bloquée par le navigateur/)).toHaveLength(0)
+  })
+})
+
+// L'HISTORIQUE LU EN PARTIE LE DIT — et le vide n'y est plus une affirmation.
+//
+// `loadPacks` jetait son drapeau, et le scanner ne le voyait pas : le nom `lecture` était lu dans la
+// fonction VOISINE (l'aperçu), et le contrôle jugeait les noms à l'échelle du fichier. Tronqué,
+// l'historique cache un pack déjà généré — donc peut-être déjà envoyé — et invite à le régénérer ;
+// refusé, il affirmait « Aucun pack généré », le pire sens possible.
+describe('PacksTab — l’historique des packs', () => {
+  it('lu en partie, il le dit, et n’affirme pas qu’aucun pack n’a été généré', async () => {
+    faux.erreurPacks = 'refus simulé'
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+
+    expect(screen.getByText(/Les packs déjà générés n'ont pas pu être lus en entier \(lecture interrompue après 0 ligne\(s\) : refus simulé\)/)).toBeTruthy()
+    expect(screen.queryAllByText(/Aucun pack généré/)).toHaveLength(0)
+  })
+
+  it('lu en entier et vide, il dit bien qu’il n’y a aucun pack', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « l'écran ne dit plus "aucun pack" sur une panne » serait
+    // satisfait par un écran qui ne le dit JAMAIS, et « il signale » par un écran qui signale toujours.
+    await act(async () => { render(<PacksTab dossierId="d1" dossierNom="Dossier test" />) })
+
+    expect(screen.getByText(/Aucun pack généré/)).toBeTruthy()
+    expect(screen.queryAllByText(/n'ont pas pu être lus/)).toHaveLength(0)
   })
 })

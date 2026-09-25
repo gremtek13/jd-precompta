@@ -1037,6 +1037,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
   const [pdfFormat, setPdfFormat] = useState<FormatMontant>('signe')
   const [pdfExtracting, setPdfExtracting] = useState(false)
   const [documentsReleve, setDocumentsReleve] = useState<DocumentDivers[]>([])
+  // Tronquée, cette liste ne ment pas sur un montant : elle CACHE un relevé déjà classé, qu'on croit
+  // alors devoir redemander au client ou redéposer.
+  const [motifReleves, setMotifReleves] = useState<string | null>(null)
   // Nom du fichier en cours d'import (voir audit ergonomie) — persisté sur chaque ligne créée
   // (source_fichier) pour pouvoir retrouver le relevé d'origine plus tard, notamment quand le libellé
   // est retombé sur le générique "Mouvement bancaire".
@@ -1048,7 +1051,10 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
     lireTout<DocumentDivers>((debut, fin) =>
       supabase.from('documents_divers').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).eq('categorie', 'releve_bancaire').order('id').range(debut, fin),
-    ).then((lecture) => setDocumentsReleve(lecture.lignes))
+    ).then((lecture) => {
+      setDocumentsReleve(lecture.lignes)
+      setMotifReleves(lecture.complete ? null : lecture.motif)
+    })
   }, [dossierId])
 
   // Même Blob générique que handlePdfBlob ci-dessous : un fichier fraîchement déposé (File) ou un CSV
@@ -1313,6 +1319,13 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes }: { dossie
         <button type="button" className={`btn btn-sm ${source === 'csv' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSource('csv')}>CSV</button>
         <button type="button" className={`btn btn-sm ${source === 'pdf' ? 'btn-primary' : 'btn-outline'}`} onClick={() => setSource('pdf')}>PDF</button>
       </div>
+
+      <BandeauLecturePartielle
+        quoi="Les relevés déjà classés dans Documents"
+        accord="lus"
+        motif={motifReleves}
+        consequence="Un relevé peut donc manquer à la liste ci-dessous sans être absent de Documents : s’il n’y apparaît pas, dépose le fichier directement."
+      />
 
       {source === 'csv' && (
         <>

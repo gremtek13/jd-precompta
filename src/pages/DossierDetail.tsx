@@ -25,6 +25,7 @@ import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
 import Avatar from '../components/widgets/Avatar'
+import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { anneeDe } from '../lib/format'
 import { lireTout } from '../lib/lectureComplete'
 import { messageErreur } from '../lib/messageErreur'
@@ -72,8 +73,9 @@ export default function DossierDetail() {
   const erreurDossier = lu && lu.id === id ? lu.erreur : null
   const [essaiDossier, setEssaiDossier] = useState(0)
   const [detectingNaf, setDetectingNaf] = useState(false)
-  const [annees, setAnnees] = useState<{ id: string; liste: number[] } | null>(null)
+  const [annees, setAnnees] = useState<{ id: string; liste: number[]; motif: string | null } | null>(null)
   const anneesDisponibles = annees && annees.id === id ? annees.liste : null
+  const motifAnnees = annees && annees.id === id ? annees.motif : null
   // Les onglets ET le sélecteur d'exercice de l'en-tête — qui lit le même AnneeProvider — ne se
   // montent qu'une fois l'identité et les années du dossier de l'URL connues, jamais l'une sans
   // l'autre : les années arrivent souvent AVANT l'identité, et l'en-tête se rend aussi pendant
@@ -121,7 +123,8 @@ export default function DossierDetail() {
     Promise.all([
       // Lues par tranches : tronquées, elles ne perdent pas des lignes visibles — elles font
       // disparaître un EXERCICE du sélecteur, et tout ce que le cabinet regarde ensuite est filtré
-      // par lui (voir lib/lectureComplete.ts).
+      // par lui (voir lib/lectureComplete.ts). Ce commentaire le disait depuis le début pendant que
+      // le drapeau partait à la poubelle : la page le DIT désormais, sous la barre de ses écrans.
       lireTout<{ date_piece: string | null }>((debut, fin) =>
         supabase.from('pieces').select('date_piece', { count: 'exact' })
           .eq('dossier_id', id).not('date_piece', 'is', null).order('id').range(debut, fin),
@@ -140,7 +143,11 @@ export default function DossierDetail() {
       for (const p of pcs.lignes) if (p.date_piece) annees.add(anneeDe(p.date_piece))
       for (const l of lgs.lignes) annees.add(anneeDe(l.date))
       for (const e of ecr.lignes) annees.add(anneeDe(e.date))
-      setAnnees({ id, liste: [...annees].sort((a, b) => b - a) })
+      setAnnees({
+        id,
+        liste: [...annees].sort((a, b) => b - a),
+        motif: [pcs, lgs, ecr].find((l) => !l.complete)?.motif ?? null,
+      })
     })
     return () => { annule = true }
   }, [id])
@@ -259,6 +266,15 @@ export default function DossierDetail() {
         <AnneeProvider key={id} defaut={calculerAnneeParDefaut(anneesDisponibles)}>
           {cockpit}
           <DossierParcours tab={tab} onChange={allerA} />
+          <BandeauLecturePartielle
+            quoi="Les dates des justificatifs, relevés et écritures"
+            motif={motifAnnees}
+            consequence={
+              'Le sélecteur d’exercice de l’en-tête peut donc omettre une année — un exercice absent de ' +
+              'la liste n’est pas forcément vide —, et l’exercice ouvert d’office n’est peut-être pas le ' +
+              'plus récent.'
+            }
+          />
 
           {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={allerA} />}
           {tab === 'pieces' && <PiecesTab dossierId={id} />}

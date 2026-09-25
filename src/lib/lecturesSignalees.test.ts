@@ -26,6 +26,14 @@ import { describe, expect, it } from 'vitest'
 // désormais leur drapeau, et TOUTE lecture qui le jetterait est une faute.
 // La version faible est écrite ici plutôt qu'effacée : c'est elle qui permet de reprendre ce
 // contrôle sur un dépôt où le portage n'est pas fini, sans le rendre inécoutable.
+//
+// ET CE SCANNER NE LISAIT QUE TROIS FORMES D'ÉCRITURE — HUIT APPELS SUR 118 LUI ÉCHAPPAIENT
+// (25/09/2026). Écrits `lireTout(…).then((lecture) => …)` ou `Promise.all([…]).then(([a, b]) => …)`,
+// ils n'étaient ni comptés ni vérifiés, et cinq jetaient leur drapeau : les trois lectures qui font
+// la liste des exercices d'un dossier (sous un commentaire qui décrivait le dégât), les relevés déjà
+// classés de l'import bancaire, les catégories de la Balance. Le « 110 sites » ci-dessous était donc
+// vrai des formes connues, pas du dépôt. C'est désormais le RECENSEMENT des appels qui fait foi : un
+// appel qu'aucune forme ne lie est une FAUTE, et la prochaine forme se signalera d'elle-même.
 
 /** Les exceptions portent une RAISON et un NOMBRE — dispenser un fichier dispenserait ses lectures
  *  correctes aussi, et une rechute y passerait sans un mot (leçon de `datesUtc.test.ts`). */
@@ -109,8 +117,13 @@ function groupe(src: string, i: number): { corps: string; fin: number } {
  * garde réellement l'appariement est la mutation qui décale `noms[k]` d'un cran, et celle-là mord.
  */
 function decoupe(corps: string): string[] {
-  const entrees: string[] = []
-  let prof = 0; let cour = ''; let chaine: string | null = null
+  return entreesPositionnees(corps).map((e) => e.texte)
+}
+
+/** Les mêmes entrées, chacune avec sa position dans `corps` — pour savoir QUEL appel elle porte. */
+function entreesPositionnees(corps: string): { texte: string; debut: number }[] {
+  const entrees: { texte: string; debut: number }[] = []
+  let prof = 0; let cour = ''; let debut = 0; let chaine: string | null = null
   for (let i = 0; i < corps.length; i++) {
     const c = corps[i]
     if (chaine) {
@@ -119,11 +132,11 @@ function decoupe(corps: string): string[] {
     } else if (c === '"' || c === "'" || c === '`') chaine = c
     else if (c === '(' || c === '[' || c === '{') prof++
     else if (c === ')' || c === ']' || c === '}') prof--
-    else if (c === ',' && prof === 0) { entrees.push(cour); cour = ''; continue }
+    else if (c === ',' && prof === 0) { entrees.push({ texte: cour, debut }); cour = ''; debut = i + 1; continue }
     cour += c
   }
-  entrees.push(cour)
-  while (entrees.length > 0 && entrees[entrees.length - 1].trim() === '') entrees.pop()
+  entrees.push({ texte: cour, debut })
+  while (entrees.length > 0 && entrees[entrees.length - 1].texte.trim() === '') entrees.pop()
   return entrees
 }
 
@@ -157,22 +170,139 @@ export function nomsCouverts(src: string): Set<string> {
 
 export interface Liaison { nom: string; couverte: boolean; table: string }
 
-/** Toutes les liaisons d'un résultat de `lireTout`, dans leurs trois formes d'écriture. */
+/** Nom donné à un appel qu'aucune forme connue ne lie : il est compté en faute, jamais sauté. */
+export const FORME_NON_RECONNUE = '<forme non reconnue>'
+
+/**
+ * Chaque APPEL de `lireTout`, par sa position — sa définition exclue (elle vit dans
+ * lib/lectureComplete.ts et, recopiée, dans deux Edge Functions).
+ *
+ * C'est ce RECENSEMENT qui fait foi, et c'est la leçon du 25/09/2026 : les trois formes connues
+ * liaient 110 appels sur 118. Les huit autres s'écrivaient `lireTout(…).then((lecture) => …)` ou
+ * `Promise.all([…]).then(([a, b]) => …)`, et le scanner ne les voyait pas du tout — cinq d'entre eux
+ * jetaient leur drapeau, dont les trois lectures qui font la liste des exercices d'un dossier, sous
+ * un commentaire qui décrivait déjà le dégât. Un appel qu'aucune forme ne lie est désormais une
+ * FAUTE : la prochaine forme d'écriture se signalera d'elle-même au lieu de passer en silence.
+ */
+export function appelsLireTout(src: string): number[] {
+  return [...src.matchAll(/\blireTout\s*[<(]/g)]
+    .map((m) => m.index!)
+    .filter((i) => !/\bfunction\s+$/.test(src.slice(Math.max(0, i - 40), i)))
+}
+
+/** Fin (parenthèse fermante) de l'appel dont le jeton `lireTout` commence en `i`. */
+function finAppel(src: string, i: number): number {
+  let j = i + 'lireTout'.length
+  while (/\s/.test(src[j] ?? '')) j++
+  if (src[j] === '<') {
+    // L'argument de type, qui peut porter ses propres chevrons ; une flèche `=>` n'en ferme aucun.
+    let prof = 0
+    for (; j < src.length; j++) {
+      if (src[j] === '<') prof++
+      else if (src[j] === '>' && src[j - 1] !== '=') { prof--; if (prof === 0) { j++; break } }
+    }
+    while (/\s/.test(src[j] ?? '')) j++
+  }
+  return src[j] === '(' ? groupe(src, j).fin : -1
+}
+
+/**
+ * Le rappel d'un `.then(` qui suit la position `fin`, s'il y en a un : son paramètre tel qu'écrit
+ * (un nom, `{ … }` ou `[ … ]`) et son texte entier. C'est DANS ce texte que le drapeau doit être lu —
+ * le paramètre n'existe que là, et un même nom lu ailleurs dans le fichier ne prouve rien (dans
+ * `BanqueTab`, `lecture.complete` est lu par une autre lecture que celle des relevés).
+ */
+function rappelThen(src: string, fin: number): { parametre: string; texte: string } | null {
+  const suite = /^\s*\.\s*then\s*\(/.exec(src.slice(fin + 1))
+  if (!suite) return null
+  const ouverture = fin + suite[0].length
+  const texte = groupe(src, ouverture).corps
+  const sansAsync = texte.replace(/^\s*async\s+/, '')
+  let parametre: string | null = null
+  if (/^\s*\(/.test(sansAsync)) {
+    const debut = sansAsync.indexOf('(')
+    const { corps, fin: fermeture } = groupe(sansAsync, debut)
+    if (/^\s*=>/.test(sansAsync.slice(fermeture + 1))) {
+      parametre = corps.trim().replace(/^([A-Za-z_$][\w$]*)\s*:[\s\S]*$/, '$1')
+    }
+  } else {
+    parametre = /^\s*([A-Za-z_$][\w$]*)\s*=>/.exec(sansAsync)?.[1] ?? null
+  }
+  return parametre ? { parametre, texte } : null
+}
+
+/** Les blocs `{ … }` du texte, hors chaînes, chacun par ses deux bornes. */
+function blocs(src: string): [number, number][] {
+  const paires: [number, number][] = []
+  const pile: number[] = []
+  let chaine: string | null = null
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i]
+    if (chaine) {
+      if (c === '\\') { i++; continue }
+      if (c === chaine) chaine = null
+      continue
+    }
+    if (c === '"' || c === "'" || c === '`') { chaine = c; continue }
+    if (c === '{') pile.push(i)
+    else if (c === '}') { const o = pile.pop(); if (o !== undefined) paires.push([o, i]) }
+  }
+  return paires
+}
+
+/**
+ * Les noms couverts là où vit une déclaration faite en `p` : de `p` à la fin du bloc qui la
+ * contient.
+ *
+ * Pas dans le fichier entier, et c'est une faute trouvée qui l'a exigé (25/09/2026) : `PacksTab`
+ * déclare `const lecture = await lireTout(…)` dans DEUX fonctions, et seule la seconde lit son
+ * drapeau. Jugé à l'échelle du fichier, le nom était « couvert », et la liste des packs déjà
+ * générés jetait le sien en silence depuis le portage. Un nom n'existe que dans son bloc ; son
+ * drapeau doit y être lu.
+ */
+function couvertsDansLaPortee(src: string, lesBlocs: [number, number][], p: number): Set<string> {
+  let fin = src.length
+  for (const [ouvre, ferme] of lesBlocs) if (ouvre < p && p < ferme && ferme < fin) fin = ferme
+  return nomsCouverts(src.slice(p, fin))
+}
+
+/** Toutes les liaisons d'un résultat de `lireTout`, dans leurs cinq formes d'écriture — et, en
+ *  faute, tout appel qu'aucune d'elles ne lie. */
 export function liaisonsLireTout(source: string): Liaison[] {
   const src = sansCommentaires(source)
-  const couverts = nomsCouverts(src)
+  const lesBlocs = blocs(src)
   const liaisons: Liaison[] = []
+  const lies = new Set<number>()
   const tableDe = (bout: string) => /from\(\s*['"`]([^'"`]+)/.exec(bout)?.[1] ?? '?'
-  const ajouter = (nom: string, bout: string) => {
-    const couverte = nom.startsWith('{')
-      ? nom.includes('complete') || nom.includes('motif')
-      : couverts.has(nom)
-    liaisons.push({ nom, couverte, table: tableDe(bout) })
+  const couvertParNom = (nom: string, portee: Set<string>) => (nom.startsWith('{')
+    ? nom.includes('complete') || nom.includes('motif')
+    : portee.has(nom))
+  const ajouter = (nom: string, bout: string, portee: Set<string>) => {
+    liaisons.push({ nom, couverte: couvertParNom(nom, portee), table: tableDe(bout) })
+  }
+  const appels = appelsLireTout(src)
+  // Les appels portés par une entrée : chaque entrée en lie UN, le premier ; un second resterait non lié.
+  const lierEntrees = (debutGroupe: number, corps: string, noms: string[], portee: Set<string>) => {
+    let k = 0
+    for (const e of entreesPositionnees(corps)) {
+      const debut = debutGroupe + 1 + e.debut
+      const premier = appels.find((p) => p >= debut && p < debut + e.texte.length)
+      if (premier !== undefined) {
+        lies.add(premier)
+        ajouter(noms[k] ?? `<position ${k}>`, e.texte, portee)
+      }
+      k++
+    }
   }
 
   // 1 et 2 — `const X = await lireTout(` et `const { … } = await lireTout(`
   for (const m of source.matchAll(/const\s+(\{[^}]*\}|[A-Za-z_$][\w$]*)\s*=\s*await\s+lireTout\s*[<(]/g)) {
-    ajouter(m[1].trim(), source.slice(m.index! + m[0].length, m.index! + m[0].length + 400))
+    lies.add(m.index! + m[0].lastIndexOf('lireTout'))
+    ajouter(
+      m[1].trim(),
+      source.slice(m.index! + m[0].length, m.index! + m[0].length + 400),
+      couvertsDansLaPortee(src, lesBlocs, m.index!),
+    )
   }
   // 3 — entrée d'un `Promise.all`, la forme normale d'un chargement d'écran ici : elle s'écrit
   //     SANS `await`, donc elle échappe à tout scanner ancré sur `await`.
@@ -181,11 +311,34 @@ export function liaisonsLireTout(source: string): Liaison[] {
     const { corps: motif, fin } = groupe(src, i)
     if (!/^\s*=\s*await\s+Promise\.all\s*\(\s*\[/.test(src.slice(fin + 1, fin + 60))) continue
     const j = src.indexOf('[', src.indexOf('Promise.all', fin))
-    const entrees = decoupe(groupe(src, j).corps)
     // La virgule de queue du MOTIF est retirée par `decoupe` comme celle des entrées : sans les
     // deux, l'appariement glisse d'un cran — et un écran de ce dépôt en porte une.
-    const noms = decoupe(motif).map((n) => n.trim())
-    entrees.forEach((e, k) => { if (e.includes('lireTout')) ajouter(noms[k] ?? `<position ${k}>`, e) })
+    lierEntrees(j, groupe(src, j).corps, decoupe(motif).map((n) => n.trim()), couvertsDansLaPortee(src, lesBlocs, m.index!))
+  }
+  // 4 — `lireTout(…).then((lecture) => …)` : le drapeau se lit dans le rappel.
+  for (const p of appels) {
+    if (lies.has(p)) continue
+    const fin = finAppel(src, p)
+    if (fin === -1) continue
+    const rappel = rappelThen(src, fin)
+    if (!rappel || rappel.parametre.startsWith('[')) continue
+    lies.add(p)
+    ajouter(rappel.parametre, src.slice(p, fin + 1), nomsCouverts(rappel.texte))
+  }
+  // 5 — `Promise.all([…]).then(([a, b]) => …)` : les entrées appariées au motif du rappel.
+  for (const m of src.matchAll(/\bPromise\.all\s*\(\s*\[/g)) {
+    const ouverture = src.indexOf('(', m.index!)
+    const tableau = src.indexOf('[', ouverture)
+    const { fin } = groupe(src, ouverture)
+    const rappel = rappelThen(src, fin)
+    if (!rappel || !rappel.parametre.startsWith('[')) continue
+    const noms = decoupe(rappel.parametre.slice(1, -1)).map((n) => n.trim())
+    lierEntrees(tableau, groupe(src, tableau).corps, noms, nomsCouverts(rappel.texte))
+  }
+  // Tout appel resté sans liaison : une forme que ce scanner ne sait pas lire. Il ne peut rien
+  // dire de son drapeau, donc il le compte comme jeté — « aveugle » ne doit jamais valoir « propre ».
+  for (const p of appels) {
+    if (!lies.has(p)) liaisons.push({ nom: FORME_NON_RECONNUE, couverte: false, table: tableDe(src.slice(p, p + 400)) })
   }
   return liaisons
 }
@@ -223,10 +376,12 @@ describe('toute lecture de collection dit si elle est partielle', () => {
   it('voit toujours autant de lectures qu’il y en a', () => {
     // Garde SYMÉTRIQUE : « aucune lecture jetée » est aussi ce que rend un scanner qui ne voit plus
     // AUCUNE lecture — la panne qui ressemble exactement au succès, et que ce dépôt a déjà payée
-    // sous six autres noms. Mesuré le 22/09/2026 : 110 sites dans 35 fichiers.
+    // sous six autres noms. Mesuré le 22/09/2026 : 110 sites dans 35 fichiers — les formes connues
+    // seulement. 118 le 25/09/2026, TOUS les appels du dépôt, les deux formes `.then` comprises.
     const liaisons = TOUTES.flatMap((f) => liaisonsLireTout(f.texte))
-    expect(liaisons.length).toBeGreaterThanOrEqual(110)
+    expect(liaisons.length).toBeGreaterThanOrEqual(118)
     expect(liaisons.every((l) => l.couverte)).toBe(true)
+    expect(liaisons.filter((l) => l.nom === FORME_NON_RECONNUE)).toEqual([])
   })
 
   it('n’admet que des exceptions RÉELLES, chacune portant sa raison et son compte', () => {
@@ -272,6 +427,65 @@ const lectureA = await lireTout((d, f) => supabase.from('pieces').select('*').ra
 setPieces(lectureA.lignes)
 `
 
+const PAR_THEN = `
+lireTout((d, f) => supabase.from('documents_divers').select('*').range(d, f))
+  .then((lecture) => setDocuments(lecture.lignes))
+`
+
+const PAR_THEN_SIGNALE = `
+lireTout<Doc>((d, f) => supabase.from('documents_divers').select('*').range(d, f))
+  .then(async (lecture: LectureComplete<Doc>) => {
+    setDocuments(lecture.lignes)
+    setMotif(lecture.complete ? null : lecture.motif)
+  })
+`
+
+// Le même nom, couvert AILLEURS dans le fichier : c'est la forme exacte de BanqueTab, où
+// `lecture.complete` est lu par la lecture des mouvements et pas par celle des relevés.
+const MEME_NOM_AILLEURS = `
+const lecture = await lireTout((d, f) => supabase.from('lignes_bancaires').select('*').range(d, f))
+setMotif(lecture.motif)
+lireTout((d, f) => supabase.from('documents_divers').select('*').range(d, f))
+  .then((lecture) => setDocuments(lecture.lignes))
+`
+
+const TOUT_PAR_THEN = `
+Promise.all([
+  lireTout((d, f) => supabase.from('pieces').select('*').range(d, f)),
+  // une virgule, dans un commentaire, comme partout ici
+  lireTout((d, f) => supabase.from('categories').select('*').range(d, f)),
+]).then(([pcs, cats]) => {
+  setMotif(pcs.motif)
+})
+`
+
+const DESTRUCTURE_THEN = `
+lireTout((d, f) => supabase.from('pieces').select('*').range(d, f)).then(({ lignes }) => setPieces(lignes))
+lireTout((d, f) => supabase.from('categories').select('*').range(d, f)).then(({ lignes, motif }) => { setCats(lignes); setMotif(motif) })
+`
+
+// La forme exacte de PacksTab : le même nom dans deux fonctions, une seule lit son drapeau.
+const DEUX_FONCTIONS_MEME_NOM = `
+async function chargerPacks() {
+  const lecture = await lireTout((d, f) => supabase.from('packs').select('*').range(d, f))
+  setPacks(lecture.lignes)
+}
+async function chargerApercu() {
+  const lecture = await lireTout((d, f) => supabase.from('pieces').select('*').range(d, f))
+  setMotif(lecture.complete ? null : lecture.motif)
+}
+`
+
+const FORME_INCONNUE = `
+const pieces = (await lireTout((d, f) => supabase.from('pieces').select('*').range(d, f))).lignes
+`
+
+const DEFINITION = `
+export async function lireTout<T>(lire: (debut: number, fin: number) => unknown) {
+  return { lignes: [] as T[], complete: true, motif: null }
+}
+`
+
 describe('le scanner, éprouvé sur des sources synthétiques', () => {
   it('attrape la lecture jetée d’un fichier qui en signale une autre', () => {
     expect(lecturesNonSignalees('faux.tsx', AVEC_COMMENTAIRE)).toEqual(['faux.tsx — lectureB [categories]'])
@@ -299,5 +513,38 @@ describe('le scanner, éprouvé sur des sources synthétiques', () => {
   it('apparie les entrées d’un `Promise.all` malgré la virgule de queue du motif', () => {
     expect(liaisonsLireTout(AVEC_COMMENTAIRE).map((l) => l.nom)).toEqual(['lectureA', 'lectureB'])
     expect(liaisonsLireTout(AVEC_COMMENTAIRE).map((l) => l.table)).toEqual(['pieces', 'categories'])
+  })
+
+  it('voit la forme `lireTout(…).then((lecture) => …)` et y attrape le drapeau jeté', () => {
+    expect(lecturesNonSignalees('faux.tsx', PAR_THEN)).toEqual(['faux.tsx — lecture [documents_divers]'])
+    // Rappel `async` et paramètre typé : la même forme, écrite comme on l'écrit vraiment.
+    expect(lecturesNonSignalees('faux.tsx', PAR_THEN_SIGNALE)).toEqual([])
+  })
+
+  it('lit le drapeau DANS le rappel : le même nom lu ailleurs dans le fichier ne couvre rien', () => {
+    expect(lecturesNonSignalees('faux.tsx', MEME_NOM_AILLEURS)).toEqual(['faux.tsx — lecture [documents_divers]'])
+  })
+
+  it('voit la forme `Promise.all([…]).then(([a, b]) => …)` et en apparie les entrées', () => {
+    expect(liaisonsLireTout(TOUT_PAR_THEN).map((l) => l.nom)).toEqual(['pcs', 'cats'])
+    expect(lecturesNonSignalees('faux.tsx', TOUT_PAR_THEN)).toEqual(['faux.tsx — cats [categories]'])
+  })
+
+  it('juge chaque déclaration dans SON bloc : le même nom couvert dans la fonction voisine ne compte pas', () => {
+    expect(lecturesNonSignalees('faux.tsx', DEUX_FONCTIONS_MEME_NOM)).toEqual(['faux.tsx — lecture [packs]'])
+  })
+
+  it('comprend un paramètre déstructuré dans le rappel', () => {
+    expect(lecturesNonSignalees('faux.tsx', DESTRUCTURE_THEN)).toEqual(['faux.tsx — { lignes } [pieces]'])
+  })
+
+  it('compte en FAUTE un appel écrit sous une forme qu’il ne sait pas lire — jamais en silence', () => {
+    expect(lecturesNonSignalees('faux.tsx', FORME_INCONNUE)).toEqual([`faux.tsx — ${FORME_NON_RECONNUE} [pieces]`])
+  })
+
+  it('ne prend pas la DÉFINITION de `lireTout` pour un appel', () => {
+    // Elle vit dans lib/lectureComplete.ts et, recopiée, dans deux Edge Functions : comptée comme
+    // un appel non lié, elle ferait crier le scanner sur trois fichiers corrects.
+    expect(liaisonsLireTout(DEFINITION)).toEqual([])
   })
 })

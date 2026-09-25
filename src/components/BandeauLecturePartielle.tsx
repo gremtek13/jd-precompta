@@ -12,16 +12,27 @@
 // infobulle. Côté cabinet il s'affiche : c'est ce qu'on recopiera dans un signalement. Côté client
 // il reste en infobulle — un chiffre de pagination ne veut rien dire pour lui, et les écrans client
 // parlent sa langue (« en cours de vérification », jamais « à valider »).
-export default function BandeauLecturePartielle({ quoi, motif, consequence, technique = true }: {
+//
+// `accord` : le participe s'accorde avec `quoi`, et c'est l'appelant qui le dit — « Les écritures…
+// n'ont pas pu être lues », « Les mouvements… lus », « La liste… n'a pas pu être lue ». Le deviner
+// d'un nom français serait un pari, et une faute d'accord dans un message d'alerte le fait passer
+// pour une négligence, c'est-à-dire exactement ce qu'on ne veut pas qu'il ait l'air d'être.
+export type AccordLecture = 'lues' | 'lus' | 'lue' | 'lu'
+
+const AFFICHE: Record<AccordLecture, string> = { lues: 'affichées', lus: 'affichés', lue: 'affichée', lu: 'affiché' }
+
+export default function BandeauLecturePartielle({ quoi, motif, consequence, technique = true, accord = 'lues' }: {
   quoi: string
   motif: string | null
   consequence: string
   technique?: boolean
+  accord?: AccordLecture
 }) {
   if (!motif) return null
+  const auxiliaire = accord === 'lues' || accord === 'lus' ? 'n\'ont' : 'n\'a'
   return (
     <p className="error-text" title={technique ? undefined : motif}>
-      {quoi} n'ont pas pu être {technique ? `lues en entier (${motif})` : 'affichées en entier'}. {consequence}
+      {quoi} {auxiliaire} pas pu être {technique ? `${accord} en entier (${motif})` : `${AFFICHE[accord]} en entier`}. {consequence}
     </p>
   )
 }

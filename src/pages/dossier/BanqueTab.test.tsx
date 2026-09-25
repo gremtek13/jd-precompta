@@ -17,6 +17,8 @@ const faux = vi.hoisted(() => ({
   // fenêtre réelle pendant laquelle un second clic arrive. La résoudre tout de suite supprimerait
   // la fenêtre même que le verrou est censé fermer.
   resoudreUpdateLigne: null as null | (() => void),
+  // La lecture des relevés déjà classés dans Documents, refusée à la demande.
+  erreurReleves: null as string | null,
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -63,6 +65,9 @@ vi.mock('../../lib/supabase', () => {
         }
         if (table === 'lignes_bancaires') {
           return Promise.resolve({ data: faux.lignes, error: null, count: faux.lignes.length }).then(suite)
+        }
+        if (table === 'documents_divers' && faux.erreurReleves) {
+          return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
         }
         if (table === 'pieces') {
           // Le `count` est OBLIGATOIRE ici : sans total annoncé, `lireTout` déclare la lecture
@@ -118,6 +123,7 @@ function reinitialiser() {
   faux.pieces = [pieceDeTest()]
   faux.updatesLignes = []
   faux.resoudreUpdateLigne = null
+  faux.erreurReleves = null
 }
 
 describe('BanqueTab — Tout rapprocher automatiquement', () => {
@@ -288,5 +294,32 @@ describe('BanqueTab — un rapprochement dont le montant ne correspond pas', () 
     await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
     await screen.findByText('PRLV AVEC FRAIS')
     expect(screen.queryAllByText(/Écart de/)).toHaveLength(0)
+  })
+})
+
+// LES RELEVÉS DÉJÀ CLASSÉS, LUS EN PARTIE, LE DISENT DANS L'IMPORT. Leur lecture s'écrivait
+// `lireTout(…).then((lecture) => …)` — une forme que le scanner ne voyait pas — et jetait son
+// drapeau : tronquée, la liste cache un relevé déjà classé, qu'on croit alors devoir redemander.
+describe('BanqueTab — les relevés déjà classés dans Documents', () => {
+  it('lus en partie, ils le disent', async () => {
+    reinitialiser()
+    faux.erreurReleves = 'refus simulé'
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+    expect(await screen.findByText(/Les relevés déjà classés dans Documents n'ont pas pu être lus en entier \(lecture interrompue après 0 ligne\(s\) : refus simulé\)/)).toBeTruthy()
+  })
+
+  it('lus en entier, ils se taisent', async () => {
+    reinitialiser()
+    render(
+      <AnneeProvider defaut="toutes">
+        <BanqueTab dossierId="dossier-de-test" />
+      </AnneeProvider>,
+    )
+    expect(await screen.findByText('Importer un relevé bancaire')).toBeTruthy()
+    expect(screen.queryAllByText(/Les relevés déjà classés dans Documents n'ont pas pu/)).toHaveLength(0)
   })
 })
