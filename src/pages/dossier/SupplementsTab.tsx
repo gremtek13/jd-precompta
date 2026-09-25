@@ -92,6 +92,7 @@ export default function SupplementsTab({ dossierId }: { dossierId: string }) {
     <>
       <BandeauLecturePartielle
         quoi="Les suppléments et les comptes courants"
+        accord="lus"
         motif={lectureIncomplete}
         consequence={
           'Un solde de compte courant est TOUJOURS recalculé depuis son historique complet : ' +

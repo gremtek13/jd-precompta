@@ -269,6 +269,7 @@ export default function SuperAdminPage() {
     <>
       <BandeauLecturePartielle
         quoi="Les cabinets, leurs dossiers et l’usage de l’IA"
+        accord="lus"
         motif={lectureIncomplete}
         consequence={
           'Les compteurs ci-dessous portent donc sur une partie des données — et un coût IA tronqué ' +

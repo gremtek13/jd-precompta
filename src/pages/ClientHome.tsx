@@ -233,6 +233,7 @@ export default function ClientHome() {
     <>
       <BandeauLecturePartielle
         quoi="Tes envois"
+        accord="lus"
         motif={lectureIncomplete}
         technique={false}
         consequence="Recharge la page : cette liste peut te demander un document que tu as déjà envoyé."

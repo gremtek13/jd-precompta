@@ -1835,7 +1835,11 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   quel que soit le sujet — « L'historique des échanges n'ont pas pu être lues », « Les mouvements
   bancaires … lues ». Il prend désormais un `accord` explicite (`lues` par défaut, la forme d'avant) :
   le deviner d'un nom français serait un pari, et une faute dans une alerte la fait passer pour une
-  négligence. Les deux nouveaux bandeaux masculins l'utilisent dès leur création.
+  négligence. Les deux nouveaux bandeaux masculins l'utilisent dès leur création, et les NEUF anciens
+  dont le sujet est masculin ou au singulier sont corrigés dans la foulée — un test d'écran figeait
+  même la faute, en attendant « L'historique des échanges n'ont pas pu être lues ». **Rien ne vérifie
+  l'accord à part la relecture**, et c'est dit plutôt que promis : le genre d'un nom ne se déduit pas
+  de son texte, et un contrôle sur le seul nombre (« La … » donc singulier) raterait « L'historique ».
   **Seize mutations, toutes mordent** : chaque forme `.then` retirée, l'appel non lié sauté (seul le
   cas synthétique le voit, puisque sur le dépôt corrigé tous les appels sont liés), le rappel puis la
   déclaration jugés à l'échelle du fichier, la définition prise pour un appel, le recensement aveugle

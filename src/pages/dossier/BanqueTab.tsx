@@ -471,6 +471,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     <>
       <BandeauLecturePartielle
         quoi="Les mouvements bancaires"
+        accord="lus"
         motif={lignesIncompletes}
         consequence={
           'Les totaux, le contrôle de solde et le rapprochement ci-dessous portent donc sur une ' +
