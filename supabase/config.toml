@@ -1,0 +1,64 @@
+# Réglage `verify_jwt` de chaque Edge Function — et RIEN d'autre.
+#
+# Pourquoi ce fichier existe. `verify_jwt` décide si la passerelle de Supabase exige un jeton de
+# session AVANT que la fonction tourne. Jusqu'au 25/09/2026, seule la production le savait : un
+# projet recréé (PLAN_DE_REPRISE.md) ou une installation ailleurs repartait sans cette information,
+# et l'outil MCP `deploy_edge_function` met `true` quand on omet le paramètre. Sur `receive-email`,
+# appelée par Resend qui ne porte aucun jeton, `true` refuse chaque e-mail entrant à la passerelle —
+# sans un seul log de la fonction, puisqu'elle ne tourne pas.
+#
+# Les valeurs viennent de `list_edge_functions`, relu le 25/09/2026. Ce fichier est désormais la
+# référence : avant un déploiement, `list_edge_functions` doit rendre la même valeur, et une
+# divergence est un incident à comprendre, pas une valeur à recopier.
+#
+# Format de la CLI Supabase, vérifié avec la version 2.117 : elle lit ce fichier tel quel, refuse
+# une valeur qui n'est pas un booléen, mais IGNORE SANS ERREUR une clé mal orthographiée — un
+# `verify_jwts = false` retomberait donc sur `true`. `src/lib/configFonctions.test.ts` exige la clé
+# exacte, une section par dossier de `supabase/functions/`, et refuse toute autre clé.
+#
+# `bright-task`, déployée en production sans exister dans ce dépôt (voir CLAUDE.md), n'a pas de
+# section : il n'y a rien à redéployer.
+
+project_id = "jd-precompta"
+
+[functions.agent-comptable]
+verify_jwt = false
+
+[functions.create-cabinet]
+verify_jwt = false
+
+[functions.create-client-access]
+verify_jwt = false
+
+[functions.create-team-member]
+verify_jwt = false
+
+[functions.delete-cabinet]
+verify_jwt = false
+
+[functions.evaluer-extraction]
+verify_jwt = true
+
+# Appelée aussi par `receive-email`, avec la clé de service en `Authorization` : `true` passe parce
+# que cette clé est un jeton signé du projet.
+[functions.extract-piece]
+verify_jwt = true
+
+# Webhook Resend : l'appelant ne porte AUCUN jeton. `true` couperait les e-mails entrants en silence.
+[functions.receive-email]
+verify_jwt = false
+
+[functions.send-email]
+verify_jwt = false
+
+[functions.superpdp-credentials]
+verify_jwt = false
+
+[functions.superpdp-emit]
+verify_jwt = true
+
+[functions.superpdp-sync]
+verify_jwt = false
+
+[functions.taux-change-bce]
+verify_jwt = true
