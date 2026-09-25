@@ -1,13 +1,11 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
-import { formatMoney } from '../lib/format'
-import { ecartPct, totauxPourAnnee } from '../lib/estimation'
+import { aujourdHuiSql, formatMoney } from '../lib/format'
+import { ecartPct, projectionAnnuelle } from '../lib/estimation'
 import type { CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
-
-const ANNEE_COURANTE = new Date().getFullYear()
 
 // Vue client, lecture seule, de l'estimation indicative que le cabinet tient dans EstimationTab —
 // mêmes chiffres, mêmes règles de calcul (lib/estimation.ts, un seul endroit si elles changent), mais
@@ -20,6 +18,9 @@ export default function ClientSimulation() {
   const dossierId = dossierActifId
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // À part : « aucun repère » ne se dit que d'une liste lue en entier. Vide faute de lecture, elle ne
+  // dit rien, et l'affirmer contredirait le bandeau juste au-dessus.
+  const [referencesIncompletes, setReferencesIncompletes] = useState(false)
   const [recettesValidees, setRecettesValidees] = useState<Piece[]>([])
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
   const [referencesPostes, setReferencesPostes] = useState<ReferencePosteAnnuel[]>([])
@@ -53,6 +54,7 @@ export default function ClientSimulation() {
       setRecettesValidees(lectureRecettes.lignes)
       setReferences(lectureReferences.lignes)
       setReferencesPostes(lectureReferencesPostes.lignes)
+      setReferencesIncompletes(!lectureReferences.complete)
       // Jumelle d'`EstimationTab` : tronquées, ces lectures rendent une simulation plausible et BASSE.
       setLectureIncomplete(
         [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes]
@@ -68,11 +70,10 @@ export default function ClientSimulation() {
   }
   if (loading) return <p className="muted">Chargement…</p>
 
-  const moisEcoules = new Date().getMonth() + 1
-  const { ca: caAnneeEnCours, cotis: cotisationsAnneeEnCours } = totauxPourAnnee(recettesValidees, cotisations, ANNEE_COURANTE)
-  const caProjete = (caAnneeEnCours * 12) / moisEcoules
-  const cotisationsProjetees = (cotisationsAnneeEnCours * 12) / moisEcoules
-  const referenceN1 = references.find((r) => r.annee === ANNEE_COURANTE - 1) ?? null
+  // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
+  // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql())
+  const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   return (
     <>
@@ -94,32 +95,34 @@ export default function ClientSimulation() {
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>Projection {ANNEE_COURANTE}</h3>
+        <h3 style={{ marginTop: 0 }}>Projection {projection.annee}</h3>
         <p className="muted" style={{ marginTop: -8 }}>
-          D'après les {moisEcoules} mois déjà entamés cette année, ramenés à 12 mois — une règle simple,
-          pas une prévision fine.
+          {projection.caProjete === null
+            ? "Moins d'un mois s'est écoulé depuis le 1er janvier : la projection s'affichera à la fin janvier."
+            : `D'après les ${projection.moisEcoules.toFixed(1).replace('.', ',')} mois écoulés cette année, `
+              + 'ramenés à 12 mois — une règle simple, pas une prévision fine.'}
         </p>
         <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
           <div>
             <span className="muted" style={{ display: 'block' }}>CA encaissé à date</span>
-            <strong>{formatMoney(caAnneeEnCours)}</strong>
+            <strong>{formatMoney(projection.ca)}</strong>
           </div>
           <div>
             <span className="muted" style={{ display: 'block' }}>CA projeté sur l'année</span>
-            <strong>{formatMoney(caProjete)}</strong>
-            {referenceN1?.chiffre_affaires != null && (
-              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(caProjete, referenceN1.chiffre_affaires)} vs {ANNEE_COURANTE - 1})</span>
+            <strong>{projection.caProjete === null ? '—' : formatMoney(projection.caProjete)}</strong>
+            {projection.caProjete !== null && referenceN1?.chiffre_affaires != null && (
+              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.caProjete, referenceN1.chiffre_affaires)} vs {projection.annee - 1})</span>
             )}
           </div>
           <div>
             <span className="muted" style={{ display: 'block' }}>Cotisations appelées à date</span>
-            <strong>{formatMoney(cotisationsAnneeEnCours)}</strong>
+            <strong>{formatMoney(projection.cotis)}</strong>
           </div>
           <div>
             <span className="muted" style={{ display: 'block' }}>Cotisations projetées sur l'année</span>
-            <strong>{formatMoney(cotisationsProjetees)}</strong>
-            {referenceN1?.total_cotisations_sociales != null && (
-              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(cotisationsProjetees, referenceN1.total_cotisations_sociales)} vs {ANNEE_COURANTE - 1})</span>
+            <strong>{projection.cotisationsProjetees === null ? '—' : formatMoney(projection.cotisationsProjetees)}</strong>
+            {projection.cotisationsProjetees !== null && referenceN1?.total_cotisations_sociales != null && (
+              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.cotisationsProjetees, referenceN1.total_cotisations_sociales)} vs {projection.annee - 1})</span>
             )}
           </div>
         </div>
@@ -128,7 +131,9 @@ export default function ClientSimulation() {
       <h3>Repères annuels</h3>
       <div className="card table-scroll" style={{ padding: 0, marginBottom: 20 }}>
         {references.length === 0 ? (
-          <div className="empty-state">Aucun repère annuel enregistré pour l'instant.</div>
+          <div className="empty-state">
+            {referencesIncompletes ? "Tes repères n'ont pas pu être affichés." : "Aucun repère annuel enregistré pour l'instant."}
+          </div>
         ) : (
           <table>
             <thead>

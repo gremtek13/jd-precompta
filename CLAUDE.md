@@ -2383,6 +2383,32 @@ d'environnement dans la même édition.
   courante, il dirait autre chose chaque jour — et serait vert par hasard le 30 du mois, c'est-à-dire
   précisément le jour où l'ancien calcul était juste. Quatre mutations mordent, dont le code tel
   qu'il était et la garde symétrique du plancher.
+- **ET LA PROJECTION DE L'ESTIMATION PORTAIT LE MÊME DIVISEUR, PLUS DEUX DÉFAUTS — EN DOUBLE, CÔTÉ
+  CABINET ET CÔTÉ CLIENT** (25/09/2026, trouvé en préparant le test de rendu de `ClientSimulation`).
+  « Projection de l'année » vivait recopiée dans `EstimationTab` et `ClientSimulation`, alors que
+  l'en-tête de `lib/estimation.ts` promettait « un seul endroit ». Elle vit désormais dans
+  `projectionAnnuelle`, qui répare trois choses :
+  - **l'appariement** : l'année figée au chargement du module, le mois relu au rendu — onglet ouvert
+    au passage d'une année, « Projection 2026 » multipliait l'année 2026 ENTIÈRE par douze. L'année et
+    les mois sortent désormais d'une seule date ;
+  - **« à date » qui comptait l'avenir** : un échéancier se crée d'avance pour l'année (« Créer
+    l'échéancier »), donc « cotisations appelées à date » portait les échéances de décembre dès
+    janvier, que la projection multipliait encore — quatre fois l'année en mars. **Mesuré** : sur le
+    seul dossier qui porte des cotisations (`2023`, bac à sable), 22 échéances en 2026 dont 4 à venir,
+    donc 21 128 € affichés « à date » pour 19 539 € échus, et 28 171 € projetés. Seul l'échu entre
+    désormais dans le « à date » ;
+  - **le diviseur**, le numéro du mois : même correctif que la CAF ci-dessus (`moisEcoulesDeLAnnee`,
+    plancher d'un mois, « — » en dessous), pour que deux écrans qui annualisent le fassent pareil.
+  **Au passage, « le vide est une affirmation » deux fois de plus** : sur une lecture refusée, la
+  Simulation et l'Estimation disaient « Aucun repère annuel enregistré », et « Mes dépôts » disait
+  « Aucun dépôt pour l'instant » — le client croyait ses envois perdus. Chaque état vide ne se dit plus
+  que d'une liste lue en entier, avec un drapeau par collection : une lecture ratée des RELEVÉS laisse
+  « aucun dépôt » vrai, et un test le garde.
+  **Vingt-sept mutations, toutes mordent** — dont le code tel qu'il était dans les deux écrans et, sur
+  la Simulation, l'appariement rendu reproductible en posant l'horloge de CHARGEMENT du module avant
+  les imports (`vi.hoisted`) : sans cela le test ne distinguerait le défaut que certaines années. La
+  seule mutation qui passe un test d'écran — une constante d'année remise au niveau du module sans
+  être lue — est attrapée par `maintenantFige.test.ts`, qui n'admet plus aucune exception.
 - **ET LA TROISIÈME BRIQUE DU MÊME DOSSIER BANCAIRE PROJETAIT SUR RIEN, SANS LE DIRE** (22/09/2026,
   dernier des trois — la question de période posée à la dernière brique).
   **`lignesBanque` N'EST PAS `lignes_bancaires`**, et c'est ce qui a renversé le diagnostic :
@@ -2449,12 +2475,13 @@ d'environnement dans la même édition.
   nouvelle), **étiquetée d'une année précise**, sur l'écran dont le métier est de dire ce qui manque.
   Et il contredisait `ClientUpload`, alors que ce fichier pose que ces trois écrans « doivent toujours
   dire la même chose au même moment ».
-  **LES QUATRE AUTRES CONSTANTES SONT LÉGITIMES, résultat à garder** : `ClientUpload` et `DossiersList`
-  figeaient les DEUX valeurs ensemble, donc cohérentes ; `ClientSimulation` et `EstimationTab` utilisent
-  la leur partout dans l'écran ET l'ÉTIQUETTENT (« Projection 2026 »), donc un onglet périmé est périmé,
-  **pas faux** — c'est la règle des « chiffres ÉTIQUETÉS de leur année » prise par son bon côté. Les deux
-  dernières restent en exceptions écrites ; les deux premières sont passées au calcul par rendu, ces
-  trois écrans devant s'accorder.
+  **LES QUATRE AUTRES CONSTANTES ÉTAIENT DITES LÉGITIMES, ET DEUX NE L'ÉTAIENT PAS** : `ClientUpload` et
+  `DossiersList` figeaient les DEUX valeurs ensemble, donc cohérentes, et sont passées au calcul par
+  rendu, ces trois écrans devant s'accorder. `ClientSimulation` et `EstimationTab` étaient restées en
+  exceptions écrites pour une année « utilisée partout dans l'écran et étiquetée » — **c'était faux**
+  (25/09/2026) : leur projection la divisait par `new Date().getMonth() + 1`, relu à chaque rendu, soit
+  le défaut de `ClientHome` mot pour mot. Voir « la projection de l'Estimation portait le même
+  diviseur » plus haut ; les deux constantes ont disparu.
   **LE REMÈDE SUPPRIME LE PIÈGE AU LIEU DE LE GARDER** : `moisEcoulesCetteAnnee()` disparaît au profit
   d'`anneeEtMoisEcoules()`, qui rend les DEUX depuis un seul `Date`. « 8 mois écoulés » ne désigne des
   mois que rapporté à SON année — les obtenir séparément était la condition du défaut. Le compilateur a
@@ -2466,8 +2493,8 @@ d'environnement dans la même édition.
   `const { annee: X } = …`. Trouvé en relisant l'ordre, pas par un outil.
   **LA RÈGLE DEVIENT UN SCANNER** (`maintenantFige.test.ts`), qui part de TOUTE source de production et
   n'admet que des exceptions écrites portant **la raison pour laquelle figer cette valeur est sans
-  conséquence** — deux à ce jour, et le COMPTE fait foi. Cinq mutations mordent, dont le défaut d'origine
-  replanté et le scanner rendu aveugle.
+  conséquence** — AUCUNE depuis le 25/09/2026, les deux dernières ayant eu une raison fausse, et le
+  COMPTE fait foi. Cinq mutations mordent, dont le défaut d'origine replanté et le scanner rendu aveugle.
   **UNE SIXIÈME SURVIT, ET C'EST ÉCRIT DANS LE TEST plutôt que maquillé** : remplacer le `Date` unique
   par deux appels ne peut diverger qu'en enjambant un réveillon à quelques microsecondes près, ce
   qu'aucune horloge feinte ne produit entre deux instructions synchrones. La forme à un seul `Date` est
@@ -5206,12 +5233,13 @@ d'environnement dans la même édition.
   qui, lui, fonctionne. Le même libellé vivant aussi dans les tableaux « Sans doute possible » et « À
   trancher », une ligne du relevé se désigne par la sienne (`tr.clickable`).
   **`ClientInformations` a reçu son premier test de rendu le 25/09/2026**, par un défaut trouvé lui
-  aussi : les réponses d'une société écrites dans une autre (même entrée). **Deux écrans client
-  (`ClientUpload`, `ClientSimulation`) n'ont toujours aucun test de rendu** — dit plutôt que laissé
-  compter : `ClientUpload` porte le MÊME câblage que `ClientHome`, donc son risque est le plus
-  faible des deux maintenant que le calcul est partagé et que l'un des deux est gardé. La liste des
-  dossiers, elle, y est entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre
-  l'affichage » plus haut.
+  aussi : les réponses d'une société écrites dans une autre (même entrée). **Les deux derniers,
+  `ClientUpload` et `ClientSimulation`, ont le leur depuis le même jour — TOUS les écrans client sont
+  désormais testés au rendu.** Il était écrit ici que leur risque était le plus faible, le calcul étant
+  partagé ; c'était vrai de `ClientUpload` (rien de faux dans son calcul, un état vide qui affirmait) et
+  faux de `ClientSimulation`, dont la projection n'était PAS partagée et portait trois défauts (voir
+  « la projection de l'Estimation portait le même diviseur »). La liste des dossiers, elle, y est
+  entrée par un défaut trouvé, pas par méthode — voir « une recherche filtre l'affichage » plus haut.
   **Deux doublures à connaître avant d'écrire le prochain test d'écran** : `PiecesTab` lit
   `monCabinetId` d'`AuthContext` (monter un `AuthProvider` complet ferait dépendre le test d'une
   session Supabase), et `piecesAvecTexteOcr` doit rendre sa forme EXACTE
@@ -5250,7 +5278,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1721 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1745 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chargesParPostePourAnnee, ecartPct, totauxPourAnnee } from './estimation'
+import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from './estimation'
 import type { CotisationDeclaree, Piece } from './types'
 
 const piece = (o: Partial<Piece>): Piece => ({
@@ -49,6 +49,71 @@ describe('totauxPourAnnee', () => {
       [], 2026,
     )
     expect(avecAchat.ca).toBe(170)
+  })
+})
+
+describe('projectionAnnuelle', () => {
+  // Un échéancier créé d'avance pour toute l'année, comme le fait « Créer l'échéancier » depuis un
+  // appel de cotisation : douze échéances de 100 €, le 5 de chaque mois.
+  const echeancier = Array.from({ length: 12 }, (_, i) =>
+    cotisation({ id: `e${i}`, echeance: `2026-${String(i + 1).padStart(2, '0')}-05`, montant_appele: 100 }))
+
+  it('divise par les mois ÉCOULÉS, pas par le numéro du mois', () => {
+    // Le 1er février, un mois et un jour sont écoulés (31/30 en 30/360). Le numéro du mois en
+    // comptait deux, et annonçait une projection de moitié.
+    const p = projectionAnnuelle([piece({ date_piece: '2026-01-15', montant_ttc: 1000 })], [], '2026-02-01')
+    expect(p.moisEcoules).toBeCloseTo(31 / 30, 10)
+    expect(p.caProjete).toBeCloseTo((1000 * 12 * 30) / 31, 6)
+  })
+
+  it('« à date » ne compte pas une échéance à venir, et ne projette que l’échu', () => {
+    // Le 20 mars : trois échéances échues (janvier, février, mars) sur les douze créées. L'écran
+    // affichait les douze comme « appelées à date », puis les multipliait par 12/3.
+    const p = projectionAnnuelle(
+      [piece({ id: 'passee', date_piece: '2026-03-02', montant_ttc: 600 }),
+       piece({ id: 'future', date_piece: '2026-11-30', montant_ttc: 9000 })],
+      echeancier, '2026-03-20',
+    )
+    expect(p.cotis).toBe(300)
+    expect(p.ca).toBe(600)
+    const mois = (2 * 30 + 20) / 30
+    expect(p.moisEcoules).toBeCloseTo(mois, 10)
+    expect(p.cotisationsProjetees).toBeCloseTo((300 * 12) / mois, 6)
+  })
+
+  it('compte l’échéance du jour : elle est appelée', () => {
+    expect(projectionAnnuelle([], echeancier, '2026-03-05').cotis).toBe(300)
+    expect(projectionAnnuelle([], echeancier, '2026-03-04').cotis).toBe(200)
+  })
+
+  it('tient l’année et les mois d’UNE date : le 5 janvier ne projette pas l’année d’avant', () => {
+    // Le défaut d'appariement : l'année figée au chargement, le mois relu au rendu. Au passage d'une
+    // année, l'écran ramenait l'année ENTIÈRE qui venait de finir à douze fois sa valeur.
+    const p = projectionAnnuelle(
+      [piece({ date_piece: '2026-12-10', montant_ttc: 50000 })], echeancier, '2027-01-05',
+    )
+    expect(p.annee).toBe(2027)
+    expect(p.ca).toBe(0)
+    expect(p.cotis).toBe(0)
+  })
+
+  it('n’annualise pas moins d’un mois, mais rend ce qui est déjà là', () => {
+    // Le 20 janvier, dix-neuf jours ramenés à douze mois font un chiffre qui bouge d'un facteur deux
+    // à chaque pièce saisie. Même plancher que la CAF des ratios bancaires.
+    const p = projectionAnnuelle([piece({ date_piece: '2026-01-10', montant_ttc: 800 })], echeancier, '2026-01-20')
+    expect(p.caProjete).toBeNull()
+    expect(p.cotisationsProjetees).toBeNull()
+    expect(p.ca).toBe(800)
+    expect(p.cotis).toBe(100)
+  })
+
+  it('le 31 décembre, la projection est l’année elle-même', () => {
+    // Le garde symétrique : douze mois écoulés, rien à ramener — sans lui, « rapporter aux mois
+    // écoulés » serait satisfait par une fonction qui déforme toujours.
+    const p = projectionAnnuelle([piece({ date_piece: '2026-06-01', montant_ttc: 1234 })], echeancier, '2026-12-31')
+    expect(p.moisEcoules).toBe(12)
+    expect(p.caProjete).toBeCloseTo(1234, 10)
+    expect(p.cotisationsProjetees).toBeCloseTo(1200, 10)
   })
 })
 

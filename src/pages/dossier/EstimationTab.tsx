@@ -1,14 +1,18 @@
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
-import { formatMoney } from '../../lib/format'
+import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
-import { chargesParPostePourAnnee, ecartPct, totauxPourAnnee } from '../../lib/estimation'
+import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from '../../lib/estimation'
 import type { Categorie, CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
 
-const ANNEE_COURANTE = new Date().getFullYear()
+// L'exercice qui précède, lu à l'appel : la valeur initiale des formulaires de repère. Une constante
+// de module le figerait pour toute la session (voir src/lib/maintenantFige.test.ts).
+function anneePrecedente(): string {
+  return String(new Date().getFullYear() - 1)
+}
 
 // Palier 6 — estimation indicative des charges sociales de l'année en cours, pour que le client ne
 // découvre pas un gros appel de cotisation en fin d'année. Volontairement limitée aux charges
@@ -31,12 +35,16 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   // Non nul quand recettes ou dépenses n'ont pas pu être lues en entier : l'estimation porte alors
   // sur une partie du dossier, et une assiette de cotisations sous-évaluée a l'air normale.
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // À part : une liste vide lue en entier dit « aucun repère », une liste vide faute de lecture ne
+  // dit rien — et l'affirmer inviterait à ressaisir ce qui existe déjà.
+  const [referencesIncompletes, setReferencesIncompletes] = useState(false)
+  const [postesIncomplets, setPostesIncomplets] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [calculating, setCalculating] = useState(false)
   const [calculatingPostes, setCalculatingPostes] = useState(false)
   const [savingPoste, setSavingPoste] = useState(false)
-  const [anneePoste, setAnneePoste] = useState(String(ANNEE_COURANTE - 1))
+  const [anneePoste, setAnneePoste] = useState(anneePrecedente)
   const [libellePoste, setLibellePoste] = useState('')
   const [montantPoste, setMontantPoste] = useState('')
   const [lecture2035Loading, setLecture2035Loading] = useState(false)
@@ -44,11 +52,11 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   const [lecture2035Diag, setLecture2035Diag] = useState<string[] | undefined>(undefined)
   const [diagResultat, setDiagResultat] = useState<string[] | undefined>(undefined)
 
-  const [anneeSaisie, setAnneeSaisie] = useState(String(ANNEE_COURANTE - 1))
+  const [anneeSaisie, setAnneeSaisie] = useState(anneePrecedente)
   const [resultatSaisi, setResultatSaisi] = useState('')
   const [caSaisi, setCaSaisi] = useState('')
   const [cotisationsSaisies, setCotisationsSaisies] = useState('')
-  const [anneeACalculer, setAnneeACalculer] = useState(String(ANNEE_COURANTE - 1))
+  const [anneeACalculer, setAnneeACalculer] = useState(anneePrecedente)
 
   async function load() {
     setLoading(true)
@@ -110,20 +118,19 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
     setReferences(lectureReferences.lignes)
     setReferencesPostes(lectureReferencesPostes.lignes)
+    setReferencesIncompletes(!lectureReferences.complete)
+    setPostesIncomplets(!lectureReferencesPostes.complete)
     setLoading(false)
   }
 
   useEffect(() => { load() }, [dossierId])
 
-  // Règle usuelle simple : ce qui est déjà là cette année, ramené à 12 mois au prorata des mois déjà
-  // entamés. Pas de lissage saisonnier ni de logique de régularisation URSSAF (calcul provisionnel
-  // réel bien plus complexe) — juste un repère pour anticiper, pas un calcul officiel.
-  const moisEcoules = new Date().getMonth() + 1
-  const { ca: caAnneeEnCours, cotis: cotisationsAnneeEnCours } = totauxPourAnnee(recettesValidees, cotisations, ANNEE_COURANTE)
-  const caProjete = (caAnneeEnCours * 12) / moisEcoules
-  const cotisationsProjetees = (cotisationsAnneeEnCours * 12) / moisEcoules
-
-  const referenceN1 = references.find((r) => r.annee === ANNEE_COURANTE - 1) ?? null
+  // Règle usuelle simple : ce qui est déjà là cette année, ramené à 12 mois. Pas de lissage saisonnier
+  // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
+  // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
+  // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql())
+  const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
   // ressaisir les chiffres à la main — jamais un enregistrement automatique, juste un préremplissage
@@ -300,32 +307,35 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>Projection {ANNEE_COURANTE}</h3>
+        <h3 style={{ marginTop: 0 }}>Projection {projection.annee}</h3>
         <p className="muted" style={{ marginTop: -8 }}>
-          D'après les {moisEcoules} mois déjà entamés cette année, ramenés à 12 mois — une règle simple,
-          pas une prévision fine.
+          {projection.caProjete === null
+            ? "Moins d'un mois écoulé depuis le 1er janvier : la projection attend la fin janvier — ramener "
+              + 'quelques jours à douze mois ferait bouger le chiffre à chaque pièce saisie.'
+            : `D'après les ${projection.moisEcoules.toFixed(1).replace('.', ',')} mois écoulés cette année, `
+              + 'ramenés à 12 mois — une règle simple, pas une prévision fine.'}
         </p>
         <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
           <div>
             <span className="muted" style={{ display: 'block' }}>CA encaissé à date</span>
-            <strong>{formatMoney(caAnneeEnCours)}</strong>
+            <strong>{formatMoney(projection.ca)}</strong>
           </div>
           <div>
             <span className="muted" style={{ display: 'block' }}>CA projeté sur l'année</span>
-            <strong>{formatMoney(caProjete)}</strong>
-            {referenceN1?.chiffre_affaires != null && (
-              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(caProjete, referenceN1.chiffre_affaires)} vs {ANNEE_COURANTE - 1})</span>
+            <strong>{projection.caProjete === null ? '—' : formatMoney(projection.caProjete)}</strong>
+            {projection.caProjete !== null && referenceN1?.chiffre_affaires != null && (
+              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.caProjete, referenceN1.chiffre_affaires)} vs {projection.annee - 1})</span>
             )}
           </div>
           <div>
             <span className="muted" style={{ display: 'block' }}>Cotisations appelées à date</span>
-            <strong>{formatMoney(cotisationsAnneeEnCours)}</strong>
+            <strong>{formatMoney(projection.cotis)}</strong>
           </div>
           <div>
             <span className="muted" style={{ display: 'block' }}>Cotisations projetées sur l'année</span>
-            <strong>{formatMoney(cotisationsProjetees)}</strong>
-            {referenceN1?.total_cotisations_sociales != null && (
-              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(cotisationsProjetees, referenceN1.total_cotisations_sociales)} vs {ANNEE_COURANTE - 1})</span>
+            <strong>{projection.cotisationsProjetees === null ? '—' : formatMoney(projection.cotisationsProjetees)}</strong>
+            {projection.cotisationsProjetees !== null && referenceN1?.total_cotisations_sociales != null && (
+              <span className="muted" style={{ marginLeft: 8 }}>({ecartPct(projection.cotisationsProjetees, referenceN1.total_cotisations_sociales)} vs {projection.annee - 1})</span>
             )}
           </div>
         </div>
@@ -422,7 +432,9 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {references.length === 0 ? (
-          <div className="empty-state">Aucun repère annuel enregistré pour l'instant.</div>
+          <div className="empty-state">
+            {referencesIncompletes ? "Les repères annuels n'ont pas pu être lus." : "Aucun repère annuel enregistré pour l'instant."}
+          </div>
         ) : (
           <table>
             <thead>
@@ -489,7 +501,9 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
 
       <div className="card table-scroll" style={{ padding: 0 }}>
         {referencesPostes.length === 0 ? (
-          <div className="empty-state">Aucun détail par poste enregistré pour l'instant.</div>
+          <div className="empty-state">
+            {postesIncomplets ? "Le détail par poste n'a pas pu être lu." : "Aucun détail par poste enregistré pour l'instant."}
+          </div>
         ) : (
           <table>
             <thead>
