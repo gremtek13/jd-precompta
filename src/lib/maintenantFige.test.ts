@@ -17,10 +17,17 @@ import { join } from 'node:path'
 //
 // Le scanner part de TOUTE source de production, comme `rls.sql` part de `pg_class` : un écran ajouté
 // demain est attrapé sans que personne ait à y penser. Il n'admet que des exceptions écrites, portant
-// **la raison pour laquelle figer cette valeur est sans conséquence** — et la seule raison admise à ce
-// jour est la même pour les deux : la valeur est utilisée de façon COHÉRENTE dans tout l'écran (jamais
-// appariée à une lecture d'horloge vivante) ET l'année est ÉTIQUETÉE à l'écran, si bien qu'un onglet
-// périmé affiche « Projection 2026 » — périmé, mais pas faux.
+// **la raison pour laquelle figer cette valeur est sans conséquence**.
+//
+// IL N'Y EN A PLUS AUCUNE, ET LES DEUX DERNIÈRES AVAIENT UNE RAISON FAUSSE (25/09/2026).
+// `ClientSimulation` et `EstimationTab` étaient dispensés pour une année « jamais appariée à une
+// lecture d'horloge vivante » — or leur projection la divisait par `new Date().getMonth() + 1`, relu à
+// chaque rendu. C'était le défaut de `ClientHome` mot pour mot : onglet ouvert au passage d'une année,
+// « Projection 2026 » ramenait l'année 2026 ENTIÈRE à douze fois sa valeur. La raison avait été
+// vérifiée en lisant la déclaration, pas ce qui la côtoie ; elle est tombée en préparant le test de
+// rendu de la Simulation client, qui fixe désormais l'horloge au 5 janvier pour la garder.
+// Le calcul vit désormais dans `projectionAnnuelle` (lib/estimation.ts), qui tire l'année et les mois
+// d'une seule date — et l'absence d'exception rend toute nouvelle constante de ce genre bloquante.
 
 const RACINES = ['src']
 const EXTENSIONS = ['.ts', '.tsx']
@@ -28,22 +35,7 @@ const EXTENSIONS = ['.ts', '.tsx']
 // Chaque exception porte sa raison. Le COMPTE fait foi : une de plus est une rechute, une de moins est
 // une raison morte (voir `datesUtc.test.ts`, où dispenser un fichier entier avait failli masquer le
 // défaut d'à côté).
-const EXCEPTIONS: { fichier: string; nom: string; raison: string }[] = [
-  {
-    fichier: 'src/pages/ClientSimulation.tsx',
-    nom: 'ANNEE_COURANTE',
-    raison:
-      "Utilisée partout dans l'écran (projection, référence N-1, libellés) et ÉTIQUETÉE — « Projection 2026 ». "
-      + "Jamais appariée à une lecture d'horloge vivante, donc un onglet périmé est périmé, pas faux.",
-  },
-  {
-    fichier: 'src/pages/dossier/EstimationTab.tsx',
-    nom: 'ANNEE_COURANTE',
-    raison:
-      "Même cas : elle amorce des `useState` (valeur initiale, pas une lecture répétée), sert de "
-      + "référence N-1 et s'affiche en toutes lettres. Cohérente avec elle-même dans tout l'écran.",
-  },
-]
+const EXCEPTIONS: { fichier: string; nom: string; raison: string }[] = []
 
 function sources(dossier: string): string[] {
   const out: string[] = []

@@ -47,6 +47,10 @@ export default function ClientUpload() {
   // Non nul quand la liste des envois ou des relevés n'a pas pu être lue en entier. Dit au client,
   // dans sa langue : sans ça l'écran pourrait lui réclamer un document qu'il a déjà envoyé.
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // À part, et plus étroit : ce qui fait la liste « Mes dépôts » (pièces et documents). Vide faute de
+  // lecture, elle ne peut pas dire « aucun dépôt » — le client croirait ses envois perdus. Une lecture
+  // ratée des relevés, elle, laisse cette phrase vraie.
+  const [depotsIncomplets, setDepotsIncomplets] = useState(false)
   // À part de `lectureIncomplete` : un fil de précisions tronqué n'a pas la même conséquence qu'une
   // liste d'envois tronquée, et le bandeau ne sert qu'à dire CE QUI est devenu faux.
   const [precisionsIncompletes, setPrecisionsIncompletes] = useState<string | null>(null)
@@ -107,6 +111,7 @@ export default function ClientUpload() {
       [lecturePieces, lectureDocuments, lectureLignes, lectureCotisations]
         .find((l) => !l.complete)?.motif ?? null,
     )
+    setDepotsIncomplets(!lecturePieces.complete || !lectureDocuments.complete)
     setCotisations(lectureCotisations.lignes)
     setCommentaires(commentairesData.commentaires)
     setPrecisionsIncompletes(commentairesData.motif)
@@ -345,7 +350,9 @@ export default function ClientUpload() {
           <div className="empty-state">
             {recherche.trim()
               ? `Aucun dépôt ne correspond à « ${recherche.trim()} ».`
-              : "Aucun dépôt pour l'instant."}
+              : depotsIncomplets
+                ? "Tes envois n'ont pas pu être affichés — recharge la page."
+                : "Aucun dépôt pour l'instant."}
           </div>
         ) : (
           <table>

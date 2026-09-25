@@ -1,3 +1,5 @@
+import { anneeDe } from './format'
+import { moisEcoulesDeLAnnee } from './situationIntermediaire'
 import type { CotisationDeclaree, Piece } from './types'
 
 // Calculs partagés entre l'Estimation cabinet (EstimationTab, un dossier à la fois) et la Simulation
@@ -12,6 +14,52 @@ export function totauxPourAnnee(pieces: Piece[], cotisations: CotisationDeclaree
     .filter((c) => c.echeance.startsWith(String(annee)))
     .reduce((sum, c) => sum + (c.montant_verse ?? c.montant_appele), 0)
   return { ca, cotis }
+}
+
+export interface ProjectionAnnuelle {
+  annee: number
+  /** Mois écoulés depuis le 1er janvier, en 30/360 — le diviseur des ratios bancaires. */
+  moisEcoules: number
+  /** Recettes datées du 1er janvier à aujourd'hui inclus. */
+  ca: number
+  /** Échéances du 1er janvier à aujourd'hui inclus : « appelées à date », jamais une à venir. */
+  cotis: number
+  /** Null sous un mois d'observation : ramener quelques jours à douze mois n'est pas une projection. */
+  caProjete: number | null
+  cotisationsProjetees: number | null
+}
+
+/**
+ * La projection de l'année en cours : ce qui est déjà là, ramené à douze mois. Une règle simple, et
+ * elle le dit — pas de saisonnalité, pas de régularisation URSSAF.
+ *
+ * ELLE VIVAIT EN DOUBLE, DANS LES DEUX ÉCRANS, ET PORTAIT TROIS DÉFAUTS :
+ *  - L'ANNÉE et le COMPTE DE MOIS ne venaient pas du même instant : l'année était figée au
+ *    chargement du module, le mois relu à chaque rendu. Onglet laissé ouvert au passage d'une année,
+ *    « Projection 2026 » multipliait l'année 2026 ENTIÈRE par douze. C'est le défaut de `ClientHome`
+ *    (voir CLAUDE.md) ; ici l'année et les mois sortent d'UNE date, par construction.
+ *  - « À DATE » COMPTAIT L'AVENIR : un échéancier de cotisation se crée d'avance pour toute l'année,
+ *    donc « cotisations appelées à date » portait les échéances de décembre dès janvier — puis la
+ *    projection multipliait encore ce total annuel, soit quatre fois l'année en mars. Seul ce qui est
+ *    échu entre dans le « à date », et donc dans ce qu'on ramène à douze mois.
+ *  - LE DIVISEUR était le NUMÉRO du mois, exact le dernier jour du mois seulement : le 1er février
+ *    il comptait deux mois pour un. C'est le défaut corrigé sur la CAF des ratios bancaires, et la
+ *    même règle s'applique ici (`moisEcoulesDeLAnnee`, 30/360), plancher d'un mois compris.
+ */
+export function projectionAnnuelle(
+  recettes: Piece[], cotisations: CotisationDeclaree[], dateDuJour: string,
+): ProjectionAnnuelle {
+  const annee = anneeDe(dateDuJour)
+  // `totauxPourAnnee` garde l'année ; la borne du jour en fait un « à date ». Les deux filtres
+  // passent par la même règle de montant que le calcul des repères — un seul endroit.
+  const { ca, cotis } = totauxPourAnnee(
+    recettes.filter((p) => p.date_piece != null && p.date_piece <= dateDuJour),
+    cotisations.filter((c) => c.echeance <= dateDuJour),
+    annee,
+  )
+  const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
+  const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)
+  return { annee, moisEcoules, ca, cotis, caProjete: annualiser(ca), cotisationsProjetees: annualiser(cotis) }
 }
 
 export function ecartPct(valeurN: number, valeurN1: number | null): string {

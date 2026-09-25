@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EstimationTab from './EstimationTab'
-import type { Categorie, Piece } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, Piece } from '../../lib/types'
 
 // LE CALCUL EST DANS `lib/estimation.ts`, TESTÉ — CE QUI SE JOUE ICI EST LE CÂBLAGE.
 //
@@ -22,6 +22,9 @@ const faux = vi.hoisted(() => ({
   // Le serveur qui cesse de rendre les pièces au-delà de N tout en annonçant le vrai total : la
   // panne qui produit une lecture INCOMPLÈTE (voir lib/lectureComplete.ts).
   muetPieces: null as number | null,
+  cotisations: [] as unknown[],
+  // Les tables dont la lecture est REFUSÉE : `lireTout` les rend incomplètes, sans aucune ligne.
+  refusees: new Set<string>(),
 }))
 
 vi.mock('../../lib/supabase', () => {
@@ -47,10 +50,14 @@ vi.mock('../../lib/supabase', () => {
         // `pieces` est lu DEUX fois par cet écran : une fois restreint aux ventes
         // (`recettesValidees`), une fois pour toutes les validées (`piecesValidees`). Le faux
         // respecte la distinction, sans quoi le test ne pourrait pas voir l'écran se tromper de jeu.
+        if (faux.refusees.has(table)) {
+          return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
+        }
         const donnees = table === 'pieces'
           ? (venteSeulement ? faux.pieces.filter((p) => (p as Piece).type_piece === 'vente') : faux.pieces)
           : table === 'categories' ? faux.categories
-          : table === 'immobilisations' ? faux.immobilisations : []
+          : table === 'immobilisations' ? faux.immobilisations
+          : table === 'cotisations_declarees' ? faux.cotisations : []
         if (table === 'pieces' && faux.muetPieces != null) {
           const rendu = donnees.slice(debut, Math.min(fin + 1, faux.muetPieces))
           return Promise.resolve({ data: rendu, error: null, count: donnees.length }).then(suite)
@@ -85,6 +92,21 @@ function categorieDeTest(o: Partial<Categorie> = {}): Categorie {
     id: 'cat-loyer', dossier_id: null, code: '613200', libelle: 'Loyer', ordre: 1,
     compte_comptable: '613200', poste_2035: 'Loyer', ...o,
   }
+}
+
+function cotisationDeTest(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
+  return {
+    id: 'e1', dossier_id: 'dossier-de-test', echeance: '2026-01-05', montant_appele: 100,
+    montant_verse: null, montant_csg_crds: null, previsionnel: false,
+    created_at: '2026-01-02T09:00:00Z', ...o,
+  }
+}
+
+// Le montant affiché sous un libellé, espaces normalisés (`Intl` sépare les milliers par une espace
+// fine insécable).
+function valeur(libelle: string): string {
+  const bloc = screen.getByText(libelle).parentElement as HTMLElement
+  return (bloc.querySelector('strong')?.textContent ?? '').replace(/\s/g, ' ')
 }
 
 async function rendre() {
@@ -192,5 +214,70 @@ describe('EstimationTab — les repères ne se calculent pas sur une lecture par
     // L'année proposée est celle d'avant l'année en cours : lue ici comme l'écran la lit, pour que ce
     // test ne dépende pas du jour où il tourne.
     expect(faux.upsertsAnnuels).toEqual([expect.objectContaining({ annee: new Date().getFullYear() - 1, source: 'calculee' })])
+  })
+})
+
+// LA PROJECTION DE L'ANNÉE, jumelle de celle de la Simulation client. Le calcul est
+// `projectionAnnuelle` (lib/estimation.ts), testé à l'unité ; ce qui se joue ici est que CET écran
+// l'appelle avec l'horloge du rendu — il divisait l'échéancier ENTIER par le numéro du mois.
+describe('EstimationTab — la projection de l’année', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    faux.pieces = [
+      pieceDeTest({ id: 'r1', type_piece: 'vente', categorie_id: null, date_piece: '2026-03-02', montant_ht: 600 }),
+      pieceDeTest({ id: 'r2', type_piece: 'vente', categorie_id: null, date_piece: '2026-11-30', montant_ht: 9000 }),
+    ]
+    faux.categories = []
+    faux.immobilisations = []
+    faux.muetPieces = null
+    // Un échéancier créé d'avance pour toute l'année : douze échéances de 100 €, le 5 de chaque mois.
+    faux.cotisations = Array.from({ length: 12 }, (_, i) =>
+      cotisationDeTest({ id: `e${i}`, echeance: `2026-${String(i + 1).padStart(2, '0')}-05` }))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    faux.cotisations = []
+  })
+
+  it('ne ramène à douze mois que ce qui est échu, sur les mois réellement écoulés', async () => {
+    await rendre()
+
+    screen.getByRole('heading', { name: 'Projection 2026' })
+    screen.getByText(/D'après les 2,7 mois écoulés cette année/)
+    expect(valeur('Cotisations appelées à date')).toBe('300,00 €')
+    expect(valeur('CA encaissé à date')).toBe('600,00 €')
+    expect(valeur("Cotisations projetées sur l'année")).toBe('1 350,00 €')
+  })
+})
+
+// « AUCUN » NE SE DIT QUE D'UNE LISTE LUE EN ENTIER. Sur une lecture refusée, l'affirmer invite à
+// ressaisir un repère qui existe déjà — et le bandeau en tête dit déjà que la lecture a échoué.
+describe('EstimationTab — des repères qui n’ont pas pu être lus', () => {
+  beforeEach(() => {
+    faux.pieces = []
+    faux.categories = []
+    faux.immobilisations = []
+    faux.muetPieces = null
+  })
+  afterEach(() => { faux.refusees = new Set() })
+
+  it('ne dit pas « aucun repère » quand les repères annuels n’ont pas pu être lus', async () => {
+    faux.refusees = new Set(['references_annuelles'])
+    await rendre()
+
+    screen.getByText("Les repères annuels n'ont pas pu être lus.")
+    expect(screen.queryAllByText("Aucun repère annuel enregistré pour l'instant.")).toHaveLength(0)
+    // Le détail par poste, lui, a été lu en entier : son « aucun » reste vrai.
+    screen.getByText("Aucun détail par poste enregistré pour l'instant.")
+  })
+
+  it('ni « aucun détail par poste » quand c’est le détail qui n’a pas pu être lu', async () => {
+    faux.refusees = new Set(['references_postes_annuels'])
+    await rendre()
+
+    screen.getByText("Le détail par poste n'a pas pu être lu.")
+    expect(screen.queryAllByText("Aucun détail par poste enregistré pour l'instant.")).toHaveLength(0)
+    screen.getByText("Aucun repère annuel enregistré pour l'instant.")
   })
 })
