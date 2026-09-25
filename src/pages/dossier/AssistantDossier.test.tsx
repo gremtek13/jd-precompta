@@ -183,6 +183,6 @@ describe('Assistant — dans le panneau de droite', () => {
     faux.muetApres = 0
     render(<Page dossierId="dA" dossierNom="Dossier A" />)
     await act(async () => { fireEvent.click(boutonEntete()) })
-    expect(await within(volet()).findByText(/L’historique des échanges n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(await within(volet()).findByText(/L’historique des échanges n'a pas pu être lu en entier/)).toBeTruthy()
   })
 })

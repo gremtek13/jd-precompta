@@ -68,6 +68,7 @@ export default function VirementsTab({ dossierId }: { dossierId: string }) {
     <>
       <BandeauLecturePartielle
         quoi="Les virements personnels"
+        accord="lus"
         motif={lectureIncomplete}
         consequence="Le total ci-dessous porte donc sur une partie d’entre eux."
       />

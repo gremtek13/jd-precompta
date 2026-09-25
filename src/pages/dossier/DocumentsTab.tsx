@@ -383,12 +383,14 @@ export default function DocumentsTab({ dossierId }: { dossierId: string }) {
 
       <BandeauLecturePartielle
         quoi="Les documents du dossier"
+        accord="lus"
         motif={lectureIncomplete}
         consequence="La liste ci-dessous n’est donc pas complète — recharge la page avant de t’y fier."
       />
 
       <BandeauLecturePartielle
         quoi="La liste des sous-dossiers"
+        accord="lue"
         motif={referencesIncompletes}
         consequence={
           'Un document peut donc s’afficher — et s’exporter — sans sous-dossier alors qu’il en a un.'

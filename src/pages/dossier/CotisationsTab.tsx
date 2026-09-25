@@ -253,6 +253,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     <>
       <BandeauLecturePartielle
         quoi="Les cotisations et leurs justificatifs"
+        accord="lus"
         motif={lectureIncomplete}
         consequence={
           'Les totaux appelé et versé ci-dessous portent donc sur une partie de l’exercice, et un appel ' +

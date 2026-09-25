@@ -263,6 +263,7 @@ export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
       <div className="assistant-bandeau">
         <BandeauLecturePartielle
           quoi="L’historique des échanges"
+          accord="lu"
           motif={lectureIncomplete}
           consequence={
             'Le fil repris perd alors ses premiers échanges — donc le contexte même que l’assistant ' +
