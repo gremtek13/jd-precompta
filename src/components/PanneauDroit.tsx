@@ -1,6 +1,6 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { PanneauDroitContexte, usePanneauDroitContexte } from '../lib/panneauDroit'
+import { PanneauDroitContexte, usePanneauDroitContexte, type GardesPanneau } from '../lib/panneauDroit'
 import { IconFermer } from './icons'
 
 // Le panneau contextuel de droite — voir lib/panneauDroit.ts pour ce qu'il partage et pourquoi un seul
@@ -9,7 +9,14 @@ import { IconFermer } from './icons'
 export function FournisseurPanneauDroit({ children }: { children: ReactNode }) {
   const [cible, setCible] = useState<HTMLElement | null>(null)
   const [occupant, setOccupant] = useState<string | null>(null)
-  const valeur = useMemo(() => ({ cible, setCible, occupant, setOccupant }), [cible, occupant])
+  const garde = useRef<(() => boolean) | null>(null)
+  const gardes = useMemo<GardesPanneau>(() => ({
+    consulter: () => garde.current?.() ?? true,
+    poser: (g) => { garde.current = g },
+    // Seulement la SIENNE : celle d'un contenu parti ne doit pas effacer celle de son successeur.
+    retirer: (g) => { if (garde.current === g) garde.current = null },
+  }), [])
+  const valeur = useMemo(() => ({ cible, setCible, occupant, setOccupant, gardes }), [cible, occupant, gardes])
   return <PanneauDroitContexte.Provider value={valeur}>{children}</PanneauDroitContexte.Provider>
 }
 
@@ -17,9 +24,20 @@ export function FournisseurPanneauDroit({ children }: { children: ReactNode }) {
 // disparaître quand son contenu quitte l'écran — le dossier qu'on referme emporte l'assistant — sans que
 // personne ait à le lui dire. L'occupant, lui, reste retenu : rouvrir un dossier retrouve l'assistant
 // là où on l'avait laissé, comme le panneau latéral d'une application qu'on n'a pas refermé.
+//
+// Il porte le NOM de son occupant (`data-occupant`) : sur téléphone, une fiche de pièce a besoin de
+// tout l'écran là où l'assistant tient dans une carte (voir index.css).
 export function EmplacementPanneauDroit() {
-  const { setCible } = usePanneauDroitContexte()
-  return <aside id="panneau-droit" className="panneau-droit" aria-label="Panneau contextuel" ref={setCible} />
+  const { setCible, occupant } = usePanneauDroitContexte()
+  return (
+    <aside
+      id="panneau-droit"
+      className="panneau-droit"
+      aria-label="Panneau contextuel"
+      data-occupant={occupant ?? undefined}
+      ref={setCible}
+    />
+  )
 }
 
 export default function PanneauDroit({ nom, children }: { nom: string; children: ReactNode }) {

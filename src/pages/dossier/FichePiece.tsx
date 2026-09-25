@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
@@ -9,6 +9,8 @@ import { tauxBce } from '../../lib/tauxChange'
 import { useAuth } from '../../context/AuthContext'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet, TypePiece } from '../../lib/types'
 import FilCommentaires from '../../components/FilCommentaires'
+import { EntetePanneau } from '../../components/PanneauDroit'
+import { IconChevron, IconPrecedent } from '../../components/icons'
 import { messageErreur } from '../../lib/messageErreur'
 import { retirerFichiers } from '../../lib/stockage'
 
@@ -28,6 +30,11 @@ function typeApercu(nom: string): 'image' | 'pdf' | 'autre' {
   return 'autre'
 }
 
+// La fiche d'une pièce, dans le panneau de droite (voir lib/panneauDroit.ts) — elle était une fenêtre
+// modale qui assombrissait tout l'écran, et elle reste un simple contenu : c'est l'écran appelant qui
+// la pose dans le volet, lui donne sa place dans la liste et décide de ce qui suit un enregistrement.
+// Ce qu'elle y gagne est le geste que la maquette validée mettait en avant : parcourir et valider les
+// pièces à la chaîne, la liste toujours visible à côté, sans rouvrir de fenêtre.
 interface Props {
   dossierId: string
   categories: Categorie[]
@@ -44,9 +51,20 @@ interface Props {
   // même si la fiche est fermée sans être enregistrée. Commenter n'est pas modifier la pièce.
   onCommentaireAjoute: (commentaire: PieceCommentaire) => void
   onCommentaireSupprime: (id: string) => void
+  // Sa place dans la liste d'où elle est ouverte (« Justificatif 3 sur 12 ») et de quoi passer à la
+  // voisine sans y revenir — null aux deux bouts.
+  navigation?: { position: string; precedente: (() => void) | null; suivante: (() => void) | null }
+  // Rapprochée d'un mouvement bancaire : dit dans la fiche comme sur la ligne de la liste.
+  rapprochee?: boolean
+  // Après une VALIDATION, l'écran appelant enchaîne sur la prochaine pièce à valider. Sans lui, la
+  // fiche se ferme, comme la fenêtre d'avant.
+  onValidee?: (pieceId: string) => void
+  // Rapporte si la fiche porte une saisie non enregistrée : c'est l'écran appelant qui garde le volet
+  // (la garde de sortie de lib/panneauDroit.ts). Doit être une fonction STABLE.
+  onModifiee?: (modifiee: boolean) => void
 }
 
-export default function PieceFormModal({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee }: Props) {
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
   // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
@@ -85,6 +103,28 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
   const [lignesBrutes, setLignesBrutes] = useState<string[] | undefined>(undefined)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+
+  // Une saisie NON ENREGISTRÉE : tout champ qui s'écarte de la pièce telle qu'ouverte, un fichier
+  // choisi, une extraction qui a rempli le formulaire. Dans une fenêtre modale la question ne se
+  // posait pas — rien d'autre n'était cliquable. Dans le volet, une autre ligne, « suivante »,
+  // « Assistant » ou la croix peuvent chasser la fiche : l'écran appelant s'en sert pour demander
+  // avant de laisser partir ce qui a été tapé.
+  const modifiee = file !== null
+    || datePiece !== (piece?.date_piece ?? '')
+    || tiers !== (piece?.tiers ?? '')
+    || typePiece !== (piece?.type_piece ?? 'achat')
+    || categorieId !== (piece?.categorie_id ?? '')
+    || sousDossierId !== (piece?.sous_dossier_id ?? '')
+    || montantHt !== (piece?.montant_ht?.toString() ?? '')
+    || montantTva !== (piece?.montant_tva?.toString() ?? '')
+    || montantTtc !== (piece?.montant_ttc?.toString() ?? '')
+    || devise !== (piece?.devise ?? DEVISE_PIVOT)
+    || montantDevise !== (piece?.montant_devise ?? null)
+    || tauxChange !== (piece?.taux_change ?? null)
+    || notes !== (piece?.notes ?? '')
+  useEffect(() => { onModifiee?.(modifiee) }, [modifiee, onModifiee])
+  // Démontée — remplacée, fermée —, elle n'a plus rien à protéger.
+  useEffect(() => () => onModifiee?.(false), [onModifiee])
 
   // Aperçu : le fichier fraîchement choisi se prévisualise localement (pas besoin de l'uploader
   // d'abord) ; le fichier déjà en storage passe par une URL signée temporaire, le bucket n'étant pas
@@ -364,8 +404,12 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
         }
       }
 
+      // Enregistrée : plus rien à protéger — dit AVANT de chaîner, sinon la garde demanderait
+      // d'abandonner une saisie qui vient justement d'être enregistrée.
+      onModifiee?.(false)
       onSaved()
-      onClose()
+      if (statut === 'validee' && piece && onValidee) onValidee(piece.id)
+      else onClose()
     } catch (err) {
       setError(messageErreur(err))
     } finally {
@@ -407,9 +451,10 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
       // Best-effort : le fichier au storage n'a pas besoin de bloquer la suppression de la pièce s'il
       // a déjà disparu ou si la suppression échoue pour une autre raison.
       if (piece.storage_path) {
-        await retirerFichiers('pieces', [piece.storage_path], 'PieceFormModal')
+        await retirerFichiers('pieces', [piece.storage_path], 'FichePiece')
       }
 
+      onModifiee?.(false)
       onSaved()
       onClose()
     } catch (err) {
@@ -419,238 +464,246 @@ export default function PieceFormModal({ dossierId, categories, sousDossiers, ti
     }
   }
 
+  const genreApercu = typeApercu(file?.name ?? piece?.nom_fichier ?? '')
+  const occupee = saving || deleting
+
   return (
-    <div style={overlayStyle}>
-      <div className="card" style={{ width: 'min(880px, 94vw)', maxHeight: '90vh', padding: 0, display: 'flex', flexDirection: 'column' }}>
-        <h2 style={{ margin: 0, padding: '20px 20px 0' }}>{piece ? 'Modifier la pièce' : 'Ajouter une pièce'}</h2>
-        {/* Formulaire en deux blocs distincts (contenu qui défile / pied fixe) — voir .piece-modal-footer
-            dans index.css : sur un justificatif long (PDF), les boutons d'action restaient sinon hors
-            champ tant qu'on n'avait pas fait défiler tout le formulaire jusqu'en bas. */}
-        <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
-            <div className="piece-modal-grid">
-              <div>
-                <div className="field">
-                  <label htmlFor="file">Fichier {piece && '(laisser vide pour garder l\'actuel)'}</label>
-                  <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
-                  {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
-                </div>
+    <div className="fiche-piece">
+      <EntetePanneau
+        titre={navigation?.position ?? (piece ? 'Justificatif' : 'Ajouter une pièce')}
+        sousTitre={piece ? (tiers.trim() || piece.nom_fichier) : null}
+        actions={navigation && (
+          <>
+            {/* Grisés pendant un enregistrement : la fiche changerait de pièce sous une réponse
+                encore attendue, et l'enchaînement qui suit une validation partirait de la mauvaise. */}
+            <button
+              type="button"
+              className="panneau-bouton-icone"
+              onClick={navigation.precedente ?? undefined}
+              disabled={!navigation.precedente || occupee}
+              aria-label="Justificatif précédent"
+              title="Justificatif précédent"
+            >
+              <IconPrecedent width={18} height={18} />
+            </button>
+            <button
+              type="button"
+              className="panneau-bouton-icone"
+              onClick={navigation.suivante ?? undefined}
+              disabled={!navigation.suivante || occupee}
+              aria-label="Justificatif suivant"
+              title="Justificatif suivant"
+            >
+              <IconChevron width={18} height={18} />
+            </button>
+          </>
+        )}
+        onFermer={onClose}
+      />
+      {/* Corps qui défile, pied fixe : sur un justificatif long (PDF), les boutons d'action
+          restaient sinon hors champ tant qu'on n'avait pas fait défiler tout le formulaire. */}
+      <form onSubmit={handleSubmit} className="fiche-piece-formulaire">
+        <div className="fiche-piece-corps">
+          {(previewUrl || previewError) && (
+            <div className="field fiche-piece-apercu">
+              {previewError ? (
+                <p className="muted" style={{ margin: 0 }}>{previewError}</p>
+              ) : (
+                <>
+                  {genreApercu === 'image' && <img src={previewUrl!} alt="Aperçu de la pièce" />}
+                  {genreApercu === 'pdf' && <iframe src={previewUrl!} title="Aperçu de la pièce" />}
+                  <a href={previewUrl!} target="_blank" rel="noreferrer" className="muted">
+                    Ouvrir dans un nouvel onglet ↗
+                  </a>
+                </>
+              )}
+            </div>
+          )}
 
-                {(previewUrl || previewError) && (
-                  <div className="field">
-                    {previewError ? (
-                      <p className="muted" style={{ margin: 0 }}>{previewError}</p>
-                    ) : (
-                      <>
-                        {typeApercu(file?.name ?? piece?.nom_fichier ?? '') === 'image' && (
-                          <img
-                            src={previewUrl!}
-                            alt="Aperçu de la pièce"
-                            style={{ maxWidth: '100%', maxHeight: 340, objectFit: 'contain', borderRadius: 8, border: '1px solid var(--color-border)' }}
-                          />
-                        )}
-                        {typeApercu(file?.name ?? piece?.nom_fichier ?? '') === 'pdf' && (
-                          <iframe
-                            src={previewUrl!}
-                            title="Aperçu de la pièce"
-                            style={{ width: '100%', height: 420, border: '1px solid var(--color-border)', borderRadius: 8 }}
-                          />
-                        )}
-                        <a href={previewUrl!} target="_blank" rel="noreferrer" className="muted" style={{ display: 'inline-block', marginTop: 6 }}>
-                          Ouvrir dans un nouvel onglet ↗
-                        </a>
-                      </>
-                    )}
-                  </div>
-                )}
-              </div>
+          <div className="field">
+            <label htmlFor="file">{piece ? 'Remplacer le fichier' : 'Fichier'}</label>
+            <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
+            {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
+          </div>
 
-              <div>
-                <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                  <button
-                    type="button"
-                    className="btn btn-outline btn-sm"
-                    disabled={extracting || (!file && !piece?.storage_path)}
-                    onClick={handleExtract}
-                  >
-                    {extracting ? 'Extraction…' : '✨ Extraire automatiquement'}
-                  </button>
-                  {confiance && (
-                    <span className={`badge ${confiance === 'haute' ? 'badge-ok' : confiance === 'moyenne' ? 'badge-warning' : 'badge-neutral'}`}>
-                      Confiance {confiance} — vérifie les champs
-                    </span>
-                  )}
-                </div>
-                {extractionError && <p className="error-text" style={{ marginTop: -8 }}>{extractionError}</p>}
-                {suggestionAutre && <p className="muted" style={{ marginTop: -8 }}>💡 {suggestionAutre}</p>}
+          <div className="field" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <button
+              type="button"
+              className="btn btn-outline btn-sm"
+              disabled={extracting || (!file && !piece?.storage_path)}
+              onClick={handleExtract}
+            >
+              {extracting ? 'Extraction…' : '✨ Extraire automatiquement'}
+            </button>
+            {confiance && (
+              <span className={`badge ${confiance === 'haute' ? 'badge-ok' : confiance === 'moyenne' ? 'badge-warning' : 'badge-neutral'}`}>
+                Confiance {confiance} — vérifie les champs
+              </span>
+            )}
+          </div>
+          {extractionError && <p className="error-text" style={{ marginTop: -8 }}>{extractionError}</p>}
+          {suggestionAutre && <p className="muted" style={{ marginTop: -8 }}>💡 {suggestionAutre}</p>}
 
-                {lignesBrutes && (
-                  <details className="field" style={{ marginTop: -8 }}>
-                    <summary className="muted" style={{ cursor: 'pointer' }}>TVA introuvable — diagnostic (temporaire), clique pour copier</summary>
-                    <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
-                      {lignesBrutes.join('\n')}
-                    </pre>
-                  </details>
-                )}
+          {lignesBrutes && (
+            <details className="field" style={{ marginTop: -8 }}>
+              <summary className="muted" style={{ cursor: 'pointer' }}>TVA introuvable — diagnostic (temporaire), clique pour copier</summary>
+              <pre style={{ fontSize: '0.75rem', background: 'var(--color-bg)', padding: 8, borderRadius: 8, overflowX: 'auto', userSelect: 'all' }}>
+                {lignesBrutes.join('\n')}
+              </pre>
+            </details>
+          )}
 
-                <div className="field-row">
-                  <div className="field">
-                    <label htmlFor="date">Date de la pièce</label>
-                    <input id="date" type="date" value={datePiece} onChange={(e) => setDatePiece(e.target.value)} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="type">Type</label>
-                    <select id="type" value={typePiece} onChange={(e) => setTypePiece(e.target.value as TypePiece)}>
-                      <option value="achat">Achat</option>
-                      <option value="vente">Vente</option>
-                      <option value="note_frais">Note de frais</option>
-                      <option value="autre">Autre</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="field">
-                  <label htmlFor="tiers">Tiers (fournisseur / client)</label>
-                  <input
-                    id="tiers"
-                    list="tiers-connus"
-                    value={tiers}
-                    onChange={(e) => setTiers(e.target.value)}
-                    onBlur={(e) => suggestCategorieFromTiers(e.target.value)}
-                  />
-                  <datalist id="tiers-connus">
-                    {tiersConnus.map((t) => <option key={t} value={t} />)}
-                  </datalist>
-                </div>
-
-                <div className="field-row">
-                  <div className="field">
-                    <label htmlFor="categorie">Catégorie</label>
-                    <select id="categorie" value={categorieId} onChange={(e) => setCategorieId(e.target.value)}>
-                      <option value="">— Choisir —</option>
-                      {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
-                    </select>
-                  </div>
-                  <div className="field">
-                    <label htmlFor="sousDossier">Sous-dossier</label>
-                    <select id="sousDossier" value={sousDossierId} onChange={(e) => setSousDossierId(e.target.value)}>
-                      <option value="">— Aucun —</option>
-                      {sousDossiers.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="field-row">
-                  <div className="field">
-                    <label htmlFor="ht">Montant HT</label>
-                    <input id="ht" type="number" step="0.01" value={montantHt} onChange={(e) => { setMontantHt(e.target.value); recalcFromHtTva(e.target.value, montantTva) }} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="tva">TVA</label>
-                    <input id="tva" type="number" step="0.01" value={montantTva} onChange={(e) => { setMontantTva(e.target.value); recalcFromHtTva(montantHt, e.target.value) }} />
-                  </div>
-                  <div className="field">
-                    <label htmlFor="ttc">Montant TTC</label>
-                    <input id="ttc" type="number" step="0.01" value={montantTtc} onChange={(e) => setMontantTtc(e.target.value)} />
-                  </div>
-                </div>
-
-                {/* Au-dessus des trois montants : ils sont en EUROS, et le document dit autre chose.
-                    Sans cette ligne, on croit relire la facture alors qu'on lit sa conversion. */}
-                {devise !== DEVISE_PIVOT && (
-                  <div className="bloc-devise">
-                    <div>
-                      <strong>Document en {devise}</strong>
-                      {tauxChange != null && montantDevise != null ? (
-                        <span className="muted">
-                          {' — '}{libelleConversion(montantDevise, devise, tauxChange, dateTaux ?? datePiece)}.
-                          {' '}Les montants ci-dessous sont le résultat de cette conversion, en euros.
-                          {' '}{conversionSource === 'banque'
-                            ? 'Montant DÉFINITIF : repris du mouvement bancaire qui a payé la pièce, frais de change compris.'
-                            : 'Montant PROVISOIRE : il sera remplacé par ce que la banque a réellement débité, au rapprochement.'}
-                        </span>
-                      ) : (
-                        <span className="muted">
-                          {' — '}non convertie : aucun taux BCE n'a pu être obtenu au dépôt.
-                          {montantDevise != null && ` Montant lu sur le document : ${montantDevise.toFixed(2)} ${devise}.`}
-                        </span>
-                      )}
-                    </div>
-                    <button type="button" className="btn btn-outline btn-sm" disabled={conversionEnCours || montantDevise == null} onClick={reconvertir}>
-                      {conversionEnCours ? 'Conversion…' : `Convertir au taux du ${datePiece || '…'}`}
-                    </button>
-                    {conversionErreur && <p className="alerte-tva" style={{ margin: 0 }}>{conversionErreur}</p>}
-                  </div>
-                )}
-
-                {/* Sous les trois champs, et calculé en direct : c'est l'endroit et le moment où la
-                    personne a le document sous les yeux. La règle n'est pas réécrite ici — c'est le
-                    contrôle partagé qui tranche (voir lib/controles.ts), appliqué aux valeurs en
-                    cours de saisie plutôt qu'à la pièce enregistrée. */}
-                {motifTvaSaisie && (
-                  <p className="alerte-tva">
-                    <strong>TVA impossible :</strong> {LIBELLE_MOTIF_TVA[motifTvaSaisie]}. Ces montants
-                    ne peuvent pas être ceux du document — la TVA lue part telle quelle en déduction.
-                  </p>
-                )}
-
-                <div className="field">
-                  <label htmlFor="notes">Notes internes</label>
-                  <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
-                  <p className="muted" style={{ fontSize: '0.78rem', margin: '4px 0 0' }}>
-                    Pour le cabinet seul. Les précisions échangées avec le client sont plus bas.
-                  </p>
-                </div>
-
-                {/* Le fil client/cabinet, à côté du document plutôt que dans un onglet à part : c'est
-                    en regardant la facture qu'on a besoin de savoir ce que le client en a dit. Une
-                    pièce pas encore enregistrée n'a pas d'identifiant, donc rien à quoi rattacher un
-                    commentaire — le fil n'apparaît qu'une fois la pièce créée. */}
-                {piece && (
-                  <div className="field">
-                    <label>Précisions du client</label>
-                    <FilCommentaires
-                      dossierId={dossierId}
-                      cible={{ type: 'piece', id: piece.id }}
-                      commentaires={commentaires}
-                      estCabinet
-                      onAjout={(c) => { setCommentaires((prev) => [...prev, c]); onCommentaireAjoute(c) }}
-                      onSuppression={(id) => {
-                        setCommentaires((prev) => prev.filter((c) => c.id !== id))
-                        onCommentaireSupprime(id)
-                      }}
-                    />
-                  </div>
-                )}
-
-                {error && <p className="error-text">{error}</p>}
-              </div>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="date">Date de la pièce</label>
+              <input id="date" type="date" value={datePiece} onChange={(e) => setDatePiece(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="type">Type</label>
+              <select id="type" value={typePiece} onChange={(e) => setTypePiece(e.target.value as TypePiece)}>
+                <option value="achat">Achat</option>
+                <option value="vente">Vente</option>
+                <option value="note_frais">Note de frais</option>
+                <option value="autre">Autre</option>
+              </select>
             </div>
           </div>
 
-          <div className="piece-modal-footer" style={{ padding: 16, borderTop: '1px solid var(--color-border)' }}>
-            {piece ? (
-              <button type="button" className="btn btn-danger" disabled={deleting || saving} onClick={handleDelete}>
-                {deleting ? 'Suppression…' : 'Supprimer'}
-              </button>
-            ) : <span />}
-            <div className="piece-modal-actions" style={{ display: 'flex', gap: 10 }}>
-              <button type="button" className="btn btn-outline" onClick={onClose}>Annuler</button>
-              <button type="button" className="btn btn-outline" disabled={saving || deleting} onClick={() => save('a_valider')}>
-                Enregistrer brouillon
-              </button>
-              <button type="submit" className="btn btn-primary" disabled={saving || deleting}>
-                {saving ? 'Enregistrement…' : 'Valider'}
-              </button>
+          <div className="field">
+            <label htmlFor="tiers">Tiers (fournisseur / client)</label>
+            <input
+              id="tiers"
+              list="tiers-connus"
+              value={tiers}
+              onChange={(e) => setTiers(e.target.value)}
+              onBlur={(e) => suggestCategorieFromTiers(e.target.value)}
+            />
+            <datalist id="tiers-connus">
+              {tiersConnus.map((t) => <option key={t} value={t} />)}
+            </datalist>
+          </div>
+
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="categorie">Catégorie</label>
+              <select id="categorie" value={categorieId} onChange={(e) => setCategorieId(e.target.value)}>
+                <option value="">— Choisir —</option>
+                {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="sousDossier">Sous-dossier</label>
+              <select id="sousDossier" value={sousDossierId} onChange={(e) => setSousDossierId(e.target.value)}>
+                <option value="">— Aucun —</option>
+                {sousDossiers.map((s) => <option key={s.id} value={s.id}>{s.nom}</option>)}
+              </select>
             </div>
           </div>
-        </form>
-      </div>
+
+          <div className="field-row fiche-piece-montants">
+            <div className="field">
+              <label htmlFor="ht">Montant HT</label>
+              <input id="ht" type="number" step="0.01" value={montantHt} onChange={(e) => { setMontantHt(e.target.value); recalcFromHtTva(e.target.value, montantTva) }} />
+            </div>
+            <div className="field">
+              <label htmlFor="tva">TVA</label>
+              <input id="tva" type="number" step="0.01" value={montantTva} onChange={(e) => { setMontantTva(e.target.value); recalcFromHtTva(montantHt, e.target.value) }} />
+            </div>
+            <div className="field">
+              <label htmlFor="ttc">Montant TTC</label>
+              <input id="ttc" type="number" step="0.01" value={montantTtc} onChange={(e) => setMontantTtc(e.target.value)} />
+            </div>
+          </div>
+
+          {/* Au-dessus des trois montants : ils sont en EUROS, et le document dit autre chose.
+              Sans cette ligne, on croit relire la facture alors qu'on lit sa conversion. */}
+          {devise !== DEVISE_PIVOT && (
+            <div className="bloc-devise">
+              <div>
+                <strong>Document en {devise}</strong>
+                {tauxChange != null && montantDevise != null ? (
+                  <span className="muted">
+                    {' — '}{libelleConversion(montantDevise, devise, tauxChange, dateTaux ?? datePiece)}.
+                    {' '}Les montants ci-dessous sont le résultat de cette conversion, en euros.
+                    {' '}{conversionSource === 'banque'
+                      ? 'Montant DÉFINITIF : repris du mouvement bancaire qui a payé la pièce, frais de change compris.'
+                      : 'Montant PROVISOIRE : il sera remplacé par ce que la banque a réellement débité, au rapprochement.'}
+                  </span>
+                ) : (
+                  <span className="muted">
+                    {' — '}non convertie : aucun taux BCE n'a pu être obtenu au dépôt.
+                    {montantDevise != null && ` Montant lu sur le document : ${montantDevise.toFixed(2)} ${devise}.`}
+                  </span>
+                )}
+              </div>
+              <button type="button" className="btn btn-outline btn-sm" disabled={conversionEnCours || montantDevise == null} onClick={reconvertir}>
+                {conversionEnCours ? 'Conversion…' : `Convertir au taux du ${datePiece || '…'}`}
+              </button>
+              {conversionErreur && <p className="alerte-tva" style={{ margin: 0 }}>{conversionErreur}</p>}
+            </div>
+          )}
+
+          {/* Sous les trois champs, et calculé en direct : c'est l'endroit et le moment où la
+              personne a le document sous les yeux. La règle n'est pas réécrite ici — c'est le
+              contrôle partagé qui tranche (voir lib/controles.ts), appliqué aux valeurs en
+              cours de saisie plutôt qu'à la pièce enregistrée. */}
+          {motifTvaSaisie && (
+            <p className="alerte-tva">
+              <strong>TVA impossible :</strong> {LIBELLE_MOTIF_TVA[motifTvaSaisie]}. Ces montants
+              ne peuvent pas être ceux du document — la TVA lue part telle quelle en déduction.
+            </p>
+          )}
+
+          <div className="field">
+            <label htmlFor="notes">Notes internes</label>
+            <textarea id="notes" rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <p className="muted" style={{ fontSize: '0.78rem', margin: '4px 0 0' }}>
+              Pour le cabinet seul. Les précisions échangées avec le client sont plus bas.
+            </p>
+          </div>
+
+          {/* Le fil client/cabinet, à côté du document plutôt que dans un onglet à part : c'est
+              en regardant la facture qu'on a besoin de savoir ce que le client en a dit. Une
+              pièce pas encore enregistrée n'a pas d'identifiant, donc rien à quoi rattacher un
+              commentaire — le fil n'apparaît qu'une fois la pièce créée. */}
+          {piece && (
+            <div className="field">
+              <label>Précisions du client</label>
+              <FilCommentaires
+                dossierId={dossierId}
+                cible={{ type: 'piece', id: piece.id }}
+                commentaires={commentaires}
+                estCabinet
+                onAjout={(c) => { setCommentaires((prev) => [...prev, c]); onCommentaireAjoute(c) }}
+                onSuppression={(id) => {
+                  setCommentaires((prev) => prev.filter((c) => c.id !== id))
+                  onCommentaireSupprime(id)
+                }}
+              />
+            </div>
+          )}
+
+          {rapprochee && <p className="fiche-piece-rapprochee">Rapprochée avec un mouvement bancaire.</p>}
+
+          {error && <p className="error-text">{error}</p>}
+        </div>
+
+        <div className="fiche-piece-pied">
+          {piece ? (
+            <button type="button" className="btn btn-danger btn-sm" disabled={occupee} onClick={handleDelete}>
+              {deleting ? 'Suppression…' : 'Supprimer'}
+            </button>
+          ) : <span />}
+          <div className="fiche-piece-actions">
+            <button type="button" className="btn btn-outline btn-sm" disabled={occupee} onClick={() => save('a_valider')}>
+              Enregistrer brouillon
+            </button>
+            <button type="submit" className="btn btn-primary btn-sm" disabled={occupee}>
+              {saving ? 'Enregistrement…' : 'Valider'}
+            </button>
+          </div>
+        </div>
+      </form>
     </div>
   )
-}
-
-const overlayStyle: CSSProperties = {
-  position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)',
-  display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50, padding: 20,
 }

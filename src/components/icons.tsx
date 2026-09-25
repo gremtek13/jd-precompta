@@ -216,6 +216,12 @@ export const IconChevron = (p: IconProps) => base(<>
   <path d="M9.5 5.5l6.5 6.5-6.5 6.5" />
 </>, p)
 
+// Son pendant vers la gauche : « précédent » dans une liste qu'on parcourt sans y revenir (la fiche
+// d'une pièce dans le panneau de droite), où IconChevron sert de « suivant ».
+export const IconPrecedent = (p: IconProps) => base(<>
+  <path d="M14.5 5.5L8 12l6.5 6.5" />
+</>, p)
+
 // Barre latérale déployée / réduite — un cadre et sa colonne de gauche, la convention des
 // applications dont la barre se replie en une colonne d'icônes.
 export const IconPanneauLateral = (p: IconProps) => base(<>

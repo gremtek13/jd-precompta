@@ -23,7 +23,7 @@ describe('suggererCategorie', () => {
   })
 
   it('normalise le tiers avant de chercher : casse et espaces multiples', () => {
-    // Le stockage et la recherche passent tous deux par `normalizeTiers` (voir PieceFormModal) —
+    // Le stockage et la recherche passent tous deux par `normalizeTiers` (voir FichePiece) —
     // c'est ce qui fait qu'une saisie "  EDF   Marseille " retrouve la règle enregistrée.
     expect(suggererCategorie('  EDF   MARSEILLE ', [regleDossier('edf marseille', 'c')], [])).toBe('c')
   })

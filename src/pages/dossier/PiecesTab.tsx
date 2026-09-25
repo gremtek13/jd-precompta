@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
@@ -15,7 +15,9 @@ import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import type { Categorie, Piece, PieceCommentaire, SousDossier, TiersCategorie, TiersCategorieCabinet } from '../../lib/types'
 import { chargerCommentaires, commentairesParCible, dernierCommentaire } from '../../lib/commentaires'
-import PieceFormModal from './PieceFormModal'
+import FichePiece from './FichePiece'
+import PanneauDroit from '../../components/PanneauDroit'
+import { useGardePanneau, usePanneauDroit } from '../../lib/panneauDroit'
 import AjouterDocumentsModal from './AjouterDocumentsModal'
 import ImportDossierModal from './ImportDossierModal'
 import SuperPdpModal from './SuperPdpModal'
@@ -46,6 +48,21 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const { monCabinetId } = useAuth()
   const [sansDateOnly, setSansDateOnly] = useState(false)
   const [editing, setEditing] = useState<Piece | null>(null)
+  // La fiche d'une pièce vit dans le panneau de droite (voir FichePiece), la liste restant cliquable
+  // à côté. `pieceOuverte` suit la pièce affichée SANS attendre un rendu : un enregistrement qui répond
+  // après qu'on a changé de pièce doit pouvoir le constater (voir `apresValidation`). Et
+  // `ficheModifiee`, ce que la fiche rapporte de sa saisie : la garde du volet le consulte avant de
+  // laisser une autre ligne, « Assistant » ou la croix chasser une saisie non enregistrée.
+  const panneauPiece = usePanneauDroit('piece')
+  const pieceOuverte = useRef<string | null>(null)
+  const ficheModifiee = useRef(false)
+  const noterModification = useCallback((modifiee: boolean) => { ficheModifiee.current = modifiee }, [])
+  const confirmerAbandon = useCallback(
+    () => !ficheModifiee.current
+      || window.confirm('Les modifications de cette pièce ne sont pas enregistrées. Les abandonner ?'),
+    [],
+  )
+  useGardePanneau('piece', editing ? confirmerAbandon : null)
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [ajoutOuvert, setAjoutOuvert] = useState(false)
   const [importDossierOuvert, setImportDossierOuvert] = useState(false)
@@ -264,6 +281,48 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   )
 
   const sousDossierLabel = (id: string | null) => sousDossiers.find((s) => s.id === id)?.nom ?? '—'
+
+  function afficherPiece(p: Piece | null) {
+    pieceOuverte.current = p?.id ?? null
+    ficheModifiee.current = false
+    setEditing(p)
+  }
+
+  // Ouvrir une pièce — une ligne cliquée, « précédente », « suivante » : la fiche affichée est
+  // consultée d'abord, une saisie non enregistrée ne part pas sans un mot.
+  function ouvrirPiece(p: Piece) {
+    if (panneauPiece.ouvert && editing && editing.id !== p.id && !confirmerAbandon()) return
+    if (!panneauPiece.ouvrir()) return
+    afficherPiece(p)
+  }
+
+  function fermerFiche() {
+    if (panneauPiece.fermer()) afficherPiece(null)
+  }
+
+  // Après une validation, la prochaine pièce À VALIDER de la liste affichée — après celle-ci, puis en
+  // reprenant du début : le geste de la maquette, valider à la chaîne sans revenir à la liste. Plus
+  // aucune, la fiche se ferme. Et rien ne bouge si l'opérateur a déjà ouvert une autre pièce pendant
+  // l'enregistrement : la réponse arrive alors pour une fiche qui n'est plus là.
+  function apresValidation(pieceId: string) {
+    if (pieceOuverte.current !== pieceId) return
+    const i = filtered.findIndex((p) => p.id === pieceId)
+    const ordre = i === -1 ? filtered : [...filtered.slice(i + 1), ...filtered.slice(0, i)]
+    const suivante = ordre.find((p) => p.id !== pieceId && p.statut === 'a_valider')
+    if (suivante) afficherPiece(suivante)
+    else fermerFiche()
+  }
+
+  // La fiche ne montre qu'une pièce qui existe encore : supprimée par la sélection de la liste —
+  // chose possible maintenant que la liste reste cliquable à côté —, elle ne pourrait plus
+  // s'enregistrer, et une mise à jour qui ne touche aucune ligne ne lève rien.
+  const ficheVisible = editing !== null && panneauPiece.ouvert && pieces.some((p) => p.id === editing.id)
+  const rangOuvert = editing ? filtered.findIndex((p) => p.id === editing.id) : -1
+  const navigationFiche = {
+    position: rangOuvert === -1 ? 'Justificatif hors de la liste affichée' : `Justificatif ${rangOuvert + 1} sur ${filtered.length}`,
+    precedente: rangOuvert > 0 ? () => ouvrirPiece(filtered[rangOuvert - 1]) : null,
+    suivante: rangOuvert !== -1 && rangOuvert < filtered.length - 1 ? () => ouvrirPiece(filtered[rangOuvert + 1]) : null,
+  }
 
   // Le texte lu ne se charge qu'au clic : garder les quatre-vingts textes d'un dossier en mémoire
   // pour qu'un seul soit lu coûterait à chaque ouverture d'onglet ce qu'on ne consulte qu'une fois.
@@ -567,7 +626,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         </p>
       )}
 
-      <div className="card table-scroll" style={{ padding: 0 }}>
+      <div className="card table-scroll liste-pieces" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
         ) : filtered.length === 0 ? (
@@ -581,22 +640,22 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                 <th className="col-checkbox"></th>
                 <th>Date</th>
                 <th>Tiers</th>
-                <th className="hide-mobile">Catégorie</th>
-                <th className="hide-mobile">Sous-dossier</th>
+                <th className="hide-mobile hide-tres-etroit">Catégorie</th>
+                <th className="hide-mobile hide-etroit">Sous-dossier</th>
                 <th>Montant TTC</th>
-                <th className="hide-mobile">Confiance</th>
+                <th className="hide-mobile hide-etroit">Confiance</th>
                 <th>Statut</th>
               </tr>
             </thead>
             <tbody>
               {filtered.map((p) => (
                 <Fragment key={p.id}>
-                <tr className="clickable">
+                <tr className={`clickable${ficheVisible && editing?.id === p.id ? ' ligne-ouverte' : ''}`}>
                   <td className="col-checkbox" onClick={(e) => e.stopPropagation()}>
                     <input type="checkbox" checked={selected.has(p.id)} onChange={() => toggleSelect(p.id)} />
                   </td>
-                  <td onClick={() => setEditing(p)}>{formatDate(p.date_piece)}</td>
-                  <td onClick={() => setEditing(p)}>
+                  <td onClick={() => ouvrirPiece(p)}>{formatDate(p.date_piece)}</td>
+                  <td onClick={() => ouvrirPiece(p)}>
                     {p.tiers ?? '—'}
                     {/* La dernière précision est lue ICI, sur la ligne, pas dans la fiche : si
                         l'opérateur doit ouvrir une modale pour savoir ce qu'est « BOULANGER
@@ -631,15 +690,15 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                       </button>
                     )}
                   </td>
-                  <td className="hide-mobile" onClick={() => setEditing(p)}>
+                  <td className="hide-mobile hide-tres-etroit" onClick={() => ouvrirPiece(p)}>
                     {p.categorie_id ? (
                       categorieLabel(p.categorie_id)
                     ) : suggestionPour(p) ? (
                       <>— <span className="muted" style={{ fontSize: '0.8rem' }}>(suggéré : {categorieLabel(suggestionPour(p))})</span></>
                     ) : '—'}
                   </td>
-                  <td className="hide-mobile" onClick={() => setEditing(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
-                  <td onClick={() => setEditing(p)}>
+                  <td className="hide-mobile hide-etroit" onClick={() => ouvrirPiece(p)}>{sousDossierLabel(p.sous_dossier_id)}</td>
+                  <td onClick={() => ouvrirPiece(p)}>
                     {formatMoney(p.montant_ttc)}
                     {/* Le montant affiché est en euros ; le document, lui, dit autre chose. Sans ce
                         rappel, chercher « 24 » sur une facture OpenAI ne donne rien — la ligne
@@ -706,13 +765,13 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
                       </div>
                     )}
                   </td>
-                  <td className="hide-mobile" onClick={() => setEditing(p)}>
+                  <td className="hide-mobile hide-etroit" onClick={() => ouvrirPiece(p)}>
                     {p.confiance === 'basse' && <span className="badge badge-danger">Basse — à vérifier</span>}
                     {p.confiance === 'moyenne' && <span className="badge badge-warning">Moyenne</span>}
                     {p.confiance === 'haute' && <span className="badge badge-ok">Haute</span>}
                     {!p.confiance && <span className="muted">—</span>}
                   </td>
-                  <td onClick={() => setEditing(p)}>
+                  <td onClick={() => ouvrirPiece(p)}>
                     {p.statut === 'validee'
                       ? <span className="badge badge-ok">Validée</span>
                       : <span className="badge badge-warning">À valider</span>}
@@ -753,21 +812,30 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         )}
       </div>
 
-      {editing && (
-        <PieceFormModal
-          dossierId={dossierId}
-          categories={categories}
-          sousDossiers={sousDossiers}
-          tiersCategories={tiersCategories}
-          tiersCategoriesCabinet={tiersCategoriesCabinet}
-          tiersConnus={tiersConnus}
-          piece={editing}
-          commentaires={filDeLaPiece(editing.id)}
-          onClose={() => setEditing(null)}
-          onSaved={load}
-          onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
-          onCommentaireSupprime={(id) => setCommentaires((prev) => prev.filter((c) => c.id !== id))}
-        />
+      {editing && ficheVisible && (
+        <PanneauDroit nom="piece">
+          {/* `key` : une fiche par pièce. Passer à la suivante repart de SES valeurs, jamais de ce qui
+              était tapé sur la précédente. */}
+          <FichePiece
+            key={editing.id}
+            dossierId={dossierId}
+            categories={categories}
+            sousDossiers={sousDossiers}
+            tiersCategories={tiersCategories}
+            tiersCategoriesCabinet={tiersCategoriesCabinet}
+            tiersConnus={tiersConnus}
+            piece={editing}
+            commentaires={filDeLaPiece(editing.id)}
+            navigation={navigationFiche}
+            rapprochee={piecesRapprochees.has(editing.id)}
+            onClose={fermerFiche}
+            onSaved={load}
+            onValidee={apresValidation}
+            onModifiee={noterModification}
+            onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
+            onCommentaireSupprime={(id) => setCommentaires((prev) => prev.filter((c) => c.id !== id))}
+          />
+        </PanneauDroit>
       )}
 
       {ajoutOuvert && (

@@ -55,8 +55,8 @@ Conséquences pratiques :
 - **Coque d'ordinateur en trois volets** (25/09/2026, étape 1 livrée, à la demande du cabinet :
   « calquer l'interface PC sur celle de Claude ») : une barre latérale posée sur le fond de la coque
   (`--color-shell`), le travail dans un panneau clair aux coins arrondis (`.main`), et un panneau
-  contextuel à droite (étape 2, en cours : l'assistant y vit déjà ; la fiche pièce et le
-  rapprochement bancaire y viendront à la place de leurs modales). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
+  contextuel à droite (étape 2, en cours : l'assistant et la fiche d'une pièce y vivent ; le
+  rapprochement bancaire y viendra à la place de sa modale). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
   formulaire du tableau de bord par `?nouveau=1`), la recherche de dossiers (`lib/recherche.ts`), la
   navigation globale, le dossier ouvert avec TOUS ses écrans en arborescence, les autres dossiers,
   et le compte en bas (thème, déconnexion). Réductible en colonne d'icônes, préférence retenue par
@@ -75,8 +75,33 @@ Conséquences pratiques :
   retient le NOM de l'occupant, ouvrir un contenu remplace le précédent, et `fermer()` ne ferme que
   s'il occupe encore le volet. Vide, l'emplacement n'existe pas (`:empty`) : un contenu qui quitte
   l'écran — le dossier qu'on referme — l'emporte avec lui. Sous 1 280 px le volet se pose PAR-DESSUS
-  le panneau central au lieu de l'écraser ; sur mobile il redevient la carte flottante d'avant. Hors
-  de la coque, `usePanneauDroit` LÈVE plutôt que d'offrir un bouton qui ne fait rien.
+  le panneau central au lieu de l'écraser ; sur mobile il redevient la carte flottante d'avant — sauf
+  pour la fiche d'une pièce, qui y prend tout l'écran (l'emplacement porte le nom de son occupant,
+  `data-occupant`, pour que le style le sache). Hors de la coque, `usePanneauDroit` LÈVE plutôt que
+  d'offrir un bouton qui ne fait rien.
+  **ET UNE GARDE DE SORTIE, parce que le volet laisse le reste de l'écran cliquable** — c'est tout son
+  intérêt, et c'est ce que la fenêtre modale qu'il remplace interdisait. Une fiche en cours de saisie
+  peut donc être chassée par une autre ligne, « suivante », « Assistant » ou la croix. Le contenu
+  affiché pose sa garde (`useGardePanneau`) ; `ouvrir()` et `fermer()` la consultent avant qu'un AUTRE
+  contenu prenne sa place ou qu'on le ferme, et rendent `false` quand elle refuse. Se rouvrir soi-même
+  ne la consulte pas, et la garde d'un contenu parti est retirée avec lui — elle retiendrait sinon son
+  successeur. **Ce qu'elle ne couvre PAS, dit plutôt que promis** : quitter l'ONGLET ou le dossier par
+  la barre latérale démonte la fiche sans rien demander. `HashRouter` n'a pas de bloqueur de
+  navigation (`useBlocker` exige un routeur de données) ; la perte y est au moins visible, le volet
+  disparaissant avec l'écran.
+  **La fiche d'une pièce** (`pages/dossier/FichePiece.tsx`, ex-`PieceFormModal`) : ouverte par un clic
+  sur sa ligne, avec sa place dans la liste AFFICHÉE en titre (« Justificatif 3 sur 12 » — filtres,
+  tri de priorité et recherche compris) et « précédent » / « suivant » pour la parcourir sans y
+  revenir, grisés pendant un enregistrement. **« Valider » enchaîne sur la prochaine pièce À VALIDER**
+  de la liste — après celle-ci, puis en reprenant du début — et ferme la fiche quand il n'en reste
+  plus : c'est le gain que la maquette validée mettait en avant. Une réponse qui arrive pour une pièce
+  que l'opérateur a déjà quittée ne déplace rien (`pieceOuverte`, lu sans attendre un rendu). La fiche
+  est clée par pièce : la suivante repart de SES valeurs. Et une pièce supprimée par la sélection de la
+  liste emporte sa fiche, qui sinon enregistrerait dans le vide — une mise à jour qui ne touche aucune
+  ligne ne lève rien. Volet ouvert, la liste des pièces efface ses colonnes secondaires pour garder le
+  statut lisible, par une requête de CONTENEUR posée sur la seule carte du tableau (`.liste-pieces`) :
+  posé sur le panneau central, `container-type` en ferait la référence des éléments `position: fixed`
+  qu'il contient — les fenêtres superposées des onglets —, le piège déjà nommé pour la barre latérale.
   **Cette page ne se remonte pas d'un dossier à l'autre** : la barre latérale mène directement du
   dossier A au dossier B, et `DossierDetail` reste monté (même route, autre `:id`). Les onglets sont
   sous un `AnneeProvider key={id}` et repartent de zéro ; ce qui vit HORS de ce bloc doit être clé par
@@ -4949,6 +4974,20 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   monté (le bouton s'enfoncerait sans que rien ne s'ouvre), une coque sans emplacement — et, depuis
   le même jour, l'IDENTITÉ du dossier d'un dossier à l'autre (neuf tests, voir « la barre latérale a
   rouvert une course »).
+  **ET LA FICHE D'UNE PIÈCE DANS LE VOLET, LE MÊME JOUR** — dix-sept mutations, toutes mordent. La
+  garde de sortie dans `PanneauDroit.test.tsx` (six cas : une garde qui refuse retient son contenu,
+  qui accepte laisse passer, la croix y passe aussi, celle d'un contenu parti ne retient pas son
+  successeur, se rouvrir ne la consulte pas, l'emplacement porte le nom de son occupant) ; le
+  parcours dans `PiecesTab.test.tsx`, qui monte désormais l'onglet DANS la coque du panneau (onze cas :
+  la fiche de la ligne cliquée et sa place dans la liste, précédent et suivant bornés à la liste
+  affichée, la saisie qui ne part pas sans un mot par « suivant », par une autre ligne ou par la
+  croix, l'enchaînement sur la prochaine pièce à valider et la fermeture quand il n'y en a plus, le
+  brouillon qui ferme sans demander d'abandonner ce qu'il vient d'enregistrer, la navigation grisée
+  pendant un enregistrement, la pièce supprimée qui emporte sa fiche, et la validation qui répond
+  pour une pièce déjà quittée). La discrimination est le résultat : retirer la CLÉ par pièce fait
+  tomber trois tests, dont celui où la suivante reprenait la saisie de la précédente ; le code TEL
+  QU'IL ÉTAIT (valider ferme au lieu d'enchaîner) en fait tomber deux. `FichePiece.test.tsx` garde
+  toujours le verrou d'enregistrement, inchangé.
   **`ClientInformations` a reçu son premier test de rendu le 25/09/2026**, par un défaut trouvé lui
   aussi : les réponses d'une société écrites dans une autre (même entrée). **Deux écrans client
   (`ClientUpload`, `ClientSimulation`) n'ont toujours aucun test de rendu** — dit plutôt que laissé
@@ -4994,7 +5033,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1596 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1613 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

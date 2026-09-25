@@ -138,7 +138,7 @@ export async function deposerFichier(dossierId: string, file: File, hashsDuLot: 
 }
 
 // Ouvre le justificatif d'une pièce dans un nouvel onglet via une URL signée temporaire (le bucket
-// "pieces" n'est pas public) — même mécanisme que l'aperçu de PieceFormModal, réutilisé pour
+// "pieces" n'est pas public) — même mécanisme que l'aperçu de FichePiece, réutilisé pour
 // consulter un justificatif sans quitter l'écran de rapprochement bancaire (voir BanqueTab) : on n'y
 // affichait jusqu'ici que le tiers et le montant, jamais le document lui-même.
 export async function ouvrirJustificatif(storagePath: string): Promise<void> {
