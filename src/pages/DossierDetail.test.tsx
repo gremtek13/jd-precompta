@@ -4,13 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from '../components/Layout'
 import DossierDetail from './DossierDetail'
 
-// La vraie page d'un dossier, montée dans la vraie coque. Cette page ne se remonte pas quand la barre
-// latérale mène d'un dossier à l'autre, et deux choses doivent pourtant suivre le dossier de l'URL :
+// La vraie page d'un dossier, montée dans la vraie coque. Deux choses que rien d'autre ne voit :
 //
-// — son IDENTITÉ. Plusieurs onglets la RECOPIENT au montage (le formulaire d'Informations) : montés
-//   avec celle de l'ancien dossier, ou avec une identité vide, ils la garderaient, et le premier
-//   « Enregistrer » l'écrirait sur le dossier affiché ;
-// — l'ASSISTANT, monté une fois pour toute la page : sa conversation doit repartir de zéro, elle aussi.
+// — le CÂBLAGE de l'assistant : le bouton de l'en-tête existe, et il ouvre l'assistant de CE dossier
+//   dans le panneau de droite (le comportement de l'assistant lui-même est gardé par
+//   AssistantDossier.test.tsx) ;
+// — l'IDENTITÉ du dossier. Cette page ne se remonte pas quand la barre latérale mène d'un dossier à
+//   l'autre, et plusieurs onglets RECOPIENT l'identité au montage (le formulaire d'Informations) :
+//   montés avec celle de l'ancien dossier, ou avec une identité vide, ils la garderaient, et le
+//   premier « Enregistrer » l'écrirait sur le dossier affiché.
 
 interface LigneDossier { id: string; nom: string; siret: string | null; assujetti_tva: boolean }
 
@@ -94,17 +96,11 @@ vi.mock('./dossier/InformationsTab', async () => {
     },
   }
 })
-vi.mock('./dossier/AssistantTab', async () => {
-  const { useState } = await import('react')
-  return {
-    // Retient le dossier pour lequel il a été MONTÉ : la conversation vit dans l'état de l'assistant,
-    // et un assistant qui ne repart pas de zéro garde le fil du dossier précédent.
-    default: function AssistantDouble({ dossierId }: { dossierId: string }) {
-      const [monte] = useState(dossierId)
-      return <p>Assistant monté pour {monte}</p>
-    },
-  }
-})
+vi.mock('./dossier/AssistantTab', () => ({
+  default: ({ dossierId, dossierNom }: { dossierId: string; dossierNom: string | null }) => (
+    <p>Assistant de {dossierNom} ({dossierId})</p>
+  ),
+}))
 // pdf.js touche au navigateur DÈS L'IMPORT (DOMMatrix), et la page importe tous les onglets : les deux
 // modules qui le chargent sont doublés, comme dans les tests de Banque et de Clôture.
 vi.mock('../lib/pdfText', () => ({
@@ -173,14 +169,16 @@ beforeEach(() => {
   faux.erreurMaj = null
 })
 
-describe('Page d’un dossier — l’assistant flottant suit le dossier', () => {
-  it('ouvert pendant qu’on change de dossier, il repart sur celui de l’URL', async () => {
+describe('Page d’un dossier — l’assistant dans le panneau de droite', () => {
+  it('le bouton « Assistant » de l’en-tête ouvre l’assistant de CE dossier dans le volet de la coque', async () => {
     await afficher('/dossiers/d1/checklist')
-    await act(async () => { fireEvent.click(screen.getByRole('button', { name: "Ouvrir l'assistant" })) })
-    expect(screen.getByText('Assistant monté pour d1')).toBeTruthy()
+    const volet = screen.getByRole('complementary', { name: 'Panneau contextuel' })
+    expect(volet.childElementCount).toBe(0)
 
-    await allerAuDossier('Bravo Santé')
-    expect(await screen.findByText('Assistant monté pour d2')).toBeTruthy()
+    // L'en-tête du dossier, retrouvé par son titre : le volet porte lui aussi un <header>.
+    const entete = screen.getByRole('heading', { level: 1, name: 'Cabinet Hélène' }).closest('header')!
+    await act(async () => { fireEvent.click(within(entete).getByRole('button', { name: 'Assistant' })) })
+    expect(within(volet).getByText('Assistant de Cabinet Hélène (d1)')).toBeTruthy()
   })
 })
 

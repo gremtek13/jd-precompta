@@ -7,6 +7,8 @@ import { extraireErreurFonction } from '../../lib/invokeErreur'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { EntetePanneau } from '../../components/PanneauDroit'
+import { IconAssistant, IconEnvoyer } from '../../components/icons'
 
 interface MessageBrut {
   conversation_id: string
@@ -29,7 +31,15 @@ interface MessageBrut {
 // Elle se contente maintenant de générer un nouvel identifiant de fil localement : rien n'est
 // supprimé, les anciennes conversations restent consultables depuis le menu "Conversations". Seule
 // une suppression explicite (bouton "×" sur un fil précis, avec confirmation) efface pour de bon.
-export default function AssistantTab({ dossierId }: { dossierId: string }) {
+//
+// Il vit dans le panneau de droite (voir AssistantDossier) et y porte son propre en-tête, parce que le
+// menu des conversations y a sa place à côté du bouton de fermeture. UNE instance par dossier : son
+// parent la monte avec `key={dossierId}` — voir AssistantDossier pour ce que ça empêche.
+export default function AssistantTab({ dossierId, dossierNom, onFermer }: {
+  dossierId: string
+  dossierNom: string | null
+  onFermer: () => void
+}) {
   const { session } = useAuth()
   const [tous, setTous] = useState<MessageBrut[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
@@ -41,8 +51,7 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
   // Plafond IA du cabinet (voir agent-comptable, verifierPlafondCabinet et migration
   // cabinets_plafond_ia) : non bloquant, contrairement au blocage (qui remonte comme une erreur
   // ordinaire via data.error, voir plus bas) — juste un signal affiché au comptable après chaque
-  // réponse. Réinitialisé à null au changement de dossier : reflète l'usage du dossier consulté, pas
-  // un cabinet précédent.
+  // réponse. Propre à cette instance, donc au dossier consulté (voir la clé posée par le parent).
   const [alerteCout, setAlerteCout] = useState<{ coutMoisUsd: number; limiteAlerteUsd: number } | null>(null)
   const [historiqueOuvert, setHistoriqueOuvert] = useState(false)
   const zoneRef = useRef<HTMLTextAreaElement>(null)
@@ -56,28 +65,23 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
     return () => document.removeEventListener('mousedown', surClicExterieur)
   }, [])
 
-  async function charger() {
-    setChargement(true)
-    // Une ligne par message : c'est la table qui grandit le plus vite du projet. Tronquée, le fil
-    // repris perd ses premiers échanges — donc le contexte même que l'assistant relit.
-    // Tri TOTAL : `created_at` n'est pas unique, deux messages peuvent partager la milliseconde.
-    const lecture = await lireTout<MessageBrut>((debut, fin) =>
-      supabase.from('agent_conversations').select('conversation_id, role, texte, outils_utilises, created_at, id', { count: 'exact' })
-        .eq('dossier_id', dossierId).order('created_at', { ascending: true }).order('id').range(debut, fin),
-    )
-    const lignes = lecture.lignes
-    setLectureIncomplete(lecture.complete ? null : lecture.motif)
-    setTous(lignes)
-    // Seulement au tout premier chargement (conversationId encore null) : ouvre le fil le plus récent
-    // s'il y en a un, sinon un fil neuf — un rechargement après l'envoi d'un message ne doit pas
-    // changer le fil affiché.
-    setConversationId((actuel) => actuel ?? (lignes.length > 0 ? lignes[lignes.length - 1].conversation_id : crypto.randomUUID()))
-    setChargement(false)
-  }
-
   useEffect(() => {
-    setConversationId(null) // force charger() à retomber sur le fil le plus récent de ce dossier
-    setAlerteCout(null)
+    async function charger() {
+      // Une ligne par message : c'est la table qui grandit le plus vite du projet. Tronquée, le fil
+      // repris perd ses premiers échanges — donc le contexte même que l'assistant relit.
+      // Tri TOTAL : `created_at` n'est pas unique, deux messages peuvent partager la milliseconde.
+      const lecture = await lireTout<MessageBrut>((debut, fin) =>
+        supabase.from('agent_conversations').select('conversation_id, role, texte, outils_utilises, created_at, id', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('created_at', { ascending: true }).order('id').range(debut, fin),
+      )
+      const lignes = lecture.lignes
+      setLectureIncomplete(lecture.complete ? null : lecture.motif)
+      setTous(lignes)
+      // Ouvre le fil le plus récent s'il y en a un, sinon un fil neuf — sauf si l'opérateur en a déjà
+      // choisi ou commencé un pendant la lecture : elle ne doit pas le lui retirer sous les yeux.
+      setConversationId((actuel) => actuel ?? (lignes.length > 0 ? lignes[lignes.length - 1].conversation_id : crypto.randomUUID()))
+      setChargement(false)
+    }
     charger()
   }, [dossierId])
 
@@ -200,112 +204,110 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
     }
   }
 
-  // Mise en page "chat" à hauteur pleine (remplit le panneau flottant qui l'héberge, voir
-  // AssistantFlottant) : seule la zone de messages défile, le champ de saisie reste toujours visible
-  // en bas — jamais toute la conversation qui défile en bloc, ce qui pousserait le champ hors écran
-  // sur mobile (bug initial : le contenu débordait carrément du panneau, non contenu du tout).
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <BandeauLecturePartielle
-        quoi="L’historique des échanges"
-        motif={lectureIncomplete}
-        consequence={
-          'Le fil repris perd alors ses premiers échanges — donc le contexte même que l’assistant ' +
-          'relit — et le coût du mois affiché est sous-estimé.'
-        }
-      />
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8, flexShrink: 0 }}>
-        <div style={{ position: 'relative' }} ref={historiqueRef}>
-          <button type="button" className="btn btn-outline btn-sm" onClick={() => setHistoriqueOuvert((v) => !v)}>
-            Conversations{threads.length > 0 ? ` (${threads.length})` : ''}
+  const menuConversations = (
+    <div className="assistant-conversations" ref={historiqueRef}>
+      <button
+        type="button"
+        className="btn btn-outline btn-sm"
+        onClick={() => setHistoriqueOuvert((v) => !v)}
+        aria-expanded={historiqueOuvert}
+      >
+        Conversations{threads.length > 0 ? ` (${threads.length})` : ''}
+      </button>
+      {historiqueOuvert && (
+        <div className="options-menu" style={{ right: 0, left: 'auto', minWidth: 260 }}>
+          <button type="button" className="nav-menu-item" onClick={nouvelleConversation}>
+            + Nouvelle conversation
           </button>
-          {historiqueOuvert && (
-            <div className="options-menu" style={{ right: 0, left: 'auto', minWidth: 260 }}>
-              <button type="button" className="nav-menu-item" onClick={nouvelleConversation}>
-                + Nouvelle conversation
+          {threads.length > 0 && <div style={{ borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />}
+          {threads.map((t) => (
+            <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+              <button
+                type="button"
+                className={`nav-menu-item ${t.id === conversationId ? 'active' : ''}`}
+                style={{ flex: 1, minWidth: 0 }}
+                onClick={() => { setConversationId(t.id); setHistoriqueOuvert(false) }}
+              >
+                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  {formatDate(t.debut)} — {t.premierMessage.length > 32 ? `${t.premierMessage.slice(0, 32)}…` : t.premierMessage}
+                </span>
               </button>
-              {threads.length > 0 && <div style={{ borderTop: '1px solid var(--color-border)', margin: '4px 0' }} />}
-              {threads.map((t) => (
-                <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                  <button
-                    type="button"
-                    className={`nav-menu-item ${t.id === conversationId ? 'active' : ''}`}
-                    style={{ flex: 1, minWidth: 0 }}
-                    onClick={() => { setConversationId(t.id); setHistoriqueOuvert(false) }}
-                  >
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
-                      {formatDate(t.debut)} — {t.premierMessage.length > 32 ? `${t.premierMessage.slice(0, 32)}…` : t.premierMessage}
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => supprimerConversation(t.id)}
-                    title="Supprimer cette conversation"
-                    style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-light)', padding: '6px 8px', fontWeight: 700 }}
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+              <button
+                type="button"
+                onClick={() => supprimerConversation(t.id)}
+                title="Supprimer cette conversation"
+                aria-label="Supprimer cette conversation"
+                style={{ border: 'none', background: 'none', cursor: 'pointer', color: 'var(--color-text-light)', padding: '6px 8px', fontWeight: 700 }}
+              >
+                ×
+              </button>
             </div>
-          )}
+          ))}
         </div>
+      )}
+    </div>
+  )
+
+  // Mise en page de discussion à hauteur pleine : seule la zone des messages défile, le champ de
+  // saisie reste toujours visible en bas — jamais toute la conversation qui défile en bloc, ce qui
+  // pousserait le champ hors de l'écran sur mobile (bug initial : le contenu débordait du panneau).
+  return (
+    <div className="assistant">
+      <EntetePanneau
+        icone={<IconAssistant width={17} height={17} />}
+        titre="Assistant"
+        sousTitre={dossierNom}
+        actions={menuConversations}
+        onFermer={onFermer}
+      />
+      <div className="assistant-bandeau">
+        <BandeauLecturePartielle
+          quoi="L’historique des échanges"
+          motif={lectureIncomplete}
+          consequence={
+            'Le fil repris perd alors ses premiers échanges — donc le contexte même que l’assistant ' +
+            'relit — et le coût du mois affiché est sous-estimé.'
+          }
+        />
       </div>
 
-      <div className="card table-scroll" style={{ padding: 0, flex: 1, minHeight: 0, overflowY: 'auto', marginBottom: 10 }}>
+      <div className="assistant-fil" role="log" aria-label="Conversation avec l'assistant">
         {chargement ? (
-          <p className="muted" style={{ padding: 20 }}>Chargement…</p>
+          <p className="muted">Chargement…</p>
         ) : messages.length === 0 ? (
-          <div className="empty-state">
+          <p className="assistant-vide">
             Répond uniquement à partir des données déjà présentes dans ce dossier — ne modifie jamais
             rien. Pose une question, par exemple « Pourquoi le compte 6251 a-t-il augmenté cette
             année ? » ou « Quelles sont les anomalies de ce dossier ? ».
-          </div>
+          </p>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, padding: 16 }}>
-            {messages.map((m, i) => (
-              <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: m.role === 'user' ? 'flex-end' : 'flex-start' }}>
-                <div
-                  style={{
-                    maxWidth: '85%',
-                    padding: '10px 14px',
-                    borderRadius: 10,
-                    whiteSpace: 'pre-wrap',
-                    background: m.role === 'user' ? 'var(--color-primary)' : 'var(--color-bg)',
-                    color: m.role === 'user' ? '#fff' : 'inherit',
-                  }}
-                >
-                  {m.texte}
-                </div>
+          messages.map((m, i) => (
+            m.role === 'user' ? (
+              <div key={i} className="assistant-message-client">{m.texte}</div>
+            ) : (
+              <div key={i} className="assistant-message-reponse">
+                <div>{m.texte}</div>
                 {m.outils_utilises && m.outils_utilises.length > 0 && (
-                  <span className="muted" style={{ fontSize: '0.78rem', marginTop: 4 }}>
-                    Outils utilisés : {m.outils_utilises.join(', ')}
-                  </span>
+                  <span className="assistant-outils">Outils utilisés : {m.outils_utilises.join(', ')}</span>
                 )}
               </div>
-            ))}
-            {loading && <span className="muted">L'assistant réfléchit…</span>}
-          </div>
+            )
+          ))
         )}
+        {loading && <span className="muted">L'assistant réfléchit…</span>}
       </div>
 
-      {error && <p className="error-text" style={{ flexShrink: 0 }}>{error}</p>}
+      {error && <p className="error-text assistant-note">{error}</p>}
 
       {alerteCout && (
-        <p
-          className="muted"
-          style={{
-            flexShrink: 0, margin: '0 0 8px', padding: '8px 12px', borderRadius: 8, fontSize: '0.82rem',
-            background: 'var(--color-warning-light)', color: 'var(--color-warning)',
-          }}
-        >
+        <p className="assistant-note assistant-alerte-cout">
           Seuil d'alerte du cabinet atteint : {formatUsd(alerteCout.coutMoisUsd)} d'usage de l'agent ce mois-ci
           (seuil {formatUsd(alerteCout.limiteAlerteUsd)}). L'agent reste utilisable — ajustable depuis Comptes master.
         </p>
       )}
 
-      <form onSubmit={envoyer} style={{ flexShrink: 0, display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div className="field" style={{ margin: 0 }}>
+      <form className="assistant-saisie" onSubmit={envoyer}>
+        <div className="assistant-saisie-champ">
           <textarea
             aria-label="Question"
             ref={zoneRef}
@@ -313,13 +315,14 @@ export default function AssistantTab({ dossierId }: { dossierId: string }) {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={surTouche}
-            placeholder="Pose ta question… (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)"
+            placeholder="Poser une question sur ce dossier…"
             disabled={loading}
           />
+          <button className="assistant-envoyer" type="submit" disabled={loading || !input.trim()} aria-label="Envoyer" title="Envoyer">
+            <IconEnvoyer width={16} height={16} strokeWidth={2.2} />
+          </button>
         </div>
-        <button className="btn btn-primary" type="submit" disabled={loading || !input.trim()}>
-          {loading ? 'Envoi…' : 'Envoyer'}
-        </button>
+        <p className="assistant-saisie-aide">Entrée pour envoyer · Maj+Entrée pour aller à la ligne</p>
       </form>
     </div>
   )

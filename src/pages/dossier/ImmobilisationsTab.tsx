@@ -211,42 +211,46 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
             investissement (matériel, véhicule…) ou une simple charge importante. La nature suggère une
             durée usuelle, toujours modifiable.
           </p>
-          <table>
-            <thead><tr><th>Pièce</th><th>Montant</th><th>Nature</th><th>Durée (années)</th><th></th></tr></thead>
-            <tbody>
-              {candidates.map((p) => (
-                <tr key={p.id}>
-                  <td>{p.tiers ?? p.nom_fichier}</td>
-                  <td>{formatMoney(p.montant_ttc)}</td>
-                  <td>
-                    <select
-                      style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px' }}
-                      value={naturesChoisies[p.id] ?? ''}
-                      onChange={(e) => choisirNature(p.id, e.target.value)}
-                    >
-                      <option value="">— Choisir —</option>
-                      {natures.map((n) => <option key={n.id} value={n.id}>{n.libelle}</option>)}
-                    </select>
-                  </td>
-                  <td>
-                    <input
-                      type="number"
-                      min={1}
-                      style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 70 }}
-                      placeholder={String(DUREE_DEFAUT_ANNEES)}
-                      value={durees[p.id] ?? ''}
-                      onChange={(e) => setDurees((prev) => ({ ...prev, [p.id]: e.target.value }))}
-                    />
-                  </td>
-                  <td>
-                    <button className="btn btn-outline btn-sm" disabled={saving === p.id} onClick={() => enregistrer(p)}>
-                      {saving === p.id ? 'Enregistrement…' : 'Enregistrer comme immobilisation'}
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {/* Dans un conteneur qui défile, comme les autres tableaux : avec le panneau de droite ouvert,
+              la colonne du bouton débordait du panneau central et passait sous le volet. */}
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Pièce</th><th>Montant</th><th>Nature</th><th>Durée (années)</th><th></th></tr></thead>
+              <tbody>
+                {candidates.map((p) => (
+                  <tr key={p.id}>
+                    <td>{p.tiers ?? p.nom_fichier}</td>
+                    <td>{formatMoney(p.montant_ttc)}</td>
+                    <td>
+                      <select
+                        style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px' }}
+                        value={naturesChoisies[p.id] ?? ''}
+                        onChange={(e) => choisirNature(p.id, e.target.value)}
+                      >
+                        <option value="">— Choisir —</option>
+                        {natures.map((n) => <option key={n.id} value={n.id}>{n.libelle}</option>)}
+                      </select>
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        min={1}
+                        style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 70 }}
+                        placeholder={String(DUREE_DEFAUT_ANNEES)}
+                        value={durees[p.id] ?? ''}
+                        onChange={(e) => setDurees((prev) => ({ ...prev, [p.id]: e.target.value }))}
+                      />
+                    </td>
+                    <td>
+                      <button className="btn btn-outline btn-sm" disabled={saving === p.id} onClick={() => enregistrer(p)}>
+                        {saving === p.id ? 'Enregistrement…' : 'Enregistrer comme immobilisation'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 

@@ -177,7 +177,10 @@ h3 { font-size: 1.02rem; }
   box-shadow: 0 0 0 3px var(--ring-primary);
 }
 .field input::placeholder, .field textarea::placeholder { color: color-mix(in srgb, var(--color-text-light) 70%, transparent); }
-.field-row { display: flex; gap: 12px; }
+/* `wrap` : les champs passent à la ligne au lieu de déborder quand la largeur manque — le panneau de
+   droite ouvert rétrécit le panneau central, et quatre champs date/montant côte à côte n'y tiennent plus.
+   Une rangée qui tient déjà ne change pas : on ne passe à la ligne qu'à la largeur minimale des champs. */
+.field-row { display: flex; flex-wrap: wrap; gap: 0 12px; }
 .field-row .field { flex: 1; }
 
 /* Fiche pièce (PieceFormModal) — justificatif à gauche, champs à droite dès qu'il y a assez de
@@ -604,8 +607,133 @@ tr.clickable:hover { background: var(--tint-primary); }
 }
 .theme-toggle:hover { border-color: var(--color-primary); color: var(--color-primary); background: var(--tint-primary); }
 
-/* Bulle de chat flottante (voir AssistantFlottant) — en classes pour que la media query mobile
-   puisse la décaler au-dessus de la barre de navigation fixe. */
+/* ---------- Panneau contextuel (droite) ---------- */
+/* Le troisième volet de la coque (voir components/PanneauDroit.tsx) : même facture que le panneau
+   central — posé sur le fond, coins arrondis — mais collé à l'écran avec son propre défilement, pour
+   que la liste du centre reste lisible pendant qu'on travaille à droite. VIDE, il n'existe pas : c'est
+   `:empty` qui le retire, pas un état React, donc un contenu qui quitte l'écran l'emporte avec lui. */
+.panneau-droit {
+  position: sticky; top: 8px; align-self: flex-start;
+  width: clamp(340px, 28vw, 440px); flex-shrink: 0; box-sizing: border-box;
+  height: calc(100vh - 16px);
+  height: calc(100dvh - 16px);
+  margin: 8px 8px 8px 0;
+  display: flex; flex-direction: column; overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid color-mix(in srgb, var(--color-border-strong) 70%, transparent);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+}
+.panneau-droit:empty { display: none; }
+/* Écran d'ordinateur étroit : trois volets côte à côte écraseraient le panneau central jusqu'à
+   l'illisible (moins de 550 pixels de contenu sous 1 280). Le volet de droite se pose alors PAR-DESSUS,
+   comme un tiroir. */
+@media (min-width: 721px) and (max-width: 1279px) {
+  .panneau-droit {
+    position: fixed; top: 8px; right: 8px; bottom: 8px; z-index: 30;
+    /* `align-self: auto` et pas flex-start : sur une boîte positionnée, flex-start la ramène à la
+       hauteur de son contenu au lieu de l'étirer entre top et bottom (alignement CSS, appliqué par
+       les navigateurs récents) — le volet s'arrêtait à mi-hauteur. */
+    height: auto; align-self: auto; margin: 0; width: min(420px, calc(100vw - 96px));
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+.panneau-entete {
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  padding: 12px 12px 12px 18px; border-bottom: 1px solid var(--color-border);
+}
+.panneau-entete-icone {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 32px; height: 32px; border-radius: 10px;
+  background: var(--tint-primary-strong); color: var(--color-primary-hover);
+}
+.panneau-entete-titres { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; }
+.panneau-entete-titre { margin: 0; font-size: 1rem; font-weight: 800; letter-spacing: -0.01em; line-height: 1.2; }
+.panneau-entete-sous-titre { font-size: 0.75rem; color: var(--color-text-light); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.panneau-bouton-icone {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 34px; height: 34px; padding: 0; border: none; border-radius: 9px;
+  background: transparent; color: var(--color-text); cursor: pointer;
+  transition: background-color var(--duree) var(--ease);
+}
+.panneau-bouton-icone:hover { background: var(--color-neutral-bg); }
+.panneau-bouton-icone:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* Le bouton « Assistant » de l'en-tête du dossier (voir AssistantDossier) — enfoncé tant que
+   l'assistant occupe le panneau. Sur mobile c'est la bulle qui l'ouvre (voir la media query). */
+.bouton-assistant {
+  display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0;
+  height: 36px; padding: 0 14px;
+  border: 1px solid var(--color-border-strong); border-radius: var(--radius-sm);
+  background: var(--color-surface); color: var(--color-text);
+  font: inherit; font-size: 0.84rem; font-weight: 700; cursor: pointer;
+  transition: background-color var(--duree) var(--ease), border-color var(--duree) var(--ease), color var(--duree) var(--ease);
+}
+.bouton-assistant:hover { border-color: var(--color-primary); }
+.bouton-assistant.actif {
+  background: var(--tint-primary-strong); color: var(--color-primary-hover);
+  border-color: color-mix(in srgb, var(--color-primary) 45%, var(--color-border-strong));
+}
+.bouton-assistant:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+
+/* L'assistant dans le volet : seule la conversation défile, la saisie reste en bas. */
+.assistant { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.assistant-conversations { position: relative; flex-shrink: 0; }
+/* Le volet coupe ce qui déborde (coins arrondis) : une longue liste de conversations y serait tronquée
+   sans moyen d'atteindre les plus anciennes. Elle défile donc elle-même. */
+.assistant-conversations .options-menu { max-height: min(420px, 60vh); overflow-y: auto; }
+.assistant-bandeau { padding: 12px 18px 0; flex-shrink: 0; }
+.assistant-bandeau:empty { display: none; }
+.assistant-bandeau .error-text { margin: 0; }
+.assistant-fil {
+  flex: 1; min-height: 0; overflow-y: auto;
+  display: flex; flex-direction: column; gap: 16px; padding: 20px 18px;
+  scrollbar-width: thin;
+}
+.assistant-fil > .muted { margin: 0; }
+.assistant-vide { margin: 0; font-size: 0.875rem; line-height: 1.6; color: var(--color-text-light); }
+.assistant-message-client {
+  align-self: flex-end; max-width: 82%;
+  padding: 10px 14px; border-radius: 16px 16px 4px 16px;
+  background: var(--color-neutral-bg); color: var(--color-text);
+  font-size: 0.875rem; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+}
+.assistant-message-reponse { font-size: 0.875rem; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.assistant-outils { display: block; margin-top: 4px; font-size: 0.75rem; color: var(--color-text-light); white-space: normal; }
+.assistant-note { flex-shrink: 0; margin: 0 14px 8px; }
+.assistant-alerte-cout {
+  padding: 8px 12px; border-radius: 8px; font-size: 0.82rem;
+  background: var(--color-warning-light); color: var(--color-warning);
+}
+.assistant-saisie { flex-shrink: 0; padding: 12px 14px 12px; border-top: 1px solid var(--color-border); }
+.assistant-saisie-champ {
+  display: flex; align-items: flex-end; gap: 8px;
+  padding: 6px 6px 6px 14px;
+  border: 1px solid var(--color-border-strong); border-radius: 16px;
+  background: var(--color-surface); box-shadow: var(--shadow-xs);
+  transition: border-color var(--duree) var(--ease), box-shadow var(--duree) var(--ease);
+}
+.assistant-saisie-champ:focus-within { border-color: var(--color-primary); box-shadow: 0 0 0 3px var(--ring-primary); }
+.assistant-saisie-champ textarea {
+  flex: 1; min-width: 0; max-height: 160px; resize: none;
+  padding: 8px 0; border: none; background: transparent; outline: none;
+  font-size: 0.875rem; line-height: 1.45; color: var(--color-text);
+}
+.assistant-saisie-champ textarea::placeholder { color: color-mix(in srgb, var(--color-text-light) 80%, transparent); }
+.assistant-envoyer {
+  display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  width: 36px; height: 36px; padding: 0; border: none; border-radius: 11px;
+  background: var(--color-primary); color: #fff; cursor: pointer;
+  transition: background-color var(--duree) var(--ease), opacity var(--duree) var(--ease);
+}
+.assistant-envoyer:hover:not(:disabled) { background: var(--color-primary-hover); }
+.assistant-envoyer:disabled { opacity: 0.45; cursor: not-allowed; }
+.assistant-envoyer:focus-visible { outline: 2px solid var(--color-primary); outline-offset: 2px; }
+.assistant-saisie-aide { margin: 6px 2px 0; font-size: 0.72rem; color: var(--color-text-light); }
+
+/* Bulle d'ouverture de l'assistant — sur MOBILE seulement : sur ordinateur, le bouton de l'en-tête
+   du dossier en tient lieu (voir la media query d'ordinateur). */
 .assistant-bouton {
   position: fixed; bottom: 24px; right: 24px; z-index: 45;
   width: 54px; height: 54px; border-radius: 50%; border: none;
@@ -616,17 +744,6 @@ tr.clickable:hover { background: var(--tint-primary); }
   transition: transform var(--duree) var(--ease), box-shadow var(--duree) var(--ease);
 }
 .assistant-bouton:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(16, 24, 20, 0.1), 0 16px 32px -8px var(--glow-primary); }
-.assistant-panneau {
-  position: fixed; bottom: 92px; right: 24px; z-index: 45;
-  width: min(420px, 92vw);
-  /* dvh plutôt que vh : sur mobile, vh compte la fenêtre comme si la barre d'adresse était toujours
-     masquée, ce qui pouvait faire déborder le panneau de l'écran visible réel. */
-  height: min(600px, 75dvh);
-  display: flex; flex-direction: column;
-  overflow: hidden;
-  border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
-}
 
 .checklist-item {
   display: flex; align-items: center; gap: 12px; padding: 14px 20px;
@@ -864,6 +981,7 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
      ferait doublon. Réduite, elle revient — c'est alors le seul chemin vers ces écrans. */
   .app-shell:not(.barre-reduite) .nav-groupes { display: none; }
   .retour-tableau { display: none; }
+  .assistant-bouton { display: none; }
 }
 
 /* Sélecteur de société (client multi-sociétés) — pilule discrète au-dessus du contenu. */
@@ -1199,9 +1317,24 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 
   .home-tiles { gap: 20px; }
 
-  /* La bulle de chat remonte au-dessus de la barre fixe, sinon elles se chevauchent. */
+  /* Le volet de droite n'a pas la place d'être un volet : il redevient la carte flottante qu'était
+     l'assistant avant la coque en trois volets, posée au-dessus de sa bulle. La bulle, elle, remonte
+     au-dessus de la barre fixe, sinon elles se chevauchent ; le bouton d'en-tête d'ordinateur
+     s'efface devant elle. */
+  .bouton-assistant { display: none; }
   .assistant-bouton { bottom: 88px; right: 16px; }
-  .assistant-panneau { bottom: 152px; right: 16px; }
+  .panneau-droit {
+    position: fixed; top: auto; left: auto; bottom: 152px; right: 16px; z-index: 45;
+    width: min(420px, 92vw);
+    /* dvh plutôt que vh : sur mobile, vh compte la fenêtre comme si la barre d'adresse était toujours
+       masquée, ce qui pouvait faire déborder le panneau de l'écran visible réel. */
+    height: min(600px, 75dvh);
+    margin: 0; align-self: auto;
+    box-shadow: var(--shadow-lg);
+  }
+  /* 16 px au moins, sinon Safari sur iPhone zoome toute la page au premier toucher du champ — même
+     règle que .field (voir plus haut). */
+  .assistant-saisie-champ textarea { font-size: 16px; }
 
   /* Tableaux de bord : les tuiles chiffrées restent deux par ligne (lisibles et compactes), tout le
      reste passe en une colonne. */

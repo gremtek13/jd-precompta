@@ -12,6 +12,7 @@ import {
 } from './icons'
 import Avatar from './widgets/Avatar'
 import BarreDossiers from './BarreDossiers'
+import { EmplacementPanneauDroit, FournisseurPanneauDroit } from './PanneauDroit'
 
 // Barre latérale déployée ou réduite à ses icônes — préférence d'affichage de ce navigateur, pas un
 // champ en base : même statut que le thème (voir lib/theme.ts).
@@ -36,9 +37,21 @@ function retenirBarreReduite(reduite: boolean) {
 
 // Coque de l'application, sur ordinateur en trois volets à la manière des applications récentes :
 // une barre latérale (navigation, dossiers, compte), le travail au centre dans un panneau posé sur le
-// fond, et — étape suivante — un panneau contextuel à droite. Sur mobile rien ne change : barre du
-// haut, navigation fixée en bas (voir index.css) ; les éléments propres à l'ordinateur y sont masqués.
+// fond, et un panneau contextuel à droite (voir components/PanneauDroit.tsx), qui n'existe que tant
+// qu'un écran y affiche quelque chose. Sur mobile rien ne change : barre du haut, navigation fixée en
+// bas (voir index.css) ; les éléments propres à l'ordinateur y sont masqués.
+//
+// Le fournisseur du panneau de droite enveloppe TOUTE la coque : ce qui ouvre le volet vit dans le
+// panneau central (l'en-tête d'un dossier), et le volet à côté de lui.
 export default function Layout() {
+  return (
+    <FournisseurPanneauDroit>
+      <Coque />
+    </FournisseurPanneauDroit>
+  )
+}
+
+function Coque() {
   const { session, role, isSuperAdmin, estChef, mesSocietes, dossierActifId, setDossierActifId, signOut } = useAuth()
   const libelleRole = role === 'client' ? 'Client' : isSuperAdmin ? 'Super-admin' : estChef ? 'Chef de cabinet' : 'Comptable'
   const { theme, toggleTheme } = useTheme()
@@ -331,6 +344,7 @@ export default function Layout() {
           <Outlet key={role === 'client' ? dossierActifId ?? '' : undefined} />
         </div>
       </main>
+      <EmplacementPanneauDroit />
     </div>
   )
 }

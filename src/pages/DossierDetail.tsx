@@ -20,7 +20,7 @@ import SupplementsTab from './dossier/SupplementsTab'
 import InformationsTab from './dossier/InformationsTab'
 import ChecklistTab from './dossier/ChecklistTab'
 import VirementsTab from './dossier/VirementsTab'
-import AssistantFlottant from './dossier/AssistantFlottant'
+import AssistantDossier, { BoutonAssistant } from './dossier/AssistantDossier'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
@@ -180,7 +180,8 @@ export default function DossierDetail() {
 
   // "Cockpit" du dossier : avatar, nom, identifiants et réglages en pastilles, sélecteur d'exercice à
   // droite (partagé entre onglets, voir AnneeContext) — un seul bloc d'en-tête plutôt qu'un titre
-  // suivi d'une ligne de badges flottants.
+  // suivi d'une ligne de badges flottants. Et, sur ordinateur, le bouton qui ouvre l'assistant dans
+  // le panneau de droite (voir AssistantDossier).
   const cockpit = (
     <header className="cockpit">
       <div className="cockpit-identite">
@@ -217,6 +218,7 @@ export default function DossierDetail() {
           <SelecteurExerciceEntete annees={anneesDisponibles} />
         </div>
       )}
+      <BoutonAssistant />
     </header>
   )
 
@@ -295,7 +297,7 @@ export default function DossierDetail() {
         </AnneeProvider>
       )}
 
-      <AssistantFlottant dossierId={id} />
+      <AssistantDossier dossierId={id} dossierNom={dossier?.nom ?? null} />
     </>
   )
 }
