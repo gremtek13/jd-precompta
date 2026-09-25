@@ -4922,6 +4922,23 @@ pas de Supabase CLI configurée dans ce dépôt.
   travail l'une de l'autre sans qu'aucun signal ne paraisse — c'est déjà arrivé en plus discret, deux
   sessions ayant écrit deux ordinaux différents dans ce fichier le même jour. Une session qui
   travaille depuis une AUTRE machine (l'OCR local, par exemple) prend sa propre branche.
+- **`main` reste linéaire** : `git rev-list --count --merges origin/main` doit rester à 0 — rebase
+  ou avance rapide, jamais de commit de fusion. Une branche qui a fusionné `main` en elle pour
+  résoudre une divergence ne se pousse donc pas telle quelle : on REJOUE ses commits à la suite de
+  `main`, puis un dernier commit ramène l'arbre à celui de la branche vérifiée. **L'égalité des
+  arbres (`git rev-parse HEAD^{tree}`) se contrôle avant de pousser** : c'est elle qui garantit que
+  ce qui part en production est exactement ce que la barrière a vérifié, et non une résolution de
+  conflits refaite à l'aveugle par le rejeu.
+- **La Routine quotidienne « avancer un chantier » (`trig_011WworgC5Yw9whbjhNq8WA5`) est DÉSACTIVÉE
+  depuis le 25/09/2026, par décision du cabinet.** Elle poussait directement sur `main` pendant
+  qu'une session travaillait sur sa branche, et les deux ne se voyaient pas : la branche a fini par
+  porter 88 commits absents de `main`, et la Routine a refait les 23 et 24/09 une partie de ce que la
+  branche avait déjà. C'est la règle précédente prise par le côté qu'elle ne couvrait pas — pas deux
+  écrivains sur une même branche, mais deux écrivains dont l'un pousse sur `main` et l'autre sur une
+  branche qui doit y finir. **Et pendant ce temps la production était DÉCALÉE** : les Edge Functions
+  et les migrations, déployées par MCP depuis la branche, tournaient en avance sur les écrans, qui ne
+  partent que de `main` — une autre forme de « un commit n'est pas un déploiement ». La réactiver
+  est une décision du cabinet, à prendre en disant qui écrit sur `main`.
 - Avant de supprimer une table jugée morte, réunir les six preuves plutôt
   qu'une seule : 0 ligne, 0 clé étrangère entrante, 0 vue dépendante, 0
   trigger, 0 fonction la mentionnant (`pg_proc.prosrc`), 0 référence dans le
