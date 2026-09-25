@@ -329,7 +329,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     load()
   }
 
-  const nonRapprochees = lignes.filter((l) => l.statut === 'non_rapprochee')
+  // Mémoïsée parce que `planAuto` en dépend : recréée à chaque rendu, elle relançait le plan — un
+  // produit mouvements × pièces — à chaque frappe dans la recherche, et rendait son `useMemo` inopérant.
+  const nonRapprochees = useMemo(() => lignes.filter((l) => l.statut === 'non_rapprochee'), [lignes])
   const totalNonRapproche = nonRapprochees.reduce((s, l) => s + l.montant, 0)
 
   // Le plan vit dans lib/appariementBanque.ts, testé. Il REFUSE de trancher quand deux pièces

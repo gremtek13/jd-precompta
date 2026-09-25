@@ -69,17 +69,25 @@ export default function DossiersList() {
   const [erreurChargement, setErreurChargement] = useState<string | null>(null)
   const [erreurIndicateurs, setErreurIndicateurs] = useState(false)
   const navigate = useNavigate()
-  // Lus au même instant, et à chaque rendu plutôt qu'une fois au chargement du module : `HashRouter`
-  // ne recharge jamais, donc un onglet de cabinet laissé ouvert gardait l'année et le compte de mois
-  // du jour où il a été ouvert. Cet écran doit dire la même chose que la Checklist et que les deux
-  // écrans client (voir anneeEtMoisEcoules).
-  const { annee: ANNEE_COURANTE, moisEcoules: MOIS_ECOULES } = anneeEtMoisEcoules()
+  // L'année des en-têtes VOYAGE AVEC les chiffres qu'elle étiquette. Les lectures de `load()` sont
+  // filtrées sur l'année (elles portent sur tout le cabinet, voir plus bas) : l'année et le compte de
+  // mois se lisent donc là, au même instant que les données, et l'année est gardée avec elles.
+  // Calculée à chaque rendu, elle passait à la nouvelle année au premier rendu qui suivait le Nouvel
+  // An — une recherche tapée suffit — au-dessus des chiffres de l'année finie : « Relevés 2027 » sur
+  // « 11/11 mois ». C'est le défaut d'APPARIEMENT de `ClientHome`, que le passage au calcul par rendu
+  // avait fait revenir ici. Les trois écrans de « ce qu'il reste à envoyer » calculent bien à chaque
+  // rendu, eux : ils lisent tout le dossier, sans filtre d'année. Figée au chargement du MODULE
+  // (l'état d'avant), l'année ne changeait plus du tout de la session — `HashRouter` ne recharge
+  // jamais ; gardée dans l'état, elle suit chaque rechargement de la liste.
+  const [anneeChargee, setAnneeChargee] = useState(() => anneeEtMoisEcoules().annee)
 
   async function load() {
     setLoading(true)
     setErreurChargement(null)
     setErreurIndicateurs(false)
-    const debutAnnee = `${ANNEE_COURANTE}-01-01`
+    // Lus une seule fois : « 8 mois écoulés » ne désigne des mois que rapporté à SON année.
+    const { annee, moisEcoules } = anneeEtMoisEcoules()
+    const debutAnnee = `${annee}-01-01`
     const debutTendance = new Date(debutSemaine(new Date()).getTime() - (NB_SEMAINES_TENDANCE - 1) * 7 * 24 * 3600 * 1000).toISOString()
 
     const [dossiersRes, piecesRes, lignesRes, cotisationsRes, depotsRes] = await Promise.all([
@@ -137,12 +145,14 @@ export default function DossiersList() {
     const cotisationsOk = new Set<string>()
     for (const c of cotisationsRes.lignes) cotisationsOk.add(c.dossier_id)
 
+    // Posée dans le même lot que les lignes : l'en-tête et les chiffres changent d'année ensemble.
+    setAnneeChargee(annee)
     setDossiers(
       dossiersRes.lignes.map((d) => ({
         ...d,
         nbAValider: aValider.get(d.id) ?? 0,
         moisPresents: moisParDossier.get(d.id)?.size ?? 0,
-        moisEcoules: MOIS_ECOULES,
+        moisEcoules,
         cotisationsOk: cotisationsOk.has(d.id),
       })),
     )
@@ -278,7 +288,7 @@ export default function DossiersList() {
                           {d.moisEcoules > 0 && d.moisPresents < d.moisEcoules && (
                             <span className="badge badge-warning">{d.moisEcoules - d.moisPresents} relevé(s) manquant(s)</span>
                           )}
-                          {!d.cotisationsOk && <span className="badge badge-neutral">cotisations {ANNEE_COURANTE} absentes</span>}
+                          {!d.cotisationsOk && <span className="badge badge-neutral">cotisations {anneeChargee} absentes</span>}
                         </div>
                       </div>
                       <IconChevron width={18} height={18} className="ligne-chevron" />
@@ -333,8 +343,8 @@ export default function DossiersList() {
                     <tr>
                       <th>Dossier</th>
                       <th>Pièces</th>
-                      <th className="hide-mobile">Relevés {ANNEE_COURANTE}</th>
-                      <th className="hide-mobile">Cotisations {ANNEE_COURANTE}</th>
+                      <th className="hide-mobile">Relevés {anneeChargee}</th>
+                      <th className="hide-mobile">Cotisations {anneeChargee}</th>
                       <th className="col-ouvrir"></th>
                     </tr>
                   </thead>

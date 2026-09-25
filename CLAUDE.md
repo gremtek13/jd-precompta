@@ -2168,6 +2168,34 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   au 1er janvier, « ce qu'il reste à envoyer » repartait à zéro sur la nouvelle année et cessait d'un
   coup de réclamer l'exercice révolu — voir l'entrée dédiée plus bas. La borne retenue est la CLÔTURE
   et non une date fixe.
+  **ET LE PASSAGE AU CALCUL PAR RENDU A FAIT REVENIR LE DÉFAUT D'APPARIEMENT DANS `DossiersList` — C'EST
+  LE LINT QUI L'A MONTRÉ** (25/09/2026). « La lire à chaque rendu » est juste pour les trois écrans de
+  « ce qu'il reste à envoyer », qui lisent TOUT le dossier puis calculent : l'année du rendu s'applique
+  à des données complètes. `DossiersList`, lui, FILTRE ses lectures sur l'année au chargement
+  (`gte('date', debutAnnee)` — elles portent sur tout le cabinet) et range le compte de mois dans
+  chaque ligne. Son en-tête, recalculé à chaque rendu, passait donc à la nouvelle année au premier
+  rendu d'après le Nouvel An — une recherche tapée suffit — au-dessus des chiffres de l'année finie :
+  **« Relevés 2027 » sur « 11/11 mois »**, et « Cotisations 2027 » cochée sur des cotisations de 2026.
+  La bonne nouvelle fabriquée de `ClientHome`, réintroduite par son propre correctif, sur l'écran qui
+  décrit tout le cabinet. Et la phrase ci-dessus qui classait `DossiersList` parmi les constantes
+  « légitimes » passées au calcul par rendu décrivait l'intention, pas le résultat.
+  **Le critère qui départage** : l'année se lit à chaque rendu quand les données ne sont pas filtrées
+  sur elle ; quand la lecture la filtre, elle se lit AU MÊME INSTANT que les données et VOYAGE avec
+  elles (`anneeChargee`, posée dans le même lot que les lignes). Figée au chargement du module — l'état
+  d'avant —, elle ne changeait plus de la session ; gardée dans l'état, elle suit chaque rechargement.
+  **Signalé par `react-hooks(exhaustive-deps)`, qui n'était pas du bruit** : `load()` lisait deux
+  valeurs du rendu sans que l'effet dépende d'elles. C'était l'un des deux avertissements qui faisaient
+  passer la branche de 66 à 68, au-dessus du plafond de `main`, trouvé en voulant les faire disparaître.
+  L'autre était une mémoïsation inopérante dans `BanqueTab` (`nonRapprochees` recréée à chaque rendu,
+  donc `planAuto` recalculé à chaque frappe) : une affaire de performance et non de justesse, gardée
+  par le lint seul — c'est dit plutôt que déguisé en test.
+  **Trois tests, horloge feinte sur `Date` seule, et trois mutations qui mordent chacune sur le test
+  écrit pour elle** : le code tel qu'il était (en-tête par rendu) sur « passer le Nouvel An écran
+  ouvert » ; l'année jamais reposée par `load()` sur « une liste RECHARGÉE » — créer un dossier relance
+  le chargement sans remonter l'écran, et sans ce cas un en-tête figé au montage passait ; l'année
+  figée au niveau du module sur les deux derniers, plus le scanner, qui la voit aussi.
+  **LATENT** : il faut une liste restée montée à travers minuit le 31 décembre, puis un rendu — le cas
+  normal d'un outil de cabinet laissé ouvert, et rien ne le signalerait.
 - **ET AU 1ER JANVIER, LES TROIS ÉCRANS CESSAIENT DE RÉCLAMER L'EXERCICE QU'ON CLÔTURE**
   (22/09/2026). `moisEcoules` vaut 0 le 1er janvier, et les trois écrans ne connaissaient que l'année
   EN COURS : ils n'avaient donc plus rien à réclamer, ni pour la nouvelle année (aucun mois révolu),
@@ -4761,7 +4789,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1528 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1535 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

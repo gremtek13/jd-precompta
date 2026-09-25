@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { anneeEtMoisEcoules } from '../lib/format'
 import DossiersList from './DossiersList'
 
@@ -32,6 +32,8 @@ vi.mock('../lib/supabase', () => ({
         gte: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+        // La création d'un dossier : seule son erreur est lue, et elle vaut null.
+        insert: () => chaine,
         then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
           const toutes = faux.parTable[table] ?? []
           return Promise.resolve({
@@ -137,5 +139,73 @@ describe('DossiersList — la recherche filtre la liste, jamais le tableau de bo
     expect(screen.getByText('Aucun dossier ne correspond.')).toBeTruthy()
     expect(valeurTuile('À régler')).toBe('1')
     expect(valeurTuile('À jour')).toBe('2')
+  })
+})
+
+// L'ANNÉE DES EN-TÊTES VOYAGE AVEC LES CHIFFRES QU'ELLE ÉTIQUETTE. Les lectures de cet écran sont
+// filtrées sur l'année (elles portent sur tout le cabinet), donc les chiffres d'une liste restée
+// ouverte au Nouvel An sont ceux de l'année finie. L'en-tête, lui, était recalculé à chaque rendu :
+// la première recherche tapée le faisait passer à la nouvelle année au-dessus de « 11/11 mois ».
+// Le jeu d'essai ne porte aucun relevé : seuls les en-têtes sont regardés, et ils ne dépendent que
+// de l'année. On ne feint que `Date` — feindre aussi les minuteurs gèlerait ceux dont
+// `findByText` dépend, et chaque test partirait en expiration.
+describe('DossiersList — l’année affichée est celle des chiffres, pas celle de l’horloge', () => {
+  const VEILLE_DU_NOUVEL_AN = new Date(2026, 11, 31, 18, 0)
+  const LENDEMAIN = new Date(2027, 0, 2, 9, 0)
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(VEILLE_DU_NOUVEL_AN)
+    faux.parTable = { dossiers: [dossier('alpha', 'Alpha Santé'), dossier('bravo', 'Bravo Cabinet')] }
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  async function monter() {
+    let rendu!: ReturnType<typeof render>
+    await act(async () => { rendu = render(<MemoryRouter><DossiersList /></MemoryRouter>) })
+    return rendu
+  }
+
+  it('passer le Nouvel An écran ouvert ne réétiquette pas les chiffres de l’année finie', async () => {
+    await monter()
+    expect(screen.getByText('Relevés 2026')).toBeTruthy()
+
+    vi.setSystemTime(LENDEMAIN)
+    // Un rendu SANS rechargement : c'est exactement ce que produit une recherche tapée.
+    await act(async () => {
+      fireEvent.change(screen.getByPlaceholderText(/Rechercher un dossier/), { target: { value: 'Bravo' } })
+    })
+
+    // Avant correction : « Relevés 2027 » et « Cotisations 2027 », au-dessus des chiffres de 2026.
+    expect(screen.getByText('Relevés 2026')).toBeTruthy()
+    expect(screen.getByText('Cotisations 2026')).toBeTruthy()
+    expect(screen.queryAllByText(/2027/)).toHaveLength(0)
+  })
+
+  it('une liste RECHARGÉE après le Nouvel An change d’année avec ses chiffres', async () => {
+    // Créer un dossier relance `load()` sur la liste ouverte, sans la remonter. Sans ce cas, « l'en-
+    // tête ne bouge pas » serait satisfait par un en-tête figé au montage — qui, après ce
+    // rechargement, étiquetterait 2026 des chiffres désormais lus sur 2027 : le même défaut, inversé.
+    await monter()
+    vi.setSystemTime(LENDEMAIN)
+
+    await act(async () => { screen.getByRole('button', { name: '+ Nouveau dossier' }).click() })
+    const champ = screen.getByLabelText('Nom du client')
+    await act(async () => { fireEvent.change(champ, { target: { value: 'Charlie Soins' } }) })
+    await act(async () => { fireEvent.submit(champ.closest('form')!) })
+
+    expect(await screen.findByText('Relevés 2027')).toBeTruthy()
+    expect(screen.queryAllByText(/Relevés 2026/)).toHaveLength(0)
+  })
+
+  it('et une liste affichée de nouveau repart sur la nouvelle année', async () => {
+    // Garde symétrique : sans lui, « l'en-tête garde l'année de ses chiffres » serait satisfait par un
+    // écran qui fige l'année pour toute la session — le défaut d'origine de « maintenant figé ».
+    const premier = await monter()
+    premier.unmount()
+    vi.setSystemTime(LENDEMAIN)
+    await monter()
+
+    expect(await screen.findByText('Relevés 2027')).toBeTruthy()
   })
 })
