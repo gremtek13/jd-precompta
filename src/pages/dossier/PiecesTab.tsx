@@ -515,7 +515,9 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
             </button>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 8 }}>
+        {/* `wrap` : sept boutons possibles ne tiennent pas sur une ligne quand le panneau de droite est
+            ouvert — sans lui, ils débordaient du panneau central et le dernier passait sous le volet. */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {piecesAvecSuggestion.length > 0 && (
             <button className="btn btn-outline btn-sm" disabled={applyingSuggestions} onClick={appliquerSuggestions}>
               {applyingSuggestions ? 'Application…' : `Appliquer les suggestions (${piecesAvecSuggestion.length})`}

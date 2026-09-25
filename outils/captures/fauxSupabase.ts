@@ -62,7 +62,23 @@ function ligne(id: string, date: string, libelle: string, montant: number, statu
   }
 }
 
+// Une conversation d'assistant, pour photographier le panneau de droite ouvert — mêmes données
+// fictives que le reste (Télécom Plus, LogiSoins) : le texte des réponses est écrit ici, jamais tiré
+// d'un vrai échange.
+function message(n: number, role: 'user' | 'assistant', texte: string, outils: string[] | null = null): Ligne {
+  return {
+    id: `m${n}`, dossier_id: 'd1', conversation_id: 'c1', role, texte, outils_utilises: outils,
+    tokens_entree: null, tokens_sortie: null, created_by: 'u1', created_at: `2026-09-25T07:5${n}:00Z`,
+  }
+}
+
 const TABLES: Record<string, Ligne[]> = {
+  agent_conversations: [
+    message(1, 'user', 'Qu’est-ce qui reste à faire sur ce dossier ?'),
+    message(2, 'assistant', '4 justificatifs sont à valider et 2 mouvements bancaires à rapprocher. Le prélèvement du 15/09 de Télécom Plus (39,99 €) correspond à la pièce du 12/09 : même montant, 3 jours d’écart.', ['points_a_traiter', 'lister_pieces']),
+    message(3, 'user', 'Il reste une pièce sans catégorie ?'),
+    message(4, 'assistant', 'Oui, une seule : LogiSoins, 29,00 € le 18/08/2026. C’est un abonnement de logiciel : une catégorie « Logiciels et abonnements » conviendrait.', ['lister_pieces']),
+  ],
   cabinet_admins: [{ user_id: 'u1', cabinet_id: 'cab1', role: 'comptable_en_chef' }],
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: null }],
   dossiers,

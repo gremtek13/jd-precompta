@@ -54,9 +54,9 @@ Conséquences pratiques :
   une pièce dans un nouvel onglet revienne au bon endroit.
 - **Coque d'ordinateur en trois volets** (25/09/2026, étape 1 livrée, à la demande du cabinet :
   « calquer l'interface PC sur celle de Claude ») : une barre latérale posée sur le fond de la coque
-  (`--color-shell`), le travail dans un panneau clair aux coins arrondis (`.main`), et — étape 2, à
-  faire — un panneau contextuel à droite qui remplacera les modales (fiche pièce, rapprochement,
-  assistant). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
+  (`--color-shell`), le travail dans un panneau clair aux coins arrondis (`.main`), et un panneau
+  contextuel à droite (étape 2, en cours : l'assistant y vit déjà ; la fiche pièce et le
+  rapprochement bancaire y viendront à la place de leurs modales). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
   formulaire du tableau de bord par `?nouveau=1`), la recherche de dossiers (`lib/recherche.ts`), la
   navigation globale, le dossier ouvert avec TOUS ses écrans en arborescence, les autres dossiers,
   et le compte en bas (thème, déconnexion). Réductible en colonne d'icônes, préférence retenue par
@@ -68,6 +68,15 @@ Conséquences pratiques :
   boucler sur une liste incomplète) et sur `signalerMajDossiers()` après une création. Une lecture
   tronquée ou refusée le DIT (« Liste des dossiers incomplète ») au lieu de passer pour la liste
   entière.
+  **Le panneau de droite** (`components/PanneauDroit.tsx`, `lib/panneauDroit.ts`) est UN emplacement
+  de la coque, posé après le panneau central. Un écran y affiche un contenu par
+  `<PanneauDroit nom="…">`, qui s'y rend par un PORTAIL — le contenu reste dans l'arbre React de
+  l'écran qui l'ouvre, donc garde son état et ses contextes. Un seul contenu à la fois : la coque
+  retient le NOM de l'occupant, ouvrir un contenu remplace le précédent, et `fermer()` ne ferme que
+  s'il occupe encore le volet. Vide, l'emplacement n'existe pas (`:empty`) : un contenu qui quitte
+  l'écran — le dossier qu'on referme — l'emporte avec lui. Sous 1 280 px le volet se pose PAR-DESSUS
+  le panneau central au lieu de l'écraser ; sur mobile il redevient la carte flottante d'avant. Hors
+  de la coque, `usePanneauDroit` LÈVE plutôt que d'offrir un bouton qui ne fait rien.
   **Cette page ne se remonte pas d'un dossier à l'autre** : la barre latérale mène directement du
   dossier A au dossier B, et `DossierDetail` reste monté (même route, autre `:id`). Les onglets sont
   sous un `AnneeProvider key={id}` et repartent de zéro ; ce qui vit HORS de ce bloc doit être clé par
@@ -171,6 +180,8 @@ PLAN_DE_REPRISE.md  quoi faire le jour où quelque chose a disparu. Dans le dép
 outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par Vite avec un
                   faux Supabase à données fictives, photographiée par Playwright — mode
                   d'emploi en tête de vitrine.mjs ; images dans sorties/, ignoré par git.
+                  debordements.mjs y liste, onglet par onglet, ce qui déborde du panneau
+                  central (panneau de droite ouvert ou fermé) et rend un code d'erreur.
 ```
 
 ## Conventions de développement
@@ -206,6 +217,16 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   une `<section>` ou un `<div>`, sinon elle viendrait se coller en bas du téléphone. Et le texte
   discret de la barre passe par `--color-text-barre` : le gris `--color-text-light` n'atteint pas
   4,5:1 sur le fond de la coque (4,3 calculé).
+- **Une rangée de boutons ou de champs passe à la ligne** (`flex-wrap`), jamais ne déborde. Ouvert, le
+  panneau de droite rétrécit le panneau central sous 700 pixels de contenu, et une rangée qui ne
+  passe pas à la ligne déborde alors : son dernier élément disparaît sous le volet sans que rien ne
+  casse ailleurs. `.field-row` passe à la ligne (seulement quand ses champs n'y tiennent plus), et
+  un tableau vit dans un `.table-scroll`. `outils/captures/debordements.mjs` le vérifie sur les
+  dix-sept onglets — 0 débordement à 1 280 et 1 440 px panneau ouvert, et à 1 024 et 1 440 fermé
+  (mesuré le 25/09/2026, après avoir corrigé les cinq qu'il a trouvés : la barre d'actions des
+  justificatifs, les rangées de champs d'Écritures, Cotisations et Estimation, et le tableau des
+  candidates à l'immobilisation). Sa mutation mord : une rangée remise sans `wrap` le fait sortir en
+  erreur.
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
@@ -929,9 +950,11 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   administratifs/Factures émises) et paragraphes d'intro longs raccourcis
   avec le détail replié en `<details>`.
 - **Interface d'ordinateur en trois volets, étape 1 (25/09/2026)** : barre latérale avec les
-  dossiers et tous les écrans du dossier ouvert, réductible — voir « Architecture actuelle ». Reste
-  l'étape 2 : le panneau contextuel à droite (fiche pièce, rapprochement bancaire, assistant), tel que
-  le montre la maquette validée par le cabinet (artefact « Nouvelle interface PC »).
+  dossiers et tous les écrans du dossier ouvert, réductible — voir « Architecture actuelle ». Étape 2
+  commencée le même jour : le panneau contextuel à droite existe, et l'assistant y vit (bouton
+  « Assistant » dans l'en-tête du dossier, sur mobile la bulle et la carte flottante d'avant). Restent
+  la fiche pièce et le rapprochement bancaire, tels que les montre la maquette validée par le cabinet
+  (artefact « Nouvelle interface PC »).
 - **Purge du texte OCR des pièces sensibles après clôture d'exercice (22/09/2026)**, décision du
   cabinet tranchée dans « Décisions en attente » : option B (purger après clôture), restreinte aux
   pièces sensibles — les justificatifs de recette (bordereaux de télétransmission), seule famille à
@@ -3715,9 +3738,8 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   l'effet ? » mais « ce composant se REMONTE-t-il quand cette dépendance change ? ». Sous une clé,
   un effet sans annulation écrit dans un composant démonté, ce que React ignore ; au-dessus, il
   écrit dans l'écran affiché. Balayé le 25/09/2026 : la page d'un dossier et les écrans client
-  étaient les deux cas, l'assistant flottant un troisième, moindre — ouvert pendant qu'on change de
-  dossier, il gardait la conversation du précédent ; il est clé par dossier dans la même correction.
-  La barre, elle, relit sa liste une fois par identifiant.
+  étaient les deux cas ; l'assistant est clé par dossier, la barre relit sa liste une fois par
+  identifiant.
 - **Et le frère du verrou a rendu un résultat NÉGATIF, mesuré le 21/09/2026** : un drapeau « en
   cours » (`setLoading`, `setSaving`…) relâché hors d'un `finally` a la même conséquence qu'un
   verrou — écran figé, bouton grisé ou spinner éternel. Le balayage brut rend 43 sites et ne dit
@@ -4870,9 +4892,18 @@ ont été découverts, en cherchant à apparier une facture en dollars.
   affiché que la barre ne désignerait plus, et la relecture en boucle sur un dossier introuvable
   (garde retirée, React lève « trop de rendus »). Trois de plus dans `DossiersList.test.tsx` gardent
   ce qui relie les deux écrans : `?nouveau=1` ouvre le formulaire, et la création prévient la barre.
-  **ET LA PAGE D'UN DOSSIER LE MÊME JOUR (`DossierDetail.test.tsx`)**, la vraie page dans la vraie
-  coque : l'IDENTITÉ du dossier d'un dossier à l'autre (neuf tests) et l'assistant flottant qui
-  repart sur le dossier de l'URL — voir « la barre latérale a rouvert une course ».
+  **ET LE PANNEAU DE DROITE, LE MÊME JOUR** — quinze tests, quatorze mutations, toutes mordent.
+  `PanneauDroit.test.tsx` garde le mécanisme (volet vide sans enfant, contenu rendu DANS le volet et
+  non à l'endroit où l'écran le déclare, un seul contenu à la fois, un contenu remplacé qui en se
+  fermant n'emporte pas son remplaçant, levée hors de la coque) ; `AssistantDossier.test.tsx`
+  l'assistant (bouton d'en-tête enfoncé tant qu'il occupe le volet, bulle mobile sur le même volet,
+  l'historique du fil envoyé à l'agent, lecture partielle dite) et surtout le passage d'un dossier à
+  l'autre volet ouvert — la clé retirée fait tomber deux tests, dont celui où une lecture de l'ancien
+  dossier arrive APRÈS celle du nouveau ; `DossierDetail.test.tsx` enfin, la vraie page dans la vraie
+  coque, garde le câblage que rien d'autre ne voit : un bouton retiré de l'en-tête, un assistant plus
+  monté (le bouton s'enfoncerait sans que rien ne s'ouvre), une coque sans emplacement — et, depuis
+  le même jour, l'IDENTITÉ du dossier d'un dossier à l'autre (neuf tests, voir « la barre latérale a
+  rouvert une course »).
   **`ClientInformations` a reçu son premier test de rendu le 25/09/2026**, par un défaut trouvé lui
   aussi : les réponses d'une société écrites dans une autre (même entrée). **Deux écrans client
   (`ClientUpload`, `ClientSimulation`) n'ont toujours aucun test de rendu** — dit plutôt que laissé
@@ -4918,7 +4949,7 @@ ont été découverts, en cherchant à apparier une facture en dollars.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1564 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1578 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

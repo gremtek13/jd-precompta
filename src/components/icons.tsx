@@ -164,9 +164,20 @@ export const IconComptesMaster = (p: IconProps) => base(<>
   <path d="M9 12l2 2 4-4.2" />
 </>, p)
 
+// Assistant — deux étincelles, le signe désormais le plus reconnu d'une aide par IA (celui de la
+// maquette validée), plutôt qu'une bulle de discussion qu'on confondrait avec une messagerie client.
 export const IconAssistant = (p: IconProps) => base(<>
-  <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v8a2.5 2.5 0 0 1-2.5 2.5H10l-4.5 4v-4H6.5A2.5 2.5 0 0 1 4 13.5z" />
-  <path d="M8.5 8h7M8.5 11h4.5" />
+  <path d="M12 3.5l1.9 5.2 5.2 1.9-5.2 1.9L12 17.7l-1.9-5.2-5.2-1.9 5.2-1.9z" />
+  <path d="M18.5 15.5l.7 1.8 1.8.7-1.8.7-.7 1.8-.7-1.8-1.8-.7 1.8-.7z" />
+</>, p)
+
+export const IconFermer = (p: IconProps) => base(<>
+  <path d="M6 6l12 12M18 6L6 18" />
+</>, p)
+
+// Envoyer un message — une flèche vers le haut, celle des champs de discussion.
+export const IconEnvoyer = (p: IconProps) => base(<>
+  <path d="M12 18.5v-13M6.5 11L12 5.5l5.5 5.5" />
 </>, p)
 
 export const IconSun = (p: IconProps) => base(<>

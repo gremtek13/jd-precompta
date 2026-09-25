@@ -32,6 +32,12 @@ const VUES = [
   { nom: 'pc-tableau-clair', chemin: '#/dossiers', l: 1280, h: 800, theme: 'light', reduite: false },
   { nom: 'mobile-dossier-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false },
   { nom: 'mobile-tableau-clair', chemin: '#/dossiers', l: 390, h: 844, theme: 'light', reduite: false },
+  // Panneau de droite ouvert (l'assistant) : large, étroit (le volet passe PAR-DESSUS), sombre, mobile.
+  { nom: 'pc-assistant-clair', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Assistant' },
+  { nom: 'pc-assistant-sombre', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'dark', reduite: false, clic: 'Assistant' },
+  { nom: 'pc-assistant-1280', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant' },
+  { nom: 'pc-assistant-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, clic: 'Assistant' },
+  { nom: 'mobile-assistant-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, clic: "Ouvrir l'assistant" },
 ].filter((v) => v.nom.includes(filtre))
 
 const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'
@@ -63,6 +69,10 @@ for (const v of VUES) {
   page.on('console', (m) => { if (m.type() === 'error') erreurs.push(m.text().slice(0, 160)) })
   await page.goto(BASE + v.chemin, { waitUntil: 'load' })
   await page.waitForTimeout(1500)
+  if (v.clic) {
+    await page.getByRole('button', { name: v.clic, exact: true }).click()
+    await page.waitForTimeout(600)
+  }
   await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: `${SORTIE}${v.nom}.png` })
   const police = await page.evaluate(() => (document.fonts.check('16px Manrope') ? 'Manrope chargée' : 'Manrope ABSENTE'))
