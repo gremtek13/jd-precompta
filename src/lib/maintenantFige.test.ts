@@ -93,8 +93,10 @@ describe('aucune valeur de « maintenant » figée au chargement d’un module',
     expect(
       fautives,
       "Une valeur tirée de « maintenant » au niveau d'un module est figée pour toute la session "
-        + "(HashRouter ne recharge jamais). La lire à chaque rendu, ou l'inscrire dans EXCEPTIONS avec "
-        + 'la raison pour laquelle la figer est sans conséquence.',
+        + "(HashRouter ne recharge jamais). La lire à chaque rendu — ou, si une lecture en base est "
+        + "FILTRÉE sur elle, au même instant que cette lecture et gardée avec ses données (voir "
+        + "`anneeChargee` dans DossiersList) —, ou l'inscrire dans EXCEPTIONS avec la raison pour "
+        + 'laquelle la figer est sans conséquence.',
     ).toEqual([])
   })
 
