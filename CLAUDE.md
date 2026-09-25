@@ -52,8 +52,8 @@ Conséquences pratiques :
   L'onglet actif d'un dossier fait partie de l'URL (`/dossiers/:id/:tab`),
   pas d'un simple état React, pour que "retour navigateur" après avoir ouvert
   une pièce dans un nouvel onglet revienne au bon endroit.
-- **Coque d'ordinateur en trois volets** (25/09/2026, deux étapes livrées le même jour, à la demande
-  du cabinet : « calquer l'interface PC sur celle de Claude ») : une barre latérale posée sur le fond
+- **Coque d'ordinateur en trois volets** (25/09/2026, en deux étapes, à la demande du cabinet :
+  « calquer l'interface PC sur celle de Claude ») : une barre latérale posée sur le fond
   de la coque (`--color-shell`), le travail dans un panneau clair aux coins arrondis (`.main`), et un
   panneau contextuel à droite (étape 2 : l'assistant, la fiche d'une pièce et le rapprochement d'un
   mouvement bancaire y vivent, à la place des fenêtres qui assombrissaient l'écran). La barre (`Layout.tsx` + `BarreDossiers.tsx`) porte « Nouveau dossier » (qui ouvre le
@@ -994,11 +994,12 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   avec le détail replié en `<details>`.
 - **Interface d'ordinateur en trois volets, étape 1 (25/09/2026)** : barre latérale avec les
   dossiers et tous les écrans du dossier ouvert, réductible — voir « Architecture actuelle ». **Étape 2
-  livrée le même jour** : le panneau contextuel à droite porte l'assistant (bouton « Assistant » dans
-  l'en-tête du dossier, sur mobile la bulle et la carte flottante d'avant), la fiche d'une pièce et le
-  rapprochement d'un mouvement bancaire, tels que les montre la maquette validée par le cabinet
-  (artefact « Nouvelle interface PC »). Les deux étapes sont en ligne, chacune publiée sur accord du
-  cabinet.
+  terminée le même jour** : le panneau contextuel à droite porte l'assistant (bouton « Assistant »
+  dans l'en-tête du dossier, sur mobile la bulle et la carte flottante d'avant), la fiche d'une pièce
+  et le rapprochement d'un mouvement bancaire, tels que les montre la maquette validée par le cabinet
+  (artefact « Nouvelle interface PC »). Chaque étape part en ligne sur accord du cabinet, et c'est la
+  feuille de route Notion (lignes 18.8 et 18.9) qui dit laquelle l'est : ce fichier voyage avec le
+  code, donc il ne peut pas savoir si le commit qui le porte a été publié.
 - **Purge du texte OCR des pièces sensibles après clôture d'exercice (22/09/2026)**, décision du
   cabinet tranchée dans « Décisions en attente » : option B (purger après clôture), restreinte aux
   pièces sensibles — les justificatifs de recette (bordereaux de télétransmission), seule famille à
