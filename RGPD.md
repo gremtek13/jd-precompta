@@ -58,7 +58,7 @@ toujours « à valider », et la catégorie reste un arbitrage humain.
 |---|---|---|---|
 | **Supabase** | Base, stockage des fichiers, authentification | `eu-west-1` (Irlande) | Non |
 | **AWS Textract** | OCR des pièces déposées | `eu-central-1` (Francfort), repli du code **gardé par un test**, secret **mesuré** le 21/09/2026 (§8.1) | Non |
-| **AWS Bedrock** | Assistant comptable (Claude) | `eu-west-1` (Irlande), **gardé par un test** | Non |
+| **AWS Bedrock** | Assistant comptable (Claude), et citation des champs d'une pièce lue | `eu-west-1` (Irlande) pour l'assistant, écrit dans son code ; `eu-central-1` (Francfort) pour la citation, même secret que Textract — **gardés par un test** | Non |
 | **Super PDP** | Plateforme de dématérialisation agréée DGFiP | France | Non |
 | **Resend** | Envoi et réception d'e-mails | `eu-west-1` (Irlande), confirmé par le cabinet le 22/09/2026 | Non, **sous réserve du DPA — voir §8.2** |
 | **GitHub Pages** | Hébergement du front (fichiers statiques) | — | Aucune donnée de dossier n'y transite |
@@ -71,6 +71,12 @@ Deux précisions qui comptent :
   en revanche les adresses IP des visiteurs, comme tout hébergeur.
 - **L'API SIRENE ne reçoit qu'un SIRET**, et seulement sur clic explicite. Aucun appel réseau
   externe n'est silencieux dans cette application — c'est une règle du projet, pas une constatation.
+- **Les polices ne partent plus chez Google** (25/09/2026). Jusque-là, `index.html` et la charte
+  d'un cabinet les demandaient à Google Fonts à chaque ouverture : l'adresse IP de chaque
+  utilisateur, clients compris, partait chez un destinataire absent de ce tableau, et la phrase
+  ci-dessus était fausse sur ce point. Elles sont désormais servies par l'application elle-même
+  (paquets @fontsource, licence OFL), et `src/lib/polices.test.ts` refuse toute adresse de Google
+  Fonts dans ce que le navigateur reçoit.
 
 ---
 

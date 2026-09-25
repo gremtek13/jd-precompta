@@ -7,10 +7,10 @@
 //
 // PIÈGE, payé une fois : ne pas donner au navigateur le mandataire de l'environnement (HTTPS_PROXY).
 // Il y enverrait AUSSI le serveur local, et la capture montrerait la page d'erreur du relais au lieu
-// de l'application. Les polices Google passent donc par curl, qui utilise le mandataire, et sont
-// servies au navigateur par interception ; toute autre requête externe est coupée.
+// de l'application. Toute requête externe est donc coupée — et NOMMÉE dans le compte rendu : depuis
+// que les polices sont servies par l'application (25/09/2026), il n'y en a aucune, et « Manrope
+// chargée » le prouve à chaque vue. Les polices passaient avant par curl, venant de Google.
 import { chromium } from 'playwright-core'
-import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync } from 'node:fs'
 
 const BASE = 'http://127.0.0.1:5199/'
@@ -53,13 +53,6 @@ const VUES = [
   { nom: 'mobile-mouvement-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
 ].filter((v) => v.nom.includes(filtre))
 
-const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36'
-const cache = new Map()
-function viaCurl(url) {
-  if (!cache.has(url)) cache.set(url, execFileSync('curl', ['-sS', '--max-time', '30', '-A', UA, url]))
-  return cache.get(url)
-}
-
 const navigateur = await chromium.launch({ executablePath: executable })
 for (const v of VUES) {
   const contexte = await navigateur.newContext({ viewport: { width: v.l, height: v.h } })
@@ -67,13 +60,11 @@ for (const v of VUES) {
     localStorage.setItem('jd-precompta-theme', theme)
     localStorage.setItem('jd-precompta-barre-reduite', reduite ? '1' : '0')
   }, { theme: v.theme, reduite: v.reduite })
+  const externes = []
   await contexte.route(/^https?:\/\//, (route) => {
     const url = route.request().url()
     if (url.startsWith(BASE)) return route.continue()
-    if (/fonts\.(googleapis|gstatic)\.com/.test(url)) {
-      const type = url.includes('googleapis') ? 'text/css' : 'font/woff2'
-      return route.fulfill({ status: 200, body: viaCurl(url), contentType: type, headers: { 'access-control-allow-origin': '*' } })
-    }
+    externes.push(url.slice(0, 80))
     return route.abort()
   })
   const page = await contexte.newPage()
@@ -94,7 +85,8 @@ for (const v of VUES) {
   await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: `${SORTIE}${v.nom}.png` })
   const police = await page.evaluate(() => (document.fonts.check('16px Manrope') ? 'Manrope chargée' : 'Manrope ABSENTE'))
-  console.log(v.nom, '—', police, '—', erreurs.length ? erreurs.slice(0, 3) : 'sans erreur')
+  console.log(v.nom, '—', police, '—', erreurs.length ? erreurs.slice(0, 3) : 'sans erreur',
+    '—', externes.length ? `requêtes externes coupées : ${externes.slice(0, 3).join(', ')}` : 'aucune requête externe')
   await contexte.close()
 }
 await navigateur.close()

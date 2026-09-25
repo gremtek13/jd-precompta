@@ -21,11 +21,8 @@
     <meta name="theme-color" content="#0F2438" />
     <meta name="apple-mobile-web-app-title" content="JD Precompta" />
 
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <!-- Manrope : police d'interface par défaut (voir index.css) — Inter reste chargée en repli et
-         pour les cabinets ayant déjà choisi une police à eux (voir lib/branding.ts). -->
-    <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <!-- Polices : servies par l'application elle-même (src/main.tsx, lib/polices.ts), jamais par un
+         service tiers — chaque ouverture enverrait l'adresse IP de l'utilisateur ailleurs. -->
     <script>
       // Posé avant le premier rendu pour éviter un flash de thème clair au chargement si le thème
       // sombre a été choisi précédemment (localStorage) ou est celui du système.
