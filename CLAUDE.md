@@ -501,6 +501,15 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   Cinq mutations mordent sur le module, trois sur le scanner. La première est le défaut d'origine
   replanté (exiger `instanceof Error`) : **un test qui n'aurait posé que de vraies `Error` serait
   resté vert avec le défaut entier**, et c'est exactement ce qui l'a laissé vivre depuis le début.
+  **ET LE TERNAIRE N'ÉTAIT QU'UNE FORME DU DÉFAUT** (25/09/2026). `ImmobilisationsTab` écrivait
+  `if (err instanceof Error && /duplicate|unique/i.test(err.message))` : la même dépendance du message
+  affiché à l'héritage, sous une forme que le gabarit du ternaire ne voit pas. La violation d'unicité
+  y arrive par `throw insertError`, un objet NU — la phrase prévue pour ce cas n'avait donc JAMAIS pu
+  s'afficher. Reconnue désormais à son code (`23505`), et la règle du scanner est élargie : aucun
+  `instanceof Error` dans `src/` hors d'une liste inscrite avec sa raison ET son nombre — une seule
+  entrée, `invokeErreur.ts`, où les erreurs de `functions.invoke()` héritent réellement d'`Error`.
+  Le défaut replanté la fait tomber, et trois mutations mordent sur le scanner (compte menti,
+  exception inventée, commentaires comptés).
   **ET « TOUTE SOURCE DE PRODUCTION » ÉTAIT FAUX : CE SCANNER S'ARRÊTAIT À `src/`** (22/09/2026,
   troisième contrôle de la journée à promettre un périmètre qu'il n'avait pas). Le ternaire interdit
   vit **huit fois** dans les Edge Functions.
@@ -1850,7 +1859,9 @@ d'environnement dans la même édition.
   « toujours ignorer » de `BanqueTab` décident du `statut` ÉCRIT EN BASE à l'import d'un relevé
   (`statutPourLibelle`, deux sites). Une liste tronquée n'affiche donc pas de travers — elle importe
   des mouvements « à traiter » qu'une règle couvre, et **aucun rechargement ne le répare ensuite**.
-  C'est le seul des 23 dont le dégât survive à la lecture suivante.
+  C'est le seul des 23 dont le dégât survive à la lecture suivante — et depuis le 25/09/2026 l'import
+  se SUSPEND sur cette lecture au lieu de la signaler (voir « une lecture partielle commandait encore
+  des écritures »).
   **LES CONSÉQUENCES NE SE FONDENT PAS**, et trois bandeaux ont donc été ajoutés plutôt qu'un
   drapeau élargi : sur `BanqueTab` (cotisations et règles — « un mouvement reste à traiter alors
   qu'une règle le couvre »), sur `PiecesTab` et `DocumentsTab` (listes de référence — `sousDossierLabel`
@@ -1954,6 +1965,66 @@ d'environnement dans la même édition.
   (le plancher passe de 110 à 118), chaque bandeau retiré, le bandeau des packs toujours allumé,
   « Aucun pack » affirmé sur une panne, les catégories fondues dans les totaux, l'accord ignoré et
   l'auxiliaire toujours au pluriel.
+- **ET UNE LECTURE PARTIELLE COMMANDAIT ENCORE DES ÉCRITURES — LE BANDEAU LE DISAIT, LE BOUTON D'À
+  CÔTÉ N'EN TENAIT PAS COMPTE** (25/09/2026, trouvé en écrivant le test de l'onglet Factures, le dernier
+  sans test de rendu). Tout ce qui précède garantit qu'une lecture partielle se SIGNALE ; rien ne
+  garantissait qu'elle cesse de COMMANDER. Dans six écrans, le drapeau n'alimentait qu'un bandeau
+  pendant qu'un bouton voisin ÉCRIVAIT à partir de la liste tronquée — et un bandeau se lit, une
+  écriture reste.
+  **La règle : une lecture partielle ne commande pas d'écriture.** Le geste se suspend, dit pourquoi,
+  et le rechargement de la page le rouvre ; la saisie à la main reste ouverte.
+  **Les cas, du plus coûteux au moins coûteux :**
+  - **l'import d'un relevé** (`BanqueTab`) dédoublonnait contre les mouvements LUS : sur un relevé lu
+    à moitié, un mouvement déjà importé l'était une seconde fois — et **aucun écran ne permet de
+    retirer un mouvement bancaire** (aucun `delete` sur `lignes_bancaires` dans tout `src/`), donc le
+    doublon était définitif depuis l'interface. Les règles « toujours ignorer » tronquées, que ce
+    fichier choisissait jusqu'ici de signaler, suspendent l'import elles aussi ;
+  - **« Générer les écritures manquantes »** (`EcrituresTab`) : `enAttente`, ce sont les pièces à
+    comptabiliser MOINS celles dont on a LU l'écriture — sur un brouillon lu à moitié, la génération
+    doublait la charge dans le FEC et la balance, que seul « Régénérer », pièce par pièce, défait. Les
+    deux exports se refusaient déjà sur cette lecture ; la génération, qui écrit, restait ouverte ;
+  - **les deux lots de rapprochement** (`BanqueTab`) n'écrivent que ce qui n'a qu'UN candidat, et une
+    unicité se juge sur ce qu'on a lu : la jumelle d'une pièce tombée hors lecture, et « Tout
+    rapprocher » rattachait le mauvais justificatif — le lot « sans doute possible » VALIDAIT même la
+    pièce sur cette fausse certitude ;
+  - **la création d'un échéancier de cotisation** (`CotisationsTab`) dédoublonnait contre les
+    échéances lues : une échéance déjà créée l'était une seconde fois, comptée double en case BK ;
+  - **les deux calculs de repères** (`EstimationTab`) ENREGISTRAIENT un total fait sur une partie des
+    pièces — l'« air d'une bonne nouvelle » que le bandeau nomme, gravé cette fois au-delà du
+    rechargement ;
+  - **le préremplissage du prévisionnel** (`FinancementTab`) n'écrit rien lui-même, mais ce qu'il pose
+    part au premier « Enregistrer » sur le document qu'on présente à une banque — et la fenêtre
+    recouvre le bandeau qui l'aurait dit.
+  **LATENT, par construction** : `lireTout` ne rend une lecture partielle que sur une panne (session
+  expirée, coupure, 5xx) ou un compte non annoncé. C'est ce qui rendait le défaut invisible : il ne se
+  produit que les jours où quelque chose d'autre va déjà mal, et le bouton restait ouvert précisément
+  ces jours-là.
+  **TROIS DE CES BOUTONS N'AVAIENT PAS NON PLUS DE VERROU** — la génération, l'import (CSV et PDF sous
+  un même verrou) et l'échéancier ne se fermaient que par un état React, donc deux clics du même rendu
+  écrivaient deux fois. Tous trois figuraient parmi les 32 candidats que le balayage du 20/09/2026
+  laissait de côté comme « un doublon qu'un cabinet voit et supprime » — faux pour l'import, dont rien
+  ne supprime un mouvement (voir la liste des porteurs plus bas). La génération relâche désormais son
+  verrou APRÈS la relecture : relâché avant, `enAttente` portait encore les pièces qu'on venait de
+  comptabiliser, le temps que la relecture revienne.
+  **Résultat négatif du même balayage, à garder** : ne sont PAS suspendus les écritures que la base
+  protège d'elle-même (`dossier_assignations` et `immobilisations.piece_id` sont UNIQUES), les écrans
+  où l'opérateur tranche ligne à ligne (le panneau d'un mouvement), et les gestes qui écrivent MOINS
+  sur une liste tronquée sans rien doubler — une règle « toujours ignorer » ajoutée ne s'applique
+  qu'aux mouvements lus, les autres restent « à traiter », sous les yeux.
+  **Et le balayage a trouvé un message qui n'avait JAMAIS pu s'afficher** : la pièce déjà immobilisée
+  — deux onglets, un double clic, ou justement une liste lue à moitié qui la remet parmi les candidates
+  — se heurte à la contrainte unique, et la phrase prévue pour ce cas vivait derrière
+  `err instanceof Error` (voir la règle élargie de `erreursSupabase.test.ts`).
+  **CE N'EST PAS UN SCANNER, et c'est dit plutôt que laissé deviner** : ce qui décide n'est pas une
+  forme de code mais une question — cette écriture dépend-elle d'une liste qui peut être tronquée ? Un
+  gabarit crierait sur tous les boutons d'un écran qui porte un bandeau. Chaque écran est donc gardé par
+  son test : lecture partielle ⇒ bouton grisé, message, rien d'écrit ; lecture complète ⇒ l'écriture
+  part — le garde symétrique, sans lequel « suspendu » serait satisfait par un bouton toujours fermé.
+  **Trente-trois mutations sur les six écrans, trente-deux mordent**, dont le code tel qu'il était sur
+  chacun, chaque verrou retiré puis posé dans le `try` (à trois clics), et le verrou de la génération
+  relâché avant la relecture. **La survivante est à sa place** : la garde posée DANS le gestionnaire
+  d'import n'est atteinte par aucun clic, le bouton étant déjà grisé — une seconde ceinture, comme le
+  refus côté gestionnaire de `ClotureTab`, et le test le dit plutôt que de le déguiser.
 - **ET LE PLAFOND DE COÛT IA SE SOUS-ESTIMAIT — `lecturesPaginees` S'ÉTAIT ARRÊTÉ À `src/` LUI AUSSI**
   (22/09/2026, QUATRIÈME demi-chemin en deux jours : les écritures des Edge Functions portées le
   21/09, leurs lectures le 22/09 au matin, la FORME de leur scanner d'écritures à midi — et la
@@ -3961,14 +4032,17 @@ d'environnement dans la même édition.
   en parallèle le 20/09/2026 ont écrit « troisième » et « cinquième » pour ce motif dans ce fichier.
   Un rang inscrit au fil du texte oblige à recompter à chaque ajout, sur des paragraphes que
   personne ne relit ensemble : la liste vit donc en un seul endroit, celui-ci.
-  **Douze fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
+  **Quinze fois trouvé à ce jour** — `ImportDossierModal` (import en masse), les deux relectures OCR
   (`PiecesTab` et `DocumentsTab`), « C'est une facture » (`DocumentsTab`, qui n'avait aucun verrou),
   « Tout rapprocher automatiquement » (`BanqueTab`), puis quatre trouvés d'un coup par l'audit
   ci-dessous (20/09/2026) : `EnvoyerEmailModal.envoyer`, `SuperPdpFactureModal.appeler`,
   `FactureAvoirModal.creerAvoir` et `PieceFormModal.save` — deux de plus le 23/09/2026,
   `FactureFormModal.enregistrer` et `AjouterDocumentsModal.lancerImport`, que cet audit ne POUVAIT
   pas voir (entrée dédiée plus bas) — et `AccesTab.handleCreateAccess` le 24/09/2026, posé par la
-  Routine du matin sur `main` et réuni à cette branche le 25/09/2026. Celui-là figurait pourtant
+  Routine du matin sur `main` et réuni à cette branche le 25/09/2026 — puis trois le 25/09/2026, en
+  cherchant les écritures qu'une lecture partielle commande : `EcrituresTab.genererEcritures`,
+  l'import d'un relevé de `BanqueTab` (CSV et PDF sous un même verrou) et
+  `CotisationsTab.creerEcheancesProposees`. Celui-là (`AccesTab`) figurait pourtant
   parmi les 36 candidats du balayage ci-dessous (`functions.invoke` sans `.current`), classé avec les
   32 laissés de côté comme « leur doublon crée une LIGNE, qu'un cabinet voit et supprime ». Ce
   classement était faux pour lui : la ligne `memberships` est protégée par une contrainte unique (la
@@ -3984,7 +4058,9 @@ d'environnement dans la même édition.
   aucun `.current`. Écarter `.update(`/`.delete(` est ce qui rend la liste lisible : une mise à jour
   idempotente suivie d'un `load()` ne coûte rien en double, et les signaler tous noierait le signal.
   Le balayage rend **36 candidats**, dont ces quatre. **Les 32 autres ne sont pas corrigés**, et
-  c'est un choix, pas un oubli : leur doublon crée une LIGNE, qu'un cabinet voit et supprime. Les
+  c'est un choix, pas un oubli : leur doublon crée une LIGNE, qu'un cabinet voit et supprime —
+  classement démenti QUATRE fois depuis (`AccesTab`, puis la génération des écritures, l'import d'un
+  relevé, dont aucun écran ne retire un mouvement, et l'échéancier de cotisation). Les
   quatre retenus sont ceux dont le doublon ne se rattrape pas — un e-mail parti chez le client, une
   facture transmise deux fois à une plateforme agréée DGFiP, un numéro consommé dans une suite
   légale qui n'admet ni trou ni doublon, et une pièce en double, c'est-à-dire une charge comptée
@@ -3992,8 +4068,8 @@ d'environnement dans la même édition.
   **Et le formulaire est le pire déclencheur, pas le double clic.** `EnvoyerEmailModal` soumet un
   `<form>` : deux « Entrée » rapprochés suffisent, geste bien plus banal que deux clics.
   **Et porter un verrou n'est pas la même chose qu'avoir porté le défaut** — c'est ce qui a fait
-  écrire « six » à la première tentative de ce recensement. Dix-sept verrous existent aujourd'hui
-  dans `src` (seize `useRef` booléens — les deux verrous des lots de `BanqueTab` n'en font plus qu'un
+  écrire « six » à la première tentative de ce recensement. Vingt verrous existent aujourd'hui
+  dans `src` (dix-neuf `useRef` booléens — les deux verrous des lots de `BanqueTab` n'en font plus qu'un
   depuis le 25/09/2026, partagé avec le panneau d'un mouvement — et l'ensemble par document de
   « C'est une facture »), et
   six sont nés corrects avec leur fonctionnalité (`VehiculesCard`, `ClotureTab`,
@@ -5056,18 +5132,23 @@ d'environnement dans la même édition.
   déclenche forcément.
   C'est un premier fil, pas une couverture, et **le chiffre qui le disait était faux** : ce fichier
   annonçait « dix onglets » sans test de rendu. Compté le 20/09/2026 sur la liste qui fait foi
-  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 16 testés** — banque,
+  (`DossierTab`, src/components/DossierParcours.tsx) : **17 onglets routables, 17 testés** — banque,
   documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations,
   suppléments, accès, immobilisations, estimation (21/09/2026), financement (22/09/2026),
-  cotisations et virements (23/09/2026) — donc **1 seul sans aucun test de rendu** : factures.
-  Suppléments, Accès, Immobilisations, Estimation, Financement et Cotisations y sont entrés comme
-  Informations : par un défaut trouvé, jamais par méthode. DIX CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
+  cotisations et virements (23/09/2026), factures (25/09/2026) — donc **plus aucun sans test de
+  rendu**. Suppléments, Accès, Immobilisations, Estimation, Financement et Cotisations y sont entrés
+  comme Informations : par un défaut trouvé, jamais par méthode. Factures, le dernier, en a rendu deux :
+  « Aucune facture. » affirmé sur une lecture refusée (le « le vide est une affirmation » corrigé la
+  veille sur `PacksTab`), et la suppression d'un brouillon qui jetait son erreur, sur un geste que
+  l'opérateur venait de confirmer. Sept mutations mordent, dont la suppression offerte à une facture
+  VALIDÉE — la garantie légale de cet onglet — et l'« Avoir » offert à un avoir. Et c'est en l'écrivant
+  qu'est apparue la famille « une lecture partielle commandait encore des écritures ». DIX CARTES et modales sont testées en plus, hors compte d'onglets, parce qu'elles
   portent un geste qui leur est propre : `VehiculesCard`, `ImportDossierModal`, `EnvoyerEmailModal`,
   `FilCommentaires`, `BalanceCard` (20/09/2026), `FactureAvoirModal`, `PieceFormModal` et
   `SuperPdpFactureModal` (21/09/2026), `FactureFormModal` et `AjouterDocumentsModal` (23/09/2026) —
-  DIX au total. **Les deux derniers ne font PAS entrer Factures dans les onglets testés** : un onglet
-  n'est pas testé parce qu'une de ses modales l'est, et `FacturesTab` lui-même reste le seul des dix-sept
-  sans test de rendu. Un onglet n'est donc pas « testé » parce qu'une
+  DIX au total. **Les deux derniers n'ont PAS fait entrer Factures dans les onglets testés** : un onglet
+  n'est pas testé parce qu'une de ses modales l'est, et `FacturesTab` n'y est entré qu'avec son propre
+  test, le 25/09/2026. Un onglet n'est donc pas « testé » parce qu'une
   de ses cartes l'est : Informations est resté dans les non-testés jusqu'à ce qu'il gagne son propre
   test de rendu, le 21/09/2026, sur ce que la suppression d'un dossier laisse dans le stockage.
   **La liste des dossiers a rejoint les écrans testés le 20/09/2026** (`DossiersList.test.tsx`) :
@@ -5169,7 +5250,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1684 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1721 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

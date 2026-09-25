@@ -1,4 +1,4 @@
-import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react'
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, formatDate, formatMoney, slugify } from '../../lib/format'
@@ -25,6 +25,9 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // À part de `lectureIncomplete`, qui couvre aussi les justificatifs : ce sont les ÉCHÉANCES lues
+  // qui dédoublonnent la création ci-dessous, et un justificatif manquant n'y change rien.
+  const [cotisationsIncompletes, setCotisationsIncompletes] = useState<string | null>(null)
   const [documentsCotisation, setDocumentsCotisation] = useState<DocumentDivers[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -41,6 +44,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   const [echeancesProposees, setEcheancesProposees] = useState<{ date: string; montant: number; previsionnel: boolean }[]>([])
   const [diagCotisation, setDiagCotisation] = useState<string[] | undefined>(undefined)
   const [creantEcheances, setCreantEcheances] = useState(false)
+  const creationEnCours = useRef(false)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [recherche, setRecherche] = useState('')
 
@@ -61,6 +65,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
       ),
     ])
     setCotisations(lectureCotisations.lignes)
+    setCotisationsIncompletes(lectureCotisations.complete ? null : lectureCotisations.motif)
     setDocumentsCotisation(lectureDocuments.lignes)
     setLectureIncomplete(
       [lectureCotisations, lectureDocuments]
@@ -176,8 +181,15 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
   // existante (montant + retrait du marqueur) plutôt que de créer un doublon. Une échéance déjà
   // définitive n'est en revanche jamais réécrite automatiquement (un montant déjà confirmé/vérifié ne
   // doit pas être silencieusement remplacé).
+  //
+  // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE : le dédoublonnage compare aux échéances LUES.
+  // Sur une liste tronquée, une échéance déjà créée le serait une seconde fois, et la cotisation
+  // compterait double dans la 2035 (case BK). La création se suspend donc, comme l'import d'un relevé.
+  // Et le verrou est un `useRef` : `creantEcheances`, un état, laissait passer deux clics du même
+  // rendu, qui créaient chacun tout l'échéancier.
   async function creerEcheancesProposees() {
-    if (echeancesProposees.length === 0) return
+    if (echeancesProposees.length === 0 || cotisationsIncompletes !== null || creationEnCours.current) return
+    creationEnCours.current = true
     setCreantEcheances(true)
     setError(null)
     try {
@@ -212,6 +224,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      creationEnCours.current = false
       setCreantEcheances(false)
     }
   }
@@ -347,11 +360,22 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
             </tbody>
           </table>
           <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
-            <button className="btn btn-primary btn-sm" disabled={creantEcheances} onClick={creerEcheancesProposees}>
+            <button
+              className="btn btn-primary btn-sm"
+              disabled={creantEcheances || cotisationsIncompletes !== null}
+              onClick={creerEcheancesProposees}
+            >
               {creantEcheances ? 'Création…' : `Créer ces ${echeancesProposees.length} échéance(s)`}
             </button>
             <button className="btn btn-outline btn-sm" onClick={() => setEcheancesProposees([])}>Ignorer</button>
           </div>
+          {cotisationsIncompletes && (
+            <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>
+              Création suspendue : les échéances déjà enregistrées n'ont pas pu être lues en entier
+              ({cotisationsIncompletes}). Une échéance déjà créée le serait une seconde fois, et la
+              cotisation compterait double sur la 2035. Recharge la page.
+            </p>
+          )}
         </div>
       )}
 

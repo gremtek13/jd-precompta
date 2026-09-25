@@ -22,13 +22,18 @@ const faux = vi.hoisted(() => ({
   // Les tables dont la lecture ÉCHOUE. Un faux client qui ne sait pas refuser ne peut rien dire de
   // la famille « le vide est une affirmation » : il rend le même objet dans les deux cas.
   refusees: new Set<string>(),
+  // Le serveur qui cesse de rendre au-delà de N lignes d'une table tout en annonçant le vrai total.
+  muet: {} as Record<string, number>,
 }))
 
 vi.mock('../../lib/supabase', () => {
   function chaine(table: string) {
     const c: Record<string, unknown> = {}
+    let debut = 0
+    let fin = Number.MAX_SAFE_INTEGER
     Object.assign(c, {
-      select: () => c, eq: () => c, or: () => c, order: () => c, range: () => c,
+      select: () => c, eq: () => c, or: () => c, order: () => c,
+      range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => Promise.resolve(faux.refusees.has(table)
         ? { data: null, error: { message: 'JWT expired' } }
         : { data: null, error: null }),
@@ -37,6 +42,10 @@ vi.mock('../../lib/supabase', () => {
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations
           : table === 'ecritures_brouillon' ? faux.ecritures : []
+        const muet = faux.muet[table]
+        if (muet != null) {
+          return Promise.resolve({ data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }).then(suite)
+        }
         return Promise.resolve({ data: donnees, error: null, count: donnees.length }).then(suite)
       },
     })
@@ -101,6 +110,7 @@ afterEach(() => {
   // tests suivants, et le symptôme (un écran qui ne charge pas) ne ressemble à aucun des défauts
   // gardés ici.
   faux.refusees = new Set()
+  faux.muet = {}
 })
 
 describe('FinancementTab — situation intermédiaire', () => {
@@ -325,5 +335,52 @@ describe('FinancementTab — le prévisionnel ne s’enregistre pas sur une lect
     const { entete } = carteDuPrevisionnel()
     expect(within(entete).getByRole('button').hasAttribute('disabled')).toBe(false)
     expect(screen.queryByText(/JWT expired/)).toBeNull()
+  })
+})
+
+// LE PRÉREMPLISSAGE N'ÉCRIT RIEN LUI-MÊME — mais ce qu'il pose part tel quel au premier « Enregistrer »,
+// sur le document qu'on montre à une banque, et la fenêtre recouvre le bandeau qui dirait que la
+// lecture est incomplète. Sur une lecture partielle, il se suspend.
+describe('FinancementTab — préremplir le prévisionnel', () => {
+  const ANNEE_REFERENCE = new Date().getFullYear() - 1
+
+  async function ouvrirLePrevisionnel() {
+    render(<FinancementTab dossierId="d" />)
+    const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
+    await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
+    const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
+    await act(async () => { within(titre.parentElement as HTMLElement).getByRole('button').click() })
+    return screen.getByRole('button', { name: 'Précharger depuis cette année' })
+  }
+
+  function poser() {
+    faux.pieces = [
+      recette({ id: 'v1', date_piece: `${ANNEE_REFERENCE}-03-10` }),
+      recette({ id: 'v2', date_piece: `${ANNEE_REFERENCE}-09-10`, montant_ht: 5000, montant_ttc: 5000 }),
+    ]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.ecritures = []
+  }
+
+  it('se suspend sur des pièces lues à moitié', async () => {
+    poser()
+    faux.muet = { pieces: 1 }
+    const bouton = await ouvrirLePrevisionnel()
+
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/Préremplissage suspendu/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('0')
+  })
+
+  it('préremplit, sur une lecture complète, les recettes de l’année entière', async () => {
+    // Le garde symétrique : sans lui, « se suspend » serait satisfait par un bouton toujours fermé.
+    poser()
+    const bouton = await ouvrirLePrevisionnel()
+
+    expect(screen.queryByText(/Préremplissage suspendu/)).toBeNull()
+    await act(async () => { bouton.click() })
+    expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('15000')
   })
 })

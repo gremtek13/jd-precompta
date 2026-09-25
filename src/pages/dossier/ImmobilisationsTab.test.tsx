@@ -1,7 +1,7 @@
 import { render, screen, within, fireEvent } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import ImmobilisationsTab from './ImmobilisationsTab'
-import type { Immobilisation } from '../../lib/types'
+import type { Immobilisation, Piece } from '../../lib/types'
 
 // LA COLONNE « DOTATION ANNUELLE » A TOUTES LES APPARENCES D'UNE ANNUITÉ CALCULÉE.
 //
@@ -14,7 +14,13 @@ import type { Immobilisation } from '../../lib/types'
 //
 // Ce que ce test garde et qu'aucun test de `src/lib` ne peut garder : que l'écran APPELLE le calcul,
 // et sur quel ensemble il l'appelle.
-const faux = vi.hoisted(() => ({ parTable: {} as Record<string, unknown[]> }))
+const faux = vi.hoisted(() => ({
+  parTable: {} as Record<string, unknown[]>,
+  // L'erreur que rend la base à une insertion — telle que supabase-js la rend : un objet NU, jamais
+  // une instance d'`Error` (voir lib/messageErreur.ts).
+  refusInsertion: null as Record<string, unknown> | null,
+  insertions: 0,
+}))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
@@ -22,13 +28,16 @@ vi.mock('../../lib/supabase', () => ({
       const chaine: Record<string, unknown> = {}
       let debut = 0
       let fin = Number.MAX_SAFE_INTEGER
+      let insertion = false
       Object.assign(chaine, {
         select: () => chaine,
+        insert: () => { insertion = true; faux.insertions++; return chaine },
         eq: () => chaine,
         or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+        then: (suite: (r: { data: unknown[] | null; error: unknown; count: number }) => unknown) => {
+          if (insertion) return Promise.resolve({ data: null, error: faux.refusInsertion, count: 0 }).then(suite)
           const toutes = faux.parTable[table] ?? []
           return Promise.resolve({
             data: toutes.slice(debut, Math.min(debut + (fin - debut + 1), toutes.length)),
@@ -58,8 +67,10 @@ const immobilisation = (o: Partial<Immobilisation> = {}): Immobilisation => ({
   created_at: '2025-01-01T09:00:00Z', ...o,
 })
 
-function poser(immos: Immobilisation[]) {
-  faux.parTable = { pieces: [], immobilisations: immos, natures_immobilisation: [] }
+function poser(immos: Immobilisation[], pieces: unknown[] = []) {
+  faux.parTable = { pieces, immobilisations: immos, natures_immobilisation: [] }
+  faux.refusInsertion = null
+  faux.insertions = 0
 }
 
 const monter = () => render(<ImmobilisationsTab dossierId="dossier-de-test" />)
@@ -207,5 +218,51 @@ describe('ImmobilisationsTab — ce que la confirmation de retrait promet', () =
     // la nouvelle — un message qui dirait les deux rassurerait encore.
     expect(message).not.toMatch(/redevient une charge courante ordinaire/)
     confirm.mockRestore()
+  })
+})
+
+// UN MESSAGE QUI NE POUVAIT PAS S'AFFICHER. La pièce déjà immobilisée — deux onglets, un double clic,
+// ou une liste lue à moitié qui la remet parmi les candidates — se heurte à la contrainte unique sur
+// `piece_id`. L'écran prévoyait une phrase pour ce cas, derrière `err instanceof Error` : or l'erreur
+// arrive en objet Postgrest NU, donc la phrase n'a jamais paru, et l'opérateur lisait « duplicate key
+// value violates unique constraint ».
+describe('ImmobilisationsTab — une pièce déjà enregistrée', () => {
+  // Typée sans `as`, comme les autres jeux d'essai d'écran : le compilateur confronte chaque champ
+  // à la table.
+  const candidate: Piece = {
+    id: 'piece-2', dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload',
+    storage_path: 'dossier-de-test/facture.pdf', nom_fichier: 'facture.pdf', storage_hash: null,
+    date_piece: '2025-04-02', tiers: 'MATÉRIEL MÉDICAL', montant_ht: 1500, montant_tva: 300,
+    montant_ttc: 1800, devise: 'EUR', montant_devise: null, taux_change: null,
+    conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    created_at: '2025-04-02T09:00:00Z', updated_at: '2025-04-02T09:00:00Z',
+  }
+
+  it('le dit en clair, à la place du message de Postgres', async () => {
+    poser([], [candidate])
+    faux.refusInsertion = {
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "immobilisations_piece_id_unique"',
+      details: 'Key (piece_id)=(piece-2) already exists.',
+      hint: null,
+    }
+    monter()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Enregistrer comme immobilisation' }))
+    await screen.findByText('Cette pièce a déjà été enregistrée comme immobilisation.')
+    expect(screen.queryByText(/duplicate key value/)).toBeNull()
+  })
+
+  it('laisse passer telle quelle une autre erreur', async () => {
+    // Le garde symétrique : sans lui, « la phrase amicale s'affiche » serait satisfait par un écran
+    // qui l'afficherait sur N'IMPORTE QUEL refus — et un refus de droits se lirait « déjà enregistrée ».
+    poser([], [candidate])
+    faux.refusInsertion = { code: '42501', message: 'new row violates row-level security policy for table "immobilisations"', details: null, hint: null }
+    monter()
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Enregistrer comme immobilisation' }))
+    await screen.findByText(/row-level security/)
+    expect(screen.queryByText('Cette pièce a déjà été enregistrée comme immobilisation.')).toBeNull()
   })
 })

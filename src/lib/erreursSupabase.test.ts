@@ -110,6 +110,49 @@ describe('aucune erreur Supabase ne repasse par `instanceof Error`', () => {
   })
 })
 
+// ET LE TERNAIRE N'ÉTAIT QU'UNE FORME DU DÉFAUT (25/09/2026). `ImmobilisationsTab` écrivait
+// `if (err instanceof Error && /duplicate|unique/i.test(err.message))` : la même dépendance du message
+// affiché à l'héritage, sous une forme que le gabarit du ternaire ne voit pas. La violation d'unicité
+// y arrivait par `throw insertError`, un objet NU — la phrase prévue pour ce cas n'a donc JAMAIS pu
+// s'afficher, et l'opérateur lisait « duplicate key value violates unique constraint ».
+//
+// D'où la règle large : dans `src/`, aucun `instanceof Error` hors des sites inscrits ci-dessous, chacun
+// avec la raison pour laquelle la valeur testée y est RÉELLEMENT une `Error` — et un NOMBRE, parce
+// qu'un fichier dispensé l'est pour ses sites connus et pas pour le suivant (la leçon de `datesUtc`).
+// Une de plus est une rechute, une de moins une raison morte.
+const INSTANCEOF_ADMIS: Record<string, { nombre: number; raison: string }> = {
+  'src/lib/invokeErreur.ts': {
+    nombre: 1,
+    raison: 'supabase.functions.invoke() ne rend que des FunctionsHttpError, FunctionsFetchError et ' +
+      'FunctionsRelayError, qui héritent toutes d’Error — et le corps de la réponse est lu AVANT ce repli.',
+  },
+}
+
+const INSTANCEOF_ERROR = /\binstanceof\s+Error\b/g
+
+function instanceofErrors(texte: string): number {
+  return texte.split('\n')
+    .filter((ligne) => !/^\s*(\/\/|\*|\/\*)/.test(ligne))
+    .reduce((n, ligne) => n + (ligne.match(INSTANCEOF_ERROR)?.length ?? 0), 0)
+}
+
+describe('`instanceof Error` ne décide de rien dans `src/`, hors des sites inscrits', () => {
+  it('chaque site est inscrit, au nombre près', () => {
+    const vus: Record<string, number> = {}
+    for (const f of sources('src')) {
+      const n = instanceofErrors(readFileSync(f, 'utf8'))
+      if (n > 0) vus[f] = n
+    }
+    expect(vus).toEqual(Object.fromEntries(Object.entries(INSTANCEOF_ADMIS).map(([f, a]) => [f, a.nombre])))
+  })
+
+  it('et il voit la forme qui a échappé au ternaire — défaut PLANTÉ', () => {
+    expect(instanceofErrors("      if (err instanceof Error && /duplicate|unique/i.test(err.message)) {")).toBe(1)
+    expect(instanceofErrors("      // if (err instanceof Error && …) — cité pour l'expliquer")).toBe(0)
+    expect(instanceofErrors('      if (erreur.code === "23505") {')).toBe(0)
+  })
+})
+
 describe('et rien de NU n’est levé dans une Edge Function', () => {
   const fonctions = sources('supabase/functions')
 

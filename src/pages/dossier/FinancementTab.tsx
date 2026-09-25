@@ -305,6 +305,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
+          lectureIncomplete={lectureIncomplete}
           onClose={() => setPrevisionnelOuvert(false)}
           onSaved={load}
         />
@@ -583,9 +584,10 @@ function SituationIntermediaireModal({ piecesValidees, categories, immobilisatio
   )
 }
 
-function PrevisionnelModal({ dossierId, previsionnel, piecesValidees, categories, immobilisations, cotisations, onClose, onSaved }: {
+function PrevisionnelModal({ dossierId, previsionnel, piecesValidees, categories, immobilisations, cotisations, lectureIncomplete, onClose, onSaved }: {
   dossierId: string; previsionnel: PrevisionnelBancaire | null
   piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+  lectureIncomplete: string | null
   onClose: () => void; onSaved: () => void
 }) {
   const anneeParDefaut = new Date().getFullYear() - 1
@@ -601,7 +603,12 @@ function PrevisionnelModal({ dossierId, previsionnel, piecesValidees, categories
   // Simple point de départ, jamais enregistré tel quel — réutilise le même calcul que la situation
   // intermédiaire (voir plus haut) sur une année civile complète, pour préremplir CA et charges de
   // référence sans resaisir depuis Clôture. Le cabinet reste libre d'ajuster avant d'enregistrer.
+  //
+  // Suspendu sur une lecture partielle : le préremplissage n'écrit rien lui-même, mais ce qu'il pose
+  // dans le formulaire part tel quel au premier « Enregistrer », sur le document qu'on présente à une
+  // banque — et la fenêtre recouvre le bandeau qui dirait que la lecture est incomplète.
   function precharger() {
+    if (lectureIncomplete) return
     const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`)
     setCaReference(String(situation.recettes))
     setChargesReference(String(situation.charges))
@@ -649,9 +656,18 @@ function PrevisionnelModal({ dossierId, previsionnel, piecesValidees, categories
             <input id="prev-annee" type="number" value={anneeReference} onChange={(e) => setAnneeReference(parseInt(e.target.value, 10) || anneeParDefaut)} />
           </div>
           <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 14 }}>
-            <button type="button" className="btn btn-outline btn-sm" onClick={precharger}>Précharger depuis cette année</button>
+            <button type="button" className="btn btn-outline btn-sm" disabled={lectureIncomplete !== null} onClick={precharger}>
+              Précharger depuis cette année
+            </button>
           </div>
         </div>
+        {lectureIncomplete && (
+          <p className="error-text" style={{ marginTop: -6 }}>
+            Préremplissage suspendu : une lecture est incomplète ({lectureIncomplete}). Le CA et les
+            charges seraient calculés sur une partie de l'année — saisis-les à la main, ou recharge la
+            page.
+          </p>
+        )}
 
         <div className="field-row">
           <div className="field">

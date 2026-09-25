@@ -185,9 +185,13 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     }
   }
 
+  // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. Les deux calculs ci-dessous ENREGISTRENT leur
+  // résultat comme repère : faits sur une partie des recettes ou des dépenses, ils graveraient un
+  // chiffre trop bas — l'« air d'une bonne nouvelle » que le bandeau nomme, qui survivrait cette fois
+  // au rechargement de la page.
   async function calculerDepuisAppli() {
     const annee = parseInt(anneeACalculer, 10)
-    if (!annee) return
+    if (!annee || lectureIncomplete) return
     setCalculating(true)
     setError(null)
     try {
@@ -219,7 +223,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
 
   async function calculerPostesDepuisAppli() {
     const annee = parseInt(anneeACalculer, 10)
-    if (!annee) return
+    if (!annee || lectureIncomplete) return
     setCalculatingPostes(true)
     setError(null)
     try {
@@ -340,13 +344,20 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
             <label htmlFor="anneeCalc">Année à calculer depuis ce dossier</label>
             <input id="anneeCalc" type="number" style={{ width: 100 }} value={anneeACalculer} onChange={(e) => setAnneeACalculer(e.target.value)} />
           </div>
-          <button className="btn btn-outline btn-sm" disabled={calculating} onClick={calculerDepuisAppli}>
+          <button className="btn btn-outline btn-sm" disabled={calculating || lectureIncomplete !== null} onClick={calculerDepuisAppli}>
             {calculating ? 'Calcul…' : 'Calculer CA + cotisations'}
           </button>
-          <button className="btn btn-outline btn-sm" disabled={calculatingPostes} onClick={calculerPostesDepuisAppli}>
+          <button className="btn btn-outline btn-sm" disabled={calculatingPostes || lectureIncomplete !== null} onClick={calculerPostesDepuisAppli}>
             {calculatingPostes ? 'Calcul…' : 'Calculer le détail par poste'}
           </button>
         </div>
+        {lectureIncomplete && (
+          <p className="error-text" style={{ marginTop: -8 }}>
+            Calcul suspendu : une lecture est incomplète ({lectureIncomplete}). Un repère calculé sur une
+            partie du dossier serait enregistré trop bas. Recharge la page — la saisie à la main reste
+            possible ci-dessous.
+          </p>
+        )}
 
         <div className="field" style={{ marginBottom: 16 }}>
           <label htmlFor="lecture2035">Importer depuis une ancienne 2035 (PDF)</label>
