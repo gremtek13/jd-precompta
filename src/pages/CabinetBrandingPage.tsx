@@ -6,19 +6,14 @@ import { signalerMajBranding } from '../lib/branding'
 import type { Cabinet } from '../lib/types'
 import { messageErreur } from '../lib/messageErreur'
 import { retirerFichiers } from '../lib/stockage'
+import { POLICES_CABINET } from '../lib/polices'
 
-// Polices proposées, pas de champ libre : un nom de police Google Fonts mal orthographié ne casse
-// rien (repli silencieux sur Inter dans le navigateur) mais ne sert à rien non plus — autant garantir
-// que chaque choix fonctionne vraiment, plutôt que de laisser deviner un nom exact.
+// Polices proposées, pas de champ libre : chacune est servie par l'application elle-même
+// (lib/polices.ts), donc un nom hors de la liste ne se chargerait pas. La police par défaut est
+// Manrope (index.css) — cette ligne annonçait « Inter », repli de la pile depuis le changement.
 const POLICES_PROPOSEES = [
-  { valeur: '', label: 'Inter (par défaut)' },
-  { valeur: 'Roboto', label: 'Roboto' },
-  { valeur: 'Lato', label: 'Lato' },
-  { valeur: 'Source Sans 3', label: 'Source Sans 3' },
-  { valeur: 'Nunito Sans', label: 'Nunito Sans' },
-  { valeur: 'Work Sans', label: 'Work Sans' },
-  { valeur: 'IBM Plex Sans', label: 'IBM Plex Sans' },
-  { valeur: 'Merriweather', label: 'Merriweather (empattements)' },
+  { valeur: '', label: 'Manrope (par défaut)' },
+  ...POLICES_CABINET.map((p) => ({ valeur: p.nom, label: p.libelle })),
 ]
 
 const COULEUR_DEFAUT = '#2f7a6f' // --color-primary par défaut (thème clair), point de départ neutre

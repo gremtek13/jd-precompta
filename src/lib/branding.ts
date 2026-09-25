@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from './supabase'
 import { useAuth } from '../context/AuthContext'
 import { assombrir, eclaircir, estCouleurHexValide } from './colors'
+import { chargerPoliceCabinet, estPoliceCabinet } from './polices'
 
 export interface CabinetBranding {
   nom: string
@@ -151,22 +152,20 @@ export function useCabinetBranding(): CabinetBranding | null {
     appliquerFaviconCabinet(branding?.logoUrl ?? null, branding?.nom ?? null, branding?.couleurPrimaire ?? null)
   }, [branding?.logoUrl, branding?.nom, branding?.couleurPrimaire])
 
-  // Police : chargée dynamiquement (même mécanisme que Inter dans index.html, posé statiquement) puis
-  // appliquée au <body> — jamais sur :root, pour ne pas casser d'éventuelles polices à part déjà
-  // choisies via une règle CSS plus spécifique ailleurs (aucune actuellement, mais un <body> reste le
-  // point d'entrée le plus sûr).
+  // Police : servie par l'application elle-même et chargée pour le seul cabinet qui l'a choisie (voir
+  // lib/polices.ts — plus rien ne part chez Google), puis appliquée au <body> — jamais sur :root, pour
+  // ne pas casser d'éventuelles polices à part déjà choisies via une règle CSS plus spécifique
+  // ailleurs (aucune actuellement, mais un <body> reste le point d'entrée le plus sûr). Un nom hors de
+  // la liste garde la police par défaut. La colonne s'appelle toujours `police_google_font` : la
+  // renommer coûterait une migration pour un nom, pas pour un comportement.
   useEffect(() => {
     const police = branding?.policeGoogleFont
-    if (!police) return
-    const id = 'cabinet-google-font'
-    let lien = document.getElementById(id) as HTMLLinkElement | null
-    if (!lien) {
-      lien = document.createElement('link')
-      lien.id = id
-      lien.rel = 'stylesheet'
-      document.head.appendChild(lien)
-    }
-    lien.href = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(police)}:wght@400;600;700;800&display=swap`
+    if (!police || !estPoliceCabinet(police)) return
+    chargerPoliceCabinet(police).catch((erreur: unknown) => {
+      // Sans ses fichiers, le navigateur passe à la police suivante de la pile : l'écran reste
+      // lisible, l'échec ne mérite pas de message, mais il se journalise.
+      console.error(`Police du cabinet non chargée (${police}) :`, erreur)
+    })
     document.body.style.fontFamily = `"${police}", "Inter", -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif`
     return () => { document.body.style.fontFamily = '' }
   }, [branding?.policeGoogleFont])
