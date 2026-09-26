@@ -52,10 +52,10 @@ vi.mock('../../lib/supabase', () => ({
   },
 }))
 
-function ecriture(compte: string, sens: 'debit' | 'credit', montant: number) {
+function ecriture(compte: string, sens: 'debit' | 'credit', montant: number, date = '2025-03-10') {
   return {
-    id: `${compte}-${sens}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null,
-    date: '2025-03-10', compte, libelle: 'Écriture de test', montant, sens,
+    id: `${compte}-${sens}-${date}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null,
+    date, compte, libelle: 'Écriture de test', montant, sens,
     statut: 'brouillon', created_at: '2025-03-10T00:00:00Z',
   }
 }
@@ -66,7 +66,10 @@ function piedDuTableau(): HTMLTableRowElement {
   return pied as HTMLTableRowElement
 }
 
-beforeEach(() => { faux.erreurs = {} })
+beforeEach(() => {
+  faux.erreurs = {}
+  faux.parTable.a_nouveaux = []
+})
 
 describe('StatistiquesTab — Balance des comptes', () => {
   it("recolle les tranches quand le serveur plafonne, sans fabriquer d'écart", async () => {
@@ -155,3 +158,118 @@ describe('StatistiquesTab — les catégories du cabinet', () => {
     expect(piedDuTableau().children[3].textContent).toContain('équilibré')
   })
 })
+
+// L'OUVERTURE D'UN DOSSIER REPRIS (ligne 29, décision du cabinet du 26/09/2026). Les à-nouveaux
+// appartiennent à l'exercice qu'ils ouvrent, comme toute écriture à celui de sa date : la balance de
+// cet exercice les compte, celle d'un autre non. Le calcul est dans `lib/ecritures.ts`, testé ; ce
+// qui se joue ici est le CÂBLAGE — la lecture, le filtre d'exercice, et ce que l'écran en dit.
+describe('StatistiquesTab — les à-nouveaux', () => {
+  function aNouveau(compte: string, libelle: string, sens: 'debit' | 'credit', montant: number) {
+    return {
+      id: `an-${compte}`, dossier_id: 'dossier-de-test', date: '2026-01-01', compte, compte_origine: compte,
+      libelle, sens, montant, source_nom: 'balance-2025.csv', source_empreinte: 'a'.repeat(64),
+      created_at: '2026-09-26T10:00:00Z',
+    }
+  }
+  const OUVERTURE = [
+    aNouveau('512000', 'Banque Populaire', 'debit', 4000),
+    aNouveau('2183', 'Matériel informatique', 'debit', 2000),
+    aNouveau('164', 'Emprunts', 'credit', 2000),
+    aNouveau('108', 'Compte de l’exploitant', 'credit', 4000),
+  ]
+
+  function monter(annee: number | 'toutes') {
+    faux.plafond = null
+    faux.parTable.categories = []
+    faux.parTable.pieces = []
+    faux.parTable.a_nouveaux = OUVERTURE
+    render(
+      <AnneeProvider defaut={annee}>
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} />
+      </AnneeProvider>,
+    )
+  }
+
+  function ligneDuCompte(compte: string): string[] {
+    const cellule = screen.getByText(compte)
+    return [...cellule.closest('tr')!.children].map((c) => c.textContent ?? '')
+  }
+
+  it('les compte dans la balance de l’exercice qu’ils ouvrent, et le dit', async () => {
+    faux.parTable.ecritures_brouillon = [
+      ecriture('606100', 'debit', 120, '2026-03-10'),
+      ecriture('512000', 'credit', 120, '2026-03-10'),
+    ]
+    monter(2026)
+
+    await screen.findByText('164')
+    expect(ligneDuCompte('164').slice(1, 3)).toEqual(['Emprunts', '1'])
+    // La banque garde son nom d'application et additionne l'ouverture et le mouvement de mars.
+    const banque = ligneDuCompte('512000')
+    expect(banque[1]).toBe('Banque')
+    expect(banque[2]).toBe('2')
+    expect(banque[5]).toMatch(/^3\s?880,00\s€ débiteur$/)
+    expect(screen.getByText(/Les à-nouveaux du 01\/01\/2026, repris de balance-2025\.csv, sont compris dans les totaux/)).toBeTruthy()
+    expect(piedDuTableau().children[3].textContent).toContain('équilibré')
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « les à-nouveaux entrent dans la balance » serait satisfait par un
+  // écran qui les ajoute à tous les exercices.
+  it('ne les compte pas dans la balance d’un autre exercice', async () => {
+    faux.parTable.ecritures_brouillon = [
+      ecriture('606100', 'debit', 120, '2025-03-10'),
+      ecriture('512000', 'credit', 120, '2025-03-10'),
+    ]
+    monter(2025)
+
+    await screen.findByText('606100')
+    expect(screen.queryAllByText('164')).toHaveLength(0)
+    expect(screen.queryAllByText(/sont compris dans les totaux/)).toHaveLength(0)
+  })
+
+  it('prévient, toutes années confondues, qu’une écriture antérieure à l’ouverture compte deux fois', async () => {
+    faux.parTable.ecritures_brouillon = [
+      ecriture('606100', 'debit', 120, '2025-03-10'),
+      ecriture('512000', 'credit', 120, '2025-03-10'),
+    ]
+    monter('toutes')
+
+    await screen.findByText('164')
+    expect(screen.getByText(/2 écritures du brouillon précèdent l’ouverture du 01\/01\/2026/)).toBeTruthy()
+  })
+
+  it('se tait, toutes années confondues, quand rien ne précède l’ouverture', async () => {
+    faux.parTable.ecritures_brouillon = [
+      ecriture('606100', 'debit', 120, '2026-03-10'),
+      ecriture('512000', 'credit', 120, '2026-03-10'),
+    ]
+    monter('toutes')
+
+    await screen.findByText('164')
+    expect(screen.queryAllByText(/précèden?t? l’ouverture/)).toHaveLength(0)
+  })
+
+  // Le double compte n'existe que TOUTES ANNÉES CONFONDUES : une balance d'exercice ne lit que les
+  // écritures de son année, donc celles d'avant l'ouverture n'y sont pas. Le dire là crierait au loup
+  // sur l'écran même où le cabinet vient lire une balance juste.
+  it('se tait sur un exercice choisi, même quand une écriture précède l’ouverture', async () => {
+    faux.parTable.ecritures_brouillon = [
+      ecriture('606100', 'debit', 120, '2025-03-10'),
+      ecriture('512000', 'credit', 120, '2025-03-10'),
+    ]
+    monter(2026)
+
+    await screen.findByText('164')
+    expect(screen.queryAllByText(/précèden?t? l’ouverture/)).toHaveLength(0)
+  })
+
+  it('dit, à part du brouillon, qu’une ouverture lue à moitié fausse les totaux', async () => {
+    faux.parTable.ecritures_brouillon = [ecriture('606100', 'debit', 120, '2026-03-10'), ecriture('512000', 'credit', 120, '2026-03-10')]
+    faux.erreurs = { a_nouveaux: 'refus simulé' }
+    monter(2026)
+
+    expect(await screen.findByText(/Les à-nouveaux du dossier n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect(screen.queryAllByText(/Les écritures du brouillon n'ont pas pu être lues/)).toHaveLength(0)
+  })
+})
+

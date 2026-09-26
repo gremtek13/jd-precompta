@@ -6,9 +6,11 @@ import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
-import { anneeDe, anneeEtMoisEcoules, formatMoney } from '../../lib/format'
+import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
-import type { ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
+import { ouvertureBanque } from '../../lib/aNouveaux'
+import type { OuvertureBanque } from '../../lib/planTresorerie'
+import type { ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
 import KpiTile from '../../components/widgets/KpiTile'
 import Widget from '../../components/widgets/Widget'
@@ -74,6 +76,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // donc on continue de réclamer — jamais l'inverse (voir lib/resteAEnvoyer.ts).
   const [anneesCloturees, setAnneesCloturees] = useState<number[]>([])
   const [clotureInconnue, setClotureInconnue] = useState<string | null>(null)
+  // Le solde de la banque à l'ouverture d'un dossier repris (voir lib/aNouveaux.ts) : la tuile de
+  // trésorerie en part. À part de `lectureIncomplete`, qui parle des POINTS de la liste — l'ouverture
+  // n'en commande aucun, elle ne décide que de cette tuile.
+  const [ouverture, setOuverture] = useState<OuvertureBanque | null>(null)
+  const [ouvertureIncomplete, setOuvertureIncomplete] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -89,6 +96,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       lectureDeclarations,
       lectureInfos,
       clotures,
+      lectureANouveaux,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -137,6 +145,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       // scanner qui a corrigé les deux premières.
       chargerInformationsDossier(dossierId),
       lireAnneesCloturees(dossierId),
+      lireTout<ANouveau>((debut, fin) =>
+        supabase.from('a_nouveaux').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
+      ),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -173,6 +185,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     setInfoInconnue(lectureInfos.erreur)
     setAnneesCloturees(clotures.annees)
     setClotureInconnue(clotures.erreur)
+    // Une ouverture lue à moitié donnerait un solde de départ faux : on n'en tire rien.
+    setOuverture(lectureANouveaux.complete ? ouvertureBanque(lectureANouveaux.lignes) : null)
+    setOuvertureIncomplete(lectureANouveaux.motif)
     setLoading(false)
   }
 
@@ -504,7 +519,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // Tendances de trésorerie (compte 512 du brouillon d'écritures, voir lib/tableauPilotage) —
   // indépendantes de l'exercice sélectionné dans l'en-tête : une pente récente reste utile même en
   // consultant une année passée.
-  const soldes = soldesFinDeMois(ecritures, NB_MOIS_TRESORERIE)
+  const soldes = soldesFinDeMois(ecritures, NB_MOIS_TRESORERIE, ouverture)
   const soldeActuel = soldes.length > 0 ? soldes[soldes.length - 1].solde : null
   const soldePrecedent = soldes.length > 1 ? soldes[soldes.length - 2].solde : null
   const variationSolde = soldeActuel !== null && soldePrecedent !== null ? soldeActuel - soldePrecedent : null
@@ -545,6 +560,15 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
           'plus rien. Recharge la page avant de t’y fier.'
         }
       />
+      <BandeauLecturePartielle
+        quoi="Les à-nouveaux du dossier"
+        accord="lus"
+        motif={ouvertureIncomplete}
+        consequence={
+          'La tuile Trésorerie ne peut donc pas partir du solde repris : elle n’affiche aucun montant, ' +
+          'plutôt qu’un solde faux — et un rouge faux. Recharge la page.'
+        }
+      />
       {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (
         <p className="error-text">{reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true })}</p>
       )}
@@ -565,13 +589,20 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
           />
         </div>
         <div className="span-3">
+          {/* Une ouverture illisible ne laisse ni montant ni couleur : un dossier repris compté depuis
+              zéro passerait au rouge sur un compte qui porte de l'argent. */}
           <KpiTile
             libelle="Trésorerie (brouillon)"
-            valeur={soldeActuel === null ? '—' : formatMoney(soldeActuel)}
-            statut={soldeActuel === null ? 'neutral' : soldeActuel < 0 ? 'danger' : 'ok'}
-            delta={variationSolde === null ? undefined : { texte: `${variationSolde >= 0 ? '+' : '−'}${formatMoney(Math.abs(variationSolde))} sur le mois`, positif: variationSolde >= 0 }}
-            detail={soldeActuel === null ? 'aucune écriture bancaire' : `${soldes.length} mois d'écritures`}
-            tendance={soldes.map((s) => s.solde)}
+            valeur={ouvertureIncomplete !== null || soldeActuel === null ? '—' : formatMoney(soldeActuel)}
+            statut={ouvertureIncomplete !== null || soldeActuel === null ? 'neutral' : soldeActuel < 0 ? 'danger' : 'ok'}
+            delta={ouvertureIncomplete !== null || variationSolde === null ? undefined : { texte: `${variationSolde >= 0 ? '+' : '−'}${formatMoney(Math.abs(variationSolde))} sur le mois`, positif: variationSolde >= 0 }}
+            detail={
+              ouvertureIncomplete !== null ? 'ouverture illisible'
+                : soldeActuel === null ? 'aucune écriture bancaire'
+                : ouverture ? `depuis l’ouverture du ${formatDate(ouverture.date)}`
+                : `${soldes.length} mois d'écritures`
+            }
+            tendance={ouvertureIncomplete !== null ? [] : soldes.map((s) => s.solde)}
             onClick={() => onNavigate('ecritures')}
           />
         </div>

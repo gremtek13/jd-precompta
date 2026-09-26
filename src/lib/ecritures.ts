@@ -1,6 +1,6 @@
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 import { dateLocaleDe } from './format'
-import type { Categorie, EcritureBrouillon, Piece } from './types'
+import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
 // valider ou ajuster par le cabinet (voir "Comptes manquants" dans Écritures, "Postes manquants"
@@ -305,16 +305,29 @@ export interface LigneBalance {
 // TVA, banque), avec son nombre d'écritures et ses totaux débit/crédit. Sert à repérer d'un coup d'œil
 // un compte au solde anormal (une charge créditrice, par exemple) sans avoir à parcourir le journal
 // ligne à ligne comme dans EcrituresTab. Le libellé vient de la catégorie associée à ce compte
-// (compte_comptable) quand elle existe, sinon des trois comptes fixes ci-dessus, sinon "—" (compte
-// entré à la main sur une catégorie propre à un dossier, jamais recroisé ici avec son libellé).
-export function calculerBalance(ecritures: EcritureBrouillon[], categories: Categorie[]): LigneBalance[] {
+// (compte_comptable) quand elle existe, sinon des trois comptes fixes ci-dessus, sinon de la balance
+// reprise, sinon "—" (compte entré à la main sur une catégorie propre à un dossier, jamais recroisé ici
+// avec son libellé).
+//
+// Les À-NOUVEAUX y entrent comme les écritures de l'exercice qu'ils ouvrent — l'appelant les filtre
+// sur l'exercice affiché, comme il filtre le brouillon (voir lib/aNouveaux.ts). Une balance de
+// l'exercice repris qui les omettrait donnerait à la banque le solde de ses seuls mouvements, et aux
+// comptes que l'application ne mouvemente jamais (une immobilisation, un emprunt) aucune ligne du tout.
+export function calculerBalance(
+  ecritures: EcritureBrouillon[], categories: Categorie[], aNouveaux: readonly ANouveau[],
+): LigneBalance[] {
   const libelleParCompte = new Map<string, string>()
   for (const c of categories) {
     if (c.compte_comptable) libelleParCompte.set(c.compte_comptable, c.libelle)
   }
+  // Le nom qu'une balance reprise donne à un compte que l'application ne nomme pas : sans lui, un
+  // emprunt ou une immobilisation s'afficheraient « — ».
+  for (const a of aNouveaux) {
+    if (a.libelle && !libelleParCompte.has(a.compte)) libelleParCompte.set(a.compte, a.libelle)
+  }
 
-  const lignesParCompte = new Map<string, EcritureBrouillon[]>()
-  for (const e of ecritures) {
+  const lignesParCompte = new Map<string, { sens: EcritureBrouillon['sens']; montant: number }[]>()
+  for (const e of [...ecritures, ...aNouveaux]) {
     lignesParCompte.set(e.compte, [...(lignesParCompte.get(e.compte) ?? []), e])
   }
 

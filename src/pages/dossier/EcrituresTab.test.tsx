@@ -144,7 +144,7 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.relacher = null
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
-    immobilisations: [], lignes_bancaires: [], declarations_tva: [],
+    immobilisations: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [],
     ...tables,
   } as Record<string, unknown[]>
 }
@@ -422,3 +422,79 @@ describe('EcrituresTab — une lecture partielle ne commande pas la génération
     expect(faux.insertions).toHaveLength(1)
   })
 })
+
+// L'OUVERTURE D'UN DOSSIER REPRIS (ligne 29, décision du cabinet du 26/09/2026). Les à-nouveaux ne
+// sont pas des écritures du brouillon ; ils ouvrent pourtant le FEC et la piste d'audit de l'exercice
+// qu'ils ouvrent. Le format est testé dans `lib/fec.ts` ; ce qui se joue ici est le CÂBLAGE — la
+// lecture, le filtre d'exercice, et les deux refus sur une lecture partielle.
+describe('EcrituresTab — les à-nouveaux ouvrent les exports de leur exercice', () => {
+  function aNouveau(o: Record<string, unknown> = {}) {
+    return {
+      id: 'an-1', dossier_id: 'dossier-de-test', date: '2025-01-01', compte: '512000', compte_origine: '51210000',
+      libelle: 'Banque Populaire', sens: 'debit', montant: 4000, source_nom: 'balance-2024.csv',
+      source_empreinte: 'b'.repeat(64), created_at: '2026-09-26T10:00:00Z', ...o,
+    }
+  }
+  const OUVERTURE = [
+    aNouveau(),
+    aNouveau({ id: 'an-2', compte: '108', compte_origine: '108', libelle: 'Compte de l’exploitant', sens: 'credit' }),
+  ]
+
+  it('ouvre le FEC de l’exercice par le journal AN, et le dit à l’écran', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture()], a_nouveaux: OUVERTURE })
+    monter()
+
+    await screen.findByText(/Exercice ouvert par 2 à-nouveaux au 01\/01\/2025, repris de balance-2024\.csv/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t'))
+    expect(lignes.slice(1).map((l) => [l[0], l[4]])).toEqual([['AN', '108'], ['AN', '512000'], ['AC', '606100']])
+  })
+
+  it('s’exporte même quand l’exercice n’a encore que son ouverture', async () => {
+    poser({ a_nouveaux: OUVERTURE })
+    monter()
+
+    await screen.findByText(/Exercice ouvert par 2 à-nouveaux/)
+    const bouton = screen.getByRole('button', { name: /Exporter FEC/ })
+    expect(bouton.hasAttribute('disabled')).toBe(false)
+    await act(async () => { bouton.click() })
+    expect(telecharge.fichiers[0].contenu.split('\r\n')).toHaveLength(3)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « le FEC s'ouvre par ses à-nouveaux » serait satisfait par un
+  // écran qui les colle en tête de TOUS les exercices.
+  it('ne les met pas dans le FEC d’un autre exercice', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture()], a_nouveaux: OUVERTURE.map((a) => ({ ...a, date: '2026-01-01' })) })
+    monter()
+
+    await screen.findByText('606100')
+    expect(screen.queryAllByText(/Exercice ouvert par/)).toHaveLength(0)
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    expect(telecharge.fichiers[0].contenu).not.toContain('\nAN\t')
+  })
+
+  it('les porte dans la piste d’audit, justifiés par la balance et son empreinte', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture()], a_nouveaux: OUVERTURE })
+    monter()
+
+    await screen.findByText(/Exercice ouvert par 2 à-nouveaux/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
+    const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
+    expect(csv).toContain(`2025-01-01;512000;À-nouveau 51210000 Banque Populaire;4000,00;0,00;;;;balance-2024.csv;${'b'.repeat(64)}`)
+  })
+
+  it('refuse les deux exports quand l’ouverture n’a été lue qu’à moitié, sans suspendre la génération', async () => {
+    // Une pièce validée attend son écriture : la génération n'a aucune raison de s'arrêter pour une
+    // ouverture illisible, qu'elle ne lit pas.
+    poser({ pieces: [piece()], a_nouveaux: OUVERTURE })
+    faux.muetParTable = { a_nouveaux: 1 }
+    monter()
+
+    await screen.findByText(/Les à-nouveaux du dossier n'ont pas pu être lus en entier/)
+    expect(screen.queryAllByText(/Le brouillon n'a pas pu être lu en entier/)).toHaveLength(0)
+    expect(screen.getByRole('button', { name: /Exporter FEC/ }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: /Exporter la piste d'audit/ }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: /Générer les écritures manquantes/ }).hasAttribute('disabled')).toBe(false)
+  })
+})
+

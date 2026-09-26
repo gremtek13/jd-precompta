@@ -315,7 +315,7 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
 
     {/* La reprise d'un dossier venu d'un autre logiciel commence ici, à côté de la sauvegarde : ce
         sont les deux moments où des données ENTRENT et SORTENT de la plateforme en bloc. */}
-    <BalanceCard />
+    <BalanceCard dossierId={dossierId} />
 
     <div className="card" style={{ maxWidth: 640, marginTop: 20 }}>
       <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>

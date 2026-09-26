@@ -23,6 +23,7 @@ export interface Relation {
 // sont volontairement absentes : cette table n'appartient pas à l'application, elle n'est ni
 // sauvegardée ni restaurée par ce chemin, et l'y faire figurer donnerait l'illusion du contraire.
 export const RELATIONS: readonly Relation[] = [
+  { enfant: 'a_nouveaux', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'agent_conversations', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'cabinet_admins', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
   { enfant: 'categories', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -96,6 +97,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'taux_change_bce',
   'cabinet_admins',
   'dossiers',
+  'a_nouveaux',
   'agent_conversations',
   'categories',
   'comptes_courants_associes',
@@ -387,6 +389,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   facture_lignes: { acces: 'par_parent', parent: 'factures_emises', colonne: 'facture_id' },
   mouvements_cca: { acces: 'par_parent', parent: 'comptes_courants_associes', colonne: 'compte_id' },
 
+  a_nouveaux: { acces: 'direct' },
   agent_conversations: { acces: 'direct' },
   comptes_courants_associes: { acces: 'direct' },
   controles_releves_bancaires: { acces: 'direct' },

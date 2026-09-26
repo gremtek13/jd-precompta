@@ -37,7 +37,7 @@ ses données sont là. Voir §6 et §8.7.
 
 | Traitement | Finalité | Base légale | Personnes concernées | Données |
 |---|---|---|---|---|
-| **Tenue de la pré-comptabilité** | Produire la comptabilité et les déclarations d'un client | Obligation légale du client (Code de commerce L123-12 et s., CGI) + exécution du contrat de mission | Client, ses fournisseurs, ses clients | Identité, SIRET, adresse, montants, mouvements bancaires |
+| **Tenue de la pré-comptabilité** | Produire la comptabilité et les déclarations d'un client | Obligation légale du client (Code de commerce L123-12 et s., CGI) + exécution du contrat de mission | Client, ses fournisseurs, ses clients | Identité, SIRET, adresse, montants, mouvements bancaires ; soldes d'ouverture d'un dossier repris (`a_nouveaux` : comptes, libellés — qui peuvent nommer un fournisseur ou un client —, montants, nom et empreinte du fichier de balance) |
 | **Collecte des justificatifs** | Rassembler les pièces (dépôt, e-mail, Super PDP) | Exécution du contrat de mission | Client, tiers figurant sur les pièces — des **patients** seulement si un bordereau est déposé par erreur (§8.7) | Fichiers, empreintes SHA-256, horodatages |
 | **Extraction automatique (OCR)** | Lire tiers, date et montants pour éviter la ressaisie | Intérêt légitime du cabinet (réduction de la saisie) | Idem collecte | Texte intégral du document (`piece_textes_ocr`) |
 | **Assistant comptable** | Répondre à des questions sur un dossier, en lecture seule | Intérêt légitime du cabinet | Client | Question, réponse, comptage de tokens |

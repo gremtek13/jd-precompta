@@ -1,5 +1,6 @@
+import { libelleEcritureANouveau } from './aNouveaux'
 import { COMPTE_BANQUE } from './comptes'
-import type { EcritureBrouillon, LigneBancaire, Piece } from './types'
+import type { ANouveau, EcritureBrouillon, LigneBancaire, Piece } from './types'
 
 // Piste d'audit fiable — les ruptures de la chaîne « écriture → justificatif → opération réelle ».
 //
@@ -121,10 +122,17 @@ export interface LignePisteAudit {
 // `pieces` doit contenir les pièces VALIDÉES du dossier : ce sont les seules dont l'absence
 // d'écriture est une information (une pièce « à valider » est la corbeille d'arrivée, la signaler
 // noierait le signal — même raison que `piecesValideesSansCategorie` dans controles.ts).
+//
+// `aNouveaux` porte l'ouverture de l'exercice exporté, s'il est celui de la reprise (voir
+// lib/aNouveaux.ts). Leur justificatif est la balance reprise, et son EMPREINTE est la preuve de ce
+// qui a été repris — exactement comme celle d'une pièce. Rien ne leur manque : un à-nouveau n'a ni
+// pièce ni mouvement bancaire, par nature, et les en déclarer privés ferait lire une rupture là où
+// la chaîne est complète.
 export function pisteAudit(
   ecritures: EcritureBrouillon[],
   pieces: Piece[],
   lignesBancaires: LigneBancaire[],
+  aNouveaux: readonly ANouveau[],
 ): LignePisteAudit[] {
   const pieceParId = new Map(pieces.map((p) => [p.id, p]))
   const ligneParId = new Map(lignesBancaires.map((l) => [l.id, l]))
@@ -194,11 +202,30 @@ export function pisteAudit(
       manque: p.date_piece ? ['écriture'] : ['écriture', 'date'],
     }))
 
+  const depuisANouveaux = aNouveaux.map((a): LignePisteAudit => ({
+    ecritureId: a.id,
+    date: a.date,
+    compte: a.compte,
+    libelle: libelleEcritureANouveau(a),
+    debit: a.sens === 'debit' ? a.montant : 0,
+    credit: a.sens === 'credit' ? a.montant : 0,
+    pieceId: null,
+    pieceTiers: null,
+    pieceDate: null,
+    pieceMontantTtc: null,
+    pieceFichier: a.source_nom,
+    pieceEmpreinte: a.source_empreinte,
+    mouvementDate: null,
+    mouvementLibelle: null,
+    mouvementMontant: null,
+    manque: [],
+  }))
+
   // Chronologique, comme l'exige une piste d'audit. Les lignes sans date (justificatif dont la date
   // n'a pas été lue) remontent en tête plutôt que de se perdre au milieu : une date absente est
   // précisément ce qu'il faut voir. `compte` puis `ecritureId` départagent à date égale, pour que
   // deux exports du même brouillon soient identiques — l'ordre de retour d'une requête ne l'est pas.
-  return [...depuisEcritures, ...depuisPieces].sort(
+  return [...depuisANouveaux, ...depuisEcritures, ...depuisPieces].sort(
     (a, b) =>
       a.date.localeCompare(b.date) ||
       a.compte.localeCompare(b.compte) ||

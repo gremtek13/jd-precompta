@@ -19,6 +19,7 @@ const faux = vi.hoisted(() => ({
   categories: [] as unknown[],
   immobilisations: [] as unknown[],
   ecritures: [] as unknown[],
+  aNouveaux: [] as unknown[],
   // Les tables dont la lecture ÉCHOUE. Un faux client qui ne sait pas refuser ne peut rien dire de
   // la famille « le vide est une affirmation » : il rend le même objet dans les deux cas.
   refusees: new Set<string>(),
@@ -41,7 +42,8 @@ vi.mock('../../lib/supabase', () => {
         const donnees = table === 'pieces' ? faux.pieces
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations
-          : table === 'ecritures_brouillon' ? faux.ecritures : []
+          : table === 'ecritures_brouillon' ? faux.ecritures
+          : table === 'a_nouveaux' ? faux.aNouveaux : []
         const muet = faux.muet[table]
         if (muet != null) {
           return Promise.resolve({ data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }).then(suite)
@@ -111,6 +113,7 @@ afterEach(() => {
   // gardés ici.
   faux.refusees = new Set()
   faux.muet = {}
+  faux.aNouveaux = []
 })
 
 describe('FinancementTab — situation intermédiaire', () => {
@@ -384,3 +387,92 @@ describe('FinancementTab — préremplir le prévisionnel', () => {
     expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('15000')
   })
 })
+
+// L'OUVERTURE D'UN DOSSIER REPRIS (ligne 29, décision du cabinet du 26/09/2026). Le calcul est dans
+// `lib/planTresorerie.ts` et `lib/aNouveaux.ts`, testés ; ce qui se joue ici est le CÂBLAGE — que les
+// trois chiffres de trésorerie de l'écran partent du solde repris, et qu'une écriture antérieure à
+// l'ouverture n'y soit pas comptée une seconde fois.
+describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
+  const ouverture = [
+    { id: 'an-1', dossier_id: 'd', date: '2026-01-01', compte: '512000', compte_origine: '51210000', libelle: 'Banque Populaire', sens: 'debit', montant: 4000, source_nom: 'balance-2025.csv', source_empreinte: 'a'.repeat(64), created_at: '2026-09-26T10:00:00Z' },
+    { id: 'an-2', dossier_id: 'd', date: '2026-01-01', compte: '108', compte_origine: '108', libelle: 'Compte de l’exploitant', sens: 'credit', montant: 4000, source_nom: 'balance-2025.csv', source_empreinte: 'a'.repeat(64), created_at: '2026-09-26T10:00:00Z' },
+  ]
+  // Décembre est déjà dans les 4 000 € repris : l'ajouter le compterait deux fois.
+  const mouvements = [
+    { date: '2025-12-15', sens: 'debit', montant: 700 },
+    { date: '2026-02-10', sens: 'debit', montant: 1000 },
+    { date: '2026-03-05', sens: 'credit', montant: 250 },
+  ]
+
+  function montantDe(carte: HTMLElement): string {
+    return carte.querySelector('strong')?.textContent ?? ''
+  }
+
+  it('part du solde repris pour la trésorerie actuelle, sans l’écriture antérieure', async () => {
+    faux.aNouveaux = ouverture
+    faux.ecritures = mouvements
+    render(<FinancementTab dossierId="d" />)
+    const tuile = (await screen.findByText('Trésorerie actuelle (banque)')).closest('.card') as HTMLElement
+    await waitFor(() => expect(montantDe(tuile)).toMatch(/^4\s?750,00\s€$/))
+    expect(within(tuile).getByText('Depuis l’ouverture du 01/01/2026 (à-nouveaux).')).toBeTruthy()
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « l'écran part du solde repris » serait satisfait par un écran qui
+  // ajoute toujours quelque chose, ou qui annonce une ouverture qui n'existe pas.
+  it('cumule tout l’historique quand rien n’ouvre le dossier, et ne parle pas d’ouverture', async () => {
+    faux.ecritures = mouvements
+    render(<FinancementTab dossierId="d" />)
+    const tuile = (await screen.findByText('Trésorerie actuelle (banque)')).closest('.card') as HTMLElement
+    await waitFor(() => expect(montantDe(tuile)).toMatch(/^1\s?450,00\s€$/))
+    expect(within(tuile).queryAllByText(/Depuis l’ouverture/)).toHaveLength(0)
+  })
+
+  async function situationAu(date: string) {
+    render(<FinancementTab dossierId="d" />)
+    const titre = await screen.findByRole('heading', { name: 'Situation intermédiaire', level: 3 })
+    // Attendre la fin du chargement : la modale reçoit l'ouverture à l'ouverture, pas après.
+    await waitFor(() => expect(screen.queryAllByText('—')).toHaveLength(0))
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    await act(async () => { fireEvent.change(screen.getByLabelText('À la date du'), { target: { value: date } }) })
+    const modale = screen.getByRole('heading', { name: 'Situation intermédiaire', level: 2 }).closest('.card') as HTMLElement
+    const carte = within(modale).getByText('Trésorerie à cette date').closest('.card') as HTMLElement
+    return { modale, tresorerie: montantDe(carte) }
+  }
+
+  it('part du solde repris pour la trésorerie à une date de la situation intermédiaire', async () => {
+    faux.aNouveaux = ouverture
+    faux.ecritures = mouvements
+    const { modale, tresorerie } = await situationAu('2026-02-28')
+    expect(tresorerie).toMatch(/^5\s?000,00\s€$/)
+    expect(within(modale).queryAllByText(/rien de comptabilisé/)).toHaveLength(0)
+  })
+
+  it('tient le solde repris pour un vrai solde, même sans aucune écriture', async () => {
+    // La banque soldée à la reprise est un zéro CONNU ; ici elle ne l'est pas, et le chiffre suffit.
+    faux.aNouveaux = ouverture
+    faux.ecritures = []
+    const { modale, tresorerie } = await situationAu('2026-06-30')
+    expect(tresorerie).toMatch(/^4\s?000,00\s€$/)
+    expect(within(modale).queryAllByText(/rien de comptabilisé/)).toHaveLength(0)
+  })
+
+  it('dit qu’avant l’ouverture, aucun solde de départ n’est connu', async () => {
+    faux.aNouveaux = ouverture
+    faux.ecritures = mouvements
+    const { modale, tresorerie } = await situationAu('2025-12-31')
+    expect(tresorerie).toMatch(/^700,00\s€$/)
+    expect(within(modale).getByText(/précède l'ouverture du dossier \(01\/01\/2026\)/)).toBeTruthy()
+  })
+
+  it('dit que la trésorerie part d’une ouverture incomplète quand elle est lue à moitié', async () => {
+    faux.aNouveaux = ouverture
+    faux.ecritures = mouvements
+    faux.muet = { a_nouveaux: 1 }
+    render(<FinancementTab dossierId="d" />)
+    expect(await screen.findByText(/Les à-nouveaux du dossier n'ont pas pu être lus en entier/)).toBeTruthy()
+    // Le bandeau général se tait : ce n'est pas lui qui a manqué, et c'est lui qui suspend le
+    // préremplissage du prévisionnel, qui ne lit pas l'ouverture.
+    expect(screen.queryAllByText(/Les données du dossier bancaire/)).toHaveLength(0)
+  })
+})
+

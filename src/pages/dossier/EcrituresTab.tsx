@@ -9,9 +9,10 @@ import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
-import type { Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { useAnnee } from '../../context/AnneeContext'
 import { messageErreur } from '../../lib/messageErreur'
@@ -44,6 +45,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
+  // L'ouverture d'un dossier repris d'un autre logiciel (voir lib/aNouveaux.ts) : elle ouvre le FEC et
+  // la piste d'audit de l'exercice qu'elle ouvre.
+  const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
   const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
   const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
@@ -70,6 +74,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // seul signal ne paraisse. Le format FEC étant rigide, il ne peut pas porter l'avertissement —
   // l'export se refuse donc, plutôt que de produire un fichier fiscal faux.
   const [brouillonIncomplet, setBrouillonIncomplet] = useState<string | null>(null)
+  // À PART du drapeau précédent, et c'est le point : une ouverture lue à moitié ouvrirait le FEC et la
+  // piste d'audit amputés, mais la génération des écritures n'en dépend pas — la suspendre pour ça
+  // bloquerait un geste que rien ne fausse.
+  const [aNouveauxIncomplets, setANouveauxIncomplets] = useState<string | null>(null)
   // Verrou d'exécution de la génération : `generating` est un état React, qui ne prend effet qu'au
   // rendu suivant — un double clic du même rendu passerait les deux, et chaque pièce en attente
   // recevrait deux jeux d'écritures, c'est-à-dire sa charge en double dans le FEC et la balance.
@@ -77,7 +85,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   async function load() {
     setLoading(true)
-    const [lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureDeclarations] = await Promise.all([
+    const [lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureDeclarations, lectureANouveaux] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -109,11 +117,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('declarations_tva').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('periode_debut', { ascending: false }).order('id').range(debut, fin),
       ),
+      lireTout<ANouveau>((debut, fin) =>
+        supabase.from('a_nouveaux').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
+      ),
     ])
     setLignesBancaires(lectureLignes.lignes)
     setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
     setEcritures(brouillon.lignes)
+    setANouveaux(lectureANouveaux.lignes)
     // Un seul drapeau pour TOUTES les collections dont dépendent le FEC et la piste d'audit, et
     // l'écran n'a rien de plus utile à dire selon laquelle a manqué. Les catégories et les
     // immobilisations en font partie : la première décide du compte de chaque écriture, la seconde
@@ -122,6 +135,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       [brouillon, lecturePieces, lectureLignes, lectureCategories, lectureImmobilisations]
         .find((l) => !l.complete)?.motif ?? null,
     )
+    setANouveauxIncomplets(lectureANouveaux.motif)
     setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
     // PAS dans `brouillonIncomplet`, et c'est le point : ce drapeau-là BLOQUE les exports FEC et
     // piste d'audit, or une lecture tronquée des déclarations de TVA n'a aucune raison d'empêcher
@@ -209,6 +223,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Le filtre par année ne porte que sur l'affichage des écritures déjà générées — la génération
   // (bouton ci-dessous) reste globale, sur toutes les pièces en attente quelle que soit leur année.
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => anneeDe(e.date) === anneeFilter)
+  // Les à-nouveaux de l'exercice exporté : ils ouvrent son FEC et sa piste d'audit, et aucun autre.
+  const aNouveauxExercice = anneeFilter === 'toutes' ? aNouveaux : aNouveaux.filter((a) => anneeDe(a.date) === anneeFilter)
 
   // La recherche ne filtre QUE les lignes affichées, jamais les données de calcul ni l'export : les
   // totaux de TVA ci-dessous et le FEC exporté plus bas portent sur `ecrituresFiltrees`. Les brancher
@@ -270,7 +286,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       // Les pièces sans date n'appartiennent à aucun exercice : elles sont jointes à chacun, et la
       // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de les taire.
       const piecesExercice = piecesValidees.filter((p) => !p.date_piece || anneeDe(p.date_piece) === anneeFilter)
-      const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, mouvements.lignes))
+      const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {
       setError(messageErreur(err, "L'export de la piste d'audit a échoué."))
@@ -758,6 +774,28 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
       {error && <p className="error-text">{error}</p>}
 
+      <BandeauLecturePartielle
+        quoi="Les à-nouveaux du dossier"
+        accord="lus"
+        motif={aNouveauxIncomplets}
+        consequence={
+          'Les exports FEC et piste d’audit sont bloqués : ils s’ouvrent par eux, et un fichier fiscal dont ' +
+          'l’ouverture est amputée ne peut pas le dire. La génération des écritures, elle, n’en dépend pas. ' +
+          'Recharge la page.'
+        }
+      />
+
+      {/* Les à-nouveaux ne sont pas des écritures du brouillon : le journal ci-dessous ne les montre
+          pas. Sans cette phrase, un FEC qui s'ouvre par un journal AN surprendrait celui qui vient de
+          parcourir la liste. */}
+      {typeof anneeFilter === 'number' && aNouveauxExercice.length > 0 && (
+        <p className="muted" style={{ fontSize: '0.85rem', textAlign: 'right', margin: '0 0 8px' }}>
+          {`Exercice ouvert par ${aNouveauxExercice.length} à-nouveau${aNouveauxExercice.length > 1 ? 'x' : ''} `
+            + `au ${formatDate(aNouveauxExercice[0].date)}, repris de ${aNouveauxExercice[0].source_nom} : `
+            + `ils ouvrent le FEC et la piste d’audit de ${anneeFilter} (journal AN), sans figurer dans le journal ci-dessous.`}
+        </p>
+      )}
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 14 }}>
         {horsFec.nb > 0 && (
           <span className="badge badge-danger" title="Le format FEC n'a pas de place pour le dire : c'est ici ou nulle part.">
@@ -767,15 +805,20 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         )}
         <button
           className="btn btn-outline btn-sm"
-          disabled={typeof anneeFilter !== 'number' || ecrituresFiltrees.length === 0 || brouillonIncomplet !== null}
+          disabled={
+            typeof anneeFilter !== 'number' || (ecrituresFiltrees.length === 0 && aNouveauxExercice.length === 0)
+            || brouillonIncomplet !== null || aNouveauxIncomplets !== null
+          }
           title={
             brouillonIncomplet
               ? `Brouillon lu incomplètement (${brouillonIncomplet}) — un FEC amputé ne peut pas le dire, le format n'a pas de place pour ça.`
+              : aNouveauxIncomplets
+              ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — le FEC s'ouvrirait sur une ouverture amputée.`
               : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice." : undefined
           }
           onClick={() => {
             if (typeof anneeFilter !== 'number') return
-            const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories)
+            const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice)
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
         >
@@ -783,10 +826,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </button>
         <button
           className="btn btn-outline btn-sm"
-          disabled={typeof anneeFilter !== 'number' || exportPiste || brouillonIncomplet !== null}
+          disabled={typeof anneeFilter !== 'number' || exportPiste || brouillonIncomplet !== null || aNouveauxIncomplets !== null}
           title={
             brouillonIncomplet
               ? `Brouillon lu incomplètement (${brouillonIncomplet}) — une piste d'audit partielle est pire qu'absente.`
+              : aNouveauxIncomplets
+              ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — une piste d'audit partielle est pire qu'absente.`
               : typeof anneeFilter !== 'number'
               ? "Sélectionne une année ci-dessus — une piste d'audit se produit par exercice."
               : "Chaque écriture avec son justificatif (tiers, date, montant, fichier, empreinte SHA-256) et l'opération bancaire réelle, plus les justificatifs validés que rien ne comptabilise."

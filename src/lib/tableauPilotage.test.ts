@@ -51,7 +51,7 @@ describe('soldesFinDeMois', () => {
       ligne('2026-01-10', 'debit', 1000),
       ligne('2026-02-10', 'credit', 400),
       ligne('2026-03-10', 'debit', 200),
-    ], 12)).toEqual([
+    ], 12, null)).toEqual([
       { mois: '2026-01', solde: 1000 },
       { mois: '2026-02', solde: 600 },
       { mois: '2026-03', solde: 800 },
@@ -64,7 +64,7 @@ describe('soldesFinDeMois', () => {
       ligne('2026-01-10', 'debit', 1000),
       ligne('2026-02-10', 'debit', 500),
       ligne('2026-03-10', 'debit', 300),
-    ], 1)
+    ], 1, null)
     expect(soldes).toEqual([{ mois: '2026-03', solde: 1800 }])
   })
 
@@ -74,13 +74,43 @@ describe('soldesFinDeMois', () => {
     expect(soldesFinDeMois([
       ligne('2026-01-10', 'debit', 100),
       ligne('2026-03-10', 'debit', 100),
-    ], 12).map((s) => s.mois)).toEqual(['2026-01', '2026-03'])
+    ], 12, null).map((s) => s.mois)).toEqual(['2026-01', '2026-03'])
   })
 
   it('arrondit au centime', () => {
     expect(soldesFinDeMois([
       ligne('2026-01-10', 'debit', 0.1),
       ligne('2026-01-11', 'debit', 0.2),
-    ], 12)).toEqual([{ mois: '2026-01', solde: 0.3 }]) // 0.30000000000000004 sans arrondi
+    ], 12, null)).toEqual([{ mois: '2026-01', solde: 0.3 }]) // 0.30000000000000004 sans arrondi
+  })
+})
+
+describe('soldesFinDeMois — un dossier ouvert par des à-nouveaux', () => {
+  const OUVERTURE = { date: '2026-01-01', solde: 8400 }
+
+  it('part du solde repris, et écarte les écritures antérieures qu’il contient déjà', () => {
+    // Sans l'ouverture, ce dossier repris afficherait −300 € : un rouge fabriqué sur un compte qui
+    // porte 8 100 €.
+    expect(soldesFinDeMois([
+      ligne('2025-12-15', 'credit', 5000),
+      ligne('2026-02-10', 'credit', 300),
+    ], 12, OUVERTURE)).toEqual([
+      { mois: '2026-01', solde: 8400 },
+      { mois: '2026-02', solde: 8100 },
+    ])
+  })
+
+  it('compte l’écriture du jour même de l’ouverture, comme le solde de la trésorerie', () => {
+    expect(soldesFinDeMois([ligne('2026-01-01', 'credit', 400)], 12, OUVERTURE))
+      .toEqual([{ mois: '2026-01', solde: 8000 }])
+  })
+
+  it('donne un solde au dossier qu’on vient d’ouvrir, avant toute écriture', () => {
+    expect(soldesFinDeMois([], 12, OUVERTURE)).toEqual([{ mois: '2026-01', solde: 8400 }])
+  })
+
+  it('tient une banque soldée à la reprise pour un zéro connu', () => {
+    expect(soldesFinDeMois([ligne('2026-03-10', 'debit', 250)], 12, { date: '2026-01-01', solde: 0 }))
+      .toEqual([{ mois: '2026-01', solde: 0 }, { mois: '2026-03', solde: 250 }])
   })
 })
