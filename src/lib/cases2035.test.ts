@@ -3,6 +3,7 @@ import {
   arrondirPourFormulaire,
   CASES_2035,
   CASE_PAR_CODE,
+  CODES_RATTACHABLES,
   CODES_TOTALISES_BR,
   caseDuPoste,
   doublonFraisVehicules,
@@ -14,7 +15,7 @@ import {
   calculerDeclaration2035, POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
 } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
-import type { Categorie, Piece, VehiculeDossier } from './types'
+import type { Categorie, CotisationDeclaree, Piece, VehiculeDossier } from './types'
 
 const ligne = (o: Partial<LigneDeclaration>): LigneDeclaration =>
   ({ poste: 'Achats', nature: 'depense', montant: 100, nbPieces: 1, ...o })
@@ -104,6 +105,20 @@ describe('rattachement poste → case', () => {
     expect(caseDuPoste('Cotisations syndicales et professionnelles')?.code).toBe('BM')
     for (const poste of ['Cotisations syndicales et professionnelles', POSTE_COTISATIONS, 'Location de matériel et de mobilier']) {
       expect(caseDuPoste(poste)?.sousCaseDe, poste).toBeUndefined()
+    }
+  })
+
+  it('ne rattache aucun poste à une case calculée, une case « dont » ou une case du cadre 8', () => {
+    // Sur la liste ENTIÈRE des rattachements, pas sur trois postes choisis. Une case calculée est
+    // écrasée par son calcul, une case « dont » ne s'additionne pas, et le cadre 8 n'entre pas dans le
+    // résultat : dans les trois cas, le montant d'un poste disparaîtrait de la déclaration.
+    expect(CODES_RATTACHABLES.size).toBeGreaterThan(20)
+    for (const code of CODES_RATTACHABLES) {
+      const c = CASE_PAR_CODE.get(code)
+      expect(c, code).toBeDefined()
+      expect(c?.calculee, code).toBeUndefined()
+      expect(c?.sousCaseDe, code).toBeUndefined()
+      expect(c?.cadre, code).not.toBe('travailleursIndependants')
     }
   })
 
@@ -295,7 +310,7 @@ describe('arrondi à l’euro — le formulaire doit s’additionner', () => {
     // exacte arrondie ferait 2. Le formulaire imprimé doit tomber juste colonne par colonne, donc
     // c'est bien 3 qu'on attend — un contrôleur qui additionne la colonne doit retrouver le total.
     const valeurs = new Map<string, number>([['BA', 0.5], ['BF', 0.5], ['BN', 0.5]])
-    const arrondies = arrondirPourFormulaire(valeurs)
+    const arrondies = arrondirPourFormulaire(valeurs, 2025)
     expect(arrondies.get('BA')).toBe(1)
     expect(arrondies.get('BR')).toBe(3)
   })
@@ -305,7 +320,7 @@ describe('arrondi à l’euro — le formulaire doit s’additionner', () => {
       recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000.49 })],
       depenses: [ligne({ poste: 'Achats', montant: 1234.56 })],
     }))
-    const arrondies = arrondirPourFormulaire(valeurs)
+    const arrondies = arrondirPourFormulaire(valeurs, 2025)
     for (const [code, montant] of arrondies) expect(Number.isInteger(montant), `${code} = ${montant}`).toBe(true)
     expect(arrondies.get('AA')).toBe(10_000)
     expect(arrondies.get('BA')).toBe(1235)
@@ -433,5 +448,137 @@ describe('doublonFraisVehicules — le forfait et le réel ne cohabitent pas', (
         ligne({ poste: 'Carburant', montant: 800.5 }),
       ],
     }))?.totalPostes).toBe(2000.5)
+  })
+})
+
+// ── Cadre 8 du 2035-B : le revenu brut social ────────────────────────────────────────────────────
+// Notice 2035-NOT-SD 2026, renvoi (26) : CE − CN + BK + BV (+ exonérations de la ligne 43) + DE − DB.
+// Autrement dit le résultat fiscal, auquel on rend les charges sociales personnelles et la CSG
+// déductible. L'Urssaf applique ensuite son abattement de 26 % : il ne doit apparaître nulle part ici.
+describe('cadre 8 — le revenu brut social des travailleurs indépendants', () => {
+  const cotisation = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => ({
+    id: 'c-1', dossier_id: 'd-1', echeance: '2025-03-05',
+    montant_appele: 10_000, montant_verse: 10_000, montant_csg_crds: null,
+    previsionnel: false, created_at: '2025-03-05T09:00:00Z', ...o,
+  })
+
+  it('porte quatre cases au 2035-B, à partir des revenus 2025 : DE et DB saisies, DC et DD calculées', () => {
+    const cadre8 = CASES_2035.filter((c) => c.cadre === 'travailleursIndependants')
+    // Dans l'ordre imprimé : c'est l'ordre d'affichage de l'écran.
+    expect(cadre8.map((c) => c.code)).toEqual(['DE', 'DB', 'DC', 'DD'])
+    for (const c of cadre8) {
+      expect(c.formulaire, c.code).toBe('2035-B')
+      expect(c.depuisExercice, c.code).toBe(2025)
+    }
+    expect(CASE_PAR_CODE.get('DE')?.saisieCabinet).toBe(true)
+    expect(CASE_PAR_CODE.get('DB')?.saisieCabinet).toBe(true)
+    expect(CASE_PAR_CODE.get('DC')?.calculee).toBeTruthy()
+    expect(CASE_PAR_CODE.get('DD')?.calculee).toBeTruthy()
+    // Aucune autre case ne dépend d'un exercice : le filtre de l'écran ne doit rien cacher d'autre.
+    expect(CASES_2035.filter((c) => c.depuisExercice !== undefined).map((c) => c.code)).toEqual(['DE', 'DB', 'DC', 'DD'])
+  })
+
+  it('rend au résultat les charges sociales personnelles et la CSG déductible, pas les amortissements', () => {
+    const { valeurs } = valeursDesCases(declaration({
+      recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 80_000 })],
+      depenses: [
+        ligne({ poste: 'Achats', montant: 16_500 }),
+        ligne({ poste: POSTE_COTISATIONS, montant: 12_000 }),
+        ligne({ poste: POSTE_CSG_DEDUCTIBLE, montant: 1500 }),
+        ligne({ poste: POSTE_AMORTISSEMENTS, montant: 2000 }),
+      ],
+    }))
+    expect(valeurs.get('CP')).toBe(48_000)
+    // 48 000 + 12 000 (BK) + 1 500 (BV) — et surtout pas l'abattement de 26 % de l'Urssaf.
+    expect(valeurs.get('DD')).toBe(61_500)
+    expect(valeurs.get('DC')).toBe(0)
+  })
+
+  it('reste positif sur un déficit fiscal que les seules cotisations ont creusé', () => {
+    // Le déficit fiscal n'est pas un revenu social négatif : les cotisations, retranchées pour le
+    // fisc, reviennent dans l'assiette sociale. Lire CR pour remplir DC serait faux.
+    const { valeurs } = valeursDesCases(declaration({
+      recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000 })],
+      depenses: [ligne({ poste: POSTE_COTISATIONS, montant: 12_000 })],
+    }))
+    expect(valeurs.get('CR')).toBe(2000)
+    expect(valeurs.get('DD')).toBe(10_000)
+    expect(valeurs.get('DC')).toBe(0)
+  })
+
+  it('porte un revenu négatif en DC, sans signe, et laisse DD à zéro', () => {
+    // Deux cases exclusives pour un seul montant, comme CP et CR : la case dit déjà « négatif ».
+    const { valeurs } = valeursDesCases(declaration({
+      recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 1000 })],
+      depenses: [ligne({ poste: 'Achats', montant: 5000 }), ligne({ poste: POSTE_COTISATIONS, montant: 500 })],
+    }))
+    expect(valeurs.get('CR')).toBe(4500)
+    expect(valeurs.get('DC')).toBe(4000)
+    expect(valeurs.get('DD')).toBe(0)
+  })
+
+  it('ne dépend pas de la ventilation de la CSG-CRDS', () => {
+    // Le cas de toute la production aujourd'hui : aucune cotisation ventilée. Non ventilée, la
+    // CSG-CRDS reste entière en BK ; ventilée, sa part déductible passe en BV et le reste sort de la
+    // déclaration. Le résultat fiscal change (290 € de moins déduits), le revenu brut social non.
+    const categories = [{ id: 'c-rec', poste_2035: 'Recettes' }] as Categorie[]
+    const recette = { id: 'r', statut: 'validee', type_piece: 'vente', date_piece: '2025-06-15', montant_ht: 50_000, montant_ttc: 50_000, categorie_id: 'c-rec' } as Piece
+    const avec = (montant_csg_crds: number | null) =>
+      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], [cotisation({ montant_csg_crds })], [])).valeurs
+
+    const brute = avec(null)
+    const ventilee = avec(970)
+    expect(brute.get('BK')).toBe(10_000)
+    expect(brute.get('BV')).toBe(0)
+    expect(ventilee.get('BK')).toBe(9030)
+    expect(ventilee.get('BV')).toBe(680)
+    expect(brute.get('CP')).toBe(40_000)
+    expect(ventilee.get('CP')).toBe(40_290)
+    expect(brute.get('DD')).toBe(50_000)
+    expect(ventilee.get('DD')).toBe(50_000)
+  })
+
+  it('rajoute DE et retranche DB', () => {
+    // Aucun écran ne les saisit encore (plus-values exonérées, intéressement, indemnités journalières
+    // comptées en gains divers…) : c'est le seul endroit où un signe inversé ne se verrait pas.
+    const arrondies = arrondirPourFormulaire(new Map([['AA', 10_000], ['DE', 300], ['DB', 1000]]), 2025)
+    expect(arrondies.get('CP')).toBe(10_000)
+    expect(arrondies.get('DD')).toBe(9300)
+  })
+
+  it('reste vide avant les revenus 2025, que le formulaire de ces années ne demande pas', () => {
+    const avant = valeursDesCases(declaration({
+      annee: 2024,
+      recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 80_000 })],
+      depenses: [ligne({ poste: POSTE_COTISATIONS, montant: 12_000 })],
+    })).valeurs
+    expect(avant.get('CP')).toBe(68_000)
+    expect(avant.get('DD')).toBe(0)
+    expect(avant.get('DC')).toBe(0)
+    // Et symétriquement : la même déclaration en 2025 le remplit. Sans ce garde, « vide avant 2025 »
+    // serait satisfait par un calcul qui ne remplit jamais rien.
+    const apres = valeursDesCases(declaration({
+      annee: 2025,
+      recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 80_000 })],
+      depenses: [ligne({ poste: POSTE_COTISATIONS, montant: 12_000 })],
+    })).valeurs
+    expect(apres.get('DD')).toBe(80_000)
+  })
+
+  it('se recalcule sur les cases arrondies, pour que le formulaire s’additionne', () => {
+    // Résultat 7 765,44 plus BK 1 000,49 : 8 765,93 au centime, donc 8 766 arrondi d'un bloc. Mais le
+    // formulaire imprime AA 10 000, BA 1 235 et BK 1 000 : un contrôleur qui refait le renvoi (26)
+    // sur les cases imprimées trouve 8 765, et c'est ce que DD doit porter.
+    const { valeurs } = valeursDesCases(declaration({
+      recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: 10_000.49 })],
+      depenses: [ligne({ poste: 'Achats', montant: 1234.56 }), ligne({ poste: POSTE_COTISATIONS, montant: 1000.49 })],
+    }))
+    expect(valeurs.get('DD')).toBe(8765.93)
+    const arrondies = arrondirPourFormulaire(valeurs, 2025)
+    expect(arrondies.get('CP')).toBe(7765)
+    expect(arrondies.get('DD')).toBe(8765)
+    expect(arrondies.get('DC')).toBe(0)
+    // L'exercice passé à l'arrondi décide lui aussi : avant 2025, rien n'est écrit au cadre 8.
+    expect(arrondirPourFormulaire(valeurs, 2024).get('DD')).toBe(0)
   })
 })

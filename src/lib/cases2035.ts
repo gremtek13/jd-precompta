@@ -23,11 +23,19 @@ import type { Declaration2035, LigneDeclaration } from './declaration2035'
 // seul encadré du formulaire.
 
 export type Formulaire = '2035-A' | '2035-B'
-export type Cadre = 'recettes' | 'depenses' | 'resultat'
+export type Cadre = 'recettes' | 'depenses' | 'resultat' | 'travailleursIndependants'
+
+// Premier exercice dont la 2035 porte le cadre 8 « Travailleurs indépendants » : la réforme de
+// l'assiette sociale vaut « à partir de la déclaration des revenus 2025 » (titre de section des deux
+// notices 2041-DRI, indépendants et praticiens conventionnés), et c'est la 2035-SD millésime 2026 qui
+// a reçu les cases DB, DC, DD et DE. Avant, ces cases n'existent pas sur la déclaration : les calculer
+// ferait écrire un revenu qu'aucun formulaire de ces années ne demande.
+export const PREMIER_EXERCICE_REVENU_BRUT_SOCIAL = 2025
 
 export interface Case2035 {
   code: string
-  // Numéro(s) de ligne tels qu'imprimés sur le formulaire — « 17 à 22 » pour un total groupé.
+  // Numéro(s) de ligne tels qu'imprimés sur le formulaire — « 17 à 22 » pour un total groupé. Le
+  // cadre 8 n'en imprime aucun : ses cases portent le cadre à la place.
   ligne: string
   // Libellé officiel, recopié du formulaire. Sert d'intitulé à l'écran et sur le PDF : un libellé
   // maison ferait douter l'expert-comptable de la case visée.
@@ -37,8 +45,9 @@ export interface Case2035 {
   // Case « dont » : un détail À L'INTÉRIEUR d'une autre case. Elle ne s'additionne JAMAIS au total,
   // son montant est déjà compté dans la case porteuse. L'ajouter doublerait la dépense.
   sousCaseDe?: string
-  // Case calculée à partir d'autres cases : la formule, telle qu'imprimée sur le formulaire. Sa
-  // présence veut dire « aucun poste ne l'alimente directement ».
+  // Case calculée à partir d'autres cases : la formule, telle qu'imprimée sur le formulaire (celle
+  // du cadre 8 n'y est pas imprimée : c'est la notice qui la donne). Sa présence veut dire « aucun
+  // poste ne l'alimente directement ».
   calculee?: string
   // Case que le moteur ne produira jamais : elle relève d'un arbitrage de l'expert-comptable
   // (plus-values, réintégrations, exonérations). Elle existe ici pour que l'arithmétique du
@@ -46,6 +55,9 @@ export interface Case2035 {
   saisieCabinet?: true
   // Se retranche au lieu de s'ajouter (débours et rétrocessions, lignes 2 et 3).
   soustractive?: true
+  // Case apparue sur le formulaire à partir de cet exercice. Avant, elle n'existe pas : l'écran ne la
+  // montre pas et le calcul la laisse à zéro.
+  depuisExercice?: number
 }
 
 // Le formulaire, cadre par cadre. Ordre d'impression, donc ordre d'affichage.
@@ -105,6 +117,20 @@ export const CASES_2035: Case2035[] = [
   { code: 'CN', ligne: '45', libelle: 'TOTAL', formulaire: '2035-B', cadre: 'resultat', calculee: 'lignes 39 à 44' },
   { code: 'CP', ligne: '46', libelle: 'Bénéfice', formulaire: '2035-B', cadre: 'resultat', calculee: 'ligne 38 − ligne 45' },
   { code: 'CR', ligne: '47', libelle: 'Déficit', formulaire: '2035-B', cadre: 'resultat', calculee: 'ligne 45 − ligne 38' },
+
+  // ── 2035-B-SD, cadre 8 : travailleurs indépendants (depuis les revenus 2025) ────────────────
+  // Le « revenu brut social » de la réforme de l'assiette : recettes moins charges, SANS déduire les
+  // cotisations sociales, la CSG déductible ni les exonérations fiscales. C'est la base que l'Urssaf
+  // reprend, et elle applique ELLE-MÊME l'abattement de 26 % — surtout ne pas le retrancher ici
+  // (notice 2035-NOT-SD 2026, renvois 24 à 26 ; notices 2041-DRI, rubrique « Revenu brut social »).
+  //
+  // DE et DB portent des éléments que le moteur ne connaît pas (plus-values à court terme exonérées,
+  // intéressement de l'exploitant, indemnités journalières comptées en gains divers, résultats non
+  // professionnels) : saisie du cabinet, comme CB, CC ou CL. DC et DD se calculent.
+  { code: 'DE', ligne: 'cadre 8', libelle: 'Sommes à réintégrer pour la détermination du revenu brut social', formulaire: '2035-B', cadre: 'travailleursIndependants', saisieCabinet: true, depuisExercice: PREMIER_EXERCICE_REVENU_BRUT_SOCIAL },
+  { code: 'DB', ligne: 'cadre 8', libelle: 'Sommes à déduire pour la détermination du revenu brut social', formulaire: '2035-B', cadre: 'travailleursIndependants', saisieCabinet: true, depuisExercice: PREMIER_EXERCICE_REVENU_BRUT_SOCIAL },
+  { code: 'DC', ligne: 'cadre 8', libelle: 'Revenu brut social (si le montant est négatif)', formulaire: '2035-B', cadre: 'travailleursIndependants', calculee: 'renvoi (26) : CE − CN + BK + BV + exonérations de la ligne 43 + DE − DB, s’il est négatif', depuisExercice: PREMIER_EXERCICE_REVENU_BRUT_SOCIAL },
+  { code: 'DD', ligne: 'cadre 8', libelle: 'Revenu brut social (si le montant est positif)', formulaire: '2035-B', cadre: 'travailleursIndependants', calculee: 'renvoi (26) : CE − CN + BK + BV + exonérations de la ligne 43 + DE − DB, s’il est positif', depuisExercice: PREMIER_EXERCICE_REVENU_BRUT_SOCIAL },
 ]
 
 export const CASE_PAR_CODE = new Map(CASES_2035.map((c) => [c.code, c]))
@@ -220,6 +246,11 @@ const RATTACHEMENTS: [string, string][] = [
 
 const CASE_PAR_CLE_DE_POSTE = new Map(RATTACHEMENTS.map(([poste, code]) => [cle(poste), code]))
 
+// Les codes qu'un poste peut atteindre. Exporté pour que le test vérifie sur la liste ENTIÈRE, et non
+// sur trois postes choisis, qu'aucun ne vise une case calculée, une case « dont » ou une case du
+// cadre 8 : un montant qui y atterrirait sortirait du résultat sans que rien ne le dise.
+export const CODES_RATTACHABLES = new Set(RATTACHEMENTS.map(([, code]) => code))
+
 // La case pré-remplie pour un poste, ou null si le rattachement ne le connaît pas.
 export function caseDuPoste(poste: string): Case2035 | null {
   const code = CASE_PAR_CLE_DE_POSTE.get(cle(poste))
@@ -305,6 +336,16 @@ export function valeursDesCases(declaration: Declaration2035): {
   const valeurs = new Map<string, number>(CASES_2035.map((c) => [c.code, 0]))
   for (const r of cases) valeurs.set(r.case.code, r.montant)
 
+  calculerLesCasesCalculees(valeurs, declaration.annee)
+
+  for (const [code, montant] of valeurs) valeurs.set(code, Number(montant.toFixed(2)))
+  return { valeurs, postesSansCase }
+}
+
+// Les cases calculées, déduites des cases alimentées. UN SEUL endroit pour les deux usages — les
+// valeurs montrées à l'écran et celles arrondies pour le PDF : écrite dans chacun, une case calculée
+// ajoutée à l'un manquerait à l'autre, et le formulaire imprimé ne dirait plus ce que l'écran a montré.
+function calculerLesCasesCalculees(valeurs: Map<string, number>, annee: number): void {
   const v = (code: string) => valeurs.get(code) ?? 0
   const somme = (codes: string[]) => codes.reduce((s, code) => s + v(code), 0)
 
@@ -326,8 +367,39 @@ export function valeursDesCases(declaration: Declaration2035): {
   valeurs.set('CP', Math.max(0, resultat))
   valeurs.set('CR', Math.max(0, -resultat))
 
-  for (const [code, montant] of valeurs) valeurs.set(code, Number(montant.toFixed(2)))
-  return { valeurs, postesSansCase }
+  // Et pour le revenu brut social du cadre 8, qui n'existe qu'à partir des revenus 2025.
+  //
+  // DC porte la VALEUR ABSOLUE d'un revenu négatif, comme CR celle d'un déficit : la case dit déjà
+  // « si le montant est négatif », et aucune des deux notices ne demande d'y écrire un signe. C'est
+  // une DÉDUCTION tirée de la forme du formulaire (deux cases exclusives pour un seul montant, comme
+  // CA/CF et CP/CR), pas une consigne lue : à confronter à la première 2035 déposée qui porte un DC.
+  const brutSocial = annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL ? revenuBrutSocial(v) : 0
+  valeurs.set('DD', Math.max(0, brutSocial))
+  valeurs.set('DC', Math.max(0, -brutSocial))
+}
+
+// Renvoi (26) de la notice 2035-NOT-SD 2026, pour une entreprise individuelle :
+//   CE − CN + BK + BV + CS + AW + CU + CI + DG + DH + CO + CJ + DE − DB.
+// Le résultat fiscal, auquel on rend ce que l'assiette sociale ne déduit pas : les cotisations
+// sociales personnelles (BK), la CSG déductible (BV) et les exonérations fiscales.
+//
+// CS à CJ sont des « dont » de la ligne 43, « Divers à déduire » (CL) : six exonérations et deux
+// déductions propres aux médecins conventionnés de secteur I. Le moteur ne remplit jamais CL
+// (`saisieCabinet`), donc elles valent zéro et ne figurent pas ici. LE JOUR OÙ CL SE SAISIRA, elles
+// devront y entrer — elles seules, pas CL entier : ses autres « dont » ne figurent pas au renvoi (DF,
+// CT), ou passent par DE (AX, et CQ hors article 151 septies A, dont la plus-value s'ajoute
+// directement sur la déclaration de revenus : renvoi 24 et notices 2041-DRI).
+//
+// Insensible à la ventilation de la CSG-CRDS, et c'est ce qui le rend juste aujourd'hui, où aucune
+// cotisation n'est ventilée : non ventilée, la CSG-CRDS reste entière en BK ; ventilée, sa part non
+// déductible sort de BK sans entrer nulle part et sa part déductible passe en BV. BK et BV étant
+// rajoutés au résultat qui les avait retranchés, le revenu brut social est le même au centime
+// (cases2035.test.ts le vérifie, depuis les cotisations).
+//
+// Pour une société, le renvoi retranche en plus les rémunérations des associés comprises en CC : une
+// saisie du cabinet, nulle ici, et le calcul reste juste tant qu'elle l'est.
+function revenuBrutSocial(v: (code: string) => number): number {
+  return v('CE') - v('CN') + v('BK') + v('BV') + v('DE') - v('DB')
 }
 
 // Les postes dont la dépense est DÉJÀ couverte par le barème kilométrique. Note (12) de la notice
@@ -420,27 +492,15 @@ export function incoherencesDesCases(valeurs: Map<string, number>): IncoherenceC
 // l'addition imprimée (les totaux ne tomberaient plus juste à l'euro près) : on arrondit donc les
 // cases alimentées, puis on RECALCULE les totaux à partir des valeurs arrondies. Un formulaire dont
 // les colonnes ne s'additionnent pas est un formulaire qu'on se fait renvoyer.
-export function arrondirPourFormulaire(valeurs: Map<string, number>): Map<string, number> {
+//
+// L'exercice est exigé, sans valeur par défaut : le cadre 8 en dépend, et un appelant qui l'oublierait
+// doit le découvrir à la compilation plutôt que sur un revenu brut social absent du PDF.
+export function arrondirPourFormulaire(valeurs: Map<string, number>, annee: number): Map<string, number> {
   const arrondies = new Map<string, number>()
   for (const c of CASES_2035) {
     if (c.calculee) continue
     arrondies.set(c.code, Math.round(valeurs.get(c.code) ?? 0))
   }
-
-  const v = (code: string) => arrondies.get(code) ?? 0
-  const somme = (codes: string[]) => codes.reduce((s, code) => s + v(code), 0)
-
-  arrondies.set('AD', v('AA') - v('AB') - v('AC'))
-  arrondies.set('AG', v('AD') + v('AE') + v('AF'))
-  arrondies.set('BR', somme(CODES_TOTALISES_BR))
-  const ecart = v('AG') - v('BR')
-  arrondies.set('CA', Math.max(0, ecart))
-  arrondies.set('CF', Math.max(0, -ecart))
-  arrondies.set('CE', somme(['CA', 'CB', 'CC', 'CD']))
-  arrondies.set('CN', somme(['CF', 'CG', 'CH', 'CK', 'CL', 'CM']))
-  const resultat = v('CE') - v('CN')
-  arrondies.set('CP', Math.max(0, resultat))
-  arrondies.set('CR', Math.max(0, -resultat))
-
+  calculerLesCasesCalculees(arrondies, annee)
   return arrondies
 }

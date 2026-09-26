@@ -71,6 +71,11 @@ const VUES = [
   { nom: 'pc-installer-sombre', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'dark', reduite: false, compte: true, clic: "Installer l'application" },
   { nom: 'pc-installer-reduite', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: true, compte: true, clic: "Installer l'application" },
   { nom: 'mobile-menu-clair', chemin: '#/dossiers', l: 390, h: 844, theme: 'light', reduite: false, clic: "Plus d'options" },
+  // Clôture : le bas du formulaire de l'exercice — le cadre 8 et le report vers la déclaration de
+  // revenus, amenés à l'écran (`vers`) puisqu'ils vivent sous le tableau des cases.
+  { nom: 'pc-cloture-clair', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Report sur la déclaration des revenus' },
+  { nom: 'pc-cloture-sombre', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Report sur la déclaration des revenus' },
+  { nom: 'mobile-cloture-clair', chemin: '#/dossiers/d1/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Report sur la déclaration des revenus' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -111,6 +116,11 @@ for (const v of VUES) {
   if (v.apres) {
     await page.getByRole('button', { name: new RegExp(v.apres) }).first().click()
     await page.waitForTimeout(600)
+  }
+  // Un texte à amener à l'écran avant la capture, pour montrer le bas d'un long onglet.
+  if (v.vers) {
+    await page.getByText(v.vers).first().scrollIntoViewIfNeeded()
+    await page.waitForTimeout(300)
   }
   await page.evaluate(() => document.fonts.ready)
   await page.screenshot({ path: `${SORTIE}${v.nom}.png` })

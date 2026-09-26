@@ -293,6 +293,26 @@ describe('sur le formulaire officiel livré dans le dépôt', () => {
     expect(ancrages.get('CH')?.page).toBe(2)
   })
 
+  it('place le cadre 8 en bas du 2035-B, le revenu négatif dans sa colonne intérieure', async () => {
+    // Nouveauté du millésime 2026 : DE, DB, DC et DD sous le résultat. DC est imprimée en colonne
+    // intérieure, à gauche de DD ; c'est le deuxième filet à droite de son code qui l'y place, sans
+    // rien coder en dur. Un revenu négatif écrit dans la case de DD passerait pour un revenu positif.
+    const ancrages = ancragesDesCases(await lireModele())
+    const cr = ancrages.get('CR')!
+    const [de, db, dc, dd] = ['DE', 'DB', 'DC', 'DD'].map((code) => ancrages.get(code)!)
+    for (const a of [de, db, dc, dd]) {
+      expect(a.page, a.code).toBe(2)
+      expect(a.y, a.code).toBeLessThan(cr.y)
+    }
+    // De haut en bas dans l'ordre imprimé.
+    expect(de.y).toBeGreaterThan(db.y)
+    expect(db.y).toBeGreaterThan(dc.y)
+    expect(dc.y).toBeGreaterThan(dd.y)
+    // DE, DB et DD au bord droit des cases du résultat ; DC nettement à gauche.
+    for (const a of [de, db, dd]) expect(a.xDroite, a.code).toBe(cr.xDroite)
+    expect(dc.xDroite).toBeLessThan(cr.xDroite - 50)
+  })
+
   it('trouve le libellé d’en-tête sur lequel le nom s’ancre', async () => {
     const pages = await lireModele()
     const { inscriptions } = planDeRemplissage(new Map(), new Map(), { nom: 'Cabinet Test', activite: null, siret: null }, pages)

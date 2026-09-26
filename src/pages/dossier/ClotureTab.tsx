@@ -5,8 +5,12 @@ import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
 import { calculerDeclaration2035, dotationPourAnnee, dotationsNonProratisees, partCsgNonDeductible, RESERVE_PRORATA_TEMPORIS,
   type DotationNonProratisee, type PartCsgNonDeductible } from '../../lib/declaration2035'
-import { CASES_2035, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases, valeursDesCases } from '../../lib/cases2035'
+import {
+  CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases,
+  valeursDesCases,
+} from '../../lib/cases2035'
 import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
+import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
@@ -244,7 +248,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
     try {
       // Arrondi à l'euro AVANT le dessin : le formulaire dit « ne pas porter les centimes », et les
       // totaux sont recalculés depuis les cases arrondies pour que la colonne s'additionne.
-      const { pdf, codesSansAncrage } = await remplir2035(arrondirPourFormulaire(valeurs), {
+      const { pdf, codesSansAncrage } = await remplir2035(arrondirPourFormulaire(valeurs, annee), {
         nom: dossier?.nom ?? null,
         activite: dossier?.libelle_naf ?? null,
         siret: dossier?.siret ?? null,
@@ -725,8 +729,11 @@ function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage, clot
 }) {
   // Une case à zéro que personne n'a alimentée n'apprend rien et noie le reste : on ne montre que
   // les cases qui portent un montant, plus les totaux, toujours affichés parce que c'est sur eux que
-  // se fait la relecture.
-  const visibles = CASES_2035.filter((c) => (valeurs.get(c.code) ?? 0) !== 0 || c.calculee)
+  // se fait la relecture. Sauf une case que le formulaire de cet exercice ne porte pas encore (le
+  // cadre 8 avant les revenus 2025) : l'afficher à zéro ferait chercher sur la déclaration une case
+  // qui n'y est pas.
+  const visibles = CASES_2035.filter((c) =>
+    (c.depuisExercice ?? annee) <= annee && ((valeurs.get(c.code) ?? 0) !== 0 || c.calculee))
 
   return (
     <div className="card" style={{ padding: 0, marginBottom: 20 }}>
@@ -787,6 +794,58 @@ function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage, clot
         </tbody>
       </table>
       </div>
+      {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && <ReportDeclarationRevenus annee={annee} valeurs={valeurs} />}
+    </div>
+  )
+}
+
+// Où vont les deux résultats de la 2035 sur la déclaration de revenus de l'exploitant. Le cadre 8
+// n'a pas d'autre destination que le volet social : c'est de là que l'Urssaf tire l'assiette des
+// cotisations et de la CSG-CRDS. L'administration le préremplit depuis la liasse, encore faut-il
+// savoir quelle rubrique relire — et qu'aucun abattement ne doit y être retranché, puisque l'Urssaf
+// applique le sien (notices 2041-DRI, rubrique « Revenu brut social »).
+//
+// Les codes des deux déclarants sont donnés ensemble : l'application ne sait pas lequel des deux
+// l'exploitant est sur la déclaration du foyer.
+//
+// LES MONTANTS SONT CEUX DU FORMULAIRE, pas ceux du tableau : à l'euro, totaux recalculés sur les
+// cases arrondies. C'est ce que l'administration reprend de la liasse, donc ce que le cabinet
+// retrouvera prérempli — et ils peuvent différer d'un euro des montants au centime du tableau
+// (120,60 € d'achats s'impriment 121, 5 000,40 € de recettes 5 000, et le bénéfice 4 279,80 €
+// devient 4 279). Annoncer l'un pour l'autre ferait chercher un écart qui n'existe pas.
+function ReportDeclarationRevenus({ annee, valeurs }: { annee: number; valeurs: Map<string, number> }) {
+  const formulaire = arrondirPourFormulaire(valeurs, annee)
+  const montant = (code: string) => `${formaterMontant(formulaire.get(code) ?? 0)} €`
+  const deficit = formulaire.get('CR') ?? 0
+  const brutNegatif = formulaire.get('DC') ?? 0
+  return (
+    <div style={{ padding: '12px 16px 14px', borderTop: '1px solid var(--color-border)', fontSize: '0.9rem' }}>
+      <strong>Report sur la déclaration des revenus {annee}</strong>
+      <span className="muted" style={{ marginLeft: 8 }}>montants à l'euro, tels que le formulaire les porte</span>
+      <ul style={{ margin: '8px 0', paddingLeft: 20 }}>
+        <li>
+          {deficit > 0
+            ? <>Déficit de {montant('CR')} : case 5QE de la déclaration 2042-C-PRO (5RE pour le second déclarant).</>
+            : <>Bénéfice de {montant('CP')} : case 5QC de la déclaration 2042-C-PRO (5RC pour le second déclarant).</>}
+        </li>
+        <li>
+          {brutNegatif > 0
+            ? <>Revenu brut social négatif de {montant('DC')} (case DC) : rubrique DSDG du volet social (DSDH pour le second déclarant).</>
+            : <>Revenu brut social de {montant('DD')} (case DD) : rubrique DSDE du volet social (DSDF pour le second déclarant).</>}
+          {' '}Prérempli quand l'exploitant n'a déposé que cette 2035. Avec plusieurs liasses, on cumule
+          leurs revenus bruts sociaux. L'Urssaf applique elle-même l'abattement de 26 % : ne pas le
+          retrancher.
+        </li>
+      </ul>
+      <p className="muted" style={{ margin: 0, fontSize: '0.9em' }}>
+        Revenu brut social calculé comme le résultat, plus les charges sociales personnelles (BK) et
+        la CSG déductible (BV). L'application ne connaît pas le reste du renvoi (26) de la notice :
+        les exonérations de la ligne 43 (zones franches, zones déficitaires en offre de soins,
+        déductions des médecins de secteur I…), les sommes à réintégrer (DE : plus-values à court terme
+        exonérées, intéressement de l'exploitant, bénéfices non professionnels) et à déduire (DB :
+        indemnités journalières comptées dans les recettes, déficits non professionnels). Si le
+        dossier en porte, le revenu brut social est à reprendre.
+      </p>
     </div>
   )
 }

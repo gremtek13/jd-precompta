@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import ClotureTab from './ClotureTab'
@@ -17,6 +17,8 @@ const faux = vi.hoisted(() => ({
   // Le serveur cesse de rendre cette table au-delà de la position donnée, tout en continuant
   // d'annoncer le vrai total. C'est ce qui produit une lecture incomplète (voir lectureComplete.ts).
   muetApresParTable: {} as Record<string, number>,
+  // Ce que `remplir2035` a reçu : les cases telles que le PDF les porterait.
+  remplies: [] as Map<string, number>[],
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -50,10 +52,14 @@ vi.mock('../../lib/supabase', () => ({
 
 // `remplir2035` importe `pdfjs-dist/...?url`, qui touche au navigateur DÈS L'IMPORT : le module
 // entier fait échouer le montage sous jsdom. Même famille que `pdfText.ts`, dont CLAUDE.md dit déjà
-// qu'une dépendance navigateur doit vivre à part. Le doublure est honnête ici — ce test ne clique
-// jamais sur la génération, il vérifie que le bouton est REFUSÉ.
+// qu'une dépendance navigateur doit vivre à part. La doublure est honnête : elle ne dessine rien et
+// RETIENT les cases reçues — c'est ce que l'écran envoie au formulaire qui est en cause, pas le
+// dessin, que `gabarit2035.test.ts` éprouve sur le vrai PDF.
 vi.mock('../../lib/remplir2035', () => ({
-  remplir2035: () => { throw new Error('la génération ne doit pas être atteinte par ce test') },
+  remplir2035: (valeurs: Map<string, number>) => {
+    faux.remplies.push(valeurs)
+    return Promise.resolve({ pdf: new Uint8Array(), codesSansAncrage: [] })
+  },
 }))
 
 const CATEGORIE = {
@@ -104,9 +110,9 @@ function poser(
   }
 }
 
-function monter() {
+function monter(annee = 2025) {
   return render(
-    <AnneeProvider defaut={2025}>
+    <AnneeProvider defaut={annee}>
       <ClotureTab dossierId="dossier-de-test" />
     </AnneeProvider>,
   )
@@ -339,5 +345,93 @@ describe('ClotureTab — un amortissement dont le justificatif a été supprimé
 
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(screen.queryAllByText(TITRE)).toHaveLength(0)
+  })
+})
+
+// LE CADRE 8 DU 2035-B, ET OÙ LE REPORTER. Depuis les revenus 2025 la 2035 porte le revenu brut
+// social (DC ou DD), base de l'Urssaf pour les cotisations et la CSG-CRDS, et la déclaration de
+// revenus le reprend dans son volet social. `cases2035.test.ts` garde le CALCUL ; ici c'est ce que
+// l'écran en fait — l'afficher, dire où le reporter, et l'envoyer au formulaire — et qu'il n'en
+// dise rien sur un exercice dont le formulaire ne porte pas ce cadre.
+describe('ClotureTab — le revenu brut social du cadre 8', () => {
+  const CATEGORIE_RECETTES = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations',
+    ordre: 2, compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const RECETTE = {
+    ...PIECE, id: 'p2', nom_fichier: 'releve-activite.pdf', type_piece: 'vente', date_piece: '2025-05-02',
+    montant_ttc: 5000.4, tiers: 'CPAM', categorie_id: 'cat-recettes',
+  }
+
+  // 5 000,40 de recettes, 120,60 d'achats, 600 de cotisations (deux échéances de 300) : bénéfice
+  // 4 279,80 au centime, revenu brut social 4 879,80. Les centimes sont choisis pour que le formulaire
+  // DIFFÈRE du tableau : il imprime 5 000 et 121, donc un bénéfice de 4 279 et non 4 280.
+  function poserUnBenefice() {
+    poser()
+    faux.parTable.categories = [CATEGORIE, CATEGORIE_RECETTES]
+    faux.parTable.pieces = [{ ...PIECE, montant_ttc: 120.6 }, RECETTE]
+  }
+
+  it('affiche DD et dit où reporter le bénéfice et le revenu brut social, à l’euro du formulaire', async () => {
+    poserUnBenefice()
+    monter()
+
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    // Le tableau garde ses centimes, comme toutes les cases de l'écran…
+    const ligneDD = screen.getByText('DD').closest('tr')!
+    expect(within(ligneDD).getByText(/^4\s879,80\s€$/)).toBeDefined()
+
+    // … le report donne ce que la liasse portera, donc ce que le cabinet retrouvera prérempli.
+    const report = within(titre.parentElement!)
+    report.getByText(/Bénéfice de 4\s279 € : case 5QC/)
+    report.getByText(/Revenu brut social de 4\s879 € \(case DD\) : rubrique DSDE/)
+    // Et ce qu'il ne faut PAS faire : l'Urssaf retranche elle-même ses 26 %.
+    report.getByText(/abattement de 26 % : ne pas le retrancher/)
+    expect(report.queryAllByText(/5QE|DSDG/)).toHaveLength(0)
+  })
+
+  it('dit un revenu brut social négatif en DC, et le déficit en 5QE', async () => {
+    // Le jeu par défaut n'a pas de recette : 720 de charges, dont 600 de cotisations. Déficit fiscal
+    // 720, revenu brut social −120 — les cotisations reviennent dans l'assiette sociale.
+    poser()
+    monter()
+
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    const report = within(titre.parentElement!)
+    report.getByText(/Déficit de 720 € : case 5QE/)
+    report.getByText(/Revenu brut social négatif de 120 € \(case DC\) : rubrique DSDG/)
+    expect(report.queryAllByText(/5QC|DSDE/)).toHaveLength(0)
+  })
+
+  it('envoie le cadre 8 au formulaire, recalculé sur les cases arrondies de l’exercice', async () => {
+    poserUnBenefice()
+    faux.remplies = []
+    // jsdom n'a ni `createObjectURL` ni navigation : le téléchargement lui-même n'est pas en cause.
+    URL.createObjectURL = () => 'blob:formulaire'
+    URL.revokeObjectURL = () => {}
+    const clic = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    await act(async () => { bouton.click() })
+
+    expect(faux.remplies).toHaveLength(1)
+    // Les mêmes 4 879 que le report : ce que l'écran annonce est ce que le PDF porte.
+    expect(faux.remplies[0].get('DD')).toBe(4879)
+    expect(faux.remplies[0].get('DC')).toBe(0)
+    expect(clic).toHaveBeenCalledTimes(1)
+    vi.restoreAllMocks()
+  })
+
+  it('ne montre ni le cadre 8 ni le report sur un exercice antérieur aux revenus 2025', async () => {
+    poser({}, [], [cotisation('c1', { echeance: '2024-03-05' })])
+    faux.parTable.pieces = [{ ...PIECE, date_piece: '2024-03-10' }]
+    monter(2024)
+
+    // Le formulaire de l'exercice est bien rendu — sans quoi l'absence ne prouverait rien.
+    await screen.findByText('Exercice 2024')
+    expect(screen.getByText('CR')).toBeDefined()
+    for (const code of ['DE', 'DB', 'DC', 'DD']) expect(screen.queryAllByText(code), code).toHaveLength(0)
+    expect(screen.queryAllByText(/Report sur la déclaration des revenus/)).toHaveLength(0)
   })
 })
