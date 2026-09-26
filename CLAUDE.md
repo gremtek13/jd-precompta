@@ -1163,11 +1163,19 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   apprise est proposée quand elle connaît le fournisseur ; sinon « Proposer une catégorie » demande
   au modèle une catégorie de la liste, justifiée par un extrait du document, que l'opérateur applique
   ou écarte. Rien n'est écrit sans lui — voir « Décisions techniques ».
+- **Le revenu brut social du cadre 8 et le report vers la déclaration de revenus (26/09/2026)** :
+  à partir des revenus 2025, Clôture calcule et le formulaire rempli porte DC ou DD, puis l'écran dit
+  où reporter le bénéfice (5QC/5QE) et le revenu brut social (DSDE/DSDG du volet social) — voir
+  « le cadre 8 du 2035-B » dans « Problèmes connus ».
 
 ## Fonctionnalités actuellement en cours
 
 - Proposition de catégorie par un modèle (ligne 25 de la feuille de route) : livrée le 26/09/2026,
   reste à éprouver par un premier clic réel du cabinet (voir « Décisions techniques »).
+- Déclarations TNS du dirigeant (ligne 27) : la première brique — le cadre 8 et le report — est
+  livrée. Restent à décider avec le cabinet les rubriques du volet social propres aux praticiens
+  conventionnés (recettes brutes, honoraires du relevé SNIR, dépassements…) et une estimation des
+  cotisations sur la nouvelle assiette.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -4453,6 +4461,51 @@ d'environnement dans la même édition.
 - **Les amortissements ne sont pas dans le cadre 3.** Ils entrent ligne 41 du 2035-**B** (`CH`)
   et redescendent par la ligne 45. Le résultat final est le même qu'en les mettant dans les
   dépenses, l'emplacement non — et c'est l'emplacement qui fait une déclaration juste.
+- **Le cadre 8 du 2035-B porte le revenu brut social, depuis les revenus 2025** (26/09/2026, ligne 27
+  de la feuille de route). La réforme de l'assiette sociale des indépendants calcule cotisations et
+  CSG-CRDS sur « recettes moins charges, sans déduire les cotisations sociales, la CSG déductible ni
+  les exonérations fiscales », et la 2035-SD millésime 2026 a reçu quatre cases pour le dire : DE et
+  DB (sommes à réintégrer et à déduire), DC et DD (le revenu, négatif ou positif). Formule du renvoi
+  (26) de la notice, pour une entreprise individuelle : CE − CN + BK + BV + les exonérations de la
+  ligne 43 (CS, AW, CU, CI, DG, DH, CO, CJ) + DE − DB. Six décisions :
+  - **L'abattement de 26 % n'est JAMAIS appliqué ici** : l'Urssaf l'applique elle-même, et les deux
+    notices 2041-DRI disent de ne pas le retrancher. Une mutation le garde.
+  - **Les exonérations de la ligne 43 valent zéro parce que CL n'est jamais rempli** (`saisieCabinet`).
+    Le jour où CL se saisira, ces huit « dont » devront entrer dans la formule — eux seuls, pas CL
+    entier : DF et CT n'y figurent pas, AX et CQ passent par DE (renvoi 24 — sauf la plus-value de
+    l'article 151 septies A, ajoutée directement sur la déclaration de revenus). Écrit au-dessus de
+    `revenuBrutSocial`.
+  - **Le calcul est insensible à la ventilation de la CSG-CRDS**, ce qui le rend juste aujourd'hui où
+    aucune cotisation n'est ventilée : non ventilée elle reste en BK, ventilée sa part déductible passe
+    en BV et le reste sort — BK et BV sont rajoutés au résultat qui les avait retranchés. Vérifié
+    depuis les cotisations, pas seulement affirmé : même revenu brut social, résultats fiscaux
+    différents.
+  - **DC porte la valeur absolue**, comme CR celle d'un déficit. C'est une DÉDUCTION tirée de la forme
+    du formulaire (deux cases exclusives pour un seul montant), aucune notice ne le disant : à
+    confronter à la première 2035 déposée qui porte un DC.
+  - **Rien avant 2025** : `PREMIER_EXERCICE_REVENU_BRUT_SOCIAL` et le champ `depuisExercice` des cases
+    — l'écran ne les montre pas, le calcul les laisse à zéro. `arrondirPourFormulaire` exige donc
+    l'exercice, sans valeur par défaut.
+  - **Un seul calcul des cases calculées pour l'écran et pour le PDF** (`calculerLesCasesCalculees`) :
+    il était écrit deux fois, et le cadre 8 n'aurait rejoint que l'un des deux sans que rien le dise.
+    Le PDF recalcule le revenu sur les cases ARRONDIES, pour qu'un contrôleur qui refait le renvoi (26)
+    sur les cases imprimées retombe sur DD.
+  **Le report est dit sous le formulaire de l'exercice** : bénéfice en 5QC (déficit en 5QE ; 5RC/5RE
+  pour le second déclarant) de la 2042-C-PRO, revenu brut social en DSDE (négatif en DSDG ; DSDF/DSDH)
+  du volet social — les mêmes rubriques pour les praticiens conventionnés et pour les autres
+  indépendants, vérifié dans les DEUX notices 2041-DRI plutôt que supposé. L'administration le
+  préremplit quand l'exploitant n'a déposé qu'une liasse, donc **le report donne les montants du
+  FORMULAIRE** (à l'euro, totaux recalculés sur les cases arrondies) et non ceux du tableau au
+  centime : les deux peuvent différer d'un euro, et annoncer l'un pour l'autre ferait chercher un
+  écart qui n'existe pas. La réserve NOMME ce que l'application ne connaît pas (exonérations de la
+  ligne 43, contenus de DE et de DB), puisque c'est alors au cabinet de reprendre le revenu.
+  **Et le rattachement ne peut pas y mener** : `CODES_RATTACHABLES` expose les cases que les postes
+  atteignent, et un test vérifie sur la liste ENTIÈRE qu'aucune n'est calculée, « dont » ou du cadre 8
+  — l'ancien test ne le vérifiait que pour trois postes choisis. Vingt-sept mutations, toutes mordent,
+  dont la formule privée de BK ou de BV, le résultat lu sur CP (tronqué à zéro sur un déficit),
+  l'abattement appliqué, DC signé, la garde d'exercice, le formulaire rempli avec un autre exercice
+  que celui affiché, le cadre 8 arrondi d'un bloc au lieu d'être recalculé, et le report lu sur le
+  tableau au centime plutôt que sur le formulaire.
 - **Le PDF officiel de la 2035 n'a aucun champ de formulaire** — zéro `/AcroForm`, zéro
   `/Widget`, vérifié sur le fichier de la DGFiP. Le remplissage écrit donc du texte à des
   coordonnées. Elles ne sont **pas** codées en dur, sinon tout serait à reprendre à chaque
@@ -5446,7 +5499,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1847 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1861 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
