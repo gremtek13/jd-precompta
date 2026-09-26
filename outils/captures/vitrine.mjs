@@ -49,6 +49,13 @@ const VUES = [
   { nom: 'pc-fiche-1280', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
   { nom: 'pc-fiche-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
   { nom: 'mobile-fiche-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'Pharma Distrib Sud' },
+  // « Proposer une catégorie » : la fiche de la seule pièce sans catégorie (LogiSoins, ouverte par sa DATE : la cellule du fournisseur porte aussi le lien « texte lu », que le clic déplierait), le bouton, puis
+  // la proposition et son extrait — long, pour éprouver le passage à la ligne dans le volet.
+  { nom: 'pc-proposer-bouton', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: '18/08/2026' },
+  { nom: 'pc-proposition-clair', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, cellule: '18/08/2026', apres: 'Proposer une catégorie' },
+  { nom: 'pc-proposition-sombre', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'dark', reduite: false, cellule: '18/08/2026', apres: 'Proposer une catégorie' },
+  { nom: 'pc-proposition-1024', chemin: '#/dossiers/d1/pieces', l: 1024, h: 768, theme: 'light', reduite: false, cellule: '18/08/2026', apres: 'Proposer une catégorie' },
+  { nom: 'mobile-proposition-clair', chemin: '#/dossiers/d1/pieces', l: 390, h: 844, theme: 'light', reduite: false, cellule: '18/08/2026', apres: 'Proposer une catégorie' },
   // Le rapprochement d'un mouvement dans le panneau de droite : une pièce proposée (Papeterie Moderne,
   // validée), puis un mouvement déjà rapproché — ouvert après être passé sur « Tous ».
   { nom: 'pc-mouvement-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
@@ -98,6 +105,11 @@ for (const v of VUES) {
   // Une ligne de liste, désignée par le texte d'une de ses cellules.
   if (v.cellule) {
     await page.getByRole('cell', { name: v.cellule }).first().click()
+    await page.waitForTimeout(600)
+  }
+  // Un bouton du contenu qui vient de s'ouvrir (la fiche, le panneau), désigné par une partie de son nom.
+  if (v.apres) {
+    await page.getByRole('button', { name: new RegExp(v.apres) }).first().click()
     await page.waitForTimeout(600)
   }
   await page.evaluate(() => document.fonts.ready)

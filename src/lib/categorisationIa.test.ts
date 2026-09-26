@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  REGLAGES_MODELE, natureCategorie, normaliserIndice, promptCategorisation, questionCategorisation, sensDePiece,
-  verifierProposition, type CategoriePourIa,
+  REGLAGES_MODELE, libelleIssue, lireProposition, natureCategorie, normaliserIndice, promptCategorisation,
+  questionCategorisation, sensDePiece, verifierProposition, type CategoriePourIa, type IssueProposition,
 } from './categorisationIa'
 import { verifierCitations } from './extractionChamps'
 
@@ -232,5 +232,68 @@ describe('REGLAGES_MODELE', () => {
     expect(REGLAGES_MODELE.temperature).toBe(0)
     // Une réponse n'est qu'un petit objet JSON ; un plafond bas borne le coût d'une réponse qui dérape.
     expect(REGLAGES_MODELE.max_tokens).toBeLessThanOrEqual(300)
+  })
+})
+
+// CE QUE L'ÉCRAN FAIT DE LA RÉPONSE — hors de la copie, donc gardé ici et non par le garde des copies.
+describe('lireProposition — la réponse de proposer-categorie, vérifiée plutôt que supposée', () => {
+  it('rend une proposition retenue avec sa catégorie et son extrait', () => {
+    expect(lireProposition({ issue: 'retenue', categorieId: 'c1', indice: 'FOUR MICRO-ONDES' }))
+      .toEqual({ issue: 'retenue', categorieId: 'c1', indice: 'FOUR MICRO-ONDES' })
+  })
+
+  it('ne rend JAMAIS l’extrait d’une proposition écartée — ce serait montrer ce que la vérification a rejeté', () => {
+    expect(lireProposition({ issue: 'indice absent du texte', categorieId: 'c1', indice: 'inventé' }))
+      .toEqual({ issue: 'indice absent du texte', categorieId: null, indice: null })
+  })
+
+  it('lève sur une catégorie retenue sans son extrait', () => {
+    expect(() => lireProposition({ issue: 'retenue', categorieId: 'c1', indice: null })).toThrow(/sans son extrait/)
+    expect(() => lireProposition({ issue: 'retenue', categorieId: 'c1', indice: '   ' })).toThrow(/sans son extrait/)
+    expect(() => lireProposition({ issue: 'retenue', categorieId: null, indice: 'FOUR' })).toThrow(/sans son extrait/)
+  })
+
+  it('lève sur une issue inconnue — y compris un nom que tout objet porte par son prototype', () => {
+    for (const issue of ['toString', 'constructor', 'acceptee', 42, undefined]) {
+      expect(() => lireProposition({ issue, categorieId: null, indice: null }), String(issue)).toThrow(/inattendue/)
+    }
+    expect(() => lireProposition(null)).toThrow(/inattendue/)
+  })
+})
+
+describe('libelleIssue — ce que chaque issue veut dire pour l’opérateur', () => {
+  const ISSUES: IssueProposition[] = [
+    'retenue', 'abstention', 'code inconnu', 'indice manquant', 'indice absent du texte', 'réponse illisible',
+  ]
+
+  it('a une phrase, et une phrase DISTINCTE, pour chaque issue — et chacune est une issue que lireProposition accepte', () => {
+    const phrases = ISSUES.map(libelleIssue)
+    for (const phrase of phrases) expect(phrase.trim().length).toBeGreaterThan(0)
+    expect(new Set(phrases).size).toBe(ISSUES.length)
+    for (const issue of ISSUES) {
+      const reponse = issue === 'retenue' ? { issue, categorieId: 'c1', indice: 'FOUR' } : { issue }
+      expect(lireProposition(reponse).issue).toBe(issue)
+    }
+  })
+
+  it('ne présente une proposition écartée que comme écartée, jamais comme une catégorie', () => {
+    for (const issue of ['code inconnu', 'indice manquant', 'indice absent du texte', 'réponse illisible'] as const) {
+      expect(libelleIssue(issue)).toMatch(/^Proposition écartée/)
+    }
+  })
+
+  it('énumère les issues du CONTRAT : chaque issue que verifierProposition peut rendre y figure', () => {
+    // Le `Record` du module le garantit à la compilation ; ce test le garantit à l'exécution, sur les
+    // issues réellement produites par la vérification.
+    const codes = ['honoraires']
+    const produites = new Set([
+      verifierProposition('{"categorie":"honoraires","indice":"Consultation"}', codes, 'Consultation').issue,
+      verifierProposition('{"categorie":null}', codes, 'x').issue,
+      verifierProposition('{"categorie":"autre","indice":"Consultation"}', codes, 'Consultation').issue,
+      verifierProposition('{"categorie":"honoraires"}', codes, 'Consultation').issue,
+      verifierProposition('{"categorie":"honoraires","indice":"Absent"}', codes, 'Consultation').issue,
+      verifierProposition('illisible', codes, 'x').issue,
+    ])
+    expect([...produites].sort()).toEqual([...ISSUES].sort())
   })
 })

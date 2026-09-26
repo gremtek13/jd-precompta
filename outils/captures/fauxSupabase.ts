@@ -35,6 +35,7 @@ const categories: Ligne[] = [
   ['c5', 'Entretien du véhicule', '615500', 'entretien'],
   ['c6', 'Loyer', '613200', 'loyer'],
   ['c7', 'Fournitures de bureau', '606400', 'fournitures'],
+  ['c8', 'Logiciels et abonnements', '651000', 'frais_divers'],
 ].map(([id, libelle, compte_comptable, poste_2035], i) => ({
   id, libelle, compte_comptable, poste_2035, code: String(id), dossier_id: null, ordre: i,
 }))
@@ -89,6 +90,12 @@ const TABLES: Record<string, Ligne[]> = {
   dossiers,
   categories,
   pieces,
+  // Le texte « lu » de la seule pièce sans catégorie : c'est ce qui fait offrir « Proposer une
+  // catégorie » dans sa fiche. Écrit ici, fictif comme le reste.
+  piece_textes_ocr: [{
+    id: 't8', dossier_id: 'd1', piece_id: 'p8', document_id: null,
+    texte: 'LOGISOINS SAS\nFacture n° 2026-0818\nAbonnement mensuel LogiSoins Premium — gestion des tournées et télétransmission\nTotal TTC 29,00 €',
+  }],
   lignes_bancaires: [
     ligne('l1', '2026-09-15', 'PRLV SEPA TELECOM PLUS', -39.99, 'non_rapprochee', null),
     ligne('l2', '2026-09-11', 'CB PHARMA DISTRIB SUD', -186.4, 'non_rapprochee', null),
@@ -160,5 +167,11 @@ export const supabase = {
       remove: () => Promise.resolve({ data: null, error: null }),
     }),
   },
-  functions: { invoke: () => Promise.resolve({ data: null, error: { message: 'maquette' } }) },
+  // « Proposer une catégorie » répond une proposition retenue, avec un extrait LONG : c'est lui qui
+  // éprouve le passage à la ligne dans le volet. Tout le reste reste une maquette.
+  functions: {
+    invoke: (nom: string) => Promise.resolve(nom === 'proposer-categorie'
+      ? { data: { issue: 'retenue', categorieId: 'c8', indice: 'Abonnement mensuel LogiSoins Premium — gestion des tournées et télétransmission' }, error: null }
+      : { data: null, error: { message: 'maquette' } }),
+  },
 }

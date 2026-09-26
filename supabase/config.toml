@@ -44,6 +44,11 @@ verify_jwt = true
 [functions.extract-piece]
 verify_jwt = true
 
+# Appelée par la fiche d'une pièce, avec la session de l'opérateur ; la fonction vérifie ensuite
+# qu'il administre le dossier de la pièce. Aucun appelant sans jeton : `true` ne coupe rien.
+[functions.proposer-categorie]
+verify_jwt = true
+
 # Webhook Resend : l'appelant ne porte AUCUN jeton. `true` couperait les e-mails entrants en silence.
 [functions.receive-email]
 verify_jwt = false

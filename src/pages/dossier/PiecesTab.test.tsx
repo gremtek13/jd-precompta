@@ -28,6 +28,9 @@ const faux = vi.hoisted(() => ({
   // fenêtre pendant laquelle l'opérateur peut ouvrir une autre pièce.
   majPieces: [] as { id: unknown; valeur: Record<string, unknown> }[],
   retenueMaj: null as Promise<void> | null,
+  // Les pièces dont le texte OCR est en base, et l'échec éventuel de cette lecture.
+  avecTexte: new Set<string>(),
+  erreurPresence: null as string | null,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -102,7 +105,7 @@ vi.mock('../../lib/doublonsTexte', () => ({ chargerDoublonsDeTexte: async () => 
 // relecture (une lecture refusée retire le bouton, parce que sa présence coûte des appels Textract
 // facturés). Une doublure qui invente ses champs fait planter l'écran avant le premier test.
 vi.mock('../../lib/texteOcr', () => ({
-  piecesAvecTexteOcr: async () => ({ avecTexte: new Set<string>(), erreur: null }),
+  piecesAvecTexteOcr: async () => ({ avecTexte: faux.avecTexte, erreur: faux.erreurPresence }),
   texteOcrDeLaPiece: async () => null,
 }))
 
@@ -133,6 +136,8 @@ function poser(pieces: unknown[], commentaires: PieceCommentaire[] = []) {
   faux.refusSuppression = null
   faux.majPieces = []
   faux.retenueMaj = null
+  faux.avecTexte = new Set()
+  faux.erreurPresence = null
   faux.parTable = {
     pieces, categories: [], sous_dossiers: [], tiers_categories: [],
     tiers_categories_cabinet: [], piece_commentaires: commentaires, lignes_bancaires: [],
@@ -471,5 +476,43 @@ describe('PiecesTab — la fiche d’une pièce dans le panneau de droite', () =
     await act(async () => { relacher() })
     expect(titreFiche()).toBe('Justificatif 2 sur 3')
     expect(within(volet()).getByText('BETA')).toBeTruthy()
+  })
+})
+
+// « PROPOSER UNE CATÉGORIE » n'a de sens que sur une pièce dont le texte a été lu : c'est lui que le
+// modèle cite. L'écran le SAIT par la liste des textes présents, et c'est ce câblage-là qu'aucun test
+// de la fiche ne peut voir — la fiche reçoit un booléen, elle ne sait pas d'où il vient.
+describe('PiecesTab — la fiche n’offre la proposition de catégorie que si elle a quelque chose à citer', () => {
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  const proposer = () => within(volet()).queryByRole('button', { name: /Proposer une catégorie/ })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+
+  it('l’offre sur une pièce dont le texte est lu', async () => {
+    poser([piece({ id: 'p1', tiers: 'ALPHA' })])
+    faux.avecTexte = new Set(['p1'])
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(proposer()).toBeTruthy()
+  })
+
+  it('ne l’offre pas sur une pièce qui n’en a pas — le bouton n’aurait rien à citer', async () => {
+    poser([piece({ id: 'p1', tiers: 'ALPHA' })])
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByLabelText('Montant TTC')).toBeTruthy()
+    expect(proposer()).toBeNull()
+  })
+
+  it('l’offre dans le doute, quand la liste des textes n’a pas pu être lue', async () => {
+    // Refuser ici coûterait une fonctionnalité sur une panne de lecture ; laisser le bouton ne coûte
+    // rien de plus — la fonction refuse une pièce sans texte AVANT d'appeler le modèle.
+    poser([piece({ id: 'p1', tiers: 'ALPHA' })])
+    faux.erreurPresence = 'lecture refusée'
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(proposer()).toBeTruthy()
   })
 })

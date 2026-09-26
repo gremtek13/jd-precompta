@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FichePiece from './FichePiece'
 import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
-import type { Piece } from '../../lib/types'
+import type { Categorie, Piece, TiersCategorie } from '../../lib/types'
 
 // Le verrou d'exécution de l'enregistrement d'une pièce (CLAUDE.md, « un verrou d'exécution est un
 // `useRef`, jamais un état React »). C'est le dernier des quatre verrous corrigés le 20/09/2026 à
@@ -24,6 +24,12 @@ const faux = vi.hoisted(() => ({
   // La promesse du premier `insert` reste EN ATTENTE : c'est la fenêtre réelle pendant laquelle un
   // second envoi arrive. La résoudre tout de suite supprimerait la fenêtre que le verrou ferme.
   resoudreInsert: null as null | ((v: unknown) => void),
+  updates: [] as unknown[],
+  // Les appels aux Edge Functions, et la réponse programmée par chaque test — `null` la laisse EN
+  // ATTENTE, pour ouvrir la fenêtre pendant laquelle un second clic arrive.
+  invocations: [] as { nom: string; corps: unknown }[],
+  reponseFonction: null as null | { data: unknown; error: unknown },
+  resoudreFonction: null as null | ((v: { data: unknown; error: unknown }) => void),
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -35,7 +41,10 @@ vi.mock('../../lib/supabase', () => ({
             faux.inserts.push(ligne)
             return new Promise((resolve) => { faux.resoudreInsert = resolve })
           },
-          update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+          update: (ligne: unknown) => {
+            faux.updates.push(ligne)
+            return { eq: () => Promise.resolve({ error: null }) }
+          },
           delete: () => ({
             eq: (_c: string, id: unknown) => {
               faux.suppressions.push(id)
@@ -58,6 +67,13 @@ vi.mock('../../lib/supabase', () => ({
       }),
     },
     auth: { getUser: () => Promise.resolve({ data: { user: { id: 'u1' } } }) },
+    functions: {
+      invoke: (nom: string, options: { body: unknown }) => {
+        faux.invocations.push({ nom, corps: options.body })
+        if (faux.reponseFonction) return Promise.resolve(faux.reponseFonction)
+        return new Promise((resolve) => { faux.resoudreFonction = resolve })
+      },
+    },
   },
 }))
 
@@ -226,5 +242,184 @@ describe('FichePiece — supprimer une pièce dit ce que ça défait', () => {
     await act(async () => { bouton.click() })
 
     expect(faux.suppressions).toEqual(['piece-1'])
+  })
+})
+
+// « PROPOSER UNE CATÉGORIE » — la ligne 25 de la feuille de route, et le contrat de
+// `lib/categorisationIa.ts` vu depuis l'écran. La fonction qui répond est doublée au niveau de
+// `functions.invoke`, pas du module qui l'appelle : la vraie lecture de la réponse et le vrai message
+// d'erreur tournent donc ici, et le CORPS envoyé est vérifié.
+//
+// Ce que ces tests gardent, qu'aucun test de `src/lib` ne peut voir : que la proposition ne REMPLIT
+// le champ que sur le clic de l'opérateur et n'écrit RIEN en base ; qu'une règle apprise passe avant
+// le modèle, qui coûte ; que le type affiché part avec la demande ; et que chaque clic — un appel
+// facturé — passe par un verrou.
+
+const CATEGORIES: Categorie[] = [
+  { id: 'cat-fournitures', dossier_id: null, code: 'fournitures', libelle: 'Fournitures', ordre: 1, compte_comptable: '606000', poste_2035: 'Achats' },
+  { id: 'cat-ventes', dossier_id: null, code: 'ventes', libelle: 'Ventes / prestations', ordre: 2, compte_comptable: '706000', poste_2035: 'Recettes' },
+]
+
+const RETENUE = { data: { issue: 'retenue', categorieId: 'cat-fournitures', indice: 'FOUR MICRO-ONDES' }, error: null }
+
+function monterPourProposer(o: { piece?: Partial<Piece>; regles?: TiersCategorie[]; sansTexteLu?: boolean } = {}) {
+  faux.inserts = []
+  faux.updates = []
+  faux.invocations = []
+  faux.resoudreFonction = null
+  render(
+    <FichePiece
+      dossierId="d1"
+      categories={CATEGORIES}
+      sousDossiers={[]}
+      tiersCategories={o.regles ?? []}
+      tiersCategoriesCabinet={[]}
+      tiersConnus={[]}
+      piece={pieceDeTest({ tiers: 'Boulanger Marseille', statut: 'a_valider', ...o.piece })}
+      commentaires={[]}
+      onClose={() => {}}
+      onSaved={() => {}}
+      onCommentaireAjoute={() => {}}
+      onCommentaireSupprime={() => {}}
+      sansTexteLu={o.sansTexteLu}
+    />,
+  )
+}
+
+const champCategorie = () => document.querySelector<HTMLSelectElement>('#categorie')!
+const boutonProposer = () => screen.queryByRole('button', { name: /Proposer une catégorie/ })
+
+describe('FichePiece — proposer une catégorie', () => {
+  beforeEach(() => { faux.reponseFonction = RETENUE })
+
+  it('propose sur un clic, montre l’extrait qui la justifie, et ne remplit rien tout seul', async () => {
+    monterPourProposer()
+    await act(async () => { boutonProposer()!.click() })
+
+    expect(faux.invocations).toEqual([{ nom: 'proposer-categorie', corps: { pieceId: 'piece-1', typePiece: 'achat' } }])
+    // Le libellé de la liste de la fiche — « Fournitures » est aussi une option du champ.
+    expect(document.querySelector('.proposition-categorie strong')?.textContent).toBe('Fournitures')
+    expect(screen.getByText(/« FOUR MICRO-ONDES »/)).toBeTruthy()
+    // Proposée n'est pas appliquée : le champ attend le clic.
+    expect(champCategorie().value).toBe('')
+    expect(faux.updates).toHaveLength(0)
+    expect(faux.inserts).toHaveLength(0)
+  })
+
+  it('« Appliquer » remplit le champ — et n’enregistre toujours rien', async () => {
+    monterPourProposer()
+    await act(async () => { boutonProposer()!.click() })
+    await act(async () => { screen.getByRole('button', { name: 'Appliquer' }).click() })
+
+    expect(champCategorie().value).toBe('cat-fournitures')
+    // Le bloc s'efface : une catégorie est choisie, il n'y a plus rien à proposer.
+    expect(screen.queryByRole('button', { name: 'Appliquer' })).toBeNull()
+    expect(faux.updates).toHaveLength(0)
+    expect(faux.inserts).toHaveLength(0)
+  })
+
+  it('« Écarter » retire la proposition sans rien appliquer', async () => {
+    monterPourProposer()
+    await act(async () => { boutonProposer()!.click() })
+    await act(async () => { screen.getByRole('button', { name: 'Écarter' }).click() })
+
+    expect(champCategorie().value).toBe('')
+    expect(screen.queryByText(/FOUR MICRO-ONDES/)).toBeNull()
+    expect(boutonProposer()).toBeTruthy()
+  })
+
+  it('envoie le type AFFICHÉ, et une proposition faite pour un autre type ne se montre plus', async () => {
+    monterPourProposer()
+    fireEvent.change(document.querySelector('#type')!, { target: { value: 'note_frais' } })
+    await act(async () => { boutonProposer()!.click() })
+    expect(faux.invocations[0].corps).toEqual({ pieceId: 'piece-1', typePiece: 'note_frais' })
+    expect(screen.getByText(/FOUR MICRO-ONDES/)).toBeTruthy()
+
+    // Repassée en vente, la pièce ne se voit plus proposer une catégorie de dépense.
+    fireEvent.change(document.querySelector('#type')!, { target: { value: 'vente' } })
+    expect(screen.queryByText(/FOUR MICRO-ONDES/)).toBeNull()
+    expect(boutonProposer()).toBeTruthy()
+  })
+
+  it('dit pourquoi une proposition est écartée, sans rien montrer à appliquer', async () => {
+    faux.reponseFonction = { data: { issue: 'indice absent du texte', categorieId: null, indice: null }, error: null }
+    monterPourProposer()
+    await act(async () => { boutonProposer()!.click() })
+
+    expect(screen.getByText(/l’extrait cité pour la justifier ne figure pas dans le document/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Appliquer' })).toBeNull()
+  })
+
+  it('dit l’erreur que la fonction a rendue, pas un repli', async () => {
+    faux.reponseFonction = {
+      data: null,
+      error: { context: new Response(JSON.stringify({ error: 'Pièce introuvable.' }), { status: 404 }) },
+    }
+    monterPourProposer()
+    await act(async () => { boutonProposer()!.click() })
+    expect(screen.getByText('Pièce introuvable.')).toBeTruthy()
+  })
+
+  it('une catégorie proposée hors de la liste de la fiche ne se pose pas dans le champ', async () => {
+    faux.reponseFonction = { data: { issue: 'retenue', categorieId: 'cat-inconnue', indice: 'FOUR MICRO-ONDES' }, error: null }
+    monterPourProposer()
+    await act(async () => { boutonProposer()!.click() })
+    expect(screen.getByText(/n’est pas dans la liste de ce dossier/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Appliquer' })).toBeNull()
+  })
+
+  // LE VERROU : chaque clic est un appel au modèle FACTURÉ. Les clics partent dans le MÊME `act`, et
+  // il en faut TROIS pour distinguer un verrou posé avant le `try` d'un verrou posé dedans.
+  it('trois clics rapprochés ne font qu’un appel', async () => {
+    faux.reponseFonction = null
+    monterPourProposer()
+    const bouton = boutonProposer()!
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.invocations).toHaveLength(1)
+    await act(async () => { faux.resoudreFonction?.(RETENUE) })
+    expect(screen.getByText(/FOUR MICRO-ONDES/)).toBeTruthy()
+  })
+
+  it('relâche le verrou sur un échec, pour laisser réessayer', async () => {
+    faux.reponseFonction = null
+    monterPourProposer()
+    await act(async () => { boutonProposer()!.click() })
+    await act(async () => { faux.resoudreFonction?.({ data: null, error: new Error('Réseau coupé') }) })
+    expect(screen.getByText('Réseau coupé')).toBeTruthy()
+
+    faux.reponseFonction = RETENUE
+    await act(async () => { boutonProposer()!.click() })
+    expect(faux.invocations).toHaveLength(2)
+    expect(screen.getByText(/FOUR MICRO-ONDES/)).toBeTruthy()
+  })
+
+  it('une règle apprise passe avant le modèle : elle se propose, et le modèle n’est pas offert', async () => {
+    const regle: TiersCategorie = {
+      id: 'r1', dossier_id: 'd1', tiers_normalise: 'boulanger marseille', categorie_id: 'cat-fournitures', updated_at: '2026-03-01T00:00:00Z',
+    }
+    monterPourProposer({ regles: [regle] })
+    expect(boutonProposer()).toBeNull()
+    expect(screen.getByText(/Une règle apprise range ce fournisseur en/)).toBeTruthy()
+
+    await act(async () => { screen.getByRole('button', { name: 'Appliquer' }).click() })
+    expect(champCategorie().value).toBe('cat-fournitures')
+    expect(faux.invocations).toHaveLength(0)
+  })
+
+  // GARDES SYMÉTRIQUES : sans elles, « le bouton s'affiche » serait satisfait par un bouton qui
+  // s'afficherait partout — sur une pièce sans texte à citer, déjà catégorisée, ou pas encore créée.
+  it('ne s’offre pas sur une pièce dont on SAIT qu’elle n’a pas de texte lu', () => {
+    monterPourProposer({ sansTexteLu: true })
+    expect(boutonProposer()).toBeNull()
+  })
+
+  it('ne s’offre pas quand une catégorie est déjà choisie', () => {
+    monterPourProposer({ piece: { categorie_id: 'cat-ventes' } })
+    expect(boutonProposer()).toBeNull()
+  })
+
+  it('ne s’offre pas sur une pièce en cours de création', () => {
+    monter()
+    expect(boutonProposer()).toBeNull()
   })
 })

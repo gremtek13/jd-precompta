@@ -127,10 +127,10 @@ gardés ; la présence des VALEURS se vérifie à la main, au moment de la repri
 
 | Variable | Lue par | Ce qu'il faut savoir |
 |---|---|---|
-| `AWS_ACCESS_KEY_ID` | `agent-comptable`, `evaluer-extraction`, `extract-piece` | Identifiant de l'utilisateur IAM `jd-precompta-textract`. Les trois fonctions partagent les MÊMES identifiants : sa policy doit donc autoriser Textract, S3 et Bedrock, ce dernier dans deux régions (celle de `AWS_REGION`, et `eu-west-1` pour l'assistant). La liste exacte des actions : `src/lib/edgeFunctionsIam.test.ts`. |
-| `AWS_SECRET_ACCESS_KEY` | `agent-comptable`, `evaluer-extraction`, `extract-piece` | Le secret qui va avec. |
+| `AWS_ACCESS_KEY_ID` | `agent-comptable`, `evaluer-extraction`, `extract-piece`, `proposer-categorie` | Identifiant de l'utilisateur IAM `jd-precompta-textract`. Les quatre fonctions partagent les MÊMES identifiants : sa policy doit donc autoriser Textract, S3 et Bedrock, ce dernier dans deux régions (celle de `AWS_REGION`, et `eu-west-1` pour l'assistant). La liste exacte des actions : `src/lib/edgeFunctionsIam.test.ts`. |
+| `AWS_SECRET_ACCESS_KEY` | `agent-comptable`, `evaluer-extraction`, `extract-piece`, `proposer-categorie` | Le secret qui va avec. |
 | `AWS_SESSION_TOKEN` | `agent-comptable` | À laisser vide. Il ne sert qu'à des identifiants temporaires, et seul l'assistant le transmet : avec de tels identifiants, l'assistant marcherait et la lecture des pièces échouerait. Ceux d'un utilisateur IAM sont permanents. |
-| `AWS_REGION` | `evaluer-extraction`, `extract-piece` | Région de la lecture (Textract) et de la citation (Bedrock) : `eu-central-1`, mesuré le 21/09/2026. Absente, le code retombe sur la même ; une région hors de l'UE serait un transfert (RGPD.md §8.1). L'assistant ne la lit pas : sa région est écrite dans son code. |
+| `AWS_REGION` | `evaluer-extraction`, `extract-piece`, `proposer-categorie` | Région de la lecture (Textract), de la citation des champs et de la proposition de catégorie (Bedrock) : `eu-central-1`, mesuré le 21/09/2026. Absente, le code retombe sur la même ; une région hors de l'UE serait un transfert (RGPD.md §8.1). L'assistant ne la lit pas : sa région est écrite dans son code. |
 | `AWS_TEXTRACT_BUCKET` | `extract-piece` | Seau S3 où un PDF séjourne le temps de sa lecture, dans la région de `AWS_REGION`. Sans lui, les images se lisent et **aucun PDF** — c'est-à-dire la plupart des dépôts. |
 | `RESEND_API_KEY` | `receive-email`, `send-email` | Clé d'API Resend. Absente, plus aucun e-mail ne part, et aucun n'est accepté à l'arrivée. |
 | `RESEND_WEBHOOK_SECRET` | `receive-email` | Secret de signature du webhook de réception (`whsec_…`) — il change quand le webhook est recréé, voir le point 4. |

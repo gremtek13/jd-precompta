@@ -832,6 +832,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
             onSaved={load}
             onValidee={apresValidation}
             onModifiee={noterModification}
+            sansTexteLu={!presenceTexteIncertaine && !avecTexteOcr.has(editing.id)}
             onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
             onCommentaireSupprime={(id) => setCommentaires((prev) => prev.filter((c) => c.id !== id))}
           />
