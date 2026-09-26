@@ -897,7 +897,8 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   couple que ci-dessus : une moitié gardée par le code, l'autre par une vérification humaine.
 
 - **Qui voit quoi, c'est un essai rejouable qui le dit** — `supabase/essais/rls.sql`, par
-  impersonation réelle des trois profils sur les 41 tables du schéma **et sur les trois seaux de
+  impersonation réelle des trois profils sur toutes les tables du schéma (41 à sa création, 42 depuis
+  `a_nouveaux`) **et sur les trois seaux de
   stockage**, qui sont le vrai enjeu : les données de patients sont dans les FICHIERS, pas dans les
   tables (RGPD.md §4). Il a trouvé, à sa première exécution, ce qu'aucune relecture n'avait vu : un
   visiteur anonyme lisait les catégories et les natures d'immobilisation du cabinet (voir
@@ -1012,11 +1013,13 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   `agent-comptable`).
 - Export de pack (ZIP + Excel récapitulatif) à la demande, export global
   d'un cabinet, export de sauvegarde avant suppression d'un dossier/cabinet.
-- Reprise d'un dossier venu d'un autre logiciel, première brique : lecture et
-  CONTRÔLE d'une balance générale (`BalanceCard`, onglet Informations) — colonnes
-  reconnues à leur contenu, contrôle débit = crédit, lignes écartées avec leur
-  motif. Rien n'est enregistré, et l'écran le dit : aucune table ne porte encore
-  de balance reprise.
+- Reprise d'un dossier venu d'un autre logiciel (`BalanceCard`, onglet Informations) : lecture
+  et CONTRÔLE d'une balance générale — colonnes reconnues à leur contenu, contrôle débit = crédit,
+  lignes écartées avec leur motif — puis, sur le clic du cabinet et après lui avoir montré ce qui
+  sera écrit, ses soldes de bilan deviennent les À-NOUVEAUX du dossier (26/09/2026, ligne 29 de la
+  feuille de route). Ils ouvrent le FEC (journal AN), la Balance des comptes et la piste d'audit de
+  leur exercice, et la trésorerie en part — voir « une balance reprise devient les à-nouveaux du
+  dossier » dans « Problèmes connus ».
 - Sauvegarde et restauration d'un dossier (`lib/sauvegarde.ts` pour le socle pur,
   `lib/sauvegardeDonnees.ts` pour les lectures/écritures, `lib/sauvegardeFichier.ts`
   pour le fichier). Téléchargement depuis l'onglet Informations d'un dossier,
@@ -4807,6 +4810,91 @@ d'environnement dans la même édition.
   centaines de lignes, la dérive des flottants afficherait un écart qui n'est qu'un artefact de
   représentation. La tolérance d'un centime absorbe les arrondis de présentation et rien d'autre —
   deux lignes manquantes ne font pas un centime.
+- **UNE BALANCE REPRISE DEVIENT LES À-NOUVEAUX DU DOSSIER — décision du cabinet, 26/09/2026** (ligne
+  29 de la feuille de route), préférée à une comparaison avec la balance de l'application ou à une
+  simple référence affichée. Sans elle, un dossier repris partait de ZÉRO : la trésorerie, la
+  situation intermédiaire et le plan qu'on montre à une banque ne comptaient que les écritures
+  passées dans l'application, donc partaient d'un chiffre faux dès que le compte existait avant.
+  **Ce qui est écrit** : la table `a_nouveaux` (migration `creation_a_nouveaux`), une ligne par ligne
+  de balance, avec le numéro lu dans le fichier (`compte_origine`), le nom et l'empreinte SHA-256 du
+  fichier — le justificatif de l'ouverture dans la piste d'audit. **Une seule ouverture par
+  dossier** : le déclencheur `a_nouveaux_une_seule_ouverture` refuse (23514) une seconde date ou une
+  seconde balance, et `enregistrer_a_nouveaux` REMPLACE l'ouverture en une transaction, sous un
+  verrou consultatif par dossier — sans lui, deux enregistrements concurrents passeraient chacun le
+  déclencheur sans voir les lignes de l'autre. La fonction est `SECURITY INVOKER` (la RLS s'applique
+  dedans), vérifie l'accès elle-même, et refuse une date qui n'est pas un 1er janvier (22023), un
+  jeu vide (22023) et un déséquilibre au centime (23514). Policy `FOR ALL to authenticated` sur
+  `admin_du_dossier` : le client ne la voit pas, un solde de bilan n'étant pas de ce qu'on lui montre.
+  **Cinq règles de préparation** (`lib/aNouveaux.ts`, pur, montré AVANT d'écrire) : seuls les comptes
+  de bilan s'ouvrent (classes 1 à 5) ; le résultat de l'exercice précédent — les classes 6 et 7
+  d'une balance d'avant clôture — est repris en 120 (bénéfice) ou 129 (perte) EN ATTENTE
+  D'AFFECTATION, l'application ne décidant pas de son affectation ; une classe 8 non soldée fait
+  REFUSER, c'est la marque d'écritures de clôture (891) qui ont retiré les comptes de bilan ; les
+  comptes 512… sont ramenés au compte banque de l'application et une TVA écrite sur une autre
+  longueur à son équivalent (44566 → 445660), sans quoi le FEC ouvrirait la banque sur un compte et
+  la ferait bouger sur un autre ; et l'équilibre se juge en CENTIMES ENTIERS, exactement —
+  `controlerBalance` tolère un centime d'arrondi d'export pour dire « équilibrée », une ouverture non.
+  **Ce que l'ouverture change, usage par usage** :
+  - **Trésorerie** (`soldeBanqueADate` : tuile, plan et situation intermédiaire de Financement ;
+    `soldesFinDeMois` : tuile de la Vue d'ensemble). À partir de sa date, l'ouverture REMPLACE tout
+    le flux antérieur, qui y est déjà ; une écriture du jour même compte. Avant elle, aucun solde de
+    départ n'est connu, et la réserve le dit au lieu d'annoncer un cumul depuis zéro. Des à-nouveaux
+    sans ligne de banque disent une banque SOLDÉE à la reprise : un zéro connu, pas une absence.
+  - **FEC** : journal AN en tête, une seule écriture `AN00001`, triée par compte. Le CompteLib de la
+    banque et de la TVA reste celui de l'application — un CompteNum ne porte qu'un CompteLib dans tout
+    le fichier —, et le numéro d'origine vit dans le libellé d'écriture. Le FEC d'un exercice qui n'a
+    encore que son ouverture s'exporte.
+  - **Balance des comptes** : comprises dans les totaux de l'exercice qu'elles ouvrent, jamais d'un
+    autre. Toutes années confondues, une écriture ANTÉRIEURE à l'ouverture compte deux fois sur les
+    comptes de bilan, et l'écran le dit — seulement quand c'est le cas, jamais sur un exercice choisi.
+  - **Piste d'audit** : une ligne par à-nouveau, justifiée par le fichier de balance et son empreinte.
+  **Leur lecture a son PROPRE drapeau partout**, jamais fondu dans le voisin : dans Écritures, le
+  drapeau du brouillon suspend la GÉNÉRATION, que les à-nouveaux ne commandent pas — une ouverture lue
+  à moitié bloque les deux exports et rien d'autre ; dans Financement, le drapeau commun suspend le
+  PRÉREMPLISSAGE du prévisionnel. Et **sur la Vue d'ensemble, une ouverture illisible ne laisse ni
+  montant ni couleur** : un dossier repris compté depuis zéro passerait au ROUGE sur un compte qui
+  porte de l'argent.
+  **CETTE TUILE A FAILLI ÊTRE OUBLIÉE**, et c'est « chercher toutes les copies avant de corriger la
+  première » appliqué au solde de banque : `soldeBanqueADate` avait été branché sur les trois usages
+  de Financement, et la Vue d'ensemble calcule le sien ailleurs, avec un statut « danger » dès qu'il
+  est négatif. Trouvé en balayant `COMPTE_BANQUE` sur tout `src/`, APRÈS la campagne de mutations —
+  qui ne pouvait pas le voir, puisqu'elle ne mute que le code qu'on a écrit. `soldesFinDeMois` prend
+  désormais l'ouverture en paramètre OBLIGATOIRE.
+  **CE QUI NE LES LIT PAS, dit plutôt que promis** :
+  - **L'assistant comptable** : `lister_comptes` se décrit comme les totaux « du brouillon
+    d'écritures » et ne les compte pas ; sur un dossier repris, il annoncera d'autres soldes que la
+    Balance des comptes. Le corriger demande de redéployer `agent-comptable` — hors des quatre usages
+    nommés par le cabinet (trésorerie, balance, FEC, piste), donc pas fait en passant.
+  - **La 2035**, qui n'est pas concernée : recettes et dépenses, jamais un compte de bilan.
+  - **Le report d'un exercice sur l'autre** (ligne 34) reste entier : l'ouverture ne vient aujourd'hui
+    QUE d'une balance reprise, et il n'y en a qu'UNE par dossier. Des exercices ouverts successivement
+    par l'application demanderont une ouverture par exercice — c'est le déclencheur qu'il faudra
+    rouvrir, pas contourner.
+  **Vérifié en base par impersonation réelle, quinze contrôles** : anonyme refusé sur la fonction
+  (pas d'`EXECUTE`) ; compte rattaché à rien et client refusés par « Accès refusé à ce dossier. », le
+  client sur SON propre dossier aussi ; insertion directe du client refusée en 42501 ; les trois
+  lisent ZÉRO ligne pendant que deux existent ; le chef écrit et relit — le contrôle POSITIF, sans
+  lequel ces refus seraient satisfaits par une fonction qui refuse tout le monde ; un second
+  enregistrement REMPLACE le premier ; le déclencheur refuse une autre date ; un déséquilibre et un
+  compte de classe 6 sont refusés en laissant le jeu précédent intact ; une date hors 1er janvier est
+  refusée ; et rien ne reste en base après l'essai. **`rls.sql` n'a PAS été rejoué en entier** —
+  même limite que le 22/09/2026 : la migration n'ajoute qu'une table et sa policy, que l'essai ciblé
+  couvre ; un changement plus large exigera le fichier entier. Le plan de sauvegarde l'inscrit à ses
+  trois endroits (`sauvegardeTables.test.ts` l'aurait refusée sinon), et l'export de schéma porte sa
+  migration (59 fichiers, empreinte revérifiée).
+  **Quatre-vingt-trois mutations, quatre-vingt-une mordent** ; les deux survivantes sont des secondes
+  ceintures que leur test écrit comme telles (la garde du gestionnaire d'enregistrement, le bouton
+  étant déjà grisé ; l'ouverture refusée sur une lecture partielle dans la Vue d'ensemble, que la
+  tuile masque déjà). **Deux ont d'abord survécu en accusant le JEU D'ESSAI** : le FEC recevait des
+  à-nouveaux déjà dans l'ordre des comptes, donc un tri absent passait ; et rien ne vérifiait que
+  l'avertissement « écriture antérieure » se TAISE sur un exercice choisi, où il crierait au loup.
+  **Deux autres mordaient pour une MAUVAISE raison**, et ont été réécrites : un équilibre jugé en
+  flottants ne se distingue pas sur des montants ronds (0,1 × 100 est exact), et la ligne « Depuis
+  l'ouverture » affichée sans ouverture faisait PLANTER l'écran — dix-sept tests tombaient sur le
+  plantage, aucun sur le défaut.
+  **Le banc de capture sert une ouverture fictive** (`outils/captures/fauxSupabase.ts`), sans quoi ces
+  affichages n'y paraîtraient jamais : zéro débordement sur les dix-sept onglets aux quatre largeurs,
+  et une balance déposée, préparation dépliée, ne déborde pas non plus à 1 280 et 1 440.
 - **Un relevé ne contient pas que des opérations.** Il porte aussi le solde d'ouverture et le solde
   de clôture. Importées comme des mouvements, ces deux lignes faussent tous les totaux bancaires
   (28 294,39 € de mouvements inexistants sur le premier relevé réel) et ne peuvent jamais être
@@ -5172,6 +5260,8 @@ d'environnement dans la même édition.
     doit alimenter — des à-nouveaux ? une comparaison avec la balance de l'application ? — serait
     deviner un choix produit. L'usage reste complet tel quel (« cet export est-il entier ? »), et
     l'écran DIT que rien n'est enregistré plutôt que de laisser croire à une reprise.
+    **Le cabinet a tranché le 26/09/2026 : des à-nouveaux** — voir « une balance reprise devient les
+    à-nouveaux du dossier ».
     **Le défaut que le module ne pouvait pas voir, parce qu'il reçoit déjà du texte** : un export
     comptable français sort souvent en CP1252, et « Charges à payer » décodé en UTF-8 indulgent
     devient « Charges Ã  payer » — or les libellés SONT les noms de comptes. On décode en UTF-8
@@ -5499,13 +5589,14 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1861 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1929 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
 l'import de relevés (`csv.ts` pour le CSV, `relevePdf.ts` pour le PDF), la lecture
 complète d'une collection malgré le plafond de PostgREST (`lectureComplete.ts`), la lecture
-d'une balance venue d'un autre logiciel (`balanceImport.ts`),
+d'une balance venue d'un autre logiciel (`balanceImport.ts`) et les à-nouveaux qu'on en tire
+(`aNouveaux.ts`),
 la génération des packs et l'export d'un cabinet
 (`packGenerator.ts`, `exportCabinet.ts`), la sauvegarde et la restauration d'un dossier
 (`sauvegarde.ts`, `sauvegardeDonnees.ts`, `sauvegardeFichier.ts`) et le dépôt de fichiers côté client

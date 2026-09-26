@@ -9,7 +9,7 @@ import {
 import { genererFec } from './fec'
 import { COMPTE_BANQUE } from './comptes'
 import { analyserEcritures } from './ecritures'
-import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', nom_fichier: `${id}.pdf`, chemin_stockage: '', statut: 'validee',
@@ -74,7 +74,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est absente du FEC', () => {
     const categories: Categorie[] = []
-    const lignes = genererFec([orpheline, saine], [piece('p1')], categories).split('\r\n').filter(Boolean)
+    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, []).split('\r\n').filter(Boolean)
     // En-tête + la seule écriture justifiée : l'orpheline n'y est pas.
     expect(lignes).toHaveLength(2)
     expect(lignes.join('\n')).not.toContain('199,99')
@@ -114,6 +114,7 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
       [ecriture({ compte: COMPTE_BANQUE, piece_id: 'p1', ligne_bancaire_id: 'l1', sens: 'credit' })],
       [piece('p1', { tiers: 'Transmedical', storage_hash: 'abc123', montant_ttc: 100 })],
       [ligneBancaire()],
+      [],
     )
     expect(lignes).toHaveLength(1)
     expect(lignes[0]).toMatchObject({
@@ -125,7 +126,7 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
   })
 
   it("nomme ce qui manque plutôt que de laisser des colonnes vides s'expliquer toutes seules", () => {
-    const lignes = pisteAudit([ecriture({ piece_id: null, montant: 199.99 })], [], [])
+    const lignes = pisteAudit([ecriture({ piece_id: null, montant: 199.99 })], [], [], [])
     expect(lignes[0].manque).toEqual(['justificatif'])
     expect(lignes[0].debit).toBe(199.99)
     expect(lignes[0].pieceEmpreinte).toBeNull()
@@ -135,7 +136,7 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
     // La seconde n'est PAS une rupture comptable : c'est un filtre de l'appelant (EcrituresTab ne
     // charge que les pièces validées). Les confondre ferait passer un artefact de chargement pour
     // une charge sans justificatif — l'erreur qui rend un avertissement inécoutable.
-    const lignes = pisteAudit([ecriture({ piece_id: 'p-absente' })], [], [])
+    const lignes = pisteAudit([ecriture({ piece_id: 'p-absente' })], [], [], [])
     expect(lignes[0].manque).toEqual(['justificatif hors du jeu chargé'])
   })
 
@@ -147,6 +148,7 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
       ],
       [piece('p1')],
       [],
+      [],
     )
     const parCompte = new Map(lignes.map((l) => [l.compte, l.manque]))
     expect(parCompte.get(COMPTE_BANQUE)).toEqual(['mouvement bancaire'])
@@ -157,19 +159,19 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
     // Ne peut pas venir d'une suppression (ON DELETE SET NULL tomberait dans « mouvement bancaire »)
     // mais seulement d'un jeu restreint par l'appelant — et une colonne vide muette se lit comme une
     // absence de preuve.
-    const lignes = pisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l-absente' })], [piece('p1')], [])
+    const lignes = pisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l-absente' })], [piece('p1')], [], [])
     expect(lignes[0].manque).toEqual(['mouvement hors du jeu chargé'])
     expect(lignes[0].mouvementMontant).toBeNull()
   })
 
   it("cumule les deux manques sur une contrepartie qui a tout perdu", () => {
     const lignes = pisteAudit(
-      [ecriture({ compte: COMPTE_BANQUE, piece_id: null, ligne_bancaire_id: null })], [], [])
+      [ecriture({ compte: COMPTE_BANQUE, piece_id: null, ligne_bancaire_id: null })], [], [], [])
     expect(lignes[0].manque).toEqual(['justificatif', 'mouvement bancaire'])
   })
 
   it("descend dans l'autre sens : un justificatif validé que rien ne comptabilise", () => {
-    const lignes = pisteAudit([], [piece('p9', { tiers: 'Boulanger', montant_ttc: 199.99 })], [])
+    const lignes = pisteAudit([], [piece('p9', { tiers: 'Boulanger', montant_ttc: 199.99 })], [], [])
     expect(lignes).toHaveLength(1)
     expect(lignes[0]).toMatchObject({
       ecritureId: null, compte: '', debit: 0, credit: 0,
@@ -180,27 +182,27 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
   it("nomme la date manquante d'une pièce non comptabilisée — elle n'est d'aucun exercice", () => {
     // Elle apparaîtra dans l'export de chaque exercice ; sans cette mention, sa présence se lirait
     // comme « elle est de cette année-là ».
-    const lignes = pisteAudit([], [piece('p9', { date_piece: null })], [])
+    const lignes = pisteAudit([], [piece('p9', { date_piece: null })], [], [])
     expect(lignes[0].manque).toEqual(['écriture', 'date'])
     expect(lignes[0].date).toBe('')
   })
 
   it("ne redouble pas une pièce déjà citée par une écriture", () => {
-    const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [piece('p1')], [])
+    const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [piece('p1')], [], [])
     expect(lignes).toHaveLength(1)
     expect(lignes[0].manque).toEqual([])
   })
 
   it('retombe sur le nom du fichier quand la pièce non comptabilisée n\'a pas de tiers', () => {
     // Une ligne de piste sans libellé ne désigne rien ; le nom du fichier est le dernier repère.
-    const lignes = pisteAudit([], [piece('p9', { tiers: null })], [])
+    const lignes = pisteAudit([], [piece('p9', { tiers: null })], [], [])
     expect(lignes[0].libelle).toBe('p9.pdf')
   })
 
   it('montre une empreinte absente comme absente, sans fabriquer une preuve', () => {
     // storage_hash est nul sur les pièces déposées avant l'introduction du champ. Afficher le nom
     // du fichier à la place laisserait croire à une preuve d'intégrité qui n'existe pas.
-    const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [piece('p1', { storage_hash: null })], [])
+    const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [piece('p1', { storage_hash: null })], [], [])
     expect(lignes[0].pieceEmpreinte).toBeNull()
     expect(lignes[0].pieceFichier).toBe('p1.pdf')
   })
@@ -215,6 +217,7 @@ describe('pisteAudit — un ordre chronologique, et le même à chaque export', 
         ecriture({ id: 'e-fevr', date: '2026-02-20' }),
       ],
       [piece('p1')], [],
+      [],
     )
     expect(lignes.map((l) => l.date)).toEqual(['2026-01-05', '2026-02-20', '2026-03-10'])
   })
@@ -222,7 +225,7 @@ describe('pisteAudit — un ordre chronologique, et le même à chaque export', 
   it('remonte les lignes sans date EN TÊTE, jamais noyées au milieu', () => {
     // Une pièce validée dont la date n'a pas été lue est exactement ce qu'il faut voir en premier :
     // elle n'appartient à aucun mois, donc à aucun exercice, et personne ne la cherchera au milieu.
-    const lignes = pisteAudit([], [piece('p1', { date_piece: '2026-06-01' }), piece('p2', { date_piece: null })], [])
+    const lignes = pisteAudit([], [piece('p1', { date_piece: '2026-06-01' }), piece('p2', { date_piece: null })], [], [])
     expect(lignes.map((l) => l.pieceId)).toEqual(['p2', 'p1'])
   })
 
@@ -232,9 +235,35 @@ describe('pisteAudit — un ordre chronologique, et le même à chaque export', 
     const a = ecriture({ id: 'e-b', compte: '606100' })
     const b = ecriture({ id: 'e-a', compte: '606100' })
     const c = ecriture({ id: 'e-c', compte: '401000' })
-    expect(pisteAudit([a, b, c], [piece('p1')], []).map((l) => l.ecritureId))
-      .toEqual(pisteAudit([c, a, b], [piece('p1')], []).map((l) => l.ecritureId))
-    expect(pisteAudit([a, b, c], [piece('p1')], []).map((l) => l.ecritureId)).toEqual(['e-c', 'e-a', 'e-b'])
+    expect(pisteAudit([a, b, c], [piece('p1')], [], []).map((l) => l.ecritureId))
+      .toEqual(pisteAudit([c, a, b], [piece('p1')], [], []).map((l) => l.ecritureId))
+    expect(pisteAudit([a, b, c], [piece('p1')], [], []).map((l) => l.ecritureId)).toEqual(['e-c', 'e-a', 'e-b'])
+  })
+})
+
+describe('pisteAudit — les à-nouveaux', () => {
+  const aNouveau = (o: Partial<ANouveau> = {}): ANouveau => ({
+    id: 'an-1', dossier_id: 'd1', date: '2026-01-01', compte: COMPTE_BANQUE, compte_origine: '51210000',
+    libelle: 'Banque Populaire', sens: 'debit', montant: 6000, source_nom: 'balance-2025.csv',
+    source_empreinte: 'f'.repeat(64), created_at: '2026-09-26T10:00:00Z', ...o,
+  })
+
+  it('les justifie par la balance reprise et son empreinte, sans rien déclarer manquant', () => {
+    const [ligne] = pisteAudit([], [], [], [aNouveau()])
+    expect(ligne).toMatchObject({
+      ecritureId: 'an-1', date: '2026-01-01', compte: COMPTE_BANQUE,
+      libelle: 'À-nouveau 51210000 Banque Populaire', debit: 6000, credit: 0,
+      pieceFichier: 'balance-2025.csv', pieceEmpreinte: 'f'.repeat(64), manque: [],
+    })
+  })
+
+  it('les range dans l’ordre chronologique, avec les écritures', () => {
+    const lignes = pisteAudit(
+      [ecriture({ id: 'e-mars', date: '2026-03-10', piece_id: 'p1' })],
+      [piece('p1')], [],
+      [aNouveau({ id: 'an-2', compte: '108', compte_origine: '108', sens: 'credit' }), aNouveau()],
+    )
+    expect(lignes.map((l) => l.ecritureId)).toEqual(['an-2', 'an-1', 'e-mars'])
   })
 })
 
@@ -244,6 +273,7 @@ describe('genererPisteAuditCsv', () => {
       [ecriture({ compte: COMPTE_BANQUE, piece_id: 'p1', ligne_bancaire_id: 'l1', montant: 1234.5 })],
       [piece('p1', { tiers: 'Transmedical', montant_ttc: 1234.5, storage_hash: 'abc' })],
       [ligneBancaire({ montant: -1234.5 })],
+      [],
     )
 
   it('écrit un en-tête et une ligne par ligne de piste', () => {
@@ -268,7 +298,7 @@ describe('genererPisteAuditCsv', () => {
 
   it('laisse une colonne vide plutôt que d\'écrire un zéro qui serait faux', () => {
     // Un montant de pièce absent n'est pas un montant nul : 0,00 se lirait comme « facture gratuite ».
-    const csv = genererPisteAuditCsv(pisteAudit([ecriture({ piece_id: null })], [], []))
+    const csv = genererPisteAuditCsv(pisteAudit([ecriture({ piece_id: null })], [], [], []))
     const champs = csv.split('\r\n')[1].split(';')
     expect(champs[7]).toBe('')
   })
@@ -277,7 +307,7 @@ describe('genererPisteAuditCsv', () => {
     // Même piège que le FEC : un libellé OCR porte des sauts de ligne et des guillemets, et un
     // point-virgule non protégé décale toutes les colonnes suivantes sans que rien ne le signale.
     const csv = genererPisteAuditCsv(
-      pisteAudit([ecriture({ piece_id: null, libelle: 'ACHAT ; "urgent"\nsuite du libellé' })], [], []))
+      pisteAudit([ecriture({ piece_id: null, libelle: 'ACHAT ; "urgent"\nsuite du libellé' })], [], [], []))
     expect(csv.split('\r\n')).toHaveLength(2)
     expect(csv).toContain('"ACHAT ; ""urgent"" suite du libellé"')
   })
@@ -287,7 +317,7 @@ describe('genererPisteAuditCsv', () => {
     // se lit sous « Date mouvement » de la suivante.
     const csv = genererPisteAuditCsv([
       ...uneLigne(),
-      ...pisteAudit([ecriture({ piece_id: null, libelle: 'a;b' })], [piece('p1', { tiers: 'X"Y' })], []),
+      ...pisteAudit([ecriture({ piece_id: null, libelle: 'a;b' })], [piece('p1', { tiers: 'X"Y' })], [], []),
     ])
     const lignes = csv.replace(/^\uFEFF/, '').split('\r\n')
     const nbColonnes = (l: string) => decouperCsv(l).length

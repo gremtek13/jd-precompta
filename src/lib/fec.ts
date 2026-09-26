@@ -1,4 +1,5 @@
-import type { Categorie, EcritureBrouillon, Piece } from './types'
+import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
+import { libelleEcritureANouveau } from './aNouveaux'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
@@ -46,11 +47,44 @@ export function libelleCompte(compte: string, categories: Categorie[]): string {
   return categories.find((c) => c.compte_comptable === compte)?.libelle ?? compte
 }
 
+// LES À-NOUVEAUX OUVRENT LE FICHIER. Un FEC commence par les écritures d'ouverture : sans elles, le
+// premier solde de chaque compte de bilan y paraît sortir de nulle part, et un contrôleur qui
+// recalcule la banque depuis le fichier ne retrouve pas le relevé. `aNouveaux` porte ceux de
+// l'exercice exporté — l'appelant filtre, comme pour les écritures. Une seule écriture, journal AN,
+// numérotée à part des autres journaux ; sa pièce est la balance reprise.
+//
+// CompteLib reste celui de l'application pour un compte qu'elle tient (la banque, la TVA) : un même
+// CompteNum ne porte qu'un libellé dans tout le fichier, et les mouvements de la banque l'appellent
+// « Banque ». Le numéro et le libellé de la balance d'origine passent dans EcritureLib.
+function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
+  return [...aNouveaux]
+    .sort((a, b) => a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
+    .map((a) => [
+      'AN',
+      'À-nouveaux',
+      'AN00001',
+      yyyymmdd(a.date),
+      champFec(a.compte),
+      champFec(LIBELLES_COMPTES_FIXES[a.compte] ?? (a.libelle || a.compte)),
+      '', '',
+      champFec(a.source_nom),
+      yyyymmdd(a.date),
+      champFec(libelleEcritureANouveau(a)),
+      a.sens === 'debit' ? montant(a.montant) : montant(0),
+      a.sens === 'credit' ? montant(a.montant) : montant(0),
+      '', '',
+      yyyymmdd(a.date),
+      '', '',
+    ].join('\t'))
+}
+
 // Regroupe les écritures par pièce (une pièce = une écriture FEC, EcritureNum commun à toutes ses
 // lignes), numérotées dans l'ordre chronologique à l'intérieur de leur journal — une vraie exigence
 // du format, pas un détail cosmétique : un contrôleur qui importe un FEC aux EcritureNum non
 // croissants dans un même journal le rejette.
-export function genererFec(ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[]): string {
+export function genererFec(
+  ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
+): string {
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
 
   const groupes = new Map<string, EcritureBrouillon[]>()
@@ -77,7 +111,7 @@ export function genererFec(ecritures: EcritureBrouillon[], pieces: Piece[], cate
     .sort((a, b) => a.date.localeCompare(b.date) || a.pieceId.localeCompare(b.pieceId))
 
   const compteurs: Record<string, number> = {}
-  const lignes: string[] = [ENTETES_FEC.join('\t')]
+  const lignes: string[] = [ENTETES_FEC.join('\t'), ...lignesANouveaux(aNouveaux)]
 
   for (const { pieceId, rows, date } of entrees) {
     const piece = pieceById.get(pieceId)

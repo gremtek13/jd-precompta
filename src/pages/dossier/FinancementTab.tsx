@@ -6,10 +6,11 @@ import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '..
 import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire, moisEcoulesDeLAnnee } from '../../lib/situationIntermediaire'
-import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, type EcheanceConnue } from '../../lib/planTresorerie'
+import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type EcheanceConnue, type OuvertureBanque } from '../../lib/planTresorerie'
+import { ouvertureBanque } from '../../lib/aNouveaux'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number }
@@ -29,6 +30,12 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [lignesBanque, setLignesBanque] = useState<LigneBanque[]>([])
+  // Le solde de la banque à l'ouverture d'un dossier repris d'un autre logiciel (voir
+  // lib/aNouveaux.ts) : sans lui, la trésorerie part de zéro à la première écriture.
+  const [ouverture, setOuverture] = useState<OuvertureBanque | null>(null)
+  // À part de `lectureIncomplete` : une ouverture lue à moitié fausse la trésorerie, et elle seule —
+  // le préremplissage du prévisionnel, que l'autre drapeau suspend, ne la lit pas.
+  const [ouvertureIncomplete, setOuvertureIncomplete] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState<Emprunt | 'new' | null>(null)
   const [echeancierDe, setEcheancierDe] = useState<Emprunt | null>(null)
@@ -50,6 +57,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       lectureImmobilisations,
       lectureCotisations,
       lectureBanque,
+      lectureANouveaux,
       { data: previsionnelData, error: previsionnelError },
     ] = await Promise.all([
       lireTout<Emprunt>((debut, fin) =>
@@ -82,6 +90,10 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
         supabase.from('ecritures_brouillon').select('date, sens, montant', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE).order('id').range(debut, fin),
       ),
+      lireTout<ANouveau>((debut, fin) =>
+        supabase.from('a_nouveaux').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
+      ),
       // QUATRIÈME COPIE DE « LECTURE → FORMULAIRE → UPSERT DE TOUS LES CHAMPS », par la porte que
       // le scanner ne regardait pas : une entrée de `Promise.all` s'écrit sans `await`. Les trois
       // premières (InformationsTab, ClientInformations, CabinetBrandingPage) sont corrigées depuis
@@ -97,6 +109,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
     setImmobilisations(lectureImmobilisations.lignes)
     setCotisations(lectureCotisations.lignes)
     setLignesBanque(lectureBanque.lignes as LigneBanque[])
+    setOuverture(ouvertureBanque(lectureANouveaux.lignes))
     setPrevisionnelIllisible(previsionnelError ? messageErreur(previsionnelError, "Le prévisionnel enregistré n'a pas pu être lu.") : null)
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
     // Six lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
@@ -105,13 +118,12 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       [lectureEmprunts, lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureBanque]
         .find((l) => !l.complete)?.motif ?? null,
     )
+    setOuvertureIncomplete(lectureANouveaux.motif)
     setLoading(false)
   }
   useEffect(() => { load() }, [dossierId])
 
-  const soldeBanque = lignesBanque.length > 0
-    ? Math.round(lignesBanque.reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0) * 100) / 100
-    : 0
+  const soldeBanque = soldeBanqueADate(lignesBanque, ouverture, aujourdHuiSql())
 
   async function supprimer(e: Emprunt) {
     if (!window.confirm(`Supprimer l'emprunt "${e.nom}" ? Cette action est irréversible.`)) return
@@ -134,6 +146,16 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
           'avant de l’éditer.'
         }
       />
+      <BandeauLecturePartielle
+        quoi="Les à-nouveaux du dossier"
+        accord="lus"
+        motif={ouvertureIncomplete}
+        consequence={
+          'La trésorerie ci-dessous — solde actuel, situation intermédiaire, plan — part donc d’une ' +
+          'ouverture incomplète. C’est le document qu’on présente à une banque — recharge la page avant ' +
+          'de l’éditer.'
+        }
+      />
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
         Échéancier des emprunts, situation intermédiaire et quelques ratios utiles pour un dossier
         bancaire. La balance complète (tous comptes, sans regroupement par poste) reste dans l'onglet
@@ -144,6 +166,11 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
         <div className="card" style={{ flex: '1 1 200px' }}>
           <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Trésorerie actuelle (banque)</span>
           <strong style={{ fontSize: '1.3rem' }}>{loading ? '—' : formatMoney(soldeBanque)}</strong>
+          {!loading && ouverture && (
+            <span className="muted" style={{ display: 'block', fontSize: '0.78rem' }}>
+              Depuis l’ouverture du {formatDate(ouverture.date)} (à-nouveaux).
+            </span>
+          )}
         </div>
         <div className="card" style={{ flex: '1 1 200px' }}>
           <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Mensualités en cours (total)</span>
@@ -269,6 +296,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
           immobilisations={immobilisations}
           cotisations={cotisations}
           lignesBanque={lignesBanque}
+          ouverture={ouverture}
           onClose={() => setSituationOuverte(false)}
         />
       )}
@@ -276,6 +304,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       {tresorerieOuverte && (
         <PlanTresorerieModal
           lignesBanque={lignesBanque}
+          ouverture={ouverture}
           soldeActuel={soldeBanque}
           emprunts={emprunts}
           cotisations={cotisations}
@@ -409,8 +438,9 @@ function DettesRatiosModal({ piecesValidees, categories, immobilisations, cotisa
   )
 }
 
-function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations, onClose }: {
-  lignesBanque: LigneBanque[]; soldeActuel: number; emprunts: Emprunt[]; cotisations: CotisationDeclaree[]; onClose: () => void
+function PlanTresorerieModal({ lignesBanque, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
+  lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; soldeActuel: number; emprunts: Emprunt[]
+  cotisations: CotisationDeclaree[]; onClose: () => void
 }) {
   const [nbMoisHistorique, setNbMoisHistorique] = useState(6)
   const [nbMoisProjection, setNbMoisProjection] = useState(6)
@@ -419,7 +449,7 @@ function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations,
   // Une projection bâtie sur rien a exactement la même tête qu'une projection bâtie sur six mois.
   const reserve = reserveSurMoyenne(plan)
   // Et le solde de DÉPART vient de la même source, sur une fenêtre plus large : tout l'historique.
-  const reserveSolde = reserveSurSolde(lignesBanque)
+  const reserveSolde = reserveSurSolde(lignesBanque, ouverture, aujourdHuiSql())
   // UNE SEULE RÉSERVE À L'ÉCRAN, et l'ordre n'est pas arbitraire : un historique VIDE implique une
   // fenêtre vide, donc les deux se déclenchent ensemble et pour la même cause. Les afficher toutes
   // deux répéterait la même phrase en rouge sous elle-même — et une mise en garde qu'on répète cesse
@@ -508,19 +538,17 @@ function PlanTresorerieModal({ lignesBanque, soldeActuel, emprunts, cotisations,
   )
 }
 
-function SituationIntermediaireModal({ piecesValidees, categories, immobilisations, cotisations, lignesBanque, onClose }: {
+function SituationIntermediaireModal({ piecesValidees, categories, immobilisations, cotisations, lignesBanque, ouverture, onClose }: {
   piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
-  lignesBanque: LigneBanque[]; onClose: () => void
+  lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; onClose: () => void
 }) {
   const [dateFin, setDateFin] = useState(aujourdHuiSql())
   const periodeDebut = `${anneeDe(dateFin)}-01-01`
 
   const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin)
-  const tresorerieADate = Math.round(
-    lignesBanque.filter((l) => l.date <= dateFin).reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0) * 100,
-  ) / 100
+  const tresorerieADate = soldeBanqueADate(lignesBanque, ouverture, dateFin)
   // « 0,00 € » est juste quand rien n'est comptabilisé, et c'est ce qui le rend dangereux.
-  const reserveSolde = reserveSurSolde(lignesBanque)
+  const reserveSolde = reserveSurSolde(lignesBanque, ouverture, dateFin)
 
   return (
     <div style={overlayStyle}>

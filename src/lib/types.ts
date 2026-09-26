@@ -209,6 +209,29 @@ export interface EcritureBrouillon {
   created_at: string
 }
 
+// Solde d'ouverture d'un compte de bilan, repris de la balance d'un dossier venu d'un autre logiciel
+// (voir lib/aNouveaux.ts). Toutes les lignes d'un dossier portent la même date — un 1er janvier — et
+// la même balance source : la base le garantit (trigger `a_nouveaux_une_seule_ouverture`), et
+// `enregistrer_a_nouveaux` les remplace en une seule transaction, en refusant un jeu déséquilibré.
+// À part du brouillon, et c'est voulu : une écriture du brouillon a une pièce, un à-nouveau a une
+// balance pour justificatif. Les mêler aurait fait crier « sans justificatif » tous les contrôles.
+export interface ANouveau {
+  id: string
+  dossier_id: string
+  date: string
+  // Le compte de l'application : un compte de banque de la balance (512…) est ramené au compte banque.
+  compte: string
+  // Le numéro lu dans la balance. Nul sur la ligne du résultat, que l'application calcule.
+  compte_origine: string | null
+  libelle: string
+  sens: SensEcriture
+  montant: number
+  source_nom: string
+  // SHA-256 du fichier de balance : la preuve de ce qui a été repris, comme pour une pièce.
+  source_empreinte: string
+  created_at: string
+}
+
 // Nature d'un bien immobilisé (téléphone, véhicule, mobilier...) — sert uniquement à suggérer une
 // durée d'amortissement usuelle à l'enregistrement d'une immobilisation ; les catégories de dépense
 // (Achats fournisseurs, Autre...) ne s'y prêtent pas, un téléphone et une voiture tombant souvent dans

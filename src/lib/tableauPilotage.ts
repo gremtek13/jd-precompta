@@ -1,5 +1,6 @@
 import type { EcritureBrouillon } from './types'
 import { COMPTE_BANQUE } from './comptes'
+import type { OuvertureBanque } from './planTresorerie'
 
 export interface MoisPilotage {
   mois: string // 'YYYY-MM'
@@ -13,21 +14,38 @@ export interface MoisPilotage {
 // de l'exercice sélectionné en en-tête (voir AnneeContext) : une tendance récente reste utile même en
 // consultant une année passée, comme le plan de trésorerie de Financement.
 // Solde du compte banque (512) à la fin de chacun des N derniers mois d'activité, dans l'ordre
-// chronologique — alimente la tendance de trésorerie de la Vue d'ensemble (voir ChecklistTab). Un
-// solde cumulé depuis la première écriture du brouillon, donc relatif (pas le solde réel du compte,
-// que seul le relevé connaît) : c'est la pente qui compte, pas le niveau absolu.
-export function soldesFinDeMois(ecritures: EcritureBrouillon[], nbMois: number): { mois: string; solde: number }[] {
+// chronologique — alimente la tuile de trésorerie de la Vue d'ensemble (voir ChecklistTab).
+//
+// SANS ouverture, c'est un solde cumulé depuis la première écriture du brouillon, donc RELATIF (pas le
+// solde réel du compte, que seul le relevé connaît) : la pente compte, pas le niveau. AVEC des
+// à-nouveaux (voir lib/aNouveaux.ts), le niveau devient réel : la série part du solde repris, et les
+// écritures antérieures à l'ouverture en sont écartées — elles y sont déjà. C'est la règle de
+// `soldeBanqueADate` (lib/planTresorerie.ts), écriture du jour de l'ouverture comprise : sans elle, la
+// tuile de la Vue d'ensemble comptait l'ouverture pour rien et passait au ROUGE sur un dossier repris
+// dont la trésorerie, dans Financement, est positive.
+//
+// L'ouverture est un paramètre OBLIGATOIRE, nul quand le dossier n'en a pas : un appelant qui
+// l'oublierait retomberait sur l'ancien calcul sans que rien ne le dise.
+export function soldesFinDeMois(
+  ecritures: EcritureBrouillon[],
+  nbMois: number,
+  ouverture: OuvertureBanque | null,
+): { mois: string; solde: number }[] {
+  // En centimes : un cumul de flottants dérive sur une longue série.
   const parMois = new Map<string, number>()
+  const ajouter = (mois: string, centimes: number) => parMois.set(mois, (parMois.get(mois) ?? 0) + centimes)
   for (const e of ecritures) {
     if (e.compte !== COMPTE_BANQUE) continue
-    const mois = e.date.slice(0, 7)
-    parMois.set(mois, (parMois.get(mois) ?? 0) + (e.sens === 'debit' ? e.montant : -e.montant))
+    if (ouverture && e.date < ouverture.date) continue
+    ajouter(e.date.slice(0, 7), (e.sens === 'debit' ? 1 : -1) * Math.round(e.montant * 100))
   }
-  const moisTries = [...parMois.keys()].sort()
-  const cumules = moisTries.reduce<{ mois: string; solde: number }[]>((acc, mois) => {
-    const precedent = acc.length > 0 ? acc[acc.length - 1].solde : 0
-    return [...acc, { mois, solde: Math.round((precedent + (parMois.get(mois) ?? 0)) * 100) / 100 }]
-  }, [])
+  // Le mois de l'ouverture existe même sans écriture : un dossier qu'on vient d'ouvrir a un solde.
+  if (ouverture) ajouter(ouverture.date.slice(0, 7), Math.round(ouverture.solde * 100))
+  let cumul = 0
+  const cumules = [...parMois.keys()].sort().map((mois) => {
+    cumul += parMois.get(mois) ?? 0
+    return { mois, solde: cumul / 100 }
+  })
   return cumules.slice(-nbMois)
 }
 

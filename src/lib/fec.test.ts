@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { genererFec, libelleCompte, nomFichierFec } from './fec'
 import { COMPTE_BANQUE } from './comptes'
-import type { Categorie, EcritureBrouillon, Piece } from './types'
+import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', nom_fichier: `${id}.pdf`, chemin_stockage: '', statut: 'validee',
@@ -27,6 +27,7 @@ describe('genererFec — intégrité du fichier', () => {
       [ligne('p1', { libelle: "CAISSE\nD'EPARGNE\nCEPAC" })],
       [piece('p1', { tiers: "CAISSE\nD'EPARGNE\nCEPAC" })],
       [],
+      [],
     )
     const rows = colonnes(fec)
     expect(rows).toHaveLength(2) // en-tête + 1 écriture, pas 4
@@ -34,14 +35,14 @@ describe('genererFec — intégrité du fichier', () => {
   })
 
   it('neutralise une tabulation, qui décalerait toutes les colonnes suivantes', () => {
-    const fec = genererFec([ligne('p1', { libelle: 'ACME\tSARL' })], [piece('p1')], [])
+    const fec = genererFec([ligne('p1', { libelle: 'ACME\tSARL' })], [piece('p1')], [], [])
     const rows = colonnes(fec)
     expect(rows[1]).toHaveLength(18) // le format en impose 18, ni plus ni moins
     expect(rows[1][10]).toBe('ACME SARL')
   })
 
   it('neutralise aussi un nom de fichier piégé', () => {
-    const fec = genererFec([ligne('p1')], [piece('p1', { nom_fichier: 'facture\tmars.pdf' })], [])
+    const fec = genererFec([ligne('p1')], [piece('p1', { nom_fichier: 'facture\tmars.pdf' })], [], [])
     expect(colonnes(fec)[1][8]).toBe('facture mars.pdf')
   })
 
@@ -49,6 +50,7 @@ describe('genererFec — intégrité du fichier', () => {
     const fec = genererFec(
       [ligne('p1', { libelle: "a\tb\nc" }), ligne('p1', { compte: COMPTE_BANQUE, sens: 'credit' })],
       [piece('p1', { nom_fichier: "x\ny.pdf" })],
+      [],
       [],
     )
     expect(colonnes(fec).every((r) => r.length === 18)).toBe(true)
@@ -66,6 +68,7 @@ describe('genererFec — numérotation et dates', () => {
         piece('vente', { date_piece: '2026-03-01', type_piece: 'vente' }),
       ],
       [],
+      [],
     )
     const rows = colonnes(fec).slice(1)
     expect(rows.map((r) => [r[0], r[2]])).toEqual([
@@ -82,7 +85,7 @@ describe('genererFec — numérotation et dates', () => {
       ligne('p1', { compte: COMPTE_BANQUE, date: '2026-04-20', sens: 'credit' }),
       ligne('p1', { date: '2026-03-10' }),
     ]
-    const rows = colonnes(genererFec(lignes, [piece('p1', { date_piece: '2026-03-10' })], [])).slice(1)
+    const rows = colonnes(genererFec(lignes, [piece('p1', { date_piece: '2026-03-10' })], [], [])).slice(1)
     expect(rows.every((r) => r[9] === '20260310')).toBe(true)
     // EcritureDate reste propre à chaque ligne : la banque garde sa date de paiement.
     expect(rows.map((r) => r[3]).sort()).toEqual(['20260310', '20260420'])
@@ -91,12 +94,60 @@ describe('genererFec — numérotation et dates', () => {
   it('produit deux fois le même fichier pour les mêmes données', () => {
     const lignes = [ligne('b'), ligne('a')]
     const pieces = [piece('a', { date_piece: '2026-02-01' }), piece('b', { date_piece: '2026-02-01' })]
-    expect(genererFec(lignes, pieces, [])).toBe(genererFec([...lignes].reverse(), pieces, []))
+    expect(genererFec(lignes, pieces, [], [])).toBe(genererFec([...lignes].reverse(), pieces, [], []))
   })
 
   it('ignore les écritures sans pièce rattachée', () => {
     const orpheline = { ...ligne('p1'), piece_id: null } as EcritureBrouillon
-    expect(colonnes(genererFec([orpheline], [piece('p1')], []))).toHaveLength(1) // en-tête seul
+    expect(colonnes(genererFec([orpheline], [piece('p1')], [], []))).toHaveLength(1) // en-tête seul
+  })
+})
+
+describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
+  const aNouveau = (o: Partial<ANouveau>): ANouveau => ({
+    id: 'an-1', dossier_id: 'd1', date: '2026-01-01', compte: '512000', compte_origine: '51210000',
+    libelle: 'Banque Populaire', sens: 'debit', montant: 6000, source_nom: 'balance-2025.csv',
+    source_empreinte: 'a'.repeat(64), created_at: '2026-09-26T10:00:00Z', ...o,
+  })
+  // Données HORS de l'ordre des comptes, comme la base peut les rendre : sans cela, le test du tri
+  // passerait sur un tri absent.
+  const ouverture = [
+    aNouveau({}),
+    aNouveau({ id: 'an-2', compte: '108', compte_origine: '108', libelle: 'Compte de l’exploitant', sens: 'credit', montant: 6000 }),
+  ]
+
+  it('les place en tête, en une seule écriture du journal AN, triées par compte', () => {
+    const rows = colonnes(genererFec([ligne('p1')], [piece('p1')], [], ouverture)).slice(1)
+    expect(rows.map((r) => [r[0], r[1], r[2], r[3], r[4]])).toEqual([
+      ['AN', 'À-nouveaux', 'AN00001', '20260101', '108'],
+      ['AN', 'À-nouveaux', 'AN00001', '20260101', '512000'],
+      ['AC', 'Achats', 'AC00001', '20260310', '606100'],
+    ])
+  })
+
+  it('garde le libellé de l’application pour la banque, et la balance d’origine dans le libellé d’écriture', () => {
+    // Un même CompteNum ne porte qu'un CompteLib dans tout le fichier : les mouvements de la banque
+    // l'appellent « Banque », son ouverture aussi.
+    const banque = colonnes(genererFec([], [], [], ouverture)).find((r) => r[4] === '512000')!
+    expect(banque[5]).toBe('Banque')
+    expect(banque[10]).toBe('À-nouveau 51210000 Banque Populaire')
+    expect(banque[8]).toBe('balance-2025.csv')
+    expect([banque[11], banque[12]]).toEqual(['6000.00', '0.00'])
+    const exploitant = colonnes(genererFec([], [], [], ouverture)).find((r) => r[4] === '108')!
+    expect([exploitant[5], exploitant[10], exploitant[11], exploitant[12]])
+      .toEqual(['Compte de l’exploitant', 'À-nouveau Compte de l’exploitant', '0.00', '6000.00'])
+  })
+
+  it('s’exporte même sans aucune écriture : l’ouverture d’un exercice qui commence', () => {
+    const rows = colonnes(genererFec([], [], [], ouverture))
+    expect(rows).toHaveLength(3)
+    expect(rows.every((r) => r.length === 18)).toBe(true)
+  })
+
+  it('neutralise un nom de balance piégé comme tout autre champ', () => {
+    const rows = colonnes(genererFec([], [], [], [aNouveau({ source_nom: 'balance\t2025.csv' })]))
+    expect(rows[1]).toHaveLength(18)
+    expect(rows[1][8]).toBe('balance 2025.csv')
   })
 })
 

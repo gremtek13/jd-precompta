@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { analyserEcritures, calculerBalance, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte, tvaNettePourPeriode } from './ecritures'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
-import type { Categorie, EcritureBrouillon, Piece } from './types'
+import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
 
 const ACHATS = '606100'
 const VENTES = '706000'
@@ -155,7 +155,7 @@ describe('calculerBalance', () => {
       ecriture({ compte: ACHATS, sens: 'credit', montant: 30 }),
       ecriture({ compte: VENTES, sens: 'credit', montant: 500 }),
     ]
-    const balance = calculerBalance(lignes, [])
+    const balance = calculerBalance(lignes, [], [])
     expect(balance.map((l) => l.compte)).toEqual([ACHATS, VENTES]) // trié par numéro
     expect(balance[0]).toMatchObject({ nbEcritures: 2, totalDebit: 100, totalCredit: 30, solde: 70 })
     expect(balance[1]).toMatchObject({ solde: -500 }) // créditeur
@@ -166,9 +166,35 @@ describe('calculerBalance', () => {
     const balance = calculerBalance(
       [ecriture({ compte: ACHATS }), ecriture({ compte: COMPTE_BANQUE }), ecriture({ compte: '999999' })],
       categories,
+      [],
     )
     // Trié par numéro de compte : 512000 (Banque) avant 606100 (Achats) avant 999999.
     expect(balance.map((l) => l.libelle)).toEqual(['Banque', 'Achats fournisseurs', '—'])
+  })
+
+  const aNouveau = (o: Partial<ANouveau>): ANouveau => ({
+    id: 'an-1', dossier_id: 'd1', date: '2026-01-01', compte: COMPTE_BANQUE, compte_origine: '51210000',
+    libelle: 'Banque Populaire', sens: 'debit', montant: 6000, source_nom: 'balance.csv',
+    source_empreinte: 'a'.repeat(64), created_at: '2026-09-26T10:00:00Z', ...o,
+  })
+
+  it('compte les à-nouveaux avec les écritures, et nomme un compte que seule la balance reprise connaît', () => {
+    const balance = calculerBalance(
+      [ecriture({ compte: COMPTE_BANQUE, sens: 'credit', montant: 120 })],
+      [],
+      [aNouveau({}), aNouveau({ id: 'an-2', compte: '164', compte_origine: '164', libelle: 'Emprunts', sens: 'credit', montant: 6000 })],
+    )
+    expect(balance).toEqual([
+      { compte: '164', libelle: 'Emprunts', nbEcritures: 1, totalDebit: 0, totalCredit: 6000, solde: -6000 },
+      // La banque garde son nom d'application, pas celui de la banque d'origine.
+      { compte: COMPTE_BANQUE, libelle: 'Banque', nbEcritures: 2, totalDebit: 6000, totalCredit: 120, solde: 5880 },
+    ])
+  })
+
+  it('ne laisse pas le libellé d’une balance reprise masquer celui d’une catégorie', () => {
+    const categories = [{ compte_comptable: '164', libelle: 'Emprunts bancaires' } as Categorie]
+    const balance = calculerBalance([], categories, [aNouveau({ compte: '164', libelle: 'EMPRUNT CA', sens: 'credit' })])
+    expect(balance[0].libelle).toBe('Emprunts bancaires')
   })
 })
 

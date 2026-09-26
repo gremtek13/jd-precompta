@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { anneeDe, formatMoney } from '../../lib/format'
+import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
-import type { Categorie, EcritureBrouillon, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, EcritureBrouillon, Piece } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 import type { DossierTab } from '../../components/DossierParcours'
 import MonthlyBars from '../../components/widgets/MonthlyBars'
@@ -27,6 +27,8 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
+  // L'ouverture d'un dossier repris d'un autre logiciel (voir lib/aNouveaux.ts).
+  const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
   const [loading, setLoading] = useState(true)
   // Non nul quand le brouillon ou les pièces n'ont pas pu être lus en entier — les totaux affichés
   // portent alors sur une partie du dossier (voir lib/lectureComplete.ts).
@@ -34,6 +36,9 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
   // À part, parce que la conséquence n'est pas la même : les catégories ne donnent que les LIBELLÉS
   // des comptes, aucun montant n'en dépend.
   const [lectureCategoriesIncomplete, setLectureCategoriesIncomplete] = useState<string | null>(null)
+  // À part encore : ce n'est pas le brouillon qui manque, c'est l'ouverture — le bandeau doit dire
+  // laquelle des deux on n'a pas pu lire.
+  const [lectureANouveauxIncomplete, setLectureANouveauxIncomplete] = useState<string | null>(null)
   // Exercice partagé avec Pièces/Banque/Écritures/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
@@ -58,17 +63,35 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
         supabase.from('pieces').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-    ]).then(([brouillon, lectureCategories, lecturePieces]) => {
+      lireTout<ANouveau>((debut, fin) =>
+        supabase.from('a_nouveaux').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
+      ),
+    ]).then(([brouillon, lectureCategories, lecturePieces, lectureANouveaux]) => {
       setEcritures(brouillon.lignes)
       setCategories(lectureCategories.lignes)
       setPieces(lecturePieces.lignes)
+      setANouveaux(lectureANouveaux.lignes)
       setLectureIncomplete(brouillon.motif ?? lecturePieces.motif)
+      setLectureANouveauxIncomplete(lectureANouveaux.motif)
       setLectureCategoriesIncomplete(lectureCategories.motif)
       setLoading(false)
     })
   }, [dossierId])
 
   const ecrituresFiltrees = anneeFilter === 'toutes' ? ecritures : ecritures.filter((e) => anneeDe(e.date) === anneeFilter)
+  // Les à-nouveaux appartiennent à l'exercice qu'ils ouvrent, comme toute écriture à celui de sa date.
+  const aNouveauxFiltres = useMemo(
+    () => (anneeFilter === 'toutes' ? aNouveaux : aNouveaux.filter((a) => anneeDe(a.date) === anneeFilter)),
+    [aNouveaux, anneeFilter],
+  )
+  const ouverture = aNouveaux[0]?.date ?? null
+  // Toutes années confondues, une écriture ANTÉRIEURE à l'ouverture est déjà dans les soldes repris :
+  // la vue la compterait deux fois sur les comptes de bilan. Dit seulement quand c'est le cas — une
+  // mise en garde permanente cesse d'être lue.
+  const anterieuresALOuverture = anneeFilter === 'toutes' && ouverture
+    ? ecritures.filter((e) => e.date < ouverture).length
+    : 0
 
   // Tableau de pilotage (voir audit ergonomie comparatif) — deux repères qui manquaient à cet onglet :
   // une tendance de trésorerie récente (indépendante de l'exercice sélectionné, comme le plan de
@@ -81,7 +104,10 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
   const piecesValideesAnnee = piecesAnnee.filter((p) => p.statut === 'validee')
   const avancementPct = piecesAnnee.length > 0 ? Math.round((piecesValideesAnnee.length / piecesAnnee.length) * 100) : null
 
-  const balance = useMemo(() => calculerBalance(ecrituresFiltrees, categories), [ecrituresFiltrees, categories])
+  const balance = useMemo(
+    () => calculerBalance(ecrituresFiltrees, categories, aNouveauxFiltres),
+    [ecrituresFiltrees, categories, aNouveauxFiltres],
+  )
 
   const lignesAffichees = balance.filter((l) =>
     correspondALaRecherche([l.compte, l.libelle, l.totalDebit, l.totalCredit, l.solde], recherche),
@@ -105,6 +131,15 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
         consequence={
           'Les totaux débit/crédit et le badge d’équilibre ci-dessous portent donc sur une partie ' +
           'des écritures : un écart affiché ici ne prouverait rien.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les à-nouveaux du dossier"
+        accord="lus"
+        motif={lectureANouveauxIncomplete}
+        consequence={
+          'Les totaux ci-dessous portent donc sur une ouverture incomplète : un écart affiché ici ne ' +
+          'prouverait rien, et le solde des comptes de bilan est faux.'
         }
       />
       <BandeauLecturePartielle
@@ -159,6 +194,21 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
           </div>
         )}
       </div>
+
+      {aNouveauxFiltres.length > 0 && (
+        <p className="muted" style={{ fontSize: '0.85rem', marginBottom: 10 }}>
+          {`Les à-nouveaux du ${formatDate(aNouveauxFiltres[0].date)}, repris de ${aNouveauxFiltres[0].source_nom}, `
+            + 'sont compris dans les totaux : ils ouvrent l’exercice comme les soldes de la balance reprise.'}
+        </p>
+      )}
+      {anterieuresALOuverture > 0 && (
+        <p className="error-text" style={{ fontSize: '0.85rem', marginTop: 0, marginBottom: 10 }}>
+          {`${anterieuresALOuverture} écriture${anterieuresALOuverture > 1 ? 's' : ''} du brouillon `
+            + `précède${anterieuresALOuverture > 1 ? 'nt' : ''} l’ouverture du ${formatDate(ouverture)} : `
+            + 'leur effet est déjà dans les soldes repris, et cette vue toutes années confondues le compte '
+            + 'une seconde fois sur les comptes de bilan. Choisis un exercice pour lire une balance juste.'}
+        </p>
+      )}
 
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche

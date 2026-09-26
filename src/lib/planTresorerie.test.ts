@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, type LigneBanquePourPlan } from './planTresorerie'
+import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type LigneBanquePourPlan } from './planTresorerie'
 import { ajouterMois, premierJourDuMoisCourant } from './format'
 import type { Emprunt } from './emprunts'
 import type { CotisationDeclaree } from './types'
@@ -117,11 +117,11 @@ describe('reserveSurSolde', () => {
   it('se tait dès qu’une écriture bancaire existe', () => {
     // Même sur une seule ligne : le solde est alors un vrai solde, et une mise en garde permanente
     // cesserait d'être lue.
-    expect(reserveSurSolde([{ date: '2026-01-15', sens: 'debit', montant: 1 }])).toBeNull()
+    expect(reserveSurSolde([{ date: '2026-01-15', sens: 'debit', montant: 1 }], null, '2026-06-30')).toBeNull()
   })
 
   it('dit que « 0,00 € » n’est pas « zéro à la banque »', () => {
-    const texte = reserveSurSolde([])
+    const texte = reserveSurSolde([], null, '2026-06-30')
     expect(texte).toContain("n'est pas")
     expect(texte).toContain('rien de comptabilisé')
     expect(texte).toContain('écritures générées')
@@ -132,8 +132,60 @@ describe('reserveSurSolde', () => {
     // écritures existent, mais toutes en dehors des mois que la moyenne regarde. Fondre les deux
     // réserves ferait taire celle du solde ou crier celle de la moyenne.
     const vieille: LigneBanquePourPlan[] = [{ date: `${cleMois(-24)}-15`, sens: 'debit', montant: 500 }]
-    expect(reserveSurSolde(vieille)).toBeNull()
+    expect(reserveSurSolde(vieille, null, `${cleMois(0)}-01`)).toBeNull()
     expect(reserveSurMoyenne(calculerPlanTresorerie(vieille, 0, 6, 1))).toContain('ne repose sur rien')
+  })
+
+  it('se tait sur un dossier ouvert par des à-nouveaux, même SANS aucune écriture', () => {
+    // Une banque soldée à la reprise est un zéro CONNU : « rien de comptabilisé » serait faux.
+    expect(reserveSurSolde([], { date: '2026-01-01', solde: 0 }, '2026-06-30')).toBeNull()
+    expect(reserveSurSolde([], { date: '2026-01-01', solde: 0 }, '2026-01-01')).toBeNull()
+  })
+
+  it('dit qu’avant l’ouverture, aucun solde de départ n’est connu', () => {
+    const texte = reserveSurSolde(
+      [{ date: '2025-11-15', sens: 'debit', montant: 100 }], { date: '2026-01-01', solde: 4000 }, '2025-12-31',
+    )
+    expect(texte).toContain("précède l'ouverture du dossier (01/01/2026)")
+    expect(texte).toContain('aucun solde')
+  })
+})
+
+describe('soldeBanqueADate', () => {
+  const lignes: LigneBanquePourPlan[] = [
+    { date: '2025-12-20', sens: 'debit', montant: 700 },
+    { date: '2026-01-01', sens: 'credit', montant: 50.1 },
+    { date: '2026-02-10', sens: 'debit', montant: 1000.2 },
+    { date: '2026-03-05', sens: 'credit', montant: 300 },
+  ]
+
+  it('cumule tout l’historique quand rien n’ouvre le dossier', () => {
+    expect(soldeBanqueADate(lignes, null, '2026-02-28')).toBe(1650.1)
+    expect(soldeBanqueADate(lignes, null, '2026-12-31')).toBe(1350.1)
+  })
+
+  it('part du solde repris, et une écriture ANTÉRIEURE à l’ouverture n’est plus comptée', () => {
+    // Les 700 € de décembre sont déjà dans les 4 000 € repris : les ajouter les compterait deux fois.
+    const ouverture = { date: '2026-01-01', solde: 4000 }
+    expect(soldeBanqueADate(lignes, ouverture, '2026-02-28')).toBe(4950.1)
+    expect(soldeBanqueADate(lignes, ouverture, '2026-12-31')).toBe(4650.1)
+  })
+
+  it('compte l’écriture du JOUR de l’ouverture : un mouvement de ce jour suit le solde de la veille', () => {
+    expect(soldeBanqueADate(lignes, { date: '2026-01-01', solde: 4000 }, '2026-01-01')).toBe(3949.9)
+  })
+
+  it('retombe sur le cumul avant l’ouverture, faute de solde de départ connu', () => {
+    expect(soldeBanqueADate(lignes, { date: '2026-01-01', solde: 4000 }, '2025-12-31')).toBe(700)
+  })
+
+  it('rend le solde repris tel quel sur un dossier sans aucune écriture', () => {
+    expect(soldeBanqueADate([], { date: '2026-01-01', solde: -1234.56 }, '2026-06-30')).toBe(-1234.56)
+  })
+
+  it('compte en centimes : pas de dérive de flottant', () => {
+    const dixCentimes: LigneBanquePourPlan[] = Array.from({ length: 3 }, (_, i) => ({ date: `2026-01-0${i + 2}`, sens: 'debit' as const, montant: 0.1 }))
+    expect(soldeBanqueADate(dixCentimes, { date: '2026-01-01', solde: 0.2 }, '2026-01-31')).toBe(0.5)
   })
 })
 

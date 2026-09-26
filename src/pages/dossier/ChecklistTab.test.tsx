@@ -111,17 +111,20 @@ function poser(pieces: {
   clotures?: { annee: number }[]
   clotureRefusee?: boolean
   tronquees?: string[]
+  ecritures?: unknown[]
+  aNouveaux?: unknown[]
+  refusees?: string[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
     'pieces:a_valider': pieces.aValider ?? [],
     pieces: [...(pieces.validees ?? []), ...(pieces.aValider ?? [])],
     cotisations_declarees: [], lignes_bancaires: pieces.lignes ?? [], immobilisations: pieces.immos ?? [],
-    natures_immobilisation: [], categories: [], ecritures_brouillon: [],
+    natures_immobilisation: [], categories: [], ecritures_brouillon: pieces.ecritures ?? [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
-    exercices_clotures: pieces.clotures ?? [],
+    exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [],
   }
-  faux.refusees = new Set(pieces.clotureRefusee ? ['exercices_clotures'] : [])
+  faux.refusees = new Set([...(pieces.clotureRefusee ? ['exercices_clotures'] : []), ...(pieces.refusees ?? [])])
   faux.tronquees = new Set(pieces.tronquees ?? [])
 }
 
@@ -485,5 +488,62 @@ describe('ChecklistTab — un rapprochement dont le montant ne correspond pas', 
     // encore en chargement serait verte pour une raison fausse.
     await screen.findByText(/non rapprochée\(s\)/)
     expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+})
+
+describe('ChecklistTab — la tuile de trésorerie d’un dossier ouvert par des à-nouveaux', () => {
+  // Une écriture de la banque : une sortie de 300 € en février.
+  const SORTIE = {
+    id: 'e1', dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: 'l1', date: '2026-02-10',
+    compte: '512000', libelle: 'Prélèvement', montant: 300, sens: 'credit', statut: 'brouillon',
+    created_at: '2026-02-10T00:00:00Z',
+  }
+  function aNouveau(id: string, compte: string, sens: 'debit' | 'credit', montant: number) {
+    return {
+      id, dossier_id: 'dossier-de-test', date: '2026-01-01', compte, compte_origine: compte, libelle: compte,
+      sens, montant, source_nom: 'balance-2025.csv', source_empreinte: 'a'.repeat(64),
+      created_at: '2026-09-26T10:00:00Z',
+    }
+  }
+  const OUVERTURE = [aNouveau('an1', '512000', 'debit', 8400), aNouveau('an2', '108', 'credit', 8400)]
+
+  function tuile(): HTMLElement {
+    return screen.getByText('Trésorerie (brouillon)').closest('.kpi') as HTMLElement
+  }
+
+  it('part du solde repris, et ne passe pas au rouge sur un compte qui porte de l’argent', async () => {
+    poser({ ecritures: [SORTIE], aNouveaux: OUVERTURE })
+    monter()
+
+    await screen.findByText('depuis l’ouverture du 01/01/2026')
+    expect(tuile().querySelector('.kpi-valeur')!.textContent).toMatch(/^8\s?100,00\s€$/)
+    expect(tuile().className).toContain('kpi-ok')
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la tuile part de l'ouverture » serait satisfait par une tuile qui
+  // en invente une. Sans à-nouveaux, elle reste le cumul du brouillon — et son rouge, qu'elle a.
+  it('sans ouverture, reste le cumul du brouillon', async () => {
+    poser({ ecritures: [SORTIE] })
+    monter()
+
+    await screen.findByText('1 mois d\'écritures')
+    expect(tuile().querySelector('.kpi-valeur')!.textContent).toMatch(/^-300,00\s€$/)
+    expect(tuile().className).toContain('kpi-danger')
+  })
+
+  // Ce test garde la TUILE masquée. L'écran refuse aussi de tirer une ouverture d'une lecture partielle
+  // (`complete ?`), mais la tuile ne montre alors ni montant, ni couleur, ni tendance : cette seconde
+  // ceinture n'a rien de visible à défendre aujourd'hui, et sa mutation survit à juste titre.
+  it('n’affiche ni montant ni rouge quand l’ouverture n’a pas pu être lue, et le dit', async () => {
+    poser({ ecritures: [SORTIE], aNouveaux: OUVERTURE, refusees: ['a_nouveaux'] })
+    monter()
+
+    await screen.findByText('ouverture illisible')
+    expect(tuile().querySelector('.kpi-valeur')!.textContent).toBe('—')
+    expect(tuile().className).toContain('kpi-neutral')
+    expect(screen.getByText(/Les à-nouveaux du dossier n'ont pas pu être lus en entier/)).toBeTruthy()
+    // Pas le bandeau des POINTS : l'ouverture n'en commande aucun, et dire que leur silence ne prouve
+    // plus rien serait faux.
+    expect(screen.queryAllByText(/Les données du dossier n'ont pas pu être lues/)).toHaveLength(0)
   })
 })

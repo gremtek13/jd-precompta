@@ -1,5 +1,5 @@
 import { empruntActif, genererEcheancier, type Emprunt } from './emprunts'
-import { ajouterMois, premierJourDuMoisCourant } from './format'
+import { ajouterMois, formatDate, premierJourDuMoisCourant } from './format'
 import type { CotisationDeclaree } from './types'
 
 export interface LigneBanquePourPlan { date: string; sens: 'debit' | 'credit'; montant: number }
@@ -94,6 +94,37 @@ export function reserveSurMoyenne(plan: PlanTresorerie): string | null {
   return null
 }
 
+// L'ouverture d'un dossier repris d'un autre logiciel : le solde du compte banque à sa date, lu dans
+// ses à-nouveaux (voir lib/aNouveaux.ts, `ouvertureBanque`).
+export interface OuvertureBanque {
+  date: string
+  solde: number
+}
+
+// Le solde du compte banque à une date. Sans ouverture, c'est le cumul de TOUT l'historique du
+// brouillon — juste seulement si cet historique remonte à l'ouverture du compte, ce qui n'est vrai
+// que d'un dossier né dans l'application.
+//
+// AVEC UNE OUVERTURE, ELLE FAIT FOI À SA DATE ET REMPLACE TOUT CE QUI PRÉCÈDE. Les écritures
+// antérieures sont déjà dans le solde repris : les ajouter le compterait deux fois — le cas d'un
+// cabinet qui collectait les pièces d'un exercice dans l'application pendant qu'il le tenait encore
+// dans son ancien logiciel. Une écriture datée du jour même de l'ouverture est un mouvement de ce
+// jour-là, donc postérieur au solde de la veille : elle s'ajoute.
+//
+// Avant l'ouverture, aucun solde de départ n'est connu : on retombe sur le cumul, et
+// `reserveSurSolde` le dit.
+//
+// En centimes entiers : une somme de flottants dérive, et ce chiffre-là part à une banque.
+export function soldeBanqueADate(
+  lignesBanque: LigneBanquePourPlan[], ouverture: OuvertureBanque | null, date: string,
+): number {
+  const depart = ouverture && date >= ouverture.date ? ouverture : null
+  const centimes = lignesBanque
+    .filter((l) => l.date <= date && (depart === null || l.date >= depart.date))
+    .reduce((s, l) => s + (l.sens === 'debit' ? 1 : -1) * Math.round(l.montant * 100), 0)
+  return (centimes + (depart ? Math.round(depart.solde * 100) : 0)) / 100
+}
+
 // LE SOLDE VIENT DE LA MÊME SOURCE, ET SA FENÊTRE N'EST PAS LA MÊME. `reserveSurMoyenne` parle des
 // `nbMoisHistorique` derniers mois ; un solde de trésorerie, lui, cumule TOUT l'historique — un dossier
 // peut donc avoir un solde parfaitement juste et une moyenne qui ne repose sur rien. Les deux réserves
@@ -102,7 +133,17 @@ export function reserveSurMoyenne(plan: PlanTresorerie): string | null {
 // « Trésorerie à cette date : 0,00 € » est arithmétiquement JUSTE quand rien n'est comptabilisé — et
 // c'est précisément ce qui le rend dangereux : indiscernable d'un compte réellement vide, sur l'état
 // qu'un cabinet montre à une banque.
-export function reserveSurSolde(lignesBanque: LigneBanquePourPlan[]): string | null {
+//
+// Des à-nouveaux changent la réponse : à partir de leur date, le solde de départ est CONNU, même sans
+// aucune écriture — une banque soldée à la reprise est un zéro vrai. Avant elle, on n'en connaît aucun.
+export function reserveSurSolde(
+  lignesBanque: LigneBanquePourPlan[], ouverture: OuvertureBanque | null, date: string,
+): string | null {
+  if (ouverture && date >= ouverture.date) return null
+  if (ouverture) {
+    return `Cette date précède l'ouverture du dossier (${formatDate(ouverture.date)}) : aucun solde de `
+      + `départ n'est connu avant elle, ce chiffre ne compte que les écritures bancaires antérieures.`
+  }
   if (lignesBanque.length > 0) return null
   return `Aucune écriture bancaire dans ce dossier : ce solde n'est pas « zéro à la banque », c'est `
     + `« rien de comptabilisé ». Les mouvements n'arrivent ici qu'une fois les écritures générées `

@@ -78,7 +78,25 @@ function message(n: number, role: 'user' | 'assistant', texte: string, outils: s
   }
 }
 
+// Une ouverture reprise d'un autre logiciel (voir lib/aNouveaux.ts) : c'est elle qui fait paraître la
+// note d'ouverture des Écritures et de la Balance des comptes, la ligne « Depuis l'ouverture » de la
+// trésorerie et le bloc « Ouverture enregistrée » des Informations. Équilibrée au centime, comme la
+// base l'exige.
+function aNouveau(id: string, compte: string, compteOrigine: string, libelle: string, sens: 'debit' | 'credit', montant: number): Ligne {
+  return {
+    id, dossier_id: 'd1', date: '2026-01-01', compte, compte_origine: compteOrigine, libelle, sens, montant,
+    source_nom: 'balance-2025.csv', source_empreinte: '0'.repeat(64), created_at: MAINTENANT,
+  }
+}
+
 const TABLES: Record<string, Ligne[]> = {
+  a_nouveaux: [
+    aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
+    aNouveau('an2', '2154', '2154', 'Matériel médical', 'debit', 3200),
+    aNouveau('an3', '28154', '28154', 'Amortissements du matériel médical', 'credit', 1280),
+    aNouveau('an4', '164', '164', 'Emprunt matériel', 'credit', 2400),
+    aNouveau('an5', '108', '108', 'Compte de l’exploitant', 'credit', 7920),
+  ],
   agent_conversations: [
     message(1, 'user', 'Qu’est-ce qui reste à faire sur ce dossier ?'),
     message(2, 'assistant', '4 justificatifs sont à valider et 2 mouvements bancaires à rapprocher. Le prélèvement du 15/09 de Télécom Plus (39,99 €) correspond à la pièce du 12/09 : même montant, 3 jours d’écart.', ['points_a_traiter', 'lister_pieces']),
