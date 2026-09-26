@@ -1625,3 +1625,15 @@ a.nav-menu-item { text-decoration: none; }
   font-size: 0.84rem; line-height: 1.45;
 }
 .bloc-devise > div:first-child { flex: 1 1 260px; }
+
+/* « Proposer une catégorie » (fiche d'une pièce) : le bouton, puis la proposition et son extrait.
+   Passe à la ligne plutôt que de déborder — le volet rétrécit la fiche (voir les conventions). */
+.proposition-categorie {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px;
+  margin: -6px 0 14px; padding: 10px 12px;
+  border: 1px solid var(--color-border); border-radius: var(--radius-sm);
+  background: var(--color-surface-2);
+  font-size: 0.84rem; line-height: 1.45;
+}
+.proposition-categorie > p { flex: 1 1 240px; margin: 0; overflow-wrap: anywhere; }
+.proposition-categorie-actions { display: flex; flex-wrap: wrap; gap: 8px; }

@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import * as original from './categorisationIa'
@@ -20,11 +20,24 @@ import * as original from './categorisationIa'
 const DEBUT = '// ── DÉBUT COPIE categorisationIa'
 const FIN = '// ── FIN COPIE categorisationIa'
 
-const FONCTIONS = ['evaluer-extraction'] as const
+const DOSSIER = new URL('../../supabase/functions/', import.meta.url)
 
 function sourceDe(fonction: string): string {
-  return readFileSync(new URL(`../../supabase/functions/${fonction}/index.ts`, import.meta.url), 'utf8')
+  return readFileSync(new URL(`${fonction}/index.ts`, DOSSIER), 'utf8')
 }
+
+// LES COPIES SE TROUVENT, ELLES NE SE DÉCLARENT PAS (26/09/2026). La première version de ce garde
+// nommait `evaluer-extraction` et elle seule : `proposer-categorie`, la seconde copie, serait arrivée
+// sans lui, et le garde serait resté vert sur une copie qu'il ne regardait pas. Une fonction est une
+// copie dès qu'elle porte les bornes OU qu'elle nomme l'une des pièces du contrat — une copie écrite à
+// côté, sans ses bornes, tombe alors sur « bornes introuvables » au lieu de passer inaperçue.
+const PIECES_DU_CONTRAT = /── DÉBUT COPIE categorisationIa|\b(?:verifierProposition|questionCategorisation|promptCategorisation|REGLAGES_MODELE)\b/
+
+const FONCTIONS = readdirSync(DOSSIER, { withFileTypes: true })
+  .filter((d) => d.isDirectory() && existsSync(new URL(`${d.name}/index.ts`, DOSSIER)))
+  .map((d) => d.name)
+  .filter((nom) => PIECES_DU_CONTRAT.test(sourceDe(nom)))
+  .sort()
 const SOURCE_LIB = readFileSync(new URL('./categorisationIa.ts', import.meta.url), 'utf8')
 
 function blocDe(source: string, ou: string): string {
@@ -95,6 +108,36 @@ for (const fonction of FONCTIONS) describe(`${fonction} — copie de categorisat
     expect(horsBloc).toMatch(/verifierProposition\(/)
     // Les réglages de l'appel viennent du bloc, pas d'une valeur retapée à côté.
     expect(horsBloc).toMatch(/\.\.\.REGLAGES_MODELE/)
+    // Et le texte suit la question sous le même séparateur : une question assemblée autrement n'est
+    // plus celle qui a été mesurée, et aucun test de comportement ne le verrait.
+    expect(horsBloc).toMatch(/content:\s*`\$\{prompt\}\\n\\n--- TEXTE ---\\n\$\{/)
+  })
+})
+
+describe('les copies du contrat', () => {
+  it('sont toutes vues — sinon « aucune divergence » et « aveugle » se confondent', () => {
+    // Le PLANCHER : une copie de plus est vue sans qu'on l'ajoute ici.
+    expect(FONCTIONS).toEqual(expect.arrayContaining(['evaluer-extraction', 'proposer-categorie']))
+  })
+})
+
+// Le modèle que la mesure du 25/09/2026 a jugé (42 textes du dossier `test`, voir CLAUDE.md). ÉCRIT
+// ICI, et pas lu dans le harnais : le défaut du harnais suit aussi le modèle de la CITATION des champs,
+// et une nouvelle mesure de l'extraction ne doit pas faire changer de modèle à la catégorisation sans
+// qu'elle soit mesurée à son tour. Le changer demande de changer cette ligne, sciemment.
+const MODELE_MESURE = 'eu.anthropic.claude-haiku-4-5-20251001-v1:0'
+
+describe('proposer-categorie — le modèle qui propose est celui qui a été mesuré', () => {
+  it('appelle le modèle mesuré, et c’est bien lui qui part à l’appel', () => {
+    const source = sourceDe('proposer-categorie')
+    expect(source.match(/const MODELE_CATEGORIE = "([^"]+)"/)?.[1]).toBe(MODELE_MESURE)
+    expect(source).toMatch(/model:\s*MODELE_CATEGORIE,/)
+    expect(source.match(/model:/g)).toHaveLength(1)
+  })
+
+  it('le harnais, appelé sans argument, mesure ce modèle-là — sinon la prochaine mesure ne dirait rien de la production', () => {
+    const defaut = sourceDe('evaluer-extraction').match(/const MODELE_PAR_DEFAUT = "([^"]+)"/)?.[1]
+    expect(defaut, 'MODELE_PAR_DEFAUT introuvable dans evaluer-extraction — garde-fou à remettre à jour').toBe(MODELE_MESURE)
   })
 })
 

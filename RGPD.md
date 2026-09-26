@@ -41,6 +41,7 @@ ses données sont là. Voir §6 et §8.7.
 | **Collecte des justificatifs** | Rassembler les pièces (dépôt, e-mail, Super PDP) | Exécution du contrat de mission | Client, tiers figurant sur les pièces — des **patients** seulement si un bordereau est déposé par erreur (§8.7) | Fichiers, empreintes SHA-256, horodatages |
 | **Extraction automatique (OCR)** | Lire tiers, date et montants pour éviter la ressaisie | Intérêt légitime du cabinet (réduction de la saisie) | Idem collecte | Texte intégral du document (`piece_textes_ocr`) |
 | **Assistant comptable** | Répondre à des questions sur un dossier, en lecture seule | Intérêt légitime du cabinet | Client | Question, réponse, comptage de tokens |
+| **Proposition de catégorie** | Proposer la catégorie d'une pièce d'après son texte, sur le clic d'un membre du cabinet ; rien n'est écrit sans lui | Intérêt légitime du cabinet (réduction de la saisie) | Idem collecte | Texte OCR de la pièce, liste des catégories ; journal : tokens et issue, jamais l'extrait |
 | **Facturation et relances** | Émettre et transmettre les factures d'honoraires | Exécution du contrat + obligation légale (facturation) | Client | Identité, adresse, e-mail, montants |
 | **Facturation électronique** | Émettre et recevoir des factures au format réglementaire | Obligation légale (réforme de la facturation électronique) | Client et ses tiers | Facture complète, identité émetteur/destinataire |
 | **Gestion des accès** | Ouvrir et fermer les comptes cabinet et client | Exécution du contrat | Membres du cabinet, clients | E-mail, identifiant, rôle |
@@ -58,7 +59,7 @@ toujours « à valider », et la catégorie reste un arbitrage humain.
 |---|---|---|---|
 | **Supabase** | Base, stockage des fichiers, authentification | `eu-west-1` (Irlande) | Non |
 | **AWS Textract** | OCR des pièces déposées | `eu-central-1` (Francfort), repli du code **gardé par un test**, secret **mesuré** le 21/09/2026 (§8.1) | Non |
-| **AWS Bedrock** | Assistant comptable (Claude), citation des champs d'une pièce lue, et proposition de sa catégorie — cette dernière seulement MESURÉE (25/09/2026, données fictives), pas encore une fonctionnalité | `eu-west-1` (Irlande) pour l'assistant, écrit dans son code ; `eu-central-1` (Francfort) pour la citation et la catégorie, même secret que Textract — **gardés par un test** | Non |
+| **AWS Bedrock** | Assistant comptable (Claude), citation des champs d'une pièce lue, et proposition de sa catégorie (`proposer-categorie`, sur clic, depuis le 26/09/2026) | `eu-west-1` (Irlande) pour l'assistant, écrit dans son code ; `eu-central-1` (Francfort) pour la citation et la catégorie, même secret que Textract — **gardés par un test** | Non |
 | **Super PDP** | Plateforme de dématérialisation agréée DGFiP | France | Non |
 | **Resend** | Envoi et réception d'e-mails | `eu-west-1` (Irlande), confirmé par le cabinet le 22/09/2026 | Non, **sous réserve du DPA — voir §8.2** |
 | **GitHub Pages** | Hébergement du front (fichiers statiques) | — | Aucune donnée de dossier n'y transite |
@@ -237,8 +238,13 @@ région décide si c'est un traitement en Europe ou un transfert hors UE.
 
 **La moitié que le code gouverne est désormais gardée** : `edgeFunctionsRegions.test.ts` lit la
 vraie source déployée et refuse toute région hors UE, pour Textract comme pour Bedrock — et vérifie
-au passage que les deux clients Textract d'`extract-piece` partagent la même région, sans quoi une
+au passage que les fonctions qui lisent le secret retombent toutes sur la même région, sans quoi une
 partie des documents partirait ailleurs pendant que le registre annoncerait une seule région.
+**Il part de TOUTE fonction qui importe un SDK AWS** (26/09/2026) : sa première version nommait les
+siennes, et `proposer-categorie` serait arrivée sans lui. Il exige aussi que chaque client AWS NOMME
+sa région — sans elle, le SDK Bedrock prend le secret `AWS_REGION`, puis **`us-east-1`** (vérifié dans
+le paquet 0.33.4) : sur un projet recréé dont le secret n'est pas encore posé, les textes partiraient
+aux États-Unis sans qu'aucun fichier ne change.
 
 **La moitié qu'il ne gouverne pas est désormais MESURÉE, et c'est mieux qu'une lecture de tableau
 de bord** : le secret `AWS_REGION` l'emporte sur le repli du code, et aucun fichier de ce dépôt ne

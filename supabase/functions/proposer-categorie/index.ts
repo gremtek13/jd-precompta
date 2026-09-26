@@ -1,28 +1,50 @@
-// Proposition d'une CATÉGORIE comptable par un modèle de langage, d'après le TEXTE OCR d'une pièce.
+// Edge Function : PROPOSER une catégorie pour UNE pièce, d'après le texte que l'OCR y a lu.
 //
-// POURQUOI CE MODULE EXISTE. Les règles tiers → catégorie (`tiersCategories.ts`) n'apprennent
-// qu'après un premier arbitrage, et ne disent rien d'un fournisseur inconnu. Le nom du fournisseur ne
-// dit d'ailleurs pas toujours ce qui a été acheté : « BOULANGER MARSEILLE » peut être un four de salle
-// d'attente comme un cadeau. Le texte du document, lui, le dit — « FOUR MICRO-ONDES » — et il est
-// conservé depuis le 18/09/2026 (`piece_textes_ocr`).
+// Le bouton « Proposer une catégorie » de la fiche d'une pièce l'appelle, sur un clic, quand aucune
+// règle ne connaît le fournisseur. Le contrat vit dans `src/lib/categorisationIa.ts`, recopié plus bas
+// au caractère près : une liste FERMÉE de catégories filtrée sur le sens de la pièce, un extrait
+// RECOPIÉ du document que le code retrouve dans le texte, et RIEN d'écrit — la fonction propose,
+// l'opérateur applique dans la fiche, puis enregistre. Mesuré avant d'être construit (25/09/2026, les
+// 42 textes du dossier `test`) : zéro code inventé, zéro inversion de sens, 6 propositions sur 7
+// conformes aux décisions déjà prises par le cabinet.
 //
-// LE MÊME CONTRAT QUE L'EXTRACTION DES CHAMPS (`extractionChamps.ts`) : le modèle DÉSIGNE, le code
-// VÉRIFIE, l'humain TRANCHE.
-//   1. Il choisit dans une liste FERMÉE, par code. Un code hors de la liste est une invention : rejeté.
-//   2. Il JUSTIFIE son choix par un extrait RECOPIÉ du document, que le code retrouve dans le texte.
-//      Une justification composée est rejetée comme une citation inventée. C'est aussi ce qui rend la
-//      proposition vérifiable d'un coup d'œil : « proposée parce que le document dit
-//      "FOUR MICRO-ONDES" » se juge en une seconde, là où une catégorie nue se croit ou se refait.
-//   3. Rien n'est écrit sans le clic de l'opérateur, comme toute proposition de ce projet.
+// QUI APPELLE : un membre du cabinet qui a accès au dossier de la pièce (`admin_du_dossier`). Un client
+// lit les pièces de son dossier mais n'a pas à voir de catégorie (accès client restreint, voir
+// CLAUDE.md), et un compte inscrit seul n'est administrateur de rien.
 //
-// CE QUE LA VÉRIFICATION NE PROUVE PAS, écrit plutôt que laissé croire : qu'un extrait retrouvé
-// justifie VRAIMENT la catégorie choisie. « FOUR MICRO-ONDES » est bien sur le document ; que ce soit
-// un achat courant ou une immobilisation reste un arbitrage. La vérification garantit que la
-// proposition repose sur le document et non sur une invention — la justesse, c'est l'humain qui la
-// juge, et c'est pourquoi l'extrait lui est montré.
+// CE QUI SORT D'ICI : la proposition repart vers l'écran qui l'a demandée — l'extrait est un fragment
+// d'un document que l'opérateur a déjà sous les yeux. Le JOURNAL, lui, ne porte que les tokens et
+// l'issue, JAMAIS l'extrait : un fragment de document peut être un nom de patient (même règle que
+// `extract-piece`).
 //
-// Ce module ne parle à personne : ni Supabase, ni réseau, ni DOM. Le harnais de mesure
-// (`evaluer-extraction`) en porte une copie auto-portée, et `categorisationIaCopie.test.ts` la garde.
+// LE COÛT EST JOURNALISÉ, PAS PLAFONNÉ — la décision prise pour `extract-piece`, pour la même raison :
+// de l'ordre de 0,003 $ par clic (≈ 1 950 tokens d'entrée mesurés), un clic par pièce que les règles ne
+// couvrent pas. Le plafond, distinct de celui de l'assistant, s'ajoutera quand le volume le justifiera ;
+// la ligne `[proposer-categorie] …` de `query_logs` est ce qui permettra d'en juger.
+
+import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
+import { createClient } from "npm:@supabase/supabase-js@2"
+
+// Le modèle que la mesure du 25/09/2026 a jugé. En changer demande une NOUVELLE mesure de la
+// catégorisation (CLAUDE.md) : `categorisationIaCopie.test.ts` le fige, et vérifie que le harnais
+// `evaluer-extraction`, appelé sans argument, mesure bien celui-là.
+const MODELE_CATEGORIE = "eu.anthropic.claude-haiku-4-5-20251001-v1:0"
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+const TYPES_PIECE = ["achat", "vente", "note_frais", "autre"]
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+}
+
+function json(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json", ...corsHeaders },
+  })
+}
 
 // ── DÉBUT COPIE categorisationIa ────────────────────────────────────────────────────────────────
 // Ce bloc est recopié AU CARACTÈRE PRÈS dans les Edge Functions qui en ont besoin (elles sont
@@ -244,53 +266,137 @@ export function verifierProposition(
 }
 // ── FIN COPIE categorisationIa ──────────────────────────────────────────────────────────────────
 
-// ── HORS DE LA COPIE : ce que l'écran fait de la réponse ───────────────────────────────────────────
-// La fonction `proposer-categorie` applique le contrat ci-dessus et rend son issue. Ce qui suit ne
-// vit que dans l'application : la façon de le DIRE à l'opérateur, et la lecture de la réponse.
-
-/**
- * Ce que chaque issue veut dire pour l'opérateur. Un `Record` sur le type, pour que le compilateur
- * refuse une issue ajoutée au contrat sans phrase pour la dire.
- */
-const LIBELLES_ISSUE: Record<IssueProposition, string> = {
-  retenue: 'Catégorie proposée d’après le document.',
-  abstention: 'Aucune catégorie ne s’impose d’après le texte du document : à choisir à la main.',
-  'code inconnu': 'Proposition écartée : la catégorie désignée n’est pas dans la liste de ce type de pièce.',
-  'indice manquant': 'Proposition écartée : elle ne s’appuyait sur aucun extrait du document.',
-  'indice absent du texte': 'Proposition écartée : l’extrait cité pour la justifier ne figure pas dans le document.',
-  'réponse illisible': 'Proposition écartée : la réponse du modèle était illisible. Vous pouvez réessayer.',
-}
-
-export function libelleIssue(issue: IssueProposition): string {
-  return LIBELLES_ISSUE[issue]
-}
-
-/** Ce que l'écran reçoit : une catégorie et son extrait, ou une issue qui dit pourquoi il n'y en a pas. */
-export interface PropositionCategorie {
-  issue: IssueProposition
-  /** Non nul SEULEMENT quand l'issue est « retenue ». */
-  categorieId: string | null
-  /** L'extrait qui justifie la proposition, tel que le document le porte — même règle. */
-  indice: string | null
-}
-
-/**
- * La réponse de `proposer-categorie`, VÉRIFIÉE plutôt que supposée : une réponse qui ne dit pas l'une
- * des issues connues, ou qui porte une catégorie sans son extrait, lève. Une proposition sans
- * justification ne se montre pas — c'est tout le contrat — et une forme inattendue est une panne à
- * dire, pas une proposition à afficher. Réciproquement, un extrait qui accompagnerait un REJET n'est
- * jamais rendu : ce serait montrer ce que la vérification vient d'écarter.
- */
-export function lireProposition(reponse: unknown): PropositionCategorie {
-  const r = (reponse ?? {}) as { issue?: unknown; categorieId?: unknown; indice?: unknown }
-  const issue = r.issue
-  // `Object.hasOwn` et non `in` : « toString » est dans tout objet par son prototype.
-  if (typeof issue !== 'string' || !Object.hasOwn(LIBELLES_ISSUE, issue)) {
-    throw new Error('Réponse inattendue du service de proposition.')
+Deno.serve(async (req: Request) => {
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders })
   }
-  if (issue !== 'retenue') return { issue: issue as IssueProposition, categorieId: null, indice: null }
-  if (typeof r.categorieId !== 'string' || !r.categorieId || typeof r.indice !== 'string' || !r.indice.trim()) {
-    throw new Error('Réponse inattendue du service de proposition : une catégorie sans son extrait.')
+  if (req.method !== "POST") {
+    return json({ error: "Méthode non autorisée." }, 405)
   }
-  return { issue: 'retenue', categorieId: r.categorieId, indice: r.indice }
-}
+
+  const authHeader = req.headers.get("Authorization")
+  if (!authHeader) {
+    return json({ error: "Non authentifié." }, 401)
+  }
+
+  try {
+    const supabaseAsCaller = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    })
+    const { data: appelant, error: erreurAppelant } = await supabaseAsCaller.auth.getUser()
+    if (erreurAppelant || !appelant.user) {
+      return json({ error: "Non authentifié." }, 401)
+    }
+
+    let payload: { pieceId?: unknown; typePiece?: unknown }
+    try {
+      payload = await req.json()
+    } catch {
+      return json({ error: "Corps de requête invalide." }, 400)
+    }
+    const pieceId = typeof payload.pieceId === "string" ? payload.pieceId.trim() : ""
+    if (!UUID.test(pieceId)) {
+      return json({ error: "pieceId : l'identifiant d'une pièce est attendu." }, 400)
+    }
+
+    // TOUT SE LIT AVEC LE JETON DE L'APPELANT : la fonction n'écrit rien et n'a besoin d'aucun
+    // privilège de plus que lui — la RLS dit déjà ce qu'il peut voir.
+    const { data: piece, error: erreurPiece } = await supabaseAsCaller
+      .from("pieces")
+      .select("id, dossier_id, type_piece")
+      .eq("id", pieceId)
+      .maybeSingle()
+    if (erreurPiece) {
+      return json({ error: `Lecture de la pièce impossible : ${erreurPiece.message}` }, 500)
+    }
+    // L'identifiant du dossier finit dans un filtre PostgREST écrit en texte : il doit en être un.
+    if (!piece || !UUID.test(piece.dossier_id)) {
+      return json({ error: "Pièce introuvable." }, 404)
+    }
+
+    // Un CLIENT lit les pièces de son dossier — ses propres dépôts — : la RLS ne suffit donc pas à dire
+    // qu'on est du cabinet. Même contrôle que les autres fonctions d'un dossier.
+    const { data: aAcces, error: erreurAcces } = await supabaseAsCaller
+      .rpc("admin_du_dossier", { p_dossier_id: piece.dossier_id })
+    if (erreurAcces) {
+      return json({ error: `Contrôle d'accès impossible : ${erreurAcces.message}` }, 500)
+    }
+    if (!aAcces) {
+      return json({ error: "Pièce introuvable." }, 404)
+    }
+
+    const [lecture, lues] = await Promise.all([
+      supabaseAsCaller.from("piece_textes_ocr").select("texte").eq("piece_id", piece.id).maybeSingle(),
+      // Celles du cabinet (dossier_id nul) et celles de CE dossier : l'appelant peut en administrer
+      // d'autres, dont les catégories propres n'ont rien à faire dans la question. Lues avec leur compte
+      // annoncé : tronquée, la liste changerait la question posée au modèle sans le dire.
+      supabaseAsCaller
+        .from("categories")
+        .select("id, code, libelle, poste_2035, compte_comptable, dossier_id", { count: "exact" })
+        .or(`dossier_id.is.null,dossier_id.eq.${piece.dossier_id}`)
+        .order("ordre")
+        .order("id"),
+    ])
+    if (lecture.error) {
+      return json({ error: `Lecture du texte de la pièce impossible : ${lecture.error.message}` }, 500)
+    }
+    if (lues.error) {
+      return json({ error: `Lecture des catégories impossible : ${lues.error.message}` }, 500)
+    }
+    const texte: string = lecture.data?.texte ?? ""
+    // Pas de texte, rien à citer : le modèle n'est pas appelé, donc rien n'est facturé.
+    if (!texte.trim()) {
+      return json({ error: "Cette pièce n'a pas de texte lu : relancez d'abord « Retrouver le texte lu »." }, 422)
+    }
+    const categories = lues.data ?? []
+    if (categories.length !== lues.count) {
+      return json({ error: "Les catégories n'ont été lues qu'en partie : la question posée au modèle serait amputée." }, 500)
+    }
+
+    // Une catégorie propre au dossier l'emporte sur celle du cabinet qui porterait le même code — la
+    // règle du harnais de mesure, pour que la production pose la question qui a été mesurée.
+    const parCode = new Map()
+    for (const c of categories) if (!c.dossier_id) parCode.set(c.code, c)
+    for (const c of categories) if (c.dossier_id) parCode.set(c.code, c)
+    const liste = [...parCode.values()]
+
+    // Le type AFFICHÉ dans la fiche, s'il est donné : l'opérateur a pu le corriger sans avoir encore
+    // enregistré, et c'est le sens qu'il a sous les yeux qui filtre la liste.
+    const type = typeof payload.typePiece === "string" && TYPES_PIECE.includes(payload.typePiece)
+      ? payload.typePiece
+      : piece.type_piece
+    const { prompt, codes } = questionCategorisation(liste, sensDePiece(type))
+
+    // Même région que la lecture et la citation des champs : le texte d'un document sort au même
+    // endroit que le document, et `edgeFunctionsRegions.test.ts` le garde.
+    const client = new AnthropicBedrock({
+      awsRegion: Deno.env.get("AWS_REGION") ?? "eu-central-1",
+      awsAccessKey: Deno.env.get("AWS_ACCESS_KEY_ID"),
+      awsSecretKey: Deno.env.get("AWS_SECRET_ACCESS_KEY"),
+    })
+    const reponse = await client.messages.create({
+      model: MODELE_CATEGORIE,
+      ...REGLAGES_MODELE,
+      messages: [{ role: "user", content: `${prompt}\n\n--- TEXTE ---\n${texte}` }],
+    })
+    const brut = reponse.content.find((b: { type: string }) => b.type === "text")?.text
+    const verifiee = verifierProposition(brut, codes, texte)
+    // Les tokens et l'issue, JAMAIS l'extrait — voir l'en-tête.
+    console.log(
+      `[proposer-categorie] ${MODELE_CATEGORIE} — ${reponse.usage?.input_tokens ?? 0} tokens entrée, `
+        + `${reponse.usage?.output_tokens ?? 0} tokens sortie, issue : ${verifiee.issue}`,
+    )
+
+    // L'identifiant, pas le code : c'est lui que la fiche pose dans son champ. Et l'extrait ne repart
+    // QU'AVEC une proposition retenue — un extrait rejeté est ce que la vérification vient d'écarter.
+    const retenue = verifiee.code ? liste.find((c) => c.code === verifiee.code) : undefined
+    return json({
+      issue: verifiee.issue,
+      categorieId: retenue?.id ?? null,
+      indice: retenue ? verifiee.indice : null,
+    })
+  } catch (err) {
+    console.error("[proposer-categorie]", err)
+    return json({ error: err instanceof Error ? err.message : "La proposition n'a pas pu être obtenue." }, 500)
+  }
+})

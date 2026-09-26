@@ -13,6 +13,8 @@ import { EntetePanneau } from '../../components/PanneauDroit'
 import { IconChevron, IconPrecedent } from '../../components/icons'
 import { messageErreur } from '../../lib/messageErreur'
 import { retirerFichiers } from '../../lib/stockage'
+import { libelleIssue, type PropositionCategorie } from '../../lib/categorisationIa'
+import { proposerCategorie } from '../../lib/propositionCategorie'
 
 // L'apprentissage tiers → catégorie ne doit jamais faire échouer l'enregistrement d'une pièce : il
 // reste best-effort. Mais l'avaler en silence n'est pas la même chose, et c'est ce qui a permis à la
@@ -62,9 +64,13 @@ interface Props {
   // Rapporte si la fiche porte une saisie non enregistrée : c'est l'écran appelant qui garde le volet
   // (la garde de sortie de lib/panneauDroit.ts). Doit être une fonction STABLE.
   onModifiee?: (modifiee: boolean) => void
+  // L'écran appelant SAIT que cette pièce n'a pas de texte lu : « Proposer une catégorie » n'aurait
+  // rien à citer, donc ne s'affiche pas. Dans le doute (liste des textes illisible), il reste : la
+  // fonction refuse alors sans appeler le modèle, donc sans rien facturer.
+  sansTexteLu?: boolean
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false }: Props) {
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
   // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
@@ -103,6 +109,12 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   const [lignesBrutes, setLignesBrutes] = useState<string[] | undefined>(undefined)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [previewError, setPreviewError] = useState<string | null>(null)
+  // La catégorie proposée par le modèle, avec le TYPE pour lequel elle a été demandée : le sens de la
+  // pièce décide des catégories proposables, donc une proposition faite pour un achat ne vaut plus
+  // rien quand l'opérateur repasse la pièce en vente.
+  const [proposition, setProposition] = useState<{ pourType: TypePiece; resultat: PropositionCategorie } | null>(null)
+  const [proposant, setProposant] = useState(false)
+  const [erreurProposition, setErreurProposition] = useState<string | null>(null)
 
   // Une saisie NON ENREGISTRÉE : tout champ qui s'écarte de la pièce telle qu'ouverte, un fichier
   // choisi, une extraction qui a rempli le formulaire. Dans une fenêtre modale la question ne se
@@ -160,6 +172,31 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     if (categorieId || !value.trim()) return
     const suggestion = suggererCategorie(value, tiersCategories, tiersCategoriesCabinet)
     if (suggestion) setCategorieId(suggestion)
+  }
+
+  // « Proposer une catégorie » — le contrat vit dans lib/categorisationIa.ts : une liste fermée, un
+  // extrait retrouvé dans le document, et RIEN d'écrit. La proposition remplit au plus le champ, sur
+  // un second clic ; l'enregistrement reste celui de la fiche.
+  //
+  // Verrou en `useRef`, posé avant le `try` et relâché dans le `finally` (CLAUDE.md) : chaque clic
+  // est un appel au modèle FACTURÉ, et deux clics du même rendu passeraient un état React.
+  const propositionEnCours = useRef(false)
+  async function proposer() {
+    if (!piece || propositionEnCours.current) return
+    propositionEnCours.current = true
+    const pourType = typePiece
+    setProposant(true)
+    setErreurProposition(null)
+    setProposition(null)
+    try {
+      const resultat = await proposerCategorie(piece.id, pourType)
+      setProposition({ pourType, resultat })
+    } catch (err) {
+      setErreurProposition(messageErreur(err, 'La proposition n’a pas pu être obtenue.'))
+    } finally {
+      propositionEnCours.current = false
+      setProposant(false)
+    }
   }
 
   function recalcFromHtTva(ht: string, tva: string) {
@@ -467,6 +504,23 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   const genreApercu = typeApercu(file?.name ?? piece?.nom_fichier ?? '')
   const occupee = saving || deleting
 
+  // Une pièce sans catégorie : d'abord ce que les règles apprises savent de son fournisseur, et le
+  // modèle SEULEMENT pour ce qu'elles ne savent pas (CLAUDE.md, « les règles d'abord »). Une règle
+  // connue ne coûte rien ; le modèle, un appel facturé.
+  const regle = suggererCategorie(tiers, tiersCategories, tiersCategoriesCabinet)
+  const categorieRegle = regle ? categories.find((c) => c.id === regle) ?? null : null
+  const propositionAffichee = proposition && proposition.pourType === typePiece ? proposition.resultat : null
+  const categorieProposee = propositionAffichee?.categorieId
+    ? categories.find((c) => c.id === propositionAffichee.categorieId) ?? null
+    : null
+  const messageProposition = !propositionAffichee || categorieProposee
+    ? null
+    : propositionAffichee.issue === 'retenue'
+      // L'identifiant rendu n'est pas dans la liste de la fiche : une catégorie créée ou retirée depuis
+      // l'ouverture de l'écran. La poser dans le champ enregistrerait une valeur que le champ n'affiche pas.
+      ? 'La catégorie proposée n’est pas dans la liste de ce dossier : rechargez la page, puis réessayez.'
+      : libelleIssue(propositionAffichee.issue)
+
   return (
     <div className="fiche-piece">
       <EntetePanneau
@@ -599,6 +653,43 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               </select>
             </div>
           </div>
+
+          {piece && !categorieId && (categorieRegle ? (
+            <div className="proposition-categorie">
+              <p>Une règle apprise range ce fournisseur en <strong>{categorieRegle.libelle}</strong>.</p>
+              <button type="button" className="btn btn-outline btn-sm" onClick={() => setCategorieId(categorieRegle.id)}>
+                Appliquer
+              </button>
+            </div>
+          ) : !regle && !sansTexteLu && (
+            <div className="proposition-categorie">
+              {categorieProposee && propositionAffichee ? (
+                <>
+                  <p>
+                    Proposée : <strong>{categorieProposee.libelle}</strong>, parce que le document porte
+                    {' '}« {propositionAffichee.indice} ».
+                    <span className="muted"> L’extrait figure bien sur le document ; c’est à vous de juger s’il justifie la catégorie.</span>
+                  </p>
+                  <div className="proposition-categorie-actions">
+                    <button type="button" className="btn btn-primary btn-sm" onClick={() => setCategorieId(categorieProposee.id)}>
+                      Appliquer
+                    </button>
+                    <button type="button" className="btn btn-outline btn-sm" onClick={() => setProposition(null)}>
+                      Écarter
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <button type="button" className="btn btn-outline btn-sm" disabled={proposant} onClick={proposer}>
+                    {proposant ? 'Proposition…' : '✨ Proposer une catégorie'}
+                  </button>
+                  {messageProposition && <p className="muted">{messageProposition}</p>}
+                  {erreurProposition && <p className="error-text">{erreurProposition}</p>}
+                </>
+              )}
+            </div>
+          ))}
 
           <div className="field-row fiche-piece-montants">
             <div className="field">

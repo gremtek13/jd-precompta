@@ -172,6 +172,9 @@ Conséquences pratiques :
     domaine `precompta.jdarnis.fr` via Resend.
   - `superpdp-credentials`, `superpdp-sync`, `superpdp-emit` — facturation
     électronique via Super PDP (voir section dédiée plus bas).
+  - `proposer-categorie` — propose la catégorie d'UNE pièce d'après son texte OCR, sur le clic d'un
+    membre du cabinet dans la fiche de la pièce : liste fermée filtrée sur le sens, extrait vérifié
+    dans le texte, RIEN d'écrit (voir « Décisions techniques »).
   - `evaluer-extraction` — harnais de MESURE, pas une fonctionnalité : rejoue la citation des
     champs ou la proposition de catégorie sur les textes OCR d'un dossier, et ne facture que pendant
     une fenêtre datée (voir « Problèmes connus »).
@@ -757,7 +760,7 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   Trouvé en regardant les trois appelants, pas en relisant le gestionnaire.
 - **UN MODÈLE PEUT PROPOSER UNE CATÉGORIE : DANS UNE LISTE FERMÉE, JUSTIFIÉE PAR UNE CITATION, ET
   UN HUMAIN TRANCHE** (`src/lib/categorisationIa.ts`, ligne 25 de la feuille de route — MESURÉ le
-  25/09/2026, le bouton n'est pas construit). Les règles tiers → catégorie n'apprennent qu'après un
+  25/09/2026, CONSTRUIT le 26/09/2026). Les règles tiers → catégorie n'apprennent qu'après un
   premier arbitrage et ne disent rien d'un fournisseur inconnu ; le texte OCR, lui, dit souvent ce
   qui a été acheté. Le contrat est celui de la citation des champs : le modèle rend le CODE d'une
   catégorie de la liste proposée et un INDICE recopié d'une ligne du document ; le code refuse un code
@@ -790,10 +793,39 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   assurance, badge de péage en déplacements), ce qui est une lecture et non une mesure.
   **Coût** : environ 1 950 tokens d'entrée par pièce, le texte OCR dominant, soit 0,0026 $ la pièce
   aux tarifs première partie (Bedrock a sa propre grille). Les trois passes ont coûté 0,32 $ en tout.
-  **Ce qu'un bouton devra respecter** : les règles d'abord, le modèle seulement pour ce qu'aucune
-  règle ne connaît ; la proposition MONTRÉE avec son indice, jamais appliquée ; un appel sur clic
-  explicite ; un plafond de coût distinct de celui de l'assistant, comme pour l'extraction ; et la
-  fonction qui l'appellera rejoint la liste des copies gardées par `categorisationIaCopie.test.ts`.
+  **LE BOUTON EST CONSTRUIT (26/09/2026)** — `proposer-categorie` (Edge Function, version 1) et la
+  fiche d'une pièce, où il vit à côté du champ Catégorie. Ce que la mesure exigeait, et comment
+  c'est tenu :
+  - **les règles d'abord** : quand une règle apprise connaît le fournisseur, la fiche la propose
+    (« Une règle apprise range ce fournisseur en … », sans rien facturer) et n'offre PAS le modèle ;
+  - **montrée, jamais appliquée** : la proposition arrive avec son extrait, et « Appliquer » ne fait
+    que remplir le champ — l'enregistrement reste celui de la fiche. La fonction n'écrit RIEN, et
+    `proposerCategorieFonction.test.ts` le lui interdit, comme de journaliser l'extrait ou de lire
+    à la clé de service ;
+  - **sur clic, sous verrou** : chaque clic est un appel facturé ; verrou `useRef` posé avant le
+    `try` et relâché dans le `finally`, gardé par le test à trois clics ;
+  - **le type AFFICHÉ part avec la demande**, et une proposition faite pour un autre type ne se
+    montre plus : c'est le sens qui décide des catégories proposables ;
+  - **appliquée puis enregistrée, elle devient une règle apprise** comme tout arbitrage — c'est
+    l'enregistrement de la fiche qui mémorise le couple fournisseur → catégorie, pas la proposition.
+    Le modèle n'est donc interrogé qu'une fois par fournisseur, et c'est l'humain qui l'a validé ;
+  - **offert seulement quand il y a quelque chose à citer** : jamais sur une pièce dont l'écran SAIT
+    qu'elle n'a pas de texte lu ; offert dans le doute (liste des textes illisible), la fonction
+    refusant une pièce sans texte AVANT d'appeler le modèle ;
+  - **le modèle MESURÉ, figé dans le test** et non plus lu dans le harnais : le défaut du harnais
+    suit aussi la citation des champs, et une nouvelle mesure de l'extraction ne doit pas faire
+    changer la catégorisation de modèle sans qu'elle soit mesurée à son tour ;
+  - **aucun plafond de coût, et c'est dit plutôt que promis** : journalisé, pas plafonné — la
+    décision prise pour `extract-piece`, pour la même raison (≈ 0,003 $ le clic ; la ligne
+    `[proposer-categorie] …` de `query_logs` porte les tokens et l'issue, jamais l'extrait). La
+    fonction est réservée à `admin_du_dossier` : ni un client ni un compte inscrit seul ne l'atteint.
+  **Vérifié en production** : sans jeton la passerelle refuse, avec la seule clé publique la fonction
+  refuse avant toute dépense, et l'aller-retour ne rend aucune différence sur 402 lignes. **Le chemin
+  positif reste à éprouver par un clic réel du cabinet** — c'est un appel au modèle, donc facturé.
+  Quarante-six mutations mordent (fonction, fiche, câblage de `PiecesTab`, lecture de la réponse) ;
+  une quarante-septième, équivalente, a survécu : poser le verrou dans le `try` AVANT le premier
+  `await` ne change rien. C'est le `return` exécuté DANS le `try` qui relâche le verrou par le
+  `finally`, et cette forme-là mord.
 - **N° de TVA intracommunautaire français** calculé déterministiquement à
   partir du SIREN (formule CGI art. 286 ter : `clé = (12 + 3×(SIREN mod 97))
   mod 97`, puis `FR` + clé 2 chiffres + SIREN) plutôt que demandé comme champ
@@ -847,9 +879,11 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   « corriger » sans le lui redemander, et ne pas réenquêter l'HDS au prochain audit — ce qui
   rouvrirait la question est un bordereau constaté dans un dossier réel.
 - **Où partent les données quand elles quittent Supabase, c'est un test qui le dit.**
-  `edgeFunctionsRegions.test.ts` lit la vraie source des Edge Functions et refuse toute région AWS
-  hors UE — Textract comme Bedrock — et exige que les deux clients Textract d'`extract-piece`
-  partagent la même région. Ce que ce test NE peut pas garder : le secret `AWS_REGION`, qui l'emporte
+  `edgeFunctionsRegions.test.ts` part de TOUTE fonction qui importe un SDK AWS, exige que chaque
+  client NOMME sa région, refuse toute région hors UE — Textract comme Bedrock — et exige que les
+  fonctions qui lisent `AWS_REGION` retombent toutes sur la même. Nommer compte : sans région, le SDK
+  Bedrock prend le secret, puis **`us-east-1`** (vérifié dans le paquet 0.33.4), donc un projet
+  recréé dont le secret n'est pas encore posé enverrait les textes aux États-Unis. Ce que ce test NE peut pas garder : le secret `AWS_REGION`, qui l'emporte
   sur le repli du code et qui peut changer sans qu'aucun fichier du dépôt ne bouge. **Sa valeur est
   désormais MESURÉE et non supposée — `eu-central-1`, le 21/09/2026** : `evaluer-extraction` résout
   le même secret et le REND, donc un appel avec `limite: 0` le relit à tout moment sans facturer un
@@ -1125,11 +1159,15 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   purge qui croirait avoir tout supprimé sur une lecture tronquée serait pire que pas de purge, et
   se refuse donc plutôt que de n'en faire qu'une partie. Deux mutations délibérées confirment que la
   fonction mord (le second appel n'insère pas de doublon, une lecture incomplète bloque la purge).
+- **Proposer une catégorie (26/09/2026)** : dans la fiche d'une pièce sans catégorie, une règle
+  apprise est proposée quand elle connaît le fournisseur ; sinon « Proposer une catégorie » demande
+  au modèle une catégorie de la liste, justifiée par un extrait du document, que l'opérateur applique
+  ou écarte. Rien n'est écrit sans lui — voir « Décisions techniques ».
 
 ## Fonctionnalités actuellement en cours
 
-- Proposition de catégorie par un modèle (ligne 25 de la feuille de route) : contrat et mesure
-  livrés le 25/09/2026 (voir « Décisions techniques »). Le bouton reste à construire.
+- Proposition de catégorie par un modèle (ligne 25 de la feuille de route) : livrée le 26/09/2026,
+  reste à éprouver par un premier clic réel du cabinet (voir « Décisions techniques »).
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -2255,6 +2293,21 @@ d'environnement dans la même édition.
   chemin positif tourne en production — une session réelle, lue par le vrai service d'authentification.
   C'est un dépôt réel qui le dira, pas un appel d'essai : on n'appelle pas cette fonction sur un
   document pour vérifier qu'elle facture.
+- **DEUX GARDES PARTAIENT D'UNE LISTE, ET LA QUATRIÈME FONCTION QUI PARLE À AWS EST ARRIVÉE SANS
+  EUX** (26/09/2026). Posée dans le dépôt, `proposer-categorie` n'a fait tomber que les deux gardes
+  qui balaient `supabase/functions/` — `config.toml` et la colonne « Lue par » du plan de reprise.
+  Celui des copies de `categorisationIa` nommait `evaluer-extraction`, celui des régions AWS ses
+  trois fonctions : tous deux sont restés VERTS sur une fonction qu'ils ne regardaient pas, qui
+  envoie pourtant le texte d'un document au modèle. C'est la panne que ce dépôt connaît sous
+  plusieurs noms — une liste d'inclusion ne contient que ce à quoi quelqu'un a pensé.
+  **Ils partent désormais du dossier** : une copie du contrat se reconnaît à ses bornes OU au nom
+  de l'une de ses pièces (une copie écrite sans ses bornes tombe alors sur « bornes introuvables »),
+  une fonction AWS à l'import d'un SDK, jamais à son nom. Chacun porte un PLANCHER, sans lequel un
+  balayage rendu aveugle passerait toutes ses règles à vide. Celui des régions exige en plus que
+  chaque client construit NOMME sa région, et la résout — littéral, repli du secret, ou constante du
+  fichier — plutôt que de chercher un motif : un client sans région prend celle de son SDK. Dix-neuf
+  mutations mordent sur les deux, dont le client S3 d'`extract-piece` privé de sa région, que mon
+  premier recensement à la main avait manqué (`S3Client` porte un chiffre).
 - **UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA — DOUZE TABLES N'Y EXISTAIENT PAS** (22/09/2026,
   quatrième membre de la famille « un commit n'est pas un déploiement »). `supabase/schema/` porte un
   export de l'historique de migrations, et PLAN_DE_REPRISE.md en tirait la promesse qu'un schéma
@@ -5393,7 +5446,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1797 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1847 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
