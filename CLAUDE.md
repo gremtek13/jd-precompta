@@ -44,9 +44,16 @@ Conséquences pratiques :
   métier server-side vit soit dans des policies RLS Postgres, soit dans des
   Edge Functions Deno.
 - **Trois profils d'accès** : cabinet (chef de cabinet ou membre d'équipe
-  assigné à des dossiers), client (accès restreint à un dossier via un code
-  dédié, pas d'auth Supabase classique), super-admin (gestion multi-cabinets
-  depuis `SuperAdminPage`).
+  assigné à des dossiers), client (un compte Supabase ordinaire, créé par le
+  cabinet avec `create-client-access` et ouvert par e-mail et mot de passe comme
+  les autres — le seul chemin de connexion est `signInWithPassword` dans
+  `Login.tsx` —, restreint à ses dossiers par `memberships`), super-admin
+  (gestion multi-cabinets depuis `SuperAdminPage`). **Aucun écran ne s'affiche
+  sans session** (`App.tsx`) : tout appel de l'application à une Edge Function en
+  porte donc une. Il était écrit ici qu'un client entrait « par un code dédié,
+  pas d'auth Supabase classique » — faux, et c'est le genre de phrase qui fait
+  croire qu'un chemin anonyme existe quand on décide qui une fonction doit
+  accepter.
 - **Routing** : `HashRouter` (react-router-dom v7) — nécessaire pour un
   hébergement statique GitHub Pages sans réécriture serveur des routes.
   L'onglet actif d'un dossier fait partie de l'URL (`/dossiers/:id/:tab`),
@@ -157,7 +164,8 @@ Conséquences pratiques :
   - `create-team-member`, `create-client-access` — création de comptes
     (membre d'équipe cabinet / accès client à un dossier).
   - `extract-piece` — OCR + extraction de champs (Textract) sur une pièce
-    déposée.
+    déposée. Réservée à un compte RATTACHÉ au cabinet et à `receive-email` : une
+    simple session ne suffit pas (voir « Problèmes connus »).
   - `receive-email` — réception d'e-mails entrants (webhook Resend) par
     dossier.
   - `send-email` — envoi d'e-mails sortants (facture, relance de pièces),
@@ -2201,6 +2209,52 @@ d'environnement dans la même édition.
   partir le code avant, et il vérifie que la garde précède tout appel au modèle dans le gestionnaire.
   Au passage, `dossierId` est validé comme UUID avant d'être interpolé dans le filtre PostgREST
   `.or(…)` des catégories, la fonction lisant avec la clé de service.
+- **ET LA FONCTION DE LECTURE ÉTAIT OUVERTE DE LA MÊME FAÇON, SANS FENÊTRE POSSIBLE — REFERMÉE EN
+  DEUX TEMPS** (v46 le 25/09/2026, v47 le 26/09/2026). `extract-piece` est elle aussi en
+  `verify_jwt: true`, donc acceptait la clé publique. Son en-tête concluait qu'aucune vérification
+  d'appelant n'était nécessaire, la fonction ne touchant « ni la base ni le storage » : vrai des
+  DONNÉES, faux de la FACTURE — chaque appel paie Textract puis le modèle, jusqu'à ~0,12 $ pour un
+  document dense, sans limite de fréquence. Aucune fenêtre n'est possible ici : c'est le chemin de
+  production, appelé à chaque dépôt.
+  **Premier temps** : `appelantAutorise`, contrôlé AVANT de lire le corps — un appelant refusé ne
+  coûte pas même la lecture de ses 10 Mo. Deux appelants légitimes : une session, VÉRIFIÉE auprès du
+  service d'authentification (jamais les revendications du jeton, qui ne valent que ce que vaut
+  `verify_jwt`, drapeau déjà retourné une fois en silence), ou la clé de service exacte, que
+  `receive-email` envoie de serveur à serveur.
+  **Second temps, imposé par une mesure** : une session ne prouve pas qu'on est un utilisateur de
+  l'application. **L'inscription publique est OUVERTE sur ce projet** (`disable_signup: false`, lu
+  sur `/auth/v1/settings`, confirmation par e-mail exigée), donc la clé publique et une adresse
+  jetable donnent une vraie session — la v46 relevait la barre sans fermer la porte. Le contrôle
+  exige désormais un compte RATTACHÉ : une ligne `cabinet_admins`, `memberships` ou `super_admins`,
+  lue à la clé de service. Un compte inscrit seul ne peut pas se la donner — les deux tables de rôle
+  n'ont aucune policy d'insertion et `memberships` exige `admin_du_dossier`, relu dans `pg_policies`
+  plutôt que supposé. Un rattachement LU suffit même si une autre lecture échoue ; sans rattachement
+  lu, une lecture en échec LÈVE (500) au lieu de refuser en 401 — « connectez-vous » à quelqu'un qui
+  l'est, sur une panne de la base, serait un mauvais diagnostic.
+  **LATENT, et mesuré** : 2 comptes en base, tous deux rattachés — personne n'est entré par cette
+  porte. Et `extract-piece` était la SEULE fonction à se contenter d'une session : toutes les autres
+  qui en prennent une exigent `admin_du_dossier`, un rôle de chef ou de super-admin (compté fonction
+  par fonction), donc un compte inscrit seul n'y obtient rien — pas plus que dans les tables, où
+  c'est l'invariant 2 de `rls.sql`.
+  **L'INSCRIPTION PUBLIQUE RESTE À FERMER, ET C'EST UN CLIC DU CABINET** : aucun outil de cette
+  session ne change un réglage d'authentification. Rien ne s'en sert — les trois fonctions de
+  création de compte passent par `auth.admin.createUser`, que ce réglage n'affecte pas —, donc la
+  fermer ne retire rien. Voir PLAN_DE_REPRISE.md §3, point 6, où le réglage est désormais nommé : un
+  projet neuf le laisse ouvert. Le contrôle d'`extract-piece` n'en dépend pas, par construction.
+  **Gardé par `extractPieceAppelant.test.ts`** : les deux fonctions du bloc `── DÉBUT/FIN APPELANT`
+  sont extraites de la vraie source, transpilées et EXÉCUTÉES — l'idiome d'`extractPiecePagination`,
+  appliqué à une barrière —, le câblage est vérifié AVANT toute dépense et sur les TROIS tables, et le
+  contrat de `receive-email` (la clé de service qu'il envoie) l'est aussi : s'il changeait de clé, ses
+  pièces jointes arriveraient sans lecture, en silence. **Vingt-deux mutations, toutes mordent**, dont
+  la session seule (le code de la v46), `memberships` oublié — qui retirerait la lecture automatique à
+  tous les CLIENTS —, le rattachement lu avec le jeton de l'appelant, et les revendications du jeton
+  lues au lieu du service d'authentification.
+  **Déployées avec `verify_jwt` relu et repassé à `true`**, le déployé comparé à la version attendue
+  AVANT chaque écrasement (identique les deux fois), et un aller-retour après : zéro différence
+  résiduelle sur 1 322 puis 1 352 lignes. **Ce qu'aucune de ces vérifications ne prouve** : que le
+  chemin positif tourne en production — une session réelle, lue par le vrai service d'authentification.
+  C'est un dépôt réel qui le dira, pas un appel d'essai : on n'appelle pas cette fonction sur un
+  document pour vérifier qu'elle facture.
 - **UN EXPORT DE SCHÉMA N'EST PAS UN SCHÉMA — DOUZE TABLES N'Y EXISTAIENT PAS** (22/09/2026,
   quatrième membre de la famille « un commit n'est pas un déploiement »). `supabase/schema/` porte un
   export de l'historique de migrations, et PLAN_DE_REPRISE.md en tirait la promesse qu'un schéma
@@ -5339,7 +5393,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1779 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1797 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

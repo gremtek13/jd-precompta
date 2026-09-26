@@ -102,6 +102,14 @@ découvre avant.
    par e-mail — les comptes sont créés avec leur mot de passe par `create-cabinet`,
    `create-team-member` et `create-client-access` —, donc l'URL du site et les adresses de
    redirection n'y jouent aucun rôle.
+   **L'inscription publique est à FERMER** (Authentication → Sign In / Providers, « Allow new users
+   to sign up ») : aucun écran ne s'en sert — les trois fonctions ci-dessus passent par
+   `auth.admin.createUser`, que ce réglage n'affecte pas —, et un projet neuf la laisse ouverte, ce
+   qui donne une vraie session à qui détient la clé publique et une adresse jetable. Rien ne se lit
+   alors dans les données (la RLS exige un rattachement, voir `rls.sql`, invariant 2), et
+   `extract-piece` exige elle aussi un compte rattaché ; mais c'est une porte que rien d'autre ne
+   ferme. **Sur le projet actuel, elle était encore ouverte le 26/09/2026** (lu sur
+   `/auth/v1/settings`, `disable_signup: false`) : ce point vaut aussi hors reprise.
 
 ### Les variables d'environnement, une par une
 
