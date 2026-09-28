@@ -20,6 +20,8 @@ const faux = vi.hoisted(() => ({
   immobilisations: [] as unknown[],
   ecritures: [] as unknown[],
   aNouveaux: [] as unknown[],
+  // Les mouvements rapprochés, qui datent les pièces (lib/rattachement.ts).
+  paiements: [] as unknown[],
   // Les tables dont la lecture ÉCHOUE. Un faux client qui ne sait pas refuser ne peut rien dire de
   // la famille « le vide est une affirmation » : il rend le même objet dans les deux cas.
   refusees: new Set<string>(),
@@ -33,7 +35,7 @@ vi.mock('../../lib/supabase', () => {
     let debut = 0
     let fin = Number.MAX_SAFE_INTEGER
     Object.assign(c, {
-      select: () => c, eq: () => c, or: () => c, order: () => c,
+      select: () => c, eq: () => c, not: () => c, or: () => c, order: () => c,
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => Promise.resolve(faux.refusees.has(table)
         ? { data: null, error: { message: 'JWT expired' } }
@@ -43,7 +45,8 @@ vi.mock('../../lib/supabase', () => {
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations
           : table === 'ecritures_brouillon' ? faux.ecritures
-          : table === 'a_nouveaux' ? faux.aNouveaux : []
+          : table === 'a_nouveaux' ? faux.aNouveaux
+          : table === 'lignes_bancaires' ? faux.paiements : []
         const muet = faux.muet[table]
         if (muet != null) {
           return Promise.resolve({ data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }).then(suite)
@@ -114,6 +117,7 @@ afterEach(() => {
   faux.refusees = new Set()
   faux.muet = {}
   faux.aNouveaux = []
+  faux.paiements = []
 })
 
 describe('FinancementTab — situation intermédiaire', () => {
@@ -197,6 +201,31 @@ describe('FinancementTab — situation intermédiaire', () => {
     const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
     expect(ligne).toMatch(/sur 8,0 mois écoulés cette année/)
     expect(ligne).not.toMatch(/sur 9,0/)
+  })
+
+  it('ne compte dans la CAF qu’une recette déjà encaissée', async () => {
+    // Facturée en mai, encaissée le 15 septembre : au 1er septembre, rien n'est entré. Sans les
+    // paiements, la CAF annualisée annonçait 15 000 € (10 000 × 12 / 8).
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 8, 1, 12, 0, 0))
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [{
+      id: 'l1', dossier_id: 'd', date: '2026-09-15', libelle: 'VIR CPAM', montant: 10000, statut: 'rapprochee',
+      piece_id: 'v1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      created_at: '2026-09-15T09:00:00Z',
+    }]
+
+    render(<FinancementTab dossierId="d" assujettiTva />)
+    const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+
+    const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
+    // Sans recette encaissée, aucune CAF ne se dégage encore : l'écran dit « — », et c'est le
+    // chiffre d'avant, 15 000 €, qui serait le défaut.
+    expect(ligne).not.toMatch(/15\s?000,00/)
+    expect(ligne).toMatch(/ramenée à 12\) : —$/)
   })
 })
 
@@ -341,6 +370,51 @@ describe('FinancementTab — le prévisionnel ne s’enregistre pas sur une lect
   })
 })
 
+// LA PÉRIODE D'UNE PIÈCE EST CELLE DE SON PAIEMENT (lib/rattachement.ts), comme dans la 2035 dont cet
+// état est la version « à ce jour ». Le calcul est testé à part ; ici c'est le CÂBLAGE — que l'écran
+// lise les paiements et les passe aux trois usages de la situation.
+describe('FinancementTab — une recette compte à son encaissement', () => {
+  const ENCAISSEE_EN_JUILLET = {
+    id: 'l1', dossier_id: 'd', date: '2026-07-02', libelle: 'VIR CPAM', montant: 10000, statut: 'rapprochee',
+    piece_id: 'v1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+    created_at: '2026-07-03T09:00:00Z',
+  }
+
+  it('ne porte pas au 30 juin une recette facturée en mai et encaissée en juillet', async () => {
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [ENCAISSEE_EN_JUILLET]
+
+    const auJuin = await ouvrirLaSituation('2026-06-30')
+    expect(totalDuPoste(auJuin, 'Recettes')).toBeNull()
+    await act(async () => { fireEvent.change(screen.getByLabelText('À la date du'), { target: { value: '2026-07-31' } }) })
+    expect(totalDuPoste(auJuin, 'Recettes')).toMatch(/^10\s?000,00\s€$/)
+  })
+
+  it('la porte à sa date de facture quand aucun encaissement n’est rapproché', async () => {
+    // Le garde symétrique : sans lui, « suit l'encaissement » serait satisfait par un écran qui
+    // écarte toute recette non rapprochée.
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+
+    const auJuin = await ouvrirLaSituation('2026-06-30')
+    expect(totalDuPoste(auJuin, 'Recettes')).toMatch(/^10\s?000,00\s€$/)
+  })
+
+  it('dit la lecture partielle quand les PAIEMENTS sont lus en partie', async () => {
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [ENCAISSEE_EN_JUILLET]
+    faux.muet = { lignes_bancaires: 0 }
+    render(<FinancementTab dossierId="d" assujettiTva />)
+
+    expect(await screen.findByText(/n'ont pas pu être lu/)).toBeTruthy()
+  })
+})
+
 // LE PRÉREMPLISSAGE N'ÉCRIT RIEN LUI-MÊME — mais ce qu'il pose part tel quel au premier « Enregistrer »,
 // sur le document qu'on montre à une banque, et la fenêtre recouvre le bandeau qui dirait que la
 // lecture est incomplète. Sur une lecture partielle, il se suspend.
@@ -375,6 +449,20 @@ describe('FinancementTab — préremplir le prévisionnel', () => {
     expect(screen.getByText(/Préremplissage suspendu/)).toBeTruthy()
     await act(async () => { bouton.click() })
     expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('0')
+  })
+
+  it('préremplit sans la recette encaissée l’année suivante', async () => {
+    // La même règle que la 2035 : la recette de septembre encaissée en janvier suivant n'appartient
+    // pas au chiffre d'affaires de l'année de référence.
+    poser()
+    faux.paiements = [{
+      id: 'l2', dossier_id: 'd', date: `${ANNEE_REFERENCE + 1}-01-05`, libelle: 'VIR', montant: 5000, statut: 'rapprochee',
+      piece_id: 'v2', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      created_at: `${ANNEE_REFERENCE + 1}-01-05T09:00:00Z`,
+    }]
+    const bouton = await ouvrirLePrevisionnel()
+    await act(async () => { bouton.click() })
+    expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('10000')
   })
 
   it('préremplit, sur une lecture complète, les recettes de l’année entière', async () => {

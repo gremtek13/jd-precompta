@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
 import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from '../../lib/estimation'
-import type { Categorie, CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
@@ -27,6 +27,8 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
   // exclut tout ce qui est encore à valider.
   const [recettesValidees, setRecettesValidees] = useState<Piece[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
+  // Les mouvements rapprochés, qui DATENT chaque pièce comme dans la 2035 (lib/rattachement.ts).
+  const [paiements, setPaiements] = useState<LigneBancaire[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
@@ -68,6 +70,7 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
       lectureImmobilisations,
       lectureReferences,
       lectureReferencesPostes,
+      lecturePaiements,
     ] = await Promise.all([
       lireTout<CotisationDeclaree>((debut, fin) =>
         supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -100,18 +103,27 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
         supabase.from('references_postes_annuels').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
       ),
+      // Ce qui date une recette ou une dépense : son paiement rapproché, sa date de facture à défaut.
+      lireTout<LigneBancaire>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
+          .order('id').range(debut, fin),
+      ),
     ])
     setCotisations(lectureCotisations.lignes)
     setRecettesValidees(lectureRecettes.lignes)
     setPiecesValidees(lecturePieces.lignes)
-    // Les SEPT collections qui entrent dans l'estimation, pas seulement les pièces : les catégories
+    setPaiements(lecturePaiements.lignes)
+    // Les HUIT collections qui entrent dans l'estimation, pas seulement les pièces : les catégories
     // décident du poste 2035 de chaque dépense, les immobilisations de quelles pièces n'en sont pas
     // une, les cotisations et les références de l'assiette. Tronquée, n'importe laquelle rend une
     // estimation plausible et BASSE — ce que le bandeau nomme déjà comme « l'air d'une bonne nouvelle ».
+    // Les paiements aussi : tronqués, ils font retomber sur leur date de facture des pièces réglées
+    // une autre année, donc les comptent dans la mauvaise.
     setLectureIncomplete(
       [
         lectureCotisations, lectureRecettes, lecturePieces, lectureCategories, lectureImmobilisations,
-        lectureReferences, lectureReferencesPostes,
+        lectureReferences, lectureReferencesPostes, lecturePaiements,
       ].find((l) => !l.complete)?.motif ?? null,
     )
     setCategories(lectureCategories.lignes)
@@ -129,7 +141,7 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
   // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
   // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva)
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
@@ -202,7 +214,7 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva, paiements)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -234,7 +246,7 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
     setCalculatingPostes(true)
     setError(null)
     try {
-      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva)
+      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements)
       if (totaux.size === 0) {
         setError("Aucune pièce avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
         return

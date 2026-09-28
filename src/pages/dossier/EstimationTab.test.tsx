@@ -23,6 +23,8 @@ const faux = vi.hoisted(() => ({
   // panne qui produit une lecture INCOMPLÈTE (voir lib/lectureComplete.ts).
   muetPieces: null as number | null,
   cotisations: [] as unknown[],
+  // Les mouvements rapprochés, qui datent chaque pièce comme dans la 2035 (lib/rattachement.ts).
+  paiements: [] as unknown[],
   // Les tables dont la lecture est REFUSÉE : `lireTout` les rend incomplètes, sans aucune ligne.
   refusees: new Set<string>(),
 }))
@@ -39,7 +41,7 @@ vi.mock('../../lib/supabase', () => {
         if (colonne === 'type_piece' && valeur === 'vente') venteSeulement = true
         return c
       },
-      or: () => c, order: () => c, in: () => c, delete: () => c,
+      or: () => c, order: () => c, in: () => c, delete: () => c, not: () => c,
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       upsert: (valeur: Record<string, unknown>) => {
         if (table === 'references_postes_annuels') faux.upserts.push(valeur)
@@ -57,7 +59,8 @@ vi.mock('../../lib/supabase', () => {
           ? (venteSeulement ? faux.pieces.filter((p) => (p as Piece).type_piece === 'vente') : faux.pieces)
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations
-          : table === 'cotisations_declarees' ? faux.cotisations : []
+          : table === 'cotisations_declarees' ? faux.cotisations
+          : table === 'lignes_bancaires' ? faux.paiements : []
         if (table === 'pieces' && faux.muetPieces != null) {
           const rendu = donnees.slice(debut, Math.min(fin + 1, faux.muetPieces))
           return Promise.resolve({ data: rendu, error: null, count: donnees.length }).then(suite)
@@ -320,5 +323,64 @@ describe('EstimationTab — un dossier exonéré compte TVA comprise', () => {
     faux.pieces = [pieceDeTest({ ...avecTva, type_piece: 'vente', categorie_id: null, date_piece: '2026-03-02' })]
     await rendre(false)
     expect(valeur('CA encaissé à date')).toBe('1 200,00 €')
+  })
+})
+
+// L'ANNÉE D'UNE PIÈCE EST CELLE DE SON PAIEMENT, comme dans la 2035 dont ces repères sont
+// l'estimation (lib/rattachement.ts). Le calcul est testé à part ; ici c'est le CÂBLAGE — que l'écran
+// lise les paiements et les passe aux deux calculs qui ENREGISTRENT un repère, et à la projection.
+describe('EstimationTab — une pièce compte à la date de son paiement', () => {
+  const annee = new Date().getFullYear() - 1
+  const paiement = (pieceId: string, date: string, montant: number) => ({
+    id: `l-${pieceId}`, dossier_id: 'dossier-de-test', date, libelle: 'VIR', montant, statut: 'rapprochee',
+    piece_id: pieceId, cotisation_id: null, prelevement_personnel: false, source_fichier: null,
+    libelle_brut: null, created_at: `${date}T09:00:00Z`,
+  })
+  beforeEach(() => {
+    faux.categories = [categorieDeTest()]
+    faux.immobilisations = []
+    faux.upserts = []
+    faux.upsertsAnnuels = []
+    faux.muetPieces = null
+  })
+  afterEach(() => { faux.paiements = [] })
+
+  it('le repère annuel ne compte pas une recette encaissée l’année suivante', async () => {
+    faux.pieces = [pieceDeTest({ type_piece: 'vente', categorie_id: null, date_piece: `${annee}-12-28` })]
+    faux.paiements = [paiement('p1', `${annee + 1}-01-04`, 1200)]
+    await rendre()
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: null })
+  })
+
+  it('le détail par poste ne compte pas une charge payée l’année suivante', async () => {
+    faux.pieces = [
+      pieceDeTest({ id: 'payee-apres', date_piece: `${annee}-12-30` }),
+      pieceDeTest({ id: 'payee-dans-l-annee', date_piece: `${annee}-03-01`, montant_ht: 300 }),
+    ]
+    faux.paiements = [paiement('payee-apres', `${annee + 1}-01-02`, -1200)]
+    const bouton = await rendre()
+    await act(async () => { bouton.click() })
+    expect(faux.upserts).toEqual([expect.objectContaining({ annee, poste: 'Loyer', montant: 300 })])
+  })
+
+  it('la projection ne compte pas une recette facturée mais pas encore encaissée', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    faux.pieces = [pieceDeTest({ type_piece: 'vente', categorie_id: null, date_piece: '2026-03-02' })]
+    faux.paiements = [paiement('p1', '2026-04-10', 1000)]
+    await rendre()
+    expect(valeur('CA encaissé à date')).toBe('0,00 €')
+    vi.useRealTimers()
+  })
+
+  it('les deux calculs se suspendent quand les PAIEMENTS sont lus en partie', async () => {
+    faux.pieces = [pieceDeTest()]
+    faux.paiements = [paiement('p1', `${annee}-03-05`, -1200)]
+    faux.refusees = new Set(['lignes_bancaires'])
+    await rendre()
+    await screen.findByText(/Calcul suspendu/)
+    expect(screen.getByRole('button', { name: 'Calculer CA + cotisations' }).hasAttribute('disabled')).toBe(true)
+    faux.refusees = new Set()
   })
 })
