@@ -1,5 +1,5 @@
 import { seuilAlignement } from './alignementBanque'
-import type { LigneBancaire, Piece } from './types'
+import type { LigneBancaire, ModeComptable, Piece } from './types'
 
 // LA DATE À LAQUELLE UNE PIÈCE COMPTE, DANS UNE COMPTABILITÉ DE TRÉSORERIE (BNC, déclaration 2035).
 //
@@ -25,6 +25,13 @@ import type { LigneBancaire, Piece } from './types'
 
 /** Ce dont le rattachement a besoin d'un mouvement bancaire : le reste de la ligne ne décide de rien. */
 export type Paiement = Pick<LigneBancaire, 'piece_id' | 'date' | 'montant' | 'statut'>
+
+/**
+ * Un paiement dont on connaît le MOUVEMENT : en engagement, chaque règlement est une écriture qui
+ * désigne sa ligne bancaire (lib/engagement.ts), et le contrôle des écritures compare ces désignations
+ * aux rapprochements.
+ */
+export type PaiementIdentifie = Paiement & Pick<LigneBancaire, 'id'>
 
 // Les paiements rapprochés de chaque pièce. Seul un mouvement RAPPROCHÉ paie une pièce : le statut est
 // relu ici plutôt que supposé du côté de l'appelant, un `piece_id` sur une ligne remise à traiter
@@ -76,7 +83,9 @@ export function partsDesPaiements(
   }
 }
 
-export type SourceRattachement = 'paiement' | 'note_de_frais' | 'sans_paiement'
+// `facture` : la date de la facture en ENGAGEMENT, où elle fait foi par définition — ce n'est pas la
+// supposition de `sans_paiement`, qu'un rapprochement viendrait corriger.
+export type SourceRattachement = 'paiement' | 'note_de_frais' | 'sans_paiement' | 'facture'
 
 export interface Rattachement {
   /** Null pour une part que rien ne date : ni paiement connu, ni date de pièce. */
@@ -85,7 +94,7 @@ export interface Rattachement {
   source: SourceRattachement
 }
 
-const ORDRE_SOURCE: Record<SourceRattachement, number> = { paiement: 0, note_de_frais: 1, sans_paiement: 2 }
+const ORDRE_SOURCE: Record<SourceRattachement, number> = { paiement: 0, note_de_frais: 1, sans_paiement: 2, facture: 3 }
 
 // Où une pièce compte, et pour quelle part. Les parts somment à 1 ; celles d'une même date et d'une
 // même source sont réunies (deux paiements le même jour ne font qu'une date), et l'ordre est fixe —
@@ -119,6 +128,21 @@ export function rattachementsTresorerie(
     }
     return ORDRE_SOURCE[a.source] - ORDRE_SOURCE[b.source]
   })
+}
+
+// Où une pièce compte, selon le MODÈLE COMPTABLE du dossier. En trésorerie, la règle ci-dessus. En
+// ENGAGEMENT (lib/engagement.ts), à la date de sa FACTURE et en entier : c'est la facture qui crée la
+// charge ou le produit, le paiement ne fait que solder la dette — il ne date donc rien, pas même une
+// partie. Une pièce sans date n'y compte nulle part, comme en trésorerie, et les écrans la disent
+// « sans date ». Sans valeur par défaut pour le modèle : un appelant qui l'oublie doit le découvrir à la
+// compilation, pas en lisant une situation intermédiaire datée au paiement dans une société à l'IS.
+export function rattachements(
+  piece: Pick<Piece, 'date_piece' | 'montant_ttc' | 'type_piece'>,
+  paiements: readonly Pick<LigneBancaire, 'date' | 'montant'>[],
+  mode: ModeComptable,
+): Rattachement[] {
+  if (mode === 'engagement') return [{ date: piece.date_piece, part: 1, source: 'facture' }]
+  return rattachementsTresorerie(piece, paiements)
 }
 
 // La part d'une pièce qui tombe dans une période, bornes comprises, en dates `AAAA-MM-JJ`. Une part

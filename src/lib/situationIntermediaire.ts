@@ -1,7 +1,7 @@
 import { anneeDe, jourDe, moisDe } from './format'
 import { montantRetenu } from './montantRetenu'
-import { paiementsParPiece, partDansLaPeriode, rattachementsTresorerie, type Paiement } from './rattachement'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
+import { paiementsParPiece, partDansLaPeriode, rattachements, type Paiement } from './rattachement'
+import type { Categorie, CotisationDeclaree, Immobilisation, ModeComptable, Piece } from './types'
 
 // Exporté parce que `ratiosBancaires.ts` doit retrouver ce poste dans `totauxParPoste` pour calculer
 // la CAF. Il le cherchait par une chaîne littérale écrite de son côté : renommer le poste ici aurait
@@ -67,6 +67,10 @@ export function calculerSituationIntermediaire(
   // dans la période de son paiement, comme dans la 2035 dont cet état est la version « à ce jour ».
   // Sans valeur par défaut — une liste vide ferait tout compter à la date de facture.
   lignesBancaires: readonly Paiement[],
+  // Le modèle comptable du dossier : en ENGAGEMENT, une pièce compte à la date de sa facture, le
+  // paiement ne datant rien (lib/rattachement.ts, `rattachements`). Sans valeur par défaut, pour la
+  // même raison que les paiements.
+  mode: ModeComptable,
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
@@ -77,10 +81,11 @@ export function calculerSituationIntermediaire(
   for (const p of pieces) {
     if (p.statut !== 'validee') continue
     if (immobilisationPieceIds.has(p.id)) continue
-    // La période de la pièce est celle de son PAIEMENT, sa date de facture à défaut : la règle de la
-    // 2035 (voir lib/rattachement.ts). Un état arrêté au 31 janvier ne porte donc pas une facture de
-    // janvier réglée en février, et porte celle de décembre réglée en janvier.
-    const part = partDansLaPeriode(rattachementsTresorerie(p, paiements.get(p.id) ?? []), periodeDebut, periodeFin)
+    // En trésorerie, la période de la pièce est celle de son PAIEMENT, sa date de facture à défaut : la
+    // règle de la 2035 (voir lib/rattachement.ts). Un état arrêté au 31 janvier ne porte donc pas une
+    // facture de janvier réglée en février, et porte celle de décembre réglée en janvier. En
+    // engagement, c'est celle de sa facture.
+    const part = partDansLaPeriode(rattachements(p, paiements.get(p.id) ?? [], mode), periodeDebut, periodeFin)
     if (part === 0) continue
     const cat = p.categorie_id ? categorieById.get(p.categorie_id) : null
     if (!cat?.poste_2035) continue

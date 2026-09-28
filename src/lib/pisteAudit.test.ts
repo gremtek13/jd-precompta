@@ -9,7 +9,10 @@ import {
 import { genererFec } from './fec'
 import { COMPTE_BANQUE } from './comptes'
 import { analyserEcritures } from './ecritures'
+import type { ModeleComptable } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
+
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', nom_fichier: `${id}.pdf`, chemin_stockage: '', statut: 'validee',
@@ -66,7 +69,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est invisible aux trois contrôles de analyserEcritures', () => {
     const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } =
-      analyserEcritures([orpheline], [], true, [])
+      analyserEcritures([orpheline], [], true, [], TRESORERIE)
     expect(nbSansContrepartie).toBe(0)
     expect(groupesDesequilibres).toEqual([])
     expect(piecesDesynchronisees).toEqual([])
@@ -74,7 +77,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est absente du FEC', () => {
     const categories: Categorie[] = []
-    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, []).split('\r\n').filter(Boolean)
+    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie').split('\r\n').filter(Boolean)
     // En-tête + la seule écriture justifiée : l'orpheline n'y est pas.
     expect(lignes).toHaveLength(2)
     expect(lignes.join('\n')).not.toContain('199,99')

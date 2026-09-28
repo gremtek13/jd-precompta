@@ -1,8 +1,8 @@
 import { anneeDe } from './format'
 import { montantRetenu } from './montantRetenu'
-import { paiementsParPiece, partDansLaPeriode, rattachementsTresorerie, type Paiement } from './rattachement'
+import { paiementsParPiece, partDansLaPeriode, rattachements, type Paiement } from './rattachement'
 import { moisEcoulesDeLAnnee } from './situationIntermediaire'
-import type { CotisationDeclaree, Piece } from './types'
+import type { CotisationDeclaree, ModeComptable, Piece } from './types'
 
 // Calculs partagés entre l'Estimation cabinet (EstimationTab, un dossier à la fois) et la Simulation
 // côté client (ClientSimulation, lecture seule) — mêmes chiffres, un seul endroit à faire évoluer si
@@ -15,11 +15,15 @@ import type { CotisationDeclaree, Piece } from './types'
 // `lignesBancaires` DATE chaque pièce comme la 2035 : une recette compte l'année de son
 // ENCAISSEMENT quand le rapprochement la connaît, sa date de facture à défaut (lib/rattachement.ts).
 // Sans valeur par défaut non plus : une liste vide ferait tout compter à la date de facture.
+//
+// `mode`, le modèle comptable du dossier : en ENGAGEMENT, une pièce compte à la date de sa facture,
+// et le paiement ne date rien. Obligatoire comme les deux autres, dans chaque calcul de ce module.
 function montantDansLaPeriode(
   pieces: Piece[], paiements: Map<string, Paiement[]>, debut: string, fin: string, assujettiTva: boolean,
+  mode: ModeComptable,
 ): number {
   return pieces.reduce((sum, p) => {
-    const part = partDansLaPeriode(rattachementsTresorerie(p, paiements.get(p.id) ?? []), debut, fin)
+    const part = partDansLaPeriode(rattachements(p, paiements.get(p.id) ?? [], mode), debut, fin)
     return part === 0 ? sum : sum + (montantRetenu(p, assujettiTva) ?? 0) * part
   }, 0)
 }
@@ -34,12 +38,12 @@ function cotisationsDeLaPeriode(cotisations: CotisationDeclaree[], debut: string
 
 export function totauxPourAnnee(
   pieces: Piece[], cotisations: CotisationDeclaree[], annee: number, assujettiTva: boolean,
-  lignesBancaires: readonly Paiement[],
+  lignesBancaires: readonly Paiement[], mode: ModeComptable,
 ) {
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
   return {
-    ca: montantDansLaPeriode(pieces, paiementsParPiece(lignesBancaires), debut, fin, assujettiTva),
+    ca: montantDansLaPeriode(pieces, paiementsParPiece(lignesBancaires), debut, fin, assujettiTva, mode),
     cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
   }
 }
@@ -76,12 +80,12 @@ export interface ProjectionAnnuelle {
  */
 export function projectionAnnuelle(
   recettes: Piece[], cotisations: CotisationDeclaree[], dateDuJour: string, assujettiTva: boolean,
-  lignesBancaires: readonly Paiement[],
+  lignesBancaires: readonly Paiement[], mode: ModeComptable,
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur
   // encaissement) comme pour les échéances. La même règle de montant que le calcul des repères.
-  const ca = montantDansLaPeriode(recettes, paiementsParPiece(lignesBancaires), `${annee}-01-01`, dateDuJour, assujettiTva)
+  const ca = montantDansLaPeriode(recettes, paiementsParPiece(lignesBancaires), `${annee}-01-01`, dateDuJour, assujettiTva, mode)
   const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)
@@ -124,15 +128,17 @@ export function chargesParPostePourAnnee(
   immobilisationPieceIds: ReadonlySet<string>,
   annee: number,
   assujettiTva: boolean,
-  // Comme la 2035 : une dépense compte l'année de son PAIEMENT (lib/rattachement.ts).
+  // Comme la 2035 : une dépense compte l'année de son PAIEMENT (lib/rattachement.ts) — de sa facture,
+  // en engagement.
   lignesBancaires: readonly Paiement[],
+  mode: ModeComptable,
 ): Map<string, number> {
   const paiements = paiementsParPiece(lignesBancaires)
   const totaux = new Map<string, number>()
   for (const p of piecesValidees) {
     if (p.type_piece === 'vente') continue
     if (immobilisationPieceIds.has(p.id)) continue
-    const part = partDansLaPeriode(rattachementsTresorerie(p, paiements.get(p.id) ?? []), `${annee}-01-01`, `${annee}-12-31`)
+    const part = partDansLaPeriode(rattachements(p, paiements.get(p.id) ?? [], mode), `${annee}-01-01`, `${annee}-12-31`)
     if (part === 0) continue
     const poste = categories.find((c) => c.id === p.categorie_id)?.poste_2035
     if (!poste) continue

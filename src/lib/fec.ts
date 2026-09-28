@@ -1,6 +1,7 @@
-import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
+import type { ANouveau, Categorie, EcritureBrouillon, ModeComptable, Piece } from './types'
 import { libelleEcritureANouveau } from './aNouveaux'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
+import { LIBELLES_COMPTES } from './comptes'
+import { auxiliaireDuTiers } from './engagement'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
 // A47 A-1 du Livre des procédures fiscales, que tout logiciel de comptabilité sait importer sans
@@ -13,12 +14,6 @@ const ENTETES_FEC = [
   'CompAuxNum', 'CompAuxLib', 'PieceRef', 'PieceDate', 'EcritureLib', 'Debit', 'Credit',
   'EcritureLet', 'DateLet', 'ValidDate', 'Montantdevise', 'Idevise',
 ]
-
-const LIBELLES_COMPTES_FIXES: Record<string, string> = {
-  [COMPTE_TVA_DEDUCTIBLE]: 'TVA déductible',
-  [COMPTE_TVA_COLLECTEE]: 'TVA collectée',
-  [COMPTE_BANQUE]: 'Banque',
-}
 
 function yyyymmdd(iso: string): string {
   return iso.slice(0, 10).replaceAll('-', '')
@@ -40,10 +35,11 @@ function champFec(valeur: string): string {
   return valeur.replace(/[\t\r\n]+/g, ' ').replace(/ {2,}/g, ' ').trim()
 }
 
-// Libellé du compte pour la colonne CompteLib — les comptes fixes (TVA, banque) d'abord, sinon celui
-// de la catégorie qui porte ce compte_comptable, sinon le numéro de compte lui-même à défaut de mieux.
+// Libellé du compte pour la colonne CompteLib — les comptes que l'application tient elle-même (TVA,
+// banque, tiers) d'abord, sinon celui de la catégorie qui porte ce compte_comptable, sinon le numéro de
+// compte lui-même à défaut de mieux.
 export function libelleCompte(compte: string, categories: Categorie[]): string {
-  if (LIBELLES_COMPTES_FIXES[compte]) return LIBELLES_COMPTES_FIXES[compte]
+  if (LIBELLES_COMPTES[compte]) return LIBELLES_COMPTES[compte]
   return categories.find((c) => c.compte_comptable === compte)?.libelle ?? compte
 }
 
@@ -65,7 +61,7 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
       'AN00001',
       yyyymmdd(a.date),
       champFec(a.compte),
-      champFec(LIBELLES_COMPTES_FIXES[a.compte] ?? (a.libelle || a.compte)),
+      champFec(LIBELLES_COMPTES[a.compte] ?? (a.libelle || a.compte)),
       '', '',
       champFec(a.source_nom),
       yyyymmdd(a.date),
@@ -82,15 +78,28 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
 // lignes), numérotées dans l'ordre chronologique à l'intérieur de leur journal — une vraie exigence
 // du format, pas un détail cosmétique : un contrôleur qui importe un FEC aux EcritureNum non
 // croissants dans un même journal le rejette.
+//
+// EN ENGAGEMENT (lib/engagement.ts), UNE PIÈCE FAIT PLUSIEURS ÉCRITURES : sa facture, au journal des
+// achats ou des ventes, et chacun de ses règlements, au journal de BANQUE (BQ) — ce sont les lignes
+// qui désignent leur mouvement. Les fondre en une seule écriture numéroterait sous un même
+// EcritureNum des lignes datées de la facture et d'autres datées du paiement, dans le journal des
+// achats, et la banque n'aurait pas de journal. Les lignes de 401 et de 411 y portent en plus le compte
+// AUXILIAIRE du tiers (CompAuxNum, CompAuxLib), un seul libellé par numéro dans tout le fichier.
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
+  // Sans valeur par défaut : exporté en trésorerie, le brouillon d'un dossier en engagement mettrait
+  // ses règlements au journal des achats, sous le numéro de la facture.
+  mode: ModeComptable,
 ): string {
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
 
+  // La clé d'une écriture FEC : la pièce en trésorerie ; en engagement, la pièce et le mouvement d'un
+  // règlement, la facture gardant la pièce seule.
   const groupes = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     if (!e.piece_id) continue
-    groupes.set(e.piece_id, [...(groupes.get(e.piece_id) ?? []), e])
+    const cle = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
+    groupes.set(cle, [...(groupes.get(cle) ?? []), e])
   }
 
   // La plus ancienne des lignes d'une écriture — jamais `rows[0].date`, qui dépend de l'ordre de
@@ -110,24 +119,35 @@ export function genererFec(
   // l'ordre inverse de leurs dates, et trier sur PieceDate numéroterait un paiement de mars avant un
   // paiement de février.
   const entrees = [...groupes.entries()]
-    .map(([pieceId, rows]) => ({ pieceId, rows, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows) }))
-    // À date égale, on départage sur la facture puis sur l'identifiant, pour que deux exports
-    // successifs du même brouillon produisent exactement le même fichier.
-    .sort((a, b) => a.ordre.localeCompare(b.ordre) || a.date.localeCompare(b.date) || a.pieceId.localeCompare(b.pieceId))
+    .map(([cle, rows]) => {
+      const pieceId = rows[0].piece_id!
+      return { cle, pieceId, rows, reglement: cle !== pieceId, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows) }
+    })
+    // À date égale, on départage sur la facture puis sur la clé, pour que deux exports successifs du
+    // même brouillon produisent exactement le même fichier.
+    .sort((a, b) => a.ordre.localeCompare(b.ordre) || a.date.localeCompare(b.date) || a.cle.localeCompare(b.cle))
 
   const compteurs: Record<string, number> = {}
   const lignes: string[] = [ENTETES_FEC.join('\t'), ...lignesANouveaux(aNouveaux)]
+  // Le libellé de chaque compte auxiliaire : le premier rencontré dans l'ordre du fichier, pour qu'un
+  // même CompAuxNum ne porte qu'un CompAuxLib — l'OCR n'écrit pas deux fois le nom d'un fournisseur
+  // de la même façon.
+  const libellesAuxiliaires = new Map<string, string>()
 
-  for (const { pieceId, rows, date } of entrees) {
+  for (const { pieceId, rows, date, reglement } of entrees) {
     const piece = pieceById.get(pieceId)
-    const journalCode = piece?.type_piece === 'vente' ? 'VE' : 'AC'
-    const journalLib = piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
+    const journalCode = reglement ? 'BQ' : piece?.type_piece === 'vente' ? 'VE' : 'AC'
+    const journalLib = reglement ? 'Banque' : piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
     compteurs[journalCode] = (compteurs[journalCode] ?? 0) + 1
     const ecritureNum = `${journalCode}${String(compteurs[journalCode]).padStart(5, '0')}`
     const pieceRef = piece?.nom_fichier ?? pieceId.slice(0, 8)
     const pieceDate = yyyymmdd(date)
 
     for (const e of rows) {
+      // Une pièce absente du jeu fourni n'a pas de tiers qu'on puisse lire : son auxiliaire est le
+      // compte « divers », plutôt qu'une clé tirée d'un libellé qui peut n'être qu'un nom de fichier.
+      const auxiliaire = auxiliaireDuTiers(piece ?? { tiers: null }, e.compte)
+      if (auxiliaire && !libellesAuxiliaires.has(auxiliaire.num)) libellesAuxiliaires.set(auxiliaire.num, auxiliaire.lib)
       lignes.push([
         journalCode,
         journalLib,
@@ -135,7 +155,8 @@ export function genererFec(
         yyyymmdd(e.date),
         champFec(e.compte),
         champFec(libelleCompte(e.compte, categories)),
-        '', '',
+        auxiliaire ? champFec(auxiliaire.num) : '',
+        auxiliaire ? champFec(libellesAuxiliaires.get(auxiliaire.num)!) : '',
         champFec(pieceRef),
         pieceDate,
         champFec(e.libelle),
