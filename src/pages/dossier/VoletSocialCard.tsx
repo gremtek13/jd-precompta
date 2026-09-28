@@ -177,7 +177,9 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
       <strong>Volet social {annee} — praticien ou auxiliaire médical conventionné</strong>
       <p className="muted" style={{ margin: '4px 0 10px' }}>
         Les rubriques propres aux praticiens conventionnés (notice 2041-DRI). Les chiffres du relevé
-        SNIR se saisissent ici et restent enregistrés pour cet exercice.
+        SNIR se saisissent ici et restent enregistrés pour cet exercice. DSCS, DSAV, DSAW et DSAU sont
+        obligatoires : sans l'une d'elles, l'Urssaf calcule les cotisations sans la prise en charge de
+        l'Assurance maladie.
       </p>
 
       {lecture.etat === 'chargement' && <p className="muted">Chargement…</p>}
@@ -204,6 +206,12 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
                 <input type="checkbox" checked={champs.remplacant} onChange={changer('remplacant')} style={{ marginRight: 6 }} />
                 Remplaçant exclusif au 1er janvier
               </label>
+              {champs.remplacant && (
+                <span className="muted" style={{ fontSize: '0.8rem' }}>
+                  Remplaçant : DSAV porte les rétrocessions reçues (la rubrique n'est pas préremplie),
+                  et DSAW vaut zéro.
+                </span>
+              )}
             </div>
           </div>
           <div className="field-row">
@@ -227,10 +235,12 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
           </div>
           <p className="muted" style={{ marginTop: -6 }}>
             Recettes brutes laissées vides : l'application reprend la ligne 4 de la 2035-A (recettes
-            nettes des débours et des honoraires rétrocédés) ; la notice ne nomme aucune ligne. Les
-            honoraires du SNIR se corrigent des remplacements, des rétrocessions, des sommes CPTS et MSP,
-            de l'article 51, du FNPEIS et des protocoles de coopération ; pour un pédicure-podologue, des
-            orthèses plantaires, que le relevé de mars 2026 ne compte pas. Structures de soins : EHPAD,
+            nettes des débours et des honoraires rétrocédés) ; la notice ne nomme aucune ligne, et DSCS
+            porte toutes les activités non salariées — y ajouter celles que cette 2035 ne porte pas. Les
+            honoraires du SNIR se corrigent des remplacements, des rétrocessions, des indemnités des
+            mandats conventionnels, des sommes CPTS et MSP, de l'article 51, du FNPEIS et des protocoles
+            de coopération ; pour un pédicure-podologue, des orthèses plantaires, que le relevé de mars
+            2026 ne compte pas. Structures de soins : EHPAD,
             SSIAD, HAD, CMPP… — prise en charge seulement si le cabinet de ville fait au moins 15 % de
             l'activité.
           </p>
@@ -306,7 +316,8 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
                 la déclaration.
               </p>
 
-              <EstimationCotisations annee={annee} revenuBrutSocial={revenuBrutSocial} resultat={estimation} />
+              <EstimationCotisations annee={annee} revenuBrutSocial={revenuBrutSocial} resultat={estimation}
+                avecStructures={(nombre(saisis.structures) ?? 0) > 0} />
             </>
           )}
         </>
@@ -315,9 +326,12 @@ export default function VoletSocialCard({ dossierId, annee, valeurs, blocage }: 
   )
 }
 
-function EstimationCotisations({ annee, revenuBrutSocial, resultat }: {
+function EstimationCotisations({ annee, revenuBrutSocial, resultat, avecStructures }: {
   annee: number
   revenuBrutSocial: number
+  // Des recettes en structures de soins sont saisies : leur prise en charge éventuelle n'est pas
+  // estimée, et le dire seulement quand il y en a évite une réserve de plus sur tous les dossiers.
+  avecStructures: boolean
   resultat: ReturnType<typeof estimerCotisationsUrssaf>
 }) {
   return (
@@ -385,6 +399,11 @@ function EstimationCotisations({ annee, revenuBrutSocial, resultat }: {
             journalières perçues, ACRE, exonérations et outre-mer ; activité supposée commencée avant
             {' '}{annee}. La régularisation est l'écart avec les cotisations provisionnelles appelées pour
             {' '}{annee} : seul l'avis de l'Urssaf la chiffre.
+            {avecStructures && (
+              ' La prise en charge ouverte par les recettes en structures de soins n’est pas estimée : ' +
+              'le simulateur de l’Urssaf ne la calcule pas non plus, et l’estimation peut donc être plus haute ' +
+              'que l’appel.'
+            )}
           </p>
         </>
       )}

@@ -4534,7 +4534,13 @@ d'environnement dans la même édition.
   proposées depuis la ligne 4 de la 2035-A (recettes nettes des débours et des honoraires
   rétrocédés), modifiables. **La notice ne nomme AUCUNE ligne pour DSCS** — relu sur deux versions
   de la notice 2041-DRI des praticiens conventionnés : la ligne 4 est une proposition, et l'écran dit
-  d'où vient le chiffre.
+  d'où vient le chiffre. La version 4, celle que le cabinet a transmise (même empreinte que la copie
+  lue), dit en revanche quatre choses que l'écran reprend : DSCS porte TOUTES les activités non
+  salariées, pas seulement celle de la 2035 ; DSCS, DSAV, DSAW et DSAU sont obligatoires, et sans
+  l'une d'elles l'Urssaf calcule SANS la prise en charge ; un remplaçant porte en DSAV ses
+  rétrocessions et zéro en DSAW ; et les recettes en structures de soins (DSAT) peuvent ouvrir une
+  prise en charge que ni le moteur de l'Urssaf ni l'application n'estiment — l'écran le dit, mais
+  seulement quand de telles recettes sont saisies.
   **La référence est `modele-ti`**, le jeu de règles des simulateurs de l'Urssaf pour les
   indépendants, publié par elle : `outils/cotisations/oracle.mjs` lui fait calculer 68 cas (2025 et
   2026 ; chaque point du taux de maladie, les bornes de l'abattement, la zone progressive des
@@ -4594,13 +4600,15 @@ d'environnement dans la même édition.
   au-delà du panneau central, panneau de droite ouvert : c'est `debordements.mjs` qui l'a vu, et la
   liste des métiers vit maintenant sous la liste déroulante. Quatre vues du banc de capture montrent
   le bloc (`vitrine.mjs volet`).
-  **Trente-huit mutations, toutes mordent** : vingt-huit sur le calcul (chaque borne de l'abattement,
+  **Quarante-trois mutations, toutes mordent** : vingt-huit sur le calcul (chaque borne de l'abattement,
   chaque point de taux, chaque plafond, les deux arrondis de taux, les deux ordres d'opérations, un
   zéro saisi pris pour un champ vide, une année sans plafond qui retomberait sur la précédente, la
-  borne d'abattement mal nommée) et dix sur l'écran (la lecture ratée qui offrirait un formulaire
+  borne d'abattement mal nommée) et quinze sur l'écran (la lecture ratée qui offrirait un formulaire
   vide, le verrou retiré ou jamais relâché, l'`upsert` sans `onConflict`, un champ vide enregistré à
   zéro, un négatif admis, la lecture partielle ignorée, les montants du tableau au lieu du formulaire,
-  la CURPS due sans bénéfice, « 26 % » écrit sur le plancher).
+  la CURPS due sans bénéfice, « 26 % » écrit sur le plancher, la note du remplaçant toujours ou
+  jamais affichée, la réserve des structures de soins toujours dite, jamais dite ou dite sur un zéro
+  saisi).
 - **Le PDF officiel de la 2035 n'a aucun champ de formulaire** — zéro `/AcroForm`, zéro
   `/Widget`, vérifié sur le fichier de la DGFiP. Le remplissage écrit donc du texte à des
   coordonnées. Elles ne sont **pas** codées en dur, sinon tout serait à reprendre à chaque
@@ -5697,7 +5705,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2040 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2042 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
