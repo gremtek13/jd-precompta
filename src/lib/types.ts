@@ -232,6 +232,37 @@ export interface ANouveau {
   created_at: string
 }
 
+// La profession, au sens des règles de l'Urssaf pour les praticiens et auxiliaires médicaux
+// conventionnés : c'est elle qui décide de la prise en charge par l'Assurance maladie et du taux de
+// la CURPS. Infirmiers, masseurs-kinésithérapeutes, orthophonistes, orthoptistes et
+// pédicures-podologues sont des auxiliaires médicaux.
+export type ProfessionPamc =
+  | 'auxiliaire_medical'
+  | 'sage_femme'
+  | 'medecin_secteur_1'
+  | 'medecin_secteur_2'
+  | 'chirurgien_dentiste'
+
+// Les chiffres du volet social d'un praticien conventionné pour un exercice (voir
+// lib/voletSocialPamc.ts), gardés parce qu'ils viennent du relevé SNIR et non de la comptabilité.
+// Un montant absent (null) veut dire « pas encore saisi », jamais zéro : un zéro se saisit.
+export interface VoletSocialPamc {
+  id: string
+  dossier_id: string
+  annee: number
+  profession: ProfessionPamc | null
+  // Remplaçant exclusif au 1er janvier : pas de CURPS, et DSAV porte les rétrocessions reçues.
+  remplacant: boolean
+  // DSCS. Absent : l'application reprend la ligne 4 de la 2035-A (recettes nettes).
+  recettes_brutes: number | null
+  // DSAV, honoraires de l'activité conventionnée du relevé SNIR.
+  honoraires_conventionnes: number | null
+  // DSAW, dépassements d'honoraires du relevé SNIR.
+  depassements: number | null
+  // DSAT, recettes perçues en structures de soins (EHPAD, SSIAD, HAD, CMPP…).
+  recettes_structures: number | null
+}
+
 // Nature d'un bien immobilisé (téléphone, véhicule, mobilier...) — sert uniquement à suggérer une
 // durée d'amortissement usuelle à l'enregistrement d'une immobilisation ; les catégories de dépense
 // (Achats fournisseurs, Autre...) ne s'y prêtent pas, un téléphone et une voiture tombant souvent dans

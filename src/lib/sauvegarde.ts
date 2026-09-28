@@ -82,6 +82,7 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'tiers_categories_cabinet', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
   { enfant: 'tiers_categories_cabinet', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
   { enfant: 'vehicules', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'volet_social_pamc', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
 
 // L'ordre dans lequel réinsérer les tables pour qu'une restauration aboutisse : toute table parente
@@ -120,6 +121,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'sous_dossiers',
   'superpdp_credentials',
   'vehicules',
+  'volet_social_pamc',
   'documents_divers',
   'emails_envoyes',
   'facture_lignes',
@@ -421,6 +423,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   supplements: { acces: 'direct' },
   tiers_categories: { acces: 'direct' },
   vehicules: { acces: 'direct' },
+  volet_social_pamc: { acces: 'direct' },
 }
 
 /** Une étape du plan de lecture d'un dossier, dans l'ordre où elle doit être exécutée. */

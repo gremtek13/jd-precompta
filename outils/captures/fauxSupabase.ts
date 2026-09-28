@@ -114,6 +114,12 @@ const TABLES: Record<string, Ligne[]> = {
     id: 't8', dossier_id: 'd1', piece_id: 'p8', document_id: null,
     texte: 'LOGISOINS SAS\nFacture n° 2026-0818\nAbonnement mensuel LogiSoins Premium — gestion des tournées et télétransmission\nTotal TTC 29,00 €',
   }],
+  // Le volet social de l'exercice que Clôture affiche, déjà saisi : c'est ce qui fait paraître les
+  // rubriques et l'estimation des cotisations dans les captures, au lieu d'un formulaire vide.
+  volet_social_pamc: [{
+    id: 'vs1', dossier_id: 'd1', annee: 2026, profession: 'auxiliaire_medical', remplacant: false,
+    recettes_brutes: 64_000, honoraires_conventionnes: 61_500, depassements: 0, recettes_structures: null,
+  }],
   lignes_bancaires: [
     ligne('l1', '2026-09-15', 'PRLV SEPA TELECOM PLUS', -39.99, 'non_rapprochee', null),
     ligne('l2', '2026-09-11', 'CB PHARMA DISTRIB SUD', -186.4, 'non_rapprochee', null),

@@ -156,7 +156,7 @@ incompréhensible trois étapes plus loin.
 1. **Le projet Supabase** — recréer, région `eu-west-1` (RGPD). Les appels à AWS ne suivent pas
    cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
    (inventaire du §3).
-2. **Le schéma** — appliquer les 59 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
+2. **Le schéma** — appliquer les 60 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
    un (`apply_migration`). Ils se suivent : plusieurs suppriment et recréent ce que les précédentes
    ont posé, les rejouer dans le désordre ne donne pas le même schéma. **Puis, et seulement
    ensuite**, jouer `supabase/schema/socle/tables_sans_migration.sql` en une fois : il porte les
