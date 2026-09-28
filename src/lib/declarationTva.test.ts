@@ -190,6 +190,13 @@ describe('calculerCa3 — la date qui décide de la période', () => {
     expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ base08: 250, taxe08: 50 })
   })
 
+  it('une recette réglée à l\'écart d\'alignement près compte en entier', () => {
+    // 1 200 € facturés, 1 197 € encaissés : 3 € de frais, sous le seuil de lib/alignementBanque.ts.
+    // La part est celle de la 2035 (lib/rattachement.ts) : la pièce est réglée, pas payée à 99,75 %.
+    const d = donnees([piece()], [mouvement({ date: '2027-03-15', montant: 1197 })])
+    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ base08: 1000, taxe08: 200 })
+  })
+
   it('des frais bancaires ne font pas compter la pièce plus d\'une fois', () => {
     const d = donnees([piece()], [
       mouvement({ id: 'm1', date: '2027-03-15', montant: 700 }),
