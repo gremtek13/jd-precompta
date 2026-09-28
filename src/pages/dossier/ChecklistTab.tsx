@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from '../../lib/ecritures'
+import type { ModeleComptable } from '../../lib/engagement'
 import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, rapprochementsEcartImportant, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
@@ -45,7 +46,14 @@ interface ItemChecklist {
 // nature d'immobilisation que le cabinet nomme lui-même) — jamais une lecture OCR devinée à l'aveugle.
 // Les points qui ne se détectent pas de façon fiable (justificatif titres-restaurant reçu...) sont de
 // simples cases à cocher manuellement, pas un faux positif automatique.
-export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { dossierId: string; assujettiTva: boolean; onNavigate: (tab: DossierTab) => void }) {
+// `modele` : le modèle comptable du dossier (lib/engagement.ts), qui décide de ce que ses écritures
+// doivent contenir — lues dans l'autre modèle, elles paraîtraient toutes « à régénérer ».
+export default function ChecklistTab({ dossierId, assujettiTva, modele, onNavigate }: {
+  dossierId: string
+  assujettiTva: boolean
+  modele: ModeleComptable
+  onNavigate: (tab: DossierTab) => void
+}) {
   // Le nom dit le filtre, et ce n'est pas cosmétique : cet état s'appelait `pieces` alors qu'il ne
   // porte QUE les validées. Un contrôle branché dessus par réflexe devient muet sur tout ce qui est
   // encore à valider — c'est arrivé, sur `moisEnDoubleSurAbonnement`, dont les deux pièces du cas
@@ -251,7 +259,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, immobilisationPieceIds)
   // Les mouvements rapprochés décident de la date qu'une écriture doit porter (lib/rattachement.ts) :
   // `lignes` porte tout le relevé, et `analyserEcritures` n'en retient que les rapprochés.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignes)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignes, modele)
   const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
   const ruptures = rupturesPisteAudit(ecritures)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
@@ -391,7 +399,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', action: 'Compléter le compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },
     { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', action: 'Compléter le poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },
     { id: 'sans-tva', label: 'pièce(s) validée(s) sans TVA renseignée', action: 'Compléter la TVA', nb: sansTva.length, cible: 'ecritures', severite: 'attention' },
-    { id: 'sans-contrepartie', label: 'écriture(s) en attente de rapprochement bancaire', action: 'Voir les écritures à rapprocher', nb: nbSansContrepartie, cible: 'banque', severite: 'attention' },
+    {
+      id: 'sans-contrepartie',
+      // En engagement, une facture sans règlement est une dette ou une créance qui court encore : le
+      // point dit ce qui manque — un paiement rapproché —, pas une écriture incomplète.
+      label: modele.mode === 'engagement' ? 'facture(s) sans règlement rapproché' : 'écriture(s) en attente de rapprochement bancaire',
+      action: 'Voir les écritures à rapprocher', nb: nbSansContrepartie, cible: 'banque', severite: 'attention',
+    },
     { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', action: 'Voir les opérations à rapprocher', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
   ]
   const pointsATraiter = tousLesPointsATraiter.filter((p) => p.nb > 0)

@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { aujourdHuiSql, formatMoney } from '../lib/format'
 import { ecartPct, projectionAnnuelle } from '../lib/estimation'
-import type { CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
+import type { CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { messageErreur } from '../lib/messageErreur'
@@ -31,6 +31,9 @@ export default function ClientSimulation() {
   // Décide du montant de chaque recette, comme dans l'Estimation du cabinet : TVA comprise pour un
   // dossier exonéré, hors taxes pour un assujetti (voir lib/montantRetenu.ts).
   const [assujettiTva, setAssujettiTva] = useState(false)
+  // Le modèle comptable du dossier : en engagement, une recette compte à la date de sa facture, et
+  // non de son encaissement (lib/rattachement.ts). Lu sur la même ligne que le statut TVA.
+  const [modeComptable, setModeComptable] = useState<ModeComptable>('tresorerie')
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -56,7 +59,7 @@ export default function ClientSimulation() {
         supabase.from('references_postes_annuels').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
       ),
-        supabase.from('dossiers').select('assujetti_tva').eq('id', dossierId).maybeSingle(),
+        supabase.from('dossiers').select('assujetti_tva, mode_comptable').eq('id', dossierId).maybeSingle(),
         lireTout<LigneBancaire>((debut, fin) =>
           supabase.from('lignes_bancaires').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
@@ -70,10 +73,12 @@ export default function ClientSimulation() {
       setReferencesPostes(lectureReferencesPostes.lignes)
       setReferencesIncompletes(!lectureReferences.complete)
       setAssujettiTva(lectureDossier.data?.assujetti_tva ?? false)
+      setModeComptable(lectureDossier.data?.mode_comptable ?? 'tresorerie')
       // Jumelle d'`EstimationTab` : tronquées, ces lectures rendent une simulation plausible et BASSE.
       // Le statut TVA non lu la rend incertaine aussi — il décide du montant de chaque recette — et
       // le dire vaut mieux que de supposer : le repli « exonéré » est le cas de la plupart des
-      // dossiers, pas une certitude.
+      // dossiers, pas une certitude. Même chose pour le modèle comptable, dont le repli est la
+      // trésorerie : c'est le même bandeau qui le dit.
       const motifDossier = lectureDossier.error
         ? messageErreur(lectureDossier.error, 'lecture refusée')
         : lectureDossier.data ? null : 'dossier introuvable'
@@ -93,7 +98,7 @@ export default function ClientSimulation() {
 
   // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements)
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   return (
@@ -125,7 +130,9 @@ export default function ClientSimulation() {
         </p>
         <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
           <div>
-            <span className="muted" style={{ display: 'block' }}>CA encaissé à date</span>
+            {/* En engagement, la facture fait le chiffre d'affaires, encaissée ou non : « encaissé » y
+                serait faux (lib/rattachement.ts). */}
+            <span className="muted" style={{ display: 'block' }}>{modeComptable === 'engagement' ? 'CA facturé à date' : 'CA encaissé à date'}</span>
             <strong>{formatMoney(projection.ca)}</strong>
           </div>
           <div>

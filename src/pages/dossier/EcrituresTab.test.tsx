@@ -1,6 +1,9 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
+import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
+import type { ValeurAnnee } from '../../components/AnneeTabs'
+import type { ModeleComptable } from '../../lib/engagement'
 import EcrituresTab from './EcrituresTab'
 
 // L'ONGLET QUI PRODUIT LES DEUX FICHIERS OFFICIELS du projet — le FEC et la piste d'audit. Un défaut
@@ -37,6 +40,13 @@ const faux = vi.hoisted(() => ({
   retenirApresInsertion: false,
   retenue: null as Promise<void> | null,
   relacher: null as (() => void) | null,
+  // Les mises à jour envoyées, dans l'ordre — celle du modèle comptable sur `dossiers` comprise.
+  misesAJour: [] as { table: string; valeurs: Record<string, unknown> }[],
+  // Une mise à jour refusée par la base : le déclencheur qui verrouille le modèle, par exemple.
+  refusMiseAJour: null as string | null,
+  // Les suppressions envoyées, avec leurs filtres : c'est ce qui dit QUELLES lignes une régénération
+  // retire.
+  suppressions: [] as { table: string; filtres: [string, unknown][] }[],
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -80,6 +90,10 @@ vi.mock('../../lib/supabase', () => ({
             return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
           }
           if (miseAJour) {
+            faux.misesAJour.push({ table, valeurs: miseAJour })
+            if (faux.refusMiseAJour) {
+              return Promise.resolve({ data: null, error: { message: faux.refusMiseAJour }, count: 0 }).then(suite)
+            }
             const vise = (ligne: Record<string, unknown>) => filtres.every(([colonne, valeur]) =>
               colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
             faux.parTable[table] = (faux.parTable[table] ?? []).map((l) =>
@@ -87,6 +101,7 @@ vi.mock('../../lib/supabase', () => ({
             return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
           }
           if (suppression) {
+            faux.suppressions.push({ table, filtres: [...filtres] })
             if (faux.refusSuppression) {
               return Promise.resolve({ data: null, error: { message: faux.refusSuppression }, count: 0 }).then(suite)
             }
@@ -153,6 +168,9 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.retenirApresInsertion = false
   faux.retenue = null
   faux.relacher = null
+  faux.misesAJour = []
+  faux.refusMiseAJour = null
+  faux.suppressions = []
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
     immobilisations: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [],
@@ -160,12 +178,28 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   } as Record<string, unknown[]>
 }
 
-function monter(assujettiTva = false) {
-  return render(
-    <AnneeProvider defaut={2025}>
-      <EcrituresTab dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={assujettiTva} />
-    </AnneeProvider>,
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+
+// Le modèle vit dans la page du dossier, qui le remet à l'onglet après l'enregistrement : ce porteur
+// joue ce rôle, sans quoi un changement de modèle ne se verrait jamais à l'écran.
+function Onglet({ assujettiTva, modeleInitial, annee }: { assujettiTva: boolean; modeleInitial: ModeleComptable; annee: ValeurAnnee }) {
+  const [modele, setModele] = useState(modeleInitial)
+  return (
+    <AnneeProvider defaut={annee}>
+      <EcrituresTab
+        dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={assujettiTva}
+        modele={modele}
+        onModeleUpdated={(m) => setModele((avant) => ({
+          mode: m.mode_comptable ?? avant.mode, compteNotesDeFrais: m.compte_notes_de_frais ?? avant.compteNotesDeFrais,
+        }))}
+      />
+    </AnneeProvider>
   )
+}
+
+function monter(assujettiTva = false, modele: ModeleComptable = TRESORERIE, annee: ValeurAnnee = 2025) {
+  return render(<Onglet assujettiTva={assujettiTva} modeleInitial={modele} annee={annee} />)
 }
 
 describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
@@ -635,11 +669,7 @@ describe('EcrituresTab — la date du paiement', () => {
       ],
       lignes_bancaires: [PAYEE_EN_JANVIER],
     })
-    render(
-      <AnneeProvider defaut="toutes">
-        <EcrituresTab dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={false} />
-      </AnneeProvider>,
-    )
+    monter(false, TRESORERIE, 'toutes')
 
     const regenerer = await screen.findByRole('button', { name: /Régénérer/ })
     await act(async () => { regenerer.click() })
@@ -667,5 +697,210 @@ describe('EcrituresTab — la date du paiement', () => {
     const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
     expect(csv).not.toMatch(/hors du jeu chargé/)
     expect(csv).toMatch(/facture\.pdf/)
+  })
+})
+
+// LE MODÈLE COMPTABLE (lib/engagement.ts) se règle dans cet onglet, tant que le brouillon est vide.
+describe('EcrituresTab — le modèle comptable', () => {
+  it('offre le choix sur un brouillon vide, l’enregistre sur le dossier, et montre alors les comptes de note de frais', async () => {
+    poser({})
+    monter()
+
+    const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
+    expect(screen.getByRole('button', { name: 'Trésorerie (BNC, 2035)' }).getAttribute('aria-pressed')).toBe('true')
+    // En trésorerie, rien sur les notes de frais : elles passent face à la banque comme toute pièce.
+    expect(screen.queryByText(/Note de frais payée personnellement/)).toBeNull()
+
+    await act(async () => { engagement.click() })
+    expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { mode_comptable: 'engagement' } }])
+    expect(engagement.getAttribute('aria-pressed')).toBe('true')
+
+    // Les mots du cabinet, à l'écran.
+    await screen.findByText(/Note de frais payée personnellement par le dirigeant/)
+    expect(screen.getByText(/Quand la société rembourse le dirigeant, depuis son compte bancaire : débit 455, crédit 512 Banque/)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: /^108 – Compte de l’exploitant/ }).click() })
+    expect(faux.misesAJour.at(-1)).toEqual({ table: 'dossiers', valeurs: { compte_notes_de_frais: '108000' } })
+  })
+
+  it('n’enregistre rien sur un clic du modèle déjà en place', async () => {
+    poser({})
+    monter()
+    const bouton1 = await screen.findByRole('button', { name: 'Trésorerie (BNC, 2035)' })
+    await act(async () => { bouton1.click() })
+    expect(faux.misesAJour).toEqual([])
+  })
+
+  it('ne l’offre plus quand le brouillon porte des écritures, et dit pourquoi', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture()] })
+    monter()
+
+    await screen.findByText(/Il ne se change plus : le brouillon porte 1 écriture/)
+    expect(screen.queryByRole('button', { name: 'Engagement (BIC, IS)' })).toBeNull()
+  })
+
+  it('ne l’offre pas sur une lecture partielle du brouillon — il pourrait porter des écritures qu’on ne voit pas', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture()] })
+    faux.muetParTable = { ecritures_brouillon: 0 }
+    monter()
+
+    await screen.findByText(/Il ne se change pas sur une lecture partielle du brouillon/)
+    expect(screen.queryByRole('button', { name: 'Engagement (BIC, IS)' })).toBeNull()
+  })
+
+  it('dit le refus de la base, et garde le modèle en place', async () => {
+    poser({})
+    faux.refusMiseAJour = 'Le modèle comptable d’un dossier ne se change que tant que son brouillon d’écritures est vide.'
+    monter()
+
+    const bouton2 = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
+
+    await act(async () => { bouton2.click() })
+    expect(screen.getByText(/ne se change que tant que son brouillon d’écritures est vide/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Trésorerie (BNC, 2035)' }).getAttribute('aria-pressed')).toBe('true')
+  })
+})
+
+describe('EcrituresTab — en engagement', () => {
+  const REGLEE_EN_JANVIER = {
+    id: 'l1', dossier_id: 'dossier-de-test', date: '2025-01-06', libelle: 'PRLV FOURNISSEUR',
+    montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: '2025-01-07T09:00:00Z',
+  }
+
+  it('génère la facture à SA date et le règlement au mouvement, en une seule écriture de la base', async () => {
+    poser({ pieces: [piece({ id: 'p1', date_piece: '2024-12-20' })], ecritures_brouillon: [], lignes_bancaires: [REGLEE_EN_JANVIER] })
+    monter(false, ENGAGEMENT)
+
+    const bouton3 = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+
+    await act(async () => { bouton3.click() })
+
+    // Une seule insertion : la contrepartie de la trésorerie n'est pas appelée en plus — elle
+    // doublerait la banque.
+    expect(faux.insertions).toHaveLength(1)
+    const lignes = (faux.parTable.ecritures_brouillon as { compte: string; sens: string; date: string; ligne_bancaire_id?: string }[])
+      .map((e) => [e.compte, e.sens, e.date, e.ligne_bancaire_id ?? null])
+    expect(lignes).toEqual([
+      ['606100', 'debit', '2024-12-20', null],
+      ['401000', 'credit', '2024-12-20', null],
+      ['401000', 'debit', '2025-01-06', 'l1'],
+      ['512000', 'credit', '2025-01-06', 'l1'],
+    ])
+  })
+
+  it('ne dit pas « à régénérer » les écritures qu’il vient de générer, et compte une facture sans règlement', async () => {
+    poser({ pieces: [piece({ id: 'p1', date_piece: '2024-12-20' })], ecritures_brouillon: [], lignes_bancaires: [] })
+    monter(false, ENGAGEMENT, 'toutes')
+
+    const bouton4 = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+
+    await act(async () => { bouton4.click() })
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryAllByText(/à régénérer/)).toHaveLength(0)
+    expect(screen.getByText('1 facture sans règlement rapproché')).toBeTruthy()
+  })
+
+  it('régénère TOUT — la facture et ses règlements — quand une pièce devient note de frais', async () => {
+    // Le règlement passé au 401 doit suivre la dette au 455 : sinon le 401 garderait un débit sans
+    // facture, et le 455 un crédit que rien ne solde.
+    poser({
+      pieces: [piece({ id: 'p1', date_piece: '2024-12-20', type_piece: 'note_frais' })],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', date: '2024-12-20' }),
+        ecriture({ id: 'e2', date: '2024-12-20', compte: '401000', sens: 'credit' }),
+        ecriture({ id: 'e3', date: '2025-01-06', compte: '401000', sens: 'debit', ligne_bancaire_id: 'l1' }),
+        ecriture({ id: 'e4', date: '2025-01-06', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }),
+      ],
+      lignes_bancaires: [REGLEE_EN_JANVIER],
+    })
+    monter(false, ENGAGEMENT, 'toutes')
+
+    const bouton5 = await screen.findByRole('button', { name: /Régénérer/ })
+
+    await act(async () => { bouton5.click() })
+
+    // Toutes les lignes de la pièce, sans le filtre de la trésorerie qui épargne la banque.
+    expect(faux.suppressions).toEqual([{ table: 'ecritures_brouillon', filtres: [['piece_id', 'p1']] }])
+    const lignes = (faux.parTable.ecritures_brouillon as { compte: string; sens: string }[]).map((e) => [e.compte, e.sens])
+    expect(lignes).toEqual([['606100', 'debit'], ['455000', 'credit'], ['455000', 'debit'], ['512000', 'credit']])
+  })
+
+  it('exporte un FEC où le règlement a son journal de banque et le fournisseur son compte auxiliaire', async () => {
+    poser({
+      pieces: [piece({ id: 'p1', date_piece: '2025-03-10' })],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1' }),
+        ecriture({ id: 'e2', compte: '401000', sens: 'credit' }),
+        ecriture({ id: 'e3', date: '2025-04-02', compte: '401000', sens: 'debit', ligne_bancaire_id: 'l1' }),
+        ecriture({ id: 'e4', date: '2025-04-02', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }),
+      ],
+      lignes_bancaires: [{ ...REGLEE_EN_JANVIER, date: '2025-04-02' }],
+    })
+    monter(false, ENGAGEMENT)
+
+    await screen.findByText(/4 écritures proposées/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const fec = telecharge.fichiers.find((f) => f.nom.includes('FEC'))!.contenu
+    expect(fec).toMatch(/^BQ\tBanque\tBQ00001\t20250402\t401000\tFournisseurs\tFFOURNISSEUR\tFOURNISSEUR MARSEILLE\t/m)
+    expect(fec).toMatch(/^AC\tAchats\tAC00001\t20250310\t606100\t/m)
+  })
+
+  it('nomme la dette et les règlements dans la confirmation de retrait d’une facture immobilisée', async () => {
+    const messages: string[] = []
+    vi.stubGlobal('confirm', (m: string) => { messages.push(m); return false })
+    poser({
+      pieces: [piece()],
+      ecritures_brouillon: [ecriture({ id: 'e1' }), ecriture({ id: 'e2', compte: '401000', sens: 'credit' })],
+      immobilisations: [{ id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1' }],
+    })
+    monter(false, ENGAGEMENT)
+
+    const bouton6 = await screen.findByRole('button', { name: /Retirer l'écriture/ })
+
+    await act(async () => { bouton6.click() })
+    expect(messages[0]).toMatch(/sa dette envers le fournisseur et ses règlements partent ensemble/)
+    expect(messages[0]).not.toMatch(/contrepartie banque/)
+  })
+})
+
+describe('EcrituresTab — la régénération', () => {
+  it('se suspend sur une lecture partielle : elle daterait mal, ou retirerait des règlements', async () => {
+    poser({
+      pieces: [piece({ montant_ttc: 150 })],
+      ecritures_brouillon: [ecriture()],
+      lignes_bancaires: [{
+        id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-12', libelle: 'PRLV', montant: -150, statut: 'rapprochee',
+        piece_id: 'p1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+        created_at: '2025-03-12T09:00:00Z',
+      }],
+    })
+    faux.muetParTable = { lignes_bancaires: 0 }
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Régénérer/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.suppressions).toEqual([])
+    expect(faux.insertions).toEqual([])
+  })
+
+  it('régénère sur une lecture complète — le garde symétrique', async () => {
+    poser({ pieces: [piece({ montant_ttc: 150 })], ecritures_brouillon: [ecriture()] })
+    monter()
+
+    const bouton7 = await screen.findByRole('button', { name: /Régénérer/ })
+
+    await act(async () => { bouton7.click() })
+    expect(faux.insertions).toHaveLength(1)
+  })
+
+  it("deux clics rapprochés ne régénèrent qu'une fois", async () => {
+    poser({ pieces: [piece({ montant_ttc: 150 })], ecritures_brouillon: [ecriture()] })
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Régénérer/ })
+    await act(async () => { bouton.click(); bouton.click() })
+    expect(faux.suppressions).toHaveLength(1)
+    expect(faux.insertions).toHaveLength(1)
   })
 })

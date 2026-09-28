@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
 import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from '../../lib/estimation'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
@@ -19,7 +19,9 @@ function anneePrecedente(): string {
 // sociales (URSSAF/CARPIMKO) : une estimation d'impôt sur le revenu dépendrait du foyer fiscal entier
 // (hors du champ de ce dossier) et se rapprocherait bien plus du conseil fiscal — hors de portée d'un
 // brouillon de précomptabilité. Simulateur officiel des impôts déjà disponible pour ce volet.
-export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
+// `modeComptable` : en engagement, les repères et la projection comptent une pièce à la date de sa
+// FACTURE, et non de son encaissement (lib/rattachement.ts, `rattachements`).
+export default function EstimationTab({ dossierId, assujettiTva, modeComptable }: { dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Deux jeux, deux filtres, et les noms le disent désormais. `recettesValidees` est restreint aux
   // pièces de VENTE validées, `piecesValidees` à toutes les validées. Le second s'appelait
@@ -141,7 +143,7 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
   // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
   // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements)
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
@@ -214,7 +216,7 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva, paiements)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva, paiements, modeComptable)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -246,7 +248,7 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
     setCalculatingPostes(true)
     setError(null)
     try {
-      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements)
+      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements, modeComptable)
       if (totaux.size === 0) {
         setError("Aucune pièce avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
         return
@@ -329,7 +331,9 @@ export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: 
         </p>
         <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap' }}>
           <div>
-            <span className="muted" style={{ display: 'block' }}>CA encaissé à date</span>
+            {/* En engagement, la facture fait le chiffre d'affaires, encaissée ou non : « encaissé » y
+                serait faux (lib/rattachement.ts). */}
+            <span className="muted" style={{ display: 'block' }}>{modeComptable === 'engagement' ? 'CA facturé à date' : 'CA encaissé à date'}</span>
             <strong>{formatMoney(projection.ca)}</strong>
           </div>
           <div>

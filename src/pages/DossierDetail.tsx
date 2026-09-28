@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
+import { EXPLICATIONS_MODE, modeleDuDossier } from '../lib/engagement'
 import type { Dossier } from '../lib/types'
 import PiecesTab from './dossier/PiecesTab'
 import FacturesTab from './dossier/FacturesTab'
@@ -82,6 +83,10 @@ export default function DossierDetail() {
   // l'autre : les années arrivent souvent AVANT l'identité, et l'en-tête se rend aussi pendant
   // l'attente, hors de ce fournisseur, où le sélecteur lèverait et emporterait toute la page.
   const pret = !erreurDossier && dossier !== null && anneesDisponibles !== null
+  // Le modèle comptable du dossier (lib/engagement.ts), lu sur la ligne du dossier et JAMAIS supposé :
+  // les onglets qui en dépendent ne se montent pas sans lui, plutôt que de retomber sur la trésorerie
+  // — un dossier en engagement lu en trésorerie ferait signaler « à régénérer » toutes ses écritures.
+  const modele = dossier ? modeleDuDossier(dossier) : null
 
   // Change ce dossier-là et lui seul : une réponse qui revient après qu'on a changé de dossier ne
   // doit pas écrire l'ancien sur le nouveau.
@@ -213,6 +218,18 @@ export default function DossierDetail() {
                 TVA : {dossier.assujetti_tva ? 'assujetti' : 'exonéré'}
               </button>
             )}
+            {dossier && (
+              // Le modèle comptable, qui décide de toutes les écritures du dossier : il se lit ici et se
+              // règle dans l'onglet Écritures, tant que le brouillon est vide — le badge y mène.
+              <button
+                type="button"
+                className="badge badge-bouton badge-neutral"
+                title={`${EXPLICATIONS_MODE[dossier.mode_comptable]} Il se règle dans l’onglet Écritures, tant que le brouillon d’écritures est vide.`}
+                onClick={() => allerA('ecritures')}
+              >
+                Comptabilité : {dossier.mode_comptable === 'engagement' ? 'engagement' : 'trésorerie'}
+              </button>
+            )}
             {dossier && (dossier.libelle_naf || dossier.code_naf) && (
               <span className="badge badge-neutral" title={dossier.code_naf ?? undefined}>
                 {dossier.libelle_naf ?? `NAF ${dossier.code_naf}`}
@@ -282,7 +299,7 @@ export default function DossierDetail() {
             }
           />
 
-          {tab === 'checklist' && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} onNavigate={allerA} />}
+          {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modele={modele} onNavigate={allerA} />}
           {tab === 'pieces' && <PiecesTab dossierId={id} />}
           {tab === 'factures' && (
             <FacturesTab
@@ -295,9 +312,18 @@ export default function DossierDetail() {
             />
           )}
           {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
-          {tab === 'banque' && <BanqueTab dossierId={id} />}
+          {tab === 'banque' && modele && <BanqueTab dossierId={id} modele={modele} />}
           {tab === 'documents' && <DocumentsTab dossierId={id} />}
-          {tab === 'ecritures' && <EcrituresTab dossierId={id} dossierNom={dossier?.nom ?? ''} dossierSiret={dossier?.siret ?? null} assujettiTva={dossier?.assujetti_tva ?? false} />}
+          {tab === 'ecritures' && modele && (
+            <EcrituresTab
+              dossierId={id}
+              dossierNom={dossier?.nom ?? ''}
+              dossierSiret={dossier?.siret ?? null}
+              assujettiTva={dossier?.assujetti_tva ?? false}
+              modele={modele}
+              onModeleUpdated={(modification) => modifierDossier(id, modification)}
+            />
+          )}
           {tab === 'statistiques' && <StatistiquesTab dossierId={id} onNavigate={allerA} />}
           {tab === 'tva' && dossier && (
             <TvaTab
@@ -310,9 +336,9 @@ export default function DossierDetail() {
           )}
           {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
           {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
-          {tab === 'cloture' && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
-          {tab === 'estimation' && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
-          {tab === 'financement' && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
+          {tab === 'cloture' && modele && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
+          {tab === 'estimation' && modele && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
+          {tab === 'financement' && modele && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
           {tab === 'supplements' && <SupplementsTab dossierId={id} />}
           {tab === 'informations' && (
             <InformationsTab

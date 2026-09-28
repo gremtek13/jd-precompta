@@ -17,6 +17,7 @@ import DossierDetail from './DossierDetail'
 interface LigneDossier {
   id: string; nom: string; siret: string | null; assujetti_tva: boolean
   tva_periodicite: 'mensuelle' | 'trimestrielle'; tva_sur_debits: boolean
+  mode_comptable: 'tresorerie' | 'engagement'; compte_notes_de_frais: '455000' | '108000' | '467000'
 }
 
 const faux = vi.hoisted(() => ({
@@ -105,9 +106,26 @@ vi.mock('./dossier/InformationsTab', async () => {
 })
 // Les quatre onglets dont un montant dépend du statut TVA du dossier (voir lib/montantRetenu.ts) :
 // doublés pour lire le statut qu'ils RECOIVENT, c'est-à-dire le câblage de la page.
+// Trois d'entre eux reçoivent aussi le modèle comptable (lib/engagement.ts) : le double le montre.
 const doubleTva = vi.hoisted(() => (onglet: string) => ({
-  default: ({ assujettiTva }: { assujettiTva: boolean }) => (
-    <p>{onglet} — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
+  default: ({ assujettiTva, modeComptable }: { assujettiTva: boolean; modeComptable?: string }) => (
+    <>
+      <p>{onglet} — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
+      {modeComptable && <p>{onglet} — modèle {modeComptable}</p>}
+    </>
+  ),
+}))
+// L'onglet Écritures règle le modèle comptable du dossier : doublé pour montrer celui qu'il REÇOIT et
+// rendre un changement à la page, qui doit le faire voir dans son badge.
+vi.mock('./dossier/EcrituresTab', () => ({
+  default: ({ modele, onModeleUpdated }: {
+    modele: { mode: string; compteNotesDeFrais: string }
+    onModeleUpdated: (m: { mode_comptable?: 'tresorerie' | 'engagement' }) => void
+  }) => (
+    <>
+      <p>Écritures — {modele.mode} — {modele.compteNotesDeFrais}</p>
+      <button onClick={() => onModeleUpdated({ mode_comptable: 'engagement' })}>Passer en engagement</button>
+    </>
   ),
 }))
 vi.mock('./dossier/ClotureTab', () => doubleTva('Clôture'))
@@ -189,8 +207,14 @@ beforeEach(() => {
   // repart de ses réglages par défaut.
   localStorage.clear()
   faux.dossiers = {
-    d1: { id: 'd1', nom: 'Cabinet Hélène', siret: '11111111111111', assujetti_tva: false, tva_periodicite: 'trimestrielle', tva_sur_debits: false },
-    d2: { id: 'd2', nom: 'Bravo Santé', siret: '22222222222222', assujetti_tva: true, tva_periodicite: 'mensuelle', tva_sur_debits: true },
+    d1: {
+      id: 'd1', nom: 'Cabinet Hélène', siret: '11111111111111', assujetti_tva: false, tva_periodicite: 'trimestrielle',
+      tva_sur_debits: false, mode_comptable: 'tresorerie', compte_notes_de_frais: '455000',
+    },
+    d2: {
+      id: 'd2', nom: 'Bravo Santé', siret: '22222222222222', assujetti_tva: true, tva_periodicite: 'mensuelle',
+      tva_sur_debits: true, mode_comptable: 'engagement', compte_notes_de_frais: '108000',
+    },
   }
   faux.retenuesIdentite = {}
   faux.erreurIdentite = null
@@ -406,5 +430,40 @@ describe('Page d’un dossier — l’onglet TVA reçoit le régime du dossier a
     await afficher('/dossiers/d2/tva')
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Passer au trimestre' })) })
     expect(screen.getByText('TVA — assujetti — trimestrielle — débits')).toBeTruthy()
+  })
+})
+
+// LE MODÈLE COMPTABLE DU DOSSIER (lib/engagement.ts) décide de toutes ses écritures : la page le lit
+// avec l'identité, le montre dans l'en-tête, et le passe aux onglets qui en dépendent — un modèle
+// venu d'un autre dossier, ou supposé, ferait lire en trésorerie le brouillon d'une société à l'IS.
+describe('Page d’un dossier — le modèle comptable', () => {
+  it('le badge de l’en-tête dit le modèle du dossier affiché, et mène à l’onglet Écritures', async () => {
+    await afficher('/dossiers/d1/checklist')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Comptabilité : trésorerie' })) })
+    expect(screen.getByText('Écritures — tresorerie — 455000')).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/ecritures')
+    expect(screen.getByRole('button', { name: 'Comptabilité : engagement' })).toBeTruthy()
+    expect(screen.getByText('Écritures — engagement — 108000')).toBeTruthy()
+  })
+
+  it.each([['cloture', 'Clôture'], ['estimation', 'Estimation'], ['financement', 'Financement']])(
+    'l’onglet %s reçoit le modèle du dossier affiché',
+    async (onglet, libelle) => {
+      await afficher(`/dossiers/d1/${onglet}`)
+      expect(screen.getByText(`${libelle} — modèle tresorerie`)).toBeTruthy()
+      cleanup()
+
+      await afficher(`/dossiers/d2/${onglet}`)
+      expect(screen.getByText(`${libelle} — modèle engagement`)).toBeTruthy()
+    },
+  )
+
+  it('un modèle changé dans l’onglet Écritures se voit aussitôt dans l’en-tête', async () => {
+    await afficher('/dossiers/d1/ecritures')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Passer en engagement' })) })
+    expect(screen.getByRole('button', { name: 'Comptabilité : engagement' })).toBeTruthy()
+    expect(screen.getByText('Écritures — engagement — 455000')).toBeTruthy()
   })
 })

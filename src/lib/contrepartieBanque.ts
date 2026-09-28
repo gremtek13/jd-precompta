@@ -1,5 +1,6 @@
 import { supabase } from './supabase'
 import { COMPTE_BANQUE } from './comptes'
+import { lignesReglementEngagement, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
 import { partsDesPaiements } from './rattachement'
 import type { LigneBancaire, Piece } from './types'
@@ -29,12 +30,31 @@ import type { LigneBancaire, Piece } from './types'
 // pièce comptée « en attente de rapprochement bancaire » dans la Checklist sans qu'on sache que
 // l'écriture a en réalité été refusée. BanqueTab vérifiait déjà l'erreur du rapprochement lui-même
 // avant d'enchaîner ici (voir son commentaire) ; le contrôle s'arrêtait à cette frontière.
-export async function synchroniserContrepartieBanque(dossierId: string, piece: Piece, ligne: LigneBancaire) {
+//
+// EN ENGAGEMENT (lib/engagement.ts), le rapprochement écrit le RÈGLEMENT de la pièce : le compte de
+// tiers contre la banque, à la date du mouvement. Rien n'y est redaté — la facture reste à sa date,
+// c'est tout l'objet de ce modèle. Sans valeur par défaut pour le modèle : appelée en trésorerie sur un
+// dossier en engagement, elle redaterait sa facture au paiement.
+export async function synchroniserContrepartieBanque(
+  dossierId: string, piece: Piece, ligne: LigneBancaire, modele: ModeleComptable,
+) {
   const { data: existantes, error: lectureError } = await supabase
     .from('ecritures_brouillon')
-    .select('id, compte')
+    .select('id, compte, ligne_bancaire_id')
     .eq('piece_id', piece.id)
   if (lectureError) throw lectureError
+  if (modele.mode === 'engagement') {
+    // Même garde qu'en trésorerie : rien tant que la facture n'est pas générée — la génération écrira
+    // la facture ET ses règlements. Et idempotente PAR MOUVEMENT, non par pièce : une pièce payée en
+    // plusieurs fois reçoit un règlement par paiement, et un second passage n'en double aucun.
+    if (!existantes || !existantes.some((e) => !e.ligne_bancaire_id)) return
+    if (existantes.some((e) => e.ligne_bancaire_id === ligne.id)) return
+    const reglement = lignesReglementEngagement(dossierId, piece, ligne, modele.compteNotesDeFrais)
+    if (reglement.length === 0) return
+    const { error } = await supabase.from('ecritures_brouillon').insert(reglement)
+    if (error) throw error
+    return
+  }
   // Rien à faire tant que la pièce n'a pas encore sa ligne de charge/produit (catégorie sans compte
   // comptable, ou "Générer les écritures" pas encore lancé) — la contrepartie viendra d'elle-même au
   // prochain passage. À distinguer d'une lecture en échec, ci-dessus : sans ce contrôle, une lecture
@@ -78,7 +98,17 @@ export async function synchroniserContrepartieBanque(dossierId: string, piece: P
 // Et l'écriture RETOURNE À LA DATE DE SA FACTURE : plus rien ne la date au paiement, donc elle compte
 // de nouveau là où la 2035 la compte (lib/rattachement.ts). `piece` nul — une pièce que l'écran n'a
 // pas sous la main — laisse la date telle quelle, et le contrôle des écritures la signalera.
-export async function retirerContrepartieBanque(pieceId: string, piece: Pick<Piece, 'date_piece' | 'created_at'> | null) {
+//
+// EN ENGAGEMENT, elle retire le RÈGLEMENT de CE mouvement, ses deux lignes, et rien d'autre : la
+// facture reste à sa date, et les règlements des autres paiements de la pièce restent en place.
+export async function retirerContrepartieBanque(
+  ligneId: string, pieceId: string, piece: Pick<Piece, 'date_piece' | 'created_at'> | null, modele: ModeleComptable,
+) {
+  if (modele.mode === 'engagement') {
+    const { error } = await supabase.from('ecritures_brouillon').delete().eq('ligne_bancaire_id', ligneId)
+    if (error) throw error
+    return
+  }
   const { error } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('compte', COMPTE_BANQUE)
   if (error) throw error
   if (!piece) return

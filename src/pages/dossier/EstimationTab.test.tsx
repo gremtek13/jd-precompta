@@ -1,7 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EstimationTab from './EstimationTab'
-import type { Categorie, CotisationDeclaree, Piece } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, ModeComptable, Piece } from '../../lib/types'
 
 // LE CALCUL EST DANS `lib/estimation.ts`, TESTÉ — CE QUI SE JOUE ICI EST LE CÂBLAGE.
 //
@@ -112,8 +112,8 @@ function valeur(libelle: string): string {
   return (bloc.querySelector('strong')?.textContent ?? '').replace(/\s/g, ' ')
 }
 
-async function rendre(assujettiTva = true) {
-  render(<EstimationTab dossierId="dossier-de-test" assujettiTva={assujettiTva} />)
+async function rendre(assujettiTva = true, modeComptable: ModeComptable = 'tresorerie') {
+  render(<EstimationTab dossierId="dossier-de-test" assujettiTva={assujettiTva} modeComptable={modeComptable} />)
   return screen.findByRole('button', { name: 'Calculer le détail par poste' })
 }
 
@@ -374,6 +374,35 @@ describe('EstimationTab — une pièce compte à la date de son paiement', () =>
     faux.paiements = [paiement('p1', '2026-04-10', 1200)]
     await rendre()
     expect(valeur('CA encaissé à date')).toBe('0,00 €')
+    vi.useRealTimers()
+  })
+
+  // EN ENGAGEMENT (lib/engagement.ts), la date de la FACTURE : l'écran doit passer le modèle du dossier
+  // aux trois calculs, sans quoi une société à l'IS verrait ses repères datés à l'encaissement.
+  it('en engagement, le repère annuel compte la recette de l’année de sa facture, encaissée ou non', async () => {
+    faux.pieces = [pieceDeTest({ type_piece: 'vente', categorie_id: null, date_piece: `${annee}-12-28` })]
+    faux.paiements = [paiement('p1', `${annee + 1}-01-04`, 1200)]
+    await rendre(true, 'engagement')
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: 1000 })
+  })
+
+  it('en engagement, le détail par poste compte la charge de l’année de sa facture', async () => {
+    faux.pieces = [pieceDeTest({ id: 'payee-apres', date_piece: `${annee}-12-30` })]
+    faux.paiements = [paiement('payee-apres', `${annee + 1}-01-02`, -1200)]
+    const bouton = await rendre(true, 'engagement')
+    await act(async () => { bouton.click() })
+    expect(faux.upserts).toEqual([expect.objectContaining({ annee, poste: 'Loyer', montant: 1000 })])
+  })
+
+  it('en engagement, la projection compte une facture pas encore encaissée', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    faux.pieces = [pieceDeTest({ type_piece: 'vente', categorie_id: null, date_piece: '2026-03-02' })]
+    faux.paiements = [paiement('p1', '2026-04-10', 1200)]
+    await rendre(true, 'engagement')
+    expect(valeur('CA facturé à date')).toBe('1 000,00 €')
+    expect(screen.queryByText('CA encaissé à date')).toBeNull()
     vi.useRealTimers()
   })
 
