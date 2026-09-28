@@ -16,6 +16,16 @@ const ONGLETS = [
   'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'tva', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
 ]
+// Les onglets qu'un dossier tenu en ENGAGEMENT (d8) rend autrement : le réglage du modèle et le
+// brouillon en 401/411, la Clôture sans 2035, les factures sans règlement de la Checklist et de Banque,
+// le chiffre d'affaires facturé de l'Estimation.
+const ONGLETS_ENGAGEMENT = ['ecritures', 'cloture', 'checklist', 'banque', 'estimation']
+const VISITES = [
+  // L'onglet TVA sur le seul dossier assujetti tenu en trésorerie : sur le cabinet infirmier, exonéré,
+  // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
+  ...ONGLETS.map((onglet) => ({ dossier: onglet === 'tva' ? 'd7' : 'd1', onglet, nom: onglet })),
+  ...ONGLETS_ENGAGEMENT.map((onglet) => ({ dossier: 'd8', onglet, nom: `engagement/${onglet}` })),
+]
 const largeur = Number(process.argv[2] ?? 1440)
 const avecPanneau = process.argv[3] !== 'sans'
 
@@ -32,10 +42,8 @@ const contexte = await navigateur.newContext({ viewport: { width: largeur, heigh
 await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) ? r.continue() : r.abort()))
 const page = await contexte.newPage()
 let total = 0
-for (const onglet of ONGLETS) {
-  // L'onglet TVA sur le seul dossier assujetti du banc : sur le cabinet infirmier, exonéré, il ne
-  // montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
-  await page.goto(`${BASE}#/dossiers/${onglet === 'tva' ? 'd7' : 'd1'}/${onglet}`)
+for (const { dossier, onglet, nom } of VISITES) {
+  await page.goto(`${BASE}#/dossiers/${dossier}/${onglet}`)
   await page.waitForTimeout(900)
   const bouton = page.getByRole('button', { name: 'Assistant', exact: true })
   if (avecPanneau && (await bouton.getAttribute('aria-pressed')) !== 'true') await bouton.click()
@@ -58,7 +66,7 @@ for (const onglet of ONGLETS) {
     return trouvees.map((t) => t.texte)
   })
   total += fautes.length
-  console.log(`${onglet} : ${fautes.length ? '\n   ' + fautes.join('\n   ') : 'rien ne déborde'}`)
+  console.log(`${nom} : ${fautes.length ? '\n   ' + fautes.join('\n   ') : 'rien ne déborde'}`)
 }
 await navigateur.close()
 console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${avecPanneau ? 'ouvert' : 'fermé'}.`)
