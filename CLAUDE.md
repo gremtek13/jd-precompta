@@ -1189,6 +1189,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   relevé. Il dit ce qu'il écarte, reprend le crédit de la déclaration précédente, enregistre la
   déclaration déposée et la compare ensuite au calcul de sa période. Voir « la CA3 se prépare depuis
   les pièces et leurs paiements » dans « Problèmes connus » (`TvaTab`, `lib/declarationTva.ts`).
+- **La 2035 compte une pièce à la date de son paiement (28/09/2026)** : quand le rapprochement la
+  connaît, sinon à sa date de facture, et Clôture liste les pièces comptées ainsi. Même règle pour la
+  situation intermédiaire, l'estimation, la simulation client, les écritures, le FEC, la piste
+  d'audit et l'assistant. Voir « la 2035 compte une pièce à la date de son paiement » dans
+  « Problèmes connus » (`lib/rattachement.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -4015,6 +4020,10 @@ d'environnement dans la même édition.
   signalerait toute écriture générée dans un autre fuseau que celui qui la relit, `dateLocaleDe`
   lisant un INSTANT. La contrepartie banque reste exclue, sa date étant celle du PAIEMENT : la
   retenir signalerait chaque pièce rapprochée, c'est-à-dire celles qui sont en ordre.
+  **Depuis le 28/09/2026, la date attendue n'est plus toujours `date_piece`** : c'est celle du
+  PAIEMENT quand le rapprochement le connaît, et le contrôle compare l'ensemble des dates attendues à
+  celui des dates présentes — voir « la 2035 compte une pièce à la date de son paiement ». La règle
+  ci-dessus devient : on ne compare que si chaque part de la pièce est datée.
   **LATENT lui aussi, et mesuré** : zéro écriture en base dont la date diffère de celle de sa pièce,
   zéro pièce validée sans date prête à être comptabilisée. Comme ses deux aînés, ce qui le rend digne
   d'être corrigé n'est pas un préjudice constaté mais qu'il ne PEUT pas se voir une fois arrivé.
@@ -4535,9 +4544,12 @@ d'environnement dans la même édition.
     pouvait, ce que la loi admet (une déduction omise se rattrape jusqu'au 31 décembre de la deuxième
     année suivante) ; elle n'arrive jamais trop tôt, sauf pour un bien payé avant d'être livré ;
   - une note de frais, payée hors du compte professionnel, compte à sa date ;
-  - une pièce payée en plusieurs fois compte pour la part de chaque paiement,
-    |mouvement| / max(|TTC|, somme des mouvements) : un acompte ne rend exigible que ce qu'il paie, et
-    des frais bancaires ne font pas compter la pièce deux fois.
+  - une pièce payée en plusieurs fois compte pour la part de chaque paiement, |mouvement| / |TTC| :
+    un acompte ne rend exigible que ce qu'il paie. Réglée à l'écart d'alignement près
+    (`min(2 %, 5 €)`, le seuil d'`alignementBanque.ts`), elle compte en ENTIER, répartie entre ses
+    paiements : un frais bancaire ne laisse pas un reste à dater ailleurs, et des paiements supérieurs
+    à la facture ne la font pas compter plus d'une fois. Cette part vient de `lib/rattachement.ts`,
+    qui date aussi la 2035 (entrée suivante).
   Une pièce qu'aucun paiement ne date ne compte dans AUCUNE déclaration, et l'écran la liste (datée
   jusqu'à la fin de la période) : une recette encaissée en espèces, ou réglée avec d'autres par un seul
   virement, se reporte à la main.
@@ -4581,6 +4593,69 @@ d'environnement dans la même édition.
   titre) : 0 débordement aux quatre largeurs sur les dix-huit onglets.
   **LATENT** : aucun dossier vivant n'est assujetti — `test` est une infirmière exonérée —, et les deux
   qui le sont (`deltasoins 10`, `2023`) sont des bacs à sable abandonnés.
+- **LA 2035 COMPTE UNE PIÈCE À LA DATE DE SON PAIEMENT, PAS À CELLE DE SA FACTURE** (28/09/2026,
+  décision du cabinet : la corriger avant d'ouvrir la comptabilité d'engagement de la ligne 31). Le
+  bénéfice non commercial se détermine sur les recettes ENCAISSÉES et les dépenses PAYÉES (CGI,
+  art. 93) ; l'application rangeait pourtant chaque pièce dans l'exercice de sa `date_piece`. Une
+  facture de décembre réglée en janvier partait donc dans la déclaration de l'année d'avant — une
+  dépense déduite un an trop tôt, une recette imposée un an trop tôt, sur un document signé. **Et
+  l'onglet TVA, livré le même jour, datait déjà la même pièce à son paiement** : deux écrans du même
+  dossier donnaient deux dates au même euro.
+  **LA RÈGLE VIT À UN SEUL ENDROIT, `lib/rattachement.ts`** (`rattachementsTresorerie`) :
+  - une pièce compte à la date de son PAIEMENT quand un mouvement rapproché la règle ;
+  - sinon à sa DATE DE FACTURE : une note de frais, payée hors du compte professionnel, et une pièce
+    dont le paiement n'est pas encore rapproché — pour celle-ci c'est une SUPPOSITION, et Clôture la
+    DIT (« Pièces comptées à leur date de facture », avec le montant compté) : un paiement que
+    personne n'a rapproché n'est pas un paiement absent ;
+  - payée en partie, chaque paiement compte pour sa part (|mouvement| / |TTC|) et le reste à la date
+    de facture ; réglée à l'écart d'alignement près, elle compte en entier, répartie entre ses
+    paiements. C'est la part de l'onglet TVA, qui, lui, ne date pas le reste : un acompte n'y rend
+    exigible que ce qu'il paie ;
+  - sans paiement ni date, elle ne compte nulle part et reste « sans date », comme avant.
+  **La TVA a changé au passage, et c'est voulu** : une recette réglée à trois euros près de ses
+  1 200 € comptait pour 99,75 % de sa base, elle compte désormais en entier — la banque fait foi sous
+  le seuil, comme au rapprochement.
+  **CE QUI SUIT LA RÈGLE, usage par usage — c'est ce qui la rend juste** :
+  - la 2035 : `calculerDeclaration2035` exige les paiements, SANS valeur par défaut — une liste vide
+    ferait tout compter à la date de facture, c'est-à-dire exactement le défaut. Clôture propose les
+    exercices des paiements ;
+  - la situation intermédiaire, les ratios et le prévisionnel de Financement, l'estimation et la
+    simulation client : une pièce compte dans la PÉRIODE de son paiement ;
+  - les ÉCRITURES : générées, elles sont datées fraction par fraction, les centimes répartis pour que
+    la somme reste exacte. Un rapprochement qui RÈGLE la pièce les redate au paiement AVANT d'écrire
+    la contrepartie banque — dans cet ordre, pour qu'un échec laisse un message vrai —, et
+    l'annulation d'un rapprochement les rend à leur date de facture. Un paiement partiel ne redate
+    rien : le contrôle demande alors « Régénérer », qui répartit ;
+  - le contrôle « à régénérer » (Écritures, Checklist, l'assistant) compare l'ENSEMBLE des dates
+    attendues à celui des dates présentes, et se tait sur une pièce qu'une part sans date empêche de
+    situer ;
+  - le FEC numérote les écritures dans l'ordre de leurs dates d'ÉCRITURE — `PieceDate` reste la date
+    de la facture, celle que le vérificateur rapproche du document —, et la piste d'audit d'un
+    exercice y joint les justificatifs de cet exercice selon la même règle ;
+  - l'assistant, **version 27** : la copie de `rattachementsTresorerie` dans `agent-comptable` est
+    gardée par `agentComptableAnalyse.test.ts`, qui y plante deux dérives (les paiements ignorés, le
+    reste non arrondi au centime) pour prouver qu'il les voit. Déployé avec `verify_jwt` relu et
+    repassé à `false`, la v26 comparée à `main` AVANT écrasement (identique), aller-retour après : zéro
+    différence résiduelle sur 1 035 lignes, et le 401 de la fonction sans session. Aucun appel au
+    modèle.
+  **Les cotisations restent comptées à leur ÉCHÉANCE**, et c'est dit plutôt que promis : ce ne sont
+  pas des pièces, et un appel est d'ordinaire prélevé le jour de son échéance. Mesuré sur tous les
+  dossiers : 14 mouvements rapprochés d'une cotisation, aucun dans une autre année que son échéance.
+  Une échéance de décembre prélevée en janvier compterait encore dans l'année d'avant — à reprendre
+  le jour où le cas se présente, `cotisation_id` portant déjà le lien.
+  **MESURÉ SUR `test`** : 11 pièces validées, 10 réglées par un mouvement rapproché, aucune dans une
+  autre année que sa facture, aucun paiement partiel, aucune écriture — la 2035 du dossier ne bouge
+  pas. Quatre paiements tombent dans un autre MOIS que leur facture : une situation intermédiaire
+  arrêtée entre les deux les compte désormais au bon endroit. Ce qui rend la correction nécessaire
+  n'est pas un préjudice constaté, c'est qu'une déclaration fausse de cette façon a l'air juste.
+  **Cinquante-six mutations, toutes mordent — et deux de mes premiers « mord » étaient FAUX.** Le
+  harnais ne vérifiait pas sa BASE. Un test d'Estimation, écrit avec un paiement de 1 000 € sur une
+  facture de 1 200 €, échouait sur le code juste (le reste comptait à la date de facture : 166,67 €),
+  donc faisait tomber la suite de l'onglet à chaque mutation, y compris celle qu'il devait garder ;
+  et une commande terminée par `exit ${PIPESTATUS[0]}`, que `sh` ne connaît pas, échouait TOUJOURS.
+  Une suite rouge avant mutation fait passer toute mutation pour tuée : c'est le piège inverse de
+  `tail … && echo OK`, déjà nommé plus bas. Le test est corrigé, la commande simplifiée, et la
+  campagne rejouée ENTIÈRE, chaque suite vérifiée verte avant sa première mutation.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -5821,7 +5896,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2154 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2247 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -5836,8 +5911,9 @@ la génération des packs et l'export d'un cabinet
 par tous les écrans (`recherche.ts`), le contrat de la proposition de catégorie
 (`categorisationIa.ts`), les cotisations Urssaf d'un praticien conventionné
 (`voletSocialPamc.ts`, contre le moteur de l'Urssaf), et le montant qu'on retient d'une pièce
-selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), et la CA3 préparée case par case
-(`declarationTva.ts`) — les fichiers `*.test.ts` sont
+selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), la CA3 préparée case par case
+(`declarationTva.ts`), et la date à laquelle une pièce compte en trésorerie (`rattachement.ts`) —
+les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 **Deux projets Vitest, et la séparation porte une règle** (`vitest.config.ts`) : « logique »
