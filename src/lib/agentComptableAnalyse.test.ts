@@ -2,8 +2,9 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import { analyserEcritures, lignesChargeProduitPourPiece, piecesAComptabiliser } from './ecritures'
+import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import { rattachementsTresorerie } from './rattachement'
-import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, Piece } from './types'
 
 // `agent-comptable` EST AUTO-PORTÉE, ET C'ÉTAIT LA DERNIÈRE DUPLICATION SANS GARDE.
 //
@@ -23,6 +24,13 @@ import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types
 // Checklist en comptait, à la question « quelles sont les anomalies ? » — la seule que cet outil
 // existe pour traiter. Deux livrables, deux réponses, aucun signal : l'incohérence que ce dépôt a
 // déjà payée trois fois.
+//
+// ET LE MODÈLE DU DOSSIER DÉCIDE DE CE QU'UNE ÉCRITURE DOIT CONTENIR (28/09/2026). En comptabilité
+// d'engagement (src/lib/engagement.ts), une pièce porte l'écriture de sa FACTURE — avec son compte de
+// tiers, 401, 411 ou celui des notes de frais — et un RÈGLEMENT par mouvement rapproché, chacun
+// équilibré seul. Une copie restée à la trésorerie annoncerait « à régénérer » chacune de ces
+// écritures justes, et se tairait sur un mouvement rapproché sans règlement : les deux copies sont
+// donc comparées dans les deux modèles.
 //
 // Le garde est volontairement FRAGILE, comme ses huit aînés : renommer une fonction ou changer une
 // signature le casse bruyamment, ce qui vaut mieux qu'une copie qui dérive en silence.
@@ -46,7 +54,11 @@ function extraire(source: string) {
   const fin = source.indexOf('\n}\n', ancreFin)
   expect(fin, "fin d'`analyserEcritures` introuvable").toBeGreaterThan(ancreFin)
   const bloc = source.slice(debut, fin + 2)
-  for (const attendu of ['function piecesAComptabiliser(', 'function rattachementsTresorerie(', 'const COMPTE_BANQUE ='] as const) {
+  for (const attendu of [
+    'function piecesAComptabiliser(', 'function rattachementsTresorerie(', 'const COMPTE_BANQUE =',
+    'const COMPTE_FOURNISSEURS =', 'function compteDeTiers(', 'function engagementDesynchronise(',
+    'function desequilibresEngagement(',
+  ] as const) {
     expect(bloc, `« ${attendu} » absent du bloc gardé`).toContain(attendu)
   }
 
@@ -58,6 +70,7 @@ function extraire(source: string) {
     piecesAComptabiliser: (p: Piece[], c: Categorie[], i: ReadonlySet<string>) => { piece: Piece; compte: string }[]
     analyserEcritures: (
       e: EcritureBrouillon[], a: { piece: Piece; compte: string }[], assujettiTva: boolean, lignesBancaires: LigneBancaire[],
+      modele: ModeleComptable,
     ) => {
       nbSansContrepartie: number
       groupesDesequilibres: { pieceId: string; solde: number }[]
@@ -89,8 +102,19 @@ const piece = (o: Partial<Piece>): Piece =>
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon =>
   ({
     id: 'e1', piece_id: 'p1', date: '2025-03-10', compte: COMPTE_ACHATS,
-    libelle: 'FOURNISSEUR', sens: 'debit', montant: 100, statut: 'proposee', ...o,
+    libelle: 'FOURNISSEUR', sens: 'debit', montant: 100, statut: 'proposee', ligne_bancaire_id: null, ...o,
   }) as EcritureBrouillon
+
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+
+// Un mouvement rapproché de la pièce : il DATE l'écriture en trésorerie, et appelle un RÈGLEMENT en
+// engagement.
+const paiement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
+  id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
+  piece_id: 'p1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+  created_at: '2025-04-02T09:00:00Z', ...o,
+})
 
 /** Le jeu d'écritures qu'une pièce conforme produit : charge + TVA + contrepartie banque. */
 function groupeConforme(id: string, o: { compte?: string; tva?: number; date?: string } = {}) {
@@ -112,15 +136,15 @@ function groupeConforme(id: string, o: { compte?: string; tva?: number; date?: s
  */
 function memeResultat(
   ecritures: EcritureBrouillon[], pieces: Piece[], immos: string[] = [], copie = deployee, assujettiTva = true,
-  paiements: LigneBancaire[] = [],
+  paiements: LigneBancaire[] = [], modele: ModeleComptable = TRESORERIE,
 ) {
   const ici = piecesAComptabiliser(pieces, categories, new Set(immos))
   const la = copie.piecesAComptabiliser(pieces, categories, new Set(immos))
   const resume = (a: { piece: Piece; compte: string }[]) => a.map((x) => `${x.piece.id}:${x.compte}`)
   expect(resume(la), 'piecesAComptabiliser a dérivé').toEqual(resume(ici))
 
-  const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiements)
-  const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, paiements)
+  const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiements, modele)
+  const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, paiements, modele)
   const forme = (r: typeof r1) => ({
     nbSansContrepartie: r.nbSansContrepartie,
     groupesDesequilibres: r.groupesDesequilibres.map((g) => `${g.pieceId}:${g.solde.toFixed(2)}`),
@@ -220,12 +244,6 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
   // LA DATE DU PAIEMENT (src/lib/rattachement.ts) : une écriture est datée à son paiement quand le
   // rapprochement le connaît. Sans le bloc copié, l'assistant signalerait « à régénérer » toute
   // écriture justement datée — et se tairait sur celle restée à la date de facture.
-  const paiement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
-    id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
-    piece_id: 'p1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-    created_at: '2025-04-02T09:00:00Z', ...o,
-  })
-
   it('voit une écriture restée à la date de facture alors que le paiement est connu', () => {
     const r = memeResultat(groupeConforme('p1'), [piece({ id: 'p1' })], [], deployee, true, [paiement()])
     expect(r.piecesDesynchronisees).toEqual(['p1'])
@@ -282,6 +300,114 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
   })
 })
 
+// EN ENGAGEMENT, le brouillon d'une pièce est celui que src/lib génère (lignesEngagementPourPiece) : on
+// part de lui plutôt que de l'écrire à la main, pour que « conforme » veuille dire ce que la génération
+// produit réellement.
+function brouillonEngagement(
+  p: Piece, mouvements: LigneBancaire[],
+  o: { assujettiTva?: boolean; compteNotesDeFrais?: CompteNotesDeFrais } = {},
+): EcritureBrouillon[] {
+  return lignesEngagementPourPiece('d1', p, COMPTE_ACHATS, o.assujettiTva ?? true, o.compteNotesDeFrais ?? '455000', mouvements)
+    .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+}
+
+describe('agent-comptable / analyserEcritures en engagement (copie déployée)', () => {
+  it('se tait sur une facture et son règlement tels que src/lib les génère', () => {
+    const p = piece({ id: 'p1' })
+    expect(memeResultat(brouillonEngagement(p, [paiement()]), [p], [], deployee, true, [paiement()], ENGAGEMENT)).toEqual({
+      nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [],
+    })
+  })
+
+  it('compte une facture pas encore réglée, sans la dire à régénérer', () => {
+    const p = piece({ id: 'p1' })
+    const r = memeResultat(brouillonEngagement(p, []), [p], [], deployee, true, [], ENGAGEMENT)
+    expect(r.nbSansContrepartie).toBe(1)
+    expect(r.piecesDesynchronisees).toEqual([])
+  })
+
+  it('voit un mouvement rapproché dont le règlement manque au brouillon', () => {
+    // La dette resterait au 401 alors qu'elle est payée.
+    const p = piece({ id: 'p1' })
+    const r = memeResultat(brouillonEngagement(p, []), [p], [], deployee, true, [paiement()], ENGAGEMENT)
+    expect(r.piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('voit un règlement que plus rien ne rapproche', () => {
+    const p = piece({ id: 'p1' })
+    const r = memeResultat(brouillonEngagement(p, [paiement()]), [p], [], deployee, true, [], ENGAGEMENT)
+    expect(r.piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('voit des règlements sans leur facture', () => {
+    const p = piece({ id: 'p1' })
+    const reglementsSeuls = brouillonEngagement(p, [paiement()]).filter((e) => e.ligne_bancaire_id)
+    const r = memeResultat(reglementsSeuls, [p], [], deployee, true, [paiement()], ENGAGEMENT)
+    expect(r.piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('voit une facture restée à son ancienne date', () => {
+    const genere = brouillonEngagement(piece({ id: 'p1' }), [paiement()])
+    const r = memeResultat(genere, [piece({ id: 'p1', date_piece: '2025-03-12' })], [], deployee, true, [paiement()], ENGAGEMENT)
+    expect(r.piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('suit le compte des notes de frais du dossier', () => {
+    const ndf = piece({ id: 'p1', type_piece: 'note_frais' })
+    const au455 = brouillonEngagement(ndf, [])
+    expect(memeResultat(au455, [ndf], [], deployee, true, [], ENGAGEMENT).piecesDesynchronisees).toEqual([])
+    const autreCompte: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '108000' }
+    expect(memeResultat(au455, [ndf], [], deployee, true, [], autreCompte).piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('passe une vente au 411, et un avoir au sens inverse', () => {
+    const vente = piece({ id: 'p1', type_piece: 'vente' })
+    const encaisse = paiement({ montant: 120 })
+    expect(memeResultat(brouillonEngagement(vente, [encaisse]), [vente], [], deployee, true, [encaisse], ENGAGEMENT))
+      .toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+    const avoir = piece({ id: 'p1', montant_ht: -100, montant_tva: -20, montant_ttc: -120 })
+    const rembourse = paiement({ montant: 120 })
+    expect(memeResultat(brouillonEngagement(avoir, [rembourse]), [avoir], [], deployee, true, [rembourse], ENGAGEMENT))
+      .toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+  })
+
+  it('accepte une facture réglée en partie : le reste court au 401', () => {
+    const p = piece({ id: 'p1' })
+    const acompte = paiement({ montant: -48 })
+    expect(memeResultat(brouillonEngagement(p, [acompte]), [p], [], deployee, true, [acompte], ENGAGEMENT).piecesDesynchronisees)
+      .toEqual([])
+  })
+
+  it('ne ventile pas la TVA d’un dossier exonéré', () => {
+    const p = piece({ id: 'p1' })
+    const exonere = brouillonEngagement(p, [], { assujettiTva: false })
+    expect(memeResultat(exonere, [p], [], deployee, false, [], ENGAGEMENT).piecesDesynchronisees).toEqual([])
+    expect(memeResultat(brouillonEngagement(p, []), [p], [], deployee, false, [], ENGAGEMENT).piecesDesynchronisees)
+      .toEqual(['p1'])
+  })
+
+  it('juge chaque écriture seule : deux écarts qui se compensent dans le groupe restent un déséquilibre', () => {
+    const p = piece({ id: 'p1' })
+    const lignes = brouillonEngagement(p, [paiement()])
+    // La ligne 401 de la facture et celle du règlement, faussées de 10 € en sens contraires : la
+    // somme du groupe reste nulle, et chacune des deux écritures partirait fausse dans le FEC.
+    const tiersFacture = lignes.find((e) => e.compte === '401000' && !e.ligne_bancaire_id)!
+    const tiersReglement = lignes.find((e) => e.compte === '401000' && e.ligne_bancaire_id)!
+    tiersFacture.montant = 110
+    tiersReglement.montant = 110
+    expect(lignes.reduce((s, e) => s + (e.sens === 'debit' ? e.montant : -e.montant), 0)).toBeCloseTo(0)
+    const r = memeResultat(lignes, [p], [], deployee, true, [paiement()], ENGAGEMENT)
+    expect(r.groupesDesequilibres).toEqual(['p1:10.00'])
+  })
+
+  it('lit le brouillon d’une trésorerie comme à régénérer en engagement, et l’inverse', () => {
+    // C'est le modèle qui décide : la même écriture est juste dans l'un et périmée dans l'autre.
+    const p = piece({ id: 'p1' })
+    expect(memeResultat(groupeConforme('p1'), [p], [], deployee, true, [], ENGAGEMENT).piecesDesynchronisees).toEqual(['p1'])
+    expect(memeResultat(brouillonEngagement(p, []), [p], [], deployee, true, [], TRESORERIE).piecesDesynchronisees).toEqual(['p1'])
+  })
+})
+
 // LA BORNE : ce garde-fou sait-il encore échouer ?
 //
 // Sans elle, remplacer la copie déployée par la copie locale dans `memeResultat` laisse les dix cas
@@ -293,31 +419,53 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
 // exige qu'il s'en aperçoive. Défaut PLANTÉ, pas simulé : si la forme de la source change au point
 // que l'amputation ne mord plus, l'extraction elle-même échouera d'abord.
 // LE CÂBLAGE, que l'extraction ne voit pas : la copie est juste, encore faut-il que `points_a_traiter`
-// lui passe le statut TVA DU DOSSIER. Un `true` écrit en dur ferait signaler « à régénérer » toute
-// écriture juste d'un dossier exonéré — l'outil qui répond « quelles sont les anomalies ? ».
-describe('agent-comptable / points_a_traiter passe le statut TVA du dossier', () => {
-  it('appelle analyserEcritures avec dossier.assujetti_tva et les paiements rapprochés', () => {
-    expect(sourceDeployee()).toMatch(/analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, rPaiements\.lignes\)/)
+// lui passe le statut TVA et le MODÈLE COMPTABLE DU DOSSIER. Un `true` ou une trésorerie écrits en dur
+// feraient signaler « à régénérer » toute écriture juste d'un dossier exonéré, ou d'un dossier en
+// engagement — sur l'outil qui répond « quelles sont les anomalies ? ».
+describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle comptable du dossier', () => {
+  it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements rapprochés et le modèle du dossier', () => {
+    expect(sourceDeployee()).toMatch(
+      /const modele = modeleDuDossier\(dossier\)\n\s*const \{ nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, rPaiements\.lignes, modele\)/,
+    )
   })
 
-  it('lit la date des pièces et les paiements RAPPROCHÉS, sous le même refus de lecture partielle', () => {
+  it('lit le modèle comptable du dossier, le passe aux outils et le dit au modèle', () => {
+    const source = sourceDeployee()
+    expect(source).toMatch(/\.from\("dossiers"\)\s*\.select\("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais"\)/)
+    expect(source).toMatch(/mode_comptable: dossierRow\.mode_comptable,\s*compte_notes_de_frais: dossierRow\.compte_notes_de_frais,/)
+    expect(source).toMatch(/const repereModele = dossierRow\.mode_comptable === "engagement"/)
+    expect(source).toContain('- Modèle comptable du dossier : ${repereModele}')
+  })
+
+  it('nomme les factures sans règlement en engagement, comme la Checklist', () => {
+    expect(sourceDeployee()).toMatch(
+      /modele\.mode === "engagement"\s*\? \{ factures_sans_reglement_rapproche: nbSansContrepartie \}\s*: \{ ecritures_en_attente_de_rapprochement_bancaire: nbSansContrepartie \}/,
+    )
+  })
+
+  it('lit la date des pièces, le mouvement des écritures et les paiements RAPPROCHÉS avec leur identifiant, sous le même refus de lecture partielle', () => {
     // Sans `date_piece` dans la lecture, la date attendue d'une pièce non payée serait `undefined`,
-    // et toute écriture passerait pour « à régénérer ».
+    // et toute écriture passerait pour « à régénérer ». Sans `ligne_bancaire_id` ni l'identifiant des
+    // mouvements, un règlement d'engagement ne se distinguerait pas de sa facture, ni de son mouvement.
     const source = sourceDeployee()
     expect(source).toMatch(/select\("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece"/)
-    expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("piece_id, date, montant, statut"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)/)
+    expect(source).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id"/)
+    expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("id, piece_id, date, montant, statut"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)/)
     expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 })
 
 describe('le garde-fou sait encore échouer', () => {
+  // Une ancre qui figurerait deux fois ferait planter la dérive au mauvais endroit : on l'exige unique.
+  function planter(source: string, avant: string, apres: string, quoi: string): string {
+    expect(source.split(avant).length - 1, `${quoi} introuvable ou ambiguë — la dérive plantée ne mord plus`).toBe(1)
+    return source.replace(avant, apres)
+  }
+
   // La copie telle qu'elle était avant le correctif : elle attend la TVA de la pièce quel que soit le
   // statut du dossier. Le cas exonéré à une seule ligne doit la séparer de src/lib.
   function sansStatutTva(): string {
-    const source = sourceDeployee()
-    const avant = '    const tvaAttendue = assujettiTva ? p.montant_tva ?? 0 : 0\n'
-    expect(source.includes(avant), 'la TVA attendue est introuvable — la dérive plantée ne mord plus').toBe(true)
-    return source.replace(avant, '    const tvaAttendue = p.montant_tva ?? 0\n')
+    return planter(sourceDeployee(), '  return assujettiTva ? piece.montant_tva ?? 0 : 0\n', '  return piece.montant_tva ?? 0\n', 'la TVA ventilée')
   }
 
   it('attrape une copie déployée qui ignore le statut TVA du dossier', () => {
@@ -331,12 +479,12 @@ describe('le garde-fou sait encore échouer', () => {
 
   function sansComparaisonDeCompte(): string {
     const source = sourceDeployee()
-    const debut = source.indexOf('    const surUnAutreCompte = lignes.some(')
+    const debut = source.indexOf('  const surUnAutreCompte = lignes.some(')
     expect(debut, 'la comparaison de compte est introuvable — la dérive plantée ne mord plus')
       .toBeGreaterThan(-1)
-    const fin = source.indexOf('    if (surUnAutreCompte) return true\n', debut)
+    const fin = source.indexOf('  if (surUnAutreCompte) return true\n', debut)
     expect(fin, 'fin de la comparaison de compte introuvable').toBeGreaterThan(debut)
-    return source.slice(0, debut) + source.slice(fin + '    if (surUnAutreCompte) return true\n'.length)
+    return source.slice(0, debut) + source.slice(fin + '  if (surUnAutreCompte) return true\n'.length)
   }
 
   it('attrape une copie déployée à qui il manque la comparaison de compte', () => {
@@ -355,10 +503,7 @@ describe('le garde-fou sait encore échouer', () => {
   }
 
   function sansPaiements(): string {
-    const source = sourceDeployee()
-    const avant = '    const attendues = datesAttendues(p, paiements.get(p.id) ?? [])\n'
-    expect(source.includes(avant), 'la date attendue est introuvable — la dérive plantée ne mord plus').toBe(true)
-    return source.replace(avant, '    const attendues = datesAttendues(p, [])\n')
+    return planter(sourceDeployee(), '  const attendues = datesAttendues(p, paiementsPiece)\n', '  const attendues = datesAttendues(p, [])\n', 'la date attendue')
   }
 
   it('attrape une copie déployée qui attend la date de facture malgré le paiement', () => {
@@ -399,6 +544,48 @@ describe('le garde-fou sait encore échouer', () => {
     expect(() => memeResultat([], [piece({ id: 'immo' })], ['immo'], derivee)).toThrow()
   })
 
+  // Le code d'avant ce chantier : tout jugé en trésorerie, quel que soit le modèle du dossier.
+  it('attrape une copie déployée qui ignore le modèle comptable du dossier', () => {
+    const derivee = extraire(planter(
+      sourceDeployee(),
+      '  const paiements = paiementsParPiece(lignesBancaires)\n  const piecesParGroupe',
+      '  modele = { ...modele, mode: "tresorerie" }\n  const paiements = paiementsParPiece(lignesBancaires)\n  const piecesParGroupe',
+      "le début d'analyserEcritures",
+    ))
+    const p = piece({ id: 'p1' })
+    expect(() => memeResultat(brouillonEngagement(p, [paiement()]), [p], [], derivee, true, [paiement()], ENGAGEMENT)).toThrow()
+  })
+
+  it('attrape une copie qui ne suit plus les règlements des mouvements rapprochés', () => {
+    const derivee = extraire(planter(
+      sourceDeployee(),
+      '  if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true\n',
+      '',
+      'la comparaison des règlements',
+    ))
+    const p = piece({ id: 'p1' })
+    expect(() => memeResultat(brouillonEngagement(p, []), [p], [], derivee, true, [paiement()], ENGAGEMENT)).toThrow()
+  })
+
+  it('attrape une copie qui juge l’équilibre sur le groupe de la pièce', () => {
+    const derivee = extraire(planter(
+      sourceDeployee(), '      const ecriture = e.ligne_bancaire_id ?? ""\n', '      const ecriture = ""\n', "la clé d'écriture",
+    ))
+    const p = piece({ id: 'p1' })
+    const lignes = brouillonEngagement(p, [paiement()])
+    lignes.find((e) => e.compte === '401000' && !e.ligne_bancaire_id)!.montant = 110
+    lignes.find((e) => e.compte === '401000' && e.ligne_bancaire_id)!.montant = 110
+    expect(() => memeResultat(lignes, [p], [], derivee, true, [paiement()], ENGAGEMENT)).toThrow()
+  })
+
+  it('attrape une copie qui passe les notes de frais au 401', () => {
+    const derivee = extraire(planter(
+      sourceDeployee(), '  if (piece.type_piece === "note_frais") return compteNotesDeFrais\n', '', 'le compte des notes de frais',
+    ))
+    const ndf = piece({ id: 'p1', type_piece: 'note_frais' })
+    expect(() => memeResultat(brouillonEngagement(ndf, []), [ndf], [], derivee, true, [], ENGAGEMENT)).toThrow()
+  })
+
   it('a bien extrait la copie DÉPLOYÉE, et pas la copie locale', () => {
     // La borne la plus bête et la plus nécessaire : si `deployee` cessait d'être ce que la source
     // Deno contient, les douze cas compareraient `src/lib` à lui-même et resteraient verts.
@@ -412,5 +599,10 @@ describe('le garde-fou sait encore échouer', () => {
     expect(() => memeResultat(
       groupeConforme('p1', { compte: '628000' }), [piece({ id: 'p1' })],
     )).not.toThrow()
+    const p = piece({ id: 'p1' })
+    const lignes = brouillonEngagement(p, [paiement()])
+    lignes.find((e) => e.compte === '401000' && !e.ligne_bancaire_id)!.montant = 110
+    lignes.find((e) => e.compte === '401000' && e.ligne_bancaire_id)!.montant = 110
+    expect(() => memeResultat(lignes, [p], [], deployee, true, [paiement()], ENGAGEMENT)).not.toThrow()
   })
 })
