@@ -17,6 +17,8 @@ const ligne = (pieceId: string, o: Partial<EcritureBrouillon> = {}): EcritureBro
 } as EcritureBrouillon)
 
 const colonnes = (fec: string) => fec.split('\r\n').map((l) => l.split('\t'))
+// Relit un montant tel que la norme l'écrit, virgule décimale comprise — `Number('6000,00')` rend NaN.
+const lireMontant = (champ: string) => Number(champ.replace(',', '.'))
 
 describe('genererFec — intégrité du fichier', () => {
   it("neutralise les sauts de ligne d'un libellé venu de l'OCR", () => {
@@ -56,6 +58,74 @@ describe('genererFec — intégrité du fichier', () => {
       'tresorerie',
     )
     expect(colonnes(fec).every((r) => r.length === 18)).toBe(true)
+  })
+})
+
+// La forme que l'article A47 A-1 impose au fichier à plat : noms des champs en première ligne,
+// tabulation, dates AAAAMMJJ, et des montants en base décimale dont « la virgule sépare la fraction
+// entière de la partie décimale », sans « aucun séparateur de millier ». Jusqu'au 28/09/2026 les
+// montants sortaient avec un point, et aucun test ne le voyait : ils n'éprouvaient que les colonnes.
+describe('genererFec — la forme imposée par l’article A47 A-1', () => {
+  const MONTANT_NORME = /^-?\d+,\d{2}$/
+  const DATE_NORME = /^\d{8}$/
+
+  const fichierComplet = () => genererFec(
+    [
+      ligne('p1', { montant: 1234567.8 }),
+      ligne('p1', { compte: COMPTE_BANQUE, sens: 'credit', montant: 1234567.8, ligne_bancaire_id: 'l1' }),
+      ligne('p2', { montant: 0.05, date: '2026-04-01' }),
+      ligne('p2', { compte: COMPTE_BANQUE, sens: 'credit', montant: 0.05, date: '2026-04-01' }),
+    ],
+    [piece('p1'), piece('p2', { date_piece: '2026-04-01' })],
+    [],
+    [{
+      id: 'an-1', dossier_id: 'd1', date: '2026-01-01', compte: '512000', compte_origine: '512000', libelle: 'Banque',
+      sens: 'debit', montant: 25000.1, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64),
+      created_at: '2026-09-26T10:00:00Z',
+    }],
+    'tresorerie',
+  )
+
+  it('écrit les montants avec une virgule décimale et sans séparateur de milliers', () => {
+    const lignes = colonnes(fichierComplet()).slice(1)
+    expect(lignes).toHaveLength(5)
+    for (const l of lignes) {
+      expect(l[11]).toMatch(MONTANT_NORME)
+      expect(l[12]).toMatch(MONTANT_NORME)
+    }
+    expect(lignes.map((l) => [l[11], l[12]])).toEqual([
+      ['25000,10', '0,00'],
+      ['1234567,80', '0,00'],
+      ['0,00', '1234567,80'],
+      ['0,05', '0,00'],
+      ['0,00', '0,05'],
+    ])
+  })
+
+  it('met le signe d’un montant négatif en tête', () => {
+    // Défensif : la génération écrit des valeurs absolues et porte le signe dans le sens. Mais un
+    // montant négatif qui arriverait jusqu'ici doit rester lisible selon la norme, pas « 12,50- ».
+    const l = colonnes(genererFec([ligne('p1', { montant: -12.5 })], [piece('p1')], [], [], 'tresorerie'))[1]
+    expect(l[11]).toBe('-12,50')
+  })
+
+  it('porte les noms des champs en première ligne, sépare par des tabulations et termine chaque ligne par CRLF', () => {
+    const fec = fichierComplet()
+    expect(fec.split('\r\n')[0]).toBe([
+      'JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate', 'CompteNum', 'CompteLib',
+      'CompAuxNum', 'CompAuxLib', 'PieceRef', 'PieceDate', 'EcritureLib', 'Debit', 'Credit',
+      'EcritureLet', 'DateLet', 'ValidDate', 'Montantdevise', 'Idevise',
+    ].join('\t'))
+    expect(fec.replaceAll('\r\n', '')).not.toContain('\n')
+    expect(fec.replaceAll('\r\n', '')).not.toContain('\r')
+  })
+
+  it('écrit les dates sur huit chiffres, sans séparateur', () => {
+    for (const l of colonnes(fichierComplet()).slice(1)) {
+      expect(l[3]).toMatch(DATE_NORME) // EcritureDate
+      expect(l[9]).toMatch(DATE_NORME) // PieceDate
+      expect(l[15]).toMatch(DATE_NORME) // ValidDate
+    }
   })
 })
 
@@ -158,10 +228,10 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
     expect(banque[5]).toBe('Banque')
     expect(banque[10]).toBe('À-nouveau 51210000 Banque Populaire')
     expect(banque[8]).toBe('balance-2025.csv')
-    expect([banque[11], banque[12]]).toEqual(['6000.00', '0.00'])
+    expect([banque[11], banque[12]]).toEqual(['6000,00', '0,00'])
     const exploitant = colonnes(genererFec([], [], [], ouverture, 'tresorerie')).find((r) => r[4] === '108')!
     expect([exploitant[5], exploitant[10], exploitant[11], exploitant[12]])
-      .toEqual(['Compte de l’exploitant', 'À-nouveau Compte de l’exploitant', '0.00', '6000.00'])
+      .toEqual(['Compte de l’exploitant', 'À-nouveau Compte de l’exploitant', '0,00', '6000,00'])
   })
 
   it('s’exporte même sans aucune écriture : l’ouverture d’un exercice qui commence', () => {
@@ -225,7 +295,7 @@ describe('genererFec — en engagement', () => {
 
   it('équilibre chaque écriture du fichier, une par une', () => {
     const parNumero = new Map<string, number>()
-    for (const r of rows()) parNumero.set(r[2], (parNumero.get(r[2]) ?? 0) + Number(r[11]) - Number(r[12]))
+    for (const r of rows()) parNumero.set(r[2], (parNumero.get(r[2]) ?? 0) + lireMontant(r[11]) - lireMontant(r[12]))
     expect([...parNumero.values()].every((s) => Math.abs(s) < 0.005)).toBe(true)
   })
 
