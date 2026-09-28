@@ -368,7 +368,10 @@ describe('EstimationTab — une pièce compte à la date de son paiement', () =>
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
     faux.pieces = [pieceDeTest({ type_piece: 'vente', categorie_id: null, date_piece: '2026-03-02' })]
-    faux.paiements = [paiement('p1', '2026-04-10', 1000)]
+    // Le paiement RÈGLE la facture, 1 200 € TTC : un paiement de 1 000 € n'en réglerait qu'une partie,
+    // et le reste compterait à la date de facture — 166,67 € « encaissés » sur ce jeu, pour une bonne
+    // raison. La première version de ce test portait ce montant-là et échouait sur le code juste.
+    faux.paiements = [paiement('p1', '2026-04-10', 1200)]
     await rendre()
     expect(valeur('CA encaissé à date')).toBe('0,00 €')
     vi.useRealTimers()
