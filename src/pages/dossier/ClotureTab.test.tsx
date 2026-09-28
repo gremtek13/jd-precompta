@@ -110,10 +110,10 @@ function poser(
   }
 }
 
-function monter(annee = 2025) {
+function monter(annee = 2025, assujettiTva = true) {
   return render(
     <AnneeProvider defaut={annee}>
-      <ClotureTab dossierId="dossier-de-test" />
+      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} />
     </AnneeProvider>,
   )
 }
@@ -433,5 +433,43 @@ describe('ClotureTab — le revenu brut social du cadre 8', () => {
     expect(screen.getByText('CR')).toBeDefined()
     for (const code of ['DE', 'DB', 'DC', 'DD']) expect(screen.queryAllByText(code), code).toHaveLength(0)
     expect(screen.queryAllByText(/Report sur la déclaration des revenus/)).toHaveLength(0)
+  })
+})
+
+// UN DOSSIER EXONÉRÉ DÉCLARE SES DÉPENSES TVA COMPRISE (voir lib/montantRetenu.ts). Ce que ce test
+// garde, et qu'aucun test de `src/lib` ne peut garder : que l'onglet passe bien SON statut au calcul
+// de la 2035 — c'est-à-dire ce qui part sur le formulaire signé.
+describe('ClotureTab — le statut TVA du dossier décide du montant déclaré', () => {
+  it.each([
+    [false, 120],
+    [true, 100],
+  ])('assujetti : %s — la case Achats porte %s €', async (assujetti, attendu) => {
+    poser()
+    faux.parTable.pieces = [{ ...PIECE, montant_ht: 100, montant_tva: 20, montant_ttc: 120 }]
+    faux.remplies = []
+    URL.createObjectURL = () => 'blob:formulaire'
+    URL.revokeObjectURL = () => {}
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    monter(2025, assujetti)
+
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    await act(async () => { bouton.click() })
+    expect(faux.remplies[0].get('BA')).toBe(attendu)
+    vi.restoreAllMocks()
+  })
+
+  // Une pièce ÉCARTÉE de la déclaration s'affiche pour le montant qui y manquera : TVA comprise pour
+  // un dossier exonéré. Au hors taxes, l'écran sous-estimerait ce que la déclaration perd.
+  it('une pièce écartée faute de poste s’affiche TVA comprise pour un dossier exonéré', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, { ...CATEGORIE, id: 'cat-sans-poste', code: 'autre', libelle: 'Autre', poste_2035: null }]
+    faux.parTable.pieces = [
+      PIECE,
+      { ...PIECE, id: 'p2', tiers: 'SANS POSTE', categorie_id: 'cat-sans-poste', montant_ht: 100, montant_tva: 20, montant_ttc: 120 },
+    ]
+    monter(2025, false)
+    const titre = await screen.findByText(/Pièces validées absentes du récapitulatif \(1\)/)
+    const ligne = within(titre.closest('.card')!).getByText('SANS POSTE').closest('tr')!
+    expect(within(ligne).getByText(/^120,00\s€$/)).toBeTruthy()
   })
 })

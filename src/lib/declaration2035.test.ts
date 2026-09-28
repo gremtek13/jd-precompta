@@ -23,7 +23,7 @@ const calcul = (o: {
   pieces?: Piece[]; immos?: Immobilisation[]; cotis?: CotisationDeclaree[]; annee?: number
   vehicules?: VehiculeDossier[]
 }) => calculerDeclaration2035(
-  o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [], o.vehicules ?? [],
+  o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [], o.vehicules ?? [], true,
 )
 
 const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
@@ -49,6 +49,18 @@ describe('calculerDeclaration2035 — périmètre', () => {
     // Une pièce d'un autre exercice n'est pas une anomalie : elle ne doit pas être signalée.
     expect(d.exclusions.sansDate).toHaveLength(0)
     expect(d.exclusions.sansPoste).toHaveLength(0)
+  })
+
+  // Un dossier EXONÉRÉ ne récupère pas la TVA : elle fait partie de sa dépense
+  // (BOI-BNC-BASE-40-60-20 § 90), et l'option hors taxes n'est ouverte qu'aux assujettis
+  // (BOI-BNC-BASE-20-10-30 § 60). Mesuré sur le dossier d'une infirmière : 852,00 € déclarés pour
+  // 1 022,40 € payés, soit 170,40 € de dépenses absentes d'une 2035 signée.
+  it('retient le TTC pour un dossier exonéré, TVA comprise', () => {
+    const pieces = [piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
+    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false)
+    expect(exonere.totalDepenses).toBe(120)
+    // Le garde symétrique : l'assujetti garde le hors taxes.
+    expect(calcul({ pieces }).totalDepenses).toBe(100)
   })
 
   it('préfère le montant HT au TTC', () => {

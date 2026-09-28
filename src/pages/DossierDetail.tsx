@@ -201,7 +201,12 @@ export default function DossierDetail() {
               <button
                 type="button"
                 className={`badge badge-bouton ${dossier.assujetti_tva ? 'badge-ok' : 'badge-neutral'}`}
-                title="Clique pour changer — la plupart des dossiers IDEL sont exonérés de TVA sur les actes de soins"
+                // Ce statut décide désormais du montant de chaque pièce (voir lib/montantRetenu.ts) : un
+                // dossier en franchise en base est techniquement assujetti, mais ne récupère rien — il
+                // se classe « exonéré », et c'est ce que l'infobulle doit dire à qui hésite.
+                title={'Clique pour changer. « Assujetti » : le dossier collecte et récupère la TVA, ses montants '
+                  + 'sont retenus hors taxes. « Exonéré » (actes de soins, franchise en base) : la TVA payée fait '
+                  + 'partie des dépenses, retenues TVA comprise.'}
                 onClick={toggleAssujettiTva}
               >
                 TVA : {dossier.assujetti_tva ? 'assujetti' : 'exonéré'}
@@ -293,11 +298,11 @@ export default function DossierDetail() {
           {tab === 'documents' && <DocumentsTab dossierId={id} />}
           {tab === 'ecritures' && <EcrituresTab dossierId={id} dossierNom={dossier?.nom ?? ''} dossierSiret={dossier?.siret ?? null} assujettiTva={dossier?.assujetti_tva ?? false} />}
           {tab === 'statistiques' && <StatistiquesTab dossierId={id} onNavigate={allerA} />}
-          {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} />}
+          {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
           {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
-          {tab === 'cloture' && <ClotureTab dossierId={id} />}
-          {tab === 'estimation' && <EstimationTab dossierId={id} />}
-          {tab === 'financement' && <FinancementTab dossierId={id} />}
+          {tab === 'cloture' && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
+          {tab === 'estimation' && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
+          {tab === 'financement' && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
           {tab === 'supplements' && <SupplementsTab dossierId={id} />}
           {tab === 'informations' && (
             <InformationsTab

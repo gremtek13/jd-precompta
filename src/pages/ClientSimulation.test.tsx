@@ -37,6 +37,12 @@ vi.mock('../lib/supabase', () => ({
         eq: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+        // La lecture du statut TVA du dossier, une seule ligne.
+        maybeSingle: () => Promise.resolve(
+          faux.refusees.has(table)
+            ? { data: null, error: { message: 'permission denied' } }
+            : { data: (faux.parTable[table] ?? [])[0] ?? null, error: null },
+        ),
         then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown) => {
           if (faux.refusees.has(table)) {
             return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
@@ -95,8 +101,11 @@ function repere(o: Partial<ReferenceAnnuelle> = {}): ReferenceAnnuelle {
 const ECHEANCIER_2026 = Array.from({ length: 12 }, (_, i) =>
   echeance({ id: `e${i}`, echeance: `2026-${String(i + 1).padStart(2, '0')}-05` }))
 
-function poser(o: { recettes?: Piece[]; cotisations?: CotisationDeclaree[]; reperes?: ReferenceAnnuelle[] } = {}) {
+function poser(o: {
+  recettes?: Piece[]; cotisations?: CotisationDeclaree[]; reperes?: ReferenceAnnuelle[]; assujetti?: boolean
+} = {}) {
   faux.parTable = {
+    dossiers: [{ assujetti_tva: o.assujetti ?? false }],
     pieces: o.recettes ?? [],
     cotisations_declarees: o.cotisations ?? [],
     references_annuelles: o.reperes ?? [],
@@ -199,6 +208,38 @@ describe('ClientSimulation — une lecture qui échoue', () => {
     faux.muet = { pieces: 1 }
     await monter()
 
+    screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
+  })
+})
+
+describe('ClientSimulation — le montant d’une recette suit le statut TVA du dossier', () => {
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+  })
+
+  // Les mêmes chiffres que l'Estimation du cabinet (lib/montantRetenu.ts) : hors taxes pour un
+  // dossier assujetti, TVA comprise pour un dossier exonéré. Sans le statut, l'écran retombait sur le
+  // HT pour tout le monde.
+  const recetteAvecTva = () => recette({ montant_ht: 500, montant_tva: 100, montant_ttc: 600 })
+
+  it('compte le hors taxes pour un dossier assujetti', async () => {
+    poser({ recettes: [recetteAvecTva()], assujetti: true })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('500,00 €')
+  })
+
+  it('compte la TVA comprise pour un dossier exonéré', async () => {
+    poser({ recettes: [recetteAvecTva()], assujetti: false })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('600,00 €')
+    expect(screen.queryAllByText(/n'ont pas pu être affichées en entier/)).toHaveLength(0)
+  })
+
+  it('prévient quand le statut TVA du dossier n’a pas pu être lu', async () => {
+    poser({ recettes: [recetteAvecTva()] })
+    faux.refusees = new Set(['dossiers'])
+    await monter()
     screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
   })
 })

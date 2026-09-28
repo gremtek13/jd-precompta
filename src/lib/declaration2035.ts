@@ -1,5 +1,6 @@
 import { anneeDe, jourDe, moisDe } from './format'
 import { totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
+import { montantRetenu } from './montantRetenu'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
 
@@ -242,6 +243,9 @@ export function calculerDeclaration2035(
   // Sans valeur par défaut, volontairement : un appelant qui oublie les véhicules doit s'en rendre
   // compte à la compilation, pas en découvrant une case BJ vide sur un formulaire déjà déposé.
   vehicules: VehiculeDossier[],
+  // Même raison : un dossier exonéré déclare ses dépenses TVA comprise, un assujetti hors taxes (voir
+  // lib/montantRetenu.ts). Une valeur par défaut ferait passer l'un pour l'autre en silence.
+  assujettiTva: boolean,
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -274,7 +278,7 @@ export function calculerDeclaration2035(
     }
     if (anneeDe(piece.date_piece) !== annee) continue
 
-    const montant = piece.montant_ht ?? piece.montant_ttc
+    const montant = montantRetenu(piece, assujettiTva)
     if (montant == null) {
       exclusions.sansMontant.push(piece)
       continue

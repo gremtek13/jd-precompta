@@ -1,4 +1,5 @@
 import { anneeDe, jourDe, moisDe } from './format'
+import { montantRetenu } from './montantRetenu'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
 
 // Exporté parce que `ratiosBancaires.ts` doit retrouver ce poste dans `totauxParPoste` pour calculer
@@ -58,6 +59,9 @@ export function moisEcoulesDeLAnnee(dateDuJour: string): number {
 export function calculerSituationIntermediaire(
   pieces: Piece[], categories: Categorie[], immobilisations: Immobilisation[], cotisations: CotisationDeclaree[],
   periodeDebut: string, periodeFin: string,
+  // TVA comprise pour un dossier exonéré, hors taxes pour un assujetti — la règle de la 2035 (voir
+  // lib/montantRetenu.ts), sur l'état qu'on montre à une banque.
+  assujettiTva: boolean,
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
@@ -70,7 +74,7 @@ export function calculerSituationIntermediaire(
     if (!p.date_piece || p.date_piece < periodeDebut || p.date_piece > periodeFin) continue
     const cat = p.categorie_id ? categorieById.get(p.categorie_id) : null
     if (!cat?.poste_2035) continue
-    const montant = p.montant_ht ?? p.montant_ttc ?? 0
+    const montant = montantRetenu(p, assujettiTva) ?? 0
     const signe = p.type_piece === 'vente' ? 1 : -1
     totauxParPoste.set(cat.poste_2035, (totauxParPoste.get(cat.poste_2035) ?? 0) + signe * montant)
   }

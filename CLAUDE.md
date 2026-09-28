@@ -4465,6 +4465,45 @@ d'environnement dans la même édition.
 - **Le compteur « N sur M » compare ce qui est comparable.** `M` est l'ensemble après les
   filtres de l'écran (statut, année, mois) et avant la recherche — pas la liste brute, sinon le
   compteur annonce un écart dû au filtre Année et non à la recherche.
+- **HT OU TTC, CE N'EST PAS UNE PRÉSENTATION : ÇA DÉPEND DE L'ASSUJETTISSEMENT À LA TVA** (28/09/2026,
+  trouvé en cadrant la ligne 28, la télédéclaration de TVA). Toute l'application retenait le HT d'une
+  pièce dès qu'il était lu (`montant_ht ?? montant_ttc`), sans regarder le dossier : la 2035, la
+  situation intermédiaire, l'estimation et la simulation client — et la génération des écritures
+  ventilait la TVA en 445660/445710 pour tout le monde. Or un dossier NON assujetti (exonéré, comme les
+  soins des auxiliaires médicaux, ou en franchise en base) ne récupère pas la TVA qu'il paie : elle
+  « constitue un élément du prix de revient » (BOI-BNC-BASE-40-60-20 § 90), et l'option hors taxes
+  n'est ouverte qu'aux assujettis (BOI-BNC-BASE-20-10-30 § 60).
+  **Mesuré sur le dossier vivant**, `test`, une infirmière exonérée : ses 10 achats validés de 2025
+  comptaient 852,00 € pour 1 022,40 € payés — 170,40 € de dépenses absents de la 2035, donc un bénéfice
+  et un revenu brut social surévalués d'autant, sur une déclaration signée comme sur l'estimation des
+  cotisations ; 298,38 € de plus attendaient parmi les pièces à valider. Et c'est la clientèle cible
+  entière : les professions de santé sont exonérées sur leurs actes de soins.
+  **LA RÈGLE ÉTAIT ÉCRITE**, dans un commentaire de la Checklist (« sur un dossier non assujetti c'est
+  le TTC — donc la charge ») : la famille « une mise en garde écrite au-dessus d'un code qui ne la tient
+  pas », à trois fichiers de distance cette fois.
+  **Un seul endroit, `lib/montantRetenu.ts`** : `montantRetenu` (le TTC pour un exonéré ; pour un
+  assujetti, la règle d'AVANT à l'identique — le HT lu, sinon le TTC moins la TVA) et `tvaVentilee` (la
+  TVA de la pièce pour un assujetti, zéro pour un exonéré). Pour une pièce cohérente, leur somme est le
+  TTC, ce qui garde l'écriture équilibrée face à la banque. Le statut entre en paramètre OBLIGATOIRE —
+  `calculerDeclaration2035`, `calculerSituationIntermediaire`, les trois calculs d'`estimation.ts`,
+  `lignesChargeProduitPourPiece`, `analyserEcritures` — pour qu'un appelant qui l'oublie le découvre à
+  la compilation : c'est le compilateur qui a énuméré les douze appels à reprendre.
+  **Le contrôle des écritures attend la même TVA**, sans quoi l'écriture juste d'un dossier exonéré (le
+  TTC sur une seule ligne) serait « à régénérer » pour toujours ; sa copie dans `agent-comptable` suit
+  (version 25). Une écriture qui ventile encore la TVA d'un exonéré devient « à régénérer », et
+  « Régénérer » la réécrit au TTC — mesuré, aucune n'existe aujourd'hui.
+  **Le jumeau inverse, pour un ASSUJETTI** : une immobilisation s'enregistrait au TTC, donc amortissait
+  une TVA qu'il récupère déjà. Elle prend la même valeur que le reste (HT pour lui, TTC pour un
+  exonéré), affichée, enregistrée, et comparée au seuil de 500 €, qui s'apprécie hors taxes. Les deux
+  immobilisations en base, dans des bacs à sable, gardent la leur : c'est un instantané, et rien ne se
+  réécrit en masse.
+  **Ce qui ne change PAS** : les montants lus sur la pièce, rien n'est réécrit en base, et le statut
+  reste celui du badge de l'en-tête — dont l'infobulle dit maintenant qu'un dossier en franchise en base
+  se classe « exonéré ». La simulation client lit ce statut elle-même ; une lecture ratée le dit par le
+  bandeau de lecture partielle au lieu de le supposer.
+  **Trente mutations, toutes mordent, et trois ont d'abord survécu** — le montant affiché des pièces
+  écartées de la 2035, celui des candidates à l'immobilisation et leur seuil. Chaque branchement est
+  gardé à part : le calcul, l'onglet, et la page, qui passe le statut aux quatre onglets.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -5705,7 +5744,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2042 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2092 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -5718,8 +5757,9 @@ la génération des packs et l'export d'un cabinet
 (`sauvegarde.ts`, `sauvegardeDonnees.ts`, `sauvegardeFichier.ts`) et le dépôt de fichiers côté client
 (`depot.ts`) comme côté cabinet (`importFichiers.ts`), et le moteur de recherche partagé
 par tous les écrans (`recherche.ts`), le contrat de la proposition de catégorie
-(`categorisationIa.ts`), et les cotisations Urssaf d'un praticien conventionné
-(`voletSocialPamc.ts`, contre le moteur de l'Urssaf) — les fichiers `*.test.ts` sont
+(`categorisationIa.ts`), les cotisations Urssaf d'un praticien conventionné
+(`voletSocialPamc.ts`, contre le moteur de l'Urssaf), et le montant qu'on retient d'une pièce
+selon que le dossier récupère ou non la TVA (`montantRetenu.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 **Deux projets Vitest, et la séparation porte une règle** (`vitest.config.ts`) : « logique »

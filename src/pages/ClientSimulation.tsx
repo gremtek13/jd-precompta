@@ -6,6 +6,7 @@ import { ecartPct, projectionAnnuelle } from '../lib/estimation'
 import type { CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
+import { messageErreur } from '../lib/messageErreur'
 
 // Vue client, lecture seule, de l'estimation indicative que le cabinet tient dans EstimationTab —
 // mêmes chiffres, mêmes règles de calcul (lib/estimation.ts, un seul endroit si elles changent), mais
@@ -24,12 +25,15 @@ export default function ClientSimulation() {
   const [recettesValidees, setRecettesValidees] = useState<Piece[]>([])
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
   const [referencesPostes, setReferencesPostes] = useState<ReferencePosteAnnuel[]>([])
+  // Décide du montant de chaque recette, comme dans l'Estimation du cabinet : TVA comprise pour un
+  // dossier exonéré, hors taxes pour un assujetti (voir lib/montantRetenu.ts).
+  const [assujettiTva, setAssujettiTva] = useState(false)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     if (!dossierId) return
     async function load() {
-      const [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes] = await Promise.all([
+      const [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier] = await Promise.all([
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -49,16 +53,24 @@ export default function ClientSimulation() {
         supabase.from('references_postes_annuels').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
       ),
+        supabase.from('dossiers').select('assujetti_tva').eq('id', dossierId).maybeSingle(),
       ])
       setCotisations(lectureCotisations.lignes)
       setRecettesValidees(lectureRecettes.lignes)
       setReferences(lectureReferences.lignes)
       setReferencesPostes(lectureReferencesPostes.lignes)
       setReferencesIncompletes(!lectureReferences.complete)
+      setAssujettiTva(lectureDossier.data?.assujetti_tva ?? false)
       // Jumelle d'`EstimationTab` : tronquées, ces lectures rendent une simulation plausible et BASSE.
+      // Le statut TVA non lu la rend incertaine aussi — il décide du montant de chaque recette — et
+      // le dire vaut mieux que de supposer : le repli « exonéré » est le cas de la plupart des
+      // dossiers, pas une certitude.
+      const motifDossier = lectureDossier.error
+        ? messageErreur(lectureDossier.error, 'lecture refusée')
+        : lectureDossier.data ? null : 'dossier introuvable'
       setLectureIncomplete(
         [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes]
-          .find((l) => !l.complete)?.motif ?? null,
+          .find((l) => !l.complete)?.motif ?? motifDossier,
       )
       setLoading(false)
     }
@@ -72,7 +84,7 @@ export default function ClientSimulation() {
 
   // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql())
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   return (

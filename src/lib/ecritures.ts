@@ -1,5 +1,6 @@
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 import { dateLocaleDe } from './format'
+import { montantRetenu, tvaVentilee } from './montantRetenu'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
@@ -37,7 +38,13 @@ export interface LigneAGenerer {
 // qu'en régénération (une pièce déjà passée en écritures, mais modifiée depuis — voir
 // piecesDesynchronisees dans EcrituresTab). Ne couvre jamais la contrepartie banque, gérée séparément
 // par synchroniserContrepartieBanque (voir lib/contrepartieBanque.ts).
-export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, compteComptable: string): LigneAGenerer[] {
+//
+// La TVA ne se ventile que pour un dossier ASSUJETTI. Un dossier exonéré ne la récupère pas : sa
+// charge est le TTC, sur une seule ligne, et rien ne passe en 445660 — une TVA déductible qu'il ne
+// déduira jamais serait un actif qui n'existe pas, et une charge amputée d'autant dans le FEC et la
+// balance (voir lib/montantRetenu.ts). Sans valeur par défaut : un appelant qui l'oublie doit le
+// découvrir à la compilation.
+export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const libelle = piece.tiers ?? piece.nom_fichier
   const date = piece.date_piece ?? dateLocaleDe(piece.created_at)
@@ -53,13 +60,14 @@ export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, co
     return { ...base, compte, sens, montant: Math.abs(montant) }
   }
 
-  if (piece.montant_tva) {
-    const montantHt = piece.montant_ht ?? piece.montant_ttc! - piece.montant_tva
+  const tva = tvaVentilee(piece, assujettiTva)
+  if (tva) {
     return [
-      ligne(compteComptable, montantHt),
-      ligne(piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, piece.montant_tva),
+      ligne(compteComptable, montantRetenu(piece, assujettiTva)!),
+      ligne(piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, tva),
     ]
   }
+  // Rien à ventiler : la charge est ce qui a été payé, face au mouvement bancaire.
   return [ligne(compteComptable, piece.montant_ttc!)]
 }
 
@@ -207,7 +215,7 @@ export function ecrituresSansObjet(
 // ces règles vivent. `aComptabiliser` : ce que chaque pièce validée doit produire, et sur quel
 // compte (voir piecesAComptabiliser). Le quatrième, `ecrituresSansObjet`, est à part parce qu'il
 // part de l'écriture et non de la pièce.
-export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser: PieceAComptabiliser[]): AnalyseEcritures {
+export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean): AnalyseEcritures {
   const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     if (!e.piece_id) continue
@@ -253,10 +261,13 @@ export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser
     // qui couvre d'un coup l'ajout et l'effacement) ; signée comme le total, sinon un avoir passerait
     // pour un écart. Démontré sur une pièce réelle du schéma : 57,00 € portés en charge entière alors
     // que la pièce annonce 50,91 + 6,09 de TVA, total juste, compte juste, contrôle muet.
+    // La TVA ATTENDUE est celle que la génération ventile, donc zéro pour un dossier exonéré : sans
+    // quoi une écriture juste, au TTC sur une seule ligne, serait signalée « à régénérer » à jamais,
+    // et une écriture qui ventile encore sa TVA en 445660 ne le serait pas.
     const tvaEnregistree = lignes
       .filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE)
       .reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-    if (Math.abs(tvaEnregistree - (p.montant_tva ?? 0)) > EPSILON_EQUILIBRE) return true
+    if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
     // LA DATE AUTANT QUE LE COMPTE, ET ELLE COÛTE PLUS CHER QUE LUI. Une pièce validée sans date
     // reçoit une écriture datée de son DÉPÔT (le repli de lignesChargeProduitPourPiece) ; « Retrouver
     // les dates manquantes » écrit ensuite `date_piece` sans toucher à l'écriture — par conception,

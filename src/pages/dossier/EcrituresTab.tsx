@@ -195,7 +195,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setError(null)
     try {
       const comptes = new Map(aComptabiliser.map(({ piece, compte }) => [piece.id, compte]))
-      const rows = enAttente.flatMap((p) => lignesChargeProduitPourPiece(dossierId, p, comptes.get(p.id)!))
+      const rows = enAttente.flatMap((p) => lignesChargeProduitPourPiece(dossierId, p, comptes.get(p.id)!, assujettiTva))
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
 
@@ -242,7 +242,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva)
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
   const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
@@ -306,7 +306,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     try {
       const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
       if (deleteError) throw deleteError
-      const { error: insertError } = await supabase.from('ecritures_brouillon').insert(lignesChargeProduitPourPiece(dossierId, piece, compte))
+      const { error: insertError } = await supabase.from('ecritures_brouillon').insert(lignesChargeProduitPourPiece(dossierId, piece, compte, assujettiTva))
       if (insertError) throw insertError
       load()
     } catch (err) {

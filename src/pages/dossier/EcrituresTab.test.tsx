@@ -149,10 +149,10 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   } as Record<string, unknown[]>
 }
 
-function monter() {
+function monter(assujettiTva = false) {
   return render(
     <AnneeProvider defaut={2025}>
-      <EcrituresTab dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={false} />
+      <EcrituresTab dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={assujettiTva} />
     </AnneeProvider>,
   )
 }
@@ -498,3 +498,48 @@ describe('EcrituresTab — les à-nouveaux ouvrent les exports de leur exercice'
   })
 })
 
+// UN DOSSIER EXONÉRÉ NE VENTILE PAS LA TVA (voir lib/montantRetenu.ts) : sa charge est le TTC, sur
+// une seule ligne. Ce que ce test garde, et qu'aucun test de `src/lib` ne peut garder : que l'onglet
+// passe SON statut à la génération, à la régénération ET au contrôle des écritures à régénérer.
+describe('EcrituresTab — le statut TVA du dossier décide de la ventilation', () => {
+  const pieceAvecTva = () => piece({ id: 'p1', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+
+  it('un dossier exonéré génère la charge TTC sur une seule ligne, sans 445660', async () => {
+    poser({ pieces: [pieceAvecTva()], ecritures_brouillon: [] })
+    monter(false)
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => [l.compte, l.montant])).toEqual([['606100', 120]])
+  })
+
+  it('un dossier assujetti ventile la TVA en 445660', async () => {
+    poser({ pieces: [pieceAvecTva()], ecritures_brouillon: [] })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => [l.compte, l.montant])).toEqual([['606100', 100], ['445660', 20]])
+  })
+
+  it('sur un dossier exonéré, une TVA encore ventilée est « à régénérer », et la régénération la retire', async () => {
+    poser({
+      pieces: [pieceAvecTva()],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', montant: 100 }),
+        ecriture({ id: 'e2', compte: '445660', montant: 20 }),
+      ],
+    })
+    monter(false)
+    await screen.findByText('Écritures à régénérer')
+    await act(async () => { screen.getByRole('button', { name: 'Régénérer' }).click() })
+    expect(faux.insertions.at(-1)!.lignes.map((l) => [l.compte, l.montant])).toEqual([['606100', 120]])
+  })
+
+  it('sur un dossier exonéré, la charge TTC sur une seule ligne n’est pas « à régénérer »', async () => {
+    // Le garde symétrique : sans lui, le test ci-dessus serait satisfait par un contrôle qui signale
+    // toute pièce portant de la TVA.
+    poser({ pieces: [pieceAvecTva()], ecritures_brouillon: [ecriture({ id: 'e1', montant: 120 })] })
+    monter(false)
+    await screen.findByText(/1 écriture proposée/)
+    expect(screen.queryByText('Écritures à régénérer')).toBeNull()
+  })
+})

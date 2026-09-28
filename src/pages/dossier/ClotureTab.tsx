@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatMoney, formatDate } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
+import { montantRetenu } from '../../lib/montantRetenu'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
 import { calculerDeclaration2035, dotationPourAnnee, dotationsNonProratisees, partCsgNonDeductible, RESERVE_PRORATA_TEMPORIS,
   type DotationNonProratisee, type PartCsgNonDeductible } from '../../lib/declaration2035'
@@ -25,7 +26,7 @@ import VoletSocialCard from './VoletSocialCard'
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer de
 // résultat ou d'impôt : cette combinaison relève de règles BNC réelles (encaissements/décaissements,
 // exercice de rattachement) que ce brouillon ne prétend pas maîtriser — voir le bandeau.
-export default function ClotureTab({ dossierId }: { dossierId: string }) {
+export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   // Non nul quand l'une des QUATRE collections dont dépend la déclaration n'a pas pu être lue en
@@ -169,7 +170,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -411,7 +412,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
                   <td>{p.tiers ?? p.nom_fichier}</td>
                   <td className="muted">{raison}</td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatMoney(p.montant_ht ?? p.montant_ttc)}
+                    {formatMoney(montantRetenu(p, assujettiTva))}
                   </td>
                 </tr>
               ))}
