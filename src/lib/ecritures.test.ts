@@ -699,6 +699,18 @@ describe('analyserEcritures — en engagement', () => {
     expect(analyserEcritures(auPaiement, aComptabiliser, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([p])
   })
 
+  it('voit une ligne de la facture qui ne porte plus son montant — cas défensif', () => {
+    // Deux totaux, deux contrôles : la charge avec sa TVA, et le compte de tiers. Un changement de TTC
+    // fausse les deux ensemble, donc seule une ligne réécrite à part distingue l'un de l'autre. La
+    // génération ne produit jamais ces lignes ; une écriture reprise à la main, si.
+    const tiersFaux = genere()
+    tiersFaux.find((l) => l.compte === COMPTE_FOURNISSEURS && !l.ligne_bancaire_id)!.montant = 110
+    expect(analyserEcritures(tiersFaux, aComptabiliser, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([p])
+    const chargeFausse = genere()
+    chargeFausse.find((l) => l.compte === ACHATS)!.montant = 110
+    expect(analyserEcritures(chargeFausse, aComptabiliser, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([p])
+  })
+
   it('signale des règlements sans leur facture — la génération ne les produit jamais ainsi', () => {
     const reglementsSeuls = genere().filter((l) => l.ligne_bancaire_id)
     expect(analyserEcritures(reglementsSeuls, aComptabiliser, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([p])

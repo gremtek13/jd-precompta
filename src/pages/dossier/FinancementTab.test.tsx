@@ -203,6 +203,29 @@ describe('FinancementTab — situation intermédiaire', () => {
     expect(ligne).not.toMatch(/sur 9,0/)
   })
 
+  it('compte en engagement la recette facturée, encaissée ou non', async () => {
+    // La même recette qu'au test suivant, facturée en mai et encaissée en septembre : au 1er septembre,
+    // un dossier en engagement la compte déjà — 10 000 € ramenés à douze mois sur 241 jours en
+    // 30/360, soit 14 937,76 €.
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 8, 1, 12, 0, 0))
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [{
+      id: 'l1', dossier_id: 'd', date: '2026-09-15', libelle: 'VIR CPAM', montant: 10000, statut: 'rapprochee',
+      piece_id: 'v1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      created_at: '2026-09-15T09:00:00Z',
+    }]
+
+    render(<FinancementTab dossierId="d" assujettiTva modeComptable="engagement" />)
+    const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+
+    const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
+    expect(ligne).toMatch(/14\s?937,76\s€/)
+  })
+
   it('ne compte dans la CAF qu’une recette déjà encaissée', async () => {
     // Facturée en mai, encaissée le 15 septembre : au 1er septembre, rien n'est entré. Sans les
     // paiements, la CAF annualisée annonçait 15 000 € (10 000 × 12 / 8).
@@ -433,8 +456,8 @@ describe('FinancementTab — une recette compte à son encaissement', () => {
 describe('FinancementTab — préremplir le prévisionnel', () => {
   const ANNEE_REFERENCE = new Date().getFullYear() - 1
 
-  async function ouvrirLePrevisionnel() {
-    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+  async function ouvrirLePrevisionnel(modeComptable: 'tresorerie' | 'engagement' = 'tresorerie') {
+    render(<FinancementTab dossierId="d" assujettiTva modeComptable={modeComptable} />)
     const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
     await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
     const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
@@ -475,6 +498,18 @@ describe('FinancementTab — préremplir le prévisionnel', () => {
     const bouton = await ouvrirLePrevisionnel()
     await act(async () => { bouton.click() })
     expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('10000')
+  })
+
+  it('préremplit en engagement les recettes facturées dans l’année, encaissées ou non', async () => {
+    poser()
+    faux.paiements = [{
+      id: 'l2', dossier_id: 'd', date: `${ANNEE_REFERENCE + 1}-01-05`, libelle: 'VIR', montant: 5000, statut: 'rapprochee',
+      piece_id: 'v2', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      created_at: `${ANNEE_REFERENCE + 1}-01-05T09:00:00Z`,
+    }]
+    const bouton = await ouvrirLePrevisionnel('engagement')
+    await act(async () => { bouton.click() })
+    expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('15000')
   })
 
   it('préremplit, sur une lecture complète, les recettes de l’année entière', async () => {

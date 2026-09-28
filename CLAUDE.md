@@ -1194,6 +1194,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   situation intermédiaire, l'estimation, la simulation client, les écritures, le FEC, la piste
   d'audit et l'assistant. Voir « la 2035 compte une pièce à la date de son paiement » dans
   « Problèmes connus » (`lib/rattachement.ts`).
+- **La comptabilité d'engagement (BIC, IS), étape 1 (28/09/2026)**, ligne 31 de la feuille de route :
+  le modèle comptable se règle par dossier, « Trésorerie (BNC, 2035) » ou « Engagement (BIC, IS) »,
+  dans l'onglet Écritures et tant que le brouillon est vide. En engagement, une facture crée une dette
+  en 401 ou une créance en 411 à sa date, et chaque paiement rapproché la solde à la sienne ; une note
+  de frais passe par le compte choisi (455, 108 ou 467) ; le FEC porte les journaux AC, VE et BQ et un
+  compte auxiliaire par tiers. Voir « la comptabilité d'engagement, étape 1 » dans « Problèmes
+  connus » (`lib/engagement.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1212,6 +1219,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   (une API JSON dont les clés sont les codes EDI des cases, un serveur d'essai, la CA3, la CA12 et la
   2035), qui demande à voir l'application fonctionner avant d'ouvrir son API. ASPOne.fr reste
   l'autre voie, à prix publiés. Rien de l'étape 2 n'est écrit.
+- Comptabilité d'engagement (ligne 31) : l'étape 1 est livrée (28/09/2026). Restent, et CLAUDE.md
+  les nomme : le lettrage, les écarts de change et les frais bancaires (le rapprochement règle encore
+  la pièce sur la banque, donc réécrit la facture — à trancher avec le cabinet), les auxiliaires des
+  à-nouveaux, le report d'un exercice sur l'autre, la TVA des livraisons de biens, la liasse (2033 ou
+  2050), l'écriture d'acquisition d'une immobilisation et les exercices qui ne suivent pas l'année
+  civile.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -4656,6 +4669,98 @@ d'environnement dans la même édition.
   Une suite rouge avant mutation fait passer toute mutation pour tuée : c'est le piège inverse de
   `tail … && echo OK`, déjà nommé plus bas. Le test est corrigé, la commande simplifiée, et la
   campagne rejouée ENTIÈRE, chaque suite vérifiée verte avant sa première mutation.
+- **LA COMPTABILITÉ D'ENGAGEMENT (BIC, IS), ÉTAPE 1 : LE MODÈLE SE CHOISIT PAR DOSSIER** (28/09/2026,
+  ligne 31 de la feuille de route, `lib/engagement.ts`). Décisions du cabinet : le modèle se règle
+  par dossier, « Trésorerie (BNC, 2035) » ou « Engagement (BIC, IS) », et les dossiers existants
+  restent en trésorerie ; un compte COLLECTIF par nature de tiers (401000, 411000), le détail par
+  fournisseur ou par client vivant dans le compte AUXILIAIRE du FEC ; les ventes n'entrent que par
+  leurs justificatifs, comme en trésorerie ; l'exercice reste l'année civile.
+  **Ce qu'une pièce écrit en engagement** : l'écriture de sa FACTURE, à sa date — la charge ou le
+  produit (`montantRetenu` : hors taxes pour un assujetti, TTC pour un exonéré), la TVA ventilée, et le
+  compte de tiers qui porte le TTC au sens inverse, au journal AC (VE pour une vente) ; puis un
+  RÈGLEMENT par mouvement rapproché, à la date du mouvement et à son montant, compte de tiers contre
+  512000, au journal BQ. Les deux lignes d'un règlement portent `ligne_bancaire_id` : c'est ce qui le
+  sépare de la facture, le range au journal de banque et le retire quand le rapprochement est annulé.
+  **Chaque écriture s'équilibre seule** : un paiement partiel reste lisible sur le compte de tiers,
+  au lieu de déséquilibrer le groupe de la pièce comme en trésorerie.
+  **La note de frais payée par le dirigeant** passe par le compte choisi pour le dossier : 455
+  (recommandé pour une société dont le dirigeant est associé), 108 (entreprise individuelle) ou 467.
+  **Les explications de l'écran sont celles du cabinet, reprises telles quelles** et gardées par un
+  test : c'est l'ENTREPRISE, depuis son compte bancaire, qui rembourse le dirigeant — jamais « la
+  banque » ; le 108 retrace les apports et les prélèvements personnels de l'exploitant, qui peut
+  reprendre de la trésorerie ; et le 467 n'est jamais présenté comme un compte d'attente.
+  **Le modèle ne se change que tant que le brouillon est vide, et c'est la base qui le garantit** : le
+  déclencheur `dossiers_verrouiller_modele_comptable` refuse (23514) de changer `mode_comptable` ou
+  `compte_notes_de_frais` dès qu'une écriture existe (migration `modele_comptable_du_dossier`). Des
+  écritures d'un modèle rangées sous l'étiquette de l'autre seraient « à régénérer » sans fin.
+  L'écran (Écritures, carte « Modèle comptable ») n'offre le réglage que sur un brouillon lu EN ENTIER
+  et vide, et dit pourquoi sinon ; ses choix sont des BOUTONS et non des boutons radio — les flèches
+  du clavier changent la valeur d'un groupe radio qui a le focus, donc l'enregistreraient, le piège
+  déjà payé sur la liste déroulante du rapprochement —, sous un verrou qui exclut aussi la génération.
+  **Ce qui suit le modèle, usage par usage** :
+  - le contrôle « à régénérer » : en engagement, le compte, la TVA, la date de FACTURE, le total de la
+    charge et celui du compte de tiers, et les règlements, qui doivent être EXACTEMENT les mouvements
+    rapprochés de la pièce, sur son compte de tiers actuel — un mouvement rapproché sans règlement
+    laisserait au 401 une dette payée, un règlement que plus rien ne rapproche en solderait une qui
+    court encore ;
+  - l'ÉQUILIBRE, jugé écriture par écriture — la facture, puis chaque règlement — et non sur le
+    groupe de la pièce, dont la somme masquerait deux écarts qui se compensent : chacune part sous son
+    propre numéro dans le FEC, où une écriture déséquilibrée fait rejeter le fichier ;
+  - la génération et « Régénérer », qui reprend la facture ET ses règlements (ils se déduisent des
+    mouvements, donc les reprendre ne perd rien), suspendus sur une lecture partielle et sous un
+    verrou par pièce ;
+  - le rapprochement (`contrepartieBanque.ts`) écrit le règlement de CE mouvement, idempotent par
+    mouvement ; l'annulation retire ce règlement-là et rien d'autre ; rien n'est redaté ;
+  - le FEC : un CompAuxNum tiré de la CLÉ d'identité du tiers (`cleFournisseur`, préfixe F ou C),
+    jamais du nom lu — deux lectures OCR du même fournisseur partageraient sinon son solde en deux
+    moitiés dont aucune ne dirait ce qu'on lui doit —, le compte « divers » pour un tiers sans clé
+    (FDIVERS, CDIVERS), un seul CompAuxLib par numéro ;
+  - la situation intermédiaire, les ratios, le prévisionnel, l'estimation et la simulation client
+    comptent une pièce à la date de sa FACTURE (`rattachements`, dont le modèle est un paramètre
+    obligatoire, sans valeur par défaut), et l'estimation dit « CA facturé à date » ;
+  - Clôture ne produit ni la 2035 (elle déclare des bénéfices non commerciaux, tenus en trésorerie) ni
+    le volet social qui en découle, et le DIT ; elle garde la clôture de l'exercice ;
+  - la Checklist et Banque parlent de « facture(s) sans règlement rapproché » et d'« écriture de
+    règlement » ; l'en-tête du dossier porte « Comptabilité : engagement », qui mène au réglage ;
+  - l'assistant, **version 28** : sa copie du contrôle suit le modèle du dossier, son prompt le dit, et
+    `points_a_traiter` nomme les factures sans règlement comme la Checklist. Le garde compare les deux
+    copies dans les deux modèles, avec quatre dérives plantées dans la vraie source. Déployée avec
+    `verify_jwt` relu et repassé à `false`, la v27 comparée à `main` AVANT écrasement (identique,
+    1 035 lignes), aller-retour après : zéro différence sur 1 164 lignes, et le 401 de la fonction sans
+    session. Aucun appel au modèle.
+  **ET LE RENVOI DE LA CHECKLIST MENAIT À UN ÉCRAN VIDE** — trouvé en portant le contrôle dans
+  l'assistant, qui recopie la Checklist. En engagement, Clôture masquait la carte « Postes manquants »
+  avec le reste de la 2035, pendant que la Checklist continuait d'y envoyer compléter le poste d'une
+  catégorie — or le poste compte encore : la situation intermédiaire et le détail par poste de
+  l'estimation écartent une pièce sans poste. La carte est écrite une fois et rendue dans les deux
+  modèles. C'est la règle « un point de Checklist doit vérifier que sa cible peut MONTRER ce qu'il
+  compte », prise par son côté le plus simple : la cible ne doit pas se cacher selon le modèle.
+  **CE QUI RESTE, dit plutôt que promis** :
+  - **le rapprochement règle encore la pièce sur la banque** (`reglerPieceSurBanque` : toujours pour
+    une devise, sous le seuil d'écart pour l'euro). En engagement il réécrit donc le montant de la
+    FACTURE : une perte ou un gain de change (666, 766) et un frais bancaire (627) y sont absorbés au
+    lieu d'être passés à part. À trancher avec le cabinet avant l'étape 2 ;
+  - le LETTRAGE (EcritureLet, DateLet) n'est pas produit ;
+  - les à-nouveaux d'un 401 ou d'un 411 gardent leur numéro d'origine et n'ont pas d'auxiliaire, et
+    aucun solde n'est reporté d'un exercice sur l'autre ;
+  - la CA3 traite toute vente comme une prestation de services : la TVA d'une livraison de biens,
+    exigible à la livraison, n'est pas modélisée ;
+  - la liasse (2033 ou 2050) n'est pas préparée, et l'acquisition d'une immobilisation n'a toujours
+    pas d'écriture ;
+  - l'exercice reste l'année civile.
+  **LATENT, et c'est voulu** : aucun dossier en base n'est en engagement, tous restant en trésorerie
+  par décision du cabinet. Le banc de capture porte une société fictive en engagement (d8) :
+  0 débordement sur ses cinq écrans propres, aux quatre largeurs.
+  **Quatre-vingt-six mutations, quatre-vingt-trois mordent — et neuf avaient d'abord survécu en
+  accusant les TESTS** : les deux totaux de la facture (un changement de TTC les fausse ensemble, donc
+  seuls deux cas défensifs, une ligne réécrite à part, les distinguent), les deux verrous du modèle
+  (trois clics, et génération et changement dans les deux ordres), le mot du message d'échec de
+  Banque, le texte de la carte des postes en trésorerie, l'exercice de la facture proposé à la
+  clôture, les ratios et le prévisionnel de Financement. **Trois survivent à juste titre** : la ligne
+  de tiers d'un règlement est écartée des écritures sans objet par son compte autant que par son
+  mouvement ; la garde du gestionnaire de « Régénérer » double le bouton grisé, dont la mutation mord ;
+  et la génération en engagement ne rappelle pas la contrepartie banque — l'appeler serait sans effet,
+  le règlement étant idempotent par mouvement.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -5896,7 +6001,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2247 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2374 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -5912,7 +6017,8 @@ par tous les écrans (`recherche.ts`), le contrat de la proposition de catégori
 (`categorisationIa.ts`), les cotisations Urssaf d'un praticien conventionné
 (`voletSocialPamc.ts`, contre le moteur de l'Urssaf), et le montant qu'on retient d'une pièce
 selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), la CA3 préparée case par case
-(`declarationTva.ts`), et la date à laquelle une pièce compte en trésorerie (`rattachement.ts`) —
+(`declarationTva.ts`), la date à laquelle une pièce compte en trésorerie (`rattachement.ts`), et les
+écritures d'un dossier tenu en engagement (`engagement.ts`) —
 les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 

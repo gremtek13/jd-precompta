@@ -386,6 +386,16 @@ describe('agent-comptable / analyserEcritures en engagement (copie déployée)',
       .toEqual(['p1'])
   })
 
+  it('voit une ligne de la facture qui ne porte plus son montant — cas défensif', () => {
+    const p = piece({ id: 'p1' })
+    for (const compte of ['401000', COMPTE_ACHATS]) {
+      const lignes = brouillonEngagement(p, [paiement()])
+      lignes.find((e) => e.compte === compte && !e.ligne_bancaire_id)!.montant = 110
+      expect(memeResultat(lignes, [p], [], deployee, true, [paiement()], ENGAGEMENT).piecesDesynchronisees, compte)
+        .toEqual(['p1'])
+    }
+  })
+
   it('juge chaque écriture seule : deux écarts qui se compensent dans le groupe restent un déséquilibre', () => {
     const p = piece({ id: 'p1' })
     const lignes = brouillonEngagement(p, [paiement()])

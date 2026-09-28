@@ -44,6 +44,9 @@ const faux = vi.hoisted(() => ({
   // Les suppressions d'écritures, avec leurs filtres : c'est ce qui dit QUELLES lignes l'annulation
   // d'un rapprochement retire.
   suppressionsEcritures: [] as string[][],
+  // L'insertion d'une écriture refusée par la base : c'est ce qui fait dire à l'écran que l'écriture
+  // de la banque n'a pas pu être créée.
+  erreurInsertionEcritures: null as string | null,
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -128,7 +131,9 @@ vi.mock('../../lib/supabase', () => {
           if (operation === 'delete') faux.suppressionsEcritures.push([...filtres])
           return Promise.resolve(operation === 'select'
             ? { data: faux.ecritures, error: null, count: faux.ecritures.length }
-            : { data: null, error: null }).then(suite)
+            : operation === 'insert' && faux.erreurInsertionEcritures
+              ? { data: null, error: { message: faux.erreurInsertionEcritures } }
+              : { data: null, error: null }).then(suite)
         }
         if (table === 'documents_divers' && faux.erreurReleves) {
           return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
@@ -199,6 +204,7 @@ function reinitialiser() {
   faux.ecritures = []
   faux.updatesEcritures = []
   faux.suppressionsEcritures = []
+  faux.erreurInsertionEcritures = null
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -835,6 +841,34 @@ describe('BanqueTab — en engagement', () => {
         expect.objectContaining({ compte: '512000', sens: 'credit', montant: 100, date: '2025-06-02', ligne_bancaire_id: 'ligne-1' }),
       ],
     })
+  })
+
+  it('dit que l’écriture de RÈGLEMENT n’a pas pu être créée, pas une « contrepartie banque »', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.erreurInsertionEcritures = 'refus simulé'
+    faux.ecritures = [{ id: 'e1', compte: '606100', ligne_bancaire_id: null }, { id: 'e2', compte: '401000', ligne_bancaire_id: null }]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre(ENGAGEMENT)
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(
+      "Le rapprochement est enregistré, mais l'écriture de règlement n'a pas pu être créée : refus simulé",
+    ))
+  })
+
+  it('et parle de contrepartie banque en trésorerie — le garde symétrique', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.erreurInsertionEcritures = 'refus simulé'
+    faux.ecritures = [{ id: 'e1', compte: '606100', ligne_bancaire_id: null }]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre(TRESORERIE)
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(
+      "Le rapprochement est enregistré, mais l'écriture de contrepartie banque n'a pas pu être créée : refus simulé",
+    ))
   })
 
   it('annuler le rapprochement retire le règlement de ce mouvement, et ne redate rien', async () => {
