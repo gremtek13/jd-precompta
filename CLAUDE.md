@@ -246,6 +246,10 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
                   central (panneau de droite ouvert ou fermé) et rend un code d'erreur.
                   installable.mjs demande à Chromium si l'application est installable, avec
                   et sans logo de cabinet, et rend un code d'erreur.
+outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de l'Urssaf
+                  (modele-ti, installé à la demande, hors package.json) les cas de référence
+                  de src/lib/voletSocialPamcReference.ts — mode d'emploi en tête du fichier.
+                  Le fichier généré se commite ; le moteur, jamais.
 ```
 
 ## Conventions de développement
@@ -897,8 +901,8 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   couple que ci-dessus : une moitié gardée par le code, l'autre par une vérification humaine.
 
 - **Qui voit quoi, c'est un essai rejouable qui le dit** — `supabase/essais/rls.sql`, par
-  impersonation réelle des trois profils sur toutes les tables du schéma (41 à sa création, 42 depuis
-  `a_nouveaux`) **et sur les trois seaux de
+  impersonation réelle des trois profils sur toutes les tables du schéma (41 à sa création, 43 depuis
+  `a_nouveaux` et `volet_social_pamc`) **et sur les trois seaux de
   stockage**, qui sont le vrai enjeu : les données de patients sont dans les FICHIERS, pas dans les
   tables (RGPD.md §4). Il a trouvé, à sa première exécution, ce qu'aucune relecture n'avait vu : un
   visiteur anonyme lisait les catégories et les natures d'immobilisation du cabinet (voir
@@ -1170,15 +1174,27 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
   à partir des revenus 2025, Clôture calcule et le formulaire rempli porte DC ou DD, puis l'écran dit
   où reporter le bénéfice (5QC/5QE) et le revenu brut social (DSDE/DSDG du volet social) — voir
   « le cadre 8 du 2035-B » dans « Problèmes connus ».
+- **Le volet social des praticiens conventionnés et l'estimation des cotisations Urssaf
+  (28/09/2026)** : sous le report, Clôture porte pour chaque exercice à partir de 2025 les rubriques
+  de la notice 2041-DRI des praticiens conventionnés — recettes totales (DSCS, proposées depuis la
+  ligne 4 de la 2035-A), honoraires et dépassements du relevé SNIR (DSAV, DSAW, saisis et
+  ENREGISTRÉS, table `volet_social_pamc`), ratio (DSAU), structures de soins (DSAT) — puis les
+  cotisations que l'Urssaf appellera sur ces revenus, pour les auxiliaires médicaux et les
+  sages-femmes. Voir « l'estimation des cotisations Urssaf se teste contre le moteur de l'Urssaf »
+  dans « Problèmes connus » (`VoletSocialCard`, `lib/voletSocialPamc.ts`).
 
 ## Fonctionnalités actuellement en cours
 
 - Proposition de catégorie par un modèle (ligne 25 de la feuille de route) : livrée le 26/09/2026,
   reste à éprouver par un premier clic réel du cabinet (voir « Décisions techniques »).
-- Déclarations TNS du dirigeant (ligne 27) : la première brique — le cadre 8 et le report — est
-  livrée. Restent à décider avec le cabinet les rubriques du volet social propres aux praticiens
-  conventionnés (recettes brutes, honoraires du relevé SNIR, dépassements…) et une estimation des
-  cotisations sur la nouvelle assiette.
+- Déclarations TNS du dirigeant (ligne 27) : le cadre 8 et le report (26/09/2026), puis le volet
+  social des praticiens conventionnés et l'estimation des cotisations Urssaf (28/09/2026), sont
+  livrés. Restent hors de l'estimation, et l'écran le dit : les médecins et les chirurgiens-dentistes
+  (prise en charge, OPTAM et CURPS propres), la retraite (appelée par la CARPIMKO ou la CARCDSF, pas
+  par l'Urssaf), les revenus de remplacement (indemnités journalières perçues), l'ACRE, les
+  exonérations et l'outre-mer, et la régularisation — l'écart avec les provisionnelles, que seul
+  l'avis de l'Urssaf chiffre. Et le choix de la ligne 4 pour proposer DSCS est à confirmer sur la
+  première déclaration réelle.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -4509,6 +4525,82 @@ d'environnement dans la même édition.
   l'abattement appliqué, DC signé, la garde d'exercice, le formulaire rempli avec un autre exercice
   que celui affiché, le cadre 8 arrondi d'un bloc au lieu d'être recalculé, et le report lu sur le
   tableau au centime plutôt que sur le formulaire.
+- **L'ESTIMATION DES COTISATIONS URSSAF SE TESTE CONTRE LE MOTEUR DE L'URSSAF, PAS CONTRE NOUS-MÊMES**
+  (28/09/2026, ligne 27 de la feuille de route, `lib/voletSocialPamc.ts` et `VoletSocialCard`). Quatre
+  décisions du cabinet : un bloc « Volet social » sous le report du revenu brut social de Clôture, sur
+  TOUS les dossiers à partir de 2025 — pas de case « conventionné » de plus à tenir dans
+  Informations ; les chiffres du relevé SNIR saisis et ENREGISTRÉS par exercice ; toutes les
+  cotisations recouvrées par l'Urssaf estimées, pas la retraite, appelée par la caisse ; et DSCS
+  proposées depuis la ligne 4 de la 2035-A (recettes nettes des débours et des honoraires
+  rétrocédés), modifiables. **La notice ne nomme AUCUNE ligne pour DSCS** — relu sur deux versions
+  de la notice 2041-DRI des praticiens conventionnés : la ligne 4 est une proposition, et l'écran dit
+  d'où vient le chiffre.
+  **La référence est `modele-ti`**, le jeu de règles des simulateurs de l'Urssaf pour les
+  indépendants, publié par elle : `outils/cotisations/oracle.mjs` lui fait calculer 68 cas (2025 et
+  2026 ; chaque point du taux de maladie, les bornes de l'abattement, la zone progressive des
+  allocations familiales, les plafonds des indemnités journalières et de la CURPS, un remplaçant, une
+  sage-femme, rien de conventionné), et les tests exigent l'égalité À L'EURO sur chacune des treize
+  grandeurs. Une comparaison ponctuelle sur 5 981 cas tirés au hasard, deux graines, a rendu zéro
+  écart. **Son aîné `modele-social` calcule encore sur l'ANCIENNE assiette** (version 11.1.0, et sa
+  branche principale au 24/09/2026) : le prendre à sa place, c'est tester contre la mauvaise loi avec
+  des tests verts. Les taux de maladie (D. 621-1, D. 621-2), des indemnités journalières (D. 621-3),
+  des allocations familiales (D. 613-1) et la contribution de 3,25 % (L. 646-3) ont en plus été relus
+  sur Légifrance ; la prise en charge par l'Assurance maladie, la CURPS et la formation
+  professionnelle ne sont sourcées que par ce moteur, et l'en-tête du module le dit. Le moteur
+  s'installe à la demande (`npm i --no-save`), jamais en dépendance : c'est un instrument de mesure,
+  et `npm ci` n'a pas à le payer.
+  **L'ÉGALITÉ À L'EURO EXIGE L'ORDRE D'OPÉRATIONS DU MOTEUR, pas seulement ses taux** — c'est un
+  demi-euro qui l'a montré. Sur 18 500 € d'assiette en 2025, la prise en charge vaut 249,50 € au
+  centime ; le moteur rend 249 €, son calcul tombant juste sous le demi dans sa représentation
+  binaire. Diviser le taux par 100 avant le produit, comme on l'écrit naturellement, rendait 250 €, et
+  deux cas de la grille étaient faux d'un euro. Le module reproduit donc publicodes : un pourcentage
+  appliqué APRÈS le produit, les conversions entre fraction et pourcentage arrondies à seize
+  décimales, et son arrondi (`Number.EPSILON` ajouté avant). Deux mutations le gardent, chacune ne
+  mordant que sur un seul cas — **exactement ce qu'un jeu de cas choisi à la main n'aurait pas
+  contenu**.
+  **Le plafond de la sécurité sociale est saisi, jamais deviné** (47 100 € en 2025, retrouvé par les
+  bornes de l'abattement que publie la notice ; 48 060 € en 2026) : une année absente fait refuser
+  l'estimation plutôt que de retomber sur la précédente — la règle du barème kilométrique. Les
+  médecins et les chirurgiens-dentistes sont refusés, pas approchés : leur prise en charge et leur
+  CURPS suivent d'autres règles.
+  **La CURPS suit un « revenu professionnel positif » que l'application n'a pas tel quel** : le moteur
+  ajoute au résultat fiscal la CSG non déductible et les cotisations facultatives. L'écran lit le
+  résultat de la 2035 (CP), l'approximation la plus proche — le revenu brut social en est bien plus
+  loin — et le verdict ne diffère que pour un résultat voisin de zéro, où la CURPS vaut quelques
+  euros. Écrit au-dessus du champ plutôt que tu.
+  **L'écran reprend les règles déjà payées ailleurs** : une lecture ratée n'offre AUCUN formulaire —
+  la famille « lecture → formulaire → écriture de tous les champs », évitée ici par construction
+  plutôt que corrigée après coup ; un verrou `useRef` posé avant l'`await` et relâché dans un
+  `finally` ; un champ vide vaut « pas saisi » (null), jamais zéro, et un zéro se saisit ; le calcul
+  part des montants du FORMULAIRE, à l'euro (`arrondirPourFormulaire`), ceux que l'administration
+  préremplit, donc ceux dont l'Urssaf partira ; et une déclaration lue en partie suspend la
+  proposition comme l'estimation.
+  **La table `volet_social_pamc`** — une ligne par dossier et par exercice, contrainte unique TOTALE
+  visée par l'`onConflict`, policy `FOR ALL to authenticated` sur `admin_du_dossier`, rien pour le
+  client — a été éprouvée par impersonation réelle, dix-sept contrôles : anonyme, compte rattaché à
+  rien et client lisent zéro ligne et se font refuser l'insertion en 42501, la mise à jour du client
+  ne touche aucune ligne ; le chef lit, écrit, met à jour et supprime — le contrôle POSITIF ; les
+  contraintes refusent un second enregistrement du même exercice (23505), une année antérieure à
+  2025, un montant négatif et une profession inconnue (23514) ; rien ne reste après l'essai ; et la
+  mutation qui retire le changement de rôle mord sur les trois refus. **`rls.sql` n'a PAS été rejoué
+  en entier** — même limite que le 22/09/2026 : la migration n'ajoute qu'une table et sa policy, que
+  l'essai ciblé couvre. Le plan de sauvegarde l'inscrit à ses trois endroits, et l'export du schéma
+  porte sa migration (60 fichiers, empreinte revérifiée).
+  **Deux défauts d'affichage trouvés en le regardant, pas en le relisant.** L'écran écrivait
+  « moins l'abattement de 26 % » au-dessus d'un montant qui, sur un revenu faible, est le PLANCHER
+  (829 € en 2025) : une affirmation fausse, sous laquelle l'assiette tombe à zéro sans rien pour
+  l'expliquer — `natureAbattement` nomme désormais la borne appliquée. Et le libellé « Auxiliaire
+  médical (infirmier, masseur-kinésithérapeute, …) » élargissait la liste déroulante de 188 pixels
+  au-delà du panneau central, panneau de droite ouvert : c'est `debordements.mjs` qui l'a vu, et la
+  liste des métiers vit maintenant sous la liste déroulante. Quatre vues du banc de capture montrent
+  le bloc (`vitrine.mjs volet`).
+  **Trente-huit mutations, toutes mordent** : vingt-huit sur le calcul (chaque borne de l'abattement,
+  chaque point de taux, chaque plafond, les deux arrondis de taux, les deux ordres d'opérations, un
+  zéro saisi pris pour un champ vide, une année sans plafond qui retomberait sur la précédente, la
+  borne d'abattement mal nommée) et dix sur l'écran (la lecture ratée qui offrirait un formulaire
+  vide, le verrou retiré ou jamais relâché, l'`upsert` sans `onConflict`, un champ vide enregistré à
+  zéro, un négatif admis, la lecture partielle ignorée, les montants du tableau au lieu du formulaire,
+  la CURPS due sans bénéfice, « 26 % » écrit sur le plancher).
 - **Le PDF officiel de la 2035 n'a aucun champ de formulaire** — zéro `/AcroForm`, zéro
   `/Widget`, vérifié sur le fichier de la DGFiP. Le remplissage écrit donc du texte à des
   coordonnées. Elles ne sont **pas** codées en dur, sinon tout serait à reprendre à chaque
@@ -5605,7 +5697,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1942 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2040 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -5617,8 +5709,9 @@ la génération des packs et l'export d'un cabinet
 (`packGenerator.ts`, `exportCabinet.ts`), la sauvegarde et la restauration d'un dossier
 (`sauvegarde.ts`, `sauvegardeDonnees.ts`, `sauvegardeFichier.ts`) et le dépôt de fichiers côté client
 (`depot.ts`) comme côté cabinet (`importFichiers.ts`), et le moteur de recherche partagé
-par tous les écrans (`recherche.ts`), et le contrat de la proposition de catégorie
-(`categorisationIa.ts`) — les fichiers `*.test.ts` sont
+par tous les écrans (`recherche.ts`), le contrat de la proposition de catégorie
+(`categorisationIa.ts`), et les cotisations Urssaf d'un praticien conventionné
+(`voletSocialPamc.ts`, contre le moteur de l'Urssaf) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 **Deux projets Vitest, et la séparation porte une règle** (`vitest.config.ts`) : « logique »

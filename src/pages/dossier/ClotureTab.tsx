@@ -19,6 +19,7 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
+import VoletSocialCard from './VoletSocialCard'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer de
@@ -697,6 +698,7 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
         formulaires.map((f) => (
           <FormulaireAnnuel
             key={f.declaration.annee}
+            dossierId={dossierId}
             annee={f.declaration.annee}
             valeurs={f.valeurs}
             genere={genere === f.declaration.annee}
@@ -714,7 +716,8 @@ export default function ClotureTab({ dossierId }: { dossierId: string }) {
 // Un exercice rendu dans la forme du formulaire : une ligne par case, dans l'ordre imprimé, avec son
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
-function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage, cloture, onCloturer }: {
+function FormulaireAnnuel({ dossierId, annee, valeurs, genere, onTelecharger, blocage, cloture, onCloturer }: {
+  dossierId: string
   annee: number
   valeurs: Map<string, number>
   genere: boolean
@@ -795,6 +798,9 @@ function FormulaireAnnuel({ annee, valeurs, genere, onTelecharger, blocage, clot
       </table>
       </div>
       {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && <ReportDeclarationRevenus annee={annee} valeurs={valeurs} />}
+      {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && (
+        <VoletSocialCard dossierId={dossierId} annee={annee} valeurs={valeurs} blocage={blocage} />
+      )}
     </div>
   )
 }

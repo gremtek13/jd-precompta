@@ -76,6 +76,12 @@ const VUES = [
   { nom: 'pc-cloture-clair', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Report sur la déclaration des revenus' },
   { nom: 'pc-cloture-sombre', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Report sur la déclaration des revenus' },
   { nom: 'mobile-cloture-clair', chemin: '#/dossiers/d1/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Report sur la déclaration des revenus' },
+  // Le volet social d'un praticien conventionné, sous le report : ses rubriques, puis l'estimation
+  // des cotisations Urssaf (une infirmière de la base fictive, exercice 2026).
+  { nom: 'pc-volet-clair', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Volet social 2026' },
+  { nom: 'pc-volet-sombre', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Total à la charge du praticien' },
+  { nom: 'pc-volet-assistant', chemin: '#/dossiers/d1/cloture', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'Volet social 2026' },
+  { nom: 'mobile-volet-clair', chemin: '#/dossiers/d1/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Total à la charge du praticien' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
