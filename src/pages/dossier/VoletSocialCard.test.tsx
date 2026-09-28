@@ -196,6 +196,28 @@ describe('le volet social d’un praticien conventionné', () => {
     expect(assiette.textContent).toMatch(/171 €$/)
   })
 
+  it('rappelle au remplaçant ce que porte DSAV, et seulement à lui', async () => {
+    await afficher()
+    const note = /DSAV porte les rétrocessions reçues/
+    expect(screen.queryByText(note)).toBeNull()
+    fireEvent.click(screen.getByLabelText(/Remplaçant exclusif/))
+    expect(screen.getByText(note).textContent).toMatch(/DSAW vaut zéro/)
+  })
+
+  it('dit que la prise en charge des structures de soins n’est pas estimée, quand il y en a', async () => {
+    await afficher()
+    saisir(/Profession/, 'auxiliaire_medical')
+    saisir(/Honoraires conventionnés/, '80000')
+    const reserve = /structures de soins n’est pas estimée/
+    // Le garde symétrique : sans recettes en structures, pas de réserve de plus.
+    expect(screen.getByText('Total à la charge du praticien')).toBeTruthy()
+    expect(screen.queryByText(reserve)).toBeNull()
+    saisir(/Recettes en structures de soins/, '0')
+    expect(screen.queryByText(reserve)).toBeNull()
+    saisir(/Recettes en structures de soins/, '12000')
+    expect(screen.getByText(reserve)).toBeTruthy()
+  })
+
   it('suspend la proposition et l’estimation sur une déclaration lue en partie', async () => {
     faux.ligne = ligne({ profession: 'auxiliaire_medical', honoraires_conventionnes: 80_000 })
     await afficher('pièces : lecture interrompue')
