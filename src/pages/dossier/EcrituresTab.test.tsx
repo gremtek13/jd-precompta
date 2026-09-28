@@ -935,3 +935,42 @@ describe('EcrituresTab — la régénération', () => {
     expect(faux.insertions).toHaveLength(1)
   })
 })
+
+// Le compte d'une catégorie est le seul compte que l'application laisse taper à la main, et il part
+// tel quel dans chaque écriture puis dans le FEC. L'outil de contrôle de la DGFiP refuse un CompteNum
+// dont les trois premiers caractères ne sont pas des chiffres.
+describe('EcrituresTab — un compte saisi commence par trois chiffres', () => {
+  const CATEGORIE_LIBRE = {
+    id: 'cat-libre', dossier_id: null, code: 'sans_suggestion', libelle: 'Catégorie libre',
+    ordre: 2, compte_comptable: null, poste_2035: 'Achats',
+  }
+
+  async function saisir(valeur: string) {
+    const champ = await screen.findByPlaceholderText('ex. 606100')
+    await act(async () => { fireEvent.change(champ, { target: { value: valeur } }) })
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+  }
+
+  it('refuse un compte qui ne commence pas par trois chiffres, et le dit', async () => {
+    poser({ categories: [CATEGORIE_LIBRE], pieces: [piece({ categorie_id: 'cat-libre' })] })
+    monter()
+
+    await saisir('Honoraires')
+    expect(screen.getByText(/« Honoraires » n'est pas un numéro de compte/)).toBeTruthy()
+    expect(faux.misesAJour).toEqual([])
+  })
+
+  // GARDE SYMÉTRIQUE : sans lui, « refuse un compte mal formé » serait satisfait par un champ qui
+  // refuse tout. Les espaces tapées disparaissent, et le refus précédent ne reste pas affiché.
+  it('enregistre un compte bien formé, sans ses espaces, et efface le refus précédent', async () => {
+    poser({ categories: [CATEGORIE_LIBRE], pieces: [piece({ categorie_id: 'cat-libre' })] })
+    monter()
+
+    // Des chiffres, mais pas en tête : c'est le début du numéro que la DGFiP contrôle.
+    await saisir('C606')
+    expect(screen.getByText(/« C606 » n'est pas un numéro de compte/)).toBeTruthy()
+    await saisir(' 622 600 ')
+    expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { compte_comptable: '622600' } }])
+    expect(screen.queryAllByText(/n'est pas un numéro de compte/)).toHaveLength(0)
+  })
+})

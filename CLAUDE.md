@@ -1226,7 +1226,8 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   2050), l'écriture d'acquisition d'une immobilisation et les exercices qui ne suivent pas l'année
   civile.
 - FEC conforme à l'article A47 A-1 du LPF, la norme de sortie des écritures : la virgule décimale est
-  corrigée (28/09/2026). Restent les vingt-deux champs d'un BNC en comptabilité de trésorerie et les
+  corrigée, et le compte d'une catégorie doit commencer par trois chiffres (28/09/2026). Restent les
+  vingt-deux champs d'un BNC en comptabilité de trésorerie (que l'outil de la DGFiP n'exige pas) et les
   montants en devise, qui attendent la réponse de l'expert-comptable du cabinet — voir « le FEC suit
   l'article A47 A-1 » dans « Problèmes connus ».
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
@@ -4127,13 +4128,31 @@ d'environnement dans la même édition.
   virgule. Premier essai à ne pas refaire : supprimer le `continue` des écritures sans pièce fait
   PLANTER `genererFec`, qui lit alors un identifiant de pièce nul. Tout test échoue donc sur le
   plantage, et la mutation « mord » pour une autre raison que celle qu'on vérifie.
+  **L'OUTIL DE CONTRÔLE DE LA DGFiP A ÉTÉ LU, PAS EXÉCUTÉ.** Test Compta Demat est publié en source
+  ouverte (dépôt `DGFiP/Test-Compta-Demat`, en Perl). Il ne tourne pas ici : il lui faut une interface
+  graphique (Tk) et une base de données. Ses règles se lisent pourtant dans `trt_txt.pl`, et trois
+  d'entre elles tranchent :
+  - un point dans un montant y est une ERREUR (« un format numérique avec un separateur , au lieu de .
+    est attendu », depuis 2019). Avant le 28/09/2026, chaque montant du fichier l'aurait levée ;
+  - un numéro de compte doit commencer par trois chiffres. Le compte d'une catégorie est le seul
+    compte de l'application tapé à la main, et `saveCompte` (Écritures) acceptait n'importe quel
+    texte, qui partait tel quel dans chaque écriture puis dans le FEC. Il refuse désormais un compte
+    qui ne commence pas par trois chiffres, et retire les espaces (« 606 100 »). LATENT, et mesuré :
+    les 10 comptes de catégorie, les 3 écritures et les à-nouveaux en base sont conformes. Cinq
+    mutations mordent, dont le code tel qu'il était, l'ancre retirée (« C606 » passerait) et le refus
+    précédent resté affiché ;
+  - en BNC trésorerie, un champ n'est obligatoire dans l'en-tête que si sa colonne est `NOT NULL` sans
+    valeur par défaut (`SQL/FECBNCT.sql`) : DateRglt, ModeRglt, NatOp et IdClient ne le sont pas, et
+    les contrôles de la date et du mode de règlement ont été retirés en 2015. **Un fichier à dix-huit
+    colonnes passe donc ce contrôle.**
   **CE QUI RESTE HORS DE LA NORME, dit plutôt que promis** :
-  - **Un BNC en comptabilité de trésorerie doit VINGT-DEUX champs** (VIII 7) : les dix-huit, plus
-    DateRglt, ModeRglt, NatOp et IdClient. Le fichier n'en écrit que dix-huit, pour tous les dossiers.
-    C'est la forme d'une comptabilité commerciale (VII), juste pour un dossier en engagement. Le
-    contenu demande des choix : le mode de règlement n'est pas dans le modèle, et l'identification du
-    client peut être codifiée, secret professionnel oblige. En attente du cabinet et de son
-    expert-comptable.
+  - **Un BNC en comptabilité de trésorerie doit VINGT-DEUX champs** selon le texte (VIII 7) : les
+    dix-huit, plus DateRglt, ModeRglt, NatOp et IdClient. Le fichier n'en écrit que dix-huit, pour
+    tous les dossiers, ce qui est la forme d'une comptabilité commerciale (VII) et la bonne pour un
+    dossier en engagement. L'outil de la DGFiP ne les exige pas (ci-dessus), donc l'écart est au texte,
+    pas au contrôle. Le contenu demande des choix : le mode de règlement n'est pas dans le modèle, et
+    l'identification du client peut être codifiée, secret professionnel oblige. En attente du cabinet
+    et de son expert-comptable.
   - **Montantdevise et Idevise restent vides**, alors que la notice demande le montant en devise
     d'une pièce payée en devise et que l'application le connaît.
   - **EcritureLet et DateLet restent vides**, ce que la norme admet (« à blanc si non utilisé »). Le
@@ -4144,7 +4163,9 @@ d'environnement dans la même édition.
     sont des brouillons, sans procédure de validation : ValidDate y vaut la date d'écriture, ce que la
     notice n'admet que d'un logiciel sans mode brouillard. C'est un fichier d'IMPORT pour
     l'expert-comptable ; le FEC remis à l'administration est celui de son logiciel.
-  - **Il n'est jamais passé au validateur de la DGFiP** (Test Compta Demat).
+  - **Il n'est jamais passé au validateur de la DGFiP**, faute de pouvoir l'exécuter ici : ses règles
+    ont été lues (ci-dessus), pas éprouvées. Le vrai test est un import dans le logiciel de
+    l'expert-comptable.
 - **Le premier export CSV de l'application pose deux règles pour les suivants.** Un BOM UTF-8 en
   tête, sans quoi Excel en français ouvre le fichier en CP1252 et « Libellé » devient « LibellÃ© » —
   sur un fichier qu'un vérificateur relit, un accent cassé à chaque ligne jette le doute sur le
@@ -6044,7 +6065,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2378 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2380 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
