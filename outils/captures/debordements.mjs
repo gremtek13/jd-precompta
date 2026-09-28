@@ -13,7 +13,7 @@ import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
 
 const ONGLETS = [
-  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'immobilisations',
+  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'tva', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
 ]
 const largeur = Number(process.argv[2] ?? 1440)
@@ -33,7 +33,9 @@ await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) 
 const page = await contexte.newPage()
 let total = 0
 for (const onglet of ONGLETS) {
-  await page.goto(`${BASE}#/dossiers/d1/${onglet}`)
+  // L'onglet TVA sur le seul dossier assujetti du banc : sur le cabinet infirmier, exonéré, il ne
+  // montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
+  await page.goto(`${BASE}#/dossiers/${onglet === 'tva' ? 'd7' : 'd1'}/${onglet}`)
   await page.waitForTimeout(900)
   const bouton = page.getByRole('button', { name: 'Assistant', exact: true })
   if (avecPanneau && (await bouton.getAttribute('aria-pressed')) !== 'true') await bouton.click()

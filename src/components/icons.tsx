@@ -125,6 +125,15 @@ export const IconSupplements = (p: IconProps) => base(<>
   <path d="M9 14.5h4M11 12.5v4" />
 </>, p)
 
+// TVA — un signe pour cent dans un cadre : la déclaration et ses taux, distincte d'IconEcritures (des
+// lignes d'écriture) comme d'IconStatistiques (des barres).
+export const IconTva = (p: IconProps) => base(<>
+  <rect x="4" y="4" width="16" height="16" rx="3" />
+  <path d="M15 9l-6 6" />
+  <circle cx="9.5" cy="9.5" r="1.2" />
+  <circle cx="14.5" cy="14.5" r="1.2" />
+</>, p)
+
 // Icônes de la navigation principale (voir Layout.tsx) — distinctes de celles de DossierParcours
 // (ICONES_PARCOURS ci-dessous), qui portent un tout autre sens à l'intérieur d'un dossier.
 
@@ -267,6 +276,7 @@ export const ICONES_PARCOURS: Record<string, IconComponent> = {
   banque: IconBanque,
   ecritures: IconEcritures,
   statistiques: IconStatistiques,
+  tva: IconTva,
   immobilisations: IconImmobilisations,
   cotisations: IconCotisations,
   cloture: IconCloture,

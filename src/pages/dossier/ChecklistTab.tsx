@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser, tvaNettePourPeriode } from '../../lib/ecritures'
+import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from '../../lib/ecritures'
 import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, rapprochementsEcartImportant, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
@@ -10,7 +10,7 @@ import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import type { OuvertureBanque } from '../../lib/planTresorerie'
-import type { ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
+import type { ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
 import type { DossierTab } from '../../components/DossierParcours'
 import KpiTile from '../../components/widgets/KpiTile'
 import Widget from '../../components/widgets/Widget'
@@ -61,7 +61,6 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
-  const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations. Sans ce drapeau, l'écran
   // qui prétend dire ce qui MANQUE affirmait « à renseigner » sur une lecture refusée — et passait
@@ -93,7 +92,6 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
       lectureNatures,
       lectureCategories,
       lectureEcritures,
-      lectureDeclarations,
       lectureInfos,
       clotures,
       lectureANouveaux,
@@ -135,10 +133,6 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
         supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      lireTout<DeclarationTva>((debut, fin) =>
-        supabase.from('declarations_tva').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('id').range(debut, fin),
-      ),
       // Par le module partagé, qui REND son erreur : c'est la troisième copie de cette lecture
       // (InformationsTab et ClientInformations sont les deux autres), et la seule qui la jetait
       // encore — parce qu'une entrée de `Promise.all` s'écrit sans `await`, donc hors de portée du
@@ -167,20 +161,19 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     setLignes(lectureLignes.lignes)
     // TOUTES les collections dont dépend un point de cette liste, pas seulement les quatre grosses.
     // `categoriesSansCompte` et `categoriesSansPoste` partent des CATÉGORIES, `ecrituresSansObjet` des
-    // IMMOBILISATIONS, le contrôle de TVA des DÉCLARATIONS : une seule tronquée et le point
+    // IMMOBILISATIONS : une seule tronquée et le point
     // correspondant se TAIT — or se taire est exactement ce que cet écran fait quand tout va bien.
     // C'est le défaut de `ClotureTab`, qui refusait la 2035 « en n'ayant vérifié QUE les pièces ».
     setLectureIncomplete(
       [
         lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
-        lectureNatures, lectureCategories, lectureEcritures, lectureDeclarations,
+        lectureNatures, lectureCategories, lectureEcritures,
       ].find((l) => !l.complete)?.motif ?? null,
     )
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
     setCategories(lectureCategories.lignes)
     setEcritures(lectureEcritures.lignes)
-    setDeclarationsTva(lectureDeclarations.lignes)
     setInfo(lectureInfos.informations)
     setInfoInconnue(lectureInfos.erreur)
     setAnneesCloturees(clotures.annees)
@@ -293,10 +286,6 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
   // peut être faux (voir lib/controles.ts).
   const tvaImpossible = piecesTvaImpossible([...piecesValidees, ...piecesAValider])
   const deviseNonConvertie = piecesDeviseNonConvertie([...piecesValidees, ...piecesAValider])
-  // Même tolérance qu'EcrituresTab (1 € : une CA3 se dépose en euros arrondis).
-  const declarationsEnEcart = declarationsTva.filter(
-    (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)) > 1,
-  )
   // Le pendant côté Banque de "en attente de rapprochement bancaire" ci-dessous (qui part des
   // écritures) : un mouvement bancaire importé mais jamais rattaché à une pièce, une cotisation, ou
   // marqué personnel/à ignorer — le seul cycle du dossier qui manquait encore à ce tableau de bord.
@@ -389,7 +378,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     { id: 'immos-sans-justificatif', label: 'immobilisation(s) dont le justificatif a été supprimé', action: "Retrouver le justificatif ou retirer l'immobilisation", nb: immosSansJustificatif.length, cible: 'immobilisations', severite: 'erreur' },
     { id: 'ecart-rapprochement', label: 'rapprochement(s) dont le montant ne correspond pas au mouvement', action: 'Vérifier le montant ou le rapprochement', nb: ecartsRapprochement.length, cible: 'banque', severite: 'erreur' },
     { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
-    { id: 'tva-en-ecart', label: 'déclaration(s) de TVA en écart avec le brouillon', action: "Voir l'écart de TVA", nb: declarationsEnEcart.length, cible: 'ecritures', severite: 'erreur' },
+    // Plus de point « déclaration de TVA en écart avec le brouillon » (retiré le 28/09/2026) : le
+    // brouillon date la TVA à la PIÈCE et ne porte aucune écriture pour un bien immobilisé, donc il
+    // ne pouvait pas dire ce qu'une CA3 déposée sur les encaissements devait contenir — il aurait
+    // crié à l'erreur sur des déclarations justes. L'onglet TVA compare chaque déclaration déposée au
+    // calcul de SA période (lib/declarationTva.ts). Ne pas le remettre ici tant que la régularisation
+    // d'une période déjà déposée (lignes 5B et 2C) n'est pas modélisée : l'écart y resterait
+    // signalé en erreur même une fois régularisé.
     { id: 'confiance-basse', label: 'pièce(s) à faible confiance d\'extraction, à vérifier', action: 'Vérifier ces pièces', nb: piecesConfianceBasse.length, cible: 'pieces', severite: 'attention', detail: detailPiecesSansDate(piecesConfianceBasse) },
     { id: 'comptes-manquants', label: 'catégorie(s) sans compte comptable', action: 'Compléter le compte comptable', nb: catSansCompte.length, cible: 'ecritures', severite: 'attention' },
     { id: 'postes-manquants', label: 'catégorie(s) sans poste 2035', action: 'Compléter le poste 2035', nb: catSansPoste.length, cible: 'cloture', severite: 'attention' },

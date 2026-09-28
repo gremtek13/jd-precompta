@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 60 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 61 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -74,8 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 28/09/2026** : 60 fichiers, 60 migrations, empreinte globale
-`ca71b7fbebf517086652df62ccb6bee1` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 28/09/2026** : 61 fichiers, 61 migrations, empreinte globale
+`0572145ff76e6ebb708575653bc8916a` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 

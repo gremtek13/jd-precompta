@@ -22,9 +22,14 @@ const dossiers: Ligne[] = [
   ['d4', 'Julie Roux', null, null, null],
   ['d5', 'SCM Les Oliviers', null, null, null],
   ['d6', 'Thomas Girard', null, null, null],
+  // Le seul dossier assujetti à la TVA du banc : un conseil qui facture et encaisse par virement.
+  // C'est lui que montre l'onglet TVA (voir TVA_D7 plus bas) ; le cabinet infirmier, exonéré comme
+  // toute infirmière, n'a pas de déclaration à déposer.
+  ['d7', 'Atelier Bernard Conseil', '98765432100015', '70.22Z', 'Conseil pour les affaires et autres conseils de gestion'],
 ].map(([id, nom, siret, code_naf, libelle_naf]) => ({
   id, nom, siret, code_naf, libelle_naf, cabinet_id: 'cab1', contact_nom: null, contact_email: null,
-  notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: id, assujetti_tva: false, adresse: null,
+  notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: id, assujetti_tva: id === 'd7', adresse: null,
+  tva_periodicite: 'trimestrielle', tva_sur_debits: false,
 }))
 
 const categories: Ligne[] = [
@@ -68,6 +73,44 @@ function ligne(id: string, date: string, libelle: string, montant: number, statu
   }
 }
 
+// Les pièces du dossier assujetti (d7), sur les deuxième et troisième trimestres 2026 : la déclaration
+// que l'onglet TVA propose dépend du jour où le banc tourne (la dernière période close), et chacun des
+// deux trimestres porte des recettes, des achats, et le second une recette qu'aucun paiement ne date.
+function pieceTva(id: string, date: string, tiers: string, ht: number, tva: number, type: 'achat' | 'vente'): Ligne {
+  return {
+    id, dossier_id: 'd7', uploaded_by: null, source: 'upload', storage_path: `d7/${id}.pdf`, nom_fichier: `${id}.pdf`,
+    storage_hash: null, date_piece: date, tiers, montant_ht: ht, montant_tva: tva, montant_ttc: Math.round((ht + tva) * 100) / 100,
+    devise: 'EUR', montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null,
+    sous_dossier_id: null, type_piece: type, statut: 'validee', notes: null, confiance: 'haute',
+    superpdp_invoice_id: null, created_at: `${date}T10:00:00Z`, updated_at: MAINTENANT,
+  }
+}
+
+function paiementTva(id: string, date: string, libelle: string, montant: number, pieceId: string): Ligne {
+  return {
+    id, dossier_id: 'd7', date, libelle, montant, statut: 'rapprochee', piece_id: pieceId, cotisation_id: null,
+    prelevement_personnel: false, source_fichier: 'releve-2026.csv', libelle_brut: null, created_at: MAINTENANT,
+  }
+}
+
+const TVA_D7 = {
+  pieces: [
+    pieceTva('v1', '2026-04-30', 'Société Delta', 4000, 800, 'vente'),
+    pieceTva('a1', '2026-06-01', 'Espace Pro — loyer du bureau', 900, 180, 'achat'),
+    pieceTva('a2', '2026-06-18', 'Techno Plus — ordinateur portable', 1500, 300, 'achat'),
+    pieceTva('v2', '2026-07-31', 'Groupe Hélios', 2500, 500, 'vente'),
+    pieceTva('a3', '2026-07-15', 'Logiciel de facturation', 50, 10, 'achat'),
+    pieceTva('v3', '2026-09-10', 'Cabinet Vasseur', 1200, 240, 'vente'),
+  ],
+  lignes: [
+    paiementTva('t1', '2026-05-15', 'VIR SOCIETE DELTA', 4800, 'v1'),
+    paiementTva('t2', '2026-06-05', 'PRLV ESPACE PRO', -1080, 'a1'),
+    paiementTva('t3', '2026-06-20', 'CB TECHNO PLUS', -1800, 'a2'),
+    paiementTva('t4', '2026-08-14', 'VIR GROUPE HELIOS', 3000, 'v2'),
+    paiementTva('t5', '2026-07-20', 'PRLV LOGICIEL FACTURATION', -60, 'a3'),
+  ],
+}
+
 // Une conversation d'assistant, pour photographier le panneau de droite ouvert — mêmes données
 // fictives que le reste (Télécom Plus, LogiSoins) : le texte des réponses est écrit ici, jamais tiré
 // d'un vrai échange.
@@ -107,7 +150,17 @@ const TABLES: Record<string, Ligne[]> = {
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
   dossiers,
   categories,
-  pieces,
+  pieces: [...pieces, ...TVA_D7.pieces],
+  // L'ordinateur du dossier d7 est immobilisé : sa TVA va en ligne 19 de la CA3, pas en 20.
+  immobilisations: [{
+    id: 'i-d7', dossier_id: 'd7', piece_id: 'a2', nature_id: null, libelle: 'Ordinateur portable', valeur: 1500,
+    date_acquisition: '2026-06-18', duree_annees: 3, created_at: MAINTENANT,
+  }],
+  // La déclaration du premier trimestre, déposée : l'historique de l'onglet TVA la compare au calcul.
+  declarations_tva: [{
+    id: 'dt1', dossier_id: 'd7', periode_debut: '2026-01-01', periode_fin: '2026-03-31', tva_declaree: 0,
+    credit_anterieur: 0, date_declaration: '2026-04-18', notes: null, created_at: '2026-04-18T09:00:00Z',
+  }],
   // Le texte « lu » de la seule pièce sans catégorie : c'est ce qui fait offrir « Proposer une
   // catégorie » dans sa fiche. Écrit ici, fictif comme le reste.
   piece_textes_ocr: [{
@@ -130,6 +183,7 @@ const TABLES: Record<string, Ligne[]> = {
     // Face à une pièce VALIDÉE (p7) : c'est la seule forme d'une « Pièce proposée » dans le panneau
     // d'un mouvement, une proposition ne portant que sur ce que le cabinet a relu.
     ligne('l7', '2026-08-24', 'CB PAPETERIE MODERNE', -27.35, 'non_rapprochee', null),
+    ...TVA_D7.lignes,
   ],
 }
 

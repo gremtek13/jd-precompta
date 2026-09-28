@@ -21,6 +21,12 @@ export interface Dossier {
   created_at: string
   code_email: string
   assujetti_tva: boolean
+  // Le régime de TVA d'un dossier assujetti, que l'onglet TVA lit pour préparer la CA3 (voir
+  // lib/declarationTva.ts). Trimestrielle par défaut : à partir de 2027 le régime simplifié disparaît
+  // et c'est la périodicité de droit sous 1 000 000 € de chiffre d'affaires. `tva_sur_debits` est
+  // l'option qui rend la TVA des recettes due à la date de la facture plutôt qu'à l'encaissement.
+  tva_periodicite: PeriodiciteTva
+  tva_sur_debits: boolean
   code_naf: string | null
   libelle_naf: string | null
   // Adresse de l'émetteur — mention obligatoire sur une facture (voir FacturesTab). Absente du modèle
@@ -353,12 +359,20 @@ export interface ReferenceAnnuelle {
 // l'appli, saisi une fois le dépôt réel fait, pour comparer ensuite au total du brouillon sur la même
 // période (voir EcrituresTab). Même logique que ReferenceAnnuelle : une vérité externe transcrite, pas
 // une donnée dérivée.
+export type PeriodiciteTva = 'mensuelle' | 'trimestrielle'
+
 export interface DeclarationTva {
   id: string
   dossier_id: string
   periode_debut: string
   periode_fin: string
+  // La TVA nette DE LA PÉRIODE telle que déposée : TVA brute (ligne 16) moins TVA déductible de la
+  // période (lignes 19 à 21), sans le crédit reporté de la déclaration précédente — c'est ce qui se
+  // compare au calcul de la même période (voir lib/declarationTva.ts). Négative sur une période en crédit.
   tva_declaree: number
+  // Le crédit reporté de la déclaration précédente et porté sur celle-ci (ligne 22). C'est de lui
+  // qu'on déduit le crédit que cette déclaration reporte à son tour (ligne 27).
+  credit_anterieur: number
   date_declaration: string | null
   notes: string | null
   created_at: string

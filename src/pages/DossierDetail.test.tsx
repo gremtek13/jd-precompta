@@ -14,7 +14,10 @@ import DossierDetail from './DossierDetail'
 //   montés avec celle de l'ancien dossier, ou avec une identité vide, ils la garderaient, et le
 //   premier « Enregistrer » l'écrirait sur le dossier affiché.
 
-interface LigneDossier { id: string; nom: string; siret: string | null; assujetti_tva: boolean }
+interface LigneDossier {
+  id: string; nom: string; siret: string | null; assujetti_tva: boolean
+  tva_periodicite: 'mensuelle' | 'trimestrielle'; tva_sur_debits: boolean
+}
 
 const faux = vi.hoisted(() => ({
   dossiers: {} as Record<string, LigneDossier>,
@@ -111,6 +114,21 @@ vi.mock('./dossier/ClotureTab', () => doubleTva('Clôture'))
 vi.mock('./dossier/EstimationTab', () => doubleTva('Estimation'))
 vi.mock('./dossier/FinancementTab', () => doubleTva('Financement'))
 vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
+// L'onglet TVA lit le régime du dossier (périodicité, option pour les débits) et peut le changer :
+// doublé pour montrer ce qu'il REÇOIT et rendre un changement à la page, qui doit le faire voir.
+vi.mock('./dossier/TvaTab', () => ({
+  default: ({ assujettiTva, periodicite, surDebits, onRegimeUpdated }: {
+    assujettiTva: boolean
+    periodicite: string
+    surDebits: boolean
+    onRegimeUpdated: (m: { tva_periodicite?: 'mensuelle' | 'trimestrielle' }) => void
+  }) => (
+    <>
+      <p>TVA — {assujettiTva ? 'assujetti' : 'exonéré'} — {periodicite} — {surDebits ? 'débits' : 'encaissements'}</p>
+      <button onClick={() => onRegimeUpdated({ tva_periodicite: 'trimestrielle' })}>Passer au trimestre</button>
+    </>
+  ),
+}))
 vi.mock('./dossier/AssistantTab', () => ({
   default: ({ dossierId, dossierNom }: { dossierId: string; dossierNom: string | null }) => (
     <p>Assistant de {dossierNom} ({dossierId})</p>
@@ -171,8 +189,8 @@ beforeEach(() => {
   // repart de ses réglages par défaut.
   localStorage.clear()
   faux.dossiers = {
-    d1: { id: 'd1', nom: 'Cabinet Hélène', siret: '11111111111111', assujetti_tva: false },
-    d2: { id: 'd2', nom: 'Bravo Santé', siret: '22222222222222', assujetti_tva: true },
+    d1: { id: 'd1', nom: 'Cabinet Hélène', siret: '11111111111111', assujetti_tva: false, tva_periodicite: 'trimestrielle', tva_sur_debits: false },
+    d2: { id: 'd2', nom: 'Bravo Santé', siret: '22222222222222', assujetti_tva: true, tva_periodicite: 'mensuelle', tva_sur_debits: true },
   }
   faux.retenuesIdentite = {}
   faux.erreurIdentite = null
@@ -368,5 +386,25 @@ describe('Page d’un dossier — le statut TVA atteint les onglets dont un mont
     expect(screen.getByText('Clôture — TVA exonéré')).toBeTruthy()
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'TVA : exonéré' })) })
     expect(screen.getByText('Clôture — TVA assujetti')).toBeTruthy()
+  })
+})
+
+// L'ONGLET TVA PRÉPARE LA DÉCLARATION SELON LE RÉGIME DU DOSSIER : une périodicité ou une option
+// venues d'un autre dossier — ou codées en dur — prépareraient la CA3 d'une autre période, avec une
+// autre règle de date, sans que rien ne le dise.
+describe('Page d’un dossier — l’onglet TVA reçoit le régime du dossier affiché', () => {
+  it('passe le statut, la périodicité et l’option de CE dossier', async () => {
+    await afficher('/dossiers/d1/tva')
+    expect(screen.getByText('TVA — exonéré — trimestrielle — encaissements')).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/tva')
+    expect(screen.getByText('TVA — assujetti — mensuelle — débits')).toBeTruthy()
+  })
+
+  it('un régime changé dans l’onglet se voit aussitôt', async () => {
+    await afficher('/dossiers/d2/tva')
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Passer au trimestre' })) })
+    expect(screen.getByText('TVA — assujetti — trimestrielle — débits')).toBeTruthy()
   })
 })

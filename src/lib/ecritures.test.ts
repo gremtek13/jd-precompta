@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { analyserEcritures, calculerBalance, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte, tvaNettePourPeriode } from './ecritures'
+import { analyserEcritures, calculerBalance, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte } from './ecritures'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
 
@@ -132,17 +132,6 @@ describe('soldeCompte', () => {
 
   it('rend zéro sur un compte absent', () => {
     expect(soldeCompte([ecriture()], '999999', 'debit')).toBe(0)
-  })
-})
-
-describe('tvaNettePourPeriode', () => {
-  it('fait collectée moins déductible, bornes incluses', () => {
-    const lignes = [
-      ecriture({ compte: COMPTE_TVA_COLLECTEE, sens: 'credit', montant: 200, date: '2026-01-01' }),
-      ecriture({ compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 50, date: '2026-03-31' }),
-      ecriture({ compte: COMPTE_TVA_COLLECTEE, sens: 'credit', montant: 999, date: '2026-04-01' }), // hors période
-    ]
-    expect(tvaNettePourPeriode(lignes, '2026-01-01', '2026-03-31')).toBe(150)
   })
 })
 
