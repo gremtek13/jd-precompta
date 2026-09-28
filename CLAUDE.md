@@ -4861,15 +4861,31 @@ d'environnement dans la même édition.
   qui ne pouvait pas le voir, puisqu'elle ne mute que le code qu'on a écrit. `soldesFinDeMois` prend
   désormais l'ouverture en paramètre OBLIGATOIRE.
   **CE QUI NE LES LIT PAS, dit plutôt que promis** :
-  - **L'assistant comptable** : `lister_comptes` se décrit comme les totaux « du brouillon
-    d'écritures » et ne les compte pas ; sur un dossier repris, il annoncera d'autres soldes que la
-    Balance des comptes. Le corriger demande de redéployer `agent-comptable` — hors des quatre usages
-    nommés par le cabinet (trésorerie, balance, FEC, piste), donc pas fait en passant.
   - **La 2035**, qui n'est pas concernée : recettes et dépenses, jamais un compte de bilan.
   - **Le report d'un exercice sur l'autre** (ligne 34) reste entier : l'ouverture ne vient aujourd'hui
     QUE d'une balance reprise, et il n'y en a qu'UNE par dossier. Des exercices ouverts successivement
     par l'application demanderont une ouverture par exercice — c'est le déclencheur qu'il faudra
     rouvrir, pas contourner.
+  **L'ASSISTANT COMPTABLE LES LIT DEPUIS LE 28/09/2026** (décision du cabinet ; il figurait dans la
+  liste ci-dessus). `lister_comptes` ne totalisait que le brouillon : sur un dossier repris, il aurait
+  annoncé pour la banque le seul solde de ses mouvements, un autre chiffre que la Balance des comptes,
+  en français à un comptable qui n'ira pas vérifier. L'outil rend désormais la balance de l'écran
+  (bloc `── DÉBUT/FIN BALANCE` d'`agent-comptable`) : à-nouveaux compris dans l'exercice qu'ils
+  ouvrent et toutes années confondues, `dont_a_nouveaux` pour leur part — aucune écriture du
+  brouillon ne la montre, donc `lister_ecritures` non plus —, `a_nouveaux.compris_dans_les_totaux` à
+  faux sur un autre exercice, sans quoi le modèle prendrait la banque de l'exercice suivant pour son
+  solde alors qu'aucun report n'existe, et l'avertissement de l'écran quand une écriture précède
+  l'ouverture. Les à-nouveaux y arrivent SANS filtre de période, pour que l'ouverture d'un autre
+  exercice se DISE au lieu de disparaître ; `resume_dossier` donne la date d'ouverture. Une lecture
+  incomplète fait refuser, comme celle du brouillon. Les contrôles de TVA de `points_a_traiter`
+  restent sur le brouillon seul, comme ceux d'Écritures : une ouverture n'est pas un flux de période.
+  `agentComptableBalance.test.ts` extrait le bloc et le compare à `calculerBalance` de src/lib sur
+  quatre périodes ; seize mutations mordent, dont une qui a d'abord survécu en accusant le jeu
+  d'essai : 0,1 + 0,2 ne distingue pas des centimes arrondis de centimes non arrondis, 0,07 + 0,14 si
+  (0,21000000000000005). **Version 24 en production**, `verify_jwt` relu et repassé à `false`, le
+  déployé v23 comparé à `main` AVANT écrasement (identique), aller-retour après : zéro différence
+  résiduelle sur 949 lignes. Un appel sans session rend bien le 401 de la fonction — elle démarre —,
+  et aucun appel au modèle n'a été fait pour le vérifier.
   **Vérifié en base par impersonation réelle, quinze contrôles** : anonyme refusé sur la fonction
   (pas d'`EXECUTE`) ; compte rattaché à rien et client refusés par « Accès refusé à ce dossier. », le
   client sur SON propre dossier aussi ; insertion directe du client refusée en 42501 ; les trois
@@ -5589,7 +5605,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 1929 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 1942 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

@@ -197,6 +197,85 @@ function bornesAnnee(annee?: number): { date_debut?: string; date_fin?: string }
   return { date_debut: `${annee}-01-01`, date_fin: `${annee}-12-31` }
 }
 
+// ── DÉBUT BALANCE ────────────────────────────────────────────────────────────────────────────────
+// LA BALANCE QUE L'ASSISTANT ANNONCE EST CELLE DE L'ONGLET « BALANCE DES COMPTES », À-NOUVEAUX
+// COMPRIS. Un dossier repris d'un autre logiciel s'ouvre par des à-nouveaux (table `a_nouveaux`, voir
+// src/lib/aNouveaux.ts) : les soldes de ses comptes de bilan à la reprise. L'écran les compte dans
+// l'exercice qu'ils ouvrent ; l'assistant, qui ne lisait que le brouillon, annonçait pour la banque le
+// seul solde de ses mouvements — un autre chiffre que l'écran, dit en français à un comptable qui
+// n'ira pas vérifier. Deux livrables, deux réponses : la panne déjà payée par `analyserEcritures`.
+//
+// Les règles sont celles de l'écran (StatistiquesTab) : un à-nouveau appartient à l'exercice qu'il
+// ouvre, comme une écriture à celui de sa date ; toutes années confondues il est compris, et une
+// écriture du brouillon ANTÉRIEURE à l'ouverture y compte alors une seconde fois sur les comptes de
+// bilan — ce que le résultat DIT plutôt que de le laisser additionner. Les à-nouveaux arrivent ici
+// SANS filtre de période : il faut leur date pour dire qu'ils existent même quand ils ouvrent un autre
+// exercice que celui demandé. Gardé par src/lib/agentComptableBalance.test.ts, qui extrait ce bloc et
+// le compare à `calculerBalance` de src/lib.
+interface MouvementDate {
+  date: string
+  compte: string
+  sens: "debit" | "credit"
+  montant: number
+}
+
+interface PeriodeDemandee {
+  date_debut?: string
+  date_fin?: string
+}
+
+function dansLaPeriode(date: string, periode: PeriodeDemandee): boolean {
+  return !periode.date_debut || (date >= periode.date_debut && date <= periode.date_fin!)
+}
+
+function balanceDesComptes(
+  ecritures: readonly MouvementDate[],
+  aNouveaux: readonly MouvementDate[],
+  periode: PeriodeDemandee,
+) {
+  // En centimes : une somme de flottants dérive sur une longue série, et ce total part tel quel.
+  const parCompte = new Map<string, { debit: number; credit: number; ouverture: { debit: number; credit: number } | null }>()
+  const cumuler = (l: MouvementDate, estANouveau: boolean) => {
+    const c = parCompte.get(l.compte) ?? { debit: 0, credit: 0, ouverture: null }
+    const centimes = Math.round(l.montant * 100)
+    if (l.sens === "debit") c.debit += centimes; else c.credit += centimes
+    if (estANouveau) {
+      c.ouverture ??= { debit: 0, credit: 0 }
+      if (l.sens === "debit") c.ouverture.debit += centimes; else c.ouverture.credit += centimes
+    }
+    parCompte.set(l.compte, c)
+  }
+  for (const e of ecritures) if (dansLaPeriode(e.date, periode)) cumuler(e, false)
+  const aNouveauxRetenus = aNouveaux.filter((a) => dansLaPeriode(a.date, periode))
+  for (const a of aNouveauxRetenus) cumuler(a, true)
+
+  const comptes = [...parCompte.entries()]
+    .map(([compte, c]) => ({
+      compte,
+      total_debit: c.debit / 100,
+      total_credit: c.credit / 100,
+      // Leur part, que `lister_ecritures` ne peut pas montrer : un à-nouveau n'est pas une écriture
+      // du brouillon. Sans elle, le modèle chercherait dans le journal un solde qui n'y est pas.
+      ...(c.ouverture ? { dont_a_nouveaux: { debit: c.ouverture.debit / 100, credit: c.ouverture.credit / 100 } } : {}),
+    }))
+    .sort((a, b) => a.compte.localeCompare(b.compte))
+
+  // Une seule ouverture par dossier, la base le garantit (déclencheur a_nouveaux_une_seule_ouverture) :
+  // la première ligne porte la date de toutes.
+  const ouverture = aNouveaux[0]?.date ?? null
+  const anterieures = !periode.date_debut && ouverture ? ecritures.filter((e) => e.date < ouverture).length : 0
+  return {
+    comptes,
+    a_nouveaux: ouverture ? { date: ouverture, compris_dans_les_totaux: aNouveauxRetenus.length > 0 } : null,
+    ...(anterieures > 0
+      ? {
+        avertissement: `${anterieures} écriture(s) du brouillon précèdent l'ouverture du ${ouverture} : leur effet est déjà dans les à-nouveaux, et ces totaux toutes années confondues le comptent une seconde fois sur les comptes de bilan. N'en tire aucun solde de bilan — redemande la balance d'un exercice (paramètre annee).`,
+      }
+      : {}),
+  }
+}
+// ── FIN BALANCE ──────────────────────────────────────────────────────────────────────────────────
+
 interface PlafondResultat {
   bloque: boolean
   alerte: boolean
@@ -357,12 +436,12 @@ interface OutilContexte {
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "resume_dossier",
-    description: "Vue d'ensemble du dossier : nom, régime TVA, et compteurs (pièces à valider, pièces validées, écritures, années couvertes). À appeler en premier si le contexte n'est pas clair.",
+    description: "Vue d'ensemble du dossier : nom, régime TVA, compteurs (pièces à valider, pièces validées, écritures, années couvertes) et a_nouveaux — la date d'ouverture d'un dossier repris d'un autre logiciel, null sinon. À appeler en premier si le contexte n'est pas clair.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "lister_comptes",
-    description: "Liste les comptes comptables utilisés dans le brouillon d'écritures, avec le total débit et crédit de chacun. Utile pour situer un compte avant de l'examiner en détail.",
+    description: "Balance des comptes, la même que l'onglet du même nom : chaque compte avec ses totaux débit et crédit, sans plafond. Pour un dossier repris d'un autre logiciel, les À-NOUVEAUX (soldes d'ouverture, qui ne sont pas des écritures du brouillon : lister_ecritures ne les montre pas) sont compris dans l'exercice qu'ils ouvrent et toutes années confondues ; dont_a_nouveaux donne leur part sur un compte. Les soldes ne sont pas encore reportés d'un exercice sur l'autre : un exercice postérieur à l'ouverture ne porte que ses propres mouvements. Renvoie { comptes, a_nouveaux (null sans reprise), avertissement? } : s'il y a un avertissement, lis-le avant de citer un solde.",
     input_schema: {
       type: "object",
       properties: { annee: { type: "integer", description: "Filtre sur une année (ex: 2025) ; toutes les années si omis." } },
@@ -452,12 +531,14 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   const { admin, dossierId, dossier } = ctx
 
   if (nom === "resume_dossier") {
-    const [r1, r2, r3, r4] = await Promise.all([
+    const [r1, r2, r3, r4, r5] = await Promise.all([
       admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),
       admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee"),
       admin.from("ecritures_brouillon").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId),
       lireTout<{ date: string }>((debut, fin) =>
         admin.from("ecritures_brouillon").select("date", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(debut, fin)),
+      lireTout<{ date: string }>((debut, fin) =>
+        admin.from("a_nouveaux").select("date", { count: "exact" }).eq("dossier_id", dossierId).order("compte").order("id").range(debut, fin)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : une lecture échouée ne doit jamais
     // retomber silencieusement sur 0 (count/data valent alors null) — l'agent répondrait avec
@@ -473,33 +554,45 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     if (!r4.complete) {
       return { erreur: `Lecture partielle : ${r4.motif} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
     }
+    // L'ouverture d'un dossier repris : sans elle, un dossier qui n'a encore que ses à-nouveaux se
+    // résumerait en « aucune écriture », et le modèle en conclurait qu'il n'y a rien à dire de ses
+    // comptes. Illisible, elle ne se devine pas : même refus que ci-dessus.
+    if (!r5.complete) {
+      return { erreur: `Lecture partielle : ${r5.motif} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
+    }
     const annees = [...new Set(r4.lignes.map((r) => r.date.slice(0, 4)))].sort()
-    return { nom: dossier.nom, assujetti_tva: dossier.assujetti_tva, pieces_a_valider: r1.count ?? 0, pieces_validees: r2.count ?? 0, ecritures_brouillon: r3.count ?? 0, annees_avec_ecritures: annees }
+    return {
+      nom: dossier.nom,
+      assujetti_tva: dossier.assujetti_tva,
+      pieces_a_valider: r1.count ?? 0,
+      pieces_validees: r2.count ?? 0,
+      ecritures_brouillon: r3.count ?? 0,
+      annees_avec_ecritures: annees,
+      a_nouveaux: r5.lignes.length > 0 ? { date: r5.lignes[0].date, nombre_de_lignes: r5.lignes.length } : null,
+    }
   }
 
   if (nom === "lister_comptes") {
     const annee = typeof input.annee === "number" ? input.annee : undefined
-    const { date_debut, date_fin } = bornesAnnee(annee)
+    const periode = bornesAnnee(annee)
     // « Une liste plafonnée dit qu'elle l'est » vaut pour les listes RENDUES au modèle, qui portent
     // déjà leur drapeau `tronque`. Ici les lignes alimentent un TOTAL par compte : un total tronqué
     // n'est pas une liste plus courte, c'est un CHIFFRE FAUX, annoncé en français à un comptable qui
     // n'ira pas vérifier. La requête se CONSTRUIT dans la fermeture, sinon la tranche s'appliquerait
     // à un constructeur déjà consommé.
-    const lu = await lireTout<{ compte: string; sens: "debit" | "credit"; montant: number }>((debut, fin) => {
-      let q = admin.from("ecritures_brouillon").select("compte, sens, montant", { count: "exact" }).eq("dossier_id", dossierId)
-      if (date_debut) q = q.gte("date", date_debut).lte("date", date_fin!)
+    const lu = await lireTout<MouvementDate>((debut, fin) => {
+      let q = admin.from("ecritures_brouillon").select("date, compte, sens, montant", { count: "exact" }).eq("dossier_id", dossierId)
+      if (periode.date_debut) q = q.gte("date", periode.date_debut).lte("date", periode.date_fin!)
       return q.order("id").range(debut, fin)
     })
     if (!lu.complete) return { erreur: `Comptes illisibles (${lu.motif}) — ne conclus rien sur les totaux de ce dossier.` }
-    const parCompte = new Map<string, { debit: number; credit: number }>()
-    for (const r of lu.lignes) {
-      const c = parCompte.get(r.compte) ?? { debit: 0, credit: 0 }
-      if (r.sens === "debit") c.debit += r.montant; else c.credit += r.montant
-      parCompte.set(r.compte, c)
-    }
-    return [...parCompte.entries()]
-      .map(([compte, { debit, credit }]) => ({ compte, total_debit: Math.round(debit * 100) / 100, total_credit: Math.round(credit * 100) / 100 }))
-      .sort((a, b) => a.compte.localeCompare(b.compte))
+    // Lus SANS filtre de période, volontairement : c'est `balanceDesComptes` qui les rattache à
+    // l'exercice qu'ils ouvrent (voir le bloc BALANCE). Une ouverture incomplète fausse les soldes de
+    // bilan, la banque la première : même refus que pour le brouillon.
+    const luANouveaux = await lireTout<MouvementDate>((debut, fin) =>
+      admin.from("a_nouveaux").select("date, compte, sens, montant", { count: "exact" }).eq("dossier_id", dossierId).order("compte").order("id").range(debut, fin))
+    if (!luANouveaux.complete) return { erreur: `À-nouveaux illisibles (${luANouveaux.motif}) — ne conclus rien sur les soldes des comptes de ce dossier.` }
+    return balanceDesComptes(lu.lignes, luANouveaux.lignes, periode)
   }
 
   if (nom === "lister_ecritures") {
