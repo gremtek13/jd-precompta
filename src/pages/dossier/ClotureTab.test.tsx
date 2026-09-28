@@ -30,6 +30,7 @@ vi.mock('../../lib/supabase', () => ({
       Object.assign(chaine, {
         select: () => chaine,
         eq: () => chaine,
+        not: () => chaine,
         or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
@@ -106,6 +107,7 @@ function poser(
     immobilisations: immos,
     cotisations_declarees: cotis,
     vehicules: [],
+    lignes_bancaires: [],
     dossiers: [{ nom: 'Dossier de test', libelle_naf: 'Infirmier', siret: '12345678901234' }],
   }
 }
@@ -117,6 +119,90 @@ function monter(annee = 2025, assujettiTva = true) {
     </AnneeProvider>,
   )
 }
+
+// L'EXERCICE D'UNE PIÈCE EST CELUI DE SON PAIEMENT (CGI, art. 93 : recettes encaissées, dépenses
+// payées). Le moteur est testé à part (declaration2035.test.ts) ; ce qui se joue ici est le CÂBLAGE —
+// que l'écran LISE les paiements, les passe au moteur, compte la pièce dans l'exercice où elle a été
+// réglée, et DISE celles qu'il compte à leur date de facture faute de paiement rapproché.
+describe("ClotureTab — l'exercice du paiement", () => {
+  const FACTURE_DE_DECEMBRE = { ...PIECE, date_piece: '2025-12-20' }
+  const REGLEE_EN_JANVIER = {
+    id: 'l1', dossier_id: 'dossier-de-test', date: '2026-01-05', libelle: 'PRLV FOURNISSEUR', montant: -120,
+    statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: '2026-01-06T09:00:00Z',
+  }
+  const TITRE = /Pièces comptées à leur date de facture/
+
+  function poserDecembre(payee: boolean) {
+    poser()
+    faux.parTable.pieces = [FACTURE_DE_DECEMBRE]
+    faux.parTable.lignes_bancaires = payee ? [REGLEE_EN_JANVIER] : []
+  }
+
+  it("compte une facture de décembre réglée en janvier dans l'exercice du paiement", async () => {
+    // 2025 ne garde que ses deux échéances de cotisation (600 €) ; les 120 € de la facture partent
+    // en 2026, l'année où ils ont quitté le compte.
+    poserDecembre(true)
+    const en2025 = monter(2025)
+    const titre2025 = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre2025.parentElement!).getByText(/Déficit de 600 € : case 5QE/)
+    en2025.unmount()
+
+    monter(2026)
+    const titre2026 = await screen.findByText(/Report sur la déclaration des revenus 2026/)
+    within(titre2026.parentElement!).getByText(/Déficit de 120 € : case 5QE/)
+  })
+
+  it('dit la pièce comptée à sa date de facture faute de paiement rapproché', async () => {
+    poserDecembre(false)
+    monter(2025)
+
+    const titre = await screen.findByText(/Pièces comptées à leur date de facture \(1\)/)
+    const carte = within(titre.closest('.card')!)
+    carte.getByText('FOURNISSEUR')
+    carte.getByText('20/12/2025')
+    carte.getByText(/^120,00\s€$/)
+    // Et la facture reste comptée en 2025 : 600 de cotisations + 120 = 720.
+    const report = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(report.parentElement!).getByText(/Déficit de 720 € : case 5QE/)
+  })
+
+  it('se tait sur une pièce dont le paiement est rapproché', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « l'écran dit la supposition » serait satisfait par un écran qui
+    // la dit toujours — et une mise en garde permanente cesse d'être lue.
+    poserDecembre(true)
+    monter(2026)
+
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
+  })
+
+  it("propose l'exercice du paiement quand toutes les années sont affichées", async () => {
+    // La liste des exercices suivait `date_piece` : la facture de décembre n'y faisait apparaître que
+    // 2025, et ses 120 € réglés en 2026 disparaissaient de la vue « toutes années ».
+    poserDecembre(true)
+    render(
+      <AnneeProvider defaut="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} />
+      </AnneeProvider>,
+    )
+
+    await screen.findByText(/Report sur la déclaration des revenus 2026/)
+    await screen.findByText(/Report sur la déclaration des revenus 2025/)
+  })
+
+  it('refuse de remplir le formulaire quand les PAIEMENTS sont lus en partie', async () => {
+    // Tronquée, cette lecture ferait retomber sur leur date de facture des pièces payées une autre
+    // année : une 2035 plausible, fausse et signée — le drapeau des cinq autres entrées la couvre.
+    poserDecembre(true)
+    faux.muetApresParTable = { lignes_bancaires: 0 }
+    monter(2026)
+
+    await screen.findByText(/n'a pas pu être lue en entier/)
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+  })
+})
 
 describe('ClotureTab — le refus de remplir une 2035 sur une lecture partielle', () => {
   it('bloque le formulaire quand ce sont les COTISATIONS qui manquent, pas les pièces', async () => {

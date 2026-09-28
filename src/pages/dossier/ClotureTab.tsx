@@ -15,7 +15,8 @@ import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from '../../lib/types'
+import { anneesDesRattachements, paiementsParPiece, rattachementsTresorerie } from '../../lib/rattachement'
+import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
 import { lireTout } from '../../lib/lectureComplete'
@@ -23,9 +24,10 @@ import { messageErreur } from '../../lib/messageErreur'
 import VoletSocialCard from './VoletSocialCard'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
-// par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer de
-// résultat ou d'impôt : cette combinaison relève de règles BNC réelles (encaissements/décaissements,
-// exercice de rattachement) que ce brouillon ne prétend pas maîtriser — voir le bandeau.
+// par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer d'impôt.
+// Chaque pièce rejoint l'exercice de son PAIEMENT quand le rapprochement bancaire le connaît, sa date
+// de facture sinon — et l'écran liste celles qui comptent ainsi faute de paiement (voir
+// lib/rattachement.ts) : c'est la règle BNC des recettes encaissées et des dépenses payées.
 export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
@@ -40,6 +42,8 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Cadre 7 du 2035-B : le total des indemnités kilométriques alimente la case BJ, ligne 23.
   const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
+  // Les mouvements rapprochés d'une pièce : ce sont eux qui la DATENT (voir lib/rattachement.ts).
+  const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [postesEdit, setPostesEdit] = useState<Record<string, string>>({})
@@ -72,7 +76,7 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
     // cotisation ou une immobilisation manquante est tout aussi plausible, fausse et signée.
     // Le tri est TOTAL partout (`id` en départage) : sans clé unique, deux tranches se recouvrent
     // ou sautent des lignes, et rien ne le signale.
-    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, { data: dossierData, error: dossierError }, clotures] = await Promise.all([
+    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, { data: dossierData, error: dossierError }, clotures] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -94,6 +98,14 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
         supabase.from('vehicules').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Les paiements qui DATENT les pièces. Tronquée, cette lecture ferait retomber sur leur date de
+      // facture des pièces payées une autre année — une 2035 plausible, fausse et signée, comme pour
+      // les quatre autres entrées : elle rejoint donc le même drapeau.
+      lireTout<LigneBancaire>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
+          .order('id').range(debut, fin),
+      ),
       supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
       // Par `lireAnneesCloturees`, qui REND son erreur — plutôt qu'une lecture nue de plus. Les
       // trois écrans qui lisent cette table doivent en tirer la même chose au même moment.
@@ -103,6 +115,7 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
     setCloturesInconnues(clotures.erreur)
     setCloturesConnues(new Set(clotures.annees))
     setVehicules(lectureVehicules.lignes)
+    setLignesBancaires(lectureLignes.lignes)
     setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
     // Un seul drapeau pour les quatre : l'écran n'a rien de plus utile à dire selon laquelle a
@@ -114,7 +127,7 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
     // écran ne le dise. Ce n'est pas une lecture « partielle » au sens du plafond PostgREST, mais
     // le refus qu'elle appelle est exactement le même.
     setLectureIncomplete(
-      [lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules]
+      [lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes]
         .find((l) => !l.complete)?.motif
       ?? (dossierError ? messageErreur(dossierError, "l'identité du dossier n'a pas pu être lue") : null),
     )
@@ -154,8 +167,12 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
   // Un dossier est par client, pas par année : sans filtre, ce récapitulatif mélangerait tous les
   // exercices dans un seul total par poste — pas ce qu'on attend d'une clôture. "Toutes années" reste
   // disponible (utile pour un premier tour d'horizon) mais affiche un avertissement explicite.
+  // L'année d'une pièce est celle de son paiement, ou de sa facture à défaut (voir lib/rattachement.ts)
+  // — la même que celle où le moteur la compte, sans quoi un exercice où une pièce compte pourrait
+  // manquer à la liste.
+  const paiements = paiementsParPiece(lignesBancaires)
   const anneesDisponibles = [...new Set([
-    ...piecesValidees.filter((p) => p.date_piece).map((p) => anneeDe(p.date_piece!)),
+    ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachementsTresorerie(p, paiements.get(p.id) ?? []))),
     ...cotisations.map((c) => anneeDe(c.echeance)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
@@ -170,7 +187,7 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva, lignesBancaires),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -330,6 +347,12 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
   }
   const piecesExclues = [...exclues.values()]
 
+  // Ce qui compte à sa DATE DE FACTURE faute de paiement rapproché, exercice par exercice : une
+  // supposition, pas une lecture — la pièce a peut-être été payée une autre année. Dite ici, sur
+  // l'écran qui remplit la 2035, parce que c'est la seule chose qui distingue « payée en décembre » de
+  // « facturée en décembre et payée on ne sait quand ».
+  const sansPaiement = declarations.flatMap((d) => d.sansPaiementConnu.map((s) => ({ annee: d.annee, ...s })))
+
   return (
     <>
       <BrouillonBanner />
@@ -418,6 +441,36 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {sansPaiement.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Pièces comptées à leur date de facture ({sansPaiement.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Aucun paiement rapproché ne date ces pièces : elles comptent dans l'exercice de leur
+            facture. Une recette se déclare l'année de son encaissement, une dépense l'année de son
+            paiement — si l'une a été réglée une autre année, la rapprocher de son mouvement dans
+            l'onglet Banque la fera changer d'exercice.
+          </p>
+          <details>
+            <summary>Voir les pièces</summary>
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>Exercice</th><th>Pièce</th><th>Date de facture</th><th style={{ textAlign: 'right' }}>Montant compté</th></tr></thead>
+                <tbody>
+                  {sansPaiement.map(({ annee, piece: p, montant }) => (
+                    <tr key={`${annee}-${p.id}`}>
+                      <td>{annee}</td>
+                      <td>{p.tiers ?? p.nom_fichier}</td>
+                      <td>{formatDate(p.date_piece)}</td>
+                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(montant)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </div>
       )}
 

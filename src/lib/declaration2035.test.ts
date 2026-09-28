@@ -4,7 +4,7 @@ import {
   csgDeductible, partCsgNonDeductible,
   POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
 } from './declaration2035'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
+import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -21,9 +21,10 @@ const piece = (o: Partial<Piece>): Piece =>
 
 const calcul = (o: {
   pieces?: Piece[]; immos?: Immobilisation[]; cotis?: CotisationDeclaree[]; annee?: number
-  vehicules?: VehiculeDossier[]
+  vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]
 }) => calculerDeclaration2035(
   o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [], o.vehicules ?? [], true,
+  o.paiements ?? [],
 )
 
 const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
@@ -57,7 +58,7 @@ describe('calculerDeclaration2035 — périmètre', () => {
   // 1 022,40 € payés, soit 170,40 € de dépenses absentes d'une 2035 signée.
   it('retient le TTC pour un dossier exonéré, TVA comprise', () => {
     const pieces = [piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
-    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false)
+    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, [])
     expect(exonere.totalDepenses).toBe(120)
     // Le garde symétrique : l'assujetti garde le hors taxes.
     expect(calcul({ pieces }).totalDepenses).toBe(100)
@@ -100,6 +101,80 @@ describe('calculerDeclaration2035 — ce qui est écarté est dit', () => {
   it('remonte une pièce sans montant lisible', () => {
     const d = calcul({ pieces: [piece({ id: 'vide', montant_ht: null, montant_ttc: null })] })
     expect(d.exclusions.sansMontant.map((p) => p.id)).toEqual(['vide'])
+  })
+})
+
+// Un mouvement rapproché d'une pièce : c'est lui qui la date (lib/rattachement.ts).
+const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
+  id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
+  piece_id: 'p', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+  created_at: '2026-01-06T09:00:00Z', ...o,
+})
+
+describe("calculerDeclaration2035 — l'exercice est celui du paiement", () => {
+  // CGI, art. 93 : les recettes encaissées et les dépenses payées au cours de l'année. Le moteur
+  // lisait `anneeDe(date_piece)` — une facture de décembre réglée en janvier partait dans la
+  // déclaration de l'année d'avant.
+  const decembre = piece({ id: 'dec', date_piece: '2025-12-20' })
+  const regleeEnJanvier = paiement({ piece_id: 'dec', date: '2026-01-05' })
+
+  it("compte une facture de décembre réglée en janvier dans l'exercice du paiement", () => {
+    expect(calcul({ annee: 2025, pieces: [decembre], paiements: [regleeEnJanvier] }).totalDepenses).toBe(0)
+    expect(calcul({ annee: 2026, pieces: [decembre], paiements: [regleeEnJanvier] }).totalDepenses).toBe(100)
+  })
+
+  it('compte une recette dans l’exercice de son encaissement', () => {
+    const recette = piece({ id: 'rec', type_piece: 'vente', categorie_id: 'c-recettes', date_piece: '2025-12-30', montant_ht: 500, montant_ttc: 500 })
+    const encaissee = paiement({ piece_id: 'rec', date: '2026-01-12', montant: 500 })
+    expect(calcul({ annee: 2025, pieces: [recette], paiements: [encaissee] }).totalRecettes).toBe(0)
+    expect(calcul({ annee: 2026, pieces: [recette], paiements: [encaissee] }).totalRecettes).toBe(500)
+  })
+
+  it("retombe sur la date de facture sans paiement rapproché, et le dit", () => {
+    const d = calcul({ annee: 2025, pieces: [decembre] })
+    expect(d.totalDepenses).toBe(100)
+    expect(d.sansPaiementConnu.map((s) => [s.piece.id, s.montant])).toEqual([['dec', 100]])
+  })
+
+  it('ne tient pas une pièce réglée pour une supposition', () => {
+    const d = calcul({ annee: 2026, pieces: [decembre], paiements: [regleeEnJanvier] })
+    expect(d.sansPaiementConnu).toEqual([])
+  })
+
+  it('ne dit pas « sans paiement » une note de frais, payée hors du compte', () => {
+    const note = piece({ id: 'ndf', type_piece: 'note_frais', date_piece: '2025-06-01' })
+    const d = calcul({ pieces: [note] })
+    expect(d.totalDepenses).toBe(100)
+    expect(d.sansPaiementConnu).toEqual([])
+  })
+
+  it('ne dit pas « sans paiement » une pièce écartée : elle ne compte pas du tout', () => {
+    const d = calcul({ pieces: [piece({ id: 'orpheline', categorie_id: 'c-sans-poste' })] })
+    expect(d.exclusions.sansPoste.map((p) => p.id)).toEqual(['orpheline'])
+    expect(d.sansPaiementConnu).toEqual([])
+  })
+
+  it('date par son paiement une pièce sans date de facture, au lieu de l’écarter', () => {
+    const sansDate = piece({ id: 'sd', date_piece: null })
+    const d = calcul({ annee: 2026, pieces: [sansDate], paiements: [paiement({ piece_id: 'sd' })] })
+    expect(d.totalDepenses).toBe(100)
+    expect(d.exclusions.sansDate).toEqual([])
+  })
+
+  it('partage un paiement partiel : la part payée au paiement, le reste à la facture', () => {
+    // 120 € de pièce, 48 € rapprochés en janvier : 40 % en 2026, 60 % en 2025 à la date de facture.
+    const partiel = paiement({ piece_id: 'dec', montant: -48 })
+    const en2025 = calcul({ annee: 2025, pieces: [decembre], paiements: [partiel] })
+    const en2026 = calcul({ annee: 2026, pieces: [decembre], paiements: [partiel] })
+    expect(en2025.totalDepenses).toBe(60)
+    expect(en2026.totalDepenses).toBe(40)
+    expect(en2025.sansPaiementConnu.map((s) => [s.piece.id, s.montant])).toEqual([['dec', 60]])
+    expect(en2026.sansPaiementConnu).toEqual([])
+  })
+
+  it('ne se laisse pas dater par un mouvement qui n’est plus rapproché', () => {
+    const remis = paiement({ piece_id: 'dec', statut: 'non_rapprochee' })
+    expect(calcul({ annee: 2025, pieces: [decembre], paiements: [remis] }).totalDepenses).toBe(100)
   })
 })
 
