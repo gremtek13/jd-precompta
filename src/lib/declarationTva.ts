@@ -1,5 +1,6 @@
 import { piecesDeviseNonConvertie, piecesTvaImpossible, LIBELLE_MOTIF_TVA } from './controles'
 import { ajouterJours, ajouterMois, dernierJourDuMois } from './format'
+import { partsDesPaiements } from './rattachement'
 import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece } from './types'
 
 // LA CA3 CASE PAR CASE — le formulaire 3310-CA3-SD (millésime 2026), préparé depuis les pièces
@@ -21,9 +22,10 @@ import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece } from './typ
 //     n'arrive jamais trop tôt, sauf pour un bien payé avant d'être livré.
 //   - une NOTE DE FRAIS se paie hors du compte professionnel : elle compte à sa date, sauf si un
 //     mouvement la rattache au relevé.
-//   - une pièce payée en plusieurs fois compte pour la part de chaque paiement :
-//     |mouvement| / max(|TTC|, somme des mouvements). Un paiement partiel ne rend exigible que ce
-//     qui a été payé, et des frais bancaires ne font pas compter la pièce plus d'une fois.
+//   - une pièce payée en plusieurs fois compte pour la part de chaque paiement (`partsDesPaiements`,
+//     lib/rattachement.ts, la même règle que la 2035) : une pièce réglée à l'écart d'alignement près
+//     compte en entier, des frais bancaires ne la font pas compter plus d'une fois, et un paiement
+//     partiel ne rend exigible que ce qui a été payé.
 // Une pièce qu'aucun paiement ne date ne compte dans AUCUNE déclaration, et elle est rendue à part
 // (`nonPlacees`) : se taire sur elle ferait passer une recette oubliée pour une recette inexistante.
 //
@@ -124,11 +126,12 @@ interface Fraction {
 function fractionsDe(piece: Piece, mouvements: LigneBancaire[], surDebits: boolean): Fraction[] | MotifNonPlacee {
   const recette = piece.type_piece === 'vente'
   if (recette && surDebits) return piece.date_piece ? [{ date: piece.date_piece, part: 1 }] : 'sans_date'
-  if (mouvements.length > 0) {
-    const paye = mouvements.reduce((s, m) => s + Math.abs(m.montant), 0)
-    const denominateur = Math.max(Math.abs(piece.montant_ttc ?? 0), paye)
-    if (denominateur > 0) return mouvements.map((m) => ({ date: m.date, part: Math.abs(m.montant) / denominateur }))
-  }
+  // La part de chaque paiement vient de `partsDesPaiements` (lib/rattachement.ts), qui la rend aussi
+  // à la 2035 : c'est la même question, et une règle écrite deux fois n'attend que de diverger. Le
+  // reste d'un paiement partiel n'est exigible nulle part — un acompte ne rend exigible que ce qu'il
+  // paie —, donc seules les parts payées sont prises ici.
+  const { parts } = partsDesPaiements(piece, mouvements)
+  if (parts.length > 0) return parts
   if (piece.type_piece === 'note_frais') return piece.date_piece ? [{ date: piece.date_piece, part: 1 }] : 'sans_date'
   return 'non_rapprochee'
 }
