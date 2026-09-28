@@ -1,5 +1,6 @@
 import { anneeDe, jourDe, moisDe } from './format'
 import { montantRetenu } from './montantRetenu'
+import { paiementsParPiece, partDansLaPeriode, rattachementsTresorerie, type Paiement } from './rattachement'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece } from './types'
 
 // Exporté parce que `ratiosBancaires.ts` doit retrouver ce poste dans `totauxParPoste` pour calculer
@@ -62,19 +63,28 @@ export function calculerSituationIntermediaire(
   // TVA comprise pour un dossier exonéré, hors taxes pour un assujetti — la règle de la 2035 (voir
   // lib/montantRetenu.ts), sur l'état qu'on montre à une banque.
   assujettiTva: boolean,
+  // Les mouvements rapprochés, qui DATENT les pièces (voir lib/rattachement.ts) : une pièce compte
+  // dans la période de son paiement, comme dans la 2035 dont cet état est la version « à ce jour ».
+  // Sans valeur par défaut — une liste vide ferait tout compter à la date de facture.
+  lignesBancaires: readonly Paiement[],
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
   const anneeFin = anneeDe(periodeFin)
+  const paiements = paiementsParPiece(lignesBancaires)
 
   const totauxParPoste = new Map<string, number>()
   for (const p of pieces) {
     if (p.statut !== 'validee') continue
     if (immobilisationPieceIds.has(p.id)) continue
-    if (!p.date_piece || p.date_piece < periodeDebut || p.date_piece > periodeFin) continue
+    // La période de la pièce est celle de son PAIEMENT, sa date de facture à défaut : la règle de la
+    // 2035 (voir lib/rattachement.ts). Un état arrêté au 31 janvier ne porte donc pas une facture de
+    // janvier réglée en février, et porte celle de décembre réglée en janvier.
+    const part = partDansLaPeriode(rattachementsTresorerie(p, paiements.get(p.id) ?? []), periodeDebut, periodeFin)
+    if (part === 0) continue
     const cat = p.categorie_id ? categorieById.get(p.categorie_id) : null
     if (!cat?.poste_2035) continue
-    const montant = montantRetenu(p, assujettiTva) ?? 0
+    const montant = (montantRetenu(p, assujettiTva) ?? 0) * part
     const signe = p.type_piece === 'vente' ? 1 : -1
     totauxParPoste.set(cat.poste_2035, (totauxParPoste.get(cat.poste_2035) ?? 0) + signe * montant)
   }

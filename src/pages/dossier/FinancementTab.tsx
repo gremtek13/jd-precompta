@@ -10,7 +10,7 @@ import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserv
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
-import type { ANouveau, Categorie, CotisationDeclaree, Immobilisation, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number }
@@ -30,6 +30,9 @@ export default function FinancementTab({ dossierId, assujettiTva }: { dossierId:
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   const [lignesBanque, setLignesBanque] = useState<LigneBanque[]>([])
+  // Les mouvements RAPPROCHÉS d'une pièce, qui la datent (voir lib/rattachement.ts) — à ne pas
+  // confondre avec `lignesBanque`, les écritures du compte 512 dont sort la trésorerie.
+  const [paiements, setPaiements] = useState<LigneBancaire[]>([])
   // Le solde de la banque à l'ouverture d'un dossier repris d'un autre logiciel (voir
   // lib/aNouveaux.ts) : sans lui, la trésorerie part de zéro à la première écriture.
   const [ouverture, setOuverture] = useState<OuvertureBanque | null>(null)
@@ -58,6 +61,7 @@ export default function FinancementTab({ dossierId, assujettiTva }: { dossierId:
       lectureCotisations,
       lectureBanque,
       lectureANouveaux,
+      lecturePaiements,
       { data: previsionnelData, error: previsionnelError },
     ] = await Promise.all([
       lireTout<Emprunt>((debut, fin) =>
@@ -94,6 +98,15 @@ export default function FinancementTab({ dossierId, assujettiTva }: { dossierId:
         supabase.from('a_nouveaux').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
       ),
+      // Les paiements qui DATENT les pièces de la situation intermédiaire, des ratios et du
+      // préremplissage du prévisionnel : une pièce compte dans la période de son paiement, la règle de
+      // la 2035. Tronquée, cette lecture ferait retomber sur leur date de facture des pièces payées
+      // ailleurs — les mêmes chiffres faux que les six autres, donc le même drapeau.
+      lireTout<LigneBancaire>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
+          .order('id').range(debut, fin),
+      ),
       // QUATRIÈME COPIE DE « LECTURE → FORMULAIRE → UPSERT DE TOUS LES CHAMPS », par la porte que
       // le scanner ne regardait pas : une entrée de `Promise.all` s'écrit sans `await`. Les trois
       // premières (InformationsTab, ClientInformations, CabinetBrandingPage) sont corrigées depuis
@@ -109,13 +122,14 @@ export default function FinancementTab({ dossierId, assujettiTva }: { dossierId:
     setImmobilisations(lectureImmobilisations.lignes)
     setCotisations(lectureCotisations.lignes)
     setLignesBanque(lectureBanque.lignes as LigneBanque[])
+    setPaiements(lecturePaiements.lignes)
     setOuverture(ouvertureBanque(lectureANouveaux.lignes))
     setPrevisionnelIllisible(previsionnelError ? messageErreur(previsionnelError, "Le prévisionnel enregistré n'a pas pu être lu.") : null)
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
-    // Six lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
+    // Sept lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
     // manqué, et chacune fausse les mêmes chiffres.
     setLectureIncomplete(
-      [lectureEmprunts, lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureBanque]
+      [lectureEmprunts, lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureBanque, lecturePaiements]
         .find((l) => !l.complete)?.motif ?? null,
     )
     setOuvertureIncomplete(lectureANouveaux.motif)
@@ -293,6 +307,7 @@ export default function FinancementTab({ dossierId, assujettiTva }: { dossierId:
         <SituationIntermediaireModal
           assujettiTva={assujettiTva}
           piecesValidees={piecesValidees}
+          paiements={paiements}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -317,6 +332,7 @@ export default function FinancementTab({ dossierId, assujettiTva }: { dossierId:
         <DettesRatiosModal
           assujettiTva={assujettiTva}
           piecesValidees={piecesValidees}
+          paiements={paiements}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -334,6 +350,7 @@ export default function FinancementTab({ dossierId, assujettiTva }: { dossierId:
           assujettiTva={assujettiTva}
           previsionnel={previsionnel}
           piecesValidees={piecesValidees}
+          paiements={paiements}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -346,8 +363,8 @@ export default function FinancementTab({ dossierId, assujettiTva }: { dossierId:
   )
 }
 
-function DettesRatiosModal({ assujettiTva, piecesValidees, categories, immobilisations, cotisations, emprunts, lignesBanque, capitalRestantTotal, mensualiteTotale, onClose }: {
-  assujettiTva: boolean; piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+function DettesRatiosModal({ assujettiTva, piecesValidees, paiements, categories, immobilisations, cotisations, emprunts, lignesBanque, capitalRestantTotal, mensualiteTotale, onClose }: {
+  assujettiTva: boolean; piecesValidees: Piece[]; paiements: LigneBancaire[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   emprunts: Emprunt[]; lignesBanque: LigneBanque[]; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
 }) {
   const aujourdHui = aujourdHuiSql()
@@ -356,7 +373,7 @@ function DettesRatiosModal({ assujettiTva, piecesValidees, categories, immobilis
   // la CAF, et l'étiquette qui l'annonce juste en dessous (voir moisEcoulesDeLAnnee).
   const moisEcoules = moisEcoulesDeLAnnee(aujourdHui)
 
-  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui, assujettiTva)
+  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui, assujettiTva, paiements)
   // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
   // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
   const plan = calculerPlanTresorerie(lignesBanque, 0, 6, 1)
@@ -541,14 +558,14 @@ function PlanTresorerieModal({ lignesBanque, ouverture, soldeActuel, emprunts, c
   )
 }
 
-function SituationIntermediaireModal({ assujettiTva, piecesValidees, categories, immobilisations, cotisations, lignesBanque, ouverture, onClose }: {
-  assujettiTva: boolean; piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+function SituationIntermediaireModal({ assujettiTva, piecesValidees, paiements, categories, immobilisations, cotisations, lignesBanque, ouverture, onClose }: {
+  assujettiTva: boolean; piecesValidees: Piece[]; paiements: LigneBancaire[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; onClose: () => void
 }) {
   const [dateFin, setDateFin] = useState(aujourdHuiSql())
   const periodeDebut = `${anneeDe(dateFin)}-01-01`
 
-  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin, assujettiTva)
+  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin, assujettiTva, paiements)
   const tresorerieADate = soldeBanqueADate(lignesBanque, ouverture, dateFin)
   // « 0,00 € » est juste quand rien n'est comptabilisé, et c'est ce qui le rend dangereux.
   const reserveSolde = reserveSurSolde(lignesBanque, ouverture, dateFin)
@@ -615,9 +632,9 @@ function SituationIntermediaireModal({ assujettiTva, piecesValidees, categories,
   )
 }
 
-function PrevisionnelModal({ dossierId, assujettiTva, previsionnel, piecesValidees, categories, immobilisations, cotisations, lectureIncomplete, onClose, onSaved }: {
+function PrevisionnelModal({ dossierId, assujettiTva, previsionnel, piecesValidees, paiements, categories, immobilisations, cotisations, lectureIncomplete, onClose, onSaved }: {
   dossierId: string; assujettiTva: boolean; previsionnel: PrevisionnelBancaire | null
-  piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+  piecesValidees: Piece[]; paiements: LigneBancaire[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lectureIncomplete: string | null
   onClose: () => void; onSaved: () => void
 }) {
@@ -640,7 +657,7 @@ function PrevisionnelModal({ dossierId, assujettiTva, previsionnel, piecesValide
   // banque — et la fenêtre recouvre le bandeau qui dirait que la lecture est incomplète.
   function precharger() {
     if (lectureIncomplete) return
-    const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`, assujettiTva)
+    const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`, assujettiTva, paiements)
     setCaReference(String(situation.recettes))
     setChargesReference(String(situation.charges))
   }

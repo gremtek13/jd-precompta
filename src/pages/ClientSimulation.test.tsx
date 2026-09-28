@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSimulation from './ClientSimulation'
-import type { CotisationDeclaree, Piece, ReferenceAnnuelle } from '../lib/types'
+import type { CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle } from '../lib/types'
 
 // LA SIMULATION DU CLIENT, dernier écran client sans test de rendu — et celui dont la projection
 // portait trois défauts à la fois (voir `projectionAnnuelle`, lib/estimation.ts, qui les garde à
@@ -35,6 +35,7 @@ vi.mock('../lib/supabase', () => ({
       Object.assign(chaine, {
         select: () => chaine,
         eq: () => chaine,
+        not: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
         // La lecture du statut TVA du dossier, une seule ligne.
@@ -103,6 +104,7 @@ const ECHEANCIER_2026 = Array.from({ length: 12 }, (_, i) =>
 
 function poser(o: {
   recettes?: Piece[]; cotisations?: CotisationDeclaree[]; reperes?: ReferenceAnnuelle[]; assujetti?: boolean
+  paiements?: LigneBancaire[]
 } = {}) {
   faux.parTable = {
     dossiers: [{ assujetti_tva: o.assujetti ?? false }],
@@ -110,6 +112,7 @@ function poser(o: {
     cotisations_declarees: o.cotisations ?? [],
     references_annuelles: o.reperes ?? [],
     references_postes_annuels: [],
+    lignes_bancaires: o.paiements ?? [],
   }
   faux.refusees = new Set()
   faux.muet = {}
@@ -173,6 +176,41 @@ describe('ClientSimulation — la projection de l’année', () => {
     expect(valeur("Cotisations projetées sur l'année")).toBe('—')
     screen.getByText(/Moins d'un mois s'est écoulé depuis le 1er janvier/)
     expect(screen.queryAllByText(/vs 2026\)/)).toHaveLength(0)
+  })
+})
+
+// « CA ENCAISSÉ À DATE » DIT ENFIN VRAI : une recette compte à la date de son encaissement quand le
+// rapprochement la connaît (lib/rattachement.ts), comme dans l'Estimation du cabinet.
+describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
+  const encaissement = (date: string): LigneBancaire => ({
+    id: 'l1', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
+    piece_id: 'r1', cotisation_id: null, prelevement_personnel: false, source_fichier: null,
+    libelle_brut: null, created_at: `${date}T09:00:00Z`,
+  })
+
+  it('ne compte pas une recette facturée en mars et encaissée en avril', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ recettes: [recette()], paiements: [encaissement('2026-04-10')] })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('0,00 €')
+  })
+
+  it('compte une recette de décembre encaissée en janvier dans l’année qui commence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ recettes: [recette({ date_piece: '2025-12-29' })], paiements: [encaissement('2026-01-06')] })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('600,00 €')
+  })
+
+  it('dit la lecture partielle quand les encaissements n’ont pas pu être lus', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ recettes: [recette()], paiements: [encaissement('2026-04-10')] })
+    faux.refusees = new Set(['lignes_bancaires'])
+    await monter()
+    screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
   })
 })
 

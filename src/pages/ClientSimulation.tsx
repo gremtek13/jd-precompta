@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { aujourdHuiSql, formatMoney } from '../lib/format'
 import { ecartPct, projectionAnnuelle } from '../lib/estimation'
-import type { CotisationDeclaree, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
+import type { CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { messageErreur } from '../lib/messageErreur'
@@ -23,6 +23,9 @@ export default function ClientSimulation() {
   // dit rien, et l'affirmer contredirait le bandeau juste au-dessus.
   const [referencesIncompletes, setReferencesIncompletes] = useState(false)
   const [recettesValidees, setRecettesValidees] = useState<Piece[]>([])
+  // Les encaissements rapprochés, qui datent chaque recette comme dans l'Estimation du cabinet :
+  // « CA encaissé à date » ne compte que ce qui est entré (lib/rattachement.ts).
+  const [paiements, setPaiements] = useState<LigneBancaire[]>([])
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
   const [referencesPostes, setReferencesPostes] = useState<ReferencePosteAnnuel[]>([])
   // Décide du montant de chaque recette, comme dans l'Estimation du cabinet : TVA comprise pour un
@@ -33,7 +36,7 @@ export default function ClientSimulation() {
   useEffect(() => {
     if (!dossierId) return
     async function load() {
-      const [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier] = await Promise.all([
+      const [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier, lecturePaiements] = await Promise.all([
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -54,9 +57,15 @@ export default function ClientSimulation() {
           .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
       ),
         supabase.from('dossiers').select('assujetti_tva').eq('id', dossierId).maybeSingle(),
+        lireTout<LigneBancaire>((debut, fin) =>
+          supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
+            .order('id').range(debut, fin),
+        ),
       ])
       setCotisations(lectureCotisations.lignes)
       setRecettesValidees(lectureRecettes.lignes)
+      setPaiements(lecturePaiements.lignes)
       setReferences(lectureReferences.lignes)
       setReferencesPostes(lectureReferencesPostes.lignes)
       setReferencesIncompletes(!lectureReferences.complete)
@@ -69,7 +78,7 @@ export default function ClientSimulation() {
         ? messageErreur(lectureDossier.error, 'lecture refusée')
         : lectureDossier.data ? null : 'dossier introuvable'
       setLectureIncomplete(
-        [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes]
+        [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lecturePaiements]
           .find((l) => !l.complete)?.motif ?? motifDossier,
       )
       setLoading(false)
@@ -84,7 +93,7 @@ export default function ClientSimulation() {
 
   // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva)
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   return (
