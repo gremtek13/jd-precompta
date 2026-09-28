@@ -577,6 +577,38 @@ describe('ChecklistTab — les écritures à régénérer suivent le statut TVA'
     expect(screen.queryByText(LIBELLE_DESYNC)).toBeNull()
   })
 
+  // LA DATE ATTENDUE EST CELLE DU PAIEMENT quand le rapprochement le connaît (lib/rattachement.ts).
+  // Sans les mouvements rapprochés, la Checklist signalerait « à régénérer » toute écriture justement
+  // datée à son paiement.
+  it('une écriture datée à son paiement rapproché n’est pas à régénérer', async () => {
+    const auPaiement = [
+      { ...ecriture('e1', '606100', 120), date: '2026-04-02' },
+      { ...ecriture('e2', '512000', 120), date: '2026-04-02', sens: 'credit', ligne_bancaire_id: 'l1' },
+    ]
+    poser({
+      validees: [pieceAvecTva], categories: [categorie], ecritures: auPaiement,
+      lignes: [ligne({ date: '2026-04-02', montant: -120 })],
+    })
+    monter(false)
+    // L'ancre : ce que l'écran affiche forcément une fois chargé, quel que soit le jour — la ligne des
+    // relevés bancaires de l'année en cours.
+    await screen.findAllByText(/^Relevés bancaires \d{4}$/)
+    expect(screen.queryByText(LIBELLE_DESYNC)).toBeNull()
+  })
+
+  it('une écriture restée à la date de facture alors que le paiement est rapproché est à régénérer', async () => {
+    const aLaFacture = [
+      ecriture('e1', '606100', 120),
+      { ...ecriture('e2', '512000', 120), date: '2026-04-02', sens: 'credit', ligne_bancaire_id: 'l1' },
+    ]
+    poser({
+      validees: [pieceAvecTva], categories: [categorie], ecritures: aLaFacture,
+      lignes: [ligne({ date: '2026-04-02', montant: -120 })],
+    })
+    monter(false)
+    await screen.findByText(LIBELLE_DESYNC)
+  })
+
   it('sur un dossier exonéré, une TVA encore ventilée est à régénérer', async () => {
     poser({
       validees: [pieceAvecTva], categories: [categorie],

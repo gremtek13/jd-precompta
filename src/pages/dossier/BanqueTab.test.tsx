@@ -36,6 +36,10 @@ const faux = vi.hoisted(() => ({
   muet: {} as Record<string, number>,
   // Ce que « lit » le faux pdf.js : des lignes de texte avec l'abscisse de leur montant.
   lignesPdf: [] as { texte: string; xFin: number }[],
+  // Les lignes d'écriture de la pièce, que la contrepartie banque lit avant d'écrire ; vides, elle
+  // renonce (rien à compléter). Et les dates qu'elle réécrit, avec leurs filtres.
+  ecritures: [] as { id: string; compte: string }[],
+  updatesEcritures: [] as { valeur: Record<string, unknown>; filtres: string[] }[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -49,6 +53,7 @@ vi.mock('../../lib/supabase', () => {
     let operation = 'select'
     let idFiltre: unknown = null
     let valeurMaj: Record<string, unknown> = {}
+    const filtres: string[] = []
     let debut = 0
     let fin = Number.MAX_SAFE_INTEGER
     const c: Record<string, unknown> = {}
@@ -56,15 +61,20 @@ vi.mock('../../lib/supabase', () => {
       select: () => c,
       eq: (colonne: string, valeur: unknown) => {
         if (colonne === 'id') idFiltre = valeur
+        filtres.push(`${colonne}=${valeur}`)
         return c
       },
+      neq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}!=${valeur}`); return c },
+      not: () => c,
       order: () => c,
       in: () => c,
+      delete: () => { operation = 'delete'; return c },
       update: (valeur: Record<string, unknown>) => {
         operation = 'update'
         valeurMaj = valeur
         if (table === 'lignes_bancaires') faux.updatesLignes.push(valeur)
         if (table === 'pieces') faux.updatesPieces.push(valeur)
+        if (table === 'ecritures_brouillon') faux.updatesEcritures.push({ valeur, filtres })
         return c
       },
       insert: (valeur: Record<string, unknown>) => {
@@ -109,6 +119,11 @@ vi.mock('../../lib/supabase', () => {
         }
         if (table === 'lignes_bancaires') {
           return Promise.resolve({ data: faux.lignes, error: null, count: faux.lignes.length }).then(suite)
+        }
+        if (table === 'ecritures_brouillon') {
+          return Promise.resolve(operation === 'select'
+            ? { data: faux.ecritures, error: null, count: faux.ecritures.length }
+            : { data: null, error: null }).then(suite)
         }
         if (table === 'documents_divers' && faux.erreurReleves) {
           return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
@@ -176,6 +191,8 @@ function reinitialiser() {
   faux.insertions = []
   faux.muet = {}
   faux.lignesPdf = []
+  faux.ecritures = []
+  faux.updatesEcritures = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -580,6 +597,37 @@ describe('BanqueTab — le mouvement dans le panneau de droite', () => {
     await act(async () => { within(volet()).getByRole('button', { name: 'Remettre à traiter' }).click() })
     await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
     expect(faux.updatesLignes).toEqual([expect.objectContaining({ statut: 'non_rapprochee', piece_id: null, cotisation_id: null })])
+  })
+})
+
+// L'ÉCRITURE D'UNE PIÈCE SUIT SON PAIEMENT (lib/rattachement.ts, lib/contrepartieBanque.ts) : datée
+// au paiement quand on la rapproche, rendue à sa date de facture quand on annule. Ce qui se joue ici
+// est le CÂBLAGE — que l'écran passe la pièce et le mouvement à ces deux fonctions.
+describe('BanqueTab — l’écriture suit le paiement', () => {
+  it('rapprocher une pièce déjà passée en écriture la date au paiement', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.ecritures = [{ id: 'e1', compte: '606100' }]
+    rendre()
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Rapproché avec')).toBeTruthy())
+
+    expect(faux.updatesEcritures).toEqual([{ valeur: { date: '2025-06-02' }, filtres: ['piece_id=piece-1', 'compte!=512000'] }])
+    expect(faux.insertions).toContainEqual({ table: 'ecritures_brouillon', valeur: expect.objectContaining({ compte: '512000', date: '2025-06-02' }) })
+  })
+
+  it('annuler le rapprochement rend l’écriture à la date de sa facture', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1' })]
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+
+    expect(faux.updatesEcritures).toEqual([{ valeur: { date: '2025-06-01' }, filtres: ['piece_id=piece-1'] }])
   })
 })
 

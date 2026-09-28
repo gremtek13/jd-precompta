@@ -9,6 +9,7 @@ import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
+import { anneesDesRattachements, paiementsParPiece, rattachementsTresorerie } from '../../lib/rattachement'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -177,7 +178,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setError(null)
     try {
       const comptes = new Map(aComptabiliser.map(({ piece, compte }) => [piece.id, compte]))
-      const rows = enAttente.flatMap((p) => lignesChargeProduitPourPiece(dossierId, p, comptes.get(p.id)!, assujettiTva))
+      // Datées au paiement quand le rapprochement le connaît, comme la 2035 compte la pièce.
+      const rows = enAttente.flatMap((p) =>
+        lignesChargeProduitPourPiece(dossierId, p, comptes.get(p.id)!, assujettiTva, lignesBancaires.filter((l) => l.piece_id === p.id)))
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
 
@@ -224,7 +227,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignesBancaires)
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
   const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
@@ -265,9 +268,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           'manquants des mouvements qui existent.',
         )
       }
-      // Les pièces sans date n'appartiennent à aucun exercice : elles sont jointes à chacun, et la
-      // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de les taire.
-      const piecesExercice = piecesValidees.filter((p) => !p.date_piece || anneeDe(p.date_piece) === anneeFilter)
+      // L'exercice d'une pièce est celui de son paiement, sa date de facture à défaut — celui où ses
+      // écritures sont datées (lib/rattachement.ts) ; sans quoi une facture de décembre réglée en
+      // janvier figurerait dans la piste de décembre comme un justificatif que rien ne comptabilise.
+      // Une pièce que rien ne date n'appartient à aucun exercice : elle est jointe à chacun, et la
+      // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de la taire.
+      const paiements = paiementsParPiece(lignesBancaires)
+      const piecesExercice = piecesValidees.filter((p) => {
+        const rattachements = rattachementsTresorerie(p, paiements.get(p.id) ?? [])
+        return rattachements.some((r) => r.date === null) || anneesDesRattachements(rattachements).includes(anneeFilter)
+      })
       const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {
@@ -288,7 +298,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     try {
       const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
       if (deleteError) throw deleteError
-      const { error: insertError } = await supabase.from('ecritures_brouillon').insert(lignesChargeProduitPourPiece(dossierId, piece, compte, assujettiTva))
+      const { error: insertError } = await supabase.from('ecritures_brouillon')
+        .insert(lignesChargeProduitPourPiece(dossierId, piece, compte, assujettiTva, lignesBancaires.filter((l) => l.piece_id === piece.id)))
       if (insertError) throw insertError
       load()
     } catch (err) {

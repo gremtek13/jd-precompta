@@ -61,7 +61,7 @@ describe('genererFec — numérotation et dates', () => {
   it('numérote chaque journal dans l’ordre chronologique', () => {
     // Un EcritureNum non croissant dans un même journal fait rejeter le fichier à l'import.
     const fec = genererFec(
-      [ligne('tard'), ligne('tot'), ligne('vente')],
+      [ligne('tard', { date: '2026-06-01' }), ligne('tot', { date: '2026-01-15' }), ligne('vente', { date: '2026-03-01' })],
       [
         piece('tard', { date_piece: '2026-06-01' }),
         piece('tot', { date_piece: '2026-01-15' }),
@@ -75,6 +75,28 @@ describe('genererFec — numérotation et dates', () => {
       ['AC', 'AC00001'], // 15/01
       ['VE', 'VE00001'], // 01/03 — compteur propre au journal des ventes
       ['AC', 'AC00002'], // 01/06
+    ])
+  })
+
+  it('numérote dans l’ordre des dates d’ÉCRITURE — celles du paiement — et non des factures', () => {
+    // Une facture de janvier payée en mars, une de février payée le 5 février : les écritures sont
+    // datées au paiement (lib/rattachement.ts), et c'est leur ordre qui fait la numérotation. Trier
+    // sur PieceDate numéroterait mars avant février.
+    const fec = genererFec(
+      [
+        ligne('janvier', { date: '2026-03-01' }), ligne('janvier', { compte: COMPTE_BANQUE, date: '2026-03-01', sens: 'credit' }),
+        ligne('fevrier', { date: '2026-02-05' }), ligne('fevrier', { compte: COMPTE_BANQUE, date: '2026-02-05', sens: 'credit' }),
+      ],
+      [piece('janvier', { date_piece: '2026-01-10' }), piece('fevrier', { date_piece: '2026-02-01' })],
+      [],
+      [],
+    )
+    const rows = colonnes(fec).slice(1)
+    expect(rows.map((r) => [r[2], r[3], r[9]])).toEqual([
+      ['AC00001', '20260205', '20260201'],
+      ['AC00001', '20260205', '20260201'],
+      ['AC00002', '20260301', '20260110'],
+      ['AC00002', '20260301', '20260110'],
     ])
   })
 

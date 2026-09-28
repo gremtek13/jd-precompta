@@ -249,7 +249,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, onNavigate }: { 
     immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id),
   )
   const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, immobilisationPieceIds)
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva)
+  // Les mouvements rapprochés décident de la date qu'une écriture doit porter (lib/rattachement.ts) :
+  // `lignes` porte tout le relevé, et `analyserEcritures` n'en retient que les rapprochés.
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignes)
   const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
   const ruptures = rupturesPisteAudit(ecritures)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
