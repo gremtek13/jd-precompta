@@ -1225,6 +1225,10 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   à-nouveaux, le report d'un exercice sur l'autre, la TVA des livraisons de biens, la liasse (2033 ou
   2050), l'écriture d'acquisition d'une immobilisation et les exercices qui ne suivent pas l'année
   civile.
+- FEC conforme à l'article A47 A-1 du LPF, la norme de sortie des écritures : la virgule décimale est
+  corrigée (28/09/2026). Restent les vingt-deux champs d'un BNC en comptabilité de trésorerie et les
+  montants en devise, qui attendent la réponse de l'expert-comptable du cabinet — voir « le FEC suit
+  l'article A47 A-1 » dans « Problèmes connus ».
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -4102,6 +4106,45 @@ d'environnement dans la même édition.
   Mesuré sur le dossier `test` le 19/09/2026 : 11 justificatifs validés pour 1 387,15 € que rien ne
   comptabilise, tous porteurs de leur empreinte, dont 10 sans catégorie — l'export ne découvre donc
   pas un défaut de plus, il pointe la porte 1 déjà connue, ce qui est le signe qu'il dit vrai.
+- **LE FEC SUIT L'ARTICLE A47 A-1 DU LPF — ET ÉCRIVAIT SES MONTANTS AVEC UN POINT** (28/09/2026,
+  trouvé en répondant à l'expert-comptable du cabinet, qui demandait si l'application suit « une norme
+  de sortie des écritures »). Cette norme est le FEC (articles L47 A et A47 A-1 du LPF), exporté depuis
+  Écritures. Relu contre le texte en vigueur (version du 02/08/2013) et la notice qui le commente, le
+  fichier en respectait la forme : noms des champs en première ligne, tabulation, CRLF, dates
+  AAAAMMJJ, UTF-8 (le texte l'admet), numérotation croissante propre à chaque journal (la notice
+  l'admet), à-nouveaux en tête. Un point y manquait : « La virgule sépare la fraction entière de la
+  partie décimale. Aucun séparateur de millier n'est accepté. » `toFixed(2)` écrivait un point sur
+  chaque montant, et un outil d'import qui suit la norme rejette le fichier ou ne lit pas ses montants.
+  Corrigé dans `montant()` (`lib/fec.ts`). Un bloc de tests éprouve désormais la FORME du fichier, là
+  où les tests n'éprouvaient que ses colonnes. Sept mutations mordent : le point, un séparateur de
+  milliers, le signe en fin de montant, le signe perdu, les fins de ligne LF, les dates à tirets, et
+  une écriture orpheline qui fuit dans le fichier. Une huitième survit par construction : le même
+  défaut vu depuis l'écran, qui ne fait que télécharger ce que `genererFec` rend. Le format se garde là
+  où il se calcule.
+  **Et une assertion de la piste d'audit ne pouvait pas échouer** : `not.toContain('199,99')` sur un
+  FEC au point, où l'écriture orpheline aurait paru en « 199.99 ». Mesuré en la faisant fuiter sans
+  planter : l'assertion passait au point, elle mord à la virgule. Son auteur attendait déjà la
+  virgule. Premier essai à ne pas refaire : supprimer le `continue` des écritures sans pièce fait
+  PLANTER `genererFec`, qui lit alors un identifiant de pièce nul. Tout test échoue donc sur le
+  plantage, et la mutation « mord » pour une autre raison que celle qu'on vérifie.
+  **CE QUI RESTE HORS DE LA NORME, dit plutôt que promis** :
+  - **Un BNC en comptabilité de trésorerie doit VINGT-DEUX champs** (VIII 7) : les dix-huit, plus
+    DateRglt, ModeRglt, NatOp et IdClient. Le fichier n'en écrit que dix-huit, pour tous les dossiers.
+    C'est la forme d'une comptabilité commerciale (VII), juste pour un dossier en engagement. Le
+    contenu demande des choix : le mode de règlement n'est pas dans le modèle, et l'identification du
+    client peut être codifiée, secret professionnel oblige. En attente du cabinet et de son
+    expert-comptable.
+  - **Montantdevise et Idevise restent vides**, alors que la notice demande le montant en devise
+    d'une pièce payée en devise et que l'application le connaît.
+  - **EcritureLet et DateLet restent vides**, ce que la norme admet (« à blanc si non utilisé »). Le
+    lettrage est la ligne 32.
+  - **Ce fichier n'est pas le FEC légal du dossier.** Il ne porte que ce que l'application écrit : les
+    justificatifs et leur banque, et les à-nouveaux. Il n'a ni cotisations sociales, ni
+    amortissements, ni prélèvements de l'exploitant, ni mouvements sans justificatif. Ses écritures
+    sont des brouillons, sans procédure de validation : ValidDate y vaut la date d'écriture, ce que la
+    notice n'admet que d'un logiciel sans mode brouillard. C'est un fichier d'IMPORT pour
+    l'expert-comptable ; le FEC remis à l'administration est celui de son logiciel.
+  - **Il n'est jamais passé au validateur de la DGFiP** (Test Compta Demat).
 - **Le premier export CSV de l'application pose deux règles pour les suivants.** Un BOM UTF-8 en
   tête, sans quoi Excel en français ouvre le fichier en CP1252 et « Libellé » devient « LibellÃ© » —
   sur un fichier qu'un vérificateur relit, un accent cassé à chaque ligne jette le doute sur le
@@ -6001,7 +6044,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2374 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2378 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

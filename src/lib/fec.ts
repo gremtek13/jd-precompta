@@ -9,6 +9,10 @@ import { auxiliaireDuTiers } from './engagement'
 // l'appli : si une pièce n'a pas encore de compte, ou n'est pas encore rapprochée en banque, elle
 // n'apparaît simplement pas (ou apparaît déséquilibrée) — jamais devinée pour compléter le fichier.
 
+// Les dix-huit champs du VII de l'article A47 A-1, ceux d'une comptabilité tenue selon le droit
+// commercial. UN BNC EN COMPTABILITÉ DE TRÉSORERIE (VIII 7) en doit VINGT-DEUX : les mêmes, plus la
+// date et le mode de règlement, la nature de l'opération et l'identification du client (DateRglt,
+// ModeRglt, NatOp, IdClient). Ce fichier ne les écrit pas encore, pour aucun dossier — voir CLAUDE.md.
 const ENTETES_FEC = [
   'JournalCode', 'JournalLib', 'EcritureNum', 'EcritureDate', 'CompteNum', 'CompteLib',
   'CompAuxNum', 'CompAuxLib', 'PieceRef', 'PieceDate', 'EcritureLib', 'Debit', 'Credit',
@@ -19,8 +23,12 @@ function yyyymmdd(iso: string): string {
   return iso.slice(0, 10).replaceAll('-', '')
 }
 
+// LA VIRGULE SÉPARE LA PARTIE ENTIÈRE DE LA PARTIE DÉCIMALE, et c'est l'article A47 A-1 qui le dit :
+// « La virgule sépare la fraction entière de la partie décimale. Aucun séparateur de millier n'est
+// accepté. » Le signe se place en tête. `toFixed` écrit un point : un outil d'import qui suit la norme
+// rejette alors le fichier, ou ne lit pas les montants. Jusqu'au 28/09/2026, le FEC sortait ainsi.
 function montant(n: number): string {
-  return n.toFixed(2)
+  return n.toFixed(2).replace('.', ',')
 }
 
 // Le FEC est un fichier en colonnes séparées par des tabulations : une tabulation ou un saut de
