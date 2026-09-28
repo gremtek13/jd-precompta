@@ -83,10 +83,10 @@ découvre avant.
    chaque e-mail entrant est refusé en 401 (« Signature invalide ») et les pièces envoyées par les
    clients n'arrivent plus dans l'application.
 5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan, elle est fermée.**
-   Les 58 migrations du projet sont exportées dans `supabase/schema/`, une par fichier, telles que
-   la base les a enregistrées, et vérifiées par empreinte agrégée. Elles restent un EXPORT : la
-   source de vérité est la base, les migrations continuent de s'appliquer par l'outil MCP, et
-   l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie en une
+   Les migrations du projet (61 au 28/09/2026) sont exportées dans `supabase/schema/`, une par
+   fichier, telles que la base les a enregistrées, et vérifiées par empreinte agrégée. Elles restent
+   un EXPORT : la source de vérité est la base, les migrations continuent de s'appliquer par l'outil
+   MCP, et l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie en une
    ligne — à rejouer avant de compter dessus, et après toute nouvelle migration.
 
    **ET ELLE N'ÉTAIT FERMÉE QU'AUX DEUX TIERS, jusqu'au 22/09/2026.** Les migrations ne portent que
@@ -156,7 +156,7 @@ incompréhensible trois étapes plus loin.
 1. **Le projet Supabase** — recréer, région `eu-west-1` (RGPD). Les appels à AWS ne suivent pas
    cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
    (inventaire du §3).
-2. **Le schéma** — appliquer les 60 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
+2. **Le schéma** — appliquer les 61 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
    un (`apply_migration`). Ils se suivent : plusieurs suppriment et recréent ce que les précédentes
    ont posé, les rejouer dans le désordre ne donne pas le même schéma. **Puis, et seulement
    ensuite**, jouer `supabase/schema/socle/tables_sans_migration.sql` en une fois : il porte les

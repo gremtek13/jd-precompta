@@ -1,15 +1,15 @@
-import { useEffect, useRef, useState, type FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
-import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte, tvaNettePourPeriode } from '../../lib/ecritures'
+import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte } from '../../lib/ecritures'
 import type { MotifSansObjet } from '../../lib/ecritures'
 import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
-import type { ANouveau, Categorie, DeclarationTva, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -60,13 +60,6 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const { annee: anneeFilter } = useAnnee()
   const [regenerating, setRegenerating] = useState<string | null>(null)
   const [retrait, setRetrait] = useState<string | null>(null)
-  const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
-  const [declarationsIncompletes, setDeclarationsIncompletes] = useState<string | null>(null)
-  const [periodeDebut, setPeriodeDebut] = useState('')
-  const [periodeFin, setPeriodeFin] = useState('')
-  const [tvaDeclaree, setTvaDeclaree] = useState('')
-  const [dateDeclaration, setDateDeclaration] = useState('')
-  const [savingDeclaration, setSavingDeclaration] = useState(false)
   const [exportPiste, setExportPiste] = useState(false)
   // Non nul quand le brouillon n'a PAS pu être lu en entier (voir lib/lectureComplete.ts). PostgREST
   // plafonne le nombre de lignes rendues par requête sans le signaler : au-delà, cet écran
@@ -85,7 +78,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   async function load() {
     setLoading(true)
-    const [lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureDeclarations, lectureANouveaux] = await Promise.all([
+    const [lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -113,10 +106,6 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
           .order('id').range(debut, fin),
       ),
-      lireTout<DeclarationTva>((debut, fin) =>
-        supabase.from('declarations_tva').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).order('periode_debut', { ascending: false }).order('id').range(debut, fin),
-      ),
       lireTout<ANouveau>((debut, fin) =>
         supabase.from('a_nouveaux').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
@@ -137,13 +126,6 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     )
     setANouveauxIncomplets(lectureANouveaux.motif)
     setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
-    // PAS dans `brouillonIncomplet`, et c'est le point : ce drapeau-là BLOQUE les exports FEC et
-    // piste d'audit, or une lecture tronquée des déclarations de TVA n'a aucune raison d'empêcher
-    // un FEC juste. Sa conséquence est ailleurs — un contrôle de TVA qui ne voit pas une période
-    // n'annonce aucun écart dessus, c'est-à-dire la bonne nouvelle que ce tableau existe pour
-    // démentir.
-    setDeclarationsIncompletes(lectureDeclarations.complete ? null : lectureDeclarations.motif)
-    setDeclarationsTva(lectureDeclarations.lignes)
     setLoading(false)
   }
 
@@ -362,37 +344,6 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // peut encore les corriger avant de valider.
   const tvaImpossible = piecesTvaImpossible(piecesValidees)
 
-  async function enregistrerDeclaration(e: FormEvent) {
-    e.preventDefault()
-    if (!periodeDebut || !periodeFin || !tvaDeclaree) return
-    setSavingDeclaration(true)
-    setError(null)
-    try {
-      const { error: insertError } = await supabase.from('declarations_tva').insert({
-        dossier_id: dossierId,
-        periode_debut: periodeDebut,
-        periode_fin: periodeFin,
-        tva_declaree: parseFloat(tvaDeclaree),
-        date_declaration: dateDeclaration || null,
-      })
-      if (insertError) throw insertError
-      setPeriodeDebut('')
-      setPeriodeFin('')
-      setTvaDeclaree('')
-      setDateDeclaration('')
-      load()
-    } catch (err) {
-      setError(messageErreur(err))
-    } finally {
-      setSavingDeclaration(false)
-    }
-  }
-
-  async function supprimerDeclaration(id: string) {
-    if (!window.confirm('Retirer cette déclaration ?')) return
-    await supabase.from('declarations_tva').delete().eq('id', id)
-    load()
-  }
 
   return (
     <>
@@ -654,79 +605,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             <span className="muted" style={{ display: 'block' }}>Solde</span>
             <strong>{formatMoney(tvaCollectee - tvaDeductible)}</strong>
           </div>
+          {/* Ces soldes datent la TVA à la date de chaque PIÈCE, et le brouillon ne porte aucune
+              écriture pour un bien immobilisé : ils ne disent donc pas ce qu'une déclaration doit
+              contenir. C'est l'onglet TVA qui la prépare, en suivant la règle d'exigibilité du
+              dossier — et c'est là que les déclarations déposées s'enregistrent et se comparent. */}
+          <p className="muted" style={{ flexBasis: '100%', margin: 0 }}>
+            Ces totaux datent la TVA à la date de chaque pièce. La déclaration se prépare dans l'onglet TVA,
+            qui suit la date d'exigibilité (l'encaissement, sauf option pour les débits).
+          </p>
         </div>
       )}
-
-      <div className="card" style={{ marginBottom: 20 }}>
-        <h3 style={{ marginTop: 0 }}>Déclarations de TVA</h3>
-        <p className="muted" style={{ marginTop: -8 }}>
-          Une fois la CA3 réellement déposée, transcris ici le montant déclaré pour la période — jamais
-          calculé par l'appli — pour comparer au total du brouillon sur la même période. Un écart peut
-          venir d'une pièce pas encore traitée ici ou d'une erreur sur l'un des deux côtés, à toi de
-          trancher.
-        </p>
-        <form onSubmit={enregistrerDeclaration} className="field-row" style={{ alignItems: 'flex-end' }}>
-          <div className="field">
-            <label htmlFor="periodeDebut">Début de période</label>
-            <input id="periodeDebut" type="date" required value={periodeDebut} onChange={(e) => setPeriodeDebut(e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="periodeFin">Fin de période</label>
-            <input id="periodeFin" type="date" required value={periodeFin} onChange={(e) => setPeriodeFin(e.target.value)} />
-          </div>
-          <div className="field">
-            <label htmlFor="tvaDeclaree">TVA nette déclarée</label>
-            <input id="tvaDeclaree" type="number" step="0.01" required value={tvaDeclaree} onChange={(e) => setTvaDeclaree(e.target.value)} style={{ width: 140 }} />
-          </div>
-          <div className="field">
-            <label htmlFor="dateDeclaration">Date de dépôt (optionnel)</label>
-            <input id="dateDeclaration" type="date" value={dateDeclaration} onChange={(e) => setDateDeclaration(e.target.value)} />
-          </div>
-          <button className="btn btn-primary btn-sm" type="submit" disabled={savingDeclaration}>
-            {savingDeclaration ? 'Enregistrement…' : 'Enregistrer'}
-          </button>
-        </form>
-
-        {declarationsIncompletes && (
-          <p className="error-text" style={{ marginTop: 12 }}>
-            Les déclarations de TVA n'ont pas pu être lues en entier ({declarationsIncompletes}).
-            Une période absente du tableau ci-dessous n'est pas une période sans écart — elle n'a
-            pas été comparée du tout.
-          </p>
-        )}
-
-        {declarationsTva.length > 0 && (
-          <table style={{ marginTop: 16 }}>
-            <thead>
-              <tr><th>Période</th><th>Déclarée</th><th>Brouillon</th><th>Écart</th><th></th></tr>
-            </thead>
-            <tbody>
-              {declarationsTva.map((d) => {
-                const brouillon = tvaNettePourPeriode(ecritures, d.periode_debut, d.periode_fin)
-                const ecart = d.tva_declaree - brouillon
-                // Tolérance plus large qu'ailleurs (1 €, pas 2 centimes) : une CA3 est déposée en euros
-                // arrondis, un écart de quelques centimes ici est donc normal, pas un défaut à signaler.
-                const enEcart = Math.abs(ecart) > 1
-                return (
-                  <tr key={d.id}>
-                    <td>{formatDate(d.periode_debut)} → {formatDate(d.periode_fin)}</td>
-                    <td>{formatMoney(d.tva_declaree)}</td>
-                    <td>{formatMoney(brouillon)}</td>
-                    <td>
-                      {enEcart
-                        ? <span className="badge badge-danger">{formatMoney(ecart)}</span>
-                        : <span className="badge badge-ok">{formatMoney(ecart)}</span>}
-                    </td>
-                    <td>
-                      <button className="btn btn-danger btn-sm" onClick={() => supprimerDeclaration(d.id)}>Retirer</button>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        )}
-      </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <p className="muted" style={{ margin: 0 }}>

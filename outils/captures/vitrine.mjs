@@ -82,6 +82,13 @@ const VUES = [
   { nom: 'pc-volet-sombre', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Total à la charge du praticien' },
   { nom: 'pc-volet-assistant', chemin: '#/dossiers/d1/cloture', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'Volet social 2026' },
   { nom: 'mobile-volet-clair', chemin: '#/dossiers/d1/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Total à la charge du praticien' },
+  // La CA3 préparée case par case, sur le seul dossier assujetti du banc (d7) : le régime, la
+  // déclaration de la dernière période close, puis l'historique des déclarations déposées.
+  { nom: 'pc-tva-clair', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-tva-sombre', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'TVA nette due' },
+  { nom: 'pc-tva-assistant', chemin: '#/dossiers/d7/tva', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'TVA nette due' },
+  { nom: 'pc-tva-historique', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Déclarations déposées' },
+  { nom: 'mobile-tva-clair', chemin: '#/dossiers/d7/tva', l: 390, h: 844, theme: 'light', reduite: false, vers: 'TVA nette due' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

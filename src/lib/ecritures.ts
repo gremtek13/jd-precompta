@@ -106,13 +106,11 @@ export interface AnalyseEcritures {
   piecesDesynchronisees: Piece[]
 }
 
-// TVA nette (collectée - déductible) du brouillon sur une période donnée — comparée à la TVA
-// réellement déclarée (voir DeclarationTva, EcrituresTab) pour un cross-check comptable vs déclaré.
-// Bornes incluses ; comparaison de chaînes ISO (YYYY-MM-DD), valide tant que les dates le sont.
-export function tvaNettePourPeriode(ecritures: EcritureBrouillon[], periodeDebut: string, periodeFin: string): number {
-  const dansPeriode = ecritures.filter((e) => e.date >= periodeDebut && e.date <= periodeFin)
-  return soldeCompte(dansPeriode, COMPTE_TVA_COLLECTEE, 'credit') - soldeCompte(dansPeriode, COMPTE_TVA_DEDUCTIBLE, 'debit')
-}
+// Il y avait ici `tvaNettePourPeriode`, la TVA nette du brouillon sur une période, que les écrans
+// comparaient à la TVA déclarée. Retirée le 28/09/2026 : le brouillon date la TVA à la PIÈCE et ne
+// porte aucune écriture pour un bien immobilisé, donc il ne peut pas dire ce qu'une CA3 déposée sur
+// les encaissements devait contenir. Une déclaration se compare désormais au calcul de SA période,
+// avec la règle d'exigibilité du dossier (lib/declarationTva.ts).
 
 // Ce qu'une pièce validée DOIT produire au brouillon, et sur quel compte. La règle vivait en
 // DOUBLE, écrite à l'identique dans EcrituresTab et ChecklistTab — une règle recopiée deux fois

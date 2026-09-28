@@ -20,6 +20,7 @@ import SupplementsTab from './dossier/SupplementsTab'
 import InformationsTab from './dossier/InformationsTab'
 import ChecklistTab from './dossier/ChecklistTab'
 import VirementsTab from './dossier/VirementsTab'
+import TvaTab from './dossier/TvaTab'
 import AssistantDossier, { BoutonAssistant } from './dossier/AssistantDossier'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
@@ -36,7 +37,7 @@ import { messageErreur } from '../lib/messageErreur'
 // navigation interne n'était mémorisée par le navigateur. Cette liste sert à valider le paramètre
 // d'URL (une valeur absente ou invalide retombe sur "checklist").
 const TABS_VALIDES: DossierTab[] = [
-  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'immobilisations',
+  'checklist', 'documents', 'pieces', 'factures', 'banque', 'ecritures', 'statistiques', 'tva', 'immobilisations',
   'cotisations', 'cloture', 'estimation', 'financement', 'supplements', 'packs', 'informations', 'virements', 'acces',
 ]
 
@@ -298,6 +299,15 @@ export default function DossierDetail() {
           {tab === 'documents' && <DocumentsTab dossierId={id} />}
           {tab === 'ecritures' && <EcrituresTab dossierId={id} dossierNom={dossier?.nom ?? ''} dossierSiret={dossier?.siret ?? null} assujettiTva={dossier?.assujetti_tva ?? false} />}
           {tab === 'statistiques' && <StatistiquesTab dossierId={id} onNavigate={allerA} />}
+          {tab === 'tva' && dossier && (
+            <TvaTab
+              dossierId={id}
+              assujettiTva={dossier.assujetti_tva}
+              periodicite={dossier.tva_periodicite}
+              surDebits={dossier.tva_sur_debits}
+              onRegimeUpdated={(modification) => modifierDossier(id, modification)}
+            />
+          )}
           {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
           {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
           {tab === 'cloture' && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}

@@ -93,25 +93,12 @@ interface PieceRow {
   categorie_id: string | null; type_piece: string; statut: string; confiance: string | null
 }
 interface CategorieRow { id: string; libelle: string; compte_comptable: string | null; poste_2035: string | null }
-interface DeclarationTvaRow { periode_debut: string; periode_fin: string; tva_declaree: number }
 
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
 const COMPTE_TVA_DEDUCTIBLE = "445660"
 const COMPTE_TVA_COLLECTEE = "445710"
 const COMPTE_BANQUE = "512000"
 const EPSILON_EQUILIBRE = 0.02
-
-function soldeCompte(ecritures: EcritureRow[], compte: string, sensNormal: "debit" | "credit"): number {
-  const lignes = ecritures.filter((e) => e.compte === compte)
-  const debit = lignes.filter((e) => e.sens === "debit").reduce((s, e) => s + e.montant, 0)
-  const credit = lignes.filter((e) => e.sens === "credit").reduce((s, e) => s + e.montant, 0)
-  return sensNormal === "debit" ? debit - credit : credit - debit
-}
-
-function tvaNettePourPeriode(ecritures: EcritureRow[], periodeDebut: string, periodeFin: string): number {
-  const dansPeriode = ecritures.filter((e) => e.date >= periodeDebut && e.date <= periodeFin)
-  return soldeCompte(dansPeriode, COMPTE_TVA_COLLECTEE, "credit") - soldeCompte(dansPeriode, COMPTE_TVA_DEDUCTIBLE, "debit")
-}
 
 interface PieceAComptabiliser {
   piece: PieceRow
@@ -480,7 +467,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, déclarations de TVA en écart, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035, pièces validées sans TVA renseignée. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035, pièces validées sans TVA renseignée. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -637,7 +624,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rDeclarationsTva, rImmobilisations] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations] = await Promise.all([
       lireTout<PieceRow>((d, f) =>
         admin.from("pieces").select("id, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
       lireTout<{ confiance: string | null }>((d, f) =>
@@ -646,25 +633,22 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
         admin.from("categories").select("id, libelle, compte_comptable, poste_2035", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
       lireTout<EcritureRow>((d, f) =>
         admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
-      lireTout<DeclarationTvaRow>((d, f) =>
-        admin.from("declarations_tva").select("periode_debut, periode_fin, tva_declaree", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       lireTout<{ piece_id: string | null }>((d, f) =>
         admin.from("immobilisations").select("piece_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
-    // Correctif audit sécurité (indicateurs/IA, Importante) : ces six lectures alimentent des
+    // Correctif audit sécurité (indicateurs/IA, Importante) : ces cinq lectures alimentent des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
     // retombant silencieusement sur un tableau vide masquerait une vraie anomalie derrière un faux
     // "tout va bien" plutôt que de dire que le contrôle n'a pas pu être fait.
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rDeclarationsTva, rImmobilisations]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
     }
     const piecesAValider = rPiecesAValider.lignes
-    const declarationsTva = rDeclarationsTva.lignes
     const piecesTyped = rPieces.lignes
     const categoriesTyped = rCategories.lignes
     const ecrituresTyped = rEcritures.lignes
@@ -677,15 +661,16 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped)
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped)
     const sansTva = piecesSansTva(piecesTyped, dossier.assujetti_tva)
-    const declarationsEnEcart = declarationsTva.filter(
-      (d) => Math.abs(d.tva_declaree - tvaNettePourPeriode(ecrituresTyped, d.periode_debut, d.periode_fin)) > 1,
-    )
 
     return {
       ecritures_desequilibrees: groupesDesequilibres.length,
       ecritures_a_regenerer_pieces_modifiees: piecesDesynchronisees.length,
       ecritures_en_attente_de_rapprochement_bancaire: nbSansContrepartie,
-      declarations_tva_en_ecart: declarationsEnEcart.map((d) => ({ periode: `${d.periode_debut} au ${d.periode_fin}`, tva_declaree: d.tva_declaree })),
+      // Plus de comparaison des déclarations de TVA au brouillon (retirée le 28/09/2026) : le
+      // brouillon date la TVA à la pièce et ne porte rien pour un bien immobilisé, donc il criait à
+      // l'écart sur des déclarations justes. C'est l'onglet TVA qui compare chaque déclaration déposée
+      // au calcul de sa période ; l'assistant le DIT au lieu de répondre « rien à signaler ».
+      declarations_tva: "non vérifiées par l'assistant : l'onglet TVA compare chaque déclaration déposée au calcul de sa période",
       pieces_a_faible_confiance_extraction: piecesConfianceBasse.length,
       categories_sans_compte_comptable: catSansCompte.map((c) => c.libelle),
       categories_sans_poste_2035: catSansPoste.map((c) => c.libelle),

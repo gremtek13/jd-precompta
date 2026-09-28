@@ -16,6 +16,7 @@ export type DossierTab =
   | 'banque'
   | 'ecritures'
   | 'statistiques'
+  | 'tva'
   | 'immobilisations'
   | 'cotisations'
   | 'cloture'
@@ -76,6 +77,7 @@ export const GROUPES_PARCOURS: GroupeParcours[] = [
     enfants: [
       { id: 'ecritures', label: 'Écritures' },
       { id: 'statistiques', label: 'Balance des comptes' },
+      { id: 'tva', label: 'TVA' },
       { id: 'immobilisations', label: 'Immobilisations' },
       { id: 'cotisations', label: 'Cotisations' },
       { id: 'cloture', label: 'Clôture' },

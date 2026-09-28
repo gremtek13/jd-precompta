@@ -5,10 +5,11 @@ import type { Categorie, EcritureBrouillon, Piece } from './types'
 
 // `agent-comptable` EST AUTO-PORTÉE, ET C'ÉTAIT LA DERNIÈRE DUPLICATION SANS GARDE.
 //
-// Elle redéclare six fonctions de `src/lib` (soldeCompte, tvaNettePourPeriode, analyserEcritures,
+// Elle redéclarait six fonctions de `src/lib` (soldeCompte, tvaNettePourPeriode, analyserEcritures,
 // categoriesSansCompte, categoriesSansPoste, piecesSansTva) plus les deux tarifs de `coutsApi`, et
 // aucun des neuf tests-garde du dépôt ne la couvrait : ils gardent `extract-piece`, `receive-email`
-// et `superpdp-emit`.
+// et `superpdp-emit`. Les deux premières sont parties le 28/09/2026 avec la comparaison des
+// déclarations de TVA au brouillon, que l'onglet TVA remplace (lib/declarationTva.ts).
 //
 // ELLE AVAIT DÉRIVÉ, sur celle des six qui pouvait le plus coûter. `analyserEcritures` a gagné
 // TROIS comparaisons dans `src/lib` — le compte, la ventilation de TVA, la date — et la copie

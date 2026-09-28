@@ -210,7 +210,7 @@ src/
                   dossiers, équipe, comptes master, écrans client...).
   pages/dossier/  tous les onglets d'un dossier (Pièces, Factures, Banque,
                   Écritures, Statistiques, Immobilisations, Cotisations,
-                  Clôture, Estimation, Financement, Informations, Virements,
+                  TVA, Clôture, Estimation, Financement, Informations, Virements,
                   Accès, Checklist, Documents) + leurs modales associées.
                   Liste et ordre des onglets : src/lib/ongletsDossier.ts
                   (GROUPES_PARCOURS, type DossierTab), source UNIQUE de la barre
@@ -290,10 +290,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   passe pas à la ligne déborde alors : son dernier élément disparaît sous le volet sans que rien ne
   casse ailleurs. `.field-row` passe à la ligne (seulement quand ses champs n'y tiennent plus), et
   un tableau vit dans un `.table-scroll`. `outils/captures/debordements.mjs` le vérifie sur les
-  dix-sept onglets — 0 débordement à 1 280 et 1 440 px panneau ouvert, et à 1 024 et 1 440 fermé
+  dix-huit onglets — 0 débordement à 1 280 et 1 440 px panneau ouvert, et à 1 024 et 1 440 fermé
   (mesuré le 25/09/2026, après avoir corrigé les cinq qu'il a trouvés : la barre d'actions des
   justificatifs, les rangées de champs d'Écritures, Cotisations et Estimation, et le tableau des
-  candidates à l'immobilisation). Sa mutation mord : une rangée remise sans `wrap` le fait sortir en
+  candidates à l'immobilisation ; remesuré le 28/09/2026 avec l'onglet TVA, mesuré sur le seul
+  dossier assujetti du banc). Sa mutation mord : une rangée remise sans `wrap` le fait sortir en
   erreur.
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
@@ -1182,6 +1183,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   cotisations que l'Urssaf appellera sur ces revenus, pour les auxiliaires médicaux et les
   sages-femmes. Voir « l'estimation des cotisations Urssaf se teste contre le moteur de l'Urssaf »
   dans « Problèmes connus » (`VoletSocialCard`, `lib/voletSocialPamc.ts`).
+- **La déclaration de TVA préparée case par case (28/09/2026)**, ligne 28 de la feuille de route,
+  étape 1 : l'onglet TVA (sous Comptabilité) prépare la CA3 (3310-CA3-SD) d'un dossier assujetti,
+  trimestrielle ou mensuelle, depuis ses justificatifs validés et les paiements qui les rattachent au
+  relevé. Il dit ce qu'il écarte, reprend le crédit de la déclaration précédente, enregistre la
+  déclaration déposée et la compare ensuite au calcul de sa période. Voir « la CA3 se prépare depuis
+  les pièces et leurs paiements » dans « Problèmes connus » (`TvaTab`, `lib/declarationTva.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1195,6 +1202,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   exonérations et l'outre-mer, et la régularisation — l'écart avec les provisionnelles, que seul
   l'avis de l'Urssaf chiffre. Et le choix de la ligne 4 pour proposer DSCS est à confirmer sur la
   première déclaration réelle.
+- Télédéclaration de la TVA (ligne 28) : l'étape 1, la CA3 préparée case par case, est livrée
+  (28/09/2026). L'étape 2 est la transmission par un partenaire EDI : le cabinet a choisi Teledec
+  (une API JSON dont les clés sont les codes EDI des cases, un serveur d'essai, la CA3, la CA12 et la
+  2035), qui demande à voir l'application fonctionner avant d'ouvrir son API. ASPOne.fr reste
+  l'autre voie, à prix publiés. Rien de l'étape 2 n'est écrit.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -4504,6 +4516,71 @@ d'environnement dans la même édition.
   **Trente mutations, toutes mordent, et trois ont d'abord survécu** — le montant affiché des pièces
   écartées de la 2035, celui des candidates à l'immobilisation et leur seuil. Chaque branchement est
   gardé à part : le calcul, l'onglet, et la page, qui passe le statut aux quatre onglets.
+- **LA CA3 SE PRÉPARE DEPUIS LES PIÈCES ET LEURS PAIEMENTS, PAS DEPUIS LE BROUILLON** (28/09/2026,
+  ligne 28 de la feuille de route, étape 1 — `lib/declarationTva.ts`, `TvaTab`). Décisions du cabinet
+  le même jour : la TVA avant la 2035, et la transmission par un partenaire EDI qui a une API
+  (étape 2, Teledec — voir « Fonctionnalités actuellement en cours »).
+  **LE RÉGIME SIMPLIFIÉ DISPARAÎT AU 1ER JANVIER 2027** (loi de finances 2025, art. 38 ; impots.gouv,
+  22-23/09/2026) : la CA3 devient trimestrielle sous 1 000 000 € de chiffre d'affaires, mensuelle sur
+  demande, et la dernière CA12 — exercices clos au 31/12/2026 — se dépose au plus tard le
+  4 mai 2027. Une seule déclaration est donc construite, la CA3 ; la dernière CA12 ne l'est pas, et
+  l'écran le dit. Le régime vit sur le dossier (`tva_periodicite`, trimestrielle par défaut ;
+  `tva_sur_debits`), le crédit reçu sur chaque déclaration (`declarations_tva.credit_anterieur`) —
+  migration `regime_tva_du_dossier`, exportée dans `supabase/schema/`.
+  **LA DATE QUI DÉCIDE DE LA PÉRIODE EST CHOISIE À UN SEUL ENDROIT** (`fractionsDe`) :
+  - une recette, traitée comme une prestation de services, compte à son ENCAISSEMENT (la date du
+    mouvement rapproché), ou à la date de sa facture sur option pour les débits ;
+  - une dépense compte à son PAIEMENT, même sur option (l'option ne vise que les recettes) : c'est la
+    règle pour un service ; pour un bien payé après livraison, la déduction arrive plus tard qu'elle ne
+    pouvait, ce que la loi admet (une déduction omise se rattrape jusqu'au 31 décembre de la deuxième
+    année suivante) ; elle n'arrive jamais trop tôt, sauf pour un bien payé avant d'être livré ;
+  - une note de frais, payée hors du compte professionnel, compte à sa date ;
+  - une pièce payée en plusieurs fois compte pour la part de chaque paiement,
+    |mouvement| / max(|TTC|, somme des mouvements) : un acompte ne rend exigible que ce qu'il paie, et
+    des frais bancaires ne font pas compter la pièce deux fois.
+  Une pièce qu'aucun paiement ne date ne compte dans AUCUNE déclaration, et l'écran la liste (datée
+  jusqu'à la fin de la période) : une recette encaissée en espèces, ou réglée avec d'autres par un seul
+  virement, se reporte à la main.
+  **AUCUNE SOMME NÉGATIVE SUR UNE LIGNE DE TAUX, la notice l'interdit** : un avoir consenti va en B5
+  (base) et 21 (taxe), un avoir reçu d'un fournisseur en 15, une recette sans TVA en E2 et son avoir en
+  F8. **L'ARRONDI EST FISCAL ET PAR LIGNE** : les totaux sont tenus en centimes entiers, puis arrondis
+  une seule fois à l'euro (0,50 € compte pour un) — jamais pièce par pièce, ce qui ferait zéro de
+  trois recettes à 0,40 €.
+  **LE TAUX SE RECONNAÎT OU LA PIÈCE EST ÉCARTÉE, JAMAIS DEVINÉE** : 20, 10, 5,5 et 8,5 % (le seul qui
+  désigne sans doute les DOM), à max(0,02 €, 0,05 % du HT) près. 2,1 % (T6, 11 ou T4) et une facture à
+  plusieurs taux sont écartés avec leur motif et leur part, comme une TVA démontrée fausse
+  (`piecesTvaImpossible`), une devise jamais convertie et une TVA non lue. Une recette sans TVA n'est
+  exonérée que si rien n'indique une taxe qu'on n'a pas su lire (un HT différent du TTC).
+  **UNE DÉCLARATION ENREGISTRÉE PORTE LA TVA NETTE DE LA PÉRIODE** — ligne 16 moins lignes 19 à 21,
+  sans le crédit reçu —, et ce crédit à part : la ligne 27 de la déclaration suivante en découle et lui
+  est proposée en ligne 22. L'historique compare chaque déclaration au calcul de SA période, avec la
+  même règle ; un écart d'un euro ou plus dit qu'une pièce a changé depuis le dépôt.
+  **ET LA COMPARAISON AU BROUILLON EST RETIRÉE DES TROIS ENDROITS QUI LA FAISAIENT** : la carte
+  « Déclarations de TVA » d'Écritures, le point « en écart avec le brouillon » de la Checklist, et
+  l'assistant (version 26 : il dit qu'il ne vérifie pas les déclarations, au lieu de répondre « rien à
+  signaler »). Le brouillon date la TVA à la PIÈCE et ne porte aucune écriture pour un bien immobilisé,
+  dont la TVA va pourtant en ligne 19 : il aurait crié à l'erreur sur des déclarations justes dès la
+  première déposée sur les encaissements. Mesuré, aucune déclaration n'était enregistrée : ce contrôle
+  n'avait jamais parlé. **Il n'est PAS remis dans la Checklist** tant que la régularisation d'une
+  période déposée (lignes 5B et 2C) n'est pas modélisée : l'écart y resterait en erreur une fois
+  régularisé, et une mise en garde permanente cesse d'être lue.
+  **CE QUE LE CALCUL NE FAIT PAS, ET L'ÉCRAN LE DIT** : l'autoliquidation (il signale les achats en
+  devise sans TVA payés dans la période), le coefficient de déduction (il le signale dès qu'une recette
+  va en E2), les exclusions du droit à déduction, les taux particuliers, le remboursement d'un crédit,
+  les taxes assimilées, la régularisation, et les factures émises dans l'application — une recette
+  n'est comptée que si son justificatif est dans Justificatifs, comme pour la 2035.
+  **UNE LECTURE PARTIELLE SUSPEND L'ENREGISTREMENT** (pièces, paiements, immobilisations, et
+  l'historique, dont dépend le crédit proposé), et le verrou tient jusqu'à la relecture : relâché
+  avant, un second clic enregistrerait la même déclaration, la mention « déjà déposée » n'étant pas
+  revenue. Le chargement se fait sans état posé dans l'effet, sur le modèle de `VoletSocialCard` : le
+  lint ne compte pas un avertissement de plus.
+  **Mesures** : 45 tests de module et 30 mutations, toutes mordent ; 16 tests d'écran et 18 mutations,
+  17 mordent — la survivante est la garde répétée dans le gestionnaire, qu'aucun clic n'atteint, le
+  bouton étant grisé ; 2 tests de câblage dans la page et 5 mutations, toutes mordent. Le banc de
+  capture a reçu un septième dossier fictif, ASSUJETTI (le cabinet infirmier ne l'est pas, à juste
+  titre) : 0 débordement aux quatre largeurs sur les dix-huit onglets.
+  **LATENT** : aucun dossier vivant n'est assujetti — `test` est une infirmière exonérée —, et les deux
+  qui le sont (`deltasoins 10`, `2023`) sont des bacs à sable abandonnés.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -5629,7 +5706,7 @@ d'environnement dans la même édition.
   documents, statistiques, écritures, clôture, checklist, justificatifs, packs, informations,
   suppléments, accès, immobilisations, estimation (21/09/2026), financement (22/09/2026),
   cotisations et virements (23/09/2026), factures (25/09/2026) — donc **plus aucun sans test de
-  rendu**. Suppléments, Accès, Immobilisations, Estimation, Financement et Cotisations y sont entrés
+  rendu**. Le dix-huitième, TVA (28/09/2026), est né avec le sien. Suppléments, Accès, Immobilisations, Estimation, Financement et Cotisations y sont entrés
   comme Informations : par un défaut trouvé, jamais par méthode. Factures, le dernier, en a rendu deux :
   « Aucune facture. » affirmé sur une lecture refusée (le « le vide est une affirmation » corrigé la
   veille sur `PacksTab`), et la suppression d'un brouillon qui jetait son erreur, sur un geste que
@@ -5744,7 +5821,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2092 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2154 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -5759,7 +5836,8 @@ la génération des packs et l'export d'un cabinet
 par tous les écrans (`recherche.ts`), le contrat de la proposition de catégorie
 (`categorisationIa.ts`), les cotisations Urssaf d'un praticien conventionné
 (`voletSocialPamc.ts`, contre le moteur de l'Urssaf), et le montant qu'on retient d'une pièce
-selon que le dossier récupère ou non la TVA (`montantRetenu.ts`) — les fichiers `*.test.ts` sont
+selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), et la CA3 préparée case par case
+(`declarationTva.ts`) — les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 **Deux projets Vitest, et la séparation porte une règle** (`vitest.config.ts`) : « logique »
