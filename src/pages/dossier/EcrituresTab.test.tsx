@@ -51,10 +51,14 @@ vi.mock('../../lib/supabase', () => ({
       // ligne oubliée en produit une autre, ailleurs.
       let suppression = false
       let insertion: Record<string, unknown>[] | null = null
+      let miseAJour: Record<string, unknown> | null = null
       const filtres: [string, unknown][] = []
       Object.assign(chaine, {
         select: () => chaine,
         delete: () => { suppression = true; return chaine },
+        // La mise à jour MORD aussi, comme la suppression : c'est la date que la contrepartie banque
+        // réécrit sur les lignes d'une pièce rapprochée (voir lib/contrepartieBanque.ts).
+        update: (valeurs: Record<string, unknown>) => { miseAJour = valeurs; return chaine },
         insert: (lignes: Record<string, unknown> | Record<string, unknown>[]) => {
           insertion = Array.isArray(lignes) ? lignes : [lignes]
           return chaine
@@ -73,6 +77,13 @@ vi.mock('../../lib/supabase', () => ({
             if (faux.retenirApresInsertion) {
               faux.retenue = new Promise<void>((r) => { faux.relacher = r })
             }
+            return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
+          }
+          if (miseAJour) {
+            const vise = (ligne: Record<string, unknown>) => filtres.every(([colonne, valeur]) =>
+              colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
+            faux.parTable[table] = (faux.parTable[table] ?? []).map((l) =>
+              vise(l as Record<string, unknown>) ? { ...(l as Record<string, unknown>), ...miseAJour } : l)
             return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
           }
           if (suppression) {
@@ -389,6 +400,50 @@ describe('EcrituresTab — une lecture partielle ne commande pas la génération
     expect(faux.insertions[0].lignes.every((l) => l.piece_id === 'p2')).toBe(true)
   })
 
+  it("date au PAIEMENT l'écriture d'une pièce déjà rapprochée, contrepartie comprise", async () => {
+    // Une facture de décembre 2024 réglée en janvier 2025 : la 2035 la compte en 2025, et son
+    // écriture doit tomber dans le même exercice — charge ET banque, une seule date, une écriture
+    // équilibrée dans un seul FEC (lib/rattachement.ts).
+    poser({
+      pieces: [piece({ id: 'p1', date_piece: '2024-12-20' })],
+      ecritures_brouillon: [],
+      lignes_bancaires: [{
+        id: 'l1', dossier_id: 'dossier-de-test', date: '2025-01-06', libelle: 'PRLV FOURNISSEUR',
+        montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, prelevement_personnel: false,
+        source_fichier: null, libelle_brut: null, created_at: '2025-01-07T09:00:00Z',
+      }],
+    })
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+
+    const dates = (faux.parTable.ecritures_brouillon as { compte: string; date: string }[]).map((e) => [e.compte, e.date])
+    expect(dates).toEqual([['606100', '2025-01-06'], ['512000', '2025-01-06']])
+  })
+
+  it("répartit l'écriture d'une pièce réglée en partie entre la facture et le paiement", async () => {
+    // 120 € dont 48 € rapprochés : la part payée au paiement, le reste à la date de facture. Le
+    // rapprochement ne redate pas un paiement partiel, c'est donc la génération qui doit le faire.
+    poser({
+      pieces: [piece({ id: 'p1', date_piece: '2024-12-20' })],
+      ecritures_brouillon: [],
+      lignes_bancaires: [{
+        id: 'l1', dossier_id: 'dossier-de-test', date: '2025-01-06', libelle: 'PRLV FOURNISSEUR',
+        montant: -48, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, prelevement_personnel: false,
+        source_fichier: null, libelle_brut: null, created_at: '2025-01-07T09:00:00Z',
+      }],
+    })
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+
+    const charges = (faux.parTable.ecritures_brouillon as { compte: string; date: string; montant: number }[])
+      .filter((e) => e.compte === '606100').map((e) => [e.date, e.montant])
+    expect(charges).toEqual([['2024-12-20', 72], ['2025-01-06', 48]])
+  })
+
   it("trois clics rapprochés ne génèrent qu'une fois", async () => {
     // Trois et non deux : un verrou posé DANS le `try` serait relâché par le `finally` du deuxième
     // clic, refusé, et laisserait passer le troisième.
@@ -541,5 +596,76 @@ describe('EcrituresTab — le statut TVA du dossier décide de la ventilation', 
     monter(false)
     await screen.findByText(/1 écriture proposée/)
     expect(screen.queryByText('Écritures à régénérer')).toBeNull()
+  })
+})
+
+// L'ÉCRITURE D'UNE PIÈCE PAYÉE EST DATÉE À SON PAIEMENT (lib/rattachement.ts). Le calcul est testé à
+// part ; ici c'est le CÂBLAGE — que le contrôle, la régénération et la piste d'audit reçoivent les
+// paiements que l'écran a lus.
+describe('EcrituresTab — la date du paiement', () => {
+  const PAYEE_EN_JANVIER = {
+    id: 'l1', dossier_id: 'dossier-de-test', date: '2025-01-06', libelle: 'PRLV FOURNISSEUR',
+    montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: '2025-01-07T09:00:00Z',
+  }
+  const FACTURE_DE_DECEMBRE = piece({ id: 'p1', date_piece: '2024-12-20' })
+
+  it('ne dit pas « à régénérer » une écriture datée à son paiement', async () => {
+    poser({
+      pieces: [FACTURE_DE_DECEMBRE],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', date: '2025-01-06' }),
+        ecriture({ id: 'e2', date: '2025-01-06', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }),
+      ],
+      lignes_bancaires: [PAYEE_EN_JANVIER],
+    })
+    monter()
+
+    // Ancré sur ce que ce jeu produit forcément une fois chargé : les deux lignes de l'écriture.
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryAllByText(/à régénérer/)).toHaveLength(0)
+  })
+
+  it('régénère au paiement une écriture restée à la date de facture', async () => {
+    poser({
+      pieces: [FACTURE_DE_DECEMBRE],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', date: '2024-12-20' }),
+        ecriture({ id: 'e2', date: '2025-01-06', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }),
+      ],
+      lignes_bancaires: [PAYEE_EN_JANVIER],
+    })
+    render(
+      <AnneeProvider defaut="toutes">
+        <EcrituresTab dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={false} />
+      </AnneeProvider>,
+    )
+
+    const regenerer = await screen.findByRole('button', { name: /Régénérer/ })
+    await act(async () => { regenerer.click() })
+
+    const charges = (faux.parTable.ecritures_brouillon as { compte: string; date: string }[])
+      .filter((e) => e.compte === '606100').map((e) => e.date)
+    expect(charges).toEqual(['2025-01-06'])
+  })
+
+  it("porte la pièce dans la piste d'audit de l'exercice de son paiement", async () => {
+    // Sans quoi l'écriture de janvier désignerait un justificatif « hors du jeu chargé », et la
+    // piste de décembre le compterait comme un justificatif que rien ne comptabilise.
+    poser({
+      pieces: [FACTURE_DE_DECEMBRE],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', date: '2025-01-06' }),
+        ecriture({ id: 'e2', date: '2025-01-06', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }),
+      ],
+      lignes_bancaires: [PAYEE_EN_JANVIER],
+    })
+    monter()
+
+    await screen.findByText(/2 écritures proposées/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
+    const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
+    expect(csv).not.toMatch(/hors du jeu chargé/)
+    expect(csv).toMatch(/facture\.pdf/)
   })
 })

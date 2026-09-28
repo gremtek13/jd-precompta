@@ -93,22 +93,27 @@ export function genererFec(
     groupes.set(e.piece_id, [...(groupes.get(e.piece_id) ?? []), e])
   }
 
-  // Date de la pièce : celle du justificatif lui-même, avec pour repli la plus ancienne de ses
-  // lignes — jamais `rows[0].date`, qui dépend de l'ordre de retour de la requête et pourrait aussi
-  // bien être la date de paiement portée par la contrepartie banque que celle de la facture. Elle
-  // sert aussi de clé de tri : un EcritureNum non croissant dans un même journal fait rejeter le
-  // fichier, il ne doit donc pas dépendre d'un ordre non garanti.
+  // La plus ancienne des lignes d'une écriture — jamais `rows[0].date`, qui dépend de l'ordre de
+  // retour de la requête.
+  const plusAncienne = (rows: EcritureBrouillon[]) =>
+    rows.reduce((date, e) => (e.date < date ? e.date : date), rows[0].date)
+
+  // Date de la pièce (PieceDate) : celle du justificatif lui-même, avec pour repli la plus ancienne de
+  // ses lignes.
   function dateDePiece(pieceId: string, rows: EcritureBrouillon[]): string {
-    const piece = pieceById.get(pieceId)
-    if (piece?.date_piece) return piece.date_piece
-    return rows.reduce((plusAncienne, e) => (e.date < plusAncienne ? e.date : plusAncienne), rows[0].date)
+    return pieceById.get(pieceId)?.date_piece ?? plusAncienne(rows)
   }
 
+  // L'ORDRE DES EcritureNum SUIT LA DATE DE L'ÉCRITURE, PAS CELLE DE LA FACTURE. Un EcritureNum non
+  // croissant dans un même journal fait rejeter le fichier ; or depuis que l'écriture d'une pièce
+  // payée est datée à son PAIEMENT (lib/rattachement.ts), deux factures peuvent se régler dans
+  // l'ordre inverse de leurs dates, et trier sur PieceDate numéroterait un paiement de mars avant un
+  // paiement de février.
   const entrees = [...groupes.entries()]
-    .map(([pieceId, rows]) => ({ pieceId, rows, date: dateDePiece(pieceId, rows) }))
-    // À date égale, on départage sur l'identifiant pour que deux exports successifs du même
-    // brouillon produisent exactement le même fichier.
-    .sort((a, b) => a.date.localeCompare(b.date) || a.pieceId.localeCompare(b.pieceId))
+    .map(([pieceId, rows]) => ({ pieceId, rows, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows) }))
+    // À date égale, on départage sur la facture puis sur l'identifiant, pour que deux exports
+    // successifs du même brouillon produisent exactement le même fichier.
+    .sort((a, b) => a.ordre.localeCompare(b.ordre) || a.date.localeCompare(b.date) || a.pieceId.localeCompare(b.pieceId))
 
   const compteurs: Record<string, number> = {}
   const lignes: string[] = [ENTETES_FEC.join('\t'), ...lignesANouveaux(aNouveaux)]

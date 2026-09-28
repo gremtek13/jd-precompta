@@ -1,7 +1,9 @@
 import { readFileSync } from 'node:fs'
+import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { analyserEcritures, piecesAComptabiliser } from './ecritures'
-import type { Categorie, EcritureBrouillon, Piece } from './types'
+import { analyserEcritures, lignesChargeProduitPourPiece, piecesAComptabiliser } from './ecritures'
+import { rattachementsTresorerie } from './rattachement'
+import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 
 // `agent-comptable` EST AUTO-PORTÉE, ET C'ÉTAIT LA DERNIÈRE DUPLICATION SANS GARDE.
 //
@@ -31,56 +33,37 @@ function sourceDeployee(): string {
 // Prend la SOURCE en paramètre plutôt que de la lire elle-même : c'est ce qui permet de lui donner
 // une source où une dérive a été PLANTÉE, et donc de prouver que ce garde-fou sait encore échouer.
 function extraire(source: string) {
-
-  // Les constantes comptables viennent de la MÊME source : une dérive sur un numéro de compte ou
-  // sur la tolérance d'équilibre doit mordre ici aussi, pas seulement une dérive d'algorithme.
-  const constantes = ['COMPTE_TVA_DEDUCTIBLE', 'COMPTE_TVA_COLLECTEE', 'COMPTE_BANQUE', 'EPSILON_EQUILIBRE']
-    .map((nom) => {
-      const ligne = source.split('\n').find((l) => l.startsWith(`const ${nom} =`))
-      expect(ligne, `constante ${nom} introuvable dans agent-comptable`).toBeTruthy()
-      return ligne!
-    })
-    .join('\n')
-
-  const debut = source.indexOf('interface PieceAComptabiliser {')
-  expect(debut, '`PieceAComptabiliser` introuvable dans agent-comptable — garde-fou à remettre à jour')
+  // DE LA PREMIÈRE COPIE DE src/lib/ecritures.ts À LA FIN D'`analyserEcritures` : les constantes
+  // comptables, `piecesAComptabiliser`, le bloc copié de src/lib/rattachement.ts (qui décide de la
+  // DATE qu'une écriture doit porter) et `analyserEcritures`. Tout vient de la MÊME source : une
+  // dérive sur un numéro de compte, sur le seuil d'alignement ou sur la tolérance d'équilibre doit
+  // mordre ici aussi, pas seulement une dérive d'algorithme.
+  const debut = source.indexOf('// ---- Dupliqué depuis src/lib/ecritures.ts')
+  expect(debut, 'le bloc copié de src/lib/ecritures.ts est introuvable — garde-fou à remettre à jour')
     .toBeGreaterThan(-1)
   const ancreFin = source.indexOf('function analyserEcritures(', debut)
-  expect(ancreFin, '`analyserEcritures` introuvable après `PieceAComptabiliser`').toBeGreaterThan(debut)
+  expect(ancreFin, '`analyserEcritures` introuvable après le bloc copié').toBeGreaterThan(debut)
   const fin = source.indexOf('\n}\n', ancreFin)
   expect(fin, "fin d'`analyserEcritures` introuvable").toBeGreaterThan(ancreFin)
+  const bloc = source.slice(debut, fin + 2)
+  for (const attendu of ['function piecesAComptabiliser(', 'function rattachementsTresorerie(', 'const COMPTE_BANQUE ='] as const) {
+    expect(bloc, `« ${attendu} » absent du bloc gardé`).toContain(attendu)
+  }
 
-  const corps = source.slice(debut, fin + 2)
-    // L'interface ne sert qu'au typage : on la retire plutôt que de la traduire.
-    .replace(/interface PieceAComptabiliser \{[^}]*\}\n\n/, '')
-    .replace(
-      'function piecesAComptabiliser(\n'
-      + '  piecesValidees: PieceRow[],\n'
-      + '  categories: CategorieRow[],\n'
-      + '  pieceIdsImmobilisees: ReadonlySet<string>,\n'
-      + '): PieceAComptabiliser[] {',
-      'function piecesAComptabiliser(piecesValidees, categories, pieceIdsImmobilisees) {',
-    )
-    .replace(
-      'function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean) {',
-      'function analyserEcritures(ecritures, aComptabiliser, assujettiTva) {',
-    )
-    .replace(/: "debit" \| "credit"/g, '')
-    // Le seul argument de type restant dans un CORPS (les autres sont dans les signatures).
-    .replace('new Map<string, EcritureRow[]>()', 'new Map()')
-
-  expect(corps, 'une annotation de type est restée — la traduction du garde-fou est à reprendre')
-    .not.toMatch(/PieceRow|CategorieRow|EcritureRow|PieceAComptabiliser\[\]/)
-
-  return new Function(
-    `${constantes}\n${corps}\nreturn { piecesAComptabiliser, analyserEcritures }`,
-  )() as {
+  // Le bloc est du TypeScript (interfaces, `Pick`, types de retour) : on le transpile avec le
+  // compilateur du projet plutôt que d'en retirer les types à la main — une traduction écrite à la
+  // main mentirait au premier cas tordu.
+  const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie }`)() as {
     piecesAComptabiliser: (p: Piece[], c: Categorie[], i: ReadonlySet<string>) => { piece: Piece; compte: string }[]
-    analyserEcritures: (e: EcritureBrouillon[], a: { piece: Piece; compte: string }[], assujettiTva: boolean) => {
+    analyserEcritures: (
+      e: EcritureBrouillon[], a: { piece: Piece; compte: string }[], assujettiTva: boolean, lignesBancaires: LigneBancaire[],
+    ) => {
       nbSansContrepartie: number
       groupesDesequilibres: { pieceId: string; solde: number }[]
       piecesDesynchronisees: Piece[]
     }
+    rattachementsTresorerie: typeof rattachementsTresorerie
   }
 }
 
@@ -129,14 +112,15 @@ function groupeConforme(id: string, o: { compte?: string; tva?: number; date?: s
  */
 function memeResultat(
   ecritures: EcritureBrouillon[], pieces: Piece[], immos: string[] = [], copie = deployee, assujettiTva = true,
+  paiements: LigneBancaire[] = [],
 ) {
   const ici = piecesAComptabiliser(pieces, categories, new Set(immos))
   const la = copie.piecesAComptabiliser(pieces, categories, new Set(immos))
   const resume = (a: { piece: Piece; compte: string }[]) => a.map((x) => `${x.piece.id}:${x.compte}`)
   expect(resume(la), 'piecesAComptabiliser a dérivé').toEqual(resume(ici))
 
-  const r1 = analyserEcritures(ecritures, ici, assujettiTva)
-  const r2 = copie.analyserEcritures(ecritures, la, assujettiTva)
+  const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiements)
+  const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, paiements)
   const forme = (r: typeof r1) => ({
     nbSansContrepartie: r.nbSansContrepartie,
     groupesDesequilibres: r.groupesDesequilibres.map((g) => `${g.pieceId}:${g.solde.toFixed(2)}`),
@@ -233,6 +217,59 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
       .toEqual(['p1'])
   })
 
+  // LA DATE DU PAIEMENT (src/lib/rattachement.ts) : une écriture est datée à son paiement quand le
+  // rapprochement le connaît. Sans le bloc copié, l'assistant signalerait « à régénérer » toute
+  // écriture justement datée — et se tairait sur celle restée à la date de facture.
+  const paiement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
+    id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
+    piece_id: 'p1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+    created_at: '2025-04-02T09:00:00Z', ...o,
+  })
+
+  it('voit une écriture restée à la date de facture alors que le paiement est connu', () => {
+    const r = memeResultat(groupeConforme('p1'), [piece({ id: 'p1' })], [], deployee, true, [paiement()])
+    expect(r.piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('se tait sur une écriture datée à son paiement', () => {
+    const r = memeResultat(groupeConforme('p1', { date: '2025-04-02' }), [piece({ id: 'p1' })], [], deployee, true, [paiement()])
+    expect(r.piecesDesynchronisees).toEqual([])
+  })
+
+  it('accepte une pièce réglée en partie, répartie sur ses deux dates', () => {
+    const partiel = [paiement({ montant: -48 })]
+    const p = piece({ id: 'p1' })
+    const reparties = lignesChargeProduitPourPiece('d1', p, COMPTE_ACHATS, true, partiel)
+      .map((l, i) => ecriture({ ...l, id: `r${i}` }))
+    expect(memeResultat(reparties, [p], [], deployee, true, partiel).piecesDesynchronisees).toEqual([])
+    // Et la même écriture tout entière au paiement ne l'est pas.
+    const toutAuPaiement = groupeConforme('p1', { date: '2025-04-02' })
+    expect(memeResultat(toutAuPaiement, [p], [], deployee, true, partiel).piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('ne se laisse pas dater par un mouvement qui n’est plus rapproché', () => {
+    const r = memeResultat(groupeConforme('p1'), [piece({ id: 'p1' })], [], deployee, true, [paiement({ statut: 'non_rapprochee' })])
+    expect(r.piecesDesynchronisees).toEqual([])
+  })
+
+  it('rattache une pièce comme src/lib, paiement partiel et note de frais compris', () => {
+    // La copie de `rattachementsTresorerie` elle-même, sur les cas qui la distinguent d'une date de
+    // facture : deux paiements, un reste, un écart sous le seuil d'alignement, une note de frais.
+    const cas: [Piece, LigneBancaire[]][] = [
+      [piece({ id: 'p1' }), []],
+      [piece({ id: 'p1', type_piece: 'note_frais' }), []],
+      [piece({ id: 'p1', date_piece: null }), []],
+      [piece({ id: 'p1' }), [paiement()]],
+      [piece({ id: 'p1' }), [paiement({ montant: -118 })]],
+      [piece({ id: 'p1' }), [paiement({ montant: -48 })]],
+      [piece({ id: 'p1', montant_ttc: 256.16 }), [paiement({ montant: -251.16 })]],
+      [piece({ id: 'p1' }), [paiement({ id: 'a', date: '2025-05-01', montant: -60 }), paiement({ id: 'b', date: '2025-04-01', montant: -60 })]],
+    ]
+    for (const [p, paiements] of cas) {
+      expect(deployee.rattachementsTresorerie(p, paiements)).toEqual(rattachementsTresorerie(p, paiements))
+    }
+  })
+
   it('écarte les mêmes pièces de la liste à comptabiliser', () => {
     // Les quatre portes : montant absent, immobilisée, catégorie sans compte, catégorie inconnue.
     memeResultat([], [
@@ -259,8 +296,17 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
 // lui passe le statut TVA DU DOSSIER. Un `true` écrit en dur ferait signaler « à régénérer » toute
 // écriture juste d'un dossier exonéré — l'outil qui répond « quelles sont les anomalies ? ».
 describe('agent-comptable / points_a_traiter passe le statut TVA du dossier', () => {
-  it('appelle analyserEcritures avec dossier.assujetti_tva', () => {
-    expect(sourceDeployee()).toMatch(/analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva\)/)
+  it('appelle analyserEcritures avec dossier.assujetti_tva et les paiements rapprochés', () => {
+    expect(sourceDeployee()).toMatch(/analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, rPaiements\.lignes\)/)
+  })
+
+  it('lit la date des pièces et les paiements RAPPROCHÉS, sous le même refus de lecture partielle', () => {
+    // Sans `date_piece` dans la lecture, la date attendue d'une pièce non payée serait `undefined`,
+    // et toute écriture passerait pour « à régénérer ».
+    const source = sourceDeployee()
+    expect(source).toMatch(/select\("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece"/)
+    expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("piece_id, date, montant, statut"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)/)
+    expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 })
 
@@ -307,6 +353,42 @@ describe('le garde-fou sait encore échouer', () => {
     expect(source.includes(avant), 'le filtre des immobilisations est introuvable').toBe(true)
     return source.replace(avant, 'if (piece.montant_ttc == null) return []')
   }
+
+  function sansPaiements(): string {
+    const source = sourceDeployee()
+    const avant = '    const attendues = datesAttendues(p, paiements.get(p.id) ?? [])\n'
+    expect(source.includes(avant), 'la date attendue est introuvable — la dérive plantée ne mord plus').toBe(true)
+    return source.replace(avant, '    const attendues = datesAttendues(p, [])\n')
+  }
+
+  it('attrape une copie déployée qui attend la date de facture malgré le paiement', () => {
+    // Le code d'avant ce chantier : il attendait `date_piece` partout.
+    const derivee = extraire(sansPaiements())
+    const paye = [{
+      id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
+      piece_id: 'p1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      created_at: '2025-04-02T09:00:00Z',
+    } satisfies LigneBancaire]
+    expect(() => memeResultat(groupeConforme('p1', { date: '2025-04-02' }), [piece({ id: 'p1' })], [], derivee, true, paye)).toThrow()
+  })
+
+  function seuilSansArrondi(): string {
+    const source = sourceDeployee()
+    const avant = '  const reste = Math.round((montantPiece - paye) * 100) / 100\n'
+    expect(source.includes(avant), "l'arrondi du reste est introuvable").toBe(true)
+    return source.replace(avant, '  const reste = montantPiece - paye\n')
+  }
+
+  it('attrape une copie du rattachement qui ne juge pas l’écart au centime', () => {
+    const derivee = extraire(seuilSansArrondi())
+    const p = piece({ id: 'p1', montant_ttc: 256.16 })
+    const paye: LigneBancaire[] = [{
+      id: 'l1', dossier_id: 'd1', date: '2025-04-02', libelle: 'PRLV', montant: -251.16, statut: 'rapprochee',
+      piece_id: 'p1', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      created_at: '2025-04-02T09:00:00Z',
+    }]
+    expect(derivee.rattachementsTresorerie(p, paye)).not.toEqual(rattachementsTresorerie(p, paye))
+  })
 
   it('attrape une dérive de `piecesAComptabiliser` elle-même', () => {
     // Sans cette seconde dérive plantée, retirer la comparaison des deux listes à comptabiliser

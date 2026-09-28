@@ -312,7 +312,7 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     // donc une écriture de paiement subsiste pour un mouvement qui n'est plus rapproché.
     if (ancienPieceId) {
       try {
-        await retirerContrepartieBanque(ancienPieceId)
+        await retirerContrepartieBanque(ancienPieceId, pieces.find((p) => p.id === ancienPieceId) ?? null)
       } catch (err) {
         window.alert(`Le rapprochement est annulé, mais l'écriture de contrepartie banque n'a pas pu être retirée : ${messageErreur(err, 'raison inconnue')}\n\nElle reste dans le brouillon d'écritures.`)
       }

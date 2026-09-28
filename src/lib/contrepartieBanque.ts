@@ -1,5 +1,7 @@
 import { supabase } from './supabase'
 import { COMPTE_BANQUE } from './comptes'
+import { dateLocaleDe } from './format'
+import { partsDesPaiements } from './rattachement'
 import type { LigneBancaire, Piece } from './types'
 
 // Les deux seules opérations d'écritures qui parlent à Supabase, tenues à l'écart de `ecritures.ts`
@@ -41,6 +43,21 @@ export async function synchroniserContrepartieBanque(dossierId: string, piece: P
   if (!existantes || existantes.length === 0) return
   if (existantes.some((e) => e.compte === COMPTE_BANQUE)) return
 
+  // L'ÉCRITURE PASSE À LA DATE DU PAIEMENT, comme la 2035 compte la pièce (lib/rattachement.ts) :
+  // générée avant le rapprochement, elle portait la date de facture, et une facture de décembre
+  // réglée en janvier aurait gardé sa charge dans l'exercice d'avant. Seulement quand ce paiement
+  // RÈGLE la pièce : un paiement partiel laisse les lignes où elles sont, et le contrôle des écritures
+  // demande alors « Régénérer », qui les répartit entre le paiement et la facture.
+  //
+  // AVANT la contrepartie, et c'est l'ordre qui garde les messages vrais : si la date échoue, rien
+  // n'est écrit ; si la contrepartie échoue ensuite, l'écriture est à la bonne date et l'appelant dit
+  // bien que la contrepartie n'a pas été créée.
+  if (partsDesPaiements(piece, [ligne]).reste === 0) {
+    const { error: dateError } = await supabase.from('ecritures_brouillon')
+      .update({ date: ligne.date }).eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
+    if (dateError) throw dateError
+  }
+
   const { error } = await supabase.from('ecritures_brouillon').insert({
     dossier_id: dossierId,
     piece_id: piece.id,
@@ -57,7 +74,15 @@ export async function synchroniserContrepartieBanque(dossierId: string, piece: P
 
 // Retire la contrepartie banque d'une pièce — appelée quand un rapprochement est annulé, sinon la
 // ligne banque resterait affichée comme si le mouvement était toujours rapproché.
-export async function retirerContrepartieBanque(pieceId: string) {
+//
+// Et l'écriture RETOURNE À LA DATE DE SA FACTURE : plus rien ne la date au paiement, donc elle compte
+// de nouveau là où la 2035 la compte (lib/rattachement.ts). `piece` nul — une pièce que l'écran n'a
+// pas sous la main — laisse la date telle quelle, et le contrôle des écritures la signalera.
+export async function retirerContrepartieBanque(pieceId: string, piece: Pick<Piece, 'date_piece' | 'created_at'> | null) {
   const { error } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('compte', COMPTE_BANQUE)
   if (error) throw error
+  if (!piece) return
+  const { error: dateError } = await supabase.from('ecritures_brouillon')
+    .update({ date: piece.date_piece ?? dateLocaleDe(piece.created_at) }).eq('piece_id', pieceId)
+  if (dateError) throw dateError
 }

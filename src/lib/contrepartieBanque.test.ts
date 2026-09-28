@@ -10,14 +10,19 @@ const reponses = {
   select: { data: [] as { id: string; compte: string }[] | null, error: null as { message: string } | null },
   insert: { error: null as { message: string } | null },
   delete: { error: null as { message: string } | null },
+  update: { error: null as { message: string } | null },
 }
 let insere: Record<string, unknown> | null = null
 let supprime = false
+// Les mises à jour de date, avec leurs filtres : c'est ce qui dit QUELLES lignes changent de date —
+// la contrepartie banque, elle, garde toujours la date de son mouvement.
+let misesAJour: { valeurs: Record<string, unknown>; filtres: string[] }[] = []
 
 vi.mock('./supabase', () => {
-  const resolvable = (op: 'select' | 'insert' | 'delete') => {
+  const resolvable = (op: 'select' | 'insert' | 'delete' | 'update', filtres: string[] = []) => {
     const chaine = {
-      eq: () => chaine,
+      eq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}=${valeur}`); return chaine },
+      neq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}!=${valeur}`); return chaine },
       then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(reponses[op])),
     }
     return chaine
@@ -28,6 +33,11 @@ vi.mock('./supabase', () => {
         select: () => resolvable('select'),
         insert: (payload: Record<string, unknown>) => { insere = payload; return resolvable('insert') },
         delete: () => { supprime = true; return resolvable('delete') },
+        update: (valeurs: Record<string, unknown>) => {
+          const filtres: string[] = []
+          misesAJour.push({ valeurs, filtres })
+          return resolvable('update', filtres)
+        },
       }),
     },
   }
@@ -47,8 +57,10 @@ beforeEach(() => {
   reponses.select = { data: [{ id: 'e1', compte: '606100' }], error: null }
   reponses.insert = { error: null }
   reponses.delete = { error: null }
+  reponses.update = { error: null }
   insere = null
   supprime = false
+  misesAJour = []
 })
 
 describe('synchroniserContrepartieBanque', () => {
@@ -103,9 +115,42 @@ describe('synchroniserContrepartieBanque', () => {
   })
 })
 
+// L'ÉCRITURE SUIT LA DATE DU PAIEMENT, comme la 2035 compte la pièce (lib/rattachement.ts) : générée
+// avant le rapprochement, elle portait la date de facture.
+describe('synchroniserContrepartieBanque — la date du paiement', () => {
+  it("passe l'écriture à la date du paiement qui règle la pièce, sans toucher la contrepartie", async () => {
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-120))
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-03-12' }, filtres: ['piece_id=p1', `compte!=${COMPTE_BANQUE}`] }])
+  })
+
+  it('tient pour réglée une pièce payée à des frais près', async () => {
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), ligne(-119.98))
+    expect(misesAJour).toHaveLength(1)
+  })
+
+  it("laisse la date d'une pièce réglée en partie : « Régénérer » la répartira", async () => {
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 1000 }), ligne(-400))
+    expect(misesAJour).toEqual([])
+    expect(insere).toMatchObject({ compte: COMPTE_BANQUE, montant: 400 })
+  })
+
+  it('ne touche à rien quand la contrepartie existe déjà', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '606100' }, { id: 'e2', compte: COMPTE_BANQUE }], error: null }
+    await synchroniserContrepartieBanque('d1', piece(), ligne(-120))
+    expect(misesAJour).toEqual([])
+  })
+
+  it("lève quand la date ne peut pas être écrite, avant d'écrire la contrepartie", async () => {
+    // L'ordre garde le message de l'appelant vrai : « la contrepartie n'a pas pu être créée ».
+    reponses.update = { error: { message: 'permission denied' } }
+    await expect(synchroniserContrepartieBanque('d1', piece(), ligne(-120))).rejects.toMatchObject({ message: 'permission denied' })
+    expect(insere).toBeNull()
+  })
+})
+
 describe('retirerContrepartieBanque', () => {
   it('supprime la ligne banque de la pièce', async () => {
-    await retirerContrepartieBanque('p1')
+    await retirerContrepartieBanque('p1', piece())
     expect(supprime).toBe(true)
   })
 
@@ -113,6 +158,27 @@ describe('retirerContrepartieBanque', () => {
     // L'appelant doit pouvoir le dire : le rapprochement est annulé mais l'écriture de paiement
     // subsiste, pour un mouvement qui n'est plus rapproché.
     reponses.delete = { error: { message: 'permission denied' } }
-    await expect(retirerContrepartieBanque('p1')).rejects.toMatchObject({ message: 'permission denied' })
+    await expect(retirerContrepartieBanque('p1', piece())).rejects.toMatchObject({ message: 'permission denied' })
+  })
+
+  it("rend l'écriture à la date de sa facture : plus rien ne la date au paiement", async () => {
+    await retirerContrepartieBanque('p1', piece({ date_piece: '2026-03-10' }))
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-03-10' }, filtres: ['piece_id=p1'] }])
+  })
+
+  it('à la date de dépôt pour une pièce sans date, comme la génération', async () => {
+    await retirerContrepartieBanque('p1', piece({ date_piece: null, created_at: '2026-03-01T10:00:00Z' }))
+    expect(misesAJour[0].valeurs).toEqual({ date: '2026-03-01' })
+  })
+
+  it("ne date rien quand l'écran n'a pas la pièce", async () => {
+    await retirerContrepartieBanque('p1', null)
+    expect(supprime).toBe(true)
+    expect(misesAJour).toEqual([])
+  })
+
+  it('lève quand la date ne peut pas être rendue', async () => {
+    reponses.update = { error: { message: 'permission denied' } }
+    await expect(retirerContrepartieBanque('p1', piece())).rejects.toMatchObject({ message: 'permission denied' })
   })
 })

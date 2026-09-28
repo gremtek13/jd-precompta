@@ -121,7 +121,94 @@ function piecesAComptabiliser(
   })
 }
 
-function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean) {
+// ---- Dupliqué depuis src/lib/rattachement.ts et src/lib/alignementBanque.ts ----------------------
+// La date qu'une écriture DOIT porter : celle du paiement quand le rapprochement le connaît, celle de
+// la facture sinon — la règle de la 2035 (CGI, art. 93 : recettes encaissées, dépenses payées). Sans
+// elle, l'assistant signalerait « à régénérer » toute écriture justement datée à son paiement, et se
+// tairait sur celle restée à la date de facture.
+interface PaiementRow { piece_id: string | null; date: string; montant: number; statut: string }
+
+const SEUIL_ALIGNEMENT_RELATIF = 0.02
+const SEUIL_ALIGNEMENT_PLAFOND_EUR = 5
+
+function seuilAlignement(montantPiece: number): number {
+  return Math.min(Math.abs(montantPiece) * SEUIL_ALIGNEMENT_RELATIF, SEUIL_ALIGNEMENT_PLAFOND_EUR)
+}
+
+function paiementsParPiece(lignes: readonly PaiementRow[]): Map<string, PaiementRow[]> {
+  const parPiece = new Map<string, PaiementRow[]>()
+  for (const ligne of lignes) {
+    if (ligne.statut !== "rapprochee" || !ligne.piece_id) continue
+    const liste = parPiece.get(ligne.piece_id) ?? []
+    liste.push(ligne)
+    parPiece.set(ligne.piece_id, liste)
+  }
+  return parPiece
+}
+
+function partsDesPaiements(
+  piece: Pick<PieceRow, "montant_ttc">,
+  paiements: readonly Pick<PaiementRow, "date" | "montant">[],
+): { parts: { date: string; part: number }[]; reste: number } {
+  const paye = paiements.reduce((s, m) => s + Math.abs(m.montant), 0)
+  if (paye === 0) return { parts: [], reste: 1 }
+  const montantPiece = Math.abs(piece.montant_ttc ?? 0)
+  const reste = Math.round((montantPiece - paye) * 100) / 100
+  if (reste <= seuilAlignement(montantPiece)) {
+    return { parts: paiements.map((m) => ({ date: m.date, part: Math.abs(m.montant) / paye })), reste: 0 }
+  }
+  return {
+    parts: paiements.map((m) => ({ date: m.date, part: Math.abs(m.montant) / montantPiece })),
+    reste: reste / montantPiece,
+  }
+}
+
+type SourceRattachement = "paiement" | "note_de_frais" | "sans_paiement"
+interface Rattachement { date: string | null; part: number; source: SourceRattachement }
+const ORDRE_SOURCE: Record<SourceRattachement, number> = { paiement: 0, note_de_frais: 1, sans_paiement: 2 }
+
+function rattachementsTresorerie(
+  piece: Pick<PieceRow, "date_piece" | "montant_ttc" | "type_piece">,
+  paiements: readonly Pick<PaiementRow, "date" | "montant">[],
+): Rattachement[] {
+  const { parts, reste } = partsDesPaiements(piece, paiements)
+  const fractions: Rattachement[] = parts.map((p) => ({ date: p.date, part: p.part, source: "paiement" }))
+  if (reste > 0) {
+    fractions.push({
+      date: piece.date_piece,
+      part: reste,
+      source: piece.type_piece === "note_frais" ? "note_de_frais" : "sans_paiement",
+    })
+  }
+
+  const reunies: Rattachement[] = []
+  for (const f of fractions) {
+    const meme = reunies.find((r) => r.date === f.date && r.source === f.source)
+    if (meme) meme.part += f.part
+    else reunies.push({ ...f })
+  }
+  return reunies.sort((a, b) => {
+    if (a.date !== b.date) {
+      if (a.date === null) return 1
+      if (b.date === null) return -1
+      return a.date.localeCompare(b.date)
+    }
+    return ORDRE_SOURCE[a.source] - ORDRE_SOURCE[b.source]
+  })
+}
+
+// ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
+function datesAttendues(piece: PieceRow, paiements: readonly PaiementRow[]): Set<string> | null {
+  const rattachements = rattachementsTresorerie(piece, paiements)
+  if (rattachements.some((r) => r.date === null)) return null
+  return new Set(rattachements.map((r) => r.date!))
+}
+
+function analyserEcritures(
+  ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean,
+  lignesBancaires: readonly PaiementRow[],
+) {
+  const paiements = paiementsParPiece(lignesBancaires)
   const piecesParGroupe = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
     if (!e.piece_id) continue
@@ -161,8 +248,14 @@ function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceACompt
     // LA DATE, et elle coûte plus cher que le compte : une pièce validée sans date reçoit une
     // écriture datée de son DÉPÔT, et « Retrouver les dates manquantes » écrit ensuite `date_piece`
     // sans toucher à l'écriture. On ne compare que si la pièce porte une date — sans date elle ne
-    // prétend à aucun exercice, donc il n'y a rien à contredire.
-    if (p.date_piece && lignes.some((e) => e.date !== p.date_piece)) return true
+    // prétend à aucun exercice, donc il n'y a rien à contredire. Et la date attendue est celle du
+    // PAIEMENT quand le rapprochement la connaît : les dates présentes doivent être exactement
+    // celles attendues.
+    const attendues = datesAttendues(p, paiements.get(p.id) ?? [])
+    if (attendues) {
+      const presentes = new Set(lignes.map((e) => e.date))
+      if (presentes.size !== attendues.size || [...attendues].some((d) => !presentes.has(d))) return true
+    }
     const total = lignes.reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
     return Math.abs(total - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE
   }).map(({ piece }) => piece)
@@ -624,9 +717,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements] = await Promise.all([
+      // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
       lireTout<PieceRow>((d, f) =>
-        admin.from("pieces").select("id, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
+        admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
       lireTout<{ confiance: string | null }>((d, f) =>
         admin.from("pieces").select("confiance", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "a_valider").order("id").range(d, f)),
       lireTout<CategorieRow>((d, f) =>
@@ -635,15 +729,18 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
         admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       lireTout<{ piece_id: string | null }>((d, f) =>
         admin.from("immobilisations").select("piece_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // Les paiements rapprochés, qui DATENT les écritures (voir le bloc copié de src/lib/rattachement.ts).
+      lireTout<PaiementRow>((d, f) =>
+        admin.from("lignes_bancaires").select("piece_id, date, montant, statut", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("piece_id", "is", null).order("id").range(d, f)),
     ])
-    // Correctif audit sécurité (indicateurs/IA, Importante) : ces cinq lectures alimentent des
+    // Correctif audit sécurité (indicateurs/IA, Importante) : ces six lectures alimentent des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
     // retombant silencieusement sur un tableau vide masquerait une vraie anomalie derrière un faux
     // "tout va bien" plutôt que de dire que le contrôle n'a pas pu être fait.
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -656,7 +753,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       rImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id),
     )
     const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, immobilisationPieceIds)
-    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva)
+    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, rPaiements.lignes)
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped)
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped)

@@ -1,6 +1,7 @@
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 import { dateLocaleDe } from './format'
 import { montantRetenu, tvaVentilee } from './montantRetenu'
+import { paiementsParPiece, rattachementsTresorerie, type Paiement } from './rattachement'
 import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
@@ -44,31 +45,81 @@ export interface LigneAGenerer {
 // déduira jamais serait un actif qui n'existe pas, et une charge amputée d'autant dans le FEC et la
 // balance (voir lib/montantRetenu.ts). Sans valeur par défaut : un appelant qui l'oublie doit le
 // découvrir à la compilation.
-export function lignesChargeProduitPourPiece(dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean): LigneAGenerer[] {
+//
+// L'ÉCRITURE EST DATÉE COMME LA 2035 COMPTE LA PIÈCE : au PAIEMENT quand le rapprochement le connaît,
+// à la date de facture sinon (lib/rattachement.ts). Elle portait la date de facture en toutes
+// circonstances, pendant que sa contrepartie banque portait celle du paiement : une facture de
+// décembre réglée en janvier avait sa charge dans le FEC et la balance d'un exercice et sa 2035 dans
+// l'autre — et une écriture à cheval sur deux FEC, déséquilibrée dans chacun. `paiements` : les
+// mouvements rapprochés de CETTE pièce ; sans valeur par défaut, une liste vide datant tout à la
+// facture.
+//
+// Une pièce réglée en partie reçoit une ligne par date — la part payée au paiement, le reste à la
+// facture —, ses montants répartis au centime près, le dernier morceau prenant l'arrondi pour que la
+// somme reste celle de la pièce. Une part que rien ne date (ni paiement, ni date de pièce) prend la
+// date du DÉPÔT, le repli d'avant.
+export function lignesChargeProduitPourPiece(
+  dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean, paiements: readonly Paiement[],
+): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const libelle = piece.tiers ?? piece.nom_fichier
-  const date = piece.date_piece ?? dateLocaleDe(piece.created_at)
-  const base = { dossier_id: dossierId, piece_id: piece.id, date, libelle, statut: 'proposee' as const }
 
   // Un montant de pièce négatif (avoir, remboursement — ça arrive, une pièce validée existante en a
   // un) inverse le sens réel de l'écriture : une "charge" négative est en réalité un crédit, jamais un
   // débit avec un montant négatif. `montant` reste toujours une grandeur positive, sinon le contrôle
   // débit = crédit (voir analyserEcritures) se fausse silencieusement — un solde qui semble équilibré
   // à zéro montant près pourrait en réalité être doublé dans le mauvais sens.
-  function ligne(compte: string, montant: number): LigneAGenerer {
+  function ligne(date: string, compte: string, montant: number): LigneAGenerer {
     const sens = montant >= 0 ? sensPiece : (sensPiece === 'debit' ? 'credit' : 'debit')
-    return { ...base, compte, sens, montant: Math.abs(montant) }
+    return { dossier_id: dossierId, piece_id: piece.id, date, libelle, statut: 'proposee', compte, sens, montant: Math.abs(montant) }
   }
 
+  const fractions = datesDEcriture(piece, paiements)
   const tva = tvaVentilee(piece, assujettiTva)
-  if (tva) {
-    return [
-      ligne(compteComptable, montantRetenu(piece, assujettiTva)!),
-      ligne(piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, tva),
-    ]
+  const charge = tva ? montantRetenu(piece, assujettiTva)! : piece.montant_ttc!
+  const charges = repartir(charge, fractions.map((f) => f.part))
+  const tvas = tva ? repartir(tva, fractions.map((f) => f.part)) : []
+
+  return fractions.flatMap((f, i) => {
+    const lignes = [ligne(f.date, compteComptable, charges[i])]
+    // Rien à ventiler : la charge est ce qui a été payé, face au mouvement bancaire. Une part de TVA
+    // arrondie à zéro sur un paiement partiel ne fait pas de ligne vide.
+    if (tva && tvas[i] !== 0) {
+      lignes.push(ligne(f.date, piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, tvas[i]))
+    }
+    return lignes
+  })
+}
+
+// Les dates d'écriture d'une pièce et la part de chacune : les rattachements de lib/rattachement.ts,
+// la part sans date reportée à la date de DÉPÔT, et deux parts à la même date réunies en une.
+function datesDEcriture(piece: Piece, paiements: readonly Paiement[]): { date: string; part: number }[] {
+  const reunies: { date: string; part: number }[] = []
+  for (const r of rattachementsTresorerie(piece, paiements)) {
+    const date = r.date ?? dateLocaleDe(piece.created_at)
+    const meme = reunies.find((x) => x.date === date)
+    if (meme) meme.part += r.part
+    else reunies.push({ date, part: r.part })
   }
-  // Rien à ventiler : la charge est ce qui a été payé, face au mouvement bancaire.
-  return [ligne(compteComptable, piece.montant_ttc!)]
+  return reunies
+}
+
+// Répartit un montant en centimes selon des parts : chaque morceau arrondi au centime, le dernier
+// prenant le reste — la somme des morceaux est exactement le montant, signe compris.
+function repartir(montant: number, parts: number[]): number[] {
+  const total = Math.round(montant * 100)
+  const morceaux = parts.map((part) => Math.round(total * part))
+  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
+  return morceaux.map((m) => m / 100)
+}
+
+// Les dates que les lignes d'une pièce DOIVENT porter, ou null quand l'une d'elles serait le repli sur
+// la date de dépôt — un INSTANT lu dans le fuseau de qui génère, donc rien qu'on puisse opposer à une
+// écriture générée ailleurs (voir analyserEcritures).
+function datesAttendues(piece: Piece, paiements: readonly Paiement[]): Set<string> | null {
+  const rattachements = rattachementsTresorerie(piece, paiements)
+  if (rattachements.some((r) => r.date === null)) return null
+  return new Set(rattachements.map((r) => r.date!))
 }
 
 // Solde d'un compte sur un ensemble d'écritures, dans le sens comptable normal de ce compte (débiteur
@@ -213,7 +264,14 @@ export function ecrituresSansObjet(
 // ces règles vivent. `aComptabiliser` : ce que chaque pièce validée doit produire, et sur quel
 // compte (voir piecesAComptabiliser). Le quatrième, `ecrituresSansObjet`, est à part parce qu'il
 // part de l'écriture et non de la pièce.
-export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean): AnalyseEcritures {
+export function analyserEcritures(
+  ecritures: EcritureBrouillon[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean,
+  // Les mouvements rapprochés, qui décident de la DATE qu'une écriture doit porter (voir plus bas).
+  // Sans valeur par défaut : une liste vide ferait attendre la date de facture partout, et signaler
+  // « à régénérer » toute écriture justement datée à son paiement.
+  lignesBancaires: readonly Paiement[],
+): AnalyseEcritures {
+  const paiements = paiementsParPiece(lignesBancaires)
   const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     if (!e.piece_id) continue
@@ -280,7 +338,17 @@ export function analyserEcritures(ecritures: EcritureBrouillon[], aComptabiliser
     // On ne compare QUE si la pièce porte une date : sans date elle ne prétend à aucun exercice, donc
     // il n'y a rien à contredire — et comparer au repli ferait crier au loup dès qu'une écriture a
     // été générée dans un autre fuseau que celui qui la relit, `dateLocaleDe` lisant un INSTANT.
-    if (p.date_piece && lignes.some((e) => e.date !== p.date_piece)) return true
+    //
+    // ET LA DATE ATTENDUE EST CELLE DU PAIEMENT QUAND LE RAPPROCHEMENT LA CONNAÎT (lib/rattachement.ts,
+    // la règle de la 2035) : une écriture générée avant son rapprochement, restée à la date de
+    // facture, compterait dans l'exercice de la facture pendant que la 2035 la compte dans celui du
+    // paiement. Les dates présentes doivent être EXACTEMENT celles attendues — une par part de la
+    // pièce, et aucune autre.
+    const attendues = datesAttendues(p, paiements.get(p.id) ?? [])
+    if (attendues) {
+      const presentes = new Set(lignes.map((e) => e.date))
+      if (presentes.size !== attendues.size || [...attendues].some((d) => !presentes.has(d))) return true
+    }
     const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
     return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
   }).map(({ piece }) => piece)
