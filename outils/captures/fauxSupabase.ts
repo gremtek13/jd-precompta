@@ -26,10 +26,15 @@ const dossiers: Ligne[] = [
   // C'est lui que montre l'onglet TVA (voir TVA_D7 plus bas) ; le cabinet infirmier, exonéré comme
   // toute infirmière, n'a pas de déclaration à déposer.
   ['d7', 'Atelier Bernard Conseil', '98765432100015', '70.22Z', 'Conseil pour les affaires et autres conseils de gestion'],
+  // Le seul dossier tenu en ENGAGEMENT (BIC, IS) du banc : une société de design, assujettie, dont les
+  // factures passent en 401/411 et que ses règlements soldent (voir ENGAGEMENT_D8 plus bas).
+  ['d8', 'SAS Lumen Studio', '11122233300014', '74.10Z', 'Activités spécialisées de design'],
 ].map(([id, nom, siret, code_naf, libelle_naf]) => ({
   id, nom, siret, code_naf, libelle_naf, cabinet_id: 'cab1', contact_nom: null, contact_email: null,
-  notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: id, assujetti_tva: id === 'd7', adresse: null,
+  notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: id,
+  assujetti_tva: id === 'd7' || id === 'd8', adresse: null,
   tva_periodicite: 'trimestrielle', tva_sur_debits: false,
+  mode_comptable: id === 'd8' ? 'engagement' : 'tresorerie', compte_notes_de_frais: '455000',
 }))
 
 const categories: Ligne[] = [
@@ -41,6 +46,8 @@ const categories: Ligne[] = [
   ['c6', 'Loyer', '613200', 'loyer'],
   ['c7', 'Fournitures de bureau', '606400', 'fournitures'],
   ['c8', 'Logiciels et abonnements', '651000', 'frais_divers'],
+  // La seule catégorie de RECETTE du banc, pour les ventes du dossier en engagement.
+  ['c9', 'Prestations de services', '706000', 'recettes'],
 ].map(([id, libelle, compte_comptable, poste_2035], i) => ({
   id, libelle, compte_comptable, poste_2035, code: String(id), dossier_id: null, ordre: i,
 }))
@@ -111,6 +118,49 @@ const TVA_D7 = {
   ],
 }
 
+// Le dossier en ENGAGEMENT (d8) : une vente et un achat réglés, un achat qui attend son règlement, et
+// le brouillon que l'application en tire (lib/engagement.ts) — la facture en 401/411 à sa date, le
+// règlement au mouvement, chacune équilibrée seule. C'est lui qui fait paraître le réglage du modèle
+// (verrouillé, le brouillon n'étant pas vide), la Clôture sans 2035 et « facture(s) sans règlement
+// rapproché ».
+function pieceEngagement(id: string, date: string, tiers: string, ht: number, tva: number, type: 'achat' | 'vente', categorie: string): Ligne {
+  return { ...pieceTva(id, date, tiers, ht, tva, type), dossier_id: 'd8', storage_path: `d8/${id}.pdf`, categorie_id: categorie }
+}
+
+function ecriture(id: string, pieceId: string, date: string, compte: string, libelle: string, sens: 'debit' | 'credit', montant: number, mouvement: string | null = null): Ligne {
+  return {
+    id, dossier_id: 'd8', piece_id: pieceId, ligne_bancaire_id: mouvement, date, compte, libelle, sens, montant,
+    statut: 'proposee', created_at: MAINTENANT,
+  }
+}
+
+const ENGAGEMENT_D8 = {
+  pieces: [
+    pieceEngagement('e1', '2026-07-10', 'Maison Arlan', 3000, 600, 'vente', 'c9'),
+    pieceEngagement('e2', '2026-08-05', 'Imprimerie Duval', 450, 90, 'achat', 'c7'),
+    pieceEngagement('e3', '2026-09-01', 'Cloud Hébergement', 100, 20, 'achat', 'c8'),
+  ],
+  lignes: [
+    { ...paiementTva('b1', '2026-07-25', 'VIR MAISON ARLAN', 3600, 'e1'), dossier_id: 'd8' },
+    { ...paiementTva('b2', '2026-08-20', 'PRLV IMPRIMERIE DUVAL', -540, 'e2'), dossier_id: 'd8' },
+  ],
+  ecritures: [
+    ecriture('w1', 'e1', '2026-07-10', '706000', 'Maison Arlan', 'credit', 3000),
+    ecriture('w2', 'e1', '2026-07-10', '445710', 'Maison Arlan', 'credit', 600),
+    ecriture('w3', 'e1', '2026-07-10', '411000', 'Maison Arlan', 'debit', 3600),
+    ecriture('w4', 'e1', '2026-07-25', '411000', 'Maison Arlan', 'credit', 3600, 'b1'),
+    ecriture('w5', 'e1', '2026-07-25', '512000', 'Maison Arlan', 'debit', 3600, 'b1'),
+    ecriture('w6', 'e2', '2026-08-05', '606400', 'Imprimerie Duval', 'debit', 450),
+    ecriture('w7', 'e2', '2026-08-05', '445660', 'Imprimerie Duval', 'debit', 90),
+    ecriture('w8', 'e2', '2026-08-05', '401000', 'Imprimerie Duval', 'credit', 540),
+    ecriture('w9', 'e2', '2026-08-20', '401000', 'Imprimerie Duval', 'debit', 540, 'b2'),
+    ecriture('w10', 'e2', '2026-08-20', '512000', 'Imprimerie Duval', 'credit', 540, 'b2'),
+    ecriture('w11', 'e3', '2026-09-01', '651000', 'Cloud Hébergement', 'debit', 100),
+    ecriture('w12', 'e3', '2026-09-01', '445660', 'Cloud Hébergement', 'debit', 20),
+    ecriture('w13', 'e3', '2026-09-01', '401000', 'Cloud Hébergement', 'credit', 120),
+  ],
+}
+
 // Une conversation d'assistant, pour photographier le panneau de droite ouvert — mêmes données
 // fictives que le reste (Télécom Plus, LogiSoins) : le texte des réponses est écrit ici, jamais tiré
 // d'un vrai échange.
@@ -150,7 +200,8 @@ const TABLES: Record<string, Ligne[]> = {
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
   dossiers,
   categories,
-  pieces: [...pieces, ...TVA_D7.pieces],
+  pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces],
+  ecritures_brouillon: ENGAGEMENT_D8.ecritures,
   // L'ordinateur du dossier d7 est immobilisé : sa TVA va en ligne 19 de la CA3, pas en 20.
   immobilisations: [{
     id: 'i-d7', dossier_id: 'd7', piece_id: 'a2', nature_id: null, libelle: 'Ordinateur portable', valeur: 1500,
@@ -184,6 +235,7 @@ const TABLES: Record<string, Ligne[]> = {
     // d'un mouvement, une proposition ne portant que sur ce que le cabinet a relu.
     ligne('l7', '2026-08-24', 'CB PAPETERIE MODERNE', -27.35, 'non_rapprochee', null),
     ...TVA_D7.lignes,
+    ...ENGAGEMENT_D8.lignes,
   ],
 }
 
