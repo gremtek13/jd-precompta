@@ -163,10 +163,20 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     return comptesEdit[c.id] ?? SUGGESTIONS_COMPTE_PAR_CODE[c.code]?.compte ?? ''
   }
 
+  // UN NUMÉRO DE COMPTE COMMENCE PAR TROIS CHIFFRES. Ce champ est le seul endroit de l'application où
+  // un compte se tape à la main, et il part tel quel dans chaque écriture puis dans le FEC. L'outil de
+  // contrôle de la DGFiP (Test Compta Demat) y refuse un CompteNum dont les trois premiers caractères
+  // ne sont pas des chiffres ; la suite peut porter des lettres (« 401AE » dans la notice de l'arrêté).
+  // Les espaces sont retirées : « 606 100 » se tape, mais aucun compte n'en contient.
   async function saveCompte(categorieId: string) {
+    setError(null)
     const categorie = categories.find((c) => c.id === categorieId)
-    const valeur = (comptesEdit[categorieId] ?? (categorie ? SUGGESTIONS_COMPTE_PAR_CODE[categorie.code]?.compte : undefined) ?? '').trim()
+    const valeur = (comptesEdit[categorieId] ?? (categorie ? SUGGESTIONS_COMPTE_PAR_CODE[categorie.code]?.compte : undefined) ?? '').replace(/\s+/g, '')
     if (!valeur) return
+    if (!/^\d{3}/.test(valeur)) {
+      setError(`« ${valeur} » n'est pas un numéro de compte : il commence par trois chiffres, comme 606100. Le fichier des écritures (FEC) n'en accepte pas d'autre.`)
+      return
+    }
     const { error: saveError } = await supabase.from('categories').update({ compte_comptable: valeur }).eq('id', categorieId)
     if (saveError) {
       setError(saveError.message)
