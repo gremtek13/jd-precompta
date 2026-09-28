@@ -5,6 +5,7 @@ import {
   partDansLaPeriode,
   partDeLAnnee,
   partsDesPaiements,
+  rattachements,
   rattachementsTresorerie,
 } from './rattachement'
 import type { LigneBancaire, Piece } from './types'
@@ -195,5 +196,24 @@ describe('partDansLaPeriode et anneesDesRattachements', () => {
 
   it('rend les exercices touchés, sans la part sans date', () => {
     expect(anneesDesRattachements(r).sort()).toEqual([2025, 2026])
+  })
+})
+
+describe('rattachements — selon le modèle comptable du dossier', () => {
+  it('rend en trésorerie exactement la règle de la 2035', () => {
+    const p = piece()
+    const payee = [mouvement({ montant: -400 })]
+    expect(rattachements(p, payee, 'tresorerie')).toEqual(rattachementsTresorerie(p, payee))
+  })
+
+  it('compte en engagement la pièce entière à sa date de facture, quel que soit son paiement', () => {
+    // La facture de décembre réglée en janvier reste en décembre : c'est elle qui crée la charge.
+    expect(rattachements(piece(), [mouvement()], 'engagement')).toEqual([{ date: '2025-12-20', part: 1, source: 'facture' }])
+    expect(rattachements(piece(), [], 'engagement')).toEqual([{ date: '2025-12-20', part: 1, source: 'facture' }])
+  })
+
+  it('ne date en engagement ni une note de frais ni une pièce sans date par autre chose que leur facture', () => {
+    expect(rattachements(piece({ type_piece: 'note_frais' }), [mouvement()], 'engagement')[0]).toMatchObject({ date: '2025-12-20', source: 'facture' })
+    expect(rattachements(piece({ date_piece: null }), [mouvement()], 'engagement')).toEqual([{ date: null, part: 1, source: 'facture' }])
   })
 })

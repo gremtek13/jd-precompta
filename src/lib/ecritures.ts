@@ -1,8 +1,9 @@
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, LIBELLES_COMPTES } from './comptes'
+import { COMPTES_DE_TIERS, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
 import { montantRetenu, tvaVentilee } from './montantRetenu'
-import { paiementsParPiece, rattachementsTresorerie, type Paiement } from './rattachement'
-import type { ANouveau, Categorie, EcritureBrouillon, Piece } from './types'
+import { paiementsParPiece, rattachementsTresorerie, type Paiement, type PaiementIdentifie } from './rattachement'
+import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
 // valider ou ajuster par le cabinet (voir "Comptes manquants" dans Écritures, "Postes manquants"
@@ -32,6 +33,10 @@ export interface LigneAGenerer {
   statut: 'proposee'
   compte: string
   montant: number
+  // Le mouvement bancaire d'une écriture de RÈGLEMENT, en engagement (voir lib/engagement.ts) ; absent
+  // des lignes d'une facture. C'est lui qui range l'écriture au journal de banque dans le FEC, et qui
+  // la retire quand le rapprochement est annulé.
+  ligne_bancaire_id?: string
 }
 
 // Ligne(s) charge/produit (+ TVA séparée le cas échéant) pour une pièce donnée — extrait de
@@ -89,6 +94,21 @@ export function lignesChargeProduitPourPiece(
     }
     return lignes
   })
+}
+
+// Ce qu'une pièce produit au brouillon selon le MODÈLE COMPTABLE du dossier — le seul point d'entrée de
+// la génération et de la régénération (EcrituresTab). En trésorerie, la charge ou le produit datés
+// comme la 2035 compte la pièce, la contrepartie banque s'y ajoutant au rapprochement
+// (contrepartieBanque.ts) ; en engagement, l'écriture de la facture à sa date et un règlement par
+// mouvement rapproché (lib/engagement.ts). `mouvements` : les mouvements rapprochés de CETTE pièce.
+export function lignesPourPiece(
+  dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean,
+  mouvements: readonly PaiementIdentifie[], modele: ModeleComptable,
+): LigneAGenerer[] {
+  if (modele.mode === 'engagement') {
+    return lignesEngagementPourPiece(dossierId, piece, compteComptable, assujettiTva, modele.compteNotesDeFrais, mouvements)
+  }
+  return lignesChargeProduitPourPiece(dossierId, piece, compteComptable, assujettiTva, mouvements)
 }
 
 // Les dates d'écriture d'une pièce et la part de chacune : les rattachements de lib/rattachement.ts,
@@ -234,9 +254,15 @@ export function ecrituresSansObjet(
 ): EcritureSansObjet[] {
   const parPiece = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
-    // `piece_id` nul est le domaine de rupturesPisteAudit, pas d'ici. Et la contrepartie banque
-    // reflète un mouvement RÉEL : elle ne disparaît pas parce que la pièce a changé de nature.
-    if (!e.piece_id || e.compte === COMPTE_BANQUE) continue
+    // `piece_id` nul est le domaine de rupturesPisteAudit, pas d'ici. Et un mouvement bancaire est
+    // RÉEL : ni la contrepartie banque (trésorerie) ni l'écriture de règlement (engagement, les deux
+    // lignes qui désignent leur mouvement) ne disparaissent parce que la pièce a changé de nature.
+    if (!e.piece_id || e.compte === COMPTE_BANQUE || e.ligne_bancaire_id) continue
+    // En engagement, la ligne de tiers de la facture (401, 411, compte de la note de frais) SOLDE la
+    // charge dans son écriture : elle ne compte rien en trop, et la garder ferait rendre zéro à
+    // `montant` — une facture immobilisée annoncée « 0,00 € compté au brouillon ». Aucune écriture d'un
+    // dossier en trésorerie ne mouvemente ces comptes.
+    if (COMPTES_DE_TIERS.has(e.compte)) continue
     parPiece.set(e.piece_id, [...(parPiece.get(e.piece_id) ?? []), e])
   }
   const sansObjet: EcritureSansObjet[] = []
@@ -266,10 +292,15 @@ export function ecrituresSansObjet(
 // part de l'écriture et non de la pièce.
 export function analyserEcritures(
   ecritures: EcritureBrouillon[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean,
-  // Les mouvements rapprochés, qui décident de la DATE qu'une écriture doit porter (voir plus bas).
-  // Sans valeur par défaut : une liste vide ferait attendre la date de facture partout, et signaler
-  // « à régénérer » toute écriture justement datée à son paiement.
-  lignesBancaires: readonly Paiement[],
+  // Les mouvements rapprochés, qui décident de la DATE qu'une écriture doit porter en trésorerie, et
+  // des RÈGLEMENTS qu'une pièce doit porter en engagement. Sans valeur par défaut : une liste vide
+  // ferait attendre la date de facture partout, et signaler « à régénérer » toute écriture justement
+  // datée à son paiement.
+  lignesBancaires: readonly PaiementIdentifie[],
+  // Le modèle comptable du dossier (lib/engagement.ts), qui décide de ce qu'une écriture DOIT
+  // contenir. Sans valeur par défaut non plus : lu en trésorerie, le brouillon d'un dossier en
+  // engagement ferait signaler « à régénérer » chacune de ses écritures justes.
+  modele: ModeleComptable,
 ): AnalyseEcritures {
   const paiements = paiementsParPiece(lignesBancaires)
   const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
@@ -277,92 +308,163 @@ export function analyserEcritures(
     if (!e.piece_id) continue
     piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
   }
+  // Une pièce dont aucune ligne ne touche la banque : en trésorerie, la charge sans sa contrepartie ;
+  // en engagement, la facture sans règlement. Dans les deux cas, un paiement que le rapprochement ne
+  // connaît pas encore.
   const nbSansContrepartie = [...piecesParGroupe.values()].filter((rows) => !rows.some((r) => r.compte === COMPTE_BANQUE)).length
 
-  const groupesDesequilibres = [...piecesParGroupe.entries()]
-    .filter(([, rows]) => rows.some((r) => r.compte === COMPTE_BANQUE))
-    .map(([pieceId, rows]) => ({
-      pieceId,
-      solde: rows.reduce((sum, r) => sum + (r.sens === 'debit' ? r.montant : -r.montant), 0),
-    }))
-    .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
+  const groupesDesequilibres = modele.mode === 'engagement'
+    ? desequilibresEngagement(piecesParGroupe)
+    : [...piecesParGroupe.entries()]
+      .filter(([, rows]) => rows.some((r) => r.compte === COMPTE_BANQUE))
+      .map(([pieceId, rows]) => ({
+        pieceId,
+        solde: rows.reduce((sum, r) => sum + (r.sens === 'debit' ? r.montant : -r.montant), 0),
+      }))
+      .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
 
-  const piecesDesynchronisees = aComptabiliser.filter(({ piece: p, compte }) => {
-    const lignes = ecritures.filter((e) => e.piece_id === p.id && e.compte !== COMPTE_BANQUE)
-    if (lignes.length === 0) return false // pas encore générée — pas une désynchronisation
-    // Signé par rapport au sens naturel de la pièce (achat = débit, vente = crédit) : une simple somme
-    // des montants (toujours positifs) donnerait un faux "désynchronisée" sur une pièce à montant
-    // négatif (avoir, remboursement), dont les lignes sont correctement enregistrées au sens inverse
-    // par lignesChargeProduitPourPiece — pas en écart, juste du signe attendu pour ce cas-là.
-    const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
-    // LE COMPTE AUTANT QUE LE MONTANT. Recatégoriser une pièce déjà validée est un geste courant,
-    // et rien ne réécrit l'écriture : elle reste sur l'ANCIEN compte. Or le total, lui, ne bouge pas
-    // d'un centime — un contrôle qui ne regarde que le montant déclare donc « synchronisée » une
-    // écriture qui partira en FEC sur un compte que la pièce ne désigne plus, pendant que Clôture et
-    // la 2035 lisent le poste 2035 de la catégorie ACTUELLE. Deux livrables, deux réponses, aucun
-    // signal — c'est mot pour mot l'incohérence que rupturesPisteAudit a déjà coûté une fois.
-    const surUnAutreCompte = lignes.some(
-      (e) => e.compte !== compte && e.compte !== COMPTE_TVA_DEDUCTIBLE && e.compte !== COMPTE_TVA_COLLECTEE,
-    )
-    if (surUnAutreCompte) return true
-    // ET LA VENTILATION DE LA TVA, QUE LE TOTAL NE PEUT PAS VOIR — le panneau annonçait pourtant
-    // « montant, TVA » depuis toujours. Corriger `montant_tva` en gardant le TTC laisse le total du
-    // groupe RIGOUREUSEMENT INCHANGÉ (les deux lignes se compensent) et les comptes identiques : ni
-    // la comparaison de montant ni celle de compte ne peut en dire un mot. Même silence quand la TVA
-    // est ajoutée ou effacée après coup, le nombre de lignes changeant sans que leur somme bouge.
-    // Ce que ça coûte : la charge et la TVA déductible partent FAUSSES en FEC et en balance, à somme
-    // juste — pendant que la 2035, calculée sur les pièces, dit autre chose. Encore deux livrables
-    // pour un seul euro.
-    // On compare la TVA ENREGISTRÉE à celle que la pièce annonce (0 quand elle n'en porte pas, ce
-    // qui couvre d'un coup l'ajout et l'effacement) ; signée comme le total, sinon un avoir passerait
-    // pour un écart. Démontré sur une pièce réelle du schéma : 57,00 € portés en charge entière alors
-    // que la pièce annonce 50,91 + 6,09 de TVA, total juste, compte juste, contrôle muet.
-    // La TVA ATTENDUE est celle que la génération ventile, donc zéro pour un dossier exonéré : sans
-    // quoi une écriture juste, au TTC sur une seule ligne, serait signalée « à régénérer » à jamais,
-    // et une écriture qui ventile encore sa TVA en 445660 ne le serait pas.
-    const tvaEnregistree = lignes
-      .filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE)
-      .reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-    if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
-    // LA DATE AUTANT QUE LE COMPTE, ET ELLE COÛTE PLUS CHER QUE LUI. Une pièce validée sans date
-    // reçoit une écriture datée de son DÉPÔT (le repli de lignesChargeProduitPourPiece) ; « Retrouver
-    // les dates manquantes » écrit ensuite `date_piece` sans toucher à l'écriture — par conception,
-    // c'est ce qui la rend sûre à lancer sur un dossier déjà relu à la main. Rien ne réconcilie les
-    // deux, et corriger à la main la date d'une pièce déjà générée fait exactement pareil.
-    // Le compte, lui, gardait au moins la bonne année. Ici non : sur les pièces réelles du projet, le
-    // dépôt suit la date de la pièce de 549 jours en MÉDIANE (1 336 au maximum) et 68 pièces tombent
-    // dans une autre année civile. L'écriture part donc dans le mauvais EXERCICE — le filtre
-    // d'exercice et le FEC lisent `e.date`, pendant que Clôture et la 2035 lisent `date_piece`. Le
-    // FEC embarque même la contradiction sur UNE SEULE LIGNE, sa colonne PieceDate venant de la
-    // pièce et EcritureDate de l'écriture.
-    // On ne compare QUE si la pièce porte une date : sans date elle ne prétend à aucun exercice, donc
-    // il n'y a rien à contredire — et comparer au repli ferait crier au loup dès qu'une écriture a
-    // été générée dans un autre fuseau que celui qui la relit, `dateLocaleDe` lisant un INSTANT.
-    //
-    // ET LA DATE ATTENDUE EST CELLE DU PAIEMENT QUAND LE RAPPROCHEMENT LA CONNAÎT (lib/rattachement.ts,
-    // la règle de la 2035) : une écriture générée avant son rapprochement, restée à la date de
-    // facture, compterait dans l'exercice de la facture pendant que la 2035 la compte dans celui du
-    // paiement. Les dates présentes doivent être EXACTEMENT celles attendues — une par part de la
-    // pièce, et aucune autre.
-    const attendues = datesAttendues(p, paiements.get(p.id) ?? [])
-    if (attendues) {
-      const presentes = new Set(lignes.map((e) => e.date))
-      if (presentes.size !== attendues.size || [...attendues].some((d) => !presentes.has(d))) return true
-    }
-    const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-    return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
+  const piecesDesynchronisees = aComptabiliser.filter(({ piece, compte }) => {
+    const groupe = piecesParGroupe.get(piece.id) ?? []
+    const paiementsPiece = paiements.get(piece.id) ?? []
+    return modele.mode === 'engagement'
+      ? engagementDesynchronise(piece, compte, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
+      : tresorerieDesynchronisee(piece, compte, groupe, assujettiTva, paiementsPiece)
   }).map(({ piece }) => piece)
 
   return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
 }
 
-// Libellé des trois comptes PCG fixes (voir constantes ci-dessus) — jamais rattachés à une catégorie
-// (contrairement à un compte de charge/produit), donc absents de `categories` : sans ce repère, la
-// balance (voir calculerBalance) les afficherait avec un libellé vide.
-const LIBELLES_COMPTES_FIXES: Record<string, string> = {
-  [COMPTE_BANQUE]: 'Banque',
-  [COMPTE_TVA_DEDUCTIBLE]: 'TVA déductible',
-  [COMPTE_TVA_COLLECTEE]: 'TVA collectée',
+// En TRÉSORERIE, ce qui rend l'écriture d'une pièce périmée : son compte, sa TVA, ses dates ou son
+// total ne sont plus ceux que la pièce produirait aujourd'hui.
+function tresorerieDesynchronisee(
+  p: Piece, compte: string, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
+  paiementsPiece: readonly Paiement[],
+): boolean {
+  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE)
+  if (lignes.length === 0) return false // pas encore générée — pas une désynchronisation
+  // Signé par rapport au sens naturel de la pièce (achat = débit, vente = crédit) : une simple somme
+  // des montants (toujours positifs) donnerait un faux "désynchronisée" sur une pièce à montant
+  // négatif (avoir, remboursement), dont les lignes sont correctement enregistrées au sens inverse
+  // par lignesChargeProduitPourPiece — pas en écart, juste du signe attendu pour ce cas-là.
+  const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
+  // LE COMPTE AUTANT QUE LE MONTANT. Recatégoriser une pièce déjà validée est un geste courant,
+  // et rien ne réécrit l'écriture : elle reste sur l'ANCIEN compte. Or le total, lui, ne bouge pas
+  // d'un centime — un contrôle qui ne regarde que le montant déclare donc « synchronisée » une
+  // écriture qui partira en FEC sur un compte que la pièce ne désigne plus, pendant que Clôture et
+  // la 2035 lisent le poste 2035 de la catégorie ACTUELLE. Deux livrables, deux réponses, aucun
+  // signal — c'est mot pour mot l'incohérence que rupturesPisteAudit a déjà coûté une fois.
+  const surUnAutreCompte = lignes.some(
+    (e) => e.compte !== compte && e.compte !== COMPTE_TVA_DEDUCTIBLE && e.compte !== COMPTE_TVA_COLLECTEE,
+  )
+  if (surUnAutreCompte) return true
+  // ET LA VENTILATION DE LA TVA, QUE LE TOTAL NE PEUT PAS VOIR — le panneau annonçait pourtant
+  // « montant, TVA » depuis toujours. Corriger `montant_tva` en gardant le TTC laisse le total du
+  // groupe RIGOUREUSEMENT INCHANGÉ (les deux lignes se compensent) et les comptes identiques : ni
+  // la comparaison de montant ni celle de compte ne peut en dire un mot. Même silence quand la TVA
+  // est ajoutée ou effacée après coup, le nombre de lignes changeant sans que leur somme bouge.
+  // Ce que ça coûte : la charge et la TVA déductible partent FAUSSES en FEC et en balance, à somme
+  // juste — pendant que la 2035, calculée sur les pièces, dit autre chose. Encore deux livrables
+  // pour un seul euro.
+  // On compare la TVA ENREGISTRÉE à celle que la pièce annonce (0 quand elle n'en porte pas, ce
+  // qui couvre d'un coup l'ajout et l'effacement) ; signée comme le total, sinon un avoir passerait
+  // pour un écart. Démontré sur une pièce réelle du schéma : 57,00 € portés en charge entière alors
+  // que la pièce annonce 50,91 + 6,09 de TVA, total juste, compte juste, contrôle muet.
+  // La TVA ATTENDUE est celle que la génération ventile, donc zéro pour un dossier exonéré : sans
+  // quoi une écriture juste, au TTC sur une seule ligne, serait signalée « à régénérer » à jamais,
+  // et une écriture qui ventile encore sa TVA en 445660 ne le serait pas.
+  const tvaEnregistree = lignes
+    .filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE)
+    .reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
+  if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
+  // LA DATE AUTANT QUE LE COMPTE, ET ELLE COÛTE PLUS CHER QUE LUI. Une pièce validée sans date
+  // reçoit une écriture datée de son DÉPÔT (le repli de lignesChargeProduitPourPiece) ; « Retrouver
+  // les dates manquantes » écrit ensuite `date_piece` sans toucher à l'écriture — par conception,
+  // c'est ce qui la rend sûre à lancer sur un dossier déjà relu à la main. Rien ne réconcilie les
+  // deux, et corriger à la main la date d'une pièce déjà générée fait exactement pareil.
+  // Le compte, lui, gardait au moins la bonne année. Ici non : sur les pièces réelles du projet, le
+  // dépôt suit la date de la pièce de 549 jours en MÉDIANE (1 336 au maximum) et 68 pièces tombent
+  // dans une autre année civile. L'écriture part donc dans le mauvais EXERCICE — le filtre
+  // d'exercice et le FEC lisent `e.date`, pendant que Clôture et la 2035 lisent `date_piece`. Le
+  // FEC embarque même la contradiction sur UNE SEULE LIGNE, sa colonne PieceDate venant de la
+  // pièce et EcritureDate de l'écriture.
+  // On ne compare QUE si la pièce porte une date : sans date elle ne prétend à aucun exercice, donc
+  // il n'y a rien à contredire — et comparer au repli ferait crier au loup dès qu'une écriture a
+  // été générée dans un autre fuseau que celui qui la relit, `dateLocaleDe` lisant un INSTANT.
+  //
+  // ET LA DATE ATTENDUE EST CELLE DU PAIEMENT QUAND LE RAPPROCHEMENT LA CONNAÎT (lib/rattachement.ts,
+  // la règle de la 2035) : une écriture générée avant son rapprochement, restée à la date de
+  // facture, compterait dans l'exercice de la facture pendant que la 2035 la compte dans celui du
+  // paiement. Les dates présentes doivent être EXACTEMENT celles attendues — une par part de la
+  // pièce, et aucune autre.
+  const attendues = datesAttendues(p, paiementsPiece)
+  if (attendues) {
+    const presentes = new Set(lignes.map((e) => e.date))
+    if (presentes.size !== attendues.size || [...attendues].some((d) => !presentes.has(d))) return true
+  }
+  const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
+  return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
+}
+
+// En ENGAGEMENT (lib/engagement.ts), ce qu'une pièce doit porter au brouillon : l'écriture de sa
+// FACTURE — sa charge ou son produit, sa TVA, et le compte de tiers qui porte le TTC, toutes à la date
+// de facture — et un RÈGLEMENT par mouvement rapproché, sur ce même compte de tiers. Les questions de la
+// trésorerie (compte, TVA, date, montant), plus deux qu'elle n'a pas : le compte de tiers suit le TYPE
+// de la pièce — un achat devenu note de frais quitte le 401 —, et les règlements suivent les
+// RAPPROCHEMENTS — un mouvement rapproché sans règlement laisserait au 401 une dette déjà payée, et un
+// règlement que plus rien ne rapproche en solderait une qui court encore.
+function engagementDesynchronise(
+  p: Piece, compte: string, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
+  paiementsPiece: readonly PaiementIdentifie[], compteNotesDeFrais: CompteNotesDeFrais,
+): boolean {
+  const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== COMPTE_BANQUE)
+  const reglements = groupe.filter((e) => e.ligne_bancaire_id)
+  // Pas encore générée — pas une désynchronisation. Des règlements SANS leur facture, en revanche, en
+  // sont une : la génération ne les produit jamais ainsi, et « Régénérer » reconstruit les deux.
+  if (facture.length === 0) return reglements.length > 0
+  const tiers = compteDeTiers(p, compteNotesDeFrais)
+  const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
+  const sensTiers: 'debit' | 'credit' = sensPiece === 'debit' ? 'credit' : 'debit'
+  const signe = (e: EcritureBrouillon, sens: 'debit' | 'credit') => (e.sens === sens ? e.montant : -e.montant)
+  const estTva = (e: EcritureBrouillon) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE
+
+  if (facture.some((e) => e.compte !== compte && e.compte !== tiers && !estTva(e))) return true
+  const tvaEnregistree = facture.filter(estTva).reduce((sum, e) => sum + signe(e, sensPiece), 0)
+  if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
+  // La date de la FACTURE, sur toutes ses lignes. Sans date de pièce, le repli sur la date de dépôt est
+  // un instant lu dans le fuseau de qui génère : rien qu'on puisse opposer à une écriture (voir la même
+  // règle en trésorerie).
+  if (p.date_piece && facture.some((e) => e.date !== p.date_piece)) return true
+  const totalPiece = facture.filter((e) => e.compte !== tiers).reduce((sum, e) => sum + signe(e, sensPiece), 0)
+  if (Math.abs(totalPiece - p.montant_ttc!) > EPSILON_EQUILIBRE) return true
+  const totalTiers = facture.filter((e) => e.compte === tiers).reduce((sum, e) => sum + signe(e, sensTiers), 0)
+  if (Math.abs(totalTiers - p.montant_ttc!) > EPSILON_EQUILIBRE) return true
+
+  // Exactement les mouvements rapprochés de la pièce — ni un de moins, ni un de plus —, sur son compte
+  // de tiers ACTUEL.
+  const attendus = new Set(paiementsPiece.map((m) => m.id))
+  const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
+  if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
+  return reglements.some((e) => e.compte !== COMPTE_BANQUE && e.compte !== tiers)
+}
+
+// En engagement, CHAQUE écriture s'équilibre seule — la facture comme chaque règlement
+// (lib/engagement.ts) — et chacune partira sous son propre numéro dans le FEC, où une écriture
+// déséquilibrée fait rejeter le fichier : on les juge donc une par une, et non le groupe de la pièce,
+// dont la somme pourrait masquer deux écarts qui se compensent. Le solde rendu est celui de la
+// première qui ne s'équilibre pas, la facture d'abord.
+function desequilibresEngagement(groupes: ReadonlyMap<string, readonly EcritureBrouillon[]>): GroupeDesequilibre[] {
+  const desequilibres: GroupeDesequilibre[] = []
+  for (const [pieceId, lignes] of groupes) {
+    const soldes = new Map<string, number>()
+    for (const e of lignes) {
+      const ecriture = e.ligne_bancaire_id ?? ''
+      soldes.set(ecriture, (soldes.get(ecriture) ?? 0) + (e.sens === 'debit' ? e.montant : -e.montant))
+    }
+    const ordre = [...soldes.keys()].sort()
+    const premier = ordre.find((cle) => Math.abs(soldes.get(cle)!) > EPSILON_EQUILIBRE)
+    if (premier !== undefined) desequilibres.push({ pieceId, solde: soldes.get(premier)! })
+  }
+  return desequilibres
 }
 
 export interface LigneBalance {
@@ -414,7 +516,7 @@ export function calculerBalance(
       const totalCredit = lignes.filter((l) => l.sens === 'credit').reduce((sum, l) => sum + l.montant, 0)
       return {
         compte,
-        libelle: LIBELLES_COMPTES_FIXES[compte] ?? libelleParCompte.get(compte) ?? '—',
+        libelle: LIBELLES_COMPTES[compte] ?? libelleParCompte.get(compte) ?? '—',
         nbEcritures: lignes.length,
         totalDebit,
         totalCredit,

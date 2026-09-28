@@ -21,8 +21,8 @@ describe('calculerSituationIntermediaire', () => {
   // comprise pour un dossier exonéré, qui ne la récupère pas, hors taxes pour un assujetti.
   it('retient la TVA comprise pour un dossier exonéré, le hors taxes pour un assujetti', () => {
     const achat = piece({ id: 'a', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
-    const exonere = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', false, [])
-    const assujetti = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', true, [])
+    const exonere = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', false, [], 'tresorerie')
+    const assujetti = calculerSituationIntermediaire([achat], [categorie], [], [], '2026-01-01', '2026-06-30', true, [], 'tresorerie')
     expect(exonere.charges).toBe(120)
     expect(assujetti.charges).toBe(100)
   })
@@ -35,6 +35,7 @@ describe('calculerSituationIntermediaire', () => {
         piece({ id: 'c', montant_ttc: 700, date_piece: '2025-12-31' }), // hors période
       ],
       [categorie], [], [], '2026-01-01', '2026-06-30', true, [],
+      'tresorerie',
     )
     expect(s.charges).toBe(100)
     expect(s.resultat).toBe(-100)
@@ -47,6 +48,7 @@ describe('calculerSituationIntermediaire', () => {
         piece({ id: 'a', montant_ttc: 300 }),
       ],
       [categorie, recette], [], [], '2026-01-01', '2026-12-31', true, [],
+      'tresorerie',
     )
     expect(s.recettes).toBe(900)
     expect(s.charges).toBe(300)
@@ -67,9 +69,9 @@ describe('calculerSituationIntermediaire', () => {
       piece({ id: 'sans-paiement', date_piece: '2026-01-20', montant_ttc: 7 }),
     ]
     const paiements = [paiement('janvier', '2026-02-03', -100), paiement('decembre', '2026-01-05', -40)]
-    const auJanvier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-01-31', true, paiements)
+    const auJanvier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-01-31', true, paiements, 'tresorerie')
     expect(auJanvier.charges).toBe(47)
-    const auFevrier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-02-28', true, paiements)
+    const auFevrier = calculerSituationIntermediaire(pieces, [categorie], [], [], '2026-01-01', '2026-02-28', true, paiements, 'tresorerie')
     expect(auFevrier.charges).toBe(147)
   })
 
@@ -82,7 +84,7 @@ describe('calculerSituationIntermediaire', () => {
       libelle_brut: null, created_at: '2026-01-10T09:00:00Z',
     }
     const partielle = piece({ id: 'partielle', date_piece: '2025-12-15', montant_ttc: 200 })
-    const s = calculerSituationIntermediaire([partielle], [categorie], [], [], '2026-01-01', '2026-01-31', true, [acompte])
+    const s = calculerSituationIntermediaire([partielle], [categorie], [], [], '2026-01-01', '2026-01-31', true, [acompte], 'tresorerie')
     expect(s.charges).toBe(80)
   })
 
@@ -91,7 +93,7 @@ describe('calculerSituationIntermediaire', () => {
     // un 1er janvier se lisait dans l'année précédente, ce qui décalait toute la fenêtre
     // d'amortissement d'un an — dotation absente la première année, présente une année de trop.
     const lignes = (annee: number) =>
-      calculerSituationIntermediaire([], [], [immo({ date_acquisition: '2026-01-01' })], [], `${annee}-01-01`, `${annee}-12-31`, true, [])
+      calculerSituationIntermediaire([], [], [immo({ date_acquisition: '2026-01-01' })], [], `${annee}-01-01`, `${annee}-12-31`, true, [], 'tresorerie')
         .totauxParPoste.find(([poste]) => poste === 'Amortissements')?.[1]
 
     expect(lignes(2025)).toBeUndefined()  // avant l'acquisition
@@ -106,7 +108,7 @@ describe('calculerSituationIntermediaire', () => {
       { id: 'y', dossier_id: 'd1', echeance: '2026-03-05', montant_appele: 400, montant_verse: null },
       { id: 'z', dossier_id: 'd1', echeance: '2027-01-05', montant_appele: 999, montant_verse: null }, // hors période
     ] as CotisationDeclaree[]
-    const s = calculerSituationIntermediaire([], [], [], cotisations, '2026-01-01', '2026-12-31', true, [])
+    const s = calculerSituationIntermediaire([], [], [], cotisations, '2026-01-01', '2026-12-31', true, [], 'tresorerie')
     expect(s.totauxParPoste.find(([p]) => p === 'Cotisations sociales personnelles')?.[1]).toBe(-680)
   })
 
@@ -128,14 +130,14 @@ describe('calculerSituationIntermediaire', () => {
       // l'état affichait un RÉSULTAT NÉGATIF de 1 600 € — un déficit entièrement fabriqué par la
       // convention, sur le document qu'on montre à une banque pour obtenir un prêt.
       const s = calculerSituationIntermediaire(
-        [vente(800, '2026-01-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-01-31', true, [])
+        [vente(800, '2026-01-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-01-31', true, [], 'tresorerie')
       expect(dotation(s)).toBe(-200)        // 2 400 € × 1/12
       expect(s.resultat).toBe(600)          // et non −1 600
     })
 
     it('compte la moitié de la dotation sur un premier semestre', () => {
       const s = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-06-30', true, [])
+        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-06-30', true, [], 'tresorerie')
       expect(dotation(s)).toBe(-1200)
       expect(s.resultat).toBe(8800)
     })
@@ -147,7 +149,7 @@ describe('calculerSituationIntermediaire', () => {
       const s = calculerSituationIntermediaire(
         [vente(10000, '2026-05-10')], [categorie, recette],
         [immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-12-15' })], [],
-        '2026-01-01', '2026-06-30', true, [])
+        '2026-01-01', '2026-06-30', true, [], 'tresorerie')
       expect(dotation(s)).toBeUndefined()
       expect(s.resultat).toBe(10000)
     })
@@ -158,7 +160,7 @@ describe('calculerSituationIntermediaire', () => {
     // cas, « la dotation suit la période » serait satisfait par une fonction qui rabote toujours.
     it('laisse une année civile complète rigoureusement inchangée', () => {
       const s = calculerSituationIntermediaire(
-        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-12-31', true, [])
+        [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-12-31', true, [], 'tresorerie')
       expect(dotation(s)).toBe(-2400)
       expect(s.resultat).toBe(7600)
     })
@@ -213,8 +215,25 @@ describe('calculerSituationIntermediaire', () => {
       [categorie],
       [immo({ piece_id: 'p-immo' })],
       [], '2026-01-01', '2026-12-31', true, [],
+      'tresorerie',
     )
     // La pièce sort des charges courantes ; seule la dotation annuelle reste.
     expect(s.charges).toBe(1000)
+  })
+})
+
+describe('calculerSituationIntermediaire — en engagement', () => {
+  it('compte une facture dans la période de sa DATE, pas de son paiement', () => {
+    const facture = piece({ id: 'dec', date_piece: '2025-12-20', montant_ttc: 300 })
+    const paiement = {
+      id: 'l1', dossier_id: 'd1', date: '2026-01-10', libelle: 'PRLV', montant: -300, statut: 'rapprochee',
+      piece_id: 'dec', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      created_at: '2026-01-11T00:00:00Z',
+    } satisfies LigneBancaire
+    const janvier = (mode: 'tresorerie' | 'engagement') =>
+      calculerSituationIntermediaire([facture], [categorie], [], [], '2026-01-01', '2026-01-31', true, [paiement], mode)
+    expect(janvier('tresorerie').charges).toBe(300)
+    expect(janvier('engagement').charges).toBe(0)
+    expect(calculerSituationIntermediaire([facture], [categorie], [], [], '2025-01-01', '2025-12-31', true, [paiement], 'engagement').charges).toBe(300)
   })
 })

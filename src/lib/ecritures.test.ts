@@ -1,9 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { analyserEcritures, calculerBalance, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte } from './ecritures'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
+import { analyserEcritures, calculerBalance, ecrituresSansObjet, lignesChargeProduitPourPiece, lignesPourPiece, piecesAComptabiliser, soldeCompte } from './ecritures'
+import type { LigneAGenerer } from './ecritures'
+import { COMPTE_BANQUE, COMPTE_FOURNISSEURS, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
+import { lignesEngagementPourPiece, lignesFactureEngagement, lignesReglementEngagement } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import type { ModeleComptable } from './engagement'
 
 const ACHATS = '606100'
+// Le modèle de tous les dossiers d'avant l'engagement : les contrôles de trésorerie s'y lisent tels quels.
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const VENTES = '706000'
 
 const piece = (o: Partial<Piece> = {}): Piece => ({
@@ -145,7 +150,7 @@ describe('un dossier exonéré ne ventile pas la TVA', () => {
   it('ne signale pas « à régénérer » une écriture TTC juste', () => {
     const p = piece({ id: 'ttc', ...avecTva })
     const lignes = [ecriture({ piece_id: 'ttc', compte: ACHATS, montant: 120 })]
-    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], false, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], false, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('signale une écriture qui ventile encore la TVA', () => {
@@ -154,7 +159,7 @@ describe('un dossier exonéré ne ventile pas la TVA', () => {
       ecriture({ piece_id: 'ventilee', compte: ACHATS, montant: 100 }),
       ecriture({ piece_id: 'ventilee', compte: COMPTE_TVA_DEDUCTIBLE, montant: 20 }),
     ]
-    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], false, []).piecesDesynchronisees).toEqual([p])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], false, [], TRESORERIE).piecesDesynchronisees).toEqual([p])
   })
 
   // L'ALLER-RETOUR : ce que la génération produit, le contrôle l'accepte, pour les deux statuts et
@@ -170,7 +175,7 @@ describe('un dossier exonéré ne ventile pas la TVA', () => {
     const lignes = pieces.flatMap((p) => lignesChargeProduitPourPiece('d1', p, p.type_piece === 'vente' ? VENTES : ACHATS, assujetti, []))
       .map((l, i) => ecriture({ ...l, id: `g${i}` }))
     const aComptabiliser = pieces.map((p) => ({ piece: p, compte: p.type_piece === 'vente' ? VENTES : ACHATS }))
-    expect(analyserEcritures(lignes, aComptabiliser, assujetti, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, aComptabiliser, assujetti, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 })
 
@@ -203,19 +208,19 @@ describe('analyserEcritures', () => {
       ecriture({ piece_id: 'avec', compte: ACHATS }),
       ecriture({ piece_id: 'avec', compte: COMPTE_BANQUE, sens: 'credit' }),
     ]
-    expect(analyserEcritures(lignes, [], true, []).nbSansContrepartie).toBe(1)
+    expect(analyserEcritures(lignes, [], true, [], TRESORERIE).nbSansContrepartie).toBe(1)
   })
 
   it('ne signale un déséquilibre que sur une écriture complète', () => {
     // Une pièce sans contrepartie est forcément déséquilibrée : la signaler serait un faux positif.
     const incomplete = [ecriture({ piece_id: 'x', compte: ACHATS, montant: 120 })]
-    expect(analyserEcritures(incomplete, [], true, []).groupesDesequilibres).toEqual([])
+    expect(analyserEcritures(incomplete, [], true, [], TRESORERIE).groupesDesequilibres).toEqual([])
 
     const desequilibree = [
       ecriture({ piece_id: 'y', compte: ACHATS, sens: 'debit', montant: 120 }),
       ecriture({ piece_id: 'y', compte: COMPTE_BANQUE, sens: 'credit', montant: 100 }),
     ]
-    expect(analyserEcritures(desequilibree, [], true, []).groupesDesequilibres).toEqual([{ pieceId: 'y', solde: 20 }])
+    expect(analyserEcritures(desequilibree, [], true, [], TRESORERIE).groupesDesequilibres).toEqual([{ pieceId: 'y', solde: 20 }])
   })
 
   it('absorbe un écart d’arrondi de deux centimes, pas davantage', () => {
@@ -223,7 +228,7 @@ describe('analyserEcritures', () => {
       analyserEcritures([
         ecriture({ piece_id: 'z', compte: ACHATS, sens: 'debit', montant: 120 }),
         ecriture({ piece_id: 'z', compte: COMPTE_BANQUE, sens: 'credit', montant: montantBanque }),
-      ], [], true, []).groupesDesequilibres.length
+      ], [], true, [], TRESORERIE).groupesDesequilibres.length
 
     expect(ecart(119.99)).toBe(0) // un centime : arrondi
     expect(ecart(119.9)).toBe(1)  // dix centimes : écart réel
@@ -232,7 +237,7 @@ describe('analyserEcritures', () => {
   it('repère une pièce dont le montant ne correspond plus à son écriture', () => {
     const p = piece({ id: 'maj', montant_ttc: 200 })
     const lignes = [ecriture({ piece_id: 'maj', compte: ACHATS, sens: 'debit', montant: 120 })]
-    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([p])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([p])
   })
 
   it('ne déclare pas désynchronisée une pièce à montant négatif correctement enregistrée', () => {
@@ -240,11 +245,11 @@ describe('analyserEcritures', () => {
     // conclurait à tort à un écart.
     const avoir = piece({ id: 'avoir', montant_ttc: -50 })
     const lignes = [ecriture({ piece_id: 'avoir', compte: ACHATS, sens: 'credit', montant: 50 })]
-    expect(analyserEcritures(lignes, [{ piece: avoir, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, [{ piece: avoir, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('ne déclare pas désynchronisée une pièce sans écriture encore générée', () => {
-    expect(analyserEcritures([], [{ piece: piece({ id: 'vierge' }), compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures([], [{ piece: piece({ id: 'vierge' }), compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 })
 
@@ -332,9 +337,9 @@ describe('piecesDesynchronisees — le compte autant que le montant', () => {
     // même au centime près : un contrôle qui ne compare que le montant la déclare synchronisée,
     // et le FEC part sur un compte que la pièce ne désigne plus.
     const lignes = [ecriture({ piece_id: 'recat', compte: ACHATS, sens: 'debit', montant: 120 })]
-    expect(analyserEcritures(lignes, [{ piece: p, compte: '613200' }], true, []).piecesDesynchronisees).toEqual([p])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: '613200' }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([p])
     // Et le même jeu sur le bon compte ne bouge pas : c'est ce qui rend le cas ci-dessus distinctif.
-    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('ne prend pas les comptes de TVA pour un autre compte', () => {
@@ -348,7 +353,7 @@ describe('piecesDesynchronisees — le compte autant que le montant', () => {
       ecriture({ piece_id: 'recat', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
     ]
     const ventilee = piece({ id: 'recat', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
-    expect(analyserEcritures(avecTva, [{ piece: ventilee, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(avecTva, [{ piece: ventilee, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('ne regarde pas la contrepartie banque, qui vit sur son propre compte', () => {
@@ -356,7 +361,7 @@ describe('piecesDesynchronisees — le compte autant que le montant', () => {
       ecriture({ piece_id: 'recat', compte: ACHATS, sens: 'debit', montant: 120 }),
       ecriture({ piece_id: 'recat', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
     ]
-    expect(analyserEcritures(complete, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(complete, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 })
 
@@ -369,7 +374,7 @@ describe('piecesDesynchronisees — la ventilation de la TVA, que le total ne pe
     // pourtant FAUSSES en FEC et en balance, à somme juste.
     const p = piece({ id: 'tva', montant_ht: 50.91, montant_tva: 6.09, montant_ttc: 57 })
     const nonVentilee = [ecriture({ piece_id: 'tva', compte: ACHATS, sens: 'debit', montant: 57 })]
-    expect(analyserEcritures(nonVentilee, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([p])
+    expect(analyserEcritures(nonVentilee, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([p])
 
     // Le garde symétrique : correctement ventilée, elle ne bouge pas. Sans lui, le test ci-dessus
     // serait satisfait par un contrôle qui signale toute pièce portant de la TVA.
@@ -377,7 +382,7 @@ describe('piecesDesynchronisees — la ventilation de la TVA, que le total ne pe
       ecriture({ piece_id: 'tva', compte: ACHATS, sens: 'debit', montant: 50.91 }),
       ecriture({ piece_id: 'tva', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 6.09 }),
     ]
-    expect(analyserEcritures(ventilee, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(ventilee, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('voit aussi une TVA EFFACÉE après coup, dont la ligne survit', () => {
@@ -388,7 +393,7 @@ describe('piecesDesynchronisees — la ventilation de la TVA, que le total ne pe
       ecriture({ piece_id: 'effacee', compte: ACHATS, sens: 'debit', montant: 100 }),
       ecriture({ piece_id: 'effacee', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
     ]
-    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([p])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([p])
   })
 
   it('compte la TVA COLLECTÉE d’une vente comme la déductible d’un achat', () => {
@@ -399,7 +404,7 @@ describe('piecesDesynchronisees — la ventilation de la TVA, que le total ne pe
       ecriture({ piece_id: 'vente', compte: VENTES, sens: 'credit', montant: 100 }),
       ecriture({ piece_id: 'vente', compte: COMPTE_TVA_COLLECTEE, sens: 'credit', montant: 20 }),
     ]
-    expect(analyserEcritures(justes, [{ piece: p, compte: VENTES }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(justes, [{ piece: p, compte: VENTES }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('ne prend pas un avoir correctement ventilé pour un écart', () => {
@@ -411,7 +416,7 @@ describe('piecesDesynchronisees — la ventilation de la TVA, que le total ne pe
       ecriture({ piece_id: 'avoir', compte: ACHATS, sens: 'credit', montant: 100 }),
       ecriture({ piece_id: 'avoir', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'credit', montant: 20 }),
     ]
-    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 })
 
@@ -423,12 +428,12 @@ describe('piecesDesynchronisees — la date, qui déplace l’écriture d’EXER
     // main — donc personne ne réconcilie l'écriture. Corriger la date à la main fait pareil.
     const datee = piece({ id: 'datee', date_piece: '2025-03-14', created_at: '2026-09-16T09:00:00Z' })
     const lignes = [ecriture({ piece_id: 'datee', date: '2026-09-16', compte: ACHATS, sens: 'debit', montant: 120 })]
-    expect(analyserEcritures(lignes, [{ piece: datee, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([datee])
+    expect(analyserEcritures(lignes, [{ piece: datee, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([datee])
 
     // Le cas symétrique, sans lequel le test ci-dessus serait satisfait par un contrôle qui signale
     // tout : la même écriture à la bonne date ne bouge pas.
     const aJour = [ecriture({ piece_id: 'datee', date: '2025-03-14', compte: ACHATS, sens: 'debit', montant: 120 })]
-    expect(analyserEcritures(aJour, [{ piece: datee, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(aJour, [{ piece: datee, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('ne déplace aucun total — c’est pour ça que rien d’autre ne peut le voir', () => {
@@ -442,7 +447,7 @@ describe('piecesDesynchronisees — la date, qui déplace l’écriture d’EXER
       ecriture({ piece_id: 'exercice', date: '2026-01-04', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
       ecriture({ piece_id: 'exercice', date: '2026-01-04', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
     ]
-    const analyse = analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, [])
+    const analyse = analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE)
     expect(analyse.groupesDesequilibres).toEqual([]) // équilibré : le montant n'a pas bougé
     expect(analyse.piecesDesynchronisees).toEqual([p])
   })
@@ -454,7 +459,7 @@ describe('piecesDesynchronisees — la date, qui déplace l’écriture d’EXER
     // désynchronisée à tort — un avertissement qui se trompe emporte ses voisins qui, eux, disent vrai.
     const sansDate = piece({ id: 'sans-date', date_piece: null, created_at: '2026-09-16T23:30:00Z' })
     const lignes = [ecriture({ piece_id: 'sans-date', date: '2026-09-17', compte: ACHATS, sens: 'debit', montant: 120 })]
-    expect(analyserEcritures(lignes, [{ piece: sansDate, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, [{ piece: sansDate, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('suffit d’UNE ligne en retard — le sens sûr, et il est défensif', () => {
@@ -467,7 +472,7 @@ describe('piecesDesynchronisees — la date, qui déplace l’écriture d’EXER
       ecriture({ piece_id: 'moitie', date: '2025-06-30', compte: ACHATS, sens: 'debit', montant: 100 }),
       ecriture({ piece_id: 'moitie', date: '2026-09-16', compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
     ]
-    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([p])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([p])
   })
 
   it('ne compte pas la date de la contrepartie banque, qui est celle du PAIEMENT', () => {
@@ -478,7 +483,7 @@ describe('piecesDesynchronisees — la date, qui déplace l’écriture d’EXER
       ecriture({ piece_id: 'payee', date: '2026-03-10', compte: ACHATS, sens: 'debit', montant: 120 }),
       ecriture({ piece_id: 'payee', date: '2026-04-05', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
     ]
-    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, []).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, [{ piece: p, compte: ACHATS }], true, [], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 })
 
@@ -490,32 +495,32 @@ describe('piecesDesynchronisees — la date du PAIEMENT, quand le rapprochement 
     // Le cas de toute écriture générée avant son rapprochement : elle compterait dans l'exercice de la
     // facture pendant que la 2035 la compte dans celui du paiement.
     const aLaFacture = [ecriture({ date: '2025-12-20' })]
-    expect(analyserEcritures(aLaFacture, aComptabiliser, true, [paiement()]).piecesDesynchronisees).toEqual([decembre])
+    expect(analyserEcritures(aLaFacture, aComptabiliser, true, [paiement()], TRESORERIE).piecesDesynchronisees).toEqual([decembre])
     // Le garde symétrique : datée au paiement, elle est à jour.
     const auPaiement = [ecriture({ date: '2026-01-05' })]
-    expect(analyserEcritures(auPaiement, aComptabiliser, true, [paiement()]).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(auPaiement, aComptabiliser, true, [paiement()], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('accepte une pièce réglée en partie répartie sur ses deux dates, et elle seule', () => {
     const payee = [paiement({ montant: -48 })]
     const reparties = lignesChargeProduitPourPiece('d1', decembre, ACHATS, true, payee)
       .map((l, i) => ecriture({ ...l, id: `e${i}` }))
-    expect(analyserEcritures(reparties, aComptabiliser, true, payee).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(reparties, aComptabiliser, true, payee, TRESORERIE).piecesDesynchronisees).toEqual([])
     // Toute l'écriture passée au paiement — ce que ferait un rapprochement qui ignorerait la part
     // restante : la part non payée quitterait l'exercice de la facture.
     const toutAuPaiement = [ecriture({ date: '2026-01-05' })]
-    expect(analyserEcritures(toutAuPaiement, aComptabiliser, true, payee).piecesDesynchronisees).toEqual([decembre])
+    expect(analyserEcritures(toutAuPaiement, aComptabiliser, true, payee, TRESORERIE).piecesDesynchronisees).toEqual([decembre])
   })
 
   it('se tait quand une part n’a pas de date — le repli sur le dépôt est un instant', () => {
     const sansDate = piece({ id: 'p1', date_piece: null, montant_ttc: 120 })
     const lignes = [ecriture({ date: '2026-01-05', montant: 60 }), ecriture({ id: 'e2', date: '2025-12-21', montant: 60 })]
-    expect(analyserEcritures(lignes, [{ piece: sansDate, compte: ACHATS }], true, [paiement({ montant: -60 })]).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures(lignes, [{ piece: sansDate, compte: ACHATS }], true, [paiement({ montant: -60 })], TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 
   it('ne se laisse pas dater par un mouvement qui n’est plus rapproché', () => {
     const remis = [paiement({ statut: 'non_rapprochee' })]
-    expect(analyserEcritures([ecriture({ date: '2025-12-20' })], aComptabiliser, true, remis).piecesDesynchronisees).toEqual([])
+    expect(analyserEcritures([ecriture({ date: '2025-12-20' })], aComptabiliser, true, remis, TRESORERIE).piecesDesynchronisees).toEqual([])
   })
 })
 
@@ -537,7 +542,7 @@ describe('ecrituresSansObjet', () => {
       { piece: p, motif: 'immobilisee', nbLignes: 2, montant: 120 },
     ])
     // Les trois contrôles qui partent de la pièce n'en voient rien.
-    const analyse = analyserEcritures(lignes, piecesAComptabiliser([p], cats, new Set(['immo'])), true, [])
+    const analyse = analyserEcritures(lignes, piecesAComptabiliser([p], cats, new Set(['immo'])), true, [], TRESORERIE)
     expect(analyse.piecesDesynchronisees).toEqual([])
     expect(analyse.groupesDesequilibres).toEqual([])
     expect(analyse.nbSansContrepartie).toBe(0)
@@ -575,5 +580,161 @@ describe('ecrituresSansObjet', () => {
   it('se tait sur une pièce parfaitement comptabilisable', () => {
     const p = piece()
     expect(ecrituresSansObjet([ecriture({ piece_id: p.id })], [p], cats, new Set())).toEqual([])
+  })
+})
+
+// ═══ Engagement (lib/engagement.ts) ═══════════════════════════════════════════════════════════════
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+
+// Les lignes que la génération écrit, telles que la base les rend : c'est contre elles que le contrôle
+// doit se taire — un contrôle vérifié sur des lignes écrites à la main pourrait l'être sur des lignes
+// que l'application ne produit jamais.
+const enBase = (lignes: LigneAGenerer[]): EcritureBrouillon[] =>
+  lignes.map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+
+describe('lignesPourPiece — la génération suit le modèle du dossier', () => {
+  it('produit en trésorerie exactement ce que produisait lignesChargeProduitPourPiece', () => {
+    const p = piece({ montant_ttc: 120, montant_tva: 20 })
+    const payee = [paiement()]
+    expect(lignesPourPiece('d1', p, ACHATS, true, payee, TRESORERIE)).toEqual(lignesChargeProduitPourPiece('d1', p, ACHATS, true, payee))
+  })
+
+  it('produit en engagement la facture à sa date et un règlement par mouvement', () => {
+    const p = piece({ montant_ttc: 120, montant_tva: 20 })
+    expect(lignesPourPiece('d1', p, ACHATS, true, [paiement()], ENGAGEMENT))
+      .toEqual(lignesEngagementPourPiece('d1', p, ACHATS, true, '455000', [paiement()]))
+  })
+})
+
+describe('analyserEcritures — en engagement', () => {
+  const p = piece({ id: 'p1', date_piece: '2025-12-20', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+  const aComptabiliser = [{ piece: p, compte: ACHATS }]
+  const genere = (piecePassee: Piece = p, mouvements: LigneBancaire[] = [paiement()]) =>
+    enBase(lignesEngagementPourPiece('d1', piecePassee, ACHATS, true, '455000', mouvements))
+
+  it('se tait sur une facture et son règlement tels que la génération les écrit', () => {
+    const analyse = analyserEcritures(genere(), aComptabiliser, true, [paiement()], ENGAGEMENT)
+    expect(analyse).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+  })
+
+  it('compte une facture sans règlement comme en attente de rapprochement, sans la dire périmée', () => {
+    const analyse = analyserEcritures(genere(p, []), aComptabiliser, true, [], ENGAGEMENT)
+    expect(analyse.nbSansContrepartie).toBe(1)
+    expect(analyse.piecesDesynchronisees).toEqual([])
+  })
+
+  it('garde la facture à SA date quand le paiement tombe dans l’exercice suivant', () => {
+    // Le cœur du modèle : la facture de décembre reste en décembre, seul le règlement passe en janvier.
+    const lignes = genere()
+    expect(lignes.filter((l) => !l.ligne_bancaire_id).map((l) => l.date)).toEqual(['2025-12-20', '2025-12-20', '2025-12-20'])
+    expect(lignes.filter((l) => l.ligne_bancaire_id).map((l) => l.date)).toEqual(['2026-01-05', '2026-01-05'])
+  })
+
+  it('juge chaque écriture seule : un frais bancaire ne déséquilibre rien, il reste au 401', () => {
+    // En trésorerie, ce même écart déséquilibrerait le groupe de la pièce.
+    const frais = [paiement({ montant: -118.5 })]
+    const analyse = analyserEcritures(genere(p, frais), aComptabiliser, true, frais, ENGAGEMENT)
+    expect(analyse.groupesDesequilibres).toEqual([])
+    expect(analyse.piecesDesynchronisees).toEqual([])
+  })
+
+  it('dit déséquilibrée une facture dont la TVA ne recoupe pas le TTC', () => {
+    const fausse = piece({ id: 'p1', date_piece: '2025-12-20', montant_ht: 100, montant_tva: 30, montant_ttc: 120 })
+    const analyse = analyserEcritures(genere(fausse), [{ piece: fausse, compte: ACHATS }], true, [paiement()], ENGAGEMENT)
+    expect(analyse.groupesDesequilibres).toEqual([{ pieceId: 'p1', solde: 10 }])
+  })
+
+  it('voit un règlement déséquilibré que la somme du groupe masquerait', () => {
+    // Deux écarts de signes opposés : le groupe entier s'équilibre, chacune de ses écritures non.
+    // Facture : 120 au débit, 130 au crédit du 401 (−10). Règlement : 130 au débit du 401, 120 au
+    // crédit de la banque (+10). La pièce entière solde à zéro.
+    const lignes = genere()
+    lignes.find((l) => l.compte === COMPTE_FOURNISSEURS && !l.ligne_bancaire_id)!.montant = 130
+    lignes.find((l) => l.compte === COMPTE_FOURNISSEURS && l.ligne_bancaire_id)!.montant = 130
+    expect(lignes.reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0)).toBe(0)
+    const analyse = analyserEcritures(lignes, aComptabiliser, true, [paiement()], ENGAGEMENT)
+    expect(analyse.groupesDesequilibres).toEqual([{ pieceId: 'p1', solde: -10 }])
+  })
+
+  it('signale un mouvement rapproché dont le règlement manque — la dette resterait ouverte au 401', () => {
+    const analyse = analyserEcritures(genere(p, []), aComptabiliser, true, [paiement()], ENGAGEMENT)
+    expect(analyse.piecesDesynchronisees).toEqual([p])
+  })
+
+  it('signale un règlement que plus aucun rapprochement ne justifie', () => {
+    const analyse = analyserEcritures(genere(), aComptabiliser, true, [paiement({ statut: 'non_rapprochee' })], ENGAGEMENT)
+    expect(analyse.piecesDesynchronisees).toEqual([p])
+  })
+
+  it('signale une pièce devenue note de frais : sa dette quitte le 401 pour le compte du dossier', () => {
+    const noteDeFrais = { ...p, type_piece: 'note_frais' as const }
+    const analyse = analyserEcritures(genere(), [{ piece: noteDeFrais, compte: ACHATS }], true, [paiement()], ENGAGEMENT)
+    expect(analyse.piecesDesynchronisees).toEqual([noteDeFrais])
+  })
+
+  it('signale un règlement resté sur l’ancien compte de tiers, même quand la facture est à jour', () => {
+    const noteDeFrais = { ...p, type_piece: 'note_frais' as const }
+    const lignes = [
+      ...enBase(lignesFactureEngagement('d1', noteDeFrais, ACHATS, true, '455000')),
+      ...enBase(lignesReglementEngagement('d1', p, paiement(), '455000')).map((l) => ({ ...l, id: `r-${l.id}` })),
+    ]
+    const analyse = analyserEcritures(lignes, [{ piece: noteDeFrais, compte: ACHATS }], true, [paiement()], ENGAGEMENT)
+    expect(analyse.piecesDesynchronisees).toEqual([noteDeFrais])
+  })
+
+  it('signale une date, un montant ou une TVA changés sur la pièce, comme en trésorerie', () => {
+    for (const modifiee of [
+      { ...p, date_piece: '2025-12-21' },
+      { ...p, montant_ht: 110, montant_ttc: 130 },
+      { ...p, montant_ht: 110, montant_tva: 10 },
+    ]) {
+      const analyse = analyserEcritures(genere(), [{ piece: modifiee, compte: ACHATS }], true, [paiement()], ENGAGEMENT)
+      expect(analyse.piecesDesynchronisees, JSON.stringify(modifiee)).toEqual([modifiee])
+    }
+  })
+
+  it('signale une recatégorisation, et une facture datée au paiement comme en trésorerie', () => {
+    expect(analyserEcritures(genere(), [{ piece: p, compte: '613200' }], true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([p])
+    const auPaiement = genere().map((l) => (l.ligne_bancaire_id ? l : { ...l, date: '2026-01-05' }))
+    expect(analyserEcritures(auPaiement, aComptabiliser, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([p])
+  })
+
+  it('signale des règlements sans leur facture — la génération ne les produit jamais ainsi', () => {
+    const reglementsSeuls = genere().filter((l) => l.ligne_bancaire_id)
+    expect(analyserEcritures(reglementsSeuls, aComptabiliser, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([p])
+  })
+
+  it('se tait sur une pièce sans date, dont la facture est au dépôt — comme en trésorerie', () => {
+    const sansDate = { ...p, date_piece: null }
+    const analyse = analyserEcritures(genere(sansDate), [{ piece: sansDate, compte: ACHATS }], true, [paiement()], ENGAGEMENT)
+    expect(analyse.piecesDesynchronisees).toEqual([])
+  })
+
+  it('exige le bon modèle : lu dans l’autre, chaque brouillon juste paraît périmé', () => {
+    // C'est pour ça que le modèle n'a pas de valeur par défaut.
+    const tresorerie = enBase(lignesChargeProduitPourPiece('d1', p, ACHATS, true, [paiement()]))
+    expect(analyserEcritures(tresorerie, aComptabiliser, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([p])
+    expect(analyserEcritures(genere(), aComptabiliser, true, [paiement()], TRESORERIE).piecesDesynchronisees).toEqual([p])
+  })
+})
+
+describe('ecrituresSansObjet — en engagement', () => {
+  it('compte la charge et la TVA d’une facture immobilisée, pas sa dette ni ses règlements', () => {
+    const p = piece({ id: 'immo', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
+    const lignes = enBase(lignesEngagementPourPiece('d1', p, ACHATS, true, '455000', [paiement({ piece_id: 'immo' })]))
+    expect(ecrituresSansObjet(lignes, [p], [categorie()], new Set(['immo']))).toEqual([
+      { piece: p, motif: 'immobilisee', nbLignes: 2, montant: 120 },
+    ])
+  })
+})
+
+describe('calculerBalance — les comptes de tiers', () => {
+  it('nomme les comptes que l’engagement mouvemente', () => {
+    const balance = calculerBalance(
+      ['401000', '411000', '455000', '108000', '467000'].map((compte) => ecriture({ compte })), [], [],
+    )
+    expect(balance.map((l) => l.libelle)).toEqual([
+      "Compte de l'exploitant", 'Fournisseurs', 'Clients', 'Associés — comptes courants', 'Autres comptes débiteurs ou créditeurs',
+    ])
   })
 })
