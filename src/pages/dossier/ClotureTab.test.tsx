@@ -1,4 +1,4 @@
-import { act, render, screen, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import ClotureTab from './ClotureTab'
@@ -19,6 +19,8 @@ const faux = vi.hoisted(() => ({
   muetApresParTable: {} as Record<string, number>,
   // Ce que `remplir2035` a reçu : les cases telles que le PDF les porterait.
   remplies: [] as Map<string, number>[],
+  // Les mises à jour envoyées, table et valeurs : l'enregistrement d'un poste manquant.
+  misesAJour: [] as { table: string; valeurs: unknown }[],
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -29,6 +31,7 @@ vi.mock('../../lib/supabase', () => ({
       let fin = Number.MAX_SAFE_INTEGER
       Object.assign(chaine, {
         select: () => chaine,
+        update: (valeurs: unknown) => { faux.misesAJour.push({ table, valeurs }); return chaine },
         eq: () => chaine,
         not: () => chaine,
         or: () => chaine,
@@ -101,6 +104,7 @@ function poser(
   cotis: Record<string, unknown>[] = [cotisation('c1'), cotisation('c2')],
 ) {
   faux.muetApresParTable = muet
+  faux.misesAJour = []
   faux.parTable = {
     categories: [CATEGORIE],
     pieces: [PIECE],
@@ -594,5 +598,27 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
     monter(2025)
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(screen.queryByText('La 2035 n’est pas produite pour ce dossier')).toBeNull()
+  })
+
+  // LA CHECKLIST ENVOIE ICI COMPLÉTER UN POSTE MANQUANT, dans les deux modèles : le poste regroupe
+  // encore la situation intermédiaire et l'estimation d'un dossier en engagement, qui écartent une
+  // pièce sans poste. Masquée avec le reste de la 2035, la carte laissait ce renvoi sur un écran vide.
+  it('montre les postes manquants et les enregistre', async () => {
+    poser()
+    faux.parTable.categories = [{ ...CATEGORIE, poste_2035: null }]
+    monterEngagement()
+
+    const carte = (await screen.findByText('Postes manquants')).closest('.card') as HTMLElement
+    expect(within(carte).getByText(/Ce dossier ne produit pas de 2035, mais le poste regroupe encore/)).toBeTruthy()
+    fireEvent.change(within(carte).getByPlaceholderText(/ex\. Achats/), { target: { value: 'Achats' } })
+    await act(async () => { within(carte).getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { poste_2035: 'Achats' } }])
+  })
+
+  it('se tait quand chaque catégorie utilisée a son poste — le garde symétrique', async () => {
+    poser()
+    monterEngagement()
+    await screen.findByText('Exercice 2025')
+    expect(screen.queryByText('Postes manquants')).toBeNull()
   })
 })

@@ -356,6 +356,51 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // « facturée en décembre et payée on ne sait quand ».
   const sansPaiement = declarations.flatMap((d) => d.sansPaiementConnu.map((s) => ({ annee: d.annee, ...s })))
 
+  // LA CARTE DES POSTES MANQUANTS VIT DANS LES DEUX MODÈLES. En engagement la 2035 n'est pas produite,
+  // mais le poste regroupe encore les recettes et les charges de la situation intermédiaire (onglet
+  // Financement) et du détail par poste de l'estimation, qui écartent une pièce sans poste — et c'est
+  // ici que la Checklist envoie le compléter. Masquée avec le reste de la 2035, elle laissait le point
+  // de la Checklist renvoyer vers un écran qui ne montre rien.
+  const cartePostesManquants = categoriesSansPoste.length > 0 && (
+    <div className="card" style={{ marginBottom: 20 }}>
+      <h3 style={{ marginTop: 0 }}>Postes manquants</h3>
+      <p className="muted" style={{ marginTop: -8 }}>
+        {modeComptable === 'engagement'
+          ? 'Ces catégories sont utilisées par des pièces validées mais n\'ont pas encore de poste associé. '
+            + 'Ce dossier ne produit pas de 2035, mais le poste regroupe encore les recettes et les charges de '
+            + 'la situation intermédiaire (onglet Financement) et du détail par poste de l\'estimation : leurs '
+            + 'montants n\'y sont pas comptés tant que ce n\'est pas fait.'
+          : 'Ces catégories sont utilisées par des pièces validées mais n\'ont pas encore de poste 2035 '
+            + 'associé — leurs montants ne sont pas comptés dans le récapitulatif tant que ce n\'est pas fait.'}
+        {' '}Un poste déjà renseigné est une suggestion à vérifier, pas une valeur figée.
+      </p>
+      <table>
+        <thead><tr><th>Catégorie</th><th>Poste 2035</th><th></th></tr></thead>
+        <tbody>
+          {categoriesSansPoste.map((c) => (
+            <tr key={c.id}>
+              <td>{c.libelle}</td>
+              <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <input
+                  style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 220 }}
+                  placeholder="ex. Achats, Loyers, Recettes..."
+                  value={posteAffiche(c)}
+                  onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                />
+                {!postesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
+                  <span className="badge badge-neutral">suggestion</span>
+                )}
+              </td>
+              <td>
+                <button className="btn btn-outline btn-sm" onClick={() => savePoste(c.id)}>Enregistrer</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )
+
   if (modeComptable === 'engagement') {
     const exercicesACloturer = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
     return (
@@ -380,6 +425,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         )}
         {error && <p className="error-text">{error}</p>}
         {clotureMessage && <p className="muted">{clotureMessage}</p>}
+        {cartePostesManquants}
         {loading ? (
           <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
         ) : exercicesACloturer.length === 0 ? (
@@ -428,40 +474,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         </div>
       )}
 
-      {categoriesSansPoste.length > 0 && (
-        <div className="card" style={{ marginBottom: 20 }}>
-          <h3 style={{ marginTop: 0 }}>Postes manquants</h3>
-          <p className="muted" style={{ marginTop: -8 }}>
-            Ces catégories sont utilisées par des pièces validées mais n'ont pas encore de poste 2035
-            associé — leurs montants ne sont pas comptés dans le récapitulatif tant que ce n'est pas fait.
-            Un poste déjà renseigné est une suggestion à vérifier, pas une valeur figée.
-          </p>
-          <table>
-            <thead><tr><th>Catégorie</th><th>Poste 2035</th><th></th></tr></thead>
-            <tbody>
-              {categoriesSansPoste.map((c) => (
-                <tr key={c.id}>
-                  <td>{c.libelle}</td>
-                  <td style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <input
-                      style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 220 }}
-                      placeholder="ex. Achats, Loyers, Recettes..."
-                      value={posteAffiche(c)}
-                      onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
-                    />
-                    {!postesEdit[c.id] && SUGGESTIONS_COMPTE_PAR_CODE[c.code] && (
-                      <span className="badge badge-neutral">suggestion</span>
-                    )}
-                  </td>
-                  <td>
-                    <button className="btn btn-outline btn-sm" onClick={() => savePoste(c.id)}>Enregistrer</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {cartePostesManquants}
 
       {piecesExclues.length > 0 && (
         <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
