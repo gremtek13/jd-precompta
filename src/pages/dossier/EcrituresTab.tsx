@@ -2,15 +2,16 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
-import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresSansObjet, lignesChargeProduitPourPiece, piecesAComptabiliser, soldeCompte } from '../../lib/ecritures'
+import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresSansObjet, lignesPourPiece, piecesAComptabiliser, soldeCompte } from '../../lib/ecritures'
 import type { MotifSansObjet } from '../../lib/ecritures'
 import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
+import { COMPTES_NOTES_DE_FRAIS, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
-import { anneesDesRattachements, paiementsParPiece, rattachementsTresorerie } from '../../lib/rattachement'
-import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from '../../lib/types'
+import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
+import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -29,7 +30,7 @@ const LIBELLE_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
 }
 
 const ACTION_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
-  immobilisee: "Le FEC et la balance portent la charge entière, la 2035 la remplace par la dotation : les deux ne se recoupent plus. Retirer l'écriture ci-contre — ou l'immobilisation, depuis son onglet, si c'en est une par erreur.",
+  immobilisee: "Le FEC et la balance portent la charge entière, l'amortissement la remplace par la dotation : les deux ne se recoupent plus. Retirer l'écriture ci-contre — ou l'immobilisation, depuis son onglet, si c'en est une par erreur.",
   sans_categorie: "Redonner une catégorie à la pièce depuis Justificatifs, puis régénérer l'écriture.",
   categorie_sans_compte: 'Renseigner le compte de la catégorie ci-dessous, puis régénérer.',
   sans_montant: 'Remettre le montant TTC de la pièce depuis Justificatifs, puis régénérer.',
@@ -42,7 +43,17 @@ const ACTION_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
 // moment de la génération, ou plus tard depuis Banque sinon. L'export FEC (voir lib/fec.ts) permet au
 // cabinet de récupérer un fichier directement importable dans son propre logiciel de comptabilité,
 // une fois l'année sélectionnée et le brouillon jugé complet.
-export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva }: { dossierId: string; dossierNom: string; dossierSiret: string | null; assujettiTva: boolean }) {
+// Le modèle comptable du dossier (lib/engagement.ts) se règle ICI, là où il sert, et seulement tant que
+// le brouillon est vide : il décide des comptes de toutes les écritures, et la base refuse ensuite de
+// le changer (déclencheur `verrouiller_modele_comptable`).
+export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva, modele, onModeleUpdated }: {
+  dossierId: string
+  dossierNom: string
+  dossierSiret: string | null
+  assujettiTva: boolean
+  modele: ModeleComptable
+  onModeleUpdated: (modification: { mode_comptable?: ModeComptable; compte_notes_de_frais?: CompteNotesDeFrais }) => void
+}) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
@@ -76,6 +87,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // rendu suivant — un double clic du même rendu passerait les deux, et chaque pièce en attente
   // recevrait deux jeux d'écritures, c'est-à-dire sa charge en double dans le FEC et la balance.
   const generationEnCours = useRef(false)
+  // Le changement de modèle et la génération s'excluent : une génération partie avec l'ancien modèle
+  // pendant que le nouveau s'enregistre écrirait des écritures de trésorerie dans un dossier passé en
+  // engagement. Chacun regarde le verrou de l'autre.
+  const changementModeleEnCours = useRef(false)
+  const [changementModele, setChangementModele] = useState(false)
+  // Par pièce : régénérer, c'est supprimer puis réécrire, et deux clics du même rendu réécriraient deux
+  // fois — en engagement, la facture ET ses règlements en double.
+  const regenerationsEnCours = useRef<Set<string>>(new Set())
 
   async function load() {
     setLoading(true)
@@ -172,27 +191,32 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // moitié feraient pire : une charge pour un bien qui s'amortit déjà. `brouillonIncomplet` couvre
   // les cinq lectures dont dépend la génération, les mêmes que celles des deux exports.
   async function genererEcritures() {
-    if (enAttente.length === 0 || brouillonIncomplet !== null || generationEnCours.current) return
+    if (enAttente.length === 0 || brouillonIncomplet !== null || generationEnCours.current || changementModeleEnCours.current) return
     generationEnCours.current = true
     setGenerating(true)
     setError(null)
     try {
       const comptes = new Map(aComptabiliser.map(({ piece, compte }) => [piece.id, compte]))
-      // Datées au paiement quand le rapprochement le connaît, comme la 2035 compte la pièce.
+      // Selon le modèle du dossier : en trésorerie, datées au paiement quand le rapprochement le connaît,
+      // comme la 2035 compte la pièce ; en engagement, la facture à sa date et un règlement par
+      // mouvement déjà rapproché (lib/engagement.ts).
       const rows = enAttente.flatMap((p) =>
-        lignesChargeProduitPourPiece(dossierId, p, comptes.get(p.id)!, assujettiTva, lignesBancaires.filter((l) => l.piece_id === p.id)))
+        lignesPourPiece(dossierId, p, comptes.get(p.id)!, assujettiTva, lignesBancaires.filter((l) => l.piece_id === p.id), modele))
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
 
       // Une pièce déjà rapprochée d'un mouvement bancaire au moment où son écriture est générée (import
       // en masse d'anciens exercices, par exemple) doit recevoir sa contrepartie tout de suite — sinon
-      // il faudrait re-toucher le rapprochement dans Banque pour que la partie double se complète.
-      await Promise.all(
-        enAttente.map((p) => {
-          const ligne = lignesBancaires.find((l) => l.piece_id === p.id)
-          return ligne ? synchroniserContrepartieBanque(dossierId, p, ligne) : Promise.resolve()
-        }),
-      )
+      // il faudrait re-toucher le rapprochement dans Banque pour que la partie double se complète. En
+      // engagement, ses règlements sont déjà dans les lignes ci-dessus.
+      if (modele.mode === 'tresorerie') {
+        await Promise.all(
+          enAttente.map((p) => {
+            const ligne = lignesBancaires.find((l) => l.piece_id === p.id)
+            return ligne ? synchroniserContrepartieBanque(dossierId, p, ligne, modele) : Promise.resolve()
+          }),
+        )
+      }
       // Relu AVANT de relâcher le verrou : relâché plus tôt, `enAttente` porterait encore les pièces
       // qu'on vient de comptabiliser le temps que la relecture revienne, et un clic à ce moment-là
       // les générerait une seconde fois.
@@ -227,7 +251,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignesBancaires)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignesBancaires, modele)
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
   const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
@@ -271,12 +295,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       // L'exercice d'une pièce est celui de son paiement, sa date de facture à défaut — celui où ses
       // écritures sont datées (lib/rattachement.ts) ; sans quoi une facture de décembre réglée en
       // janvier figurerait dans la piste de décembre comme un justificatif que rien ne comptabilise.
+      // En engagement, celui de sa facture, où son écriture de facture est datée.
       // Une pièce que rien ne date n'appartient à aucun exercice : elle est jointe à chacun, et la
       // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de la taire.
       const paiements = paiementsParPiece(lignesBancaires)
       const piecesExercice = piecesValidees.filter((p) => {
-        const rattachements = rattachementsTresorerie(p, paiements.get(p.id) ?? [])
-        return rattachements.some((r) => r.date === null) || anneesDesRattachements(rattachements).includes(anneeFilter)
+        const parts = rattachements(p, paiements.get(p.id) ?? [], modele.mode)
+        return parts.some((r) => r.date === null) || anneesDesRattachements(parts).includes(anneeFilter)
       })
       const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
@@ -287,27 +312,64 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     }
   }
 
-  // Reprend les lignes charge/produit + TVA d'une pièce d'après ses montants actuels — jamais
-  // automatique, seulement sur ce clic explicite. Ne touche pas à la contrepartie banque (montant du
-  // mouvement réel, indépendant d'une correction sur la pièce).
+  // Reprend les écritures d'une pièce d'après ses montants actuels — jamais automatique, seulement sur
+  // ce clic explicite. En TRÉSORERIE, les lignes charge/produit + TVA seulement : la contrepartie banque
+  // porte le montant du mouvement réel, indépendant d'une correction sur la pièce. En ENGAGEMENT, TOUT —
+  // la facture et ses règlements, qui se déduisent des mouvements rapprochés (lib/engagement.ts) : c'est
+  // ce qui répare un règlement resté sur l'ancien compte de tiers d'une pièce devenue note de frais.
+  //
+  // SUSPENDUE SUR UNE LECTURE PARTIELLE, comme la génération : les mouvements rapprochés datent la
+  // charge en trésorerie et décident des règlements en engagement — lus à moitié, régénérer daterait
+  // mal, ou SUPPRIMERAIT des règlements qui existent.
   async function regenererEcriture(piece: Piece) {
     const compte = categorieById(piece.categorie_id)?.compte_comptable
-    if (!compte) return
+    if (!compte || brouillonIncomplet !== null || regenerationsEnCours.current.has(piece.id)) return
+    regenerationsEnCours.current.add(piece.id)
     setRegenerating(piece.id)
     setError(null)
     try {
-      const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
+      const { error: deleteError } = modele.mode === 'engagement'
+        ? await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
+        : await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
       if (deleteError) throw deleteError
       const { error: insertError } = await supabase.from('ecritures_brouillon')
-        .insert(lignesChargeProduitPourPiece(dossierId, piece, compte, assujettiTva, lignesBancaires.filter((l) => l.piece_id === piece.id)))
+        .insert(lignesPourPiece(dossierId, piece, compte, assujettiTva, lignesBancaires.filter((l) => l.piece_id === piece.id), modele))
       if (insertError) throw insertError
       load()
     } catch (err) {
       setError(messageErreur(err))
     } finally {
+      regenerationsEnCours.current.delete(piece.id)
       setRegenerating(null)
     }
   }
+
+  // Le modèle ne se change que tant que le brouillon est vide — et lu en entier : un brouillon lu à
+  // moitié peut porter des écritures qu'on ne voit pas, et la base refuserait alors le changement.
+  const modeleModifiable = !loading && brouillonIncomplet === null && ecritures.length === 0
+  const raisonVerrouModele = loading
+    ? 'Lecture du brouillon…'
+    : brouillonIncomplet !== null
+      ? 'Il ne se change pas sur une lecture partielle du brouillon.'
+      : `Il ne se change plus : le brouillon porte ${ecritures.length} écriture${ecritures.length > 1 ? 's' : ''}, qui resteraient dans l’ancien modèle.`
+
+  async function changerModele(modification: { mode_comptable?: ModeComptable; compte_notes_de_frais?: CompteNotesDeFrais }) {
+    if (!modeleModifiable || generationEnCours.current || changementModeleEnCours.current) return
+    changementModeleEnCours.current = true
+    setChangementModele(true)
+    setError(null)
+    try {
+      const { error: updateError } = await supabase.from('dossiers').update(modification).eq('id', dossierId)
+      if (updateError) throw updateError
+      onModeleUpdated(modification)
+    } catch (err) {
+      setError(messageErreur(err, 'Le modèle comptable n’a pas pu être enregistré.'))
+    } finally {
+      changementModeleEnCours.current = false
+      setChangementModele(false)
+    }
+  }
+  const compteNotesDeFrais = COMPTES_NOTES_DE_FRAIS.find((c) => c.compte === modele.compteNotesDeFrais)!
 
   // Retire du brouillon TOUTES les lignes d'une pièce, contrepartie banque comprise — et c'est la
   // seule forme correcte. N'ôter que la charge laisserait la ligne banque SEULE dans son groupe,
@@ -331,9 +393,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   async function retirerEcriture(piece: Piece) {
     if (!window.confirm(
       `Retirer du brouillon l'écriture de « ${piece.tiers ?? piece.nom_fichier} » ? `
-      + 'Sa ligne de charge, sa TVA et sa contrepartie banque partent ensemble. La pièce, son '
-      + "rapprochement bancaire et l'immobilisation ne bougent pas : la dépense reste comptée par "
-      + "l'amortissement.",
+      + (modele.mode === 'engagement'
+        ? 'Sa ligne de charge, sa TVA, sa dette envers le fournisseur et ses règlements partent ensemble. '
+        : 'Sa ligne de charge, sa TVA et sa contrepartie banque partent ensemble. ')
+      + "La pièce, son rapprochement bancaire et l'immobilisation ne bougent pas : la dépense reste "
+      + "comptée par l'amortissement.",
     )) return
     setRetrait(piece.id)
     setError(null)
@@ -360,6 +424,64 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     <>
       <BrouillonBanner />
 
+      {/* Le modèle comptable : un choix offert tant que le brouillon est vide — c'est là qu'il se prend,
+          avant la première génération —, une ligne qui le rappelle ensuite. Des BOUTONS et non des
+          boutons radio : sur un groupe radio qui a le focus, les flèches du clavier changent la valeur,
+          donc l'enregistreraient — le piège déjà payé sur la liste déroulante du rapprochement. */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <h3 style={{ marginTop: 0 }}>Modèle comptable</h3>
+        {modeleModifiable ? (
+          <>
+            <p className="muted" style={{ marginTop: -8 }}>
+              Il décide des comptes de toutes les écritures du dossier. Il ne se change que tant que le
+              brouillon est vide : c'est donc avant la première génération qu'il se choisit.
+            </p>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+              {(['tresorerie', 'engagement'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  type="button"
+                  className={`btn btn-sm ${modele.mode === mode ? 'btn-primary' : 'btn-outline'}`}
+                  aria-pressed={modele.mode === mode}
+                  disabled={changementModele || generating}
+                  onClick={() => { if (modele.mode !== mode) changerModele({ mode_comptable: mode }) }}
+                >
+                  {LIBELLES_MODE[mode]}
+                </button>
+              ))}
+            </div>
+            <p className="muted" style={{ margin: 0 }}>{EXPLICATIONS_MODE[modele.mode]}</p>
+            {modele.mode === 'engagement' && (
+              <div style={{ marginTop: 14 }}>
+                <strong>Note de frais payée personnellement par le dirigeant</strong>
+                <ul style={{ listStyle: 'none', padding: 0, margin: '8px 0 0', display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {COMPTES_NOTES_DE_FRAIS.map((c) => (
+                    <li key={c.compte}>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${modele.compteNotesDeFrais === c.compte ? 'btn-primary' : 'btn-outline'}`}
+                        aria-pressed={modele.compteNotesDeFrais === c.compte}
+                        disabled={changementModele || generating}
+                        onClick={() => { if (modele.compteNotesDeFrais !== c.compte) changerModele({ compte_notes_de_frais: c.compte }) }}
+                      >
+                        {c.libelle}
+                      </button>
+                      <p className="muted" style={{ margin: '4px 0 0' }}>{c.explication}</p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="muted" style={{ margin: 0 }}>
+            <strong>{LIBELLES_MODE[modele.mode]}</strong>
+            {modele.mode === 'engagement' && ` — notes de frais du dirigeant en ${compteNotesDeFrais.libelle.replace(/ \(.*\)$/, '')}`}.
+            {' '}{raisonVerrouModele}
+          </p>
+        )}
+      </div>
+
       {/* EN PREMIER, avant même « sans catégorie » : celles-là ne produisent RIEN, celle-ci produit
           quelque chose de FAUX. Un total manquant finit par se remarquer ; un total juste en
           apparence et compté deux fois, non. */}
@@ -371,9 +493,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           <p className="muted" style={{ marginTop: -8 }}>
             Ces écritures ont été générées, puis la pièce a changé de nature — rien ne les a retirées.
             Elles comptent encore dans le FEC et dans la Balance des comptes, qui se calculent sur le
-            brouillon, alors que la 2035 se calcule sur les pièces et les écarte : les deux livrables
-            ne disent plus la même chose. Aucun autre contrôle ne peut les voir — les trois autres
-            partent de la pièce, celui-ci part de l'écriture.
+            brouillon,{modele.mode === 'engagement'
+              ? ' alors que la pièce ne les justifie plus.'
+              : ' alors que la 2035 se calcule sur les pièces et les écarte : les deux livrables ne disent plus la même chose.'}
+            {' '}Aucun autre contrôle ne peut les voir — les trois autres partent de la pièce, celui-ci
+            part de l'écriture.
           </p>
           <table>
             <thead><tr><th>Pièce</th><th>Compté au brouillon</th><th>Ce qui a changé</th><th>Ce qu'il faut faire</th></tr></thead>
@@ -478,15 +602,25 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
             Écritures à régénérer <span className="badge badge-danger">à traiter</span>
           </h3>
-          <p className="muted" style={{ marginTop: -8 }}>
-            Ces pièces ont été modifiées depuis que leur écriture a été générée : montant TTC,
-            ventilation de la TVA, catégorie (donc compte) ou date. Les trois dernières ne déplacent
-            AUCUN total — une catégorie change le compte qui part en FEC, une date change l'EXERCICE
-            dans lequel l'écriture tombe alors que la 2035 lit celle de la pièce, et une TVA corrigée
-            à TTC constant change la répartition entre charge et TVA déductible à somme juste.
-            Reprend tout cela à jour sans toucher à une éventuelle contrepartie banque déjà
-            rapprochée, dont la date est celle du paiement.
-          </p>
+          {modele.mode === 'engagement' ? (
+            <p className="muted" style={{ marginTop: -8 }}>
+              Ces pièces ont changé depuis que leurs écritures ont été générées : montant TTC,
+              ventilation de la TVA, catégorie (donc compte), date, type (donc compte de tiers — un achat
+              devenu note de frais quitte le 401), ou rapprochements — un paiement rapproché sans
+              règlement laisse au 401 une dette déjà payée. « Régénérer » reprend la facture et ses
+              règlements d’après la pièce et ses rapprochements actuels.
+            </p>
+          ) : (
+            <p className="muted" style={{ marginTop: -8 }}>
+              Ces pièces ont été modifiées depuis que leur écriture a été générée : montant TTC,
+              ventilation de la TVA, catégorie (donc compte) ou date. Les trois dernières ne déplacent
+              AUCUN total — une catégorie change le compte qui part en FEC, une date change l'EXERCICE
+              dans lequel l'écriture tombe alors que la 2035 lit celle de la pièce, et une TVA corrigée
+              à TTC constant change la répartition entre charge et TVA déductible à somme juste.
+              Reprend tout cela à jour sans toucher à une éventuelle contrepartie banque déjà
+              rapprochée, dont la date est celle du paiement.
+            </p>
+          )}
           <table>
             <thead><tr><th>Pièce</th><th>Montant actuel</th><th>Date actuelle</th><th></th></tr></thead>
             <tbody>
@@ -496,7 +630,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                   <td>{formatMoney(p.montant_ttc)}</td>
                   <td>{p.date_piece ? formatDate(p.date_piece) : <span className="muted">sans date</span>}</td>
                   <td>
-                    <button className="btn btn-outline btn-sm" disabled={regenerating === p.id} onClick={() => regenererEcriture(p)}>
+                    <button
+                      className="btn btn-outline btn-sm"
+                      disabled={regenerating === p.id || brouillonIncomplet !== null}
+                      title={brouillonIncomplet ? `Lecture incomplète (${brouillonIncomplet}) — régénérer maintenant pourrait mal dater l’écriture, ou retirer des règlements.` : undefined}
+                      onClick={() => regenererEcriture(p)}
+                    >
                       {regenerating === p.id ? 'Régénération…' : 'Régénérer'}
                     </button>
                   </td>
@@ -546,9 +685,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             Écritures déséquilibrées <span className="badge badge-danger">à vérifier</span>
           </h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            Le total des débits ne correspond pas à celui des crédits sur ces pièces — un montant réel
-            de mouvement bancaire différent de la pièce (frais, paiement partiel...) l'explique parfois,
-            mais ça mérite toujours une vérification avant l'export FEC.
+            {modele.mode === 'engagement'
+              ? 'Une écriture de ces pièces ne s’équilibre pas — le plus souvent une facture dont la TVA ne recoupe pas le TTC. Chaque écriture part sous son propre numéro dans le FEC, et une écriture déséquilibrée fait rejeter le fichier.'
+              : 'Le total des débits ne correspond pas à celui des crédits sur ces pièces — un montant réel de mouvement bancaire différent de la pièce (frais, paiement partiel...) l’explique parfois, mais ça mérite toujours une vérification avant l’export FEC.'}
           </p>
           <table>
             <thead><tr><th>Pièce</th><th>Écart</th></tr></thead>
@@ -634,7 +773,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               aussi celles dont on n'a pas pu lire l'écriture. Il se tait plutôt que de l'affirmer. */}
           {enAttente.length > 0 && brouillonIncomplet === null && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
           {nbSansContrepartie > 0 && (
-            <> — <span className="badge badge-warning">{nbSansContrepartie} en attente de rapprochement bancaire</span></>
+            <> — <span className="badge badge-warning">
+              {modele.mode === 'engagement'
+                ? `${nbSansContrepartie} facture${nbSansContrepartie > 1 ? 's' : ''} sans règlement rapproché`
+                : `${nbSansContrepartie} en attente de rapprochement bancaire`}
+            </span></>
           )}
           {piecesDesynchronisees.length > 0 && (
             <> — <span className="badge badge-danger">{piecesDesynchronisees.length} à régénérer</span></>
@@ -645,7 +788,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </p>
         <button
           className="btn btn-primary btn-sm"
-          disabled={generating || enAttente.length === 0 || brouillonIncomplet !== null}
+          disabled={generating || changementModele || enAttente.length === 0 || brouillonIncomplet !== null}
           title={
             brouillonIncomplet
               ? `Lecture incomplète (${brouillonIncomplet}) — générer maintenant pourrait doubler des écritures déjà passées.`
@@ -717,7 +860,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           }
           onClick={() => {
             if (typeof anneeFilter !== 'number') return
-            const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice)
+            const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode)
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
         >

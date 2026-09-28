@@ -5,6 +5,7 @@ import { extractPdfLignes } from '../../lib/pdfText'
 import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
+import type { ModeleComptable } from '../../lib/engagement'
 import type { ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -35,8 +36,13 @@ function signatureLigne(l: { date: string; libelle: string; montant: number }): 
   return `${l.date}|${l.libelle}|${l.montant.toFixed(2)}`
 }
 
-export default function BanqueTab({ dossierId }: { dossierId: string }) {
+// `modele` : le modèle comptable du dossier (lib/engagement.ts). En trésorerie, un rapprochement
+// écrit la contrepartie banque de la pièce ; en engagement, le RÈGLEMENT de la facture — le compte de
+// tiers contre la banque —, et l'annuler retire ce règlement-là et lui seul.
+export default function BanqueTab({ dossierId, modele }: { dossierId: string; modele: ModeleComptable }) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
+  // Ce que le rapprochement écrit au brouillon, nommé comme le modèle le nomme dans les messages.
+  const ecritureDeBanque = modele.mode === 'engagement' ? "l'écriture de règlement" : "l'écriture de contrepartie banque"
   // Non nul quand le relevé n'a pas pu être lu en entier — voir lib/lectureComplete.ts.
   const [lignesIncompletes, setLignesIncompletes] = useState<string | null>(null)
   // Les PIÈCES sont l'autre moitié du rapprochement, et leur lecture était restée en `select('*')`
@@ -286,9 +292,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     // annuler ce qui a réussi — la contrepartie se recréera au prochain passage, elle est idempotente.
     if (ligne && piece) {
       try {
-        await synchroniserContrepartieBanque(dossierId, piece, ligne)
+        await synchroniserContrepartieBanque(dossierId, piece, ligne, modele)
       } catch (err) {
-        window.alert(`Le rapprochement est enregistré, mais l'écriture de contrepartie banque n'a pas pu être créée : ${messageErreur(err, 'raison inconnue')}`)
+        window.alert(`Le rapprochement est enregistré, mais ${ecritureDeBanque} n'a pas pu être créée : ${messageErreur(err, 'raison inconnue')}`)
       }
     }
     return true
@@ -312,9 +318,9 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
     // donc une écriture de paiement subsiste pour un mouvement qui n'est plus rapproché.
     if (ancienPieceId) {
       try {
-        await retirerContrepartieBanque(ancienPieceId, pieces.find((p) => p.id === ancienPieceId) ?? null)
+        await retirerContrepartieBanque(ligneId, ancienPieceId, pieces.find((p) => p.id === ancienPieceId) ?? null, modele)
       } catch (err) {
-        window.alert(`Le rapprochement est annulé, mais l'écriture de contrepartie banque n'a pas pu être retirée : ${messageErreur(err, 'raison inconnue')}\n\nElle reste dans le brouillon d'écritures.`)
+        window.alert(`Le rapprochement est annulé, mais ${ecritureDeBanque} n'a pas pu être retirée : ${messageErreur(err, 'raison inconnue')}\n\nElle reste dans le brouillon d'écritures.`)
       }
     }
     return true
@@ -428,11 +434,11 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
 
         try {
           const piece = await reglerPieceSurBanque(a.piece, a.ligne)
-          await synchroniserContrepartieBanque(dossierId, piece, a.ligne)
+          await synchroniserContrepartieBanque(dossierId, piece, a.ligne, modele)
         } catch (err) {
           // La pièce est validée et le mouvement rapproché ; seule la contrepartie comptable manque.
           // On le dit plutôt que de laisser croire que tout est passé.
-          echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : contrepartie banque non créée (${messageErreur(err, 'raison inconnue')})`)
+          echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${ecritureDeBanque} non créée (${messageErreur(err, 'raison inconnue')})`)
         }
       }
       if (echecs.length > 0) {
@@ -495,14 +501,14 @@ export default function BanqueTab({ dossierId }: { dossierId: string }) {
             const pieceAvant = pieces.find((p) => p.id === m.pieceId)
             if (!ligne || !pieceAvant) return
             const piece = await reglerPieceSurBanque(pieceAvant, ligne)
-            await synchroniserContrepartieBanque(dossierId, piece, ligne)
+            await synchroniserContrepartieBanque(dossierId, piece, ligne, modele)
           }),
       )
       const contrepartiesEnEchec = contreparties.filter((r) => r.status === 'rejected')
       if (contrepartiesEnEchec.length > 0) {
         const premier = contrepartiesEnEchec[0] as PromiseRejectedResult
         window.alert(
-          `${contrepartiesEnEchec.length} écriture${contrepartiesEnEchec.length > 1 ? 's' : ''} de contrepartie banque n'${contrepartiesEnEchec.length > 1 ? 'ont' : 'a'} pas pu être créée${contrepartiesEnEchec.length > 1 ? 's' : ''} (${messageErreur(premier.reason, 'raison inconnue')}) — les rapprochements, eux, sont enregistrés.`,
+          `${contrepartiesEnEchec.length} écriture${contrepartiesEnEchec.length > 1 ? 's' : ''} ${modele.mode === 'engagement' ? 'de règlement' : 'de contrepartie banque'} n'${contrepartiesEnEchec.length > 1 ? 'ont' : 'a'} pas pu être créée${contrepartiesEnEchec.length > 1 ? 's' : ''} (${messageErreur(premier.reason, 'raison inconnue')}) — les rapprochements, eux, sont enregistrés.`,
         )
       }
       return true

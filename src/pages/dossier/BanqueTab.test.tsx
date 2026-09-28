@@ -4,6 +4,7 @@ import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { LigneBancaire, Piece } from '../../lib/types'
+import type { ModeleComptable } from '../../lib/engagement'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
 // `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
@@ -38,8 +39,11 @@ const faux = vi.hoisted(() => ({
   lignesPdf: [] as { texte: string; xFin: number }[],
   // Les lignes d'écriture de la pièce, que la contrepartie banque lit avant d'écrire ; vides, elle
   // renonce (rien à compléter). Et les dates qu'elle réécrit, avec leurs filtres.
-  ecritures: [] as { id: string; compte: string }[],
+  ecritures: [] as { id: string; compte: string; ligne_bancaire_id?: string | null }[],
   updatesEcritures: [] as { valeur: Record<string, unknown>; filtres: string[] }[],
+  // Les suppressions d'écritures, avec leurs filtres : c'est ce qui dit QUELLES lignes l'annulation
+  // d'un rapprochement retire.
+  suppressionsEcritures: [] as string[][],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -121,6 +125,7 @@ vi.mock('../../lib/supabase', () => {
           return Promise.resolve({ data: faux.lignes, error: null, count: faux.lignes.length }).then(suite)
         }
         if (table === 'ecritures_brouillon') {
+          if (operation === 'delete') faux.suppressionsEcritures.push([...filtres])
           return Promise.resolve(operation === 'select'
             ? { data: faux.ecritures, error: null, count: faux.ecritures.length }
             : { data: null, error: null }).then(suite)
@@ -193,16 +198,20 @@ function reinitialiser() {
   faux.lignesPdf = []
   faux.ecritures = []
   faux.updatesEcritures = []
+  faux.suppressionsEcritures = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
 // `usePanneauDroit` lève (voir lib/panneauDroit.ts) — un bouton qui n'ouvrirait rien ne doit pas
 // passer pour un bouton qui marche.
-function rendre() {
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+
+function rendre(modele: ModeleComptable = TRESORERIE) {
   return render(
     <FournisseurPanneauDroit>
       <AnneeProvider defaut="toutes">
-        <BanqueTab dossierId="dossier-de-test" />
+        <BanqueTab dossierId="dossier-de-test" modele={modele} />
       </AnneeProvider>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
@@ -802,5 +811,43 @@ describe('BanqueTab — les lots de rapprochement sur une lecture partielle', ()
     expect(screen.queryByText(/Validation en lot suspendue/)).toBeNull()
     await act(async () => { bouton.click() })
     await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ statut: 'validee' })]))
+  })
+})
+
+// EN ENGAGEMENT (lib/engagement.ts), le rapprochement écrit le RÈGLEMENT de la facture et ne redate
+// rien ; l'annuler retire ce règlement-là. Le calcul est testé à part : ici, que l'écran passe le
+// modèle du dossier aux deux fonctions.
+describe('BanqueTab — en engagement', () => {
+  it('rapprocher écrit le règlement du mouvement, 401 contre 512, sans redater la facture', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.ecritures = [{ id: 'e1', compte: '606100', ligne_bancaire_id: null }, { id: 'e2', compte: '401000', ligne_bancaire_id: null }]
+    rendre(ENGAGEMENT)
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Rapproché avec')).toBeTruthy())
+
+    expect(faux.updatesEcritures).toEqual([])
+    expect(faux.insertions).toContainEqual({
+      table: 'ecritures_brouillon',
+      valeur: [
+        expect.objectContaining({ compte: '401000', sens: 'debit', montant: 100, date: '2025-06-02', ligne_bancaire_id: 'ligne-1' }),
+        expect.objectContaining({ compte: '512000', sens: 'credit', montant: 100, date: '2025-06-02', ligne_bancaire_id: 'ligne-1' }),
+      ],
+    })
+  })
+
+  it('annuler le rapprochement retire le règlement de ce mouvement, et ne redate rien', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1' })]
+    rendre(ENGAGEMENT)
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+
+    expect(faux.suppressionsEcritures).toEqual([['ligne_bancaire_id=ligne-1']])
+    expect(faux.updatesEcritures).toEqual([])
   })
 })

@@ -104,10 +104,10 @@ const ECHEANCIER_2026 = Array.from({ length: 12 }, (_, i) =>
 
 function poser(o: {
   recettes?: Piece[]; cotisations?: CotisationDeclaree[]; reperes?: ReferenceAnnuelle[]; assujetti?: boolean
-  paiements?: LigneBancaire[]
+  paiements?: LigneBancaire[]; modeComptable?: 'tresorerie' | 'engagement'
 } = {}) {
   faux.parTable = {
-    dossiers: [{ assujetti_tva: o.assujetti ?? false }],
+    dossiers: [{ assujetti_tva: o.assujetti ?? false, mode_comptable: o.modeComptable ?? 'tresorerie' }],
     pieces: o.recettes ?? [],
     cotisations_declarees: o.cotisations ?? [],
     references_annuelles: o.reperes ?? [],
@@ -202,6 +202,18 @@ describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
     poser({ recettes: [recette({ date_piece: '2025-12-29' })], paiements: [encaissement('2026-01-06')] })
     await monter()
     expect(valeur('CA encaissé à date')).toBe('600,00 €')
+  })
+
+  // EN ENGAGEMENT (lib/engagement.ts), la facture fait le chiffre d'affaires, encaissée ou non : la
+  // simulation lit le modèle sur la ligne du dossier, comme le statut TVA.
+  it('compte, pour un dossier en engagement, la recette facturée en mars et encaissée en avril', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ recettes: [recette()], paiements: [encaissement('2026-04-10')], modeComptable: 'engagement' })
+    await monter()
+    // Et l'écran dit « facturé » : « encaissé » y serait faux.
+    expect(valeur('CA facturé à date')).toBe('600,00 €')
+    expect(screen.queryByText('CA encaissé à date')).toBeNull()
   })
 
   it('dit la lecture partielle quand les encaissements n’ont pas pu être lus', async () => {

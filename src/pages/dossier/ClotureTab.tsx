@@ -15,8 +15,8 @@ import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
-import { anneesDesRattachements, paiementsParPiece, rattachementsTresorerie } from '../../lib/rattachement'
-import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from '../../lib/types'
+import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
+import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
 import { lireTout } from '../../lib/lectureComplete'
@@ -28,7 +28,10 @@ import VoletSocialCard from './VoletSocialCard'
 // Chaque pièce rejoint l'exercice de son PAIEMENT quand le rapprochement bancaire le connaît, sa date
 // de facture sinon — et l'écran liste celles qui comptent ainsi faute de paiement (voir
 // lib/rattachement.ts) : c'est la règle BNC des recettes encaissées et des dépenses payées.
-export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
+// `modeComptable` : un dossier tenu en ENGAGEMENT (BIC, IS) ne produit pas de 2035 — elle déclare des
+// bénéfices non commerciaux, tenus en trésorerie. L'écran le dit, et n'y garde que la clôture de
+// l'exercice, qui ne dépend pas de la déclaration (purge du texte lu, fin des relances).
+export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: { dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable }) {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   // Non nul quand l'une des QUATRE collections dont dépend la déclaration n'a pas pu être lue en
@@ -169,10 +172,10 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
   // disponible (utile pour un premier tour d'horizon) mais affiche un avertissement explicite.
   // L'année d'une pièce est celle de son paiement, ou de sa facture à défaut (voir lib/rattachement.ts)
   // — la même que celle où le moteur la compte, sans quoi un exercice où une pièce compte pourrait
-  // manquer à la liste.
+  // manquer à la liste. En engagement, celle de sa facture.
   const paiements = paiementsParPiece(lignesBancaires)
   const anneesDisponibles = [...new Set([
-    ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachementsTresorerie(p, paiements.get(p.id) ?? []))),
+    ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
     ...cotisations.map((c) => anneeDe(c.echeance)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
@@ -352,6 +355,46 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
   // l'écran qui remplit la 2035, parce que c'est la seule chose qui distingue « payée en décembre » de
   // « facturée en décembre et payée on ne sait quand ».
   const sansPaiement = declarations.flatMap((d) => d.sansPaiementConnu.map((s) => ({ annee: d.annee, ...s })))
+
+  if (modeComptable === 'engagement') {
+    const exercicesACloturer = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
+    return (
+      <>
+        <BrouillonBanner />
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>La 2035 n’est pas produite pour ce dossier</h3>
+          <p className="muted" style={{ margin: 0 }}>
+            Ce dossier est tenu en comptabilité d’engagement (BIC, IS). La 2035 déclare des bénéfices
+            non commerciaux, déterminés sur les recettes encaissées et les dépenses payées : elle ne se
+            tire pas d’une comptabilité d’engagement, pas plus que le volet social qui en découle. La
+            liasse d’un tel dossier (2033 ou 2050) n’est pas encore préparée par l’application ; ses
+            livrables sont le FEC et la balance des comptes, depuis l’onglet Écritures.
+          </p>
+        </div>
+        {cloturesInconnues && (
+          <p className="error-text">
+            {cloturesInconnues} On ne sait donc pas quels exercices sont déjà clôturés : le bouton
+            ci-dessous propose « Clôturer » même si ça a déjà été fait. Le rejouer ne pose pas de
+            seconde clôture — il rattrape seulement les pièces validées depuis.
+          </p>
+        )}
+        {error && <p className="error-text">{error}</p>}
+        {clotureMessage && <p className="muted">{clotureMessage}</p>}
+        {loading ? (
+          <div className="card"><p className="muted" style={{ margin: 0 }}>Chargement…</p></div>
+        ) : exercicesACloturer.length === 0 ? (
+          <div className="card"><div className="empty-state">Aucun exercice à clôturer pour l'instant.</div></div>
+        ) : (
+          exercicesACloturer.map((annee) => (
+            <div key={annee} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+              <strong>Exercice {annee}</strong>
+              <BoutonCloture cloture={cloturesConnues.has(annee)} onCloturer={() => handleCloturer(annee)} />
+            </div>
+          ))
+        )}
+      </>
+    )
+  }
 
   return (
     <>
@@ -767,6 +810,25 @@ export default function ClotureTab({ dossierId, assujettiTva }: { dossierId: str
   )
 }
 
+// La clôture d'un exercice, écrite une fois pour les deux modèles : en engagement elle reste offerte
+// alors que la 2035 ne l'est pas — elle ne dépend pas de la déclaration.
+function BoutonCloture({ cloture, onCloturer }: { cloture: boolean; onCloturer: () => void }) {
+  return (
+    <>
+      {cloture && <span className="badge badge-neutral">exercice clôturé</span>}
+      <button
+        className="btn btn-outline btn-sm"
+        onClick={onCloturer}
+        title={cloture
+          ? "Rattraper la purge du texte OCR pour les pièces sensibles validées depuis la clôture."
+          : "Marque l'exercice comme clôturé et supprime définitivement le texte OCR déjà lu des justificatifs de recette (bordereaux de télétransmission) de cet exercice."}
+      >
+        {cloture ? '↻ Rattraper la purge' : '🔒 Clôturer l’exercice'}
+      </button>
+    </>
+  )
+}
+
 // Un exercice rendu dans la forme du formulaire : une ligne par case, dans l'ordre imprimé, avec son
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
@@ -802,16 +864,7 @@ function FormulaireAnnuel({ dossierId, annee, valeurs, genere, onTelecharger, bl
           </span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {cloture && <span className="badge badge-neutral">exercice clôturé</span>}
-          <button
-            className="btn btn-outline btn-sm"
-            onClick={onCloturer}
-            title={cloture
-              ? "Rattraper la purge du texte OCR pour les pièces sensibles validées depuis la clôture."
-              : "Marque l'exercice comme clôturé et supprime définitivement le texte OCR déjà lu des justificatifs de recette (bordereaux de télétransmission) de cet exercice."}
-          >
-            {cloture ? '↻ Rattraper la purge' : '🔒 Clôturer l’exercice'}
-          </button>
+          <BoutonCloture cloture={cloture} onCloturer={onCloturer} />
           <button
             className="btn btn-primary btn-sm"
             onClick={onTelecharger}

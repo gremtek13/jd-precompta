@@ -115,7 +115,7 @@ function poser(
 function monter(annee = 2025, assujettiTva = true) {
   return render(
     <AnneeProvider defaut={annee}>
-      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} />
+      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} modeComptable="tresorerie" />
     </AnneeProvider>,
   )
 }
@@ -183,7 +183,7 @@ describe("ClotureTab — l'exercice du paiement", () => {
     poserDecembre(true)
     render(
       <AnneeProvider defaut="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="tresorerie" />
       </AnneeProvider>,
     )
 
@@ -557,5 +557,42 @@ describe('ClotureTab — le statut TVA du dossier décide du montant déclaré',
     const titre = await screen.findByText(/Pièces validées absentes du récapitulatif \(1\)/)
     const ligne = within(titre.closest('.card')!).getByText('SANS POSTE').closest('tr')!
     expect(within(ligne).getByText(/^120,00\s€$/)).toBeTruthy()
+  })
+})
+
+// EN ENGAGEMENT (BIC, IS), la 2035 n'a pas d'objet : elle déclare des bénéfices non commerciaux, tenus
+// en trésorerie. L'écran le dit, et ne garde que la clôture de l'exercice, qui ne dépend pas d'elle.
+describe('ClotureTab — un dossier tenu en engagement', () => {
+  function monterEngagement() {
+    return render(
+      <AnneeProvider defaut={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="engagement" />
+      </AnneeProvider>,
+    )
+  }
+
+  it('dit que la 2035 n’est pas produite, et n’offre ni formulaire ni volet social', async () => {
+    poser()
+    monterEngagement()
+
+    await screen.findByText('La 2035 n’est pas produite pour ce dossier')
+    expect(screen.getByText(/ses livrables sont le FEC et la balance des comptes/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /Remplir le formulaire officiel/ })).toBeNull()
+    expect(screen.queryByText(/Report sur la déclaration des revenus/)).toBeNull()
+    expect(screen.queryByText(/Volet social/)).toBeNull()
+  })
+
+  it('garde la clôture de l’exercice, qui ne dépend pas de la déclaration', async () => {
+    poser()
+    monterEngagement()
+    const carte = (await screen.findByText('Exercice 2025')).closest('.card')!
+    expect(within(carte as HTMLElement).getByRole('button', { name: /Clôturer l’exercice/ })).toBeTruthy()
+  })
+
+  it('produit la 2035 en trésorerie — le garde symétrique', async () => {
+    poser()
+    monter(2025)
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryByText('La 2035 n’est pas produite pour ce dossier')).toBeNull()
   })
 })

@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
+import type { ModeleComptable } from '../../lib/engagement'
 import type { Immobilisation, LigneBancaire, Piece } from '../../lib/types'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
@@ -129,8 +130,11 @@ function poser(pieces: {
   faux.tronquees = new Set(pieces.tronquees ?? [])
 }
 
-function monter(assujettiTva = false) {
-  return render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={assujettiTva} onNavigate={() => {}} />)
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+
+function monter(assujettiTva = false, modele: ModeleComptable = TRESORERIE) {
+  return render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={assujettiTva} modele={modele} onNavigate={() => {}} />)
 }
 
 const LIBELLE = /datée\(s\) après leur dépôt/
@@ -616,5 +620,34 @@ describe('ChecklistTab — les écritures à régénérer suivent le statut TVA'
     })
     monter(false)
     await screen.findByText(LIBELLE_DESYNC)
+  })
+})
+
+// EN ENGAGEMENT (lib/engagement.ts), la Checklist lit le brouillon dans le modèle du dossier : lue en
+// trésorerie, chaque facture juste paraîtrait « à régénérer ».
+describe('ChecklistTab — en engagement', () => {
+  const categorie = {
+    id: 'cat-achats', dossier_id: null, code: 'achats_fournisseurs', libelle: 'Achats', ordre: 1,
+    compte_comptable: '606100', poste_2035: 'Achats',
+  }
+  const facture = piece({ statut: 'validee', date_piece: '2026-03-10', categorie_id: 'cat-achats', montant_ttc: 120 })
+  const ligneEcriture = (id: string, compte: string, sens: string) => ({
+    id, dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: null, date: '2026-03-10',
+    libelle: 'FOURNISSEUR', sens, statut: 'proposee', compte, montant: 120, created_at: '2026-03-10T09:00:00Z',
+  })
+  const ecrituresDeFacture = [ligneEcriture('e1', '606100', 'debit'), ligneEcriture('e2', '401000', 'credit')]
+
+  it('ne dit pas « à régénérer » une facture juste, et la compte sans règlement rapproché', async () => {
+    poser({ validees: [facture], categories: [categorie], ecritures: ecrituresDeFacture })
+    monter(false, ENGAGEMENT)
+    await screen.findByText(/facture\(s\) sans règlement rapproché/)
+    expect(screen.queryByText(/écriture\(s\) à régénérer/)).toBeNull()
+    expect(screen.queryByText(/en attente de rapprochement bancaire/)).toBeNull()
+  })
+
+  it('lue en trésorerie, la même facture paraîtrait périmée — le modèle doit arriver jusqu’au contrôle', async () => {
+    poser({ validees: [facture], categories: [categorie], ecritures: ecrituresDeFacture })
+    monter(false, TRESORERIE)
+    await screen.findByText(/écriture\(s\) à régénérer/)
   })
 })
