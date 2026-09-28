@@ -1,6 +1,7 @@
 import { anneeDe, jourDe, moisDe } from './format'
 import { totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
 import { montantRetenu } from './montantRetenu'
+import { paiementsParPiece, partDeLAnnee, rattachementsTresorerie, type Paiement } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
 
@@ -45,10 +46,19 @@ export interface ExclusionsDeclaration {
   // Catégorie sans poste 2035 rattaché : la pièce est validée, son montant est connu, mais il
   // n'irait dans aucune case. C'est le cas le plus grave — un vrai trou dans le total.
   sansPoste: Piece[]
-  // Aucune date : impossible de rattacher à un exercice.
+  // Ni paiement rapproché ni date de pièce : impossible de rattacher à un exercice (toute la pièce,
+  // ou le reste d'un paiement partiel — voir lib/rattachement.ts).
   sansDate: Piece[]
   // Aucun montant lisible : rien à additionner.
   sansMontant: Piece[]
+}
+
+// Une pièce comptée à sa DATE DE FACTURE faute de paiement rapproché — une supposition, que l'écran
+// dit : la dépense a peut-être été payée l'année suivante, la recette encaissée plus tard (voir
+// lib/rattachement.ts). `montant` est la part comptée ainsi dans CET exercice, signée comme la pièce.
+export interface PieceSansPaiement {
+  piece: Piece
+  montant: number
 }
 
 export interface Declaration2035 {
@@ -61,6 +71,9 @@ export interface Declaration2035 {
   // cas existent et vont dans deux cases différentes du formulaire.
   resultat: number
   exclusions: ExclusionsDeclaration
+  // Comptées, mais à leur date de facture : aucune note de frais (payée hors du compte, sa date EST
+  // celle du paiement), seulement les pièces dont le paiement n'est pas encore rapproché.
+  sansPaiementConnu: PieceSansPaiement[]
   // Le détail du cadre 7 pour cet exercice, ou null quand aucun véhicule n'y est déclaré. Porté à
   // part du poste : `nonCalcules` doit remonter jusqu'à l'écran, sans quoi un véhicule dont le
   // barème manque disparaîtrait de la déclaration sans laisser de trace.
@@ -246,6 +259,10 @@ export function calculerDeclaration2035(
   // Même raison : un dossier exonéré déclare ses dépenses TVA comprise, un assujetti hors taxes (voir
   // lib/montantRetenu.ts). Une valeur par défaut ferait passer l'un pour l'autre en silence.
   assujettiTva: boolean,
+  // Les mouvements bancaires rapprochés : ce sont eux qui DATENT une pièce (voir lib/rattachement.ts).
+  // Sans valeur par défaut non plus — une liste vide ferait tout compter à la date de facture, soit
+  // exactement le défaut que ce paramètre corrige.
+  lignesBancaires: readonly Paiement[],
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -254,6 +271,8 @@ export function calculerDeclaration2035(
   const pieceIdsImmobilisees = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
 
   const exclusions: ExclusionsDeclaration = { sansPoste: [], sansDate: [], sansMontant: [] }
+  const sansPaiementConnu: PieceSansPaiement[] = []
+  const paiements = paiementsParPiece(lignesBancaires)
   const totaux = new Map<string, { nature: 'recette' | 'depense'; montant: number; nbPieces: number }>()
 
   const ajouter = (poste: string, nature: 'recette' | 'depense', montant: number, nbPieces: number) => {
@@ -270,13 +289,17 @@ export function calculerDeclaration2035(
     if (piece.statut !== 'validee') continue
     if (pieceIdsImmobilisees.has(piece.id)) continue
 
+    // L'EXERCICE EST CELUI DU PAIEMENT, PAS CELUI DE LA FACTURE (CGI, art. 93 : recettes encaissées,
+    // dépenses payées). Le calcul lisait `anneeDe(date_piece)` : une facture de décembre réglée en
+    // janvier partait dans la déclaration de l'année d'avant. La date vient de lib/rattachement.ts,
+    // la même règle que la situation intermédiaire, l'estimation et les écritures.
+    //
     // L'ordre des contrôles porte une intention : une pièce d'un autre exercice n'est pas une
     // anomalie, elle n'a juste rien à faire ici — elle sort avant d'être comptée comme un défaut.
-    if (!piece.date_piece) {
-      exclusions.sansDate.push(piece)
-      continue
-    }
-    if (anneeDe(piece.date_piece) !== annee) continue
+    const rattachements = rattachementsTresorerie(piece, paiements.get(piece.id) ?? [])
+    if (rattachements.some((r) => r.date === null)) exclusions.sansDate.push(piece)
+    const part = partDeLAnnee(rattachements, annee)
+    if (part === 0) continue
 
     const montant = montantRetenu(piece, assujettiTva)
     if (montant == null) {
@@ -293,7 +316,14 @@ export function calculerDeclaration2035(
     // Un montant négatif (avoir, remboursement) ne change pas le poste, il le diminue. Le signe est
     // porté par `nature` au niveau du poste, donc on additionne le montant tel quel ici et on prend
     // la valeur absolue une seule fois, à la sortie.
-    ajouter(categorie.poste_2035, piece.type_piece === 'vente' ? 'recette' : 'depense', montant, 1)
+    ajouter(categorie.poste_2035, piece.type_piece === 'vente' ? 'recette' : 'depense', montant * part, 1)
+
+    // Ce qui compte ici à la date de facture faute de paiement connu — rendu APRÈS les contrôles, une
+    // pièce écartée n'étant pas comptée du tout.
+    const partSansPaiement = rattachements
+      .filter((r) => r.source === 'sans_paiement' && r.date !== null && anneeDe(r.date) === annee)
+      .reduce((s, r) => s + r.part, 0)
+    if (partSansPaiement > 0) sansPaiementConnu.push({ piece, montant: arrondi(montant * partSansPaiement) })
   }
 
   const totalAmortissements = immobilisations.reduce((somme, i) => somme + dotationPourAnnee(i, annee), 0)
@@ -352,6 +382,7 @@ export function calculerDeclaration2035(
     totalDepenses,
     resultat: arrondi(totalRecettes - totalDepenses),
     exclusions,
+    sansPaiementConnu,
     indemnitesKilometriques,
   }
 }
