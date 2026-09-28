@@ -10,6 +10,7 @@ import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { messageErreur } from '../../lib/messageErreur'
+import { montantRetenu } from '../../lib/montantRetenu'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 // Seuil au-delà duquel une dépense est candidate à l'immobilisation plutôt qu'à la charge courante.
@@ -30,7 +31,7 @@ const DUREE_DEFAUT_ANNEES = 5
 // « Dotation annuelle » qui a toutes les apparences d'une annuité calculée. Elle est désormais
 // CALCULÉE et montrée (voir `dotationsNonProratisees`), et seulement quand elle apprend quelque
 // chose — un bien acquis le 1er janvier a bien une première annuité pleine.
-export default function ImmobilisationsTab({ dossierId }: { dossierId: string }) {
+export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
@@ -78,9 +79,14 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
   useEffect(() => { load() }, [dossierId])
 
   const dejaEnregistrees = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
-  const candidates = piecesValidees.filter(
-    (p) => p.montant_ttc != null && p.montant_ttc >= SEUIL_IMMOBILISATION && !dejaEnregistrees.has(p.id),
-  )
+  // La valeur d'un bien est celle qui s'amortit : hors taxes pour un dossier assujetti, qui récupère la
+  // TVA, TVA comprise pour un dossier exonéré, pour qui elle fait partie du prix de revient (voir
+  // lib/montantRetenu.ts). Le seuil se juge sur la même valeur que celle qu'on affiche et qu'on
+  // enregistre : l'enregistrer au TTC faisait amortir chez un assujetti une TVA qu'il récupère déjà.
+  const candidates = piecesValidees.filter((p) => {
+    const valeur = montantRetenu(p, assujettiTva)
+    return valeur != null && valeur >= SEUIL_IMMOBILISATION && !dejaEnregistrees.has(p.id)
+  })
   const natureLabel = (id: string | null) => natures.find((n) => n.id === id)?.libelle ?? '—'
 
   // Le filtre par année ne porte que sur le registre déjà enregistré — les candidates restent toujours
@@ -153,7 +159,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
         piece_id: piece.id,
         nature_id: naturesChoisies[piece.id] || null,
         libelle: piece.tiers ?? piece.nom_fichier,
-        valeur: piece.montant_ttc,
+        valeur: montantRetenu(piece, assujettiTva),
         date_acquisition: piece.date_piece ?? dateLocaleDe(piece.created_at),
         duree_annees: duree,
       })
@@ -215,7 +221,9 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
           <p className="muted" style={{ marginTop: -8 }}>
             Pièces validées de {formatMoney(SEUIL_IMMOBILISATION)} ou plus — à toi de décider si c'est un
             investissement (matériel, véhicule…) ou une simple charge importante. La nature suggère une
-            durée usuelle, toujours modifiable.
+            durée usuelle, toujours modifiable. {assujettiTva
+              ? 'Montants hors taxes : le dossier est assujetti et récupère la TVA.'
+              : 'Montants TVA comprise : le dossier est exonéré, la TVA fait partie du prix.'}
           </p>
           {/* Dans un conteneur qui défile, comme les autres tableaux : avec le panneau de droite ouvert,
               la colonne du bouton débordait du panneau central et passait sous le volet. */}
@@ -226,7 +234,7 @@ export default function ImmobilisationsTab({ dossierId }: { dossierId: string })
                 {candidates.map((p) => (
                   <tr key={p.id}>
                     <td>{p.tiers ?? p.nom_fichier}</td>
-                    <td>{formatMoney(p.montant_ttc)}</td>
+                    <td>{formatMoney(montantRetenu(p, assujettiTva))}</td>
                     <td>
                       <select
                         style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px' }}

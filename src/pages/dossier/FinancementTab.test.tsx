@@ -83,8 +83,8 @@ function immobilisation(o: Partial<Immobilisation> = {}): Immobilisation {
   } as Immobilisation
 }
 
-async function ouvrirLaSituation(au: string) {
-  render(<FinancementTab dossierId="d" />)
+async function ouvrirLaSituation(au: string, assujettiTva = true) {
+  render(<FinancementTab dossierId="d" assujettiTva={assujettiTva} />)
   const titre = await screen.findByRole('heading', { name: 'Situation intermédiaire', level: 3 })
   await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
   // La date par défaut est « aujourd'hui » : on la fixe, sinon le test dirait autre chose chaque mois.
@@ -183,7 +183,7 @@ describe('FinancementTab — situation intermédiaire', () => {
     faux.categories = [CATEGORIE]
     faux.immobilisations = []
 
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
 
     // Le libellé est coupé en plusieurs nœuds par le `<strong>` du montant : on lit le texte du
     // paragraphe entier plutôt qu'un nœud, sinon le test échoue pour une raison qui n'est pas la
@@ -216,7 +216,7 @@ describe('FinancementTab — ce sur quoi la projection repose', () => {
   }
 
   async function ouvrir(carte: string) {
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
     const titre = await screen.findByRole('heading', { name: carte, level: 3 })
     await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
     return screen.getByRole('heading', { name: carte, level: 2 }).closest('.card') as HTMLElement
@@ -318,7 +318,7 @@ describe('FinancementTab — le prévisionnel ne s’enregistre pas sur une lect
 
   it('dit qu’on n’a pas lu, et ferme le formulaire', async () => {
     faux.refusees = new Set(['previsionnels_bancaires'])
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
     await attendreChargement()
 
     const { entete } = carteDuPrevisionnel()
@@ -332,7 +332,7 @@ describe('FinancementTab — le prévisionnel ne s’enregistre pas sur une lect
   // par le bouton de l'AUTRE carte.
   it('mais laisse générer quand la lecture a réussi', async () => {
     faux.refusees = new Set()
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
     await attendreChargement()
 
     const { entete } = carteDuPrevisionnel()
@@ -348,7 +348,7 @@ describe('FinancementTab — préremplir le prévisionnel', () => {
   const ANNEE_REFERENCE = new Date().getFullYear() - 1
 
   async function ouvrirLePrevisionnel() {
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
     const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
     await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
     const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
@@ -411,7 +411,7 @@ describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
   it('part du solde repris pour la trésorerie actuelle, sans l’écriture antérieure', async () => {
     faux.aNouveaux = ouverture
     faux.ecritures = mouvements
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
     const tuile = (await screen.findByText('Trésorerie actuelle (banque)')).closest('.card') as HTMLElement
     await waitFor(() => expect(montantDe(tuile)).toMatch(/^4\s?750,00\s€$/))
     expect(within(tuile).getByText('Depuis l’ouverture du 01/01/2026 (à-nouveaux).')).toBeTruthy()
@@ -421,14 +421,14 @@ describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
   // ajoute toujours quelque chose, ou qui annonce une ouverture qui n'existe pas.
   it('cumule tout l’historique quand rien n’ouvre le dossier, et ne parle pas d’ouverture', async () => {
     faux.ecritures = mouvements
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
     const tuile = (await screen.findByText('Trésorerie actuelle (banque)')).closest('.card') as HTMLElement
     await waitFor(() => expect(montantDe(tuile)).toMatch(/^1\s?450,00\s€$/))
     expect(within(tuile).queryAllByText(/Depuis l’ouverture/)).toHaveLength(0)
   })
 
   async function situationAu(date: string) {
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
     const titre = await screen.findByRole('heading', { name: 'Situation intermédiaire', level: 3 })
     // Attendre la fin du chargement : la modale reçoit l'ouverture à l'ouverture, pas après.
     await waitFor(() => expect(screen.queryAllByText('—')).toHaveLength(0))
@@ -468,7 +468,7 @@ describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
     faux.aNouveaux = ouverture
     faux.ecritures = mouvements
     faux.muet = { a_nouveaux: 1 }
-    render(<FinancementTab dossierId="d" />)
+    render(<FinancementTab dossierId="d" assujettiTva />)
     expect(await screen.findByText(/Les à-nouveaux du dossier n'ont pas pu être lus en entier/)).toBeTruthy()
     // Le bandeau général se tait : ce n'est pas lui qui a manqué, et c'est lui qui suspend le
     // préremplissage du prévisionnel, qui ne lit pas l'ouverture.
@@ -476,3 +476,49 @@ describe('FinancementTab — un dossier ouvert par des à-nouveaux', () => {
   })
 })
 
+// UN DOSSIER EXONÉRÉ COMPTE TVA COMPRISE (voir lib/montantRetenu.ts), sur les trois fenêtres qui
+// appellent la situation intermédiaire — chacune par son propre appel, donc chacune gardée ici :
+// l'état qu'on montre à une banque, la CAF qui fait la capacité de remboursement, et le
+// préremplissage du prévisionnel.
+describe('FinancementTab — un dossier exonéré compte TVA comprise', () => {
+  const recetteAvecTva = (o: Partial<Piece> = {}) =>
+    recette({ montant_ht: 10000, montant_tva: 2000, montant_ttc: 12000, ...o })
+
+  it('la situation intermédiaire porte les recettes TTC', async () => {
+    faux.pieces = [recetteAvecTva()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    const modale = await ouvrirLaSituation('2026-06-30', false)
+    expect(totalDuPoste(modale, 'Recettes')).toMatch(/^12\s?000,00\s€$/)
+  })
+
+  it('la CAF des ratios bancaires part des recettes TTC', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 8, 1, 12, 0, 0))   // 1er septembre 2026 : 8 mois écoulés
+    faux.pieces = [recetteAvecTva()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    render(<FinancementTab dossierId="d" assujettiTva={false} />)
+    const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    // 12 000 € ramenés à douze mois sur 241 jours en 30/360 (8,03 mois) : 17 925,31 € — et non
+    // 14 937,76 €, le même calcul sur le hors taxes.
+    const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
+    expect(ligne).toMatch(/17\s?925,31\s€/)
+  })
+
+  it('le prévisionnel se préremplit des recettes TTC', async () => {
+    const annee = new Date().getFullYear() - 1
+    faux.pieces = [recetteAvecTva({ date_piece: `${annee}-03-10` })]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.ecritures = []
+    render(<FinancementTab dossierId="d" assujettiTva={false} />)
+    const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
+    await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
+    const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
+    await act(async () => { within(titre.parentElement as HTMLElement).getByRole('button').click() })
+    await act(async () => { screen.getByRole('button', { name: 'Précharger depuis cette année' }).click() })
+    expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('12000')
+  })
+})

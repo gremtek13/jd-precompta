@@ -1,4 +1,5 @@
 import { anneeDe } from './format'
+import { montantRetenu } from './montantRetenu'
 import { moisEcoulesDeLAnnee } from './situationIntermediaire'
 import type { CotisationDeclaree, Piece } from './types'
 
@@ -6,10 +7,13 @@ import type { CotisationDeclaree, Piece } from './types'
 // côté client (ClientSimulation, lecture seule) — mêmes chiffres, un seul endroit à faire évoluer si
 // la règle de projection change un jour.
 
-export function totauxPourAnnee(pieces: Piece[], cotisations: CotisationDeclaree[], annee: number) {
+// `assujettiTva` décide du montant de chaque pièce — TVA comprise pour un dossier exonéré, hors
+// taxes pour un assujetti — comme dans la 2035 dont ces repères sont l'estimation (voir
+// lib/montantRetenu.ts). Sans valeur par défaut, pour la même raison qu'elle.
+export function totauxPourAnnee(pieces: Piece[], cotisations: CotisationDeclaree[], annee: number, assujettiTva: boolean) {
   const ca = pieces
     .filter((p) => p.date_piece?.startsWith(String(annee)))
-    .reduce((sum, p) => sum + (p.montant_ht ?? p.montant_ttc ?? 0), 0)
+    .reduce((sum, p) => sum + (montantRetenu(p, assujettiTva) ?? 0), 0)
   const cotis = cotisations
     .filter((c) => c.echeance.startsWith(String(annee)))
     .reduce((sum, c) => sum + (c.montant_verse ?? c.montant_appele), 0)
@@ -47,7 +51,7 @@ export interface ProjectionAnnuelle {
  *    même règle s'applique ici (`moisEcoulesDeLAnnee`, 30/360), plancher d'un mois compris.
  */
 export function projectionAnnuelle(
-  recettes: Piece[], cotisations: CotisationDeclaree[], dateDuJour: string,
+  recettes: Piece[], cotisations: CotisationDeclaree[], dateDuJour: string, assujettiTva: boolean,
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // `totauxPourAnnee` garde l'année ; la borne du jour en fait un « à date ». Les deux filtres
@@ -56,6 +60,7 @@ export function projectionAnnuelle(
     recettes.filter((p) => p.date_piece != null && p.date_piece <= dateDuJour),
     cotisations.filter((c) => c.echeance <= dateDuJour),
     annee,
+    assujettiTva,
   )
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)
@@ -97,6 +102,7 @@ export function chargesParPostePourAnnee(
   categories: { id: string; poste_2035: string | null }[],
   immobilisationPieceIds: ReadonlySet<string>,
   annee: number,
+  assujettiTva: boolean,
 ): Map<string, number> {
   const totaux = new Map<string, number>()
   for (const p of piecesValidees) {
@@ -105,7 +111,7 @@ export function chargesParPostePourAnnee(
     if (immobilisationPieceIds.has(p.id)) continue
     const poste = categories.find((c) => c.id === p.categorie_id)?.poste_2035
     if (!poste) continue
-    totaux.set(poste, (totaux.get(poste) ?? 0) + (p.montant_ht ?? p.montant_ttc ?? 0))
+    totaux.set(poste, (totaux.get(poste) ?? 0) + (montantRetenu(p, assujettiTva) ?? 0))
   }
   return totaux
 }

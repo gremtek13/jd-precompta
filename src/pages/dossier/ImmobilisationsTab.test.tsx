@@ -1,4 +1,4 @@
-import { render, screen, within, fireEvent } from '@testing-library/react'
+import { render, screen, within, fireEvent, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import ImmobilisationsTab from './ImmobilisationsTab'
 import type { Immobilisation, Piece } from '../../lib/types'
@@ -20,6 +20,7 @@ const faux = vi.hoisted(() => ({
   // une instance d'`Error` (voir lib/messageErreur.ts).
   refusInsertion: null as Record<string, unknown> | null,
   insertions: 0,
+  inserees: [] as Record<string, unknown>[],
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -31,7 +32,7 @@ vi.mock('../../lib/supabase', () => ({
       let insertion = false
       Object.assign(chaine, {
         select: () => chaine,
-        insert: () => { insertion = true; faux.insertions++; return chaine },
+        insert: (ligne: Record<string, unknown>) => { insertion = true; faux.insertions++; faux.inserees.push(ligne); return chaine },
         eq: () => chaine,
         or: () => chaine,
         order: () => chaine,
@@ -71,9 +72,10 @@ function poser(immos: Immobilisation[], pieces: unknown[] = []) {
   faux.parTable = { pieces, immobilisations: immos, natures_immobilisation: [] }
   faux.refusInsertion = null
   faux.insertions = 0
+  faux.inserees = []
 }
 
-const monter = () => render(<ImmobilisationsTab dossierId="dossier-de-test" />)
+const monter = (assujettiTva = false) => render(<ImmobilisationsTab dossierId="dossier-de-test" assujettiTva={assujettiTva} />)
 
 const TITRE = /Première annuité à reprendre/
 
@@ -252,6 +254,37 @@ describe('ImmobilisationsTab — une pièce déjà enregistrée', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Enregistrer comme immobilisation' }))
     await screen.findByText('Cette pièce a déjà été enregistrée comme immobilisation.')
     expect(screen.queryByText(/duplicate key value/)).toBeNull()
+  })
+
+  // LA VALEUR QUI S'AMORTIT (voir lib/montantRetenu.ts) : hors taxes pour un assujetti, qui récupère
+  // la TVA — l'enregistrer au TTC lui faisait amortir une TVA déjà déduite —, TVA comprise pour un
+  // dossier exonéré, pour qui elle fait partie du prix.
+  it.each([
+    [false, 1800],
+    [true, 1500],
+  ])('assujetti : %s — la pièce est enregistrée pour %s €', async (assujetti, valeur) => {
+    poser([], [candidate])
+    monter(assujetti)
+    // Ce que l'écran affiche est ce qu'il enregistre.
+    const ligne = (await screen.findByText('MATÉRIEL MÉDICAL')).closest('tr')!
+    expect(within(ligne).getByText(new RegExp(`^${valeur.toLocaleString('fr-FR').replace(/\s/g, '\\s')},00\\s€$`))).toBeTruthy()
+    fireEvent.click(await screen.findByRole('button', { name: 'Enregistrer comme immobilisation' }))
+    await waitFor(() => expect(faux.inserees).toHaveLength(1))
+    expect(faux.inserees[0].valeur).toBe(valeur)
+  })
+
+  // Le seuil se juge sur la même valeur : 450 € hors taxes, 540 € TTC. Un assujetti peut passer ce
+  // bien en charge (le seuil de 500 € s'apprécie hors taxes) ; pour un dossier exonéré, le TTC
+  // dépasse le seuil et la pièce reste proposée — comme avant ce correctif.
+  it.each([
+    [true, false],
+    [false, true],
+  ])('assujetti : %s — une pièce de 450 € HT / 540 € TTC est proposée : %s', async (assujetti, proposee) => {
+    poser([], [{ ...candidate, montant_ht: 450, montant_tva: 90, montant_ttc: 540 }])
+    monter(assujetti)
+    // L'ancre n'apparaît qu'une fois le chargement fini : sans elle, l'absence ne prouverait rien.
+    await screen.findByText("Aucune immobilisation enregistrée pour l'instant.")
+    expect(screen.queryAllByText('MATÉRIEL MÉDICAL').length > 0).toBe(proposee)
   })
 
   it('laisse passer telle quelle une autre erreur', async () => {

@@ -61,8 +61,8 @@ function extraire(source: string) {
       'function piecesAComptabiliser(piecesValidees, categories, pieceIdsImmobilisees) {',
     )
     .replace(
-      'function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[]) {',
-      'function analyserEcritures(ecritures, aComptabiliser) {',
+      'function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean) {',
+      'function analyserEcritures(ecritures, aComptabiliser, assujettiTva) {',
     )
     .replace(/: "debit" \| "credit"/g, '')
     // Le seul argument de type restant dans un CORPS (les autres sont dans les signatures).
@@ -75,7 +75,7 @@ function extraire(source: string) {
     `${constantes}\n${corps}\nreturn { piecesAComptabiliser, analyserEcritures }`,
   )() as {
     piecesAComptabiliser: (p: Piece[], c: Categorie[], i: ReadonlySet<string>) => { piece: Piece; compte: string }[]
-    analyserEcritures: (e: EcritureBrouillon[], a: { piece: Piece; compte: string }[]) => {
+    analyserEcritures: (e: EcritureBrouillon[], a: { piece: Piece; compte: string }[], assujettiTva: boolean) => {
       nbSansContrepartie: number
       groupesDesequilibres: { pieceId: string; solde: number }[]
       piecesDesynchronisees: Piece[]
@@ -127,15 +127,15 @@ function groupeConforme(id: string, o: { compte?: string; tva?: number; date?: s
  * cas verts — « le scanner est aveugle » et « zéro faute » redeviendraient indiscernables.
  */
 function memeResultat(
-  ecritures: EcritureBrouillon[], pieces: Piece[], immos: string[] = [], copie = deployee,
+  ecritures: EcritureBrouillon[], pieces: Piece[], immos: string[] = [], copie = deployee, assujettiTva = true,
 ) {
   const ici = piecesAComptabiliser(pieces, categories, new Set(immos))
   const la = copie.piecesAComptabiliser(pieces, categories, new Set(immos))
   const resume = (a: { piece: Piece; compte: string }[]) => a.map((x) => `${x.piece.id}:${x.compte}`)
   expect(resume(la), 'piecesAComptabiliser a dérivé').toEqual(resume(ici))
 
-  const r1 = analyserEcritures(ecritures, ici)
-  const r2 = copie.analyserEcritures(ecritures, la)
+  const r1 = analyserEcritures(ecritures, ici, assujettiTva)
+  const r2 = copie.analyserEcritures(ecritures, la, assujettiTva)
   const forme = (r: typeof r1) => ({
     nbSansContrepartie: r.nbSansContrepartie,
     groupesDesequilibres: r.groupesDesequilibres.map((g) => `${g.pieceId}:${g.solde.toFixed(2)}`),
@@ -216,6 +216,22 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     expect(r.groupesDesequilibres).toEqual(['p2:5.00'])
   })
 
+  // UN DOSSIER EXONÉRÉ NE VENTILE PAS LA TVA : sa charge est le TTC, sur une seule ligne (voir
+  // src/lib/montantRetenu.ts). Les deux copies doivent le savoir, sinon l'assistant annoncerait « à
+  // régénérer » une écriture juste — ou tairait celle qui porte encore une TVA qu'il ne récupère pas.
+  it('se tait sur la charge TTC d’un dossier exonéré, sur une seule ligne', () => {
+    const ecritures = [
+      ecriture({ id: 'a', piece_id: 'p1', montant: 120 }),
+      ecriture({ id: 'b', piece_id: 'p1', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
+    ]
+    expect(memeResultat(ecritures, [piece({ id: 'p1' })], [], deployee, false).piecesDesynchronisees).toEqual([])
+  })
+
+  it('voit une TVA encore ventilée sur un dossier exonéré', () => {
+    expect(memeResultat(groupeConforme('p1'), [piece({ id: 'p1' })], [], deployee, false).piecesDesynchronisees)
+      .toEqual(['p1'])
+  })
+
   it('écarte les mêmes pièces de la liste à comptabiliser', () => {
     // Les quatre portes : montant absent, immobilisée, catégorie sans compte, catégorie inconnue.
     memeResultat([], [
@@ -238,7 +254,34 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
 // On lui donne donc la VRAIE source déployée, amputée d'une seule des quatre comparaisons, et on
 // exige qu'il s'en aperçoive. Défaut PLANTÉ, pas simulé : si la forme de la source change au point
 // que l'amputation ne mord plus, l'extraction elle-même échouera d'abord.
+// LE CÂBLAGE, que l'extraction ne voit pas : la copie est juste, encore faut-il que `points_a_traiter`
+// lui passe le statut TVA DU DOSSIER. Un `true` écrit en dur ferait signaler « à régénérer » toute
+// écriture juste d'un dossier exonéré — l'outil qui répond « quelles sont les anomalies ? ».
+describe('agent-comptable / points_a_traiter passe le statut TVA du dossier', () => {
+  it('appelle analyserEcritures avec dossier.assujetti_tva', () => {
+    expect(sourceDeployee()).toMatch(/analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva\)/)
+  })
+})
+
 describe('le garde-fou sait encore échouer', () => {
+  // La copie telle qu'elle était avant le correctif : elle attend la TVA de la pièce quel que soit le
+  // statut du dossier. Le cas exonéré à une seule ligne doit la séparer de src/lib.
+  function sansStatutTva(): string {
+    const source = sourceDeployee()
+    const avant = '    const tvaAttendue = assujettiTva ? p.montant_tva ?? 0 : 0\n'
+    expect(source.includes(avant), 'la TVA attendue est introuvable — la dérive plantée ne mord plus').toBe(true)
+    return source.replace(avant, '    const tvaAttendue = p.montant_tva ?? 0\n')
+  }
+
+  it('attrape une copie déployée qui ignore le statut TVA du dossier', () => {
+    const derivee = extraire(sansStatutTva())
+    const ecritures = [
+      ecriture({ id: 'a', piece_id: 'p1', montant: 120 }),
+      ecriture({ id: 'b', piece_id: 'p1', compte: COMPTE_BANQUE, sens: 'credit', montant: 120 }),
+    ]
+    expect(() => memeResultat(ecritures, [piece({ id: 'p1' })], [], derivee, false)).toThrow()
+  })
+
   function sansComparaisonDeCompte(): string {
     const source = sourceDeployee()
     const debut = source.indexOf('    const surUnAutreCompte = lignes.some(')

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from '../components/Layout'
@@ -100,6 +100,17 @@ vi.mock('./dossier/InformationsTab', async () => {
     },
   }
 })
+// Les quatre onglets dont un montant dépend du statut TVA du dossier (voir lib/montantRetenu.ts) :
+// doublés pour lire le statut qu'ils RECOIVENT, c'est-à-dire le câblage de la page.
+const doubleTva = vi.hoisted(() => (onglet: string) => ({
+  default: ({ assujettiTva }: { assujettiTva: boolean }) => (
+    <p>{onglet} — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
+  ),
+}))
+vi.mock('./dossier/ClotureTab', () => doubleTva('Clôture'))
+vi.mock('./dossier/EstimationTab', () => doubleTva('Estimation'))
+vi.mock('./dossier/FinancementTab', () => doubleTva('Financement'))
+vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
 vi.mock('./dossier/AssistantTab', () => ({
   default: ({ dossierId, dossierNom }: { dossierId: string; dossierNom: string | null }) => (
     <p>Assistant de {dossierNom} ({dossierId})</p>
@@ -333,5 +344,29 @@ describe('Page d’un dossier — les exercices du sélecteur', () => {
     await afficher('/dossiers/d1/checklist')
     expect(screen.getByRole('heading', { level: 1, name: 'Cabinet Hélène' })).toBeTruthy()
     expect(screen.queryAllByText(/n'ont pas pu être lues en entier/)).toHaveLength(0)
+  })
+})
+
+// UN MONTANT DÉPEND DU STATUT TVA DU DOSSIER : TVA comprise pour un dossier exonéré, hors taxes pour
+// un assujetti (voir lib/montantRetenu.ts). La page le lit une fois, avec l'identité, et le passe aux
+// quatre onglets qui en ont besoin ; un statut resté codé en dur dans l'un d'eux déclarerait les
+// dépenses d'une infirmière exonérée hors taxes, sur la 2035 qu'elle signe.
+describe('Page d’un dossier — le statut TVA atteint les onglets dont un montant dépend', () => {
+  it.each([
+    ['cloture', 'Clôture'], ['estimation', 'Estimation'], ['financement', 'Financement'], ['immobilisations', 'Immobilisations'],
+  ])('l’onglet %s reçoit le statut du dossier affiché', async (onglet, libelle) => {
+    await afficher(`/dossiers/d1/${onglet}`)
+    expect(screen.getByText(`${libelle} — TVA exonéré`)).toBeTruthy()
+    cleanup()
+
+    await afficher(`/dossiers/d2/${onglet}`)
+    expect(screen.getByText(`${libelle} — TVA assujetti`)).toBeTruthy()
+  })
+
+  it('la bascule du badge se voit aussitôt dans l’onglet ouvert', async () => {
+    await afficher('/dossiers/d1/cloture')
+    expect(screen.getByText('Clôture — TVA exonéré')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'TVA : exonéré' })) })
+    expect(screen.getByText('Clôture — TVA assujetti')).toBeTruthy()
   })
 })

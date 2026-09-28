@@ -22,7 +22,7 @@ interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number 
 // comptes) reste dans l'onglet Statistiques plutôt que dupliquée ici — la situation intermédiaire
 // ci-dessous s'en distingue : un état "à ce jour" regroupé par poste 2035 (comme Clôture), pas un
 // tableau brut par compte.
-export default function FinancementTab({ dossierId }: { dossierId: string }) {
+export default function FinancementTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
@@ -291,6 +291,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
 
       {situationOuverte && (
         <SituationIntermediaireModal
+          assujettiTva={assujettiTva}
           piecesValidees={piecesValidees}
           categories={categories}
           immobilisations={immobilisations}
@@ -314,6 +315,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
 
       {dettesOuvertes && (
         <DettesRatiosModal
+          assujettiTva={assujettiTva}
           piecesValidees={piecesValidees}
           categories={categories}
           immobilisations={immobilisations}
@@ -329,6 +331,7 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
       {previsionnelOuvert && (
         <PrevisionnelModal
           dossierId={dossierId}
+          assujettiTva={assujettiTva}
           previsionnel={previsionnel}
           piecesValidees={piecesValidees}
           categories={categories}
@@ -343,8 +346,8 @@ export default function FinancementTab({ dossierId }: { dossierId: string }) {
   )
 }
 
-function DettesRatiosModal({ piecesValidees, categories, immobilisations, cotisations, emprunts, lignesBanque, capitalRestantTotal, mensualiteTotale, onClose }: {
-  piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+function DettesRatiosModal({ assujettiTva, piecesValidees, categories, immobilisations, cotisations, emprunts, lignesBanque, capitalRestantTotal, mensualiteTotale, onClose }: {
+  assujettiTva: boolean; piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   emprunts: Emprunt[]; lignesBanque: LigneBanque[]; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
 }) {
   const aujourdHui = aujourdHuiSql()
@@ -353,7 +356,7 @@ function DettesRatiosModal({ piecesValidees, categories, immobilisations, cotisa
   // la CAF, et l'étiquette qui l'annonce juste en dessous (voir moisEcoulesDeLAnnee).
   const moisEcoules = moisEcoulesDeLAnnee(aujourdHui)
 
-  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui)
+  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui, assujettiTva)
   // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
   // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
   const plan = calculerPlanTresorerie(lignesBanque, 0, 6, 1)
@@ -538,14 +541,14 @@ function PlanTresorerieModal({ lignesBanque, ouverture, soldeActuel, emprunts, c
   )
 }
 
-function SituationIntermediaireModal({ piecesValidees, categories, immobilisations, cotisations, lignesBanque, ouverture, onClose }: {
-  piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+function SituationIntermediaireModal({ assujettiTva, piecesValidees, categories, immobilisations, cotisations, lignesBanque, ouverture, onClose }: {
+  assujettiTva: boolean; piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; onClose: () => void
 }) {
   const [dateFin, setDateFin] = useState(aujourdHuiSql())
   const periodeDebut = `${anneeDe(dateFin)}-01-01`
 
-  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin)
+  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin, assujettiTva)
   const tresorerieADate = soldeBanqueADate(lignesBanque, ouverture, dateFin)
   // « 0,00 € » est juste quand rien n'est comptabilisé, et c'est ce qui le rend dangereux.
   const reserveSolde = reserveSurSolde(lignesBanque, ouverture, dateFin)
@@ -612,8 +615,8 @@ function SituationIntermediaireModal({ piecesValidees, categories, immobilisatio
   )
 }
 
-function PrevisionnelModal({ dossierId, previsionnel, piecesValidees, categories, immobilisations, cotisations, lectureIncomplete, onClose, onSaved }: {
-  dossierId: string; previsionnel: PrevisionnelBancaire | null
+function PrevisionnelModal({ dossierId, assujettiTva, previsionnel, piecesValidees, categories, immobilisations, cotisations, lectureIncomplete, onClose, onSaved }: {
+  dossierId: string; assujettiTva: boolean; previsionnel: PrevisionnelBancaire | null
   piecesValidees: Piece[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lectureIncomplete: string | null
   onClose: () => void; onSaved: () => void
@@ -637,7 +640,7 @@ function PrevisionnelModal({ dossierId, previsionnel, piecesValidees, categories
   // banque — et la fenêtre recouvre le bandeau qui dirait que la lecture est incomplète.
   function precharger() {
     if (lectureIncomplete) return
-    const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`)
+    const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`, assujettiTva)
     setCaReference(String(situation.recettes))
     setChargesReference(String(situation.charges))
   }

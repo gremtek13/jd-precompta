@@ -114,13 +114,14 @@ function poser(pieces: {
   ecritures?: unknown[]
   aNouveaux?: unknown[]
   refusees?: string[]
+  categories?: unknown[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
     'pieces:a_valider': pieces.aValider ?? [],
     pieces: [...(pieces.validees ?? []), ...(pieces.aValider ?? [])],
     cotisations_declarees: [], lignes_bancaires: pieces.lignes ?? [], immobilisations: pieces.immos ?? [],
-    natures_immobilisation: [], categories: [], ecritures_brouillon: pieces.ecritures ?? [],
+    natures_immobilisation: [], categories: pieces.categories ?? [], ecritures_brouillon: pieces.ecritures ?? [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
     exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [],
   }
@@ -128,8 +129,8 @@ function poser(pieces: {
   faux.tronquees = new Set(pieces.tronquees ?? [])
 }
 
-function monter() {
-  return render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} onNavigate={() => {}} />)
+function monter(assujettiTva = false) {
+  return render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={assujettiTva} onNavigate={() => {}} />)
 }
 
 const LIBELLE = /datée\(s\) après leur dépôt/
@@ -545,5 +546,43 @@ describe('ChecklistTab — la tuile de trésorerie d’un dossier ouvert par des
     // Pas le bandeau des POINTS : l'ouverture n'en commande aucun, et dire que leur silence ne prouve
     // plus rien serait faux.
     expect(screen.queryAllByText(/Les données du dossier n'ont pas pu être lues/)).toHaveLength(0)
+  })
+})
+
+// LE CONTRÔLE DES ÉCRITURES SUIT LE STATUT TVA DU DOSSIER (voir lib/montantRetenu.ts) : un dossier
+// exonéré porte sa charge TTC sur une seule ligne. Sans le statut, la Checklist signalerait « à
+// régénérer » une écriture juste, pour toujours — un point qui ne s'éteint jamais cesse d'être lu.
+describe('ChecklistTab — les écritures à régénérer suivent le statut TVA', () => {
+  const categorie = {
+    id: 'cat-achats', dossier_id: null, code: 'achats_fournisseurs', libelle: 'Achats', ordre: 1,
+    compte_comptable: '606100', poste_2035: 'Achats',
+  }
+  const pieceAvecTva = piece({
+    statut: 'validee', date_piece: '2026-03-10', categorie_id: 'cat-achats',
+    montant_ht: 100, montant_tva: 20, montant_ttc: 120,
+  })
+  const ecriture = (id: string, compte: string, montant: number) => ({
+    id, dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: null, date: '2026-03-10',
+    libelle: 'FOURNISSEUR', sens: 'debit', statut: 'proposee', compte, montant,
+    created_at: '2026-03-10T09:00:00Z',
+  })
+  const LIBELLE_DESYNC = /écriture\(s\) à régénérer/
+
+  it('sur un dossier exonéré, la charge TTC sur une seule ligne n’est pas à régénérer', async () => {
+    poser({ validees: [pieceAvecTva], categories: [categorie], ecritures: [ecriture('e1', '606100', 120)] })
+    monter(false)
+    // L'ancre : un AUTRE point que ce jeu déclenche forcément — l'écriture n'a pas de contrepartie
+    // bancaire. Vérifier une absence sur un écran encore en chargement serait vert pour rien.
+    await screen.findByText(/en attente de rapprochement bancaire/)
+    expect(screen.queryByText(LIBELLE_DESYNC)).toBeNull()
+  })
+
+  it('sur un dossier exonéré, une TVA encore ventilée est à régénérer', async () => {
+    poser({
+      validees: [pieceAvecTva], categories: [categorie],
+      ecritures: [ecriture('e1', '606100', 100), ecriture('e2', '445660', 20)],
+    })
+    monter(false)
+    await screen.findByText(LIBELLE_DESYNC)
   })
 })

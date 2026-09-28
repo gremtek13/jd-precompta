@@ -109,8 +109,8 @@ function valeur(libelle: string): string {
   return (bloc.querySelector('strong')?.textContent ?? '').replace(/\s/g, ' ')
 }
 
-async function rendre() {
-  render(<EstimationTab dossierId="dossier-de-test" />)
+async function rendre(assujettiTva = true) {
+  render(<EstimationTab dossierId="dossier-de-test" assujettiTva={assujettiTva} />)
   return screen.findByRole('button', { name: 'Calculer le détail par poste' })
 }
 
@@ -279,5 +279,46 @@ describe('EstimationTab — des repères qui n’ont pas pu être lus', () => {
     screen.getByText("Le détail par poste n'a pas pu être lu.")
     expect(screen.queryAllByText("Aucun détail par poste enregistré pour l'instant.")).toHaveLength(0)
     screen.getByText("Aucun repère annuel enregistré pour l'instant.")
+  })
+})
+
+// UN DOSSIER EXONÉRÉ COMPTE TVA COMPRISE (voir lib/montantRetenu.ts). L'onglet appelle TROIS calculs
+// qui en dépendent — le détail par poste, le repère annuel et la projection — et chacun reçoit le
+// statut par son propre appel : un seul oublié suffirait à les faire diverger sur le même écran.
+describe('EstimationTab — un dossier exonéré compte TVA comprise', () => {
+  const avecTva = { montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 }
+  beforeEach(() => {
+    faux.categories = [categorieDeTest()]
+    faux.immobilisations = []
+    faux.upserts = []
+    faux.upsertsAnnuels = []
+    faux.muetPieces = null
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+    faux.cotisations = []
+  })
+
+  it('le détail par poste enregistre la charge TTC', async () => {
+    faux.pieces = [pieceDeTest(avecTva)]
+    const bouton = await rendre(false)
+    await act(async () => { bouton.click() })
+    expect(faux.upserts[0]).toMatchObject({ poste: 'Loyer', montant: 1200 })
+  })
+
+  it('le repère annuel enregistre le chiffre d’affaires TTC', async () => {
+    const annee = new Date().getFullYear() - 1
+    faux.pieces = [pieceDeTest({ ...avecTva, type_piece: 'vente', categorie_id: null, date_piece: `${annee}-06-01` })]
+    await rendre(false)
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: 1200 })
+  })
+
+  it('la projection compte le chiffre d’affaires TTC', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    faux.pieces = [pieceDeTest({ ...avecTva, type_piece: 'vente', categorie_id: null, date_piece: '2026-03-02' })]
+    await rendre(false)
+    expect(valeur('CA encaissé à date')).toBe('1 200,00 €')
   })
 })

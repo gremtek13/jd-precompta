@@ -19,7 +19,7 @@ function anneePrecedente(): string {
 // sociales (URSSAF/CARPIMKO) : une estimation d'impôt sur le revenu dépendrait du foyer fiscal entier
 // (hors du champ de ce dossier) et se rapprocherait bien plus du conseil fiscal — hors de portée d'un
 // brouillon de précomptabilité. Simulateur officiel des impôts déjà disponible pour ce volet.
-export default function EstimationTab({ dossierId }: { dossierId: string }) {
+export default function EstimationTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Deux jeux, deux filtres, et les noms le disent désormais. `recettesValidees` est restreint aux
   // pièces de VENTE validées, `piecesValidees` à toutes les validées. Le second s'appelait
@@ -129,7 +129,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
   // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
   // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql())
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
@@ -202,7 +202,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -234,7 +234,7 @@ export default function EstimationTab({ dossierId }: { dossierId: string }) {
     setCalculatingPostes(true)
     setError(null)
     try {
-      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee)
+      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva)
       if (totaux.size === 0) {
         setError("Aucune pièce avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
         return

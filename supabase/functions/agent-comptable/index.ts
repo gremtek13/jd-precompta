@@ -134,7 +134,7 @@ function piecesAComptabiliser(
   })
 }
 
-function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[]) {
+function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean) {
   const piecesParGroupe = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
     if (!e.piece_id) continue
@@ -163,11 +163,14 @@ function analyserEcritures(ecritures: EcritureRow[], aComptabiliser: PieceACompt
     )
     if (surUnAutreCompte) return true
     // LA VENTILATION DE LA TVA, que le total ne peut pas voir : corriger `montant_tva` en gardant le
-    // TTC laisse la somme du groupe rigoureusement inchangée, les deux lignes se compensant.
+    // TTC laisse la somme du groupe rigoureusement inchangée, les deux lignes se compensant. La TVA
+    // attendue est celle que la génération ventile : rien pour un dossier exonéré, qui ne la récupère
+    // pas et porte sa charge TTC sur une seule ligne (voir src/lib/montantRetenu.ts).
     const tvaEnregistree = lignes
       .filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE)
       .reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-    if (Math.abs(tvaEnregistree - (p.montant_tva ?? 0)) > EPSILON_EQUILIBRE) return true
+    const tvaAttendue = assujettiTva ? p.montant_tva ?? 0 : 0
+    if (Math.abs(tvaEnregistree - tvaAttendue) > EPSILON_EQUILIBRE) return true
     // LA DATE, et elle coûte plus cher que le compte : une pièce validée sans date reçoit une
     // écriture datée de son DÉPÔT, et « Retrouver les dates manquantes » écrit ensuite `date_piece`
     // sans toucher à l'écriture. On ne compare que si la pièce porte une date — sans date elle ne
@@ -669,7 +672,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       rImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id),
     )
     const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, immobilisationPieceIds)
-    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser)
+    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva)
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped)
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped)
