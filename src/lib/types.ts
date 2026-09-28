@@ -27,6 +27,14 @@ export interface Dossier {
   // l'option qui rend la TVA des recettes due à la date de la facture plutôt qu'à l'encaissement.
   tva_periodicite: PeriodiciteTva
   tva_sur_debits: boolean
+  // Le modèle comptable du dossier (voir lib/engagement.ts). Trésorerie : une pièce compte à la date de
+  // son paiement, c'est la règle du BNC et de la 2035. Engagement : la facture crée une dette ou une
+  // créance à sa date, en 401 ou en 411, et le paiement la solde — la tenue d'une société à l'IS ou
+  // d'une entreprise au BIC. Il ne se change que tant que le brouillon d'écritures est vide : un
+  // déclencheur en base refuse ensuite (`verrouiller_modele_comptable`, errcode 23514).
+  mode_comptable: ModeComptable
+  // En engagement, le compte crédité par une note de frais que le dirigeant a payée de sa poche.
+  compte_notes_de_frais: CompteNotesDeFrais
   code_naf: string | null
   libelle_naf: string | null
   // Adresse de l'émetteur — mention obligatoire sur une facture (voir FacturesTab). Absente du modèle
@@ -360,6 +368,11 @@ export interface ReferenceAnnuelle {
 // période (voir EcrituresTab). Même logique que ReferenceAnnuelle : une vérité externe transcrite, pas
 // une donnée dérivée.
 export type PeriodiciteTva = 'mensuelle' | 'trimestrielle'
+
+export type ModeComptable = 'tresorerie' | 'engagement'
+// 455 : compte courant d'un dirigeant associé d'une société ; 108 : compte de l'exploitant d'une
+// entreprise individuelle ; 467 : autres comptes débiteurs ou créditeurs. Voir lib/engagement.ts.
+export type CompteNotesDeFrais = '455000' | '108000' | '467000'
 
 export interface DeclarationTva {
   id: string
