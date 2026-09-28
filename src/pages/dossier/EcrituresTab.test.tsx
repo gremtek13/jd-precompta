@@ -747,6 +747,37 @@ describe('EcrituresTab — le modèle comptable', () => {
     expect(screen.queryByRole('button', { name: 'Engagement (BIC, IS)' })).toBeNull()
   })
 
+  it("trois clics rapprochés n'enregistrent le modèle qu'une fois", async () => {
+    // Trois et non deux : un verrou posé DANS le `try` serait relâché par le `finally` du deuxième.
+    poser({})
+    monter()
+    const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
+    await act(async () => { engagement.click(); engagement.click(); engagement.click() })
+    expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { mode_comptable: 'engagement' } }])
+  })
+
+  it('le changement de modèle suspend la génération', async () => {
+    // Générer pendant que le modèle change écrirait des écritures d'un modèle sous l'étiquette de
+    // l'autre — celles que le déclencheur de la base refuse justement de laisser se mélanger.
+    poser({ pieces: [piece()], ecritures_brouillon: [] })
+    monter()
+    const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
+    const generer = screen.getByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { engagement.click(); generer.click() })
+    expect(faux.misesAJour).toHaveLength(1)
+    expect(faux.insertions).toHaveLength(0)
+  })
+
+  it('la génération suspend le changement de modèle', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [] })
+    monter()
+    const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
+    const generer = screen.getByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { generer.click(); engagement.click() })
+    expect(faux.insertions).toHaveLength(1)
+    expect(faux.misesAJour).toEqual([])
+  })
+
   it('dit le refus de la base, et garde le modèle en place', async () => {
     poser({})
     faux.refusMiseAJour = 'Le modèle comptable d’un dossier ne se change que tant que son brouillon d’écritures est vide.'

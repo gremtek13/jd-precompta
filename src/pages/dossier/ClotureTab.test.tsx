@@ -615,6 +615,34 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
     expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { poste_2035: 'Achats' } }])
   })
 
+  it('garde, en trésorerie, l’explication de la 2035 sur la même carte', async () => {
+    poser()
+    faux.parTable.categories = [{ ...CATEGORIE, poste_2035: null }]
+    monter(2025)
+    const carte = (await screen.findByText('Postes manquants')).closest('.card') as HTMLElement
+    expect(within(carte).getByText(/n'ont pas encore de poste 2035 associé — leurs montants ne sont pas comptés dans le récapitulatif/)).toBeTruthy()
+    expect(within(carte).queryByText(/Ce dossier ne produit pas de 2035/)).toBeNull()
+  })
+
+  it('propose à la clôture l’exercice de la FACTURE, pas celui du paiement', async () => {
+    // Facturée en décembre 2025, payée en janvier 2026 : en engagement la pièce appartient à 2025, et
+    // l'exercice 2026 n'a rien à clôturer.
+    poser({}, [], [])
+    faux.parTable.pieces = [{ ...PIECE, date_piece: '2025-12-20' }]
+    faux.parTable.lignes_bancaires = [{
+      id: 'l1', dossier_id: 'dossier-de-test', date: '2026-01-05', libelle: 'PRLV FOURNISSEUR', montant: -120,
+      statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, prelevement_personnel: false,
+      source_fichier: null, libelle_brut: null, created_at: '2026-01-05T09:00:00Z',
+    }]
+    render(
+      <AnneeProvider defaut="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="engagement" />
+      </AnneeProvider>,
+    )
+    await screen.findByText('Exercice 2025')
+    expect(screen.queryByText('Exercice 2026')).toBeNull()
+  })
+
   it('se tait quand chaque catégorie utilisée a son poste — le garde symétrique', async () => {
     poser()
     monterEngagement()
