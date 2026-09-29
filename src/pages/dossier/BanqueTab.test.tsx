@@ -229,6 +229,10 @@ vi.mock('../../lib/supabase', async () => {
     const id = args.p_ligne_bancaire_id
     faux.lignes = faux.lignes.map((l): LigneBancaire => {
       if (l.id !== id) return l
+      // Le virement personnel (lib/virementPersonnel.ts) : classé et écrit, ou remis à traiter et
+      // retiré — l'écriture n'étant pas relue ici non plus.
+      if (nom === 'classer_virement_personnel') return { ...l, statut: 'ignoree', prelevement_personnel: true }
+      if (nom === 'retirer_virement_personnel') return { ...l, statut: 'non_rapprochee', prelevement_personnel: false }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), statut: 'rapprochee' }
         : { ...l, categorie_id: null, statut: 'non_rapprochee' }
@@ -1601,5 +1605,104 @@ describe('BanqueTab — les règles d’affectation et le lot', () => {
     rendre()
     await ouvrir('PRLV SEPA SWISSLIFE')
     expect(within(volet()).queryByText(/Avant d’affecter/)).toBeNull()
+  })
+})
+
+// UN VIREMENT PERSONNEL S'ÉCRIT (lib/virementPersonnel.ts) : sur le compte du dirigeant, face à la
+// banque, par la fonction de la base qui vérifie l'écriture et l'écrit AVEC le classement. Le bouton le
+// classait par une simple mise à jour, sans rien écrire — et « Remettre à traiter » doit maintenant
+// retirer l'écriture avec lui, par la base aussi.
+describe('BanqueTab — le virement personnel s’écrit', () => {
+  function preparer(ligne: Partial<LigneBancaire> = {}) {
+    reinitialiser()
+    faux.pieces = []
+    faux.lignes = [ligneDeTest({ libelle: 'VIR COMPTE PERSO', montant: -500, ...ligne })]
+  }
+
+  it('classe et écrit par la base, sur le compte de l’exploitant, et reste sur le mouvement', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR COMPTE PERSO')
+    // Dit avant le clic : où il s'écrira.
+    expect(within(volet()).getByText(/il s’écrit sur le compte 108000 \(Compte de l'exploitant\)/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Virement personnel' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Virement personnel' })).toBeTruthy())
+    expect(faux.rpcs).toEqual([{
+      nom: 'classer_virement_personnel',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1',
+        p_ecritures: [
+          { compte: '108000', sens: 'debit', montant: 500, libelle: 'VIR COMPTE PERSO' },
+          { compte: '512000', sens: 'credit', montant: 500, libelle: 'VIR COMPTE PERSO' },
+        ],
+      },
+    }])
+    // Plus de mise à jour directe du relevé : un classement sans son écriture manquerait au FEC.
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('en engagement, sur le compte choisi pour le dirigeant', async () => {
+    preparer({ montant: 2000, libelle: 'VIR APPORT' })
+    rendre(ENGAGEMENT)
+    await ouvrir('VIR APPORT')
+    expect(within(volet()).getByText(/il s’écrit sur le compte 455000 \(Associés — comptes courants\)/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Virement personnel' }).click() })
+
+    await waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '455000', sens: 'credit', montant: 2000, libelle: 'VIR APPORT' },
+      { compte: '512000', sens: 'debit', montant: 2000, libelle: 'VIR APPORT' },
+    ])
+  })
+
+  it('un refus de la base se dit, et le mouvement reste à traiter', async () => {
+    preparer()
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('VIR COMPTE PERSO')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Virement personnel' }).click() })
+
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/Le mouvement n'a pas pu être classé en virement personnel : refus simulé/)))
+    expect(within(volet()).getByText('Non rapproché')).toBeTruthy()
+  })
+
+  it('un mouvement de zéro euro est refusé avant l’appel', async () => {
+    preparer({ montant: 0 })
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('VIR COMPTE PERSO')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Virement personnel' }).click() })
+
+    expect(alerte).toHaveBeenCalledWith('Un mouvement de zéro euro n’a rien à écrire.')
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('remettre à traiter un virement personnel passe par la base, qui retire son écriture', async () => {
+    preparer({ statut: 'ignoree', prelevement_personnel: true })
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Ignorés' })).click() })
+    await ouvrir('VIR COMPTE PERSO')
+    expect(within(volet()).getByText(/« Remettre à traiter » retire aussi son écriture/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Remettre à traiter' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_virement_personnel', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('un mouvement ignoré qui n’est pas un virement personnel se remet à traiter sans la base', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « un virement personnel passe par la base » serait satisfait par un
+    // écran qui y envoie TOUS les mouvements ignorés — et la fonction refuse ceux qui n'en sont pas.
+    preparer({ statut: 'ignoree' })
+    faux.majImmediate = true
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Ignorés' })).click() })
+    await ouvrir('VIR COMPTE PERSO')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Remettre à traiter' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([])
   })
 })

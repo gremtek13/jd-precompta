@@ -1,7 +1,8 @@
-import { render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { act, render, screen, waitFor } from '@testing-library/react'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import VirementsTab from './VirementsTab'
-import type { LigneBancaire } from '../../lib/types'
+import type { ModeleComptable } from '../../lib/engagement'
+import type { EcritureBrouillon, LigneBancaire } from '../../lib/types'
 
 // LE « TOTAL PRÉLEVÉ » SOMMAIT DES VALEURS ABSOLUES.
 //
@@ -13,35 +14,96 @@ import type { LigneBancaire } from '../../lib/types'
 // LATENT, et mesuré : les 3 lignes marquées en base sont toutes des sorties, donc le total est juste
 // aujourd'hui. Ce qui le rend digne d'être corrigé est qu'il ne PEUT pas se voir une fois arrivé —
 // un total faux a exactement l'air d'un total, et la ligne fautive est noyée dans une liste.
-const faux = vi.hoisted(() => ({ lignes: [] as LigneBancaire[] }))
-
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
-    from: () => {
-      const c: Record<string, unknown> = {}
-      let debut = 0
-      let fin = Number.MAX_SAFE_INTEGER
-      Object.assign(c, {
-        select: () => c,
-        eq: () => c,
-        order: () => c,
-        update: () => c,
-        // `count` est ANNONCÉ : un faux client qui l'omet fait déclarer INCOMPLÈTE toute lecture de
-        // `lireTout`, et l'écran rend alors son bandeau à la place de la liste — le test serait vert
-        // pour une raison qui n'est pas la sienne. C'est le coût récurrent de `lireTout`, et il se
-        // paie une fois par faux client.
-        range: (d: number, f: number) => { debut = d; fin = f; return c },
-        then: (suite: (r: { data: LigneBancaire[]; error: null; count: number }) => unknown) =>
-          Promise.resolve({
-            data: faux.lignes.slice(debut, Math.min(debut + (fin - debut + 1), faux.lignes.length)),
-            error: null,
-            count: faux.lignes.length,
-          }).then(suite),
-      })
-      return c
-    },
-  },
+//
+// ET UN VIREMENT PERSONNEL S'ÉCRIT DEPUIS LE 29/09/2026 (lib/virementPersonnel.ts) : ceux marqués avant
+// n'ont pas d'écriture, et cet écran les montre et les écrit — par la fonction de la base, sous un
+// verrou, jamais sur une lecture partielle.
+const faux = vi.hoisted(() => ({
+  lignes: [] as LigneBancaire[],
+  ecritures: [] as EcritureBrouillon[],
+  // Lecture partielle d'une table : le serveur cesse de rendre des lignes au-delà de ce rang, en
+  // annonçant le vrai total.
+  muetApres: {} as Record<string, number>,
+  rpcs: [] as { nom: string; args: Record<string, unknown> }[],
+  erreurRpc: null as string | null,
+  // Retient la RÉPONSE de chaque appel à la base après le premier `rpc` : de quoi tenir le verrou
+  // pendant la relecture qui suit l'écriture.
+  retenirLectures: false,
+  relacher: null as (() => void) | null,
+  retenue: null as Promise<void> | null,
+  // Retient l'appel à la base lui-même : le lot est alors EN COURS d'écriture.
+  retenirRpc: false,
+  relacherRpc: null as (() => void) | null,
 }))
+
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatEq } = await import('../../test/filtresPostgrest')
+  type Predicat = (ligne: Record<string, unknown>) => boolean
+  type ReponseRpc = { data: number | null; error: { message: string } | null }
+  function executerRpc(nom: string, args: Record<string, unknown>): Promise<ReponseRpc> {
+    faux.rpcs.push({ nom, args })
+    if (faux.erreurRpc) return Promise.resolve({ data: null, error: { message: faux.erreurRpc } })
+    const id = args.p_ligne_bancaire_id as string
+    // Ce que font les deux fonctions de la base (supabase/schema/20260929150010_…) : le classement
+    // et l'écriture ensemble, le retrait des deux ensemble.
+    faux.ecritures = faux.ecritures.filter((e) => !(e.piece_id == null && e.ligne_bancaire_id === id))
+    if (nom === 'classer_virement_personnel') {
+      const ligne = faux.lignes.find((l) => l.id === id)!
+      faux.lignes = faux.lignes.map((l) => (l.id === id ? { ...l, statut: 'ignoree', prelevement_personnel: true } : l))
+      faux.ecritures.push(...(args.p_ecritures as Record<string, unknown>[]).map((e, i): EcritureBrouillon => ({
+        id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: id,
+        date: ligne.date, compte: e.compte as string, libelle: e.libelle as string, montant: e.montant as number,
+        sens: e.sens as 'debit' | 'credit', statut: 'proposee', created_at: '2026-09-29T10:00:00Z',
+      })))
+    } else {
+      faux.lignes = faux.lignes.map((l) => (l.id === id ? { ...l, statut: 'non_rapprochee', prelevement_personnel: false } : l))
+    }
+    if (faux.retenirLectures) faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+    return Promise.resolve({ data: 2, error: null })
+  }
+  return {
+    supabase: {
+      rpc: (nom: string, args: Record<string, unknown>) => {
+        if (faux.retenirRpc) {
+          faux.retenirRpc = false
+          return new Promise<void>((r) => { faux.relacherRpc = r }).then(() => executerRpc(nom, args))
+        }
+        return executerRpc(nom, args)
+      },
+      from: (table: string) => {
+        const c: Record<string, unknown> = {}
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        // Les filtres qui décident de ce que l'écran voit sont APPLIQUÉS (voir src/test/filtresPostgrest.ts) —
+        // sauf le cadrage par dossier, que le jeu d'essai ne renseigne pas.
+        const predicats: Predicat[] = []
+        Object.assign(c, {
+          select: () => c,
+          eq: (colonne: string, valeur: unknown) => {
+            if (colonne !== 'dossier_id') predicats.push(predicatEq(colonne, valeur))
+            return c
+          },
+          is: (colonne: string, valeur: null) => { predicats.push((l) => l[colonne] === valeur); return c },
+          order: () => c,
+          // `count` est ANNONCÉ : un faux client qui l'omet fait déclarer INCOMPLÈTE toute lecture de
+          // `lireTout`, et l'écran rend alors son bandeau à la place de la liste — le test serait vert
+          // pour une raison qui n'est pas la sienne. C'est le coût récurrent de `lireTout`, et il se
+          // paie une fois par faux client.
+          range: (d: number, f: number) => { debut = d; fin = f; return c },
+          then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+            const source: readonly (EcritureBrouillon | LigneBancaire)[] = table === 'ecritures_brouillon' ? faux.ecritures : faux.lignes
+            const toutes = filtrer(source, predicats)
+            const rendu = toutes.slice(debut, Math.min(fin + 1, toutes.length, faux.muetApres[table] ?? Infinity))
+            return (faux.retenue ?? Promise.resolve())
+              .then(() => ({ data: rendu, error: null, count: toutes.length }))
+              .then(suite)
+          },
+        })
+        return c
+      },
+    },
+  }
+})
 
 // Typé `Partial<LigneBancaire> => LigneBancaire` SANS `as` : le compilateur vérifie alors chaque
 // champ contre la table, exhaustivement. C'est ce qui a sorti `created_at` du jeu d'essai de
@@ -53,9 +115,41 @@ const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   created_at: '2025-06-02T09:00:00Z', ...o,
 })
 
-const monter = () => render(<VirementsTab dossierId="dossier-de-test" />)
+const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
+  id: 'e-1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-1', date: '2025-06-02',
+  compte: '108000', libelle: 'VIREMENT COMPTE PERSO', montant: 1000, sens: 'debit', statut: 'proposee',
+  created_at: '2025-06-02T10:00:00Z', ...o,
+})
+
+// L'écriture juste d'un prélèvement de 1 000 € en trésorerie : le compte de l'exploitant au débit.
+const ecritureJuste = (id: string, montant = 1000, date = '2025-06-02') => [
+  ecriture({ id: `${id}-a`, ligne_bancaire_id: id, compte: '108000', sens: 'debit', montant, date }),
+  ecriture({ id: `${id}-b`, ligne_bancaire_id: id, compte: '512000', sens: 'credit', montant, date }),
+]
+
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+
+const monter = (modele: ModeleComptable = TRESORERIE) => render(<VirementsTab dossierId="dossier-de-test" modele={modele} />)
 // `\s` : `formatMoney` sépare les milliers par une espace fine insécable (U+202F).
 const MONTANT = (texte: string) => new RegExp(`^${texte.replace(/ /g, '\\s')}$`)
+
+beforeEach(() => {
+  faux.lignes = []
+  faux.ecritures = []
+  faux.muetApres = {}
+  faux.rpcs = []
+  faux.erreurRpc = null
+  faux.retenirLectures = false
+  faux.relacher = null
+  faux.retenue = null
+  faux.retenirRpc = false
+  faux.relacherRpc = null
+})
+
+afterEach(() => {
+  vi.restoreAllMocks()
+})
 
 describe('VirementsTab — le total prélevé', () => {
   it('additionne les sorties, en valeur absolue', async () => {
@@ -82,11 +176,202 @@ describe('VirementsTab — le total prélevé', () => {
     // affiche TOUJOURS cette mise en garde — et une mise en garde permanente cesse d'être lue, puis
     // emporte ses voisines dans son discrédit.
     faux.lignes = [ligne({ id: 'a', montant: -1000 })]
+    faux.ecritures = ecritureJuste('a')
     monter()
 
     // Ancré sur la ligne elle-même : sans ancre, un écran encore en chargement rendrait le test vert
     // pour une raison fausse.
     await screen.findByText('VIREMENT COMPTE PERSO')
     expect(screen.queryAllByText(/mouvement\(s\) ENTRANT\(s\)/)).toHaveLength(0)
+  })
+})
+
+describe('VirementsTab — les virements personnels sans écriture', () => {
+  it('montre ceux qui n’en ont pas, et les écrit sur le compte de l’exploitant', async () => {
+    faux.lignes = [
+      ligne({ id: 'ancien', montant: -1000, date: '2025-06-02' }),
+      ligne({ id: 'ecrit', montant: -500, date: '2025-07-02', libelle: 'VIR PERSO JUILLET' }),
+    ]
+    faux.ecritures = ecritureJuste('ecrit', 500, '2025-07-02')
+    monter()
+
+    await screen.findByText('1 virement personnel sans son écriture')
+    expect(screen.getByText('Sans écriture')).toBeTruthy()
+    expect(screen.getByText('Compte 108000')).toBeTruthy()
+
+    await act(async () => { screen.getByRole('button', { name: 'Écrire ce virement' }).click() })
+
+    // UN appel, pour le seul virement sans écriture, avec l'écriture que le classement produit.
+    expect(faux.rpcs).toEqual([{
+      nom: 'classer_virement_personnel',
+      args: {
+        p_ligne_bancaire_id: 'ancien',
+        p_ecritures: [
+          { compte: '108000', sens: 'debit', montant: 1000, libelle: 'VIREMENT COMPTE PERSO' },
+          { compte: '512000', sens: 'credit', montant: 1000, libelle: 'VIREMENT COMPTE PERSO' },
+        ],
+      },
+    }])
+    // Relue, la liste n'en porte plus : la carte disparaît, et les deux virements ont leur écriture.
+    await waitFor(() => expect(screen.queryByText(/sans (son|leur) écriture/)).toBeNull())
+    expect(screen.getAllByText('Compte 108000')).toHaveLength(2)
+  })
+
+  it('en engagement, sur le compte choisi pour le dirigeant', async () => {
+    faux.lignes = [ligne({ id: 'apport', montant: 2000, libelle: 'VIR APPORT' })]
+    monter(ENGAGEMENT)
+
+    await screen.findByText('1 virement personnel sans son écriture')
+    await act(async () => { screen.getByRole('button', { name: 'Écrire ce virement' }).click() })
+
+    // Un apport CRÉDITE le compte du dirigeant.
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '455000', sens: 'credit', montant: 2000, libelle: 'VIR APPORT' },
+      { compte: '512000', sens: 'debit', montant: 2000, libelle: 'VIR APPORT' },
+    ])
+    await screen.findByText('Compte 455000')
+  })
+
+  it('une écriture sur un autre compte est à réécrire', async () => {
+    faux.lignes = [ligne({ id: 'a' })]
+    faux.ecritures = [
+      ecriture({ id: 'x', ligne_bancaire_id: 'a', compte: '455000', sens: 'debit' }),
+      ecriture({ id: 'y', ligne_bancaire_id: 'a', compte: '512000', sens: 'credit' }),
+    ]
+    monter()
+
+    await screen.findByText('À réécrire')
+    expect(screen.getByText('1 virement personnel sans son écriture')).toBeTruthy()
+  })
+
+  it('se tait quand chaque virement a son écriture', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « la carte montre les virements sans écriture » serait satisfait par
+    // une carte toujours affichée.
+    faux.lignes = [ligne({ id: 'a' })]
+    faux.ecritures = ecritureJuste('a')
+    monter()
+
+    await screen.findByText('Compte 108000')
+    expect(screen.queryByText(/sans (son|leur) écriture/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Écrire/ })).toBeNull()
+  })
+
+  it('suspend l’écriture quand les écritures ne sont lues qu’en partie', async () => {
+    faux.lignes = [ligne({ id: 'a' })]
+    // L'écriture existe ; lue en partie, elle manque, et le virement PARAÎT sans écriture.
+    faux.ecritures = ecritureJuste('a')
+    faux.muetApres.ecritures_brouillon = 0
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: 'Écrire ce virement' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/Suspendu : la lecture est partielle/)).toBeTruthy()
+    // La colonne ne l'affirme pas non plus.
+    expect(screen.queryByText('Sans écriture')).toBeNull()
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('suspend l’écriture quand les virements ne sont lus qu’en partie', async () => {
+    faux.lignes = [ligne({ id: 'a' }), ligne({ id: 'b', date: '2025-07-02' })]
+    faux.muetApres.lignes_bancaires = 1
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: 'Écrire ce virement' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/Suspendu : la lecture est partielle/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('ne donne pas une liste qu’il n’a pas pu lire pour vide', async () => {
+    faux.lignes = [ligne({ id: 'a' })]
+    faux.muetApres.lignes_bancaires = 0
+    monter()
+
+    await screen.findByText('Les virements personnels n’ont pas pu être lus.')
+    expect(screen.queryByText('Aucun virement personnel marqué pour l\'instant.')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Écrire/ })).toBeNull()
+  })
+
+  it('trois clics rapprochés n’écrivent qu’une fois, et le verrou tient pendant la relecture', async () => {
+    faux.lignes = [ligne({ id: 'a' }), ligne({ id: 'b', date: '2025-07-02' })]
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Écrire les 2' })
+
+    faux.retenirLectures = true
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    await waitFor(() => expect(faux.relacher).not.toBeNull())
+    // Un lot, pas trois : deux virements, deux appels.
+    expect(faux.rpcs.map((r) => r.args.p_ligne_bancaire_id)).toEqual(['a', 'b'])
+    // La relecture n'est pas revenue : le bouton reste grisé, et un clic de plus ne relance rien.
+    expect(screen.getByRole('button', { name: 'Écriture…' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { screen.getByRole('button', { name: 'Écriture…' }).click() })
+    expect(faux.rpcs).toHaveLength(2)
+
+    faux.retenirLectures = false
+    await act(async () => { faux.relacher?.(); faux.retenue = null })
+    await waitFor(() => expect(screen.queryByText(/sans (son|leur) écriture/)).toBeNull())
+  })
+
+  it('« Retirer » attend la fin du lot : retiré pendant, un virement serait reclassé par le lot', async () => {
+    faux.lignes = [ligne({ id: 'a' }), ligne({ id: 'b', date: '2025-07-02' })]
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Écrire les 2' })
+
+    faux.retenirRpc = true
+    await act(async () => { bouton.click() })
+    const retirer = screen.getAllByRole('button', { name: 'Retirer' })
+    expect(retirer.every((b) => b.hasAttribute('disabled'))).toBe(true)
+    await act(async () => { retirer[0].click() })
+    expect(faux.rpcs.map((r) => r.nom)).toEqual([])
+
+    await act(async () => { faux.relacherRpc?.() })
+    await waitFor(() => expect(screen.queryByText(/sans (son|leur) écriture/)).toBeNull())
+    expect(faux.rpcs.map((r) => r.nom)).toEqual(['classer_virement_personnel', 'classer_virement_personnel'])
+  })
+
+  it('un refus de la base se dit, et la liste est relue', async () => {
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    faux.lignes = [ligne({ id: 'a' })]
+    faux.erreurRpc = 'L’écriture de ce mouvement est validée : elle ne se remplace plus.'
+    monter()
+
+    const ecrire = await screen.findByRole('button', { name: 'Écrire ce virement' })
+    await act(async () => { ecrire.click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalled())
+    expect(alerte.mock.calls[0][0]).toMatch(/0 virement\(s\) écrit\(s\) sur 1/)
+    expect(alerte.mock.calls[0][0]).toMatch(/elle ne se remplace plus/)
+    // Le bouton revient : un nouvel essai reste possible.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Écrire ce virement' }).hasAttribute('disabled')).toBe(false))
+  })
+})
+
+describe('VirementsTab — retirer un virement', () => {
+  it('passe par la base, qui retire l’écriture avec le classement', async () => {
+    faux.lignes = [ligne({ id: 'a' })]
+    faux.ecritures = ecritureJuste('a')
+    monter()
+
+    const retirer = await screen.findByRole('button', { name: 'Retirer' })
+    await act(async () => { retirer.click() })
+
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_virement_personnel', args: { p_ligne_bancaire_id: 'a' } }])
+    await screen.findByText('Aucun virement personnel marqué pour l\'instant.')
+    expect(faux.ecritures).toEqual([])
+  })
+
+  it('un refus se dit au lieu de laisser croire le virement retiré', async () => {
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    faux.lignes = [ligne({ id: 'a' })]
+    faux.ecritures = ecritureJuste('a')
+    faux.erreurRpc = 'L’écriture de ce mouvement est validée : elle ne se retire plus.'
+    monter()
+
+    const retirer = await screen.findByRole('button', { name: 'Retirer' })
+    await act(async () => { retirer.click() })
+
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/elle ne se retire plus/)))
+    expect(screen.getByText('VIREMENT COMPTE PERSO')).toBeTruthy()
   })
 })

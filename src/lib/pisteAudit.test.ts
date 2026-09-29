@@ -271,6 +271,25 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     expect(ligne.manque).toEqual(['justificatif'])
     expect(ligne.pieceFichier).toBeNull()
   })
+
+  it('donne aussi le relevé pour justificatif à un virement personnel', () => {
+    // lib/virementPersonnel.ts : le prélèvement de l'exploitant s'écrit sur son compte, sans pièce.
+    const perso = ligneBancaire({
+      id: 'l-perso', piece_id: null, categorie_id: null, statut: 'ignoree', prelevement_personnel: true,
+      montant: -500, libelle: 'VIR PERSO', source_fichier: 'releve-mars-2026.pdf',
+    })
+    const [ligne] = pisteAudit(
+      [ecriture({ id: 'v1', piece_id: null, ligne_bancaire_id: 'l-perso', compte: '108000', montant: 500, date: '2026-03-12' })],
+      [], [perso], [],
+    )
+    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'VIR PERSO', []])
+    // Remis à traiter, il n'a plus de justificatif.
+    const [remis] = pisteAudit(
+      [ecriture({ id: 'v1', piece_id: null, ligne_bancaire_id: 'l-perso', compte: '108000', montant: 500, date: '2026-03-12' })],
+      [], [{ ...perso, statut: 'non_rapprochee', prelevement_personnel: false }], [],
+    )
+    expect(remis.manque).toEqual(['justificatif'])
+  })
 })
 
 describe('pisteAudit — un ordre chronologique, et le même à chaque export', () => {

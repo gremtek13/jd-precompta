@@ -18,6 +18,7 @@ import {
 } from '../../lib/appariementBanque'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
 import { ecritureDuMouvement, refusAffectation } from '../../lib/affectationBanque'
+import { compteDuDirigeant, ecritureDuVirementPersonnel, refusVirementPersonnel } from '../../lib/virementPersonnel'
 import {
   envoisDuLot, justificatifPossible, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
 } from '../../lib/reglesAffectation'
@@ -344,7 +345,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // Défait un rapprochement comme un classement (ignoré, virement personnel) : dans les trois cas le
   // mouvement redevient « à traiter », sans rien qui le rattache.
   async function remettreATraiter(ligneId: string): Promise<boolean> {
-    const ancienPieceId = lignes.find((l) => l.id === ligneId)?.piece_id ?? null
+    const ligne = lignes.find((l) => l.id === ligneId)
+    // Un virement personnel part avec son écriture, par la base (`retirer_virement_personnel`) : une
+    // simple remise à « à traiter » la laisserait au brouillon sans plus rien qui la justifie — une
+    // rupture de la piste d'audit, et un prélèvement compté dans la trésorerie d'un mouvement à traiter.
+    if (ligne?.prelevement_personnel) {
+      const { error } = await supabase.rpc('retirer_virement_personnel', { p_ligne_bancaire_id: ligneId })
+      if (error) { window.alert(`Le virement personnel n'a pas pu être remis à traiter : ${messageErreur(error, 'raison inconnue')}`); return false }
+      return true
+    }
+    const ancienPieceId = ligne?.piece_id ?? null
     const { error } = await supabase.from('lignes_bancaires').update({
       statut: 'non_rapprochee', piece_id: null, cotisation_id: null, prelevement_personnel: false,
     }).eq('id', ligneId)
@@ -430,15 +440,22 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     return true
   }
 
-  // Virement du compte pro vers le compte personnel — n'a ni pièce ni échéance à rattacher (ce n'est
-  // pas une charge), donc classé "ignoree" comme n'importe quel mouvement sans justificatif, mais avec
-  // ce drapeau à part pour rester identifiable dans l'onglet Virements plutôt que de se perdre parmi
-  // les autres lignes ignorées (assurance, etc.).
+  // Virement entre le compte pro et le compte personnel de l'exploitant — un prélèvement, ou un apport.
+  // Ni pièce ni échéance à rattacher, ni charge ni recette : il s'ÉCRIT sur le compte du dirigeant face
+  // à la banque (lib/virementPersonnel.ts, testé), par `classer_virement_personnel`, qui VÉRIFIE
+  // l'écriture contre le mouvement et le compte du dossier puis l'écrit AVEC le classement, dans une
+  // seule transaction — classé sans écriture, il manquait au FEC et à la trésorerie. Le mouvement reste
+  // « ignoré », avec le drapeau qui le range dans l'onglet Virements.
   async function marquerVirementPersonnel(ligneId: string): Promise<boolean> {
-    const { error } = await supabase.from('lignes_bancaires').update({
-      statut: 'ignoree', piece_id: null, cotisation_id: null, prelevement_personnel: true,
-    }).eq('id', ligneId)
-    if (error) { window.alert(`Le mouvement n'a pas pu être classé en virement personnel : ${error.message}`); return false }
+    const ligne = lignes.find((l) => l.id === ligneId)
+    if (!ligne) return false
+    const refus = refusVirementPersonnel(ligne)
+    if (refus) { window.alert(refus); return false }
+    const { error } = await supabase.rpc('classer_virement_personnel', {
+      p_ligne_bancaire_id: ligne.id,
+      p_ecritures: ecritureDuVirementPersonnel(ligne, modele),
+    })
+    if (error) { window.alert(`Le mouvement n'a pas pu être classé en virement personnel : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
   }
 
@@ -1237,6 +1254,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             reglesIncompletes={reglesAffectationIncompletes}
             lignes={lignes}
             assujettiTva={assujettiTva}
+            compteDirigeant={compteDuDirigeant(modele)}
             piecesRapprochees={piecesRapprochees}
             cotisationsRapprochees={cotisationsRapprochees}
             recurrence={suggestionRecurrente(ligneOuverte)}

@@ -260,8 +260,9 @@ export function ecrituresSansObjet(
     if (!e.piece_id || e.compte === COMPTE_BANQUE || e.ligne_bancaire_id) continue
     // En engagement, la ligne de tiers de la facture (401, 411, compte de la note de frais) SOLDE la
     // charge dans son écriture : elle ne compte rien en trop, et la garder ferait rendre zéro à
-    // `montant` — une facture immobilisée annoncée « 0,00 € compté au brouillon ». Aucune écriture d'un
-    // dossier en trésorerie ne mouvemente ces comptes.
+    // `montant` — une facture immobilisée annoncée « 0,00 € compté au brouillon ». Aucune écriture de
+    // pièce d'un dossier en trésorerie ne mouvemente ces comptes (celle d'un virement personnel, sans
+    // pièce, est écartée plus haut).
     if (COMPTES_DE_TIERS.has(e.compte)) continue
     parPiece.set(e.piece_id, [...(parPiece.get(e.piece_id) ?? []), e])
   }

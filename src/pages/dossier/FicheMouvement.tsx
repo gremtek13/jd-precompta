@@ -10,6 +10,7 @@ import {
   justificatifPossible, motifPropose, mouvementsCouverts, normaliserPourRegle, refusMotif, regleApplicable, sensDuMouvement,
 } from '../../lib/reglesAffectation'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
+import { LIBELLES_COMPTES } from '../../lib/comptes'
 import { ouvrirJustificatif } from '../../lib/depot'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from '../../lib/types'
@@ -42,6 +43,11 @@ import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectat
 // désigne sont PROPOSÉS dans la carte « Affectations proposées » de Banque, et c'est un second clic,
 // liste sous les yeux, qui les écrit. Une règle qui reconnaît ce mouvement présélectionne sa catégorie,
 // et le dit.
+//
+// ET UN VIREMENT PERSONNEL S'ÉCRIT (lib/virementPersonnel.ts) : sur le compte du dirigeant, face à la
+// banque. La fiche le dit avant le clic et sur le mouvement classé ; elle ne dit pas si l'écriture d'un
+// virement classé AVANT qu'il s'écrive manque — elle ne lit pas le brouillon —, et renvoie à l'onglet
+// Virements, qui le lit, le montre et l'écrit.
 
 export interface NavigationMouvement {
   position: string
@@ -75,6 +81,9 @@ interface FicheMouvementProps {
   // Une recette sans facture n'est pas encore prise en charge sur un dossier assujetti : sa TVA ne se
   // lit pas sur un relevé (voir `refusAffectation`).
   assujettiTva: boolean
+  // Le compte sur lequel un virement personnel s'écrit — celui de l'exploitant en trésorerie, celui du
+  // dirigeant en engagement (`compteDuDirigeant`).
+  compteDirigeant: string
   piecesRapprochees: ReadonlySet<string>
   cotisationsRapprochees: ReadonlySet<string>
   recurrence: RecurrenceMouvement | null
@@ -208,11 +217,12 @@ function CarteCotisation({ cotisation, signaux, action }: { cotisation: Cotisati
 }
 
 export default function FicheMouvement({
-  ligne, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva,
+  ligne, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant,
   piecesRapprochees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation,
 }: FicheMouvementProps) {
+  const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   // Le choix à la main ne s'applique qu'au clic sur « Associer », jamais au changement de la liste :
   // sur une liste déroulante qui a le focus, les flèches du clavier changent la valeur — et
   // rapprochaient donc, dans la fenêtre d'avant, la première pièce venue sans qu'on l'ait choisie.
@@ -641,6 +651,21 @@ export default function FicheMouvement({
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={onIgnorer}>Ignorer</button>
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={onToujoursIgnorer}>Toujours ignorer ce type…</button>
             </div>
+            <p className="fiche-mouvement-note">
+              « Virement personnel » : entre le compte pro et le compte personnel, il s’écrit sur le compte{' '}
+              {compteDirigeant} ({libelleCompteDirigeant}), face à la banque — ni charge ni recette.
+            </p>
+          </section>
+        )}
+
+        {ligne.prelevement_personnel && (
+          <section className="fiche-mouvement-section">
+            <h3>Virement personnel</h3>
+            <p className="fiche-mouvement-note">
+              Ni charge ni recette : il s’écrit sur le compte {compteDirigeant} ({libelleCompteDirigeant}), face
+              à la banque. « Remettre à traiter » retire aussi son écriture ; l’onglet Virements dit si elle
+              manque, et l’écrit.
+            </p>
           </section>
         )}
 

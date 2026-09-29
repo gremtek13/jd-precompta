@@ -5,7 +5,9 @@ import {
   mouvementsAffectes, mouvementsAffectesDesynchronises, natureDuCompte, recettesAffecteesSurDossierAssujetti,
 } from './affectationBanque'
 import { categoriesSansCompte, categoriesSansPoste } from './controles'
+import type { ModeleComptable } from './engagement'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import { compteDuDirigeant, virementsPersonnelsAEcrire } from './virementPersonnel'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS AFFECTÉS (29/09/2026, ligne 26.6).
 //
@@ -32,6 +34,8 @@ interface Copie {
   recettesAffecteesSurDossierAssujetti: (a: ReturnType<Copie['mouvementsAffectes']>, assujetti: boolean) => { ligne: { id: string } }[]
   categoriesSansCompte: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[]) => Categorie[]
   categoriesSansPoste: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[]) => Categorie[]
+  compteDuDirigeant: typeof compteDuDirigeant
+  virementsPersonnelsAEcrire: (e: EcritureBrouillon[], l: LigneBancaire[], m: ModeleComptable) => { id: string }[]
 }
 
 // Prend la SOURCE en paramètre : c'est ce qui permet de lui donner une source où une dérive a été
@@ -46,7 +50,7 @@ function extraire(source: string): Copie {
   expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
   const bloc = `const COMPTE_BANQUE = "${banque![1]}"\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSurDossierAssujetti, categoriesSansCompte, categoriesSansPoste }`)() as Copie
+  return new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSurDossierAssujetti, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)() as Copie
 }
 
 const deployee = extraire(sourceDeployee())
@@ -193,13 +197,56 @@ describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
   })
 })
 
+// LES VIREMENTS PERSONNELS (src/lib/virementPersonnel.ts) : la Checklist compte ceux dont l'écriture
+// manque — ceux classés avant que ce classement s'écrive —, et l'assistant doit dire la même chose.
+const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
+const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '467000' }
+const perso = (o: Partial<LigneBancaire>): LigneBancaire =>
+  ligne({ statut: 'ignoree', categorie_id: null, prelevement_personnel: true, montant: -500, ...o })
+const VIREMENTS: LigneBancaire[] = [
+  perso({ id: 'sans-ecriture' }),
+  perso({ id: 'ecrit-108' }),
+  perso({ id: 'ecrit-467' }),
+  perso({ id: 'apport', montant: 800 }),
+  perso({ id: 'zero', montant: 0 }),
+  perso({ id: 'rapproche', statut: 'rapprochee', piece_id: 'p1' }),
+  perso({ id: 'affecte', statut: 'rapprochee', categorie_id: 'frais' }),
+  ligne({ id: 'pas-perso', statut: 'ignoree', categorie_id: null, montant: -500 }),
+]
+const ECRITURES_VIREMENTS: EcritureBrouillon[] = [
+  ...conforme('ecrit-108', '108000', -500),
+  ...conforme('ecrit-467', '467000', -500),
+  ...conforme('apport', '108000', 800),
+]
+
+describe('agent-comptable / bloc AFFECTATION — les virements personnels', () => {
+  it('lit le compte du dirigeant dans le modèle comme src/lib', () => {
+    for (const modele of [TRESORERIE, ENGAGEMENT, { ...ENGAGEMENT, compteNotesDeFrais: '455000' as const }, { ...ENGAGEMENT, compteNotesDeFrais: '108000' as const }]) {
+      expect(deployee.compteDuDirigeant(modele)).toBe(compteDuDirigeant(modele))
+    }
+  })
+
+  it('rend les mêmes virements à écrire, dans les deux modèles', () => {
+    for (const modele of [TRESORERIE, ENGAGEMENT]) {
+      expect(ids2(deployee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele)), `modèle ${modele.mode}`)
+        .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele)))
+    }
+    // La batterie exerce bien ce qui décide : l'écriture absente, le compte qui suit le modèle, et les
+    // mouvements qu'on ne peut pas écrire (zéro euro, rapproché, affecté, pas un virement personnel).
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE))).toEqual(['sans-ecriture', 'ecrit-467'])
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT))).toEqual(['sans-ecriture', 'ecrit-108', 'apport'])
+  })
+})
+
+const ids2 = (a: { id: string }[]) => a.map((l) => l.id)
+
 describe('agent-comptable / points_a_traiter lit les mouvements affectés', () => {
   const source = sourceDeployee()
   const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
 
   it('lit les mouvements rapprochés portant une catégorie, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, categorie_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)\.not\("categorie_id", "is", null\)/)
-    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('passe les mouvements aux catégories sans compte ou sans poste, et rend les deux points de la Checklist', () => {
@@ -213,6 +260,16 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
   it('dit au modèle qu’une écriture de mouvement affecté sans pièce n’est pas une anomalie', () => {
     expect(source).toMatch(/Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif[^\n]*n'a pas de pièce, ce n'est pas une anomalie/)
+  })
+
+  it('lit les virements personnels sous le même refus de lecture partielle, et rend le point de la Checklist', () => {
+    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("prelevement_personnel", true\)/)
+    expect(corps).toContain('virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele)')
+    expect(corps).toMatch(/virements_personnels_sans_ecriture: virementsAEcrire\.length/)
+  })
+
+  it('dit au modèle qu’un virement personnel s’écrit sur le compte du dirigeant, sans pièce', () => {
+    expect(source).toMatch(/Un VIREMENT PERSONNEL[^\n]*s'écrit sur le compte du dirigeant[^\n]*sans pièce : ce n'est pas une anomalie/)
   })
 })
 
@@ -234,7 +291,7 @@ describe('le garde-fou sait encore échouer', () => {
   })
 
   it('attrape une copie qui ne compare plus la date', () => {
-    const derivee = planter(' && e.date === m.ligne.date', '')
+    const derivee = planter(' && e.date === date', '')
     echoue(() => memeResultat(conforme('encaissement', '706000', 100, '2025-04-01'), [ligne({ id: 'encaissement' })], false, derivee))
   })
 
@@ -251,6 +308,24 @@ describe('le garde-fou sait encore échouer', () => {
   it('attrape une copie qui signe le poste d’un remboursement à l’envers', () => {
     const derivee = planter('montantPoste: nature === "depense" ? -ligne.montant : ligne.montant', 'montantPoste: Math.abs(ligne.montant)')
     echoue(() => memeResultat([], LIGNES, false, derivee))
+  })
+
+  it('attrape une copie qui écrit toujours sur le compte de l’exploitant', () => {
+    const derivee = planter('return modele.mode === "engagement" ? modele.compteNotesDeFrais : COMPTE_EXPLOITANT', 'return COMPTE_EXPLOITANT')
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT)))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT))))
+  })
+
+  it('attrape une copie qui propose d’écrire un virement de zéro euro', () => {
+    const derivee = planter(' && l.montant !== 0', '')
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE)))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE))))
+  })
+
+  it('attrape une copie qui prend tout mouvement pour un virement personnel', () => {
+    const derivee = planter('    l.prelevement_personnel\n    && !l.piece_id', '    !l.piece_id')
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE)))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE))))
   })
 
   it('attrape une copie dont la contrepartie n’est plus la banque', () => {

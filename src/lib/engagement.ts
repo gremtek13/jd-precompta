@@ -83,8 +83,11 @@ export const COMPTES_NOTES_DE_FRAIS: readonly { compte: CompteNotesDeFrais; libe
   },
 ]
 
-// Les comptes de tiers de l'engagement. Aucune écriture d'un dossier en trésorerie ne les mouvemente :
-// ce n'est pas une hypothèse dont dépendrait un contrôle, c'est ce que la génération produit.
+// Les comptes de tiers de l'engagement. Aucune écriture d'une PIÈCE d'un dossier en trésorerie ne les
+// mouvemente : ce n'est pas une hypothèse dont dépendrait un contrôle, c'est ce que la génération
+// produit. L'écriture d'un virement personnel, elle, porte le 108 d'un dossier en trésorerie — mais elle
+// n'a pas de pièce, et aucun contrôle qui lit cette liste ne regarde une écriture sans pièce
+// (lib/virementPersonnel.ts).
 export const COMPTES_DE_TIERS: ReadonlySet<string> = new Set([
   COMPTE_FOURNISSEURS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_EXPLOITANT, COMPTE_AUTRES_DEBITEURS_CREDITEURS,
 ])

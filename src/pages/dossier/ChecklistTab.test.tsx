@@ -709,3 +709,52 @@ describe('ChecklistTab — les mouvements affectés sans justificatif', () => {
     expect(point.textContent).toMatch(/^1 /)
   })
 })
+
+// Un VIREMENT PERSONNEL s'écrit sur le compte du dirigeant depuis le 29/09/2026
+// (lib/virementPersonnel.ts). Écrit, il n'est ni un point à traiter ni une rupture de la piste d'audit ;
+// classé sans son écriture — tous ceux marqués avant —, il a l'air traité et manque au FEC. Le point le
+// dit, et mène à l'onglet Virements, qui les montre et les écrit.
+describe('ChecklistTab — les virements personnels', () => {
+  const perso = () => ligne({
+    id: 'l-perso', libelle: 'VIR PERSO', montant: -500, statut: 'ignoree', piece_id: null, prelevement_personnel: true,
+  })
+  function ecritureDe(o: Partial<EcritureBrouillon>): EcritureBrouillon {
+    return {
+      id: 'v1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-perso', date: '2026-03-10',
+      compte: '108000', libelle: 'VIR PERSO', montant: 500, sens: 'debit', statut: 'proposee',
+      created_at: '2026-03-10T00:00:00Z', ...o,
+    }
+  }
+  const ecrit = (compte = '108000') => [ecritureDe({ id: 'v1', compte }), ecritureDe({ id: 'v2', compte: '512000', sens: 'credit' })]
+
+  it('compte le virement classé sans son écriture, et mène à l’onglet Virements', async () => {
+    const onNavigate = vi.fn()
+    poser({ lignes: [perso()] })
+    render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />)
+
+    const point = await screen.findByText(/virement\(s\) personnel\(s\) sans écriture/)
+    expect(point.textContent).toMatch(/^1 /)
+    screen.getByRole('button', { name: 'Écrire ces virements' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('virements')
+  })
+
+  it('écrit, il n’est ni un point à traiter ni une rupture de la piste d’audit', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « le point compte les virements sans écriture » serait satisfait par
+    // un point qui compte TOUS les virements personnels.
+    poser({ lignes: [perso(), ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })], ecritures: ecrit() })
+    monter()
+
+    // Ancré sur un point que ce jeu d'essai déclenche forcément.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/personnel\(s\) sans écriture/)).toHaveLength(0)
+    expect(screen.queryAllByText(/piste d'audit rompue/)).toHaveLength(0)
+  })
+
+  it('en engagement, l’écriture attendue est sur le compte choisi pour le dirigeant', async () => {
+    poser({ lignes: [perso()], ecritures: ecrit('108000') })
+    monter(false, ENGAGEMENT)
+
+    const point = await screen.findByText(/personnel\(s\) sans écriture/)
+    expect(point.textContent).toMatch(/^1 /)
+  })
+})

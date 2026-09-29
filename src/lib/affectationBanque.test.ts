@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
-  ecritureDuMouvement, idsMouvementsAffectes, mouvementsAffectes, mouvementsAffectesDesynchronises, natureDuCompte,
-  recettesAffecteesSurDossierAssujetti, referenceDuReleve, refusAffectation, sensInhabituel, type MouvementBancaire,
+  ecritureDuMouvement, idsMouvementsJustifiesParLeReleve, mouvementJustifieParLeReleve, mouvementsAffectes,
+  mouvementsAffectesDesynchronises, natureDuCompte, recettesAffecteesSurDossierAssujetti, referenceDuReleve, refusAffectation,
+  sensInhabituel, type MouvementBancaire,
 } from './affectationBanque'
 import type { Categorie, EcritureBrouillon } from './types'
 
@@ -131,11 +132,14 @@ describe('mouvementsAffectes — ce qui compte dans un poste', () => {
       mouvement({ id: 'b', statut: 'non_rapprochee', categorie_id: 'cat-frais' }),
       mouvement({ id: 'c', statut: 'rapprochee', categorie_id: null, piece_id: 'p1' }),
       mouvement({ id: 'd', statut: 'rapprochee', categorie_id: 'cat-inconnue' }),
+      mouvement({ id: 'e', statut: 'ignoree', prelevement_personnel: true }),
     ]
+    // Un virement personnel ne compte dans AUCUN poste : le compte du dirigeant est un compte de bilan.
     expect(mouvementsAffectes(lignes, categories).map((m) => m.ligne.id)).toEqual(['a'])
     // Les identifiants se lisent sur la LIGNE : un mouvement affecté à une catégorie qu'on n'a pas su
-    // lire reste l'écriture d'un mouvement, pas une rupture de la piste d'audit.
-    expect([...idsMouvementsAffectes(lignes)]).toEqual(['a', 'd'])
+    // lire reste l'écriture d'un mouvement, pas une rupture de la piste d'audit — et un virement
+    // personnel aussi a le relevé pour justificatif.
+    expect([...idsMouvementsJustifiesParLeReleve(lignes)]).toEqual(['a', 'd', 'e'])
   })
 
   it('le montant du poste est positif quand il l’augmente, négatif pour un remboursement', () => {
@@ -156,6 +160,26 @@ describe('mouvementsAffectes — ce qui compte dans un poste', () => {
   it('une catégorie passée sur un compte de bilan n’a plus de nature', () => {
     const [m] = mouvementsAffectes([mouvement({ statut: 'rapprochee', categorie_id: 'cat-bilan' })], categories)
     expect(m.nature).toBeNull()
+  })
+})
+
+describe('mouvementJustifieParLeReleve — le relevé pour seul justificatif', () => {
+  it('un mouvement affecté à une catégorie, ou classé en virement personnel', () => {
+    expect(mouvementJustifieParLeReleve(mouvement({ statut: 'rapprochee', categorie_id: 'cat-frais' }))).toBe(true)
+    expect(mouvementJustifieParLeReleve(mouvement({ statut: 'ignoree', prelevement_personnel: true }))).toBe(true)
+  })
+
+  it('ni un mouvement rapproché d’une pièce ou d’une échéance, ni un mouvement ignoré ou à traiter', () => {
+    const cas: Partial<MouvementBancaire>[] = [
+      { statut: 'rapprochee', piece_id: 'p1' },
+      { statut: 'rapprochee', cotisation_id: 'c1' },
+      { statut: 'ignoree' },
+      { statut: 'non_rapprochee' },
+      // Une catégorie sur un mouvement qui n'est pas rapproché : un état que la base refuse
+      // (`lignes_bancaires_affectation_rapprochee`), jamais un justificatif.
+      { statut: 'non_rapprochee', categorie_id: 'cat-frais' },
+    ]
+    for (const o of cas) expect(mouvementJustifieParLeReleve(mouvement(o))).toBe(false)
   })
 })
 

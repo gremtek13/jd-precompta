@@ -33,13 +33,14 @@
 //
 // Fichier auto-porteur, comme les autres fonctions de ce dossier (déployées par copier-coller dans
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts,
-// src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts
-// et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
+// src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
+// src/lib/virementPersonnel.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas
+// empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `rattachementsTresorerie` et `analyserEcritures` et les exécute
 // contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que rien ne
-// puisse le voir. Le bloc AFFECTATION (mouvements du relevé affectés sans justificatif) l'est de même
-// par src/lib/agentComptableAffectation.test.ts.
+// puisse le voir. Le bloc AFFECTATION (mouvements du relevé affectés sans justificatif, virements
+// personnels) l'est de même par src/lib/agentComptableAffectation.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -379,6 +380,9 @@ function analyserEcritures(
 // les sortent de la 2035), les mouvements dont l'écriture ne suit plus la catégorie, et les recettes
 // affectées d'un dossier devenu assujetti. Une copie restée aux seules pièces répondrait « aucune
 // catégorie sans compte » sur un dossier dont les recettes ne sont QUE des virements.
+// ET LES VIREMENTS PERSONNELS (src/lib/virementPersonnel.ts) : un virement entre le compte pro et le
+// compte personnel s'écrit sur le compte du dirigeant face à la banque, et ceux classés avant qu'il
+// s'écrive n'ont pas d'écriture — la Checklist les compte, l'assistant aussi.
 // Gardé par `agentComptableAffectation.test.ts`, qui extrait ce bloc et le compare à src/lib.
 interface MouvementAffecteRow { id: string; date: string; montant: number; statut: string; categorie_id: string | null }
 
@@ -412,7 +416,7 @@ function mouvementsAffectes(lignes: readonly MouvementAffecteRow[], categories: 
 
 // L'écriture qu'une affectation produit, sans son libellé : le contrôle ne le compare pas. Le sens
 // vient du signe du mouvement, jamais de la nature de la catégorie.
-function ecritureDuMouvement(ligne: MouvementAffecteRow, compteCategorie: string) {
+function ecritureDuMouvement(ligne: Pick<MouvementAffecteRow, "montant">, compteCategorie: string) {
   const montant = Math.abs(ligne.montant)
   const entree = ligne.montant >= 0
   return [
@@ -423,29 +427,67 @@ function ecritureDuMouvement(ligne: MouvementAffecteRow, compteCategorie: string
 
 const EPSILON_AFFECTATION = 0.02
 
-// Un mouvement affecté dont l'écriture n'est plus celle que son affectation produirait : absente, sur
-// un autre compte, d'un autre montant, dans un autre sens ou à une autre date — le cas d'une catégorie
-// dont le compte a changé depuis. « Réaffecter » (onglet Écritures) la réécrit.
-function mouvementsAffectesDesynchronises(ecritures: readonly EcritureRow[], affectes: readonly MouvementAffecte[]): MouvementAffecte[] {
+// Les écritures SANS PIÈCE, par mouvement : celles d'un mouvement affecté ou d'un virement personnel.
+// Les écritures d'une pièce qui désignent un mouvement (sa contrepartie, son règlement) n'en sont pas.
+function ecrituresSansPieceParMouvement(ecritures: readonly EcritureRow[]): Map<string, EcritureRow[]> {
   const parLigne = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
     if (e.piece_id || !e.ligne_bancaire_id) continue
     parLigne.set(e.ligne_bancaire_id, [...(parLigne.get(e.ligne_bancaire_id) ?? []), e])
   }
+  return parLigne
+}
+
+// L'écriture présente est-elle celle attendue — mêmes comptes, mêmes sens, même date, montants à la
+// tolérance près, dans n'importe quel ordre, et rien de plus ?
+function ecritureConforme(
+  presentes: readonly EcritureRow[], attendues: readonly { compte: string; sens: string; montant: number }[], date: string,
+): boolean {
+  if (presentes.length !== attendues.length) return false
+  const restantes = [...presentes]
+  for (const a of attendues) {
+    const i = restantes.findIndex((e) =>
+      e.compte === a.compte && e.sens === a.sens && e.date === date && Math.abs(e.montant - a.montant) <= EPSILON_AFFECTATION)
+    if (i < 0) return false
+    restantes.splice(i, 1)
+  }
+  return true
+}
+
+// Un mouvement affecté dont l'écriture n'est plus celle que son affectation produirait : absente, sur
+// un autre compte, d'un autre montant, dans un autre sens ou à une autre date — le cas d'une catégorie
+// dont le compte a changé depuis. « Réaffecter » (onglet Écritures) la réécrit.
+function mouvementsAffectesDesynchronises(ecritures: readonly EcritureRow[], affectes: readonly MouvementAffecte[]): MouvementAffecte[] {
+  const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
-    const presentes = parLigne.get(m.ligne.id) ?? []
     if (!m.nature || !m.categorie.compte_comptable) return true
-    const attendues = ecritureDuMouvement(m.ligne, m.categorie.compte_comptable)
-    if (presentes.length !== attendues.length) return true
-    const restantes = [...presentes]
-    for (const a of attendues) {
-      const i = restantes.findIndex((e) =>
-        e.compte === a.compte && e.sens === a.sens && e.date === m.ligne.date && Math.abs(e.montant - a.montant) <= EPSILON_AFFECTATION)
-      if (i < 0) return true
-      restantes.splice(i, 1)
-    }
-    return false
+    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable), m.ligne.date)
   })
+}
+
+interface VirementPersonnelRow {
+  id: string; date: string; montant: number; prelevement_personnel: boolean
+  piece_id: string | null; cotisation_id: string | null; categorie_id: string | null
+}
+
+const COMPTE_EXPLOITANT = "108000"
+
+// Le compte du dirigeant, lu dans le modèle du dossier : celui de l'exploitant en trésorerie ; en
+// engagement, celui que le cabinet a choisi pour ses notes de frais — la même personne.
+function compteDuDirigeant(modele: ModeleComptable): string {
+  return modele.mode === "engagement" ? modele.compteNotesDeFrais : COMPTE_EXPLOITANT
+}
+
+// Les virements personnels dont l'écriture manque ou n'est plus celle attendue — ceux qu'on PEUT écrire :
+// ni rapprochés ni affectés, et pas de zéro euro.
+function virementsPersonnelsAEcrire(
+  ecritures: readonly EcritureRow[], lignes: readonly VirementPersonnelRow[], modele: ModeleComptable,
+): VirementPersonnelRow[] {
+  const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  return lignes.filter((l) =>
+    l.prelevement_personnel
+    && !l.piece_id && !l.cotisation_id && !l.categorie_id && l.montant !== 0
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(modele)), l.date))
 }
 
 // Les recettes affectées d'un dossier DEVENU assujetti : écrites au TTC en 706, leur TVA collectée
@@ -761,7 +803,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée ou par un mouvement affecté), pièces validées sans TVA renseignée, encaissements affectés en recette sur un dossier assujetti. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée ou par un mouvement affecté), pièces validées sans TVA renseignée, encaissements affectés en recette sur un dossier assujetti, virements personnels sans leur écriture. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -919,7 +961,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
       lireTout<PieceRow>((d, f) =>
         admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
@@ -939,15 +981,18 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // comptent comme celles des pièces, et leur écriture doit suivre la catégorie.
       lireTout<MouvementAffecteRow>((d, f) =>
         admin.from("lignes_bancaires").select("id, date, montant, statut, categorie_id", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("categorie_id", "is", null).order("id").range(d, f)),
+      // Les VIREMENTS PERSONNELS (bloc AFFECTATION) : ceux classés sans leur écriture manquent au FEC.
+      lireTout<VirementPersonnelRow>((d, f) =>
+        admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
     ])
-    // Correctif audit sécurité (indicateurs/IA, Importante) : ces sept lectures alimentent des
+    // Correctif audit sécurité (indicateurs/IA, Importante) : ces huit lectures alimentent des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
     // retombant silencieusement sur un tableau vide masquerait une vraie anomalie derrière un faux
     // "tout va bien" plutôt que de dire que le contrôle n'a pas pu être fait.
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -969,6 +1014,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped)
     const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes)
     const recettesAffecteesAssujetti = recettesAffecteesSurDossierAssujetti(affectes, dossier.assujetti_tva)
+    const virementsAEcrire = virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele)
 
     return {
       ecritures_desequilibrees: groupesDesequilibres.length,
@@ -991,6 +1037,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       categories_sans_poste_2035: catSansPoste.map((c) => c.libelle),
       pieces_validees_sans_tva_renseignee: sansTva.length,
       encaissements_affectes_en_recette_sur_dossier_assujetti: recettesAffecteesAssujetti.length,
+      // Le libellé de la Checklist : classés sans leur écriture, ils manquent au FEC et à la trésorerie.
+      virements_personnels_sans_ecriture: virementsAEcrire.length,
     }
   }
 
@@ -1134,6 +1182,7 @@ Règles impératives :
 - Si les données sont insuffisantes pour répondre avec certitude, dis-le plutôt que de deviner.
 - Repères PCG utiles : comptes 6xxx = charges (sens normal débit), 7xxx = produits (sens normal crédit), 445660 = TVA déductible, 445710 = TVA collectée, 512000 = banque.
 - Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au 512000, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
+- Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).
 - Réponds en français, de façon concise, avec des montants exacts et la période concernée. Utilise des puces si ça aide.`
