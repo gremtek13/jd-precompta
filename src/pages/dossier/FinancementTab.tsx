@@ -309,7 +309,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
                     </td>
                     <td className="hide-mobile">{e.organisme_preteur ?? '—'}</td>
                     <td>{formatMoney(e.capital_initial)}</td>
-                    <td className="hide-mobile">{e.taux_annuel} %</td>
+                    <td className="hide-mobile">{`${String(e.taux_annuel).replace('.', ',')} %`}</td>
                     <td>{formatMoney(mensualite)}</td>
                     <td>{formatMoney(restant)}</td>
                     <td className="td-actions">
@@ -933,7 +933,7 @@ function EcheancierModal({ emprunt, rapprochements, onClose }: { emprunt: Emprun
       <div className="card" style={{ width: 'min(640px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
         <h2 style={{ marginTop: 0 }}>Échéancier — {emprunt.nom}</h2>
         <p className="muted" style={{ marginTop: -8 }}>
-          {formatMoney(emprunt.capital_initial)} sur {emprunt.duree_mois} mois à {emprunt.taux_annuel} %,
+          {formatMoney(emprunt.capital_initial)} sur {emprunt.duree_mois} mois à {String(emprunt.taux_annuel).replace('.', ',')} %,
           à partir du {formatDate(emprunt.date_debut)}.
           {deblocage && ` Fonds reçus le ${formatDate(deblocage.date)}.`}
           {' '}{payees.size === 0

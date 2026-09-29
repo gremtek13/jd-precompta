@@ -722,8 +722,10 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 .fiche-mouvement-regle input[type="text"] { width: 100%; min-width: 0; }
 .fiche-mouvement-origine { margin: 0; font-size: 0.75rem; color: var(--color-text-light); overflow-wrap: anywhere; }
 /* Le découpage d'une échéance d'emprunt : numéro, intérêts, assurance côte à côte — trois nombres
-   courts. `min-width: 0`, sinon la largeur propre d'un champ numérique renvoie chacun à la ligne. */
-.fiche-mouvement-decoupage { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 10px; }
+   courts. `min-width: 0`, sinon la largeur propre d'un champ numérique renvoie chacun à la ligne. Les
+   champs s'alignent par le BAS : un libellé qui passe à la ligne (« Assurance (616800) » dans le volet)
+   décalait son champ sous celui des deux autres. */
+.fiche-mouvement-decoupage { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 10px; align-items: end; }
 .fiche-mouvement-decoupage > .field { margin-bottom: 0; min-width: 0; }
 .fiche-mouvement-decoupage input { width: 100%; min-width: 0; }
 .decoupage-emprunt {

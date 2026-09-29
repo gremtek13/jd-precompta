@@ -80,6 +80,17 @@ function ligne(id: string, date: string, libelle: string, montant: number, statu
   return {
     id, dossier_id: 'd1', date, libelle, montant, statut, piece_id: pieceId, cotisation_id: null, categorie_id: categorie,
     prelevement_personnel: false, source_fichier: 'releve-septembre.csv', libelle_brut: null, created_at: MAINTENANT,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+  }
+}
+
+// Un mouvement rapproché d'un EMPRUNT (lib/echeanceEmprunt.ts), tel que `rapprocher_echeance_emprunt`
+// le laisse : le découpage validé gardé sur la ligne — le numéro de l'échéance, ses intérêts et son
+// assurance ; pour un déblocage, ni numéro, ni intérêts, ni assurance.
+function mouvementEmprunt(id: string, date: string, libelle: string, montant: number, echeance: number | null, interets: number, assurance: number): Ligne {
+  return {
+    ...ligne(id, date, libelle, montant, 'rapprochee', null),
+    emprunt_id: 'em1', emprunt_echeance: echeance, emprunt_interets: interets, emprunt_assurance: assurance,
   }
 }
 
@@ -110,6 +121,7 @@ function paiementTva(id: string, date: string, libelle: string, montant: number,
   return {
     id, dossier_id: 'd7', date, libelle, montant, statut: 'rapprochee', piece_id: pieceId, cotisation_id: null, categorie_id: null,
     prelevement_personnel: false, source_fichier: 'releve-2026.csv', libelle_brut: null, created_at: MAINTENANT,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
   }
 }
 
@@ -222,7 +234,22 @@ const TABLES: Record<string, Ligne[]> = {
     ecritureReleve('r4', 'l9', '2026-08-31', '512000', 'FRAIS TENUE DE COMPTE', 'credit', 8.5),
     ecritureReleve('r5', 'l13', '2026-09-25', '108000', 'VIR COMPTE PERSO SEPTEMBRE', 'debit', 1500),
     ecritureReleve('r6', 'l13', '2026-09-25', '512000', 'VIR COMPTE PERSO SEPTEMBRE', 'credit', 1500),
+    // Le prêt véhicule (em1) : son déblocage au crédit du 164000, et sa première échéance découpée —
+    // capital au 164000, intérêts au 661100, assurance au 616800.
+    ecritureReleve('r7', 'l15', '2026-07-28', '164000', 'DEBLOCAGE PRET VEHICULE', 'credit', 15000),
+    ecritureReleve('r8', 'l15', '2026-07-28', '512000', 'DEBLOCAGE PRET VEHICULE', 'debit', 15000),
+    ecritureReleve('r9', 'l16', '2026-08-28', '164000', 'PRLV ECHEANCE PRET VEHICULE', 'debit', 291.01),
+    ecritureReleve('r10', 'l16', '2026-08-28', '661100', 'PRLV ECHEANCE PRET VEHICULE', 'debit', 45),
+    ecritureReleve('r11', 'l16', '2026-08-28', '616800', 'PRLV ECHEANCE PRET VEHICULE', 'debit', 12.5),
+    ecritureReleve('r12', 'l16', '2026-08-28', '512000', 'PRLV ECHEANCE PRET VEHICULE', 'credit', 348.51),
   ],
+  // Un prêt du cabinet infirmier, débloqué fin juillet : 15 000 € à 3,6 % sur 48 mois, soit 336,01 € par
+  // mois, plus 12,50 € d'assurance. C'est lui qui fait paraître l'emprunt dans Financement, le découpage
+  // d'une échéance dans la fiche d'un mouvement (l17, à rapprocher) et les intérêts dans la 2035.
+  emprunts: [{
+    id: 'em1', dossier_id: 'd1', nom: 'Prêt véhicule', organisme_preteur: 'Banque Régionale', capital_initial: 15000,
+    taux_annuel: 3.6, date_debut: '2026-07-28', duree_mois: 48, created_at: MAINTENANT,
+  }],
   // L'ordinateur du dossier d7 est immobilisé : sa TVA va en ligne 19 de la CA3, pas en 20.
   immobilisations: [{
     id: 'i-d7', dossier_id: 'd7', piece_id: 'a2', nature_id: null, libelle: 'Ordinateur portable', valeur: 1500,
@@ -279,6 +306,11 @@ const TABLES: Record<string, Ligne[]> = {
     // Virements le montre et propose de l'écrire, et la Checklist le compte.
     { ...ligne('l13', '2026-09-25', 'VIR COMPTE PERSO SEPTEMBRE', -1500, 'ignoree', null), prelevement_personnel: true },
     { ...ligne('l14', '2026-07-25', 'VIR COMPTE PERSO JUILLET', -1200, 'ignoree', null), prelevement_personnel: true },
+    // Le prêt véhicule : son déblocage et sa première échéance rapprochés, la deuxième à rapprocher — sa
+    // fiche propose l'échéance n° 2 et son découpage (44,13 € d'intérêts, 12,50 € d'assurance).
+    mouvementEmprunt('l15', '2026-07-28', 'DEBLOCAGE PRET VEHICULE', 15000, null, 0, 0),
+    mouvementEmprunt('l16', '2026-08-28', 'PRLV ECHEANCE PRET VEHICULE', -348.51, 1, 45, 12.5),
+    ligne('l17', '2026-09-28', 'PRLV ECHEANCE PRET VEHICULE', -348.51, 'non_rapprochee', null),
     ...TVA_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
   ],

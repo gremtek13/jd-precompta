@@ -112,6 +112,15 @@ const VUES = [
   { nom: 'pc-virements-sombre', chemin: '#/dossiers/d1/virements', l: 1440, h: 900, theme: 'dark', reduite: false },
   { nom: 'mobile-virements-clair', chemin: '#/dossiers/d1/virements', l: 390, h: 844, theme: 'light', reduite: false },
   { nom: 'pc-virement-fiche', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Ignorés', cellule: 'VIR COMPTE PERSO SEPTEMBRE' },
+  // Les échéances d'emprunt (lib/echeanceEmprunt.ts) : la fiche d'une échéance à rapprocher, avec
+  // l'échéance proposée et son découpage ; celle de l'échéance déjà rapprochée, ouverte par sa date
+  // sous « Tous » (les deux portent le même libellé) ; et l'emprunt dans Financement.
+  { nom: 'pc-emprunt-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'PRLV ECHEANCE PRET VEHICULE' },
+  { nom: 'pc-emprunt-sombre', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, cellule: 'PRLV ECHEANCE PRET VEHICULE' },
+  { nom: 'pc-emprunt-1024', chemin: '#/dossiers/d1/banque', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'PRLV ECHEANCE PRET VEHICULE' },
+  { nom: 'pc-emprunt-rapproche', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: '28/08/2026' },
+  { nom: 'mobile-emprunt-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'PRLV ECHEANCE PRET VEHICULE' },
+  { nom: 'pc-emprunt-financement', chemin: '#/dossiers/d1/financement', l: 1440, h: 900, theme: 'light', reduite: false },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

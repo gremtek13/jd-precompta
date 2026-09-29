@@ -789,8 +789,11 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     preparer()
     faux.paiements = [ECHEANCE_2, DEBLOCAGE]
     const ligne = await ligneDeLEmprunt()
+    // Le taux s'écrit à la virgule, dans la liste comme dans l'échéancier : « 3.6 % » s'affichait.
+    expect(within(ligne).getByText('3,6 %')).toBeTruthy()
     await act(async () => { within(ligne).getByRole('button', { name: 'Échéancier' }).click() })
     const modale = screen.getByRole('heading', { name: 'Échéancier — Prêt matériel' }).closest('.card') as HTMLElement
+    expect(within(modale).getByText(/sur 24 mois à 3,6 %,/)).toBeTruthy()
     const lignes = within(modale).getAllByRole('row')
     // L'en-tête, puis l'échéance 1 (non payée) et la 2 (payée le 6 mars).
     expect(within(lignes[1]).getAllByRole('cell').at(-1)?.textContent).toBe('—')
