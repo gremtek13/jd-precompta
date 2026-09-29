@@ -34,13 +34,14 @@
 // Fichier auto-porteur, comme les autres fonctions de ce dossier (déployées par copier-coller dans
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts,
 // src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
-// src/lib/virementPersonnel.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas
-// empaquetés avec la fonction.
+// src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/format.ts et
+// src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `rattachementsTresorerie` et `analyserEcritures` et les exécute
 // contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que rien ne
 // puisse le voir. Le bloc AFFECTATION (mouvements du relevé affectés sans justificatif, virements
-// personnels) l'est de même par src/lib/agentComptableAffectation.test.ts.
+// personnels) l'est de même par src/lib/agentComptableAffectation.test.ts, et le bloc EMPRUNT
+// (échéances d'emprunt) par src/lib/agentComptableEmprunt.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -512,6 +513,131 @@ function utilisee(c: CategorieRow, pieces: PieceRow[], mouvements: readonly Pick
 }
 // ── FIN AFFECTATION ──────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT EMPRUNT ────────────────────────────────────────────────────────────────────────────────
+// LES ÉCHÉANCES D'EMPRUNT — copiées de src/lib/emprunts.ts, src/lib/echeanceEmprunt.ts et
+// src/lib/format.ts (ligne 26.6 de la feuille de route, 29/09/2026). Un prélèvement d'emprunt rapproché
+// s'écrit face à la banque sur trois comptes : le capital remboursé au 164000, les intérêts au 661100,
+// l'assurance au 616800 — un déblocage, au crédit du 164000. La Checklist en tire deux points que
+// l'assistant doit dire comme elle : les échéances que le relevé COUVRE sans qu'aucun mouvement ne les
+// paie (leurs intérêts ne sont pas comptés), et l'échéance dont l'écriture ne suit plus le découpage.
+// Lit `ecrituresSansPieceParMouvement` et `ecritureConforme` du bloc AFFECTATION, juste au-dessus.
+// Gardé par `agentComptableEmprunt.test.ts`, qui extrait ce bloc et le compare à src/lib.
+interface EmpruntRow { id: string; nom: string; capital_initial: number; taux_annuel: number; date_debut: string; duree_mois: number }
+interface MouvementEmpruntRow {
+  id: string; date: string; montant: number; statut: string
+  emprunt_id: string | null; emprunt_echeance: number | null; emprunt_interets: number | null; emprunt_assurance: number | null
+}
+interface LigneEcheancier { numero: number; date: string; mensualite: number; interets: number; capitalRembourse: number; capitalRestant: number }
+
+const COMPTE_EMPRUNT = "164000"
+const COMPTE_INTERETS_EMPRUNT = "661100"
+const COMPTE_ASSURANCE_EMPRUNT = "616800"
+const MARGE_PRELEVEMENT_JOURS = 10
+
+// Le calendrier civil, en UTC : ni le fuseau ni l'heure d'été ne décalent une échéance d'un jour.
+function ajouterMois(dateSql: string, n: number): string {
+  const [annee, mois, jour] = dateSql.slice(0, 10).split("-").map(Number)
+  const indexMois = mois - 1 + n
+  const anneeCible = annee + Math.floor(indexMois / 12)
+  const moisCible = ((indexMois % 12) + 12) % 12
+  const dernierJour = new Date(Date.UTC(anneeCible, moisCible + 1, 0)).getUTCDate()
+  const jourCible = Math.min(jour, dernierJour)
+  return `${anneeCible}-${String(moisCible + 1).padStart(2, "0")}-${String(jourCible).padStart(2, "0")}`
+}
+
+function ajouterJours(dateSql: string, n: number): string {
+  const [annee, mois, jour] = dateSql.slice(0, 10).split("-").map(Number)
+  const d = new Date(Date.UTC(annee, mois - 1, jour + n))
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`
+}
+
+function calculerMensualite(capitalInitial: number, tauxAnnuel: number, dureeMois: number): number {
+  const tauxMensuel = tauxAnnuel / 100 / 12
+  if (tauxMensuel === 0) return capitalInitial / dureeMois
+  return (capitalInitial * tauxMensuel) / (1 - Math.pow(1 + tauxMensuel, -dureeMois))
+}
+
+// Mensualité constante ; la dernière échéance solde le capital restant.
+function genererEcheancier(emprunt: Pick<EmpruntRow, "capital_initial" | "taux_annuel" | "duree_mois" | "date_debut">): LigneEcheancier[] {
+  const tauxMensuel = emprunt.taux_annuel / 100 / 12
+  const mensualite = Math.round(calculerMensualite(emprunt.capital_initial, emprunt.taux_annuel, emprunt.duree_mois) * 100) / 100
+  let capitalRestant = emprunt.capital_initial
+  const lignes: LigneEcheancier[] = []
+  for (let i = 1; i <= emprunt.duree_mois; i++) {
+    const interets = Math.round(capitalRestant * tauxMensuel * 100) / 100
+    let capitalRembourse = Math.round((mensualite - interets) * 100) / 100
+    if (i === emprunt.duree_mois) capitalRembourse = capitalRestant
+    capitalRestant = Math.max(Math.round((capitalRestant - capitalRembourse) * 100) / 100, 0)
+    lignes.push({ numero: i, date: ajouterMois(emprunt.date_debut, i), mensualite, interets, capitalRembourse, capitalRestant })
+  }
+  return lignes
+}
+
+// Les échéances prévues entre deux dates qu'aucun mouvement ne paie, reconnues à leur NUMÉRO — pas à
+// leur date, que la banque décale de quelques jours.
+function echeancesNonRapprochees(
+  emprunts: readonly EmpruntRow[],
+  lignes: readonly Pick<MouvementEmpruntRow, "emprunt_id" | "emprunt_echeance">[],
+  debut: string,
+  fin: string,
+): { emprunt: EmpruntRow; echeance: LigneEcheancier }[] {
+  if (fin < debut) return []
+  const payees = new Set(lignes.filter((l) => l.emprunt_id && l.emprunt_echeance != null).map((l) => `${l.emprunt_id}|${l.emprunt_echeance}`))
+  const manquantes: { emprunt: EmpruntRow; echeance: LigneEcheancier }[] = []
+  for (const emprunt of emprunts) {
+    for (const echeance of genererEcheancier(emprunt)) {
+      if (echeance.date < debut || echeance.date > fin) continue
+      if (payees.has(`${emprunt.id}|${echeance.numero}`)) continue
+      manquantes.push({ emprunt, echeance })
+    }
+  }
+  return manquantes.sort((a, b) => a.echeance.date.localeCompare(b.echeance.date) || a.emprunt.nom.localeCompare(b.emprunt.nom))
+}
+
+// Ce que le relevé importé couvre : du premier au dernier mouvement, moins la marge laissée au prélèvement.
+function couvertureDuReleve(lignes: readonly Pick<MouvementEmpruntRow, "date">[]): { debut: string; fin: string } | null {
+  if (lignes.length === 0) return null
+  let debut = lignes[0].date
+  let fin = lignes[0].date
+  for (const l of lignes) {
+    if (l.date < debut) debut = l.date
+    if (l.date > fin) fin = l.date
+  }
+  return { debut, fin: ajouterJours(fin, -MARGE_PRELEVEMENT_JOURS) }
+}
+
+const centimesEmprunt = (n: number) => Math.round(n * 100)
+
+// L'écriture d'une échéance ou d'un déblocage, sans son libellé : le contrôle ne le compare pas. Une
+// ligne par compte NON NUL ; le sens vient du signe du mouvement.
+function ecritureDeLEcheance(ligne: Pick<MouvementEmpruntRow, "montant">, interets: number, assurance: number) {
+  const total = centimesEmprunt(Math.abs(ligne.montant))
+  if (ligne.montant > 0) {
+    return [
+      { compte: COMPTE_EMPRUNT, sens: "credit", montant: total / 100 },
+      { compte: COMPTE_BANQUE, sens: "debit", montant: total / 100 },
+    ]
+  }
+  const capital = total - centimesEmprunt(interets) - centimesEmprunt(assurance)
+  return [
+    { compte: COMPTE_EMPRUNT, sens: "debit", montant: capital / 100 },
+    { compte: COMPTE_INTERETS_EMPRUNT, sens: "debit", montant: centimesEmprunt(interets) / 100 },
+    { compte: COMPTE_ASSURANCE_EMPRUNT, sens: "debit", montant: centimesEmprunt(assurance) / 100 },
+    { compte: COMPTE_BANQUE, sens: "credit", montant: total / 100 },
+  ].filter((l) => l.montant > 0)
+}
+
+// Un mouvement rapproché d'un emprunt dont l'écriture n'est pas celle de son découpage.
+function echeancesDesynchronisees(ecritures: readonly EcritureRow[], lignes: readonly MouvementEmpruntRow[]): MouvementEmpruntRow[] {
+  const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  return lignes.filter((ligne) => {
+    if (!ligne.emprunt_id) return false
+    const attendue = ecritureDeLEcheance(ligne, ligne.emprunt_interets ?? 0, ligne.emprunt_assurance ?? 0)
+    return !ecritureConforme(parLigne.get(ligne.id) ?? [], attendue, ligne.date)
+  })
+}
+// ── FIN EMPRUNT ──────────────────────────────────────────────────────────────────────────────────
+
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
 function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
   if (!assujettiTva) return []
@@ -961,7 +1087,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
       lireTout<PieceRow>((d, f) =>
         admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
@@ -984,6 +1110,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les VIREMENTS PERSONNELS (bloc AFFECTATION) : ceux classés sans leur écriture manquent au FEC.
       lireTout<VirementPersonnelRow>((d, f) =>
         admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
+      // Les EMPRUNTS et le RELEVÉ ENTIER (bloc EMPRUNT) : le relevé dit ce qu'il couvre, et ses mouvements
+      // rapprochés d'un emprunt, les échéances payées et leur découpage.
+      lireTout<EmpruntRow>((d, f) =>
+        admin.from("emprunts").select("id, nom, capital_initial, taux_annuel, date_debut, duree_mois", { count: "exact" }).eq("dossier_id", dossierId).order("date_debut").order("id").range(d, f)),
+      lireTout<MouvementEmpruntRow>((d, f) =>
+        admin.from("lignes_bancaires").select("id, date, montant, statut, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces huit lectures alimentent des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -992,7 +1124,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -1015,6 +1147,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes)
     const recettesAffecteesAssujetti = recettesAffecteesSurDossierAssujetti(affectes, dossier.assujetti_tva)
     const virementsAEcrire = virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele)
+    const couverture = couvertureDuReleve(rReleve.lignes)
+    const echeancesManquantes = couverture ? echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin) : []
+    const echeancesPerimees = echeancesDesynchronisees(ecrituresTyped, rReleve.lignes)
 
     return {
       ecritures_desequilibrees: groupesDesequilibres.length,
@@ -1039,6 +1174,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       encaissements_affectes_en_recette_sur_dossier_assujetti: recettesAffecteesAssujetti.length,
       // Le libellé de la Checklist : classés sans leur écriture, ils manquent au FEC et à la trésorerie.
       virements_personnels_sans_ecriture: virementsAEcrire.length,
+      // Les libellés de la Checklist : le relevé couvre ces échéances et aucun mouvement ne les paie — leurs
+      // intérêts ne sont pas comptés ; et l'écriture d'une échéance rapprochée qui ne suit plus son découpage.
+      echeances_emprunt_couvertes_par_le_releve_sans_mouvement_rapproche: echeancesManquantes.length,
+      echeances_emprunt_dont_l_ecriture_ne_suit_plus_le_decoupage: echeancesPerimees.length,
     }
   }
 
@@ -1183,6 +1322,7 @@ Règles impératives :
 - Repères PCG utiles : comptes 6xxx = charges (sens normal débit), 7xxx = produits (sens normal crédit), 445660 = TVA déductible, 445710 = TVA collectée, 512000 = banque.
 - Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au 512000, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
+- Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).
 - Réponds en français, de façon concise, avec des montants exacts et la période concernée. Utilise des puces si ça aide.`
