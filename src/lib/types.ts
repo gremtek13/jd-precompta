@@ -61,6 +61,21 @@ export interface RegleBancaireIgnoree {
   created_at: string
 }
 
+// Une règle d'affectation apprise par libellé (ligne 26.6) : les mouvements de ce sens dont le
+// libellé contient le motif sont PROPOSÉS à l'affectation dans la catégorie — jamais affectés seuls
+// (lib/reglesAffectation.ts). Le motif est normalisé (minuscules sans accents, mots séparés par une
+// espace) : la base refuse toute autre forme, et un motif de chiffres seuls en porte au moins cinq.
+export type SensMouvementBancaire = 'encaissement' | 'decaissement'
+
+export interface RegleAffectationBancaire {
+  id: string
+  dossier_id: string
+  motif: string
+  sens: SensMouvementBancaire
+  categorie_id: string
+  created_at: string
+}
+
 // Contrôle de cohérence d'un relevé bancaire importé : solde d'ouverture + somme des mouvements
 // doit donner le solde de clôture. Conservé en base (et non affiché une fois puis jeté) parce qu'un
 // relevé incomplet est une information qui doit survivre à la fermeture d'une alerte — voir

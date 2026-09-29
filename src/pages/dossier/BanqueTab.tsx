@@ -6,7 +6,7 @@ import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LigneP
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import type { ModeleComptable } from '../../lib/engagement'
-import type { Categorie, ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
+import type { Categorie, ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -18,6 +18,9 @@ import {
 } from '../../lib/appariementBanque'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
 import { ecritureDuMouvement, refusAffectation } from '../../lib/affectationBanque'
+import {
+  envoisDuLot, justificatifPossible, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
+} from '../../lib/reglesAffectation'
 import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { lireTout } from '../../lib/lectureComplete'
@@ -64,6 +67,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   const [categories, setCategories] = useState<Categorie[]>([])
   const [categoriesIncompletes, setCategoriesIncompletes] = useState<string | null>(null)
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
+  // Les règles d'affectation apprises par libellé (lib/reglesAffectation.ts). Leur drapeau est à part :
+  // tronquée, la liste ne cache aucun mouvement, mais une règle plus précise qu'on n'a pas lue aurait pu
+  // changer la catégorie proposée — le lot est alors suspendu.
+  const [reglesAffectation, setReglesAffectation] = useState<RegleAffectationBancaire[]>([])
+  const [reglesAffectationIncompletes, setReglesAffectationIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
   // Exercice partagé avec Pièces/Écritures/Statistiques/Clôture, sélectionné dans l'en-tête du
@@ -148,6 +156,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     )
     setCategoriesIncompletes(lectureCategories.complete ? null : lectureCategories.motif)
 
+    // Une règle par motif et par sens : la liste grandit à chaque règle retenue. Tri TOTAL.
+    const lectureReglesAffectation = await lireTout<RegleAffectationBancaire>((debut, fin) =>
+      supabase.from('regles_affectation_bancaire').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('motif').order('sens').order('id').range(debut, fin),
+    )
+    setReglesAffectationIncompletes(lectureReglesAffectation.complete ? null : lectureReglesAffectation.motif)
+
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -160,6 +175,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setCotisations(lectureCotisations.lignes)
     setCategories(lectureCategories.lignes)
     setRegles(lectureRegles.lignes)
+    setReglesAffectation(lectureReglesAffectation.lignes)
     setRelevesIncoherents(controles)
     setLoading(false)
   }
@@ -350,7 +366,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // la catégorie, puis l'écrit AVEC l'affectation, dans une seule transaction — un mouvement affecté
   // sans écriture compterait dans la 2035 et pas dans le FEC. Réaffecter passe par le même appel : la
   // base remplace l'écriture précédente.
-  async function affecter(ligne: LigneBancaire, categorieId: string): Promise<boolean> {
+  //
+  // `motifRegle` : l'affectation se retient aussi en RÈGLE (lib/reglesAffectation.ts), écrite APRÈS
+  // l'affectation — une règle sans l'affectation qui l'a fait naître proposerait une catégorie que
+  // personne n'a encore choisie. Remplacée si elle existe déjà pour ce motif et ce sens (contrainte
+  // totale `regles_affectation_bancaire_unique`, que l'`onConflict` vise).
+  async function affecter(ligne: LigneBancaire, categorieId: string, motifRegle: string | null): Promise<boolean> {
     const categorie = categories.find((c) => c.id === categorieId)
     if (!categorie) return false
     const refus = refusAffectation(ligne, categorie, assujettiTva)
@@ -364,7 +385,32 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       p_ecritures: ecritureDuMouvement(ligne, categorie.compte_comptable),
     })
     if (error) { window.alert(`L'affectation n'a pas pu être enregistrée : ${messageErreur(error, 'raison inconnue')}`); return false }
+    const sens = sensDuMouvement(ligne)
+    if (motifRegle !== null && sens && !refusMotif(motifRegle) && !reglesAffectationIncompletes) {
+      const { error: erreurRegle } = await supabase.from('regles_affectation_bancaire').upsert(
+        { dossier_id: dossierId, motif: normaliserPourRegle(motifRegle), sens, categorie_id: categorie.id },
+        { onConflict: 'dossier_id,motif,sens' },
+      )
+      if (erreurRegle) {
+        window.alert(`Le mouvement est affecté, mais la règle n'a pas pu être enregistrée : ${messageErreur(erreurRegle, 'raison inconnue')}`)
+      }
+    }
     return true
+  }
+
+  // Retirer une règle ne touche à AUCUN mouvement : ceux qu'elle a fait affecter le restent, ceux qui
+  // restent à traiter ne sont simplement plus proposés. La confirmation le dit, et l'échec aussi — un
+  // geste confirmé qui échoue en silence se reconfirme, et rend le même silence.
+  async function retirerRegleAffectation(regle: RegleAffectationBancaire) {
+    const categorie = categories.find((c) => c.id === regle.categorie_id)
+    const confirme = window.confirm(
+      `Retirer la règle « ${regle.motif} » (${regle.sens === 'encaissement' ? 'encaissements' : 'paiements'} → ${categorie?.libelle ?? 'catégorie non lue'}) ?\n\n` +
+      'Les mouvements déjà affectés le restent ; ceux qui restent à traiter ne seront plus proposés.',
+    )
+    if (!confirme) return
+    const { error } = await supabase.from('regles_affectation_bancaire').delete().eq('id', regle.id)
+    if (error) window.alert(`La règle n'a pas pu être retirée : ${messageErreur(error, 'raison inconnue')}`)
+    load()
   }
 
   // L'affectation et son écriture partent ENSEMBLE, par la base : remettre le mouvement « à traiter »
@@ -461,6 +507,51 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // tranche, bandeaux sous les yeux.
   const lotAutomatiqueSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes
   const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes
+
+  // LES AFFECTATIONS QUE LES RÈGLES PROPOSENT (lib/reglesAffectation.ts). Un mouvement qui a peut-être
+  // son justificatif — une pièce ou une échéance du même montant, une pièce du même tiers — en est
+  // écarté : affecté, il compterait dans la 2035 à côté de sa pièce.
+  const planRegles = useMemo(() => {
+    const justificatifs = { pieces, piecesRapprochees, cotisations, cotisationsRapprochees }
+    return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva,
+      (l) => justificatifPossible(l, justificatifs))
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesRapprochees, cotisations, cotisationsRapprochees])
+  const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
+  // Toutes les lectures dont le plan dépend : un mouvement tronqué, une pièce ou une échéance non lue
+  // (le mouvement paraîtrait sans justificatif), une catégorie ou une règle manquante (une règle plus
+  // précise aurait changé la catégorie). Une lecture partielle ne commande pas d'écriture.
+  const lotReglesSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes
+    ?? categoriesIncompletes ?? reglesAffectationIncompletes
+  const [affectationLotEnCours, setAffectationLotEnCours] = useState(false)
+  const [progressionLot, setProgressionLot] = useState<string | null>(null)
+
+  // Écrit le lot par envois (TAILLE_ENVOI_AFFECTATION), chacun tout ou rien : `affecter_mouvements_bancaires`
+  // refait pour chaque mouvement les vérifications de l'affectation à l'unité, et refuse l'envoi entier
+  // si l'un d'eux n'est plus à traiter. Sous le verrou partagé des écritures de l'écran.
+  async function affecterSelonLesRegles() {
+    if (planRegles.propositions.length === 0 || lotReglesSuspendu) return
+    const envois = envoisDuLot(planRegles.propositions)
+    const total = planRegles.propositions.length
+    await sousVerrou(setAffectationLotEnCours, async () => {
+      let faits = 0
+      try {
+        for (const envoi of envois) {
+          setProgressionLot(`${faits} / ${total}`)
+          const { error } = await supabase.rpc('affecter_mouvements_bancaires', { p_affectations: envoi })
+          if (error) {
+            window.alert(
+              `${faits > 0 ? `${faits} mouvement${faits > 1 ? 's' : ''} affecté${faits > 1 ? 's' : ''}, puis l'envoi suivant` : 'Le lot'} a été refusé, et rien de cet envoi n'a été écrit : ${messageErreur(error, 'raison inconnue')}`,
+            )
+            return faits > 0
+          }
+          faits += envoi.length
+        }
+        return true
+      } finally {
+        setProgressionLot(null)
+      }
+    })
+  }
 
   // Valide la pièce ET rapproche le mouvement, en une passe. Les deux vont ensemble : c'est la
   // concordance avec la banque qui justifie la validation, la séparer n'aurait pas de sens.
@@ -639,6 +730,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         }
       />
 
+      <BandeauLecturePartielle
+        quoi="Les règles d’affectation"
+        motif={reglesAffectationIncompletes}
+        consequence={
+          'Une règle plus précise peut donc manquer, et la catégorie proposée à un mouvement être fausse. ' +
+          'L’affectation en lot et l’enregistrement d’une nouvelle règle sont suspendus. Recharge la page.'
+        }
+      />
+
       <ImportCsv
         dossierId={dossierId}
         onImported={load}
@@ -712,7 +812,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             type="button"
             className="btn btn-primary btn-sm"
             style={{ marginTop: 10 }}
-            disabled={rapprochementAuto || actionMouvementEnCours || lotAutomatiqueSuspendu !== null}
+            disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotAutomatiqueSuspendu !== null}
             onClick={rapprocherTout}
           >
             {rapprochementAuto ? 'Rapprochement…' : `Tout rapprocher automatiquement (${suggestionsAutomatiques.length})`}
@@ -733,6 +833,26 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
           <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
             {planAuto.ecartesPourAmbiguite} mouvement(s) ont plusieurs pièces ou échéances possibles et
             ne sont pas rapprochés automatiquement — ouvre la ligne pour choisir.
+          </p>
+        )}
+        {reglesAffectation.length > 0 && (
+          <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
+            Règles d'affectation :{' '}
+            {reglesAffectation.map((r) => (
+              <span key={r.id} className="badge badge-neutral" style={{ marginRight: 6 }}>
+                « {r.motif} » · {r.sens === 'encaissement' ? 'encaissements' : 'paiements'} →{' '}
+                {categories.find((c) => c.id === r.categorie_id)?.libelle ?? 'catégorie non lue'}
+                <button
+                  type="button"
+                  onClick={() => retirerRegleAffectation(r)}
+                  style={{ marginLeft: 6, border: 'none', background: 'none', cursor: 'pointer', color: 'inherit', fontWeight: 700 }}
+                  title="Retirer cette règle"
+                  aria-label={`Retirer la règle « ${r.motif} »`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
           </p>
         )}
         {regles.length > 0 && (
@@ -769,7 +889,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             <button
               type="button"
               className="btn btn-primary"
-              disabled={rapprochementAuto || actionMouvementEnCours || lotCertainSuspendu !== null}
+              disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotCertainSuspendu !== null}
               onClick={validerEtRapprocherLot}
             >
               {rapprochementAuto ? 'Traitement…' : `Valider et rapprocher les ${certainsAValider.length}`}
@@ -850,6 +970,136 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         </div>
       )}
 
+      {/* Après les pièces, et c'est voulu : un mouvement qui a son justificatif se rapproche, il ne
+          s'affecte pas — le plan les écarte, et les montre à part. */}
+      {(planRegles.propositions.length + planRegles.aRapprocher.length + planRegles.refus.length + planRegles.conflits.length) > 0 && (
+        <div className="card" style={{ marginBottom: 14, borderLeft: '3px solid var(--color-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+            <div>
+              <h3 style={{ margin: 0 }}>Affectations proposées par vos règles ({planRegles.propositions.length})</h3>
+              <p className="muted" style={{ margin: '4px 0 0' }}>
+                Chaque mouvement ci-dessous porte un libellé qu'une de vos règles reconnaît. Rien n'est écrit
+                sans ce clic : chacun le sera sur le compte de sa catégorie face à la banque, comme une
+                affectation faite à la main, et compté dans la 2035 à sa date.
+              </p>
+            </div>
+            {planRegles.propositions.length > 0 && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={affectationLotEnCours || rapprochementAuto || actionMouvementEnCours || lotReglesSuspendu !== null}
+                onClick={affecterSelonLesRegles}
+              >
+                {affectationLotEnCours
+                  ? `Affectation…${progressionLot ? ` (${progressionLot})` : ''}`
+                  : `Affecter les ${planRegles.propositions.length}`}
+              </button>
+            )}
+          </div>
+          {lotReglesSuspendu && planRegles.propositions.length > 0 && (
+            <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>
+              Affectation en lot suspendue : une lecture est incomplète ({lotReglesSuspendu}). Un mouvement
+              peut avoir un justificatif qu'on n'a pas lu, ou une règle plus précise qu'on n'a pas lue.
+              Recharge la page.
+            </p>
+          )}
+          {planRegles.propositions.length > 0 && (
+            <ul style={{ margin: '10px 0 0', paddingLeft: 20 }}>
+              {totauxParCategorie(planRegles.propositions).map((t) => (
+                <li key={t.categorie.id}>
+                  <strong>{t.categorie.libelle}</strong> ({t.categorie.compte_comptable}) : {t.nombre} mouvement{t.nombre > 1 ? 's' : ''},{' '}
+                  {formatMoney(t.montant)}
+                </li>
+              ))}
+            </ul>
+          )}
+          {planRegles.propositions.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary>Voir les {planRegles.propositions.length} mouvement{planRegles.propositions.length > 1 ? 's' : ''}</summary>
+              <div className="table-scroll" style={{ marginTop: 8 }}>
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Libellé bancaire</th>
+                      <th style={{ textAlign: 'right' }}>Montant</th>
+                      <th>Catégorie</th>
+                      <th>Règle</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {planRegles.propositions.map((p) => (
+                      <tr key={p.ligne.id}>
+                        <td>{formatDate(p.ligne.date)}</td>
+                        <td className="muted" style={{ maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {libelleExploitable(p.ligne)}
+                        </td>
+                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(p.ligne.montant)}</td>
+                        <td>{p.categorie.libelle}</td>
+                        <td>« {p.regle.motif} »</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          )}
+          {/* Ce que les règles reconnaissent sans le proposer, et pourquoi — un lot qui en traite moins
+              qu'il n'en reconnaît dit où sont passés les autres. */}
+          {planRegles.aRapprocher.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary>
+                {planRegles.aRapprocher.length} mouvement{planRegles.aRapprocher.length > 1 ? 's' : ''} à rapprocher plutôt qu'affecter
+              </summary>
+              <p className="muted" style={{ margin: '6px 0' }}>
+                Une règle les reconnaît, mais leur justificatif est peut-être au dossier : affectés, ils
+                compteraient dans la 2035 à côté de leur pièce. Ouvre-les pour les rapprocher.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {planRegles.aRapprocher.map((r) => (
+                  <li key={r.ligne.id}>
+                    {formatDate(r.ligne.date)} — {libelleExploitable(r.ligne)} — {formatMoney(r.ligne.montant)} : {r.raison}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {planRegles.refus.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary>
+                {planRegles.refus.length} mouvement{planRegles.refus.length > 1 ? 's' : ''} que l'affectation refuserait
+              </summary>
+              <ul style={{ margin: '6px 0 0', paddingLeft: 20 }}>
+                {planRegles.refus.map((r) => (
+                  <li key={r.ligne.id}>
+                    {formatDate(r.ligne.date)} — {libelleExploitable(r.ligne)} — {formatMoney(r.ligne.montant)} (règle « {r.regle.motif} ») : {r.raison}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+          {planRegles.conflits.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary>
+                {planRegles.conflits.length} mouvement{planRegles.conflits.length > 1 ? 's' : ''} où des règles se contredisent
+              </summary>
+              <p className="muted" style={{ margin: '6px 0' }}>
+                Plusieurs règles reconnaissent leur libellé sans s'accorder sur la catégorie, et aucune ne
+                contient les autres : rien n'est proposé. Retire la règle qui n'a pas lieu d'être, ou
+                affecte-les à la main.
+              </p>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                {planRegles.conflits.map((c) => (
+                  <li key={c.ligne.id}>
+                    {formatDate(c.ligne.date)} — {libelleExploitable(c.ligne)} : {c.regles.map((r) => `« ${r.motif} »`).join(', ')}
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         {(['toutes', 'non_rapprochee', 'rapprochee', 'ignoree'] as const).map((s) => (
           <button
@@ -917,7 +1167,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                 const categorieAffectee = l.statut === 'rapprochee' && l.categorie_id
                   ? categories.find((c) => c.id === l.categorie_id) ?? null
                   : null
-                const aUneSuggestion = l.statut === 'non_rapprochee' && !!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
+                const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l)) || idsProposesParRegle.has(l.id))
                 return (
                   <tr
                     key={l.id}
@@ -983,12 +1233,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             piecesValidees={piecesValidees}
             cotisations={cotisations}
             categories={categories}
+            regles={reglesAffectation}
+            reglesIncompletes={reglesAffectationIncompletes}
+            lignes={lignes}
             assujettiTva={assujettiTva}
             piecesRapprochees={piecesRapprochees}
             cotisationsRapprochees={cotisationsRapprochees}
             recurrence={suggestionRecurrente(ligneOuverte)}
             navigation={navigationMouvement}
-            occupe={actionMouvementEnCours || rapprochementAuto}
+            occupe={actionMouvementEnCours || rapprochementAuto || affectationLotEnCours}
             onFermer={fermerMouvement}
             onRapprocher={(pieceId) => agirSurMouvement(() => rapprocher(ligneOuverte.id, pieceId))}
             onRapprocherCotisation={(cotisationId) => agirSurMouvement(() => rapprocherCotisation(ligneOuverte.id, cotisationId))}
@@ -996,7 +1249,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             onIgnorer={() => agirSurMouvement(() => ignorer(ligneOuverte.id))}
             onToujoursIgnorer={() => agirSurMouvement(() => toujoursIgnorer(ligneOuverte))}
             onRemettreATraiter={() => agirSurMouvement(() => remettreATraiter(ligneOuverte.id))}
-            onAffecter={(categorieId) => agirSurMouvement(() => affecter(ligneOuverte, categorieId))}
+            onAffecter={(categorieId, motifRegle) => agirSurMouvement(() => affecter(ligneOuverte, categorieId, motifRegle))}
             onRetirerAffectation={() => agirSurMouvement(() => retirerAffectation(ligneOuverte.id))}
           />
         </PanneauDroit>

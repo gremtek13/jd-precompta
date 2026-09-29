@@ -6,10 +6,13 @@ import {
 } from '../../lib/appariementBanque'
 import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { natureDuCompte, refusAffectation, sensInhabituel } from '../../lib/affectationBanque'
+import {
+  justificatifPossible, motifPropose, mouvementsCouverts, normaliserPourRegle, refusMotif, regleApplicable, sensDuMouvement,
+} from '../../lib/reglesAffectation'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
 import { ouvrirJustificatif } from '../../lib/depot'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from '../../lib/types'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
 // d'ordinateur, comme la fiche d'une pièce (voir FichePiece). Il remplace la fenêtre qui assombrissait
@@ -33,6 +36,12 @@ import type { Categorie, CotisationDeclaree, LigneBancaire, Piece } from '../../
 // alors écrit au brouillon, compté dans la 2035 à sa date, et porté au FEC avec le relevé pour pièce.
 // Comme le choix d'une pièce, l'affectation ne part qu'au clic sur « Affecter », jamais au changement
 // de la liste — et ce que la base refuserait est dit avant le clic.
+//
+// ET L'AFFECTATION PEUT SE RETENIR EN RÈGLE (lib/reglesAffectation.ts) : « proposer aussi les autres
+// paiements dont le libellé contient… ». La règle ne s'applique jamais seule ; les mouvements qu'elle
+// désigne sont PROPOSÉS dans la carte « Affectations proposées » de Banque, et c'est un second clic,
+// liste sous les yeux, qui les écrit. Une règle qui reconnaît ce mouvement présélectionne sa catégorie,
+// et le dit.
 
 export interface NavigationMouvement {
   position: string
@@ -56,6 +65,13 @@ interface FicheMouvementProps {
   // Les catégories du dossier, pour affecter un mouvement sans justificatif. Seules celles d'un compte
   // de charge ou de produit sont proposées : l'affectation écrit ce compte face à la banque.
   categories: Categorie[]
+  // Les règles d'affectation du dossier, et le relevé entier : de quoi présélectionner la catégorie
+  // qu'une règle propose, proposer un motif (la famille d'une référence se cherche dans tout le relevé)
+  // et compter les mouvements qu'une règle nouvelle désignerait. `reglesIncompletes` : la liste n'a pas
+  // pu être lue en entier — on ne retient alors aucune règle, faute de savoir laquelle on remplacerait.
+  regles: RegleAffectationBancaire[]
+  reglesIncompletes: string | null
+  lignes: LigneBancaire[]
   // Une recette sans facture n'est pas encore prise en charge sur un dossier assujetti : sa TVA ne se
   // lit pas sur un relevé (voir `refusAffectation`).
   assujettiTva: boolean
@@ -74,7 +90,8 @@ interface FicheMouvementProps {
   onIgnorer: () => void
   onToujoursIgnorer: () => void
   onRemettreATraiter: () => void
-  onAffecter: (categorieId: string) => void
+  // `motifRegle` : le motif à retenir en règle d'affectation, ou null pour n'affecter que ce mouvement.
+  onAffecter: (categorieId: string, motifRegle: string | null) => void
   onRetirerAffectation: () => void
 }
 
@@ -191,8 +208,8 @@ function CarteCotisation({ cotisation, signaux, action }: { cotisation: Cotisati
 }
 
 export default function FicheMouvement({
-  ligne, pieces, piecesValidees, cotisations, categories, assujettiTva, piecesRapprochees, cotisationsRapprochees,
-  recurrence, navigation, occupe,
+  ligne, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva,
+  piecesRapprochees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation,
 }: FicheMouvementProps) {
@@ -201,11 +218,19 @@ export default function FicheMouvement({
   // rapprochaient donc, dans la fenêtre d'avant, la première pièce venue sans qu'on l'ait choisie.
   const [pieceChoisie, setPieceChoisie] = useState('')
   const [cotisationChoisie, setCotisationChoisie] = useState('')
-  // Affecté, la liste part de la catégorie en place : « Réaffecter » sans rien changer réécrit alors
-  // l'écriture sur le compte ACTUEL de la catégorie — le geste qui répare une écriture périmée.
-  const [categorieChoisie, setCategorieChoisie] = useState(ligne.categorie_id ?? '')
-
   const aTraiter = ligne.statut === 'non_rapprochee'
+  // La règle qui reconnaît ce mouvement, s'il est à traiter. Sa catégorie est PRÉSÉLECTIONNÉE, jamais
+  // appliquée : l'affectation reste le clic de l'opérateur.
+  const resultatRegle = aTraiter ? regleApplicable(ligne, regles) : null
+  const regleProposee = resultatRegle?.etat === 'proposee' ? resultatRegle.regle : null
+  // Affecté, la liste part de la catégorie en place : « Réaffecter » sans rien changer réécrit alors
+  // l'écriture sur le compte ACTUEL de la catégorie — le geste qui répare une écriture périmée. À
+  // traiter, elle part de la catégorie qu'une règle propose, quand elle en propose une.
+  const [categorieChoisie, setCategorieChoisie] = useState(ligne.categorie_id ?? regleProposee?.categorie_id ?? '')
+  // Retenir une règle : cochée à la main, jamais d'office — le motif décide de ce qu'elle désignera.
+  const sens = sensDuMouvement(ligne)
+  const [retenirRegle, setRetenirRegle] = useState(false)
+  const [motifRegle, setMotifRegle] = useState(() => motifPropose(ligne, lignes) ?? '')
   const affecte = ligne.statut === 'rapprochee' && !!ligne.categorie_id
   const libelle = libelleExploitable(ligne) || ligne.libelle
   const sansObjet = mouvementRapprocheSansObjet(ligne)
@@ -223,6 +248,22 @@ export default function FicheMouvement({
   const refus = categorieCible ? refusAffectation(ligne, categorieCible, assujettiTva) : null
   const natureCible = categorieCible ? natureDuCompte(categorieCible.compte_comptable) : null
   const inhabituel = !refus && natureCible ? sensInhabituel(ligne, natureCible) : false
+
+  // Ce que la règle retenue désignerait, et pourquoi elle ne peut pas l'être.
+  const refusRegle = retenirRegle ? refusMotif(motifRegle) : null
+  const motifNormalise = normaliserPourRegle(motifRegle)
+  const autresCouverts = retenirRegle && sens && !refusRegle
+    ? mouvementsCouverts(motifNormalise, sens, lignes).filter((l) => l.id !== ligne.id).length
+    : 0
+  const regleRemplacee = retenirRegle && sens
+    ? regles.find((r) => r.motif === motifNormalise && r.sens === sens) ?? null
+    : null
+  const regleBloquee = retenirRegle && (!!refusRegle || !!reglesIncompletes || !sens)
+  // Un paiement dont la pièce est peut-être au dossier : l'affecter compterait la dépense deux fois
+  // (voir `justificatifPossible`). Dit avant le clic, jamais refusé : c'est l'opérateur qui sait.
+  const justificatifAttendu = aTraiter
+    ? justificatifPossible(ligne, { pieces, piecesRapprochees, cotisations, cotisationsRapprochees })
+    : null
 
   // Même précédence que le rapprochement automatique : une pièce avant une échéance, une échéance
   // avant une récurrence. Ce n'est pas un arbitrage entre égaux mais une règle de l'écran.
@@ -287,12 +328,25 @@ export default function FicheMouvement({
           <button
             type="button"
             className="btn btn-outline"
-            disabled={!categorieCible || !!refus || occupe}
-            onClick={() => onAffecter(categorieChoisie)}
+            disabled={!categorieCible || !!refus || occupe || regleBloquee}
+            onClick={() => onAffecter(categorieChoisie, retenirRegle ? motifNormalise : null)}
           >
             {verbe}
           </button>
         </div>
+        {regleProposee && categorieChoisie === regleProposee.categorie_id && (
+          <p className="fiche-mouvement-note">
+            Une règle range les {regleProposee.sens === 'encaissement' ? 'encaissements' : 'paiements'} contenant
+            {' '}« {regleProposee.motif} » dans cette catégorie : elle est présélectionnée, rien n’est écrit sans ton clic.
+          </p>
+        )}
+        {resultatRegle?.etat === 'conflit' && (
+          <p className="fiche-mouvement-alerte">
+            Plusieurs règles reconnaissent ce libellé sans s’accorder sur la catégorie
+            ({resultatRegle.regles.map((r) => `« ${r.motif} »`).join(', ')}) : choisis-la ici, et retire dans Banque
+            la règle qui n’a pas lieu d’être.
+          </p>
+        )}
         {refus && <p className="fiche-mouvement-alerte">{refus}</p>}
         {inhabituel && (
           <p className="fiche-mouvement-alerte">
@@ -300,6 +354,48 @@ export default function FicheMouvement({
               ? 'C’est un encaissement, et cette catégorie est une dépense : il la diminuera, comme un remboursement. Si c’est une recette — des honoraires encaissés —, choisis une catégorie de recettes.'
               : 'C’est un paiement, et cette catégorie est une recette : il la diminuera, comme un remboursement consenti. Si c’est une dépense, choisis une catégorie de dépenses.'}
           </p>
+        )}
+        {sens && (
+          <div className="fiche-mouvement-regle">
+            <label className="fiche-mouvement-case">
+              <input
+                type="checkbox"
+                checked={retenirRegle}
+                disabled={!!reglesIncompletes}
+                onChange={(e) => setRetenirRegle(e.target.checked)}
+              />
+              Retenir : proposer aussi les autres {sens === 'encaissement' ? 'encaissements' : 'paiements'} dont le libellé contient…
+            </label>
+            {reglesIncompletes && (
+              <p className="fiche-mouvement-note">
+                Les règles d’affectation n’ont pas pu être lues en entier : on ne peut pas savoir laquelle une
+                nouvelle remplacerait. Recharge la page pour en retenir une.
+              </p>
+            )}
+            {retenirRegle && (
+              <>
+                <input
+                  type="text"
+                  aria-label="Motif de la règle"
+                  value={motifRegle}
+                  onChange={(e) => setMotifRegle(e.target.value)}
+                  placeholder="un mot du libellé qui nomme ce tiers"
+                />
+                {refusRegle ? (
+                  <p className="fiche-mouvement-alerte">{refusRegle}</p>
+                ) : (
+                  <p className="fiche-mouvement-note">
+                    {autresCouverts === 0
+                      ? 'Aucun autre mouvement à traiter ne le contient pour l’instant : la règle servira aux prochains relevés.'
+                      : `${autresCouverts} autre${autresCouverts > 1 ? 's' : ''} mouvement${autresCouverts > 1 ? 's' : ''} à traiter le contien${autresCouverts > 1 ? 'nent' : 't'} : ${autresCouverts > 1 ? 'ils seront proposés' : 'il sera proposé'} dans « Affectations proposées », et rien ne sera écrit sans ton clic.`}
+                    {regleRemplacee && regleRemplacee.categorie_id !== categorieChoisie && (
+                      ` Elle remplacera la règle qui les range en « ${categories.find((c) => c.id === regleRemplacee.categorie_id)?.libelle ?? 'catégorie non lue'} ».`
+                    )}
+                  </p>
+                )}
+              </>
+            )}
+          </div>
         )}
       </div>
     )
@@ -533,6 +629,12 @@ export default function FicheMouvement({
               l’Assurance maladie — s’affecte à une catégorie : il est écrit au brouillon sur son compte,
               et compté dans la 2035 à la date du mouvement.
             </p>
+            {justificatifAttendu && (
+              <p className="fiche-mouvement-alerte">
+                {justificatifAttendu} Avant d’affecter, vérifie que ce n’est pas ce paiement : affecté, il
+                compterait dans la 2035 à côté de sa pièce.
+              </p>
+            )}
             {choixDeCategorie('Affecter')}
             <div className="fiche-mouvement-boutons">
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={onVirementPersonnel}>Virement personnel</button>

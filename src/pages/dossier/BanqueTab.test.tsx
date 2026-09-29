@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
-import type { Categorie, LigneBancaire, Piece } from '../../lib/types'
+import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Predicat } from '../../test/filtresPostgrest'
 
@@ -53,6 +53,16 @@ const faux = vi.hoisted(() => ({
   categories: [] as Categorie[],
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   erreurRpc: null as string | null,
+  // Les règles d'affectation, ce que l'écran en écrit (`upsert`) et en retire (`delete`) — et le refus
+  // de l'un ou l'autre à la demande.
+  reglesAffectation: [] as RegleAffectationBancaire[],
+  upserts: [] as { table: string; valeur: Record<string, unknown>; options: unknown }[],
+  suppressionsRegles: [] as string[][],
+  erreurUpsert: null as string | null,
+  erreurSuppressionRegle: null as string | null,
+  // Le lot refusé au N-ième envoi (1 pour le premier) : ce qui dit ce que l'écran annonce d'un refus au
+  // milieu d'un lot découpé en envois.
+  refusAuEnvoi: null as number | null,
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -102,12 +112,18 @@ vi.mock('../../lib/supabase', async () => {
         faux.insertions.push({ table, valeur })
         return c
       },
+      upsert: (valeur: Record<string, unknown>, options: unknown) => {
+        operation = 'upsert'
+        faux.upserts.push({ table, valeur, options })
+        return c
+      },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       then: (suite: (r: unknown) => unknown) => {
         const muet = faux.muet[table]
         if (operation === 'select' && muet != null) {
           const toutes = table === 'lignes_bancaires' ? faux.lignes : table === 'pieces' ? faux.pieces
-            : table === 'categories' ? filtrer(faux.categories, predicats) : []
+            : table === 'categories' ? filtrer(faux.categories, predicats)
+              : table === 'regles_affectation_bancaire' ? filtrer(faux.reglesAffectation, predicats) : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         }
@@ -149,6 +165,19 @@ vi.mock('../../lib/supabase', async () => {
               ? { data: null, error: { message: faux.erreurInsertionEcritures } }
               : { data: null, error: null }).then(suite)
         }
+        if (table === 'regles_affectation_bancaire') {
+          if (operation === 'upsert') {
+            return Promise.resolve(faux.erreurUpsert ? { data: null, error: { message: faux.erreurUpsert } } : { data: null, error: null }).then(suite)
+          }
+          if (operation === 'delete') {
+            faux.suppressionsRegles.push([...filtres])
+            if (faux.erreurSuppressionRegle) return Promise.resolve({ data: null, error: { message: faux.erreurSuppressionRegle } }).then(suite)
+            faux.reglesAffectation = faux.reglesAffectation.filter((r) => r.id !== idFiltre)
+            return Promise.resolve({ data: null, error: null }).then(suite)
+          }
+          const lues = filtrer(faux.reglesAffectation, predicats)
+          return Promise.resolve({ data: lues, error: null, count: lues.length }).then(suite)
+        }
         if (table === 'categories') {
           const lues = filtrer(faux.categories, predicats)
           return Promise.resolve({ data: lues, error: null, count: lues.length }).then(suite)
@@ -178,6 +207,18 @@ vi.mock('../../lib/supabase', async () => {
   function rpc(nom: string, args: Record<string, unknown>) {
     faux.rpcs.push({ nom, args })
     if (faux.erreurRpc) return Promise.resolve({ data: null, error: { message: faux.erreurRpc } })
+    if (nom === 'affecter_mouvements_bancaires') {
+      const envoi = args.p_affectations as { ligne_bancaire_id: string; categorie_id: string }[]
+      const rang = faux.rpcs.filter((r) => r.nom === nom).length
+      if (faux.refusAuEnvoi === rang) {
+        return Promise.resolve({ data: null, error: { message: 'Le mouvement du 02/06/2025 (-100,00 €) n\'est plus à traiter : il a changé depuis l\'affichage.' } })
+      }
+      faux.lignes = faux.lignes.map((l): LigneBancaire => {
+        const a = envoi.find((x) => x.ligne_bancaire_id === l.id)
+        return a ? { ...l, categorie_id: a.categorie_id, statut: 'rapprochee' } : l
+      })
+      return Promise.resolve({ data: envoi.length, error: null })
+    }
     const id = args.p_ligne_bancaire_id
     faux.lignes = faux.lignes.map((l): LigneBancaire => {
       if (l.id !== id) return l
@@ -240,6 +281,12 @@ function reinitialiser() {
   faux.categories = []
   faux.rpcs = []
   faux.erreurRpc = null
+  faux.reglesAffectation = []
+  faux.upserts = []
+  faux.suppressionsRegles = []
+  faux.erreurUpsert = null
+  faux.erreurSuppressionRegle = null
+  faux.refusAuEnvoi = null
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -1147,5 +1194,282 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
     expect(within(volet()).getByText(/Cette catégorie n’a pas de poste 2035/)).toBeTruthy()
     // Réaffecter part de la catégorie en place : sans rien changer, il réécrit l'écriture.
     expect((within(volet()).getByLabelText('Catégorie') as HTMLSelectElement).value).toBe('cat-divers')
+  })
+})
+
+function regleDeTest(o: Partial<RegleAffectationBancaire> = {}): RegleAffectationBancaire {
+  return {
+    id: 'regle-1', dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'encaissement', categorie_id: 'cat-recettes',
+    created_at: '2025-07-01T09:00:00Z', ...o,
+  }
+}
+
+// LES RÈGLES PROPOSENT, LE CLIC ÉCRIT (lib/reglesAffectation.ts). Ce qu'aucun test de `src/lib` ne peut
+// voir : que le lot parte sur le clic et pas avant, par la fonction SQL et pas autrement, UNE fois
+// sous trois clics, qu'il se suspende sur une lecture partielle, qu'il laisse de côté un mouvement
+// dont la pièce est au dossier — et qu'une règle retenue depuis la fiche parte APRÈS l'affectation.
+describe('BanqueTab — les règles d’affectation et le lot', () => {
+  const FRAIS = categorieDeTest()
+  const RECETTES = categorieDeTest({
+    id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  })
+  const ASSURANCE = categorieDeTest({ id: 'cat-assurance', code: 'assurance', libelle: 'Assurance', ordre: 30, compte_comptable: '616100', poste_2035: "Primes d'assurance" })
+
+  function preparer() {
+    reinitialiser()
+    faux.pieces = []
+    faux.categories = [FRAIS, RECETTES, ASSURANCE]
+    faux.lignes = [
+      ligneDeTest({ id: 'l-cpam-1', libelle: 'VIR CPAM 13 SOINS', montant: 250, date: '2025-06-03' }),
+      ligneDeTest({ id: 'l-cpam-2', libelle: 'VIR CPAM 13 SOINS', montant: 180, date: '2025-06-10' }),
+      ligneDeTest({ id: 'l-frais', libelle: 'FRAIS TENUE DE COMPTE', montant: -8.5, date: '2025-06-05' }),
+      ligneDeTest({ id: 'l-swiss-1', libelle: 'PRLV SEPA SWISSLIFE', montant: -60, date: '2025-06-07' }),
+      ligneDeTest({ id: 'l-swiss-2', libelle: 'PRLV SEPA SWISSLIFE', montant: -60, date: '2025-07-07' }),
+    ]
+    faux.reglesAffectation = [
+      regleDeTest(),
+      regleDeTest({ id: 'regle-2', motif: 'frais', sens: 'decaissement', categorie_id: 'cat-frais' }),
+    ]
+  }
+  const envoisDuLot = () => faux.rpcs.filter((r) => r.nom === 'affecter_mouvements_bancaires')
+  const choisir = (id: string) => fireEvent.change(within(volet()).getByLabelText('Catégorie'), { target: { value: id } })
+
+  it('propose ce que les règles reconnaissent, et ne l’écrit qu’au clic, en un envoi', async () => {
+    preparer()
+    rendre()
+    expect(await screen.findByText('Affectations proposées par vos règles (3)')).toBeTruthy()
+    expect(screen.getByText(/2 mouvements,/).closest('li')?.textContent).toMatch(/^Ventes \/ prestations \(706000\) : 2 mouvements, 430,00/)
+    expect(screen.getByText(/1 mouvement,/).closest('li')?.textContent).toMatch(/^Frais bancaires \(627000\) : 1 mouvement, -8,50/)
+    // Rien n'est écrit au chargement : la règle propose, elle n'écrit pas.
+    expect(faux.rpcs).toEqual([])
+
+    await act(async () => { screen.getByRole('button', { name: 'Affecter les 3' }).click() })
+
+    expect(envoisDuLot()).toEqual([{
+      nom: 'affecter_mouvements_bancaires',
+      args: {
+        p_affectations: [
+          { ligne_bancaire_id: 'l-cpam-1', categorie_id: 'cat-recettes', ecritures: [
+            { compte: '706000', sens: 'credit', montant: 250, libelle: 'VIR CPAM 13 SOINS' },
+            { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM 13 SOINS' },
+          ] },
+          { ligne_bancaire_id: 'l-cpam-2', categorie_id: 'cat-recettes', ecritures: [
+            { compte: '706000', sens: 'credit', montant: 180, libelle: 'VIR CPAM 13 SOINS' },
+            { compte: '512000', sens: 'debit', montant: 180, libelle: 'VIR CPAM 13 SOINS' },
+          ] },
+          { ligne_bancaire_id: 'l-frais', categorie_id: 'cat-frais', ecritures: [
+            { compte: '627000', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
+            { compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
+          ] },
+        ],
+      },
+    }])
+    // Le relevé relu, plus rien n'est proposé : la carte disparaît.
+    await waitFor(() => expect(screen.queryByText(/Affectations proposées par vos règles/)).toBeNull())
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('la liste signale un mouvement qu’une règle propose', async () => {
+    preparer()
+    rendre()
+    const ligne = (await screen.findAllByText('FRAIS TENUE DE COMPTE')).find((e) => e.closest('tr')?.classList.contains('clickable'))
+    expect(ligne?.closest('tr')?.textContent).toMatch(/Non rapproché · suggestion/)
+    // Le garde symétrique : un mouvement qu'aucune règle ne reconnaît reste sans suggestion.
+    const autre = (await screen.findAllByText('PRLV SEPA SWISSLIFE')).find((e) => e.closest('tr')?.classList.contains('clickable'))
+    expect(autre?.closest('tr')?.textContent).not.toMatch(/suggestion/)
+  })
+
+  it('écarte du lot un mouvement dont la pièce est au dossier, et le dit', async () => {
+    preparer()
+    faux.pieces = [pieceDeTest({ id: 'p-cpam', tiers: null, type_piece: 'vente', montant_ttc: 250, date_piece: '2025-06-01', statut: 'a_valider' })]
+    rendre()
+    expect(await screen.findByText('Affectations proposées par vos règles (2)')).toBeTruthy()
+    expect(screen.getByText(/1 mouvement à rapprocher plutôt qu'affecter/)).toBeTruthy()
+    expect(screen.getByText(/Une pièce du même montant attend un rapprochement/)).toBeTruthy()
+
+    await act(async () => { screen.getByRole('button', { name: 'Affecter les 2' }).click() })
+    const envoyes = (envoisDuLot()[0].args.p_affectations as { ligne_bancaire_id: string }[]).map((a) => a.ligne_bancaire_id)
+    expect(envoyes).toEqual(['l-cpam-2', 'l-frais'])
+  })
+
+  it('suspend le lot sur une lecture partielle des règles, et le dit', async () => {
+    preparer()
+    faux.muet = { regles_affectation_bancaire: 1 }
+    rendre()
+    expect(await screen.findByText(/Les règles d’affectation n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(screen.getByText(/Affectation en lot suspendue/)).toBeTruthy()
+    const bouton = screen.getByRole('button', { name: /^Affecter les / })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(envoisDuLot()).toEqual([])
+  })
+
+  it('suspend aussi le lot sur une lecture partielle des pièces — un justificatif non lu ne s’écarte pas', async () => {
+    preparer()
+    faux.pieces = [pieceDeTest({ id: 'p-cpam', tiers: null, type_piece: 'vente', montant_ttc: 250, date_piece: '2025-06-01' })]
+    faux.muet = { pieces: 0 }
+    rendre()
+    expect(await screen.findByText(/Affectation en lot suspendue/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /^Affecter les / }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('n’affecte le lot qu’une fois, même sur trois clics rapprochés', async () => {
+    preparer()
+    rendre()
+    const bouton = await screen.findByRole('button', { name: 'Affecter les 3' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(envoisDuLot()).toHaveLength(1)
+  })
+
+  it('découpe un grand lot en envois de cent, et dit ce qui est passé avant un refus', async () => {
+    preparer()
+    faux.lignes = Array.from({ length: 150 }, (_, i) => ligneDeTest({
+      id: `l${i}`, libelle: 'VIR CPAM 13 SOINS', montant: 10 + i, date: `2025-06-${String((i % 28) + 1).padStart(2, '0')}`,
+    }))
+    faux.refusAuEnvoi = 2
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    const bouton = await screen.findByRole('button', { name: 'Affecter les 150' })
+    await act(async () => { bouton.click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalled())
+    expect(envoisDuLot().map((r) => (r.args.p_affectations as unknown[]).length)).toEqual([100, 50])
+    expect(alerte).toHaveBeenCalledWith(expect.stringMatching(
+      /^100 mouvements affectés, puis l'envoi suivant a été refusé, et rien de cet envoi n'a été écrit : Le mouvement du 02\/06\/2025/))
+  })
+
+  it('refusé dès le premier envoi, le lot dit que rien de cet envoi n’a été écrit', async () => {
+    preparer()
+    faux.refusAuEnvoi = 1
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    const bouton = await screen.findByRole('button', { name: 'Affecter les 3' })
+    await act(async () => { bouton.click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/^Le lot a été refusé, et rien de cet envoi n'a été écrit : /)))
+    expect(screen.getByText('Affectations proposées par vos règles (3)')).toBeTruthy()
+  })
+
+  it('retire une règle après une confirmation qui dit ce qu’on perd, sans toucher aux mouvements', async () => {
+    preparer()
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(false)
+    rendre()
+    const retirer = await screen.findByRole('button', { name: 'Retirer la règle « frais »' })
+    await act(async () => { retirer.click() })
+    expect(confirmation).toHaveBeenCalledWith(expect.stringMatching(/« frais » \(paiements → Frais bancaires\)[\s\S]*Les mouvements déjà affectés le restent/))
+    expect(faux.suppressionsRegles).toEqual([])
+
+    confirmation.mockReturnValue(true)
+    await act(async () => { retirer.click() })
+    expect(faux.suppressionsRegles).toEqual([['id=regle-2']])
+    expect(faux.rpcs).toEqual([])
+    await waitFor(() => expect(screen.getByText('Affectations proposées par vos règles (2)')).toBeTruthy())
+  })
+
+  it('dit un retrait de règle que la base refuse', async () => {
+    preparer()
+    faux.erreurSuppressionRegle = 'refus simulé'
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    const retirer = await screen.findByRole('button', { name: 'Retirer la règle « frais »' })
+    await act(async () => { retirer.click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith("La règle n'a pas pu être retirée : refus simulé"))
+  })
+
+  it('présélectionne dans la fiche la catégorie qu’une règle propose, et le dit — sans rien écrire', async () => {
+    preparer()
+    rendre()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    expect((within(volet()).getByLabelText('Catégorie') as HTMLSelectElement).value).toBe('cat-frais')
+    expect(within(volet()).getByText(/Une règle range les paiements contenant « frais » dans cette catégorie/)).toBeTruthy()
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('retient une règle depuis la fiche : l’affectation d’abord, puis la règle normalisée', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV SEPA SWISSLIFE')
+    choisir('cat-assurance')
+    await act(async () => { within(volet()).getByRole('checkbox').click() })
+    expect((within(volet()).getByLabelText('Motif de la règle') as HTMLInputElement).value).toBe('swisslife')
+    expect(within(volet()).getByText(/1 autre mouvement à traiter le contient : il sera proposé/)).toBeTruthy()
+    fireEvent.change(within(volet()).getByLabelText('Motif de la règle'), { target: { value: '  SwissLife ' } })
+
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+
+    expect(faux.rpcs.map((r) => r.nom)).toEqual(['affecter_mouvement_bancaire'])
+    expect(faux.upserts).toEqual([{
+      table: 'regles_affectation_bancaire',
+      valeur: { dossier_id: 'dossier-de-test', motif: 'swisslife', sens: 'decaissement', categorie_id: 'cat-assurance' },
+      options: { onConflict: 'dossier_id,motif,sens' },
+    }])
+  })
+
+  it('n’écrit aucune règle quand la case n’est pas cochée', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV SEPA SWISSLIFE')
+    choisir('cat-assurance')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    expect(faux.rpcs.map((r) => r.nom)).toEqual(['affecter_mouvement_bancaire'])
+    expect(faux.upserts).toEqual([])
+  })
+
+  it('refuse, avant le clic, un motif qui ne nomme personne', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV SEPA SWISSLIFE')
+    choisir('cat-assurance')
+    await act(async () => { within(volet()).getByRole('checkbox').click() })
+    fireEvent.change(within(volet()).getByLabelText('Motif de la règle'), { target: { value: 'PRLV SEPA' } })
+    expect(within(volet()).getByText(/il désignerait un type d’opération, pas un tiers/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Affecter' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('dit la règle que la nouvelle remplacerait', async () => {
+    preparer()
+    faux.reglesAffectation.push(regleDeTest({ id: 'regle-3', motif: 'swisslife', sens: 'decaissement', categorie_id: 'cat-frais' }))
+    rendre()
+    await ouvrir('PRLV SEPA SWISSLIFE')
+    choisir('cat-assurance')
+    await act(async () => { within(volet()).getByRole('checkbox').click() })
+    expect(within(volet()).getByText(/Elle remplacera la règle qui les range en « Frais bancaires »/)).toBeTruthy()
+  })
+
+  it('dit une règle que la base refuse, le mouvement restant affecté', async () => {
+    preparer()
+    faux.erreurUpsert = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('PRLV SEPA SWISSLIFE')
+    choisir('cat-assurance')
+    await act(async () => { within(volet()).getByRole('checkbox').click() })
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(
+      "Le mouvement est affecté, mais la règle n'a pas pu être enregistrée : refus simulé"))
+    await waitFor(() => expect(within(volet()).getByText('Affecté à « Assurance »')).toBeTruthy())
+  })
+
+  it('ne retient aucune règle sur une lecture partielle des règles', async () => {
+    preparer()
+    faux.muet = { regles_affectation_bancaire: 1 }
+    rendre()
+    await ouvrir('PRLV SEPA SWISSLIFE')
+    expect(within(volet()).getByRole('checkbox').hasAttribute('disabled')).toBe(true)
+    expect(within(volet()).getByText(/Les règles d’affectation n’ont pas pu être lues en entier/)).toBeTruthy()
+  })
+
+  it('avertit, avant d’affecter, qu’un justificatif de ce tiers attend un rapprochement', async () => {
+    preparer()
+    faux.pieces = [pieceDeTest({ id: 'p-swiss', tiers: 'Swisslife Prévoyance', montant_ttc: 720, date_piece: '2025-01-15' })]
+    rendre()
+    await ouvrir('PRLV SEPA SWISSLIFE')
+    expect(within(volet()).getByText(/Un justificatif de ce tiers n’est rapproché d’aucun mouvement\. Avant d’affecter/)).toBeTruthy()
+    // Le garde symétrique : sans pièce de ce tiers, rien à dire.
+    cleanup()
+    preparer()
+    rendre()
+    await ouvrir('PRLV SEPA SWISSLIFE')
+    expect(within(volet()).queryByText(/Avant d’affecter/)).toBeNull()
   })
 })
