@@ -879,7 +879,9 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     faux.ecritures = ecrituresDuPlan(true)
     faux.paiements = [DEBLOCAGE]
     const modale = await ouvrirLePlan('Plan de trésorerie')
-    expect(modale.textContent).toMatch(/600,00\s€ d'encaissements/)
+    // Ancré sur « complets : » : « 2 600,00 € » CONTIENT « 600,00 € », et l'assertion laissait passer la
+    // moyenne qui compte le déblocage — trouvé par mutation.
+    expect(modale.textContent).toMatch(/complets : 600,00\s€ d'encaissements/)
     expect(within(modale).getByText(/Les fonds reçus d’un emprunt n’entrent pas dans cette moyenne/)).toBeTruthy()
     // Le solde, lui, les compte : 6 × 600 + 12 000.
     expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.textContent).toMatch(/15\s?600,00\s€/)
@@ -890,8 +892,20 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     faux.ecritures = ecrituresDuPlan(true)
     faux.paiements = []
     const modale = await ouvrirLePlan('Plan de trésorerie')
-    expect(modale.textContent).toMatch(/2\s?600,00\s€ d'encaissements/)
+    expect(modale.textContent).toMatch(/complets : 2\s?600,00\s€ d'encaissements/)
     expect(within(modale).queryByText(/fonds reçus d’un emprunt/i)).toBeNull()
+  })
+
+  // LA SITUATION INTERMÉDIAIRE COMPTE LES INTÉRÊTS ET L'ASSURANCE d'une échéance rapprochée, à sa date,
+  // par les parts du relevé que l'écran lui passe — et jamais son capital. Trouvé par mutation : la
+  // situation privée des échéances laissait tout ce fichier vert.
+  it('la situation intermédiaire porte les intérêts et l’assurance d’une échéance rapprochée, pas son capital', async () => {
+    preparer()
+    faux.paiements = [ECHEANCE_2]
+    const modale = await ouvrirLaSituation('2025-06-30', false)
+    expect(totalDuPoste(modale, 'Frais financiers')).toMatch(/^-34,55\s€$/)
+    expect(totalDuPoste(modale, "Primes d'assurance")).toMatch(/^-21,03\s€$/)
+    expect(modale.textContent).not.toMatch(/484,42/)
   })
 
   it('le taux d’endettement ne compte pas le déblocage non plus, et le dit', async () => {

@@ -814,6 +814,22 @@ describe('ChecklistTab — les échéances d’emprunt', () => {
     expect(point.textContent).toMatch(/^1 /)
   })
 
+  // L'autre borne de la fenêtre : avant le premier mouvement importé, rien n'a été importé, donc rien ne
+  // se réclame. Le relevé couvre ici d'avril à juin 2025 : les échéances de février et de mars tombent
+  // avant lui, celles d'avril, mai et juin dedans — et aucune n'est payée.
+  it('ne réclame pas les échéances d’avant le premier relevé importé', async () => {
+    poser({
+      lignes: [
+        ligne({ id: 'debut', date: '2025-04-01', statut: 'non_rapprochee', piece_id: null }),
+        ligne({ id: 'fin', date: '2025-06-30', statut: 'non_rapprochee', piece_id: null }),
+      ],
+      emprunts: [EMPRUNT], ecritures: [],
+    })
+    monter()
+    const point = await screen.findByText(/couverte\(s\) par le relevé sans mouvement rapproché/)
+    expect(point.textContent).toMatch(/^3 /)
+  })
+
   it('une échéance rapprochée et écrite n’est ni un point, ni un rapprochement sans justificatif, ni une rupture', async () => {
     poser({ lignes: [ligne({ id: 'a-traiter', date: '2025-03-01', statut: 'non_rapprochee', piece_id: null }), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2 })
     monter()

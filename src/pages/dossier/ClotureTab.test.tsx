@@ -771,6 +771,26 @@ describe('ClotureTab — les échéances d’emprunt', () => {
     expect(numeros).toEqual(['n° 1', 'n° 3', 'n° 4', 'n° 5', 'n° 6', 'n° 7', 'n° 8', 'n° 9', 'n° 10', 'n° 11'])
   })
 
+  // JUSQU'À AUJOURD'HUI POUR L'EXERCICE EN COURS : une échéance à venir n'est pas en retard. Horloge feinte
+  // sur `Date` seule — les minuteurs dont `findByText` dépend restent vrais —, au 20 juin 2025 : les
+  // échéances 1, 3, 4 et 5 sont passées sans paiement, celles de juillet à décembre pas encore dues.
+  it('ne réclame pas les échéances de l’exercice en cours qui ne sont pas encore dues', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date(2025, 5, 20, 12, 0, 0))
+    try {
+      poser()
+      faux.parTable.emprunts = [EMPRUNT]
+      faux.parTable.lignes_bancaires = [echeanceRapprochee(2)]
+      monter(2025)
+      const titre = await screen.findByText('Échéances d’emprunt non rapprochées (4)')
+      const carte = titre.closest('.card') as HTMLElement
+      const numeros = within(carte).getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[2].textContent)
+      expect(numeros).toEqual(['n° 1', 'n° 3', 'n° 4', 'n° 5'])
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('se tait quand toutes les échéances de l’exercice sont rapprochées — le garde symétrique', async () => {
     poser()
     faux.parTable.emprunts = [EMPRUNT]
