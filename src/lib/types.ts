@@ -93,16 +93,19 @@ export interface LigneBancaire {
   // Rattache le mouvement à une échéance de cotisations_declarees plutôt qu'à une pièce — un
   // prélèvement URSSAF/CARPIMKO n'a pas de facture, juste un montant appelé sur un échéancier.
   //
-  // MUTUELLEMENT EXCLUSIF AVEC `piece_id`, ET C'EST L'APPLICATION QUI LE TIENT, PAS LA BASE. Ce
-  // commentaire disait « contrainte en base » ; mesuré le 23/09/2026, `lignes_bancaires` ne porte
-  // AUCUNE contrainte CHECK, et 0 ligne porte les deux. Les quatre écrivains posent bien l'un en
-  // annulant l'autre (BanqueTab : rapprocher sur une pièce, sur une cotisation, annuler, virement
-  // personnel) et `planRapprochementAutomatique` ne rend jamais les deux.
-  // Porter la garantie dans la base demanderait une migration sur `lignes_bancaires`, qui est l'une
-  // des douze tables du socle (supabase/schema/socle/) : la contrainte se retrouverait alors à la
-  // fois dans une migration et dans l'export du socle, donc rejouée deux fois le jour d'une reprise.
-  // C'est une passe à part, pas un ajout en passant — voir CLAUDE.md.
+  // MUTUELLEMENT EXCLUSIF AVEC `piece_id` ET `categorie_id`, ET C'EST LA BASE QUI LE TIENT :
+  // `lignes_bancaires_un_seul_rapprochement` (num_nonnulls(piece_id, cotisation_id, categorie_id)
+  // <= 1). Ce commentaire a affirmé du 23/09 au 29/09/2026 qu'aucune contrainte CHECK n'existait :
+  // c'était faux, `pg_constraint` la rend depuis le 22/09 au moins (le socle l'exporte déjà), et
+  // l'affirmation n'avait pas été mesurée sur le catalogue.
   cotisation_id: string | null
+  // La catégorie d'un mouvement SANS justificatif (ligne 26.6 de la feuille de route) : frais
+  // bancaires, encaissements de l'Assurance maladie, remboursements. Le mouvement est alors rapproché,
+  // et son écriture — le compte de la catégorie face à la banque — s'écrit AVEC l'affectation, par la
+  // fonction SQL `affecter_mouvement_bancaire` (voir lib/affectationBanque.ts). La base refuse une
+  // catégorie sur un mouvement non rapproché ou classé en virement personnel
+  // (`lignes_bancaires_affectation_rapprochee`).
+  categorie_id: string | null
   // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
   // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.
   // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien
