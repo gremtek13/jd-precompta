@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { ecritureDuMouvement } from './affectationBanque'
 import {
-  envoisDuLot, justificatifPossible, libelleCorrespond, motDistinctif, motifPropose, mouvementsCouverts, normaliserPourRegle,
+  envoisDuLot, justificatifPossible, libelleCorrespond, motDistinctif, motifPropose, mouvementATraiter, mouvementsCouverts,
+  normaliserPourRegle,
   planAffectationParRegles, refusMotif, regleApplicable, sensDuMouvement, TAILLE_ENVOI_AFFECTATION, totauxParCategorie,
 } from './reglesAffectation'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from './types'
@@ -136,11 +137,31 @@ describe('motifPropose — un point de départ, jamais une décision', () => {
     expect(motifPropose(lignes[0], lignes.slice(0, 2))).toBe('881234567000')
   })
 
+  it('deux références qui ne partagent que quatre chiffres ne forment pas une famille', () => {
+    // Quatre chiffres se retrouvent par hasard dans une date ou un montant, et la base refuse un motif de
+    // chiffres seuls plus court que cinq : proposer « 8812 » serait proposer un motif qu'on ne peut pas retenir.
+    const a = ligne({ id: 'a', libelle: '8812345670001111', montant: 120 })
+    const b = ligne({ id: 'b', libelle: '8812999990002222', montant: 80 })
+    expect(motifPropose(a, [a, b])).toBeNull()
+  })
+
   it('une référence sans famille ne propose rien, et la famille ne se cherche que dans le même sens', () => {
     const encaissement = ligne({ id: 'a', libelle: '8812345670001111', montant: 120 })
     const paiement = ligne({ id: 'b', libelle: '8812345670002222', montant: -80 })
     expect(motifPropose(encaissement, [encaissement])).toBeNull()
     expect(motifPropose(encaissement, [encaissement, paiement])).toBeNull()
+  })
+})
+
+describe('mouvementATraiter — ce que le lot peut affecter', () => {
+  it('à traiter seulement, jamais un virement personnel ni un mouvement de zéro euro', () => {
+    expect(mouvementATraiter(ligne())).toBe(true)
+    expect(mouvementATraiter(ligne({ statut: 'ignoree' }))).toBe(false)
+    expect(mouvementATraiter(ligne({ statut: 'rapprochee', piece_id: 'p1' }))).toBe(false)
+    // Défensif : l'écran classe un virement personnel « ignoré », mais la marque seule doit suffire à
+    // l'écarter — la base refuserait de l'affecter, et le lot entier avec lui.
+    expect(mouvementATraiter(ligne({ prelevement_personnel: true }))).toBe(false)
+    expect(mouvementATraiter(ligne({ montant: 0 }))).toBe(false)
   })
 })
 
@@ -177,6 +198,13 @@ describe('regleApplicable — une règle, plusieurs, ou un conflit', () => {
     const large = regle({ id: 'r1', motif: 'transmedical' })
     const precise = regle({ id: 'r2', motif: 'sepa transmedical' })
     expect(regleApplicable(ligne(), [large, precise])).toEqual({ etat: 'proposee', regle: precise })
+  })
+
+  it('d’accord sans que l’une contienne l’autre : aucun conflit, la plus longue est montrée', () => {
+    const cpam = regle({ id: 'r1', motif: 'cpam', sens: 'encaissement', categorie_id: 'cat-recettes' })
+    const soins = regle({ id: 'r2', motif: 'soins', sens: 'encaissement', categorie_id: 'cat-recettes' })
+    expect(regleApplicable(ligne({ libelle: 'VIR CPAM 13 SOINS', montant: 48.2 }), [cpam, soins]))
+      .toEqual({ etat: 'proposee', regle: soins })
   })
 
   it('en désaccord, la plus précise l’emporte quand elle CONTIENT les autres', () => {
@@ -303,6 +331,21 @@ describe('totauxParCategorie — le lot relu avant de cliquer', () => {
       ['cat-frais', 1, -8.5],
       ['cat-recettes', 2, 0.3],
     ])
+  })
+})
+
+describe('totauxParCategorie — deux catégories au même rang', () => {
+  it('se rangent par libellé, quel que soit l’ordre des mouvements', () => {
+    const assurance = categorie({ id: 'cat-assurance', code: 'assurance', libelle: 'Assurance', ordre: 50, compte_comptable: '616000' })
+    const abonnements = categorie({ id: 'cat-abonnements', code: 'abonnements', libelle: 'Abonnements', ordre: 50, compte_comptable: '651000' })
+    const plan = planAffectationParRegles([
+      ligne({ id: 'a', libelle: 'PRLV SEPA SWISSLIFE' }),
+      ligne({ id: 'b' }),
+    ], [
+      regle({ id: 'r1', motif: 'swisslife', categorie_id: 'cat-assurance' }),
+      regle({ id: 'r2', motif: 'transmedical', categorie_id: 'cat-abonnements' }),
+    ], [assurance, abonnements], false, aucunJustificatif)
+    expect(totauxParCategorie(plan.propositions).map((t) => t.categorie.libelle)).toEqual(['Abonnements', 'Assurance'])
   })
 })
 
