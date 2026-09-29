@@ -715,6 +715,11 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 .fiche-mouvement-choix { display: flex; gap: 8px; align-items: center; }
 .fiche-mouvement-choix select { flex: 1; min-width: 0; }
 .fiche-mouvement-boutons { display: flex; gap: 8px; flex-wrap: wrap; }
+/* Retenir une affectation en règle : sous la liste des catégories, jamais à côté — la fiche est étroite. */
+.fiche-mouvement-regle { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.fiche-mouvement-case { display: flex; align-items: flex-start; gap: 6px; font-size: 0.82rem; font-weight: 600; line-height: 1.4; }
+.fiche-mouvement-case input { margin-top: 2px; flex: none; }
+.fiche-mouvement-regle input[type="text"] { width: 100%; min-width: 0; }
 .fiche-mouvement-origine { margin: 0; font-size: 0.75rem; color: var(--color-text-light); overflow-wrap: anywhere; }
 
 /* Une pièce (ou une échéance) face au mouvement : ce qu'elle est, et ce qui la rattache au relevé. */

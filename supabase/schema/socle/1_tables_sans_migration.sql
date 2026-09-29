@@ -242,6 +242,7 @@ CREATE UNIQUE INDEX immobilisations_piece_unique ON public.immobilisations USING
 CREATE INDEX lignes_bancaires_dossier_id_idx ON public.lignes_bancaires USING btree (dossier_id);
 CREATE INDEX lignes_bancaires_statut_idx ON public.lignes_bancaires USING btree (statut);
 CREATE INDEX lignes_bancaires_categorie_id_idx ON public.lignes_bancaires USING btree (categorie_id);
+CREATE INDEX ecritures_brouillon_ligne_bancaire_id_idx ON public.ecritures_brouillon USING btree (ligne_bancaire_id);
 
 -- ─────────────────────────────── 4. RLS
 --

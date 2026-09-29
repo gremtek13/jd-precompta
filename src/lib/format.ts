@@ -76,6 +76,12 @@ const MOTS_SANS_IDENTITE = new Set([
 // seul le motif propre aux sigles l'est.
 const SIGLE_POINTE = /(?:[a-z]\.){2,}[a-z]?/g
 
+/** Recolle les sigles pointés d'un texte déjà en minuscules : « c.p.a.m. » devient « cpam ». Servi
+ * aussi aux règles d'affectation d'un relevé (lib/reglesAffectation.ts), pour la même raison. */
+export function recollerSiglesPointes(texte: string): string {
+  return texte.replace(SIGLE_POINTE, (sigle) => sigle.replace(/\./g, ''))
+}
+
 // Clé d'identité d'un fournisseur : le premier mot de son nom qui puisse vraiment le désigner.
 //
 // C'est ce qui permet de reconnaître un même fournisseur à travers les graphies que l'OCR produit.
@@ -96,13 +102,9 @@ const SIGLE_POINTE = /(?:[a-z]\.){2,}[a-z]?/g
 // isolément plutôt que de la regrouper avec d'autres qui n'ont rien à voir.
 export function cleFournisseur(tiers: string | null): string | null {
   if (!tiers) return null
-  const mots = tiers
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .toLowerCase()
-    // Avant l'aplatissement de la ponctuation, jamais après : une fois les points devenus des
-    // espaces, plus rien ne distingue un sigle d'une suite de mots d'une lettre.
-    .replace(SIGLE_POINTE, (sigle) => sigle.replace(/\./g, ''))
+  // Les sigles se recollent avant l'aplatissement de la ponctuation, jamais après : une fois les
+  // points devenus des espaces, plus rien ne distingue un sigle d'une suite de mots d'une lettre.
+  const mots = recollerSiglesPointes(tiers.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase())
     .replace(/[^a-z0-9]+/g, ' ')
     .trim()
     .split(' ')
