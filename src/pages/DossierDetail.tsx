@@ -349,7 +349,7 @@ export default function DossierDetail() {
               onIdentiteUpdated={(siret, adresse) => modifierDossier(id, { siret, adresse })}
             />
           )}
-          {tab === 'virements' && <VirementsTab dossierId={id} />}
+          {tab === 'virements' && modele && <VirementsTab dossierId={id} modele={modele} />}
           {tab === 'acces' && <AccesTab dossierId={id} dossierNom={dossier?.nom ?? ''} codeEmail={dossier?.code_email ?? null} />}
         </AnneeProvider>
       )}

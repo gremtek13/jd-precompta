@@ -57,7 +57,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   return {
     supabase: {
       rpc: (nom: string, args: Record<string, unknown>) => {
@@ -144,7 +144,12 @@ vi.mock('../../lib/supabase', async () => {
               faux.parTable[table] = (faux.parTable[table] ?? []).filter((l) => garde(l as Record<string, unknown>))
               return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
             }
-            const toutes = filtrer(faux.parTable[table] ?? [], predicats)
+            // Les `.eq` d'une LECTURE s'appliquent aussi, sauf le cadrage par dossier, que le jeu d'essai
+            // ne renseigne pas : sans cela, la lecture des mouvements restreinte aux seuls rapprochés
+            // restait verte en cachant les virements personnels, dont l'écriture va au FEC.
+            const egalites = filtres.filter(([colonne]) => colonne !== 'dossier_id' && !colonne.startsWith('!'))
+              .map(([colonne, valeur]) => predicatEq(colonne, valeur))
+            const toutes = filtrer(faux.parTable[table] ?? [], [...predicats, ...egalites])
             const demande = fin - debut + 1
             const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
             const muet = faux.muetParTable[table] ?? faux.muetApres
@@ -348,8 +353,8 @@ describe("EcrituresTab — retrait d'une écriture sans objet", () => {
       immobilisations: [{ id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1' }],
       lignes_bancaires: [{
         id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-10', libelle: 'ACHAT',
-        montant: -120, piece_id: 'p1', cotisation_id: null, ignoree: false,
-        libelle_brut: null, created_at: '2025-03-10T09:00:00Z',
+        montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
+        prelevement_personnel: false, source_fichier: null, libelle_brut: null, created_at: '2025-03-10T09:00:00Z',
       }],
     })
   }
@@ -756,6 +761,9 @@ describe('EcrituresTab — le modèle comptable', () => {
     // Les mots du cabinet, à l'écran.
     await screen.findByText(/Note de frais payée personnellement par le dirigeant/)
     expect(screen.getByText(/Quand la société rembourse le dirigeant, depuis son compte bancaire : débit 455, crédit 512 Banque/)).toBeTruthy()
+    // Le même compte reçoit les virements personnels du dirigeant (lib/virementPersonnel.ts) : le
+    // choix engage les deux, et l'écran le dit avant qu'on le fasse.
+    expect(screen.getByText(/Ce compte reçoit aussi les virements entre le compte de l’entreprise et le compte personnel/)).toBeTruthy()
     await act(async () => { screen.getByRole('button', { name: /^108 – Compte de l’exploitant/ }).click() })
     expect(faux.misesAJour.at(-1)).toEqual({ table: 'dossiers', valeurs: { compte_notes_de_frais: '108000' } })
   })
@@ -1176,5 +1184,50 @@ describe('EcrituresTab — ce que le FEC ne contiendra pas, bien accordé', () =
     poser({ ecritures_brouillon: [ecriture({ id: 'o1', piece_id: null }), ecriture({ id: 'o2', piece_id: null })] })
     monter()
     expect(await screen.findByText(/^2 écritures ne seront pas dans ce FEC/)).toBeTruthy()
+  })
+})
+
+// UN VIREMENT PERSONNEL (lib/virementPersonnel.ts) est classé « ignoré », et porte pourtant une
+// écriture : le compte du dirigeant face à la banque. Ce que ce bloc garde et qu'aucun test de
+// `src/lib` ne peut voir : que l'onglet lise ces mouvements-là aussi — ils ne sont pas « rapprochés » —,
+// donc qu'il ne crie pas à la rupture sur leur écriture et qu'il la porte au FEC.
+describe('EcrituresTab — les virements personnels', () => {
+  function virement(o: Record<string, unknown> = {}) {
+    return {
+      id: 'l-perso', dossier_id: 'dossier-de-test', date: '2025-03-20', libelle: 'VIR PERSO', montant: -500,
+      statut: 'ignoree', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: true,
+      source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
+    }
+  }
+  const ECRITURE_PERSO = [
+    ecriture({ id: 'v1', piece_id: null, ligne_bancaire_id: 'l-perso', date: '2025-03-20', compte: '108000', sens: 'debit', montant: 500, libelle: 'VIR PERSO' }),
+    ecriture({ id: 'v2', piece_id: null, ligne_bancaire_id: 'l-perso', date: '2025-03-20', compte: '512000', sens: 'credit', montant: 500, libelle: 'VIR PERSO' }),
+  ]
+
+  it('ne crie pas à la rupture, et porte l’écriture au FEC, au journal de banque, sur le compte de l’exploitant', async () => {
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [virement()], ecritures_brouillon: ECRITURE_PERSO })
+    monter()
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryByText("Piste d'audit rompue")).toBeNull()
+    expect(screen.queryByText(/pas dans ce FEC/)).toBeNull()
+
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
+    expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual([
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250320'],
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250320'],
+    ])
+    expect(lignes.map((l) => `${l[4]} ${l[5]}`).sort()).toEqual(["108000 Compte de l'exploitant", '512000 Banque'])
+  })
+
+  it('le garde symétrique : remis à traiter, ses écritures sont une rupture et sortent du FEC', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS],
+      lignes_bancaires: [virement({ statut: 'non_rapprochee', prelevement_personnel: false })],
+      ecritures_brouillon: ECRITURE_PERSO,
+    })
+    monter()
+    expect(await screen.findByText("Piste d'audit rompue")).toBeTruthy()
+    expect(screen.getByText(/2 écritures ne seront pas dans ce FEC/)).toBeTruthy()
   })
 })

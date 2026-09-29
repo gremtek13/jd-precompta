@@ -383,6 +383,26 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     expect(rows.map((r) => r[4])).toEqual(['627000', COMPTE_BANQUE])
   })
 
+  it('porte de même un virement personnel, sur le compte du dirigeant', () => {
+    // Le prélèvement de l'exploitant, classé en virement personnel : il s'écrit sur son compte, face à
+    // la banque, et le relevé est sa pièce (lib/virementPersonnel.ts).
+    const prelevement = mouvement('l-perso', {
+      date: '2026-03-20', montant: -500, libelle: 'VIR PERSO', statut: 'ignoree', categorie_id: null, prelevement_personnel: true,
+    })
+    const ecritures = [
+      ligne('', { id: 'v1', piece_id: null, ligne_bancaire_id: 'l-perso', compte: '108000', sens: 'debit', montant: 500, date: '2026-03-20', libelle: 'VIR PERSO' }),
+      ligne('', { id: 'v2', piece_id: null, ligne_bancaire_id: 'l-perso', compte: COMPTE_BANQUE, sens: 'credit', montant: 500, date: '2026-03-20', libelle: 'VIR PERSO' }),
+    ]
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [prelevement])).slice(1)
+    expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[8], r[11], r[12]])).toEqual([
+      ['BQ', 'BQ00001', '20260320', '108000', "Compte de l'exploitant", 'releve-mars-2026.pdf', '500,00', '0,00'],
+      ['BQ', 'BQ00001', '20260320', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '500,00'],
+    ])
+    // Le garde symétrique : remis à traiter, le même mouvement n'est plus justifié par le relevé.
+    const remis = { ...prelevement, statut: 'non_rapprochee' as const, prelevement_personnel: false }
+    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [remis])).slice(1)).toEqual([])
+  })
+
   it('les équilibre, une écriture après l’autre', () => {
     const parNumero = new Map<string, number>()
     for (const r of colonnes(genererFec(brouillon, [], [], [], 'tresorerie', [cpam, frais])).slice(1)) {

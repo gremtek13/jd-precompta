@@ -1,5 +1,5 @@
 import type { ANouveau, Categorie, EcritureBrouillon, ModeComptable, Piece } from './types'
-import { idsMouvementsAffectes, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
+import { idsMouvementsJustifiesParLeReleve, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
 import { libelleEcritureANouveau } from './aNouveaux'
 import { LIBELLES_COMPTES } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
@@ -95,33 +95,34 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
 // achats, et la banque n'aurait pas de journal. Les lignes de 401 et de 411 y portent en plus le compte
 // AUXILIAIRE du tiers (CompAuxNum, CompAuxLib), un seul libellé par numéro dans tout le fichier.
 //
-// UN MOUVEMENT AFFECTÉ À UNE CATÉGORIE SANS JUSTIFICATIF (ligne 26.6, lib/affectationBanque.ts) fait
-// une écriture au journal de BANQUE, dans les deux modèles : sa pièce est le RELEVÉ qui le porte
-// (PieceRef), à la date du mouvement (PieceDate). C'est ce qui manquait pour que le FEC porte chaque
-// euro du relevé : un encaissement de l'Assurance maladie n'y était nulle part. Les autres écritures
-// sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
+// UN MOUVEMENT AFFECTÉ À UNE CATÉGORIE SANS JUSTIFICATIF (ligne 26.6, lib/affectationBanque.ts), ou
+// CLASSÉ EN VIREMENT PERSONNEL (lib/virementPersonnel.ts), fait une écriture au journal de BANQUE, dans
+// les deux modèles : sa pièce est le RELEVÉ qui le porte (PieceRef), à la date du mouvement (PieceDate).
+// C'est ce qui manquait pour que le FEC porte chaque euro du relevé : un encaissement de l'Assurance
+// maladie ou un prélèvement de l'exploitant n'y était nulle part. Les autres écritures sans pièce — le
+// reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : exporté en trésorerie, le brouillon d'un dossier en engagement mettrait
   // ses règlements au journal des achats, sous le numéro de la facture.
   mode: ModeComptable,
-  // Les lignes du relevé qui portent les mouvements affectés — n'importe quelles lignes, seules les
-  // affectées comptent. Sans valeur par défaut : les oublier sortirait du fichier tous les encaissements
-  // sans bordereau, c'est-à-dire, pour un infirmier, presque toutes ses recettes.
+  // Les lignes du relevé qui portent les mouvements affectés et les virements personnels — n'importe
+  // quelles lignes, seules celles-là comptent. Sans valeur par défaut : les oublier sortirait du fichier
+  // tous les encaissements sans bordereau, c'est-à-dire, pour un infirmier, presque toutes ses recettes.
   mouvements: readonly MouvementBancaire[],
 ): string {
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
-  const idsAffectes = idsMouvementsAffectes(mouvements)
+  const idsJustifies = idsMouvementsJustifiesParLeReleve(mouvements)
   const mouvementById = new Map(mouvements.map((m) => [m.id, m]))
 
   // La clé d'une écriture FEC : la pièce en trésorerie ; en engagement, la pièce et le mouvement d'un
-  // règlement, la facture gardant la pièce seule ; le mouvement, pour un mouvement affecté.
+  // règlement, la facture gardant la pièce seule ; le mouvement, pour un mouvement justifié par le relevé.
   const groupes = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     let cle: string
     if (e.piece_id) {
       cle = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
-    } else if (e.ligne_bancaire_id && idsAffectes.has(e.ligne_bancaire_id)) {
+    } else if (e.ligne_bancaire_id && idsJustifies.has(e.ligne_bancaire_id)) {
       cle = `releve|${e.ligne_bancaire_id}`
     } else continue
     groupes.set(cle, [...(groupes.get(cle) ?? []), e])
@@ -181,7 +182,8 @@ export function genererFec(
     for (const e of rows) {
       // Une pièce absente du jeu fourni n'a pas de tiers qu'on puisse lire : son auxiliaire est le
       // compte « divers », plutôt qu'une clé tirée d'un libellé qui peut n'être qu'un nom de fichier.
-      // Un mouvement affecté n'a jamais de compte de tiers : son écriture va de la catégorie à la banque.
+      // Un mouvement justifié par le relevé n'a pas de compte AUXILIAIRE : son écriture va de la catégorie,
+      // ou du compte du dirigeant, à la banque — l'auxiliaire ne sert qu'aux 401 et 411 d'une pièce.
       const auxiliaire = pieceId ? auxiliaireDuTiers(piece ?? { tiers: null }, e.compte) : null
       if (auxiliaire && !libellesAuxiliaires.has(auxiliaire.num)) libellesAuxiliaires.set(auxiliaire.num, auxiliaire.lib)
       lignes.push([

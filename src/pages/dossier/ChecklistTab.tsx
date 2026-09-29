@@ -6,7 +6,8 @@ import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobi
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
-import { idsMouvementsAffectes, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSurDossierAssujetti } from '../../lib/affectationBanque'
+import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSurDossierAssujetti } from '../../lib/affectationBanque'
+import { virementsPersonnelsAEcrire } from '../../lib/virementPersonnel'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
@@ -265,13 +266,16 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
   const affectes = mouvementsAffectes(lignes, categories)
-  const ruptures = rupturesPisteAudit(ecritures, idsMouvementsAffectes(lignes))
+  const ruptures = rupturesPisteAudit(ecritures, idsMouvementsJustifiesParLeReleve(lignes))
   // L'écriture d'un mouvement affecté que son affectation ne produirait plus — la catégorie a changé de
   // compte depuis. Même famille que les pièces « à régénérer », invisible de la même façon.
   const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes)
   // Des encaissements affectés en recette alors que le dossier est (devenu) assujetti : leur TVA
   // collectée n'est dans aucune CA3.
   const recettesSansTva = recettesAffecteesSurDossierAssujetti(affectes, assujettiTva)
+  // Les virements personnels sans leur écriture — classés avant que ce classement s'écrive
+  // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie.
+  const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
   const catSansCompte = categoriesSansCompte(categories, piecesValidees, lignes)
   const catSansPoste = categoriesSansPoste(categories, piecesValidees, lignes)
@@ -390,6 +394,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     // « Erreur » : la TVA collectée d'un assujetti manque à sa CA3, et la 2035 compte la taxe comme du
     // chiffre d'affaires. Rien ne les réécrit : la facture, déposée et rapprochée, les remplace.
     { id: 'recettes-affectees-assujetti', label: 'encaissement(s) affecté(s) en recette sans TVA, sur un dossier assujetti', action: 'Rapprocher leur facture à la place', nb: recettesSansTva.length, cible: 'banque', severite: 'erreur' },
+    // « Erreur » comme une pièce validée sans catégorie : le virement a l'air traité — il est classé —,
+    // donc plus personne ne le regarde, et il manque au FEC. L'onglet Virements les montre et les écrit.
+    { id: 'virements-sans-ecriture', label: 'virement(s) personnel(s) sans écriture — absents du FEC et de la trésorerie', action: 'Écrire ces virements', nb: virementsAEcrire.length, cible: 'virements', severite: 'erreur' },
     // Avant les autres points d'Écritures : ceux-là disent qu'il MANQUE quelque chose, celui-ci que
     // le brouillon compte quelque chose de faux — une charge immobilisée y est comptée deux fois.
     { id: 'ecritures-sans-objet', label: 'écriture(s) que la pièce ne justifie plus', action: "Retirer l'écriture ou corriger la pièce", nb: ecrituresSansObjetDuDossier.length, cible: 'ecritures', severite: 'erreur' },

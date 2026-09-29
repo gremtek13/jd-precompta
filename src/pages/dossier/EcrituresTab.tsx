@@ -12,7 +12,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
 import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
 import {
-  ecritureDuMouvement, idsMouvementsAffectes, mouvementsAffectes, mouvementsAffectesDesynchronises, refusAffectation,
+  ecritureDuMouvement, idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, refusAffectation,
   type MouvementAffecte,
 } from '../../lib/affectationBanque'
 import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece } from '../../lib/types'
@@ -131,10 +131,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       // Les mouvements RAPPROCHÉS : ceux d'une pièce datent et règlent son écriture, ceux AFFECTÉS à une
       // catégorie sans justificatif (ligne 26.6) portent la leur — sans pièce, et ce n'est pas une
       // rupture de la piste d'audit. Tous, et pas seulement ceux d'une pièce : les laisser dehors ferait
-      // sortir leurs écritures du FEC et les signaler « sans justificatif ».
+      // sortir leurs écritures du FEC et les signaler « sans justificatif ». Et les VIREMENTS PERSONNELS,
+      // classés « ignorés » mais écrits sur le compte du dirigeant (lib/virementPersonnel.ts), pour la
+      // même raison.
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
+          .eq('dossier_id', dossierId).or('statut.eq.rapprochee,prelevement_personnel.eq.true')
           .order('id').range(debut, fin),
       ),
       lireTout<ANouveau>((debut, fin) =>
@@ -281,12 +283,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
   // ne doit pas disparaître de la vue parce que l'onglet Année est positionné ailleurs.
-  // L'écriture d'un mouvement AFFECTÉ n'a pas de pièce, par construction : son justificatif est le
-  // relevé, et elle va au FEC (journal de banque). Elle n'est donc ni une rupture ni un absent du FEC.
-  const idsAffectes = idsMouvementsAffectes(lignesBancaires)
-  const ruptures = rupturesPisteAudit(ecritures, idsAffectes)
+  // L'écriture d'un mouvement AFFECTÉ ou d'un VIREMENT PERSONNEL n'a pas de pièce, par construction :
+  // son justificatif est le relevé, et elle va au FEC (journal de banque). Elle n'est donc ni une
+  // rupture ni un absent du FEC.
+  const idsJustifies = idsMouvementsJustifiesParLeReleve(lignesBancaires)
+  const ruptures = rupturesPisteAudit(ecritures, idsJustifies)
   // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé.
-  const horsFec = absenceFec(ecrituresFiltrees, idsAffectes)
+  const horsFec = absenceFec(ecrituresFiltrees, idsJustifies)
   // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
   // de la catégorie a changé depuis (voir lib/affectationBanque.ts).
   const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories))
@@ -529,13 +532,19 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                     </li>
                   ))}
                 </ul>
+                {/* Le même compte, parce que c'est la même personne : deux comptes pour le dirigeant
+                    partageraient ce qu'on lui doit en deux moitiés (lib/virementPersonnel.ts). */}
+                <p className="muted" style={{ margin: '10px 0 0' }}>
+                  Ce compte reçoit aussi les virements entre le compte de l’entreprise et le compte personnel
+                  du dirigeant (« Virement personnel », onglet Banque).
+                </p>
               </div>
             )}
           </>
         ) : (
           <p className="muted" style={{ margin: 0 }}>
             <strong>{LIBELLES_MODE[modele.mode]}</strong>
-            {modele.mode === 'engagement' && ` — notes de frais du dirigeant en ${compteNotesDeFrais.libelle.replace(/ \(.*\)$/, '')}`}.
+            {modele.mode === 'engagement' && ` — notes de frais et virements personnels du dirigeant en ${compteNotesDeFrais.libelle.replace(/ \(.*\)$/, '')}`}.
             {' '}{raisonVerrouModele}
           </p>
         )}

@@ -135,18 +135,30 @@ export function mouvementsAffectes(
   return affectes
 }
 
-// Les identifiants des mouvements affectés — ce qui dit, pour une écriture sans pièce, si elle est
-// l'écriture d'un mouvement (légitime) ou le reste d'une pièce supprimée (une rupture). Voir
-// lib/pisteAudit.ts et lib/fec.ts.
+// UN MOUVEMENT JUSTIFIÉ PAR LE RELEVÉ : son écriture n'a pas de pièce, et c'est légitime — le relevé
+// qui le porte en est le justificatif. Deux cas : affecté à une catégorie (rapproché, portant une
+// catégorie), ou classé en virement personnel (lib/virementPersonnel.ts), écrit sur le compte du
+// dirigeant. Ce qui dit, pour une écriture sans pièce, si elle est l'écriture d'un mouvement ou le reste
+// d'une pièce supprimée (une rupture). Voir lib/pisteAudit.ts et lib/fec.ts.
+//
+// UN SEUL PRÉDICAT pour le FEC, la piste d'audit, Écritures et la Checklist : le jour où un troisième
+// cas s'ajoutera, une copie oubliée ferait sortir ses écritures du FEC ou crier « sans justificatif »
+// sur une écriture juste — sur l'un des quatre seulement, donc sans que les autres le disent.
 //
 // LU SUR LA LIGNE, SANS LA CATÉGORIE, et c'est voulu : la légitimité de l'écriture tient à ce que son
 // mouvement est affecté, pas à ce qu'on a pu lire de sa catégorie. Une catégorie absente de la liste
 // chargée ferait sinon crier « écriture sans justificatif » sur une écriture juste — l'artefact de
 // filtrage que `rupturesPisteAudit` refuse déjà de prendre pour une rupture.
-export function idsMouvementsAffectes(
-  lignes: readonly Pick<LigneBancaire, 'id' | 'statut' | 'categorie_id'>[],
+export function mouvementJustifieParLeReleve(
+  ligne: Pick<LigneBancaire, 'statut' | 'categorie_id' | 'prelevement_personnel'>,
+): boolean {
+  return (ligne.statut === 'rapprochee' && !!ligne.categorie_id) || ligne.prelevement_personnel
+}
+
+export function idsMouvementsJustifiesParLeReleve(
+  lignes: readonly Pick<LigneBancaire, 'id' | 'statut' | 'categorie_id' | 'prelevement_personnel'>[],
 ): ReadonlySet<string> {
-  return new Set(lignes.filter((l) => l.statut === 'rapprochee' && l.categorie_id).map((l) => l.id))
+  return new Set(lignes.filter(mouvementJustifieParLeReleve).map((l) => l.id))
 }
 
 // La pièce d'un mouvement affecté est le RELEVÉ qui le porte : c'est ce qu'un vérificateur ouvrira
@@ -181,23 +193,39 @@ export function mouvementsAffectesDesynchronises(
   ecritures: readonly EcritureBrouillon[],
   affectes: readonly MouvementAffecte[],
 ): MouvementAffecte[] {
+  const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  return affectes.filter((m) => {
+    if (!m.nature || !m.categorie.compte_comptable) return true
+    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable), m.ligne.date)
+  })
+}
+
+// Les écritures SANS PIÈCE, rangées par mouvement : celles d'un mouvement affecté ou d'un virement
+// personnel. Les lignes d'une pièce qui désignent le même mouvement (sa contrepartie banque) n'en sont
+// pas — elles appartiennent à la pièce.
+export function ecrituresSansPieceParMouvement(ecritures: readonly EcritureBrouillon[]): Map<string, EcritureBrouillon[]> {
   const parLigne = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     if (e.piece_id || !e.ligne_bancaire_id) continue
     parLigne.set(e.ligne_bancaire_id, [...(parLigne.get(e.ligne_bancaire_id) ?? []), e])
   }
-  return affectes.filter((m) => {
-    const presentes = parLigne.get(m.ligne.id) ?? []
-    if (!m.nature || !m.categorie.compte_comptable) return true
-    const attendues = ecritureDuMouvement(m.ligne, m.categorie.compte_comptable)
-    if (presentes.length !== attendues.length) return true
-    const restantes = [...presentes]
-    for (const a of attendues) {
-      const i = restantes.findIndex((e) =>
-        e.compte === a.compte && e.sens === a.sens && e.date === m.ligne.date && Math.abs(e.montant - a.montant) <= EPSILON)
-      if (i < 0) return true
-      restantes.splice(i, 1)
-    }
-    return false
-  })
+  return parLigne
+}
+
+// L'écriture présente est-elle exactement celle attendue — mêmes lignes, dans n'importe quel ordre, à
+// la date du mouvement, au centime près ? Une ligne de trop ou de moins suffit à dire non.
+export function ecritureConforme(
+  presentes: readonly EcritureBrouillon[],
+  attendues: readonly LigneEcritureMouvement[],
+  date: string,
+): boolean {
+  if (presentes.length !== attendues.length) return false
+  const restantes = [...presentes]
+  for (const a of attendues) {
+    const i = restantes.findIndex((e) =>
+      e.compte === a.compte && e.sens === a.sens && e.date === date && Math.abs(e.montant - a.montant) <= EPSILON)
+    if (i < 0) return false
+    restantes.splice(i, 1)
+  }
+  return true
 }
