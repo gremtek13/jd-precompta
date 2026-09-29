@@ -151,10 +151,15 @@ Conséquences pratiques :
   (`apply_migration` / `list_migrations`) — toujours consulter l'état réel du
   schéma en base (`list_tables`, `execute_sql`) plutôt que de supposer. Le
   dossier `supabase/schema/` en porte un EXPORT (une migration par fichier,
-  vérifié par empreinte), pour qu'un schéma reste reconstructible si le projet
-  Supabase disparaît : ce n'est pas la source de vérité et il ne s'applique
-  pas tout seul. Après toute nouvelle migration, y ajouter le fichier
-  correspondant et rejouer le contrôle de dérive de `supabase/schema/README.md`.
+  vérifié par empreinte, plus le socle de ce que les migrations ne créent pas),
+  pour que le schéma survive au projet Supabase : ce n'est pas la source de
+  vérité et il ne s'applique pas tout seul — et la procédure qui le rejouerait
+  n'existe pas encore (voir « un export de schéma n'est pas un schéma »). Après
+  toute nouvelle migration, y ajouter le fichier correspondant et rejouer les
+  trois contrôles de `supabase/schema/README.md` : la dérive, le socle
+  (`socle.sql`/`socle.py`) et l'inventaire (`inventaire.sql`/`inventaire.py`).
+  **Une migration passe par `apply_migration`, jamais par `execute_sql`** : onze
+  objets créés par la seconde voie manquaient à l'export le 29/09/2026.
 - **Edge Functions** (`supabase/functions/`, Deno, un dossier = une
   fonction, déployées via MCP `deploy_edge_function`) :
   - `agent-comptable` — assistant IA (Bedrock/Claude) par dossier, avec
@@ -225,7 +230,9 @@ supabase/
                   par impersonation des trois profils sur TOUTES les tables du schéma,
                   puis se mute lui-même pour prouver qu'il sait encore échouer.
                   allerretour.py : compare la copie DÉPLOYÉE d'une Edge Function au fichier
-                  du dépôt, à rejouer après chaque déploiement.
+                  du dépôt, à rejouer après chaque déploiement. socle.py/.sql et
+                  inventaire.py/.sql : l'export du schéma confronté au catalogue, le socle au
+                  caractère près et tout le reste nom par nom, à rejouer après chaque migration.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -2383,7 +2390,7 @@ d'environnement dans la même édition.
   prouve une chose plus faible que celle qu'on lui prête** est la panne que ce dépôt connaît sous
   plusieurs noms ; celle-ci portait sur le plan de reprise, c'est-à-dire sur ce dont on ne s'aperçoit
   que le jour où il est trop tard. Les deux documents qui promettaient trop le disent maintenant.
-  **`supabase/schema/socle/tables_sans_migration.sql`** comble le trou : tables, contraintes, index,
+  **`supabase/schema/socle/1_tables_sans_migration.sql`** comble le trou : tables, contraintes, index,
   RLS et policies, générés depuis `pg_catalog`. Dans un SOUS-DOSSIER pour rester hors de l'empreinte,
   qui ne balaie que `schema/*.sql` — ce n'est pas une migration et il ne s'applique pas tout seul.
   Le bloc RLS n'est pas décoratif : **une table restaurée sans RLS n'est pas « à sécuriser plus
@@ -2405,6 +2412,43 @@ d'environnement dans la même édition.
   échouer une restauration au moment où plus rien ne peut être vérifié), et n'a **AUCUNE
   exception** : 41 = 41 = 41. Six mutations mordent, dont le socle retiré du balayage — le trou
   d'origine — et le scanner rendu aveugle.
+  **ET UN SECOND TROU, QUE LE SOCLE NE POUVAIT PAS VOIR** (29/09/2026, trouvé en écrivant le garde de
+  `RELATIONS`). Le socle regardait les TABLES absentes des migrations ; ce qui a été ajouté par
+  `execute_sql` à une table que les migrations CRÉENT n'était dans aucune de ses deux moitiés. Mesuré en
+  confrontant nom par nom tout le catalogue à ce que l'export reconstruit : **751 objets dans la base,
+  740 dans l'export**, et les onze manquants sont parmi les plus chers du schéma —
+  `categories.compte_comptable` et `poste_2035` (les deux portes vers l'écriture et la 2035),
+  `pieces.storage_hash` et son index (l'empreinte du dédoublonnage et de la piste d'audit),
+  `dossiers.assujetti_tva`, `pieces.sous_dossier_id` et sa clé, et l'adresse de collecte par e-mail
+  (`dossiers.code_email`, sa contrainte unique, sa fonction et son déclencheur). Un schéma reconstruit
+  sans eux aurait eu l'air juste, et la première restauration de sauvegarde aurait échoué sur une
+  colonne inconnue. Tout le reste concorde — 196 contraintes, 27 index, 85 policies, les droits
+  d'exécution des fonctions, la RLS des 43 tables.
+  **`socle/2_objets_sans_migration.sql`** les porte, rendu exact du catalogue lui aussi, et
+  `socle.py`/`socle.sql` le comparent désormais avec le premier (69 instructions, `140616cb…`). Une
+  seule conversion, dite des deux côtés : le corps de `generate_code_email` est enregistré avec des fins
+  de ligne `\r\n`, écrites `\n` — un retour chariot dans un fichier du dépôt ne survivrait pas au
+  premier éditeur. Le découpage des instructions a dû apprendre les corps `$tag$ … $tag$`, qui portent
+  leurs propres `;` : sans cela chaque ligne de plpgsql devenait une « instruction », des deux côtés à
+  la fois — donc une empreinte fausse ET égale.
+  **`supabase/essais/inventaire.py` + `inventaire.sql` font de la mesure un contrôle** : les deux
+  rendent la même liste (colonnes, contraintes, index, déclencheurs, policies du stockage comprises,
+  fonctions par nom et arité, RLS), triée par octets (`collate "C"`, sans quoi Postgres et Python
+  trient différemment deux listes identiques) — 751 objets, `96bcfbf6…`. Il rejoue l'export dans
+  l'ordre, `drop` compris, et **refuse les formes qu'il n'a jamais vues** (contrainte anonyme de niveau
+  table, colonne retirée ou renommée) au lieu de deviner le nom que Postgres leur donnerait. Seize
+  mutations mordent, dont le complément retiré (740), un `drop` ignoré pour chaque genre d'objet et la
+  lecture aveugle (le plancher). **Une survit, et c'est dit dans le code** : la protection des corps
+  `$$`, aucun corps ne contenant de DDL aujourd'hui. Une seconde survivait — la règle de nommage des
+  `check` anonymes de niveau table, qu'aucune instruction n'exerçait — et elle est devenue un refus,
+  qui mord.
+  **ET LA PROCÉDURE, ELLE, N'A JAMAIS TOURNÉ** — c'est la limite qui reste, écrite dans le README du
+  schéma et au §4 du plan de reprise. « Les migrations puis le socle » bute dès `20260904160206` (une
+  policy sur `references_annuelles`, que seul le socle crée), et l'ordre inverse aussi, le socle étant
+  un instantané d'aujourd'hui (`20260905071332` recrée une contrainte qu'il porte déjà). Le CONTENU est
+  complet, la PROCÉDURE non : rejouer l'export dans une base vide et en tirer un ordre qui passe est un
+  chantier de la feuille de route, différé comme le reste de la disponibilité (décision du
+  25/09/2026). Les deux documents qui promettaient une procédure disent maintenant qu'elle échoue.
 - **Ce qui doit être tout ou rien vit dans une fonction SQL.** Une facture s'enregistre en un
   seul appel (`enregistrer_facture`) : en-tête, remplacement des lignes, numéro et validation
   dans la même transaction. En trois à cinq allers-retours, un échec au milieu laissait la

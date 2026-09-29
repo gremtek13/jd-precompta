@@ -82,8 +82,9 @@ découvre avant.
    compte : un webhook recréé en porte un nouveau, à reposer dans `RESEND_WEBHOOK_SECRET` — sans quoi
    chaque e-mail entrant est refusé en 401 (« Signature invalide ») et les pièces envoyées par les
    clients n'arrivent plus dans l'application.
-5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan, elle est fermée.**
-   Les migrations du projet (62 au 28/09/2026) sont exportées dans `supabase/schema/`, une par
+5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan. Elle est fermée pour le
+   CONTENU, pas encore pour la PROCÉDURE** (voir la fin de ce point et le §4, étape 2).
+   Les migrations du projet (63 au 29/09/2026) sont exportées dans `supabase/schema/`, une par
    fichier, telles que la base les a enregistrées, et vérifiées par empreinte agrégée. Elles restent
    un EXPORT : la source de vérité est la base, les migrations continuent de s'appliquer par l'outil
    MCP, et l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie en une
@@ -94,9 +95,16 @@ découvre avant.
    n'existaient donc dans aucun fichier — dont `lignes_bancaires`, la plus grosse table du projet,
    et `ecritures_brouillon`, le cœur comptable. Ce plan promettait un schéma reconstructible en
    s'appuyant sur une empreinte qui compare les FICHIERS aux MIGRATIONS, jamais les migrations au
-   SCHÉMA. Le trou est comblé par `supabase/schema/socle/tables_sans_migration.sql` (instantané
+   SCHÉMA. Le trou est comblé par `supabase/schema/socle/1_tables_sans_migration.sql` (instantané
    généré depuis `pg_catalog`, éprouvé par `supabase/essais/socle.py`), et gardé à chaque build par
    `src/lib/sauvegardeTables.test.ts`.
+
+   **ET UN SECOND TROU, trouvé le 29/09/2026** : six colonnes et cinq objets ajoutés hors migration à
+   des tables que les migrations CRÉENT — `categories.compte_comptable` et `poste_2035`,
+   `pieces.storage_hash`, `dossiers.assujetti_tva`, l'adresse de collecte par e-mail. Comblé par
+   `socle/2_objets_sans_migration.sql`, et trouvé par `supabase/essais/inventaire.py`, qui compare nom
+   par nom tout le catalogue à ce que l'export reconstruit. **Ce qui reste ouvert : aucune procédure
+   ne rejoue cet export, et celle qu'écrivait le §4 échoue** — voir son étape 2.
 6. **Les réglages d'authentification** du tableau de bord Supabase (règles de mot de passe
    notamment) : aucun fichier de ce dépôt ne les porte. L'application n'envoie en revanche aucun lien
    par e-mail — les comptes sont créés avec leur mot de passe par `create-cabinet`,
@@ -156,14 +164,19 @@ incompréhensible trois étapes plus loin.
 1. **Le projet Supabase** — recréer, région `eu-west-1` (RGPD). Les appels à AWS ne suivent pas
    cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
    (inventaire du §3).
-2. **Le schéma** — appliquer les 62 fichiers de `supabase/schema/` dans l'ordre de leur nom, un par
-   un (`apply_migration`). Ils se suivent : plusieurs suppriment et recréent ce que les précédentes
-   ont posé, les rejouer dans le désordre ne donne pas le même schéma. **Puis, et seulement
-   ensuite**, jouer `supabase/schema/socle/tables_sans_migration.sql` en une fois : il porte les
-   douze tables que les migrations ne créent pas, et il référence `dossiers`, `pieces` et
-   `categories`, donc il vient après. Sans ces deux moitiés, rien d'autre n'est possible — et avec
-   la première seule, on obtient un schéma qui a l'air complet et auquel il manque la banque et les
-   écritures.
+2. **Le schéma — L'ÉTAPE QUI N'A JAMAIS ÉTÉ RÉPÉTÉE, et l'ordre écrit ici jusqu'au 29/09/2026
+   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 63 migrations, puis le
+   socle, `socle/1_tables_sans_migration.sql` et `socle/2_objets_sans_migration.sql` —, vérifié nom
+   par nom contre le catalogue le 29/09/2026. Mais les jouer « migrations d'abord, socle ensuite » bute
+   dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que seul le socle
+   crée ; et l'ordre inverse aussi, le socle étant un instantané d'aujourd'hui qui porte déjà ce que
+   des migrations ajoutent ensuite (`20260905071332` recrée une contrainte qu'il contient). Il faudrait
+   donc intercaler à la main, erreur par erreur — c'est précisément ce qu'un plan de reprise existe
+   pour éviter, et c'est pourquoi cette étape est un chantier de la feuille de route : rejouer l'export
+   dans une base vide et en tirer un ordre qui passe (différé comme le reste de la disponibilité,
+   décision du 25/09/2026). Sans cette étape rien d'autre n'est possible — et avec les migrations
+   seules, on obtient un schéma qui a l'air complet et auquel il manque la banque, les écritures et les
+   colonnes qui décident de la 2035.
 3. **Les comptes utilisateurs**, avec leurs UUID d'origine (§3.1).
 4. **Le cabinet** — la ligne `cabinets`, et sa charte graphique.
 5. **Les dossiers, un par un** — écran super-admin → « Restaurer une sauvegarde ». L'écran lit le

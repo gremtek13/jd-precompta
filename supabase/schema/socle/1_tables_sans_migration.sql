@@ -31,8 +31,10 @@
 --
 -- ── ORDRE ──
 --
--- À appliquer APRÈS les migrations numérotées (il référence `dossiers`, `pieces`, `categories`) et
--- dans l'ordre de ce fichier, qui suit les dépendances entre les douze.
+-- Il référence `dossiers`, `pieces` et `categories`, que les migrations créent, et s'applique dans
+-- l'ordre de ce fichier, qui suit les dépendances entre les douze. `2_objets_sans_migration.sql` vient
+-- après lui. Mais « après les migrations numérotées », écrit ici jusqu'au 29/09/2026, ne tient pas :
+-- plusieurs migrations visent déjà ces douze tables — voir PLAN_DE_REPRISE.md, §4, étape 2.
 
 -- ─────────────────────────────── 1. tables ne dépendant que de `dossiers`
 
