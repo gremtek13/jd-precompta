@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
 import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from '../../lib/estimation'
-import { mouvementsAffectes } from '../../lib/affectationBanque'
+import { partsDuReleve } from '../../lib/partsDuReleve'
 import type { Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -147,8 +147,8 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
   // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
-  const affectes = mouvementsAffectes(paiements, categories)
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, affectes)
+  const parts = partsDuReleve(paiements, categories)
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
@@ -221,7 +221,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva, paiements, modeComptable, affectes)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva, paiements, modeComptable, parts)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -253,7 +253,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
     setCalculatingPostes(true)
     setError(null)
     try {
-      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements, modeComptable, affectes)
+      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements, modeComptable, parts)
       if (totaux.size === 0) {
         setError("Aucune pièce ni aucun mouvement affecté avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
         return

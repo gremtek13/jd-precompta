@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mouvementsAffectes } from './affectationBanque'
+import { partsDuReleve } from './partsDuReleve'
 import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from './estimation'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece } from './types'
 
@@ -69,7 +69,7 @@ describe('les repères comptent les mouvements du relevé affectés sans justifi
   const mouvement = (id: string, categorieId: string, date: string, montant: number): LigneBancaire => ({
     ...paiement(id, date, montant), id, piece_id: null, categorie_id: categorieId,
   })
-  const releve = (...lignes: LigneBancaire[]) => mouvementsAffectes(lignes, categories)
+  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categories)
 
   it("ajoute au chiffre d'affaires un encaissement affecté, l'année de sa date", () => {
     const cpam = releve(mouvement('cpam', 'c-recettes', '2026-03-12', 1250))
@@ -106,6 +106,23 @@ describe('les repères comptent les mouvements du relevé affectés sans justifi
     )
     const postes = chargesParPostePourAnnee([], categories, new Set(), 2026, false, [], 'tresorerie', mouvements)
     expect([...postes]).toEqual([['Frais financiers', 17]])
+  })
+
+  // Une échéance d'emprunt rapprochée : ses intérêts et son assurance sont des charges de l'année de son
+  // prélèvement ; ni elle ni le déblocage ne touchent le chiffre d'affaires.
+  it('range les intérêts et l’assurance d’une échéance dans leurs postes, sans toucher au chiffre d’affaires', () => {
+    const echeance: LigneBancaire = {
+      ...mouvement('pret', 'x', '2026-03-06', -540), categorie_id: null,
+      emprunt_id: 'emp1', emprunt_echeance: 2, emprunt_interets: 36, emprunt_assurance: 21.03,
+    }
+    const deblocage: LigneBancaire = {
+      ...mouvement('fonds', 'x', '2026-01-10', 12000), categorie_id: null,
+      emprunt_id: 'emp1', emprunt_echeance: null, emprunt_interets: 0, emprunt_assurance: 0,
+    }
+    const parts = releve(echeance, deblocage, mouvement('frais', 'c-frais', '2026-03-12', -8.5))
+    expect([...chargesParPostePourAnnee([], categories, new Set(), 2026, false, [], 'tresorerie', parts)])
+      .toEqual([['Frais financiers', 44.5], ["Primes d'assurance", 21.03]])
+    expect(totauxPourAnnee([], [], 2026, false, [], 'tresorerie', parts).ca).toBe(0)
   })
 })
 

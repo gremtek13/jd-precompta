@@ -1,5 +1,5 @@
 import { anneeDe, jourDe, moisDe } from './format'
-import type { MouvementAffecte } from './affectationBanque'
+import type { PartDuReleve } from './partsDuReleve'
 import { montantRetenu } from './montantRetenu'
 import { paiementsParPiece, partDansLaPeriode, rattachements, type Paiement } from './rattachement'
 import type { Categorie, CotisationDeclaree, Immobilisation, ModeComptable, Piece } from './types'
@@ -72,10 +72,11 @@ export function calculerSituationIntermediaire(
   // paiement ne datant rien (lib/rattachement.ts, `rattachements`). Sans valeur par défaut, pour la
   // même raison que les paiements.
   mode: ModeComptable,
-  // Les mouvements affectés à une catégorie sans justificatif (lib/affectationBanque.ts), comptés dans
-  // la période de leur DATE, comme la 2035 dont cet état est la version « à ce jour ». Sans valeur par
-  // défaut : les oublier montrerait à une banque un cabinet sans ses encaissements.
-  mouvementsAffectes: readonly MouvementAffecte[],
+  // Ce que le relevé compte sans justificatif (lib/partsDuReleve.ts) — mouvements affectés, intérêts et
+  // assurance des échéances d'emprunt —, dans la période de leur DATE, comme la 2035 dont cet état est
+  // la version « à ce jour ». Sans valeur par défaut : les oublier montrerait à une banque un cabinet
+  // sans ses encaissements, et sans ses frais financiers.
+  partsDuReleve: readonly PartDuReleve[],
 ): SituationIntermediaire {
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
@@ -99,13 +100,13 @@ export function calculerSituationIntermediaire(
     totauxParPoste.set(cat.poste_2035, (totauxParPoste.get(cat.poste_2035) ?? 0) + signe * montant)
   }
 
-  // Le relevé : chaque mouvement affecté à sa date, dans le poste de sa catégorie, signé comme la
-  // nature de son compte — une recette en positif, une dépense en négatif, un remboursement à l'inverse.
-  for (const m of mouvementsAffectes) {
-    if (m.ligne.date < periodeDebut || m.ligne.date > periodeFin) continue
-    if (!m.nature || !m.categorie.poste_2035) continue
-    const signe = m.nature === 'recette' ? 1 : -1
-    totauxParPoste.set(m.categorie.poste_2035, (totauxParPoste.get(m.categorie.poste_2035) ?? 0) + signe * m.montantPoste)
+  // Le relevé : chaque part à la date de son mouvement, dans son poste, signée comme sa nature — une
+  // recette en positif, une dépense en négatif, un remboursement à l'inverse.
+  for (const p of partsDuReleve) {
+    if (p.ligne.date < periodeDebut || p.ligne.date > periodeFin) continue
+    if (!p.nature || !p.poste) continue
+    const signe = p.nature === 'recette' ? 1 : -1
+    totauxParPoste.set(p.poste, (totauxParPoste.get(p.poste) ?? 0) + signe * p.montantPoste)
   }
 
   // LA DOTATION SUIT LA PÉRIODE ANNONCÉE, et ce n'était pas le cas.

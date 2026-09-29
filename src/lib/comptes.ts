@@ -21,6 +21,14 @@ export const COMPTE_COURANT_ASSOCIE = '455000'
 export const COMPTE_EXPLOITANT = '108000'
 export const COMPTE_AUTRES_DEBITEURS_CREDITEURS = '467000'
 
+// Les comptes d'une ÉCHÉANCE D'EMPRUNT (voir lib/echeanceEmprunt.ts) : le capital remboursé diminue la
+// dette (164, un compte de bilan, ni charge ni recette), les intérêts sont une charge financière (661,
+// frais financiers de la 2035) et l'assurance de l'emprunteur une prime d'assurance (616). La base
+// vérifie ces trois numéros exactement (`rapprocher_echeance_emprunt`).
+export const COMPTE_EMPRUNT = '164000'
+export const COMPTE_INTERETS_EMPRUNT = '661100'
+export const COMPTE_ASSURANCE_EMPRUNT = '616800'
+
 // Le libellé des comptes que l'application tient elle-même, et qu'aucune catégorie ne porte : sans
 // lui, la balance les afficherait « — » et le FEC les nommerait par leur numéro. UN SEUL endroit : il
 // vivait en deux copies, dans `ecritures.ts` et dans `fec.ts`, et un compte ajouté à l'une seulement
@@ -34,4 +42,7 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_COURANT_ASSOCIE]: 'Associés — comptes courants',
   [COMPTE_EXPLOITANT]: "Compte de l'exploitant",
   [COMPTE_AUTRES_DEBITEURS_CREDITEURS]: 'Autres comptes débiteurs ou créditeurs',
+  [COMPTE_EMPRUNT]: 'Emprunts auprès des établissements de crédit',
+  [COMPTE_INTERETS_EMPRUNT]: 'Intérêts des emprunts et dettes',
+  [COMPTE_ASSURANCE_EMPRUNT]: 'Assurance des emprunts',
 }

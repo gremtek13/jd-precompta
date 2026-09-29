@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mouvementsAffectes } from './affectationBanque'
+import { partsDuReleve } from './partsDuReleve'
 import { calculerSituationIntermediaire, fractionDeLAnnee, moisEcoulesDeLAnnee } from './situationIntermediaire'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece } from './types'
 
@@ -256,7 +256,7 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
     libelle_brut: null, created_at: '2026-01-21T00:00:00Z', ...o,
   })
   const situation = (lignes: LigneBancaire[], fin = '2026-01-31') =>
-    calculerSituationIntermediaire([], toutes, [], [], '2026-01-01', fin, true, [], 'tresorerie', mouvementsAffectes(lignes, toutes))
+    calculerSituationIntermediaire([], toutes, [], [], '2026-01-01', fin, true, [], 'tresorerie', partsDuReleve(lignes, toutes))
 
   it('porte un encaissement affecté en recette', () => {
     const s = situation([mouvement({})])
@@ -290,5 +290,24 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
   it('laisse de côté un mouvement sans poste ou dont le compte n’est plus de résultat', () => {
     const s = situation([mouvement({ id: 'x', categorie_id: 'c4', montant: -30 }), mouvement({ id: 'y', categorie_id: 'c5', montant: 500 })])
     expect(s.totauxParPoste).toEqual([])
+  })
+
+  // L'état qu'on montre à une banque porte les frais financiers du prêt qu'elle a peut-être accordé :
+  // les intérêts et l'assurance d'une échéance rapprochée, dans la période de son prélèvement — jamais
+  // le capital, qui rembourse une dette, ni le déblocage, qui n'est pas une recette.
+  it('porte les intérêts et l’assurance d’une échéance d’emprunt, pas le capital ni le déblocage', () => {
+    const echeance = mouvement({
+      id: 'pret', categorie_id: null, montant: -540, emprunt_id: 'emp1', emprunt_echeance: 1,
+      emprunt_interets: 36, emprunt_assurance: 21.03,
+    })
+    const deblocage = mouvement({
+      id: 'fonds', categorie_id: null, montant: 12000, emprunt_id: 'emp1', emprunt_echeance: null,
+      emprunt_interets: 0, emprunt_assurance: 0,
+    })
+    const s = situation([echeance, deblocage])
+    expect(s.charges).toBe(57.03)
+    expect(s.recettes).toBe(0)
+    expect(s.totauxParPoste).toEqual([["Primes d'assurance", -21.03], ['Frais financiers', -36]])
+    expect(situation([{ ...echeance, date: '2026-02-05' }]).charges).toBe(0)
   })
 })

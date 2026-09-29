@@ -10,7 +10,8 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
     id: 'l1', date: '2025-03-12', libelle: 'FRAIS TENUE DE COMPTE', libelle_brut: null, montant: -8.5,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
-    source_fichier: null, ...o,
+    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+    ...o,
   }
 }
 
@@ -52,9 +53,15 @@ describe('refusAffectation — dit avant d’écrire ce que la base refuserait',
     expect(refusAffectation(mouvement({ montant: 120 }), RECETTES, false)).toBeNull()
   })
 
-  it('refuse un mouvement déjà rapproché d’une pièce, d’une échéance ou classé en virement personnel', () => {
-    for (const lien of [{ piece_id: 'p1' }, { cotisation_id: 'c1' }, { prelevement_personnel: true }]) {
-      expect(refusAffectation(mouvement(lien), categorie(), false)).toMatch(/annule d’abord ce classement/)
+  it('refuse un mouvement déjà rapproché d’une pièce, d’une cotisation, d’un emprunt ou classé en virement personnel', () => {
+    for (const lien of [
+      { piece_id: 'p1' }, { cotisation_id: 'c1' }, { prelevement_personnel: true },
+      // Sans ce refus, l'écran proposerait d'affecter l'échéance d'un emprunt ; la base, elle, le refuse
+      // par sa contrainte `lignes_bancaires_un_seul_rapprochement`, avec un message brut.
+      { statut: 'rapprochee' as const, emprunt_id: 'emp1', emprunt_echeance: 1, emprunt_interets: 0, emprunt_assurance: 0 },
+    ]) {
+      expect(refusAffectation(mouvement(lien), categorie(), false))
+        .toBe('Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, ou classé en virement personnel : annule d’abord ce classement.')
     }
   })
 
@@ -164,8 +171,10 @@ describe('mouvementsAffectes — ce qui compte dans un poste', () => {
 })
 
 describe('mouvementJustifieParLeReleve — le relevé pour seul justificatif', () => {
-  it('un mouvement affecté à une catégorie, ou classé en virement personnel', () => {
+  it('un mouvement affecté à une catégorie, rapproché d’un emprunt, ou classé en virement personnel', () => {
     expect(mouvementJustifieParLeReleve(mouvement({ statut: 'rapprochee', categorie_id: 'cat-frais' }))).toBe(true)
+    expect(mouvementJustifieParLeReleve(mouvement({ statut: 'rapprochee', emprunt_id: 'emp1', emprunt_echeance: 1 }))).toBe(true)
+    expect(mouvementJustifieParLeReleve(mouvement({ montant: 20000, statut: 'rapprochee', emprunt_id: 'emp1' }))).toBe(true)
     expect(mouvementJustifieParLeReleve(mouvement({ statut: 'ignoree', prelevement_personnel: true }))).toBe(true)
   })
 
@@ -178,6 +187,8 @@ describe('mouvementJustifieParLeReleve — le relevé pour seul justificatif', (
       // Une catégorie sur un mouvement qui n'est pas rapproché : un état que la base refuse
       // (`lignes_bancaires_affectation_rapprochee`), jamais un justificatif.
       { statut: 'non_rapprochee', categorie_id: 'cat-frais' },
+      // Même chose d'un emprunt (`lignes_bancaires_emprunt_rapproche`).
+      { statut: 'non_rapprochee', emprunt_id: 'emp1' },
     ]
     for (const o of cas) expect(mouvementJustifieParLeReleve(mouvement(o))).toBe(false)
   })

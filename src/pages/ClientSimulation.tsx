@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 import { useAuth } from '../context/AuthContext'
 import { aujourdHuiSql, formatMoney } from '../lib/format'
 import { ecartPct, projectionAnnuelle } from '../lib/estimation'
-import { mouvementsAffectes } from '../lib/affectationBanque'
+import { partsDuReleve } from '../lib/partsDuReleve'
 import type { Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
@@ -111,7 +111,7 @@ export default function ClientSimulation() {
   // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
   const projection = projectionAnnuelle(
-    recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, mouvementsAffectes(paiements, categories),
+    recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, partsDuReleve(paiements, categories),
   )
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 

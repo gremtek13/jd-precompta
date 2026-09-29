@@ -5,7 +5,7 @@ import {
   POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
 } from './declaration2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
-import { mouvementsAffectes, type MouvementAffecte } from './affectationBanque'
+import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -22,7 +22,7 @@ const piece = (o: Partial<Piece>): Piece =>
 
 const calcul = (o: {
   pieces?: Piece[]; immos?: Immobilisation[]; cotis?: CotisationDeclaree[]; annee?: number
-  vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]; mouvements?: MouvementAffecte[]
+  vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]; mouvements?: PartDuReleve[]
 }) => calculerDeclaration2035(
   o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [], o.vehicules ?? [], true,
   o.paiements ?? [], o.mouvements ?? [],
@@ -247,7 +247,7 @@ describe('calculerDeclaration2035 — les mouvements du relevé affectés sans j
   ] as Categorie[]
   const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
     paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
-  const releve = (...lignes: LigneBancaire[]) => mouvementsAffectes(lignes, categoriesDuReleve)
+  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve)
 
   it('compte un encaissement affecté en recette, sans en faire une pièce', () => {
     const d = calcul({ mouvements: releve(affecte({ id: 'cpam', categorie_id: 'c-recettes', montant: 250 })) })
@@ -306,6 +306,52 @@ describe('calculerDeclaration2035 — les mouvements du relevé affectés sans j
     expect(d.exclusions.mouvementsHorsResultat.map((m) => m.ligne.id)).toEqual(['y'])
     expect(d.exclusions.mouvementsSansPoste).toEqual([])
     expect(d.totalRecettes).toBe(0)
+  })
+})
+
+describe('calculerDeclaration2035 — les échéances d’emprunt rapprochées', () => {
+  // Le prélèvement mensuel d'un prêt : les intérêts sont une charge financière (ligne 31), l'assurance
+  // une prime (total BH), le capital un remboursement de dette qui n'entre pas dans le résultat.
+  const categoriesDuReleve = [{ id: 'c-frais', compte_comptable: '627000', poste_2035: 'Frais financiers' }] as Categorie[]
+  const echeance = (o: Partial<LigneBancaire> = {}): LigneBancaire => paiement({
+    piece_id: null, date: '2025-03-06', montant: -540, emprunt_id: 'emp1', emprunt_echeance: 2,
+    emprunt_interets: 36, emprunt_assurance: 21.03, ...o,
+  })
+  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve)
+
+  it('compte les intérêts en frais financiers et l’assurance en primes, jamais le capital', () => {
+    const d = calcul({ mouvements: releve(echeance()) })
+    expect(d.depenses).toEqual([
+      { poste: 'Frais financiers', nature: 'depense', montant: 36, nbPieces: 0, nbMouvements: 1 },
+      { poste: "Primes d'assurance", nature: 'depense', montant: 21.03, nbPieces: 0, nbMouvements: 1 },
+    ])
+    expect(d.totalDepenses).toBe(57.03)
+    expect(d.totalRecettes).toBe(0)
+  })
+
+  it('les intérêts rejoignent les frais bancaires affectés sur la même ligne', () => {
+    const d = calcul({
+      mouvements: releve(echeance(), paiement({ id: 'frais', piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', montant: -8.5 })),
+    })
+    expect(d.depenses.find((l) => l.poste === 'Frais financiers'))
+      .toEqual({ poste: 'Frais financiers', nature: 'depense', montant: 44.5, nbPieces: 0, nbMouvements: 2 })
+  })
+
+  it('à la date du prélèvement, pas à celle de l’échéance', () => {
+    const mouvements = releve(echeance({ date: '2026-01-04', emprunt_echeance: 12 }))
+    expect(calcul({ annee: 2025, mouvements }).totalDepenses).toBe(0)
+    expect(calcul({ annee: 2026, mouvements }).totalDepenses).toBe(57.03)
+  })
+
+  it('ni le déblocage ni une échéance qui n’est pas rapprochée', () => {
+    const d = calcul({
+      mouvements: releve(
+        echeance({ id: 'deblocage', montant: 12000, emprunt_echeance: null, emprunt_interets: 0, emprunt_assurance: 0 }),
+        echeance({ id: 'a-traiter', statut: 'non_rapprochee' }),
+      ),
+    })
+    expect(d.totalRecettes).toBe(0)
+    expect(d.totalDepenses).toBe(0)
   })
 })
 
