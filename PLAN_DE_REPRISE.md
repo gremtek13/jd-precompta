@@ -84,7 +84,7 @@ découvre avant.
    clients n'arrivent plus dans l'application.
 5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan. Elle est fermée pour le
    CONTENU, pas encore pour la PROCÉDURE** (voir la fin de ce point et le §4, étape 2).
-   Les migrations du projet (63 au 29/09/2026) sont exportées dans `supabase/schema/`, une par
+   Les migrations du projet (65 au 29/09/2026) sont exportées dans `supabase/schema/`, une par
    fichier, telles que la base les a enregistrées, et vérifiées par empreinte agrégée. Elles restent
    un EXPORT : la source de vérité est la base, les migrations continuent de s'appliquer par l'outil
    MCP, et l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie en une
@@ -165,7 +165,7 @@ incompréhensible trois étapes plus loin.
    cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
    (inventaire du §3).
 2. **Le schéma — L'ÉTAPE QUI N'A JAMAIS ÉTÉ RÉPÉTÉE, et l'ordre écrit ici jusqu'au 29/09/2026
-   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 64 migrations, puis le
+   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 65 migrations, puis le
    socle, `socle/1_tables_sans_migration.sql` et `socle/2_objets_sans_migration.sql` —, vérifié nom
    par nom contre le catalogue le 29/09/2026. Mais les jouer « migrations d'abord, socle ensuite » bute
    dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que seul le socle
