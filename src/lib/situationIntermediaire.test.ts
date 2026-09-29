@@ -267,6 +267,13 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
     expect(situation(cpam, '2026-02-28').recettes).toBe(250)
   })
 
+  // L'autre borne : un encaissement de décembre appartient à l'exercice d'avant, et le compter ici le
+  // compterait deux fois — dans la situation de l'an dernier, et dans celle-ci.
+  it('laisse hors de l’état un mouvement daté avant le début de la période', () => {
+    const s = situation([mouvement({ id: 'dec', date: '2025-12-30', montant: 900 }), mouvement({})])
+    expect(s.recettes).toBe(250)
+  })
+
   it('porte une dépense affectée en charge, qu’un remboursement diminue', () => {
     const s = situation([
       mouvement({ id: 'f', categorie_id: 'c3', montant: -12 }),

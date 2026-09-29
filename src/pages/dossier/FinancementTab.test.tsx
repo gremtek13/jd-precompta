@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from '@testing-librar
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
 import type { Categorie, Immobilisation, Piece } from '../../lib/types'
+import type { Predicat } from '../../test/filtresPostgrest'
 import { ajouterMois, premierJourDuMoisCourant } from '../../lib/format'
 
 // LE CALCUL EST DANS `lib/situationIntermediaire.ts`, TESTÉ — CE QUI SE JOUE ICI EST LA PÉRIODE.
@@ -29,24 +30,31 @@ const faux = vi.hoisted(() => ({
   muet: {} as Record<string, number>,
 }))
 
-vi.mock('../../lib/supabase', () => {
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     const c: Record<string, unknown> = {}
     let debut = 0
     let fin = Number.MAX_SAFE_INTEGER
+    // `.not` et `.or` sont APPLIQUÉS (voir src/test/filtresPostgrest.ts) : acceptés sans effet, ils
+    // laissaient ce test vert avec la lecture des mouvements rapprochés restreinte à ceux qui portent
+    // une pièce — la situation, les ratios et le prévisionnel perdaient alors les recettes affectées.
+    const predicats: Predicat[] = []
     Object.assign(c, {
-      select: () => c, eq: () => c, not: () => c, or: () => c, order: () => c,
+      select: () => c, eq: () => c, order: () => c,
+      not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
+      or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       maybeSingle: () => Promise.resolve(faux.refusees.has(table)
         ? { data: null, error: { message: 'JWT expired' } }
         : { data: null, error: null }),
       then: (suite: (r: unknown) => unknown) => {
-        const donnees = table === 'pieces' ? faux.pieces
+        const donnees = filtrer(table === 'pieces' ? faux.pieces
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations
           : table === 'ecritures_brouillon' ? faux.ecritures
           : table === 'a_nouveaux' ? faux.aNouveaux
-          : table === 'lignes_bancaires' ? faux.paiements : []
+          : table === 'lignes_bancaires' ? faux.paiements : [], predicats)
         const muet = faux.muet[table]
         if (muet != null) {
           return Promise.resolve({ data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }).then(suite)
@@ -685,5 +693,39 @@ describe('FinancementTab — les mouvements affectés sans justificatif', () => 
     faux.paiements = [ENCAISSEMENT_AFFECTE]
     const auAvril = await ouvrirLaSituation('2026-04-30')
     expect(totalDuPoste(auAvril, 'Recettes')).toBeNull()
+  })
+
+  // Les deux autres appels de la même situation, chacun avec son propre câblage : la CAF que les ratios
+  // annualisent, et le chiffre d'affaires de référence que le prévisionnel reprend. Un seul oubli
+  // suffisait à montrer à une banque un cabinet d'infirmier sans recettes.
+  it('compte l’encaissement affecté dans la CAF des ratios bancaires', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 8, 1, 12, 0, 0))   // 1er septembre 2026 : 241 jours en 30/360
+    faux.pieces = []
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [{ ...ENCAISSEMENT_AFFECTE, montant: 10000 }]
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    // 10 000 € ramenés à douze mois : 14 937,76 €, comme la même recette portée par une pièce.
+    const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
+    expect(ligne).toMatch(/14\s?937,76\s€/)
+  })
+
+  it('préremplit le prévisionnel des encaissements affectés de l’année de référence', async () => {
+    const annee = new Date().getFullYear() - 1
+    faux.pieces = []
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.ecritures = []
+    faux.paiements = [{ ...ENCAISSEMENT_AFFECTE, date: `${annee}-03-10`, montant: 12000 }]
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
+    await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
+    const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
+    await act(async () => { within(titre.parentElement as HTMLElement).getByRole('button').click() })
+    await act(async () => { screen.getByRole('button', { name: 'Précharger depuis cette année' }).click() })
+    expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('12000')
   })
 })

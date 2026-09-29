@@ -93,7 +93,16 @@ vi.mock('../lib/supabase', () => ({
 // Les onglets sont doublés : ils ont leurs propres tests, et les monter ici ferait dépendre ce test-ci
 // de toutes leurs lectures. Le double d'Informations fait ce que fait le vrai : il RECOPIE le SIRET
 // reçu au montage, et ne le relit plus ensuite.
-vi.mock('./dossier/ChecklistTab', () => ({ default: () => <p>Vue d’ensemble du dossier</p> }))
+// La vue d'ensemble reçoit elle aussi le statut TVA : elle compte les recettes affectées d'un dossier
+// assujetti (lib/affectationBanque.ts) et les pièces au montant retenu (lib/montantRetenu.ts).
+vi.mock('./dossier/ChecklistTab', () => ({
+  default: ({ assujettiTva }: { assujettiTva: boolean }) => (
+    <>
+      <p>Vue d’ensemble du dossier</p>
+      <p>Vue d’ensemble — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
+    </>
+  ),
+}))
 vi.mock('./dossier/PiecesTab', () => ({ default: () => <p>Liste des justificatifs</p> }))
 vi.mock('./dossier/InformationsTab', async () => {
   const { useState } = await import('react')
@@ -132,6 +141,10 @@ vi.mock('./dossier/ClotureTab', () => doubleTva('Clôture'))
 vi.mock('./dossier/EstimationTab', () => doubleTva('Estimation'))
 vi.mock('./dossier/FinancementTab', () => doubleTva('Financement'))
 vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
+// Banque refuse, avant le clic, d'affecter une recette sans facture à un dossier assujetti (sa TVA ne
+// se lit pas sur un relevé) : un statut qui ne lui parviendrait pas laisserait passer l'affectation, que
+// seule la base refuserait alors.
+vi.mock('./dossier/BanqueTab', () => doubleTva('Banque'))
 // L'onglet TVA lit le régime du dossier (périodicité, option pour les débits) et peut le changer :
 // doublé pour montrer ce qu'il REÇOIT et rendre un changement à la page, qui doit le faire voir.
 vi.mock('./dossier/TvaTab', () => ({
@@ -391,11 +404,14 @@ describe('Page d’un dossier — les exercices du sélecteur', () => {
 
 // UN MONTANT DÉPEND DU STATUT TVA DU DOSSIER : TVA comprise pour un dossier exonéré, hors taxes pour
 // un assujetti (voir lib/montantRetenu.ts). La page le lit une fois, avec l'identité, et le passe aux
-// quatre onglets qui en ont besoin ; un statut resté codé en dur dans l'un d'eux déclarerait les
-// dépenses d'une infirmière exonérée hors taxes, sur la 2035 qu'elle signe.
+// onglets qui en ont besoin ; un statut resté codé en dur dans l'un d'eux déclarerait les dépenses
+// d'une infirmière exonérée hors taxes, sur la 2035 qu'elle signe. Banque et la vue d'ensemble s'y
+// ajoutent avec l'affectation d'un mouvement (ligne 26.6) : l'une refuse d'affecter une recette sans
+// facture à un dossier assujetti, l'autre compte celles qui le sont quand même.
 describe('Page d’un dossier — le statut TVA atteint les onglets dont un montant dépend', () => {
   it.each([
     ['cloture', 'Clôture'], ['estimation', 'Estimation'], ['financement', 'Financement'], ['immobilisations', 'Immobilisations'],
+    ['banque', 'Banque'], ['checklist', 'Vue d’ensemble'],
   ])('l’onglet %s reçoit le statut du dossier affiché', async (onglet, libelle) => {
     await afficher(`/dossiers/d1/${onglet}`)
     expect(screen.getByText(`${libelle} — TVA exonéré`)).toBeTruthy()

@@ -76,6 +76,15 @@ describe('les repères comptent les mouvements du relevé affectés sans justifi
     expect(totauxPourAnnee([], [], 2025, false, [], 'tresorerie', cpam).ca).toBe(0)
   })
 
+  // L'autre borne : l'encaissement de décembre dernier appartient au repère de l'an dernier. Compté ici
+  // aussi, il gonflerait le chiffre d'affaires de l'année — et la projection qui en part.
+  it("laisse au repère de l'an dernier un encaissement de décembre", () => {
+    const deuxAnnees = releve(mouvement('decembre', 'c-recettes', '2025-12-30', 700), mouvement('cpam', 'c-recettes', '2026-03-12', 1250))
+    expect(totauxPourAnnee([], [], 2026, false, [], 'tresorerie', deuxAnnees).ca).toBe(1250)
+    expect(totauxPourAnnee([], [], 2025, false, [], 'tresorerie', deuxAnnees).ca).toBe(700)
+    expect(projectionAnnuelle([], [], '2026-06-15', false, [], 'tresorerie', deuxAnnees).ca).toBe(1250)
+  })
+
   it("ne compte pas une dépense du relevé dans le chiffre d'affaires", () => {
     const frais = releve(mouvement('frais', 'c-frais', '2026-03-12', -8.5))
     expect(totauxPourAnnee([], [], 2026, false, [], 'tresorerie', frais).ca).toBe(0)

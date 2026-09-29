@@ -1,10 +1,11 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { Categorie, LigneBancaire, Piece } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
+import type { Predicat } from '../../test/filtresPostgrest'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
 // `validerEtRapprocherLot` juste au-dessus dans le fichier : il ne se désactivait que via
@@ -60,12 +61,17 @@ const faux = vi.hoisted(() => ({
 // donc remplacé, exactement comme `lib/supabase` l'est ci-dessous pour ce qui parle à la base.
 vi.mock('../../lib/pdfText', () => ({ extractPdfLignes: async () => faux.lignesPdf }))
 
-vi.mock('../../lib/supabase', () => {
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     let operation = 'select'
     let idFiltre: unknown = null
     let valeurMaj: Record<string, unknown> = {}
     const filtres: string[] = []
+    // Les filtres APPLIQUÉS aux catégories (voir src/test/filtresPostgrest.ts) : lues sur le seul
+    // dossier au lieu du dossier ET du cabinet, elles disparaissent toutes en production — aucune n'y
+    // appartient à un dossier —, et un faux qui ignorait les deux filtres ne pouvait pas le voir.
+    const predicats: Predicat[] = []
     let debut = 0
     let fin = Number.MAX_SAFE_INTEGER
     const c: Record<string, unknown> = {}
@@ -74,11 +80,12 @@ vi.mock('../../lib/supabase', () => {
       eq: (colonne: string, valeur: unknown) => {
         if (colonne === 'id') idFiltre = valeur
         filtres.push(`${colonne}=${valeur}`)
+        predicats.push(predicatEq(colonne, valeur))
         return c
       },
       neq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}!=${valeur}`); return c },
-      not: () => c,
-      or: () => c,
+      not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
+      or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       order: () => c,
       in: () => c,
       delete: () => { operation = 'delete'; return c },
@@ -99,7 +106,8 @@ vi.mock('../../lib/supabase', () => {
       then: (suite: (r: unknown) => unknown) => {
         const muet = faux.muet[table]
         if (operation === 'select' && muet != null) {
-          const toutes = table === 'lignes_bancaires' ? faux.lignes : table === 'pieces' ? faux.pieces : []
+          const toutes = table === 'lignes_bancaires' ? faux.lignes : table === 'pieces' ? faux.pieces
+            : table === 'categories' ? filtrer(faux.categories, predicats) : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         }
@@ -142,7 +150,8 @@ vi.mock('../../lib/supabase', () => {
               : { data: null, error: null }).then(suite)
         }
         if (table === 'categories') {
-          return Promise.resolve({ data: faux.categories, error: null, count: faux.categories.length }).then(suite)
+          const lues = filtrer(faux.categories, predicats)
+          return Promise.resolve({ data: lues, error: null, count: lues.length }).then(suite)
         }
         if (table === 'documents_divers' && faux.erreurReleves) {
           return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
@@ -1056,6 +1065,77 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
     await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
     expect(faux.rpcs).toEqual([{ nom: 'retirer_affectation_mouvement_bancaire', args: { p_ligne_bancaire_id: 'ligne-1' } }])
     expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('dit une annulation que la base refuse, et le mouvement reste affecté', async () => {
+    preparer({ statut: 'rapprochee', categorie_id: 'cat-frais' })
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler l’affectation' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/L'affectation n'a pas pu être annulée : refus simulé/)))
+    expect(within(volet()).getByText('Affecté à « Frais bancaires »')).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Annuler l’affectation' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  // LE VERROU EST PARTAGÉ AVEC LES LOTS, et le bouton le montre : sans cela il resterait cliquable
+  // pendant « Tout rapprocher », et le clic, refusé par le verrou, ne ferait visiblement rien.
+  it('« Tout rapprocher » en cours retient aussi l’affectation', async () => {
+    preparer()
+    faux.pieces = [pieceDeTest()]
+    faux.lignes = [ligneDeTest(), ligneDeTest({ id: 'ligne-2', libelle: 'FRAIS TENUE DE COMPTE', montant: -8.5 })]
+    rendre()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    choisir('cat-frais')
+    const affecter = within(volet()).getByRole('button', { name: 'Affecter' })
+    expect(affecter.hasAttribute('disabled')).toBe(false)
+    await act(async () => { screen.getByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ }).click() })
+    expect(affecter.hasAttribute('disabled')).toBe(true)
+    await act(async () => { affecter.click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  // Le compte d'une catégorie se change dans Écritures, après coup : un mouvement affecté quand elle
+  // portait un compte de charge ne compte plus dans aucun total si elle porte maintenant un compte de
+  // bilan, et c'est sur ce mouvement que l'opérateur doit l'apprendre.
+  it('dit, sur un mouvement affecté, un compte qui n’est plus de charge ni de produit', async () => {
+    preparer({ statut: 'rapprochee', categorie_id: 'cat-frais' })
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    // Le garde symétrique : affecté à une catégorie de charge, il n'y a rien à en dire.
+    expect(within(volet()).queryByText(/n’est plus un compte de charge ou de produit/)).toBeNull()
+    cleanup()
+
+    preparer({ statut: 'rapprochee', categorie_id: 'cat-bilan' })
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    expect(within(volet()).getByText(/Le compte de cette catégorie n’est plus un compte de charge ou de produit/)).toBeTruthy()
+  })
+
+  it('dit qu’aucune catégorie n’a de compte de charge ou de produit, au lieu d’une liste vide', async () => {
+    preparer()
+    faux.categories = [BILAN]
+    rendre()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    expect(within(volet()).getByText(/Aucune catégorie de ce dossier n’a de compte de charge ou de produit/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Affecter' })).toBeNull()
+  })
+
+  it('dit des catégories lues en partie, sans quoi la liste de choix manquerait d’une catégorie en silence', async () => {
+    preparer()
+    faux.muet = { categories: 1 }
+    rendre()
+    expect(await screen.findByText(/Les catégories n'ont pas pu être lues en entier/)).toBeTruthy()
+    // Le garde symétrique : lues en entier, rien à dire.
+    cleanup()
+    preparer()
+    rendre()
+    await screen.findAllByText('FRAIS TENUE DE COMPTE')
+    expect(screen.queryByText(/Les catégories n'ont pas pu être lues/)).toBeNull()
   })
 
   it('dit, sur un mouvement affecté, ce que la 2035 ne comptera pas', async () => {

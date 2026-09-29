@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import ClotureTab from './ClotureTab'
 import type { Immobilisation } from '../../lib/types'
+import type { Predicat } from '../../test/filtresPostgrest'
 
 // L'ONGLET QUI PRODUIT LE SEUL DOCUMENT QUE LE CABINET SIGNE — la 2035. Son garde-fou refuse de
 // remplir le formulaire sur une lecture partielle, et c'est la bonne règle : une déclaration bâtie
@@ -23,36 +24,43 @@ const faux = vi.hoisted(() => ({
   misesAJour: [] as { table: string; valeurs: unknown }[],
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      const chaine: Record<string, unknown> = {}
-      let debut = 0
-      let fin = Number.MAX_SAFE_INTEGER
-      Object.assign(chaine, {
-        select: () => chaine,
-        update: (valeurs: unknown) => { faux.misesAJour.push({ table, valeurs }); return chaine },
-        eq: () => chaine,
-        not: () => chaine,
-        or: () => chaine,
-        order: () => chaine,
-        range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        maybeSingle: () => Promise.resolve({ data: (faux.parTable[table] ?? [])[0] ?? null, error: null }),
-        then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
-          const toutes = faux.parTable[table] ?? []
-          const muet = faux.muetApresParTable[table]
-          const borne = muet == null ? toutes.length : Math.min(toutes.length, muet)
-          return Promise.resolve({
-            data: toutes.slice(debut, Math.min(debut + (fin - debut + 1), borne)),
-            error: null,
-            count: toutes.length,
-          }).then(suite)
-        },
-      })
-      return chaine
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  return {
+    supabase: {
+      from: (table: string) => {
+        const chaine: Record<string, unknown> = {}
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        // `.not` et `.or` sont APPLIQUÉS (voir src/test/filtresPostgrest.ts) : acceptés sans effet, ils
+        // laissaient ce test vert avec la lecture des mouvements rapprochés restreinte à ceux qui portent
+        // une pièce — la 2035 perdait alors les recettes affectées sans qu'un test tombe.
+        const predicats: Predicat[] = []
+        Object.assign(chaine, {
+          select: () => chaine,
+          update: (valeurs: unknown) => { faux.misesAJour.push({ table, valeurs }); return chaine },
+          eq: () => chaine,
+          not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
+          or: (expression: string) => { predicats.push(predicatOr(expression)); return chaine },
+          order: () => chaine,
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          maybeSingle: () => Promise.resolve({ data: (faux.parTable[table] ?? [])[0] ?? null, error: null }),
+          then: (suite: (r: { data: unknown[]; error: null; count: number }) => unknown) => {
+            const toutes = filtrer(faux.parTable[table] ?? [], predicats)
+            const muet = faux.muetApresParTable[table]
+            const borne = muet == null ? toutes.length : Math.min(toutes.length, muet)
+            return Promise.resolve({
+              data: toutes.slice(debut, Math.min(debut + (fin - debut + 1), borne)),
+              error: null,
+              count: toutes.length,
+            }).then(suite)
+          },
+        })
+        return chaine
+      },
     },
-  },
-}))
+  }
+})
 
 // `remplir2035` importe `pdfjs-dist/...?url`, qui touche au navigateur DÈS L'IMPORT : le module
 // entier fait échouer le montage sous jsdom. Même famille que `pdfText.ts`, dont CLAUDE.md dit déjà

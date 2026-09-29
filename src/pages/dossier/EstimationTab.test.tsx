@@ -2,6 +2,7 @@ import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import EstimationTab from './EstimationTab'
 import type { Categorie, CotisationDeclaree, ModeComptable, Piece } from '../../lib/types'
+import type { Predicat } from '../../test/filtresPostgrest'
 
 // LE CALCUL EST DANS `lib/estimation.ts`, TESTÉ — CE QUI SE JOUE ICI EST LE CÂBLAGE.
 //
@@ -29,11 +30,16 @@ const faux = vi.hoisted(() => ({
   refusees: new Set<string>(),
 }))
 
-vi.mock('../../lib/supabase', () => {
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   function chaine(table: string) {
     let venteSeulement = false
     let debut = 0
     let fin = Number.MAX_SAFE_INTEGER
+    // `.not` et `.or` sont APPLIQUÉS (voir src/test/filtresPostgrest.ts) : acceptés sans effet, ils
+    // laissaient ce test vert avec la lecture des mouvements rapprochés restreinte à ceux qui portent
+    // une pièce — l'estimation perdait alors les recettes affectées sans qu'un test tombe.
+    const predicats: Predicat[] = []
     const c: Record<string, unknown> = {}
     Object.assign(c, {
       select: () => c,
@@ -41,7 +47,9 @@ vi.mock('../../lib/supabase', () => {
         if (colonne === 'type_piece' && valeur === 'vente') venteSeulement = true
         return c
       },
-      or: () => c, order: () => c, in: () => c, delete: () => c, not: () => c,
+      or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
+      not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
+      order: () => c, in: () => c, delete: () => c,
       range: (d: number, f: number) => { debut = d; fin = f; return c },
       upsert: (valeur: Record<string, unknown>) => {
         if (table === 'references_postes_annuels') faux.upserts.push(valeur)
@@ -55,12 +63,12 @@ vi.mock('../../lib/supabase', () => {
         if (faux.refusees.has(table)) {
           return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
         }
-        const donnees = table === 'pieces'
+        const donnees = filtrer(table === 'pieces'
           ? (venteSeulement ? faux.pieces.filter((p) => (p as Piece).type_piece === 'vente') : faux.pieces)
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations
           : table === 'cotisations_declarees' ? faux.cotisations
-          : table === 'lignes_bancaires' ? faux.paiements : []
+          : table === 'lignes_bancaires' ? faux.paiements : [], predicats)
         if (table === 'pieces' && faux.muetPieces != null) {
           const rendu = donnees.slice(debut, Math.min(fin + 1, faux.muetPieces))
           return Promise.resolve({ data: rendu, error: null, count: donnees.length }).then(suite)
