@@ -16,7 +16,7 @@ import { CHEMINS_DOSSIER, ORDRE_RESTAURATION } from './sauvegarde'
 // LA SOURCE EXHAUSTIVE EST LE SCHÉMA EXPORTÉ, comme `rls.sql` part de `pg_class` : une table ajoutée
 // demain est attrapée sans que personne ait à y penser. Et elle n'est devenue exhaustive que le
 // 22/09/2026 — jusque-là DOUZE des 41 tables n'avaient aucun `create table` nulle part, ayant été
-// créées hors `apply_migration` (voir `supabase/schema/socle/tables_sans_migration.sql`). Ce test
+// créées hors `apply_migration` (voir `supabase/schema/socle/1_tables_sans_migration.sql`). Ce test
 // n'aurait donc pas pu exister avant, et c'est en essayant de l'écrire que le trou est apparu.
 //
 // LES DEUX SENS COMPTENT, et pas par symétrie décorative : une table du schéma absente du plan n'est

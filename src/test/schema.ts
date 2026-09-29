@@ -105,3 +105,138 @@ export function clesPrimairesDuSchema(fichiers: { chemin: string; texte: string 
   }
   return cles
 }
+
+/** Une clé étrangère lue dans le schéma exporté. */
+export interface RelationDuSchema {
+  enfant: string
+  colonne: string
+  /** `schéma.table` quand la table visée n'est pas dans `public` (`auth.users`), sinon la table seule. */
+  parent: string
+  aLaSuppression: 'cascade' | 'bloque' | 'met_a_null'
+  /** Le nom de la contrainte — celui que Postgres donne quand l'instruction n'en donne pas. */
+  nom: string
+}
+
+/** Une forme que l'export n'a jamais portée : on s'arrête plutôt que de deviner ce qu'elle fait. */
+export class FormeInconnue extends Error {}
+
+// `ON DELETE` tel que la sauvegarde le nomme. Sans clause, Postgres fait NO ACTION : la suppression du
+// parent est refusée tant qu'un enfant le désigne — « bloque », comme RESTRICT. SET DEFAULT n'a pas
+// d'équivalent dans la sauvegarde, et l'export n'en porte aucun : le ranger quelque part serait un pari.
+function actionDe(queue: string): RelationDuSchema['aLaSuppression'] {
+  const m = /\bon\s+delete\s+(cascade|set\s+null|set\s+default|restrict|no\s+action)\b/i.exec(queue)
+  if (!m) return 'bloque'
+  const action = m[1].toLowerCase().replace(/\s+/g, ' ')
+  if (action === 'cascade') return 'cascade'
+  if (action === 'set null') return 'met_a_null'
+  if (action === 'set default') throw new FormeInconnue(`ON DELETE SET DEFAULT jamais rencontré : ${queue.slice(0, 80)}`)
+  return 'bloque'
+}
+
+// La table visée : `[schéma.]table`, guillemets permis. Le schéma n'est gardé que s'il n'est pas
+// `public`, pour que `auth.users` ne se confonde jamais avec une table `users` de l'application.
+const CIBLE = String.raw`references\s+(?:"?(\w+)"?\.)?"?(\w+)"?(?:\s*\([^)]*\))?`
+
+function cible(schema: string | undefined, table: string): string {
+  return schema && schema.toLowerCase() !== 'public' ? `${schema}.${table}` : table
+}
+
+/** Une seule colonne, ou l'on s'arrête : `Relation` n'en porte qu'une, et en garder la première
+ *  ferait passer une clé composite pour une clé simple. */
+function uneColonne(liste: string, texte: string): string {
+  const cols = colonnesDe(liste)
+  if (cols.length !== 1) throw new FormeInconnue(`clé étrangère sur ${cols.length} colonnes jamais rencontrée : ${texte.slice(0, 80)}`)
+  return cols[0]
+}
+
+/** Les corps `$tag$ … $tag$` vidés : un corps de fonction qui contiendrait un `alter table … add
+ *  constraint … references …` n'est pas une instruction de l'export. Défensif aujourd'hui — aucun
+ *  corps n'en contient —, et gardé par un cas synthétique. */
+function sansCorpsDeFonction(sql: string): string {
+  return sql.replace(/\$(\w*)\$[\s\S]*?\$\1\$/g, (_m, balise: string) => `$${balise}$$${balise}$`)
+}
+
+/**
+ * Les clés étrangères du schéma exporté, `alter` rejoués dans l'ordre des fichiers puis des
+ * instructions : colonnes déclarées dans un `create table`, contraintes de niveau table,
+ * `add column … references`, `add constraint … foreign key`, `drop constraint` et `drop table`. Une clé
+ * déclarée sur la colonne porte le nom que Postgres lui donne (`<table>_<colonne>_fkey`) : c'est ce
+ * qui permet à un `drop constraint` de la retrouver.
+ *
+ * Une forme que l'export n'a jamais portée — clé composite, `SET DEFAULT`, colonne renommée ou
+ * retirée, table renommée — LÈVE `FormeInconnue` au lieu d'être devinée : la règle s'écrira et se
+ * vérifiera le jour où elle apparaîtra, contre `pg_constraint`.
+ */
+export function relationsDuSchema(fichiers: { chemin: string; texte: string }[]): RelationDuSchema[] {
+  const parNom = new Map<string, RelationDuSchema>()
+  const ajouter = (r: Omit<RelationDuSchema, 'nom'>, nom: string | undefined) => {
+    const n = nom ?? `${r.enfant}_${r.colonne}_fkey`
+    parNom.set(n, { ...r, nom: n })
+  }
+
+  for (const { texte } of fichiers) {
+    const sql = sansCorpsDeFonction(texte.split('\n').filter((l) => !l.trimStart().startsWith('--')).join('\n'))
+    type Evt = { i: number; genre: 'create' | 'alter' | 'drop_table'; table: string; pos: number }
+    const evts: Evt[] = []
+    for (const m of sql.matchAll(/create\s+table\s+(?:if\s+not\s+exists\s+)?(?:public\.)?"?(\w+)"?\s*\(/gi)) {
+      evts.push({ i: m.index!, genre: 'create', table: m[1], pos: m.index! + m[0].length - 1 })
+    }
+    for (const m of sql.matchAll(/alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?(?:public\.)?"?(\w+)"?\s+/gi)) {
+      evts.push({ i: m.index!, genre: 'alter', table: m[1], pos: m.index! + m[0].length })
+    }
+    for (const m of sql.matchAll(/drop\s+table\s+(?:if\s+exists\s+)?(?:public\.)?"?(\w+)"?/gi)) {
+      evts.push({ i: m.index!, genre: 'drop_table', table: m[1], pos: m.index! })
+    }
+    evts.sort((a, b) => a.i - b.i)
+
+    for (const e of evts) {
+      if (e.genre === 'drop_table') {
+        for (const [n, r] of parNom) if (r.enfant === e.table) parNom.delete(n)
+        continue
+      }
+      if (e.genre === 'create') {
+        for (const entree of entrees(groupe(sql, e.pos).corps)) {
+          const t = entree.trim()
+          const niveauTable = new RegExp(String.raw`^(?:constraint\s+"?(\w+)"?\s+)?foreign\s+key\s*\(([^)]*)\)\s*${CIBLE}([\s\S]*)$`, 'i').exec(t)
+          if (niveauTable) {
+            const [, nom, cols, schema, parent, queue] = niveauTable
+            ajouter({ enfant: e.table, colonne: uneColonne(cols, t), parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, nom)
+            continue
+          }
+          if (/^(constraint|primary|unique|check|exclude|like)\b/i.test(t)) continue
+          const colonne = new RegExp(String.raw`^"?(\w+)"?\s[\s\S]*?\b${CIBLE}([\s\S]*)$`, 'i').exec(t)
+          if (colonne) {
+            const [, col, schema, parent, queue] = colonne
+            ajouter({ enfant: e.table, colonne: col, parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, undefined)
+          }
+        }
+        continue
+      }
+      // Un `alter table` jusqu'à son point-virgule, découpé en actions sur les virgules de premier
+      // niveau : `add column a …, add column b …` est une seule instruction.
+      const finInstruction = sql.indexOf(';', e.pos)
+      const corps = sql.slice(e.pos, finInstruction < 0 ? undefined : finInstruction)
+      for (const action of entrees(corps)) {
+        const a = action.trim()
+        if (/^(rename|drop\s+column)\b/i.test(a)) {
+          throw new FormeInconnue(`${e.table} : « ${a.slice(0, 60)} » jamais rencontré — les clés qui en dépendent ne se déduisent pas encore`)
+        }
+        const drop = /^drop\s+constraint\s+(?:if\s+exists\s+)?"?(\w+)"?/i.exec(a)
+        if (drop) { parNom.delete(drop[1]); continue }
+        const contrainte = new RegExp(String.raw`^add\s+(?:constraint\s+"?(\w+)"?\s+)?foreign\s+key\s*\(([^)]*)\)\s*${CIBLE}([\s\S]*)$`, 'i').exec(a)
+        if (contrainte) {
+          const [, nom, cols, schema, parent, queue] = contrainte
+          ajouter({ enfant: e.table, colonne: uneColonne(cols, a), parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, nom)
+          continue
+        }
+        const colonne = new RegExp(String.raw`^add\s+column\s+(?:if\s+not\s+exists\s+)?"?(\w+)"?\s[\s\S]*?\b${CIBLE}([\s\S]*)$`, 'i').exec(a)
+        if (colonne) {
+          const [, col, schema, parent, queue] = colonne
+          ajouter({ enfant: e.table, colonne: col, parent: cible(schema, parent), aLaSuppression: actionDe(queue) }, undefined)
+        }
+      }
+    }
+  }
+  return [...parNom.values()].sort((a, b) =>
+    a.enfant.localeCompare(b.enfant) || a.colonne.localeCompare(b.colonne) || a.parent.localeCompare(b.parent))
+}

@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 62 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 63 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -74,8 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 28/09/2026** : 62 fichiers, 62 migrations, empreinte globale
-`230a1c1c34cfc675f054893d3ea020b7` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 29/09/2026** : 63 fichiers, 63 migrations, empreinte globale
+`0d44bcb17ad46ee9afb5fd68edb64d22` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -90,28 +90,60 @@ projet, et `ecritures_brouillon`, le cœur comptable dont sortent le FEC et la b
 posait. Une vérification qui prouve une chose plus faible que celle qu'on lui prête est la panne que
 ce dépôt connaît sous plusieurs noms ; celle-ci portait sur le plan de reprise.
 
-Le trou est comblé par **`socle/tables_sans_migration.sql`**, un instantané du schéma vivant généré
-depuis `pg_catalog` — tables, contraintes, index, RLS et policies. Il vit dans un SOUS-DOSSIER pour
-rester hors de l'empreinte ci-dessus, qui ne balaie que `supabase/schema/*.sql` : ce n'est pas une
-migration, il ne figure pas dans l'historique, et il ne s'applique pas tout seul.
+Le trou est comblé par le **socle**, deux instantanés du schéma vivant générés depuis `pg_catalog`.
+Ils vivent dans un SOUS-DOSSIER pour rester hors de l'empreinte ci-dessus, qui ne balaie que
+`supabase/schema/*.sql` : ce ne sont pas des migrations, ils ne figurent pas dans l'historique, et ils
+ne s'appliquent pas tout seuls.
 
-Deux contrôles le tiennent, et il faut les deux :
+- **`socle/1_tables_sans_migration.sql`** — les douze tables, avec leurs contraintes, index, RLS et
+  policies.
+- **`socle/2_objets_sans_migration.sql`** — **le second trou, trouvé le 29/09/2026** : six colonnes et
+  cinq objets ajoutés hors `apply_migration` à des tables que les migrations CRÉENT. La table était
+  dans l'export, une partie d'elle non — dont `categories.compte_comptable` et `poste_2035` (les deux
+  portes vers l'écriture et la 2035), `pieces.storage_hash` (l'empreinte du dédoublonnage et de la
+  piste d'audit), `dossiers.assujetti_tva` et l'adresse de collecte par e-mail. Le premier fichier ne
+  pouvait pas les voir : il ne regardait que les tables absentes des migrations.
+
+Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
-  au caractère près (57 instructions, empreinte `49fc3d3c27c7229699191765fa68753d` le 22/09/2026).
-  À rejouer après toute migration touchant l'une des douze tables : c'est le seul moment où ce
-  fichier peut dériver, et sa dérive ne se voit nulle part ailleurs.
+  le socle au caractère près (69 instructions, empreinte `140616cbb2164569510023bcdf85b2d5` le
+  29/09/2026), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  corps de fonction.
+- **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
+  ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
+  (751 objets, empreinte `96bcfbf688e7fa19e3d4a5ee21ca6a07` le 29/09/2026). C'est le seul qui voie un
+  objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
+  noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
+  échappent.
 - **`src/lib/sauvegardeTables.test.ts`** — refuse, à chaque build, qu'une table du schéma manque au
   plan de sauvegarde ou l'inverse. C'est lui qui aurait attrapé `exercices_clotures`, créée le matin
   même et absente des trois sites de `sauvegarde.ts`.
+- **`src/lib/sauvegardeRelations.test.ts`** — refuse, à chaque build, que le graphe de la sauvegarde
+  (`RELATIONS`) diffère des clés étrangères de l'export, action à la suppression comprise. C'est en
+  l'écrivant que le second trou est apparu : la clé de `pieces.sous_dossier_id` n'existait dans aucun
+  fichier.
 
-## Restaurer un schéma à partir d'ici
+Les deux essais se rejouent à la main après toute migration : la CI n'a pas accès à la base.
 
-Appliquer les fichiers dans l'ordre de leur nom (`apply_migration`, un par un — ils se suivent :
-plusieurs suppriment et recréent ce que les précédentes ont posé, et les rejouer dans le désordre ne
-donnerait pas le même schéma).
+## Restaurer un schéma à partir d'ici — CE QUI N'A JAMAIS ÉTÉ FAIT
 
-Deux choses qu'ils ne recréent pas, et qu'il faut avoir sous la main avant :
+**L'export n'a jamais été rejoué dans une base vide, et l'ordre écrit ici jusqu'au 29/09/2026
+ÉCHOUE** — constaté en le lisant, pas en le rejouant. « Les migrations dans l'ordre de leur nom, puis
+le socle » bute dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que
+seul le socle crée ; puis sur `multi_cabinet_rls`, qui vise les douze tables du socle ; puis sur
+`20260905064432`, qui modifie `generate_code_email`, que seul le complément crée. L'ordre inverse ne
+tient pas davantage : le socle est un instantané d'aujourd'hui, et il porte déjà ce que des migrations
+ajoutent ensuite.
+
+Ce que ce dossier garantit est donc plus faible que ce qu'il promettait : **tout ce que la base
+contient s'y trouve, nom par nom** (contrôles ci-dessus) — pas encore une procédure qui le rejoue.
+Aujourd'hui il faudrait intercaler à la main, erreur par erreur : une reprise faite ainsi un jour de
+panne est précisément ce qu'un plan de reprise existe pour éviter. Rejouer l'export dans une base vide
+et en tirer un ordre qui passe est un chantier inscrit à la feuille de route, différé comme le reste
+de la disponibilité (décision du cabinet, 25/09/2026).
+
+Deux choses que ces fichiers ne recréent pas, et qu'il faut avoir sous la main avant :
 
 - **les comptes `auth.users`**, avec leurs UUID d'origine — plusieurs migrations posent des clés
   étrangères vers eux, dont quatre en NOT NULL ;

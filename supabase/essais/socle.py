@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Éprouve `supabase/schema/socle/tables_sans_migration.sql` contre la base vivante.
+"""Éprouve le socle — `supabase/schema/socle/*.sql` — contre la base vivante.
 
 POURQUOI CE FICHIER EXISTE. `supabase/schema/` porte un export des migrations, et son contrôle de
 dérive compare les FICHIERS aux MIGRATIONS par empreinte agrégée. Il était vert le 22/09/2026
@@ -7,17 +7,22 @@ dérive compare les FICHIERS aux MIGRATIONS par empreinte agrégée. Il était v
 créées hors `apply_migration`. Le contrôle prouvait une chose plus faible que celle qu'on lui
 prêtait, et ce qu'on lui prêtait était le plan de reprise.
 
-`tables_sans_migration.sql` comble ce trou. Mais un fichier de reconstruction que rien ne confronte
-à la base est exactement le plan de reprise qu'on CROIT avoir : il dérive au premier `alter table`,
-et son silence est indiscernable d'un fichier juste.
+Le socle comble ce trou, en deux fichiers appliqués dans l'ordre de leur nom :
+`1_tables_sans_migration.sql` (les douze tables) et `2_objets_sans_migration.sql` (six colonnes et
+cinq objets ajoutés hors migration à des tables que les migrations créent — trouvés le 29/09/2026
+par `inventaire.py`). Mais un fichier de reconstruction que rien ne confronte à la base est
+exactement le plan de reprise qu'on CROIT avoir : il dérive au premier `alter table`, et son silence
+est indiscernable d'un fichier juste.
 
-COMMENT ÇA MARCHE. Le fichier n'est PAS écrit à la main : chaque instruction est le rendu exact du
-catalogue. Ce harnais peut donc comparer AU CARACTÈRE PRÈS, sans normaliser quoi que ce soit — et ne
-pas normaliser est ce qui le rend honnête, une comparaison indulgente finissant par tout accepter.
+COMMENT ÇA MARCHE. Les fichiers ne sont PAS écrits à la main : chaque instruction est le rendu exact
+du catalogue. Ce harnais peut donc comparer AU CARACTÈRE PRÈS — à UNE conversion près, faite aussi
+côté base et dite dans `socle.sql` : les fins de ligne `\r\n` du corps d'une fonction. Ne pas
+normaliser davantage est ce qui le rend honnête, une comparaison indulgente finissant par tout
+accepter.
 
     1. jouer `supabase/essais/socle.sql` (outil MCP `execute_sql`), qui rend une empreinte
-    2. python3 supabase/essais/socle.py            → rend l'empreinte du fichier
-    3. les deux sont égales ⇒ le fichier décrit la base ; elles diffèrent ⇒ `--detail` des deux côtés
+    2. python3 supabase/essais/socle.py            → rend l'empreinte des fichiers
+    3. les deux sont égales ⇒ le socle décrit la base ; elles diffèrent ⇒ `--detail` des deux côtés
 
 Cet environnement n'atteint pas la base depuis un shell : les deux moitiés sont donc séparées, comme
 pour `allerretour.py`. Le coût est de deux commandes ; ce qu'on achète est une reconstruction dont on
@@ -28,7 +33,7 @@ import re
 import sys
 from pathlib import Path
 
-FICHIER = Path(__file__).resolve().parents[1] / 'schema' / 'socle' / 'tables_sans_migration.sql'
+DOSSIER = Path(__file__).resolve().parents[1] / 'schema' / 'socle'
 
 
 def instructions(texte: str) -> list[str]:
@@ -37,10 +42,35 @@ def instructions(texte: str) -> list[str]:
     On ne coupe QUE les lignes entièrement en commentaire, jamais un `--` de fin de ligne : le SQL
     fautif serait de toute façon avant, et couper là risquerait d'avaler un littéral contenant `--`.
     C'est la règle déjà posée par `retraitsStockage.test.ts` pour le scanner de `.catch(() => {})`.
+
+    Une instruction s'arrête à un `;` suivi d'une fin de ligne, HORS d'un corps `$tag$ … $tag$` : le
+    corps d'une fonction porte ses propres `;` en fin de ligne, et couper dedans ferait de chaque
+    ligne de plpgsql une « instruction » — une empreinte fausse des deux côtés à la fois, donc égale.
     """
     lignes = [l for l in texte.split('\n') if not l.lstrip().startswith('--')]
     brut = '\n'.join(lignes)
-    return [s.strip() + ';' for s in re.split(r';\s*\n', brut) if s.strip()]
+    morceaux: list[str] = []
+    courant = ''
+    i = 0
+    while i < len(brut):
+        balise = re.match(r'\$\w*\$', brut[i:])
+        if balise:
+            fin = brut.find(balise.group(0), i + len(balise.group(0)))
+            if fin < 0:
+                raise ValueError(f'corps {balise.group(0)} jamais refermé')
+            fin += len(balise.group(0))
+            courant += brut[i:fin]
+            i = fin
+            continue
+        if brut[i] == ';' and (i + 1 == len(brut) or brut[i + 1] == '\n' or brut[i + 1].isspace()):
+            morceaux.append(courant)
+            courant = ''
+            i += 1
+            continue
+        courant += brut[i]
+        i += 1
+    morceaux.append(courant)
+    return [m.strip() + ';' for m in morceaux if m.strip()]
 
 
 def empreinte(instrs: list[str]) -> str:
@@ -51,12 +81,18 @@ def empreinte(instrs: list[str]) -> str:
 
 
 def main() -> int:
-    instrs = instructions(FICHIER.read_text(encoding='utf-8'))
+    fichiers = sorted(DOSSIER.glob('*.sql'))
+    if not fichiers:
+        # Un dossier vide rendrait l'empreinte d'une liste vide : « rien à comparer » et « tout
+        # concorde » ne doivent pas se ressembler.
+        print(f'aucun fichier dans {DOSSIER}', file=sys.stderr)
+        return 1
+    instrs = [i for f in fichiers for i in instructions(f.read_text(encoding='utf-8'))]
     if '--detail' in sys.argv:
         for s in sorted(instrs):
             print(hashlib.md5(s.encode('utf-8')).hexdigest(), s.split('\n')[0][:90])
         return 0
-    print(f'{len(instrs)} instructions   empreinte {empreinte(instrs)}')
+    print(f'{len(fichiers)} fichiers   {len(instrs)} instructions   empreinte {empreinte(instrs)}')
     return 0
 
 

@@ -6,7 +6,9 @@
 // logique pure, donc testables sans rien simuler — et c'est la seule façon de répéter une
 // restauration à chaque exécution de la suite de tests plutôt qu'une fois par an.
 //
-// Tout ce qui suit est LU du schéma réel (pg_constraint) le 18/09/2026, jamais supposé.
+// Tout ce qui suit est LU du schéma réel (pg_constraint) le 18/09/2026, jamais supposé — et
+// `sauvegardeRelations.test.ts` le compare au schéma exporté à chaque exécution : une clé étrangère
+// ajoutée par une migration et oubliée ici fait échouer la suite, action à la suppression comprise.
 
 /** Une relation de clé étrangère, telle que Postgres la déclare. */
 export interface Relation {
