@@ -1,4 +1,5 @@
 import type { ANouveau, Categorie, EcritureBrouillon, ModeComptable, Piece } from './types'
+import { idsMouvementsAffectes, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
 import { libelleEcritureANouveau } from './aNouveaux'
 import { LIBELLES_COMPTES } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
@@ -93,20 +94,36 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
 // EcritureNum des lignes datées de la facture et d'autres datées du paiement, dans le journal des
 // achats, et la banque n'aurait pas de journal. Les lignes de 401 et de 411 y portent en plus le compte
 // AUXILIAIRE du tiers (CompAuxNum, CompAuxLib), un seul libellé par numéro dans tout le fichier.
+//
+// UN MOUVEMENT AFFECTÉ À UNE CATÉGORIE SANS JUSTIFICATIF (ligne 26.6, lib/affectationBanque.ts) fait
+// une écriture au journal de BANQUE, dans les deux modèles : sa pièce est le RELEVÉ qui le porte
+// (PieceRef), à la date du mouvement (PieceDate). C'est ce qui manquait pour que le FEC porte chaque
+// euro du relevé : un encaissement de l'Assurance maladie n'y était nulle part. Les autres écritures
+// sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : exporté en trésorerie, le brouillon d'un dossier en engagement mettrait
   // ses règlements au journal des achats, sous le numéro de la facture.
   mode: ModeComptable,
+  // Les lignes du relevé qui portent les mouvements affectés — n'importe quelles lignes, seules les
+  // affectées comptent. Sans valeur par défaut : les oublier sortirait du fichier tous les encaissements
+  // sans bordereau, c'est-à-dire, pour un infirmier, presque toutes ses recettes.
+  mouvements: readonly MouvementBancaire[],
 ): string {
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
+  const idsAffectes = idsMouvementsAffectes(mouvements)
+  const mouvementById = new Map(mouvements.map((m) => [m.id, m]))
 
   // La clé d'une écriture FEC : la pièce en trésorerie ; en engagement, la pièce et le mouvement d'un
-  // règlement, la facture gardant la pièce seule.
+  // règlement, la facture gardant la pièce seule ; le mouvement, pour un mouvement affecté.
   const groupes = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
-    if (!e.piece_id) continue
-    const cle = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
+    let cle: string
+    if (e.piece_id) {
+      cle = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
+    } else if (e.ligne_bancaire_id && idsAffectes.has(e.ligne_bancaire_id)) {
+      cle = `releve|${e.ligne_bancaire_id}`
+    } else continue
     groupes.set(cle, [...(groupes.get(cle) ?? []), e])
   }
 
@@ -128,8 +145,18 @@ export function genererFec(
   // paiement de février.
   const entrees = [...groupes.entries()]
     .map(([cle, rows]) => {
-      const pieceId = rows[0].piece_id!
-      return { cle, pieceId, rows, reglement: cle !== pieceId, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows) }
+      const pieceId = rows[0].piece_id
+      if (!pieceId) {
+        const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!
+        return {
+          cle, pieceId: null, rows, reglement: true, date: mouvement.date, ordre: plusAncienne(rows),
+          pieceRef: referenceDuReleve(mouvement),
+        }
+      }
+      return {
+        cle, pieceId, rows, reglement: cle !== pieceId, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows),
+        pieceRef: null,
+      }
     })
     // À date égale, on départage sur la facture puis sur la clé, pour que deux exports successifs du
     // même brouillon produisent exactement le même fichier.
@@ -142,19 +169,20 @@ export function genererFec(
   // de la même façon.
   const libellesAuxiliaires = new Map<string, string>()
 
-  for (const { pieceId, rows, date, reglement } of entrees) {
-    const piece = pieceById.get(pieceId)
+  for (const { pieceId, rows, date, reglement, pieceRef: refReleve } of entrees) {
+    const piece = pieceId ? pieceById.get(pieceId) : undefined
     const journalCode = reglement ? 'BQ' : piece?.type_piece === 'vente' ? 'VE' : 'AC'
     const journalLib = reglement ? 'Banque' : piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
     compteurs[journalCode] = (compteurs[journalCode] ?? 0) + 1
     const ecritureNum = `${journalCode}${String(compteurs[journalCode]).padStart(5, '0')}`
-    const pieceRef = piece?.nom_fichier ?? pieceId.slice(0, 8)
+    const pieceRef = refReleve ?? piece?.nom_fichier ?? pieceId!.slice(0, 8)
     const pieceDate = yyyymmdd(date)
 
     for (const e of rows) {
       // Une pièce absente du jeu fourni n'a pas de tiers qu'on puisse lire : son auxiliaire est le
       // compte « divers », plutôt qu'une clé tirée d'un libellé qui peut n'être qu'un nom de fichier.
-      const auxiliaire = auxiliaireDuTiers(piece ?? { tiers: null }, e.compte)
+      // Un mouvement affecté n'a jamais de compte de tiers : son écriture va de la catégorie à la banque.
+      const auxiliaire = pieceId ? auxiliaireDuTiers(piece ?? { tiers: null }, e.compte) : null
       if (auxiliaire && !libellesAuxiliaires.has(auxiliaire.num)) libellesAuxiliaires.set(auxiliaire.num, auxiliaire.lib)
       lignes.push([
         journalCode,

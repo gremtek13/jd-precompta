@@ -1,4 +1,5 @@
 import { anneeDe } from './format'
+import type { MouvementAffecte } from './affectationBanque'
 import { montantRetenu } from './montantRetenu'
 import { paiementsParPiece, partDansLaPeriode, rattachements, type Paiement } from './rattachement'
 import { moisEcoulesDeLAnnee } from './situationIntermediaire'
@@ -28,6 +29,18 @@ function montantDansLaPeriode(
   }, 0)
 }
 
+// LES ENCAISSEMENTS SANS JUSTIFICATIF (lib/affectationBanque.ts) : un virement de l'Assurance maladie
+// affecté à une catégorie de recettes. Pour un infirmier c'est l'essentiel du chiffre d'affaires — il ne
+// transmet pas ses bordereaux —, et l'estimation ne comptait que les justificatifs de recette. À la date
+// du mouvement, comme la 2035 ; toute catégorie de recettes, comme une pièce de vente compte quelle que
+// soit sa catégorie.
+function recettesAffecteesDansLaPeriode(mouvements: readonly MouvementAffecte[], debut: string, fin: string): number {
+  return mouvements.reduce(
+    (sum, m) => (m.nature === 'recette' && m.ligne.date >= debut && m.ligne.date <= fin ? sum + m.montantPoste : sum),
+    0,
+  )
+}
+
 // Les cotisations restent à leur ÉCHÉANCE, comme dans la 2035 : un prélèvement de l'Urssaf tombe le
 // jour de l'échéance qu'il paie.
 function cotisationsDeLaPeriode(cotisations: CotisationDeclaree[], debut: string, fin: string): number {
@@ -39,11 +52,14 @@ function cotisationsDeLaPeriode(cotisations: CotisationDeclaree[], debut: string
 export function totauxPourAnnee(
   pieces: Piece[], cotisations: CotisationDeclaree[], annee: number, assujettiTva: boolean,
   lignesBancaires: readonly Paiement[], mode: ModeComptable,
+  // Sans valeur par défaut, comme les paiements : voir `recettesAffecteesDansLaPeriode`.
+  mouvementsAffectes: readonly MouvementAffecte[],
 ) {
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
   return {
-    ca: montantDansLaPeriode(pieces, paiementsParPiece(lignesBancaires), debut, fin, assujettiTva, mode),
+    ca: montantDansLaPeriode(pieces, paiementsParPiece(lignesBancaires), debut, fin, assujettiTva, mode)
+      + recettesAffecteesDansLaPeriode(mouvementsAffectes, debut, fin),
     cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
   }
 }
@@ -81,11 +97,13 @@ export interface ProjectionAnnuelle {
 export function projectionAnnuelle(
   recettes: Piece[], cotisations: CotisationDeclaree[], dateDuJour: string, assujettiTva: boolean,
   lignesBancaires: readonly Paiement[], mode: ModeComptable,
+  mouvementsAffectes: readonly MouvementAffecte[],
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur
   // encaissement) comme pour les échéances. La même règle de montant que le calcul des repères.
   const ca = montantDansLaPeriode(recettes, paiementsParPiece(lignesBancaires), `${annee}-01-01`, dateDuJour, assujettiTva, mode)
+    + recettesAffecteesDansLaPeriode(mouvementsAffectes, `${annee}-01-01`, dateDuJour)
   const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)
@@ -132,6 +150,9 @@ export function chargesParPostePourAnnee(
   // en engagement.
   lignesBancaires: readonly Paiement[],
   mode: ModeComptable,
+  // Les dépenses payées sans justificatif — les frais bancaires, par exemple — à la date du mouvement,
+  // dans le poste de leur catégorie (lib/affectationBanque.ts).
+  mouvementsAffectes: readonly MouvementAffecte[],
 ): Map<string, number> {
   const paiements = paiementsParPiece(lignesBancaires)
   const totaux = new Map<string, number>()
@@ -143,6 +164,12 @@ export function chargesParPostePourAnnee(
     const poste = categories.find((c) => c.id === p.categorie_id)?.poste_2035
     if (!poste) continue
     totaux.set(poste, (totaux.get(poste) ?? 0) + (montantRetenu(p, assujettiTva) ?? 0) * part)
+  }
+  for (const m of mouvementsAffectes) {
+    if (m.nature !== 'depense' || anneeDe(m.ligne.date) !== annee) continue
+    const poste = m.categorie.poste_2035
+    if (!poste) continue
+    totaux.set(poste, (totaux.get(poste) ?? 0) + m.montantPoste)
   }
   return totaux
 }

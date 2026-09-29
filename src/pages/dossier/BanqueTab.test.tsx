@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
-import type { LigneBancaire, Piece } from '../../lib/types'
+import type { Categorie, LigneBancaire, Piece } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
@@ -47,6 +47,11 @@ const faux = vi.hoisted(() => ({
   // L'insertion d'une écriture refusée par la base : c'est ce qui fait dire à l'écran que l'écriture
   // de la banque n'a pas pu être créée.
   erreurInsertionEcritures: null as string | null,
+  // Les catégories du dossier (ligne 26.6), et les appels aux fonctions SQL de l'affectation — que le
+  // faux serveur APPLIQUE au relevé, pour que la relecture montre le mouvement dans son nouvel état.
+  categories: [] as Categorie[],
+  rpcs: [] as { nom: string; args: Record<string, unknown> }[],
+  erreurRpc: null as string | null,
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -73,6 +78,7 @@ vi.mock('../../lib/supabase', () => {
       },
       neq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}!=${valeur}`); return c },
       not: () => c,
+      or: () => c,
       order: () => c,
       in: () => c,
       delete: () => { operation = 'delete'; return c },
@@ -135,6 +141,9 @@ vi.mock('../../lib/supabase', () => {
               ? { data: null, error: { message: faux.erreurInsertionEcritures } }
               : { data: null, error: null }).then(suite)
         }
+        if (table === 'categories') {
+          return Promise.resolve({ data: faux.categories, error: null, count: faux.categories.length }).then(suite)
+        }
         if (table === 'documents_divers' && faux.erreurReleves) {
           return Promise.resolve({ data: null, error: { message: faux.erreurReleves }, count: null }).then(suite)
         }
@@ -155,7 +164,21 @@ vi.mock('../../lib/supabase', () => {
     })
     return c
   }
-  return { supabase: { from: (table: string) => chaine(table) } }
+  // Les deux fonctions SQL de l'affectation : le faux serveur refuse à la demande, sinon il applique au
+  // relevé ce que la vraie fonction écrit — la catégorie et le statut, l'écriture n'étant pas relue ici.
+  function rpc(nom: string, args: Record<string, unknown>) {
+    faux.rpcs.push({ nom, args })
+    if (faux.erreurRpc) return Promise.resolve({ data: null, error: { message: faux.erreurRpc } })
+    const id = args.p_ligne_bancaire_id
+    faux.lignes = faux.lignes.map((l): LigneBancaire => {
+      if (l.id !== id) return l
+      return nom === 'affecter_mouvement_bancaire'
+        ? { ...l, categorie_id: String(args.p_categorie_id), statut: 'rapprochee' }
+        : { ...l, categorie_id: null, statut: 'non_rapprochee' }
+    })
+    return Promise.resolve({ data: 2, error: null })
+  }
+  return { supabase: { from: (table: string) => chaine(table), rpc } }
 })
 
 // TYPÉ, et sans `as`, comme `pieceDeTest` juste en dessous : le compilateur confronte alors chaque
@@ -165,7 +188,7 @@ function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -100,
     libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
-    piece_id: null, cotisation_id: null, prelevement_personnel: false, source_fichier: null,
+    piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
     created_at: '2025-06-02T09:00:00Z', ...o,
   }
 }
@@ -205,6 +228,9 @@ function reinitialiser() {
   faux.updatesEcritures = []
   faux.suppressionsEcritures = []
   faux.erreurInsertionEcritures = null
+  faux.categories = []
+  faux.rpcs = []
+  faux.erreurRpc = null
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -213,11 +239,11 @@ function reinitialiser() {
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
 
-function rendre(modele: ModeleComptable = TRESORERIE) {
+function rendre(modele: ModeleComptable = TRESORERIE, assujettiTva = false) {
   return render(
     <FournisseurPanneauDroit>
       <AnneeProvider defaut="toutes">
-        <BanqueTab dossierId="dossier-de-test" modele={modele} />
+        <BanqueTab dossierId="dossier-de-test" modele={modele} assujettiTva={assujettiTva} />
       </AnneeProvider>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
@@ -883,5 +909,163 @@ describe('BanqueTab — en engagement', () => {
 
     expect(faux.suppressionsEcritures).toEqual([['ligne_bancaire_id=ligne-1']])
     expect(faux.updatesEcritures).toEqual([])
+  })
+})
+
+// LIGNE 26.6 : un mouvement qui n'aura jamais de facture — des frais bancaires, un encaissement de
+// l'Assurance maladie — s'affecte à une catégorie. Ce que ce bloc garde et qu'aucun test de `src/lib`
+// ne peut voir : que l'écran passe par la fonction SQL (jamais une mise à jour directe de la ligne,
+// qui laisserait l'écriture derrière), avec l'écriture composée pour CE mouvement, au clic seulement,
+// une seule fois, et qu'il dise avant le clic ce que la base refuserait.
+function categorieDeTest(o: Partial<Categorie> = {}): Categorie {
+  return {
+    id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 70,
+    compte_comptable: '627000', poste_2035: 'Frais financiers', ...o,
+  }
+}
+
+describe('BanqueTab — affecter un mouvement sans justificatif à une catégorie', () => {
+  const FRAIS = categorieDeTest()
+  const RECETTES = categorieDeTest({
+    id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  })
+  const BILAN = categorieDeTest({ id: 'cat-bilan', code: 'exploitant', libelle: 'Exploitant', ordre: 90, compte_comptable: '108000', poste_2035: null })
+
+  function preparer(ligne: Partial<LigneBancaire> = {}) {
+    reinitialiser()
+    faux.pieces = []
+    faux.categories = [FRAIS, RECETTES, BILAN]
+    faux.lignes = [ligneDeTest({ libelle: 'FRAIS TENUE DE COMPTE', montant: -8.5, ...ligne })]
+  }
+  const choisir = (id: string) => fireEvent.change(within(volet()).getByLabelText('Catégorie'), { target: { value: id } })
+  async function voirLesRapproches() {
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+  }
+
+  it('n’affecte qu’au clic sur « Affecter », par la base, et reste sur le mouvement', async () => {
+    preparer()
+    rendre()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    // Changer la liste n'écrit rien : sur une liste qui a le focus, les flèches du clavier la changent.
+    choisir('cat-frais')
+    expect(faux.rpcs).toEqual([])
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByText('Affecté à « Frais bancaires »')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{
+      nom: 'affecter_mouvement_bancaire',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1',
+        p_categorie_id: 'cat-frais',
+        p_ecritures: [
+          { compte: '627000', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
+          { compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
+        ],
+      },
+    }])
+    // Jamais une mise à jour directe de la ligne : l'affectation et son écriture partent ensemble.
+    expect(faux.updatesLignes).toEqual([])
+    expect(within(volet()).getByRole('button', { name: 'Annuler l’affectation' })).toBeTruthy()
+  })
+
+  it('écrit un encaissement en recette sur un dossier exonéré : la banque au débit, le produit au crédit', async () => {
+    preparer({ libelle: 'VIR CPAM', montant: 250 })
+    rendre()
+    await ouvrir('VIR CPAM')
+    choisir('cat-recettes')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '706000', sens: 'credit', montant: 250, libelle: 'VIR CPAM' },
+      { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM' },
+    ])
+  })
+
+  it('refuse une recette sur un dossier assujetti, avant le clic', async () => {
+    preparer({ libelle: 'VIR CPAM', montant: 250 })
+    rendre(TRESORERIE, true)
+    await ouvrir('VIR CPAM')
+    choisir('cat-recettes')
+    expect(within(volet()).getByText(/Sur un dossier assujetti à la TVA, une recette sans facture/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Affecter' }).hasAttribute('disabled')).toBe(true)
+    // Une dépense, elle, s'affecte sur ce même dossier : pas de TVA déductible sans facture.
+    choisir('cat-frais')
+    expect(within(volet()).getByRole('button', { name: 'Affecter' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('nomme un encaissement rangé sur une dépense, sans le refuser — c’est un remboursement', async () => {
+    preparer({ libelle: 'VIR CPAM', montant: 250 })
+    rendre()
+    await ouvrir('VIR CPAM')
+    choisir('cat-frais')
+    expect(within(volet()).getByText(/C’est un encaissement, et cette catégorie est une dépense/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Affecter' }).hasAttribute('disabled')).toBe(false)
+    // Le garde symétrique : rangé en recette, il n'y a rien à dire.
+    choisir('cat-recettes')
+    expect(within(volet()).queryByText(/C’est un encaissement/)).toBeNull()
+  })
+
+  it('ne propose que les comptes de charge et de produit, les dépenses d’abord pour un paiement', async () => {
+    preparer()
+    rendre()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    const options = within(within(volet()).getByLabelText('Catégorie')).getAllByRole('option').map((o) => o.textContent)
+    expect(options).toEqual(['— Choisir —', 'Frais bancaires (627000)', 'Ventes / prestations (706000)'])
+  })
+
+  it('n’affecte qu’une fois, même sur trois clics rapprochés', async () => {
+    preparer()
+    rendre()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    choisir('cat-frais')
+    const bouton = within(volet()).getByRole('button', { name: 'Affecter' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.rpcs).toHaveLength(1)
+  })
+
+  it('dit une affectation que la base refuse, et le mouvement reste à traiter', async () => {
+    preparer()
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    choisir('cat-frais')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/L'affectation n'a pas pu être enregistrée : refus simulé/)))
+    expect(within(volet()).getByText('Non rapproché')).toBeTruthy()
+  })
+
+  it('la liste dit « Affecté » et la catégorie, jamais un « Rapproché » nu ni « sans justificatif »', async () => {
+    preparer({ statut: 'rapprochee', categorie_id: 'cat-frais' })
+    rendre()
+    await voirLesRapproches()
+    expect(await screen.findByText('Affecté — Frais bancaires')).toBeTruthy()
+    expect(screen.queryByText('Rapproché')).toBeNull()
+    expect(screen.queryByText('Rapproché sans justificatif')).toBeNull()
+  })
+
+  it('annule l’affectation par la base, jamais par une remise à « à traiter »', async () => {
+    preparer({ statut: 'rapprochee', categorie_id: 'cat-frais' })
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    expect(within(volet()).getByText('Affecté à « Frais bancaires »')).toBeTruthy()
+    // Pas « Rapproché avec » : sa preuve est le relevé, pas une pièce.
+    expect(within(volet()).queryByText('Rapproché avec')).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler l’affectation' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_affectation_mouvement_bancaire', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('dit, sur un mouvement affecté, ce que la 2035 ne comptera pas', async () => {
+    preparer({ statut: 'rapprochee', categorie_id: 'cat-divers' })
+    faux.categories = [...faux.categories, categorieDeTest({ id: 'cat-divers', code: 'divers', libelle: 'Divers', compte_comptable: '628000', poste_2035: null })]
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('FRAIS TENUE DE COMPTE')
+    expect(within(volet()).getByText(/Cette catégorie n’a pas de poste 2035/)).toBeTruthy()
+    // Réaffecter part de la catégorie en place : sans rien changer, il réécrit l'écriture.
+    expect((within(volet()).getByLabelText('Catégorie') as HTMLSelectElement).value).toBe('cat-divers')
   })
 })

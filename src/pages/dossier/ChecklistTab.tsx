@@ -6,6 +6,7 @@ import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobi
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
+import { idsMouvementsAffectes, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSurDossierAssujetti } from '../../lib/affectationBanque'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
@@ -261,10 +262,19 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // `lignes` porte tout le relevé, et `analyserEcritures` n'en retient que les rapprochés.
   const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignes, modele)
   const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
-  const ruptures = rupturesPisteAudit(ecritures)
+  // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
+  // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
+  const affectes = mouvementsAffectes(lignes, categories)
+  const ruptures = rupturesPisteAudit(ecritures, idsMouvementsAffectes(lignes))
+  // L'écriture d'un mouvement affecté que son affectation ne produirait plus — la catégorie a changé de
+  // compte depuis. Même famille que les pièces « à régénérer », invisible de la même façon.
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes)
+  // Des encaissements affectés en recette alors que le dossier est (devenu) assujetti : leur TVA
+  // collectée n'est dans aucune CA3.
+  const recettesSansTva = recettesAffecteesSurDossierAssujetti(affectes, assujettiTva)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
-  const catSansCompte = categoriesSansCompte(categories, piecesValidees)
-  const catSansPoste = categoriesSansPoste(categories, piecesValidees)
+  const catSansCompte = categoriesSansCompte(categories, piecesValidees, lignes)
+  const catSansPoste = categoriesSansPoste(categories, piecesValidees, lignes)
   const sansTva = piecesSansTva(piecesValidees, assujettiTva)
   const sansCategorie = piecesValideesSansCategorie(piecesValidees)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
@@ -375,6 +385,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     { id: 'devise-non-convertie', label: 'pièce(s) en devise étrangère non converties en euros', action: 'Convertir ces pièces', nb: deviseNonConvertie.length, cible: 'pieces', severite: 'erreur', detail: detailPiecesSansDate(deviseNonConvertie) },
     { id: 'desequilibrees', label: 'écriture(s) déséquilibrée(s)', action: 'Voir les écritures déséquilibrées', nb: groupesDesequilibres.length, cible: 'ecritures', severite: 'erreur' },
     { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', action: 'Régénérer les écritures concernées', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
+    // Le pendant côté relevé : un mouvement affecté dont l'écriture n'est plus celle de sa catégorie.
+    { id: 'affectes-perimes', label: 'mouvement(s) affecté(s) dont l’écriture ne suit plus la catégorie', action: 'Réaffecter ces mouvements', nb: affectesPerimes.length, cible: 'ecritures', severite: 'erreur' },
+    // « Erreur » : la TVA collectée d'un assujetti manque à sa CA3, et la 2035 compte la taxe comme du
+    // chiffre d'affaires. Rien ne les réécrit : la facture, déposée et rapprochée, les remplace.
+    { id: 'recettes-affectees-assujetti', label: 'encaissement(s) affecté(s) en recette sans TVA, sur un dossier assujetti', action: 'Rapprocher leur facture à la place', nb: recettesSansTva.length, cible: 'banque', severite: 'erreur' },
     // Avant les autres points d'Écritures : ceux-là disent qu'il MANQUE quelque chose, celui-ci que
     // le brouillon compte quelque chose de faux — une charge immobilisée y est comptée deux fois.
     { id: 'ecritures-sans-objet', label: 'écriture(s) que la pièce ne justifie plus', action: "Retirer l'écriture ou corriger la pièce", nb: ecrituresSansObjetDuDossier.length, cible: 'ecritures', severite: 'erreur' },

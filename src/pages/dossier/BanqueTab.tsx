@@ -6,7 +6,7 @@ import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LigneP
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import type { ModeleComptable } from '../../lib/engagement'
-import type { ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
+import type { Categorie, ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -17,6 +17,7 @@ import {
   libelleExploitable, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
+import { ecritureDuMouvement, refusAffectation } from '../../lib/affectationBanque'
 import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { lireTout } from '../../lib/lectureComplete'
@@ -39,7 +40,11 @@ function signatureLigne(l: { date: string; libelle: string; montant: number }): 
 // `modele` : le modèle comptable du dossier (lib/engagement.ts). En trésorerie, un rapprochement
 // écrit la contrepartie banque de la pièce ; en engagement, le RÈGLEMENT de la facture — le compte de
 // tiers contre la banque —, et l'annuler retire ce règlement-là et lui seul.
-export default function BanqueTab({ dossierId, modele }: { dossierId: string; modele: ModeleComptable }) {
+// `assujettiTva` : une recette sans facture ne s'affecte pas sur un dossier assujetti, sa TVA ne se
+// lisant pas sur un relevé (lib/affectationBanque.ts).
+export default function BanqueTab({ dossierId, modele, assujettiTva }: {
+  dossierId: string; modele: ModeleComptable; assujettiTva: boolean
+}) {
   const [lignes, setLignes] = useState<LigneBancaire[]>([])
   // Ce que le rapprochement écrit au brouillon, nommé comme le modèle le nomme dans les messages.
   const ecritureDeBanque = modele.mode === 'engagement' ? "l'écriture de règlement" : "l'écriture de contrepartie banque"
@@ -53,6 +58,11 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
   const [referencesIncompletes, setReferencesIncompletes] = useState<string | null>(null)
   const [pieces, setPieces] = useState<Piece[]>([])
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  // Les catégories, pour affecter un mouvement sans justificatif (ligne 26.6). Leur drapeau est à part :
+  // lues en partie, elles n'effacent aucun mouvement — elles en laissent un sans le nom de sa catégorie,
+  // et manquent à la liste de choix.
+  const [categories, setCategories] = useState<Categorie[]>([])
+  const [categoriesIncompletes, setCategoriesIncompletes] = useState<string | null>(null)
   const [regles, setRegles] = useState<RegleBancaireIgnoree[]>([])
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
@@ -130,6 +140,14 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
       [lectureCotisations, lectureRegles].find((l) => !l.complete)?.motif ?? null,
     )
 
+    // Les catégories du dossier et celles de tout le cabinet (`dossier_id` nul) : un `eq` seul écarterait
+    // les secondes, qui sont justement celles par défaut.
+    const lectureCategories = await lireTout<Categorie>((debut, fin) =>
+      supabase.from('categories').select('*', { count: 'exact' })
+        .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
+    )
+    setCategoriesIncompletes(lectureCategories.complete ? null : lectureCategories.motif)
+
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -140,6 +158,7 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
     setLignes(lignesData)
     setPieces(piecesData ?? [])
     setCotisations(lectureCotisations.lignes)
+    setCategories(lectureCategories.lignes)
     setRegles(lectureRegles.lignes)
     setRelevesIncoherents(controles)
     setLoading(false)
@@ -323,6 +342,37 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
         window.alert(`Le rapprochement est annulé, mais ${ecritureDeBanque} n'a pas pu être retirée : ${messageErreur(err, 'raison inconnue')}\n\nElle reste dans le brouillon d'écritures.`)
       }
     }
+    return true
+  }
+
+  // LIGNE 26.6 : un mouvement sans justificatif affecté à une catégorie. L'écriture est composée ici
+  // (lib/affectationBanque.ts, testé) ; `affecter_mouvement_bancaire` la VÉRIFIE contre le mouvement et
+  // la catégorie, puis l'écrit AVEC l'affectation, dans une seule transaction — un mouvement affecté
+  // sans écriture compterait dans la 2035 et pas dans le FEC. Réaffecter passe par le même appel : la
+  // base remplace l'écriture précédente.
+  async function affecter(ligne: LigneBancaire, categorieId: string): Promise<boolean> {
+    const categorie = categories.find((c) => c.id === categorieId)
+    if (!categorie) return false
+    const refus = refusAffectation(ligne, categorie, assujettiTva)
+    if (refus || !categorie.compte_comptable) {
+      window.alert(refus ?? `La catégorie « ${categorie.libelle} » n’a pas de compte.`)
+      return false
+    }
+    const { error } = await supabase.rpc('affecter_mouvement_bancaire', {
+      p_ligne_bancaire_id: ligne.id,
+      p_categorie_id: categorie.id,
+      p_ecritures: ecritureDuMouvement(ligne, categorie.compte_comptable),
+    })
+    if (error) { window.alert(`L'affectation n'a pas pu être enregistrée : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
+  // L'affectation et son écriture partent ENSEMBLE, par la base : remettre le mouvement « à traiter »
+  // par une simple mise à jour laisserait l'écriture derrière lui — et la contrainte
+  // `lignes_bancaires_affectation_rapprochee` la refuserait de toute façon.
+  async function retirerAffectation(ligneId: string): Promise<boolean> {
+    const { error } = await supabase.rpc('retirer_affectation_mouvement_bancaire', { p_ligne_bancaire_id: ligneId })
+    if (error) { window.alert(`L'affectation n'a pas pu être annulée : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
   }
 
@@ -577,6 +627,15 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
           'Un mouvement peut donc rester « à traiter » alors qu’une cotisation ou une règle le ' +
           'couvre. L’import d’un relevé, dont le statut écrit en base suivrait cette liste tronquée, ' +
           'et le rapprochement automatique sont suspendus. Recharge la page.'
+        }
+      />
+
+      <BandeauLecturePartielle
+        quoi="Les catégories"
+        motif={categoriesIncompletes}
+        consequence={
+          'Un mouvement affecté peut donc s’afficher sans le nom de sa catégorie, et la liste de choix ' +
+          'de la fiche d’un mouvement peut en manquer. Recharge la page avant d’affecter.'
         }
       />
 
@@ -855,6 +914,9 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
                 const ecartMontant = piecePayee && l.statut === 'rapprochee' ? ecartAvecBanque(piecePayee, l) : null
                 const ecartImportant = ecartMontant && ecartMontant.ecart > 0 && !ecartMontant.alignable ? ecartMontant : null
                 const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
+                const categorieAffectee = l.statut === 'rapprochee' && l.categorie_id
+                  ? categories.find((c) => c.id === l.categorie_id) ?? null
+                  : null
                 const aUneSuggestion = l.statut === 'non_rapprochee' && !!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
                 return (
                   <tr
@@ -874,7 +936,14 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
                       {!l.prelevement_personnel && mouvementRapprocheSansObjet(l) && (
                         <span className="badge badge-danger">Rapproché sans justificatif</span>
                       )}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !mouvementRapprocheSansObjet(l) && (
+                      {/* Affecté, il n'est pas « Rapproché » d'une pièce : sa preuve est le relevé, et la
+                          pastille le dit plutôt que de laisser un « Rapproché » nu. */}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && l.categorie_id && (
+                        <span className="badge badge-ok">
+                          Affecté{categorieAffectee ? ` — ${categorieAffectee.libelle}` : ''}
+                        </span>
+                      )}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !mouvementRapprocheSansObjet(l) && (
                         <span className="badge badge-ok">
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
@@ -913,6 +982,8 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
             pieces={pieces}
             piecesValidees={piecesValidees}
             cotisations={cotisations}
+            categories={categories}
+            assujettiTva={assujettiTva}
             piecesRapprochees={piecesRapprochees}
             cotisationsRapprochees={cotisationsRapprochees}
             recurrence={suggestionRecurrente(ligneOuverte)}
@@ -925,6 +996,8 @@ export default function BanqueTab({ dossierId, modele }: { dossierId: string; mo
             onIgnorer={() => agirSurMouvement(() => ignorer(ligneOuverte.id))}
             onToujoursIgnorer={() => agirSurMouvement(() => toujoursIgnorer(ligneOuverte))}
             onRemettreATraiter={() => agirSurMouvement(() => remettreATraiter(ligneOuverte.id))}
+            onAffecter={(categorieId) => agirSurMouvement(() => affecter(ligneOuverte, categorieId))}
+            onRetirerAffectation={() => agirSurMouvement(() => retirerAffectation(ligneOuverte.id))}
           />
         </PanneauDroit>
       )}

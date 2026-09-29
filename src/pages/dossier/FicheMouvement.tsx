@@ -5,10 +5,11 @@ import {
   candidatsCotisations, candidatsPieces, ecartEnJours, libelleExploitable, sensCoherent, tiersConfirmeParBanque,
 } from '../../lib/appariementBanque'
 import { ecartAvecBanque } from '../../lib/alignementBanque'
+import { natureDuCompte, refusAffectation, sensInhabituel } from '../../lib/affectationBanque'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
 import { ouvrirJustificatif } from '../../lib/depot'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { CotisationDeclaree, LigneBancaire, Piece } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, Piece } from '../../lib/types'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
 // d'ordinateur, comme la fiche d'une pièce (voir FichePiece). Il remplace la fenêtre qui assombrissait
@@ -26,6 +27,12 @@ import type { CotisationDeclaree, LigneBancaire, Piece } from '../../lib/types'
 // - après une action, le mouvement RESTE affiché, dans son nouvel état (« Rapproché avec… ») : on voit
 //   ce qu'on vient de faire, l'annulation est à portée de main, et « Suivant » mène au mouvement qui a
 //   pris sa place dans la liste (voir BanqueTab).
+//
+// ET UN MOUVEMENT QUI N'AURA JAMAIS DE FACTURE S'AFFECTE À UNE CATÉGORIE (ligne 26.6,
+// lib/affectationBanque.ts) : les frais bancaires, les encaissements de l'Assurance maladie. Il est
+// alors écrit au brouillon, compté dans la 2035 à sa date, et porté au FEC avec le relevé pour pièce.
+// Comme le choix d'une pièce, l'affectation ne part qu'au clic sur « Affecter », jamais au changement
+// de la liste — et ce que la base refuserait est dit avant le clic.
 
 export interface NavigationMouvement {
   position: string
@@ -46,6 +53,12 @@ interface FicheMouvementProps {
   // rapprocher sur de l'OCR non validé écrirait une écriture sur un montant que personne n'a confirmé.
   piecesValidees: Piece[]
   cotisations: CotisationDeclaree[]
+  // Les catégories du dossier, pour affecter un mouvement sans justificatif. Seules celles d'un compte
+  // de charge ou de produit sont proposées : l'affectation écrit ce compte face à la banque.
+  categories: Categorie[]
+  // Une recette sans facture n'est pas encore prise en charge sur un dossier assujetti : sa TVA ne se
+  // lit pas sur un relevé (voir `refusAffectation`).
+  assujettiTva: boolean
   piecesRapprochees: ReadonlySet<string>
   cotisationsRapprochees: ReadonlySet<string>
   recurrence: RecurrenceMouvement | null
@@ -61,6 +74,8 @@ interface FicheMouvementProps {
   onIgnorer: () => void
   onToujoursIgnorer: () => void
   onRemettreATraiter: () => void
+  onAffecter: (categorieId: string) => void
+  onRetirerAffectation: () => void
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -176,19 +191,38 @@ function CarteCotisation({ cotisation, signaux, action }: { cotisation: Cotisati
 }
 
 export default function FicheMouvement({
-  ligne, pieces, piecesValidees, cotisations, piecesRapprochees, cotisationsRapprochees, recurrence,
-  navigation, occupe,
+  ligne, pieces, piecesValidees, cotisations, categories, assujettiTva, piecesRapprochees, cotisationsRapprochees,
+  recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
+  onAffecter, onRetirerAffectation,
 }: FicheMouvementProps) {
   // Le choix à la main ne s'applique qu'au clic sur « Associer », jamais au changement de la liste :
   // sur une liste déroulante qui a le focus, les flèches du clavier changent la valeur — et
   // rapprochaient donc, dans la fenêtre d'avant, la première pièce venue sans qu'on l'ait choisie.
   const [pieceChoisie, setPieceChoisie] = useState('')
   const [cotisationChoisie, setCotisationChoisie] = useState('')
+  // Affecté, la liste part de la catégorie en place : « Réaffecter » sans rien changer réécrit alors
+  // l'écriture sur le compte ACTUEL de la catégorie — le geste qui répare une écriture périmée.
+  const [categorieChoisie, setCategorieChoisie] = useState(ligne.categorie_id ?? '')
 
   const aTraiter = ligne.statut === 'non_rapprochee'
+  const affecte = ligne.statut === 'rapprochee' && !!ligne.categorie_id
   const libelle = libelleExploitable(ligne) || ligne.libelle
   const sansObjet = mouvementRapprocheSansObjet(ligne)
+
+  // Ce qui se propose à l'affectation : les catégories d'un compte de résultat, dans l'ordre du sens
+  // du mouvement — les recettes d'abord pour un encaissement, les dépenses d'abord pour un paiement.
+  const categorieAffectee = ligne.categorie_id ? categories.find((c) => c.id === ligne.categorie_id) ?? null : null
+  const natureAffectee = categorieAffectee ? natureDuCompte(categorieAffectee.compte_comptable) : null
+  const categoriesRecettes = categories.filter((c) => natureDuCompte(c.compte_comptable) === 'recette')
+  const categoriesDepenses = categories.filter((c) => natureDuCompte(c.compte_comptable) === 'depense')
+  const groupesDeCategories = ligne.montant >= 0
+    ? [{ titre: 'Recettes', liste: categoriesRecettes }, { titre: 'Dépenses', liste: categoriesDepenses }]
+    : [{ titre: 'Dépenses', liste: categoriesDepenses }, { titre: 'Recettes', liste: categoriesRecettes }]
+  const categorieCible = categorieChoisie ? categories.find((c) => c.id === categorieChoisie) ?? null : null
+  const refus = categorieCible ? refusAffectation(ligne, categorieCible, assujettiTva) : null
+  const natureCible = categorieCible ? natureDuCompte(categorieCible.compte_comptable) : null
+  const inhabituel = !refus && natureCible ? sensInhabituel(ligne, natureCible) : false
 
   // Même précédence que le rapprochement automatique : une pièce avant une échéance, une échéance
   // avant une récurrence. Ce n'est pas un arbitrage entre égaux mais une règle de l'écran.
@@ -224,6 +258,53 @@ export default function FicheMouvement({
   const toutDejaRapproche = !aucuneReference && piecesAuChoix.length === 0 && cotisationsAuChoix.length === 0
   const unePropositionExiste = piecesCandidates.length > 0 || echeancesCandidates.length > 0
 
+  // La liste des catégories et son bouton. Le refus que la base opposerait est dit AVANT le clic, et
+  // le bouton se grise ; un encaissement rangé sur une dépense (ou l'inverse) n'est pas refusé — c'est
+  // un remboursement, légitime — mais il est nommé, parce que c'est aussi l'erreur la plus facile.
+  function choixDeCategorie(verbe: string): ReactNode {
+    if (categoriesRecettes.length + categoriesDepenses.length === 0) {
+      return (
+        <p className="fiche-mouvement-note">
+          Aucune catégorie de ce dossier n’a de compte de charge ou de produit (classe 6 ou 7) : il en
+          faut un pour affecter ce mouvement.
+        </p>
+      )
+    }
+    return (
+      <div className="field">
+        <label htmlFor="affecter-categorie">Catégorie</label>
+        <div className="fiche-mouvement-choix">
+          <select id="affecter-categorie" value={categorieChoisie} onChange={(e) => setCategorieChoisie(e.target.value)}>
+            <option value="">— Choisir —</option>
+            {groupesDeCategories.filter((g) => g.liste.length > 0).map((g) => (
+              <optgroup key={g.titre} label={g.titre}>
+                {g.liste.map((c) => (
+                  <option key={c.id} value={c.id}>{c.libelle} ({c.compte_comptable})</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+          <button
+            type="button"
+            className="btn btn-outline"
+            disabled={!categorieCible || !!refus || occupe}
+            onClick={() => onAffecter(categorieChoisie)}
+          >
+            {verbe}
+          </button>
+        </div>
+        {refus && <p className="fiche-mouvement-alerte">{refus}</p>}
+        {inhabituel && (
+          <p className="fiche-mouvement-alerte">
+            {ligne.montant > 0
+              ? 'C’est un encaissement, et cette catégorie est une dépense : il la diminuera, comme un remboursement. Si c’est une recette — des honoraires encaissés —, choisis une catégorie de recettes.'
+              : 'C’est un paiement, et cette catégorie est une recette : il la diminuera, comme un remboursement consenti. Si c’est une dépense, choisis une catégorie de dépenses.'}
+          </p>
+        )}
+      </div>
+    )
+  }
+
   let principal: ReactNode = null
   if (piecesCandidates.length === 1) {
     principal = (
@@ -246,6 +327,14 @@ export default function FicheMouvement({
         onClick={recurrent.action === 'virement_personnel' ? onVirementPersonnel : onIgnorer}
       >
         {recurrent.action === 'virement_personnel' ? 'Virement personnel' : 'Ignorer'}, comme les {recurrent.occurrences} précédents
+      </button>
+    )
+  } else if (affecte) {
+    // Par la base, jamais par une remise à « à traiter » : l'écriture du mouvement part avec son
+    // affectation, dans la même transaction (`retirer_affectation_mouvement_bancaire`).
+    principal = (
+      <button type="button" className="btn btn-outline" disabled={occupe} onClick={onRetirerAffectation}>
+        Annuler l’affectation
       </button>
     )
   } else if (ligne.statut === 'rapprochee') {
@@ -307,7 +396,10 @@ export default function FicheMouvement({
           {/* Une pastille verte sur un mouvement qui ne désigne plus rien serait une affirmation fausse,
               indiscernable d'un vrai rapprochement — voir `mouvementRapprocheSansObjet`. */}
           {!ligne.prelevement_personnel && sansObjet && <span className="badge badge-danger">Rapproché sans justificatif</span>}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && <span className="badge badge-ok">Rapproché</span>}
+          {!ligne.prelevement_personnel && affecte && (
+            <span className="badge badge-ok">Affecté{categorieAffectee ? ` à « ${categorieAffectee.libelle} »` : ''}</span>
+          )}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && <span className="badge badge-ok">Rapproché</span>}
           {ecart && <span className="badge badge-danger">Écart de {formatMoney(ecart.ecart)} avec la pièce</span>}
           {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
@@ -436,6 +528,12 @@ export default function FicheMouvement({
         {aTraiter && (
           <section className="fiche-mouvement-section">
             <h3>Sans justificatif</h3>
+            <p className="fiche-mouvement-note">
+              Un mouvement qui n’aura pas de facture — des frais bancaires, un encaissement de
+              l’Assurance maladie — s’affecte à une catégorie : il est écrit au brouillon sur son compte,
+              et compté dans la 2035 à la date du mouvement.
+            </p>
+            {choixDeCategorie('Affecter')}
             <div className="fiche-mouvement-boutons">
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={onVirementPersonnel}>Virement personnel</button>
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={onIgnorer}>Ignorer</button>
@@ -444,7 +542,44 @@ export default function FicheMouvement({
           </section>
         )}
 
-        {ligne.statut === 'rapprochee' && !sansObjet && (
+        {affecte && (
+          <section className="fiche-mouvement-section">
+            <h3>Affecté à</h3>
+            {categorieAffectee ? (
+              <div className="carte-rapprochement">
+                <div className="carte-rapprochement-entete">
+                  <div className="carte-rapprochement-titres">
+                    <strong>{categorieAffectee.libelle}</strong>
+                    <span>
+                      Compte {categorieAffectee.compte_comptable ?? '—'}
+                      {categorieAffectee.poste_2035 ? ` · ${categorieAffectee.poste_2035}` : ''}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              // Le lien existe, la catégorie n'a pas été lue — une lecture partielle, que le bandeau en
+              // tête de l'écran annonce déjà.
+              <p className="fiche-mouvement-note">La catégorie affectée ne figure pas parmi les catégories lues.</p>
+            )}
+            {/* Ce que la 2035 ne comptera pas, dit ici — c'est l'écran où l'on arbitre ce mouvement. */}
+            {categorieAffectee && !natureAffectee && (
+              <p className="fiche-mouvement-alerte">
+                Le compte de cette catégorie n’est plus un compte de charge ou de produit : ce mouvement
+                ne compte dans aucun total, et son écriture n’est plus juste. Réaffecte-le.
+              </p>
+            )}
+            {categorieAffectee && natureAffectee && !categorieAffectee.poste_2035 && (
+              <p className="fiche-mouvement-alerte">
+                Cette catégorie n’a pas de poste 2035 : ce mouvement n’entre dans aucun total de la 2035
+                tant qu’il n’est pas renseigné (Clôture).
+              </p>
+            )}
+            {choixDeCategorie('Réaffecter')}
+          </section>
+        )}
+
+        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && (
           <section className="fiche-mouvement-section">
             <h3>Rapproché avec</h3>
             {piecePayee && <CartePiece piece={piecePayee} />}

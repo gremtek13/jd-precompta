@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
@@ -47,10 +47,30 @@ const faux = vi.hoisted(() => ({
   // Les suppressions envoyées, avec leurs filtres : c'est ce qui dit QUELLES lignes une régénération
   // retire.
   suppressions: [] as { table: string; filtres: [string, unknown][] }[],
+  // Les appels à la fonction SQL de l'affectation (ligne 26.6) — que le faux serveur APPLIQUE : il
+  // remplace l'écriture du mouvement, comme la vraie, pour que la relecture la voie.
+  rpcs: [] as { nom: string; args: Record<string, unknown> }[],
 }))
 
 vi.mock('../../lib/supabase', () => ({
   supabase: {
+    rpc: (nom: string, args: Record<string, unknown>) => {
+      faux.rpcs.push({ nom, args })
+      const id = args.p_ligne_bancaire_id
+      const ligne = (faux.parTable.lignes_bancaires ?? []).find((l) => (l as { id: string }).id === id) as { date: string } | undefined
+      const ecrites = (args.p_ecritures as Record<string, unknown>[]).map((e, i) => ({
+        id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: id,
+        date: ligne?.date, statut: 'proposee', created_at: '2025-04-02T09:00:00Z', ...e,
+      }))
+      faux.parTable.ecritures_brouillon = [
+        ...(faux.parTable.ecritures_brouillon ?? []).filter((e) => {
+          const ecr = e as { piece_id: string | null; ligne_bancaire_id: string | null }
+          return !(ecr.piece_id == null && ecr.ligne_bancaire_id === id)
+        }),
+        ...ecrites,
+      ]
+      return Promise.resolve({ data: ecrites.length, error: null })
+    },
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
       let debut = 0
@@ -171,6 +191,7 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.misesAJour = []
   faux.refusMiseAJour = null
   faux.suppressions = []
+  faux.rpcs = []
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
     immobilisations: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [],
@@ -972,5 +993,127 @@ describe('EcrituresTab — un compte saisi commence par trois chiffres', () => {
     await saisir(' 622 600 ')
     expect(faux.misesAJour).toEqual([{ table: 'categories', valeurs: { compte_comptable: '622600' } }])
     expect(screen.queryAllByText(/n'est pas un numéro de compte/)).toHaveLength(0)
+  })
+})
+
+// LIGNE 26.6 : un mouvement du relevé affecté à une catégorie porte une écriture SANS pièce. Ce que ce
+// bloc garde et qu'aucun test de `src/lib` ne peut voir : que l'onglet lise les mouvements affectés
+// (et pas seulement ceux d'une pièce), donc qu'il ne crie pas à la rupture sur ces écritures, qu'il
+// les porte au FEC et à la piste d'audit, et qu'il sache les réécrire quand leur catégorie change.
+describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
+  const FRAIS = {
+    id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 70,
+    compte_comptable: '627000', poste_2035: 'Frais financiers',
+  }
+  function mouvement(o: Record<string, unknown> = {}) {
+    return {
+      id: 'l-frais', dossier_id: 'dossier-de-test', date: '2025-03-31', libelle: 'FRAIS TENUE DE COMPTE', montant: -8.5,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: 'cat-frais', prelevement_personnel: false,
+      source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
+    }
+  }
+  const ECRITURE_FRAIS = [
+    ecriture({ id: 'm1', piece_id: null, ligne_bancaire_id: 'l-frais', date: '2025-03-31', compte: '627000', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' }),
+    ecriture({ id: 'm2', piece_id: null, ligne_bancaire_id: 'l-frais', date: '2025-03-31', compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' }),
+  ]
+
+  it('ne crie pas à la rupture, et porte l’écriture au FEC, au journal de banque, le relevé pour pièce', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, FRAIS], lignes_bancaires: [mouvement()], ecritures_brouillon: ECRITURE_FRAIS })
+    monter()
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryByText("Piste d'audit rompue")).toBeNull()
+    expect(screen.queryByText(/pas dans ce FEC/)).toBeNull()
+    expect(screen.queryByText('Mouvements affectés à réaffecter')).toBeNull()
+
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
+    expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual([
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250331'],
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250331'],
+    ])
+    expect(lignes.map((l) => l[4]).sort()).toEqual(['512000', '627000'])
+  })
+
+  it('le garde symétrique : sans affectation, les mêmes écritures sont une rupture et sortent du FEC', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, FRAIS],
+      lignes_bancaires: [mouvement({ categorie_id: null, statut: 'non_rapprochee' })],
+      ecritures_brouillon: ECRITURE_FRAIS,
+    })
+    monter()
+    expect(await screen.findByText("Piste d'audit rompue")).toBeTruthy()
+    expect(screen.getByText(/2 écritures ne seront pas dans ce FEC/)).toBeTruthy()
+  })
+
+  it('donne le relevé pour justificatif dans la piste d’audit', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, FRAIS], lignes_bancaires: [mouvement()], ecritures_brouillon: ECRITURE_FRAIS })
+    monter()
+    await screen.findByText(/2 écritures proposées/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
+    const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
+    expect(csv).toMatch(/Relevé bancaire : releve-mars-2025\.pdf/)
+    expect(csv).not.toMatch(/;justificatif(\r\n|$)/)
+  })
+
+  it('propose de réaffecter un mouvement dont la catégorie a changé de compte, et le réécrit par la base', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...FRAIS, compte_comptable: '627100' }],
+      lignes_bancaires: [mouvement()],
+      ecritures_brouillon: ECRITURE_FRAIS,
+    })
+    monter()
+    expect(await screen.findByText('Mouvements affectés à réaffecter')).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Réaffecter' }).click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'affecter_mouvement_bancaire',
+      args: {
+        p_ligne_bancaire_id: 'l-frais',
+        p_categorie_id: 'cat-frais',
+        p_ecritures: [
+          { compte: '627100', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
+          { compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
+        ],
+      },
+    }])
+    // Relue, l'écriture suit la catégorie : le panneau disparaît.
+    await waitFor(() => expect(screen.queryByText('Mouvements affectés à réaffecter')).toBeNull())
+  })
+
+  it("deux clics rapprochés ne réaffectent qu'une fois", async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...FRAIS, compte_comptable: '627100' }],
+      lignes_bancaires: [mouvement()],
+      ecritures_brouillon: ECRITURE_FRAIS,
+    })
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Réaffecter' })
+    await act(async () => { bouton.click(); bouton.click() })
+    expect(faux.rpcs).toHaveLength(1)
+  })
+
+  it('ne propose pas de réaffecter sur une catégorie sortie des comptes de résultat, et dit où aller', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...FRAIS, compte_comptable: '108000' }],
+      lignes_bancaires: [mouvement()],
+      ecritures_brouillon: ECRITURE_FRAIS,
+    })
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Réaffecter' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/choisis une autre catégorie dans Banque/)
+  })
+})
+
+describe('EcrituresTab — ce que le FEC ne contiendra pas, bien accordé', () => {
+  // L'alerte s'écrivait « ne seraont pas dans ce FEC » au pluriel : une faute dans le message qui
+  // dit ce que le fichier fiscal ne contiendra pas le fait passer pour une négligence.
+  it('au singulier comme au pluriel', async () => {
+    poser({ ecritures_brouillon: [ecriture({ id: 'o1', piece_id: null })] })
+    const { unmount } = monter()
+    expect(await screen.findByText(/^1 écriture ne sera pas dans ce FEC/)).toBeTruthy()
+    unmount()
+    poser({ ecritures_brouillon: [ecriture({ id: 'o1', piece_id: null }), ecriture({ id: 'o2', piece_id: null })] })
+    monter()
+    expect(await screen.findByText(/^2 écritures ne seront pas dans ce FEC/)).toBeTruthy()
   })
 })

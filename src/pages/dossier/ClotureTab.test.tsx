@@ -650,3 +650,67 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
     expect(screen.queryByText('Postes manquants')).toBeNull()
   })
 })
+
+// LIGNE 26.6 : les encaissements de l'Assurance maladie d'un infirmier n'ont pas de bordereau — il ne
+// le transmet pas — et arrivent par virement. Affectés à une catégorie de recettes, ils comptent dans
+// la 2035 à la date du mouvement. Ce que ce bloc garde et qu'aucun test de `src/lib` ne peut voir :
+// que l'écran LISE les mouvements affectés (sa lecture ne prenait que ceux d'une pièce), les passe au
+// moteur, propose leur exercice, et DISE ceux qu'il ne peut pas compter.
+describe('ClotureTab — les mouvements du relevé affectés sans justificatif', () => {
+  const RECETTES = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  function mouvement(o: Record<string, unknown> = {}) {
+    return {
+      id: 'l-cpam', dossier_id: 'dossier-de-test', date: '2025-06-10', libelle: 'VIR CPAM', montant: 5000,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', prelevement_personnel: false,
+      source_fichier: null, libelle_brut: null, created_at: '2025-06-11T09:00:00Z', ...o,
+    }
+  }
+
+  it('compte un encaissement affecté dans les recettes de la 2035', async () => {
+    // 5 000 € encaissés, 120 € d'achat, 600 € de cotisations : 4 280 € de bénéfice. Sans le
+    // mouvement, le même dossier déclarait un déficit de 720 €.
+    poser()
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.lignes_bancaires = [mouvement()]
+    monter(2025)
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre.parentElement!).getByText(/Bénéfice de 4\s280 € : case 5QC/)
+  })
+
+  it('propose l’exercice d’un encaissement quand toutes les années sont affichées', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.lignes_bancaires = [mouvement({ date: '2026-02-10' })]
+    render(
+      <AnneeProvider defaut="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="tresorerie" />
+      </AnneeProvider>,
+    )
+    await screen.findByText(/Report sur la déclaration des revenus 2026/)
+  })
+
+  it('dit le mouvement que sa catégorie sans poste 2035 laisse hors de la déclaration', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, { ...RECETTES, poste_2035: null }]
+    faux.parTable.lignes_bancaires = [mouvement()]
+    monter(2025)
+    const titre = await screen.findByText(/Mouvements affectés absents du récapitulatif \(1\)/)
+    const carte = within(titre.closest('.card')!)
+    carte.getByText('VIR CPAM')
+    carte.getByText('catégorie sans poste 2035')
+    // Et la catégorie rejoint les postes manquants, où l'on renseigne le poste.
+    await screen.findByText('Postes manquants')
+  })
+
+  it('se tait quand le mouvement est compté — le garde symétrique', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.lignes_bancaires = [mouvement()]
+    monter(2025)
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(/Mouvements affectés absents du récapitulatif/)).toHaveLength(0)
+  })
+})

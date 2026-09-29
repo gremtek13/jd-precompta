@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSimulation from './ClientSimulation'
-import type { CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle } from '../lib/types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle } from '../lib/types'
 
 // LA SIMULATION DU CLIENT, dernier écran client sans test de rendu — et celui dont la projection
 // portait trois défauts à la fois (voir `projectionAnnuelle`, lib/estimation.ts, qui les garde à
@@ -36,6 +36,8 @@ vi.mock('../lib/supabase', () => ({
         select: () => chaine,
         eq: () => chaine,
         not: () => chaine,
+        // Les catégories se lisent sur le dossier ET le cabinet (`dossier_id` nul).
+        or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
         // La lecture du statut TVA du dossier, une seule ligne.
@@ -104,7 +106,7 @@ const ECHEANCIER_2026 = Array.from({ length: 12 }, (_, i) =>
 
 function poser(o: {
   recettes?: Piece[]; cotisations?: CotisationDeclaree[]; reperes?: ReferenceAnnuelle[]; assujetti?: boolean
-  paiements?: LigneBancaire[]; modeComptable?: 'tresorerie' | 'engagement'
+  paiements?: LigneBancaire[]; modeComptable?: 'tresorerie' | 'engagement'; categories?: Categorie[]
 } = {}) {
   faux.parTable = {
     dossiers: [{ assujetti_tva: o.assujetti ?? false, mode_comptable: o.modeComptable ?? 'tresorerie' }],
@@ -113,6 +115,7 @@ function poser(o: {
     references_annuelles: o.reperes ?? [],
     references_postes_annuels: [],
     lignes_bancaires: o.paiements ?? [],
+    categories: o.categories ?? [],
   }
   faux.refusees = new Set()
   faux.muet = {}
@@ -184,7 +187,7 @@ describe('ClientSimulation — la projection de l’année', () => {
 describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
   const encaissement = (date: string): LigneBancaire => ({
     id: 'l1', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
-    piece_id: 'r1', cotisation_id: null, prelevement_personnel: false, source_fichier: null,
+    piece_id: 'r1', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
 
@@ -291,5 +294,36 @@ describe('ClientSimulation — le montant d’une recette suit le statut TVA du 
     faux.refusees = new Set(['dossiers'])
     await monter()
     screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
+  })
+})
+
+// LIGNE 26.6 : la simulation du client compte, comme l'Estimation du cabinet, les encaissements du
+// relevé affectés à une catégorie de recettes — pour un infirmier, presque tout son chiffre
+// d'affaires, qui n'a pas de bordereau. Elle lit pour cela les catégories, et n'en montre rien.
+describe('ClientSimulation — les encaissements affectés sans justificatif', () => {
+  const RECETTES: Categorie = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const affecte = (date: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
+    id: 'l-cpam', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, ...o,
+  })
+
+  it('compte un encaissement affecté déjà reçu dans le chiffre d’affaires à date', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ paiements: [affecte('2026-03-10')], categories: [RECETTES] })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('900,00 €')
+  })
+
+  it('ne compte pas un encaissement à venir, ni un mouvement dont la catégorie n’a pas été lue', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ paiements: [affecte('2026-04-10'), affecte('2026-03-10', { id: 'l-2', categorie_id: 'cat-inconnue' })], categories: [RECETTES] })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('0,00 €')
   })
 })

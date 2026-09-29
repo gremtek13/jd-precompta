@@ -1,4 +1,5 @@
 import { anneeDe, jourDe, moisDe } from './format'
+import type { MouvementAffecte } from './affectationBanque'
 import { totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
 import { montantRetenu } from './montantRetenu'
 import { paiementsParPiece, partDeLAnnee, rattachementsTresorerie, type Paiement } from './rattachement'
@@ -37,6 +38,9 @@ export interface LigneDeclaration {
   montant: number
   // Nombre de pièces derrière ce total, pour que le montant se justifie d'un clic.
   nbPieces: number
+  // Et de mouvements bancaires affectés sans justificatif (voir lib/affectationBanque.ts) : leur
+  // preuve est le relevé, et les compter avec les pièces ferait chercher des pièces qui n'existent pas.
+  nbMouvements: number
 }
 
 // Ce qui n'a PAS été pris dans le calcul, avec la raison. Sur une déclaration fiscale, une pièce
@@ -51,6 +55,11 @@ export interface ExclusionsDeclaration {
   sansDate: Piece[]
   // Aucun montant lisible : rien à additionner.
   sansMontant: Piece[]
+  // Un mouvement affecté à une catégorie sans poste 2035 : même trou que `sansPoste`, côté relevé.
+  mouvementsSansPoste: MouvementAffecte[]
+  // Un mouvement affecté à une catégorie dont le compte n'est plus un compte de résultat : il a changé
+  // depuis l'affectation, que la base aurait refusée sinon. Ni recette ni dépense — donc dit.
+  mouvementsHorsResultat: MouvementAffecte[]
 }
 
 // Une pièce comptée à sa DATE DE FACTURE faute de paiement rapproché — une supposition, que l'écran
@@ -263,6 +272,11 @@ export function calculerDeclaration2035(
   // Sans valeur par défaut non plus — une liste vide ferait tout compter à la date de facture, soit
   // exactement le défaut que ce paramètre corrige.
   lignesBancaires: readonly Paiement[],
+  // Les mouvements affectés à une catégorie sans justificatif (lib/affectationBanque.ts) : les
+  // encaissements de l'Assurance maladie, les frais bancaires. Ils comptent à la date du MOUVEMENT,
+  // qui est celle de l'encaissement ou du paiement — la règle de la 2035 sans supposition. Sans valeur
+  // par défaut : un appelant qui les oublie rendrait la 2035 d'un infirmier presque sans recettes.
+  mouvementsAffectes: readonly MouvementAffecte[],
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -270,19 +284,22 @@ export function calculerDeclaration2035(
   // par son montant d'achat : la compter deux fois gonflerait les charges de l'exercice.
   const pieceIdsImmobilisees = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
 
-  const exclusions: ExclusionsDeclaration = { sansPoste: [], sansDate: [], sansMontant: [] }
+  const exclusions: ExclusionsDeclaration = {
+    sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [],
+  }
   const sansPaiementConnu: PieceSansPaiement[] = []
   const paiements = paiementsParPiece(lignesBancaires)
-  const totaux = new Map<string, { nature: 'recette' | 'depense'; montant: number; nbPieces: number }>()
+  const totaux = new Map<string, { nature: 'recette' | 'depense'; montant: number; nbPieces: number; nbMouvements: number }>()
 
-  const ajouter = (poste: string, nature: 'recette' | 'depense', montant: number, nbPieces: number) => {
+  const ajouter = (poste: string, nature: 'recette' | 'depense', montant: number, nbPieces: number, nbMouvements = 0) => {
     const actuel = totaux.get(poste)
     if (actuel) {
       actuel.montant += montant
       actuel.nbPieces += nbPieces
+      actuel.nbMouvements += nbMouvements
       return
     }
-    totaux.set(poste, { nature, montant, nbPieces })
+    totaux.set(poste, { nature, montant, nbPieces, nbMouvements })
   }
 
   for (const piece of pieces) {
@@ -326,6 +343,23 @@ export function calculerDeclaration2035(
     if (partSansPaiement > 0) sansPaiementConnu.push({ piece, montant: arrondi(montant * partSansPaiement) })
   }
 
+  // LE RELEVÉ, APRÈS LES PIÈCES. Un mouvement affecté compte l'année de sa date, dans le poste de sa
+  // catégorie et selon la nature de son COMPTE (classe 7 une recette, classe 6 une dépense), signé
+  // comme ce qu'il fait au poste : un remboursement le diminue. Il ne peut pas être aussi une pièce —
+  // la base interdit qu'un mouvement porte les deux (`lignes_bancaires_un_seul_rapprochement`).
+  for (const m of mouvementsAffectes) {
+    if (anneeDe(m.ligne.date) !== annee) continue
+    if (!m.nature) {
+      exclusions.mouvementsHorsResultat.push(m)
+      continue
+    }
+    if (!m.categorie.poste_2035) {
+      exclusions.mouvementsSansPoste.push(m)
+      continue
+    }
+    ajouter(m.categorie.poste_2035, m.nature, m.montantPoste, 0, 1)
+  }
+
   const totalAmortissements = immobilisations.reduce((somme, i) => somme + dotationPourAnnee(i, annee), 0)
   if (totalAmortissements > 0) ajouter(POSTE_AMORTISSEMENTS, 'depense', totalAmortissements, 0)
 
@@ -367,6 +401,7 @@ export function calculerDeclaration2035(
     nature: t.nature,
     montant: arrondi(Math.abs(t.montant)),
     nbPieces: t.nbPieces,
+    nbMouvements: t.nbMouvements,
   }))
 
   const recettes = lignes.filter((l) => l.nature === 'recette').sort((a, b) => b.montant - a.montant)

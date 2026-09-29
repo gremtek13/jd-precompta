@@ -23,12 +23,19 @@ describe('categoriesSansCompte', () => {
       categorie({ id: 'inutilisee', compte_comptable: null }),
       categorie({ id: 'complete', compte_comptable: '606100' }),
     ]
-    const manquantes = categoriesSansCompte(categories, [piece({ categorie_id: 'utilisee' })])
+    const manquantes = categoriesSansCompte(categories, [piece({ categorie_id: 'utilisee' })], [])
     expect(manquantes.map((c) => c.id)).toEqual(['utilisee'])
   })
 
+  it('signale aussi une catégorie qui ne sert qu’à un mouvement du relevé', () => {
+    // Un mouvement affecté sans justificatif (lib/affectationBanque.ts) : sa catégorie avait un compte
+    // à l’affectation, la base l’exige, mais on peut le lui retirer ensuite.
+    const categories = [categorie({ id: 'frais', compte_comptable: null }), categorie({ id: 'inutilisee', compte_comptable: null })]
+    expect(categoriesSansCompte(categories, [], [{ categorie_id: 'frais' }, { categorie_id: null }]).map((c) => c.id)).toEqual(['frais'])
+  })
+
   it('ne signale rien quand tout est renseigné', () => {
-    expect(categoriesSansCompte([categorie({})], [piece({})])).toEqual([])
+    expect(categoriesSansCompte([categorie({})], [piece({})], [])).toEqual([])
   })
 })
 
@@ -41,8 +48,15 @@ describe('categoriesSansPoste', () => {
     const manquantes = categoriesSansPoste(categories, [
       piece({ id: 'a', categorie_id: 'sans' }),
       piece({ id: 'b', categorie_id: 'avec' }),
-    ])
+    ], [])
     expect(manquantes.map((c) => c.id)).toEqual(['sans'])
+  })
+
+  it('signale une catégorie sans poste qui ne sert qu’à un mouvement du relevé', () => {
+    // La base n’exige pas de poste à l’affectation : le mouvement sort alors de la 2035, et c’est ici
+    // que la Checklist et Clôture le voient.
+    const categories = [categorie({ id: 'sans', poste_2035: null }), categorie({ id: 'avec', poste_2035: 'Achats' })]
+    expect(categoriesSansPoste(categories, [], [{ categorie_id: 'sans' }, { categorie_id: 'avec' }]).map((c) => c.id)).toEqual(['sans'])
   })
 })
 
@@ -410,7 +424,7 @@ describe('moisEnDoubleSurAbonnement', () => {
 // manquantes qu'aucune relecture ne montrait.
 const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
-  montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null,
+  montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-03-10T00:00:00Z', ...o,
 })
@@ -449,6 +463,14 @@ describe('mouvementsRapprochesSansObjet', () => {
     expect(mouvementsRapprochesSansObjet([
       ligne({ id: 'perso', prelevement_personnel: true, piece_id: null, cotisation_id: null }),
     ]).map((l) => l.id)).toEqual(['perso'])
+  })
+
+  it('se tait sur un mouvement affecté à une catégorie : sa preuve est le relevé', () => {
+    // Ligne 26.6 : un encaissement de l’Assurance maladie rangé en recettes est rapproché sans pièce ni
+    // échéance, et il n’est pas orphelin. Le signaler ferait crier au loup sur chaque encaissement.
+    expect(mouvementsRapprochesSansObjet([
+      ligne({ id: 'cpam', piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', montant: 250 }),
+    ])).toEqual([])
   })
 
   it('le prédicat unitaire et la version tableau disent la même chose', () => {

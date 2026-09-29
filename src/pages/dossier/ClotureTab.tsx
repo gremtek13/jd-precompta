@@ -16,6 +16,7 @@ import { remplir2035 } from '../../lib/remplir2035'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
 import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
+import { mouvementsAffectes } from '../../lib/affectationBanque'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
@@ -101,12 +102,16 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         supabase.from('vehicules').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
-      // Les paiements qui DATENT les pièces. Tronquée, cette lecture ferait retomber sur leur date de
-      // facture des pièces payées une autre année — une 2035 plausible, fausse et signée, comme pour
-      // les quatre autres entrées : elle rejoint donc le même drapeau.
+      // Les paiements qui DATENT les pièces, et les mouvements AFFECTÉS à une catégorie sans
+      // justificatif (ligne 26.6), qui comptent eux-mêmes — les encaissements de l'Assurance maladie
+      // d'un infirmier, qui ne transmet pas ses bordereaux. Tronquée, cette lecture ferait retomber sur
+      // leur date de facture des pièces payées une autre année, ou retirerait des recettes : une 2035
+      // plausible, fausse et signée, comme pour les quatre autres entrées. Elle rejoint donc le même
+      // drapeau. Tous les rapprochés : une ligne rapprochée d'une échéance n'y fait rien, et un filtre
+      // plus fin serait un second endroit où oublier les affectés.
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
+          .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
           .order('id').range(debut, fin),
       ),
       supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
@@ -142,9 +147,9 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   useEffect(() => { load() }, [dossierId])
 
 
-  // Catégories utilisées par une pièce validée mais sans poste 2035 associé — le regroupement par
-  // poste ignorera ces pièces tant que ce n'est pas renseigné (voir lib/controles.ts).
-  const categoriesSansPoste = calculerCategoriesSansPoste(categories, piecesValidees)
+  // Catégories utilisées par une pièce validée ou un mouvement affecté mais sans poste 2035 associé — le
+  // regroupement par poste les ignorera tant que ce n'est pas renseigné (voir lib/controles.ts).
+  const categoriesSansPoste = calculerCategoriesSansPoste(categories, piecesValidees, lignesBancaires)
   // Même famille que « Postes manquants », un cran plus tôt dans la chaîne : sans catégorie du tout,
   // le montant n'atteint même pas la question du poste (voir lib/controles.ts).
   const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees)
@@ -174,8 +179,11 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // — la même que celle où le moteur la compte, sans quoi un exercice où une pièce compte pourrait
   // manquer à la liste. En engagement, celle de sa facture.
   const paiements = paiementsParPiece(lignesBancaires)
+  const affectes = mouvementsAffectes(lignesBancaires, categories)
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
+    // Un exercice qui n'a que des encaissements sans bordereau doit se proposer comme un autre.
+    ...affectes.map((m) => anneeDe(m.ligne.date)),
     ...cotisations.map((c) => anneeDe(c.echeance)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
@@ -190,7 +198,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva, lignesBancaires),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva, lignesBancaires, affectes),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -349,6 +357,12 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     for (const p of d.exclusions.sansMontant) exclues.set(p.id, { piece: p, raison: 'aucun montant lisible' })
   }
   const piecesExclues = [...exclues.values()]
+  // Même chose côté relevé : un mouvement affecté que la déclaration n'a pas pu compter. Un mouvement ne
+  // compte que dans l'exercice de sa date, donc il ne peut sortir que d'une seule déclaration.
+  const mouvementsExclus = declarations.flatMap((d) => [
+    ...d.exclusions.mouvementsSansPoste.map((m) => ({ mouvement: m, raison: 'catégorie sans poste 2035' })),
+    ...d.exclusions.mouvementsHorsResultat.map((m) => ({ mouvement: m, raison: 'compte de la catégorie hors charges et produits' })),
+  ])
 
   // Ce qui compte à sa DATE DE FACTURE faute de paiement rapproché, exercice par exercice : une
   // supposition, pas une lecture — la pièce a peut-être été payée une autre année. Dite ici, sur
@@ -366,11 +380,11 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
       <h3 style={{ marginTop: 0 }}>Postes manquants</h3>
       <p className="muted" style={{ marginTop: -8 }}>
         {modeComptable === 'engagement'
-          ? 'Ces catégories sont utilisées par des pièces validées mais n\'ont pas encore de poste associé. '
+          ? 'Ces catégories sont utilisées par des pièces validées ou des mouvements affectés mais n\'ont pas encore de poste associé. '
             + 'Ce dossier ne produit pas de 2035, mais le poste regroupe encore les recettes et les charges de '
             + 'la situation intermédiaire (onglet Financement) et du détail par poste de l\'estimation : leurs '
             + 'montants n\'y sont pas comptés tant que ce n\'est pas fait.'
-          : 'Ces catégories sont utilisées par des pièces validées mais n\'ont pas encore de poste 2035 '
+          : 'Ces catégories sont utilisées par des pièces validées ou des mouvements affectés mais n\'ont pas encore de poste 2035 '
             + 'associé — leurs montants ne sont pas comptés dans le récapitulatif tant que ce n\'est pas fait.'}
         {' '}Un poste déjà renseigné est une suggestion à vérifier, pas une valeur figée.
       </p>
@@ -446,9 +460,10 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     <>
       <BrouillonBanner />
       <p className="muted" style={{ marginTop: -8, marginBottom: 20 }}>
-        Regroupement des pièces validées par poste de la 2035, complété par les amortissements et les
-        cotisations sociales versées. Un simple total par poste — pas un résultat ni un calcul d'impôt,
-        ce travail reste celui de l'expert-comptable.
+        Regroupement par poste de la 2035 des pièces validées et des mouvements du relevé affectés à
+        une catégorie, complété par les amortissements et les cotisations sociales versées. Un simple
+        total par poste — pas un résultat ni un calcul d'impôt, ce travail reste celui de
+        l'expert-comptable.
       </p>
 
       {anneeFilter === 'toutes' && anneesDisponibles.length > 1 && (
@@ -497,6 +512,33 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {mouvementsExclus.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Mouvements affectés absents du récapitulatif ({mouvementsExclus.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces mouvements du relevé sont affectés à une catégorie mais n'entrent dans aucun total : leur
+            montant manquera dans la déclaration tant que la catégorie n'a pas de poste 2035, ou tant
+            qu'elle n'est pas revenue sur un compte de charge ou de produit.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Mouvement</th><th>Catégorie</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
+              <tbody>
+                {mouvementsExclus.map(({ mouvement: m, raison }) => (
+                  <tr key={m.ligne.id}>
+                    <td>{formatDate(m.ligne.date)}</td>
+                    <td>{m.ligne.libelle}</td>
+                    <td>{m.categorie.libelle}</td>
+                    <td className="muted">{raison}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(m.ligne.montant)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
