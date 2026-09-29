@@ -37,8 +37,8 @@ export function compteDuDirigeant(modele: ModeleComptable): string {
 // refait les mêmes refus : l'écran les dit pour qu'on ne clique pas pour rien, la base pour qu'aucun
 // chemin ne les contourne.
 export function refusVirementPersonnel(ligne: MouvementBancaire): string | null {
-  if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id) {
-    return 'Ce mouvement est rapproché d’une pièce ou d’une échéance, ou affecté à une catégorie : annule d’abord ce classement.'
+  if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.emprunt_id) {
+    return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, ou affecté à une catégorie : annule d’abord ce classement.'
   }
   if (ligne.montant === 0) return 'Un mouvement de zéro euro n’a rien à écrire.'
   return null

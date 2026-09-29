@@ -1,7 +1,7 @@
 import { anneeDe, jourDe, moisDe } from './format'
-import type { MouvementAffecte } from './affectationBanque'
 import { totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
 import { montantRetenu } from './montantRetenu'
+import type { PartDuReleve } from './partsDuReleve'
 import { paiementsParPiece, partDeLAnnee, rattachementsTresorerie, type Paiement } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
@@ -38,8 +38,9 @@ export interface LigneDeclaration {
   montant: number
   // Nombre de pièces derrière ce total, pour que le montant se justifie d'un clic.
   nbPieces: number
-  // Et de mouvements bancaires affectés sans justificatif (voir lib/affectationBanque.ts) : leur
-  // preuve est le relevé, et les compter avec les pièces ferait chercher des pièces qui n'existent pas.
+  // Et de mouvements bancaires comptés sans justificatif — affectés à une catégorie, ou échéances
+  // d'emprunt (voir lib/partsDuReleve.ts) : leur preuve est le relevé, et les compter avec les pièces
+  // ferait chercher des pièces qui n'existent pas.
   nbMouvements: number
 }
 
@@ -56,10 +57,10 @@ export interface ExclusionsDeclaration {
   // Aucun montant lisible : rien à additionner.
   sansMontant: Piece[]
   // Un mouvement affecté à une catégorie sans poste 2035 : même trou que `sansPoste`, côté relevé.
-  mouvementsSansPoste: MouvementAffecte[]
+  mouvementsSansPoste: PartDuReleve[]
   // Un mouvement affecté à une catégorie dont le compte n'est plus un compte de résultat : il a changé
   // depuis l'affectation, que la base aurait refusée sinon. Ni recette ni dépense — donc dit.
-  mouvementsHorsResultat: MouvementAffecte[]
+  mouvementsHorsResultat: PartDuReleve[]
 }
 
 // Une pièce comptée à sa DATE DE FACTURE faute de paiement rapproché — une supposition, que l'écran
@@ -272,11 +273,12 @@ export function calculerDeclaration2035(
   // Sans valeur par défaut non plus — une liste vide ferait tout compter à la date de facture, soit
   // exactement le défaut que ce paramètre corrige.
   lignesBancaires: readonly Paiement[],
-  // Les mouvements affectés à une catégorie sans justificatif (lib/affectationBanque.ts) : les
-  // encaissements de l'Assurance maladie, les frais bancaires. Ils comptent à la date du MOUVEMENT,
-  // qui est celle de l'encaissement ou du paiement — la règle de la 2035 sans supposition. Sans valeur
-  // par défaut : un appelant qui les oublie rendrait la 2035 d'un infirmier presque sans recettes.
-  mouvementsAffectes: readonly MouvementAffecte[],
+  // Ce que le relevé compte sans justificatif (lib/partsDuReleve.ts) : les mouvements affectés à une
+  // catégorie — les encaissements de l'Assurance maladie, les frais bancaires — et les intérêts et
+  // l'assurance des échéances d'emprunt. Ils comptent à la date du MOUVEMENT, qui est celle de
+  // l'encaissement ou du paiement — la règle de la 2035 sans supposition. Sans valeur par défaut : un
+  // appelant qui les oublie rendrait la 2035 d'un infirmier presque sans recettes.
+  partsDuReleve: readonly PartDuReleve[],
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -343,21 +345,22 @@ export function calculerDeclaration2035(
     if (partSansPaiement > 0) sansPaiementConnu.push({ piece, montant: arrondi(montant * partSansPaiement) })
   }
 
-  // LE RELEVÉ, APRÈS LES PIÈCES. Un mouvement affecté compte l'année de sa date, dans le poste de sa
-  // catégorie et selon la nature de son COMPTE (classe 7 une recette, classe 6 une dépense), signé
-  // comme ce qu'il fait au poste : un remboursement le diminue. Il ne peut pas être aussi une pièce —
-  // la base interdit qu'un mouvement porte les deux (`lignes_bancaires_un_seul_rapprochement`).
-  for (const m of mouvementsAffectes) {
-    if (anneeDe(m.ligne.date) !== annee) continue
-    if (!m.nature) {
-      exclusions.mouvementsHorsResultat.push(m)
+  // LE RELEVÉ, APRÈS LES PIÈCES. Une part compte l'année de la date de son mouvement, dans son poste et
+  // selon sa nature — pour un mouvement affecté, celle de son COMPTE (classe 7 une recette, classe 6 une
+  // dépense) —, signée comme ce qu'elle fait au poste : un remboursement le diminue. Un mouvement ne
+  // peut pas être aussi une pièce — la base interdit qu'il porte les deux
+  // (`lignes_bancaires_un_seul_rapprochement`).
+  for (const p of partsDuReleve) {
+    if (anneeDe(p.ligne.date) !== annee) continue
+    if (!p.nature) {
+      exclusions.mouvementsHorsResultat.push(p)
       continue
     }
-    if (!m.categorie.poste_2035) {
-      exclusions.mouvementsSansPoste.push(m)
+    if (!p.poste) {
+      exclusions.mouvementsSansPoste.push(p)
       continue
     }
-    ajouter(m.categorie.poste_2035, m.nature, m.montantPoste, 0, 1)
+    ajouter(p.poste, p.nature, p.montantPoste, 0, 1)
   }
 
   const totalAmortissements = immobilisations.reduce((somme, i) => somme + dotationPourAnnee(i, annee), 0)

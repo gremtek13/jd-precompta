@@ -1,5 +1,5 @@
 import { anneeDe } from './format'
-import type { MouvementAffecte } from './affectationBanque'
+import type { PartDuReleve } from './partsDuReleve'
 import { montantRetenu } from './montantRetenu'
 import { paiementsParPiece, partDansLaPeriode, rattachements, type Paiement } from './rattachement'
 import { moisEcoulesDeLAnnee } from './situationIntermediaire'
@@ -34,9 +34,9 @@ function montantDansLaPeriode(
 // transmet pas ses bordereaux —, et l'estimation ne comptait que les justificatifs de recette. À la date
 // du mouvement, comme la 2035 ; toute catégorie de recettes, comme une pièce de vente compte quelle que
 // soit sa catégorie.
-function recettesAffecteesDansLaPeriode(mouvements: readonly MouvementAffecte[], debut: string, fin: string): number {
-  return mouvements.reduce(
-    (sum, m) => (m.nature === 'recette' && m.ligne.date >= debut && m.ligne.date <= fin ? sum + m.montantPoste : sum),
+function recettesAffecteesDansLaPeriode(parts: readonly PartDuReleve[], debut: string, fin: string): number {
+  return parts.reduce(
+    (sum, p) => (p.nature === 'recette' && p.ligne.date >= debut && p.ligne.date <= fin ? sum + p.montantPoste : sum),
     0,
   )
 }
@@ -53,13 +53,13 @@ export function totauxPourAnnee(
   pieces: Piece[], cotisations: CotisationDeclaree[], annee: number, assujettiTva: boolean,
   lignesBancaires: readonly Paiement[], mode: ModeComptable,
   // Sans valeur par défaut, comme les paiements : voir `recettesAffecteesDansLaPeriode`.
-  mouvementsAffectes: readonly MouvementAffecte[],
+  partsDuReleve: readonly PartDuReleve[],
 ) {
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
   return {
     ca: montantDansLaPeriode(pieces, paiementsParPiece(lignesBancaires), debut, fin, assujettiTva, mode)
-      + recettesAffecteesDansLaPeriode(mouvementsAffectes, debut, fin),
+      + recettesAffecteesDansLaPeriode(partsDuReleve, debut, fin),
     cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
   }
 }
@@ -97,13 +97,13 @@ export interface ProjectionAnnuelle {
 export function projectionAnnuelle(
   recettes: Piece[], cotisations: CotisationDeclaree[], dateDuJour: string, assujettiTva: boolean,
   lignesBancaires: readonly Paiement[], mode: ModeComptable,
-  mouvementsAffectes: readonly MouvementAffecte[],
+  partsDuReleve: readonly PartDuReleve[],
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur
   // encaissement) comme pour les échéances. La même règle de montant que le calcul des repères.
   const ca = montantDansLaPeriode(recettes, paiementsParPiece(lignesBancaires), `${annee}-01-01`, dateDuJour, assujettiTva, mode)
-    + recettesAffecteesDansLaPeriode(mouvementsAffectes, `${annee}-01-01`, dateDuJour)
+    + recettesAffecteesDansLaPeriode(partsDuReleve, `${annee}-01-01`, dateDuJour)
   const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
   const annualiser = (montant: number) => (moisEcoules >= 1 ? (montant * 12) / moisEcoules : null)
@@ -150,9 +150,9 @@ export function chargesParPostePourAnnee(
   // en engagement.
   lignesBancaires: readonly Paiement[],
   mode: ModeComptable,
-  // Les dépenses payées sans justificatif — les frais bancaires, par exemple — à la date du mouvement,
-  // dans le poste de leur catégorie (lib/affectationBanque.ts).
-  mouvementsAffectes: readonly MouvementAffecte[],
+  // Les dépenses payées sans justificatif — les frais bancaires, les intérêts et l'assurance d'une
+  // échéance d'emprunt — à la date du mouvement, dans leur poste (lib/partsDuReleve.ts).
+  partsDuReleve: readonly PartDuReleve[],
 ): Map<string, number> {
   const paiements = paiementsParPiece(lignesBancaires)
   const totaux = new Map<string, number>()
@@ -165,11 +165,9 @@ export function chargesParPostePourAnnee(
     if (!poste) continue
     totaux.set(poste, (totaux.get(poste) ?? 0) + (montantRetenu(p, assujettiTva) ?? 0) * part)
   }
-  for (const m of mouvementsAffectes) {
-    if (m.nature !== 'depense' || anneeDe(m.ligne.date) !== annee) continue
-    const poste = m.categorie.poste_2035
-    if (!poste) continue
-    totaux.set(poste, (totaux.get(poste) ?? 0) + m.montantPoste)
+  for (const part of partsDuReleve) {
+    if (part.nature !== 'depense' || anneeDe(part.ligne.date) !== annee || !part.poste) continue
+    totaux.set(part.poste, (totaux.get(part.poste) ?? 0) + part.montantPoste)
   }
   return totaux
 }

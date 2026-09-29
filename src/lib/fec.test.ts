@@ -404,6 +404,32 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [remis])).slice(1)).toEqual([])
   })
 
+  it('porte de même une échéance d’emprunt, le capital, les intérêts et l’assurance face à la banque', () => {
+    // Le prélèvement d'un prêt rapproché de son échéance (lib/echeanceEmprunt.ts) : quatre lignes, une
+    // écriture, le relevé pour pièce — et chaque compte nommé, sans quoi le FEC les donnerait par leur
+    // seul numéro.
+    const pret = mouvement('l-pret', {
+      date: '2026-03-06', montant: -540, libelle: 'ECHEANCE PRET', categorie_id: null,
+      emprunt_id: 'emp1', emprunt_echeance: 2, emprunt_interets: 36, emprunt_assurance: 21.03,
+    })
+    const ecritures = [
+      ligne('', { id: 'p1', piece_id: null, ligne_bancaire_id: 'l-pret', compte: '164000', sens: 'debit', montant: 482.97, date: '2026-03-06', libelle: 'ECHEANCE PRET' }),
+      ligne('', { id: 'p2', piece_id: null, ligne_bancaire_id: 'l-pret', compte: '661100', sens: 'debit', montant: 36, date: '2026-03-06', libelle: 'ECHEANCE PRET' }),
+      ligne('', { id: 'p3', piece_id: null, ligne_bancaire_id: 'l-pret', compte: '616800', sens: 'debit', montant: 21.03, date: '2026-03-06', libelle: 'ECHEANCE PRET' }),
+      ligne('', { id: 'p4', piece_id: null, ligne_bancaire_id: 'l-pret', compte: COMPTE_BANQUE, sens: 'credit', montant: 540, date: '2026-03-06', libelle: 'ECHEANCE PRET' }),
+    ]
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [pret])).slice(1)
+    expect(rows.map((r) => [r[0], r[2], r[4], r[5], r[8], r[11], r[12]])).toEqual([
+      ['BQ', 'BQ00001', '164000', 'Emprunts auprès des établissements de crédit', 'releve-mars-2026.pdf', '482,97', '0,00'],
+      ['BQ', 'BQ00001', '661100', 'Intérêts des emprunts et dettes', 'releve-mars-2026.pdf', '36,00', '0,00'],
+      ['BQ', 'BQ00001', '616800', 'Assurance des emprunts', 'releve-mars-2026.pdf', '21,03', '0,00'],
+      ['BQ', 'BQ00001', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '540,00'],
+    ])
+    // Le garde symétrique : une fois le rapprochement retiré, la même écriture n'a plus de justificatif.
+    const retire = { ...pret, statut: 'non_rapprochee' as const, emprunt_id: null }
+    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [retire])).slice(1)).toEqual([])
+  })
+
   it('les équilibre, une écriture après l’autre', () => {
     const parNumero = new Map<string, number>()
     for (const r of colonnes(genererFec(brouillon, [], [], [], 'tresorerie', [cpam, frais])).slice(1)) {

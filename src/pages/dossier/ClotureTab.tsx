@@ -16,7 +16,7 @@ import { remplir2035 } from '../../lib/remplir2035'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
 import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
-import { mouvementsAffectes } from '../../lib/affectationBanque'
+import { partsDuReleve } from '../../lib/partsDuReleve'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import { useAnnee } from '../../context/AnneeContext'
@@ -179,11 +179,12 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // — la même que celle où le moteur la compte, sans quoi un exercice où une pièce compte pourrait
   // manquer à la liste. En engagement, celle de sa facture.
   const paiements = paiementsParPiece(lignesBancaires)
-  const affectes = mouvementsAffectes(lignesBancaires, categories)
+  const parts = partsDuReleve(lignesBancaires, categories)
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
-    // Un exercice qui n'a que des encaissements sans bordereau doit se proposer comme un autre.
-    ...affectes.map((m) => anneeDe(m.ligne.date)),
+    // Un exercice qui n'a que des encaissements sans bordereau, ou des intérêts d'emprunt, doit se
+    // proposer comme un autre.
+    ...parts.map((m) => anneeDe(m.ligne.date)),
     ...cotisations.map((c) => anneeDe(c.echeance)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
@@ -198,7 +199,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva, lignesBancaires, affectes),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva, lignesBancaires, parts),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -528,10 +529,10 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
               <thead><tr><th>Date</th><th>Mouvement</th><th>Catégorie</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
               <tbody>
                 {mouvementsExclus.map(({ mouvement: m, raison }) => (
-                  <tr key={m.ligne.id}>
+                  <tr key={`${m.origine}|${m.ligne.id}|${m.libelle}`}>
                     <td>{formatDate(m.ligne.date)}</td>
                     <td>{m.ligne.libelle}</td>
-                    <td>{m.categorie.libelle}</td>
+                    <td>{m.libelle}</td>
                     <td className="muted">{raison}</td>
                     <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(m.ligne.montant)}</td>
                   </tr>

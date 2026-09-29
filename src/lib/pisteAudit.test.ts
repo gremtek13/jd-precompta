@@ -291,6 +291,20 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     )
     expect(remis.manque).toEqual(['justificatif'])
   })
+
+  it('donne aussi le relevé pour justificatif à une échéance d’emprunt', () => {
+    // lib/echeanceEmprunt.ts : le prélèvement d'un prêt s'écrit sur le 164, le 661 et le 616, sans pièce.
+    const pret = ligneBancaire({
+      id: 'l-pret', piece_id: null, categorie_id: null, montant: -540, libelle: 'ECHEANCE PRET',
+      source_fichier: 'releve-mars-2026.pdf', emprunt_id: 'emp1', emprunt_echeance: 2, emprunt_interets: 36, emprunt_assurance: 0,
+    })
+    const interets = [ecriture({ id: 'i1', piece_id: null, ligne_bancaire_id: 'l-pret', compte: '661100', montant: 36, date: '2026-03-06' })]
+    const [ligne] = pisteAudit(interets, [], [pret], [])
+    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'ECHEANCE PRET', []])
+    // Le rapprochement retiré, elle n'a plus de justificatif.
+    const [retire] = pisteAudit(interets, [], [{ ...pret, statut: 'non_rapprochee', emprunt_id: null }], [])
+    expect(retire.manque).toEqual(['justificatif'])
+  })
 })
 
 describe('pisteAudit — un ordre chronologique, et le même à chaque export', () => {

@@ -31,11 +31,11 @@ export function natureDuCompte(compte: string | null | undefined): NatureCompte 
   return null
 }
 
-/** Ce que l'affectation lit d'un mouvement : le reste de la ligne ne décide de rien. */
+/** Ce que le relevé justifie d'un mouvement se lit sur ces colonnes : le reste de la ligne ne décide de rien. */
 export type MouvementBancaire = Pick<
   LigneBancaire,
   'id' | 'date' | 'libelle' | 'libelle_brut' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
-  | 'prelevement_personnel' | 'source_fichier'
+  | 'prelevement_personnel' | 'source_fichier' | 'emprunt_id' | 'emprunt_echeance' | 'emprunt_interets' | 'emprunt_assurance'
 >
 
 // Pourquoi ce mouvement ne peut pas être affecté à cette catégorie, dit AVANT d'écrire. La base refait
@@ -46,8 +46,8 @@ export function refusAffectation(
   categorie: Pick<Categorie, 'libelle' | 'compte_comptable'>,
   assujettiTva: boolean,
 ): string | null {
-  if (ligne.piece_id || ligne.cotisation_id || ligne.prelevement_personnel) {
-    return 'Ce mouvement est rapproché d’une pièce ou d’une échéance, ou classé en virement personnel : annule d’abord ce classement.'
+  if (ligne.piece_id || ligne.cotisation_id || ligne.emprunt_id || ligne.prelevement_personnel) {
+    return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, ou classé en virement personnel : annule d’abord ce classement.'
   }
   const nature = natureDuCompte(categorie.compte_comptable)
   if (!nature) {
@@ -136,27 +136,29 @@ export function mouvementsAffectes(
 }
 
 // UN MOUVEMENT JUSTIFIÉ PAR LE RELEVÉ : son écriture n'a pas de pièce, et c'est légitime — le relevé
-// qui le porte en est le justificatif. Deux cas : affecté à une catégorie (rapproché, portant une
-// catégorie), ou classé en virement personnel (lib/virementPersonnel.ts), écrit sur le compte du
-// dirigeant. Ce qui dit, pour une écriture sans pièce, si elle est l'écriture d'un mouvement ou le reste
-// d'une pièce supprimée (une rupture). Voir lib/pisteAudit.ts et lib/fec.ts.
+// qui le porte en est le justificatif. Trois cas : affecté à une catégorie (rapproché, portant une
+// catégorie), rapproché d'un emprunt dont il est une échéance ou le déblocage (lib/echeanceEmprunt.ts),
+// ou classé en virement personnel (lib/virementPersonnel.ts), écrit sur le compte du dirigeant. Ce qui
+// dit, pour une écriture sans pièce, si elle est l'écriture d'un mouvement ou le reste d'une pièce
+// supprimée (une rupture). Voir lib/pisteAudit.ts et lib/fec.ts.
 //
-// UN SEUL PRÉDICAT pour le FEC, la piste d'audit, Écritures et la Checklist : le jour où un troisième
-// cas s'ajoutera, une copie oubliée ferait sortir ses écritures du FEC ou crier « sans justificatif »
-// sur une écriture juste — sur l'un des quatre seulement, donc sans que les autres le disent.
+// UN SEUL PRÉDICAT pour le FEC, la piste d'audit, Écritures et la Checklist : le troisième cas, l'emprunt,
+// s'est ajouté ICI et nulle part ailleurs — une copie oubliée aurait fait sortir ses écritures du FEC ou
+// crier « sans justificatif » sur une écriture juste, sur l'un des quatre seulement, donc sans que les
+// autres le disent.
 //
 // LU SUR LA LIGNE, SANS LA CATÉGORIE, et c'est voulu : la légitimité de l'écriture tient à ce que son
 // mouvement est affecté, pas à ce qu'on a pu lire de sa catégorie. Une catégorie absente de la liste
 // chargée ferait sinon crier « écriture sans justificatif » sur une écriture juste — l'artefact de
 // filtrage que `rupturesPisteAudit` refuse déjà de prendre pour une rupture.
 export function mouvementJustifieParLeReleve(
-  ligne: Pick<LigneBancaire, 'statut' | 'categorie_id' | 'prelevement_personnel'>,
+  ligne: Pick<LigneBancaire, 'statut' | 'categorie_id' | 'emprunt_id' | 'prelevement_personnel'>,
 ): boolean {
-  return (ligne.statut === 'rapprochee' && !!ligne.categorie_id) || ligne.prelevement_personnel
+  return (ligne.statut === 'rapprochee' && (!!ligne.categorie_id || !!ligne.emprunt_id)) || ligne.prelevement_personnel
 }
 
 export function idsMouvementsJustifiesParLeReleve(
-  lignes: readonly Pick<LigneBancaire, 'id' | 'statut' | 'categorie_id' | 'prelevement_personnel'>[],
+  lignes: readonly Pick<LigneBancaire, 'id' | 'statut' | 'categorie_id' | 'emprunt_id' | 'prelevement_personnel'>[],
 ): ReadonlySet<string> {
   return new Set(lignes.filter(mouvementJustifieParLeReleve).map((l) => l.id))
 }
