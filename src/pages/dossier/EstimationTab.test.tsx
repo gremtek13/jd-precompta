@@ -462,6 +462,23 @@ describe('EstimationTab — les mouvements affectés sans justificatif', () => {
     expect(faux.upserts).toEqual([expect.objectContaining({ annee, poste: 'Frais financiers', montant: 8.5 })])
   })
 
+  // UNE ÉCHÉANCE D'EMPRUNT RAPPROCHÉE (lib/echeanceEmprunt.ts) : ses intérêts en frais financiers, son
+  // assurance en primes d'assurance, jamais son capital — par les parts du relevé que l'écran passe au
+  // calcul. Trouvé par mutation : l'écran privé des échéances laissait ce fichier vert.
+  it('le détail par poste compte les intérêts et l’assurance d’une échéance d’emprunt, pas son capital', async () => {
+    faux.paiements = [{
+      ...mouvement('ech', 'cat-frais', `${annee}-03-06`, -540), categorie_id: null,
+      emprunt_id: 'emp-1', emprunt_echeance: 2, emprunt_interets: 34.55, emprunt_assurance: 21.03,
+    }]
+    const bouton = await rendre()
+    await act(async () => { bouton.click() })
+    expect(faux.upserts).toHaveLength(2)
+    expect(faux.upserts).toEqual(expect.arrayContaining([
+      expect.objectContaining({ annee, poste: 'Frais financiers', montant: 34.55 }),
+      expect.objectContaining({ annee, poste: "Primes d'assurance", montant: 21.03 }),
+    ]))
+  })
+
   it('la projection compte un encaissement affecté déjà reçu', async () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))

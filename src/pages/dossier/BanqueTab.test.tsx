@@ -1981,6 +1981,19 @@ describe('BanqueTab — une échéance d’emprunt se découpe et s’écrit', (
     })
   })
 
+  // Le découpage de départ d'une correction est celui que la BASE GARDE, validé sur le tableau de la
+  // banque — pas la proposition de l'échéancier. Dans le cas ci-dessus les deux coïncident, et c'est ce qui
+  // laissait passer la mutation qui repart de la proposition : d'où des montants qui s'en écartent.
+  it('repart du découpage gardé, même quand il s’écarte de l’échéancier', async () => {
+    preparer({ ...RAPPROCHEE, emprunt_interets: 35.1, emprunt_assurance: 22 })
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV ECHEANCE PRET')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Corriger le découpage…' }).click() })
+    expect(champ('Intérêts (661100)').value).toBe('35.10')
+    expect(champ('Assurance (616800)').value).toBe('22.00')
+  })
+
   it('dit qu’une échéance rapprochée désigne un emprunt qui n’a pas été lu', async () => {
     preparer(RAPPROCHEE)
     faux.emprunts = []

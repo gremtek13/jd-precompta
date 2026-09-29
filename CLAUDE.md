@@ -250,6 +250,10 @@ supabase/
                   virementPersonnel.sql : le virement personnel et son écriture sur le compte du
                   dirigeant, par impersonation des trois profils, à rejouer après toute migration
                   qui touche ses deux fonctions ou les contraintes de lignes_bancaires.
+                  echeanceEmprunt.sql : l'échéance ou le déblocage d'un emprunt rapproché d'un
+                  mouvement, et son écriture, par impersonation des trois profils, à rejouer après
+                  toute migration qui touche ses deux fonctions, la table emprunts ou les
+                  contraintes de lignes_bancaires.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1245,6 +1249,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   journal de banque avec le relevé pour pièce, et l'onglet Virements écrit ceux qu'on avait classés
   avant. Voir « un virement personnel s'écrit sur le compte du dirigeant » dans « Problèmes connus »
   (`lib/virementPersonnel.ts`).
+- **Une échéance d'emprunt s'écrit sur ses comptes (29/09/2026)**, ligne 26.6, étape (a), suite :
+  dans la fiche d'un mouvement (onglet Banque), un prélèvement d'emprunt se rapproche de son échéance
+  et se découpe — le capital au 164000, les intérêts au 661100, l'assurance au 616800 —, et le
+  déblocage d'un emprunt s'écrit au crédit du 164000. Le découpage est proposé depuis l'échéancier et
+  validé par le cabinet ; les intérêts et l'assurance comptent dans la 2035 à la date du prélèvement,
+  le capital jamais. Voir « une échéance d'emprunt s'écrit sur trois comptes » dans « Problèmes
+  connus » (`lib/echeanceEmprunt.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1276,12 +1287,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   l'article A47 A-1 » dans « Problèmes connus ».
 - Tenir toute la comptabilité d'un BNC (ligne 26.6) : l'étape (a) est livrée EN PARTIE (29/09/2026) —
   un mouvement sans justificatif s'affecte à une catégorie de charge ou de produit, un par un depuis
-  sa fiche ou en lot par des règles apprises par libellé, et un virement personnel s'écrit sur le
-  compte du dirigeant (108 en trésorerie). Restent pour (a) : le 164 pour le capital d'un emprunt et
-  la ventilation d'un mouvement sur plusieurs comptes (une échéance d'emprunt mêle capital et
-  intérêts) ; les recettes d'un dossier assujetti, dont la TVA ne se lit pas sur un relevé. Puis (b) écrire les cotisations, les dotations, l'acquisition d'une
-  immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y comparer, (d)
-  valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
+  sa fiche ou en lot par des règles apprises par libellé, un virement personnel s'écrit sur le compte
+  du dirigeant (108 en trésorerie), et une échéance d'emprunt sur ses trois comptes (164, 661, 616).
+  Restent pour (a) : la ventilation d'un mouvement sur plusieurs comptes ; les recettes d'un dossier
+  assujetti, dont la TVA ne se lit pas sur un relevé. Puis (b) écrire les cotisations, les dotations,
+  l'acquisition d'une immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y
+  comparer, (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -5163,6 +5174,91 @@ d'environnement dans la même édition.
   lecture partielle ignorée, la colonne qui affirme « sans écriture » sur une lecture partielle, les
   refus tus, et le point de Checklist qui mène à Banque. La garde du gestionnaire du lot, doublée par
   le bouton grisé, n'est pas mutée seule : elle survivrait, comme ses aînées.
+- **UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT SUR TROIS COMPTES — LIGNE 26.6, ÉTAPE (A), SUITE** (29/09/2026,
+  `lib/echeanceEmprunt.ts`). Le prélèvement mensuel d'un prêt mêle ce que la comptabilité sépare : le
+  capital remboursé diminue une dette (164, ni charge ni recette), les intérêts sont une charge
+  financière (661, ligne 31 de la 2035-A) et l'assurance de l'emprunteur une prime d'assurance (616,
+  dans BH). Rien de ce prélèvement n'était écrit, et la 2035 ne comptait aucun intérêt d'emprunt — une
+  charge déductible oubliée chaque mois. Et le seul geste qui existait, affecter le prélèvement à une
+  catégorie de charge, y comptait le CAPITAL.
+  **LE DÉCOUPAGE EST PROPOSÉ, PAS DÉDUIT** : l'application le tire de l'échéancier qu'elle calcule
+  (`lib/emprunts.ts`) — l'échéance non payée la plus proche du mouvement, ses intérêts, et ce que le
+  prélèvement porte en plus proposé en assurance —, et le cabinet le valide sur le tableau de la
+  banque, qui fait foi et peut différer. Ce qui est validé s'écrit ET se garde sur le mouvement
+  (`emprunt_echeance`, `emprunt_interets`, `emprunt_assurance`) : la 2035 le lit là. Un mouvement
+  POSITIF rattaché à un emprunt en est le DÉBLOCAGE : la banque au débit, le 164 au crédit.
+  **Le rapprochement et son écriture partent ENSEMBLE**, par `rapprocher_echeance_emprunt`, qui vérifie
+  l'écriture composée par l'application — une ligne par compte non nul, au montant et dans le sens du
+  mouvement, l'équilibre au centime — et REMPLACE celle d'un rapprochement précédent du même mouvement ;
+  `retirer_echeance_emprunt` défait les deux. Toutes deux sont `SECURITY INVOKER`, vérifient
+  `admin_du_dossier` et refusent une écriture validée. Les contraintes tiennent le reste sans le code :
+  un seul lien par mouvement (`num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id) <= 1`),
+  un mouvement d'emprunt rapproché et jamais personnel (`lignes_bancaires_emprunt_rapproche`), un
+  découpage de la bonne forme — un déblocage sans numéro ni intérêts (`lignes_bancaires_decoupage_emprunt`)
+  —, une échéance payée une seule fois (`lignes_bancaires_echeance_emprunt_unique`), et un emprunt dont
+  un mouvement est rapproché qui ne se supprime pas (clé sans action). Migration
+  `echeance_emprunt_rapprochee` ; l'export porte 66 migrations, le socle 71 instructions, l'inventaire
+  781 objets. `supabase/essais/echeanceEmprunt.sql` : 50 contrôles par impersonation des trois profils,
+  dont le contrôle POSITIF du chef, chaque refus jugé à sa raison, et que rien ne reste ; sans les
+  `set local role`, ses contrôles 1 et 2 virent au rouge.
+  **LES MOTEURS NE LISENT QU'UNE FORME, LES PARTS DU RELEVÉ** (`lib/partsDuReleve.ts`). Une échéance y
+  donne jusqu'à deux parts — les intérêts en « Frais financiers » (BN), l'assurance en « Primes
+  d'assurance » (BH) — à la date du MOUVEMENT ; le capital et le déblocage aucune. Seules comptent les
+  échéances RAPPROCHÉES : une échéance que rien ne paie n'est pas une dépense payée. La 2035, la
+  situation intermédiaire, l'estimation et la simulation client reçoivent ces parts à la place des seuls
+  mouvements affectés, par un paramètre obligatoire. La ventilation d'un mouvement sur plusieurs
+  comptes, prochaine source, s'ajoutera à cet endroit, et tous les moteurs la compteront.
+  **UN SEUL PRÉDICAT POUR LE FEC, LA PISTE D'AUDIT, ÉCRITURES ET LA CHECKLIST** : l'emprunt est le
+  troisième cas de `mouvementJustifieParLeReleve`, ajouté là et nulle part ailleurs. Et
+  `mouvementRapprocheSansObjet` l'écarte : sans cela, chaque échéance rapprochée ressortait « rapprochée
+  sans justificatif », en rouge. Affecter, classer en virement personnel ou rapprocher d'un emprunt un
+  mouvement déjà lié à autre chose est refusé, et dit avant le clic.
+  **CE QUI RESSEMBLE À UNE ÉCHÉANCE NE S'AFFECTE PAS EN LOT** (`empruntPlausible`, large exprès) : un
+  paiement à dix jours d'une échéance non payée, entre 90 % et une fois et demie de ce qu'elle prévoit,
+  ou un encaissement à un mois du début d'un emprunt, d'au moins un dixième de son capital et sans
+  dépasser ce qui reste à débloquer. La fiche déplie alors le rapprochement, découpage proposé sous les
+  yeux ; la carte des règles d'affectation écarte le mouvement et dit pourquoi — une règle au nom de la
+  banque désigne ses échéances comme ses frais, et le capital compterait en charge. Rien ne s'écrit sans
+  le clic, et le lot est suspendu quand les emprunts sont lus en partie.
+  **LES DÉBLOCAGES NE SONT PAS UN RYTHME D'ACTIVITÉ** : écrits au 512, ils entreraient dans la moyenne
+  des encaissements du plan de trésorerie et flatteraient le taux d'endettement, sur le document qu'on
+  montre à une banque. Financement les écarte de la moyenne (`idsDeblocagesEmprunt`) et le dit ; le
+  solde, lui, les compte.
+  **CE QUI MANQUE SE DIT, À DEUX ENDROITS ET AVEC DEUX BORNES** (`echeancesNonRapprochees`) : la
+  Checklist compte les échéances que le relevé COUVRE sans qu'aucun mouvement ne les paie — du premier
+  mouvement importé au dernier, moins dix jours laissés au prélèvement (`couvertureDuReleve`) —, en
+  « attention » : un travail en retard, pas une donnée fausse. Clôture liste celles de l'exercice,
+  jusqu'à aujourd'hui pour l'exercice en cours, avec les intérêts qui manquent à la 2035. Une échéance
+  se reconnaît à son NUMÉRO, pas à sa date, que la banque décale. La Checklist compte aussi, en
+  erreur, le mouvement dont l'écriture ne suit plus son découpage — défensif, la base les écrivant
+  ensemble.
+  **Financement** : l'échéancier dit quand chaque échéance a été payée ; un emprunt dont un mouvement est
+  rapproché ne se supprime pas, et l'écran le dit AVANT la confirmation ; sa durée ne descend pas sous
+  une échéance payée ; modifier l'emprunt ne change pas un découpage validé.
+  **L'assistant, version 31** : `points_a_traiter` rend les deux points de la Checklist, et le prompt
+  dit qu'une échéance s'écrit face au 512 sur trois comptes et qu'un déblocage n'est pas une recette.
+  `agentComptableEmprunt.test.ts` compare la copie (bloc `── DÉBUT/FIN EMPRUNT`) à `src/lib` et y
+  plante neuf dérives. Déployée avec `verify_jwt` relu et repassé à `false`, la v30 comparée au dépôt
+  avant écrasement (identique), aller-retour après : zéro différence sur 1 459 lignes, et le 401 de la
+  fonction sans session. Aucun appel au modèle.
+  **Les captures ont trouvé deux défauts d'affichage** : les trois champs du découpage se décalaient
+  quand un libellé passe à la ligne (alignés par le bas désormais), et Financement écrivait le taux
+  d'un emprunt « 3.6 % » — à la virgule désormais, gardé par un test.
+  **LATENT, et mesuré** : aucun emprunt en base, donc aucun mouvement rapproché d'un emprunt ni aucune
+  écriture sur ces trois comptes (29/09/2026). Le banc de capture sert un prêt fictif — déblocage,
+  échéance rapprochée, échéance à rapprocher — et 0 débordement aux quatre largeurs.
+  **Quatre-vingt-dix-huit mutations, quatre-vingt-quatorze mordent — la première passe n'en tuait que
+  quatre-vingt-sept**, trois autres n'étant vues que du compilateur. Les sept accusaient des tests : une
+  assertion lâche (« 600,00 € d'encaissements » est CONTENU dans « 2 600,00 € », donc la moyenne qui
+  compte le déblocage passait), un jeu d'essai où le découpage gardé coïncidait avec la proposition (la
+  correction qui repart de la proposition passait), et cinq câblages qu'aucun test d'écran n'exerçait
+  avec une échéance — la situation intermédiaire, le détail par poste de l'Estimation, la fin de période
+  de Clôture, le début de fenêtre de la Checklist, les ratios. Et une mutation était mal écrite (elle
+  renommait une prop sans changer ce qui passe) : réécrite, elle mord. **Quatre survivent, et sont
+  équivalentes** : un mouvement de zéro euro pris pour un déblocage, et la garde « zéro euro » de la
+  ressemblance (un zéro est refusé avant, et la base n'admet pas d'emprunt sur un mouvement nul) ; un
+  déblocage compté dans les parts (ses intérêts et son assurance valent zéro par contrainte) ; la
+  simulation client privée des échéances (elle ne compte que des recettes).
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -6403,7 +6499,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2626 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2743 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -6422,8 +6518,9 @@ selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), la CA3 prép
 (`declarationTva.ts`), la date à laquelle une pièce compte en trésorerie (`rattachement.ts`), les
 écritures d'un dossier tenu en engagement (`engagement.ts`), celles d'un mouvement du relevé
 affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent ces affectations en lot
-(`reglesAffectation.ts`), et celles d'un virement personnel sur le compte du dirigeant
-(`virementPersonnel.ts`) —
+(`reglesAffectation.ts`), celles d'un virement personnel sur le compte du dirigeant
+(`virementPersonnel.ts`), et celles d'une échéance d'emprunt sur ses trois comptes
+(`echeanceEmprunt.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`) —
 les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
