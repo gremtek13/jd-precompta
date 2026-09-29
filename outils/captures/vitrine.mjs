@@ -63,6 +63,13 @@ const VUES = [
   { nom: 'pc-mouvement-1280', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
   { nom: 'pc-mouvement-rapproche', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'PRLV ENERGIE SERVICES' },
   { nom: 'mobile-mouvement-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'CB PAPETERIE MODERNE' },
+  // L'affectation d'un mouvement sans justificatif (ligne 26.6) : un virement de l'Assurance maladie
+  // qu'aucune pièce n'explique, où le volet propose une catégorie ; puis un mouvement déjà affecté,
+  // ouvert après être passé sur « Tous ».
+  { nom: 'pc-affecter-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'VIR CPAM TIERS PAYANT' },
+  { nom: 'pc-affecter-sombre', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, cellule: 'VIR CPAM TIERS PAYANT' },
+  { nom: 'pc-affecte-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR CPAM REMBOURSEMENTS AOUT' },
+  { nom: 'mobile-affecter-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'VIR CPAM TIERS PAYANT' },
   // Le menu du compte (apparence, installation, thème, déconnexion), ouvert tel quel, puis avec la
   // consigne d'installation dépliée (le navigateur n'a pas encore annoncé d'invite) : déployé, sombre,
   // réduit — où le menu s'ouvre au-dessus de l'avatar seul — et le menu « … » du téléphone.
