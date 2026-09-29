@@ -142,7 +142,13 @@ create table public.tiers_categories (
 );
 
 -- `lignes_bancaires_un_seul_rapprochement` porte une règle métier qu'aucun code ne peut remplacer :
--- une ligne se rapproche d'UNE pièce ou d'UNE cotisation, jamais des deux.
+-- une ligne se rapproche d'UNE pièce, d'UNE cotisation ou d'UNE catégorie, jamais de deux.
+-- `lignes_bancaires_affectation_rapprochee` : un mouvement affecté à une catégorie est rapproché, et
+-- n'est pas un virement personnel.
+--
+-- RÉGÉNÉRÉE LE 29/09/2026 depuis le catalogue, après la migration
+-- `affectation_des_mouvements_bancaires` (colonne `categorie_id`, ses deux contraintes, son index) —
+-- ligne 26.6 de la feuille de route. Les onze autres tables sont celles du 22/09/2026.
 create table public.lignes_bancaires (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -156,12 +162,15 @@ create table public.lignes_bancaires (
   prelevement_personnel boolean default false not null,
   source_fichier text,
   libelle_brut text,
+  categorie_id uuid,
   constraint lignes_bancaires_pkey PRIMARY KEY (id),
+  constraint lignes_bancaires_categorie_id_fkey FOREIGN KEY (categorie_id) REFERENCES categories(id),
   constraint lignes_bancaires_cotisation_id_fkey FOREIGN KEY (cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE SET NULL,
   constraint lignes_bancaires_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint lignes_bancaires_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
+  constraint lignes_bancaires_affectation_rapprochee CHECK (((categorie_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_statut_check CHECK ((statut = ANY (ARRAY['non_rapprochee'::text, 'rapprochee'::text, 'ignoree'::text]))),
-  constraint lignes_bancaires_un_seul_rapprochement CHECK (((piece_id IS NULL) OR (cotisation_id IS NULL)))
+  constraint lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id) <= 1))
 );
 
 create table public.documents_divers (
@@ -230,6 +239,7 @@ CREATE INDEX documents_divers_dossier_hash_idx ON public.documents_divers USING 
 CREATE UNIQUE INDEX immobilisations_piece_unique ON public.immobilisations USING btree (piece_id) WHERE (piece_id IS NOT NULL);
 CREATE INDEX lignes_bancaires_dossier_id_idx ON public.lignes_bancaires USING btree (dossier_id);
 CREATE INDEX lignes_bancaires_statut_idx ON public.lignes_bancaires USING btree (statut);
+CREATE INDEX lignes_bancaires_categorie_id_idx ON public.lignes_bancaires USING btree (categorie_id);
 
 -- ─────────────────────────────── 4. RLS
 --
