@@ -243,6 +243,14 @@ const TABLES: Record<string, Ligne[]> = {
     id: 'vs1', dossier_id: 'd1', annee: 2026, profession: 'auxiliaire_medical', remplacant: false,
     recettes_brutes: 64_000, honoraires_conventionnes: 61_500, depassements: 0, recettes_structures: null,
   }],
+  // Les règles d'affectation du cabinet infirmier (lib/reglesAffectation.ts) : trois mouvements
+  // proposés sur deux catégories, et un prélèvement « telecom » que la règle reconnaît mais que le lot
+  // écarte — sa facture (p1, du même montant) attend d'être rapprochée.
+  regles_affectation_bancaire: [
+    { id: 'ra1', dossier_id: 'd1', motif: 'cpam', sens: 'encaissement', categorie_id: 'c9', created_at: MAINTENANT },
+    { id: 'ra2', dossier_id: 'd1', motif: 'frais', sens: 'decaissement', categorie_id: 'c10', created_at: MAINTENANT },
+    { id: 'ra3', dossier_id: 'd1', motif: 'telecom', sens: 'decaissement', categorie_id: 'c1', created_at: MAINTENANT },
+  ],
   lignes_bancaires: [
     ligne('l1', '2026-09-15', 'PRLV SEPA TELECOM PLUS', -39.99, 'non_rapprochee', null),
     ligne('l2', '2026-09-11', 'CB PHARMA DISTRIB SUD', -186.4, 'non_rapprochee', null),
@@ -257,6 +265,13 @@ const TABLES: Record<string, Ligne[]> = {
     // une infirmière, l'essentiel du chiffre d'affaires —, et des frais de tenue de compte.
     ligne('l8', '2026-08-20', 'VIR CPAM REMBOURSEMENTS AOUT', 1850.4, 'rapprochee', null, 'c9'),
     ligne('l9', '2026-08-31', 'FRAIS TENUE DE COMPTE', -8.5, 'rapprochee', null, 'c10'),
+    // Deux mouvements à traiter que les règles d'affectation reconnaissent (voir
+    // `regles_affectation_bancaire`) : la carte « Affectations proposées » les montre avec l3.
+    ligne('l10', '2026-09-22', 'VIR CPAM TIERS PAYANT SEPT', 1375.2, 'non_rapprochee', null),
+    ligne('l11', '2026-09-30', 'FRAIS OPPOSITION CHEQUE', -15, 'non_rapprochee', null),
+    // Un acompte au garage : la facture (p5, 245,60 €) attend, d'un autre montant. Aucune paire « sans
+    // doute », mais la fiche du mouvement avertit qu'un justificatif de ce tiers n'est rapproché de rien.
+    ligne('l12', '2026-09-18', 'PRLV SEPA GARAGE DU CENTRE', -120, 'non_rapprochee', null),
     ...TVA_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
   ],
