@@ -16,6 +16,7 @@ const cotisation = (o: Partial<CotisationDeclaree>): CotisationDeclaree =>
 const paiement = (pieceId: string, date: string, montant: number): LigneBancaire => ({
   id: `l-${pieceId}`, dossier_id: 'd1', date, libelle: 'VIR', montant, statut: 'rapprochee', piece_id: pieceId,
   cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
   created_at: `${date}T09:00:00Z`,
 })
 
