@@ -70,6 +70,16 @@ const VUES = [
   { nom: 'pc-affecter-sombre', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, cellule: 'VIR CPAM TIERS PAYANT' },
   { nom: 'pc-affecte-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR CPAM REMBOURSEMENTS AOUT' },
   { nom: 'mobile-affecter-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'VIR CPAM TIERS PAYANT' },
+  // Les règles d'affectation : la carte des affectations proposées (deux catégories, un mouvement écarté
+  // parce que sa facture attend), puis la fiche d'un acompte dont la facture est au dossier — l'avertissement
+  // avant d'affecter —, la case « Retenir » cochée.
+  { nom: 'pc-regles-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Affectations proposées par vos règles' },
+  { nom: 'pc-regles-sombre', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Affectations proposées par vos règles' },
+  { nom: 'pc-regles-assistant', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'Affectations proposées par vos règles' },
+  { nom: 'mobile-regles-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Affectations proposées par vos règles' },
+  { nom: 'pc-retenir-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', cocher: 'Retenir' },
+  { nom: 'pc-retenir-1024', chemin: '#/dossiers/d1/banque', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', cocher: 'Retenir' },
+  { nom: 'mobile-retenir-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', cocher: 'Retenir' },
   // Le menu du compte (apparence, installation, thème, déconnexion), ouvert tel quel, puis avec la
   // consigne d'installation dépliée (le navigateur n'a pas encore annoncé d'invite) : déployé, sombre,
   // réduit — où le menu s'ouvre au-dessus de l'avatar seul — et le menu « … » du téléphone.
@@ -131,6 +141,11 @@ for (const v of VUES) {
   if (v.cellule) {
     await page.getByRole('cell', { name: v.cellule }).first().click()
     await page.waitForTimeout(600)
+  }
+  // Une case du contenu qui vient de s'ouvrir, désignée par une partie de son libellé.
+  if (v.cocher) {
+    await page.getByRole('checkbox', { name: new RegExp(v.cocher) }).first().check()
+    await page.waitForTimeout(400)
   }
   // Un bouton du contenu qui vient de s'ouvrir (la fiche, le panneau), désigné par une partie de son nom.
   if (v.apres) {
