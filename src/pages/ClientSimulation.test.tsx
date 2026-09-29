@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSimulation from './ClientSimulation'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle } from '../lib/types'
+import type { Predicat } from '../test/filtresPostgrest'
 
 // LA SIMULATION DU CLIENT, dernier écran client sans test de rendu — et celui dont la projection
 // portait trois défauts à la fois (voir `projectionAnnuelle`, lib/estimation.ts, qui les garde à
@@ -26,43 +27,51 @@ const faux = vi.hoisted(() => ({
   muet: {} as Record<string, number>,
 }))
 
-vi.mock('../lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      const chaine: Record<string, unknown> = {}
-      let debut = 0
-      let fin = Number.MAX_SAFE_INTEGER
-      Object.assign(chaine, {
-        select: () => chaine,
-        eq: () => chaine,
-        not: () => chaine,
-        // Les catégories se lisent sur le dossier ET le cabinet (`dossier_id` nul).
-        or: () => chaine,
-        order: () => chaine,
-        range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        // La lecture du statut TVA du dossier, une seule ligne.
-        maybeSingle: () => Promise.resolve(
-          faux.refusees.has(table)
-            ? { data: null, error: { message: 'permission denied' } }
-            : { data: (faux.parTable[table] ?? [])[0] ?? null, error: null },
-        ),
-        then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown) => {
-          if (faux.refusees.has(table)) {
-            return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
-          }
-          const toutes = faux.parTable[table] ?? []
-          const plafond = faux.muet[table] ?? Number.MAX_SAFE_INTEGER
-          return Promise.resolve({
-            data: toutes.slice(debut, Math.min(fin + 1, plafond)),
-            error: null,
-            count: toutes.length,
-          }).then(suite)
-        },
-      })
-      return chaine
+vi.mock('../lib/supabase', async () => {
+  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../test/filtresPostgrest')
+  return {
+    supabase: {
+      from: (table: string) => {
+        const chaine: Record<string, unknown> = {}
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        // Les filtres sont APPLIQUÉS (voir src/test/filtresPostgrest.ts). Acceptés sans effet, ils
+        // laissaient ce test vert sur deux lectures qui cachent tout ce que la ligne 26.6 ajoute : les
+        // mouvements rapprochés restreints à ceux qui portent une pièce, et les catégories lues sur le
+        // seul dossier — celles du cabinet, les seules qui existent en production, n'y sont pas.
+        const predicats: Predicat[] = []
+        Object.assign(chaine, {
+          select: () => chaine,
+          eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return chaine },
+          not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
+          // Les catégories se lisent sur le dossier ET le cabinet (`dossier_id` nul).
+          or: (expression: string) => { predicats.push(predicatOr(expression)); return chaine },
+          order: () => chaine,
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          // La lecture du statut TVA du dossier, une seule ligne.
+          maybeSingle: () => Promise.resolve(
+            faux.refusees.has(table)
+              ? { data: null, error: { message: 'permission denied' } }
+              : { data: (faux.parTable[table] ?? [])[0] ?? null, error: null },
+          ),
+          then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number | null }) => unknown) => {
+            if (faux.refusees.has(table)) {
+              return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: null }).then(suite)
+            }
+            const toutes = filtrer(faux.parTable[table] ?? [], predicats)
+            const plafond = faux.muet[table] ?? Number.MAX_SAFE_INTEGER
+            return Promise.resolve({
+              data: toutes.slice(debut, Math.min(fin + 1, plafond)),
+              error: null,
+              count: toutes.length,
+            }).then(suite)
+          },
+        })
+        return chaine
+      },
     },
-  },
-}))
+  }
+})
 
 // Même doublure que les autres écrans client : un `AuthProvider` complet ferait dépendre le test
 // d'une session Supabase.
@@ -325,5 +334,17 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
     poser({ paiements: [affecte('2026-04-10'), affecte('2026-03-10', { id: 'l-2', categorie_id: 'cat-inconnue' })], categories: [RECETTES] })
     await monter()
     expect(valeur('CA encaissé à date')).toBe('0,00 €')
+  })
+
+  // Une catégorie qui manque à la lecture retire son mouvement du chiffre d'affaires, en silence : la
+  // projection baisse, et c'est la bonne nouvelle qu'on ne vérifie pas. La lecture partielle se dit.
+  it('prévient quand les catégories ne sont lues qu’en partie', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    const FRAIS: Categorie = { ...RECETTES, id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' }
+    poser({ paiements: [affecte('2026-03-10')], categories: [RECETTES, FRAIS] })
+    faux.muet = { categories: 1 }
+    await monter()
+    screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
   })
 })

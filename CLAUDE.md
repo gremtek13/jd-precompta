@@ -17,6 +17,14 @@ Client historique : JD Consult (cabinet `jeremy.darnis@gmail.com`), mais
 l'appli est conçue multi-cabinets dès l'origine (voir `cabinets`,
 `cabinet_admins`).
 
+**Le but, fixé par le cabinet le 29/09/2026** : une application qui rend l'expert-comptable
+indépendant — sans autre logiciel, tout centralisé ici, de la pièce à la déclaration. Pas de
+calendrier : le logiciel le plus complet et le plus fiable possible, même si c'est long. C'est ce qui
+ordonne la feuille de route, à commencer par la ligne 26.6 (chaque mouvement du relevé sur un compte,
+pour que le FEC de l'application soit celui du dossier). Tenir la comptabilité d'autrui étant réservé
+aux experts-comptables inscrits à l'Ordre, l'application est leur logiciel, ou celui d'un praticien
+qui tient la sienne ; un cabinet non inscrit en reste à la précomptabilité.
+
 ## État des données (19/09/2026) — à lire avant tout chiffre de ce fichier
 
 **La base ne contient aujourd'hui que des données FICTIVES**, et un seul dossier est vivant :
@@ -233,6 +241,9 @@ supabase/
                   du dépôt, à rejouer après chaque déploiement. socle.py/.sql et
                   inventaire.py/.sql : l'export du schéma confronté au catalogue, le socle au
                   caractère près et tout le reste nom par nom, à rejouer après chaque migration.
+                  affectation.sql : l'affectation d'un mouvement bancaire et son écriture, par
+                  impersonation des trois profils, à rejouer après toute migration qui touche
+                  ses deux fonctions ou les contraintes de lignes_bancaires.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1208,6 +1219,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   de frais passe par le compte choisi (455, 108 ou 467) ; le FEC porte les journaux AC, VE et BQ et un
   compte auxiliaire par tiers. Voir « la comptabilité d'engagement, étape 1 » dans « Problèmes
   connus » (`lib/engagement.ts`).
+- **Affecter un mouvement bancaire sans justificatif à une catégorie (29/09/2026)**, ligne 26.6 de
+  la feuille de route, étape (a) en partie : depuis la fiche d'un mouvement (onglet Banque), un
+  encaissement de l'Assurance maladie ou un frais bancaire s'affecte à une catégorie de charge ou de
+  produit. Il est écrit au brouillon sur le compte de la catégorie face à la banque, compté à la date
+  du mouvement dans la 2035, la situation intermédiaire et l'estimation, et porté au FEC au journal de
+  banque avec le relevé pour pièce. Voir « un mouvement sans justificatif s'affecte à une catégorie »
+  dans « Problèmes connus » (`lib/affectationBanque.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1237,6 +1255,16 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   vingt-deux champs d'un BNC en comptabilité de trésorerie (que l'outil de la DGFiP n'exige pas) et les
   montants en devise, qui attendent la réponse de l'expert-comptable du cabinet — voir « le FEC suit
   l'article A47 A-1 » dans « Problèmes connus ».
+- Tenir toute la comptabilité d'un BNC (ligne 26.6) : l'étape (a) est livrée EN PARTIE (29/09/2026) —
+  un mouvement sans justificatif s'affecte à la main, un par un, à une catégorie de charge ou de
+  produit. Restent pour (a) : les règles apprises par libellé et l'affectation en lot (sur le relevé
+  2025 du dossier `test`, 372 mouvements ne sont rattachés à rien) ; les comptes de bilan — 108 pour
+  les apports et prélèvements de l'exploitant, que « Virement personnel » classe sans rien écrire,
+  164 pour le capital d'un emprunt — et la ventilation d'un mouvement sur plusieurs comptes (une
+  échéance d'emprunt mêle capital et intérêts) ; les recettes d'un dossier assujetti, dont la TVA ne
+  se lit pas sur un relevé. Puis (b) écrire les cotisations, les dotations, l'acquisition d'une
+  immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y comparer, (d)
+  valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -3286,15 +3314,22 @@ d'environnement dans la même édition.
   - **`prelevement_personnel` n'est PAS écarté du prédicat** : un virement personnel est classé
     `'ignoree'` (mesuré : les 3 de la base le sont), donc il n'y entre pas de toute façon, et
     l'écarter laisserait croire qu'un virement personnel « rapproché » serait légitime.
-  **ET LE COMMENTAIRE DE `types.ts` PROMETTAIT UNE CONTRAINTE QUI N'EXISTE PAS** : `cotisation_id`
-  s'annonçait « mutuellement exclusif avec piece_id (**contrainte en base**) ». Mesuré :
-  `lignes_bancaires` ne porte **AUCUNE contrainte CHECK**, et 0 ligne porte les deux. La garantie est
-  tenue par l'APPLICATION — les quatre écrivains de BanqueTab posent l'un en annulant l'autre, et
-  `planRapprochementAutomatique` ne rend jamais les deux — et le commentaire le dit maintenant.
-  **Pourquoi elle n'est PAS portée dans la base** : `lignes_bancaires` est l'une des douze tables du
-  socle (`supabase/schema/socle/`), donc la contrainte se retrouverait à la fois dans une migration
-  et dans l'export du socle, **rejouée deux fois le jour d'une reprise** — c'est-à-dire un plan de
-  reprise qui casse au moment où on s'en sert. Une passe à part, pas un ajout en passant.
+  **ET CE PARAGRAPHE A AFFIRMÉ SIX JOURS DURANT QU'UNE CONTRAINTE N'EXISTAIT PAS — ELLE EXISTAIT**
+  (corrigé le 29/09/2026). Le commentaire de `types.ts` annonçait `cotisation_id` « mutuellement
+  exclusif avec piece_id (contrainte en base) » ; il était écrit ici qu'une mesure le démentait —
+  « `lignes_bancaires` ne porte AUCUNE contrainte CHECK » — et le commentaire, JUSTE, avait été réécrit
+  sur la foi de cette mesure pour dire que l'application seule tenait la garantie. Or
+  `lignes_bancaires_un_seul_rapprochement` (`piece_id IS NULL OR cotisation_id IS NULL`) figurait dans
+  l'export du socle, tiré de `pg_constraint` la VEILLE, le 22/09. Comment la mesure s'est trompée, le
+  commit ne le dit pas ; ce qui est sûr, c'est que rien ne l'a recoupée avec l'export qui portait la
+  réponse. Trouvé en écrivant la migration de l'affectation (ligne 26.6), dont le `drop constraint`
+  sans `if exists` n'aurait pas pu passer sinon. La contrainte tient désormais les trois liens
+  (`num_nonnulls(piece_id, cotisation_id, categorie_id) <= 1`), et `types.ts` le dit.
+  **La crainte qui justifiait de ne pas la poser s'est réalisée, sous la forme du défaut déjà inscrit
+  au plan de reprise** : `lignes_bancaires` vit dans le socle et la migration du 29/09 la modifie, donc
+  « migrations puis socle » bute sur une table qui n'existe pas encore, et « socle puis migrations »
+  sur une colonne déjà là. Même famille que `20260905071332` (PLAN_DE_REPRISE.md §4, étape 2) : c'est
+  l'ORDRE de reconstruction qui reste à écrire, pas une contrainte à retirer.
   **TREIZE MUTATIONS, TOUTES MORDENT, et la DISCRIMINATION est le résultat** : la pastille de la
   LISTE et celle du PANNEAU font tomber UN test chacune, donc les deux copies sont gardées
   séparément — et il a fallu OUVRIR le panneau dans le test pour ça, une assertion restée sur la
@@ -4869,6 +4904,102 @@ d'environnement dans la même édition.
   mouvement ; la garde du gestionnaire de « Régénérer » double le bouton grisé, dont la mutation mord ;
   et la génération en engagement ne rappelle pas la contrepartie banque — l'appeler serait sans effet,
   le règlement étant idempotent par mouvement.
+- **UN MOUVEMENT SANS JUSTIFICATIF S'AFFECTE À UNE CATÉGORIE — LIGNE 26.6, ÉTAPE (A), EN PARTIE**
+  (29/09/2026, `lib/affectationBanque.ts`). Jusqu'ici seul un mouvement rapproché d'une PIÈCE
+  produisait une écriture. Tout le reste n'était écrit nulle part — ni au brouillon, ni au FEC, ni dans
+  la 2035 — et c'est l'essentiel du relevé : sur celui du dossier `test` (fictif), 372 des 385
+  mouvements ne sont rattachés à rien. Pour un infirmier ce sont ses recettes : il ne transmet pas ses
+  bordereaux (décision du 24/09/2026), ses honoraires arrivent par virement, et la 2035 ne comptait que
+  les justificatifs de recette.
+  **Le modèle** : `lignes_bancaires.categorie_id`, clé SANS action à la suppression — une catégorie en
+  usage ne se supprime pas, donc ce lien ne peut pas se défaire en silence comme celui d'une pièce ou
+  d'une échéance. Deux contraintes le tiennent sans le code : `lignes_bancaires_un_seul_rapprochement`
+  (`num_nonnulls(piece_id, cotisation_id, categorie_id) <= 1`) et
+  `lignes_bancaires_affectation_rapprochee` (affecté ⇒ rapproché, jamais un virement personnel).
+  **L'affectation et son écriture s'écrivent ENSEMBLE**, par `affecter_mouvement_bancaire` : un
+  mouvement affecté sans écriture compterait dans la 2035 et pas dans le FEC, une écriture sans
+  affectation l'inverse. L'écriture est COMPOSÉE par l'application (`ecritureDuMouvement`, testée) et la
+  fonction la VÉRIFIE avant de l'écrire — une seule ligne de banque, au montant et dans le sens du
+  mouvement, aucun autre compte que celui de la catégorie, l'équilibre au centime — puis remplace la
+  précédente ; `retirer_affectation_mouvement_bancaire` retire les deux. Toutes deux sont
+  `SECURITY INVOKER` (la RLS s'applique dedans), vérifient `admin_du_dossier` et refusent de remplacer
+  ou de retirer une écriture validée. `supabase/essais/affectation.sql` les rejoue par impersonation des
+  trois profils : vingt-cinq contrôles, dont le contrôle POSITIF du chef de cabinet, chaque refus jugé à
+  sa RAISON, et ce que les contraintes tiennent seules.
+  **La nature se lit au COMPTE, le sens au SIGNE** : classe 7 une recette, classe 6 une dépense ; un
+  compte de bilan est refusé tant qu'aucune étape ne le prend en charge. L'écriture prend le sens du
+  mouvement, jamais celui de la nature : un remboursement reçu crédite la charge et la diminue, sans
+  cas à part. L'erreur la plus facile est nommée avant le clic (`sensInhabituel`) : « Honoraires »
+  (622600) est une CHARGE, les honoraires qu'on encaisse vont en 706, et un encaissement rangé là
+  diminuerait les dépenses au lieu d'augmenter les recettes — un résultat juste, une 2035 fausse sur
+  deux lignes.
+  **Refusé, et dit avant le clic** (la base refait les mêmes refus) : un mouvement déjà rapproché ou
+  classé en virement personnel, une catégorie sans compte de résultat, un mouvement de zéro euro, et
+  UNE RECETTE SUR UN DOSSIER ASSUJETTI — sa TVA ne se lit pas sur un relevé, et l'écrire au TTC en 706
+  compterait la taxe en chiffre d'affaires sans qu'aucune CA3 la voie. Un dossier qui le DEVIENT garde
+  ses recettes affectées : la Checklist les montre, et le geste est de rapprocher leur facture à la
+  place.
+  **Ce qui le compte, usage par usage** — toujours à la date du MOUVEMENT, et par un paramètre
+  OBLIGATOIRE, sans valeur par défaut : l'oublier rendrait la 2035 d'un infirmier presque sans
+  recettes. La 2035 (`nbMouvements` à part de `nbPieces`, pour ne pas faire chercher des pièces qui
+  n'existent pas ; les mouvements qu'elle ne peut pas compter — catégorie sans poste, compte sorti des
+  comptes de résultat —, Clôture les liste), la situation intermédiaire, les ratios et le prévisionnel
+  de Financement, l'estimation (chiffre d'affaires et détail par poste) et la simulation client. Et
+  les cinq écrans qui lisaient les mouvements rapprochés avec `.not('piece_id', 'is', null)` les lisent
+  TOUS : ce filtre aurait caché chaque mouvement affecté, en silence.
+  **Le FEC** porte l'écriture au journal de BANQUE, un numéro par mouvement, le RELEVÉ pour pièce (son
+  nom de fichier en PieceRef) à la date du mouvement. L'écriture sans pièce d'un mouvement qui n'est
+  PAS affecté — le reste d'une pièce supprimée — reste dehors, et `absenceFec` la chiffre. **La piste
+  d'audit** donne « Relevé bancaire : <fichier> » pour justificatif et laisse l'empreinte VIDE : le
+  relevé n'en a pas de connue ici, et y mettre autre chose ferait croire à une preuve d'intégrité.
+  L'écriture d'un mouvement qu'on supprime redevient une rupture, sa clé étant en SET NULL.
+  **Les contrôles** : un mouvement affecté n'est pas « rapproché sans justificatif » ; une catégorie qui
+  ne sert qu'au relevé compte dans les comptes et les postes manquants ; et la Checklist gagne deux
+  points — le mouvement dont l'écriture ne suit plus sa catégorie (son compte a changé depuis : le
+  défaut d'une pièce recatégorisée, invisible de même puisque les totaux ne bougent pas, et
+  « Réaffecter », dans Écritures, la réécrit) et la recette affectée d'un dossier assujetti.
+  **L'écran** : dans la fiche d'un mouvement, sous « Sans justificatif », les catégories de résultat
+  dans l'ordre du sens (les recettes d'abord pour un encaissement), et l'affectation ne part QU'AU CLIC
+  sur « Affecter » — sur une liste déroulante qui a le focus, les flèches du clavier changent la
+  valeur, la leçon déjà payée par le choix d'une pièce. Le volet reste ensuite sur le mouvement
+  (« Affecté à … », « Réaffecter », « Annuler l'affectation »), sous le verrou partagé des écritures de
+  rapprochement.
+  **L'assistant (v29)** compte les mouvements affectés comme la Checklist, et son prompt dit qu'une
+  écriture sans pièce face au 512000 n'est pas une anomalie. `agentComptableAffectation.test.ts`
+  compare sa copie à `src/lib` et plante six dérives dans la vraie source. Déployé avec `verify_jwt`
+  relu et repassé à `false`, la v28 comparée au dépôt avant écrasement (identique), aller-retour après :
+  zéro différence sur 1 271 lignes, et le 401 de la fonction sans session. Aucun appel au modèle.
+  **La sauvegarde** emporte le lien (`RELATIONS`), et `sauvegardeRelations.test.ts` compare désormais
+  tout ce graphe au schéma exporté — c'est en l'écrivant qu'ont été trouvés les onze objets créés hors
+  migration (voir « un export de schéma n'est pas un schéma »). Le banc de capture sert un
+  encaissement et un frais bancaire affectés : 0 débordement sur les vingt-trois écrans, aux quatre
+  largeurs.
+  **LATENT** : aucun mouvement n'est encore affecté en base (mesuré le 29/09/2026).
+  **Cent vingt-huit mutations, cent vingt-cinq mordent — et la première campagne n'en tuait que
+  cent quatre.** Vingt survivaient aux tests, quatre autres au seul compilateur.
+  **LE CODE TEL QU'IL ÉTAIT SURVIVAIT SUR CINQ ÉCRANS, et c'est le résultat du chantier** : remettre
+  `.not('piece_id', 'is', null)` sur la lecture des mouvements rapprochés laissait Écritures, Clôture,
+  Estimation, Financement et la simulation client au VERT. Leurs faux clients répondaient
+  `not: () => chaine` — ils acceptaient le filtre sans l'appliquer, donc rendaient les mouvements
+  affectés quoi que la requête demande. Même panne sur les catégories lues par `.eq('dossier_id', …)`
+  au lieu du `.or(…)` qui ajoute celles du cabinet : en production aucune catégorie n'appartient à un
+  dossier, donc toutes disparaîtraient, et Banque comme la simulation restaient verts.
+  `src/test/filtresPostgrest.ts` fait APPLIQUER ces filtres aux faux clients des six écrans (voir
+  « Tests »), et les sept mutations mordent. C'est la famille du jeu d'essai infidèle (`devise: null`)
+  par une porte nouvelle : ce n'est plus une ligne d'essai qui ment, c'est le faux serveur qui ignore
+  la question.
+  **Les autres survivantes accusaient des tests absents**, tous écrits : les bornes de début d'une
+  situation et d'un repère d'estimation, la lecture partielle des catégories (Banque, simulation),
+  l'annulation refusée, le verrou partagé sur « Affecter », les deux messages du volet (compte sorti
+  des comptes de résultat, aucune catégorie proposable), la réaffectation à trois clics, pendant la
+  relecture et refusée par la base, les ratios et le prévisionnel de Financement, et le statut TVA que
+  la page transmet à Banque — et à la vue d'ensemble, que rien ne gardait non plus.
+  **Trois survivent, et c'est dit** : le refus répété dans le gestionnaire d'affectation de Banque,
+  qu'aucun clic n'atteint, le bouton étant grisé (sa propre mutation mord) — une seconde ceinture, que
+  le compilateur voit ; et, dans Écritures comme dans la Checklist, les comptes manquants comptés sans
+  le relevé : une catégorie qui porte un mouvement affecté a forcément un compte — la base en exige un
+  de résultat à l'affectation, et aucun écran ni aucune fonction n'efface un compte (Écritures refuse
+  un compte vide). Ce câblage est défensif, et le module le garde (`categoriesSansCompte`).
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -6109,7 +6240,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2380 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2509 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -6125,8 +6256,9 @@ par tous les écrans (`recherche.ts`), le contrat de la proposition de catégori
 (`categorisationIa.ts`), les cotisations Urssaf d'un praticien conventionné
 (`voletSocialPamc.ts`, contre le moteur de l'Urssaf), et le montant qu'on retient d'une pièce
 selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), la CA3 préparée case par case
-(`declarationTva.ts`), la date à laquelle une pièce compte en trésorerie (`rattachement.ts`), et les
-écritures d'un dossier tenu en engagement (`engagement.ts`) —
+(`declarationTva.ts`), la date à laquelle une pièce compte en trésorerie (`rattachement.ts`), les
+écritures d'un dossier tenu en engagement (`engagement.ts`), et celles d'un mouvement du relevé
+affecté sans justificatif (`affectationBanque.ts`) —
 les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
@@ -6147,6 +6279,18 @@ jour. Écrit ainsi, le tout premier test d'écran du dépôt restait VERT en rem
 MÊME `act` (`await act(async () => { bouton.click(); bouton.click() })`), qui est la séquence réelle.
 Trouvé par mutation, pas par relecture — un harnais qui ment est pire qu'un harnais absent, et
 celui-là mentait sur le seul défaut qu'il prétendait garder.
+
+**Un faux client APPLIQUE les filtres qui décident de ce que l'écran voit** (`src/test/filtresPostgrest.ts`,
+29/09/2026). Un faux qui répond `not: () => chaine` rend les mêmes lignes avec ou sans le filtre : il
+ne peut pas voir qu'un écran filtre TROP. Cinq écrans lisaient les mouvements rapprochés restreints à
+ceux qui portent une pièce — le défaut même que l'affectation d'un mouvement corrige —, et leurs tests
+restaient verts avec ce filtre remis. Le module modélise `.eq`, `.not(colonne, 'is', null)` et les
+termes `eq`/`is.null` d'un `.or`, et LÈVE sur toute autre forme : un filtre accepté sans être appliqué
+est exactement la panne qu'il corrige. Il sert aujourd'hui aux faux clients de Banque (catégories),
+Écritures, Clôture, Estimation, Financement et de la simulation client ; un nouveau test d'écran dont
+un filtre décide de ce qu'il montre s'y branche plutôt que d'accepter le filtre en silence. Et comme
+toute fabrique de faux, il se charge DANS la fabrique de `vi.mock` (`await import(…)`) : une variable
+du module de test y serait lue avant d'exister, `vi.mock` étant remonté en tête de fichier.
 
 - `npm test` — la suite, dans le fuseau des utilisateurs.
 - `npm run test:watch` — en continu pendant le développement.

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { ModeleComptable } from '../../lib/engagement'
+import type { Predicat } from '../../test/filtresPostgrest'
 import EcrituresTab from './EcrituresTab'
 
 // L'ONGLET QUI PRODUIT LES DEUX FICHIERS OFFICIELS du projet — le FEC et la piste d'audit. Un défaut
@@ -48,104 +49,118 @@ const faux = vi.hoisted(() => ({
   // retire.
   suppressions: [] as { table: string; filtres: [string, unknown][] }[],
   // Les appels à la fonction SQL de l'affectation (ligne 26.6) — que le faux serveur APPLIQUE : il
-  // remplace l'écriture du mouvement, comme la vraie, pour que la relecture la voie.
+  // remplace l'écriture du mouvement, comme la vraie, pour que la relecture la voie. Il la refuse à la
+  // demande, et peut retenir les lectures qui la suivent : c'est la fenêtre de la relecture.
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
+  erreurRpc: null as string | null,
+  retenirApresRpc: false,
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
-    rpc: (nom: string, args: Record<string, unknown>) => {
-      faux.rpcs.push({ nom, args })
-      const id = args.p_ligne_bancaire_id
-      const ligne = (faux.parTable.lignes_bancaires ?? []).find((l) => (l as { id: string }).id === id) as { date: string } | undefined
-      const ecrites = (args.p_ecritures as Record<string, unknown>[]).map((e, i) => ({
-        id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: id,
-        date: ligne?.date, statut: 'proposee', created_at: '2025-04-02T09:00:00Z', ...e,
-      }))
-      faux.parTable.ecritures_brouillon = [
-        ...(faux.parTable.ecritures_brouillon ?? []).filter((e) => {
-          const ecr = e as { piece_id: string | null; ligne_bancaire_id: string | null }
-          return !(ecr.piece_id == null && ecr.ligne_bancaire_id === id)
-        }),
-        ...ecrites,
-      ]
-      return Promise.resolve({ data: ecrites.length, error: null })
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  return {
+    supabase: {
+      rpc: (nom: string, args: Record<string, unknown>) => {
+        faux.rpcs.push({ nom, args })
+        if (faux.erreurRpc) return Promise.resolve({ data: null, error: { message: faux.erreurRpc } })
+        if (faux.retenirApresRpc) {
+          faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+        }
+        const id = args.p_ligne_bancaire_id
+        const ligne = (faux.parTable.lignes_bancaires ?? []).find((l) => (l as { id: string }).id === id) as { date: string } | undefined
+        const ecrites = (args.p_ecritures as Record<string, unknown>[]).map((e, i) => ({
+          id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: id,
+          date: ligne?.date, statut: 'proposee', created_at: '2025-04-02T09:00:00Z', ...e,
+        }))
+        faux.parTable.ecritures_brouillon = [
+          ...(faux.parTable.ecritures_brouillon ?? []).filter((e) => {
+            const ecr = e as { piece_id: string | null; ligne_bancaire_id: string | null }
+            return !(ecr.piece_id == null && ecr.ligne_bancaire_id === id)
+          }),
+          ...ecrites,
+        ]
+        return Promise.resolve({ data: ecrites.length, error: null })
+      },
+      from: (table: string) => {
+        const chaine: Record<string, unknown> = {}
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        // La suppression MORD vraiment sur la table du faux : après elle, le `load()` de l'écran relit
+        // un jeu réellement amputé. C'est ce qui rend les assertions de bout en bout — « le panneau
+        // disparaît » plutôt que « la bonne méthode a été appelée » — et ce qui permet de voir qu'une
+        // ligne oubliée en produit une autre, ailleurs.
+        let suppression = false
+        let insertion: Record<string, unknown>[] | null = null
+        let miseAJour: Record<string, unknown> | null = null
+        const filtres: [string, unknown][] = []
+        // `.not` et `.or` sont APPLIQUÉS à la lecture (voir src/test/filtresPostgrest.ts) : acceptés sans
+        // effet, ils laissaient ce test vert avec la lecture des mouvements rapprochés restreinte à ceux
+        // qui portent une pièce, c'est-à-dire le défaut même que l'affectation (ligne 26.6) corrige.
+        const predicats: Predicat[] = []
+        Object.assign(chaine, {
+          select: () => chaine,
+          delete: () => { suppression = true; return chaine },
+          // La mise à jour MORD aussi, comme la suppression : c'est la date que la contrepartie banque
+          // réécrit sur les lignes d'une pièce rapprochée (voir lib/contrepartieBanque.ts).
+          update: (valeurs: Record<string, unknown>) => { miseAJour = valeurs; return chaine },
+          insert: (lignes: Record<string, unknown> | Record<string, unknown>[]) => {
+            insertion = Array.isArray(lignes) ? lignes : [lignes]
+            return chaine
+          },
+          eq: (colonne: string, valeur: unknown) => { filtres.push([colonne, valeur]); return chaine },
+          neq: (colonne: string, valeur: unknown) => { filtres.push([`!${colonne}`, valeur]); return chaine },
+          is: () => chaine,
+          not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
+          or: (expression: string) => { predicats.push(predicatOr(expression)); return chaine },
+          order: () => chaine,
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          then: (suite: (r: { data: unknown[] | null; error: unknown; count: number }) => unknown) => {
+            if (insertion) {
+              faux.insertions.push({ table, lignes: insertion })
+              faux.parTable[table] = [...(faux.parTable[table] ?? []), ...insertion.map((l, i) => ({ id: `ins-${faux.insertions.length}-${i}`, ...l }))]
+              if (faux.retenirApresInsertion) {
+                faux.retenue = new Promise<void>((r) => { faux.relacher = r })
+              }
+              return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
+            }
+            if (miseAJour) {
+              faux.misesAJour.push({ table, valeurs: miseAJour })
+              if (faux.refusMiseAJour) {
+                return Promise.resolve({ data: null, error: { message: faux.refusMiseAJour }, count: 0 }).then(suite)
+              }
+              const vise = (ligne: Record<string, unknown>) => filtres.every(([colonne, valeur]) =>
+                colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
+              faux.parTable[table] = (faux.parTable[table] ?? []).map((l) =>
+                vise(l as Record<string, unknown>) ? { ...(l as Record<string, unknown>), ...miseAJour } : l)
+              return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
+            }
+            if (suppression) {
+              faux.suppressions.push({ table, filtres: [...filtres] })
+              if (faux.refusSuppression) {
+                return Promise.resolve({ data: null, error: { message: faux.refusSuppression }, count: 0 }).then(suite)
+              }
+              const garde = (ligne: Record<string, unknown>) => !filtres.every(([colonne, valeur]) =>
+                colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
+              faux.parTable[table] = (faux.parTable[table] ?? []).filter((l) => garde(l as Record<string, unknown>))
+              return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
+            }
+            const toutes = filtrer(faux.parTable[table] ?? [], predicats)
+            const demande = fin - debut + 1
+            const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
+            const muet = faux.muetParTable[table] ?? faux.muetApres
+            const rendu = muet == null
+              ? toutes.slice(debut, debut + taille)
+              : toutes.slice(debut, Math.min(debut + taille, muet))
+            const reponse = { data: rendu, error: null, count: toutes.length }
+            return (faux.retenue ?? Promise.resolve()).then(() => reponse).then(suite)
+          },
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+        })
+        return chaine
+      },
     },
-    from: (table: string) => {
-      const chaine: Record<string, unknown> = {}
-      let debut = 0
-      let fin = Number.MAX_SAFE_INTEGER
-      // La suppression MORD vraiment sur la table du faux : après elle, le `load()` de l'écran relit
-      // un jeu réellement amputé. C'est ce qui rend les assertions de bout en bout — « le panneau
-      // disparaît » plutôt que « la bonne méthode a été appelée » — et ce qui permet de voir qu'une
-      // ligne oubliée en produit une autre, ailleurs.
-      let suppression = false
-      let insertion: Record<string, unknown>[] | null = null
-      let miseAJour: Record<string, unknown> | null = null
-      const filtres: [string, unknown][] = []
-      Object.assign(chaine, {
-        select: () => chaine,
-        delete: () => { suppression = true; return chaine },
-        // La mise à jour MORD aussi, comme la suppression : c'est la date que la contrepartie banque
-        // réécrit sur les lignes d'une pièce rapprochée (voir lib/contrepartieBanque.ts).
-        update: (valeurs: Record<string, unknown>) => { miseAJour = valeurs; return chaine },
-        insert: (lignes: Record<string, unknown> | Record<string, unknown>[]) => {
-          insertion = Array.isArray(lignes) ? lignes : [lignes]
-          return chaine
-        },
-        eq: (colonne: string, valeur: unknown) => { filtres.push([colonne, valeur]); return chaine },
-        neq: (colonne: string, valeur: unknown) => { filtres.push([`!${colonne}`, valeur]); return chaine },
-        is: () => chaine,
-        not: () => chaine,
-        or: () => chaine,
-        order: () => chaine,
-        range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        then: (suite: (r: { data: unknown[] | null; error: unknown; count: number }) => unknown) => {
-          if (insertion) {
-            faux.insertions.push({ table, lignes: insertion })
-            faux.parTable[table] = [...(faux.parTable[table] ?? []), ...insertion.map((l, i) => ({ id: `ins-${faux.insertions.length}-${i}`, ...l }))]
-            if (faux.retenirApresInsertion) {
-              faux.retenue = new Promise<void>((r) => { faux.relacher = r })
-            }
-            return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
-          }
-          if (miseAJour) {
-            faux.misesAJour.push({ table, valeurs: miseAJour })
-            if (faux.refusMiseAJour) {
-              return Promise.resolve({ data: null, error: { message: faux.refusMiseAJour }, count: 0 }).then(suite)
-            }
-            const vise = (ligne: Record<string, unknown>) => filtres.every(([colonne, valeur]) =>
-              colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
-            faux.parTable[table] = (faux.parTable[table] ?? []).map((l) =>
-              vise(l as Record<string, unknown>) ? { ...(l as Record<string, unknown>), ...miseAJour } : l)
-            return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
-          }
-          if (suppression) {
-            faux.suppressions.push({ table, filtres: [...filtres] })
-            if (faux.refusSuppression) {
-              return Promise.resolve({ data: null, error: { message: faux.refusSuppression }, count: 0 }).then(suite)
-            }
-            const garde = (ligne: Record<string, unknown>) => !filtres.every(([colonne, valeur]) =>
-              colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
-            faux.parTable[table] = (faux.parTable[table] ?? []).filter((l) => garde(l as Record<string, unknown>))
-            return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
-          }
-          const toutes = faux.parTable[table] ?? []
-          const demande = fin - debut + 1
-          const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
-          const muet = faux.muetParTable[table] ?? faux.muetApres
-          const rendu = muet == null
-            ? toutes.slice(debut, debut + taille)
-            : toutes.slice(debut, Math.min(debut + taille, muet))
-          const reponse = { data: rendu, error: null, count: toutes.length }
-          return (faux.retenue ?? Promise.resolve()).then(() => reponse).then(suite)
-        },
-        maybeSingle: () => Promise.resolve({ data: null, error: null }),
-      })
-      return chaine
-    },
-  },
-}))
+  }
+})
 
 // `genererFec` reste le VRAI : c'est son résultat qu'on veut inspecter. Seul le téléchargement est
 // remplacé — jsdom n'a pas d'URL.createObjectURL, et c'est le CONTENU qui est en cause.
@@ -192,6 +207,8 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.refusMiseAJour = null
   faux.suppressions = []
   faux.rpcs = []
+  faux.erreurRpc = null
+  faux.retenirApresRpc = false
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
     immobilisations: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [],
@@ -1079,7 +1096,10 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
     await waitFor(() => expect(screen.queryByText('Mouvements affectés à réaffecter')).toBeNull())
   })
 
-  it("deux clics rapprochés ne réaffectent qu'une fois", async () => {
+  // Trois clics dans le MÊME rendu, et pas deux : un verrou posé DANS le `try` laisse le refus du
+  // deuxième sortir par le `finally`, qui relâche le verrou du premier — le troisième passe alors
+  // (voir CLAUDE.md, « Le verrou se pose AVANT le `try` »). Avec deux clics, ce test restait vert.
+  it("trois clics rapprochés ne réaffectent qu'une fois", async () => {
     poser({
       categories: [CATEGORIE_ACHATS, { ...FRAIS, compte_comptable: '627100' }],
       lignes_bancaires: [mouvement()],
@@ -1087,8 +1107,49 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
     })
     monter()
     const bouton = await screen.findByRole('button', { name: 'Réaffecter' })
-    await act(async () => { bouton.click(); bouton.click() })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
     expect(faux.rpcs).toHaveLength(1)
+  })
+
+  // Le verrou d'un mouvement tient jusqu'à la RELECTURE, pas seulement jusqu'à l'appel : réaffecter un
+  // second mouvement rend son bouton au premier (l'état n'en retient qu'un), et le premier, encore
+  // porté par la liste le temps que la relecture revienne, se réaffecterait une seconde fois.
+  it('ne réaffecte pas deux fois un mouvement dont la relecture n’est pas revenue', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...FRAIS, compte_comptable: '627100' }],
+      lignes_bancaires: [mouvement(), mouvement({ id: 'l-frais-2', date: '2025-04-30' })],
+      ecritures_brouillon: [
+        ...ECRITURE_FRAIS,
+        ecriture({ id: 'm3', piece_id: null, ligne_bancaire_id: 'l-frais-2', date: '2025-04-30', compte: '627000', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' }),
+        ecriture({ id: 'm4', piece_id: null, ligne_bancaire_id: 'l-frais-2', date: '2025-04-30', compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' }),
+      ],
+    })
+    monter()
+    const [premier, second] = await screen.findAllByRole('button', { name: 'Réaffecter' })
+    faux.retenirApresRpc = true
+    await act(async () => { premier.click() })
+    await act(async () => { second.click() })
+    await waitFor(() => expect(premier.hasAttribute('disabled')).toBe(false))
+    await act(async () => { premier.click() })
+    expect(faux.rpcs.map((r) => r.args.p_ligne_bancaire_id)).toEqual(['l-frais', 'l-frais-2'])
+
+    await act(async () => { faux.relacher?.() })
+    await waitFor(() => expect(screen.queryByText('Mouvements affectés à réaffecter')).toBeNull())
+  })
+
+  it('dit une réaffectation que la base refuse, et garde le mouvement à réaffecter', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...FRAIS, compte_comptable: '627100' }],
+      lignes_bancaires: [mouvement()],
+      ecritures_brouillon: ECRITURE_FRAIS,
+    })
+    faux.erreurRpc = 'refus simulé'
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Réaffecter' })
+    await act(async () => { bouton.click() })
+    expect(await screen.findByText('refus simulé')).toBeTruthy()
+    expect(screen.getByText('Mouvements affectés à réaffecter')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Réaffecter' }).hasAttribute('disabled')).toBe(false)
   })
 
   it('ne propose pas de réaffecter sur une catégorie sortie des comptes de résultat, et dit où aller', async () => {

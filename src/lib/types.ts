@@ -96,8 +96,8 @@ export interface LigneBancaire {
   // MUTUELLEMENT EXCLUSIF AVEC `piece_id` ET `categorie_id`, ET C'EST LA BASE QUI LE TIENT :
   // `lignes_bancaires_un_seul_rapprochement` (num_nonnulls(piece_id, cotisation_id, categorie_id)
   // <= 1). Ce commentaire a affirmé du 23/09 au 29/09/2026 qu'aucune contrainte CHECK n'existait :
-  // c'était faux, `pg_constraint` la rend depuis le 22/09 au moins (le socle l'exporte déjà), et
-  // l'affirmation n'avait pas été mesurée sur le catalogue.
+  // c'était faux, `pg_constraint` la rend depuis le 22/09 au moins (le socle l'exporte déjà), et rien
+  // n'avait recoupé l'affirmation avec l'export qui portait la réponse.
   cotisation_id: string | null
   // La catégorie d'un mouvement SANS justificatif (ligne 26.6 de la feuille de route) : frais
   // bancaires, encaissements de l'Assurance maladie, remboursements. Le mouvement est alors rapproché,
