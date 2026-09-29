@@ -11,10 +11,13 @@ import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserv
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
+import { echeancesOccupees, idsDeblocagesEmprunt } from '../../lib/echeanceEmprunt'
 import type { ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
-interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number }
+// `ligne_bancaire_id` : le mouvement du relevé dont l'écriture est la contrepartie — de quoi reconnaître
+// celles d'un DÉBLOCAGE d'emprunt, que le solde compte et la moyenne des encaissements non.
+interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number; ligne_bancaire_id: string | null }
 
 // Première brique du "dossier bancaire automatisé" — l'échéancier des emprunts (voir lib/emprunts.ts),
 // avec quelques ratios simples qui ne demandent pas de résoudre au préalable la question, plus large,
@@ -93,8 +96,8 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
       // Solde de trésorerie recalculé depuis le détail (pas juste l'agrégat "aujourd'hui") pour
       // pouvoir aussi répondre "à telle date" dans la situation intermédiaire ci-dessous — sur tout
       // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours.
-      lireTout<{ date: string; sens: string; montant: number }>((debut, fin) =>
-        supabase.from('ecritures_brouillon').select('date, sens, montant', { count: 'exact' })
+      lireTout<{ date: string; sens: string; montant: number; ligne_bancaire_id: string | null }>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('date, sens, montant, ligne_bancaire_id', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE).order('id').range(debut, fin),
       ),
       lireTout<ANouveau>((debut, fin) =>
@@ -142,10 +145,36 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   useEffect(() => { load() }, [dossierId])
 
   const soldeBanque = soldeBanqueADate(lignesBanque, ouverture, aujourdHuiSql())
+  // LES DÉBLOCAGES D'EMPRUNT NE SONT PAS UN RYTHME D'ACTIVITÉ (lib/echeanceEmprunt.ts) : écrits au 512, ils
+  // entreraient dans la moyenne des encaissements du plan de trésorerie et flatteraient le taux
+  // d'endettement, sur le document qu'on présente à une banque. Le solde, lui, les compte.
+  const deblocages = idsDeblocagesEmprunt(paiements)
+  const lignesDuRythme = lignesBanque.filter((l) => !l.ligne_bancaire_id || !deblocages.has(l.ligne_bancaire_id))
+  const deblocagesEcartes = lignesBanque.length - lignesDuRythme.length
 
+  // Les mouvements rapprochés de chaque emprunt : ses échéances payées, et son déblocage.
+  const rapprochementsDe = (e: Emprunt) => paiements.filter((l) => l.emprunt_id === e.id)
+
+  // Un emprunt dont une échéance est rapprochée ne se supprime pas : la clé du relevé vers l'emprunt est
+  // SANS action à la suppression, et c'est voulu — ses écritures et sa part de la 2035 en dépendent. Dit
+  // AVANT, plutôt qu'une confirmation suivie d'un refus de la base ; et le refus de la base, s'il vient
+  // quand même (une lecture partielle, un autre onglet), est lu et dit.
   async function supprimer(e: Emprunt) {
+    const rapproches = rapprochementsDe(e)
+    if (rapproches.length > 0) {
+      window.alert(
+        `L’emprunt « ${e.nom} » a ${rapproches.length} mouvement${rapproches.length > 1 ? 's' : ''} du relevé rapproché${rapproches.length > 1 ? 's' : ''} ` +
+        '(échéances ou déblocage) : annule d’abord ces rapprochements dans Banque — ils portent ses écritures et sa part de la 2035.',
+      )
+      return
+    }
     if (!window.confirm(`Supprimer l'emprunt "${e.nom}" ? Cette action est irréversible.`)) return
-    await supabase.from('emprunts').delete().eq('id', e.id)
+    const { error } = await supabase.from('emprunts').delete().eq('id', e.id)
+    if (error) {
+      window.alert(error.code === '23503'
+        ? `L’emprunt « ${e.nom} » n’a pas été supprimé : des mouvements du relevé y sont rapprochés. Annule d’abord ces rapprochements dans Banque.`
+        : `L’emprunt n’a pas pu être supprimé : ${messageErreur(error, 'raison inconnue')}`)
+    }
     load()
   }
 
@@ -300,12 +329,15 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
         <EmpruntFormModal
           dossierId={dossierId}
           emprunt={editing === 'new' ? null : editing}
+          rapprochements={editing === 'new' ? [] : rapprochementsDe(editing)}
           onClose={() => setEditing(null)}
           onSaved={load}
         />
       )}
 
-      {echeancierDe && <EcheancierModal emprunt={echeancierDe} onClose={() => setEcheancierDe(null)} />}
+      {echeancierDe && (
+        <EcheancierModal emprunt={echeancierDe} rapprochements={rapprochementsDe(echeancierDe)} onClose={() => setEcheancierDe(null)} />
+      )}
 
       {situationOuverte && (
         <SituationIntermediaireModal
@@ -325,6 +357,8 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
       {tresorerieOuverte && (
         <PlanTresorerieModal
           lignesBanque={lignesBanque}
+          lignesDuRythme={lignesDuRythme}
+          deblocagesEcartes={deblocagesEcartes}
           ouverture={ouverture}
           soldeActuel={soldeBanque}
           emprunts={emprunts}
@@ -343,7 +377,8 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
           immobilisations={immobilisations}
           cotisations={cotisations}
           emprunts={emprunts}
-          lignesBanque={lignesBanque}
+          lignesDuRythme={lignesDuRythme}
+          deblocagesEcartes={deblocagesEcartes}
           capitalRestantTotal={capitalRestantTotal}
           mensualiteTotale={mensualiteTotale}
           onClose={() => setDettesOuvertes(false)}
@@ -370,9 +405,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   )
 }
 
-function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, categories, immobilisations, cotisations, emprunts, lignesBanque, capitalRestantTotal, mensualiteTotale, onClose }: {
+function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, categories, immobilisations, cotisations, emprunts, lignesDuRythme, deblocagesEcartes, capitalRestantTotal, mensualiteTotale, onClose }: {
   assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: LigneBancaire[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
-  emprunts: Emprunt[]; lignesBanque: LigneBanque[]; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
+  emprunts: Emprunt[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
 }) {
   const aujourdHui = aujourdHuiSql()
   const debutAnnee = `${new Date().getFullYear()}-01-01`
@@ -383,7 +418,7 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
   const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui, assujettiTva, paiements, modeComptable, partsDuReleve(paiements, categories))
   // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
   // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
-  const plan = calculerPlanTresorerie(lignesBanque, 0, 6, 1)
+  const plan = calculerPlanTresorerie(lignesDuRythme, 0, 6, 1)
   const ratios = calculerRatiosBancaires(situationAnnee, moisEcoules, capitalRestantTotal, mensualiteTotale, plan.moyenneEncaissements)
   // Le « — » du taux d'endettement ne dit pas POURQUOI : sans cette réserve, « pas encore assez
   // d'historique » et « le rythme est à zéro » se lisent pareil, sur un ratio qu'une banque regarde
@@ -429,9 +464,10 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
           </div>
           <div className="card" style={{ flex: '1 1 220px' }}>
             <span className="muted" style={{ display: 'block', fontSize: '0.85rem' }}>Taux d'endettement mensuel</span>
-            <strong style={{ fontSize: '1.2rem' }}>{ratios.tauxEndettementMensuel === null ? '—' : `${ratios.tauxEndettementMensuel} %`}</strong>
+            <strong style={{ fontSize: '1.2rem' }}>{ratios.tauxEndettementMensuel === null ? '—' : `${String(ratios.tauxEndettementMensuel).replace('.', ',')} %`}</strong>
             <div className="muted" style={{ fontSize: '0.78rem' }}>
               Mensualités / moyenne des encaissements mensuels des 6 derniers mois complets.
+              {deblocagesEcartes > 0 && ' Les fonds reçus d’un emprunt n’y comptent pas : ils ne disent rien de l’activité.'}
               {reserveMoyenne && <span style={{ color: 'var(--color-danger, #c0392b)' }}> {reserveMoyenne}</span>}
             </div>
           </div>
@@ -465,14 +501,15 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
   )
 }
 
-function PlanTresorerieModal({ lignesBanque, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
-  lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; soldeActuel: number; emprunts: Emprunt[]
-  cotisations: CotisationDeclaree[]; onClose: () => void
+function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
+  lignesBanque: LigneBanque[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; ouverture: OuvertureBanque | null; soldeActuel: number
+  emprunts: Emprunt[]; cotisations: CotisationDeclaree[]; onClose: () => void
 }) {
   const [nbMoisHistorique, setNbMoisHistorique] = useState(6)
   const [nbMoisProjection, setNbMoisProjection] = useState(6)
 
-  const plan = calculerPlanTresorerie(lignesBanque, soldeActuel, nbMoisHistorique, nbMoisProjection)
+  // Le solde de départ compte tout ; la moyenne, le seul rythme d'activité — sans les déblocages d'emprunt.
+  const plan = calculerPlanTresorerie(lignesDuRythme, soldeActuel, nbMoisHistorique, nbMoisProjection)
   // Une projection bâtie sur rien a exactement la même tête qu'une projection bâtie sur six mois.
   const reserve = reserveSurMoyenne(plan)
   // Et le solde de DÉPART vient de la même source, sur une fenêtre plus large : tout l'historique.
@@ -510,6 +547,7 @@ function PlanTresorerieModal({ lignesBanque, ouverture, soldeActuel, emprunts, c
           Moyenne mensuelle observée sur les {nbMoisHistorique} derniers mois complets : {formatMoney(plan.moyenneEncaissements)} d'encaissements,{' '}
           {formatMoney(plan.moyenneDecaissements)} de décaissements — mensualités d'emprunts et cotisations déjà payées comprises, puisqu'elles
           transitent par le même compte banque.
+          {deblocagesEcartes > 0 && ' Les fonds reçus d’un emprunt n’entrent pas dans cette moyenne : le solde les compte, mais ils ne disent rien du rythme d’activité.'}
         </p>
         {reserveAffichee && (
           <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserveAffichee}</p>
@@ -782,7 +820,13 @@ function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionne
   )
 }
 
-function EmpruntFormModal({ dossierId, emprunt, onClose, onSaved }: { dossierId: string; emprunt: Emprunt | null; onClose: () => void; onSaved: () => void }) {
+// `rapprochements` : les mouvements du relevé rapprochés de CET emprunt. Leur découpage est celui que le
+// cabinet a validé sur le tableau de la banque, gardé sur le mouvement : modifier l'emprunt ne le change
+// pas, seul l'échéancier PROPOSÉ pour les suivantes suit. Une durée plus courte que le numéro d'une
+// échéance rapprochée ferait désigner une échéance qui n'existe plus : elle est refusée.
+function EmpruntFormModal({ dossierId, emprunt, rapprochements, onClose, onSaved }: {
+  dossierId: string; emprunt: Emprunt | null; rapprochements: LigneBancaire[]; onClose: () => void; onSaved: () => void
+}) {
   const [nom, setNom] = useState(emprunt?.nom ?? '')
   const [organisme, setOrganisme] = useState(emprunt?.organisme_preteur ?? '')
   const [capital, setCapital] = useState(emprunt ? String(emprunt.capital_initial) : '')
@@ -792,8 +836,14 @@ function EmpruntFormModal({ dossierId, emprunt, onClose, onSaved }: { dossierId:
   const [saving, setSaving] = useState(false)
   const [erreur, setErreur] = useState<string | null>(null)
 
+  const derniereRapprochee = rapprochements.reduce((m, l) => Math.max(m, l.emprunt_echeance ?? 0), 0)
+
   async function enregistrer(e: FormEvent) {
     e.preventDefault()
+    if (parseInt(dureeMois, 10) < derniereRapprochee) {
+      setErreur(`L’échéance n° ${derniereRapprochee} de cet emprunt est rapprochée d’un mouvement du relevé : la durée ne peut pas descendre en dessous de ${derniereRapprochee} mois.`)
+      return
+    }
     setSaving(true)
     setErreur(null)
     const payload = {
@@ -853,6 +903,13 @@ function EmpruntFormModal({ dossierId, emprunt, onClose, onSaved }: { dossierId:
           <p className="muted" style={{ fontSize: '0.82rem' }}>
             Amortissement à mensualité constante — le calcul le plus courant pour un prêt professionnel.
           </p>
+          {rapprochements.length > 0 && (
+            <p className="muted" style={{ fontSize: '0.82rem' }}>
+              {rapprochements.length} mouvement{rapprochements.length > 1 ? 's' : ''} du relevé {rapprochements.length > 1 ? 'sont rapprochés' : 'est rapproché'} de
+              cet emprunt : {rapprochements.length > 1 ? 'leur découpage validé ne change' : 'son découpage validé ne change'} pas si tu le modifies, seul
+              l’échéancier proposé pour les échéances suivantes suit.
+            </p>
+          )}
           {erreur && <p className="error-text">{erreur}</p>}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 16 }}>
             <button type="button" className="btn btn-outline" onClick={onClose} disabled={saving}>Annuler</button>
@@ -864,8 +921,13 @@ function EmpruntFormModal({ dossierId, emprunt, onClose, onSaved }: { dossierId:
   )
 }
 
-function EcheancierModal({ emprunt, onClose }: { emprunt: Emprunt; onClose: () => void }) {
+// `rapprochements` : les mouvements du relevé rapprochés de cet emprunt. Une échéance rapprochée dit le
+// jour où elle a été payée ; c'est son découpage VALIDÉ, gardé sur le mouvement, que la 2035 compte — pas
+// celui de ce tableau, qui n'est qu'une proposition.
+function EcheancierModal({ emprunt, rapprochements, onClose }: { emprunt: Emprunt; rapprochements: LigneBancaire[]; onClose: () => void }) {
   const lignes = genererEcheancier(emprunt)
+  const payees = echeancesOccupees(rapprochements, emprunt.id, null)
+  const deblocage = rapprochements.find((l) => l.montant > 0) ?? null
   return (
     <div style={overlayStyle}>
       <div className="card" style={{ width: 'min(640px, 92vw)', maxHeight: '90vh', overflowY: 'auto' }}>
@@ -873,10 +935,14 @@ function EcheancierModal({ emprunt, onClose }: { emprunt: Emprunt; onClose: () =
         <p className="muted" style={{ marginTop: -8 }}>
           {formatMoney(emprunt.capital_initial)} sur {emprunt.duree_mois} mois à {emprunt.taux_annuel} %,
           à partir du {formatDate(emprunt.date_debut)}.
+          {deblocage && ` Fonds reçus le ${formatDate(deblocage.date)}.`}
+          {' '}{payees.size === 0
+            ? 'Aucune échéance n’est encore rapprochée d’un mouvement du relevé (Banque) : leurs intérêts ne comptent pas dans la 2035.'
+            : `${payees.size} échéance${payees.size > 1 ? 's' : ''} rapprochée${payees.size > 1 ? 's' : ''} d’un mouvement du relevé : la 2035 en compte le découpage validé, qui peut différer de ce tableau.`}
         </p>
         <div className="table-scroll" style={{ border: '1px solid var(--color-border)', borderRadius: 8 }}>
           <table>
-            <thead><tr><th>#</th><th>Date</th><th>Mensualité</th><th>Intérêts</th><th>Capital remboursé</th><th>Restant dû</th></tr></thead>
+            <thead><tr><th>#</th><th>Date</th><th>Mensualité</th><th>Intérêts</th><th>Capital remboursé</th><th>Restant dû</th><th>Payée le</th></tr></thead>
             <tbody>
               {lignes.map((l) => (
                 <tr key={l.numero}>
@@ -886,6 +952,7 @@ function EcheancierModal({ emprunt, onClose }: { emprunt: Emprunt; onClose: () =
                   <td>{formatMoney(l.interets)}</td>
                   <td>{formatMoney(l.capitalRembourse)}</td>
                   <td>{formatMoney(l.capitalRestant)}</td>
+                  <td>{payees.has(l.numero) ? formatDate(payees.get(l.numero)!) : '—'}</td>
                 </tr>
               ))}
             </tbody>

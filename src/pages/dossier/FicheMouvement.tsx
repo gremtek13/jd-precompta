@@ -10,8 +10,14 @@ import {
   justificatifPossible, motifPropose, mouvementsCouverts, normaliserPourRegle, refusMotif, regleApplicable, sensDuMouvement,
 } from '../../lib/reglesAffectation'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
-import { LIBELLES_COMPTES } from '../../lib/comptes'
+import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT, LIBELLES_COMPTES } from '../../lib/comptes'
 import { ouvrirJustificatif } from '../../lib/depot'
+import {
+  capitalDeLEcheance, decoupageDuMouvement, decoupagePourEcheance, echeanceProposee, echeancesOccupees, empruntPlausible,
+  estDeblocage, MARGE_PRELEVEMENT_JOURS, montantAttendu, refusDecoupage, refusEcheanceEmprunt,
+  type DecoupageEcheance, type EmpruntPlausible,
+} from '../../lib/echeanceEmprunt'
+import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from '../../lib/types'
 
@@ -48,6 +54,13 @@ import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectat
 // banque. La fiche le dit avant le clic et sur le mouvement classé ; elle ne dit pas si l'écriture d'un
 // virement classé AVANT qu'il s'écrive manque — elle ne lit pas le brouillon —, et renvoie à l'onglet
 // Virements, qui le lit, le montre et l'écrit.
+//
+// ET UNE ÉCHÉANCE D'EMPRUNT SE DÉCOUPE (lib/echeanceEmprunt.ts) : le capital au 164, les intérêts au
+// 661, l'assurance au 616 — un déblocage, lui, au crédit du 164. Le découpage est PROPOSÉ depuis
+// l'échéancier et VALIDÉ par le cabinet, qui a le tableau de la banque sous les yeux : les champs sont
+// modifiables, le capital se recalcule, et rien ne s'écrit avant le clic. Un mouvement qui ressemble à
+// une échéance (`empruntPlausible`) la voit proposée en tête, formulaire déplié ; les autres gardent le
+// geste à portée, replié, sous « Sans justificatif ».
 
 export interface NavigationMouvement {
   position: string
@@ -102,6 +115,12 @@ interface FicheMouvementProps {
   // `motifRegle` : le motif à retenir en règle d'affectation, ou null pour n'affecter que ce mouvement.
   onAffecter: (categorieId: string, motifRegle: string | null) => void
   onRetirerAffectation: () => void
+  // Les emprunts du dossier, pour rapprocher une échéance ou un déblocage. `empruntsIncomplets` : la
+  // liste n'a pas pu être lue en entier — un emprunt peut manquer au choix, et la fiche le dit.
+  emprunts: Emprunt[]
+  empruntsIncomplets: string | null
+  onRapprocherEmprunt: (empruntId: string, decoupage: DecoupageEcheance) => void
+  onRetirerEmprunt: () => void
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -216,11 +235,177 @@ function CarteCotisation({ cotisation, signaux, action }: { cotisation: Cotisati
   )
 }
 
+const auCentimeSaisi = (n: number) => n.toFixed(2)
+
+// Le formulaire d'un rapprochement d'emprunt : l'emprunt, puis — pour une échéance — son numéro, ses
+// intérêts et son assurance, le capital recalculé à chaque frappe. Rendu à deux endroits de la fiche
+// (proposé en tête, ou replié sous « Sans justificatif ») et sur un mouvement déjà rapproché, pour
+// corriger le découpage : un seul composant, pour que les trois disent la même chose.
+function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, onRapprocherEmprunt }: {
+  ligne: LigneBancaire
+  emprunts: Emprunt[]
+  lignes: LigneBancaire[]
+  plausible: EmpruntPlausible | null
+  occupe: boolean
+  verbe: string
+  onRapprocherEmprunt: (empruntId: string, decoupage: DecoupageEcheance) => void
+}) {
+  const deblocage = estDeblocage(ligne)
+  const occupeesDe = (e: Emprunt) => echeancesOccupees(lignes, e.id, ligne.id)
+  // Le découpage de départ : celui que la base garde sur un mouvement déjà rapproché, celui de
+  // l'échéance à laquelle le mouvement ressemble, sinon la proposition pour le seul emprunt du dossier.
+  const [etatInitial] = useState(() => {
+    const garde = decoupageDuMouvement(ligne)
+    if (garde && ligne.emprunt_id) return { empruntId: ligne.emprunt_id, decoupage: garde }
+    if (plausible) {
+      return {
+        empruntId: plausible.emprunt.id,
+        decoupage: plausible.echeance ? decoupagePourEcheance(plausible.echeance, ligne) : { echeance: null, interets: 0, assurance: 0 },
+      }
+    }
+    if (emprunts.length === 1) {
+      return { empruntId: emprunts[0].id, decoupage: echeanceProposee(emprunts[0], ligne, occupeesDe(emprunts[0]))?.decoupage ?? null }
+    }
+    return { empruntId: '', decoupage: null }
+  })
+  const [empruntChoisi, setEmpruntChoisi] = useState(etatInitial.empruntId)
+  const [echeanceSaisie, setEcheanceSaisie] = useState(etatInitial.decoupage?.echeance != null ? String(etatInitial.decoupage.echeance) : '')
+  const [interetsSaisis, setInteretsSaisis] = useState(etatInitial.decoupage ? auCentimeSaisi(etatInitial.decoupage.interets) : '')
+  const [assuranceSaisie, setAssuranceSaisie] = useState(etatInitial.decoupage ? auCentimeSaisi(etatInitial.decoupage.assurance) : '')
+
+  const emprunt = empruntChoisi ? emprunts.find((e) => e.id === empruntChoisi) ?? null : null
+  const occupees = emprunt ? occupeesDe(emprunt) : new Map<number, string>()
+  const echeancier = emprunt ? genererEcheancier(emprunt) : []
+
+  function poserDecoupage(d: DecoupageEcheance | null) {
+    setEcheanceSaisie(d?.echeance != null ? String(d.echeance) : '')
+    setInteretsSaisis(d ? auCentimeSaisi(d.interets) : '')
+    setAssuranceSaisie(d ? auCentimeSaisi(d.assurance) : '')
+  }
+
+  // Changer d'emprunt repropose SON échéance ; changer de numéro repropose les intérêts de CE mois-là.
+  // Les deux ne font que remplir des champs : rien ne s'écrit avant le clic.
+  function choisirEmprunt(id: string) {
+    setEmpruntChoisi(id)
+    const e = emprunts.find((x) => x.id === id)
+    poserDecoupage(e ? echeanceProposee(e, ligne, occupeesDe(e))?.decoupage ?? null : null)
+  }
+
+  function choisirEcheance(saisie: string) {
+    setEcheanceSaisie(saisie)
+    const l = echeancier.find((x) => String(x.numero) === saisie.trim())
+    if (l) {
+      const d = decoupagePourEcheance(l, ligne)
+      setInteretsSaisis(auCentimeSaisi(d.interets))
+      setAssuranceSaisie(auCentimeSaisi(d.assurance))
+    }
+  }
+
+  const lire = (saisie: string) => (saisie.trim() === '' ? Number.NaN : Number(saisie))
+  const decoupage: DecoupageEcheance = deblocage
+    ? { echeance: null, interets: 0, assurance: 0 }
+    : { echeance: echeanceSaisie.trim() === '' ? null : Number(echeanceSaisie), interets: lire(interetsSaisis), assurance: lire(assuranceSaisie) }
+  const champVide = !deblocage && (interetsSaisis.trim() === '' || assuranceSaisie.trim() === '')
+  const refus = !emprunt
+    ? null
+    : refusEcheanceEmprunt(ligne)
+      ?? (champVide ? 'Saisis les intérêts et l’assurance — 0 s’il n’y en a pas.' : null)
+      ?? refusDecoupage(ligne, emprunt, decoupage, occupees)
+  const reference = !deblocage && decoupage.echeance != null ? echeancier.find((l) => l.numero === decoupage.echeance) ?? null : null
+  const total = Math.round(Math.abs(ligne.montant) * 100)
+  const ecartReference = reference ? total - Math.round(montantAttendu(reference) * 100) : 0
+  const joursReference = reference ? ecartEnJours(reference.date, ligne.date) : 0
+  const toutesPayees = !!emprunt && !deblocage && echeancier.every((l) => occupees.has(l.numero))
+
+  return (
+    <>
+      <div className="field">
+        <label htmlFor={`emprunt-${ligne.id}`}>Emprunt</label>
+        <select id={`emprunt-${ligne.id}`} value={empruntChoisi} onChange={(e) => choisirEmprunt(e.target.value)}>
+          <option value="">— Choisir —</option>
+          {emprunts.map((e) => (
+            <option key={e.id} value={e.id}>{e.nom}{e.organisme_preteur ? ` (${e.organisme_preteur})` : ''}</option>
+          ))}
+        </select>
+      </div>
+      {emprunt && deblocage && (
+        <p className="fiche-mouvement-note">
+          Les fonds d’un emprunt ne sont pas une recette : ils s’écrivent au crédit du compte {COMPTE_EMPRUNT}
+          {' '}({LIBELLES_COMPTES[COMPTE_EMPRUNT]}), face à la banque. Capital de l’emprunt : {formatMoney(emprunt.capital_initial)}.
+        </p>
+      )}
+      {emprunt && !deblocage && (
+        <>
+          {toutesPayees && (
+            <p className="fiche-mouvement-note">Toutes les échéances de cet emprunt sont déjà rapprochées d’un mouvement.</p>
+          )}
+          <div className="fiche-mouvement-decoupage">
+            <div className="field">
+              <label htmlFor={`emprunt-echeance-${ligne.id}`}>Échéance n°</label>
+              <input
+                id={`emprunt-echeance-${ligne.id}`}
+                type="number" min={1} max={emprunt.duree_mois} step={1}
+                value={echeanceSaisie}
+                onChange={(e) => choisirEcheance(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor={`emprunt-interets-${ligne.id}`}>Intérêts ({COMPTE_INTERETS_EMPRUNT})</label>
+              <input
+                id={`emprunt-interets-${ligne.id}`}
+                type="number" min={0} step={0.01}
+                value={interetsSaisis}
+                onChange={(e) => setInteretsSaisis(e.target.value)}
+              />
+            </div>
+            <div className="field">
+              <label htmlFor={`emprunt-assurance-${ligne.id}`}>Assurance ({COMPTE_ASSURANCE_EMPRUNT})</label>
+              <input
+                id={`emprunt-assurance-${ligne.id}`}
+                type="number" min={0} step={0.01}
+                value={assuranceSaisie}
+                onChange={(e) => setAssuranceSaisie(e.target.value)}
+              />
+            </div>
+          </div>
+          {reference && (
+            <p className="fiche-mouvement-note">
+              L’échéancier prévoit {formatMoney(montantAttendu(reference))} le {formatDate(reference.date)}, dont
+              {' '}{formatMoney(reference.interets)} d’intérêts.
+              {ecartReference > 0 && ` Le prélèvement porte ${formatMoney(ecartReference / 100)} de plus — le plus souvent l’assurance de l’emprunteur.`}
+              {ecartReference < 0 && ` Le prélèvement est inférieur de ${formatMoney(-ecartReference / 100)} : vérifie le numéro de l’échéance, ou le tableau de la banque.`}
+              {joursReference > MARGE_PRELEVEMENT_JOURS && ` Cette échéance tombe à ${joursReference} jours du mouvement.`}
+              {' '}Le tableau d’amortissement de la banque fait foi : corrige les montants s’ils diffèrent.
+            </p>
+          )}
+          {!refus && (
+            <p className="fiche-mouvement-note">
+              Capital remboursé : <strong>{formatMoney(capitalDeLEcheance(ligne, decoupage))}</strong> au compte {COMPTE_EMPRUNT},
+              ni charge ni recette. Seuls les intérêts et l’assurance comptent dans la 2035.
+            </p>
+          )}
+        </>
+      )}
+      {refus && <p className="fiche-mouvement-alerte">{refus}</p>}
+      <div className="fiche-mouvement-boutons">
+        <button
+          type="button"
+          className="btn btn-outline"
+          disabled={!emprunt || !!refus || occupe}
+          onClick={() => emprunt && onRapprocherEmprunt(emprunt.id, decoupage)}
+        >
+          {verbe}
+        </button>
+      </div>
+    </>
+  )
+}
+
 export default function FicheMouvement({
   ligne, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant,
   piecesRapprochees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
-  onAffecter, onRetirerAffectation,
+  onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   // Le choix à la main ne s'applique qu'au clic sur « Associer », jamais au changement de la liste :
@@ -244,6 +429,15 @@ export default function FicheMouvement({
   const affecte = ligne.statut === 'rapprochee' && !!ligne.categorie_id
   const libelle = libelleExploitable(ligne) || ligne.libelle
   const sansObjet = mouvementRapprocheSansObjet(ligne)
+
+  // L'emprunt de ce mouvement, et celui auquel il ressemble s'il est à traiter.
+  const rapprocheEmprunt = ligne.statut === 'rapprochee' && !!ligne.emprunt_id
+  const empruntLie = ligne.emprunt_id ? emprunts.find((e) => e.id === ligne.emprunt_id) ?? null : null
+  const deblocage = estDeblocage(ligne)
+  const plausible = aTraiter ? empruntPlausible(ligne, emprunts, lignes) : null
+  const empruntOffert = aTraiter && ligne.montant !== 0 && (emprunts.length > 0 || !!empruntsIncomplets)
+  const [empruntDeplie, setEmpruntDeplie] = useState(false)
+  const [correctionDepliee, setCorrectionDepliee] = useState(false)
 
   // Ce qui se propose à l'affectation : les catégories d'un compte de résultat, dans l'ordre du sens
   // du mouvement — les recettes d'abord pour un encaissement, les dépenses d'abord pour un paiement.
@@ -435,6 +629,13 @@ export default function FicheMouvement({
         {recurrent.action === 'virement_personnel' ? 'Virement personnel' : 'Ignorer'}, comme les {recurrent.occurrences} précédents
       </button>
     )
+  } else if (rapprocheEmprunt) {
+    // Par la base : l'écriture de l'échéance part avec son rapprochement (`retirer_echeance_emprunt`).
+    principal = (
+      <button type="button" className="btn btn-outline" disabled={occupe} onClick={onRetirerEmprunt}>
+        Annuler le rapprochement
+      </button>
+    )
   } else if (affecte) {
     // Par la base, jamais par une remise à « à traiter » : l'écriture du mouvement part avec son
     // affectation, dans la même transaction (`retirer_affectation_mouvement_bancaire`).
@@ -505,7 +706,12 @@ export default function FicheMouvement({
           {!ligne.prelevement_personnel && affecte && (
             <span className="badge badge-ok">Affecté{categorieAffectee ? ` à « ${categorieAffectee.libelle} »` : ''}</span>
           )}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && <span className="badge badge-ok">Rapproché</span>}
+          {rapprocheEmprunt && (
+            <span className="badge badge-ok">
+              {deblocage ? 'Déblocage d’emprunt' : `Échéance n° ${ligne.emprunt_echeance}`}{empruntLie ? ` — ${empruntLie.nom}` : ''}
+            </span>
+          )}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && <span className="badge badge-ok">Rapproché</span>}
           {ecart && <span className="badge badge-danger">Écart de {formatMoney(ecart.ecart)} avec la pièce</span>}
           {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
@@ -572,7 +778,23 @@ export default function FicheMouvement({
             </p>
           </section>
         )}
-        {aTraiter && !unePropositionExiste && !recurrent && (
+        {plausible && (
+          <section className="fiche-mouvement-section">
+            <h3>{plausible.echeance ? 'Échéance d’emprunt proposée' : 'Déblocage d’emprunt proposé'}</h3>
+            <p className="fiche-mouvement-note">
+              {plausible.echeance
+                ? `Ce paiement ressemble à l’échéance n° ${plausible.echeance.numero} de « ${plausible.emprunt.nom} » : le capital va au compte ${COMPTE_EMPRUNT}, les intérêts au ${COMPTE_INTERETS_EMPRUNT}, l’assurance au ${COMPTE_ASSURANCE_EMPRUNT}. Vérifie le découpage avant de rapprocher.`
+                : `Cet encaissement ressemble au déblocage de « ${plausible.emprunt.nom} ».`}
+            </p>
+            <FormulaireEmprunt
+              ligne={ligne} emprunts={emprunts} lignes={lignes} plausible={plausible} occupe={occupe}
+              verbe={plausible.echeance ? 'Rapprocher de cette échéance' : 'Rapprocher du déblocage'}
+              onRapprocherEmprunt={onRapprocherEmprunt}
+            />
+            {empruntsIncomplets && <NoteEmpruntsIncomplets />}
+          </section>
+        )}
+        {aTraiter && !unePropositionExiste && !recurrent && !plausible && (
           <p className="fiche-mouvement-vide">Aucune pièce proposée pour ce mouvement.</p>
         )}
 
@@ -645,6 +867,13 @@ export default function FicheMouvement({
                 compterait dans la 2035 à côté de sa pièce.
               </p>
             )}
+            {plausible && (
+              <p className="fiche-mouvement-alerte">
+                {plausible.echeance
+                  ? 'Ce paiement ressemble à une échéance d’emprunt (ci-dessus) : affecté à une catégorie, son capital compterait en charge.'
+                  : 'Cet encaissement ressemble au déblocage d’un emprunt (ci-dessus) : affecté à une catégorie, il compterait en recette.'}
+              </p>
+            )}
             {choixDeCategorie('Affecter')}
             <div className="fiche-mouvement-boutons">
               <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={onVirementPersonnel}>Virement personnel</button>
@@ -655,6 +884,89 @@ export default function FicheMouvement({
               « Virement personnel » : entre le compte pro et le compte personnel, il s’écrit sur le compte{' '}
               {compteDirigeant} ({libelleCompteDirigeant}), face à la banque — ni charge ni recette.
             </p>
+          </section>
+        )}
+
+        {empruntOffert && !plausible && (
+          <section className="fiche-mouvement-section">
+            <h3>{deblocage ? 'Déblocage d’emprunt' : 'Échéance d’emprunt'}</h3>
+            {empruntDeplie ? (
+              <FormulaireEmprunt
+                ligne={ligne} emprunts={emprunts} lignes={lignes} plausible={null} occupe={occupe}
+                verbe={deblocage ? 'Rapprocher du déblocage' : 'Rapprocher de cette échéance'}
+                onRapprocherEmprunt={onRapprocherEmprunt}
+              />
+            ) : (
+              <>
+                <p className="fiche-mouvement-note">
+                  {deblocage
+                    ? 'Les fonds reçus d’un emprunt ne sont pas une recette : ils se rapprochent de l’emprunt.'
+                    : 'Un prélèvement d’emprunt se découpe : capital, intérêts et assurance ne vont pas sur le même compte.'}
+                </p>
+                <div className="fiche-mouvement-boutons">
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setEmpruntDeplie(true)}>
+                    Rapprocher d’un emprunt…
+                  </button>
+                </div>
+              </>
+            )}
+            {empruntsIncomplets && <NoteEmpruntsIncomplets />}
+          </section>
+        )}
+
+        {rapprocheEmprunt && (
+          <section className="fiche-mouvement-section">
+            <h3>{deblocage ? 'Déblocage d’emprunt' : 'Échéance d’emprunt'}</h3>
+            {empruntLie ? (
+              <div className="carte-rapprochement">
+                <div className="carte-rapprochement-entete">
+                  <div className="carte-rapprochement-titres">
+                    <strong>{empruntLie.nom}</strong>
+                    <span>
+                      {deblocage ? 'Fonds reçus' : `Échéance n° ${ligne.emprunt_echeance} sur ${empruntLie.duree_mois}`}
+                      {empruntLie.organisme_preteur ? ` · ${empruntLie.organisme_preteur}` : ''}
+                    </span>
+                  </div>
+                  <strong className="carte-rapprochement-montant">{formatMoney(Math.abs(ligne.montant))}</strong>
+                </div>
+                <dl className="decoupage-emprunt">
+                  {deblocage ? (
+                    <>
+                      <dt>Emprunt ({COMPTE_EMPRUNT})</dt><dd>{formatMoney(ligne.montant)}</dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt>Capital remboursé ({COMPTE_EMPRUNT})</dt>
+                      <dd>{formatMoney(capitalDeLEcheance(ligne, decoupageDuMouvement(ligne) ?? { echeance: null, interets: 0, assurance: 0 }))}</dd>
+                      <dt>Intérêts ({COMPTE_INTERETS_EMPRUNT})</dt><dd>{formatMoney(ligne.emprunt_interets ?? 0)}</dd>
+                      <dt>Assurance ({COMPTE_ASSURANCE_EMPRUNT})</dt><dd>{formatMoney(ligne.emprunt_assurance ?? 0)}</dd>
+                    </>
+                  )}
+                </dl>
+              </div>
+            ) : (
+              // Le lien existe, l'emprunt n'a pas été lu — une lecture partielle, que le bandeau en tête
+              // de l'écran annonce déjà.
+              <p className="fiche-mouvement-note">L’emprunt rapproché ne figure pas parmi les emprunts lus.</p>
+            )}
+            <p className="fiche-mouvement-note">
+              {deblocage
+                ? 'Écrit au brouillon : la banque au débit, l’emprunt au crédit — ni recette, ni charge.'
+                : 'Écrit au brouillon face à la banque. Les intérêts comptent en frais financiers dans la 2035, l’assurance en primes d’assurance ; le capital n’y compte pas.'}
+            </p>
+            {empruntLie && !deblocage && (correctionDepliee ? (
+              <FormulaireEmprunt
+                ligne={ligne} emprunts={emprunts} lignes={lignes} plausible={null} occupe={occupe}
+                verbe="Enregistrer le découpage"
+                onRapprocherEmprunt={onRapprocherEmprunt}
+              />
+            ) : (
+              <div className="fiche-mouvement-boutons">
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setCorrectionDepliee(true)}>
+                  Corriger le découpage…
+                </button>
+              </div>
+            ))}
           </section>
         )}
 
@@ -706,7 +1018,7 @@ export default function FicheMouvement({
           </section>
         )}
 
-        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && (
+        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && (
           <section className="fiche-mouvement-section">
             <h3>Rapproché avec</h3>
             {piecePayee && <CartePiece piece={piecePayee} />}
@@ -738,5 +1050,13 @@ export default function FicheMouvement({
 
       {principal && <div className="fiche-mouvement-pied">{principal}</div>}
     </div>
+  )
+}
+
+function NoteEmpruntsIncomplets() {
+  return (
+    <p className="fiche-mouvement-note">
+      La liste des emprunts n’a pas pu être lue en entier : un emprunt peut manquer à ce choix. Recharge la page.
+    </p>
   )
 }

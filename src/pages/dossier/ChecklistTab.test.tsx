@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
+import type { Emprunt } from '../../lib/emprunts'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -117,6 +118,7 @@ function poser(pieces: {
   aNouveaux?: unknown[]
   refusees?: string[]
   categories?: unknown[]
+  emprunts?: unknown[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
@@ -125,7 +127,7 @@ function poser(pieces: {
     cotisations_declarees: [], lignes_bancaires: pieces.lignes ?? [], immobilisations: pieces.immos ?? [],
     natures_immobilisation: [], categories: pieces.categories ?? [], ecritures_brouillon: pieces.ecritures ?? [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
-    exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [],
+    exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], emprunts: pieces.emprunts ?? [],
   }
   faux.refusees = new Set([...(pieces.clotureRefusee ? ['exercices_clotures'] : []), ...(pieces.refusees ?? [])])
   faux.tronquees = new Set(pieces.tronquees ?? [])
@@ -757,5 +759,80 @@ describe('ChecklistTab — les virements personnels', () => {
 
     const point = await screen.findByText(/personnel\(s\) sans écriture/)
     expect(point.textContent).toMatch(/^1 /)
+  })
+})
+
+// LES ÉCHÉANCES D'EMPRUNT (lib/echeanceEmprunt.ts). Ce que le module ne peut pas voir : que l'écran LISE
+// les emprunts, borne la réclamation à ce que le relevé couvre, et compte une échéance rapprochée comme un
+// mouvement justifié — ni « rapproché sans justificatif », ni rupture de la piste d'audit.
+describe('ChecklistTab — les échéances d’emprunt', () => {
+  // Échéances le 5 de chaque mois à partir du 5 février 2025.
+  const EMPRUNT: Emprunt = {
+    id: 'emp-1', dossier_id: 'dossier-de-test', nom: 'Prêt matériel', organisme_preteur: null,
+    capital_initial: 12000, taux_annuel: 3.6, date_debut: '2025-01-05', duree_mois: 24, created_at: '2025-01-05T10:00:00Z',
+  }
+  const echeance2 = (o: Partial<LigneBancaire> = {}) => ligne({
+    id: 'l-ech-2', date: '2025-03-06', libelle: 'PRLV ECHEANCE PRET', montant: -540, statut: 'rapprochee', piece_id: null,
+    emprunt_id: 'emp-1', emprunt_echeance: 2, emprunt_interets: 34.55, emprunt_assurance: 21.03, ...o,
+  })
+  // Le relevé couvre du 1er février au 30 avril 2025 : moins la marge laissée au prélèvement, jusqu'au 20.
+  const bornes = (fin = '2025-04-30') => [
+    ligne({ id: 'debut', date: '2025-02-01', statut: 'non_rapprochee', piece_id: null }),
+    ligne({ id: 'fin', date: fin, statut: 'non_rapprochee', piece_id: null }),
+  ]
+  function ecritureDe(o: Partial<EcritureBrouillon>): EcritureBrouillon {
+    return {
+      id: 'e', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-ech-2', date: '2025-03-06',
+      compte: '512000', libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee',
+      created_at: '2025-03-06T09:00:00Z', ...o,
+    }
+  }
+  const ecritureDeLEcheance2 = [
+    ecritureDe({ id: 'e1', compte: '164000', sens: 'debit', montant: 484.42 }),
+    ecritureDe({ id: 'e2', compte: '661100', sens: 'debit', montant: 34.55 }),
+    ecritureDe({ id: 'e3', compte: '616800', sens: 'debit', montant: 21.03 }),
+    ecritureDe({ id: 'e4' }),
+  ]
+
+  it('compte les échéances que le relevé couvre sans qu’aucun mouvement ne les paie, et mène à Banque', async () => {
+    const onNavigate = vi.fn()
+    // Échéances 1 (5 février), 2 (5 mars, payée) et 3 (5 avril) dans la fenêtre : deux manquent.
+    poser({ lignes: [...bornes(), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2 })
+    render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />)
+    const point = await screen.findByText(/échéance\(s\) d’emprunt couverte\(s\) par le relevé sans mouvement rapproché/)
+    expect(point.textContent).toMatch(/^2 /)
+    screen.getByRole('button', { name: 'Rapprocher ces prélèvements' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('banque')
+  })
+
+  it('ne réclame pas l’échéance que le relevé ne couvre pas encore — le garde symétrique', async () => {
+    // Le relevé s'arrête le 12 avril : moins la marge, il couvre jusqu'au 2 avril, et l'échéance du 5
+    // avril n'est pas réclamée. Seule reste la première.
+    poser({ lignes: [...bornes('2025-04-12'), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2 })
+    monter()
+    const point = await screen.findByText(/couverte\(s\) par le relevé sans mouvement rapproché/)
+    expect(point.textContent).toMatch(/^1 /)
+  })
+
+  it('une échéance rapprochée et écrite n’est ni un point, ni un rapprochement sans justificatif, ni une rupture', async () => {
+    poser({ lignes: [ligne({ id: 'a-traiter', date: '2025-03-01', statut: 'non_rapprochee', piece_id: null }), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2 })
+    monter()
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/d’emprunt dont l’écriture ne suit plus/)).toHaveLength(0)
+    expect(screen.queryAllByText(/rapproché\(s\) sans justificatif/)).toHaveLength(0)
+    expect(screen.queryAllByText(/piste d'audit rompue/)).toHaveLength(0)
+  })
+
+  it('compte l’échéance dont l’écriture ne suit plus le découpage', async () => {
+    poser({ lignes: [echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2.map((e) => e.compte === '661100' ? { ...e, montant: 30 } : e) })
+    monter()
+    const point = await screen.findByText(/échéance\(s\) d’emprunt dont l’écriture ne suit plus le découpage/)
+    expect(point.textContent).toMatch(/^1 /)
+  })
+
+  it('une lecture partielle des emprunts allume le bandeau : le silence du point ne prouve plus rien', async () => {
+    poser({ lignes: [...bornes(), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2, tronquees: ['emprunts'] })
+    monter()
+    expect(await screen.findByText(/n'ont pas pu être lu/)).toBeTruthy()
   })
 })

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { anneeDe, formatMoney, formatDate } from '../../lib/format'
+import { anneeDe, aujourdHuiSql, formatMoney, formatDate } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { montantRetenu } from '../../lib/montantRetenu'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
@@ -17,8 +17,11 @@ import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
 import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
 import { partsDuReleve } from '../../lib/partsDuReleve'
+import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
+import type { Emprunt } from '../../lib/emprunts'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VehiculeDossier } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
+import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useAnnee } from '../../context/AnneeContext'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
@@ -48,6 +51,12 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
   // Les mouvements rapprochés d'une pièce : ce sont eux qui la DATENT (voir lib/rattachement.ts).
   const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
+  // Les emprunts, pour dire les échéances que l'échéancier prévoit dans l'exercice et qu'aucun
+  // mouvement ne paie (lib/echeanceEmprunt.ts). Leur drapeau est à part : la 2035 lit le découpage
+  // gardé sur les mouvements rapprochés, pas les emprunts — lus en partie, ils ne faussent aucune case,
+  // ils taisent seulement une échéance manquante.
+  const [emprunts, setEmprunts] = useState<Emprunt[]>([])
+  const [empruntsIncomplets, setEmpruntsIncomplets] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [postesEdit, setPostesEdit] = useState<Record<string, string>>({})
@@ -80,7 +89,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     // cotisation ou une immobilisation manquante est tout aussi plausible, fausse et signée.
     // Le tri est TOTAL partout (`id` en départage) : sans clé unique, deux tranches se recouvrent
     // ou sautent des lignes, et rien ne le signale.
-    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, { data: dossierData, error: dossierError }, clotures] = await Promise.all([
+    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, { data: dossierData, error: dossierError }, clotures, lectureEmprunts] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -118,7 +127,13 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
       // Par `lireAnneesCloturees`, qui REND son erreur — plutôt qu'une lecture nue de plus. Les
       // trois écrans qui lisent cette table doivent en tirer la même chose au même moment.
       lireAnneesCloturees(dossierId),
+      lireTout<Emprunt>((debut, fin) =>
+        supabase.from('emprunts').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date_debut').order('id').range(debut, fin),
+      ),
     ])
+    setEmprunts(lectureEmprunts.lignes)
+    setEmpruntsIncomplets(lectureEmprunts.complete ? null : lectureEmprunts.motif)
     setDossier(dossierData ?? null)
     setCloturesInconnues(clotures.erreur)
     setCloturesConnues(new Set(clotures.annees))
@@ -261,6 +276,17 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
       .filter((i) => dotationPourAnnee(i, d.annee) > 0)
       .map((i) => ({ annee: d.annee, immo: i, dotation: dotationPourAnnee(i, d.annee) })),
   )
+
+  // LES ÉCHÉANCES D'EMPRUNT QUE L'ÉCHÉANCIER PRÉVOIT DANS L'EXERCICE ET QU'AUCUN MOUVEMENT NE PAIE : la 2035
+  // ne compte que les intérêts des échéances RAPPROCHÉES, au découpage validé — une échéance que rien ne
+  // paie n'y est pas, et son prélèvement attend quelque part dans le relevé. Jusqu'à aujourd'hui pour
+  // l'exercice en cours : une échéance à venir n'est pas en retard.
+  const aujourdHui = aujourdHuiSql()
+  const echeancesManquantes = declarations.flatMap((d) => {
+    const fin = `${d.annee}-12-31` < aujourdHui ? `${d.annee}-12-31` : aujourdHui
+    return echeancesNonRapprochees(emprunts, lignesBancaires, `${d.annee}-01-01`, fin).map((e) => ({ annee: d.annee, ...e }))
+  })
+  const interetsManquants = Math.round(echeancesManquantes.reduce((s, e) => s + e.echeance.interets, 0) * 100) / 100
 
   // Véhicules dont l'indemnité n'a pas pu être calculée : leur déduction manque sur le formulaire,
   // et rien sur le PDF ne le dirait.
@@ -540,6 +566,47 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      <BandeauLecturePartielle
+        quoi="Les emprunts"
+        accord="lus"
+        motif={empruntsIncomplets}
+        consequence={
+          'Des échéances d’emprunt que rien ne paie peuvent donc manquer à la liste de cet écran : leurs ' +
+          'intérêts manqueraient à la 2035 sans que rien le dise. Recharge la page.'
+        }
+      />
+
+      {echeancesManquantes.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
+          <h3 style={{ marginTop: 0 }}>Échéances d’emprunt non rapprochées ({echeancesManquantes.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            L’échéancier prévoit ces échéances et aucun mouvement du relevé ne les paie : leurs intérêts —
+            {' '}{formatMoney(interetsManquants)} selon l’échéancier — et leur assurance ne comptent pas dans la
+            2035. Rapproche chaque prélèvement de son échéance dans l’onglet Banque ; si le relevé de ces
+            mois n’est pas encore importé, c’est par là qu’il faut commencer.
+          </p>
+          <details>
+            <summary>Voir les échéances</summary>
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>Exercice</th><th>Emprunt</th><th>Échéance</th><th>Date prévue</th><th style={{ textAlign: 'right' }}>Intérêts prévus</th></tr></thead>
+                <tbody>
+                  {echeancesManquantes.map(({ annee, emprunt, echeance }) => (
+                    <tr key={`${annee}-${emprunt.id}-${echeance.numero}`}>
+                      <td>{annee}</td>
+                      <td>{emprunt.nom}</td>
+                      <td>n° {echeance.numero}</td>
+                      <td>{formatDate(echeance.date)}</td>
+                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(echeance.interets)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
         </div>
       )}
 

@@ -8,6 +8,8 @@ import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
 import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSurDossierAssujetti } from '../../lib/affectationBanque'
 import { virementsPersonnelsAEcrire } from '../../lib/virementPersonnel'
+import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
+import type { Emprunt } from '../../lib/emprunts'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
@@ -71,6 +73,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
+  // Les emprunts : leurs échéances que le relevé couvre sans qu'aucun mouvement ne les paie sont un point
+  // de cette liste, donc leur lecture rejoint `lectureIncomplete`.
+  const [emprunts, setEmprunts] = useState<Emprunt[]>([])
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations. Sans ce drapeau, l'écran
   // qui prétend dire ce qui MANQUE affirmait « à renseigner » sur une lecture refusée — et passait
@@ -105,6 +110,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       lectureInfos,
       clotures,
       lectureANouveaux,
+      lectureEmprunts,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -153,6 +159,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
         supabase.from('a_nouveaux').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
       ),
+      lireTout<Emprunt>((debut, fin) =>
+        supabase.from('emprunts').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date_debut').order('id').range(debut, fin),
+      ),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -177,9 +187,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     setLectureIncomplete(
       [
         lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
-        lectureNatures, lectureCategories, lectureEcritures,
+        lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts,
       ].find((l) => !l.complete)?.motif ?? null,
     )
+    setEmprunts(lectureEmprunts.lignes)
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
     setCategories(lectureCategories.lignes)
@@ -276,6 +287,15 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Les virements personnels sans leur écriture — classés avant que ce classement s'écrive
   // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie.
   const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele)
+  // Les échéances d'emprunt que le relevé COUVRE — du premier mouvement au dernier, moins la marge laissée
+  // au prélèvement — et qu'aucun mouvement ne paie : leurs intérêts manquent aux comptes, et le
+  // prélèvement attend quelque part dans le relevé. Hors de cette fenêtre, on ne réclame rien : avant le
+  // premier relevé rien n'a été importé, après le dernier le prélèvement n'est peut-être pas passé.
+  const couverture = couvertureDuReleve(lignes)
+  const echeancesManquantes = couverture ? echeancesNonRapprochees(emprunts, lignes, couverture.debut, couverture.fin) : []
+  // L'écriture d'une échéance rapprochée qui n'est plus celle de son découpage : défensif, la base les
+  // écrivant ensemble — mais une écriture retirée par un autre chemin sortirait du FEC en silence.
+  const echeancesPerimees = echeancesDesynchronisees(ecritures, lignes)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
   const catSansCompte = categoriesSansCompte(categories, piecesValidees, lignes)
   const catSansPoste = categoriesSansPoste(categories, piecesValidees, lignes)
@@ -391,6 +411,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     { id: 'desynchronisees', label: 'écriture(s) à régénérer (pièce modifiée depuis)', action: 'Régénérer les écritures concernées', nb: piecesDesynchronisees.length, cible: 'ecritures', severite: 'erreur' },
     // Le pendant côté relevé : un mouvement affecté dont l'écriture n'est plus celle de sa catégorie.
     { id: 'affectes-perimes', label: 'mouvement(s) affecté(s) dont l’écriture ne suit plus la catégorie', action: 'Réaffecter ces mouvements', nb: affectesPerimes.length, cible: 'ecritures', severite: 'erreur' },
+    // Le pendant pour un emprunt : rapprocher de nouveau l'échéance (fiche du mouvement, « Corriger le
+    // découpage ») réécrit son écriture.
+    { id: 'echeances-emprunt-perimees', label: 'échéance(s) d’emprunt dont l’écriture ne suit plus le découpage', action: 'Rapprocher de nouveau ces échéances', nb: echeancesPerimees.length, cible: 'banque', severite: 'erreur' },
     // « Erreur » : la TVA collectée d'un assujetti manque à sa CA3, et la 2035 compte la taxe comme du
     // chiffre d'affaires. Rien ne les réécrit : la facture, déposée et rapprochée, les remplace.
     { id: 'recettes-affectees-assujetti', label: 'encaissement(s) affecté(s) en recette sans TVA, sur un dossier assujetti', action: 'Rapprocher leur facture à la place', nb: recettesSansTva.length, cible: 'banque', severite: 'erreur' },
@@ -429,6 +452,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       action: 'Voir les écritures à rapprocher', nb: nbSansContrepartie, cible: 'banque', severite: 'attention',
     },
     { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', action: 'Voir les opérations à rapprocher', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
+    // « Attention » et non « erreur » : c'est un travail en retard — le prélèvement est dans le relevé, à
+    // traiter —, pas une donnée démontrée fausse. Mais il dit ce que le retard coûte.
+    { id: 'echeances-emprunt-non-rapprochees', label: 'échéance(s) d’emprunt couverte(s) par le relevé sans mouvement rapproché — intérêts non comptés', action: 'Rapprocher ces prélèvements', nb: echeancesManquantes.length, cible: 'banque', severite: 'attention' },
   ]
   const pointsATraiter = tousLesPointsATraiter.filter((p) => p.nb > 0)
   // Trois groupes distincts (voir audit ergonomie) plutôt qu'un seul total mélangeant des natures très

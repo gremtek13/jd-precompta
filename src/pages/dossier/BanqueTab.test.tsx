@@ -5,6 +5,7 @@ import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
+import type { Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
 
 // « Tout rapprocher automatiquement » n'avait AUCUN verrou en `useRef`, contrairement à son voisin
@@ -66,6 +67,9 @@ const faux = vi.hoisted(() => ({
   // Les échéances de cotisation : un justificatif possible pour le lot des règles, et une lecture qui
   // peut être partielle comme les autres.
   cotisations: [] as CotisationDeclaree[],
+  // Les emprunts du dossier (lib/echeanceEmprunt.ts) : une lecture qui peut être partielle, et deux
+  // fonctions SQL que le faux serveur APPLIQUE au relevé.
+  emprunts: [] as Emprunt[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -127,7 +131,8 @@ vi.mock('../../lib/supabase', async () => {
           const toutes = table === 'lignes_bancaires' ? faux.lignes : table === 'pieces' ? faux.pieces
             : table === 'categories' ? filtrer(faux.categories, predicats)
               : table === 'regles_affectation_bancaire' ? filtrer(faux.reglesAffectation, predicats)
-                : table === 'cotisations_declarees' ? faux.cotisations : []
+                : table === 'cotisations_declarees' ? faux.cotisations
+                  : table === 'emprunts' ? faux.emprunts : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         }
@@ -185,6 +190,9 @@ vi.mock('../../lib/supabase', async () => {
         if (table === 'cotisations_declarees') {
           return Promise.resolve({ data: faux.cotisations, error: null, count: faux.cotisations.length }).then(suite)
         }
+        if (table === 'emprunts') {
+          return Promise.resolve({ data: faux.emprunts, error: null, count: faux.emprunts.length }).then(suite)
+        }
         if (table === 'categories') {
           const lues = filtrer(faux.categories, predicats)
           return Promise.resolve({ data: lues, error: null, count: lues.length }).then(suite)
@@ -233,6 +241,16 @@ vi.mock('../../lib/supabase', async () => {
       // retiré — l'écriture n'étant pas relue ici non plus.
       if (nom === 'classer_virement_personnel') return { ...l, statut: 'ignoree', prelevement_personnel: true }
       if (nom === 'retirer_virement_personnel') return { ...l, statut: 'non_rapprochee', prelevement_personnel: false }
+      // L'échéance d'emprunt (lib/echeanceEmprunt.ts) : rapprochée avec son découpage, ou retirée.
+      if (nom === 'rapprocher_echeance_emprunt') {
+        return {
+          ...l, statut: 'rapprochee', emprunt_id: String(args.p_emprunt_id), emprunt_echeance: args.p_echeance as number | null,
+          emprunt_interets: Number(args.p_interets), emprunt_assurance: Number(args.p_assurance),
+        }
+      }
+      if (nom === 'retirer_echeance_emprunt') {
+        return { ...l, statut: 'non_rapprochee', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null }
+      }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), statut: 'rapprochee' }
         : { ...l, categorie_id: null, statut: 'non_rapprochee' }
@@ -300,6 +318,7 @@ function reinitialiser() {
   faux.erreurSuppressionRegle = null
   faux.refusAuEnvoi = null
   faux.cotisations = []
+  faux.emprunts = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -893,7 +912,7 @@ describe('BanqueTab — les lots de rapprochement sur une lecture partielle', ()
     faux.muet = { pieces: 1 }
     rendre()
 
-    const bouton = await screen.findByRole('button', { name: /Valider et rapprocher les 1/ })
+    const bouton = await screen.findByRole('button', { name: 'Valider et rapprocher cette pièce' })
     expect(bouton.hasAttribute('disabled')).toBe(true)
     expect(screen.getByText(/Validation en lot suspendue/)).toBeTruthy()
     await act(async () => { bouton.click() })
@@ -908,7 +927,7 @@ describe('BanqueTab — les lots de rapprochement sur une lecture partielle', ()
     faux.pieces = [pieceDeTest({ id: 'piece-1', statut: 'a_valider' })]
     rendre()
 
-    const bouton = await screen.findByRole('button', { name: /Valider et rapprocher les 1/ })
+    const bouton = await screen.findByRole('button', { name: 'Valider et rapprocher cette pièce' })
     expect(screen.queryByText(/Validation en lot suspendue/)).toBeNull()
     await act(async () => { bouton.click() })
     await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ statut: 'validee' })]))
@@ -1705,5 +1724,326 @@ describe('BanqueTab — le virement personnel s’écrit', () => {
 
     await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
     expect(faux.rpcs).toEqual([])
+  })
+})
+
+// UNE ÉCHÉANCE D'EMPRUNT SE DÉCOUPE ET S'ÉCRIT (lib/echeanceEmprunt.ts). Ce qu'aucun test de `src/lib` ne
+// peut voir : que le découpage PROPOSÉ ne parte qu'au clic, par la fonction SQL et jamais par une mise à
+// jour de la ligne, UNE fois sous trois clics ; que les champs se corrigent et que le capital suive ; qu'un
+// paiement qui ne ressemble à rien garde le geste replié ; que la liste et la fiche disent l'échéance au
+// lieu d'un « Rapproché » nu — et qu'un paiement qui ressemble à une échéance n'entre pas dans le lot des
+// règles, où son capital serait affecté en charge.
+describe('BanqueTab — une échéance d’emprunt se découpe et s’écrit', () => {
+  // 12 000 € à 3,6 % sur 24 mois depuis le 5 janvier 2025 : mensualité 518,97 €, et l'échéance 1 (5 février)
+  // porte 36,00 € d'intérêts pour 482,97 € de capital ; l'échéance 3 (5 avril), 33,10 € pour 485,87 €.
+  const EMPRUNT: Emprunt = {
+    id: 'emp-1', dossier_id: 'dossier-de-test', nom: 'Prêt matériel', organisme_preteur: 'Banque du Midi',
+    capital_initial: 12000, taux_annuel: 3.6, date_debut: '2025-01-05', duree_mois: 24, created_at: '2025-01-05T10:00:00Z',
+  }
+  // Le prélèvement porte 21,03 € de plus que l'échéance : l'assurance de l'emprunteur.
+  const ECHEANCE = { libelle: 'PRLV ECHEANCE PRET', montant: -540, date: '2025-02-06' }
+  const RAPPROCHEE: Partial<LigneBancaire> = {
+    ...ECHEANCE, statut: 'rapprochee', emprunt_id: 'emp-1', emprunt_echeance: 1, emprunt_interets: 36, emprunt_assurance: 21.03,
+  }
+
+  function preparer(ligne: Partial<LigneBancaire> = ECHEANCE) {
+    reinitialiser()
+    faux.pieces = []
+    faux.emprunts = [EMPRUNT]
+    faux.lignes = [ligneDeTest({ ...ECHEANCE, ...ligne })]
+  }
+  const champ = (nom: string) => within(volet()).getByLabelText(nom) as HTMLInputElement
+  const saisir = (nom: string, valeur: string) => fireEvent.change(champ(nom), { target: { value: valeur } })
+  const rapprochements = () => faux.rpcs.filter((r) => r.nom === 'rapprocher_echeance_emprunt')
+  async function voirLesRapproches() {
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+  }
+
+  it('propose l’échéance à laquelle le paiement ressemble, et ne l’écrit qu’au clic, par la base', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV ECHEANCE PRET')
+    expect(within(volet()).getByText('Échéance d’emprunt proposée')).toBeTruthy()
+    expect(champ('Échéance n°').value).toBe('1')
+    expect(champ('Intérêts (661100)').value).toBe('36.00')
+    expect(champ('Assurance (616800)').value).toBe('21.03')
+    expect(within(volet()).getByText(/L’échéancier prévoit 518,97.*le 05\/02\/2025.*21,03.*de plus/)).toBeTruthy()
+    expect(within(volet()).getByText(/Capital remboursé/).textContent).toMatch(/482,97/)
+    // Ce que l'affectation coûterait, dit sous « Sans justificatif » ; et une proposition existe, donc
+    // l'écran ne dit pas qu'il n'y en a aucune.
+    expect(within(volet()).getByText(/ressemble à une échéance d’emprunt \(ci-dessus\) : affecté à une catégorie, son capital compterait en charge/)).toBeTruthy()
+    expect(within(volet()).queryByText('Aucune pièce proposée pour ce mouvement.')).toBeNull()
+    expect(faux.rpcs).toEqual([])
+
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' }).click() })
+
+    expect(faux.rpcs).toEqual([{
+      nom: 'rapprocher_echeance_emprunt',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1', p_emprunt_id: 'emp-1', p_echeance: 1, p_interets: 36, p_assurance: 21.03,
+        p_ecritures: [
+          { compte: '164000', sens: 'debit', montant: 482.97, libelle: 'PRLV ECHEANCE PRET' },
+          { compte: '661100', sens: 'debit', montant: 36, libelle: 'PRLV ECHEANCE PRET' },
+          { compte: '616800', sens: 'debit', montant: 21.03, libelle: 'PRLV ECHEANCE PRET' },
+          { compte: '512000', sens: 'credit', montant: 540, libelle: 'PRLV ECHEANCE PRET' },
+        ],
+      },
+    }])
+    // Jamais une mise à jour directe de la ligne : le rapprochement et son écriture partent ensemble.
+    expect(faux.updatesLignes).toEqual([])
+    // La fiche RESTE sur le mouvement, dans son nouvel état.
+    await waitFor(() => expect(within(volet()).getByText('Échéance n° 1 — Prêt matériel')).toBeTruthy())
+    expect(within(volet()).getByRole('button', { name: 'Annuler le rapprochement' })).toBeTruthy()
+  })
+
+  it('changer de numéro repropose les intérêts de ce mois-là, sans rien écrire', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV ECHEANCE PRET')
+    saisir('Échéance n°', '3')
+    expect(champ('Intérêts (661100)').value).toBe('33.10')
+    expect(champ('Assurance (616800)').value).toBe('21.03')
+    expect(within(volet()).getByText(/L’échéancier prévoit 518,97.*le 05\/04\/2025/)).toBeTruthy()
+    // Loin du mouvement, c'est dit : une échéance éloignée d'un mois n'est sans doute pas la bonne.
+    expect(within(volet()).getByText(/Cette échéance tombe à 58 jours du mouvement/)).toBeTruthy()
+    expect(faux.rpcs).toEqual([])
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' }).click() })
+    expect(rapprochements()[0].args).toMatchObject({ p_echeance: 3, p_interets: 33.1, p_assurance: 21.03 })
+  })
+
+  it('corriger les montants recalcule le capital, et refuse ce que la base refuserait', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV ECHEANCE PRET')
+    saisir('Intérêts (661100)', '30.5')
+    expect(within(volet()).getByText(/Capital remboursé/).textContent).toMatch(/488,47/)
+
+    saisir('Intérêts (661100)', '600')
+    expect(within(volet()).getByText(/Découpage impossible : les intérêts et l’assurance sont positifs, au centime, et ne dépassent pas le prélèvement/)).toBeTruthy()
+    expect(within(volet()).queryByText(/Capital remboursé/)).toBeNull()
+    const bouton = within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+
+    saisir('Intérêts (661100)', '36')
+    saisir('Assurance (616800)', '')
+    expect(within(volet()).getByText('Saisis les intérêts et l’assurance — 0 s’il n’y en a pas.')).toBeTruthy()
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
+
+    saisir('Assurance (616800)', '0')
+    expect(bouton.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('refuse une échéance déjà payée par un autre mouvement, en disant lequel', async () => {
+    preparer({ ...ECHEANCE, date: '2025-03-06' })
+    faux.lignes.push(ligneDeTest({ ...RAPPROCHEE, id: 'ligne-payee', date: '2025-02-05', libelle: 'PRLV ECHEANCE PRET FEVRIER' }))
+    rendre()
+    await ouvrir('PRLV ECHEANCE PRET')
+    // L'échéance 1 est payée : c'est la 2 qui est proposée.
+    expect(champ('Échéance n°').value).toBe('2')
+    saisir('Échéance n°', '1')
+    expect(within(volet()).getByText('L’échéance n° 1 de cet emprunt est déjà rapprochée du mouvement du 05/02/2025.')).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('un paiement qui ne ressemble à aucune échéance garde le geste, replié', async () => {
+    preparer({ libelle: 'PRLV SEPA TRANSMEDICAL', montant: -38.4, date: '2025-02-06' })
+    rendre()
+    await ouvrir('PRLV SEPA TRANSMEDICAL')
+    expect(within(volet()).queryByText('Échéance d’emprunt proposée')).toBeNull()
+    expect(within(volet()).getByText('Aucune pièce proposée pour ce mouvement.')).toBeTruthy()
+    expect(within(volet()).queryByText(/ressemble à une échéance/)).toBeNull()
+    expect(within(volet()).queryByLabelText('Échéance n°')).toBeNull()
+
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher d’un emprunt…' }).click() })
+    // Le seul emprunt du dossier est choisi, et son échéance la plus proche proposée — ramenée à ce que le
+    // prélèvement peut porter, et l'écart dit.
+    expect((within(volet()).getByLabelText('Emprunt') as HTMLSelectElement).value).toBe('emp-1')
+    expect(champ('Échéance n°').value).toBe('1')
+    expect(champ('Intérêts (661100)').value).toBe('36.00')
+    expect(champ('Assurance (616800)').value).toBe('0.00')
+    expect(within(volet()).getByText(/Le prélèvement est inférieur de 480,57/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' }).click() })
+    expect(rapprochements()).toHaveLength(1)
+  })
+
+  it('un déblocage : les fonds reçus, au crédit du 164', async () => {
+    preparer({ libelle: 'VIR DEBLOCAGE PRET', montant: 12000, date: '2025-01-07' })
+    rendre()
+    await ouvrir('VIR DEBLOCAGE PRET')
+    expect(within(volet()).getByText('Déblocage d’emprunt proposé')).toBeTruthy()
+    expect(within(volet()).queryByLabelText('Échéance n°')).toBeNull()
+    expect(within(volet()).getByText(/ressemble au déblocage d’un emprunt \(ci-dessus\) : affecté à une catégorie, il compterait en recette/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher du déblocage' }).click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'rapprocher_echeance_emprunt',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1', p_emprunt_id: 'emp-1', p_echeance: null, p_interets: 0, p_assurance: 0,
+        p_ecritures: [
+          { compte: '164000', sens: 'credit', montant: 12000, libelle: 'VIR DEBLOCAGE PRET' },
+          { compte: '512000', sens: 'debit', montant: 12000, libelle: 'VIR DEBLOCAGE PRET' },
+        ],
+      },
+    }])
+    await waitFor(() => expect(within(volet()).getByText('Déblocage d’emprunt — Prêt matériel')).toBeTruthy())
+  })
+
+  it('n’écrit qu’une fois, même sur trois clics rapprochés', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV ECHEANCE PRET')
+    const bouton = within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(rapprochements()).toHaveLength(1)
+  })
+
+  // Relâché avant la relecture, le verrou laisserait le formulaire cliquable sur un mouvement déjà
+  // rapproché : un second clic réécrirait le rapprochement. Le bouton le montre.
+  it('reste verrouillé tant que la relecture du relevé n’est pas revenue', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV ECHEANCE PRET')
+    faux.retenirLectureLignes = true
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' }).click() })
+    expect(within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { faux.resoudreLectureLignes?.() })
+    await waitFor(() => expect(within(volet()).getByText('Échéance n° 1 — Prêt matériel')).toBeTruthy())
+  })
+
+  it('un refus de la base se dit, et le mouvement reste à traiter', async () => {
+    preparer()
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('PRLV ECHEANCE PRET')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Rapprocher de cette échéance' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/Le rapprochement de l'emprunt n'a pas pu être enregistré : refus simulé/)))
+    expect(within(volet()).getByText('Non rapproché')).toBeTruthy()
+  })
+
+  it('la liste dit l’échéance et l’emprunt, jamais un « Rapproché » nu ni « sans justificatif »', async () => {
+    preparer(RAPPROCHEE)
+    rendre()
+    await voirLesRapproches()
+    expect(await screen.findByText('Échéance n° 1 — Prêt matériel')).toBeTruthy()
+    expect(screen.queryByText(/^Rapproché$/)).toBeNull()
+    expect(screen.queryByText('Rapproché sans justificatif')).toBeNull()
+  })
+
+  it('la fiche montre le découpage, et annule le rapprochement par la base', async () => {
+    preparer(RAPPROCHEE)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV ECHEANCE PRET')
+    const decoupage = within(volet()).getByText('Capital remboursé (164000)').closest('dl')
+    expect(decoupage?.textContent).toMatch(/Capital remboursé \(164000\)482,97.*Intérêts \(661100\)36,00.*Assurance \(616800\)21,03/)
+    expect(within(volet()).queryByText('Rapproché avec')).toBeNull()
+    expect(within(volet()).queryByText(/^Rapproché$/)).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_echeance_emprunt', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('dit une annulation que la base refuse, et le mouvement reste rapproché', async () => {
+    preparer(RAPPROCHEE)
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV ECHEANCE PRET')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/Le rapprochement de l'emprunt n'a pas pu être annulé : refus simulé/)))
+    expect(within(volet()).getByText('Échéance n° 1 — Prêt matériel')).toBeTruthy()
+  })
+
+  it('corrige le découpage d’une échéance déjà rapprochée, depuis celui que la base garde', async () => {
+    preparer(RAPPROCHEE)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV ECHEANCE PRET')
+    expect(within(volet()).queryByLabelText('Intérêts (661100)')).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Corriger le découpage…' }).click() })
+    expect(champ('Échéance n°').value).toBe('1')
+    expect(champ('Intérêts (661100)').value).toBe('36.00')
+    expect(champ('Assurance (616800)').value).toBe('21.03')
+    saisir('Intérêts (661100)', '35')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Enregistrer le découpage' }).click() })
+    expect(rapprochements()[0].args).toMatchObject({
+      p_echeance: 1, p_interets: 35, p_assurance: 21.03,
+      p_ecritures: [
+        { compte: '164000', sens: 'debit', montant: 483.97, libelle: 'PRLV ECHEANCE PRET' },
+        { compte: '661100', sens: 'debit', montant: 35, libelle: 'PRLV ECHEANCE PRET' },
+        { compte: '616800', sens: 'debit', montant: 21.03, libelle: 'PRLV ECHEANCE PRET' },
+        { compte: '512000', sens: 'credit', montant: 540, libelle: 'PRLV ECHEANCE PRET' },
+      ],
+    })
+  })
+
+  it('dit qu’une échéance rapprochée désigne un emprunt qui n’a pas été lu', async () => {
+    preparer(RAPPROCHEE)
+    faux.emprunts = []
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV ECHEANCE PRET')
+    expect(within(volet()).getByText('L’emprunt rapproché ne figure pas parmi les emprunts lus.')).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Corriger le découpage…' })).toBeNull()
+  })
+
+  it('la liste signale un paiement qui ressemble à une échéance', async () => {
+    preparer()
+    faux.lignes.push(ligneDeTest({ id: 'autre', libelle: 'PRLV SEPA TRANSMEDICAL', montant: -38.4, date: '2025-02-06' }))
+    rendre()
+    const ligne = (await screen.findAllByText('PRLV ECHEANCE PRET')).find((e) => e.closest('tr')?.classList.contains('clickable'))
+    expect(ligne?.closest('tr')?.textContent).toMatch(/Non rapproché · suggestion/)
+    const autre = (await screen.findAllByText('PRLV SEPA TRANSMEDICAL')).find((e) => e.closest('tr')?.classList.contains('clickable'))
+    expect(autre?.closest('tr')?.textContent).not.toMatch(/suggestion/)
+  })
+
+  it('un dossier sans emprunt ne parle pas d’emprunt', async () => {
+    preparer()
+    faux.emprunts = []
+    rendre()
+    await ouvrir('PRLV ECHEANCE PRET')
+    expect(within(volet()).queryByText(/emprunt/i)).toBeNull()
+  })
+
+  const FRAIS = categorieDeTest()
+  function preparerLot() {
+    preparer({ libelle: 'PRLV BANQUE DU MIDI ECHEANCE' })
+    faux.categories = [FRAIS]
+    faux.lignes.push(ligneDeTest({ id: 'l-frais', libelle: 'FRAIS BANQUE DU MIDI', montant: -8.5, date: '2025-02-10' }))
+    faux.reglesAffectation = [regleDeTest({ motif: 'banque du midi', sens: 'decaissement', categorie_id: 'cat-frais' })]
+  }
+
+  // Une règle au nom de la banque désigne ses frais ET ses échéances : affectée en lot à « Frais
+  // bancaires », l'échéance y porterait son capital en charge.
+  it('écarte du lot des règles un paiement qui ressemble à une échéance, et le dit', async () => {
+    preparerLot()
+    rendre()
+    expect(await screen.findByText('Affectations proposées par vos règles (1)')).toBeTruthy()
+    expect(screen.getByText(/1 mouvement à rapprocher plutôt qu'affecter/)).toBeTruthy()
+    expect(screen.getByText(/Il ressemble à l’échéance n° 1 de l’emprunt « Prêt matériel » : à rapprocher de l’emprunt, pas à affecter/)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Affecter ce mouvement' }).click() })
+    const envoi = faux.rpcs.find((r) => r.nom === 'affecter_mouvements_bancaires')
+    expect(envoi).toBeTruthy()
+    expect((envoi!.args.p_affectations as { ligne_bancaire_id: string }[]).map((a) => a.ligne_bancaire_id)).toEqual(['l-frais'])
+  })
+
+  it('suspend le lot sur une lecture partielle des emprunts, et le dit — jusque dans la fiche', async () => {
+    preparerLot()
+    faux.muet = { emprunts: 0 }
+    rendre()
+    expect(await screen.findByText(/Les emprunts n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect(screen.getByText(/Affectation en lot suspendue/)).toBeTruthy()
+    // Sans les emprunts, l'échéance n'est plus reconnue : le lot la proposerait avec les frais — c'est
+    // précisément ce que la suspension empêche d'écrire.
+    const bouton = screen.getByRole('button', { name: 'Affecter les 2' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs.filter((r) => r.nom === 'affecter_mouvements_bancaires')).toEqual([])
+    await ouvrir('PRLV BANQUE DU MIDI ECHEANCE')
+    expect(within(volet()).getByText(/La liste des emprunts n’a pas pu être lue en entier/)).toBeTruthy()
   })
 })
