@@ -244,6 +244,9 @@ supabase/
                   affectation.sql : l'affectation d'un mouvement bancaire et son écriture, par
                   impersonation des trois profils, à rejouer après toute migration qui touche
                   ses deux fonctions ou les contraintes de lignes_bancaires.
+                  reglesAffectation.sql : les règles d'affectation par libellé et l'affectation en
+                  lot, par impersonation des trois profils, à rejouer après toute migration qui
+                  touche leur table ou les fonctions d'affectation.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1226,6 +1229,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   du mouvement dans la 2035, la situation intermédiaire et l'estimation, et porté au FEC au journal de
   banque avec le relevé pour pièce. Voir « un mouvement sans justificatif s'affecte à une catégorie »
   dans « Problèmes connus » (`lib/affectationBanque.ts`).
+- **Règles d'affectation par libellé et affectation en lot (29/09/2026)**, ligne 26.6, étape (a),
+  suite : en affectant un mouvement, le cabinet peut RETENIR une règle (« les paiements dont le libellé
+  contient … vont dans … »). L'onglet Banque propose alors les mouvements qu'elle reconnaît, et
+  « Affecter les N » les écrit en une fois. Un mouvement dont le justificatif est peut-être au dossier
+  n'entre jamais dans le lot. Voir « les règles d'affectation proposent, le clic écrit » dans
+  « Problèmes connus » (`lib/reglesAffectation.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1256,9 +1265,8 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   montants en devise, qui attendent la réponse de l'expert-comptable du cabinet — voir « le FEC suit
   l'article A47 A-1 » dans « Problèmes connus ».
 - Tenir toute la comptabilité d'un BNC (ligne 26.6) : l'étape (a) est livrée EN PARTIE (29/09/2026) —
-  un mouvement sans justificatif s'affecte à la main, un par un, à une catégorie de charge ou de
-  produit. Restent pour (a) : les règles apprises par libellé et l'affectation en lot (sur le relevé
-  2025 du dossier `test`, 372 mouvements ne sont rattachés à rien) ; les comptes de bilan — 108 pour
+  un mouvement sans justificatif s'affecte à une catégorie de charge ou de produit, un par un depuis
+  sa fiche ou en lot par des règles apprises par libellé. Restent pour (a) : les comptes de bilan — 108 pour
   les apports et prélèvements de l'exploitant, que « Virement personnel » classe sans rien écrire,
   164 pour le capital d'un emprunt — et la ventilation d'un mouvement sur plusieurs comptes (une
   échéance d'emprunt mêle capital et intérêts) ; les recettes d'un dossier assujetti, dont la TVA ne
@@ -5000,6 +5008,85 @@ d'environnement dans la même édition.
   le relevé : une catégorie qui porte un mouvement affecté a forcément un compte — la base en exige un
   de résultat à l'affectation, et aucun écran ni aucune fonction n'efface un compte (Écritures refuse
   un compte vide). Ce câblage est défensif, et le module le garde (`categoriesSansCompte`).
+- **LES RÈGLES D'AFFECTATION PROPOSENT, LE CLIC ÉCRIT — LIGNE 26.6, ÉTAPE (A), SUITE** (29/09/2026,
+  `lib/reglesAffectation.ts`). Affecter un relevé mouvement par mouvement, c'est une journée : sur celui
+  du dossier `test` (fictif), 372 mouvements restent à traiter. Mais ils se répètent — mesuré sans
+  remonter un seul libellé, 324 portent un mot distinctif et 13 mots en couvrent 80 %. Une RÈGLE dit
+  donc : les mouvements de CE sens dont le libellé contient CE motif vont dans CETTE catégorie.
+  **Une règle PROPOSE, elle n'écrit jamais** — ni à l'import, ni au chargement de l'écran : une
+  affectation écrit une écriture comptable, et rien n'est validé automatiquement dans cette
+  application. La fiche d'un mouvement présélectionne la catégorie qu'une règle propose et le dit ; la
+  carte « Affectations proposées par vos règles » montre le lot, catégorie par catégorie avec son total,
+  mouvement par mouvement avec sa règle ; et c'est le clic « Affecter les N » qui écrit.
+  **Le motif est enregistré sous une forme NORMALISÉE** — minuscules sans accents, sigles pointés
+  recollés (`recollerSiglesPointes`, sorti de `cleFournisseur` pour être partagé), ponctuation ramenée
+  à une espace —, et la base refuse toute autre forme : un motif « CPAM » ne se retrouverait jamais
+  dans un libellé normalisé, et la règle ne proposerait rien, en silence. Il se cherche en DÉBUT de mot
+  (« sfr » ne trouve pas « transfert »), la fin restant libre parce que les relevés coupent. Il doit
+  porter un mot qui nomme quelqu'un : trois lettres au moins, hors des mots de relevé (« prlv sepa »
+  couvre 139 prélèvements de fournisseurs différents sur ce relevé) ; cinq chiffres au moins pour une
+  référence seule, six caractères pour un identifiant mêlé. La fiche propose le premier mot distinctif
+  du libellé, ou, pour un libellé fait d'une seule référence — 29 encaissements du relevé, 28 chiffres
+  tous ouverts par les cinq mêmes —, le plus long début commun à toute sa famille. Le motif reste
+  modifiable : c'est un point de départ, pas une décision.
+  **Le sens fait partie de la règle** : « amazon » en paiement est un achat, en encaissement un
+  remboursement que la même règle ne doit pas ranger sans qu'on le voie.
+  **Plusieurs règles sur un libellé** : d'accord sur la catégorie, la plus longue est montrée ; en
+  désaccord, la plus précise l'emporte seulement quand elle CONTIENT les autres (« amazon prime » sur
+  « amazon ») ; sinon aucune n'est proposée, et la carte comme la fiche nomment le conflit. Trancher par
+  l'ordre de création serait choisir à la place de l'opérateur, en masse, sur un seul clic — le défaut
+  déjà corrigé dans le rapprochement automatique.
+  **LE RISQUE QUI A DÉCIDÉ DE TOUT : LA MÊME DÉPENSE COMPTÉE DEUX FOIS.** Affecté, un paiement dont la
+  pièce est au dossier compte dans la 2035 à côté d'elle, et la pièce reste « sans mouvement » — ce qui
+  est exactement l'air d'une pièce payée en espèces : rien ne le dirait. Une règle « transmedical »
+  aurait fait ça aux dix-sept factures Transmedical du dossier `test`. `justificatifPossible` écarte donc
+  du lot tout mouvement pour lequel existe une pièce du même montant dans la fenêtre du rapprochement
+  (à valider comprises), une échéance de cotisation du même montant, ou une pièce de CE tiers qu'aucun
+  mouvement ne rapproche — quel que soit son montant : un paiement en deux fois ou une facture mal lue
+  échappent au montant, pas au nom. Ils sont listés à part, « à rapprocher plutôt qu'affecter », et la
+  fiche le dit avant une affectation à l'unité, sans la refuser : c'est l'opérateur qui sait.
+  **Le lot s'écrit par `affecter_mouvements_bancaires`** (`SECURITY INVOKER`), qui refait pour chaque
+  mouvement les vérifications de l'affectation à l'unité et REFUSE un mouvement qui n'est plus à
+  traiter : une décision prise ailleurs depuis l'affichage — un autre onglet, un collègue — ne
+  s'écrase pas. Tout ou rien par appel, par envois de cent : MESURÉ, 372 affectations en 2,48 s sous
+  RLS, quand la base coupe un appel à 8 s (`statement_timeout` du rôle `authenticated`). Un refus au
+  milieu dit combien de mouvements sont passés avant lui, et le relevé est relu. Un index sur
+  `ecritures_brouillon.ligne_bancaire_id` est né avec : l'affectation lit, remplace et relit l'écriture
+  d'un mouvement par ce lien, trois parcours de la table par mouvement.
+  **Suspendu sur TOUTE lecture partielle dont le plan dépend** — le relevé, les pièces (un justificatif
+  non lu ne s'écarte pas), les échéances et les règles « toujours ignorer », les catégories, et les
+  règles elles-mêmes (une règle plus précise non lue changerait la catégorie). Sous le verrou partagé
+  des écritures de l'écran.
+  **Retenir une règle se fait en affectant**, dans la fiche : une case cochée à la main, jamais d'office ;
+  le motif proposé, modifiable ; le nombre d'autres mouvements à traiter qu'elle désignera ; la règle
+  qu'elle remplacerait — une par motif et par sens, contrainte TOTALE que vise l'`upsert`. Un motif qui
+  ne nomme personne est refusé avant le clic. La règle s'écrit APRÈS l'affectation — une règle sans
+  l'affectation qui l'a fait naître proposerait un choix que personne n'a fait —, et un refus de la
+  base le dit, le mouvement restant affecté. Les règles lues en partie, la case se désactive, et
+  l'affectation d'une case déjà cochée se suspend. **Retirer une règle** ne touche aucun mouvement, et
+  la confirmation le dit.
+  **En base** : la RLS de la convention (`admin_du_dossier`, `to authenticated`), plus une garantie que
+  la relecture ne donne pas — la catégorie visée doit être celle du dossier ou une catégorie partagée du
+  cabinet. La catégorie d'une règle ne se supprime pas (clé sans action).
+  `supabase/essais/reglesAffectation.sql` : 22 contrôles par impersonation des trois profils, dont le
+  contrôle POSITIF du chef, ce que la table refuse seule, le lot tout ou rien, et que rien ne reste ;
+  sans le changement de rôle, ses trois contrôles d'accès virent au rouge (vérifié). La sauvegarde emporte la table (ses trois
+  listes et sa relation), l'export porte la migration (64 fichiers), le socle l'index (70 instructions),
+  l'inventaire 768 objets. Le banc de capture sert trois règles : 0 débordement aux quatre largeurs.
+  **LATENT** : aucune règle en base (mesuré le 29/09/2026).
+  **Quatre-vingt-seize mutations, quatre-vingt-quatorze mordent — la première campagne n'en tuait que
+  soixante-quinze.** Les vingt et une survivantes accusaient des tests absents, tous écrits depuis : le
+  relevé, les catégories et les échéances lues en partie (seules les règles et les pièces suspendaient
+  le lot dans un test), la relecture après un lot passé en partie, la règle écrite malgré une
+  affectation refusée, les refus et les conflits que la carte doit dire, la carte qui se taisait quand
+  rien n'est proposé, le conflit et la présélection dans la fiche, la règle « remplacée » de l'autre sens
+  ou de même catégorie, une règle cherchée sur un mouvement déjà affecté, des règles relues en partie
+  fiche ouverte ; et dans le module, une famille de quatre chiffres, le virement personnel et le zéro
+  euro d'un mouvement « à traiter », deux règles d'accord qui ne se contiennent pas, deux catégories au
+  même rang. Chacune fait désormais tomber UN test, celui écrit pour elle. **Deux survivent, et c'est
+  dit** : la garde du gestionnaire du lot et celle de l'écriture de la règle, qu'aucun clic n'atteint —
+  le bouton du lot est grisé sur une lecture partielle, celui de la fiche aussi quand les règles sont
+  lues en partie, et ces deux jumelles-là mordent.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -6240,7 +6327,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2509 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2578 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -6257,8 +6344,9 @@ par tous les écrans (`recherche.ts`), le contrat de la proposition de catégori
 (`voletSocialPamc.ts`, contre le moteur de l'Urssaf), et le montant qu'on retient d'une pièce
 selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), la CA3 préparée case par case
 (`declarationTva.ts`), la date à laquelle une pièce compte en trésorerie (`rattachement.ts`), les
-écritures d'un dossier tenu en engagement (`engagement.ts`), et celles d'un mouvement du relevé
-affecté sans justificatif (`affectationBanque.ts`) —
+écritures d'un dossier tenu en engagement (`engagement.ts`), celles d'un mouvement du relevé
+affecté sans justificatif (`affectationBanque.ts`), et les règles qui proposent ces affectations en lot
+(`reglesAffectation.ts`) —
 les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
