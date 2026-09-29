@@ -3,6 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
 import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from '../../lib/estimation'
+import { mouvementsAffectes } from '../../lib/affectationBanque'
 import type { Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -106,9 +107,12 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
           .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
       ),
       // Ce qui date une recette ou une dépense : son paiement rapproché, sa date de facture à défaut.
+      // Et les mouvements AFFECTÉS à une catégorie sans justificatif (ligne 26.6), qui comptent
+      // eux-mêmes : pour un infirmier, les encaissements de l'Assurance maladie sont presque tout son
+      // chiffre d'affaires.
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
+          .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
           .order('id').range(debut, fin),
       ),
     ])
@@ -143,7 +147,8 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
   // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable)
+  const affectes = mouvementsAffectes(paiements, categories)
+  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, affectes)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
@@ -216,7 +221,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva, paiements, modeComptable)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva, paiements, modeComptable, affectes)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,
@@ -248,9 +253,9 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
     setCalculatingPostes(true)
     setError(null)
     try {
-      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements, modeComptable)
+      const totaux = chargesParPostePourAnnee(piecesValidees, categories, immobilisationPieceIds, annee, assujettiTva, paiements, modeComptable, affectes)
       if (totaux.size === 0) {
-        setError("Aucune pièce avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
+        setError("Aucune pièce ni aucun mouvement affecté avec un poste 2035 renseigné pour cette année — complète d'abord les postes manquants dans l'onglet Clôture.")
         return
       }
       for (const [poste, montant] of totaux) {

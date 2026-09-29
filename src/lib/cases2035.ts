@@ -264,6 +264,7 @@ export interface CaseRemplie {
   // rien qu'avec les catégories par défaut) : les nommer, c'est pouvoir justifier la case d'un clic.
   postes: string[]
   nbPieces: number
+  nbMouvements: number
 }
 
 export interface PosteNonRattache {
@@ -311,9 +312,12 @@ export function repartirEnCases(declaration: Declaration2035): RepartitionCases 
       actuel.montant += ligne.montant
       actuel.postes.push(ligne.poste)
       actuel.nbPieces += ligne.nbPieces
+      actuel.nbMouvements += ligne.nbMouvements
       continue
     }
-    parCode.set(c.code, { case: c, montant: ligne.montant, postes: [ligne.poste], nbPieces: ligne.nbPieces })
+    parCode.set(c.code, {
+      case: c, montant: ligne.montant, postes: [ligne.poste], nbPieces: ligne.nbPieces, nbMouvements: ligne.nbMouvements,
+    })
   }
 
   // Ordre du formulaire, pas ordre d'apparition : une déclaration se lit dans l'ordre imprimé.

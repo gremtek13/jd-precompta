@@ -8,14 +8,29 @@ import { ecartAvecBanque, type EcartBanque } from './alignementBanque'
 
 // Catégories utilisées par au moins une pièce validée mais sans compte comptable associé — impossible
 // de générer l'écriture correspondante tant que ce n'est pas renseigné (voir EcrituresTab).
-export function categoriesSansCompte(categories: Categorie[], pieces: Piece[]): Categorie[] {
-  return categories.filter((c) => !c.compte_comptable && pieces.some((p) => p.categorie_id === c.id))
+//
+// ET PAR UN MOUVEMENT DU RELEVÉ AFFECTÉ SANS JUSTIFICATIF (lib/affectationBanque.ts). La base exige un
+// compte de charge ou de produit au moment de l'affectation, mais il peut être retiré ensuite : le
+// mouvement sort alors de la 2035 et son écriture n'est plus juste. `mouvements` est obligatoire —
+// l'oublier ferait taire ce point sur un dossier dont les recettes ne sont QUE des virements.
+// N'importe quelles lignes du relevé : seule une ligne affectée porte une catégorie.
+export function categoriesSansCompte(
+  categories: Categorie[], pieces: Piece[], mouvements: readonly Pick<LigneBancaire, 'categorie_id'>[],
+): Categorie[] {
+  return categories.filter((c) => !c.compte_comptable && utilisee(c, pieces, mouvements))
 }
 
 // Même logique côté poste de la 2035 (voir ClotureTab) — une pièce dont la catégorie n'a pas de poste
-// associé n'est comptée dans aucun total de clôture.
-export function categoriesSansPoste(categories: Categorie[], pieces: Piece[]): Categorie[] {
-  return categories.filter((c) => !c.poste_2035 && pieces.some((p) => p.categorie_id === c.id))
+// associé n'est comptée dans aucun total de clôture. Un mouvement affecté non plus : la base n'exige
+// pas de poste à l'affectation.
+export function categoriesSansPoste(
+  categories: Categorie[], pieces: Piece[], mouvements: readonly Pick<LigneBancaire, 'categorie_id'>[],
+): Categorie[] {
+  return categories.filter((c) => !c.poste_2035 && utilisee(c, pieces, mouvements))
+}
+
+function utilisee(c: Categorie, pieces: Piece[], mouvements: readonly Pick<LigneBancaire, 'categorie_id'>[]): boolean {
+  return pieces.some((p) => p.categorie_id === c.id) || mouvements.some((m) => m.categorie_id === c.id)
 }
 
 // Pièces VALIDÉES sans aucune catégorie. C'est le trou que les deux contrôles ci-dessus ne voient
@@ -352,8 +367,15 @@ export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonn
 //
 // Le prédicat est exporté À L'UNITÉ parce que l'onglet Banque en a besoin LIGNE PAR LIGNE, pour sa
 // pastille : le réécrire là-bas serait une règle recopiée deux fois, qui n'attend pas de diverger.
-export function mouvementRapprocheSansObjet(ligne: LigneBancaire): boolean {
-  return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id
+//
+// UN MOUVEMENT AFFECTÉ À UNE CATÉGORIE (ligne 26.6, lib/affectationBanque.ts) est rapproché sans pièce
+// ni échéance, et il n'est PAS orphelin : sa preuve est le relevé, son écriture est celle de sa
+// catégorie. La clé est en NO ACTION — une catégorie en usage ne se supprime pas —, donc ce lien-là ne
+// peut pas se défaire en silence comme les deux autres.
+export function mouvementRapprocheSansObjet(
+  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'>,
+): boolean {
+  return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id && !ligne.categorie_id
 }
 
 // Ce que TOUTE suppression d'une pièce ou d'une échéance de cotisation fait au rapprochement qui

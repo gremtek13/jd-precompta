@@ -176,7 +176,7 @@ describe('EstimationTab — détail par poste', () => {
     await act(async () => { bouton.click() })
 
     expect(faux.upserts).toHaveLength(0)
-    await screen.findByText(/Aucune pièce avec un poste 2035 renseigné/)
+    await screen.findByText(/Aucune pièce ni aucun mouvement affecté avec un poste 2035 renseigné/)
   })
 })
 
@@ -414,5 +414,52 @@ describe('EstimationTab — une pièce compte à la date de son paiement', () =>
     await screen.findByText(/Calcul suspendu/)
     expect(screen.getByRole('button', { name: 'Calculer CA + cotisations' }).hasAttribute('disabled')).toBe(true)
     faux.refusees = new Set()
+  })
+})
+
+// LIGNE 26.6 : un mouvement du relevé affecté à une catégorie sans justificatif compte dans les
+// repères, à sa date — c'est l'essentiel du chiffre d'affaires d'un infirmier. Ce qui se joue ici est
+// le CÂBLAGE : que l'écran lise les mouvements affectés (sa lecture ne prenait que ceux d'une pièce)
+// et les passe aux trois calculs.
+describe('EstimationTab — les mouvements affectés sans justificatif', () => {
+  const annee = new Date().getFullYear() - 1
+  const RECETTES = categorieDeTest({ id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Ventes / prestations', compte_comptable: '706000', poste_2035: 'Recettes' })
+  const FRAIS = categorieDeTest({ id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' })
+  const mouvement = (id: string, categorieId: string, date: string, montant: number) => ({
+    id, dossier_id: 'dossier-de-test', date, libelle: 'VIR', montant, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: categorieId, prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
+  })
+  beforeEach(() => {
+    faux.categories = [categorieDeTest(), RECETTES, FRAIS]
+    faux.immobilisations = []
+    faux.upserts = []
+    faux.upsertsAnnuels = []
+    faux.muetPieces = null
+    faux.pieces = []
+  })
+  afterEach(() => { faux.paiements = [] })
+
+  it('le repère annuel compte un encaissement affecté dans le chiffre d’affaires', async () => {
+    faux.paiements = [mouvement('cpam', 'cat-recettes', `${annee}-06-10`, 5000)]
+    await rendre()
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: 5000 })
+  })
+
+  it('le détail par poste compte une dépense affectée dans son poste', async () => {
+    faux.paiements = [mouvement('frais', 'cat-frais', `${annee}-06-10`, -8.5)]
+    const bouton = await rendre()
+    await act(async () => { bouton.click() })
+    expect(faux.upserts).toEqual([expect.objectContaining({ annee, poste: 'Frais financiers', montant: 8.5 })])
+  })
+
+  it('la projection compte un encaissement affecté déjà reçu', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    faux.paiements = [mouvement('cpam', 'cat-recettes', '2026-03-10', 900)]
+    await rendre()
+    expect(valeur('CA encaissé à date')).toBe('900,00 €')
+    vi.useRealTimers()
   })
 })

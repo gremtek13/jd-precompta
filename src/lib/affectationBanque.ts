@@ -1,0 +1,203 @@
+import { libelleExploitable } from './appariementBanque'
+import { COMPTE_BANQUE } from './comptes'
+import type { Categorie, EcritureBrouillon, LigneBancaire } from './types'
+
+// UN MOUVEMENT BANCAIRE SANS JUSTIFICATIF S'AFFECTE À UNE CATÉGORIE (ligne 26.6 de la feuille de
+// route, étape a).
+//
+// Jusqu'ici, seul un mouvement rapproché d'une PIÈCE produisait une écriture. Tout le reste — les
+// frais bancaires, les encaissements de l'Assurance maladie et des mutuelles, les remboursements —
+// n'était écrit nulle part : ni dans le brouillon, ni dans le FEC, ni dans la 2035. Pour un
+// infirmier, c'est l'essentiel de ses recettes : il ne transmet pas ses bordereaux (secret médical,
+// décision du cabinet du 24/09/2026), ses honoraires arrivent par virement, et la 2035 ne comptait
+// que les justificatifs de recette. Une comptabilité tenue dans l'application doit porter CHAQUE
+// mouvement du relevé ; c'est la condition pour que son FEC soit celui du dossier.
+//
+// CE QUI S'ÉCRIT : le compte de la catégorie face à la banque, au montant, à la date et dans le sens
+// du mouvement. L'écriture est composée ICI (testée), et la fonction SQL `affecter_mouvement_bancaire`
+// la vérifie contre le mouvement et la catégorie puis l'écrit AVEC l'affectation, dans une seule
+// transaction : un mouvement affecté sans écriture compterait dans la 2035 et pas dans le FEC, une
+// écriture sans affectation l'inverse (voir `supabase/essais/affectation.sql`).
+
+export type NatureCompte = 'recette' | 'depense'
+
+// LA NATURE SE LIT AU COMPTE, et c'est un invariant du plan comptable, pas un libellé : classe 7, un
+// produit ; classe 6, une charge. Un compte de bilan (108, 164, 445…) n'a pas de nature ici — il ne
+// passe pas par le résultat, et l'affectation le refuse tant qu'aucune étape ne le prend en charge.
+export function natureDuCompte(compte: string | null | undefined): NatureCompte | null {
+  if (!compte) return null
+  if (/^7\d{2}/.test(compte)) return 'recette'
+  if (/^6\d{2}/.test(compte)) return 'depense'
+  return null
+}
+
+/** Ce que l'affectation lit d'un mouvement : le reste de la ligne ne décide de rien. */
+export type MouvementBancaire = Pick<
+  LigneBancaire,
+  'id' | 'date' | 'libelle' | 'libelle_brut' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
+  | 'prelevement_personnel' | 'source_fichier'
+>
+
+// Pourquoi ce mouvement ne peut pas être affecté à cette catégorie, dit AVANT d'écrire. La base refait
+// les mêmes refus (`affecter_mouvement_bancaire`) : l'écran les dit pour qu'on ne clique pas pour rien,
+// la base pour qu'aucun chemin ne les contourne.
+export function refusAffectation(
+  ligne: MouvementBancaire,
+  categorie: Pick<Categorie, 'libelle' | 'compte_comptable'>,
+  assujettiTva: boolean,
+): string | null {
+  if (ligne.piece_id || ligne.cotisation_id || ligne.prelevement_personnel) {
+    return 'Ce mouvement est rapproché d’une pièce ou d’une échéance, ou classé en virement personnel : annule d’abord ce classement.'
+  }
+  const nature = natureDuCompte(categorie.compte_comptable)
+  if (!nature) {
+    return `La catégorie « ${categorie.libelle} » n’a pas de compte de charge ou de produit (classe 6 ou 7).`
+  }
+  // UNE RECETTE D'UN DOSSIER ASSUJETTI PORTE DE LA TVA, que rien ici ne saurait calculer : ni le taux,
+  // ni la part hors taxes ne se lisent sur un relevé. L'écrire au TTC en 706 compterait la TVA
+  // collectée dans le chiffre d'affaires, et la CA3 ne la verrait pas. Refusé tant qu'une étape ne
+  // demande pas le taux — la facture, elle, le porte.
+  if (assujettiTva && nature === 'recette') {
+    return 'Sur un dossier assujetti à la TVA, une recette sans facture n’est pas encore prise en charge : sa TVA ne serait pas calculée. Dépose la facture et rapproche-la.'
+  }
+  if (ligne.montant === 0) return 'Un mouvement de zéro euro n’a rien à écrire.'
+  return null
+}
+
+// UN ENCAISSEMENT SUR UNE CATÉGORIE DE DÉPENSE LA DIMINUE — c'est un remboursement, et c'est légitime.
+// Mais c'est aussi l'erreur la plus facile : « Honoraires » (622600) est une CHARGE, les honoraires
+// qu'on paie à un confrère ; les honoraires qu'on encaisse sont des recettes (706000). Un virement de
+// l'Assurance maladie rangé en « Honoraires » diminuerait les dépenses au lieu d'augmenter les
+// recettes : le résultat serait juste, la 2035 fausse sur deux lignes. L'écran le dit avant le clic.
+export function sensInhabituel(ligne: Pick<LigneBancaire, 'montant'>, nature: NatureCompte): boolean {
+  return (ligne.montant > 0 && nature === 'depense') || (ligne.montant < 0 && nature === 'recette')
+}
+
+export interface LigneEcritureMouvement {
+  compte: string
+  sens: 'debit' | 'credit'
+  montant: number
+  libelle: string
+}
+
+// L'écriture d'un mouvement affecté : le compte de la catégorie face à la banque. LE SENS VIENT DU
+// SIGNE DU MOUVEMENT, jamais de la nature de la catégorie — la règle de la contrepartie banque d'une
+// pièce (voir contrepartieBanque.ts) : une entrée d'argent augmente la banque au débit, une sortie la
+// diminue au crédit, et la catégorie prend le sens inverse. Un remboursement reçu sur une charge la
+// crédite donc, et la diminue, sans cas à part.
+export function ecritureDuMouvement(ligne: MouvementBancaire, compteCategorie: string): LigneEcritureMouvement[] {
+  const montant = Math.abs(ligne.montant)
+  const entree = ligne.montant >= 0
+  // Le libellé complet quand l'import n'a gardé que le générique « Mouvement bancaire » : c'est ce
+  // qu'un vérificateur lira dans le FEC pour retrouver la ligne du relevé.
+  const libelle = libelleExploitable(ligne) || ligne.libelle
+  return [
+    { compte: compteCategorie, sens: entree ? 'credit' : 'debit', montant, libelle },
+    { compte: COMPTE_BANQUE, sens: entree ? 'debit' : 'credit', montant, libelle },
+  ]
+}
+
+export interface MouvementAffecte {
+  ligne: MouvementBancaire
+  categorie: Categorie
+  // Nulle quand le compte de la catégorie n'est plus un compte de résultat : il a changé depuis
+  // l'affectation, que la base aurait refusée sinon. Le mouvement ne compte alors dans aucun poste,
+  // et son écriture est à reprendre (voir `mouvementsAffectesDesynchronises`).
+  nature: NatureCompte | null
+  // Ce que le mouvement ajoute à son poste, positif quand il l'augmente : une recette encaissée ou
+  // une dépense payée, négatif pour un remboursement dans l'un ou l'autre sens. Sans objet quand la
+  // nature est nulle.
+  montantPoste: number
+}
+
+// Les mouvements AFFECTÉS : rapprochés et portant une catégorie. Le statut est relu ici plutôt que
+// supposé de l'appelant, comme dans `paiementsParPiece` — et la base garantit qu'une catégorie ne vit
+// que sur un mouvement rapproché. Une catégorie absente de la liste fournie (une lecture partielle,
+// que l'écran signale déjà) écarte le mouvement : on ne compte pas ce qu'on ne sait pas ranger.
+export function mouvementsAffectes(
+  lignes: readonly MouvementBancaire[],
+  categories: readonly Categorie[],
+): MouvementAffecte[] {
+  const parId = new Map(categories.map((c) => [c.id, c]))
+  const affectes: MouvementAffecte[] = []
+  for (const ligne of lignes) {
+    if (ligne.statut !== 'rapprochee' || !ligne.categorie_id) continue
+    const categorie = parId.get(ligne.categorie_id)
+    if (!categorie) continue
+    const nature = natureDuCompte(categorie.compte_comptable)
+    affectes.push({
+      ligne,
+      categorie,
+      nature,
+      montantPoste: nature === 'depense' ? -ligne.montant : ligne.montant,
+    })
+  }
+  return affectes
+}
+
+// Les identifiants des mouvements affectés — ce qui dit, pour une écriture sans pièce, si elle est
+// l'écriture d'un mouvement (légitime) ou le reste d'une pièce supprimée (une rupture). Voir
+// lib/pisteAudit.ts et lib/fec.ts.
+//
+// LU SUR LA LIGNE, SANS LA CATÉGORIE, et c'est voulu : la légitimité de l'écriture tient à ce que son
+// mouvement est affecté, pas à ce qu'on a pu lire de sa catégorie. Une catégorie absente de la liste
+// chargée ferait sinon crier « écriture sans justificatif » sur une écriture juste — l'artefact de
+// filtrage que `rupturesPisteAudit` refuse déjà de prendre pour une rupture.
+export function idsMouvementsAffectes(
+  lignes: readonly Pick<LigneBancaire, 'id' | 'statut' | 'categorie_id'>[],
+): ReadonlySet<string> {
+  return new Set(lignes.filter((l) => l.statut === 'rapprochee' && l.categorie_id).map((l) => l.id))
+}
+
+// La pièce d'un mouvement affecté est le RELEVÉ qui le porte : c'est ce qu'un vérificateur ouvrira
+// pour retrouver la ligne. Son nom quand l'import l'a gardé, sinon ce qu'il est.
+export function referenceDuReleve(ligne: Pick<LigneBancaire, 'source_fichier'>): string {
+  return ligne.source_fichier?.trim() || 'Relevé bancaire'
+}
+
+// LES RECETTES AFFECTÉES D'UN DOSSIER DEVENU ASSUJETTI. La base refuse d'en affecter une nouvelle sur
+// un dossier assujetti (sa TVA ne se lit pas sur un relevé) ; mais un dossier peut le DEVENIR après
+// coup — le cabinet coche « assujetti » dans l'en-tête —, et les encaissements déjà affectés restent
+// alors écrits au TTC en 706 : leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe
+// comme du chiffre d'affaires. Rien ne les réécrit : on les montre, et le geste est de retrouver la
+// facture et de la rapprocher à la place.
+export function recettesAffecteesSurDossierAssujetti(
+  affectes: readonly MouvementAffecte[],
+  assujettiTva: boolean,
+): MouvementAffecte[] {
+  return assujettiTva ? affectes.filter((m) => m.nature === 'recette') : []
+}
+
+// Tolérance de deux centimes, celle du contrôle des écritures d'une pièce (voir ecritures.ts).
+const EPSILON = 0.02
+
+// UN MOUVEMENT AFFECTÉ DONT L'ÉCRITURE N'EST PLUS CELLE QUE SON AFFECTATION PRODUIRAIT : absente, sur
+// un autre compte, d'un autre montant, dans un autre sens ou à une autre date. La transaction de
+// `affecter_mouvement_bancaire` les écrit ensemble, donc le cas ne vient pas d'un échec à mi-chemin ;
+// il vient d'une CATÉGORIE dont le compte a changé depuis — le même défaut que celui d'une pièce
+// recatégorisée (voir `analyserEcritures`), et invisible de la même façon, les totaux ne bougeant
+// pas. « Réaffecter » la réécrit. Le libellé n'est pas comparé : il ne change rien à ce qui est compté.
+export function mouvementsAffectesDesynchronises(
+  ecritures: readonly EcritureBrouillon[],
+  affectes: readonly MouvementAffecte[],
+): MouvementAffecte[] {
+  const parLigne = new Map<string, EcritureBrouillon[]>()
+  for (const e of ecritures) {
+    if (e.piece_id || !e.ligne_bancaire_id) continue
+    parLigne.set(e.ligne_bancaire_id, [...(parLigne.get(e.ligne_bancaire_id) ?? []), e])
+  }
+  return affectes.filter((m) => {
+    const presentes = parLigne.get(m.ligne.id) ?? []
+    if (!m.nature || !m.categorie.compte_comptable) return true
+    const attendues = ecritureDuMouvement(m.ligne, m.categorie.compte_comptable)
+    if (presentes.length !== attendues.length) return true
+    const restantes = [...presentes]
+    for (const a of attendues) {
+      const i = restantes.findIndex((e) =>
+        e.compte === a.compte && e.sens === a.sens && e.date === m.ligne.date && Math.abs(e.montant - a.montant) <= EPSILON)
+      if (i < 0) return true
+      restantes.splice(i, 1)
+    }
+    return false
+  })
+}

@@ -41,15 +41,34 @@ export interface RuptureAudit {
 // Une écriture peut porter les deux ruptures à la fois (contrepartie banque dont la pièce ET la
 // ligne ont disparu) : elle est alors rendue deux fois, une par motif. Les fusionner obligerait
 // l'écran à traiter un cas composite pour n'économiser qu'une ligne.
-export function rupturesPisteAudit(ecritures: EcritureBrouillon[]): RuptureAudit[] {
+//
+// SAUF L'ÉCRITURE D'UN MOUVEMENT AFFECTÉ À UNE CATÉGORIE (ligne 26.6, lib/affectationBanque.ts) :
+// elle n'a pas de pièce, par construction, et son justificatif est le RELEVÉ. `idsAffectes` les
+// désigne, lus sur les lignes (`idsMouvementsAffectes`). Obligatoire : l'oublier ferait signaler
+// chaque encaissement de l'Assurance maladie comme une écriture sans justificatif. Et l'écriture d'un
+// mouvement qu'on a ensuite supprimé redevient une rupture : la clé est en `ON DELETE SET NULL`, son
+// `ligne_bancaire_id` tombe à nul et ne désigne plus rien d'affecté.
+export function rupturesPisteAudit(ecritures: EcritureBrouillon[], idsAffectes: ReadonlySet<string>): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
-    if (!ecriture.piece_id) ruptures.push({ ecriture, motif: 'sans_justificatif' })
+    if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsAffectes)) ruptures.push({ ecriture, motif: 'sans_justificatif' })
     if (ecriture.compte === COMPTE_BANQUE && !ecriture.ligne_bancaire_id) {
       ruptures.push({ ecriture, motif: 'sans_mouvement' })
     }
   }
   return ruptures
+}
+
+// Ce que la colonne « Fichier justificatif » dit d'un mouvement affecté : le relevé, et son nom quand
+// l'import l'a gardé — un export CSV nommé « export.csv » ne dirait pas seul ce qu'il est.
+function justificatifDuReleve(ligne: Pick<LigneBancaire, 'source_fichier'>): string {
+  const nom = ligne.source_fichier?.trim()
+  return nom ? `Relevé bancaire : ${nom}` : 'Relevé bancaire'
+}
+
+// L'écriture d'un mouvement affecté : sans pièce, et sur un mouvement qui l'est.
+function ecritureDuReleve(e: EcritureBrouillon, idsAffectes: ReadonlySet<string>): boolean {
+  return !e.piece_id && !!e.ligne_bancaire_id && idsAffectes.has(e.ligne_bancaire_id)
 }
 
 // DÉLIBÉRÉMENT ABSENT : « l'écriture désigne une pièce qui n'est pas dans le jeu fourni ».
@@ -69,8 +88,11 @@ export interface AbsenceFec {
 // télécharger le fichier, pas après. Le format FEC est rigide : impossible d'y écrire une feuille
 // « lignes manquantes » comme le pack Excel le fait pour ses pièces. Le seul endroit où ce livrable
 // incomplet peut se déclarer est donc l'écran qui l'engendre.
-export function absenceFec(ecritures: EcritureBrouillon[]): AbsenceFec {
-  const horsFec = ecritures.filter((e) => !e.piece_id)
+//
+// Les écritures des mouvements affectés, elles, y sont — au journal de banque, avec le relevé pour
+// pièce (voir `genererFec`).
+export function absenceFec(ecritures: EcritureBrouillon[], idsAffectes: ReadonlySet<string>): AbsenceFec {
+  const horsFec = ecritures.filter((e) => !e.piece_id && !ecritureDuReleve(e, idsAffectes))
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -128,6 +150,10 @@ export interface LignePisteAudit {
 // qui a été repris — exactement comme celle d'une pièce. Rien ne leur manque : un à-nouveau n'a ni
 // pièce ni mouvement bancaire, par nature, et les en déclarer privés ferait lire une rupture là où
 // la chaîne est complète.
+//
+// Le justificatif d'un mouvement AFFECTÉ à une catégorie (ligne 26.6) est le relevé qui le porte :
+// son écriture n'a pas de pièce, et ce n'est pas une rupture. `lignesBancaires` suffit à le savoir —
+// l'export relit le relevé en entier.
 export function pisteAudit(
   ecritures: EcritureBrouillon[],
   pieces: Piece[],
@@ -141,8 +167,9 @@ export function pisteAudit(
   const depuisEcritures = ecritures.map((e): LignePisteAudit => {
     const piece = e.piece_id ? pieceParId.get(e.piece_id) ?? null : null
     const mouvement = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
+    const releve = !e.piece_id && mouvement && mouvement.statut === 'rapprochee' && mouvement.categorie_id ? mouvement : null
     const manque: string[] = []
-    if (!e.piece_id) manque.push('justificatif')
+    if (!e.piece_id) { if (!releve) manque.push('justificatif') }
     // Distinguer « le lien est nul » de « le lien pointe une ligne absente du jeu fourni » : la
     // seconde n'est pas une rupture, c'est un filtre de l'appelant. Le dire autrement ferait passer
     // un artefact de chargement pour un défaut comptable.
@@ -164,9 +191,11 @@ export function pisteAudit(
       credit: e.sens === 'credit' ? e.montant : 0,
       pieceId: piece?.id ?? null,
       pieceTiers: piece?.tiers ?? null,
-      pieceDate: piece?.date_piece ?? null,
+      pieceDate: piece?.date_piece ?? releve?.date ?? null,
       pieceMontantTtc: piece?.montant_ttc ?? null,
-      pieceFichier: piece?.nom_fichier ?? null,
+      // Le relevé n'a pas d'empreinte connue ici : le mouvement n'est relié qu'au NOM du fichier
+      // importé. La colonne reste vide plutôt que de laisser croire à une preuve d'intégrité.
+      pieceFichier: piece?.nom_fichier ?? (releve ? justificatifDuReleve(releve) : null),
       pieceEmpreinte: piece?.storage_hash ?? null,
       mouvementDate: mouvement?.date ?? null,
       mouvementLibelle: mouvement?.libelle ?? null,

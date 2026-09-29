@@ -657,3 +657,33 @@ describe('FinancementTab — un dossier exonéré compte TVA comprise', () => {
     expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('12000')
   })
 })
+
+// LIGNE 26.6 : un encaissement de l'Assurance maladie sans bordereau, affecté à une catégorie de
+// recettes, entre dans l'état qu'on montre à une banque à la date du mouvement. Ce qui se joue ici
+// est le CÂBLAGE : que l'écran lise les mouvements affectés — sa lecture ne prenait que ceux d'une
+// pièce — et les passe à la situation intermédiaire.
+describe('FinancementTab — les mouvements affectés sans justificatif', () => {
+  const ENCAISSEMENT_AFFECTE = {
+    id: 'l-cpam', dossier_id: 'd', date: '2026-05-12', libelle: 'VIR CPAM', montant: 4000, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: '2026-05-13T09:00:00Z',
+  }
+
+  it('porte au 30 juin un encaissement affecté de mai', async () => {
+    faux.pieces = []
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [ENCAISSEMENT_AFFECTE]
+    const auJuin = await ouvrirLaSituation('2026-06-30')
+    expect(totalDuPoste(auJuin, 'Recettes')).toMatch(/^4\s?000,00\s€$/)
+  })
+
+  it('ne le porte pas à un état arrêté avant lui', async () => {
+    faux.pieces = []
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [ENCAISSEMENT_AFFECTE]
+    const auAvril = await ouvrirLaSituation('2026-04-30')
+    expect(totalDuPoste(auAvril, 'Recettes')).toBeNull()
+  })
+})

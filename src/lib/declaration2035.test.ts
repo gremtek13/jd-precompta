@@ -5,6 +5,7 @@ import {
   POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
 } from './declaration2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
+import { mouvementsAffectes, type MouvementAffecte } from './affectationBanque'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -21,10 +22,10 @@ const piece = (o: Partial<Piece>): Piece =>
 
 const calcul = (o: {
   pieces?: Piece[]; immos?: Immobilisation[]; cotis?: CotisationDeclaree[]; annee?: number
-  vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]
+  vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]; mouvements?: MouvementAffecte[]
 }) => calculerDeclaration2035(
   o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [], o.vehicules ?? [], true,
-  o.paiements ?? [],
+  o.paiements ?? [], o.mouvements ?? [],
 )
 
 const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
@@ -58,7 +59,7 @@ describe('calculerDeclaration2035 — périmètre', () => {
   // 1 022,40 € payés, soit 170,40 € de dépenses absentes d'une 2035 signée.
   it('retient le TTC pour un dossier exonéré, TVA comprise', () => {
     const pieces = [piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
-    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, [])
+    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, [], [])
     expect(exonere.totalDepenses).toBe(120)
     // Le garde symétrique : l'assujetti garde le hors taxes.
     expect(calcul({ pieces }).totalDepenses).toBe(100)
@@ -107,7 +108,7 @@ describe('calculerDeclaration2035 — ce qui est écarté est dit', () => {
 // Un mouvement rapproché d'une pièce : c'est lui qui la date (lib/rattachement.ts).
 const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
-  piece_id: 'p', cotisation_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+  piece_id: 'p', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
 
@@ -229,6 +230,81 @@ describe('calculerDeclaration2035 — totaux et résultat', () => {
       pieces: [piece({ id: 'a', montant_ht: 100 }), piece({ id: 'l', categorie_id: 'c-loyer', montant_ht: 900 })],
     })
     expect(d.depenses.map((l) => l.poste)).toEqual(['Loyers et charges locatives', 'Achats'])
+  })
+})
+
+describe('calculerDeclaration2035 — les mouvements du relevé affectés sans justificatif', () => {
+  // Le cas qui a ouvert le chantier (ligne 26.6) : un infirmier ne transmet pas ses bordereaux, donc
+  // ses recettes ne sont QUE des virements de l'Assurance maladie sur le relevé. Sans eux, sa 2035
+  // n'avait presque pas de recettes.
+  const categoriesDuReleve = [
+    { id: 'c-recettes', compte_comptable: '706000', poste_2035: 'Recettes' },
+    { id: 'c-achats', compte_comptable: '606400', poste_2035: 'Achats' },
+    { id: 'c-frais', compte_comptable: '627000', poste_2035: 'Frais financiers' },
+    { id: 'c-sans-poste', compte_comptable: '628000', poste_2035: null },
+    { id: 'c-bilan', compte_comptable: '108000', poste_2035: 'Recettes' },
+  ] as Categorie[]
+  const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
+    paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
+  const releve = (...lignes: LigneBancaire[]) => mouvementsAffectes(lignes, categoriesDuReleve)
+
+  it('compte un encaissement affecté en recette, sans en faire une pièce', () => {
+    const d = calcul({ mouvements: releve(affecte({ id: 'cpam', categorie_id: 'c-recettes', montant: 250 })) })
+    expect(d.totalRecettes).toBe(250)
+    expect(d.resultat).toBe(250)
+    expect(d.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: 250, nbPieces: 0, nbMouvements: 1 }])
+  })
+
+  it('le compte l’année de sa date, et ne dit rien d’un mouvement d’un autre exercice', () => {
+    const mouvements = releve(
+      affecte({ id: 'cpam', categorie_id: 'c-recettes', date: '2024-12-31', montant: 250 }),
+      affecte({ id: 'orphelin', categorie_id: 'c-sans-poste', date: '2024-12-30' }),
+    )
+    expect(calcul({ annee: 2025, mouvements }).totalRecettes).toBe(0)
+    expect(calcul({ annee: 2025, mouvements }).exclusions.mouvementsSansPoste).toEqual([])
+    expect(calcul({ annee: 2024, mouvements }).totalRecettes).toBe(250)
+  })
+
+  it('ajoute une dépense du relevé au poste de ses pièces, chacune comptée à part', () => {
+    const d = calcul({
+      pieces: [piece({ id: 'a', montant_ht: 100 })],
+      mouvements: releve(affecte({ id: 'carte', categorie_id: 'c-achats', montant: -30 })),
+    })
+    expect(d.depenses).toEqual([{ poste: 'Achats', nature: 'depense', montant: 130, nbPieces: 1, nbMouvements: 1 }])
+  })
+
+  it('un remboursement reçu diminue sa charge au lieu de devenir une recette', () => {
+    const d = calcul({
+      mouvements: releve(affecte({ id: 'frais', montant: -8.5 }), affecte({ id: 'geste', montant: 3 })),
+    })
+    expect(d.totalDepenses).toBe(5.5)
+    expect(d.totalRecettes).toBe(0)
+  })
+
+  it('un rejet de virement diminue les recettes', () => {
+    const d = calcul({
+      mouvements: releve(
+        affecte({ id: 'cpam', categorie_id: 'c-recettes', montant: 250 }),
+        affecte({ id: 'rejet', categorie_id: 'c-recettes', montant: -40 }),
+      ),
+    })
+    expect(d.totalRecettes).toBe(210)
+    expect(d.totalDepenses).toBe(0)
+  })
+
+  it('dit un mouvement dont la catégorie n’a pas de poste, sans le compter', () => {
+    const d = calcul({ mouvements: releve(affecte({ id: 'x', categorie_id: 'c-sans-poste' })) })
+    expect(d.exclusions.mouvementsSansPoste.map((m) => m.ligne.id)).toEqual(['x'])
+    expect(d.totalDepenses).toBe(0)
+  })
+
+  it('dit un mouvement dont la catégorie a quitté les comptes de résultat, même avec un poste', () => {
+    // Le poste dit « Recettes », le compte dit 108 : sans nature, le mouvement n'est ni l'un ni
+    // l'autre, et le compter sur son poste le ferait entrer dans les recettes par la catégorie.
+    const d = calcul({ mouvements: releve(affecte({ id: 'y', categorie_id: 'c-bilan', montant: 500 })) })
+    expect(d.exclusions.mouvementsHorsResultat.map((m) => m.ligne.id)).toEqual(['y'])
+    expect(d.exclusions.mouvementsSansPoste).toEqual([])
+    expect(d.totalRecettes).toBe(0)
   })
 })
 

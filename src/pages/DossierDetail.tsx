@@ -312,7 +312,7 @@ export default function DossierDetail() {
             />
           )}
           {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
-          {tab === 'banque' && modele && <BanqueTab dossierId={id} modele={modele} />}
+          {tab === 'banque' && modele && <BanqueTab dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false} />}
           {tab === 'documents' && <DocumentsTab dossierId={id} />}
           {tab === 'ecritures' && modele && (
             <EcrituresTab

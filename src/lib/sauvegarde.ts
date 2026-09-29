@@ -53,6 +53,7 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'immobilisations', parent: 'natures_immobilisation', colonne: 'nature_id', aLaSuppression: 'bloque' },
   { enfant: 'immobilisations', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },
   { enfant: 'informations_dossier', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'lignes_bancaires', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
   { enfant: 'lignes_bancaires', parent: 'cotisations_declarees', colonne: 'cotisation_id', aLaSuppression: 'met_a_null' },
   { enfant: 'lignes_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'lignes_bancaires', parent: 'pieces', colonne: 'piece_id', aLaSuppression: 'met_a_null' },

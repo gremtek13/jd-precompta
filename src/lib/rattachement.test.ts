@@ -25,7 +25,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV FOURNISSEUR', montant: -1000,
-    statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, prelevement_personnel: false,
+    statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, prelevement_personnel: false,
     source_fichier: null, libelle_brut: null, created_at: '2026-01-06T09:00:00Z', ...o,
   }
 }

@@ -30,7 +30,7 @@ const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
 describe('rupturesPisteAudit', () => {
   it('signale une écriture qui ne désigne aucun justificatif', () => {
     const orpheline = ecriture({ piece_id: null, montant: 199.99 })
-    const ruptures = rupturesPisteAudit([ecriture(), orpheline])
+    const ruptures = rupturesPisteAudit([ecriture(), orpheline], new Set())
     expect(ruptures).toHaveLength(1)
     expect(ruptures[0].motif).toBe('sans_justificatif')
     expect(ruptures[0].ecriture.montant).toBe(199.99)
@@ -38,27 +38,48 @@ describe('rupturesPisteAudit', () => {
 
   it("signale une contrepartie banque qui n'indique aucun mouvement", () => {
     // Ne peut venir que d'une ligne bancaire supprimée : l'insertion pose toujours le lien.
-    const ruptures = rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: null })])
+    const ruptures = rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: null })], new Set())
     expect(ruptures.map((r) => r.motif)).toEqual(['sans_mouvement'])
   })
 
   it('ne signale pas une contrepartie banque correctement reliée', () => {
-    expect(rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })])).toEqual([])
+    expect(rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })], new Set())).toEqual([])
   })
 
   it("ne signale pas une écriture de charge sans ligne bancaire — ce n'est pas une contrepartie", () => {
     // Le cas NORMAL et de loin le plus fréquent : la ligne de charge n'a jamais de lien bancaire,
     // seule la contrepartie en porte un. Confondre les deux ferait crier au loup sur tout le brouillon.
-    expect(rupturesPisteAudit([ecriture({ compte: '606100', ligne_bancaire_id: null })])).toEqual([])
+    expect(rupturesPisteAudit([ecriture({ compte: '606100', ligne_bancaire_id: null })], new Set())).toEqual([])
   })
 
   it('rend les DEUX ruptures quand une contrepartie a tout perdu', () => {
-    const ruptures = rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, piece_id: null, ligne_bancaire_id: null })])
+    const ruptures = rupturesPisteAudit([ecriture({ compte: COMPTE_BANQUE, piece_id: null, ligne_bancaire_id: null })], new Set())
     expect(ruptures.map((r) => r.motif).sort()).toEqual(['sans_justificatif', 'sans_mouvement'])
   })
 
   it('rend une liste vide sur un brouillon sain', () => {
-    expect(rupturesPisteAudit([ecriture(), ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })])).toEqual([])
+    expect(rupturesPisteAudit([ecriture(), ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })], new Set())).toEqual([])
+  })
+
+  // Ligne 26.6 : l'écriture d'un mouvement affecté à une catégorie n'a pas de pièce, par
+  // construction — son justificatif est le relevé.
+  const encaissement = [
+    ecriture({ piece_id: null, ligne_bancaire_id: 'l-cpam', compte: '706000', sens: 'credit', montant: 250 }),
+    ecriture({ piece_id: null, ligne_bancaire_id: 'l-cpam', compte: COMPTE_BANQUE, sens: 'debit', montant: 250 }),
+  ]
+
+  it('ne signale pas l’écriture d’un mouvement affecté : son justificatif est le relevé', () => {
+    expect(rupturesPisteAudit(encaissement, new Set(['l-cpam']))).toEqual([])
+    // Le garde symétrique : sans l'affectation, ce sont deux écritures sans justificatif.
+    expect(rupturesPisteAudit(encaissement, new Set()).map((r) => r.motif)).toEqual(['sans_justificatif', 'sans_justificatif'])
+  })
+
+  it('redevient une rupture quand le mouvement a disparu', () => {
+    // `ecritures_brouillon.ligne_bancaire_id` est en `ON DELETE SET NULL` : un relevé retiré laisse
+    // l'écriture sans rien derrière.
+    const perdue = encaissement.map((e) => ({ ...e, ligne_bancaire_id: null }))
+    expect(rupturesPisteAudit(perdue, new Set(['l-cpam'])).map((r) => r.motif).sort())
+      .toEqual(['sans_justificatif', 'sans_justificatif', 'sans_mouvement'])
   })
 })
 
@@ -77,14 +98,14 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est absente du FEC', () => {
     const categories: Categorie[] = []
-    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie').split('\r\n').filter(Boolean)
+    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie', []).split('\r\n').filter(Boolean)
     // En-tête + la seule écriture justifiée : l'orpheline n'y est pas.
     expect(lignes).toHaveLength(2)
     expect(lignes.join('\n')).not.toContain('199,99')
   })
 
   it('mais pèse dans les totaux — et absenceFec chiffre exactement ce que le FEC ne dira pas', () => {
-    expect(absenceFec([orpheline, saine])).toEqual({ nb: 1, debit: 199.99, credit: 0 })
+    expect(absenceFec([orpheline, saine], new Set())).toEqual({ nb: 1, debit: 199.99, credit: 0 })
   })
 })
 
@@ -94,22 +115,31 @@ describe('absenceFec', () => {
       ecriture({ piece_id: null, montant: 10, sens: 'debit' }),
       ecriture({ piece_id: null, montant: 4, sens: 'credit' }),
       ecriture({ piece_id: 'p1', montant: 999, sens: 'debit' }),
-    ])
+    ], new Set())
     expect(r).toEqual({ nb: 2, debit: 10, credit: 4 })
   })
 
   it('rend des zéros sur un brouillon sain', () => {
-    expect(absenceFec([ecriture(), ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })]))
+    expect(absenceFec([ecriture(), ecriture({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' })], new Set()))
       .toEqual({ nb: 0, debit: 0, credit: 0 })
+  })
+
+  it('ne compte pas l’écriture d’un mouvement affecté : le FEC la porte au journal de banque', () => {
+    const frais = [
+      ecriture({ piece_id: null, ligne_bancaire_id: 'l-frais', compte: '627000', sens: 'debit', montant: 8.5 }),
+      ecriture({ piece_id: null, ligne_bancaire_id: 'l-frais', compte: COMPTE_BANQUE, sens: 'credit', montant: 8.5 }),
+    ]
+    expect(absenceFec(frais, new Set(['l-frais']))).toEqual({ nb: 0, debit: 0, credit: 0 })
+    expect(absenceFec(frais, new Set())).toEqual({ nb: 2, debit: 8.5, credit: 8.5 })
   })
 })
 
 const ligneBancaire = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-03-12', libelle: 'PRLV SEPA TRANSMEDICAL',
-  montant: -100, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null,
+  montant: -100, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-03-12T00:00:00Z', ...o,
-} as LigneBancaire)
+})
 
 describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
   it("remonte de l'écriture au justificatif puis à l'opération réelle", () => {
@@ -208,6 +238,38 @@ describe('pisteAudit — la chaîne complète, dans les deux sens', () => {
     const lignes = pisteAudit([ecriture({ piece_id: 'p1' })], [piece('p1', { storage_hash: null })], [], [])
     expect(lignes[0].pieceEmpreinte).toBeNull()
     expect(lignes[0].pieceFichier).toBe('p1.pdf')
+  })
+})
+
+describe('pisteAudit — un mouvement affecté sans justificatif', () => {
+  const affecte = ligneBancaire({
+    id: 'l-cpam', piece_id: null, categorie_id: 'c-recettes', montant: 250, libelle: 'VIR CPAM',
+    source_fichier: 'releve-mars-2026.pdf',
+  })
+  const ecritures = [
+    ecriture({ id: 'e1', piece_id: null, ligne_bancaire_id: 'l-cpam', compte: '706000', sens: 'credit', montant: 250, date: '2026-03-12' }),
+    ecriture({ id: 'e2', piece_id: null, ligne_bancaire_id: 'l-cpam', compte: COMPTE_BANQUE, sens: 'debit', montant: 250, date: '2026-03-12' }),
+  ]
+
+  it('donne le relevé pour justificatif, sans rien déclarer manquant', () => {
+    const lignes = pisteAudit(ecritures, [], [affecte], [])
+    expect(lignes.map((l) => [l.ecritureId, l.pieceFichier, l.pieceDate, l.mouvementLibelle, l.manque])).toEqual([
+      ['e2', 'Relevé bancaire : releve-mars-2026.pdf', '2026-03-12', 'VIR CPAM', []],
+      ['e1', 'Relevé bancaire : releve-mars-2026.pdf', '2026-03-12', 'VIR CPAM', []],
+    ])
+    // Pas d'empreinte : le mouvement n'est relié qu'au NOM du fichier importé.
+    expect(lignes.every((l) => l.pieceEmpreinte === null)).toBe(true)
+  })
+
+  it('dit « Relevé bancaire » quand l’import n’a pas gardé le nom du fichier', () => {
+    const [ligne] = pisteAudit(ecritures.slice(0, 1), [], [{ ...affecte, source_fichier: null }], [])
+    expect(ligne.pieceFichier).toBe('Relevé bancaire')
+  })
+
+  it('déclare le justificatif manquant quand le mouvement n’est plus affecté', () => {
+    const [ligne] = pisteAudit(ecritures.slice(0, 1), [], [{ ...affecte, categorie_id: null, statut: 'non_rapprochee' }], [])
+    expect(ligne.manque).toEqual(['justificatif'])
+    expect(ligne.pieceFichier).toBeNull()
   })
 })
 

@@ -11,6 +11,10 @@ import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
 import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
+import {
+  ecritureDuMouvement, idsMouvementsAffectes, mouvementsAffectes, mouvementsAffectesDesynchronises, refusAffectation,
+  type MouvementAffecte,
+} from '../../lib/affectationBanque'
 import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -95,6 +99,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Par pièce : régénérer, c'est supprimer puis réécrire, et deux clics du même rendu réécriraient deux
   // fois — en engagement, la facture ET ses règlements en double.
   const regenerationsEnCours = useRef<Set<string>>(new Set())
+  // Par mouvement, pour la même raison : réaffecter remplace l'écriture d'un mouvement affecté.
+  const reaffectationsEnCours = useRef<Set<string>>(new Set())
+  const [reaffectation, setReaffectation] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -121,9 +128,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('immobilisations').select('piece_id, id', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Les mouvements RAPPROCHÉS : ceux d'une pièce datent et règlent son écriture, ceux AFFECTÉS à une
+      // catégorie sans justificatif (ligne 26.6) portent la leur — sans pièce, et ce n'est pas une
+      // rupture de la piste d'audit. Tous, et pas seulement ceux d'une pièce : les laisser dehors ferait
+      // sortir leurs écritures du FEC et les signaler « sans justificatif ».
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('piece_id', 'is', null)
+          .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
           .order('id').range(debut, fin),
       ),
       lireTout<ANouveau>((debut, fin) =>
@@ -153,9 +164,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
-  // Catégories utilisées par au moins une pièce validée mais sans compte associé — impossible de
-  // générer l'écriture correspondante tant que ce n'est pas renseigné (voir lib/controles.ts).
-  const categoriesSansCompte = calculerCategoriesSansCompte(categories, piecesValidees)
+  // Catégories utilisées par au moins une pièce validée ou un mouvement affecté mais sans compte
+  // associé — impossible de générer l'écriture correspondante tant que ce n'est pas renseigné (voir
+  // lib/controles.ts).
+  const categoriesSansCompte = calculerCategoriesSansCompte(categories, piecesValidees, lignesBancaires)
 
   // Valeur affichée dans le champ tant que le cabinet n'a rien tapé : la suggestion connue pour ce
   // code de catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -269,9 +281,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
   // ne doit pas disparaître de la vue parce que l'onglet Année est positionné ailleurs.
-  const ruptures = rupturesPisteAudit(ecritures)
+  // L'écriture d'un mouvement AFFECTÉ n'a pas de pièce, par construction : son justificatif est le
+  // relevé, et elle va au FEC (journal de banque). Elle n'est donc ni une rupture ni un absent du FEC.
+  const idsAffectes = idsMouvementsAffectes(lignesBancaires)
+  const ruptures = rupturesPisteAudit(ecritures, idsAffectes)
   // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé.
-  const horsFec = absenceFec(ecrituresFiltrees)
+  const horsFec = absenceFec(ecrituresFiltrees, idsAffectes)
+  // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
+  // de la catégorie a changé depuis (voir lib/affectationBanque.ts).
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories))
   const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
   // Export de la piste d'audit de l'exercice (voir lib/pisteAudit.ts) : depuis chaque écriture, le
@@ -280,9 +298,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // un écran : il part par e-mail, il se relit hors de l'application.
   //
   // Il relit les mouvements bancaires en entier à ce moment-là, sur ce clic : `lignesBancaires`
-  // ci-dessus est volontairement restreint aux lignes rapprochées portant une pièce (c'est ce dont la
-  // génération a besoin), et une piste d'audit bâtie sur un jeu restreint annoncerait des mouvements
-  // manquants qui existent.
+  // ci-dessus est volontairement restreint aux lignes rapprochées (c'est ce dont la génération et les
+  // mouvements affectés ont besoin), et une piste d'audit bâtie sur un jeu restreint annoncerait des
+  // mouvements manquants qui existent.
   async function exporterPisteAudit() {
     if (typeof anneeFilter !== 'number') return
     setExportPiste(true)
@@ -351,6 +369,37 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     } finally {
       regenerationsEnCours.current.delete(piece.id)
       setRegenerating(null)
+    }
+  }
+
+  // Réécrit l'écriture d'un mouvement affecté sur le compte ACTUEL de sa catégorie, par la même fonction
+  // que l'affectation (`affecter_mouvement_bancaire`), qui remplace l'écriture précédente dans la même
+  // transaction. Sur ce clic seulement, comme « Régénérer ».
+  async function reaffecter(m: MouvementAffecte) {
+    if (reaffectationsEnCours.current.has(m.ligne.id)) return
+    const refus = refusAffectation(m.ligne, m.categorie, assujettiTva)
+    if (refus || !m.categorie.compte_comptable) {
+      setError(refus ?? `La catégorie « ${m.categorie.libelle} » n’a pas de compte.`)
+      return
+    }
+    reaffectationsEnCours.current.add(m.ligne.id)
+    setReaffectation(m.ligne.id)
+    setError(null)
+    try {
+      const { error: rpcError } = await supabase.rpc('affecter_mouvement_bancaire', {
+        p_ligne_bancaire_id: m.ligne.id,
+        p_categorie_id: m.categorie.id,
+        p_ecritures: ecritureDuMouvement(m.ligne, m.categorie.compte_comptable),
+      })
+      if (rpcError) throw rpcError
+      // Relu AVANT de relâcher le verrou : le panneau porte encore le mouvement tant que la relecture
+      // n'est pas revenue.
+      await load()
+    } catch (err) {
+      setError(messageErreur(err, 'Le mouvement n’a pas pu être réaffecté.'))
+    } finally {
+      reaffectationsEnCours.current.delete(m.ligne.id)
+      setReaffectation(null)
     }
   }
 
@@ -656,6 +705,48 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </div>
       )}
 
+      {affectesPerimes.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Mouvements affectés à réaffecter <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Ces mouvements du relevé sont affectés à une catégorie dont le compte a changé depuis : leur
+            écriture porte encore l’ancien, ou n’existe plus. Aucun total ne bouge, et c’est ce qui rend
+            l’écart invisible ailleurs. « Réaffecter » la réécrit sur le compte actuel de la catégorie ;
+            si la catégorie n’a plus de compte de charge ou de produit, choisis-en une autre depuis la
+            fiche du mouvement, dans Banque.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th>Catégorie</th><th></th></tr></thead>
+              <tbody>
+                {affectesPerimes.map((m) => (
+                  <tr key={m.ligne.id}>
+                    <td>{formatDate(m.ligne.date)}</td>
+                    <td>{m.ligne.libelle}</td>
+                    <td>{formatMoney(m.ligne.montant)}</td>
+                    <td>
+                      {m.categorie.libelle} <span className="muted">({m.categorie.compte_comptable ?? 'sans compte'})</span>
+                    </td>
+                    <td>
+                      <button
+                        className="btn btn-outline btn-sm"
+                        disabled={reaffectation === m.ligne.id || !m.nature}
+                        title={!m.nature ? 'Le compte de cette catégorie n’est pas un compte de charge ou de produit : choisis une autre catégorie dans Banque.' : undefined}
+                        onClick={() => reaffecter(m)}
+                      >
+                        {reaffectation === m.ligne.id ? 'Réaffectation…' : 'Réaffecter'}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {ruptures.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -720,8 +811,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0 }}>Comptes manquants</h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            Ces catégories sont utilisées par des pièces validées mais n'ont pas encore de compte comptable associé —
-            les écritures correspondantes ne peuvent pas être générées tant que ce n'est pas fait. Un compte déjà
+            Ces catégories sont utilisées par des pièces validées ou des mouvements affectés mais n'ont pas encore de
+            compte comptable associé — les écritures correspondantes ne peuvent pas être générées tant que ce n'est pas fait. Un compte déjà
             renseigné est une suggestion à vérifier, pas une valeur figée — modifie-le avant d'enregistrer si besoin.
           </p>
           <table>
@@ -851,7 +942,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12, marginBottom: 14 }}>
         {horsFec.nb > 0 && (
           <span className="badge badge-danger" title="Le format FEC n'a pas de place pour le dire : c'est ici ou nulle part.">
-            {horsFec.nb} écriture{horsFec.nb > 1 ? 's' : ''} ne sera{horsFec.nb > 1 ? 'ont' : ''} pas dans ce FEC
+            {/* « seront » et non « sera » + « ont » : l'accord s'écrivait « ne seraont » au pluriel,
+                sur l'alerte qui dit ce que le fichier fiscal ne contiendra pas. */}
+            {horsFec.nb} écriture{horsFec.nb > 1 ? 's' : ''} ne {horsFec.nb > 1 ? 'seront' : 'sera'} pas dans ce FEC
             {' '}({formatMoney(horsFec.debit - horsFec.credit)})
           </span>
         )}
@@ -870,7 +963,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           }
           onClick={() => {
             if (typeof anneeFilter !== 'number') return
-            const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode)
+            const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires)
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
         >

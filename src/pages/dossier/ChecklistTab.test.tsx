@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
-import type { Immobilisation, LigneBancaire, Piece } from '../../lib/types'
+import type { Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
 // qu'il est exactement ce qu'on attend de lui quand tout va bien. Un contrôle branché sur le mauvais
@@ -88,7 +88,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'dossier-de-test', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
-    montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null,
+    montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
     prelevement_personnel: false, source_fichier: null, libelle_brut: null,
     created_at: '2026-03-10T00:00:00Z', ...o,
   }
@@ -649,5 +649,63 @@ describe('ChecklistTab — en engagement', () => {
     poser({ validees: [facture], categories: [categorie], ecritures: ecrituresDeFacture })
     monter(false, TRESORERIE)
     await screen.findByText(/écriture\(s\) à régénérer/)
+  })
+})
+
+// LIGNE 26.6 : un mouvement du relevé AFFECTÉ à une catégorie est rapproché sans pièce ni échéance,
+// et son écriture n'a pas de pièce. Ni l'un ni l'autre n'est un défaut — le point « rapproché sans
+// justificatif » et la « piste rompue » crieraient sinon sur chaque encaissement de l'Assurance
+// maladie. Ce qui en est un : une écriture qui ne suit plus sa catégorie, et une recette affectée sur
+// un dossier assujetti, dont la TVA collectée n'est dans aucune CA3.
+describe('ChecklistTab — les mouvements affectés sans justificatif', () => {
+  const RECETTES: Categorie = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const cpam = () => ligne({ id: 'l-cpam', libelle: 'VIR CPAM', montant: 250, piece_id: null, categorie_id: 'cat-recettes' })
+  function ecritureDe(o: Partial<EcritureBrouillon>): EcritureBrouillon {
+    return {
+      id: 'e1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2026-03-10',
+      compte: '706000', libelle: 'VIR CPAM', montant: 250, sens: 'credit', statut: 'proposee',
+      created_at: '2026-03-10T00:00:00Z', ...o,
+    }
+  }
+  const ECRITURE_CPAM = [ecritureDe({ id: 'e1' }), ecritureDe({ id: 'e2', compte: '512000', sens: 'debit' })]
+
+  it('ni orphelin, ni rupture de la piste d’audit, quand son écriture suit sa catégorie', async () => {
+    poser({ lignes: [cpam(), ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })], categories: [RECETTES], ecritures: ECRITURE_CPAM })
+    monter()
+    // Ancré sur un point que ce jeu d'essai déclenche forcément.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/rapproché\(s\) sans justificatif/)).toHaveLength(0)
+    expect(screen.queryAllByText(/piste d'audit rompue/)).toHaveLength(0)
+    expect(screen.queryAllByText(/ne suit plus la catégorie/)).toHaveLength(0)
+    expect(screen.queryAllByText(/sur un dossier assujetti/)).toHaveLength(0)
+  })
+
+  it('compte le mouvement dont l’écriture ne suit plus sa catégorie', async () => {
+    poser({ lignes: [cpam()], categories: [{ ...RECETTES, compte_comptable: '706100' }], ecritures: ECRITURE_CPAM })
+    monter()
+    const point = await screen.findByText(/ne suit plus la catégorie/)
+    expect(point.textContent).toMatch(/^1 /)
+  })
+
+  it('compte la recette affectée d’un dossier assujetti — et se tait sur un dossier exonéré', async () => {
+    poser({ lignes: [cpam()], categories: [RECETTES], ecritures: ECRITURE_CPAM })
+    const { unmount } = monter(true)
+    const point = await screen.findByText(/en recette sans TVA, sur un dossier assujetti/)
+    expect(point.textContent).toMatch(/^1 /)
+    unmount()
+    poser({ lignes: [cpam(), ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })], categories: [RECETTES], ecritures: ECRITURE_CPAM })
+    monter(false)
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/sur un dossier assujetti/)).toHaveLength(0)
+  })
+
+  it('compte la catégorie sans poste 2035 d’un mouvement affecté', async () => {
+    poser({ lignes: [cpam()], categories: [{ ...RECETTES, poste_2035: null }], ecritures: ECRITURE_CPAM })
+    monter()
+    const point = await screen.findByText(/catégorie\(s\) sans poste 2035/)
+    expect(point.textContent).toMatch(/^1 /)
   })
 })
