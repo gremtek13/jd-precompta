@@ -3,10 +3,10 @@ import type { MouvementBancaire } from './affectationBanque'
 import { caseDuPoste } from './cases2035'
 import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT, LIBELLES_COMPTES } from './comptes'
 import {
-  capitalDeLEcheance, couvertureDuReleve, decoupageDuMouvement, echeanceProposee, echeancesDesynchronisees,
-  echeancesNonRapprochees, echeancesOccupees, ecritureDeLEcheance, estDeblocage, idsDeblocagesEmprunt, LIBELLE_ASSURANCE_EMPRUNT,
-  LIBELLE_INTERETS_EMPRUNT, MARGE_PRELEVEMENT_JOURS, partsDesEcheances, POSTE_ASSURANCE_EMPRUNT,
-  POSTE_INTERETS_EMPRUNT, refusDecoupage, refusEcheanceEmprunt,
+  capitalDeLEcheance, couvertureDuReleve, decoupageDuMouvement, decoupagePourEcheance, echeanceProposee, echeancesDesynchronisees,
+  echeancesNonRapprochees, echeancesOccupees, ecritureDeLEcheance, empruntPlausible, estDeblocage, idsDeblocagesEmprunt,
+  JOURS_DEBLOCAGE_PLAUSIBLE, LIBELLE_ASSURANCE_EMPRUNT, LIBELLE_INTERETS_EMPRUNT, MARGE_PRELEVEMENT_JOURS, montantAttendu,
+  partsDesEcheances, POSTE_ASSURANCE_EMPRUNT, POSTE_INTERETS_EMPRUNT, raisonEmpruntPlausible, refusDecoupage, refusEcheanceEmprunt,
 } from './echeanceEmprunt'
 import { genererEcheancier, type Emprunt } from './emprunts'
 import { partsDuReleve } from './partsDuReleve'
@@ -212,6 +212,96 @@ describe('echeanceProposee — ce que le cabinet valide ou corrige', () => {
   it('un déblocage : ni échéance ni découpage', () => {
     const p = echeanceProposee(EMPRUNT, mouvement({ montant: 12000, date: '2025-01-07' }), aucune)
     expect(p).toEqual({ echeance: null, decoupage: { echeance: null, interets: 0, assurance: 0 }, ecartJours: 2 })
+  })
+})
+
+describe('decoupagePourEcheance — le découpage d’une échéance choisie par son numéro', () => {
+  it('les intérêts de CE mois-là, et le surplus en assurance', () => {
+    const cinquieme = ECHEANCIER[4]
+    const d = decoupagePourEcheance(cinquieme, mouvement())
+    expect(d.echeance).toBe(5)
+    expect(d.interets).toBe(cinquieme.interets)
+    expect(Math.round((d.interets + d.assurance + capitalDeLEcheance(mouvement(), d)) * 100)).toBe(54000)
+    expect(capitalDeLEcheance(mouvement(), d)).toBe(cinquieme.capitalRembourse)
+  })
+
+  it('la dernière échéance solde le capital : ce qu’elle attend n’est pas la mensualité', () => {
+    const derniere = ECHEANCIER[ECHEANCIER.length - 1]
+    expect(montantAttendu(derniere)).toBe(Math.round((derniere.interets + derniere.capitalRembourse) * 100) / 100)
+    expect(montantAttendu(derniere)).not.toBe(derniere.mensualite)
+    // Payée pile, elle ne porte aucune assurance.
+    expect(decoupagePourEcheance(derniere, mouvement({ montant: -montantAttendu(derniere) })).assurance).toBe(0)
+  })
+})
+
+describe('empruntPlausible — de quoi déplier la fiche et écarter le mouvement du lot, jamais de quoi écrire', () => {
+  const premiere = ECHEANCIER[0]
+  const attendue = montantAttendu(premiere)
+
+  it('un prélèvement à quelques jours d’une échéance libre, de son montant ou un peu plus', () => {
+    expect(empruntPlausible(mouvement(), [EMPRUNT], [])).toEqual({ emprunt: EMPRUNT, echeance: premiere })
+    expect(empruntPlausible(mouvement({ montant: -attendue }), [EMPRUNT], [])?.echeance?.numero).toBe(1)
+  })
+
+  it('les bornes : 90 % et une fois et demie de ce que l’échéancier prévoit, à la marge près en date', () => {
+    const a90 = Math.ceil(attendue * 90) / 100
+    expect(empruntPlausible(mouvement({ montant: -a90 }), [EMPRUNT], [])).not.toBeNull()
+    expect(empruntPlausible(mouvement({ montant: -(a90 - 0.01) }), [EMPRUNT], [])).toBeNull()
+    const a150 = Math.floor(attendue * 150) / 100
+    expect(empruntPlausible(mouvement({ montant: -a150 }), [EMPRUNT], [])).not.toBeNull()
+    expect(empruntPlausible(mouvement({ montant: -(a150 + 0.01) }), [EMPRUNT], [])).toBeNull()
+    // L'échéance 1 tombe le 5 février : à la marge près, oui ; un jour de plus, non — et l'échéance 2,
+    // le 5 mars, est alors trop loin elle aussi.
+    expect(empruntPlausible(mouvement({ date: '2025-02-15' }), [EMPRUNT], [])).not.toBeNull()
+    expect(empruntPlausible(mouvement({ date: '2025-02-16' }), [EMPRUNT], [])).toBeNull()
+    expect(MARGE_PRELEVEMENT_JOURS).toBe(10)
+  })
+
+  it('pas une échéance qu’un autre mouvement paie déjà : la suivante, si elle est assez proche', () => {
+    const payee = rapproche({ id: 'autre', date: '2025-02-05', emprunt_echeance: 1 })
+    expect(empruntPlausible(mouvement(), [EMPRUNT], [payee])).toBeNull()
+    expect(empruntPlausible(mouvement({ date: '2025-03-01' }), [EMPRUNT], [payee])?.echeance?.numero).toBe(2)
+    // Le mouvement lui-même ne s'occupe pas : déjà rapproché de l'échéance 1, il y ressemble toujours.
+    expect(empruntPlausible(mouvement(), [EMPRUNT], [rapproche({ emprunt_echeance: 1 })])?.echeance?.numero).toBe(1)
+  })
+
+  it('de deux emprunts, celui dont l’échéance est la plus proche en date', () => {
+    const autre: Emprunt = { ...EMPRUNT, id: 'emp2', nom: 'Prêt travaux', date_debut: '2025-01-03' }
+    expect(empruntPlausible(mouvement({ date: '2025-02-04' }), [EMPRUNT, autre], [])?.emprunt.id).toBe('emp1')
+    expect(empruntPlausible(mouvement({ date: '2025-02-03' }), [EMPRUNT, autre], [])?.emprunt.id).toBe('emp2')
+    // À égalité, le premier de la liste — l'ordre de lecture, par date de début.
+    expect(empruntPlausible(mouvement({ date: '2025-02-04' }), [autre, EMPRUNT], [])?.emprunt.id).toBe('emp2')
+  })
+
+  it('un déblocage : un encaissement près du début, d’au moins un dixième du capital, dans ce qui reste à débloquer', () => {
+    const encaissement = (o: Partial<MouvementBancaire> = {}) => mouvement({ montant: 12000, date: '2025-01-07', ...o })
+    expect(empruntPlausible(encaissement(), [EMPRUNT], [])).toEqual({ emprunt: EMPRUNT, echeance: null })
+    expect(empruntPlausible(encaissement({ montant: 1200 }), [EMPRUNT], [])).not.toBeNull()
+    expect(empruntPlausible(encaissement({ montant: 1199.99 }), [EMPRUNT], [])).toBeNull()
+    expect(empruntPlausible(encaissement({ montant: 12000.01 }), [EMPRUNT], [])).toBeNull()
+    expect(empruntPlausible(encaissement({ date: '2025-02-05' }), [EMPRUNT], [])).not.toBeNull()
+    expect(empruntPlausible(encaissement({ date: '2025-02-06' }), [EMPRUNT], [])).toBeNull()
+    expect(JOURS_DEBLOCAGE_PLAUSIBLE).toBe(31)
+    // Une première tranche déjà rapprochée : il ne reste que 4 000 € à débloquer.
+    const tranche = rapproche({ id: 't1', montant: 8000, emprunt_echeance: null, emprunt_interets: 0, emprunt_assurance: 0 })
+    expect(empruntPlausible(encaissement({ montant: 4000 }), [EMPRUNT], [tranche])).not.toBeNull()
+    expect(empruntPlausible(encaissement({ montant: 4000.01 }), [EMPRUNT], [tranche])).toBeNull()
+    // Ce qui ne compte pas dans le déjà-débloqué : une échéance, un autre emprunt, le mouvement lui-même.
+    expect(empruntPlausible(encaissement({ id: 't1' }), [EMPRUNT], [tranche])).not.toBeNull()
+    expect(empruntPlausible(encaissement(), [EMPRUNT], [{ ...tranche, emprunt_id: 'autre' }, rapproche({ id: 'e1' })])).not.toBeNull()
+    // Une tranche encore à traiter n'est pas débloquée.
+    expect(empruntPlausible(encaissement({ montant: 4000.01 }), [EMPRUNT], [{ ...tranche, statut: 'non_rapprochee', emprunt_id: null }])).not.toBeNull()
+  })
+
+  it('rien pour un mouvement de zéro euro, ni sans emprunt', () => {
+    expect(empruntPlausible(mouvement({ montant: 0 }), [EMPRUNT], [])).toBeNull()
+    expect(empruntPlausible(mouvement(), [], [])).toBeNull()
+  })
+
+  it('la raison que le lot des règles affiche, échéance ou déblocage', () => {
+    expect(raisonEmpruntPlausible({ emprunt: EMPRUNT, echeance: premiere }))
+      .toBe('Il ressemble à l’échéance n° 1 de l’emprunt « Prêt matériel » : à rapprocher de l’emprunt, pas à affecter — son capital compterait en charge.')
+    expect(raisonEmpruntPlausible({ emprunt: EMPRUNT, echeance: null })).toMatch(/déblocage de l’emprunt « Prêt matériel ».*pas une recette/)
   })
 })
 

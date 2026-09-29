@@ -1231,3 +1231,47 @@ describe('EcrituresTab — les virements personnels', () => {
     expect(screen.getByText(/2 écritures ne seront pas dans ce FEC/)).toBeTruthy()
   })
 })
+
+// L'ÉCHÉANCE D'EMPRUNT RAPPROCHÉE (lib/echeanceEmprunt.ts) : son écriture n'a pas de pièce, par
+// construction — le relevé la justifie. Ce que le module ne peut pas voir : que l'écran LISE le mouvement
+// rapproché d'un emprunt, pour ne pas crier à la rupture et porter l'écriture au FEC.
+describe('EcrituresTab — les échéances d’emprunt', () => {
+  function echeance(o: Record<string, unknown> = {}) {
+    return {
+      id: 'l-ech', dossier_id: 'dossier-de-test', date: '2025-03-06', libelle: 'PRLV ECHEANCE PRET', montant: -540,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      emprunt_id: 'emp-1', emprunt_echeance: 2, emprunt_interets: 34.55, emprunt_assurance: 21.03,
+      source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
+    }
+  }
+  const ECRITURE_ECHEANCE = [
+    ecriture({ id: 'x1', piece_id: null, ligne_bancaire_id: 'l-ech', date: '2025-03-06', compte: '164000', sens: 'debit', montant: 484.42, libelle: 'PRLV ECHEANCE PRET' }),
+    ecriture({ id: 'x2', piece_id: null, ligne_bancaire_id: 'l-ech', date: '2025-03-06', compte: '661100', sens: 'debit', montant: 34.55, libelle: 'PRLV ECHEANCE PRET' }),
+    ecriture({ id: 'x3', piece_id: null, ligne_bancaire_id: 'l-ech', date: '2025-03-06', compte: '616800', sens: 'debit', montant: 21.03, libelle: 'PRLV ECHEANCE PRET' }),
+    ecriture({ id: 'x4', piece_id: null, ligne_bancaire_id: 'l-ech', date: '2025-03-06', compte: '512000', sens: 'credit', montant: 540, libelle: 'PRLV ECHEANCE PRET' }),
+  ]
+
+  it('ne crie pas à la rupture, et porte l’écriture au FEC, au journal de banque, le relevé pour pièce', async () => {
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [echeance()], ecritures_brouillon: ECRITURE_ECHEANCE })
+    monter()
+    await screen.findByText(/4 écritures proposées/)
+    expect(screen.queryByText("Piste d'audit rompue")).toBeNull()
+    expect(screen.queryByText(/pas dans ce FEC/)).toBeNull()
+
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
+    expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual(Array(4).fill(['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250306']))
+    expect(lignes.map((l) => l[4]).sort()).toEqual(['164000', '512000', '616800', '661100'])
+  })
+
+  it('le garde symétrique : le rapprochement retiré, ses écritures sont une rupture et sortent du FEC', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS],
+      lignes_bancaires: [echeance({ statut: 'non_rapprochee', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null })],
+      ecritures_brouillon: ECRITURE_ECHEANCE,
+    })
+    monter()
+    expect(await screen.findByText("Piste d'audit rompue")).toBeTruthy()
+    expect(screen.getByText(/4 écritures ne seront pas dans ce FEC/)).toBeTruthy()
+  })
+})

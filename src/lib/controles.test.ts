@@ -466,6 +466,15 @@ describe('mouvementsRapprochesSansObjet', () => {
     ]).map((l) => l.id)).toEqual(['perso'])
   })
 
+  it('se tait sur un mouvement rapproché d’un emprunt, échéance ou déblocage', () => {
+    // lib/echeanceEmprunt.ts : rapproché sans pièce ni cotisation, et justifié par le relevé. Le
+    // signaler aurait mis en rouge chaque échéance rapprochée, dans Banque comme dans la Checklist.
+    expect(mouvementsRapprochesSansObjet([
+      ligne({ id: 'echeance', piece_id: null, cotisation_id: null, emprunt_id: 'emp1', emprunt_echeance: 3, emprunt_interets: 30, emprunt_assurance: 0 }),
+      ligne({ id: 'deblocage', piece_id: null, cotisation_id: null, montant: 12000, emprunt_id: 'emp1', emprunt_interets: 0, emprunt_assurance: 0 }),
+    ])).toEqual([])
+  })
+
   it('se tait sur un mouvement affecté à une catégorie : sa preuve est le relevé', () => {
     // Ligne 26.6 : un encaissement de l’Assurance maladie rangé en recettes est rapproché sans pièce ni
     // échéance, et il n’est pas orphelin. Le signaler ferait crier au loup sur chaque encaissement.

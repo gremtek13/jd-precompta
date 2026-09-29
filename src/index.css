@@ -721,6 +721,16 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 .fiche-mouvement-case input { margin-top: 2px; flex: none; }
 .fiche-mouvement-regle input[type="text"] { width: 100%; min-width: 0; }
 .fiche-mouvement-origine { margin: 0; font-size: 0.75rem; color: var(--color-text-light); overflow-wrap: anywhere; }
+/* Le découpage d'une échéance d'emprunt : numéro, intérêts, assurance côte à côte — trois nombres
+   courts. `min-width: 0`, sinon la largeur propre d'un champ numérique renvoie chacun à la ligne. */
+.fiche-mouvement-decoupage { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 0 10px; }
+.fiche-mouvement-decoupage > .field { margin-bottom: 0; min-width: 0; }
+.fiche-mouvement-decoupage input { width: 100%; min-width: 0; }
+.decoupage-emprunt {
+  margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-size: 0.84rem;
+}
+.decoupage-emprunt dt { color: var(--color-text-light); }
+.decoupage-emprunt dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
 
 /* Une pièce (ou une échéance) face au mouvement : ce qu'elle est, et ce qui la rattache au relevé. */
 .carte-rapprochement {

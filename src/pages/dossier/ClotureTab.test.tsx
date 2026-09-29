@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import ClotureTab from './ClotureTab'
 import type { Immobilisation } from '../../lib/types'
+import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
 
 // L'ONGLET QUI PRODUIT LE SEUL DOCUMENT QUE LE CABINET SIGNE — la 2035. Son garde-fou refuse de
@@ -720,5 +721,71 @@ describe('ClotureTab — les mouvements du relevé affectés sans justificatif',
     monter(2025)
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(screen.queryAllByText(/Mouvements affectés absents du récapitulatif/)).toHaveLength(0)
+  })
+})
+
+// UNE ÉCHÉANCE D'EMPRUNT RAPPROCHÉE COMPTE DANS LA 2035 PAR SES INTÉRÊTS ET SON ASSURANCE, JAMAIS PAR SON
+// CAPITAL (lib/echeanceEmprunt.ts). Ce que ce bloc garde et qu'aucun test de `src/lib` ne peut voir : que
+// l'écran passe le découpage gardé sur les mouvements au moteur, et DISE les échéances de l'exercice que
+// rien ne paie — dont les intérêts manquent à la déclaration signée.
+describe('ClotureTab — les échéances d’emprunt', () => {
+  // 12 000 € à 3,6 % sur 24 mois depuis le 5 janvier 2025 : onze échéances tombent en 2025 (5 février au
+  // 5 décembre), la douzième le 5 janvier 2026.
+  const EMPRUNT: Emprunt = {
+    id: 'emp-1', dossier_id: 'dossier-de-test', nom: 'Prêt matériel', organisme_preteur: 'Banque du Midi',
+    capital_initial: 12000, taux_annuel: 3.6, date_debut: '2025-01-05', duree_mois: 24, created_at: '2025-01-05T10:00:00Z',
+  }
+  const ECHEANCIER = genererEcheancier(EMPRUNT)
+  function echeanceRapprochee(numero: number, o: Record<string, unknown> = {}) {
+    const e = ECHEANCIER[numero - 1]
+    return {
+      id: `l-ech-${numero}`, dossier_id: 'dossier-de-test', date: e.date, libelle: 'PRLV ECHEANCE PRET', montant: -540,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      source_fichier: null, libelle_brut: null, created_at: `${e.date}T09:00:00Z`,
+      emprunt_id: 'emp-1', emprunt_echeance: numero, emprunt_interets: e.interets, emprunt_assurance: 21.03, ...o,
+    }
+  }
+
+  it('compte les intérêts et l’assurance d’une échéance rapprochée, jamais le capital', async () => {
+    // Le jeu par défaut déclare 720 € de dépenses. L'échéance 2 ajoute 34,55 € d'intérêts (35 au
+    // formulaire) et 21,03 € d'assurance (21) : 776 € — et non les 540 € du prélèvement.
+    poser()
+    faux.parTable.emprunts = [EMPRUNT]
+    faux.parTable.lignes_bancaires = [echeanceRapprochee(2)]
+    monter(2025)
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre.parentElement!).getByText(/Déficit de 776 € : case 5QE/)
+  })
+
+  it('dit les échéances de l’exercice qu’aucun mouvement ne paie, et les intérêts qui manquent', async () => {
+    poser()
+    faux.parTable.emprunts = [EMPRUNT]
+    faux.parTable.lignes_bancaires = [echeanceRapprochee(2)]
+    monter(2025)
+    const titre = await screen.findByText('Échéances d’emprunt non rapprochées (10)')
+    const carte = titre.closest('.card') as HTMLElement
+    const manquants = [1, 3, 4, 5, 6, 7, 8, 9, 10, 11].reduce((s, n) => s + ECHEANCIER[n - 1].interets, 0)
+    const attendu = (Math.round(manquants * 100) / 100).toFixed(2).replace('.', ',')
+    expect(carte.textContent).toContain(`${attendu}`)
+    const numeros = within(carte).getAllByRole('row').slice(1).map((r) => within(r).getAllByRole('cell')[2].textContent)
+    expect(numeros).toEqual(['n° 1', 'n° 3', 'n° 4', 'n° 5', 'n° 6', 'n° 7', 'n° 8', 'n° 9', 'n° 10', 'n° 11'])
+  })
+
+  it('se tait quand toutes les échéances de l’exercice sont rapprochées — le garde symétrique', async () => {
+    poser()
+    faux.parTable.emprunts = [EMPRUNT]
+    faux.parTable.lignes_bancaires = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11].map((n) => echeanceRapprochee(n))
+    monter(2025)
+    await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    expect(screen.queryAllByText(/Échéances d’emprunt non rapprochées/)).toHaveLength(0)
+  })
+
+  it('dit une lecture partielle des emprunts, sans bloquer le formulaire — la 2035 ne les lit pas', async () => {
+    poser({ emprunts: 0 })
+    faux.parTable.emprunts = [EMPRUNT]
+    monter(2025)
+    expect(await screen.findByText(/Les emprunts n'ont pas pu être lus en entier/)).toBeTruthy()
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(bouton.hasAttribute('disabled')).toBe(false)
   })
 })

@@ -183,15 +183,90 @@ export function echeanceProposee(
     }
   }
   if (!retenue) return null
+  return { echeance: retenue, decoupage: decoupagePourEcheance(retenue, ligne), ecartJours: ecartRetenu }
+}
+
+// Le découpage proposé pour UNE échéance de l'échéancier — celle que `echeanceProposee` retient, ou
+// celle dont le cabinet tape le numéro : changer de numéro repropose les intérêts de CE mois-là.
+export function decoupagePourEcheance(
+  echeance: LigneEcheancier,
+  ligne: Pick<MouvementBancaire, 'montant'>,
+): DecoupageEcheance {
   const total = centimes(Math.abs(ligne.montant))
-  const interets = Math.min(centimes(retenue.interets), total)
-  const attendu = centimes(retenue.interets) + centimes(retenue.capitalRembourse)
-  const assurance = total > attendu ? total - attendu : 0
-  return {
-    echeance: retenue,
-    decoupage: { echeance: retenue.numero, interets: interets / 100, assurance: assurance / 100 },
-    ecartJours: ecartRetenu,
+  const interets = Math.min(centimes(echeance.interets), total)
+  const assurance = total > montantAttenduCentimes(echeance) ? total - montantAttenduCentimes(echeance) : 0
+  return { echeance: echeance.numero, interets: interets / 100, assurance: assurance / 100 }
+}
+
+// Ce que l'échéancier prévoit pour une échéance, intérêts et capital : la mensualité, sauf à la
+// dernière, qui solde le capital restant et diffère donc de quelques centimes.
+function montantAttenduCentimes(echeance: Pick<LigneEcheancier, 'interets' | 'capitalRembourse'>): number {
+  return centimes(echeance.interets) + centimes(echeance.capitalRembourse)
+}
+
+export function montantAttendu(echeance: Pick<LigneEcheancier, 'interets' | 'capitalRembourse'>): number {
+  return montantAttenduCentimes(echeance) / 100
+}
+
+// UN MOUVEMENT QUI RESSEMBLE À UNE ÉCHÉANCE OU À UN DÉBLOCAGE. De quoi DÉPLIER le rapprochement dans la
+// fiche d'un mouvement, et écarter le mouvement du lot des règles d'affectation — jamais de quoi écrire :
+// le rapprochement reste un clic, découpage sous les yeux. Large exprès, parce que les deux erreurs ne
+// coûtent pas la même chose : ressembler à tort coûte un clic ; ne pas ressembler, dans le lot, fait
+// affecter une échéance à une catégorie de charge, et son CAPITAL compte alors en charge dans la 2035.
+//
+// Une échéance : l'une de celles qu'aucun autre mouvement ne paie, à `MARGE_PRELEVEMENT_JOURS` près de
+// sa date, et le prélèvement entre 90 % de ce que l'échéancier prévoit (le tableau de la banque peut
+// arrondir autrement) et une fois et demie (l'assurance s'ajoute). La plus proche en date si plusieurs.
+// Un déblocage : un encaissement à un mois près de la date de début, d'au moins un dixième du capital,
+// et qui ne dépasse pas ce qui reste à débloquer après les déblocages déjà rapprochés.
+export interface EmpruntPlausible {
+  emprunt: Emprunt
+  // L'échéance que le mouvement semble payer ; nulle pour un déblocage.
+  echeance: LigneEcheancier | null
+}
+
+export const JOURS_DEBLOCAGE_PLAUSIBLE = 31
+
+export function empruntPlausible(
+  ligne: Pick<MouvementBancaire, 'id' | 'date' | 'montant'>,
+  emprunts: readonly Emprunt[],
+  lignes: readonly Pick<MouvementBancaire, 'id' | 'date' | 'montant' | 'statut' | 'emprunt_id' | 'emprunt_echeance'>[],
+): EmpruntPlausible | null {
+  const total = centimes(Math.abs(ligne.montant))
+  if (total === 0) return null
+  let retenu: EmpruntPlausible | null = null
+  let ecartRetenu = Infinity
+  for (const emprunt of emprunts) {
+    if (estDeblocage(ligne)) {
+      const ecart = ecartEnJours(ligne.date, emprunt.date_debut)
+      if (ecart > JOURS_DEBLOCAGE_PLAUSIBLE) continue
+      const dejaDebloque = lignes
+        .filter((l) => l.id !== ligne.id && l.statut === 'rapprochee' && l.emprunt_id === emprunt.id && estDeblocage(l))
+        .reduce((s, l) => s + centimes(l.montant), 0)
+      const capital = centimes(emprunt.capital_initial)
+      if (total * 10 < capital || total > capital - dejaDebloque) continue
+      if (ecart < ecartRetenu) { retenu = { emprunt, echeance: null }; ecartRetenu = ecart }
+      continue
+    }
+    const occupees = echeancesOccupees(lignes, emprunt.id, ligne.id)
+    for (const echeance of genererEcheancier(emprunt)) {
+      if (occupees.has(echeance.numero)) continue
+      const ecart = ecartEnJours(echeance.date, ligne.date)
+      if (ecart > MARGE_PRELEVEMENT_JOURS || ecart >= ecartRetenu) continue
+      const attendu = montantAttenduCentimes(echeance)
+      if (total * 10 < attendu * 9 || total * 2 > attendu * 3) continue
+      retenu = { emprunt, echeance }
+      ecartRetenu = ecart
+    }
   }
+  return retenu
+}
+
+// Ce que le lot des règles d'affectation dit d'un mouvement qu'il écarte pour cette raison.
+export function raisonEmpruntPlausible(p: EmpruntPlausible): string {
+  return p.echeance
+    ? `Il ressemble à l’échéance n° ${p.echeance.numero} de l’emprunt « ${p.emprunt.nom} » : à rapprocher de l’emprunt, pas à affecter — son capital compterait en charge.`
+    : `Il ressemble au déblocage de l’emprunt « ${p.emprunt.nom} » : à rapprocher de l’emprunt, pas à affecter — un emprunt n’est pas une recette.`
 }
 
 // LES PARTS DU RELEVÉ D'UNE ÉCHÉANCE, pour la 2035 et les états qui la déclinent : les intérêts en frais

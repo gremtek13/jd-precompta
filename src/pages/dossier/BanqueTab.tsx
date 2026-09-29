@@ -20,6 +20,11 @@ import { mouvementRapprocheSansObjet } from '../../lib/controles'
 import { ecritureDuMouvement, refusAffectation } from '../../lib/affectationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, refusVirementPersonnel } from '../../lib/virementPersonnel'
 import {
+  echeancesOccupees, ecritureDeLEcheance, empruntPlausible, raisonEmpruntPlausible, refusDecoupage, refusEcheanceEmprunt,
+  type DecoupageEcheance,
+} from '../../lib/echeanceEmprunt'
+import type { Emprunt } from '../../lib/emprunts'
+import {
   envoisDuLot, justificatifPossible, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
 } from '../../lib/reglesAffectation'
 import { ecartAvecBanque } from '../../lib/alignementBanque'
@@ -73,6 +78,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // changer la catégorie proposée — le lot est alors suspendu.
   const [reglesAffectation, setReglesAffectation] = useState<RegleAffectationBancaire[]>([])
   const [reglesAffectationIncompletes, setReglesAffectationIncompletes] = useState<string | null>(null)
+  // Les emprunts du dossier (lib/echeanceEmprunt.ts) : de quoi rapprocher une échéance ou un déblocage.
+  // Leur drapeau est à part : lus en partie, ils ne changent aucun mouvement — un emprunt manque au choix
+  // de la fiche, et un paiement qui ressemble à l'une de ses échéances n'est plus reconnu comme tel, donc
+  // pourrait entrer dans le lot des règles d'affectation, qui est alors suspendu.
+  const [emprunts, setEmprunts] = useState<Emprunt[]>([])
+  const [empruntsIncomplets, setEmpruntsIncomplets] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
   // Exercice partagé avec Pièces/Écritures/Statistiques/Clôture, sélectionné dans l'en-tête du
@@ -164,6 +175,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     )
     setReglesAffectationIncompletes(lectureReglesAffectation.complete ? null : lectureReglesAffectation.motif)
 
+    // Un emprunt par ligne de la carte Financement. Tri TOTAL : deux emprunts peuvent commencer le même jour.
+    const lectureEmprunts = await lireTout<Emprunt>((debut, fin) =>
+      supabase.from('emprunts').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('date_debut').order('id').range(debut, fin),
+    )
+    setEmpruntsIncomplets(lectureEmprunts.complete ? null : lectureEmprunts.motif)
+
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -177,6 +195,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setCategories(lectureCategories.lignes)
     setRegles(lectureRegles.lignes)
     setReglesAffectation(lectureReglesAffectation.lignes)
+    setEmprunts(lectureEmprunts.lignes)
     setRelevesIncoherents(controles)
     setLoading(false)
   }
@@ -432,6 +451,35 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     return true
   }
 
+  // LIGNE 26.6 : une échéance d'emprunt — capital au 164, intérêts au 661, assurance au 616 — ou un
+  // déblocage. L'écriture est composée ici (lib/echeanceEmprunt.ts, testé) ; `rapprocher_echeance_emprunt`
+  // la VÉRIFIE contre le mouvement et le découpage validé, puis l'écrit AVEC le rapprochement, dans une
+  // seule transaction. Rapprocher de nouveau un mouvement déjà rapproché d'un emprunt remplace son
+  // découpage et son écriture. Les refus de la base sont refaits ici, pour qu'on ne clique pas pour rien.
+  async function rapprocherEmprunt(ligne: LigneBancaire, empruntId: string, d: DecoupageEcheance): Promise<boolean> {
+    const emprunt = emprunts.find((e) => e.id === empruntId)
+    if (!emprunt) return false
+    const refus = refusEcheanceEmprunt(ligne) ?? refusDecoupage(ligne, emprunt, d, echeancesOccupees(lignes, emprunt.id, ligne.id))
+    if (refus) { window.alert(refus); return false }
+    const { error } = await supabase.rpc('rapprocher_echeance_emprunt', {
+      p_ligne_bancaire_id: ligne.id,
+      p_emprunt_id: emprunt.id,
+      p_echeance: d.echeance,
+      p_interets: d.interets,
+      p_assurance: d.assurance,
+      p_ecritures: ecritureDeLEcheance(ligne, d),
+    })
+    if (error) { window.alert(`Le rapprochement de l'emprunt n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
+  // Le rapprochement et son écriture partent ENSEMBLE, par la base.
+  async function retirerEmprunt(ligneId: string): Promise<boolean> {
+    const { error } = await supabase.rpc('retirer_echeance_emprunt', { p_ligne_bancaire_id: ligneId })
+    if (error) { window.alert(`Le rapprochement de l'emprunt n'a pas pu être annulé : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
   // L'erreur est lue, et plus seulement suivie d'une relecture : le panneau reste sur le mouvement
   // après l'action, donc un échec muet laisserait l'opérateur croire le mouvement classé.
   async function ignorer(ligneId: string): Promise<boolean> {
@@ -527,18 +575,28 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
 
   // LES AFFECTATIONS QUE LES RÈGLES PROPOSENT (lib/reglesAffectation.ts). Un mouvement qui a peut-être
   // son justificatif — une pièce ou une échéance du même montant, une pièce du même tiers — en est
-  // écarté : affecté, il compterait dans la 2035 à côté de sa pièce.
+  // écarté : affecté, il compterait dans la 2035 à côté de sa pièce. De même un mouvement qui ressemble
+  // à une échéance d'emprunt (`empruntPlausible`) : affecté à une catégorie de charge, son CAPITAL
+  // compterait en charge — une règle au nom de la banque les désigne aussi bien que ses frais.
   const planRegles = useMemo(() => {
     const justificatifs = { pieces, piecesRapprochees, cotisations, cotisationsRapprochees }
-    return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva,
-      (l) => justificatifPossible(l, justificatifs))
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesRapprochees, cotisations, cotisationsRapprochees])
+    return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva, (l) => {
+      const justificatif = justificatifPossible(l, justificatifs)
+      if (justificatif) return justificatif
+      const emprunt = empruntPlausible(l, emprunts, lignes)
+      return emprunt ? raisonEmpruntPlausible(emprunt) : null
+    })
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts])
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
+  const idsEmpruntPlausible = useMemo(
+    () => new Set(nonRapprochees.filter((l) => empruntPlausible(l, emprunts, lignes)).map((l) => l.id)),
+    [nonRapprochees, emprunts, lignes],
+  )
   // Toutes les lectures dont le plan dépend : un mouvement tronqué, une pièce ou une échéance non lue
   // (le mouvement paraîtrait sans justificatif), une catégorie ou une règle manquante (une règle plus
   // précise aurait changé la catégorie). Une lecture partielle ne commande pas d'écriture.
   const lotReglesSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes
-    ?? categoriesIncompletes ?? reglesAffectationIncompletes
+    ?? categoriesIncompletes ?? reglesAffectationIncompletes ?? empruntsIncomplets
   const [affectationLotEnCours, setAffectationLotEnCours] = useState(false)
   const [progressionLot, setProgressionLot] = useState<string | null>(null)
 
@@ -748,6 +806,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       />
 
       <BandeauLecturePartielle
+        quoi="Les emprunts"
+        accord="lus"
+        motif={empruntsIncomplets}
+        consequence={
+          'Un emprunt peut donc manquer au choix de la fiche d’un mouvement, et un paiement qui ressemble à ' +
+          'l’une de ses échéances n’être pas reconnu : l’affectation en lot est suspendue. Recharge la page.'
+        }
+      />
+
+      <BandeauLecturePartielle
         quoi="Les règles d’affectation"
         motif={reglesAffectationIncompletes}
         consequence={
@@ -909,7 +977,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
               disabled={rapprochementAuto || actionMouvementEnCours || affectationLotEnCours || lotCertainSuspendu !== null}
               onClick={validerEtRapprocherLot}
             >
-              {rapprochementAuto ? 'Traitement…' : `Valider et rapprocher les ${certainsAValider.length}`}
+              {rapprochementAuto ? 'Traitement…' : certainsAValider.length === 1 ? 'Valider et rapprocher cette pièce' : `Valider et rapprocher les ${certainsAValider.length}`}
             </button>
           </div>
           {lotCertainSuspendu && (
@@ -1009,7 +1077,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
               >
                 {affectationLotEnCours
                   ? `Affectation…${progressionLot ? ` (${progressionLot})` : ''}`
-                  : `Affecter les ${planRegles.propositions.length}`}
+                  : planRegles.propositions.length === 1 ? 'Affecter ce mouvement' : `Affecter les ${planRegles.propositions.length}`}
               </button>
             )}
           </div>
@@ -1184,7 +1252,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                 const categorieAffectee = l.statut === 'rapprochee' && l.categorie_id
                   ? categories.find((c) => c.id === l.categorie_id) ?? null
                   : null
-                const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l)) || idsProposesParRegle.has(l.id))
+                const empruntDuMouvement = l.statut === 'rapprochee' && l.emprunt_id
+                  ? emprunts.find((e) => e.id === l.emprunt_id) ?? null
+                  : null
+                const aUneSuggestion = l.statut === 'non_rapprochee' && (!!(suggestion(l) || suggestionCotisation(l) || suggestionRecurrente(l))
+                  || idsProposesParRegle.has(l.id) || idsEmpruntPlausible.has(l.id))
                 return (
                   <tr
                     key={l.id}
@@ -1210,7 +1282,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                           Affecté{categorieAffectee ? ` — ${categorieAffectee.libelle}` : ''}
                         </span>
                       )}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !mouvementRapprocheSansObjet(l) && (
+                      {/* Rapproché d'un emprunt : l'échéance qu'il paie, ou son déblocage — pas un « Rapproché » nu. */}
+                      {l.statut === 'rapprochee' && l.emprunt_id && (
+                        <span className="badge badge-ok">
+                          {l.montant > 0 ? 'Déblocage d’emprunt' : `Échéance n° ${l.emprunt_echeance}`}
+                          {empruntDuMouvement ? ` — ${empruntDuMouvement.nom}` : ''}
+                        </span>
+                      )}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !mouvementRapprocheSansObjet(l) && (
                         <span className="badge badge-ok">
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
@@ -1269,6 +1348,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             onRemettreATraiter={() => agirSurMouvement(() => remettreATraiter(ligneOuverte.id))}
             onAffecter={(categorieId, motifRegle) => agirSurMouvement(() => affecter(ligneOuverte, categorieId, motifRegle))}
             onRetirerAffectation={() => agirSurMouvement(() => retirerAffectation(ligneOuverte.id))}
+            emprunts={emprunts}
+            empruntsIncomplets={empruntsIncomplets}
+            onRapprocherEmprunt={(empruntId, decoupage) => agirSurMouvement(() => rapprocherEmprunt(ligneOuverte, empruntId, decoupage))}
+            onRetirerEmprunt={() => agirSurMouvement(() => retirerEmprunt(ligneOuverte.id))}
           />
         </PanneauDroit>
       )}

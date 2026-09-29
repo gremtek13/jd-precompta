@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
-import type { Categorie, Immobilisation, Piece } from '../../lib/types'
+import type { Categorie, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
+import type { Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { ajouterMois, premierJourDuMoisCourant } from '../../lib/format'
 
@@ -28,6 +29,11 @@ const faux = vi.hoisted(() => ({
   refusees: new Set<string>(),
   // Le serveur qui cesse de rendre au-delà de N lignes d'une table tout en annonçant le vrai total.
   muet: {} as Record<string, number>,
+  // Les emprunts, et ce que l'écran en supprime ou en modifie — refusé à la demande.
+  emprunts: [] as Emprunt[],
+  suppressions: [] as { table: string }[],
+  misesAJour: [] as { table: string; valeur: Record<string, unknown> }[],
+  erreurSuppression: null as { message: string; code: string } | null,
 }))
 
 vi.mock('../../lib/supabase', async () => {
@@ -40,8 +46,11 @@ vi.mock('../../lib/supabase', async () => {
     // laissaient ce test vert avec la lecture des mouvements rapprochés restreinte à ceux qui portent
     // une pièce — la situation, les ratios et le prévisionnel perdaient alors les recettes affectées.
     const predicats: Predicat[] = []
+    let operation = 'select'
     Object.assign(c, {
       select: () => c, eq: () => c, order: () => c,
+      delete: () => { operation = 'delete'; faux.suppressions.push({ table }); return c },
+      update: (valeur: Record<string, unknown>) => { operation = 'update'; faux.misesAJour.push({ table, valeur }); return c },
       not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return c },
       or: (expression: string) => { predicats.push(predicatOr(expression)); return c },
       range: (d: number, f: number) => { debut = d; fin = f; return c },
@@ -49,7 +58,12 @@ vi.mock('../../lib/supabase', async () => {
         ? { data: null, error: { message: 'JWT expired' } }
         : { data: null, error: null }),
       then: (suite: (r: unknown) => unknown) => {
+        if (operation === 'delete') {
+          return Promise.resolve({ data: null, error: faux.erreurSuppression }).then(suite)
+        }
+        if (operation === 'update') return Promise.resolve({ data: null, error: null }).then(suite)
         const donnees = filtrer(table === 'pieces' ? faux.pieces
+          : table === 'emprunts' ? faux.emprunts
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations
           : table === 'ecritures_brouillon' ? faux.ecritures
@@ -126,6 +140,10 @@ afterEach(() => {
   faux.muet = {}
   faux.aNouveaux = []
   faux.paiements = []
+  faux.emprunts = []
+  faux.suppressions = []
+  faux.misesAJour = []
+  faux.erreurSuppression = null
 })
 
 describe('FinancementTab — situation intermédiaire', () => {
@@ -727,5 +745,159 @@ describe('FinancementTab — les mouvements affectés sans justificatif', () => 
     await act(async () => { within(titre.parentElement as HTMLElement).getByRole('button').click() })
     await act(async () => { screen.getByRole('button', { name: 'Précharger depuis cette année' }).click() })
     expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('12000')
+  })
+})
+
+// UNE ÉCHÉANCE D'EMPRUNT RAPPROCHÉE (lib/echeanceEmprunt.ts), VUE DEPUIS L'EMPRUNT. Ce que le module ne peut
+// pas voir : que l'échéancier dise quand chaque échéance a été payée, qu'un emprunt rapproché ne se
+// supprime pas sans qu'on sache pourquoi, que sa durée ne descende pas sous une échéance payée — et que
+// le déblocage, compté dans le solde, n'entre pas dans la moyenne des encaissements qu'on montre à une
+// banque.
+describe('FinancementTab — les emprunts et le relevé', () => {
+  const EMPRUNT: Emprunt = {
+    id: 'emp-1', dossier_id: 'd', nom: 'Prêt matériel', organisme_preteur: 'Banque du Midi',
+    capital_initial: 12000, taux_annuel: 3.6, date_debut: '2025-01-05', duree_mois: 24, created_at: '2025-01-05T10:00:00Z',
+  }
+  function mouvement(o: Partial<LigneBancaire>): LigneBancaire {
+    return {
+      id: 'l', dossier_id: 'd', date: '2025-03-06', libelle: 'PRLV ECHEANCE PRET', libelle_brut: null, montant: -540,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      source_fichier: null, emprunt_id: 'emp-1', emprunt_echeance: 2, emprunt_interets: 34.55, emprunt_assurance: 21.03,
+      created_at: '2025-03-06T09:00:00Z', ...o,
+    }
+  }
+  const ECHEANCE_2 = mouvement({ id: 'l-ech-2' })
+  const DEBLOCAGE = mouvement({
+    id: 'l-deb', date: '2025-01-07', libelle: 'VIR DEBLOCAGE PRET', montant: 12000,
+    emprunt_echeance: null, emprunt_interets: 0, emprunt_assurance: 0,
+  })
+
+  function preparer() {
+    faux.pieces = []
+    faux.categories = []
+    faux.immobilisations = []
+    faux.ecritures = []
+    faux.emprunts = [EMPRUNT]
+  }
+  async function rendreEtAttendre() {
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    return screen.findByText('Prêt matériel')
+  }
+  const ligneDeLEmprunt = async () => (await rendreEtAttendre()).closest('tr') as HTMLElement
+
+  it('l’échéancier dit quand chaque échéance rapprochée a été payée, et le déblocage', async () => {
+    preparer()
+    faux.paiements = [ECHEANCE_2, DEBLOCAGE]
+    const ligne = await ligneDeLEmprunt()
+    await act(async () => { within(ligne).getByRole('button', { name: 'Échéancier' }).click() })
+    const modale = screen.getByRole('heading', { name: 'Échéancier — Prêt matériel' }).closest('.card') as HTMLElement
+    const lignes = within(modale).getAllByRole('row')
+    // L'en-tête, puis l'échéance 1 (non payée) et la 2 (payée le 6 mars).
+    expect(within(lignes[1]).getAllByRole('cell').at(-1)?.textContent).toBe('—')
+    expect(within(lignes[2]).getAllByRole('cell').at(-1)?.textContent).toBe('06/03/2025')
+    expect(within(modale).getByText(/Fonds reçus le 07\/01\/2025\./)).toBeTruthy()
+    expect(within(modale).getByText(/1 échéance rapprochée d’un mouvement du relevé : la 2035 en compte le découpage validé/)).toBeTruthy()
+  })
+
+  it('l’échéancier dit qu’aucune échéance n’est rapprochée, et que la 2035 n’en compte rien', async () => {
+    preparer()
+    const ligne = await ligneDeLEmprunt()
+    await act(async () => { within(ligne).getByRole('button', { name: 'Échéancier' }).click() })
+    expect(screen.getByText(/Aucune échéance n’est encore rapprochée d’un mouvement du relevé \(Banque\) : leurs intérêts ne comptent pas dans la 2035/)).toBeTruthy()
+  })
+
+  it('refuse de supprimer un emprunt rapproché, et le dit AVANT de demander', async () => {
+    preparer()
+    faux.paiements = [ECHEANCE_2, DEBLOCAGE]
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    const confirmation = vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    const ligne = await ligneDeLEmprunt()
+    await act(async () => { within(ligne).getByRole('button', { name: 'Supprimer' }).click() })
+    expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/« Prêt matériel » a 2 mouvements du relevé rapprochés.*annule d’abord ces rapprochements dans Banque/))
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.suppressions).toEqual([])
+  })
+
+  it('supprime un emprunt que rien ne rapproche, après confirmation', async () => {
+    preparer()
+    vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    const ligne = await ligneDeLEmprunt()
+    await act(async () => { within(ligne).getByRole('button', { name: 'Supprimer' }).click() })
+    expect(faux.suppressions).toEqual([{ table: 'emprunts' }])
+    expect(alerte).not.toHaveBeenCalled()
+  })
+
+  it('dit le refus de la base, au lieu de recharger en silence', async () => {
+    preparer()
+    faux.erreurSuppression = { message: 'violates foreign key constraint', code: '23503' }
+    vi.spyOn(window, 'confirm').mockImplementation(() => true)
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    const ligne = await ligneDeLEmprunt()
+    await act(async () => { within(ligne).getByRole('button', { name: 'Supprimer' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/n’a pas été supprimé : des mouvements du relevé y sont rapprochés/)))
+  })
+
+  it('refuse une durée plus courte qu’une échéance rapprochée, et dit que le découpage validé ne change pas', async () => {
+    preparer()
+    faux.paiements = [ECHEANCE_2]
+    const ligne = await ligneDeLEmprunt()
+    await act(async () => { within(ligne).getByRole('button', { name: 'Modifier' }).click() })
+    expect(screen.getByText(/1 mouvement du relevé est rapproché de cet emprunt : son découpage validé ne change pas/)).toBeTruthy()
+    fireEvent.change(screen.getByLabelText('Durée (mois)'), { target: { value: '1' } })
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(screen.getByText(/L’échéance n° 2 de cet emprunt est rapprochée d’un mouvement du relevé : la durée ne peut pas descendre en dessous de 2 mois/)).toBeTruthy()
+    expect(faux.misesAJour).toEqual([])
+    // La borne est incluse : deux mois, l'échéance 2 existe encore.
+    fireEvent.change(screen.getByLabelText('Durée (mois)'), { target: { value: '2' } })
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.misesAJour).toHaveLength(1)
+  })
+
+  // LE SOLDE COMPTE LE DÉBLOCAGE, LA MOYENNE NON : 12 000 € reçus dans la fenêtre y ajouteraient 2 000 €
+  // d'« activité » par mois, projetés sur tout le plan et dans le taux d'endettement.
+  function ecrituresDuPlan(avecDeblocage: boolean) {
+    const mois = (d: number) => ajouterMois(premierJourDuMoisCourant(), -d).slice(0, 7)
+    const rythme = [1, 2, 3, 4, 5, 6].map((d) => ({ date: `${mois(d)}-15`, sens: 'debit', montant: 600, ligne_bancaire_id: null }))
+    return avecDeblocage
+      ? [...rythme, { date: `${mois(2)}-20`, sens: 'debit', montant: 12000, ligne_bancaire_id: 'l-deb' }]
+      : rythme
+  }
+  async function ouvrirLePlan(carte: string) {
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    const titre = await screen.findByRole('heading', { name: carte, level: 3 })
+    await waitFor(() => expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.querySelector('strong')?.textContent).not.toBe('—'))
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    return screen.getByRole('heading', { name: carte, level: 2 }).closest('.card') as HTMLElement
+  }
+
+  it('le plan de trésorerie écarte le déblocage de la moyenne, pas du solde', async () => {
+    preparer()
+    faux.ecritures = ecrituresDuPlan(true)
+    faux.paiements = [DEBLOCAGE]
+    const modale = await ouvrirLePlan('Plan de trésorerie')
+    expect(modale.textContent).toMatch(/600,00\s€ d'encaissements/)
+    expect(within(modale).getByText(/Les fonds reçus d’un emprunt n’entrent pas dans cette moyenne/)).toBeTruthy()
+    // Le solde, lui, les compte : 6 × 600 + 12 000.
+    expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.textContent).toMatch(/15\s?600,00\s€/)
+  })
+
+  it('un encaissement qui n’est pas un déblocage reste dans la moyenne, et rien n’est dit', async () => {
+    preparer()
+    faux.ecritures = ecrituresDuPlan(true)
+    faux.paiements = []
+    const modale = await ouvrirLePlan('Plan de trésorerie')
+    expect(modale.textContent).toMatch(/2\s?600,00\s€ d'encaissements/)
+    expect(within(modale).queryByText(/fonds reçus d’un emprunt/i)).toBeNull()
+  })
+
+  it('le taux d’endettement ne compte pas le déblocage non plus, et le dit', async () => {
+    preparer()
+    faux.ecritures = ecrituresDuPlan(true)
+    faux.paiements = [DEBLOCAGE]
+    const modale = await ouvrirLePlan('Dettes & ratios bancaires')
+    expect(within(modale).getByText(/Les fonds reçus d’un emprunt n’y comptent pas/)).toBeTruthy()
+    // 518,97 € de mensualité sur 600 € d'encaissements, et non sur 2 600 € — écrit à la française.
+    expect(modale.textContent).toMatch(/86,5\s%/)
   })
 })

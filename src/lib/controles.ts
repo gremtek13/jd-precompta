@@ -372,10 +372,15 @@ export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonn
 // ni échéance, et il n'est PAS orphelin : sa preuve est le relevé, son écriture est celle de sa
 // catégorie. La clé est en NO ACTION — une catégorie en usage ne se supprime pas —, donc ce lien-là ne
 // peut pas se défaire en silence comme les deux autres.
+//
+// UN MOUVEMENT RAPPROCHÉ D'UN EMPRUNT (lib/echeanceEmprunt.ts) non plus : sa preuve est le relevé, son
+// écriture celle de son découpage, et sa clé est sans action — un emprunt dont une échéance est
+// rapprochée ne se supprime pas. Sans cette clause, chaque échéance rapprochée ressortait « rapprochée
+// sans justificatif », en rouge, dans Banque et dans la Checklist.
 export function mouvementRapprocheSansObjet(
-  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'>,
+  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id'>,
 ): boolean {
-  return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id && !ligne.categorie_id
+  return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id && !ligne.categorie_id && !ligne.emprunt_id
 }
 
 // Ce que TOUTE suppression d'une pièce ou d'une échéance de cotisation fait au rapprochement qui
