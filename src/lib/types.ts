@@ -108,11 +108,11 @@ export interface LigneBancaire {
   // Rattache le mouvement à une échéance de cotisations_declarees plutôt qu'à une pièce — un
   // prélèvement URSSAF/CARPIMKO n'a pas de facture, juste un montant appelé sur un échéancier.
   //
-  // MUTUELLEMENT EXCLUSIF AVEC `piece_id` ET `categorie_id`, ET C'EST LA BASE QUI LE TIENT :
-  // `lignes_bancaires_un_seul_rapprochement` (num_nonnulls(piece_id, cotisation_id, categorie_id)
-  // <= 1). Ce commentaire a affirmé du 23/09 au 29/09/2026 qu'aucune contrainte CHECK n'existait :
-  // c'était faux, `pg_constraint` la rend depuis le 22/09 au moins (le socle l'exporte déjà), et rien
-  // n'avait recoupé l'affirmation avec l'export qui portait la réponse.
+  // MUTUELLEMENT EXCLUSIF AVEC `piece_id`, `categorie_id` ET `emprunt_id`, ET C'EST LA BASE QUI LE
+  // TIENT : `lignes_bancaires_un_seul_rapprochement` (num_nonnulls(piece_id, cotisation_id,
+  // categorie_id, emprunt_id) <= 1). Ce commentaire a affirmé du 23/09 au 29/09/2026 qu'aucune
+  // contrainte CHECK n'existait : c'était faux, `pg_constraint` la rend depuis le 22/09 au moins (le
+  // socle l'exporte déjà), et rien n'avait recoupé l'affirmation avec l'export qui portait la réponse.
   cotisation_id: string | null
   // La catégorie d'un mouvement SANS justificatif (ligne 26.6 de la feuille de route) : frais
   // bancaires, encaissements de l'Assurance maladie, remboursements. Le mouvement est alors rapproché,
@@ -121,6 +121,21 @@ export interface LigneBancaire {
   // catégorie sur un mouvement non rapproché ou classé en virement personnel
   // (`lignes_bancaires_affectation_rapprochee`).
   categorie_id: string | null
+  // L'emprunt dont le mouvement est une ÉCHÉANCE (une sortie) ou le DÉBLOCAGE (une entrée) — ligne 26.6,
+  // étape (a). Écrit avec son écriture par la fonction SQL `rapprocher_echeance_emprunt`, retiré avec
+  // elle par `retirer_echeance_emprunt` (voir lib/echeanceEmprunt.ts). Le DÉCOUPAGE validé par le cabinet
+  // se garde ici et non seulement dans l'écriture : la 2035 le lit sur le mouvement, comme l'écran du
+  // client, qui n'a pas accès aux écritures. Le capital remboursé est le reste du prélèvement.
+  // La base tient la forme sans le code (`lignes_bancaires_decoupage_emprunt`) : tout nul sans emprunt ;
+  // une échéance porte son numéro (1 à la durée) et des intérêts et une assurance positifs qui tiennent
+  // dans le prélèvement ; un déblocage n'a ni numéro, ni intérêts, ni assurance (zéro). Un mouvement
+  // rapproché d'un emprunt est rapproché et n'est pas un virement personnel
+  // (`lignes_bancaires_emprunt_rapproche`), et une échéance ne se rapproche que d'un mouvement
+  // (`lignes_bancaires_echeance_emprunt_unique`).
+  emprunt_id: string | null
+  emprunt_echeance: number | null
+  emprunt_interets: number | null
+  emprunt_assurance: number | null
   // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
   // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.
   // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien

@@ -97,6 +97,7 @@ function paiement(pieceId: string, montant: number, date: string): LigneBancaire
   return {
     id: `m-${pieceId}`, dossier_id: 'd', date, libelle: 'VIREMENT', montant, statut: 'rapprochee',
     piece_id: pieceId, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   }
 }
