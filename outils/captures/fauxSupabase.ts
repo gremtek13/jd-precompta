@@ -46,8 +46,11 @@ const categories: Ligne[] = [
   ['c6', 'Loyer', '613200', 'loyer'],
   ['c7', 'Fournitures de bureau', '606400', 'fournitures'],
   ['c8', 'Logiciels et abonnements', '651000', 'frais_divers'],
-  // La seule catégorie de RECETTE du banc, pour les ventes du dossier en engagement.
+  // La seule catégorie de RECETTE du banc : les ventes du dossier en engagement, et les virements de
+  // l'Assurance maladie que le cabinet infirmier affecte sans justificatif (voir l8).
   ['c9', 'Prestations de services', '706000', 'recettes'],
+  // Des frais que la banque prélève sans facture : l'autre mouvement affecté du banc (l9).
+  ['c10', 'Frais bancaires', '627000', 'Frais financiers'],
 ].map(([id, libelle, compte_comptable, poste_2035], i) => ({
   id, libelle, compte_comptable, poste_2035, code: String(id), dossier_id: null, ordre: i,
 }))
@@ -73,10 +76,20 @@ const pieces: Ligne[] = [
   piece('p8', '2026-08-18', 'LogiSoins', 29, 4.83, null, 'a_valider'),
 ]
 
-function ligne(id: string, date: string, libelle: string, montant: number, statut: string, pieceId: string | null): Ligne {
+function ligne(id: string, date: string, libelle: string, montant: number, statut: string, pieceId: string | null, categorie: string | null = null): Ligne {
   return {
-    id, dossier_id: 'd1', date, libelle, montant, statut, piece_id: pieceId, cotisation_id: null,
+    id, dossier_id: 'd1', date, libelle, montant, statut, piece_id: pieceId, cotisation_id: null, categorie_id: categorie,
     prelevement_personnel: false, source_fichier: 'releve-septembre.csv', libelle_brut: null, created_at: MAINTENANT,
+  }
+}
+
+// L'écriture d'un mouvement AFFECTÉ à une catégorie sans justificatif (lib/affectationBanque.ts) : le
+// compte de la catégorie face à la banque, sans pièce, telle que `affecter_mouvement_bancaire` l'écrit.
+// Sans elle, la Checklist du banc dirait ces mouvements « à réaffecter ».
+function ecritureReleve(id: string, mouvement: string, date: string, compte: string, libelle: string, sens: 'debit' | 'credit', montant: number): Ligne {
+  return {
+    id, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: mouvement, date, compte, libelle, sens, montant,
+    statut: 'proposee', created_at: MAINTENANT,
   }
 }
 
@@ -95,7 +108,7 @@ function pieceTva(id: string, date: string, tiers: string, ht: number, tva: numb
 
 function paiementTva(id: string, date: string, libelle: string, montant: number, pieceId: string): Ligne {
   return {
-    id, dossier_id: 'd7', date, libelle, montant, statut: 'rapprochee', piece_id: pieceId, cotisation_id: null,
+    id, dossier_id: 'd7', date, libelle, montant, statut: 'rapprochee', piece_id: pieceId, cotisation_id: null, categorie_id: null,
     prelevement_personnel: false, source_fichier: 'releve-2026.csv', libelle_brut: null, created_at: MAINTENANT,
   }
 }
@@ -201,7 +214,13 @@ const TABLES: Record<string, Ligne[]> = {
   dossiers,
   categories,
   pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces],
-  ecritures_brouillon: ENGAGEMENT_D8.ecritures,
+  ecritures_brouillon: [
+    ...ENGAGEMENT_D8.ecritures,
+    ecritureReleve('r1', 'l8', '2026-08-20', '706000', 'VIR CPAM REMBOURSEMENTS AOUT', 'credit', 1850.4),
+    ecritureReleve('r2', 'l8', '2026-08-20', '512000', 'VIR CPAM REMBOURSEMENTS AOUT', 'debit', 1850.4),
+    ecritureReleve('r3', 'l9', '2026-08-31', '627000', 'FRAIS TENUE DE COMPTE', 'debit', 8.5),
+    ecritureReleve('r4', 'l9', '2026-08-31', '512000', 'FRAIS TENUE DE COMPTE', 'credit', 8.5),
+  ],
   // L'ordinateur du dossier d7 est immobilisé : sa TVA va en ligne 19 de la CA3, pas en 20.
   immobilisations: [{
     id: 'i-d7', dossier_id: 'd7', piece_id: 'a2', nature_id: null, libelle: 'Ordinateur portable', valeur: 1500,
@@ -234,6 +253,10 @@ const TABLES: Record<string, Ligne[]> = {
     // Face à une pièce VALIDÉE (p7) : c'est la seule forme d'une « Pièce proposée » dans le panneau
     // d'un mouvement, une proposition ne portant que sur ce que le cabinet a relu.
     ligne('l7', '2026-08-24', 'CB PAPETERIE MODERNE', -27.35, 'non_rapprochee', null),
+    // Deux mouvements AFFECTÉS sans justificatif : un virement de l'Assurance maladie en recette — pour
+    // une infirmière, l'essentiel du chiffre d'affaires —, et des frais de tenue de compte.
+    ligne('l8', '2026-08-20', 'VIR CPAM REMBOURSEMENTS AOUT', 1850.4, 'rapprochee', null, 'c9'),
+    ligne('l9', '2026-08-31', 'FRAIS TENUE DE COMPTE', -8.5, 'rapprochee', null, 'c10'),
     ...TVA_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
   ],
