@@ -220,6 +220,8 @@ const TABLES: Record<string, Ligne[]> = {
     ecritureReleve('r2', 'l8', '2026-08-20', '512000', 'VIR CPAM REMBOURSEMENTS AOUT', 'debit', 1850.4),
     ecritureReleve('r3', 'l9', '2026-08-31', '627000', 'FRAIS TENUE DE COMPTE', 'debit', 8.5),
     ecritureReleve('r4', 'l9', '2026-08-31', '512000', 'FRAIS TENUE DE COMPTE', 'credit', 8.5),
+    ecritureReleve('r5', 'l13', '2026-09-25', '108000', 'VIR COMPTE PERSO SEPTEMBRE', 'debit', 1500),
+    ecritureReleve('r6', 'l13', '2026-09-25', '512000', 'VIR COMPTE PERSO SEPTEMBRE', 'credit', 1500),
   ],
   // L'ordinateur du dossier d7 est immobilisé : sa TVA va en ligne 19 de la CA3, pas en 20.
   immobilisations: [{
@@ -272,6 +274,11 @@ const TABLES: Record<string, Ligne[]> = {
     // Un acompte au garage : la facture (p5, 245,60 €) attend, d'un autre montant. Aucune paire « sans
     // doute », mais la fiche du mouvement avertit qu'un justificatif de ce tiers n'est rapproché de rien.
     ligne('l12', '2026-09-18', 'PRLV SEPA GARAGE DU CENTRE', -120, 'non_rapprochee', null),
+    // Deux VIREMENTS PERSONNELS (lib/virementPersonnel.ts) : celui de septembre, écrit sur le compte de
+    // l'exploitant ; celui de juillet, classé avant que ce classement s'écrive — sans écriture, l'onglet
+    // Virements le montre et propose de l'écrire, et la Checklist le compte.
+    { ...ligne('l13', '2026-09-25', 'VIR COMPTE PERSO SEPTEMBRE', -1500, 'ignoree', null), prelevement_personnel: true },
+    { ...ligne('l14', '2026-07-25', 'VIR COMPTE PERSO JUILLET', -1200, 'ignoree', null), prelevement_personnel: true },
     ...TVA_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
   ],

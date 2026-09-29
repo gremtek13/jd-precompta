@@ -106,6 +106,12 @@ const VUES = [
   { nom: 'pc-tva-assistant', chemin: '#/dossiers/d7/tva', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'TVA nette due' },
   { nom: 'pc-tva-historique', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Déclarations déposées' },
   { nom: 'mobile-tva-clair', chemin: '#/dossiers/d7/tva', l: 390, h: 844, theme: 'light', reduite: false, vers: 'TVA nette due' },
+  // Les virements personnels (lib/virementPersonnel.ts) : l'onglet, qui montre celui qu'il reste à
+  // écrire, et la fiche d'un virement personnel dans Banque, ouverte sous « Ignorés ».
+  { nom: 'pc-virements-clair', chemin: '#/dossiers/d1/virements', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-virements-sombre', chemin: '#/dossiers/d1/virements', l: 1440, h: 900, theme: 'dark', reduite: false },
+  { nom: 'mobile-virements-clair', chemin: '#/dossiers/d1/virements', l: 390, h: 844, theme: 'light', reduite: false },
+  { nom: 'pc-virement-fiche', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Ignorés', cellule: 'VIR COMPTE PERSO SEPTEMBRE' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

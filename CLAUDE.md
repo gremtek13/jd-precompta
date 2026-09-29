@@ -247,6 +247,9 @@ supabase/
                   reglesAffectation.sql : les règles d'affectation par libellé et l'affectation en
                   lot, par impersonation des trois profils, à rejouer après toute migration qui
                   touche leur table ou les fonctions d'affectation.
+                  virementPersonnel.sql : le virement personnel et son écriture sur le compte du
+                  dirigeant, par impersonation des trois profils, à rejouer après toute migration
+                  qui touche ses deux fonctions ou les contraintes de lignes_bancaires.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1235,6 +1238,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   « Affecter les N » les écrit en une fois. Un mouvement dont le justificatif est peut-être au dossier
   n'entre jamais dans le lot. Voir « les règles d'affectation proposent, le clic écrit » dans
   « Problèmes connus » (`lib/reglesAffectation.ts`).
+- **Un virement personnel s'écrit sur le compte du dirigeant (29/09/2026)**, ligne 26.6, étape (a),
+  suite : « Virement personnel » (fiche d'un mouvement, onglet Banque) ne se contente plus de classer
+  le mouvement, il l'écrit au brouillon face à la banque, sur le 108 de l'exploitant en trésorerie ou
+  sur le compte choisi pour le dirigeant en engagement — ni charge ni recette. Le FEC le porte au
+  journal de banque avec le relevé pour pièce, et l'onglet Virements écrit ceux qu'on avait classés
+  avant. Voir « un virement personnel s'écrit sur le compte du dirigeant » dans « Problèmes connus »
+  (`lib/virementPersonnel.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1266,11 +1276,10 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   l'article A47 A-1 » dans « Problèmes connus ».
 - Tenir toute la comptabilité d'un BNC (ligne 26.6) : l'étape (a) est livrée EN PARTIE (29/09/2026) —
   un mouvement sans justificatif s'affecte à une catégorie de charge ou de produit, un par un depuis
-  sa fiche ou en lot par des règles apprises par libellé. Restent pour (a) : les comptes de bilan — 108 pour
-  les apports et prélèvements de l'exploitant, que « Virement personnel » classe sans rien écrire,
-  164 pour le capital d'un emprunt — et la ventilation d'un mouvement sur plusieurs comptes (une
-  échéance d'emprunt mêle capital et intérêts) ; les recettes d'un dossier assujetti, dont la TVA ne
-  se lit pas sur un relevé. Puis (b) écrire les cotisations, les dotations, l'acquisition d'une
+  sa fiche ou en lot par des règles apprises par libellé, et un virement personnel s'écrit sur le
+  compte du dirigeant (108 en trésorerie). Restent pour (a) : le 164 pour le capital d'un emprunt et
+  la ventilation d'un mouvement sur plusieurs comptes (une échéance d'emprunt mêle capital et
+  intérêts) ; les recettes d'un dossier assujetti, dont la TVA ne se lit pas sur un relevé. Puis (b) écrire les cotisations, les dotations, l'acquisition d'une
   immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y comparer, (d)
   valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
@@ -3474,10 +3483,12 @@ d'environnement dans la même édition.
   **LATENT, et mesuré** : 3 lignes marquées en base, **toutes des sorties** (net −7 500 €, somme des
   valeurs absolues 7 500 € — identiques), 0 au statut inattendu, 0 portant un lien. Le correctif ne
   change donc aucun chiffre existant.
-  **ON NE TRANCHE PAS CE QU'EST UN APPORT** : le distinguer vraiment (compte 108 de l'exploitant
-  porte les deux sens) serait une décision produit, pas une correction. On l'écarte d'un total qui ne
-  le désigne pas, et on le DIT — la mention étant **rendue vide quand elle n'apprend rien**, comme
-  `dotationsNonProratisees` et `reserveSurMoyenne`.
+  **ON NE TRANCHE PAS CE QU'EST UN APPORT** : on l'écarte d'un total qui ne le désigne pas, et on le
+  DIT — la mention étant **rendue vide quand elle n'apprend rien**, comme `dotationsNonProratisees` et
+  `reserveSurMoyenne`. Depuis le 29/09/2026 le virement s'ÉCRIT sur le compte du dirigeant (voir « un
+  virement personnel s'écrit sur le compte du dirigeant »), et c'est le SIGNE du mouvement qui décide
+  du sens : un apport crédite ce compte, un prélèvement le débite. La mention le dit, et rappelle
+  qu'un encaissement classé là par erreur manquerait aux recettes.
   **Le calcul reste DANS l'écran, et c'est écrit plutôt que laissé deviner** : une partition par
   signe n'est pas une règle métier et ne duplique rien de `src/lib` (le balayage du 21/09/2026 sur
   les calculs définis dans les écrans vaut pour les fonctions LONGUES, pas pour deux `filter`). Le
@@ -3488,9 +3499,9 @@ d'environnement dans la même édition.
   annoncé pris sur les sorties est attrapé à part — sans quoi « l'écran nomme l'apport » serait
   satisfait par un écran qui en annonce un autre.
   **Résultat négatif du même passage, à garder** : le reste de `VirementsTab` est juste — lecture
-  paginée, total qui échappe à la recherche, bandeau de lecture partielle, et `retirer` qui écrit la
-  même transition que son jumeau de `BanqueTab` (les `piece_id`/`cotisation_id` qu'il ne remet pas à
-  null sont déjà nuls par construction, le marquage les ayant effacés). Ne pas le réenquêter.
+  paginée, total qui échappe à la recherche, bandeau de lecture partielle. Son `retirer` et celui de
+  `BanqueTab` passent désormais tous deux par `retirer_virement_personnel` (29/09/2026), qui remet le
+  mouvement à traiter ET retire son écriture. Ne pas le réenquêter.
 - **LES LECTURES D'UNE SEULE LIGNE N'ONT PAS DE SCANNER, ET N'EN ONT PAS BESOIN** (balayage du
   23/09/2026, résultat négatif à garder). Six scanners gardent les lectures de COLLECTION — compte
   annoncé, erreur lue, drapeau signalé, tri total, de part et d'autre de `src/` ; les **39** lectures
@@ -5087,6 +5098,71 @@ d'environnement dans la même édition.
   dit** : la garde du gestionnaire du lot et celle de l'écriture de la règle, qu'aucun clic n'atteint —
   le bouton du lot est grisé sur une lecture partielle, celui de la fiche aussi quand les règles sont
   lues en partie, et ces deux jumelles-là mordent.
+- **UN VIREMENT PERSONNEL S'ÉCRIT SUR LE COMPTE DU DIRIGEANT — LIGNE 26.6, ÉTAPE (A), SUITE**
+  (29/09/2026, `lib/virementPersonnel.ts`). « Virement personnel » (fiche d'un mouvement, onglet Banque)
+  classait le mouvement — `statut = 'ignoree'`, `prelevement_personnel` — et n'écrivait RIEN. Or un
+  BNC vire chaque mois de quoi vivre sur son compte personnel : ces sorties manquaient au FEC, la
+  Balance des comptes n'avait pas de 108, et la trésorerie de l'application, calculée sur les écritures
+  du 512000, dépassait le relevé de tout ce que l'exploitant avait prélevé.
+  **Le compte du dirigeant se lit dans le modèle du dossier** (`compteDuDirigeant`) : le 108000 de
+  l'exploitant en trésorerie, quel que soit le compte des notes de frais ; en engagement, le compte
+  choisi pour le dirigeant (455, 108 ou 467). Le même compte que ses notes de frais, parce que c'est la
+  même personne : deux comptes partageraient ce qu'on lui doit en deux moitiés, et la carte « Modèle
+  comptable » d'Écritures le dit avant qu'on choisisse. Le SIGNE du mouvement décide du sens : un
+  prélèvement débite ce compte, un apport le crédite — ni charge ni recette, la 2035 ne bouge pas.
+  **Le classement et l'écriture partent ENSEMBLE**, par `classer_virement_personnel` : l'écriture est
+  composée par l'application (`ecritureDuVirementPersonnel`, testée) et VÉRIFIÉE par la fonction — une
+  ligne de banque au montant et dans le sens du mouvement, le compte du dirigeant du dossier et aucun
+  autre, l'équilibre au centime — puis elle remplace celle d'avant. `retirer_virement_personnel` remet
+  le mouvement à traiter ET retire son écriture ; « Remettre à traiter » (Banque) et « Retirer »
+  (Virements) passent tous deux par elle, une simple mise à jour laissant l'écriture derrière le
+  mouvement sans plus rien qui la justifie. Les deux sont `SECURITY INVOKER`, vérifient
+  `admin_du_dossier`, et refusent un mouvement rapproché ou affecté, un mouvement de zéro euro et une
+  écriture validée — refus que l'écran dit avant le clic (`refusVirementPersonnel`). Migration
+  `virement_personnel_ecrit` ; `supabase/essais/virementPersonnel.sql` : 28 contrôles par
+  impersonation des trois profils, dont le contrôle POSITIF du chef, chaque refus jugé à sa raison, un
+  virement classé avant la migration qui s'écrit, et que rien ne reste ; sans les `set local role`, ses
+  deux premiers contrôles virent au rouge (vérifié).
+  **UN SEUL PRÉDICAT DIT QUAND LE RELEVÉ JUSTIFIE UNE ÉCRITURE SANS PIÈCE** :
+  `mouvementJustifieParLeReleve`, un mouvement affecté OU un virement personnel. Le FEC porte l'écriture
+  au journal de banque avec le relevé pour pièce, la piste d'audit donne « Relevé bancaire : <fichier> »
+  pour justificatif, `absenceFec` ne la compte plus, et Écritures lit les mouvements rapprochés OU
+  classés en virement personnel — le prédicat de l'affectation seul les aurait tous rendus « sans
+  justificatif ». La comparaison d'une écriture sans pièce à celle attendue (`ecritureConforme`,
+  `ecrituresSansPieceParMouvement`) est partagée avec le contrôle des mouvements affectés, au lieu d'être
+  écrite deux fois.
+  **LES VIREMENTS CLASSÉS AVANT N'ONT PAS D'ÉCRITURE**, et rien ne les écrit sans clic : l'onglet
+  Virements les montre (« N virements personnels sans leur écriture », une colonne « Écriture » par
+  ligne) et « Écrire les N » les écrit un par un par la même fonction, un échec n'interrompant pas le
+  lot et se disant. Un virement de zéro euro n'a « rien à écrire ». Suspendu sur une lecture partielle
+  des virements OU des écritures — un virement dont l'écriture n'a pas été lue paraîtrait sans
+  écriture —, et la colonne ne dit alors rien plutôt que « sans écriture ». Un seul verrou pour le lot
+  et « Retirer » : retiré pendant le lot, un virement serait reclassé par le lot qui l'a pris avant. Il
+  se relâche APRÈS la relecture. La Checklist porte le point « virement(s) personnel(s) sans
+  écriture », en erreur — il a l'air traité, il est classé, donc plus personne ne le regarde —, qui
+  mène à Virements.
+  **L'assistant, version 30** : `points_a_traiter` compte les virements personnels sans écriture comme
+  la Checklist, et le prompt dit qu'une écriture sur le compte du dirigeant face au 512000, sans pièce,
+  n'est pas une anomalie. `agentComptableAffectation.test.ts` compare la copie à `src/lib` et y plante
+  des dérives. Déployé avec `verify_jwt` relu et repassé à `false`, la v29 comparée au dépôt avant
+  écrasement (identique), aller-retour après : zéro différence sur 1 319 lignes, et le 401 de la
+  fonction sans session. Aucun appel au modèle.
+  **CE QUI RESTE, dit plutôt que promis** : un APPORT est un débit du 512000, donc le plan de
+  trésorerie le compte dans sa moyenne d'encaissements, et le taux d'endettement (mensualités ÷ cette
+  moyenne) s'en trouve flatté. Les prélèvements, eux, entrent désormais dans les décaissements du plan,
+  ce qui le rend plus juste qu'avant. Distinguer les apports demanderait de lire le compte en face de la
+  banque dans ce calcul — à faire si un dossier réel en porte.
+  **LATENT, et mesuré** : 3 virements personnels en base, tous des sorties et tous dans des bacs à
+  sable abandonnés, aucun sur `test` — ils n'ont pas d'écriture, et c'est l'onglet Virements de ces
+  dossiers qui les propose. Le banc de capture sert un virement écrit et un virement d'avant.
+  **Quarante-trois mutations, toutes mordent** — dont le code TEL QU'IL ÉTAIT à chaque endroit (classer
+  sans écrire, remettre à traiter sans la base, le FEC et la piste d'audit sur les seuls mouvements
+  affectés, Écritures sur les seuls mouvements rapprochés, retirer par une simple mise à jour), le
+  compte du dirigeant figé d'un côté ou de l'autre, le sens inversé, la date ignorée, une ligne de trop
+  admise, le lot sans verrou ou relâché avant la relecture, « Retirer » ouvert pendant le lot, chaque
+  lecture partielle ignorée, la colonne qui affirme « sans écriture » sur une lecture partielle, les
+  refus tus, et le point de Checklist qui mène à Banque. La garde du gestionnaire du lot, doublée par
+  le bouton grisé, n'est pas mutée seule : elle survivrait, comme ses aînées.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -6327,7 +6403,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2578 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2626 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -6345,8 +6421,9 @@ par tous les écrans (`recherche.ts`), le contrat de la proposition de catégori
 selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), la CA3 préparée case par case
 (`declarationTva.ts`), la date à laquelle une pièce compte en trésorerie (`rattachement.ts`), les
 écritures d'un dossier tenu en engagement (`engagement.ts`), celles d'un mouvement du relevé
-affecté sans justificatif (`affectationBanque.ts`), et les règles qui proposent ces affectations en lot
-(`reglesAffectation.ts`) —
+affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent ces affectations en lot
+(`reglesAffectation.ts`), et celles d'un virement personnel sur le compte du dirigeant
+(`virementPersonnel.ts`) —
 les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
