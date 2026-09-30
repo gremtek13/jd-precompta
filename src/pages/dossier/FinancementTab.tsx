@@ -6,13 +6,15 @@ import { ajouterMois, anneeDe, aujourdHuiSql, formatDate, formatMoney } from '..
 import { COMPTE_BANQUE } from '../../lib/comptes'
 import { capitalRestantDu, empruntActif, genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { calculerSituationIntermediaire, moisEcoulesDeLAnnee } from '../../lib/situationIntermediaire'
-import { partsDuReleve } from '../../lib/partsDuReleve'
+import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
 import { calculerPlanTresorerie, echeancesCotisations, echeancesEmprunts, reserveSurMoyenne, reserveSurSolde, soldeBanqueADate, type EcheanceConnue, type OuvertureBanque } from '../../lib/planTresorerie'
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
 import { echeancesOccupees, idsDeblocagesEmprunt } from '../../lib/echeanceEmprunt'
-import type { ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece } from '../../lib/types'
+import type {
+  ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VentilationBancaire,
+} from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 // `ligne_bancaire_id` : le mouvement du relevé dont l'écriture est la contrepartie — de quoi reconnaître
@@ -39,6 +41,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   // Les mouvements RAPPROCHÉS d'une pièce, qui la datent (voir lib/rattachement.ts) — à ne pas
   // confondre avec `lignesBanque`, les écritures du compte 512 dont sort la trésorerie.
   const [paiements, setPaiements] = useState<LigneBancaire[]>([])
+  // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts), que la situation
+  // intermédiaire, les ratios et le prévisionnel comptent comme la 2035.
+  const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
   // Le solde de la banque à l'ouverture d'un dossier repris d'un autre logiciel (voir
   // lib/aNouveaux.ts) : sans lui, la trésorerie part de zéro à la première écriture.
   const [ouverture, setOuverture] = useState<OuvertureBanque | null>(null)
@@ -69,6 +74,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
       lectureANouveaux,
       lecturePaiements,
       { data: previsionnelData, error: previsionnelError },
+      lectureVentilations,
     ] = await Promise.all([
       lireTout<Emprunt>((debut, fin) =>
         supabase.from('emprunts').select('*', { count: 'exact' })
@@ -122,6 +128,12 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
       // « Générer » compris — et le premier enregistrement écrasait les deux taux ET
       // `note_hypotheses`, du texte libre que personne ne relit donc que personne ne verrait partir.
       supabase.from('previsionnels_bancaires').select('*').eq('dossier_id', dossierId).maybeSingle(),
+      // Les parts des mouvements VENTILÉS : elles vivent dans leur propre table, et comptent dans les
+      // mêmes chiffres que les mouvements affectés — donc le même drapeau.
+      lireTout<VentilationBancaire>((debut, fin) =>
+        supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     setEmprunts(lectureEmprunts.lignes)
     setPiecesValidees(lecturePieces.lignes)
@@ -130,14 +142,17 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
     setCotisations(lectureCotisations.lignes)
     setLignesBanque(lectureBanque.lignes as LigneBanque[])
     setPaiements(lecturePaiements.lignes)
+    setVentilations(lectureVentilations.lignes)
     setOuverture(ouvertureBanque(lectureANouveaux.lignes))
     setPrevisionnelIllisible(previsionnelError ? messageErreur(previsionnelError, "Le prévisionnel enregistré n'a pas pu être lu.") : null)
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
-    // Sept lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
+    // Huit lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
     // manqué, et chacune fausse les mêmes chiffres.
     setLectureIncomplete(
-      [lectureEmprunts, lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureBanque, lecturePaiements]
-        .find((l) => !l.complete)?.motif ?? null,
+      [
+        lectureEmprunts, lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureBanque,
+        lecturePaiements, lectureVentilations,
+      ].find((l) => !l.complete)?.motif ?? null,
     )
     setOuvertureIncomplete(lectureANouveaux.motif)
     setLoading(false)
@@ -145,6 +160,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   useEffect(() => { load() }, [dossierId])
 
   const soldeBanque = soldeBanqueADate(lignesBanque, ouverture, aujourdHuiSql())
+  // Ce que le relevé ajoute sans pièce aux trois états — mouvements affectés, échéances d'emprunt, parts
+  // ventilées (lib/partsDuReleve.ts) —, calculé une fois et passé aux trois fenêtres qui le comptent.
+  const partsReleve = partsDuReleve(paiements, categories, ventilations)
   // LES DÉBLOCAGES D'EMPRUNT NE SONT PAS UN RYTHME D'ACTIVITÉ (lib/echeanceEmprunt.ts) : écrits au 512, ils
   // entreraient dans la moyenne des encaissements du plan de trésorerie et flatteraient le taux
   // d'endettement, sur le document qu'on présente à une banque. Le solde, lui, les compte.
@@ -345,6 +363,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
           modeComptable={modeComptable}
           piecesValidees={piecesValidees}
           paiements={paiements}
+          partsReleve={partsReleve}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -373,6 +392,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
           modeComptable={modeComptable}
           piecesValidees={piecesValidees}
           paiements={paiements}
+          partsReleve={partsReleve}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -393,6 +413,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
           previsionnel={previsionnel}
           piecesValidees={piecesValidees}
           paiements={paiements}
+          partsReleve={partsReleve}
           categories={categories}
           immobilisations={immobilisations}
           cotisations={cotisations}
@@ -405,8 +426,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   )
 }
 
-function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, categories, immobilisations, cotisations, emprunts, lignesDuRythme, deblocagesEcartes, capitalRestantTotal, mensualiteTotale, onClose }: {
-  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: LigneBancaire[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, emprunts, lignesDuRythme, deblocagesEcartes, capitalRestantTotal, mensualiteTotale, onClose }: {
+  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: LigneBancaire[]; partsReleve: PartDuReleve[]
+  categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   emprunts: Emprunt[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
 }) {
   const aujourdHui = aujourdHuiSql()
@@ -415,7 +437,7 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
   // la CAF, et l'étiquette qui l'annonce juste en dessous (voir moisEcoulesDeLAnnee).
   const moisEcoules = moisEcoulesDeLAnnee(aujourdHui)
 
-  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui, assujettiTva, paiements, modeComptable, partsDuReleve(paiements, categories))
+  const situationAnnee = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, debutAnnee, aujourdHui, assujettiTva, paiements, modeComptable, partsReleve)
   // Moyenne sur 6 mois glissants, juste pour disposer d'un rythme d'encaissements de référence — les
   // réglages fins (nombre de mois, projection détaillée) restent dans la modale Plan de trésorerie.
   const plan = calculerPlanTresorerie(lignesDuRythme, 0, 6, 1)
@@ -603,14 +625,15 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, 
   )
 }
 
-function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValidees, paiements, categories, immobilisations, cotisations, lignesBanque, ouverture, onClose }: {
-  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: LigneBancaire[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, lignesBanque, ouverture, onClose }: {
+  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: LigneBancaire[]; partsReleve: PartDuReleve[]
+  categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; onClose: () => void
 }) {
   const [dateFin, setDateFin] = useState(aujourdHuiSql())
   const periodeDebut = `${anneeDe(dateFin)}-01-01`
 
-  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin, assujettiTva, paiements, modeComptable, partsDuReleve(paiements, categories))
+  const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, periodeDebut, dateFin, assujettiTva, paiements, modeComptable, partsReleve)
   const tresorerieADate = soldeBanqueADate(lignesBanque, ouverture, dateFin)
   // « 0,00 € » est juste quand rien n'est comptabilisé, et c'est ce qui le rend dangereux.
   const reserveSolde = reserveSurSolde(lignesBanque, ouverture, dateFin)
@@ -677,9 +700,10 @@ function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValide
   )
 }
 
-function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionnel, piecesValidees, paiements, categories, immobilisations, cotisations, lectureIncomplete, onClose, onSaved }: {
+function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionnel, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, lectureIncomplete, onClose, onSaved }: {
   dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; previsionnel: PrevisionnelBancaire | null
-  piecesValidees: Piece[]; paiements: LigneBancaire[]; categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
+  piecesValidees: Piece[]; paiements: LigneBancaire[]; partsReleve: PartDuReleve[]
+  categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lectureIncomplete: string | null
   onClose: () => void; onSaved: () => void
 }) {
@@ -702,7 +726,7 @@ function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionne
   // banque — et la fenêtre recouvre le bandeau qui dirait que la lecture est incomplète.
   function precharger() {
     if (lectureIncomplete) return
-    const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`, assujettiTva, paiements, modeComptable, partsDuReleve(paiements, categories))
+    const situation = calculerSituationIntermediaire(piecesValidees, categories, immobilisations, cotisations, `${anneeReference}-01-01`, `${anneeReference}-12-31`, assujettiTva, paiements, modeComptable, partsReleve)
     setCaReference(String(situation.recettes))
     setChargesReference(String(situation.charges))
   }

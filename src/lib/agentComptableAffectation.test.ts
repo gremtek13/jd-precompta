@@ -70,7 +70,7 @@ const CATEGORIES: Categorie[] = [
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2025-03-10', libelle: 'VIR CPAM', montant: 100, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: 'recettes', prelevement_personnel: false,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
   source_fichier: null, libelle_brut: null, created_at: '2025-03-10T09:00:00Z', ...o,
 })
 const LIGNES: LigneBancaire[] = [

@@ -76,6 +76,21 @@ export interface RegleAffectationBancaire {
   created_at: string
 }
 
+// Une PART d'un mouvement ventilé sur plusieurs comptes (ligne 26.6) — la table `ventilations_bancaires`.
+// Elle va à une catégorie de résultat OU au compte du dirigeant (`part_personnelle`), jamais aux deux ni à
+// aucune (`ventilations_bancaires_cible`). Son montant est SIGNÉ COMME LE RELEVÉ — positif, une entrée ;
+// négatif, une sortie — et n'est jamais nul ; une part peut aller en sens inverse du mouvement (la
+// commission retenue sur une remise de carte bancaire). Une cible ne reçoit qu'une part par mouvement.
+export interface VentilationBancaire {
+  id: string
+  dossier_id: string
+  ligne_bancaire_id: string
+  categorie_id: string | null
+  part_personnelle: boolean
+  montant: number
+  created_at: string
+}
+
 // Contrôle de cohérence d'un relevé bancaire importé : solde d'ouverture + somme des mouvements
 // doit donner le solde de clôture. Conservé en base (et non affiché une fois puis jeté) parce qu'un
 // relevé incomplet est une information qui doit survivre à la fermeture d'une alerte — voir
@@ -136,6 +151,14 @@ export interface LigneBancaire {
   emprunt_echeance: number | null
   emprunt_interets: number | null
   emprunt_assurance: number | null
+  // Le mouvement est VENTILÉ sur plusieurs comptes (ligne 26.6, étape a) : ses parts sont dans
+  // `ventilations_bancaires`, une catégorie de résultat ou la part personnelle chacune, et leur somme
+  // est le mouvement. Posé avec les parts et l'écriture par la fonction SQL `ventiler_mouvement_bancaire`
+  // (voir lib/ventilationBanque.ts). La base le tient dans les contraintes de la ligne : exclusif d'une
+  // pièce, d'une cotisation, d'une catégorie et d'un emprunt (`lignes_bancaires_un_seul_rapprochement`),
+  // rapproché et jamais personnel (`lignes_bancaires_ventilation_rapprochee`). Que les parts fassent le
+  // montant, seule la fonction le vérifie — un contrôle de l'application dit un écart.
+  ventilee: boolean
   // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
   // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.
   // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien

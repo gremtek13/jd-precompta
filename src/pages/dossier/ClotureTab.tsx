@@ -19,7 +19,9 @@ import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../
 import { partsDuReleve } from '../../lib/partsDuReleve'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
-import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VehiculeDossier } from '../../lib/types'
+import type {
+  Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VehiculeDossier, VentilationBancaire,
+} from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useAnnee } from '../../context/AnneeContext'
@@ -51,6 +53,9 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
   // Les mouvements rapprochés d'une pièce : ce sont eux qui la DATENT (voir lib/rattachement.ts).
   const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
+  // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts) : elles vivent
+  // dans leur propre table, et la 2035 les compte comme des mouvements affectés.
+  const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
   // Les emprunts, pour dire les échéances que l'échéancier prévoit dans l'exercice et qu'aucun
   // mouvement ne paie (lib/echeanceEmprunt.ts). Leur drapeau est à part : la 2035 lit le découpage
   // gardé sur les mouvements rapprochés, pas les emprunts — lus en partie, ils ne faussent aucune case,
@@ -89,7 +94,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     // cotisation ou une immobilisation manquante est tout aussi plausible, fausse et signée.
     // Le tri est TOTAL partout (`id` en départage) : sans clé unique, deux tranches se recouvrent
     // ou sautent des lignes, et rien ne le signale.
-    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, { data: dossierData, error: dossierError }, clotures, lectureEmprunts] = await Promise.all([
+    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -131,7 +136,14 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         supabase.from('emprunts').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('date_debut').order('id').range(debut, fin),
       ),
+      // Les parts des mouvements ventilés : une part tronquée retire de la 2035 ce qu'elle y met, donc
+      // cette lecture rejoint le drapeau de la déclaration comme les mouvements eux-mêmes.
+      lireTout<VentilationBancaire>((debut, fin) =>
+        supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
+    setVentilations(lectureVentilations.lignes)
     setEmprunts(lectureEmprunts.lignes)
     setEmpruntsIncomplets(lectureEmprunts.complete ? null : lectureEmprunts.motif)
     setDossier(dossierData ?? null)
@@ -150,7 +162,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     // écran ne le dise. Ce n'est pas une lecture « partielle » au sens du plafond PostgREST, mais
     // le refus qu'elle appelle est exactement le même.
     setLectureIncomplete(
-      [lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes]
+      [lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, lectureVentilations]
         .find((l) => !l.complete)?.motif
       ?? (dossierError ? messageErreur(dossierError, "l'identité du dossier n'a pas pu être lue") : null),
     )
@@ -162,9 +174,10 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   useEffect(() => { load() }, [dossierId])
 
 
-  // Catégories utilisées par une pièce validée ou un mouvement affecté mais sans poste 2035 associé — le
-  // regroupement par poste les ignorera tant que ce n'est pas renseigné (voir lib/controles.ts).
-  const categoriesSansPoste = calculerCategoriesSansPoste(categories, piecesValidees, lignesBancaires)
+  // Catégories utilisées par une pièce validée, un mouvement affecté ou une part d'un mouvement ventilé
+  // mais sans poste 2035 associé — le regroupement par poste les ignorera tant que ce n'est pas renseigné
+  // (voir lib/controles.ts).
+  const categoriesSansPoste = calculerCategoriesSansPoste(categories, piecesValidees, [...lignesBancaires, ...ventilations])
   // Même famille que « Postes manquants », un cran plus tôt dans la chaîne : sans catégorie du tout,
   // le montant n'atteint même pas la question du poste (voir lib/controles.ts).
   const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees)
@@ -194,7 +207,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // — la même que celle où le moteur la compte, sans quoi un exercice où une pièce compte pourrait
   // manquer à la liste. En engagement, celle de sa facture.
   const paiements = paiementsParPiece(lignesBancaires)
-  const parts = partsDuReleve(lignesBancaires, categories)
+  const parts = partsDuReleve(lignesBancaires, categories, ventilations)
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
     // Un exercice qui n'a que des encaissements sans bordereau, ou des intérêts d'emprunt, doit se
@@ -546,9 +559,10 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
           <h3 style={{ marginTop: 0 }}>Mouvements affectés absents du récapitulatif ({mouvementsExclus.length})</h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            Ces mouvements du relevé sont affectés à une catégorie mais n'entrent dans aucun total : leur
-            montant manquera dans la déclaration tant que la catégorie n'a pas de poste 2035, ou tant
-            qu'elle n'est pas revenue sur un compte de charge ou de produit.
+            Ces mouvements du relevé — ou ces parts d'un mouvement ventilé — sont affectés à une
+            catégorie mais n'entrent dans aucun total : leur montant manquera dans la déclaration tant
+            que la catégorie n'a pas de poste 2035, ou tant qu'elle n'est pas revenue sur un compte de
+            charge ou de produit.
           </p>
           <div className="table-scroll">
             <table>
@@ -560,7 +574,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
                     <td>{m.ligne.libelle}</td>
                     <td>{m.libelle}</td>
                     <td className="muted">{raison}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(m.ligne.montant)}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(m.montantReleve)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -899,8 +913,8 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
       {lectureIncomplete && (
         <p className="error-text">
           Une des entrées dont dépend la déclaration n'a pas pu être lue en entier
-          ({lectureIncomplete}) — pièces, catégories, immobilisations, cotisations, véhicules ou
-          l'identité du dossier. Les
+          ({lectureIncomplete}) — pièces, catégories, immobilisations, cotisations, véhicules,
+          mouvements du relevé et leurs ventilations, ou l'identité du dossier. Les
           montants ci-dessous portent donc sur une partie du dossier, et le remplissage du
           formulaire est bloqué : une 2035 calculée sur une lecture partielle est plausible, fausse,
           et signée.

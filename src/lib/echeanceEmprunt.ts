@@ -59,8 +59,8 @@ const auCentime = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
 // contourne. Un mouvement déjà rapproché d'un EMPRUNT n'est pas refusé : un nouveau rapprochement
 // remplace le précédent (une autre échéance, un autre découpage).
 export function refusEcheanceEmprunt(ligne: MouvementBancaire): string | null {
-  if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.prelevement_personnel) {
-    return 'Ce mouvement est rapproché d’une pièce ou d’une cotisation, affecté à une catégorie ou classé en virement personnel : annule d’abord ce classement.'
+  if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.ventilee || ligne.prelevement_personnel) {
+    return 'Ce mouvement est rapproché d’une pièce ou d’une cotisation, affecté à une catégorie, ventilé sur plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.'
   }
   if (ligne.montant === 0) return 'Un mouvement de zéro euro n’a rien à écrire.'
   return null

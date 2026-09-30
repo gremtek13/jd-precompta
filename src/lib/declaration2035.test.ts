@@ -4,7 +4,7 @@ import {
   csgDeductible, partCsgNonDeductible,
   POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
 } from './declaration2035'
-import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
+import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 
 const categories = [
@@ -109,7 +109,7 @@ describe('calculerDeclaration2035 — ce qui est écarté est dit', () => {
 const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
 
@@ -247,7 +247,7 @@ describe('calculerDeclaration2035 — les mouvements du relevé affectés sans j
   ] as Categorie[]
   const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
     paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
-  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve)
+  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, [])
 
   it('compte un encaissement affecté en recette, sans en faire une pièce', () => {
     const d = calcul({ mouvements: releve(affecte({ id: 'cpam', categorie_id: 'c-recettes', montant: 250 })) })
@@ -317,7 +317,7 @@ describe('calculerDeclaration2035 — les échéances d’emprunt rapprochées',
     piece_id: null, date: '2025-03-06', montant: -540, emprunt_id: 'emp1', emprunt_echeance: 2,
     emprunt_interets: 36, emprunt_assurance: 21.03, ...o,
   })
-  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve)
+  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, [])
 
   it('compte les intérêts en frais financiers et l’assurance en primes, jamais le capital', () => {
     const d = calcul({ mouvements: releve(echeance()) })
@@ -352,6 +352,68 @@ describe('calculerDeclaration2035 — les échéances d’emprunt rapprochées',
     })
     expect(d.totalRecettes).toBe(0)
     expect(d.totalDepenses).toBe(0)
+  })
+})
+
+describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs comptes', () => {
+  // lib/ventilationBanque.ts : un même paiement dans plusieurs postes, et la part personnelle dans aucun.
+  const categoriesDuReleve = [
+    { id: 'c-tel', libelle: 'Téléphone', compte_comptable: '626000', poste_2035: 'Frais postaux et de télécommunications' },
+    { id: 'c-internet', libelle: 'Internet', compte_comptable: '626100', poste_2035: 'Frais postaux et de télécommunications' },
+    { id: 'c-achats', libelle: 'Achats', compte_comptable: '606400', poste_2035: 'Achats' },
+    { id: 'c-recettes', libelle: 'Recettes', compte_comptable: '706000', poste_2035: 'Recettes' },
+    { id: 'c-frais', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' },
+  ] as Categorie[]
+  const ventile = (o: Partial<LigneBancaire> = {}): LigneBancaire =>
+    paiement({ id: 'v', piece_id: null, ventilee: true, date: '2025-03-12', montant: -120, ...o })
+  const part = (o: Partial<VentilationBancaire>): VentilationBancaire => ({
+    id: 'x', dossier_id: 'd1', ligne_bancaire_id: 'v', categorie_id: 'c-tel', part_personnelle: false, montant: -84,
+    created_at: '2025-03-12T10:00:00Z', ...o,
+  })
+  const releve = (lignes: LigneBancaire[], parts: VentilationBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, parts)
+
+  it('compte chaque part dans son poste, et jamais la part personnelle', () => {
+    const d = calcul({
+      mouvements: releve([ventile()], [
+        part({ id: 'a', categorie_id: 'c-tel', montant: -84 }),
+        part({ id: 'b', categorie_id: null, part_personnelle: true, montant: -36 }),
+      ]),
+    })
+    expect(d.depenses).toEqual([
+      { poste: 'Frais postaux et de télécommunications', nature: 'depense', montant: 84, nbPieces: 0, nbMouvements: 1 },
+    ])
+    expect(d.totalDepenses).toBe(84)
+  })
+
+  it('la remise de carte : la recette brute en recettes, la commission en frais financiers', () => {
+    const d = calcul({
+      mouvements: releve([ventile({ montant: 95 })], [
+        part({ id: 'a', categorie_id: 'c-recettes', montant: 100 }),
+        part({ id: 'b', categorie_id: 'c-frais', montant: -5 }),
+      ]),
+    })
+    expect(d.totalRecettes).toBe(100)
+    expect(d.totalDepenses).toBe(5)
+    expect(d.resultat).toBe(95)
+  })
+
+  it('un mouvement ventilé sur deux catégories du même poste y compte UNE fois', () => {
+    const d = calcul({
+      mouvements: releve([ventile()], [
+        part({ id: 'a', categorie_id: 'c-tel', montant: -84 }),
+        part({ id: 'b', categorie_id: 'c-internet', montant: -36 }),
+      ]),
+    })
+    expect(d.depenses).toEqual([
+      { poste: 'Frais postaux et de télécommunications', nature: 'depense', montant: 120, nbPieces: 0, nbMouvements: 1 },
+    ])
+  })
+
+  it('l’année du mouvement, et rien d’un mouvement qui n’est pas ventilé', () => {
+    const parts = [part({ id: 'a', categorie_id: 'c-achats', montant: -84 }), part({ id: 'b', categorie_id: 'c-tel', montant: -36 })]
+    expect(calcul({ annee: 2025, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(0)
+    expect(calcul({ annee: 2026, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(120)
+    expect(calcul({ mouvements: releve([ventile({ ventilee: false, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
   })
 })
 

@@ -153,9 +153,10 @@ export interface LignePisteAudit {
 // pièce ni mouvement bancaire, par nature, et les en déclarer privés ferait lire une rupture là où
 // la chaîne est complète.
 //
-// Le justificatif d'un mouvement AFFECTÉ à une catégorie ou CLASSÉ EN VIREMENT PERSONNEL (ligne 26.6)
-// est le relevé qui le porte : son écriture n'a pas de pièce, et ce n'est pas une rupture.
-// `lignesBancaires` suffit à le savoir — l'export relit le relevé en entier.
+// Le justificatif d'un mouvement JUSTIFIÉ PAR LE RELEVÉ (ligne 26.6, `mouvementJustifieParLeReleve` :
+// affecté, rapproché d'un emprunt, ventilé ou classé en virement personnel) est le relevé qui le porte :
+// son écriture n'a pas de pièce, et ce n'est pas une rupture. `lignesBancaires` suffit à le savoir —
+// l'export relit le relevé en entier.
 export function pisteAudit(
   ecritures: EcritureBrouillon[],
   pieces: Piece[],

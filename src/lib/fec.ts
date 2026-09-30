@@ -95,12 +95,13 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
 // achats, et la banque n'aurait pas de journal. Les lignes de 401 et de 411 y portent en plus le compte
 // AUXILIAIRE du tiers (CompAuxNum, CompAuxLib), un seul libellé par numéro dans tout le fichier.
 //
-// UN MOUVEMENT AFFECTÉ À UNE CATÉGORIE SANS JUSTIFICATIF (ligne 26.6, lib/affectationBanque.ts), ou
-// CLASSÉ EN VIREMENT PERSONNEL (lib/virementPersonnel.ts), fait une écriture au journal de BANQUE, dans
-// les deux modèles : sa pièce est le RELEVÉ qui le porte (PieceRef), à la date du mouvement (PieceDate).
-// C'est ce qui manquait pour que le FEC porte chaque euro du relevé : un encaissement de l'Assurance
-// maladie ou un prélèvement de l'exploitant n'y était nulle part. Les autres écritures sans pièce — le
-// reste d'une pièce supprimée — restent dehors, et `absenceFec` les chiffre.
+// UN MOUVEMENT JUSTIFIÉ PAR LE RELEVÉ (ligne 26.6, `mouvementJustifieParLeReleve`) — affecté à une
+// catégorie, rapproché d'un emprunt, ventilé sur plusieurs comptes ou classé en virement personnel — fait
+// une écriture au journal de BANQUE, dans les deux modèles : sa pièce est le RELEVÉ qui le porte
+// (PieceRef), à la date du mouvement (PieceDate). C'est ce qui manquait pour que le FEC porte chaque euro
+// du relevé : un encaissement de l'Assurance maladie ou un prélèvement de l'exploitant n'y était nulle
+// part. Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec`
+// les chiffre.
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : exporté en trésorerie, le brouillon d'un dossier en engagement mettrait
