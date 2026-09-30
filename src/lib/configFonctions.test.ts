@@ -14,9 +14,11 @@ import { describe, expect, it } from 'vitest'
 //   est accepté, puis retombe sur `true`) — c'est le piège qui rend ce test nécessaire plutôt que
 //   décoratif ;
 // - une section pour une fonction qui n'existe plus, qui ferait croire à un réglage vivant.
-// Et un seul invariant de VALEUR, parce qu'il a une raison qui ne dépend de personne : `receive-email`
+// Et deux invariants de VALEUR, parce qu'ils ont une raison qui ne dépend de personne : `receive-email`
 // reçoit le webhook de Resend, qui ne porte aucun jeton, donc `true` y refuserait chaque e-mail
-// entrant à la passerelle, sans un log.
+// entrant à la passerelle, sans un log ; et `extract-piece` reçoit de `receive-email` la clé secrète
+// dans `apikey` (30/09/2026), qui n'est pas un jeton non plus — `true` y ferait arriver chaque pièce
+// jointe sans lecture.
 //
 // Ce qu'il ne garde PAS : que la production porte ces valeurs. Aucun outil de ce dépôt ne lit la
 // production ; `list_edge_functions` se relit avant chaque déploiement, et une divergence avec ce
@@ -95,6 +97,10 @@ describe('supabase/config.toml', () => {
 
   it('laisse passer le webhook de Resend, qui ne porte aucun jeton', () => {
     expect(configuration.fonctions.get('receive-email')).toBe(false)
+  })
+
+  it('laisse passer jusqu’à extract-piece l’appel de receive-email, qui n’a qu’une clé secrète', () => {
+    expect(configuration.fonctions.get('extract-piece')).toBe(false)
   })
 })
 

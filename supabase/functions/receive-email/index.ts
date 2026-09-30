@@ -10,7 +10,7 @@
 //
 // Sécurité : cette fonction est publique (pas de vérification JWT Supabase, Resend n'en envoie pas) —
 // la seule authentification est la signature du webhook (RESEND_WEBHOOK_SECRET), vérifiée avant tout
-// traitement. Elle utilise la clé de service Supabase pour écrire directement en base et au storage,
+// traitement. Elle utilise la clé secrète Supabase pour écrire directement en base et au storage,
 // sans passer par les policies RLS (il n'y a pas d'utilisateur authentifié dans ce flux) — et pour
 // appeler extract-piece en tant que service (le client web l'appelle avec la session de l'utilisateur,
 // ici il n'y en a pas).
@@ -80,17 +80,24 @@ function orientationDe(classification: ClassificationDocument): Orientation {
 }
 
 // Même appel que celui que fait le navigateur (lib/extraction.ts côté client) mais depuis le serveur —
-// pas de session utilisateur ici, donc la clé de service sert d'autorisation. Best-effort : un échec
+// pas de session utilisateur ici, donc la clé secrète sert d'autorisation. Elle part dans l'en-tête
+// `apikey` et nulle part ailleurs : ce n'est pas un jeton, et la plateforme refuse une clé de cette
+// forme en `Authorization` (voir `appelantAutorise` dans extract-piece). Best-effort : un échec
 // (Textract, format refusé...) ne doit pas bloquer l'import, juste laisser les champs vides à compléter
-// à la main, comme pour un dépôt manuel dont l'extraction aurait échoué.
-async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, serviceRoleKey: string): Promise<ExtractionPiece | null> {
+// à la main, comme pour un dépôt manuel dont l'extraction aurait échoué. Mais un refus se JOURNALISE :
+// muet, un changement de contrat entre les deux fonctions ferait arriver chaque pièce jointe sans
+// lecture, et rien ne le dirait.
+async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, cleSecrete: string): Promise<ExtractionPiece | null> {
   try {
     const res = await fetch(`${supabaseUrl}/functions/v1/extract-piece`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
+      headers: { apikey: cleSecrete },
       body: bytes,
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.error(`[receive-email] extract-piece a répondu ${res.status} : pièce jointe déposée sans lecture`)
+      return null
+    }
     const result = await res.json()
     return result.error ? null : result
   } catch (err) {
@@ -98,6 +105,32 @@ async function classifierEtExtraire(bytes: Uint8Array, supabaseUrl: string, serv
     return null
   }
 }
+
+// ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
+// Les clés d'API de Supabase, lues dans les variables que la plateforme pose elle-même. Les clés
+// historiques (`anon`, `service_role`) étaient des jetons signés du projet, et Supabase les coupe à la
+// fin de 2026 ; les nouvelles arrivent dans deux objets JSON « nom → clé », `SUPABASE_PUBLISHABLE_KEYS`
+// et `SUPABASE_SECRET_KEYS`, et ce projet se sert de la clé nommée `default`. Une variable absente,
+// illisible ou sans clé `default` de la bonne forme LÈVE : une clé vide ferait refuser chaque requête
+// pour une raison que personne ne lirait. Le message ne cite jamais la clé.
+// Bloc copié à l'identique dans chaque fonction qui parle à la base : `clesSupabase.test.ts` compare
+// les copies et exécute celle-ci.
+function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KEYS", brut: string | undefined): string {
+  const prefixe = variable === "SUPABASE_SECRET_KEYS" ? "sb_secret_" : "sb_publishable_"
+  if (!brut) throw new Error(`${variable} est absente de l'environnement de la fonction.`)
+  let cles: unknown
+  try {
+    cles = JSON.parse(brut)
+  } catch {
+    throw new Error(`${variable} n'est pas un objet JSON lisible.`)
+  }
+  const cle = cles !== null && typeof cles === "object" ? (cles as Record<string, unknown>).default : undefined
+  if (typeof cle !== "string" || !cle.startsWith(prefixe) || cle.length === prefixe.length) {
+    throw new Error(`${variable} ne porte pas de clé « default » de la forme ${prefixe}…`)
+  }
+  return cle
+}
+// ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req: Request) => {
   if (req.method !== "POST") {
@@ -142,8 +175,8 @@ Deno.serve(async (req: Request) => {
   const { email_id, to, from, subject, attachments } = event.data
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
-  const supabase = createClient(supabaseUrl, serviceRoleKey)
+  const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))
+  const supabase = createClient(supabaseUrl, cleSecrete)
 
   const codeEmail = to.map(extractEmail).map((addr) => addr.split("@")[0]).find((c) => !!c)
   if (!codeEmail) {
@@ -236,7 +269,7 @@ Deno.serve(async (req: Request) => {
       // directement en relevé bancaire sur son extension, comme les autres points d'entrée. Les autres
       // formats passent par la même extraction/classification que l'import manuel ou en masse.
       const estCsv = nomFichier.toLowerCase().endsWith(".csv")
-      const extraction = estCsv ? null : await classifierEtExtraire(bytes, supabaseUrl, serviceRoleKey)
+      const extraction = estCsv ? null : await classifierEtExtraire(bytes, supabaseUrl, cleSecrete)
       const classification = estCsv ? "releve_bancaire" : (extraction?.classification ?? "facture")
       const orientation = orientationDe(classification)
 

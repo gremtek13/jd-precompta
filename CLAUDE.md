@@ -177,8 +177,9 @@ Conséquences pratiques :
   - `create-team-member`, `create-client-access` — création de comptes
     (membre d'équipe cabinet / accès client à un dossier).
   - `extract-piece` — OCR + extraction de champs (Textract) sur une pièce
-    déposée. Réservée à un compte RATTACHÉ au cabinet et à `receive-email` : une
-    simple session ne suffit pas (voir « Problèmes connus »).
+    déposée. Réservée à un compte RATTACHÉ au cabinet et à `receive-email`, qui
+    présente la clé secrète dans l'en-tête `apikey` : une simple session ne suffit
+    pas (voir « Problèmes connus »).
   - `receive-email` — réception d'e-mails entrants (webhook Resend) par
     dossier.
   - `send-email` — envoi d'e-mails sortants (facture, relance de pièces),
@@ -190,7 +191,8 @@ Conséquences pratiques :
     dans le texte, RIEN d'écrit (voir « Décisions techniques »).
   - `evaluer-extraction` — harnais de MESURE, pas une fonctionnalité : rejoue la citation des
     champs ou la proposition de catégorie sur les textes OCR d'un dossier, et ne facture que pendant
-    une fenêtre datée (voir « Problèmes connus »).
+    une fenêtre datée (voir « Problèmes connus »). Sa question « cles », gratuite, dit si la
+    plateforme accepte les clés d'API du projet.
   - `banque-connexion` — la connexion bancaire d'un dossier (Enable Banking, bac à sable) : l'état
     de la connexion, la liste des banques, la demande d'accord et son retour, le choix du compte, la
     récupération des mouvements et le retrait. Elle REND les mouvements ; c'est l'écran qui les importe
@@ -199,7 +201,8 @@ Conséquences pratiques :
 ## Stack technique
 
 - React 19 + TypeScript ~6 + Vite 8, `react-router-dom` 7 (`HashRouter`).
-- `@supabase/supabase-js` 2.x — client unique exporté par `src/lib/supabase.ts`.
+- `@supabase/supabase-js` 2.x — client unique exporté par `src/lib/supabase.ts`, sur la clé
+  publishable du projet (`sb_publishable_…`), que `lib/clePublique.ts` vérifie au démarrage.
 - `exceljs` (génération des packs Excel), `jszip` (packs ZIP), `pdfjs-dist`
   (lecture de PDF côté navigateur, ex. relevés bancaires).
 - Lint : `oxlint` (`npm run lint`), pas d'ESLint. Tests : Vitest (`npm test`),
@@ -987,7 +990,9 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   stockés côté Supabase (secrets de fonctions / table dédiée chiffrée côté
   usage), jamais exposés au bundle client. `superpdp_credentials` contient un
   `client_secret` par dossier — à traiter comme une donnée sensible standard,
-  jamais loguée en clair.
+  jamais loguée en clair. La clé SECRÈTE de Supabase n'entre ni dans le dépôt ni dans le navigateur :
+  `clesSupabase.test.ts` refuse toute clé secrète ou historique dans un fichier suivi, et
+  `clePublique.ts` refuse de démarrer l'application sur une autre clé que la publishable.
 - **La liste des variables d'environnement est tirée du code** : PLAN_DE_REPRISE.md (fin du §3) nomme
   chacune, avec les fonctions qui la lisent et ce qu'il faut savoir pour la reposer, et
   `variablesEnvironnement.test.ts` la compare à chaque `Deno.env.get("…")` des Edge Functions et à
@@ -1298,6 +1303,10 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   ce qui entrerait — sans ce qui est déjà au relevé —, et « Importer » les écrit « à traiter », par le
   même chemin qu'un relevé. Voir « la connexion bancaire récupère, l'écran importe » dans « Problèmes
   connus » (`banque-connexion`, `lib/connexionBancaire.ts`).
+- **Les nouvelles clés d'API de Supabase (30/09/2026)**, ligne 25.5 : le navigateur sur la clé
+  publishable, les quinze Edge Functions sur les clés publishable et secrète, et plus aucune lecture
+  des clés historiques, que Supabase coupe à la fin de 2026. Voir « les clés historiques de Supabase
+  sont quittées » dans « Problèmes connus » (`lib/clePublique.ts`, `clesSupabase.test.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1339,9 +1348,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
   connexion bancaire récupère, l'écran importe » et « un retour sur l'onglet rechargeait l'application
-  entière »). Restent : le choix du prestataire (sur devis) et son contrat ; le chemin du CLIENT — seul le
-  titulaire du compte peut donner l'accord, et l'écran d'aujourd'hui fait cliquer le cabinet ; et la
-  récupération automatique ou au clic, à trancher (RGPD.md §8.8).
+  entière »), et l'essai d'après a importé les 44 mouvements, par un renouvellement de l'accord qui a
+  retrouvé le compte choisi. Restent : le choix du prestataire (sur devis) et son contrat ; le chemin
+  du CLIENT — seul le titulaire du compte peut donner l'accord, et l'écran d'aujourd'hui fait cliquer
+  le cabinet ; et la récupération automatique ou au clic, à trancher (RGPD.md §8.8).
+- Quitter les clés historiques de Supabase (ligne 25.5) : fait dans le code et en production le
+  30/09/2026. Reste leur désactivation dans le tableau de bord de Supabase, un clic réversible du
+  cabinet, une fois le nouveau site en ligne et les fenêtres ouvertes rechargées.
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -2405,6 +2418,11 @@ d'environnement dans la même édition.
   de faire foi sans que rien la compare à la production. Dix mutations posées, neuf mordent ; la
   dixième (retirer l'invariant de `receive-email` en le passant à `true`) survit, et c'est attendu :
   cet invariant est le seul garde de cette valeur.
+  **Le décompte du 21/09/2026 ci-dessus a changé le 30/09/2026** : `extract-piece` et
+  `evaluer-extraction` sont passées à `false` avec les nouvelles clés de Supabase, que `verify_jwt` ne
+  sait pas lire (voir « les clés historiques de Supabase sont quittées »). Le fichier porte désormais
+  onze `false` et quatre `true` (`banque-connexion`, `proposer-categorie`, `superpdp-emit`,
+  `taux-change-bce`) — c'est lui qui fait foi, pas ce décompte.
 - **LE HARNAIS DE MESURE ÉTAIT UNE PORTE PUBLIQUE QUI FACTURE — REFERMÉE LE 25/09/2026.**
   `evaluer-extraction` est en `verify_jwt: true`, et ça ne la protégeait de rien : la clé publique du
   projet, servie avec l'application, EST un jeton valide. Le dépôt étant public, le nom de la fonction
@@ -2422,6 +2440,11 @@ d'environnement dans la même édition.
   partir le code avant, et il vérifie que la garde précède tout appel au modèle dans le gestionnaire.
   Au passage, `dossierId` est validé comme UUID avant d'être interpolé dans le filtre PostgREST
   `.or(…)` des catégories, la fonction lisant avec la clé de service.
+  **Depuis le 30/09/2026 elle est en `verify_jwt: false`** et demande elle-même la clé publishable
+  dans l'en-tête `apikey` : la même porte qu'avant, ni plus large ni plus étroite, puisque cette clé
+  est servie avec l'application. Ce qui ferme la dépense reste la fenêtre datée. Et sa question
+  « cles », qui ne facture rien, dit si la plateforme accepte les nouvelles clés (voir « les clés
+  historiques de Supabase sont quittées »).
 - **ET LA FONCTION DE LECTURE ÉTAIT OUVERTE DE LA MÊME FAÇON, SANS FENÊTRE POSSIBLE — REFERMÉE EN
   DEUX TEMPS** (v46 le 25/09/2026, v47 le 26/09/2026). `extract-piece` est elle aussi en
   `verify_jwt: true`, donc acceptait la clé publique. Son en-tête concluait qu'aucune vérification
@@ -2433,7 +2456,9 @@ d'environnement dans la même édition.
   coûte pas même la lecture de ses 10 Mo. Deux appelants légitimes : une session, VÉRIFIÉE auprès du
   service d'authentification (jamais les revendications du jeton, qui ne valent que ce que vaut
   `verify_jwt`, drapeau déjà retourné une fois en silence), ou la clé de service exacte, que
-  `receive-email` envoie de serveur à serveur.
+  `receive-email` envoie de serveur à serveur — depuis le 30/09/2026 la clé SECRÈTE du projet, dans
+  l'en-tête `apikey` et lui seul, comparée à temps constant, la fonction étant passée en
+  `verify_jwt: false` (voir « les clés historiques de Supabase sont quittées »).
   **Second temps, imposé par une mesure** : une session ne prouve pas qu'on est un utilisateur de
   l'application. **L'inscription publique est OUVERTE sur ce projet** (`disable_signup: false`, lu
   sur `/auth/v1/settings`, confirmation par e-mail exigée), donc la clé publique et une adresse
@@ -2468,6 +2493,69 @@ d'environnement dans la même édition.
   chemin positif tourne en production — une session réelle, lue par le vrai service d'authentification.
   C'est un dépôt réel qui le dira, pas un appel d'essai : on n'appelle pas cette fonction sur un
   document pour vérifier qu'elle facture.
+- **LES CLÉS HISTORIQUES DE SUPABASE SONT QUITTÉES — TOUT CE QUI LES LIRAIT ENCORE S'ARRÊTERAIT FIN
+  2026** (30/09/2026, ligne 25.5 de la feuille de route). Les clés `anon` et `service_role` étaient des
+  jetons signés du secret JWT du projet, et Supabase les coupe à la fin de 2026 (guide « Migrating to
+  publishable and secret API keys ») : ce jour-là, tout ce qui les lit encore s'arrête d'un coup, sans
+  qu'aucun écran ne dise pourquoi — la panne totale, datée d'avance. Le passage est fait des deux côtés,
+  et un test empêche d'en revenir.
+  **Le navigateur** lit `VITE_SUPABASE_PUBLISHABLE_KEY` (`sb_publishable_…`), dans `.env.production`
+  suivi par Git — ce n'est pas un secret, la RLS protège —, et `lib/clePublique.ts` refuse de démarrer
+  sur une clé absente, sur une clé SECRÈTE (`sb_secret_…` ouvrirait la base entière, RLS contournée ; le
+  message ne cite jamais la clé) et sur toute autre forme, l'ancienne `anon` comprise.
+  **Les quinze Edge Functions** lisent `SUPABASE_PUBLISHABLE_KEYS` et `SUPABASE_SECRET_KEYS`, deux objets
+  JSON « nom → clé » dont on prend la clé `default`, par un bloc `cleSupabase` copié à l'identique entre
+  les bornes `── DÉBUT/FIN CLÉS SUPABASE`. Une variable absente, illisible ou sans clé de la bonne forme
+  LÈVE en la nommant, au lieu de faire refuser chaque requête pour une raison que personne ne lirait.
+  `clesSupabase.test.ts` garde quatre choses, dont aucune ne suffit seule : plus aucune fonction ne lit
+  `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY` — la plateforme les pose encore, donc une lecture
+  ajoutée demain MARCHERAIT, jusqu'à la coupure — ; chaque lecture passe par le bloc, identique partout ;
+  le bloc, extrait de la vraie source et transpilé, dit vrai quand on l'exécute ; et aucun fichier suivi
+  ne porte une clé historique ni une clé secrète — le dépôt est PUBLIC. `variablesEnvironnement.test.ts`
+  et le plan de reprise (§3 : où créer ces clés sur un projet neuf) suivent.
+  **`verify_jwt` NE SAIT LIRE QUE LES ANCIENNES CLÉS, qui étaient des jetons**, et la passerelle des
+  fonctions refuse une nouvelle clé présentée en `Authorization: Bearer` (« Invalid JWT ») — le guide le
+  dit. Deux fonctions sont donc passées à `false`, avec un contrôle dans leur code : `extract-piece`, que
+  `receive-email` appelle de serveur à serveur avec la clé SECRÈTE dans l'en-tête `apikey` et lui seul,
+  comparée à temps constant avant toute dépense (`appelantAutorise`) ; et `evaluer-extraction`, qui
+  demande la clé publishable dans `apikey` — la porte d'avant, ni plus large ni plus étroite. Les quatre
+  restées à `true` (`banque-connexion`, `proposer-categorie`, `superpdp-emit`, `taux-change-bce`) ne sont
+  appelées qu'avec la session d'un opérateur, un jeton que la passerelle lit tant que le projet signe ses
+  sessions avec son secret JWT : passer aux clés de signature asymétriques est une AUTRE migration,
+  indépendante, qui reposera la question pour ces quatre-là. Et supabase-js 2.112 n'envoie jamais la clé
+  publishable en `Bearer` à une fonction (`omitApiKeyAsBearer`, vérifié dans sa source).
+  **MESURÉ EN PRODUCTION, pas supposé.** La question « cles » d'`evaluer-extraction`, gratuite — ni
+  modèle ni Textract —, interroge la plateforme par supabase-js, comme les fonctions : la clé publishable
+  lit la base sans session ; la clé secrète la lit aussi ; l'administration des comptes lui répond
+  « introuvable » pour un compte qui n'existe pas, preuve qu'elle y est admise sans lire aucun compte
+  réel ; et la clé secrète, dans le seul en-tête `apikey`, atteint `extract-piece`, qui répond « Fichier
+  vide. » à un corps vide AVANT de construire le moindre client AWS — le chemin de `receive-email`,
+  qu'aucun test ne voit, éprouvé sans rien lire ni facturer. Quatre « acceptée ». Deux appels à la main
+  y ajoutent le navigateur avant connexion, la clé publishable en `apikey` ET en `Bearer` comme
+  supabase-js l'envoie alors : 200 sur `/auth/v1/settings`, `[]` en 200 sur une lecture sans session.
+  **LES QUINZE SONT EN PRODUCTION**, chacune comparée à la version en place AVANT écrasement, déployée
+  avec le `verify_jwt` de `config.toml` passé explicitement — relu ensuite dans `list_edge_functions` :
+  onze `false`, quatre `true`, les mêmes —, rejouée par aller-retour sans différence, et appelée sans
+  session pour voir le refus de la fonction ou de la passerelle. Aucun appel au modèle ni à Textract.
+  Les allers-retours ont trouvé deux défauts du script lui-même et une faute de transcription reproduite
+  à l'identique : voir « un déploiement se vérifie, il ne se relit pas ».
+  **Les journaux de la passerelle disent qui utilise encore les anciennes clés** (`query_logs`, source
+  `edge_logs`, champ `request.sb.jwt.apikey.payload.role`, rempli seulement quand la clé `apikey` est un
+  jeton) : le 30/09/2026, plus aucune fonction ; seul le navigateur, avec le site d'avant. Côté base,
+  rien : ni tâche planifiée (pas de schéma `cron`), ni webhook de base (pas de schéma
+  `supabase_functions`), ni fonction ou déclencheur qui appelle le réseau — les huit réponses que garde
+  `pg_net` datent d'essais faits à la main le 18/09/2026.
+  **Quarante et une mutations, toutes mordent** : trente-deux sur les clés (le préfixe non vérifié, les
+  préfixes inversés, le message qui cite la clé, une copie qui diffère, une clé historique relue, la
+  clé secrète admise en `Bearer`, la comparaison qui s'arrête au premier octet faux, `extract-piece`
+  remise à `verify_jwt = true`, le navigateur qui admet une clé secrète ou l'ancienne `anon`…) et neuf
+  sur la sonde (un compte rendu pris pour une clé admise, un autre 400 pris pour « Fichier vide. », une
+  sonde qui rendrait une clé…).
+  **CE QUI RESTE, et c'est un clic du cabinet** : désactiver les anciennes clés (Settings → API Keys,
+  réversible), une fois le nouveau site en ligne et les fenêtres ouvertes rechargées — une fenêtre
+  ouverte avant le déploiement garde l'ancien paquet en mémoire ; l'application installée, elle, n'a pas
+  de service worker et recharge le site à chaque ouverture. Les journaux de la passerelle, relus après,
+  doivent ne plus montrer aucune requête `anon` ni `service_role`.
 - **DEUX GARDES PARTAIENT D'UNE LISTE, ET LA QUATRIÈME FONCTION QUI PARLE À AWS EST ARRIVÉE SANS
   EUX** (26/09/2026). Posée dans le dépôt, `proposer-categorie` n'a fait tomber que les deux gardes
   qui balaient `supabase/functions/` — `config.toml` et la colonne « Lue par » du plan de reprise.
@@ -3767,14 +3855,28 @@ d'environnement dans la même édition.
   les lignes retransmises sont arrivées au caractère près — fait le 21/09/2026 sur les versions 43
   puis 45 (1 278 lignes, 6 échappements décodés, zéro différence).
   **ET IL N'EST PLUS UNE RECETTE À REFAIRE DE MÉMOIRE : c'est `supabase/essais/allerretour.py`**
-  (21/09/2026), rejoué d'une commande — `python3 supabase/essais/allerretour.py <id> <chemin>
-  [marqueur]`. Il retrouve le journal de la session en cours tout seul, applique le décodage
-  `\uXXXX` à la source du dépôt et rend « zéro différence résiduelle sur N lignes ». Le `marqueur`
-  facultatif est ce qui l'empêche de mentir : **sans lui, le journal porte encore les lectures
-  ANTÉRIEURES de la même fonction**, et l'aller-retour comparerait le dépôt à la version qu'on vient
-  de remplacer — vert pour une raison fausse. Lui aussi est éprouvé par mutation (une ligne changée,
-  un accent changé, un marqueur introuvable : les trois virent au rouge), parce qu'un harnais qui
-  ment est pire qu'un harnais absent.
+  (21/09/2026), rejoué d'une commande — `python3 supabase/essais/allerretour.py <slug-ou-id>
+  <chemin> [marqueur]`. Il retrouve le journal de la session en cours tout seul, applique le décodage
+  `\uXXXX` à la source du dépôt et rend « zéro différence résiduelle sur N lignes ». Lui aussi est
+  éprouvé par mutation (une ligne changée, un accent changé, un marqueur introuvable : les trois
+  virent au rouge), parce qu'un harnais qui ment est pire qu'un harnais absent.
+  **ET IL MENTAIT DE DEUX FAÇONS, corrigées le 30/09/2026 en déployant les quinze fonctions sur les
+  nouvelles clés.** Il retenait la lecture la plus LONGUE du journal, qui porte aussi celles d'avant
+  l'écrasement : faux dès qu'une version raccourcit — rouge sur un fichier dont on retire des lignes,
+  VERT sur une transcription fautive plus courte que la lecture juste qui la précède (ce jour-là, deux
+  redéploiements de `receive-email` avaient perdu quatre traits d'une bordure). Il retient désormais
+  la plus RÉCENTE, et un journal synthétique dont la nouvelle version est plus courte le prouve
+  (l'ancienne version rend un diff, la nouvelle zéro). Et il ne suivait pas un résultat ÉCRIT SUR
+  DISQUE faute de place : il rendait « INTROUVABLE » sur `extract-piece` et `agent-comptable`, les
+  deux transcriptions les plus longues. Il suit désormais le chemin donné (« saved to … », un `.txt`
+  ou un `.json` fait de blocs de texte). Le `marqueur` reste utile pour refuser une lecture faite
+  AVANT le déploiement quand aucune n'a été faite après.
+  **CE QUI SE TRANSCRIT MAL, MESURÉ LE MÊME JOUR : les bordures de commentaire.** Les longues suites de
+  `─` (73, 75, 78 traits…) sont les seules lignes à avoir échoué sur les quinze fonctions — deux
+  déploiements de `superpdp-sync`, deux de `receive-email`, et le second de `receive-email` a reproduit
+  la même erreur à l'identique, même empreinte `ezbr_sha256` comprise : redéployer n'est pas corriger
+  tant que l'aller-retour ne l'a pas dit. Les compter AVANT de transcrire (un script qui imprime
+  chaque bordure par groupes de dix) et les écrire par groupes de cinq a suffi.
   **ET IL NE COÛTE RIEN : IL SE FAIT ENTIÈREMENT EN BASH.** C'est ce qui décide qu'on le fera
   vraiment à chaque fois, parce qu'une vérification chère finit par se sauter — et une
   vérification qu'on saute vaut exactement zéro. Deux chemins, aucun ne demande de retranscrire
@@ -5523,6 +5625,15 @@ d'environnement dans la même édition.
   explicitement, la version 2 comparée à `main` avant écrasement (identique, 861 lignes), aller-retour
   après : zéro différence résiduelle sur 883 lignes. Sans jeton la passerelle refuse ; avec la seule clé
   publique, la fonction démarre et rend son 401. Aucun appel au prestataire pour le vérifier.
+  **ET L'ESSAI D'APRÈS A IMPORTÉ, PAR LE RENOUVELLEMENT** (30/09/2026, vers 12 h 10 UTC). Le journal de la
+  fonction, qui compte sans citer, montre un dernier refus 422, puis « 7 compte(s) ouvert(s), compte
+  repris : oui » — le compte choisi retrouvé à son empreinte (`identification_hash`) d'une session à
+  l'autre, sans avoir à le rechoisir —, puis une lecture complète de 44 mouvements en trois pages. Mesuré
+  en base, en comptes seulement : 44 mouvements entrés au relevé du dossier `test` (385 → 429 lignes), 44
+  identifiants externes distincts, tous « à traiter » (aucune règle « toujours ignorer » ne les couvrait),
+  datés du 08/06/2026 au 15/09/2026 — plus de 90 jours en arrière, ce que seule la lecture qui suit un
+  accord permet —, et `derniere_recuperation` posée. Le chemin du renouvellement, que les tests seuls
+  couvraient, est ainsi éprouvé en production.
 - **UN RETOUR SUR L'ONGLET RECHARGEAIT L'APPLICATION ENTIÈRE, ET EFFAÇAIT CE QUI ÉTAIT AFFICHÉ OU SAISI**
   (trouvé le 30/09/2026 par le premier essai de la connexion bancaire, corrigé le jour même). Supabase
   renvoie une COPIE neuve de la session chaque fois que l'onglet redevient visible — un « SIGNED_IN » émis
@@ -6807,7 +6918,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2998 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3037 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -6831,8 +6942,8 @@ affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent c
 (`echeanceEmprunt.ts`), et celles d'un mouvement ventilé sur plusieurs comptes
 (`ventilationBanque.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`),
 et ce que la connexion bancaire décide sans rien appeler — la période proposée, ce qui s'importe
-vraiment (`connexionBancaire.ts`) —
-les fichiers `*.test.ts` sont
+vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le navigateur accepte
+(`clePublique.ts`). Les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
 **Deux projets Vitest, et la séparation porte une règle** (`vitest.config.ts`) : « logique »
@@ -6935,6 +7046,11 @@ n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que
   les sept MUTATIONS mordent toujours. Ce n'est pas automatisé : la CI n'a pas
   d'accès à la base.
 - Toute nouvelle Edge Function reste auto-porteuse (pas d'import `src/`).
+- Toute Edge Function lit les clés de Supabase par le bloc `cleSupabase`, copié à l'identique —
+  jamais `SUPABASE_ANON_KEY` ni `SUPABASE_SERVICE_ROLE_KEY`, que Supabase coupe à la fin de 2026 et
+  que `clesSupabase.test.ts` refuse. Une nouvelle clé ne voyage que dans l'en-tête `apikey` : une
+  fonction appelée sans session d'utilisateur passe donc à `verify_jwt = false`, avec son propre
+  contrôle avant toute dépense.
 - Tout déploiement d'Edge Function passe `verify_jwt` EXPLICITEMENT, à la valeur que porte
   `supabase/config.toml` pour cette fonction, après avoir vérifié que `list_edge_functions` rend la
   même : le paramètre a `true` pour défaut et REMPLACE la valeur en place quand on l'omet. Sur

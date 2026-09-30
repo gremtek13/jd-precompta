@@ -39,13 +39,19 @@ verify_jwt = false
 [functions.delete-cabinet]
 verify_jwt = false
 
+# Le harnais de mesure : `false` depuis le 30/09/2026, parce que la passerelle ne sait vérifier que
+# les clés historiques, qui étaient des jetons. La fonction demande elle-même la clé publishable
+# dans `apikey` — la porte d'avant, ni plus large ni plus étroite — et sa fenêtre datée ferme la
+# dépense.
 [functions.evaluer-extraction]
-verify_jwt = true
+verify_jwt = false
 
-# Appelée aussi par `receive-email`, avec la clé de service en `Authorization` : `true` passe parce
-# que cette clé est un jeton signé du projet.
+# Appelée aussi par `receive-email`, qui n'a pas de session et présente la clé SECRÈTE dans `apikey` :
+# ce n'est pas un jeton, donc `true` ferait refuser à la passerelle chaque lecture d'une pièce jointe
+# reçue par e-mail, sans un log de la fonction. Le contrôle d'appelant de la fonction est la seule
+# barrière, et il précède toute dépense (voir `appelantAutorise`).
 [functions.extract-piece]
-verify_jwt = true
+verify_jwt = false
 
 # Appelée par la fiche d'une pièce, avec la session de l'opérateur ; la fonction vérifie ensuite
 # qu'il administre le dossier de la pièce. Aucun appelant sans jeton : `true` ne coupe rien.

@@ -164,12 +164,20 @@ gardés ; la présence des VALEURS se vérifie à la main, au moment de la repri
 | `RESEND_API_KEY` | `receive-email`, `send-email` | Clé d'API Resend. Absente, plus aucun e-mail ne part, et aucun n'est accepté à l'arrivée. |
 | `RESEND_WEBHOOK_SECRET` | `receive-email` | Secret de signature du webhook de réception (`whsec_…`) — il change quand le webhook est recréé, voir le point 4. |
 
-**Fournies par Supabase**, rien à poser : `SUPABASE_URL`, `SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY`.
+**Fournies par Supabase**, rien à poser : `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEYS`,
+`SUPABASE_SECRET_KEYS`. Les deux dernières sont des objets JSON « nom → clé » : les fonctions se
+servent de la clé nommée `default`. Elles n'existent que si le projet a ses clés publishable et
+secrète — Settings → API Keys, onglet « Publishable and secret API keys », bouton « Create new API
+keys » s'il apparaît. Un projet sans elles fait lever chaque fonction, en nommant la variable
+absente ; la question « cles » d'`evaluer-extraction` le vérifie sans rien facturer. Les clés
+historiques (anon, service_role) ne servent plus depuis le 30/09/2026 : elles cessent de fonctionner à
+la fin de 2026.
 
-**Côté application web** : `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`. Elles vivent dans
-`.env.production`, suivi par Git — la clé publique n'est pas un secret, c'est la RLS qui protège. Le
-build les ÉCRIT dans l'application : un projet recréé change les deux, et une application qui n'a pas
-été reconstruite continue de parler à l'ancien (§4, étape 9).
+**Côté application web** : `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`. Elles vivent dans
+`.env.production`, suivi par Git — la clé publishable (`sb_publishable_…`) n'est pas un secret, c'est
+la RLS qui protège ; l'application refuse de démarrer sur une autre forme de clé. Le build les ÉCRIT
+dans l'application : un projet recréé change les deux, et une application qui n'a pas été reconstruite
+continue de parler à l'ancien (§4, étape 9).
 
 <!-- FIN DE L'INVENTAIRE -->
 
@@ -211,7 +219,7 @@ incompréhensible trois étapes plus loin.
 8. **Les Edge Functions** — redéployer depuis `supabase/functions/` via l'outil MCP, chacune avec
    le `verify_jwt` que porte `supabase/config.toml`. L'outil met `true` quand on omet ce paramètre,
    et `receive-email` refuserait alors tous les e-mails entrants à la passerelle, sans un log.
-9. **L'application web** — remplacer dans `.env.production` l'URL et la clé publique du nouveau
+9. **L'application web** — remplacer dans `.env.production` l'URL et la clé publishable du nouveau
    projet, puis pousser sur `main` : c'est le build qui les écrit dans l'application (inventaire du
    §3). Tant que ce n'est pas fait, l'application en ligne parle à l'ancien projet — ou à rien.
 
