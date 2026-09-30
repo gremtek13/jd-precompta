@@ -38,9 +38,10 @@ export interface LigneDeclaration {
   montant: number
   // Nombre de pièces derrière ce total, pour que le montant se justifie d'un clic.
   nbPieces: number
-  // Et de mouvements bancaires comptés sans justificatif — affectés à une catégorie, ou échéances
-  // d'emprunt (voir lib/partsDuReleve.ts) : leur preuve est le relevé, et les compter avec les pièces
-  // ferait chercher des pièces qui n'existent pas.
+  // Et de mouvements bancaires comptés sans justificatif — affectés à une catégorie, échéances d'emprunt
+  // ou mouvements ventilés (voir lib/partsDuReleve.ts) : leur preuve est le relevé, et les compter avec
+  // les pièces ferait chercher des pièces qui n'existent pas. Un mouvement, pas une part : ventilé sur
+  // deux catégories du même poste, il compte une fois.
   nbMouvements: number
 }
 
@@ -291,17 +292,20 @@ export function calculerDeclaration2035(
   }
   const sansPaiementConnu: PieceSansPaiement[] = []
   const paiements = paiementsParPiece(lignesBancaires)
-  const totaux = new Map<string, { nature: 'recette' | 'depense'; montant: number; nbPieces: number; nbMouvements: number }>()
+  // Les mouvements d'un poste se comptent par IDENTIFIANT, pas par part : un mouvement ventilé sur deux
+  // catégories du même poste (lib/ventilationBanque.ts) y apporte deux parts, et reste UN mouvement à
+  // retrouver sur le relevé.
+  const totaux = new Map<string, { nature: 'recette' | 'depense'; montant: number; nbPieces: number; mouvements: Set<string> }>()
 
-  const ajouter = (poste: string, nature: 'recette' | 'depense', montant: number, nbPieces: number, nbMouvements = 0) => {
-    const actuel = totaux.get(poste)
-    if (actuel) {
-      actuel.montant += montant
-      actuel.nbPieces += nbPieces
-      actuel.nbMouvements += nbMouvements
-      return
+  const ajouter = (poste: string, nature: 'recette' | 'depense', montant: number, nbPieces: number, mouvementId: string | null = null) => {
+    let actuel = totaux.get(poste)
+    if (!actuel) {
+      actuel = { nature, montant: 0, nbPieces: 0, mouvements: new Set() }
+      totaux.set(poste, actuel)
     }
-    totaux.set(poste, { nature, montant, nbPieces, nbMouvements })
+    actuel.montant += montant
+    actuel.nbPieces += nbPieces
+    if (mouvementId) actuel.mouvements.add(mouvementId)
   }
 
   for (const piece of pieces) {
@@ -360,7 +364,7 @@ export function calculerDeclaration2035(
       exclusions.mouvementsSansPoste.push(p)
       continue
     }
-    ajouter(p.poste, p.nature, p.montantPoste, 0, 1)
+    ajouter(p.poste, p.nature, p.montantPoste, 0, p.ligne.id)
   }
 
   const totalAmortissements = immobilisations.reduce((somme, i) => somme + dotationPourAnnee(i, annee), 0)
@@ -404,7 +408,7 @@ export function calculerDeclaration2035(
     nature: t.nature,
     montant: arrondi(Math.abs(t.montant)),
     nbPieces: t.nbPieces,
-    nbMouvements: t.nbMouvements,
+    nbMouvements: t.mouvements.size,
   }))
 
   const recettes = lignes.filter((l) => l.nature === 'recette').sort((a, b) => b.montant - a.montant)

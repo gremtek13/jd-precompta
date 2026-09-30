@@ -339,7 +339,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
   const mouvement = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id, dossier_id: 'd1', date: '2026-03-12', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c-recettes', prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     source_fichier: 'releve-mars-2026.pdf', libelle_brut: null, created_at: '2026-03-13T00:00:00Z', ...o,
   })
   const cpam = mouvement('l-cpam')
@@ -428,6 +428,28 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     // Le garde symétrique : une fois le rapprochement retiré, la même écriture n'a plus de justificatif.
     const retire = { ...pret, statut: 'non_rapprochee' as const, emprunt_id: null }
     expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [retire])).slice(1)).toEqual([])
+  })
+
+  it('porte de même un mouvement ventilé, une ligne par part face à la banque', () => {
+    // lib/ventilationBanque.ts : l'abonnement pris en charge à 70 %, la part personnelle sur le compte de
+    // l'exploitant. Une écriture, le relevé pour pièce.
+    const telephone = mouvement('l-tel', {
+      date: '2026-03-15', montant: -120, libelle: 'PRLV OPERATEUR', categorie_id: null, ventilee: true,
+    })
+    const ecritures = [
+      ligne('', { id: 't1', piece_id: null, ligne_bancaire_id: 'l-tel', compte: '626000', sens: 'debit', montant: 84, date: '2026-03-15', libelle: 'PRLV OPERATEUR' }),
+      ligne('', { id: 't2', piece_id: null, ligne_bancaire_id: 'l-tel', compte: '108000', sens: 'debit', montant: 36, date: '2026-03-15', libelle: 'PRLV OPERATEUR' }),
+      ligne('', { id: 't3', piece_id: null, ligne_bancaire_id: 'l-tel', compte: COMPTE_BANQUE, sens: 'credit', montant: 120, date: '2026-03-15', libelle: 'PRLV OPERATEUR' }),
+    ]
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [telephone])).slice(1)
+    expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[8], r[11], r[12]])).toEqual([
+      ['BQ', 'BQ00001', '20260315', '626000', 'releve-mars-2026.pdf', '84,00', '0,00'],
+      ['BQ', 'BQ00001', '20260315', '108000', 'releve-mars-2026.pdf', '36,00', '0,00'],
+      ['BQ', 'BQ00001', '20260315', COMPTE_BANQUE, 'releve-mars-2026.pdf', '0,00', '120,00'],
+    ])
+    // Le garde symétrique : la ventilation annulée, la même écriture n'a plus de justificatif.
+    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false }
+    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule])).slice(1)).toEqual([])
   })
 
   it('les équilibre, une écriture après l’autre', () => {

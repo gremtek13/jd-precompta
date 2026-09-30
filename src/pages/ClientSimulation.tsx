@@ -4,7 +4,9 @@ import { useAuth } from '../context/AuthContext'
 import { aujourdHuiSql, formatMoney } from '../lib/format'
 import { ecartPct, projectionAnnuelle } from '../lib/estimation'
 import { partsDuReleve } from '../lib/partsDuReleve'
-import type { Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../lib/types'
+import type {
+  Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel, VentilationBancaire,
+} from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { messageErreur } from '../lib/messageErreur'
@@ -31,6 +33,10 @@ export default function ClientSimulation() {
   // encaissements de l'Assurance maladie sans bordereau, que l'Estimation du cabinet compte aussi. La
   // simulation n'en montre rien d'autre que le total — le client ne voit pas les catégories.
   const [categories, setCategories] = useState<Categorie[]>([])
+  // Les parts des mouvements VENTILÉS sur plusieurs comptes (lib/ventilationBanque.ts) : une remise de
+  // carte bancaire en recette brute et commission, que l'Estimation du cabinet compte aussi. Le client
+  // les lit — sa policy le lui permet sur ses dossiers — et n'en voit que le total.
+  const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
   const [referencesPostes, setReferencesPostes] = useState<ReferencePosteAnnuel[]>([])
   // Décide du montant de chaque recette, comme dans l'Estimation du cabinet : TVA comprise pour un
@@ -44,7 +50,7 @@ export default function ClientSimulation() {
   useEffect(() => {
     if (!dossierId) return
     async function load() {
-      const [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier, lecturePaiements, lectureCategories] = await Promise.all([
+      const [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier, lecturePaiements, lectureCategories, lectureVentilations] = await Promise.all([
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -76,11 +82,16 @@ export default function ClientSimulation() {
           supabase.from('categories').select('*', { count: 'exact' })
             .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
         ),
+        lireTout<VentilationBancaire>((debut, fin) =>
+          supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        ),
       ])
       setCotisations(lectureCotisations.lignes)
       setRecettesValidees(lectureRecettes.lignes)
       setPaiements(lecturePaiements.lignes)
       setCategories(lectureCategories.lignes)
+      setVentilations(lectureVentilations.lignes)
       setReferences(lectureReferences.lignes)
       setReferencesPostes(lectureReferencesPostes.lignes)
       setReferencesIncompletes(!lectureReferences.complete)
@@ -95,7 +106,7 @@ export default function ClientSimulation() {
         ? messageErreur(lectureDossier.error, 'lecture refusée')
         : lectureDossier.data ? null : 'dossier introuvable'
       setLectureIncomplete(
-        [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lecturePaiements, lectureCategories]
+        [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lecturePaiements, lectureCategories, lectureVentilations]
           .find((l) => !l.complete)?.motif ?? motifDossier,
       )
       setLoading(false)
@@ -111,7 +122,7 @@ export default function ClientSimulation() {
   // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
   const projection = projectionAnnuelle(
-    recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, partsDuReleve(paiements, categories),
+    recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, partsDuReleve(paiements, categories, ventilations),
   )
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 

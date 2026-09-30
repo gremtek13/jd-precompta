@@ -24,7 +24,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
     id: 'l1', date: '2025-02-06', libelle: 'PRLV ECHEANCE PRET', libelle_brut: null, montant: -540,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
     source_fichier: 'releve-fevrier.csv', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
-    emprunt_assurance: null, ...o,
+    emprunt_assurance: null, ventilee: false, ...o,
   }
 }
 
@@ -70,15 +70,16 @@ describe('les comptes et les postes de l’échéance', () => {
 })
 
 describe('refusEcheanceEmprunt — dit avant d’écrire ce que la base refuserait', () => {
-  it('un mouvement rapproché d’une pièce ou d’une cotisation, affecté ou personnel', () => {
+  it('un mouvement rapproché d’une pièce ou d’une cotisation, affecté, ventilé ou personnel', () => {
     for (const o of [
       { statut: 'rapprochee' as const, piece_id: 'p1' },
       { statut: 'rapprochee' as const, cotisation_id: 'c1' },
       { statut: 'rapprochee' as const, categorie_id: 'cat-frais' },
+      { statut: 'rapprochee' as const, ventilee: true },
       { statut: 'ignoree' as const, prelevement_personnel: true },
     ]) {
       expect(refusEcheanceEmprunt(mouvement(o)))
-        .toBe('Ce mouvement est rapproché d’une pièce ou d’une cotisation, affecté à une catégorie ou classé en virement personnel : annule d’abord ce classement.')
+        .toBe('Ce mouvement est rapproché d’une pièce ou d’une cotisation, affecté à une catégorie, ventilé sur plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.')
     }
   })
 
@@ -345,7 +346,7 @@ describe('partsDesEcheances — ce que la 2035 compte d’une échéance', () =>
     const parts = partsDuReleve([
       mouvement({ id: 'frais', statut: 'rapprochee', categorie_id: 'cat-frais', montant: -8.5 }),
       rapproche({ id: 'pret' }),
-    ], [categorie])
+    ], [categorie], [])
     expect(parts.map((p) => [p.origine, p.ligne.id, p.libelle, p.poste, p.nature, p.montantPoste])).toEqual([
       ['affectation', 'frais', 'Frais bancaires', 'Frais financiers', 'depense', 8.5],
       ['emprunt', 'pret', LIBELLE_INTERETS_EMPRUNT, POSTE_INTERETS_EMPRUNT, 'depense', 36],

@@ -425,7 +425,7 @@ describe('moisEnDoubleSurAbonnement', () => {
 const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
   montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-03-10T00:00:00Z', ...o,
 })
@@ -480,6 +480,14 @@ describe('mouvementsRapprochesSansObjet', () => {
     // échéance, et il n’est pas orphelin. Le signaler ferait crier au loup sur chaque encaissement.
     expect(mouvementsRapprochesSansObjet([
       ligne({ id: 'cpam', piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', montant: 250 }),
+    ])).toEqual([])
+  })
+
+  it('se tait sur un mouvement ventilé sur plusieurs comptes : ses parts sont ailleurs', () => {
+    // lib/ventilationBanque.ts : rapproché sans pièce, ni échéance, ni catégorie sur la ligne — ses parts
+    // vivent dans `ventilations_bancaires`. Sans cette clause, chaque ventilation ressortirait en rouge.
+    expect(mouvementsRapprochesSansObjet([
+      ligne({ id: 'telephone', piece_id: null, cotisation_id: null, ventilee: true }),
     ])).toEqual([])
   })
 

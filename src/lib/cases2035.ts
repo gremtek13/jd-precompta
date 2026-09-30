@@ -264,6 +264,9 @@ export interface CaseRemplie {
   // rien qu'avec les catégories par défaut) : les nommer, c'est pouvoir justifier la case d'un clic.
   postes: string[]
   nbPieces: number
+  // La SOMME des mouvements de ses postes : un mouvement ventilé sur deux postes d'une même case y compte
+  // deux fois — les postes ne portent qu'un nombre, pas les mouvements eux-mêmes. Aucun écran ne
+  // l'affiche aujourd'hui ; le jour où l'un le fera, c'est ici qu'il faudra porter les identifiants.
   nbMouvements: number
 }
 

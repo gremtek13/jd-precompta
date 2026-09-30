@@ -13,7 +13,9 @@ import { ecartAvecBanque, type EcartBanque } from './alignementBanque'
 // compte de charge ou de produit au moment de l'affectation, mais il peut être retiré ensuite : le
 // mouvement sort alors de la 2035 et son écriture n'est plus juste. `mouvements` est obligatoire —
 // l'oublier ferait taire ce point sur un dossier dont les recettes ne sont QUE des virements.
-// N'importe quelles lignes du relevé : seule une ligne affectée porte une catégorie.
+// N'importe quelles lignes du relevé : seule une ligne affectée porte une catégorie. Les PARTS d'un
+// mouvement ventilé (lib/ventilationBanque.ts) portent elles aussi `categorie_id` : l'appelant les passe
+// avec les mouvements, `[...lignes, ...ventilations]`.
 export function categoriesSansCompte(
   categories: Categorie[], pieces: Piece[], mouvements: readonly Pick<LigneBancaire, 'categorie_id'>[],
 ): Categorie[] {
@@ -377,10 +379,15 @@ export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonn
 // écriture celle de son découpage, et sa clé est sans action — un emprunt dont une échéance est
 // rapprochée ne se supprime pas. Sans cette clause, chaque échéance rapprochée ressortait « rapprochée
 // sans justificatif », en rouge, dans Banque et dans la Checklist.
+//
+// UN MOUVEMENT VENTILÉ (lib/ventilationBanque.ts) non plus, pour la même raison : sa preuve est le
+// relevé, ses parts vivent dans leur propre table, et la catégorie d'une part ne se supprime pas (clé
+// sans action). Un écart entre le drapeau et ses parts, lui, est dit par `ventilationsIncoherentes`.
 export function mouvementRapprocheSansObjet(
-  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id'>,
+  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'ventilee'>,
 ): boolean {
   return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id && !ligne.categorie_id && !ligne.emprunt_id
+    && !ligne.ventilee
 }
 
 // Ce que TOUTE suppression d'une pièce ou d'une échéance de cotisation fait au rapprochement qui

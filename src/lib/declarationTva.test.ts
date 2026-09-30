@@ -29,7 +29,7 @@ function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'd1', date: '2027-02-20', libelle: 'VIR CLIENT', montant: 1200,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     source_fichier: null, libelle_brut: null, created_at: '2027-02-21T09:00:00Z', ...o,
   }
 }

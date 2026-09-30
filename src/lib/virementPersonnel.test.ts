@@ -13,7 +13,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
     id: 'l1', date: '2025-03-12', libelle: 'VIR PERSONNEL', libelle_brut: null, montant: -500,
     statut: 'ignoree', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: true,
-    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
     ...o,
   }
 }
@@ -41,10 +41,13 @@ describe('compteDuDirigeant — lu dans le modèle du dossier', () => {
 })
 
 describe('refusVirementPersonnel — dit avant d’écrire ce que la base refuserait', () => {
-  it('un mouvement rapproché d’une pièce, d’une cotisation, d’un emprunt, ou affecté à une catégorie', () => {
-    for (const o of [{ piece_id: 'p1' }, { cotisation_id: 'c1' }, { categorie_id: 'cat-frais' }, { emprunt_id: 'emp1', emprunt_echeance: 1 }]) {
+  it('un mouvement rapproché d’une pièce, d’une cotisation, d’un emprunt, affecté à une catégorie ou ventilé', () => {
+    for (const o of [
+      { piece_id: 'p1' }, { cotisation_id: 'c1' }, { categorie_id: 'cat-frais' }, { emprunt_id: 'emp1', emprunt_echeance: 1 },
+      { ventilee: true },
+    ]) {
       expect(refusVirementPersonnel(mouvement({ statut: 'rapprochee', prelevement_personnel: false, ...o })))
-        .toBe('Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, ou affecté à une catégorie : annule d’abord ce classement.')
+        .toBe('Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, affecté à une catégorie ou ventilé sur plusieurs comptes : annule d’abord ce classement.')
     }
   })
 

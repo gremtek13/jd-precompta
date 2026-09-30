@@ -4,7 +4,9 @@ import { aujourdHuiSql, formatMoney } from '../../lib/format'
 import { extractPiece } from '../../lib/extraction'
 import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from '../../lib/estimation'
 import { partsDuReleve } from '../../lib/partsDuReleve'
-import type { Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel } from '../../lib/types'
+import type {
+  Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel, VentilationBancaire,
+} from '../../lib/types'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { messageErreur } from '../../lib/messageErreur'
@@ -32,6 +34,8 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   // Les mouvements rapprochés, qui DATENT chaque pièce comme dans la 2035 (lib/rattachement.ts).
   const [paiements, setPaiements] = useState<LigneBancaire[]>([])
+  // Les parts des mouvements ventilés (lib/ventilationBanque.ts), que l'estimation compte comme la 2035.
+  const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
   const [references, setReferences] = useState<ReferenceAnnuelle[]>([])
@@ -74,6 +78,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
       lectureReferences,
       lectureReferencesPostes,
       lecturePaiements,
+      lectureVentilations,
     ] = await Promise.all([
       lireTout<CotisationDeclaree>((debut, fin) =>
         supabase.from('cotisations_declarees').select('*', { count: 'exact' })
@@ -115,21 +120,28 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
           .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
           .order('id').range(debut, fin),
       ),
+      // Les parts des mouvements VENTILÉS sur plusieurs comptes : elles vivent dans leur propre table.
+      lireTout<VentilationBancaire>((debut, fin) =>
+        supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     setCotisations(lectureCotisations.lignes)
     setRecettesValidees(lectureRecettes.lignes)
     setPiecesValidees(lecturePieces.lignes)
     setPaiements(lecturePaiements.lignes)
-    // Les HUIT collections qui entrent dans l'estimation, pas seulement les pièces : les catégories
+    setVentilations(lectureVentilations.lignes)
+    // Les NEUF collections qui entrent dans l'estimation, pas seulement les pièces : les catégories
     // décident du poste 2035 de chaque dépense, les immobilisations de quelles pièces n'en sont pas
     // une, les cotisations et les références de l'assiette. Tronquée, n'importe laquelle rend une
     // estimation plausible et BASSE — ce que le bandeau nomme déjà comme « l'air d'une bonne nouvelle ».
     // Les paiements aussi : tronqués, ils font retomber sur leur date de facture des pièces réglées
-    // une autre année, donc les comptent dans la mauvaise.
+    // une autre année, donc les comptent dans la mauvaise. Et les parts ventilées : tronquées, elles
+    // retirent de l'estimation ce qu'elles y mettent.
     setLectureIncomplete(
       [
         lectureCotisations, lectureRecettes, lecturePieces, lectureCategories, lectureImmobilisations,
-        lectureReferences, lectureReferencesPostes, lecturePaiements,
+        lectureReferences, lectureReferencesPostes, lecturePaiements, lectureVentilations,
       ].find((l) => !l.complete)?.motif ?? null,
     )
     setCategories(lectureCategories.lignes)
@@ -147,7 +159,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
   // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
-  const parts = partsDuReleve(paiements, categories)
+  const parts = partsDuReleve(paiements, categories, ventilations)
   const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
