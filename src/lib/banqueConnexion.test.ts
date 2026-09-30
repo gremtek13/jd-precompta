@@ -399,10 +399,12 @@ const R = executer<{
   aujourdHuiCabinet: (maintenant: Date) => string
   refusPeriode: (du: unknown, au: unknown, aujourdHui: string) => string | null
   messageDuPrestataire: (donnees: unknown) => string | null
+  periodeRefusee: (statut: number, donnees: unknown) => boolean
+  PERIODE_REFUSEE: string
   banquesDeLaListe: (donnees: unknown) => { nom: string; pays: string; types_acces: string[]; accord_jours: number | null }[]
   vuePublique: (c: Record<string, unknown> | null) => Record<string, unknown> | null
 }>(bloc('RÈGLES'), ['comptesDeLaSession', 'comptesGardes', 'finAccordDemandee', 'aujourdHuiCabinet', 'refusPeriode',
-  'messageDuPrestataire', 'banquesDeLaListe', 'vuePublique'])
+  'messageDuPrestataire', 'periodeRefusee', 'PERIODE_REFUSEE', 'banquesDeLaListe', 'vuePublique'])
 
 const JOUR_S = 86_400
 
@@ -492,6 +494,19 @@ describe('banque-connexion — ce que disent le prestataire et la liste des banq
     expect(R.messageDuPrestataire({ message: 'm', detail: { objet: true } })).toBe('m')
     expect(R.messageDuPrestataire({ message: 'x'.repeat(400) })).toHaveLength(300)
     for (const vide of [null, undefined, {}, 'texte', { message: '  ' }]) expect(R.messageDuPrestataire(vide)).toBeNull()
+  })
+
+  // Le 422 du 30/09/2026 (bac à sable de BBVA) : la même période rendue à la lecture qui suivait l'accord,
+  // refusée à la suivante. Reconnue au statut ET au message — un 422 dit aussi un en-tête manquant.
+  it('une période refusée se reconnaît au statut ET au message, et se dit en français avec ses deux remèdes', () => {
+    expect(R.periodeRefusee(422, { code: 422, message: 'Wrong transactions period requested' })).toBe(true)
+    expect(R.periodeRefusee(422, { message: 'Wrong transaction period' })).toBe(true)
+    expect(R.periodeRefusee(422, { message: 'Required PSU header is not provided', detail: 'psuIpAddress' })).toBe(false)
+    expect(R.periodeRefusee(400, { message: 'Wrong transactions period requested' })).toBe(false)
+    expect(R.periodeRefusee(422, null)).toBe(false)
+    expect(R.PERIODE_REFUSEE).toMatch(/90 derniers jours/)
+    expect(R.PERIODE_REFUSEE).toMatch(/Ramène la date « Du »/)
+    expect(R.PERIODE_REFUSEE).toMatch(/renouvelle l'accord/)
   })
 
   it('les banques proposées : un espace de connexion au moins, par ordre alphabétique', () => {
@@ -623,6 +638,19 @@ describe('banque-connexion — le câblage du gestionnaire', () => {
     const suppression = retirer.indexOf('.delete().eq("id", connexion.id)')
     expect(fermeture).toBeGreaterThan(-1)
     expect(suppression).toBeGreaterThan(fermeture)
+  })
+
+  it('une période refusée par la banque se dit avec son drapeau, AVANT la réponse d’erreur générale', () => {
+    const reconnue = GESTIONNAIRE.indexOf('if (periodeRefusee(e.reponse.statut, e.reponse.donnees)) return json({ error: PERIODE_REFUSEE, periode_refusee: true }, 422)')
+    expect(reconnue, 'refus de période non reconnu dans le gestionnaire').toBeGreaterThan(-1)
+    expect(GESTIONNAIRE.indexOf('return erreurPrestataire(e.reponse)', reconnue)).toBeGreaterThan(reconnue)
+  })
+
+  it('un accord neuf efface la dernière récupération : la lecture qui le suit peut remonter plus loin', () => {
+    const finaliser = brancheDe('finaliser')
+    const mise = finaliser.indexOf('.update({')
+    expect(finaliser.indexOf('derniere_recuperation: null', mise)).toBeGreaterThan(mise)
+    expect(finaliser.indexOf('derniere_recuperation: null', mise)).toBeLessThan(finaliser.indexOf('})', mise))
   })
 
   it('la période part vers la banque ET se refiltre ici, et une lecture incomplète ne date pas de récupération', () => {

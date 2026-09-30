@@ -11,20 +11,48 @@ const mouvement = (id: string, date: string, montant: number, libelle = 'PRLV FI
 describe('la période proposée à la récupération', () => {
   it('reprend au dernier mouvement DÉJÀ récupéré de la banque, ce jour-là compris', () => {
     const lignes = [ligne('2026-09-10', -5, 'eb:r:a'), ligne('2026-09-20', -5, 'eb:r:b'), ligne('2026-09-25')]
-    expect(periodeParDefaut(lignes, '2026-09-30')).toEqual({ du: '2026-09-20', au: '2026-09-30' })
+    expect(periodeParDefaut(lignes, '2026-09-30', false)).toEqual({ du: '2026-09-20', au: '2026-09-30', debutVoulu: null })
   })
 
   it('sans récupération précédente, commence le LENDEMAIN du dernier mouvement du relevé', () => {
     // Un mouvement de fichier ne se reconnaît qu'à sa date et son montant : ne pas repasser sur ses jours.
-    expect(periodeParDefaut([ligne('2026-08-31'), ligne('2026-07-15')], '2026-09-30')).toEqual({ du: '2026-09-01', au: '2026-09-30' })
+    expect(periodeParDefaut([ligne('2026-08-31'), ligne('2026-07-15')], '2026-09-30', false))
+      .toEqual({ du: '2026-09-01', au: '2026-09-30', debutVoulu: null })
   })
 
-  it('sur un relevé vide, trois mois', () => {
-    expect(periodeParDefaut([], '2026-09-30')).toEqual({ du: '2026-07-03', au: '2026-09-30' })
+  it('sur un relevé vide, 90 jours bornes comprises', () => {
+    expect(periodeParDefaut([], '2026-09-30', false)).toEqual({ du: '2026-07-03', au: '2026-09-30', debutVoulu: null })
   })
 
   it('ne commence jamais après aujourd’hui', () => {
-    expect(periodeParDefaut([ligne('2026-09-30')], '2026-09-30')).toEqual({ du: '2026-09-30', au: '2026-09-30' })
+    expect(periodeParDefaut([ligne('2026-09-30')], '2026-09-30', false)).toEqual({ du: '2026-09-30', au: '2026-09-30', debutVoulu: null })
+  })
+
+  // Le cas du 30/09/2026 : relevé arrêté au 31/12/2025, une première lecture de 272 jours rendue par la
+  // banque juste après l'accord, puis la même refusée. La seconde doit se borner aux 90 derniers jours.
+  it('après une première lecture sous l’accord en cours, se borne aux 90 derniers jours et dit où elle aurait commencé', () => {
+    expect(periodeParDefaut([ligne('2025-12-31')], '2026-09-30', true))
+      .toEqual({ du: '2026-07-03', au: '2026-09-30', debutVoulu: '2026-01-01' })
+  })
+
+  it('la lecture qui suit l’accord garde toute la période voulue', () => {
+    expect(periodeParDefaut([ligne('2025-12-31')], '2026-09-30', false))
+      .toEqual({ du: '2026-01-01', au: '2026-09-30', debutVoulu: null })
+  })
+
+  it('la borne compte les deux jours : 90 jours avant aujourd’hui en feraient 91', () => {
+    // Le 03/07 est le 90e jour en comptant le 30/09 : une période qui y commence passe telle quelle ;
+    // une qui commencerait le 02/07, 91e jour, est bornée.
+    expect(periodeParDefaut([ligne('2026-07-02')], '2026-09-30', true))
+      .toEqual({ du: '2026-07-03', au: '2026-09-30', debutVoulu: null })
+    expect(periodeParDefaut([ligne('2026-07-01')], '2026-09-30', true))
+      .toEqual({ du: '2026-07-03', au: '2026-09-30', debutVoulu: '2026-07-02' })
+  })
+
+  it('une période déjà dans les 90 jours n’est ni bornée ni signalée', () => {
+    const lignes = [ligne('2026-09-20', -5, 'eb:r:b')]
+    expect(periodeParDefaut(lignes, '2026-09-30', true)).toEqual({ du: '2026-09-20', au: '2026-09-30', debutVoulu: null })
+    expect(periodeParDefaut([], '2026-09-30', true)).toEqual({ du: '2026-07-03', au: '2026-09-30', debutVoulu: null })
   })
 })
 

@@ -82,25 +82,36 @@ export function sourceDeLaConnexion(banque: string): string {
   return `Connexion bancaire — ${banque}`
 }
 
-// Le premier jour proposé quand le relevé du dossier est vide : trois mois, ce qu'une banque rend
-// d'ordinaire sans redemander l'accord du titulaire.
-const JOURS_PAR_DEFAUT = 89
+// Ce qu'une banque rend sans redemander l'accord du titulaire : les 90 derniers jours, BORNES COMPRISES,
+// donc à partir de 89 jours avant aujourd'hui (DSP2). Seule la lecture qui suit l'accord peut remonter
+// plus loin. Mesuré sur le bac à sable de BBVA le 30/09/2026 : une première lecture de 272 jours rendue,
+// la même refusée vingt-cinq secondes plus tard (422, « Wrong transactions period requested »). Et un jour
+// de trop suffit à se faire refuser : 90 jours avant aujourd'hui en font 91 avec les deux bornes.
+const JOURS_SANS_NOUVEL_ACCORD = 89
 
 /**
  * La période proposée. Elle REPREND au dernier mouvement déjà récupéré de la banque — ce jour-là compris :
  * l'identifiant externe empêche d'importer deux fois le même mouvement, et un jour à moitié récupéré
  * se complète. Sans récupération précédente, elle commence le LENDEMAIN du dernier mouvement du relevé :
  * un mouvement importé d'un fichier n'a pas d'identifiant, et la même opération relue à la banque ne se
- * reconnaîtrait qu'à sa date et son montant (voir `planImport`). Sur un relevé vide : trois mois.
+ * reconnaîtrait qu'à sa date et son montant (voir `planImport`). Sur un relevé vide : 90 jours.
+ *
+ * Une fois une lecture complète faite sous l'accord en cours (`dejaLueSousCetAccord`), la banque ne rend
+ * plus que 90 jours : la période s'y BORNE, et `debutVoulu` dit où elle aurait commencé — l'écran le dit,
+ * avec le renouvellement de l'accord pour remonter jusque-là. Proposer quand même la période voulue
+ * ferait refuser chaque récupération, sans que rien dise pourquoi.
  */
 export function periodeParDefaut(
-  lignes: readonly Pick<LigneBancaire, 'date' | 'id_externe'>[], aujourdHui: string,
-): { du: string; au: string } {
+  lignes: readonly Pick<LigneBancaire, 'date' | 'id_externe'>[], aujourdHui: string, dejaLueSousCetAccord: boolean,
+): { du: string; au: string; debutVoulu: string | null } {
   const plusRecente = (dates: string[]) => dates.reduce<string | null>((max, d) => (max === null || d > max ? d : max), null)
   const recuperee = plusRecente(lignes.filter((l) => l.id_externe !== null).map((l) => l.date))
   const duReleve = plusRecente(lignes.map((l) => l.date))
-  const du = recuperee ?? (duReleve !== null ? ajouterJours(duReleve, 1) : ajouterJours(aujourdHui, -JOURS_PAR_DEFAUT))
-  return { du: du > aujourdHui ? aujourdHui : du, au: aujourdHui }
+  const borne = ajouterJours(aujourdHui, -JOURS_SANS_NOUVEL_ACCORD)
+  const voulu = recuperee ?? (duReleve !== null ? ajouterJours(duReleve, 1) : borne)
+  const du = voulu > aujourdHui ? aujourdHui : voulu
+  if (dejaLueSousCetAccord && du < borne) return { du: borne, au: aujourdHui, debutVoulu: du }
+  return { du, au: aujourdHui, debutVoulu: null }
 }
 
 const cleDateMontant = (date: string, montant: number) => `${date}|${montant.toFixed(2)}`
