@@ -109,7 +109,7 @@ describe('calculerDeclaration2035 — ce qui est écarté est dit', () => {
 const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
 
@@ -365,7 +365,7 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
     { id: 'c-frais', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' },
   ] as Categorie[]
   const ventile = (o: Partial<LigneBancaire> = {}): LigneBancaire =>
-    paiement({ id: 'v', piece_id: null, ventilee: true, date: '2025-03-12', montant: -120, ...o })
+    paiement({ id: 'v', piece_id: null, ventilee: true, id_externe: null, date: '2025-03-12', montant: -120, ...o })
   const part = (o: Partial<VentilationBancaire>): VentilationBancaire => ({
     id: 'x', dossier_id: 'd1', ligne_bancaire_id: 'v', categorie_id: 'c-tel', part_personnelle: false, montant: -84,
     created_at: '2025-03-12T10:00:00Z', ...o,
@@ -413,7 +413,7 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
     const parts = [part({ id: 'a', categorie_id: 'c-achats', montant: -84 }), part({ id: 'b', categorie_id: 'c-tel', montant: -36 })]
     expect(calcul({ annee: 2025, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(0)
     expect(calcul({ annee: 2026, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(120)
-    expect(calcul({ mouvements: releve([ventile({ ventilee: false, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
+    expect(calcul({ mouvements: releve([ventile({ ventilee: false, id_externe: null, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
   })
 })
 

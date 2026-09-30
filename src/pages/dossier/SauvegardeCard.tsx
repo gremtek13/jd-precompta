@@ -56,14 +56,19 @@ export default function SauvegardeCard({ dossierId, dossierNom }: { dossierId: s
         (les justificatifs eux-mêmes) ; cette sauvegarde contient les données qui les relient. Il faut
         les deux pour repartir de zéro.
       </p>
-      {/* Le fichier porte le client_secret Super PDP du dossier et le texte OCR intégral des pièces,
-          qui sur un dossier de santé contient des noms de patients et des numéros de sécurité
-          sociale. Le dire ici, au moment du téléchargement, plutôt que dans une documentation que
-          personne n'ouvre juste avant de déposer le fichier quelque part. */}
+      {/* Le fichier porte le texte OCR intégral des pièces, qui sur un dossier de santé contient des
+          noms de patients et des numéros de sécurité sociale. Le dire ici, au moment du
+          téléchargement, plutôt que dans une documentation que personne n'ouvre juste avant de
+          déposer le fichier quelque part.
+          Il ne porte PAS les identifiants Super PDP ni la connexion bancaire, contrairement à ce que ce
+          paragraphe affirmait jusqu'au 30/09/2026 : la sauvegarde se lit avec la session du navigateur,
+          et leurs tables n'ont aucune policy (PLAN_DE_REPRISE.md, §3, point 7). Le dire aussi : une
+          restauration les perd, et il faut les refaire. */}
       <p className="muted">
-        <strong>Ce fichier est confidentiel.</strong> Il contient les identifiants Super PDP du
-        dossier et le texte intégral lu sur chaque pièce — donc, sur un dossier de santé, des données
-        de patients. Il se range comme se rangerait le dossier papier du client.
+        <strong>Ce fichier est confidentiel.</strong> Il contient le texte intégral lu sur chaque pièce
+        — donc, sur un dossier de santé, des données de patients. Il se range comme se rangerait le
+        dossier papier du client. Il ne contient ni les identifiants Super PDP ni la connexion bancaire
+        du dossier : après une restauration, ils se refont.
       </p>
 
       {erreur && <p className="error-text">{erreur}</p>}

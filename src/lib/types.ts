@@ -170,6 +170,11 @@ export interface LigneBancaire {
   // s'agissait sans devoir rouvrir le relevé d'origine. Nuls sur tout import antérieur à leur ajout.
   source_fichier: string | null
   libelle_brut: string | null
+  // L'identifiant du mouvement chez le prestataire de la connexion bancaire (ligne 24 de la feuille de
+  // route), préfixé de l'empreinte du compte : c'est lui qui dédoublonne un mouvement récupéré deux fois
+  // (`lignes_bancaires_id_externe_unique`, sur le dossier et lui). Nul pour un mouvement importé d'un
+  // relevé, CSV ou PDF — deux NULL ne se heurtent pas.
+  id_externe: string | null
   created_at: string
 }
 

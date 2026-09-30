@@ -199,7 +199,7 @@ describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
   const encaissement = (date: string): LigneBancaire => ({
     id: 'l1', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
     piece_id: 'r1', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
 
@@ -320,7 +320,7 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
   const affecte = (date: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id: 'l-cpam', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, ...o,
   })
 
@@ -366,7 +366,7 @@ describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes
   const remise = (date: string): LigneBancaire => ({
     id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant: 870, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
   const part = (id: string, categorieId: string | null, montant: number): VentilationBancaire => ({

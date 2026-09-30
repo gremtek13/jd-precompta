@@ -72,7 +72,7 @@ describe('lignesChargeProduitPourPiece', () => {
 const paiement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p1', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
 

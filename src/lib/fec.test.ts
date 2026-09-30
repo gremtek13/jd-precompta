@@ -339,7 +339,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
   const mouvement = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id, dossier_id: 'd1', date: '2026-03-12', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c-recettes', prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
     source_fichier: 'releve-mars-2026.pdf', libelle_brut: null, created_at: '2026-03-13T00:00:00Z', ...o,
   })
   const cpam = mouvement('l-cpam')
@@ -434,7 +434,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     // lib/ventilationBanque.ts : l'abonnement pris en charge à 70 %, la part personnelle sur le compte de
     // l'exploitant. Une écriture, le relevé pour pièce.
     const telephone = mouvement('l-tel', {
-      date: '2026-03-15', montant: -120, libelle: 'PRLV OPERATEUR', categorie_id: null, ventilee: true,
+      date: '2026-03-15', montant: -120, libelle: 'PRLV OPERATEUR', categorie_id: null, ventilee: true, id_externe: null,
     })
     const ecritures = [
       ligne('', { id: 't1', piece_id: null, ligne_bancaire_id: 'l-tel', compte: '626000', sens: 'debit', montant: 84, date: '2026-03-15', libelle: 'PRLV OPERATEUR' }),
@@ -448,7 +448,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ['BQ', 'BQ00001', '20260315', COMPTE_BANQUE, 'releve-mars-2026.pdf', '0,00', '120,00'],
     ])
     // Le garde symétrique : la ventilation annulée, la même écriture n'a plus de justificatif.
-    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false }
+    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, id_externe: null }
     expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule])).slice(1)).toEqual([])
   })
 
