@@ -137,7 +137,7 @@ describe('absenceFec', () => {
 const ligneBancaire = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-03-12', libelle: 'PRLV SEPA TRANSMEDICAL',
   montant: -100, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-03-12T00:00:00Z', ...o,
 })
@@ -310,13 +310,13 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     // lib/ventilationBanque.ts : une ligne par part, sans pièce.
     const telephone = ligneBancaire({
       id: 'l-tel', piece_id: null, categorie_id: null, montant: -120, libelle: 'PRLV OPERATEUR',
-      source_fichier: 'releve-mars-2026.pdf', ventilee: true,
+      source_fichier: 'releve-mars-2026.pdf', ventilee: true, id_externe: null,
     })
     const part = [ecriture({ id: 't1', piece_id: null, ligne_bancaire_id: 'l-tel', compte: '626000', montant: 84, date: '2026-03-15' })]
     const [ligne] = pisteAudit(part, [], [telephone], [])
     expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'PRLV OPERATEUR', []])
     // La ventilation annulée, elle n'a plus de justificatif.
-    const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false }], [])
+    const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false, id_externe: null }], [])
     expect(annule.manque).toEqual(['justificatif'])
   })
 })

@@ -272,8 +272,8 @@ vi.mock('../../lib/supabase', async () => {
       if (nom === 'retirer_echeance_emprunt') {
         return { ...l, statut: 'non_rapprochee', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null }
       }
-      if (nom === 'ventiler_mouvement_bancaire') return { ...l, statut: 'rapprochee', ventilee: true }
-      if (nom === 'retirer_ventilation_mouvement_bancaire') return { ...l, statut: 'non_rapprochee', ventilee: false }
+      if (nom === 'ventiler_mouvement_bancaire') return { ...l, statut: 'rapprochee', ventilee: true, id_externe: null }
+      if (nom === 'retirer_ventilation_mouvement_bancaire') return { ...l, statut: 'non_rapprochee', ventilee: false, id_externe: null }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), statut: 'rapprochee' }
         : { ...l, categorie_id: null, statut: 'non_rapprochee' }
@@ -291,7 +291,7 @@ function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
     id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -100,
     libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
     created_at: '2025-06-02T09:00:00Z', ...o,
   }
 }
@@ -2105,7 +2105,7 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
       montant: -36, created_at: '2025-06-02T10:00:00Z',
     },
   ]
-  const VENTILEE: Partial<LigneBancaire> = { statut: 'rapprochee', ventilee: true }
+  const VENTILEE: Partial<LigneBancaire> = { statut: 'rapprochee', ventilee: true, id_externe: null }
 
   function preparer(ligne: Partial<LigneBancaire> = {}, parts: VentilationBancaire[] = []) {
     reinitialiser()

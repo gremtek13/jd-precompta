@@ -75,7 +75,7 @@ const CATEGORIES: Categorie[] = [
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2025-03-31', libelle: 'PRLV OPERATEUR', montant: -120, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, id_externe: null,
   source_fichier: null, libelle_brut: null, created_at: '2025-04-01T09:00:00Z', ...o,
 })
 const part = (ligneId: string, categorieId: string | null, montant: number, id = `${ligneId}-${categorieId ?? 'perso'}`): VentilationBancaire => ({
@@ -137,9 +137,9 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
     ligne({ id: 'deux-recettes', montant: 900 }),
     ligne({ id: 'une-part', montant: -50 }),
     ligne({ id: 'somme-fausse', montant: -100 }),
-    ligne({ id: 'non-ventile', ventilee: false, statut: 'non_rapprochee', montant: -30 }),
+    ligne({ id: 'non-ventile', ventilee: false, id_externe: null, statut: 'non_rapprochee', montant: -30 }),
     ligne({ id: 'pas-rapproche', statut: 'non_rapprochee', montant: -60 }),
-    ligne({ id: 'affecte', ventilee: false, categorie_id: 'frais', montant: -8.5 }),
+    ligne({ id: 'affecte', ventilee: false, id_externe: null, categorie_id: 'frais', montant: -8.5 }),
   ]
   const PARTS: VentilationBancaire[] = [
     part('paiement', 'tel', -84), part('paiement', null, -36),
@@ -284,7 +284,7 @@ describe('le garde-fou du bloc VENTILATION sait encore échouer', () => {
 
   it('attrape une incohérence qui ne voit plus les parts posées sur un mouvement non ventilé', () => {
     const derivee = planter(['    } else if (parts.length > 0) {\n      incoherentes.push({ ligne, raison: "parts_sans_ventilation" })', '    } else if (false) {\n      incoherentes.push({ ligne, raison: "parts_sans_ventilation" })'])
-    const lignes = [ligne({ id: 'l', ventilee: false, statut: 'non_rapprochee' })]
+    const lignes = [ligne({ id: 'l', ventilee: false, id_externe: null, statut: 'non_rapprochee' })]
     echoue(() => expect(derivee.ventilationsIncoherentes(lignes, PAIEMENT).length).toBe(ventilationsIncoherentes(lignes, PAIEMENT).length))
   })
 

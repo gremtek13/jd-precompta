@@ -150,11 +150,15 @@ create table public.tiers_categories (
 -- personnel. `lignes_bancaires_decoupage_emprunt` : le découpage d'une échéance (intérêts, assurance,
 -- le reste en capital) tient dans le montant payé, et un déblocage n'en a pas.
 -- `lignes_bancaires_echeance_emprunt_unique` : une échéance ne se rapproche que d'un mouvement.
+-- `lignes_bancaires_id_externe_unique` : un mouvement récupéré par la connexion bancaire ne s'importe
+-- qu'une fois dans un dossier ; totale, elle laisse s'empiler les mouvements d'un relevé (identifiant nul).
 --
 -- RÉGÉNÉRÉE LE 29/09/2026 depuis le catalogue, après les migrations
 -- `affectation_des_mouvements_bancaires` (colonne `categorie_id`, ses deux contraintes, son index) et
 -- `echeance_emprunt_rapprochee` (les quatre colonnes `emprunt_*`, leurs contraintes, leur index) —
--- ligne 26.6 de la feuille de route. Les onze autres tables sont celles du 22/09/2026.
+-- ligne 26.6 de la feuille de route —, puis `ventilation_des_mouvements_bancaires` (colonne `ventilee`,
+-- ses deux contraintes) ; et LE 30/09/2026 après `connexion_bancaire_enable_banking` (colonne
+-- `id_externe`, sa contrainte unique) — ligne 24. Les onze autres tables sont celles du 22/09/2026.
 create table public.lignes_bancaires (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -174,7 +178,9 @@ create table public.lignes_bancaires (
   emprunt_interets numeric(12,2),
   emprunt_assurance numeric(12,2),
   ventilee boolean default false not null,
+  id_externe text,
   constraint lignes_bancaires_echeance_emprunt_unique UNIQUE (emprunt_id, emprunt_echeance),
+  constraint lignes_bancaires_id_externe_unique UNIQUE (dossier_id, id_externe),
   constraint lignes_bancaires_pkey PRIMARY KEY (id),
   constraint lignes_bancaires_categorie_id_fkey FOREIGN KEY (categorie_id) REFERENCES categories(id),
   constraint lignes_bancaires_cotisation_id_fkey FOREIGN KEY (cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE SET NULL,

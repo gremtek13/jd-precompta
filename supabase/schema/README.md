@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 68 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 69 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -74,8 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 30/09/2026** : 68 fichiers, 68 migrations, empreinte globale
-`670662042a165d9761243e5c456dba9b` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 30/09/2026** : 69 fichiers, 69 migrations, empreinte globale
+`1e90206d58743accd3763977f6806ccf` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -107,12 +107,12 @@ ne s'appliquent pas tout seuls.
 Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
-  le socle au caractère près (71 instructions, empreinte `9c156ebda3a398311fa22c7ee0ebede2` le
-  30/09/2026), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  le socle au caractère près (71 instructions, empreinte `0438dec76ec4b996ffd53c86ad9c3bed` le
+  30/09/2026, après la connexion bancaire), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (804 objets, empreinte `0f052aeb8c8e0ccdc911641904967b78` le 30/09/2026). C'est le seul qui voie un
+  (836 objets, empreinte `a613ccf9ac4f9f816841032a4a528ed9` le 30/09/2026). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.

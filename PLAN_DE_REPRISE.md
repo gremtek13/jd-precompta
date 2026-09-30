@@ -45,11 +45,13 @@ même jour.
 
 ### Le fichier de sauvegarde est une donnée sensible
 
-Il contient, en clair :
+Il contient, en clair, le texte OCR intégral des pièces (`piece_textes_ocr`), qui sur les dossiers de
+santé porte des noms de patients, des dates de naissance et des numéros de sécurité sociale.
 
-- le `client_secret` OAuth Super PDP de chaque dossier concerné (table `superpdp_credentials`) ;
-- le texte OCR intégral des pièces (`piece_textes_ocr`), qui sur les dossiers de santé porte des noms
-  de patients, des dates de naissance et des numéros de sécurité sociale.
+Il ne contient PAS le `client_secret` OAuth Super PDP (`superpdp_credentials`) ni la connexion
+bancaire (`connexions_bancaires`), contrairement à ce que ce paragraphe affirmait jusqu'au 30/09/2026 :
+la sauvegarde se lit avec la session du navigateur, et ces deux tables n'ont AUCUNE policy — seules
+leurs Edge Functions les atteignent. Elles en sortent donc vides, et c'est voulu (voir le §3).
 
 Il se range comme on rangerait un dossier papier de ces mêmes clients. Jamais dans un dépôt Git,
 jamais en pièce jointe d'un courriel ordinaire, jamais sur un service de partage grand public.
@@ -118,6 +120,15 @@ découvre avant.
    `extract-piece` exige elle aussi un compte rattaché ; mais c'est une porte que rien d'autre ne
    ferme. **Sur le projet actuel, elle était encore ouverte le 26/09/2026** (lu sur
    `/auth/v1/settings`, `disable_signup: false`) : ce point vaut aussi hors reprise.
+7. **Les identifiants Super PDP et les connexions bancaires des dossiers.** Leurs tables
+   (`superpdp_credentials`, `connexions_bancaires`) n'ont aucune policy : la sauvegarde, lue avec la
+   session du navigateur, en rend zéro ligne — 2 identifiants Super PDP en base au 30/09/2026, et aucune
+   policy qui laisse le navigateur les lire. Un dossier restauré a donc perdu les deux : le
+   `client_secret` Super PDP se ressaisit (« Facturation électronique — Super PDP », onglet
+   Justificatifs), et la banque se reconnecte (onglet Banque) — ce
+   que seul le titulaire du compte peut faire, son consentement étant de toute façon lié à la session
+   perdue. Les mouvements déjà importés, eux, sont dans la sauvegarde : leur identifiant externe
+   dédoublonne ce que la nouvelle connexion récupère une seconde fois.
 
 ### Les variables d'environnement, une par une
 
@@ -165,7 +176,7 @@ incompréhensible trois étapes plus loin.
    cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
    (inventaire du §3).
 2. **Le schéma — L'ÉTAPE QUI N'A JAMAIS ÉTÉ RÉPÉTÉE, et l'ordre écrit ici jusqu'au 29/09/2026
-   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 68 migrations, puis le
+   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 69 migrations, puis le
    socle, `socle/1_tables_sans_migration.sql` et `socle/2_objets_sans_migration.sql` —, vérifié nom
    par nom contre le catalogue le 29/09/2026. Mais les jouer « migrations d'abord, socle ensuite » bute
    dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que seul le socle
