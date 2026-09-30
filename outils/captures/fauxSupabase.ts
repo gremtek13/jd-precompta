@@ -338,6 +338,60 @@ const TABLES: Record<string, Ligne[]> = {
   ],
 }
 
+// La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte
+// choisi parmi deux, et une récupération qui rend des mouvements FICTIFS — dont un déjà dans le relevé
+// importé en fichier (l11), pour que l'aperçu dise ce qu'il écarte, et un libellé LONG, pour éprouver le
+// passage à la ligne du tableau. Les autres dossiers n'ont pas de banque connectée : ils montrent
+// « Connecter une banque », puis la liste que rend `banques`.
+const CONNEXION_D1 = {
+  banque_nom: 'Mock ASPSP', banque_pays: 'FI', type_acces: 'personal', environnement: 'SANDBOX', etat: 'active',
+  valide_jusqu_au: '2027-03-20T10:00:00+00:00', derniere_recuperation: '2026-09-20T08:30:00+00:00',
+  created_at: '2026-09-20T08:00:00+00:00', compte_empreinte: 'emp-courant',
+  comptes: [
+    { empreinte: 'emp-courant', nom: 'Compte professionnel', devise: 'EUR', iban_fin: '4821', mouvements_lisibles: true },
+    { empreinte: 'emp-livret', nom: 'Livret professionnel', devise: 'EUR', iban_fin: '7730', mouvements_lisibles: true },
+  ],
+}
+
+function connexionBancaire(corps: Ligne): { data: unknown; error: unknown } {
+  const d1 = corps.dossierId === 'd1'
+  switch (corps.action) {
+    case 'statut':
+      return { data: { configuree: true, connexion: d1 ? CONNEXION_D1 : null }, error: null }
+    case 'banques':
+      return {
+        data: {
+          environnement: 'SANDBOX',
+          banques: [
+            { nom: 'Mock ASPSP', pays: 'FI', types_acces: ['business', 'personal'], accord_jours: 180 },
+            { nom: 'Banque Fictive du Littoral', pays: 'FI', types_acces: ['personal'], accord_jours: 90 },
+          ],
+        },
+        error: null,
+      }
+    case 'mouvements':
+      return {
+        data: {
+          du: corps.du, au: corps.au, complete: true, motif: null, banque_nom: 'Mock ASPSP', environnement: 'SANDBOX',
+          compte: { nom: 'Compte professionnel', iban_fin: '4821' }, avertissement: null,
+          ecartes: { non_comptabilises: 1, autre_devise: 0, hors_periode: 0, illisibles: 0, doublons: 0 },
+          mouvements: [
+            { id_externe: 'eb:r:banc-1', date: '2026-09-29', libelle: 'PRLV SEPA LOGISOINS ABONNEMENT', montant: -29 },
+            { id_externe: 'eb:r:banc-2', date: '2026-09-29', libelle: 'CB STATION SERVICE DU PORT', montant: -58.4 },
+            {
+              id_externe: 'eb:r:banc-3', date: '2026-09-30', montant: 312.8,
+              libelle: 'VIR SEPA RECU / DE: MUTUELLE GENERALE DES PROFESSIONS DE SANTE / MOTIF: REMBOURSEMENTS TIERS PAYANT SEPTEMBRE 2026 / REF: 2026093000417',
+            },
+            { id_externe: 'eb:r:banc-4', date: '2026-09-30', libelle: 'FRAIS OPPOSITION CHEQUE', montant: -15 },
+          ],
+        },
+        error: null,
+      }
+    default:
+      return { data: null, error: { message: 'maquette' } }
+  }
+}
+
 type Filtre = (l: Ligne) => boolean
 
 function requete(table: string) {
@@ -397,10 +451,15 @@ export const supabase = {
     }),
   },
   // « Proposer une catégorie » répond une proposition retenue, avec un extrait LONG : c'est lui qui
-  // éprouve le passage à la ligne dans le volet. Tout le reste reste une maquette.
+  // éprouve le passage à la ligne dans le volet. La connexion bancaire répond pour le cabinet infirmier
+  // (voir CONNEXION_D1). Tout le reste reste une maquette.
   functions: {
-    invoke: (nom: string) => Promise.resolve(nom === 'proposer-categorie'
-      ? { data: { issue: 'retenue', categorieId: 'c8', indice: 'Abonnement mensuel LogiSoins Premium — gestion des tournées et télétransmission' }, error: null }
-      : { data: null, error: { message: 'maquette' } }),
+    invoke: (nom: string, options?: { body?: Ligne }) => {
+      if (nom === 'proposer-categorie') {
+        return Promise.resolve({ data: { issue: 'retenue', categorieId: 'c8', indice: 'Abonnement mensuel LogiSoins Premium — gestion des tournées et télétransmission' }, error: null })
+      }
+      if (nom === 'banque-connexion') return Promise.resolve(connexionBancaire(options?.body ?? {}))
+      return Promise.resolve({ data: null, error: { message: 'maquette' } })
+    },
   },
 }

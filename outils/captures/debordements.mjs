@@ -25,6 +25,17 @@ const VISITES = [
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.
   ...ONGLETS.map((onglet) => ({ dossier: onglet === 'tva' ? 'd7' : 'd1', onglet, nom: onglet })),
   ...ONGLETS_ENGAGEMENT.map((onglet) => ({ dossier: 'd8', onglet, nom: `engagement/${onglet}` })),
+  // La connexion bancaire, une récupération faite : l'aperçu de ce qui entrerait — son tableau, son
+  // libellé long, ses boutons — n'apparaît qu'après un clic, donc aucune visite ordinaire ne le voit.
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'banque/récupération',
+    apres: (page) => page.getByRole('button', { name: 'Récupérer les mouvements' }).click(),
+  },
+  // Et un dossier sans banque, la liste des banques ouverte : le choix de la banque et de l'espace.
+  {
+    dossier: 'd2', onglet: 'banque', nom: 'banque/connecter',
+    apres: (page) => page.getByRole('button', { name: 'Connecter une banque' }).click(),
+  },
 ]
 const largeur = Number(process.argv[2] ?? 1440)
 const avecPanneau = process.argv[3] !== 'sans'
@@ -42,12 +53,16 @@ const contexte = await navigateur.newContext({ viewport: { width: largeur, heigh
 await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) ? r.continue() : r.abort()))
 const page = await contexte.newPage()
 let total = 0
-for (const { dossier, onglet, nom } of VISITES) {
+for (const { dossier, onglet, nom, apres } of VISITES) {
   await page.goto(`${BASE}#/dossiers/${dossier}/${onglet}`)
   await page.waitForTimeout(900)
   const bouton = page.getByRole('button', { name: 'Assistant', exact: true })
   if (avecPanneau && (await bouton.getAttribute('aria-pressed')) !== 'true') await bouton.click()
   await page.waitForTimeout(300)
+  if (apres) {
+    await apres(page)
+    await page.waitForTimeout(300)
+  }
   const fautes = await page.evaluate(() => {
     const main = document.querySelector('.main').getBoundingClientRect()
     const defile = (e) => {

@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, VentilationBancaire } from '../../lib/types'
+import type {
+  Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree, VentilationBancaire,
+} from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
@@ -73,6 +75,11 @@ const faux = vi.hoisted(() => ({
   // Les parts des mouvements ventilés (lib/ventilationBanque.ts) : une lecture qui peut être partielle, et
   // deux fonctions SQL que le faux serveur APPLIQUE au relevé et à ses parts.
   ventilations: [] as VentilationBancaire[],
+  // La connexion bancaire de la carte (ConnexionBancaireCard) : aucune par défaut. Les tests de CÂBLAGE la
+  // programment — la connexion que rend `statut`, et ce que rend la récupération.
+  connexionBancaire: null as null | { connexion: Record<string, unknown>; recuperation: Record<string, unknown> },
+  // Les règles « toujours ignorer » du dossier : elles décident du statut ÉCRIT à l'import d'un mouvement.
+  reglesIgnorees: [] as RegleBancaireIgnoree[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -87,6 +94,7 @@ vi.mock('../../lib/supabase', async () => {
     let operation = 'select'
     let idFiltre: unknown = null
     let valeurMaj: Record<string, unknown> = {}
+    let valeurUpsert: Record<string, unknown>[] = []
     const filtres: string[] = []
     // Les filtres APPLIQUÉS aux catégories (voir src/test/filtresPostgrest.ts) : lues sur le seul
     // dossier au lieu du dossier ET du cabinet, elles disparaissent toutes en production — aucune n'y
@@ -124,6 +132,7 @@ vi.mock('../../lib/supabase', async () => {
       },
       upsert: (valeur: Record<string, unknown>, options: unknown) => {
         operation = 'upsert'
+        valeurUpsert = Array.isArray(valeur) ? valeur : [valeur]
         faux.upserts.push({ table, valeur, options })
         return c
       },
@@ -136,7 +145,8 @@ vi.mock('../../lib/supabase', async () => {
               : table === 'regles_affectation_bancaire' ? filtrer(faux.reglesAffectation, predicats)
                 : table === 'cotisations_declarees' ? faux.cotisations
                   : table === 'emprunts' ? faux.emprunts
-                    : table === 'ventilations_bancaires' ? faux.ventilations : []
+                    : table === 'ventilations_bancaires' ? faux.ventilations
+                      : table === 'regles_bancaires_ignorees' ? faux.reglesIgnorees : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         }
@@ -167,8 +177,26 @@ vi.mock('../../lib/supabase', async () => {
             faux.resoudreLectureLignes = () => resoudre({ data: faux.lignes, error: null, count: faux.lignes.length })
           }).then(suite)
         }
+        if (table === 'lignes_bancaires' && operation === 'upsert') {
+          // L'import de la connexion bancaire : le faux serveur ÉCRIT les lignes et rend celles qu'il a
+          // écrites, comme `ignoreDuplicates` — un identifiant externe déjà présent n'est ni réécrit ni rendu.
+          const deja = new Set(faux.lignes.map((l) => l.id_externe))
+          const ecrites = valeurUpsert.filter((l) => !deja.has(String(l.id_externe)))
+          faux.lignes = [...faux.lignes, ...ecrites.map((l, i): LigneBancaire => ({
+            id: `importee-${faux.lignes.length + i}`, dossier_id: String(l.dossier_id), date: String(l.date),
+            libelle: String(l.libelle), montant: Number(l.montant), statut: l.statut as LigneBancaire['statut'],
+            piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+            source_fichier: String(l.source_fichier), libelle_brut: null, emprunt_id: null, emprunt_echeance: null,
+            emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: String(l.id_externe),
+            created_at: '2025-06-20T09:00:00Z',
+          }))]
+          return Promise.resolve({ data: ecrites.map((l) => ({ id_externe: l.id_externe })), error: null }).then(suite)
+        }
         if (table === 'lignes_bancaires') {
           return Promise.resolve({ data: faux.lignes, error: null, count: faux.lignes.length }).then(suite)
+        }
+        if (table === 'regles_bancaires_ignorees') {
+          return Promise.resolve({ data: faux.reglesIgnorees, error: null, count: faux.reglesIgnorees.length }).then(suite)
         }
         if (table === 'ecritures_brouillon') {
           if (operation === 'delete') faux.suppressionsEcritures.push([...filtres])
@@ -281,14 +309,21 @@ vi.mock('../../lib/supabase', async () => {
     return Promise.resolve({ data: 2, error: null })
   }
   // La carte de connexion bancaire (ConnexionBancaireCard) lit l'état de la connexion à l'ouverture :
-  // aucune ici, et rien de configuré — la carte a ses propres tests. Toute autre action serait un appel
-  // au prestataire que ces tests n'ont pas prévu, et se nomme.
+  // aucune par défaut, et rien de configuré — la carte a ses propres tests. Les tests de CÂBLAGE programment
+  // une connexion et sa récupération. Toute autre action serait un appel au prestataire que ces tests n'ont
+  // pas prévu, et se nomme.
   const functions = {
     invoke: (nom: string, options: { body: { action?: unknown } }) => {
-      if (nom !== 'banque-connexion' || options.body.action !== 'statut') {
-        throw new Error(`Appel de fonction non attendu dans ce test : ${nom} ${String(options.body.action)}`)
+      const action = options.body.action
+      if (nom === 'banque-connexion' && action === 'statut') {
+        return Promise.resolve({
+          data: { configuree: faux.connexionBancaire !== null, connexion: faux.connexionBancaire?.connexion ?? null }, error: null,
+        })
       }
-      return Promise.resolve({ data: { configuree: false, connexion: null }, error: null })
+      if (nom === 'banque-connexion' && action === 'mouvements' && faux.connexionBancaire) {
+        return Promise.resolve({ data: faux.connexionBancaire.recuperation, error: null })
+      }
+      throw new Error(`Appel de fonction non attendu dans ce test : ${nom} ${String(action)}`)
     },
   }
   return { supabase: { from: (table: string) => chaine(table), rpc, functions } }
@@ -354,6 +389,8 @@ function reinitialiser() {
   faux.cotisations = []
   faux.emprunts = []
   faux.ventilations = []
+  faux.connexionBancaire = null
+  faux.reglesIgnorees = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -2478,5 +2515,86 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
     await ouvrir('REMISE CB')
     await deplier()
     expect(groupes()).toEqual(['Recettes', 'Dépenses', 'Hors résultat'])
+  })
+})
+
+// LA CARTE DE CONNEXION BANCAIRE DANS L'ONGLET. Ses propres tests la montent seule, avec ses props écrites à
+// la main : rien n'y vérifie que l'onglet lui passe SON relevé, SES règles et SA suspension — or c'est le
+// relevé qui écarte un mouvement déjà importé d'un fichier, les règles qui décident du statut écrit, et la
+// suspension qui empêche d'importer sur une lecture partielle. Une carte branchée sur une liste vide
+// importerait en double, en silence.
+describe('BanqueTab — la connexion bancaire', () => {
+  const connexion = {
+    banque_nom: 'Mock ASPSP', banque_pays: 'FI', type_acces: 'personal', environnement: 'SANDBOX', etat: 'active',
+    valide_jusqu_au: '2099-01-01T00:00:00+00:00', derniere_recuperation: null, created_at: '2025-06-01T08:00:00+00:00',
+    compte_empreinte: 'emp-courant',
+    comptes: [{ empreinte: 'emp-courant', nom: 'Compte courant', devise: 'EUR', iban_fin: '0042', mouvements_lisibles: true }],
+  }
+  const recuperation = {
+    du: '2025-06-01', au: '2025-06-30', complete: true, motif: null, banque_nom: 'Mock ASPSP', environnement: 'SANDBOX',
+    compte: { nom: 'Compte courant', iban_fin: '0042' }, avertissement: null,
+    ecartes: { non_comptabilises: 0, autre_devise: 0, hors_periode: 0, illisibles: 0, doublons: 0 },
+    mouvements: [
+      // Le même mouvement que la ligne du relevé importé en fichier : même date, même montant.
+      { id_externe: 'eb:r:fichier', date: '2025-06-02', libelle: 'PRLV SEPA FOURNISSEUR — FICTIF SA', montant: -100 },
+      { id_externe: 'eb:r:assurance', date: '2025-06-10', libelle: 'PRLV SEPA ASSURANCE FICTIVE', montant: -50 },
+    ],
+  }
+  const regle = (motif: string): RegleBancaireIgnoree => ({ id: `r-${motif}`, dossier_id: 'dossier-de-test', motif, created_at: '2025-06-01T09:00:00Z' })
+
+  async function recuperer() {
+    const bouton = await screen.findByRole('button', { name: 'Récupérer les mouvements' })
+    await act(async () => { bouton.click() })
+  }
+
+  it('la carte reçoit le relevé, les règles et le rechargement de l’onglet', async () => {
+    reinitialiser()
+    faux.connexionBancaire = { connexion, recuperation }
+    faux.reglesIgnorees = [regle('assurance fictive')]
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    rendre()
+    await recuperer()
+    // Le relevé de l'onglet : le mouvement déjà importé d'un fichier est écarté de l'import.
+    expect(screen.getByText('1 à importer').parentElement!.textContent).toContain('1 déjà dans un relevé importé en fichier')
+    await act(async () => { screen.getByRole('button', { name: 'Importer les 1 mouvement(s)' }).click() })
+    // Les règles de l'onglet : le statut écrit est celui qu'elles décident.
+    const importe = faux.upserts.find((u) => u.table === 'lignes_bancaires')
+    expect(importe?.valeur).toEqual([expect.objectContaining({ id_externe: 'eb:r:assurance', statut: 'ignoree' })])
+    // Le rechargement de l'onglet : relue, la carte sait que ce mouvement est désormais au relevé — une
+    // seconde récupération ne le proposerait plus. Sans lui, elle le reproposerait jusqu'à recharger la page.
+    await screen.findByText(/1 mouvement\(s\) importé\(s\) dans le relevé/)
+    await recuperer()
+    const apercu = (await screen.findByText('0 à importer')).parentElement!.textContent!
+    expect(apercu).toContain('1 déjà importé(s)')
+  })
+
+  it('une lecture partielle du relevé suspend l’import de la banque', async () => {
+    reinitialiser()
+    faux.connexionBancaire = { connexion, recuperation }
+    faux.muet = { lignes_bancaires: 0 }
+    rendre()
+    await recuperer()
+    expect(screen.getByText(/Import suspendu : une lecture de l'onglet est incomplète/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /^Importer les/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('une lecture partielle des règles « toujours ignorer » la suspend aussi', async () => {
+    reinitialiser()
+    faux.connexionBancaire = { connexion, recuperation }
+    faux.reglesIgnorees = [regle('assurance fictive')]
+    faux.muet = { regles_bancaires_ignorees: 0 }
+    rendre()
+    await recuperer()
+    expect(screen.getByText(/Import suspendu : une lecture de l'onglet est incomplète/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: /^Importer les/ }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('une lecture complète n’est pas suspendue — le garde symétrique', async () => {
+    reinitialiser()
+    faux.connexionBancaire = { connexion, recuperation }
+    rendre()
+    await recuperer()
+    expect(screen.queryByText(/Import suspendu/)).toBeNull()
+    expect((screen.getByRole('button', { name: /^Importer les/ }) as HTMLButtonElement).disabled).toBe(false)
   })
 })

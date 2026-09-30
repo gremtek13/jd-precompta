@@ -191,6 +191,10 @@ Conséquences pratiques :
   - `evaluer-extraction` — harnais de MESURE, pas une fonctionnalité : rejoue la citation des
     champs ou la proposition de catégorie sur les textes OCR d'un dossier, et ne facture que pendant
     une fenêtre datée (voir « Problèmes connus »).
+  - `banque-connexion` — la connexion bancaire d'un dossier (Enable Banking, bac à sable) : l'état
+    de la connexion, la liste des banques, la demande d'accord et son retour, le choix du compte, la
+    récupération des mouvements et le retrait. Elle REND les mouvements ; c'est l'écran qui les importe
+    (voir « la connexion bancaire récupère, l'écran importe » dans « Problèmes connus »).
 
 ## Stack technique
 
@@ -258,6 +262,9 @@ supabase/
                   et son écriture, par impersonation des trois profils, à rejouer après toute
                   migration qui touche ses deux fonctions, la table ventilations_bancaires ou les
                   contraintes de lignes_bancaires.
+                  connexionBancaire.sql : la connexion bancaire d'un dossier (connexions_bancaires,
+                  fermée au navigateur) et l'identifiant externe d'un mouvement, par impersonation
+                  des trois profils, à rejouer après toute migration qui touche l'une ou l'autre.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -275,7 +282,9 @@ outils/captures/  banc de capture VERSIONNÉ : la vraie application servie par V
                   faux Supabase à données fictives, photographiée par Playwright — mode
                   d'emploi en tête de vitrine.mjs ; images dans sorties/, ignoré par git.
                   debordements.mjs y liste, onglet par onglet, ce qui déborde du panneau
-                  central (panneau de droite ouvert ou fermé) et rend un code d'erreur.
+                  central (panneau de droite ouvert ou fermé) et rend un code d'erreur — plus deux
+                  visites qui CLIQUENT d'abord, ce qui ne paraît qu'après un clic échappant aux
+                  autres (la récupération d'une connexion bancaire, la liste des banques).
                   installable.mjs demande à Chromium si l'application est installable, avec
                   et sans logo de cabinet, et rend un code d'erreur.
 outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de l'Urssaf
@@ -328,6 +337,15 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   candidates à l'immobilisation ; remesuré le 28/09/2026 avec l'onglet TVA, mesuré sur le seul
   dossier assujetti du banc). Sa mutation mord : une rangée remise sans `wrap` le fait sortir en
   erreur.
+  **Sur téléphone la rangée devient une colonne, et y garder `wrap` la rendait MULTI-LIGNE** : la
+  ligne prend alors la largeur du champ le plus large, et une liste à l'option longue sortait de sa
+  carte (mesuré le 30/09/2026 : 35 px sur le régime de TVA, 32 px sur le véhicule d'Informations, zéro
+  ailleurs sur les dix-huit onglets). La règle mobile porte `flex-wrap: nowrap`, sauf la rangée des
+  montants de la fiche d'une pièce, qui reste en ligne. Et un bouton aligné sur le BAS des champs de
+  sa rangée passe par la classe `.field-row.aligne-bas`, jamais par un `alignItems` en ligne : en
+  colonne, `flex-end` calait les champs à droite, à la largeur de leur contenu, et le style en ligne
+  l'emportait sur la règle mobile. `debordements.mjs` ne mesure que l'ordinateur : ces deux-là ont été
+  vus sur une capture, puis mesurés rangée par rangée.
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
@@ -895,6 +913,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   un test réel effectué par l'utilisateur.
 - **API SIRENE** — recherche de code NAF/profession à partir d'un SIRET
   (`src/lib/sirene.ts`), déclenchée uniquement à la demande.
+- **Enable Banking** (API `api.enablebanking.com`) — agrégateur bancaire DSP2, prestataire
+  d'information sur les comptes enregistré en Finlande, en preuve de concept sur son BAC À SABLE
+  (application `ded8dcc5-…`, écrite dans `banque-connexion`). Chaque appel est signé par un jeton RS256
+  fait avec la clé privée de l'application (secret `ENABLE_BANKING_CLE_PRIVEE`, jamais dans le dépôt ni
+  dans la conversation) ; l'adresse de retour `https://compta.jdarnis.fr/retour-banque.html` est
+  déclarée dans son panneau de contrôle. Le prestataire définitif est sur devis (ligne 24).
 - **Bedrock (Claude)** — moteur de l'assistant comptable (`agent-comptable`),
   avec suivi de coût par tokens et plafond configurable par cabinet.
 - **GitHub Actions** — CI/CD de déploiement (voir `.github/workflows/deploy.yml`).
@@ -1267,6 +1291,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   créditée nette de sa commission. Chaque part compte dans la 2035 à la date du mouvement, la part
   personnelle jamais ; l'écriture porte une ligne par part face à la banque. Voir « un mouvement se
   ventile sur plusieurs comptes » dans « Problèmes connus » (`lib/ventilationBanque.ts`).
+- **La connexion bancaire, en preuve de concept sur un bac à sable (30/09/2026)**, ligne 24 : dans
+  l'onglet Banque, « Connecter une banque » ouvre la liste des banques du prestataire (Enable Banking),
+  la demande d'accord part sur le site de la banque, et au retour le cabinet choisit le compte dont
+  importer les mouvements. « Récupérer les mouvements » les lit sur une période proposée, l'écran montre
+  ce qui entrerait — sans ce qui est déjà au relevé —, et « Importer » les écrit « à traiter », par le
+  même chemin qu'un relevé. Voir « la connexion bancaire récupère, l'écran importe » dans « Problèmes
+  connus » (`banque-connexion`, `lib/connexionBancaire.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1304,6 +1335,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   assujetti, dont la TVA ne se lit pas sur un relevé. Puis (b) écrire les cotisations, les dotations,
   l'acquisition d'une immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y
   comparer, (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
+- Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
+  (30/09/2026). Restent : la clé privée de l'application à poser dans les secrets des fonctions, puis
+  un premier essai du cabinet avec une banque fictive ; le choix du prestataire (sur devis) et son
+  contrat ; le chemin du CLIENT — seul le titulaire du compte peut donner l'accord, et l'écran
+  d'aujourd'hui fait cliquer le cabinet ; et la récupération automatique ou au clic, à trancher
+  (RGPD.md §8.8).
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -1378,11 +1415,12 @@ d'environnement dans la même édition.
     chasse à chaque audit : ce qui rendrait ces avertissements dangereux, c'est qu'une NOUVELLE
     fonction `SECURITY DEFINER` écrive sans contrôle d'accès interne. C'est cela qu'il faut
     revérifier, pas l'advisor lui-même.
-  - `rls_enabled_no_policy` (INFO) sur `super_admins`, `superpdp_credentials`
-    et `facture_numerotation` — **volontaire.** RLS activée sans aucune policy
+  - `rls_enabled_no_policy` (INFO) sur `super_admins`, `superpdp_credentials`,
+    `facture_numerotation` et `connexions_bancaires` — **volontaire.** RLS activée sans aucune policy
     vaut refus total côté client : ces tables ne sont atteintes que par les
     fonctions `SECURITY DEFINER` et le service role. Y ajouter une policy pour
-    faire taire l'advisor ouvrirait précisément ce que ce réglage ferme.
+    faire taire l'advisor ouvrirait précisément ce que ce réglage ferme — pour la dernière,
+    l'identifiant de session qui ouvre les mouvements d'un compte.
 - **`pack_pieces` a été supprimée** (migration `drop_table_morte_pack_pieces`).
   Elle devait tracer la composition de chaque pack livré au comptable ; le
   générateur ne l'a jamais écrite. La preuve n'était pas qu'elle soit vide mais
@@ -5368,6 +5406,82 @@ d'environnement dans la même édition.
   qui n'est plus « à traiter » ; la TVA d'une part n'est pas ventilée — sur un dossier assujetti, une
   recette ne se ventile pas et une dépense passe TTC en charge, comme une affectation ; et le plan de
   trésorerie compte un mouvement ventilé en entier, comme tout mouvement.
+- **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
+  (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
+  `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
+  se découpe à la main ; l'agrégation bancaire de la DSP2 lit les mouvements à la banque, sur l'accord
+  du titulaire. Le cabinet a retenu Enable Banking pour la preuve de concept, sur son bac à sable
+  (banques et mouvements fictifs) ; le prestataire définitif est sur devis.
+  **LA FONCTION PARLE AU PRESTATAIRE, L'ÉCRAN ÉCRIT.** `banque-connexion` porte sept actions — l'état,
+  la liste des banques, la demande d'accord, son retour, le choix du compte, la récupération, le retrait —
+  et REND les mouvements ; rien ne s'écrit au relevé sans le clic « Importer », après l'aperçu. Chaque
+  appel au prestataire est signé d'un jeton RS256 fait avec la clé privée de l'application (WebCrypto ;
+  PKCS#8 et PKCS#1 reconnus à leur structure, une clé chiffrée ou d'une autre famille refusée avec une
+  phrase qui décrit sa FORME, jamais son contenu). L'ordre du gestionnaire est gardé par un test : la
+  session vérifiée, puis `admin_du_dossier` avec le jeton de l'appelant, et rien ne part chez le
+  prestataire avant ; `statut` n'y part jamais — c'est lui qui s'affiche à l'ouverture de l'onglet, et
+  « aucun appel réseau externe silencieux » tient. La session ouverte chez le prestataire, l'identifiant
+  d'un compte et le jeton de retour ne quittent jamais le serveur : `connexions_bancaires` n'a AUCUNE
+  policy, et un test vérifie qu'aucune réponse de la fonction ne les porte ni qu'aucun journal ne les
+  nomme — les journaux comptent, ils ne citent pas.
+  **L'ACCORD** : `valid_until` vaut la durée maximale de la banque, bornée à 180 jours et diminuée d'une
+  marge. Le titulaire choisit l'espace par lequel il se connecte (`type_acces`, professionnel ou
+  particulier : un entrepreneur individuel n'a souvent qu'un espace particulier). **Une seule connexion
+  par dossier** (`connexions_bancaires_dossier_unique`) — l'application tient un relevé par dossier. Le
+  RENOUVELLEMENT garde la connexion active jusqu'au retour, retrouve le compte importé à son empreinte
+  (`identification_hash`, stable d'une session à l'autre, là où l'identifiant de compte ne l'est pas), et
+  referme l'ancienne session ; le retour ne s'écrit que si la demande est toujours celle qu'on finalise,
+  sinon la session ouverte est aussitôt refermée. Le RETRAIT referme l'accord chez la banque AVANT
+  d'effacer la ligne — dans l'autre ordre, un échec laisserait un accès ouvert que plus rien ne désigne ;
+  si la banque ne répond pas, la réponse porte `fermeture_impossible`, et c'est ce drapeau, lu sur une
+  COPIE du corps de l'erreur, qui offre « Retirer quand même » — pas un refus de la base.
+  **LE RETOUR DE LA BANQUE** : `public/retour-banque.html` recopie ses paramètres derrière le « # »
+  (HashRouter) et se remplace dans l'historique ; `RetourBanque` remet le code UNE fois — la promesse
+  gardée dans un ref, parce qu'un simple drapeau « déjà lancé » laisserait le second montage du mode
+  strict sans réponse — puis rejoint l'onglet Banque en remplaçant la page, pour que le code ne reste
+  pas à portée de « précédent ». L'erreur rendue par la banque n'appelle rien, et son texte ne s'affiche
+  que s'il a la forme d'un code : une phrase écrite dans un lien ne doit pas s'afficher dans
+  l'application. L'adresse de retour vit à trois endroits que `banqueConnexion.test.ts` confronte (la
+  fonction, `public/` et le domaine de `CNAME`), plus le panneau de contrôle du prestataire, que la
+  fonction relit à chaque demande et refuse en le disant.
+  **LES MOUVEMENTS** : seuls ceux que la banque a COMPTABILISÉS (`BOOK`) et en euros entrent ; le sens se
+  lit sur `credit_debit_indicator` (`CRDT`, `DBIT` — un résumé de la documentation écrivait `DBTR`,
+  vérifié faux sur la référence), le montant sur sa CHAÎNE, au centime, sans passer par un flottant ; le
+  libellé réunit la référence de paiement et la contrepartie. L'identifiant externe est tiré de la
+  référence de la banque, sinon du contenu du mouvement et de son rang, préfixé de l'empreinte du compte :
+  c'est lui qui dédoublonne une récupération de la suivante. **La période est refiltrée par la fonction** :
+  la plupart des bacs à sable ignorent le filtre de dates. La lecture page à page s'arrête sur la clé de
+  suite, et devient INCOMPLÈTE sur une clé répétée, un budget de 100 secondes (sous le mur de 150 de la
+  plateforme) ou deux cents pages : l'import se suspend alors, et `derniere_recuperation` n'est posée
+  que sur une lecture complète.
+  **L'IMPORT** : par lots de 500, `upsert` sur `(dossier_id, id_externe)` avec `ignoreDuplicates` — une
+  contrainte TOTALE, comme toute contrainte unique de ce schéma —, et le compte annoncé est celui des
+  lignes que la base rend (`.select('id_externe')`), pas celui des lignes envoyées : un autre onglet a pu
+  importer entre-temps. Le statut suit les règles « toujours ignorer », dont `statutPourLibelle` vit
+  désormais dans `lib/reglesIgnorees.ts`, commun aux trois imports (CSV, PDF, banque). `planImport` écarte
+  ce qui est déjà au relevé : par identifiant, puis — pour un mouvement importé d'un FICHIER, qui n'en a
+  pas — par date et montant, un à un (deux cafés du même prix le même jour, dont un seul au fichier, en
+  laissent un à importer). Une date décalée d'un jour entre le fichier et la banque échapperait à ce
+  second filtre : c'est pourquoi la période proposée commence au lendemain du dernier mouvement du
+  relevé, ou au dernier mouvement déjà récupéré, ce jour compris. L'import se suspend sur une lecture
+  incomplète de la banque OU de l'onglet — relevé ou règles —, et le bac à sable demande confirmation.
+  **Vérifié en base et en production** : trois migrations (`connexion_bancaire_enable_banking`,
+  `connexion_bancaire_une_par_dossier`, `connexion_bancaire_type_acces`) ; l'export porte 71 migrations,
+  le socle 71 instructions, l'inventaire 838 objets ; `supabase/essais/connexionBancaire.sql`, 22
+  contrôles par impersonation des trois profils. `banque-connexion` déployée en version 1 avec
+  `verify_jwt` à `true` (inscrit dans `config.toml` avant le premier déploiement), aller-retour sans
+  différence sur 861 lignes, 401 sans session. Aucun appel au prestataire n'a été fait pour le vérifier :
+  la clé privée n'est pas encore posée.
+  **Tests et mutations** : 55 tests de la fonction, sur sa VRAIE source (quatre blocs bornés extraits,
+  transpilés, exécutés ; le jeton vérifié avec la clé publique d'une vraie paire RSA), 32 mutations,
+  toutes mordent ; 14 du module, 29 de la carte, 8 du retour, 4 de câblage dans l'onglet Banque ; 41
+  mutations des écrans, toutes mordent — dont le code remis deux fois sous le mode strict, le verrou
+  posé dans le `try` (à trois clics), le compte de l'envoyé au lieu de l'écrit, et chacune des props
+  que l'onglet passe à la carte, que ses propres tests, montés seuls, ne pouvaient pas voir.
+  **Pièges payés en chemin** : jsdom ne laisse pas redéfinir `location.assign` — le test double la page
+  entière (`vi.stubGlobal('location', …)`) ; un élément qui paraît après chargement se cherche HORS de
+  l'`act` ; et un retour d'`upsert` lu par `.select(` passe pour une lecture de collection, d'où une
+  exception inscrite dans `lecturesPaginees.test.ts`, bornée par la taille du lot.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -6608,7 +6722,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2864 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2974 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -6630,7 +6744,9 @@ affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent c
 (`reglesAffectation.ts`), celles d'un virement personnel sur le compte du dirigeant
 (`virementPersonnel.ts`), celles d'une échéance d'emprunt sur ses trois comptes
 (`echeanceEmprunt.ts`), et celles d'un mouvement ventilé sur plusieurs comptes
-(`ventilationBanque.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`) —
+(`ventilationBanque.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`),
+et ce que la connexion bancaire décide sans rien appeler — la période proposée, ce qui s'importe
+vraiment (`connexionBancaire.ts`) —
 les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
