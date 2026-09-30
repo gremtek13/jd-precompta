@@ -25,6 +25,10 @@ import { describe, expect, it, vi } from 'vitest'
 //   4. Le seul appelant sans session, `receive-email`, parle-t-il encore la langue que le contrôle
 //      attend ? S'il changeait de clé, ses pièces jointes arriveraient sans lecture, en silence — la
 //      panne qui ressemble à un dossier calme.
+//
+// DEPUIS LE 30/09/2026 CETTE LANGUE A CHANGÉ : la clé secrète du projet n'est plus un jeton, elle
+// voyage dans l'en-tête `apikey` et la fonction est en `verify_jwt = false`. Le contrôle est donc la
+// seule barrière, et il compare lui-même la clé, à temps constant.
 
 const SOURCE = readFileSync(
   new URL('../../supabase/functions/extract-piece/index.ts', import.meta.url), 'utf8')
@@ -32,7 +36,10 @@ const SOURCE_RECEPTION = readFileSync(
   new URL('../../supabase/functions/receive-email/index.ts', import.meta.url), 'utf8')
 
 type SessionRattachee = (jeton: string) => Promise<boolean>
-type Controle = (entete: string | null, cleService: string | undefined, sessionRattachee: SessionRattachee) => Promise<boolean>
+type Controle = (
+  autorisation: string | null, apikey: string | null, cleSecrete: string, sessionRattachee: SessionRattachee,
+) => Promise<boolean>
+type Egalite = (a: string, b: string) => boolean
 type Comptage = { count: number | null; error: { message: string } | null }
 type Rattachement = (comptes: Comptage[]) => boolean
 
@@ -44,19 +51,21 @@ function blocAppelant(source: string): string {
   const bloc = source.slice(debut, fin)
   expect(bloc, '`appelantAutorise` absente du bloc gardé').toContain('async function appelantAutorise(')
   expect(bloc, '`estRattache` absente du bloc gardé').toContain('function estRattache(')
+  expect(bloc, '`egaliteConstante` absente du bloc gardé').toContain('function egaliteConstante(')
   return bloc
 }
 
 /** Le bloc SEUL, transpilé et exécuté : tout nom qu'il emprunterait au reste du fichier lèverait. */
-function executer(bloc: string): { appelantAutorise: Controle; estRattache: Rattachement } {
+function executer(bloc: string): { appelantAutorise: Controle; estRattache: Rattachement; egaliteConstante: Egalite } {
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { appelantAutorise, estRattache }`)()
+  return new Function(`${js}\nreturn { appelantAutorise, estRattache, egaliteConstante }`)()
 }
 
-const { appelantAutorise, estRattache } = executer(blocAppelant(SOURCE))
+const BLOC = blocAppelant(SOURCE)
+const { appelantAutorise, estRattache, egaliteConstante } = executer(BLOC)
 
-const CLE_SERVICE = 'cle-de-service-du-projet'
-const CLE_PUBLIQUE = 'cle-publique-servie-avec-le-site'
+const CLE_SECRETE = 'sb_secret_cle-du-projet'
+const CLE_PUBLIQUE = 'sb_publishable_servie-avec-le-site'
 const SESSION = 'jeton-d-une-session-ouverte'
 
 /** Le service d'authentification simulé : il ne reconnaît qu'une session, et compte ses appels. */
@@ -65,58 +74,111 @@ function authentification() {
 }
 
 describe('extract-piece — qui peut faire lire un document', () => {
-  it('refuse un appel sans en-tête, sans même interroger le service d’authentification', async () => {
+  it('refuse un appel sans en-tête ni clé, sans même interroger le service d’authentification', async () => {
     const auth = authentification()
-    expect(await appelantAutorise(null, CLE_SERVICE, auth)).toBe(false)
+    expect(await appelantAutorise(null, null, CLE_SECRETE, auth)).toBe(false)
     expect(auth).not.toHaveBeenCalled()
   })
 
   it('refuse un en-tête qui ne porte pas de jeton porteur', async () => {
+    // La clé publishable dans `apikey` est ce que le navigateur envoie toujours : elle ne vaut rien seule.
     const auth = authentification()
     for (const entete of ['', 'Bearer', 'Bearer ', `Basic ${SESSION}`, SESSION]) {
-      expect(await appelantAutorise(entete, CLE_SERVICE, auth), `accepté : « ${entete} »`).toBe(false)
+      expect(await appelantAutorise(entete, CLE_PUBLIQUE, CLE_SECRETE, auth), `accepté : « ${entete} »`).toBe(false)
     }
     expect(auth).not.toHaveBeenCalled()
   })
 
-  it('refuse la clé PUBLIQUE de l’application : un jeton signé n’est pas une session', async () => {
+  it('refuse la clé PUBLISHABLE présentée comme jeton : une clé n’est pas une session', async () => {
     const auth = authentification()
-    expect(await appelantAutorise(`Bearer ${CLE_PUBLIQUE}`, CLE_SERVICE, auth)).toBe(false)
+    expect(await appelantAutorise(`Bearer ${CLE_PUBLIQUE}`, CLE_PUBLIQUE, CLE_SECRETE, auth)).toBe(false)
     // Et la question a bien été posée au service d'authentification : c'est LUI qui dit non.
     expect(auth).toHaveBeenCalledWith(CLE_PUBLIQUE)
   })
 
   it('accepte une session que le service d’authentification reconnaît — le garde symétrique', async () => {
     // Sans lui, « on refuse l'inconnu » serait satisfait par un contrôle qui refuse tout le monde, et
-    // chaque dépôt perdrait sa lecture.
-    expect(await appelantAutorise(`Bearer ${SESSION}`, CLE_SERVICE, authentification())).toBe(true)
+    // chaque dépôt perdrait sa lecture. C'est l'appel du navigateur : sa session en porteur, la clé
+    // publishable dans `apikey`.
+    expect(await appelantAutorise(`Bearer ${SESSION}`, CLE_PUBLIQUE, CLE_SECRETE, authentification())).toBe(true)
   })
 
-  it('accepte la clé de service (receive-email) sans interroger le service d’authentification', async () => {
-    // La clé de service n'a pas de session : le service d'authentification la refuserait.
+  it('accepte la clé secrète dans `apikey` (receive-email) sans interroger le service d’authentification', async () => {
+    // La clé secrète n'a pas de session : le service d'authentification la refuserait.
     const auth = authentification()
-    expect(await appelantAutorise(`Bearer ${CLE_SERVICE}`, CLE_SERVICE, auth)).toBe(true)
+    expect(await appelantAutorise(null, CLE_SECRETE, CLE_SECRETE, auth)).toBe(true)
     expect(auth).not.toHaveBeenCalled()
+  })
+
+  it('ne tient pas la clé secrète pour une clé quand elle arrive en porteur', async () => {
+    // C'était la langue d'avant : la clé historique était un jeton. La nouvelle n'en est pas un, et ne
+    // doit ouvrir qu'une porte. En porteur, elle n'est qu'un jeton de plus, que le service
+    // d'authentification ne reconnaît pas.
+    const auth = authentification()
+    expect(await appelantAutorise(`Bearer ${CLE_SECRETE}`, null, CLE_SECRETE, auth)).toBe(false)
+    expect(auth).toHaveBeenCalledWith(CLE_SECRETE)
+  })
+
+  it('refuse une clé secrète presque juste', async () => {
+    const auth = authentification()
+    for (const cle of [`${CLE_SECRETE.slice(0, -1)}x`, CLE_SECRETE.slice(0, -1), `${CLE_SECRETE} `, CLE_SECRETE.toUpperCase()]) {
+      expect(await appelantAutorise(null, cle, CLE_SECRETE, auth), `accepté : « ${cle} »`).toBe(false)
+    }
   })
 
   it('lit le schéma sans tenir compte de la casse, et tolère un blanc final', async () => {
     const auth = authentification()
-    expect(await appelantAutorise(`bearer ${CLE_SERVICE}`, CLE_SERVICE, auth)).toBe(true)
-    expect(await appelantAutorise(`Bearer ${SESSION} `, CLE_SERVICE, auth)).toBe(true)
+    expect(await appelantAutorise(`bearer ${SESSION}`, null, CLE_SECRETE, auth)).toBe(true)
+    expect(await appelantAutorise(`Bearer ${SESSION} `, null, CLE_SECRETE, auth)).toBe(true)
   })
 
-  it('sans clé de service connue, rien ne passe pour elle', async () => {
-    // Une variable absente ne doit pas devenir une clé que tout le monde connaît : « undefined ».
+  it('sans clé secrète connue, rien ne passe pour elle', async () => {
+    // Une clé vide ne doit pas devenir une clé que tout le monde connaît : deux chaînes vides sont
+    // égales, et c'est exactement le sens dangereux.
     const auth = authentification()
-    expect(await appelantAutorise('Bearer undefined', undefined, auth)).toBe(false)
-    expect(await appelantAutorise(`Bearer ${CLE_SERVICE}`, '', auth)).toBe(false)
+    expect(await appelantAutorise(null, '', '', auth)).toBe(false)
+    expect(await appelantAutorise(null, CLE_SECRETE, '', auth)).toBe(false)
+    expect(await appelantAutorise(null, '', CLE_SECRETE, auth)).toBe(false)
   })
 
   it('une vérification de session qui échoue fait échouer l’appel, jamais passer', async () => {
     // Le service d'authentification injoignable : la promesse rejette, le gestionnaire rend 500 par
     // son `catch`. Le sens dangereux serait de conclure « accepté » faute de réponse.
     const enPanne: SessionRattachee = async () => { throw new Error('service d’authentification injoignable') }
-    await expect(appelantAutorise(`Bearer ${SESSION}`, CLE_SERVICE, enPanne)).rejects.toThrow('injoignable')
+    await expect(appelantAutorise(`Bearer ${SESSION}`, null, CLE_SECRETE, enPanne)).rejects.toThrow('injoignable')
+  })
+})
+
+describe('extract-piece — la clé secrète se compare à temps constant', () => {
+  it('rend l’égalité, octet par octet', () => {
+    expect(egaliteConstante(CLE_SECRETE, CLE_SECRETE)).toBe(true)
+    expect(egaliteConstante(CLE_SECRETE, `${CLE_SECRETE.slice(0, -1)}x`)).toBe(false)
+    expect(egaliteConstante(CLE_SECRETE, `x${CLE_SECRETE.slice(1)}`)).toBe(false)
+    expect(egaliteConstante(CLE_SECRETE, CLE_SECRETE.slice(0, -1))).toBe(false)
+    expect(egaliteConstante('', CLE_SECRETE)).toBe(false)
+    // Deux écritures du même mot à l'œil nu (« é » précomposé, puis « e » suivi de l'accent) sont deux
+    // clés différentes : la comparaison porte sur les octets, jamais sur ce qu'on lit.
+    expect(egaliteConstante('clé', 'cle\u0301')).toBe(false)
+    expect(egaliteConstante('clé', 'clé')).toBe(true)
+  })
+
+  it('ne s’arrête pas à la première différence', () => {
+    // Une boucle qui sortirait au premier octet faux rendrait la même réponse — seul son TEMPS dirait
+    // combien de caractères d'une clé devinée sont justes, et aucun test d'égalité ne le verrait. Un
+    // `a === b` posé en tête ferait de même : juste dans sa réponse, bavard dans son temps. La fonction
+    // est donc gardée ENTIÈRE, au caractère près — un raccourci ajouté n'importe où la fait tomber.
+    const debut = BLOC.indexOf('function egaliteConstante(')
+    const fonction = BLOC.slice(debut, BLOC.indexOf('\n}\n', debut) + 2)
+    expect(fonction).toBe([
+      'function egaliteConstante(a: string, b: string): boolean {',
+      '  const x = new TextEncoder().encode(a)',
+      '  const y = new TextEncoder().encode(b)',
+      '  if (x.length !== y.length) return false',
+      '  let difference = 0',
+      '  for (let i = 0; i < x.length; i++) difference |= x[i] ^ y[i]',
+      '  return difference === 0',
+      '}',
+    ].join('\n'))
   })
 })
 
@@ -174,16 +236,23 @@ describe('extract-piece — le contrôle est câblé AVANT toute dépense', () =
     }
   })
 
-  it('la session se vérifie auprès du service d’authentification, et la clé de service vient de l’environnement', () => {
-    // Pas de lecture des revendications du jeton : elles ne valent que ce que vaut `verify_jwt`, et
-    // ce drapeau s'est déjà retourné une fois en silence au déploiement.
+  it('la session se vérifie auprès du service d’authentification, et les clés viennent de l’environnement', () => {
+    // Pas de lecture des revendications du jeton : elles ne valent que ce que vaut `verify_jwt`, et la
+    // passerelle ne vérifie plus rien pour cette fonction.
     expect(rappel).toMatch(/\.auth\.getUser\(jeton\)/)
     expect(rappel).toMatch(/if \(error \|\| !data\.user\) return false/)
-    expect(gestionnaire).toMatch(/Deno\.env\.get\("SUPABASE_SERVICE_ROLE_KEY"\)/)
+    expect(rappel).toMatch(/const verificateur = createClient\(url, cleSupabase\("SUPABASE_PUBLISHABLE_KEYS", Deno\.env\.get\("SUPABASE_PUBLISHABLE_KEYS"\)\)\)/)
+    expect(gestionnaire).toMatch(/const cleSecrete = cleSupabase\("SUPABASE_SECRET_KEYS", Deno\.env\.get\("SUPABASE_SECRET_KEYS"\)\)\n\s*const autorise = await appelantAutorise\(/)
   })
 
-  it('le rattachement se lit sur les TROIS tables, à la clé de service, et décide seul de la réponse', () => {
-    expect(rappel).toMatch(/const admin = createClient\(url, Deno\.env\.get\("SUPABASE_SERVICE_ROLE_KEY"\)!\)/)
+  it('passe au contrôle l’en-tête `Authorization`, l’en-tête `apikey` et la clé secrète, dans cet ordre', () => {
+    // Deux en-têtes inversés passeraient la compilation — ce sont deux chaînes — et feraient comparer
+    // le jeton de session à la clé secrète : chaque dépôt perdrait sa lecture, et receive-email aussi.
+    expect(gestionnaire).toMatch(/appelantAutorise\(\s*req\.headers\.get\("Authorization"\),\s*req\.headers\.get\("apikey"\),\s*cleSecrete,/)
+  })
+
+  it('le rattachement se lit sur les TROIS tables, à la clé secrète, et décide seul de la réponse', () => {
+    expect(rappel).toMatch(/const admin = createClient\(url, cleSecrete\)/)
     for (const table of ['cabinet_admins', 'memberships', 'super_admins']) {
       expect(rappel, `${table} n’est plus lue`).toMatch(new RegExp(
         String.raw`admin\.from\("${table}"\)\.select\("user_id", \{ count: "exact", head: true \}\)\.eq\("user_id", id\)`))
@@ -197,9 +266,19 @@ describe('extract-piece — le contrôle est câblé AVANT toute dépense', () =
 })
 
 describe('receive-email — le seul appelant sans session', () => {
-  it('appelle avec la clé de service que le contrôle accepte', () => {
-    expect(SOURCE_RECEPTION).toMatch(/fetch\(`\$\{supabaseUrl\}\/functions\/v1\/extract-piece`/)
-    expect(SOURCE_RECEPTION).toMatch(/Authorization: `Bearer \$\{serviceRoleKey\}`/)
-    expect(SOURCE_RECEPTION).toMatch(/const serviceRoleKey = Deno\.env\.get\("SUPABASE_SERVICE_ROLE_KEY"\)/)
+  const appel = SOURCE_RECEPTION.slice(SOURCE_RECEPTION.indexOf('async function classifierEtExtraire('))
+
+  it('appelle avec la clé secrète dans `apikey`, et rien en `Authorization`', () => {
+    // La plateforme refuse une clé de cette forme en porteur (« Invalid JWT »), et le contrôle ne la
+    // reconnaît que dans `apikey`.
+    expect(appel).toMatch(/fetch\(`\$\{supabaseUrl\}\/functions\/v1\/extract-piece`, \{\s*method: "POST",\s*headers: \{ apikey: cleSecrete \},\s*body: bytes,/)
+    expect(SOURCE_RECEPTION).toMatch(/const cleSecrete = cleSupabase\("SUPABASE_SECRET_KEYS", Deno\.env\.get\("SUPABASE_SECRET_KEYS"\)\)/)
+    expect(SOURCE_RECEPTION).toMatch(/classifierEtExtraire\(bytes, supabaseUrl, cleSecrete\)/)
+  })
+
+  it('journalise un refus au lieu de déposer la pièce jointe sans rien dire', () => {
+    // Un changement de contrat entre les deux fonctions — celui-ci en est un — rendrait chaque pièce
+    // jointe sans lecture ; le journal est le seul endroit où cela se verrait.
+    expect(appel).toMatch(/if \(!res\.ok\) \{\s*console\.error\(`\[receive-email\] extract-piece a répondu \$\{res\.status\}/)
   })
 })

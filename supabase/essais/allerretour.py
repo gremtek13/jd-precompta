@@ -10,12 +10,25 @@ le journal de session (`~/.claude/projects/<projet>/<session>.jsonl`), qui porte
 avec son résultat. On l'y relit plutôt que de le retranscrire — la transcription est précisément ce
 que cet aller-retour vérifie, elle ne peut donc pas servir aussi de référence.
 
-    python3 supabase/essais/allerretour.py <id-de-fonction> <chemin/du/depot/index.ts> [marqueur]
+    python3 supabase/essais/allerretour.py <slug-ou-id> <chemin/du/depot/index.ts> [marqueur]
 
-`<id-de-fonction>` est l'uuid que rend `list_edge_functions` (champ `id`). Le `marqueur` facultatif
-est un bout de texte que SEULE la version attendue contient : sans lui, le journal peut encore porter
-une lecture ANTÉRIEURE de la même fonction, et l'aller-retour comparerait alors le dépôt à la version
-qu'on vient de remplacer — vert pour une raison fausse.
+`<slug-ou-id>` est le nom de la fonction (`extract-piece`) ou l'uuid que rend `list_edge_functions`.
+
+C'EST LA LECTURE LA PLUS RÉCENTE QUI COMPTE, et le journal en porte plusieurs : celle d'avant
+l'écrasement (la comparaison au dépôt), puis celle d'après. Jusqu'au 30/09/2026 ce script retenait la
+plus LONGUE — juste tant que chaque lecture est plus longue que la précédente, faux dès qu'une version
+raccourcit : un fichier dont on retire des lignes (rouge sur un déploiement juste), ou une
+transcription fautive plus courte que la lecture juste qui la précède (VERT sur un déploiement faux).
+Ce second cas n'a rien de théorique : le 30/09/2026, deux redéploiements de `receive-email` ont
+perdu quatre traits d'une bordure de commentaire — ils suivaient, par chance, une lecture plus courte.
+Le `marqueur` facultatif reste utile : un bout de texte que SEULE la version attendue contient, pour
+refuser une lecture faite avant le déploiement si aucune n'a été faite après.
+
+ET UNE FONCTION VOLUMINEUSE N'EST PAS DANS LE JOURNAL : son résultat dépasse ce que la conversation
+accepte, il est écrit sur disque, et le journal ne porte que le message qui en donne le chemin
+(« saved to … », un `.txt` ou un `.json` fait de blocs de texte). Ce script le suit. Avant, il rendait
+« INTROUVABLE » sur `extract-piece` et `agent-comptable`, c'est-à-dire sur les deux fonctions dont la
+transcription est la plus longue, donc la plus exposée.
 
 CE QU'IL PROUVE : la transcription. CE QU'IL NE PROUVE PAS : que la fonction s'exécute, ni ce qu'elle
 a le DROIT de faire chez AWS (voir `edgeFunctionsIam.test.ts`), ni son `verify_jwt` — qui se relit
@@ -38,13 +51,32 @@ def journal() -> str:
     return max(fichiers, key=os.path.getmtime)
 
 
-def source_deployee(identifiant: str, marqueur: str | None) -> str | None:
-    """La plus longue lecture de cette fonction trouvée dans le journal."""
-    meilleure = None
+MARQUE = '"name":"index.ts","content":"'
+
+
+def texte_du_resultat(bloc: dict) -> str:
+    """Le texte d'un résultat d'outil — relu sur disque quand il y a été écrit faute de place."""
+    texte = bloc.get('content')
+    if isinstance(texte, list):
+        texte = ''.join(x.get('text', '') for x in texte if isinstance(x, dict))
+    if not isinstance(texte, str):
+        return ''
+    chemin = re.search(r'saved to:? ?(\S+\.(?:txt|json))', texte)
+    if chemin and os.path.exists(chemin.group(1)):
+        texte = open(chemin.group(1), encoding='utf8').read()
+        # Écrit en .json, c'est un tableau de blocs {type, text} : on en recolle le texte.
+        if chemin.group(1).endswith('.json'):
+            blocs = json.loads(texte)
+            if isinstance(blocs, list):
+                texte = ''.join(b.get('text', '') for b in blocs if isinstance(b, dict))
+    return texte
+
+
+def source_deployee(fonction: str, marqueur: str | None) -> str | None:
+    """La lecture la plus RÉCENTE de cette fonction dans le journal (voir l'en-tête)."""
+    appels = {}  # identifiant d'appel -> fonction demandée à get_edge_function
+    derniere = None
     for ligne in open(journal(), encoding='utf8'):
-        # Les guillemets sont échappés dans le JSONL : on ne peut filtrer que sur un identifiant nu.
-        if identifiant not in ligne:
-            continue
         try:
             objet = json.loads(ligne)
         except ValueError:
@@ -53,21 +85,24 @@ def source_deployee(identifiant: str, marqueur: str | None) -> str | None:
         if not isinstance(contenu, list):
             continue
         for bloc in contenu:
-            if bloc.get('type') != 'tool_result':
+            if not isinstance(bloc, dict):
                 continue
-            texte = bloc.get('content')
-            if isinstance(texte, list):
-                texte = ''.join(x.get('text', '') for x in texte)
-            if not isinstance(texte, str) or '"name":"index.ts","content":"' not in texte:
+            if bloc.get('type') == 'tool_use' and bloc.get('name', '').endswith('get_edge_function'):
+                appels[bloc.get('id')] = (bloc.get('input') or {}).get('function_slug')
                 continue
-            if marqueur and marqueur not in texte:
+            if bloc.get('type') != 'tool_result' or bloc.get('tool_use_id') not in appels:
                 continue
-            if meilleure is None or len(texte) > len(meilleure):
-                meilleure = texte
-    if meilleure is None:
+            texte = texte_du_resultat(bloc)
+            # Désignée par son nom, ou par l'uuid que porte le résultat lui-même.
+            if appels[bloc['tool_use_id']] != fonction and f'"id":"{fonction}"' not in texte:
+                continue
+            if MARQUE not in texte or (marqueur and marqueur not in texte):
+                continue
+            derniere = texte
+    if derniere is None:
         return None
-    debut = meilleure.index('"name":"index.ts","content":"') + len('"name":"index.ts","content":')
-    reste = meilleure[debut:]
+    debut = derniere.index(MARQUE) + len(MARQUE) - 1
+    reste = derniere[debut:]
     # Un résultat volumineux est TRONQUÉ, parfois au milieu d'une séquence d'échappement : on
     # raccourcit jusqu'à obtenir une chaîne JSON valide, et le compte de lignes dira ensuite que la
     # comparaison ne porte pas sur tout le fichier.
@@ -83,10 +118,10 @@ def source_deployee(identifiant: str, marqueur: str | None) -> str | None:
 def main() -> int:
     if len(sys.argv) < 3:
         raise SystemExit(__doc__)
-    identifiant, chemin = sys.argv[1], sys.argv[2]
+    fonction, chemin = sys.argv[1], sys.argv[2]
     marqueur = sys.argv[3] if len(sys.argv) > 3 else None
 
-    deploye = source_deployee(identifiant, marqueur)
+    deploye = source_deployee(fonction, marqueur)
     if deploye is None:
         print("INTROUVABLE dans le journal — le résultat de get_edge_function n'y est pas encore écrit")
         return 1

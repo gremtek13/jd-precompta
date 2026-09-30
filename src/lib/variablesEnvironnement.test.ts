@@ -25,12 +25,15 @@ import { describe, expect, it } from 'vitest'
 // outil de ce dépôt ne lit. Les noms sont gardés ; les valeurs se vérifient à la main.
 
 /**
- * Ce que Supabase pose lui-même dans l'environnement de chaque fonction, dans le cloud comme en
- * auto-hébergé. C'est un fait de la PLATEFORME et non du dépôt, ce qui lui donne le droit d'être
- * écrit ici : une variable rangée à tort parmi celles-ci passerait pour « rien à poser » et
- * manquerait le jour de la reprise — le sens dangereux de l'erreur, que le test refuse.
+ * Ce que Supabase pose lui-même dans l'environnement de chaque fonction (guide « Environment
+ * variables » des Edge Functions). C'est un fait de la PLATEFORME et non du dépôt, ce qui lui donne le
+ * droit d'être écrit ici : une variable rangée à tort parmi celles-ci passerait pour « rien à poser »
+ * et manquerait le jour de la reprise — le sens dangereux de l'erreur, que le test refuse.
+ * Les deux variables des clés historiques, que la plateforme pose encore, n'y sont PLUS depuis le
+ * 30/09/2026 : ces clés cessent de fonctionner à la fin de 2026, et `clesSupabase.test.ts` refuse
+ * qu'une fonction les lise.
  */
-const FOURNIES_PAR_SUPABASE = ['SUPABASE_ANON_KEY', 'SUPABASE_DB_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'SUPABASE_URL']
+const FOURNIES_PAR_SUPABASE = ['SUPABASE_DB_URL', 'SUPABASE_JWKS', 'SUPABASE_PUBLISHABLE_KEYS', 'SUPABASE_SECRET_KEYS', 'SUPABASE_URL']
 
 /** Ce que Vite définit lui-même : jamais dans un fichier `.env`, toujours défini. */
 const INTEGREES_VITE = ['BASE_URL', 'DEV', 'MODE', 'PROD', 'SSR']
@@ -185,7 +188,7 @@ describe('variables d’environnement des Edge Functions', () => {
     const lues = new Set([...fonctions.values()].flatMap((s) => [...lecturesDeno(s).noms]))
     // Les trois variables de la plateforme sont lues par presque toutes les fonctions : un scanner
     // qui ne les voit plus ne voit plus rien.
-    for (const nom of ['SUPABASE_URL', 'SUPABASE_ANON_KEY', 'SUPABASE_SERVICE_ROLE_KEY']) expect(lues).toContain(nom)
+    for (const nom of ['SUPABASE_URL', 'SUPABASE_PUBLISHABLE_KEYS', 'SUPABASE_SECRET_KEYS']) expect(lues).toContain(nom)
     expect(inventaire.aPoser.size).toBeGreaterThan(0)
   })
 

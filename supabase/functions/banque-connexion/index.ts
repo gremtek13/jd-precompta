@@ -528,6 +528,32 @@ function paysDemande(valeur: unknown): string | null {
   return typeof valeur === "string" && /^[A-Z]{2}$/.test(valeur) ? valeur : null
 }
 
+// ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
+// Les clés d'API de Supabase, lues dans les variables que la plateforme pose elle-même. Les clés
+// historiques (`anon`, `service_role`) étaient des jetons signés du projet, et Supabase les coupe à la
+// fin de 2026 ; les nouvelles arrivent dans deux objets JSON « nom → clé », `SUPABASE_PUBLISHABLE_KEYS`
+// et `SUPABASE_SECRET_KEYS`, et ce projet se sert de la clé nommée `default`. Une variable absente,
+// illisible ou sans clé `default` de la bonne forme LÈVE : une clé vide ferait refuser chaque requête
+// pour une raison que personne ne lirait. Le message ne cite jamais la clé.
+// Bloc copié à l'identique dans chaque fonction qui parle à la base : `clesSupabase.test.ts` compare
+// les copies et exécute celle-ci.
+function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KEYS", brut: string | undefined): string {
+  const prefixe = variable === "SUPABASE_SECRET_KEYS" ? "sb_secret_" : "sb_publishable_"
+  if (!brut) throw new Error(`${variable} est absente de l'environnement de la fonction.`)
+  let cles: unknown
+  try {
+    cles = JSON.parse(brut)
+  } catch {
+    throw new Error(`${variable} n'est pas un objet JSON lisible.`)
+  }
+  const cle = cles !== null && typeof cles === "object" ? (cles as Record<string, unknown>).default : undefined
+  if (typeof cle !== "string" || !cle.startsWith(prefixe) || cle.length === prefixe.length) {
+    throw new Error(`${variable} ne porte pas de clé « default » de la forme ${prefixe}…`)
+  }
+  return cle
+}
+// ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req: Request) => {
   const debut = Date.now()
   if (req.method === "OPTIONS") {
@@ -543,10 +569,10 @@ Deno.serve(async (req: Request) => {
   }
 
   const supabaseUrl = Deno.env.get("SUPABASE_URL")!
-  const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!
-  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+  const clePublique = cleSupabase("SUPABASE_PUBLISHABLE_KEYS", Deno.env.get("SUPABASE_PUBLISHABLE_KEYS"))
+  const cleSecrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))
 
-  const supabaseAsCaller = createClient(supabaseUrl, anonKey, {
+  const supabaseAsCaller = createClient(supabaseUrl, clePublique, {
     global: { headers: { Authorization: authHeader } },
   })
   const { data: callerData, error: callerError } = await supabaseAsCaller.auth.getUser()
@@ -555,7 +581,7 @@ Deno.serve(async (req: Request) => {
   }
   const utilisateur: string = callerData.user.id
 
-  const admin = createClient(supabaseUrl, serviceRoleKey)
+  const admin = createClient(supabaseUrl, cleSecrete)
 
   let payload: Record<string, unknown>
   try {

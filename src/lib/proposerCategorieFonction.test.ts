@@ -55,10 +55,13 @@ describe('proposer-categorie — le gestionnaire', () => {
     expect([...CODE.matchAll(/\.rpc\("([^"]+)"/g)].map((m) => m[1])).toEqual(['admin_du_dossier'])
   })
 
-  it('lit avec le jeton de l’appelant, jamais avec la clé de service', () => {
-    // La RLS dit ce que l'appelant peut voir ; la clé de service la contournerait, et seul le
-    // contrôle d'accès resterait entre un appelant et les pièces des autres dossiers.
-    expect(CODE).not.toContain('SUPABASE_SERVICE_ROLE_KEY')
+  it('lit avec le jeton de l’appelant, jamais avec la clé secrète', () => {
+    // La RLS dit ce que l'appelant peut voir ; la clé secrète la contournerait, et seul le contrôle
+    // d'accès resterait entre un appelant et les pièces des autres dossiers. L'ancienne clé de service
+    // et la nouvelle clé secrète sont interdites toutes les deux : le bloc des clés, copié ici, nomme
+    // la variable de la seconde sans la lire.
+    expect(CODE).not.toMatch(/Deno\.env\.get\("SUPABASE_(?:SERVICE_ROLE_KEY|SECRET_KEYS)"\)/)
+    expect(CODE).toMatch(/cleSupabase\("SUPABASE_PUBLISHABLE_KEYS", Deno\.env\.get\("SUPABASE_PUBLISHABLE_KEYS"\)\)/)
   })
 
   it('ne journalise jamais l’extrait ni le texte — un fragment de document peut être un nom de patient', () => {

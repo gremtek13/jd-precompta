@@ -1,12 +1,15 @@
 // ESSAI DE MESURE — pas une fonctionnalité. À rejouer, pas à lire.
 //
-// Elle répond à DEUX questions, chacune décisive pour une marche de l'extraction :
+// Elle répond à TROIS questions — les deux premières décisives pour une marche de l'extraction :
 //   - « extraction » (celle d'origine, et la question par défaut) : un modèle qui lit le texte OCR
 //     extrait-il les champs d'une pièce aussi bien que l'étiquetage d'AnalyzeExpense, qu'on paie près
 //     de sept fois le prix de l'OCR seul ?
 //   - « categorie » (25/09/2026) : le même modèle, sur le même texte, propose-t-il une catégorie
 //     comptable FONDÉE — prise dans la liste du dossier et justifiée par un extrait du document — et
 //     retrouve-t-il les choix que le cabinet a déjà faits ? Voir `src/lib/categorisationIa.ts`.
+//   - « cles » (30/09/2026) : les clés d'API de Supabase que lisent toutes les fonctions sont-elles
+//     présentes et acceptées par la plateforme ? Sans modèle ni dossier, donc sans rien facturer ;
+//     voir `sonderCles`.
 //
 // ELLE N'EST OUVERTE QUE PENDANT UNE FENÊTRE DATÉE, ET C'EST UNE CORRECTION DE SÉCURITÉ (25/09/2026).
 // Le dépôt est PUBLIC : le nom de cette fonction, l'identifiant du dossier `test` (écrit en clair dans
@@ -448,16 +451,100 @@ async function mesurerCategorisation(supabase, client, dossierId, modele, limite
   }
 }
 
+// LA QUESTION « cles » (30/09/2026) : les clés d'API de Supabase, que toutes les fonctions lisent
+// dans leur environnement, sont-elles présentes, lisibles et ACCEPTÉES par la plateforme ? Aucun
+// fichier du dépôt ne peut le dire — elles vivent dans le projet —, et une clé refusée ne se verrait
+// qu'au premier geste d'un utilisateur. Chaque question passe par supabase-js, comme dans les
+// fonctions, et ne lit rien de réel :
+//   - la clé publishable, sans session, compte les lignes de `categories` : la RLS n'en montre aucune
+//     à un visiteur, mais une clé refusée rend une erreur ;
+//   - la clé secrète compte les lignes de `super_admins` (la base), puis demande à l'administration
+//     des comptes un compte qui n'existe pas : « introuvable » (404) prouve qu'elle y est admise,
+//     sans lire le moindre compte réel ;
+//   - enfin la clé secrète prend le chemin de `receive-email` : l'en-tête `apikey`, et lui seul, vers
+//     `extract-piece`. Aucun test ne voit ce chemin, et une passerelle qui retiendrait l'en-tête ferait
+//     arriver chaque pièce jointe sans lecture. Le corps est VIDE : admise, `extract-piece` répond
+//     « Fichier vide. » avant de construire le moindre client AWS ; refusée, 401. Rien n'est lu,
+//     rien n'est facturé.
+// Ce qui revient : des verdicts, jamais une clé ni une ligne. Une variable absente ou illisible
+// lève dans `cleSupabase`, et son message nomme la variable.
+async function sonderCles(url) {
+  const publique = cleSupabase("SUPABASE_PUBLISHABLE_KEYS", Deno.env.get("SUPABASE_PUBLISHABLE_KEYS"))
+  const secrete = cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS"))
+  const { error: refusPublique } = await createClient(url, publique)
+    .from("categories")
+    .select("id", { count: "exact", head: true })
+  const admin = createClient(url, secrete)
+  const { error: refusBase } = await admin.from("super_admins").select("user_id", { count: "exact", head: true })
+  const { error: reponseComptes } = await admin.auth.admin.getUserById("00000000-0000-0000-0000-000000000000")
+  const reponseLecture = await fetch(`${url}/functions/v1/extract-piece`, { method: "POST", headers: { apikey: secrete } })
+  let motifLecture
+  try {
+    motifLecture = (await reponseLecture.json())?.error ?? "aucun motif"
+  } catch {
+    motifLecture = "réponse illisible"
+  }
+  return {
+    publishable: refusPublique ? `refusée : ${refusPublique.message}` : "acceptée",
+    secrete_base: refusBase ? `refusée : ${refusBase.message}` : "acceptée",
+    secrete_comptes: reponseComptes?.status === 404
+      ? "acceptée"
+      : `inattendu : ${reponseComptes ? `${reponseComptes.status} ${reponseComptes.message}` : "un compte a été rendu"}`,
+    secrete_lecture: reponseLecture.status === 400 && motifLecture === "Fichier vide."
+      ? "acceptée"
+      : `inattendu : ${reponseLecture.status} ${motifLecture}`,
+  }
+}
+
+// ── DÉBUT CLÉS SUPABASE ─────────────────────────────────────────────────────────────────────────
+// Les clés d'API de Supabase, lues dans les variables que la plateforme pose elle-même. Les clés
+// historiques (`anon`, `service_role`) étaient des jetons signés du projet, et Supabase les coupe à la
+// fin de 2026 ; les nouvelles arrivent dans deux objets JSON « nom → clé », `SUPABASE_PUBLISHABLE_KEYS`
+// et `SUPABASE_SECRET_KEYS`, et ce projet se sert de la clé nommée `default`. Une variable absente,
+// illisible ou sans clé `default` de la bonne forme LÈVE : une clé vide ferait refuser chaque requête
+// pour une raison que personne ne lirait. Le message ne cite jamais la clé.
+// Bloc copié à l'identique dans chaque fonction qui parle à la base : `clesSupabase.test.ts` compare
+// les copies et exécute celle-ci.
+function cleSupabase(variable: "SUPABASE_PUBLISHABLE_KEYS" | "SUPABASE_SECRET_KEYS", brut: string | undefined): string {
+  const prefixe = variable === "SUPABASE_SECRET_KEYS" ? "sb_secret_" : "sb_publishable_"
+  if (!brut) throw new Error(`${variable} est absente de l'environnement de la fonction.`)
+  let cles: unknown
+  try {
+    cles = JSON.parse(brut)
+  } catch {
+    throw new Error(`${variable} n'est pas un objet JSON lisible.`)
+  }
+  const cle = cles !== null && typeof cles === "object" ? (cles as Record<string, unknown>).default : undefined
+  if (typeof cle !== "string" || !cle.startsWith(prefixe) || cle.length === prefixe.length) {
+    throw new Error(`${variable} ne porte pas de clé « default » de la forme ${prefixe}…`)
+  }
+  return cle
+}
+// ── FIN CLÉS SUPABASE ───────────────────────────────────────────────────────────────────────────
+
 Deno.serve(async (req) => {
   try {
+    // QUI PEUT LANCER CET ESSAI ? Jusqu'au 30/09/2026 la passerelle exigeait un jeton signé
+    // (`verify_jwt = true`), et la clé publique historique du projet en était un. Les nouvelles clés
+    // de Supabase ne sont pas des jetons : la fonction est passée à `verify_jwt = false`, et demande
+    // ici la clé publishable dans l'en-tête `apikey`. C'est la même porte qu'avant, ni plus large ni
+    // plus étroite — cette clé est servie avec l'application, elle n'arrête que ce qui ne la connaît
+    // pas. Ce qui ferme la dépense reste la fenêtre datée ci-dessous.
+    if (req.headers.get("apikey") !== cleSupabase("SUPABASE_PUBLISHABLE_KEYS", Deno.env.get("SUPABASE_PUBLISHABLE_KEYS"))) {
+      return Response.json({ error: "La clé publishable du projet est attendue dans l'en-tête apikey." }, { status: 401 })
+    }
     const { dossierId, question = "extraction", modele = MODELE_PAR_DEFAUT, limite = 100 } = await req.json()
+    // Aucun dossier, aucun modèle : voir `sonderCles`. Hors fenêtre comme dedans, elle ne facture rien.
+    if (question === "cles") {
+      return Response.json({ question: "cles", ...(await sonderCles(Deno.env.get("SUPABASE_URL"))) })
+    }
     if (!dossierId) return Response.json({ error: "dossierId manquant" }, { status: 400 })
     // Un identifiant qui n'en est pas un n'a rien à faire dans un filtre PostgREST écrit en texte.
     if (!/^[0-9a-f-]{36}$/i.test(String(dossierId))) {
       return Response.json({ error: "dossierId : un uuid" }, { status: 400 })
     }
     if (question !== "extraction" && question !== "categorie") {
-      return Response.json({ error: "question : « extraction » ou « categorie »" }, { status: 400 })
+      return Response.json({ error: "question : « extraction », « categorie » ou « cles »" }, { status: 400 })
     }
     if (!Number.isInteger(limite) || limite < 0) {
       return Response.json({ error: "limite : un entier positif ou nul" }, { status: 400 })
@@ -471,7 +558,7 @@ Deno.serve(async (req) => {
 
     const supabase = createClient(
       Deno.env.get("SUPABASE_URL"),
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY"),
+      cleSupabase("SUPABASE_SECRET_KEYS", Deno.env.get("SUPABASE_SECRET_KEYS")),
     )
 
     if (question === "categorie") {
