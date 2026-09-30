@@ -2412,4 +2412,60 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
     await ouvrir('PRLV OPERATEUR MOBILE')
     expect(within(volet()).getByText(/« Téléphone » n’a pas de poste 2035 : sa part n’entre dans aucun total/)).toBeTruthy()
   })
+
+  // Trouvé par mutation : l'alerte retirée laissait ce fichier vert. Le compte d'une catégorie qui quitte
+  // les comptes de résultat — une catégorie devenue compte de bilan — retire sa part de la 2035 et rend
+  // l'écriture fausse ; c'est la fiche, où l'on arbitre le mouvement, qui doit le dire.
+  it('dit une part dont la catégorie n’a plus de compte de charge ou de produit', async () => {
+    preparer(VENTILEE, PARTS)
+    faux.categories = [{ ...TELEPHONE, compte_comptable: '467000' }, FRAIS, RECETTES]
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).getByText(/Le compte de « Téléphone » n’est plus un compte de charge ou de produit/)).toBeTruthy()
+    // Le garde symétrique : une catégorie de résultat ne déclenche rien.
+    cleanup()
+    preparer(VENTILEE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).queryByText(/n’est plus un compte de charge ou de produit/)).toBeNull()
+  })
+
+  // Trouvé par mutation aussi : des parts qui ne font plus le mouvement — un chemin défensif, la base
+  // vérifiant la somme — se disent dans la fiche ; sur des parts lues en partie, jamais, une part non lue
+  // passerait pour une part manquante.
+  it('dit des parts qui ne font plus le mouvement, et se tait sur des parts lues en partie', async () => {
+    const MAL_VENTILEES = [PARTS[0], { ...PARTS[1], montant: -30 }]
+    preparer(VENTILEE, MAL_VENTILEES)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).getByText(/Les parts enregistrées ne font plus le montant du mouvement/)).toBeTruthy()
+    cleanup()
+    preparer(VENTILEE, MAL_VENTILEES)
+    faux.muet = { ventilations_bancaires: 1 }
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).queryByText(/ne font plus le montant du mouvement/)).toBeNull()
+  })
+
+  // Trouvé par mutation : l'ordre des catégories proposées n'était gardé par rien. Comme pour l'affectation,
+  // le sens du mouvement décide : les dépenses d'abord pour un paiement, les recettes d'abord pour un
+  // encaissement — l'erreur la plus facile est de choisir dans le mauvais groupe.
+  it('propose d’abord les catégories du sens du mouvement', async () => {
+    const groupes = () => [...within(volet()).getByLabelText('Compte de la part 1').querySelectorAll('optgroup')].map((g) => g.getAttribute('label'))
+    preparer()
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    expect(groupes()).toEqual(['Dépenses', 'Recettes', 'Hors résultat'])
+    cleanup()
+    preparer({ libelle: 'REMISE CB', montant: 485.3 })
+    rendre()
+    await ouvrir('REMISE CB')
+    await deplier()
+    expect(groupes()).toEqual(['Recettes', 'Dépenses', 'Hors résultat'])
+  })
 })

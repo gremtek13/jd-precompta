@@ -1418,6 +1418,23 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
     expect(bouton.getAttribute('title')).toMatch(/modifie la ventilation dans Banque/)
   })
 
+  // Trouvé par mutation : le premier test de lecture partielle ne coupait que les parts du mouvement à
+  // réécrire, qui devenaient alors « incohérentes » et sortaient du panneau d'elles-mêmes. Coupées sur un
+  // AUTRE mouvement, les parts du premier sont lues en entier : sans la garde, le panneau le proposerait,
+  // et « Réécrire » — suspendu sur une lecture partielle — ne ferait rien au clic.
+  it('ne propose rien sur une lecture partielle, même d’un mouvement dont les parts sont toutes lues', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, RECOMPTEE],
+      lignes_bancaires: [mouvement(), mouvement({ id: 'l-v2', date: '2025-04-30' })],
+      ventilations_bancaires: [...PARTS, part('w1', 'cat-tel', -84, 'l-v2'), part('w2', null, -36, 'l-v2')],
+      ecritures_brouillon: [...ecrituresDe('l-v', '2025-03-31'), ...ecrituresDe('l-v2', '2025-04-30')],
+    })
+    faux.muetParTable = { ventilations_bancaires: 3 }
+    monter()
+    expect(await screen.findByText(/Les parts des mouvements ventilés/)).toBeTruthy()
+    expect(screen.queryByText('Mouvements ventilés à réécrire')).toBeNull()
+  })
+
   it('sur des parts lues en partie, le dit, ne propose rien et laisse le FEC s’exporter', async () => {
     poser({ categories: [CATEGORIE_ACHATS, RECOMPTEE], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
     faux.muetParTable = { ventilations_bancaires: 1 }
