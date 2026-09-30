@@ -254,6 +254,10 @@ supabase/
                   mouvement, et son écriture, par impersonation des trois profils, à rejouer après
                   toute migration qui touche ses deux fonctions, la table emprunts ou les
                   contraintes de lignes_bancaires.
+                  ventilation.sql : la ventilation d'un mouvement sur plusieurs comptes, ses parts
+                  et son écriture, par impersonation des trois profils, à rejouer après toute
+                  migration qui touche ses deux fonctions, la table ventilations_bancaires ou les
+                  contraintes de lignes_bancaires.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1256,6 +1260,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   validé par le cabinet ; les intérêts et l'assurance comptent dans la 2035 à la date du prélèvement,
   le capital jamais. Voir « une échéance d'emprunt s'écrit sur trois comptes » dans « Problèmes
   connus » (`lib/echeanceEmprunt.ts`).
+- **Un mouvement bancaire se ventile sur plusieurs comptes (30/09/2026)**, ligne 26.6, étape (a),
+  suite : dans la fiche d'un mouvement sans justificatif (onglet Banque), « Ventiler sur plusieurs
+  comptes » le répartit entre des catégories de charge ou de produit et, pour la part personnelle
+  d'une dépense mixte, le compte du dirigeant — l'abonnement pris en charge à 70 %, la remise de carte
+  créditée nette de sa commission. Chaque part compte dans la 2035 à la date du mouvement, la part
+  personnelle jamais ; l'écriture porte une ligne par part face à la banque. Voir « un mouvement se
+  ventile sur plusieurs comptes » dans « Problèmes connus » (`lib/ventilationBanque.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1285,11 +1296,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   vingt-deux champs d'un BNC en comptabilité de trésorerie (que l'outil de la DGFiP n'exige pas) et les
   montants en devise, qui attendent la réponse de l'expert-comptable du cabinet — voir « le FEC suit
   l'article A47 A-1 » dans « Problèmes connus ».
-- Tenir toute la comptabilité d'un BNC (ligne 26.6) : l'étape (a) est livrée EN PARTIE (29/09/2026) —
-  un mouvement sans justificatif s'affecte à une catégorie de charge ou de produit, un par un depuis
-  sa fiche ou en lot par des règles apprises par libellé, un virement personnel s'écrit sur le compte
-  du dirigeant (108 en trésorerie), et une échéance d'emprunt sur ses trois comptes (164, 661, 616).
-  Restent pour (a) : la ventilation d'un mouvement sur plusieurs comptes ; les recettes d'un dossier
+- Tenir toute la comptabilité d'un BNC (ligne 26.6) : l'étape (a) est livrée EN PARTIE (29 et
+  30/09/2026) — un mouvement sans justificatif s'affecte à une catégorie de charge ou de produit, un
+  par un depuis sa fiche ou en lot par des règles apprises par libellé, ou se ventile sur plusieurs
+  comptes ; un virement personnel s'écrit sur le compte du dirigeant (108 en trésorerie), et une
+  échéance d'emprunt sur ses trois comptes (164, 661, 616). Reste pour (a) : les recettes d'un dossier
   assujetti, dont la TVA ne se lit pas sur un relevé. Puis (b) écrire les cotisations, les dotations,
   l'acquisition d'une immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y
   comparer, (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
@@ -5207,7 +5218,7 @@ d'environnement dans la même édition.
   échéances RAPPROCHÉES : une échéance que rien ne paie n'est pas une dépense payée. La 2035, la
   situation intermédiaire, l'estimation et la simulation client reçoivent ces parts à la place des seuls
   mouvements affectés, par un paramètre obligatoire. La ventilation d'un mouvement sur plusieurs
-  comptes, prochaine source, s'ajoutera à cet endroit, et tous les moteurs la compteront.
+  comptes y est entrée le 30/09/2026, troisième source (voir l'entrée suivante).
   **UN SEUL PRÉDICAT POUR LE FEC, LA PISTE D'AUDIT, ÉCRITURES ET LA CHECKLIST** : l'emprunt est le
   troisième cas de `mouvementJustifieParLeReleve`, ajouté là et nulle part ailleurs. Et
   `mouvementRapprocheSansObjet` l'écarte : sans cela, chaque échéance rapprochée ressortait « rapprochée
@@ -5259,6 +5270,104 @@ d'environnement dans la même édition.
   ressemblance (un zéro est refusé avant, et la base n'admet pas d'emprunt sur un mouvement nul) ; un
   déblocage compté dans les parts (ses intérêts et son assurance valent zéro par contrainte) ; la
   simulation client privée des échéances (elle ne compte que des recettes).
+- **UN MOUVEMENT SE VENTILE SUR PLUSIEURS COMPTES — LIGNE 26.6, ÉTAPE (A), SUITE** (30/09/2026,
+  `lib/ventilationBanque.ts`). Une affectation met tout le mouvement dans UNE catégorie ; or un même
+  paiement mêle souvent ce que la 2035 sépare : une dépense en partie personnelle (l'abonnement
+  téléphonique pris en charge à 70 %, le reste prélevé par l'exploitant), un achat qui relève de deux
+  postes, une remise de carte bancaire créditée NETTE de sa commission. Affecter l'un d'eux en entier à
+  une catégorie mettait en charge la part personnelle, ou comptait en recette le net au lieu du brut.
+  **Le modèle** : les parts vivent dans `ventilations_bancaires` — une catégorie de résultat OU le compte
+  du dirigeant, un montant non nul SIGNÉ COMME LE RELEVÉ, une part par cible (contrainte unique
+  `nulls not distinct`, sans quoi deux parts personnelles, toutes deux sans catégorie, ne se
+  heurteraient pas) — et le mouvement porte le drapeau `ventilee`, qui entre dans
+  `lignes_bancaires_un_seul_rapprochement` et dans `lignes_bancaires_ventilation_rapprochee` (ventilé ⇒
+  rapproché, jamais personnel). Une catégorie ventilée ne se supprime pas (clé sans action), et la
+  suppression d'un dossier passe quand même. Les parts se gardent dans une table et pas seulement dans
+  l'écriture, pour la même raison que le découpage d'une échéance : la 2035 les lit là, comme la
+  simulation du client, qui n'a pas accès aux écritures — il LIT les parts de ses dossiers, n'en écrit
+  aucune.
+  **UNE PART S'ÉCRIT COMME UNE AFFECTATION DE SON MONTANT** : le compte de sa catégorie — ou celui du
+  dirigeant, lu dans le modèle du dossier (`compteDuDirigeant` : le 108000 en trésorerie, le compte
+  choisi en engagement) — dans le sens de son SIGNE, jamais dans celui de la nature du compte, et la
+  banque dans le sens du mouvement. La commission d'une remise est une part NÉGATIVE sur un mouvement
+  positif : elle débite le 627 pendant que la recette brute crédite le 706.
+  **La ventilation, ses parts et son écriture partent ENSEMBLE**, par `ventiler_mouvement_bancaire`, qui
+  vérifie l'écriture composée par l'application (`ecritureDeLaVentilation`, testée) — une ligne de banque
+  au montant et dans le sens du mouvement, une ligne par part sur son compte et dans son sens,
+  l'équilibre au centime — et REMPLACE une ventilation précédente du même mouvement ;
+  `retirer_ventilation_mouvement_bancaire` défait les trois. Toutes deux sont `SECURITY INVOKER`,
+  vérifient `admin_du_dossier` et refusent une écriture validée.
+  **CE QUE LA BASE NE TIENT PAS SEULE : QUE LES PARTS FASSENT LE MOUVEMENT.** C'est un invariant ENTRE
+  LIGNES, qu'aucune contrainte de ligne ne dit, et un déclencheur différé qui le dirait rendrait
+  impossible la restauration d'une sauvegarde, qui réinsère les mouvements puis leurs parts en requêtes
+  séparées. La fonction le vérifie ; `ventilationsIncoherentes` dit un écart venu d'un autre chemin
+  (défensif).
+  Migrations `ventilation_des_mouvements_bancaires` puis `ventilations_bancaires_lecture_client_une_evaluation`
+  — l'advisor de performance `auth_rls_initplan` levé le jour même sur la policy de lecture du client,
+  réécrite en `(select auth.uid())` : même prédicat, un coût par requête et non par ligne. L'export porte
+  68 migrations, le socle 71 instructions, l'inventaire 804 objets. `supabase/essais/ventilation.sql` :
+  59 contrôles par impersonation des trois profils, dont le contrôle POSITIF du chef, chaque refus jugé
+  à sa raison, ce que les contraintes tiennent seules (les fonctions d'avant et les mises à jour directes
+  de Banque, qui ne connaissent pas la ventilation, se heurtent chacune à une contrainte nommée), et que
+  rien ne reste ; sans les `set local role`, ses contrôles 1 et 2 virent au rouge. Rejoué en entier après
+  la seconde migration. La sauvegarde l'inscrit à ses trois endroits et dans `RELATIONS`.
+  **L'ÉCRAN FAIT SAISIR LES MONTANTS DANS LE SENS DU MOUVEMENT** (`FormulaireVentilation`, dans la fiche
+  d'un mouvement, replié tant qu'on ne le demande pas) : un paiement de 120 € se ventile en 84 et 36, et
+  un montant négatif va en sens inverse. La conversion vers le signe du relevé ne s'écrit qu'à un endroit
+  (`montantSigne` / `montantSaisi`). Le reste à ventiler se lit à chaque frappe, en centimes ; les
+  catégories sont proposées dans l'ordre du sens du mouvement (les dépenses d'abord pour un paiement),
+  la part personnelle en « Hors résultat » ; une part qui diminue sa catégorie — un encaissement sur une
+  dépense — est nommée avant le clic, comme pour l'affectation (`sensInhabituel`, part par part) ; ce que
+  la base refuserait est dit avant lui (`refusVentilation`, dans le même ordre que la fonction) ; et un
+  formulaire à deux lignes vides DEMANDE sans crier à l'erreur. Rien ne part avant le clic, sous le
+  verrou partagé des écritures de rapprochement. Ventilé, le mouvement montre ses parts (« Ventilé sur
+  N comptes », dans la liste comme dans la fiche), se modifie ou s'annule ; une part dont la catégorie a
+  quitté les comptes de résultat, ou des parts qui ne font plus le mouvement, sont DITES dans la fiche —
+  la seconde seulement sur des parts lues en entier.
+  **Ce qui le compte, usage par usage** : `partsDuReleve` reçoit les parts en paramètre OBLIGATOIRE, sans
+  valeur par défaut — une liste vide ferait disparaître en silence tout ce qu'un mouvement ventilé met
+  dans la 2035. La 2035, la situation intermédiaire, les ratios et le prévisionnel de Financement,
+  l'estimation et la simulation client lisent donc `ventilations_bancaires` (par `lireTout`, tri total),
+  et une lecture partielle des parts rejoint le drapeau de lecture partielle de chaque écran, qui le
+  dit. Une liste montre ce que la PART pèse sur le relevé, jamais
+  le mouvement entier (`montantReleve`) : une part de 36 € n'en retire pas 120 de la déclaration. Le FEC
+  et la piste d'audit passent par le quatrième cas de `mouvementJustifieParLeReleve` : une écriture au
+  journal de banque, une ligne par part, le relevé pour pièce. Les catégories des parts comptent dans
+  les comptes et les postes manquants comme celles des mouvements affectés.
+  **La Checklist gagne deux points, en erreur** : le mouvement ventilé dont l'écriture ne suit plus ses
+  parts (le compte d'une catégorie a changé depuis — le défaut d'un mouvement affecté recatégorisé,
+  invisible de même, les totaux ne bougeant pas), qui mène à Écritures, où « Réécrire » la reprend depuis
+  les mêmes parts par la même fonction ; et la ventilation dont les parts ne font plus le mouvement
+  (défensif), qui mène à Banque et se TAIT sur une lecture partielle des parts — une part non lue ferait
+  passer sa ventilation pour incohérente. Une recette ventilée sur un dossier devenu assujetti rejoint le
+  point des encaissements affectés en recette. Écritures, lui, ne propose AUCUNE réécriture sur une
+  lecture partielle des parts, même pour un mouvement dont toutes les parts ont été lues : c'est
+  l'ensemble qui décide de ce qui est périmé.
+  **L'assistant, version 32** : `points_a_traiter` rend les deux points de la Checklist, compte les
+  recettes ventilées avec les affectées et les catégories des parts dans les comptes et les postes
+  manquants, et le prompt dit qu'un mouvement ventilé s'écrit face au 512 sur une ligne par part.
+  `agentComptableVentilation.test.ts` compare la copie (bloc `── DÉBUT/FIN VENTILATION`) à `src/lib`
+  dans les trois modèles et y plante onze dérives. Déployée avec `verify_jwt` relu et repassé à `false`,
+  la v31 comparée au dépôt avant écrasement (identique, 1 459 lignes), aller-retour après : zéro
+  différence sur 1 604 lignes, et le 401 de la fonction sans session. Aucun appel au modèle.
+  **Les captures ont trouvé un défaut d'affichage** : les listes et les montants des parts n'avaient pas
+  le style des autres champs du volet (la classe `field` manquait au conteneur). Le banc sert deux
+  mouvements ventilés fictifs — une remise de carte et sa commission, un abonnement en partie
+  personnel — et 0 débordement aux quatre largeurs.
+  **LATENT, et mesuré** : aucun mouvement ventilé en base, aucune part, aucune ligne d'écriture
+  (30/09/2026).
+  **Quatre-vingt-quatre mutations, quatre-vingt-trois mordent — la première passe en laissait cinq en
+  vie.** Quatre accusaient des tests absents, tous écrits : l'ordre des catégories proposées, l'alerte
+  d'une part dont la catégorie a quitté les comptes de résultat, celle de parts qui ne font plus le
+  mouvement (tue sur une lecture partielle), et le panneau « à réécrire » d'Écritures sur une lecture
+  partielle qui coupe les parts d'un AUTRE mouvement. **Une survit, et c'est dit** : la garde du
+  gestionnaire de ventilation de Banque, qu'aucun clic n'atteint, le bouton du formulaire étant grisé
+  sur un refus — sa jumelle mord.
+  **CE QUI RESTE, dit plutôt que promis** : aucune règle ne propose de ventilation — une règle
+  d'affectation met un mouvement dans UNE catégorie, et le lot ne touche jamais un mouvement ventilé,
+  qui n'est plus « à traiter » ; la TVA d'une part n'est pas ventilée — sur un dossier assujetti, une
+  recette ne se ventile pas et une dépense passe TTC en charge, comme une affectation ; et le plan de
+  trésorerie compte un mouvement ventilé en entier, comme tout mouvement.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -6499,7 +6608,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2743 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2864 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -6519,8 +6628,9 @@ selon que le dossier récupère ou non la TVA (`montantRetenu.ts`), la CA3 prép
 écritures d'un dossier tenu en engagement (`engagement.ts`), celles d'un mouvement du relevé
 affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent ces affectations en lot
 (`reglesAffectation.ts`), celles d'un virement personnel sur le compte du dirigeant
-(`virementPersonnel.ts`), et celles d'une échéance d'emprunt sur ses trois comptes
-(`echeanceEmprunt.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`) —
+(`virementPersonnel.ts`), celles d'une échéance d'emprunt sur ses trois comptes
+(`echeanceEmprunt.ts`), et celles d'un mouvement ventilé sur plusieurs comptes
+(`ventilationBanque.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`) —
 les fichiers `*.test.ts` sont
 posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
 
