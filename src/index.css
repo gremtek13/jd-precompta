@@ -182,6 +182,10 @@ h3 { font-size: 1.02rem; }
    Une rangée qui tient déjà ne change pas : on ne passe à la ligne qu'à la largeur minimale des champs. */
 .field-row { display: flex; flex-wrap: wrap; gap: 0 12px; }
 .field-row .field { flex: 1; }
+/* Un bouton au bout d'une rangée de champs, aligné sur leur BAS plutôt que sur leur libellé. Une classe et
+   non un `alignItems` en ligne : sur téléphone la rangée devient une colonne, où `flex-end` calerait les
+   champs à DROITE, à la largeur de leur contenu — le style en ligne l'emporterait sur la règle mobile. */
+.field-row.aligne-bas { align-items: flex-end; }
 
 /* ---------- Badges ---------- */
 .badge {
@@ -1319,7 +1323,11 @@ a.nav-menu-item { text-decoration: none; }
   .card { padding: 16px; border-radius: var(--radius-sm); }
   .stat-card { border-radius: var(--radius-sm); }
 
-  .field-row { flex-direction: column; gap: 0; }
+  /* `nowrap` : une colonne n'a rien à renvoyer à la ligne, et une rangée qui le peut devient MULTI-LIGNE —
+     la ligne prend alors la largeur du champ le plus large, une liste à l'option longue sort de sa carte
+     (mesuré le 30/09/2026 : 35 px pour le régime de TVA, 32 px pour le véhicule d'Informations). */
+  .field-row { flex-direction: column; flex-wrap: nowrap; gap: 0; }
+  .field-row.aligne-bas { align-items: stretch; }
 
   /* Empêche le zoom automatique de Safari iOS à la mise au point d'un champ en dessous de 16px. */
   .field input, .field select, .field textarea { font-size: 16px; }
@@ -1469,7 +1477,7 @@ a.nav-menu-item { text-decoration: none; }
     left: 8px; right: 8px; width: auto; height: auto; z-index: 50;
   }
   /* Trois nombres tiennent sur la largeur d'un téléphone : les montants restent côte à côte. */
-  .field-row.fiche-piece-montants { flex-direction: row; gap: 0 10px; }
+  .field-row.fiche-piece-montants { flex-direction: row; flex-wrap: wrap; gap: 0 10px; }
   /* 16 px au moins, sinon Safari sur iPhone zoome toute la page au premier toucher du champ — même
      règle que .field (voir plus haut). */
   .assistant-saisie-champ textarea { font-size: 16px; }

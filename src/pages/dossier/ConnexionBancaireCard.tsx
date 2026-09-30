@@ -282,7 +282,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
             <p className="error-text">Le prestataire ne propose aucune banque pour ce pays.</p>
           )}
           {banques && banques.liste.length > 0 && (
-            <div className="field-row" style={{ alignItems: 'flex-end' }}>
+            <div className="field-row aligne-bas">
               <div className="field">
                 <label htmlFor="banque-a-connecter">Banque</label>
                 <select
@@ -424,7 +424,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                   </>
                 )}
               </p>
-              <div className="field-row" style={{ alignItems: 'flex-end' }}>
+              <div className="field-row aligne-bas">
                 <div className="field">
                   <label htmlFor="recuperation-du">Du</label>
                   <input id="recuperation-du" type="date" value={periodeAffichee.du}

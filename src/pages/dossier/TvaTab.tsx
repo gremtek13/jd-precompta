@@ -273,7 +273,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Régime de TVA</h3>
-        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+        <div className="field-row aligne-bas">
           <div className="field">
             <label htmlFor="tva-periodicite">Déclaration CA3</label>
             <select
@@ -308,7 +308,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
       </div>
 
       <div className="card" style={{ marginBottom: 20 }}>
-        <div className="field-row" style={{ alignItems: 'flex-end' }}>
+        <div className="field-row aligne-bas">
           <div className="field">
             <label htmlFor="tva-annee">Année</label>
             <select
@@ -384,7 +384,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
               </div>
             )}
 
-            <div className="field-row" style={{ alignItems: 'flex-end', marginTop: 16 }}>
+            <div className="field-row aligne-bas" style={{ marginTop: 16 }}>
               <div className="field">
                 <label htmlFor="tva-credit">Crédit reporté de la déclaration précédente (ligne 22)</label>
                 <input
@@ -532,7 +532,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
               suivante, et ce qui permet de voir, plus tard, qu’une pièce de la période a changé depuis.
               La TVA nette de la période est la ligne 16 moins les lignes 19 à 21, sans le crédit reporté.
             </p>
-            <div className="field-row" style={{ alignItems: 'flex-end' }}>
+            <div className="field-row aligne-bas">
               <div className="field">
                 <label htmlFor="tva-montant">TVA nette de la période déposée</label>
                 <input

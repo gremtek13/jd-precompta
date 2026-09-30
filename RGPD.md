@@ -39,6 +39,7 @@ ses données sont là. Voir §6 et §8.7.
 |---|---|---|---|---|
 | **Tenue de la pré-comptabilité** | Produire la comptabilité et les déclarations d'un client | Obligation légale du client (Code de commerce L123-12 et s., CGI) + exécution du contrat de mission | Client, ses fournisseurs, ses clients | Identité, SIRET, adresse, montants, mouvements bancaires ; soldes d'ouverture d'un dossier repris (`a_nouveaux` : comptes, libellés — qui peuvent nommer un fournisseur ou un client —, montants, nom et empreinte du fichier de balance) ; chiffres du volet social d'un praticien conventionné (`volet_social_pamc` : honoraires du relevé SNIR, dépassements, recettes en structures de soins, profession — les revenus du praticien lui-même, aucune donnée de patient) |
 | **Collecte des justificatifs** | Rassembler les pièces (dépôt, e-mail, Super PDP) | Exécution du contrat de mission | Client, tiers figurant sur les pièces — des **patients** seulement si un bordereau est déposé par erreur (§8.7) | Fichiers, empreintes SHA-256, horodatages |
+| **Connexion bancaire** *(preuve de concept, bac à sable seulement)* | Récupérer les mouvements d'un compte directement à la banque, sans relevé déposé, sur le clic d'un membre du cabinet | Exécution du contrat de mission ; l'accès au compte repose sur l'accord que le titulaire donne lui-même, à sa banque et au prestataire (DSP2) | Client titulaire du compte ; tiers nommés dans les libellés | `connexions_bancaires` : banque, échéance de l'accord, identifiant de session chez le prestataire, comptes ouverts (nom du compte, devise, quatre derniers chiffres de l'IBAN, empreinte) — jamais le nom du titulaire ni l'IBAN entier ; les mouvements importés (date, libellé, montant, identifiant externe) vont dans `lignes_bancaires`, comme ceux d'un relevé |
 | **Extraction automatique (OCR)** | Lire tiers, date et montants pour éviter la ressaisie | Intérêt légitime du cabinet (réduction de la saisie) | Idem collecte | Texte intégral du document (`piece_textes_ocr`) |
 | **Assistant comptable** | Répondre à des questions sur un dossier, en lecture seule | Intérêt légitime du cabinet | Client | Question, réponse, comptage de tokens |
 | **Proposition de catégorie** | Proposer la catégorie d'une pièce d'après son texte, sur le clic d'un membre du cabinet ; rien n'est écrit sans lui | Intérêt légitime du cabinet (réduction de la saisie) | Idem collecte | Texte OCR de la pièce, liste des catégories ; journal : tokens et issue, jamais l'extrait |
@@ -61,6 +62,7 @@ toujours « à valider », et la catégorie reste un arbitrage humain.
 | **AWS Textract** | OCR des pièces déposées | `eu-central-1` (Francfort), repli du code **gardé par un test**, secret **mesuré** le 21/09/2026 (§8.1) | Non |
 | **AWS Bedrock** | Assistant comptable (Claude), citation des champs d'une pièce lue, et proposition de sa catégorie (`proposer-categorie`, sur clic, depuis le 26/09/2026) | `eu-west-1` (Irlande) pour l'assistant, écrit dans son code ; `eu-central-1` (Francfort) pour la citation et la catégorie, même secret que Textract — **gardés par un test** | Non |
 | **Super PDP** | Plateforme de dématérialisation agréée DGFiP | France | Non |
+| **Enable Banking** *(bac à sable seulement, depuis le 30/09/2026)* | Connexion bancaire (DSP2) : l'accord du titulaire, la lecture de ses comptes et de leurs mouvements | EEE — Google Cloud EMEA (Irlande) et AWS EMEA (Luxembourg), **déclarés** par sa notice aux utilisateurs de l'API, lue le 30/09/2026, pas mesurés | Non, selon cette notice |
 | **Resend** | Envoi et réception d'e-mails | `eu-west-1` (Irlande), confirmé par le cabinet le 22/09/2026 | Non, **sous réserve du DPA — voir §8.2** |
 | **GitHub Pages** | Hébergement du front (fichiers statiques) | — | Aucune donnée de dossier n'y transite |
 | **API SIRENE** | Code NAF depuis un SIRET | France (service public) | Non |
@@ -70,6 +72,17 @@ Deux précisions qui comptent :
 - **GitHub Pages ne reçoit aucune donnée de dossier.** L'application est une SPA qui parle
   directement à Supabase depuis le navigateur ; GitHub ne sert que des fichiers statiques. Il voit
   en revanche les adresses IP des visiteurs, comme tout hébergeur.
+- **Enable Banking n'est pas un sous-traitant ordinaire.** Enable Banking Oy (Espoo, Finlande) est un
+  prestataire de services d'information sur les comptes enregistré auprès de l'autorité finlandaise
+  (FIN-FSA), et le titulaire du compte accepte SES conditions avant de s'authentifier à sa banque : pour
+  l'accès au compte, il agit sous le consentement du titulaire, pas seulement pour le compte du
+  cabinet. Sa notice déclare garder les données de compte 60 secondes au plus (le temps de les
+  convertir), les identifiants d'accès 15 minutes, la session le temps de l'accord (180 jours au
+  plus), et ne stocker ni numéro de compte ni nom de titulaire. C'est l'application qui garde les
+  mouvements. Et la règle du projet tient : à l'ouverture de l'onglet Banque, l'état de la connexion se
+  lit dans la base, sans appel au prestataire ; tout le reste — la liste des banques, la demande
+  d'accord, la récupération, le retrait — part d'un clic. Voir §8.8 pour ce qui reste avant la
+  production.
 - **L'API SIRENE ne reçoit qu'un SIRET**, et seulement sur clic explicite. Aucun appel réseau
   externe n'est silencieux dans cette application — c'est une règle du projet, pas une constatation.
 - **Les polices ne partent plus chez Google** (25/09/2026). Jusque-là, `index.html` et la charte
@@ -206,7 +219,12 @@ Ce qui est **prouvé**, pas seulement affirmé :
 - **Inférence IA en Europe** : Bedrock `eu-west-1`, choix explicite et commenté dans le code.
 - **Secrets hors du bundle client** : clés Resend et Bedrock en secrets de fonctions,
   identifiants Super PDP dans une table sans aucune policy, atteinte uniquement par la clé de
-  service.
+  service. Même règle pour la connexion bancaire : la clé privée de l'application Enable Banking est
+  un secret de fonction, et `connexions_bancaires` n'a AUCUNE policy — l'identifiant de session, qui
+  ouvre les mouvements du compte avec cette clé, ne quitte jamais le serveur. Éprouvé par
+  impersonation des trois profils (`supabase/essais/connexionBancaire.sql`, 22 contrôles), et la
+  fonction ne rend jamais ni session, ni identifiant de compte, ni jeton de retour : un test le vérifie
+  sur chacune de ses réponses (`src/lib/banqueConnexion.test.ts`).
 - **Une restauration éprouvée** contre Postgres, avec son plan de reprise (`PLAN_DE_REPRISE.md`).
 - **Les policies RLS rejouées en bloc**, par impersonation réelle des trois profils
   (`supabase/essais/rls.sql`) : 40 tables, 32 d'entre elles portant un `dossier_id`, plus cinq
@@ -386,3 +404,25 @@ est le seul hébergeur vérifié à proposer du PostgreSQL managé dans sa régi
 son stockage objet mais pas ses bases managées ; chaque offre impose un contrat HDS et un support
 payant, de l'ordre de 200 à 300 € par mois avant la première ressource. AWS n'est certifié que pour
 une liste de services et de régions : il faudrait y vérifier Textract.
+
+### 8.8 — Connexion bancaire : ce qui reste avant la production *(ouvert le 30/09/2026)*
+
+La preuve de concept tourne sur le **bac à sable** d'Enable Banking : banques et mouvements fictifs, et
+l'écran le dit avant tout import. Rien de ce qui suit ne se pose tant qu'elle y reste ; tout se pose
+avant la première connexion d'un vrai compte.
+
+- **Le prestataire n'est pas choisi** — il est sur devis (ligne 24 de la feuille de route). Le
+  contrat, sa liste de sous-traitants et la question du rôle (voir §3 : un prestataire agréé qui agit
+  sous le consentement du titulaire) se tranchent avec lui, et rejoignent le §8.4.
+- **Qui se connecte.** L'accord se donne sur le site de la banque, avec les identifiants du
+  titulaire : c'est le CLIENT qui doit le donner, jamais le cabinet à sa place. La preuve de concept
+  fait cliquer le cabinet ; en production, il faudra soit un chemin dans l'espace client — pas encore
+  construit —, soit une connexion faite par le client lui-même, cabinet à ses côtés.
+- **Les libellés nomment des tiers, et pour un praticien parfois un patient** — celui qui règle par
+  virement. Ce n'est pas nouveau : un relevé déposé en CSV ou en PDF importe les mêmes libellés depuis
+  le début, et la connexion n'y ajoute rien. Mais le §4, qui situe les données de patients dans les
+  FICHIERS et non dans les tables, ne compte pas `lignes_bancaires.libelle` : à remesurer au premier
+  dossier réel, sans rouvrir le §8.7 pour autant — un nom de payeur n'est pas un bordereau.
+- **Retirer la connexion referme l'accord chez la banque**, puis efface la ligne. Si la banque ne
+  répond pas, l'écran le dit et propose de retirer quand même : l'accord expire alors de lui-même, à
+  sa date, et plus rien dans l'application ne permet de s'en servir.

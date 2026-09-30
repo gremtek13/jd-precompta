@@ -129,6 +129,14 @@ découvre avant.
    que seul le titulaire du compte peut faire, son consentement étant de toute façon lié à la session
    perdue. Les mouvements déjà importés, eux, sont dans la sauvegarde : leur identifiant externe
    dédoublonne ce que la nouvelle connexion récupère une seconde fois.
+8. **L'application enregistrée chez Enable Banking** (connexion bancaire, bac à sable au 30/09/2026) :
+   sa clé publique et son adresse de retour, `https://compta.jdarnis.fr/retour-banque.html`, vivent dans
+   le panneau de contrôle d'Enable Banking, pas dans ce dépôt. Un projet Supabase recréé ne change rien
+   là-bas — il suffit de reposer la clé privée (`ENABLE_BANKING_CLE_PRIVEE`, ci-dessous). Un SITE
+   déplacé, lui, change l'adresse de retour : elle se redéclare chez Enable Banking, dans `URL_RETOUR`
+   (`banque-connexion`) et dans `public/` — trois endroits qu'un test confronte entre eux
+   (`banqueConnexion.test.ts`), sauf le premier. Oubliée, la fonction refuse la connexion en le disant
+   (« L'adresse de retour … n'est pas déclarée ») plutôt que de renvoyer le titulaire sur une page 404.
 
 ### Les variables d'environnement, une par une
 
