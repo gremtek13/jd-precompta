@@ -11,6 +11,7 @@ import ClientSimulation from './pages/ClientSimulation'
 import SuperAdminPage from './pages/SuperAdminPage'
 import EquipePage from './pages/EquipePage'
 import CabinetBrandingPage from './pages/CabinetBrandingPage'
+import RetourBanque from './pages/RetourBanque'
 
 function Gate() {
   const { session, role, isSuperAdmin, estChef, loading } = useAuth()
@@ -32,6 +33,9 @@ function Gate() {
             {isSuperAdmin && <Route path="/comptes-master" element={<SuperAdminPage />} />}
             {estChef && <Route path="/equipe" element={<EquipePage />} />}
             {estChef && <Route path="/apparence" element={<CabinetBrandingPage />} />}
+            {/* Le retour de la banque après son accord (connexion bancaire) : `public/retour-banque.html`
+                y recopie les paramètres que la banque a mis dans l'adresse. */}
+            <Route path="/retour-banque" element={<RetourBanque />} />
             <Route path="*" element={<Navigate to="/dossiers" replace />} />
           </>
         )}

@@ -280,7 +280,18 @@ vi.mock('../../lib/supabase', async () => {
     })
     return Promise.resolve({ data: 2, error: null })
   }
-  return { supabase: { from: (table: string) => chaine(table), rpc } }
+  // La carte de connexion bancaire (ConnexionBancaireCard) lit l'état de la connexion à l'ouverture :
+  // aucune ici, et rien de configuré — la carte a ses propres tests. Toute autre action serait un appel
+  // au prestataire que ces tests n'ont pas prévu, et se nomme.
+  const functions = {
+    invoke: (nom: string, options: { body: { action?: unknown } }) => {
+      if (nom !== 'banque-connexion' || options.body.action !== 'statut') {
+        throw new Error(`Appel de fonction non attendu dans ce test : ${nom} ${String(options.body.action)}`)
+      }
+      return Promise.resolve({ data: { configuree: false, connexion: null }, error: null })
+    },
+  }
+  return { supabase: { from: (table: string) => chaine(table), rpc, functions } }
 })
 
 // TYPÉ, et sans `as`, comme `pieceDeTest` juste en dessous : le compilateur confronte alors chaque

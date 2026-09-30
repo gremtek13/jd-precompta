@@ -667,3 +667,28 @@ describe('banque-connexion — le câblage du gestionnaire', () => {
     expect(SOURCE).toMatch(/const URL_RETOUR = "https:\/\/compta\.jdarnis\.fr\/retour-banque\.html"/)
   })
 })
+
+// L'ADRESSE DE RETOUR MÈNE BIEN QUELQUE PART. Déclarée chez le prestataire et dans la fonction, elle doit
+// exister sur le site servi — sinon la banque renvoie le titulaire sur une page 404, après son accord, et
+// le code d'autorisation se perd sans que rien ne le dise.
+describe('le retour de la banque arrive dans l’application', () => {
+  const urlRetour = new URL(/const URL_RETOUR = "([^"]+)"/.exec(SOURCE)![1])
+
+  it('la page de retour est servie à l’adresse déclarée, sur le domaine du site', () => {
+    const domaine = readFileSync(new URL('../../public/CNAME', import.meta.url), 'utf8').trim()
+    expect(urlRetour.protocol).toBe('https:')
+    expect(urlRetour.hostname).toBe(domaine)
+    const page = readFileSync(new URL(`../../public${urlRetour.pathname}`, import.meta.url), 'utf8')
+    // Les paramètres de la banque passent derrière le « # », et la page se REMPLACE dans l'historique.
+    expect(page).toMatch(/location\.replace\('\/#\/retour-banque' \+ location\.search\)/)
+    // Rien d'autre ne se charge sur cette page : pas de ressource tierce qui verrait passer le code.
+    expect(page).not.toMatch(/<script[^>]*\bsrc=|<link[^>]*\bhref=|<img\b/)
+  })
+
+  it('l’application porte l’écran qui remet le code à la fonction', () => {
+    const app = readFileSync(new URL('../App.tsx', import.meta.url), 'utf8')
+    expect(app).toMatch(/<Route path="\/retour-banque" element=\{<RetourBanque \/>\} \/>/)
+    const ecran = readFileSync(new URL('../pages/RetourBanque.tsx', import.meta.url), 'utf8')
+    expect(ecran).toMatch(/action: 'finaliser', code, state: etat/)
+  })
+})

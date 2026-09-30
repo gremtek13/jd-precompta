@@ -34,8 +34,10 @@ import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { ecritureDeLaVentilation, refusVentilation, type PartSaisie } from '../../lib/ventilationBanque'
 import { lireTout } from '../../lib/lectureComplete'
+import { statutPourLibelle } from '../../lib/reglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PanneauDroit from '../../components/PanneauDroit'
+import ConnexionBancaireCard from './ConnexionBancaireCard'
 import { usePanneauDroit } from '../../lib/panneauDroit'
 import FicheMouvement from './FicheMouvement'
 import { messageErreur } from '../../lib/messageErreur'
@@ -884,6 +886,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         }
       />
 
+      <ConnexionBancaireCard
+        dossierId={dossierId}
+        lignes={lignes}
+        regles={regles}
+        suspension={lignesIncompletes ?? referencesIncompletes}
+        onImported={load}
+      />
+
       <ImportCsv
         dossierId={dossierId}
         onImported={load}
@@ -1427,11 +1437,6 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       )}
     </>
   )
-}
-
-function statutPourLibelle(libelle: string, regles: RegleBancaireIgnoree[]): StatutLigneBancaire {
-  const l = libelle.toLowerCase()
-  return regles.some((r) => l.includes(r.motif)) ? 'ignoree' : 'non_rapprochee'
 }
 
 // `lectureIncomplete` : ce que l'import ne peut pas voir. Le dédoublonnage compare le relevé aux

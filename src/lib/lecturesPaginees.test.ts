@@ -89,6 +89,12 @@ const EXCEPTIONS: Record<string, { nombre: number; raison: string }> = {
     raison:
       "les accès client d'UN dossier : une poignée de personnes, pas une base d'utilisateurs",
   },
+  "src/pages/dossier/ConnexionBancaireCard.tsx [lignes_bancaires]": {
+    nombre: 1,
+    raison:
+      "ce qu'UN lot d'import vient d'écrire (`.upsert(…).select('id_externe')`) : les lignes du lot, " +
+      "TAILLE_LOT (500) au plus — le retour d'une écriture, pas une lecture de la table",
+  },
   "src/lib/clotureExercice.ts [exercices_clotures]": {
     nombre: 1,
     raison:
