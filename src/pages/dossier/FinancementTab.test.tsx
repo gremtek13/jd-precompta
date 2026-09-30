@@ -24,6 +24,8 @@ const faux = vi.hoisted(() => ({
   aNouveaux: [] as unknown[],
   // Les mouvements rapprochés, qui datent les pièces (lib/rattachement.ts).
   paiements: [] as unknown[],
+  // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts).
+  ventilations: [] as unknown[],
   // Les tables dont la lecture ÉCHOUE. Un faux client qui ne sait pas refuser ne peut rien dire de
   // la famille « le vide est une affirmation » : il rend le même objet dans les deux cas.
   refusees: new Set<string>(),
@@ -68,7 +70,8 @@ vi.mock('../../lib/supabase', async () => {
           : table === 'immobilisations' ? faux.immobilisations
           : table === 'ecritures_brouillon' ? faux.ecritures
           : table === 'a_nouveaux' ? faux.aNouveaux
-          : table === 'lignes_bancaires' ? faux.paiements : [], predicats)
+          : table === 'lignes_bancaires' ? faux.paiements
+          : table === 'ventilations_bancaires' ? faux.ventilations : [], predicats)
         const muet = faux.muet[table]
         if (muet != null) {
           return Promise.resolve({ data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }).then(suite)
@@ -140,6 +143,7 @@ afterEach(() => {
   faux.muet = {}
   faux.aNouveaux = []
   faux.paiements = []
+  faux.ventilations = []
   faux.emprunts = []
   faux.suppressions = []
   faux.misesAJour = []
@@ -916,5 +920,91 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     expect(within(modale).getByText(/Les fonds reçus d’un emprunt n’y comptent pas/)).toBeTruthy()
     // 518,97 € de mensualité sur 600 € d'encaissements, et non sur 2 600 € — écrit à la française.
     expect(modale.textContent).toMatch(/86,5\s%/)
+  })
+})
+
+// UN MOUVEMENT VENTILÉ SUR PLUSIEURS COMPTES (lib/ventilationBanque.ts) entre dans l'état qu'on montre à
+// une banque par ses parts, à la date du mouvement : la recette brute d'une remise en recettes, sa
+// commission en frais, et la part personnelle nulle part. Ce qui se joue ici est le CÂBLAGE : les parts
+// vivent dans leur propre table, l'écran les lit une fois et les passe aux trois fenêtres qui les
+// comptent — la situation intermédiaire, les ratios et le prévisionnel.
+describe('FinancementTab — les mouvements ventilés sur plusieurs comptes', () => {
+  const FRAIS: Categorie = {
+    id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 70,
+    compte_comptable: '627000', poste_2035: 'Frais financiers',
+  }
+  function mouvement(o: Partial<LigneBancaire> = {}) {
+    return {
+      id: 'l-v', dossier_id: 'd', date: '2026-05-12', libelle: 'REMISE CB', montant: 4950, statut: 'rapprochee',
+      piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, ventilee: true,
+      source_fichier: null, libelle_brut: null, created_at: '2026-05-13T09:00:00Z', ...o,
+    }
+  }
+  function part(id: string, categorieId: string | null, montant: number) {
+    return {
+      id, dossier_id: 'd', ligne_bancaire_id: 'l-v', categorie_id: categorieId,
+      part_personnelle: categorieId === null, montant, created_at: '2026-05-13T09:00:00Z',
+    }
+  }
+  function poser() {
+    faux.pieces = []
+    faux.categories = [CATEGORIE, FRAIS]
+    faux.immobilisations = []
+    faux.ecritures = []
+  }
+
+  it('porte au 30 juin la recette brute d’une remise et sa commission, chacune dans son poste', async () => {
+    poser()
+    faux.paiements = [mouvement()]
+    faux.ventilations = [part('v1', 'cat-recettes', 5000), part('v2', 'cat-frais', -50)]
+    const auJuin = await ouvrirLaSituation('2026-06-30')
+    expect(totalDuPoste(auJuin, 'Recettes')).toMatch(/^5\s?000,00\s€$/)
+    expect(totalDuPoste(auJuin, 'Frais financiers')).toMatch(/^-50,00\s€$/)
+  })
+
+  it('ne porte jamais la part personnelle', async () => {
+    poser()
+    faux.paiements = [mouvement({ libelle: 'PRLV OPERATEUR', montant: -120 })]
+    faux.ventilations = [part('v1', 'cat-frais', -84), part('v2', null, -36)]
+    const auJuin = await ouvrirLaSituation('2026-06-30')
+    expect(totalDuPoste(auJuin, 'Frais financiers')).toMatch(/^-84,00\s€$/)
+  })
+
+  it('compte la part de recettes dans la CAF des ratios, pas l’apport personnel qui l’accompagne', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 8, 1, 12, 0, 0))   // 1er septembre 2026 : 241 jours en 30/360
+    poser()
+    // 10 500 € reçus : 10 000 € d'honoraires et 500 € d'apport de l'exploitant sur le même virement.
+    faux.paiements = [mouvement({ montant: 10500 })]
+    faux.ventilations = [part('v1', 'cat-recettes', 10000), part('v2', null, 500)]
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    const titre = await screen.findByRole('heading', { name: 'Dettes & ratios bancaires', level: 3 })
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    // 10 000 € ramenés à douze mois : 14 937,76 €. Comptée, la part personnelle en ferait 15 684,65.
+    const ligne = (await screen.findByText(/CAF annuelle estimée/)).textContent ?? ''
+    expect(ligne).toMatch(/14\s?937,76\s€/)
+  })
+
+  it('préremplit le prévisionnel de la part de recettes de l’année de référence', async () => {
+    const annee = new Date().getFullYear() - 1
+    poser()
+    faux.paiements = [mouvement({ date: `${annee}-03-10`, montant: 11940 })]
+    faux.ventilations = [part('v1', 'cat-recettes', 12000), part('v2', 'cat-frais', -60)]
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    const tuile = screen.getByText('Trésorerie actuelle (banque)').parentElement as HTMLElement
+    await waitFor(() => expect(tuile.querySelector('strong')?.textContent).not.toBe('—'))
+    const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
+    await act(async () => { within(titre.parentElement as HTMLElement).getByRole('button').click() })
+    await act(async () => { screen.getByRole('button', { name: 'Précharger depuis cette année' }).click() })
+    expect((screen.getByLabelText('CA de référence (€)') as HTMLInputElement).value).toBe('12000')
+  })
+
+  it('dit la lecture partielle quand les parts sont lues en partie', async () => {
+    poser()
+    faux.paiements = [mouvement()]
+    faux.ventilations = [part('v1', 'cat-recettes', 5000), part('v2', 'cat-frais', -50)]
+    faux.muet = { ventilations_bancaires: 1 }
+    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+    expect(await screen.findByText(/Les données du dossier bancaire/)).toBeTruthy()
   })
 })

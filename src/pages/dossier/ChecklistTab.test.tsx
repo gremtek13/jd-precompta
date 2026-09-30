@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
-import type { Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
+import type { Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VentilationBancaire } from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
@@ -119,6 +119,7 @@ function poser(pieces: {
   refusees?: string[]
   categories?: unknown[]
   emprunts?: unknown[]
+  ventilations?: unknown[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
@@ -128,6 +129,7 @@ function poser(pieces: {
     natures_immobilisation: [], categories: pieces.categories ?? [], ecritures_brouillon: pieces.ecritures ?? [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
     exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], emprunts: pieces.emprunts ?? [],
+    ventilations_bancaires: pieces.ventilations ?? [],
   }
   faux.refusees = new Set([...(pieces.clotureRefusee ? ['exercices_clotures'] : []), ...(pieces.refusees ?? [])])
   faux.tronquees = new Set(pieces.tronquees ?? [])
@@ -850,5 +852,107 @@ describe('ChecklistTab — les échéances d’emprunt', () => {
     poser({ lignes: [...bornes(), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2, tronquees: ['emprunts'] })
     monter()
     expect(await screen.findByText(/n'ont pas pu être lu/)).toBeTruthy()
+  })
+})
+
+// UN MOUVEMENT VENTILÉ SUR PLUSIEURS COMPTES (lib/ventilationBanque.ts). Écrit selon ses parts, il n'est ni
+// un « rapproché sans justificatif » ni une rupture de la piste d'audit. Ce qui en est un point : une
+// écriture qui ne suit plus ses parts (le compte d'une catégorie a changé depuis), des parts qui ne font
+// plus le mouvement, et une part de recettes sur un dossier assujetti — dont la TVA n'est dans aucune CA3.
+// Ce que le module ne peut pas voir : que l'écran LISE les parts, et se taise sur une lecture partielle.
+describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () => {
+  const TELEPHONE: Categorie = {
+    id: 'cat-tel', dossier_id: null, code: 'telephone', libelle: 'Téléphone', ordre: 40,
+    compte_comptable: '626000', poste_2035: 'Frais postaux et de télécommunications',
+  }
+  const RECETTES: Categorie = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const ventile = (o: Partial<LigneBancaire> = {}) => ligne({
+    id: 'l-v', libelle: 'PRLV OPERATEUR', montant: -120, piece_id: null, ventilee: true, ...o,
+  })
+  function part(id: string, categorieId: string | null, montant: number): VentilationBancaire {
+    return {
+      id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-v', categorie_id: categorieId,
+      part_personnelle: categorieId === null, montant, created_at: '2026-03-10T00:00:00Z',
+    }
+  }
+  const PARTS = [part('v1', 'cat-tel', -84), part('v2', null, -36)]
+  function ecritureDe(o: Partial<EcritureBrouillon>): EcritureBrouillon {
+    return {
+      id: 'e1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-v', date: '2026-03-10',
+      compte: '626000', libelle: 'PRLV OPERATEUR', montant: 84, sens: 'debit', statut: 'proposee',
+      created_at: '2026-03-10T00:00:00Z', ...o,
+    }
+  }
+  const ECRITURE = [
+    ecritureDe({ id: 'e1' }),
+    ecritureDe({ id: 'e2', compte: '108000', montant: 36 }),
+    ecritureDe({ id: 'e3', compte: '512000', montant: 120, sens: 'credit' }),
+  ]
+  const aTraiter = () => ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })
+
+  it('écrit selon ses parts, il n’est ni un point, ni un rapprochement sans justificatif, ni une rupture', async () => {
+    poser({ lignes: [ventile(), aTraiter()], categories: [TELEPHONE], ecritures: ECRITURE, ventilations: PARTS })
+    monter()
+    // Ancré sur un point que ce jeu d'essai déclenche forcément.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/rapproché\(s\) sans justificatif/)).toHaveLength(0)
+    expect(screen.queryAllByText(/piste d'audit rompue/)).toHaveLength(0)
+    expect(screen.queryAllByText(/ventilé\(s\)/)).toHaveLength(0)
+  })
+
+  it('compte le mouvement dont l’écriture ne suit plus les parts, et mène à Écritures', async () => {
+    const onNavigate = vi.fn()
+    poser({ lignes: [ventile()], categories: [{ ...TELEPHONE, compte_comptable: '626100' }], ecritures: ECRITURE, ventilations: PARTS })
+    render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />)
+    const point = await screen.findByText(/ventilé\(s\) dont l’écriture ne suit plus les parts/)
+    expect(point.textContent).toMatch(/^1 /)
+    screen.getByRole('button', { name: 'Réécrire ces ventilations' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('ecritures')
+  })
+
+  it('compte le mouvement dont les parts ne font plus le mouvement, et mène à Banque', async () => {
+    const onNavigate = vi.fn()
+    poser({ lignes: [ventile()], categories: [TELEPHONE], ecritures: ECRITURE, ventilations: [part('v1', 'cat-tel', -84), part('v2', null, -30)] })
+    render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />)
+    const point = await screen.findByText(/ventilé\(s\) dont les parts ne font plus le mouvement/)
+    expect(point.textContent).toMatch(/^1 /)
+    screen.getByRole('button', { name: 'Modifier ou annuler ces ventilations' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('banque')
+    // Une ventilation incohérente ne se compte pas en plus comme une écriture à réécrire : on ne sait pas
+    // ce qu'elle devrait porter.
+    expect(screen.queryAllByText(/ne suit plus les parts/)).toHaveLength(0)
+  })
+
+  it('se tait sur des parts lues en partie, et le bandeau dit pourquoi', async () => {
+    poser({ lignes: [ventile(), aTraiter()], categories: [TELEPHONE], ecritures: ECRITURE, ventilations: [PARTS[0]], tronquees: ['ventilations_bancaires'] })
+    monter()
+    await screen.findByText(/Les données du dossier/)
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/ne font plus le mouvement/)).toHaveLength(0)
+    expect(screen.queryAllByText(/ne suit plus les parts/)).toHaveLength(0)
+  })
+
+  it('compte la part de recettes d’un dossier assujetti — et se tait sur un dossier exonéré', async () => {
+    const encaissement = ventile({ libelle: 'REMISE CB', montant: 4950 })
+    const parts = [part('v1', 'cat-recettes', 5000), part('v2', 'cat-tel', -50)]
+    poser({ lignes: [encaissement], categories: [RECETTES, TELEPHONE], ventilations: parts })
+    const { unmount } = monter(true)
+    const point = await screen.findByText(/en recette sans TVA, sur un dossier assujetti/)
+    expect(point.textContent).toMatch(/^1 /)
+    unmount()
+    poser({ lignes: [encaissement, aTraiter()], categories: [RECETTES, TELEPHONE], ventilations: parts })
+    monter(false)
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/sur un dossier assujetti/)).toHaveLength(0)
+  })
+
+  it('compte la catégorie sans poste 2035 qu’une part désigne', async () => {
+    poser({ lignes: [ventile()], categories: [{ ...TELEPHONE, poste_2035: null }], ecritures: ECRITURE, ventilations: PARTS })
+    monter()
+    const point = await screen.findByText(/catégorie\(s\) sans poste 2035/)
+    expect(point.textContent).toMatch(/^1 /)
   })
 })

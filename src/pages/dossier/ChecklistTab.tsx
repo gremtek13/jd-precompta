@@ -15,7 +15,8 @@ import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import type { OuvertureBanque } from '../../lib/planTresorerie'
-import type { ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece } from '../../lib/types'
+import type { ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece, VentilationBancaire } from '../../lib/types'
+import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSurDossierAssujetti, ventilationsIncoherentes } from '../../lib/ventilationBanque'
 import type { DossierTab } from '../../components/DossierParcours'
 import KpiTile from '../../components/widgets/KpiTile'
 import Widget from '../../components/widgets/Widget'
@@ -76,6 +77,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Les emprunts : leurs échéances que le relevé couvre sans qu'aucun mouvement ne les paie sont un point
   // de cette liste, donc leur lecture rejoint `lectureIncomplete`.
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
+  // Les parts des mouvements ventilés (lib/ventilationBanque.ts) : deux points de cette liste en dépendent,
+  // et les catégories qu'elles désignent comptent parmi les catégories utilisées — donc le même drapeau.
+  const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
+  // Lues en partie, une part non lue ferait passer sa ventilation pour incohérente : ce point-là se tait
+  // alors, et le bandeau de lecture partielle dit pourquoi — crier au loup sur un artefact de lecture est
+  // ce que `rupturesPisteAudit` refuse déjà.
+  const [ventilationsPartielles, setVentilationsPartielles] = useState(false)
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations. Sans ce drapeau, l'écran
   // qui prétend dire ce qui MANQUE affirmait « à renseigner » sur une lecture refusée — et passait
@@ -111,6 +119,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       clotures,
       lectureANouveaux,
       lectureEmprunts,
+      lectureVentilations,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -163,6 +172,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
         supabase.from('emprunts').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('date_debut').order('id').range(debut, fin),
       ),
+      lireTout<VentilationBancaire>((debut, fin) =>
+        supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -187,10 +200,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     setLectureIncomplete(
       [
         lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
-        lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts,
+        lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations,
       ].find((l) => !l.complete)?.motif ?? null,
     )
     setEmprunts(lectureEmprunts.lignes)
+    setVentilations(lectureVentilations.lignes)
+    setVentilationsPartielles(!lectureVentilations.complete)
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
     setCategories(lectureCategories.lignes)
@@ -284,6 +299,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Des encaissements affectés en recette alors que le dossier est (devenu) assujetti : leur TVA
   // collectée n'est dans aucune CA3.
   const recettesSansTva = recettesAffecteesSurDossierAssujetti(affectes, assujettiTva)
+  // Les mêmes, par une part d'un mouvement ventilé : un seul point, les deux se réparent pareil.
+  const recettesVentileesSansTva = recettesVentileesSurDossierAssujetti(partsDesVentilations(lignes, ventilations, categories), assujettiTva)
+  // Une ventilation dont les parts ne font plus le mouvement (défensif, la base vérifie la somme), et une
+  // écriture de mouvement ventilé qui ne suit plus ses parts — le compte d'une catégorie a changé depuis.
+  const ventilationsFausses = ventilationsPartielles ? [] : ventilationsIncoherentes(lignes, ventilations)
+  const ventilesPerimes = mouvementsVentilesDesynchronises(ecritures, lignes, ventilations, categories, modele)
   // Les virements personnels sans leur écriture — classés avant que ce classement s'écrive
   // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie.
   const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele)
@@ -297,8 +318,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // écrivant ensemble — mais une écriture retirée par un autre chemin sortirait du FEC en silence.
   const echeancesPerimees = echeancesDesynchronisees(ecritures, lignes)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
-  const catSansCompte = categoriesSansCompte(categories, piecesValidees, lignes)
-  const catSansPoste = categoriesSansPoste(categories, piecesValidees, lignes)
+  // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
+  const catSansCompte = categoriesSansCompte(categories, piecesValidees, [...lignes, ...ventilations])
+  const catSansPoste = categoriesSansPoste(categories, piecesValidees, [...lignes, ...ventilations])
   const sansTva = piecesSansTva(piecesValidees, assujettiTva)
   const sansCategorie = piecesValideesSansCategorie(piecesValidees)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
@@ -414,9 +436,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     // Le pendant pour un emprunt : rapprocher de nouveau l'échéance (fiche du mouvement, « Corriger le
     // découpage ») réécrit son écriture.
     { id: 'echeances-emprunt-perimees', label: 'échéance(s) d’emprunt dont l’écriture ne suit plus le découpage', action: 'Rapprocher de nouveau ces échéances', nb: echeancesPerimees.length, cible: 'banque', severite: 'erreur' },
+    // Le pendant pour un mouvement ventilé : « Réécrire », dans Écritures, reprend l'écriture depuis ses parts.
+    { id: 'ventiles-perimes', label: 'mouvement(s) ventilé(s) dont l’écriture ne suit plus les parts', action: 'Réécrire ces ventilations', nb: ventilesPerimes.length, cible: 'ecritures', severite: 'erreur' },
+    // « Erreur » : la 2035 compte ce que disent les parts, l'écriture autre chose. Défensif — la base
+    // vérifie la somme —, mais une part écrite ou retirée par un autre chemin ne se verrait nulle part.
+    { id: 'ventilations-incoherentes', label: 'mouvement(s) ventilé(s) dont les parts ne font plus le mouvement', action: 'Modifier ou annuler ces ventilations', nb: ventilationsFausses.length, cible: 'banque', severite: 'erreur' },
     // « Erreur » : la TVA collectée d'un assujetti manque à sa CA3, et la 2035 compte la taxe comme du
     // chiffre d'affaires. Rien ne les réécrit : la facture, déposée et rapprochée, les remplace.
-    { id: 'recettes-affectees-assujetti', label: 'encaissement(s) affecté(s) en recette sans TVA, sur un dossier assujetti', action: 'Rapprocher leur facture à la place', nb: recettesSansTva.length, cible: 'banque', severite: 'erreur' },
+    { id: 'recettes-affectees-assujetti', label: 'encaissement(s) affecté(s) ou ventilé(s) en recette sans TVA, sur un dossier assujetti', action: 'Rapprocher leur facture à la place', nb: recettesSansTva.length + recettesVentileesSansTva.length, cible: 'banque', severite: 'erreur' },
     // « Erreur » comme une pièce validée sans catégorie : le virement a l'air traité — il est classé —,
     // donc plus personne ne le regarde, et il manque au FEC. L'onglet Virements les montre et les écrit.
     { id: 'virements-sans-ecriture', label: 'virement(s) personnel(s) sans écriture — absents du FEC et de la trésorerie', action: 'Écrire ces virements', nb: virementsAEcrire.length, cible: 'virements', severite: 'erreur' },

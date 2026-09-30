@@ -246,13 +246,13 @@ export function ventilationsIncoherentes(
 // compter ici ferait dire deux fois la même chose. Une catégorie absente de la liste fournie écarte le
 // mouvement (on ne juge pas ce qu'on n'a pas lu) ; une catégorie présente mais sortie des comptes de
 // résultat le rend périmé, comme pour une affectation.
-export function mouvementsVentilesDesynchronises(
+export function mouvementsVentilesDesynchronises<L extends MouvementBancaire>(
   ecritures: readonly EcritureBrouillon[],
-  lignes: readonly MouvementBancaire[],
+  lignes: readonly L[],
   ventilations: readonly VentilationBancaire[],
   categories: readonly Categorie[],
   modele: ModeleComptable,
-): MouvementBancaire[] {
+): L[] {
   const ecrituresParLigne = ecrituresSansPieceParMouvement(ecritures)
   const parLigne = partsParMouvement(ventilations)
   const incoherentes = new Set(ventilationsIncoherentes(lignes, ventilations).map((v) => v.ligne.id))
