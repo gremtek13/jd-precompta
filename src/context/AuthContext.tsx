@@ -59,11 +59,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => sub.subscription.unsubscribe()
   }, [])
 
+  // Les rôles se relisent quand l'IDENTITÉ change, jamais sur l'objet session. Supabase en renvoie une
+  // copie neuve à chaque retour sur l'onglet (un « SIGNED_IN » émis par sa reprise de session, vérifié
+  // dans auth-js, `_recoverAndRefresh`) et à chaque jeton renouvelé (« TOKEN_REFRESHED »). Relus sur
+  // l'objet, les rôles repassaient `loading` à vrai : l'application entière retombait sur
+  // « Chargement… » et remontait tous ses écrans, qui perdaient ce qu'ils affichaient ou ce qu'on y
+  // saisissait — l'aperçu d'une récupération bancaire disparaissait ainsi après un passage par une
+  // autre fenêtre, et chaque écran relisait toute sa base, deux fois.
+  const userId = session?.user.id ?? null
+
   useEffect(() => {
     let cancelled = false
 
     async function resolveRole() {
-      if (!session) {
+      if (!userId) {
         setRole(null)
         setDossierIds([])
         setMesSocietes([])
@@ -79,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: adminRow } = await supabase
         .from('cabinet_admins')
         .select('cabinet_id, role')
-        .eq('user_id', session.user.id)
+        .eq('user_id', userId)
         .maybeSingle()
 
       if (cancelled) return
@@ -101,7 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data: memberships } = await supabase
         .from('memberships')
         .select('dossier_id')
-        .eq('user_id', session.user.id)
+        .eq('user_id', userId)
 
       if (cancelled) return
 
@@ -143,7 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true
     }
-  }, [session])
+  }, [userId])
 
   async function signOut() {
     // CE QUE LA SOURCE DE LA BIBLIOTHÈQUE DIT, ET QUI CORRIGE L'INTUITION (vérifié dans
