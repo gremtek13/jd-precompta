@@ -1,7 +1,7 @@
 import { piecesDeviseNonConvertie, piecesTvaImpossible, LIBELLE_MOTIF_TVA } from './controles'
 import { ajouterJours, ajouterMois, dernierJourDuMois } from './format'
-import { partsDesPaiements } from './rattachement'
-import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece } from './types'
+import { partsDesPaiements, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
+import type { DeclarationTva, PeriodiciteTva, Piece } from './types'
 
 // LA CA3 CASE PAR CASE — le formulaire 3310-CA3-SD (millésime 2026), préparé depuis les pièces
 // validées et les paiements qui les rattachent au relevé bancaire.
@@ -123,7 +123,7 @@ interface Fraction {
   part: number
 }
 
-function fractionsDe(piece: Piece, mouvements: LigneBancaire[], surDebits: boolean): Fraction[] | MotifNonPlacee {
+function fractionsDe(piece: Piece, mouvements: readonly PaiementDePiece[], surDebits: boolean): Fraction[] | MotifNonPlacee {
   const recette = piece.type_piece === 'vente'
   if (recette && surDebits) return piece.date_piece ? [{ date: piece.date_piece, part: 1 }] : 'sans_date'
   // La part de chaque paiement vient de `partsDesPaiements` (lib/rattachement.ts), qui la rend aussi
@@ -250,7 +250,10 @@ export interface DonneesTva {
   // Toutes les pièces du dossier, validées et à valider : les secondes ne comptent pas, mais celles
   // que la période concerne sont rendues pour qu'on les valide avant de déposer.
   pieces: Piece[]
-  lignesBancaires: LigneBancaire[]
+  // Les paiements de chaque pièce, parts de virements groupés comprises (`paiementsDesPieces`) : une
+  // facture réglée avec d'autres par un seul virement devient exigible ou déductible à la date de ce
+  // virement, pour la part qui la règle.
+  paiements: PaiementsDesPieces
   pieceIdsImmobilisees: ReadonlySet<string>
 }
 
@@ -273,13 +276,6 @@ export function calculerCa3(
   surDebits: boolean,
   creditAnterieur: number,
 ): DeclarationCa3 {
-  const mouvementsParPiece = new Map<string, LigneBancaire[]>()
-  for (const ligne of donnees.lignesBancaires) {
-    if (!ligne.piece_id) continue
-    const liste = mouvementsParPiece.get(ligne.piece_id) ?? []
-    liste.push(ligne)
-    mouvementsParPiece.set(ligne.piece_id, liste)
-  }
   const impossibles = new Map(piecesTvaImpossible(donnees.pieces).map((a) => [a.piece.id, a.motif]))
   const nonConverties = new Set(piecesDeviseNonConvertie(donnees.pieces).map((p) => p.id))
 
@@ -296,7 +292,7 @@ export function calculerCa3(
 
   for (const piece of donnees.pieces) {
     const recette = piece.type_piece === 'vente'
-    const fractions = fractionsDe(piece, mouvementsParPiece.get(piece.id) ?? [], surDebits)
+    const fractions = fractionsDe(piece, donnees.paiements.get(piece.id) ?? [], surDebits)
     if (typeof fractions === 'string') {
       const concernee = recette || (piece.montant_tva ?? 0) !== 0
       const dansLeTemps = piece.date_piece == null || piece.date_piece <= periode.fin

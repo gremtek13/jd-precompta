@@ -43,7 +43,7 @@ export interface EcartBanque {
 
 // Rend `null` quand la question ne se pose pas : pièce en devise (traitée à part, sans seuil),
 // montant non lu (rien à comparer), ou mouvement à zéro.
-export function ecartAvecBanque(piece: Piece, ligne: LigneBancaire): EcartBanque | null {
+export function ecartAvecBanque(piece: Piece, ligne: Pick<LigneBancaire, 'montant'>): EcartBanque | null {
   if (piece.devise && piece.devise !== DEVISE_PIVOT) return null
   if (piece.montant_ttc == null) return null
   if (!ligne.montant) return null

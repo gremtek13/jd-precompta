@@ -12,10 +12,17 @@ const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '4
 // programmée par le test — de quoi vérifier ce qui est écrit, et ce qui se passe quand la base refuse.
 const reponses = {
   select: { data: [] as { id: string; compte: string; ligne_bancaire_id?: string | null }[] | null, error: null as { message: string } | null },
+  // Le COMPTE des contreparties qui restent à une pièce (`select('id', { count, head })`), que lit
+  // `rendreAuxDatesDeFacture` avant de redater.
+  compte: { count: 0 as number | null, error: null as { message: string } | null },
   insert: { error: null as { message: string } | null },
   delete: { error: null as { message: string } | null },
   update: { error: null as { message: string } | null },
 }
+// Les filtres de chaque lecture de compte : c'est ce qui dit de QUELLE pièce on compte les contreparties.
+let filtresComptes: string[][] = []
+// Des comptes rendus l'un après l'autre, quand un test en lit plusieurs ; `reponses.compte` sinon.
+let comptesSuccessifs: number[] = []
 // Un objet en trésorerie (la contrepartie seule), un tableau en engagement (les deux lignes du règlement).
 let insere: unknown = null
 let supprime = false
@@ -26,18 +33,25 @@ let filtresSuppression: string[] = []
 let misesAJour: { valeurs: Record<string, unknown>; filtres: string[] }[] = []
 
 vi.mock('./supabase', () => {
-  const resolvable = (op: 'select' | 'insert' | 'delete' | 'update', filtres: string[] = []) => {
+  const resolvable = (op: 'select' | 'compte' | 'insert' | 'delete' | 'update', filtres: string[] = []) => {
     const chaine = {
       eq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}=${valeur}`); return chaine },
       neq: (colonne: string, valeur: unknown) => { filtres.push(`${colonne}!=${valeur}`); return chaine },
-      then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(reponses[op])),
+      then: (resoudre: (v: unknown) => unknown) => Promise.resolve(resoudre(
+        op === 'compte' && comptesSuccessifs.length > 0 ? { count: comptesSuccessifs.shift(), error: null } : reponses[op],
+      )),
     }
     return chaine
   }
   return {
     supabase: {
       from: () => ({
-        select: () => resolvable('select'),
+        select: (_colonnes: string, options?: { count?: string; head?: boolean }) => {
+          if (!options?.head) return resolvable('select')
+          const filtres: string[] = []
+          filtresComptes.push(filtres)
+          return resolvable('compte', filtres)
+        },
         insert: (payload: Record<string, unknown>) => { insere = payload; return resolvable('insert') },
         delete: () => { supprime = true; filtresSuppression = []; return resolvable('delete', filtresSuppression) },
         update: (valeurs: Record<string, unknown>) => {
@@ -50,7 +64,7 @@ vi.mock('./supabase', () => {
   }
 })
 
-const { synchroniserContrepartieBanque, retirerContrepartieBanque } = await import('./contrepartieBanque')
+const { synchroniserContrepartieBanque, retirerContrepartieBanque, rendreAuxDatesDeFacture } = await import('./contrepartieBanque')
 
 const piece = (o: Partial<Piece> = {}): Piece => ({
   id: 'p1', dossier_id: 'd1', nom_fichier: 'facture.pdf', statut: 'validee', type_piece: 'achat',
@@ -62,6 +76,9 @@ const ligne = (montant: number, o: Partial<LigneBancaire> = {}): LigneBancaire =
 
 beforeEach(() => {
   reponses.select = { data: [{ id: 'e1', compte: '606100' }], error: null }
+  reponses.compte = { count: 0, error: null }
+  filtresComptes = []
+  comptesSuccessifs = []
   reponses.insert = { error: null }
   reponses.delete = { error: null }
   reponses.update = { error: null }
@@ -100,10 +117,33 @@ describe('synchroniserContrepartieBanque', () => {
     expect(insere).toBeNull()
   })
 
-  it('reste idempotente : pas de doublon si la contrepartie existe déjà', async () => {
-    reponses.select = { data: [{ id: 'e1', compte: '606100' }, { id: 'e2', compte: COMPTE_BANQUE }], error: null }
+  it('reste idempotente PAR MOUVEMENT : pas de doublon si la contrepartie de ce mouvement existe déjà', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '606100' }, { id: 'e2', compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' }], error: null }
     await synchroniserContrepartieBanque('d1', piece(), ligne(-120), TRESORERIE)
     expect(insere).toBeNull()
+  })
+
+  // Le défaut d'avant : elle sortait dès que la pièce portait UNE contrepartie, et une pièce payée en
+  // deux fois — un acompte puis la part d'un virement groupé — ne recevait jamais la seconde.
+  it('écrit la contrepartie d’un SECOND paiement de la pièce, sans la redater', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '606100' }, { id: 'e2', compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 120 }), { id: 'g', date: '2026-04-02', montant: -120 }, TRESORERIE)
+    expect(insere).toMatchObject({ compte: COMPTE_BANQUE, ligne_bancaire_id: 'g', date: '2026-04-02', montant: 120, sens: 'credit' })
+    // Ce paiement réglerait la pièce à lui seul, mais un autre la paie déjà : les lignes restent où elles
+    // sont, et le contrôle demandera « Régénérer », qui les répartit.
+    expect(misesAJour).toEqual([])
+  })
+
+  it('porte la PART d’un virement groupé, jamais le virement entier', async () => {
+    await synchroniserContrepartieBanque('d1', piece({ montant_ttc: 700 }), { id: 'g', date: '2026-02-12', montant: -700 }, TRESORERIE)
+    expect(insere).toMatchObject({ ligne_bancaire_id: 'g', montant: 700, sens: 'credit', date: '2026-02-12' })
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-02-12' }, filtres: ['piece_id=p1', `compte!=${COMPTE_BANQUE}`] }])
+  })
+
+  it('n’écrit rien pour un paiement de zéro euro', async () => {
+    await synchroniserContrepartieBanque('d1', piece(), ligne(0), TRESORERIE)
+    expect(insere).toBeNull()
+    expect(misesAJour).toEqual([])
   })
 
   it('lève quand la base refuse l’écriture, au lieu de rendre la main', async () => {
@@ -142,8 +182,8 @@ describe('synchroniserContrepartieBanque — la date du paiement', () => {
     expect(insere).toMatchObject({ compte: COMPTE_BANQUE, montant: 400 })
   })
 
-  it('ne touche à rien quand la contrepartie existe déjà', async () => {
-    reponses.select = { data: [{ id: 'e1', compte: '606100' }, { id: 'e2', compte: COMPTE_BANQUE }], error: null }
+  it('ne touche à rien quand la contrepartie de ce mouvement existe déjà', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '606100' }, { id: 'e2', compte: COMPTE_BANQUE, ligne_bancaire_id: 'l1' }], error: null }
     await synchroniserContrepartieBanque('d1', piece(), ligne(-120), TRESORERIE)
     expect(misesAJour).toEqual([])
   })
@@ -157,9 +197,32 @@ describe('synchroniserContrepartieBanque — la date du paiement', () => {
 })
 
 describe('retirerContrepartieBanque', () => {
-  it('supprime la ligne banque de la pièce', async () => {
+  it('supprime la contrepartie de CE mouvement, et elle seule', async () => {
+    // Elle retirait toutes celles de la pièce : annuler l'un de ses deux paiements effaçait aussi
+    // la contrepartie de l'autre.
     await retirerContrepartieBanque('l1', 'p1', piece(), TRESORERIE)
     expect(supprime).toBe(true)
+    expect(filtresSuppression).toEqual(['piece_id=p1', 'ligne_bancaire_id=l1'])
+  })
+
+  it('laisse les dates d’une pièce qu’un autre paiement date encore', async () => {
+    reponses.compte = { count: 1, error: null }
+    await retirerContrepartieBanque('l1', 'p1', piece(), TRESORERIE)
+    expect(filtresComptes).toEqual([['piece_id=p1', `compte=${COMPTE_BANQUE}`]])
+    expect(misesAJour).toEqual([])
+  })
+
+  it('ne redate rien quand le compte des contreparties restantes ne revient pas', async () => {
+    // « Plus aucun paiement » ne se déduit pas d'un compte que la base n'a pas rendu.
+    reponses.compte = { count: null, error: null }
+    await retirerContrepartieBanque('l1', 'p1', piece(), TRESORERIE)
+    expect(misesAJour).toEqual([])
+  })
+
+  it('lève quand le compte des contreparties restantes est refusé', async () => {
+    reponses.compte = { count: null, error: { message: 'permission denied' } }
+    await expect(retirerContrepartieBanque('l1', 'p1', piece(), TRESORERIE)).rejects.toMatchObject({ message: 'permission denied' })
+    expect(misesAJour).toEqual([])
   })
 
   it('lève quand la suppression échoue', async () => {
@@ -247,13 +310,33 @@ describe('retirerContrepartieBanque — en engagement', () => {
     expect(misesAJour).toEqual([])
   })
 
-  it('retire en trésorerie la contrepartie de la pièce, comme avant', async () => {
+  it('retire en trésorerie la contrepartie de ce mouvement pour la pièce', async () => {
     await retirerContrepartieBanque('l1', 'p1', piece(), TRESORERIE)
-    expect(filtresSuppression).toEqual(['piece_id=p1', `compte=${COMPTE_BANQUE}`])
+    expect(filtresSuppression).toEqual(['piece_id=p1', 'ligne_bancaire_id=l1'])
   })
 
   it('lève quand la suppression échoue', async () => {
     reponses.delete = { error: { message: 'permission denied' } }
     await expect(retirerContrepartieBanque('l1', 'p1', piece(), ENGAGEMENT)).rejects.toMatchObject({ message: 'permission denied' })
+  })
+})
+
+// Après un règlement groupé retiré, ou réglé de nouveau sans certaines pièces : la base a déjà retiré les
+// contreparties du mouvement, et chaque pièce qu'aucun paiement ne date plus retourne à sa facture.
+describe('rendreAuxDatesDeFacture', () => {
+  it('ramène à sa facture chaque pièce sans contrepartie restante, et elle seule', async () => {
+    comptesSuccessifs = [0, 2]
+    await rendreAuxDatesDeFacture([
+      piece({ id: 'p1', date_piece: '2026-01-10' }),
+      piece({ id: 'p2', date_piece: '2026-01-11' }),
+    ], TRESORERIE)
+    expect(filtresComptes).toEqual([['piece_id=p1', `compte=${COMPTE_BANQUE}`], ['piece_id=p2', `compte=${COMPTE_BANQUE}`]])
+    expect(misesAJour).toEqual([{ valeurs: { date: '2026-01-10' }, filtres: ['piece_id=p1'] }])
+  })
+
+  it('ne redate rien en engagement : la facture n’a jamais quitté sa date', async () => {
+    await rendreAuxDatesDeFacture([piece()], ENGAGEMENT)
+    expect(filtresComptes).toEqual([])
+    expect(misesAJour).toEqual([])
   })
 })

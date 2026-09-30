@@ -347,7 +347,7 @@ describe('bout en bout depuis les pièces', () => {
       piece({ id: 'a', categorie_id: 'c-hono', montant_ht: 800 }),
       piece({ id: 'b', categorie_id: 'c-assur', montant_ht: 200 }),
       piece({ id: 'c', categorie_id: 'c-vente', type_piece: 'vente', montant_ht: 5000 }),
-    ], categories, [], [], [], true, [], [])
+    ], categories, [], [], [], true, new Map(), [])
 
     const { valeurs, postesSansCase } = valeursDesCases(d)
     expect(postesSansCase).toEqual([])
@@ -367,7 +367,7 @@ describe('le barème kilométrique arrive en case BJ', () => {
 
   it('porte le « total A » du cadre 7 ligne 23, comme le dit le formulaire', () => {
     // Le bas du 2035-B : « Total A à reporter ligne 23 de l'annexe 2035 A ». Ligne 23 = BJ.
-    const d = calculerDeclaration2035(2025, [], [], [], [], [vehicule({})], true, [], [])
+    const d = calculerDeclaration2035(2025, [], [], [], [], [vehicule({})], true, new Map(), [])
     const { valeurs, postesSansCase } = valeursDesCases(d)
     expect(postesSansCase).toEqual([])
     expect(valeurs.get('BJ')).toBe(2660)
@@ -384,7 +384,7 @@ describe('le barème kilométrique arrive en case BJ', () => {
       id: 'train', statut: 'validee', type_piece: 'achat', date_piece: '2025-04-02',
       montant_ht: 340, montant_ttc: 340, categorie_id: 'c-depl',
     } as Piece
-    const d = calculerDeclaration2035(2025, [piece], categories, [], [], [vehicule({})], true, [], [])
+    const d = calculerDeclaration2035(2025, [piece], categories, [], [], [vehicule({})], true, new Map(), [])
     expect(valeursDesCases(d).valeurs.get('BJ')).toBe(2660 + 340)
   })
 })
@@ -527,7 +527,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
     const categories = [{ id: 'c-rec', poste_2035: 'Recettes' }] as Categorie[]
     const recette = { id: 'r', statut: 'validee', type_piece: 'vente', date_piece: '2025-06-15', montant_ht: 50_000, montant_ttc: 50_000, categorie_id: 'c-rec' } as Piece
     const avec = (montant_csg_crds: number | null) =>
-      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], [cotisation({ montant_csg_crds })], [], true, [], [])).valeurs
+      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], [cotisation({ montant_csg_crds })], [], true, new Map(), [])).valeurs
 
     const brute = avec(null)
     const ventilee = avec(970)

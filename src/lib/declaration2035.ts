@@ -2,7 +2,7 @@ import { anneeDe, jourDe, moisDe } from './format'
 import { totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
 import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
-import { paiementsParPiece, partDeLAnnee, rattachementsTresorerie, type Paiement } from './rattachement'
+import { partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
 
@@ -270,10 +270,11 @@ export function calculerDeclaration2035(
   // Même raison : un dossier exonéré déclare ses dépenses TVA comprise, un assujetti hors taxes (voir
   // lib/montantRetenu.ts). Une valeur par défaut ferait passer l'un pour l'autre en silence.
   assujettiTva: boolean,
-  // Les mouvements bancaires rapprochés : ce sont eux qui DATENT une pièce (voir lib/rattachement.ts).
-  // Sans valeur par défaut non plus — une liste vide ferait tout compter à la date de facture, soit
-  // exactement le défaut que ce paramètre corrige.
-  lignesBancaires: readonly Paiement[],
+  // Les paiements de chaque pièce, rapprochements et parts de règlements groupés réunis
+  // (`paiementsDesPieces`) : ce sont eux qui DATENT une pièce (voir lib/rattachement.ts). Sans valeur par
+  // défaut non plus — une liste vide ferait tout compter à la date de facture, soit exactement le défaut
+  // que ce paramètre corrige.
+  paiements: PaiementsDesPieces,
   // Ce que le relevé compte sans justificatif (lib/partsDuReleve.ts) : les mouvements affectés à une
   // catégorie — les encaissements de l'Assurance maladie, les frais bancaires — et les intérêts et
   // l'assurance des échéances d'emprunt. Ils comptent à la date du MOUVEMENT, qui est celle de
@@ -291,7 +292,6 @@ export function calculerDeclaration2035(
     sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [],
   }
   const sansPaiementConnu: PieceSansPaiement[] = []
-  const paiements = paiementsParPiece(lignesBancaires)
   // Les mouvements d'un poste se comptent par IDENTIFIANT, pas par part : un mouvement ventilé sur deux
   // catégories du même poste (lib/ventilationBanque.ts) y apporte deux parts, et reste UN mouvement à
   // retrouver sur le relevé.

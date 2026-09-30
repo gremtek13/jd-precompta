@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
-import type { Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VentilationBancaire } from '../../lib/types'
+import type { Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, ReglementGroupe, VentilationBancaire } from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
@@ -90,7 +90,7 @@ function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'dossier-de-test', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
     montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     prelevement_personnel: false, source_fichier: null, libelle_brut: null,
     created_at: '2026-03-10T00:00:00Z', ...o,
   }
@@ -120,6 +120,7 @@ function poser(pieces: {
   categories?: unknown[]
   emprunts?: unknown[]
   ventilations?: unknown[]
+  reglements?: unknown[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
@@ -129,7 +130,7 @@ function poser(pieces: {
     natures_immobilisation: [], categories: pieces.categories ?? [], ecritures_brouillon: pieces.ecritures ?? [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
     exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], emprunts: pieces.emprunts ?? [],
-    ventilations_bancaires: pieces.ventilations ?? [],
+    ventilations_bancaires: pieces.ventilations ?? [], reglements_groupes: pieces.reglements ?? [],
   }
   faux.refusees = new Set([...(pieces.clotureRefusee ? ['exercices_clotures'] : []), ...(pieces.refusees ?? [])])
   faux.tronquees = new Set(pieces.tronquees ?? [])
@@ -953,6 +954,95 @@ describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () =
     poser({ lignes: [ventile()], categories: [{ ...TELEPHONE, poste_2035: null }], ecritures: ECRITURE, ventilations: PARTS })
     monter()
     const point = await screen.findByText(/catégorie\(s\) sans poste 2035/)
+    expect(point.textContent).toMatch(/^1 /)
+  })
+})
+
+// UN VIREMENT QUI RÈGLE PLUSIEURS PIÈCES (ligne 26). Ses parts sont des paiements de leurs pièces : le contrôle
+// des écritures les attend comme des rapprochements simples, et deux points de cette liste en dépendent — une
+// part qui ne justifie plus rien, une pièce payée plus que son montant.
+describe('ChecklistTab — les virements qui règlent plusieurs pièces', () => {
+  const ACHATS: Categorie = {
+    id: 'cat-achats', dossier_id: null, code: 'achats', libelle: 'Achats', ordre: 20,
+    compte_comptable: '606100', poste_2035: 'Achats',
+  }
+  const A = piece({ id: 'pa', statut: 'validee', tiers: 'ALPHA', montant_ttc: 300, date_piece: '2026-02-20', categorie_id: 'cat-achats' })
+  const B = piece({ id: 'pb', statut: 'validee', tiers: 'BETA', montant_ttc: 200, date_piece: '2026-02-25', categorie_id: 'cat-achats' })
+  const groupe = (o: Partial<LigneBancaire> = {}) => ligne({
+    id: 'l-g', libelle: 'VIR FOURNISSEURS', montant: -500, piece_id: null, reglement_groupe: true, ...o,
+  })
+  const part = (id: string, pieceId: string | null, montant: number, ligneId = 'l-g'): ReglementGroupe => ({
+    id, dossier_id: 'dossier-de-test', ligne_bancaire_id: ligneId, piece_id: pieceId, montant, created_at: '2026-03-10T00:00:00Z',
+  })
+  const PARTS = [part('g1', 'pa', -300), part('g2', 'pb', -200)]
+  function ecritureDe(o: Partial<EcritureBrouillon>): EcritureBrouillon {
+    return {
+      id: 'e1', dossier_id: 'dossier-de-test', piece_id: 'pa', ligne_bancaire_id: null, date: '2026-03-10',
+      compte: '606100', libelle: 'ALPHA', montant: 300, sens: 'debit', statut: 'proposee',
+      created_at: '2026-03-10T00:00:00Z', ...o,
+    }
+  }
+  // Chaque pièce, réglée entière par sa part, porte sa charge à la date du virement et une contrepartie de
+  // banque au montant de sa part.
+  const ECRITURES = [
+    ecritureDe({ id: 'ea', piece_id: 'pa' }),
+    ecritureDe({ id: 'ea-b', piece_id: 'pa', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l-g' }),
+    ecritureDe({ id: 'eb', piece_id: 'pb', libelle: 'BETA', montant: 200 }),
+    ecritureDe({ id: 'eb-b', piece_id: 'pb', libelle: 'BETA', montant: 200, compte: '512000', sens: 'credit', ligne_bancaire_id: 'l-g' }),
+  ]
+  const aTraiter = () => ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })
+
+  it('réglé et écrit, il n’est ni un point, ni un rapprochement sans justificatif, ni une écriture à régénérer', async () => {
+    poser({ validees: [A, B], lignes: [groupe(), aTraiter()], categories: [ACHATS], ecritures: ECRITURES, reglements: PARTS })
+    monter()
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/à régénérer/)).toHaveLength(0)
+    expect(screen.queryAllByText(/rapproché\(s\) sans justificatif/)).toHaveLength(0)
+    expect(screen.queryAllByText(/piste d'audit rompue/)).toHaveLength(0)
+    expect(screen.queryAllByText(/virement\(s\) groupé\(s\)/)).toHaveLength(0)
+    expect(screen.queryAllByText(/payée\(s\) plus que leur montant/)).toHaveLength(0)
+    // Réglées par leur part : leur montant n'est pas « introuvable » dans le relevé, ni la pièce sans paiement.
+    expect(screen.queryAllByText(/ne correspond à aucun mouvement bancaire/)).toHaveLength(0)
+  })
+
+  it('compte le virement dont une part ne justifie plus rien, et mène à Banque', async () => {
+    const onNavigate = vi.fn()
+    poser({ validees: [A], lignes: [groupe()], categories: [ACHATS], reglements: [part('g1', 'pa', -300), part('g2', null, -200)] })
+    render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />)
+    const point = await screen.findByText(/virement\(s\) groupé\(s\) dont une part ne justifie plus rien/)
+    expect(point.textContent).toMatch(/^1 /)
+    screen.getByRole('button', { name: 'Régler de nouveau ou annuler ces virements' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('banque')
+  })
+
+  // Une pièce supprimée ET une part dont le montant ne tombe plus juste : deux raisons, un seul virement à
+  // reprendre. Compté par raison, le point annoncerait deux virements là où il n'y en a qu'un.
+  it('compte par MOUVEMENT, pas par raison', async () => {
+    poser({ validees: [A], lignes: [groupe()], categories: [ACHATS], reglements: [part('g1', 'pa', -300), part('g2', null, -150)] })
+    monter()
+    const point = await screen.findByText(/virement\(s\) groupé\(s\) dont une part ne justifie plus rien/)
+    expect(point.textContent).toMatch(/^1 /)
+  })
+
+  it('se tait sur des parts lues en partie, et le bandeau dit pourquoi', async () => {
+    poser({
+      validees: [A], lignes: [groupe(), aTraiter()], categories: [ACHATS], reglements: [part('g1', 'pa', -300)],
+      tronquees: ['reglements_groupes'],
+    })
+    monter()
+    await screen.findByText(/Les données du dossier/)
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/virement\(s\) groupé\(s\)/)).toHaveLength(0)
+  })
+
+  it('compte la pièce payée deux fois — un rapprochement et la part d’un virement groupé', async () => {
+    poser({
+      validees: [A, B],
+      lignes: [groupe(), ligne({ id: 'l-a', libelle: 'PRLV ALPHA', montant: -300, piece_id: 'pa' })],
+      categories: [ACHATS], reglements: PARTS,
+    })
+    monter()
+    const point = await screen.findByText(/payée\(s\) plus que leur montant/)
     expect(point.textContent).toMatch(/^1 /)
   })
 })

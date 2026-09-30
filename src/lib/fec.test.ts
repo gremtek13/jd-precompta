@@ -339,7 +339,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
   const mouvement = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id, dossier_id: 'd1', date: '2026-03-12', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c-recettes', prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     source_fichier: 'releve-mars-2026.pdf', libelle_brut: null, created_at: '2026-03-13T00:00:00Z', ...o,
   })
   const cpam = mouvement('l-cpam')
@@ -448,7 +448,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ['BQ', 'BQ00001', '20260315', COMPTE_BANQUE, 'releve-mars-2026.pdf', '0,00', '120,00'],
     ])
     // Le garde symétrique : la ventilation annulée, la même écriture n'a plus de justificatif.
-    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, id_externe: null }
+    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, reglement_groupe: false, id_externe: null }
     expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule])).slice(1)).toEqual([])
   })
 

@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FichePiece from './FichePiece'
-import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
+import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
 import type { Categorie, Piece, TiersCategorie } from '../../lib/types'
 
 // Le verrou d'exécution de l'enregistrement d'une pièce (CLAUDE.md, « un verrou d'exécution est un
@@ -227,7 +227,7 @@ describe('FichePiece — supprimer une pièce dit ce que ça défait', () => {
 
     await act(async () => { bouton.click() })
 
-    expect(message).toContain(AVERTISSEMENT_RAPPROCHEMENT_DEFAIT)
+    expect(message).toContain(AVERTISSEMENT_PAIEMENT_DEFAIT)
     expect(faux.suppressions).toHaveLength(0)
     // Le message d'avant envoyait chercher un lien à retirer qui ne bloque rien.
     expect(message).not.toMatch(/Retire d.abord ce lien/)

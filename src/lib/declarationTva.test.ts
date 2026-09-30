@@ -10,6 +10,7 @@ import {
   periodesDeLAnnee,
   type DonneesTva,
 } from './declarationTva'
+import { paiementsDesPieces, type PartReglee } from './rattachement'
 import type { DeclarationTva, LigneBancaire, Piece } from './types'
 
 // Jeu d'essai typé SANS `as` : le compilateur vérifie chaque champ contre la table, et un champ
@@ -29,7 +30,7 @@ function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'd1', date: '2027-02-20', libelle: 'VIR CLIENT', montant: 1200,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: '2027-02-21T09:00:00Z', ...o,
   }
 }
@@ -45,8 +46,10 @@ function declaration(o: Partial<DeclarationTva> = {}): DeclarationTva {
 const T1 = { debut: '2027-01-01', fin: '2027-03-31' }
 const T2 = { debut: '2027-04-01', fin: '2027-06-30' }
 
-function donnees(pieces: Piece[], lignesBancaires: LigneBancaire[] = [], immobilisees: string[] = []): DonneesTva {
-  return { pieces, lignesBancaires, pieceIdsImmobilisees: new Set(immobilisees) }
+function donnees(
+  pieces: Piece[], lignesBancaires: LigneBancaire[] = [], immobilisees: string[] = [], parts: PartReglee[] = [],
+): DonneesTva {
+  return { pieces, paiements: paiementsDesPieces(lignesBancaires, parts), pieceIdsImmobilisees: new Set(immobilisees) }
 }
 
 describe('periodesDeLAnnee', () => {
@@ -184,6 +187,29 @@ describe('calculerCa3 — la date qui décide de la période', () => {
     ])
     expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ A1: 500, base08: 500, taxe08: 100 })
     expect(calculerCa3(d, T2, false, 0).cases).toMatchObject({ A1: 500, base08: 500, taxe08: 100 })
+  })
+
+  // Ligne 26 : un virement qui règle plusieurs factures. Chacune devient exigible à la date du virement,
+  // pour la PART qui la règle — jamais le virement entier, qui paie aussi les autres.
+  it('rend exigible chaque facture d\'un virement groupé à la date du virement, pour sa part', () => {
+    const d = donnees(
+      [piece({ id: 'p1' }), piece({ id: 'p2', montant_ht: 500, montant_tva: 100, montant_ttc: 600 })],
+      [mouvement({ id: 'g', piece_id: null, reglement_groupe: true, montant: 1800, date: '2027-04-03' })],
+      [],
+      [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: 1200 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: 600 }],
+    )
+    expect(calculerCa3(d, T1, false, 0).cases.taxe08).toBe(0)
+    expect(calculerCa3(d, T2, false, 0).cases).toMatchObject({ A1: 1500, base08: 1500, taxe08: 300 })
+  })
+
+  it('ne rend exigible d\'une facture réglée en partie par un virement groupé que ce que sa part paie', () => {
+    const d = donnees(
+      [piece({ id: 'p1' }), piece({ id: 'p2', montant_ht: 500, montant_tva: 100, montant_ttc: 600 })],
+      [mouvement({ id: 'g', piece_id: null, reglement_groupe: true, montant: 900, date: '2027-02-03' })],
+      [],
+      [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: 300 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: 600 }],
+    )
+    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ base08: 750, taxe08: 150 })
   })
 
   it('un acompte seul ne rend exigible que ce qu\'il paie', () => {

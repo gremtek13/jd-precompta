@@ -2,7 +2,8 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TvaTab from './TvaTab'
-import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece } from '../../lib/types'
+import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe } from '../../lib/types'
+import type { Predicat } from '../../test/filtresPostgrest'
 
 // LE CALCUL EST DANS lib/declarationTva.ts ET SE TESTE LÀ. Ce qui se joue ici est ce qu'aucun test du
 // module ne peut voir : l'écran montre les cases de la bonne période, reprend le crédit de la
@@ -23,63 +24,70 @@ const faux = vi.hoisted(() => ({
   miseAJourRefusee: false,
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      let debut = 0
-      let fin = Number.MAX_SAFE_INTEGER
-      const lecture: Record<string, unknown> = {}
-      Object.assign(lecture, {
-        select: () => lecture,
-        eq: () => lecture,
-        not: () => lecture,
-        order: () => lecture,
-        range: (d: number, f: number) => { debut = d; fin = f; return lecture },
-        then: (suite: (r: unknown) => unknown) => {
-          faux.lectures++
-          const reponse = () => {
-            const lignes = faux.tables[table] ?? []
-            return {
-              data: lignes.slice(debut, Math.min(fin + 1, lignes.length)),
-              error: null,
-              count: lignes.length + (faux.tronquees.has(table) ? 1 : 0),
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatEq, predicatNot } = await import('../../test/filtresPostgrest')
+  return {
+    supabase: {
+      from: (table: string) => {
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        // Les filtres sont APPLIQUÉS (voir src/test/filtresPostgrest.ts) : la lecture des paiements était
+        // restreinte aux mouvements qui portent une pièce, ce qui écarterait en silence un virement qui en
+        // règle plusieurs — il n'en porte aucune. Accepté sans effet, ce filtre remis laisserait ce test vert.
+        const predicats: Predicat[] = []
+        const lecture: Record<string, unknown> = {}
+        Object.assign(lecture, {
+          select: () => lecture,
+          eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return lecture },
+          not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return lecture },
+          order: () => lecture,
+          range: (d: number, f: number) => { debut = d; fin = f; return lecture },
+          then: (suite: (r: unknown) => unknown) => {
+            faux.lectures++
+            const reponse = () => {
+              const lignes = filtrer(faux.tables[table] ?? [], predicats)
+              return {
+                data: lignes.slice(debut, Math.min(fin + 1, lignes.length)),
+                error: null,
+                count: lignes.length + (faux.tronquees.has(table) ? 1 : 0),
+              }
             }
-          }
-          const suspendre = faux.relectureSuspendue && table === 'declarations_tva' && faux.insertions.length > 0
-          if (!suspendre) return Promise.resolve(reponse()).then(suite)
-          return new Promise((resoudre) => { faux.relectureSuspendue!.liberer = () => resoudre(reponse()) }).then(suite)
-        },
-        insert: (valeurs: Record<string, unknown>) => {
-          faux.insertions.push({ table, valeurs })
-          return new Promise((resoudre) => {
-            const repondre = () => {
-              faux.tables[table] = [...(faux.tables[table] ?? []), { id: `nouvelle-${faux.insertions.length}`, created_at: '2027-04-15T10:00:00Z', notes: null, ...valeurs }]
-              resoudre({ error: null })
-            }
-            if (faux.suspendue) faux.suspendue.liberer = repondre
-            else repondre()
-          })
-        },
-        update: (valeurs: Record<string, unknown>) => ({
-          eq: () => {
-            faux.misesAJour.push({ table, valeurs })
-            return Promise.resolve(faux.miseAJourRefusee
-              ? { error: { message: 'new row violates row-level security policy' } }
-              : { error: null })
+            const suspendre = faux.relectureSuspendue && table === 'declarations_tva' && faux.insertions.length > 0
+            if (!suspendre) return Promise.resolve(reponse()).then(suite)
+            return new Promise((resoudre) => { faux.relectureSuspendue!.liberer = () => resoudre(reponse()) }).then(suite)
           },
-        }),
-        delete: () => ({
-          eq: (_colonne: string, id: unknown) => {
-            faux.suppressions.push({ table, id })
-            faux.tables[table] = (faux.tables[table] ?? []).filter((l) => (l as { id: unknown }).id !== id)
-            return Promise.resolve({ error: null })
+          insert: (valeurs: Record<string, unknown>) => {
+            faux.insertions.push({ table, valeurs })
+            return new Promise((resoudre) => {
+              const repondre = () => {
+                faux.tables[table] = [...(faux.tables[table] ?? []), { id: `nouvelle-${faux.insertions.length}`, created_at: '2027-04-15T10:00:00Z', notes: null, ...valeurs }]
+                resoudre({ error: null })
+              }
+              if (faux.suspendue) faux.suspendue.liberer = repondre
+              else repondre()
+            })
           },
-        }),
-      })
-      return lecture
+          update: (valeurs: Record<string, unknown>) => ({
+            eq: () => {
+              faux.misesAJour.push({ table, valeurs })
+              return Promise.resolve(faux.miseAJourRefusee
+                ? { error: { message: 'new row violates row-level security policy' } }
+                : { error: null })
+            },
+          }),
+          delete: () => ({
+            eq: (_colonne: string, id: unknown) => {
+              faux.suppressions.push({ table, id })
+              faux.tables[table] = (faux.tables[table] ?? []).filter((l) => (l as { id: unknown }).id !== id)
+              return Promise.resolve({ error: null })
+            },
+          }),
+        })
+        return lecture
+      },
     },
-  },
-}))
+  }
+})
 
 // Jeux d'essai typés SANS `as` : le compilateur vérifie chaque champ contre la table.
 function piece(o: Partial<Piece> = {}): Piece {
@@ -97,7 +105,7 @@ function paiement(pieceId: string, montant: number, date: string): LigneBancaire
   return {
     id: `m-${pieceId}`, dossier_id: 'd', date, libelle: 'VIREMENT', montant, statut: 'rapprochee',
     piece_id: pieceId, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   }
 }
@@ -120,6 +128,7 @@ function dossierCourant() {
     lignes_bancaires: [paiement('vente', 1200, '2027-02-20'), paiement('achat', -300, '2027-03-05')],
     immobilisations: [],
     declarations_tva: [],
+    reglements_groupes: [],
   }
 }
 
@@ -310,6 +319,35 @@ describe('l’onglet TVA', () => {
     await afficher()
     expect(screen.getByText(/1 pièce\(s\) de la période ne sont pas dans les cases/)).toBeTruthy()
     expect(screen.getByText('2,1 % : ligne T6 en France continentale, 11 dans les DOM, T4 en Corse')).toBeTruthy()
+  })
+
+  // UN VIREMENT QUI RÈGLE PLUSIEURS RECETTES (ligne 26) : chacune devient exigible à la date du virement, pour
+  // sa part. Le virement ne porte aucune pièce — elles sont dans ses parts, que l'écran doit lire.
+  it('compte les recettes qu’un virement groupé encaisse dans la période du virement', async () => {
+    const groupe: LigneBancaire = { ...paiement('groupe', 1800, '2027-03-10'), id: 'g', piece_id: null, reglement_groupe: true }
+    const part = (id: string, pieceId: string, montant: number): ReglementGroupe => ({
+      id, dossier_id: 'd', ligne_bancaire_id: 'g', piece_id: pieceId, montant, created_at: '2027-03-10T09:00:00Z',
+    })
+    faux.tables.pieces = [
+      piece(),
+      piece({ id: 'vente2', tiers: 'Client Martin', montant_ht: 500, montant_tva: 100, montant_ttc: 600 }),
+      ...faux.tables.pieces.slice(1),
+    ]
+    faux.tables.lignes_bancaires = [groupe, paiement('achat', -300, '2027-03-05')]
+    faux.tables.reglements_groupes = [part('p1', 'vente', 1200), part('p2', 'vente2', 600)]
+    await afficher()
+    const l08 = ligneDe('Taux normal 20 %')
+    expect(within(l08).getByText(MONTANT('1 500,00 €'))).toBeTruthy()
+    expect(within(l08).getByText(MONTANT('300,00 €'))).toBeTruthy()
+    expect(within(ligneDe('TVA nette due')).getByText(MONTANT('250,00 €'))).toBeTruthy()
+    expect(screen.queryByText(/ne sont rattachées à aucun paiement/)).toBeNull()
+  })
+
+  it('suspend l’enregistrement quand les parts des virements groupés sont lues en partie', async () => {
+    faux.tronquees = new Set(['reglements_groupes'])
+    await afficher()
+    expect(screen.getByText(/Les paiements rapprochés n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('demande confirmation avant de retirer une déclaration, en nommant ce qui part', async () => {

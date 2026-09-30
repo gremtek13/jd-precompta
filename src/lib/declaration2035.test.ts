@@ -6,6 +6,7 @@ import {
 } from './declaration2035'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
+import { paiementsDesPieces } from './rattachement'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -25,7 +26,7 @@ const calcul = (o: {
   vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]; mouvements?: PartDuReleve[]
 }) => calculerDeclaration2035(
   o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [], o.vehicules ?? [], true,
-  o.paiements ?? [], o.mouvements ?? [],
+  paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [],
 )
 
 const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
@@ -59,7 +60,7 @@ describe('calculerDeclaration2035 — périmètre', () => {
   // 1 022,40 € payés, soit 170,40 € de dépenses absentes d'une 2035 signée.
   it('retient le TTC pour un dossier exonéré, TVA comprise', () => {
     const pieces = [piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
-    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, [], [])
+    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [])
     expect(exonere.totalDepenses).toBe(120)
     // Le garde symétrique : l'assujetti garde le hors taxes.
     expect(calcul({ pieces }).totalDepenses).toBe(100)
@@ -109,7 +110,7 @@ describe('calculerDeclaration2035 — ce qui est écarté est dit', () => {
 const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
 
@@ -413,7 +414,7 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
     const parts = [part({ id: 'a', categorie_id: 'c-achats', montant: -84 }), part({ id: 'b', categorie_id: 'c-tel', montant: -36 })]
     expect(calcul({ annee: 2025, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(0)
     expect(calcul({ annee: 2026, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(120)
-    expect(calcul({ mouvements: releve([ventile({ ventilee: false, id_externe: null, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
+    expect(calcul({ mouvements: releve([ventile({ ventilee: false, reglement_groupe: false, id_externe: null, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
   })
 })
 

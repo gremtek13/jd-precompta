@@ -16,7 +16,8 @@ import {
   type LigneAffichee,
   type MotifNonPlacee,
 } from '../../lib/declarationTva'
-import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece } from '../../lib/types'
+import { paiementsDesPieces } from '../../lib/rattachement'
+import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BrouillonBanner from '../../components/BrouillonBanner'
 
@@ -60,23 +61,34 @@ const pourcentage = (part: number) => `${Math.round(part * 100)} %`
 interface Lu {
   pieces: Piece[]
   lignesBancaires: LigneBancaire[]
+  // Les parts des virements qui règlent PLUSIEURS pièces (lib/reglementGroupe.ts) : chacune rend sa pièce
+  // exigible ou déductible à la date du virement, pour sa part.
+  reglements: ReglementGroupe[]
   pieceIdsImmobilisees: ReadonlySet<string>
   declarations: DeclarationTva[]
   // Le motif de chaque lecture restée incomplète, nul quand elle est entière.
-  lectures: { pieces: string | null; lignes: string | null; immobilisations: string | null; declarations: string | null }
+  lectures: {
+    pieces: string | null; lignes: string | null; reglements: string | null; immobilisations: string | null; declarations: string | null
+  }
 }
 
 // Lues par tranches (voir lib/lectureComplete.ts) : une déclaration bâtie sur une partie des pièces ou
 // des paiements a exactement l'air d'une déclaration juste.
 async function lireDonnees(dossierId: string): Promise<Lu> {
-  const [lecturePieces, lectureLignes, lectureImmobilisations, lectureDeclarations] = await Promise.all([
+  const [lecturePieces, lectureLignes, lectureReglements, lectureImmobilisations, lectureDeclarations] = await Promise.all([
     lireTout<Piece>((debut, fin) =>
       supabase.from('pieces').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
+    // Tous les RAPPROCHÉS, et non plus ceux qui portent une pièce : un virement qui règle plusieurs
+    // pièces n'en porte aucune — ses pièces sont dans ses parts, et ce filtre l'aurait écarté en silence.
     lireTout<LigneBancaire>((debut, fin) =>
       supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-        .eq('dossier_id', dossierId).not('piece_id', 'is', null).order('id').range(debut, fin),
+        .eq('dossier_id', dossierId).eq('statut', 'rapprochee').order('id').range(debut, fin),
+    ),
+    lireTout<ReglementGroupe>((debut, fin) =>
+      supabase.from('reglements_groupes').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
     lireTout<{ piece_id: string | null; id: string }>((debut, fin) =>
       supabase.from('immobilisations').select('piece_id, id', { count: 'exact' })
@@ -90,11 +102,13 @@ async function lireDonnees(dossierId: string): Promise<Lu> {
   return {
     pieces: lecturePieces.lignes,
     lignesBancaires: lectureLignes.lignes,
+    reglements: lectureReglements.lignes,
     pieceIdsImmobilisees: new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)),
     declarations: lectureDeclarations.lignes,
     lectures: {
       pieces: lecturePieces.motif,
       lignes: lectureLignes.motif,
+      reglements: lectureReglements.motif,
       immobilisations: lectureImmobilisations.motif,
       declarations: lectureDeclarations.motif,
     },
@@ -159,7 +173,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
   const pieces = lu?.pieces ?? []
   const lignesBancaires = lu?.lignesBancaires ?? []
   const declarations = lu?.declarations ?? []
-  const lectures = lu?.lectures ?? { pieces: null, lignes: null, immobilisations: null, declarations: null }
+  const lectures = lu?.lectures ?? { pieces: null, lignes: null, reglements: null, immobilisations: null, declarations: null }
   const periodeParDefaut = dernierePeriodeClose(aujourdHuiSql(), periodicite)
   const selection = choix && choix.periodicite === periodicite
     ? choix
@@ -177,7 +191,9 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
     ...lignesBancaires.map((l) => anneeDe(l.date)),
   ])].sort((a, b) => b - a)
 
-  const donnees: DonneesTva = { pieces, lignesBancaires, pieceIdsImmobilisees: lu?.pieceIdsImmobilisees ?? new Set() }
+  const donnees: DonneesTva = {
+    pieces, paiements: paiementsDesPieces(lignesBancaires, lu?.reglements ?? []), pieceIdsImmobilisees: lu?.pieceIdsImmobilisees ?? new Set(),
+  }
   const precedente = declarationPrecedente(declarations, periode.debut)
   const creditPropose = precedente ? creditReporte(precedente) : 0
   const creditTexte = saisieCredit[periode.debut] ?? String(creditPropose)
@@ -192,7 +208,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
 
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE : le montant proposé vient d'un calcul qui ne
   // voit qu'une partie des pièces, et le crédit proposé d'un historique qui peut en manquer une.
-  const lectureIncomplete = lectures.pieces ?? lectures.lignes ?? lectures.immobilisations ?? lectures.declarations
+  const lectureIncomplete = lectures.pieces ?? lectures.lignes ?? lectures.reglements ?? lectures.immobilisations ?? lectures.declarations
 
   async function enregistrer() {
     if (enregistrement.current || lectureIncomplete || !montantValide || !creditValide) return
@@ -257,7 +273,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
       <BandeauLecturePartielle
         quoi="Les paiements rapprochés"
         accord="lus"
-        motif={lectures.lignes}
+        motif={lectures.lignes ?? lectures.reglements}
         consequence="Une pièce dont le paiement n’a pas été lu ne compte dans aucune période."
       />
       <BandeauLecturePartielle

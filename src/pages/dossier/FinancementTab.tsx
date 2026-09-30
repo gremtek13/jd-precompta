@@ -12,8 +12,9 @@ import { ouvertureBanque } from '../../lib/aNouveaux'
 import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
 import { echeancesOccupees, idsDeblocagesEmprunt } from '../../lib/echeanceEmprunt'
+import { paiementsDesPieces, type PaiementsDesPieces } from '../../lib/rattachement'
 import type {
-  ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VentilationBancaire,
+  ANouveau, Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
@@ -40,7 +41,9 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   const [lignesBanque, setLignesBanque] = useState<LigneBanque[]>([])
   // Les mouvements RAPPROCHÉS d'une pièce, qui la datent (voir lib/rattachement.ts) — à ne pas
   // confondre avec `lignesBanque`, les écritures du compte 512 dont sort la trésorerie.
-  const [paiements, setPaiements] = useState<LigneBancaire[]>([])
+  const [mouvementsRapproches, setMouvementsRapproches] = useState<LigneBancaire[]>([])
+  // Les parts des virements qui règlent plusieurs pièces (lib/reglementGroupe.ts) : chacune date sa pièce.
+  const [reglements, setReglements] = useState<ReglementGroupe[]>([])
   // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts), que la situation
   // intermédiaire, les ratios et le prévisionnel comptent comme la 2035.
   const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
@@ -75,6 +78,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
       lecturePaiements,
       { data: previsionnelData, error: previsionnelError },
       lectureVentilations,
+      lectureReglements,
     ] = await Promise.all([
       lireTout<Emprunt>((debut, fin) =>
         supabase.from('emprunts').select('*', { count: 'exact' })
@@ -134,6 +138,12 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
         supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Les parts des virements qui règlent PLUSIEURS pièces : elles datent leurs pièces comme les
+      // paiements ci-dessus, donc le même drapeau.
+      lireTout<ReglementGroupe>((debut, fin) =>
+        supabase.from('reglements_groupes').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     setEmprunts(lectureEmprunts.lignes)
     setPiecesValidees(lecturePieces.lignes)
@@ -141,17 +151,18 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
     setImmobilisations(lectureImmobilisations.lignes)
     setCotisations(lectureCotisations.lignes)
     setLignesBanque(lectureBanque.lignes as LigneBanque[])
-    setPaiements(lecturePaiements.lignes)
+    setMouvementsRapproches(lecturePaiements.lignes)
     setVentilations(lectureVentilations.lignes)
+    setReglements(lectureReglements.lignes)
     setOuverture(ouvertureBanque(lectureANouveaux.lignes))
     setPrevisionnelIllisible(previsionnelError ? messageErreur(previsionnelError, "Le prévisionnel enregistré n'a pas pu être lu.") : null)
     setPrevisionnel((previsionnelData ?? null) as PrevisionnelBancaire | null)
-    // Huit lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
+    // Neuf lectures, un seul drapeau : l'écran n'a rien de plus utile à dire selon laquelle a
     // manqué, et chacune fausse les mêmes chiffres.
     setLectureIncomplete(
       [
         lectureEmprunts, lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureBanque,
-        lecturePaiements, lectureVentilations,
+        lecturePaiements, lectureVentilations, lectureReglements,
       ].find((l) => !l.complete)?.motif ?? null,
     )
     setOuvertureIncomplete(lectureANouveaux.motif)
@@ -162,16 +173,19 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   const soldeBanque = soldeBanqueADate(lignesBanque, ouverture, aujourdHuiSql())
   // Ce que le relevé ajoute sans pièce aux trois états — mouvements affectés, échéances d'emprunt, parts
   // ventilées (lib/partsDuReleve.ts) —, calculé une fois et passé aux trois fenêtres qui le comptent.
-  const partsReleve = partsDuReleve(paiements, categories, ventilations)
+  const partsReleve = partsDuReleve(mouvementsRapproches, categories, ventilations)
+  // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent les pièces des trois
+  // états comme dans la 2035.
+  const paiements = paiementsDesPieces(mouvementsRapproches, reglements)
   // LES DÉBLOCAGES D'EMPRUNT NE SONT PAS UN RYTHME D'ACTIVITÉ (lib/echeanceEmprunt.ts) : écrits au 512, ils
   // entreraient dans la moyenne des encaissements du plan de trésorerie et flatteraient le taux
   // d'endettement, sur le document qu'on présente à une banque. Le solde, lui, les compte.
-  const deblocages = idsDeblocagesEmprunt(paiements)
+  const deblocages = idsDeblocagesEmprunt(mouvementsRapproches)
   const lignesDuRythme = lignesBanque.filter((l) => !l.ligne_bancaire_id || !deblocages.has(l.ligne_bancaire_id))
   const deblocagesEcartes = lignesBanque.length - lignesDuRythme.length
 
   // Les mouvements rapprochés de chaque emprunt : ses échéances payées, et son déblocage.
-  const rapprochementsDe = (e: Emprunt) => paiements.filter((l) => l.emprunt_id === e.id)
+  const rapprochementsDe = (e: Emprunt) => mouvementsRapproches.filter((l) => l.emprunt_id === e.id)
 
   // Un emprunt dont une échéance est rapprochée ne se supprime pas : la clé du relevé vers l'emprunt est
   // SANS action à la suppression, et c'est voulu — ses écritures et sa part de la 2035 en dépendent. Dit
@@ -427,7 +441,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
 }
 
 function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, emprunts, lignesDuRythme, deblocagesEcartes, capitalRestantTotal, mensualiteTotale, onClose }: {
-  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: LigneBancaire[]; partsReleve: PartDuReleve[]
+  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
   categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   emprunts: Emprunt[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
 }) {
@@ -626,7 +640,7 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, 
 }
 
 function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, lignesBanque, ouverture, onClose }: {
-  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: LigneBancaire[]; partsReleve: PartDuReleve[]
+  assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
   categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lignesBanque: LigneBanque[]; ouverture: OuvertureBanque | null; onClose: () => void
 }) {
@@ -702,7 +716,7 @@ function SituationIntermediaireModal({ assujettiTva, modeComptable, piecesValide
 
 function PrevisionnelModal({ dossierId, assujettiTva, modeComptable, previsionnel, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisations, lectureIncomplete, onClose, onSaved }: {
   dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable; previsionnel: PrevisionnelBancaire | null
-  piecesValidees: Piece[]; paiements: LigneBancaire[]; partsReleve: PartDuReleve[]
+  piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
   categories: Categorie[]; immobilisations: Immobilisation[]; cotisations: CotisationDeclaree[]
   lectureIncomplete: string | null
   onClose: () => void; onSaved: () => void

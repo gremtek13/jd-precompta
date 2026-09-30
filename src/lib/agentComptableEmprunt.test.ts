@@ -74,7 +74,7 @@ const EMPRUNTS: Emprunt[] = [
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2025-02-06', libelle: 'PRLV ECHEANCE PRET', montant: -540, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
-  emprunt_id: 'a', emprunt_echeance: 1, emprunt_interets: 36, emprunt_assurance: 21.03, ventilee: false, id_externe: null,
+  emprunt_id: 'a', emprunt_echeance: 1, emprunt_interets: 36, emprunt_assurance: 21.03, ventilee: false, reglement_groupe: false, id_externe: null,
   source_fichier: null, libelle_brut: null, created_at: '2025-02-06T09:00:00Z', ...o,
 })
 
@@ -185,8 +185,8 @@ describe('agent-comptable / points_a_traiter lit les emprunts et le relevé', ()
     expect(corps).toMatch(/from\("emprunts"\)\.select\("id, nom, capital_initial, taux_annuel, date_debut, duree_mois"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("date_debut"\)\.order\("id"\)/)
     // Le relevé ENTIER, sans filtre de statut : c'est lui qui dit ce qu'il couvre — et, avec `ventilee`, ce
     // que le bloc VENTILATION en lit.
-    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(corps).toMatch(/rAffectes, rVirements, rEmprunts, rReleve, rParts\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    expect(corps).toMatch(/rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('borne la réclamation à la couverture du relevé, et rend les deux points de la Checklist', () => {

@@ -216,7 +216,7 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.retenirApresRpc = false
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
-    immobilisations: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [],
+    immobilisations: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [], reglements_groupes: [],
     ...tables,
   } as Record<string, unknown[]>
 }
@@ -744,6 +744,82 @@ describe('EcrituresTab — la date du paiement', () => {
 })
 
 // LE MODÈLE COMPTABLE (lib/engagement.ts) se règle dans cet onglet, tant que le brouillon est vide.
+// UN VIREMENT QUI RÈGLE PLUSIEURS PIÈCES (ligne 26) : chaque part est un paiement de sa pièce. La génération
+// écrit donc, pour chacune, sa charge à la date du virement et UNE contrepartie de banque au montant de sa
+// part — et une pièce payée en deux fois, une contrepartie par paiement. Le virement ne porte aucune pièce :
+// elles sont dans ses parts, que l'écran doit lire, sans quoi ces pièces paraîtraient impayées.
+describe('EcrituresTab — un virement qui règle plusieurs pièces', () => {
+  const VIREMENT = {
+    id: 'g', dossier_id: 'dossier-de-test', date: '2025-01-06', libelle: 'VIR FOURNISSEURS', montant: -200,
+    statut: 'rapprochee', piece_id: null, cotisation_id: null, reglement_groupe: true, prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: '2025-01-07T09:00:00Z',
+  }
+  const part = (id: string, pieceId: string, montant: number, ligneId = 'g') => ({
+    id, dossier_id: 'dossier-de-test', ligne_bancaire_id: ligneId, piece_id: pieceId, montant, created_at: '2025-01-07T09:00:00Z',
+  })
+  const P1 = piece({ id: 'p1', date_piece: '2024-12-20' })
+  const P2 = piece({ id: 'p2', date_piece: '2024-12-22', tiers: 'SECOND FOURNISSEUR', montant_ttc: 80 })
+  const lignesDe = (pieceId: string) => (faux.parTable.ecritures_brouillon as Record<string, unknown>[])
+    .filter((e) => e.piece_id === pieceId).map((e) => [e.compte, e.date, e.montant, e.ligne_bancaire_id ?? null])
+
+  it('génère, pour chaque pièce, sa charge à la date du virement et la contrepartie de sa part', async () => {
+    poser({ pieces: [P1, P2], lignes_bancaires: [VIREMENT], reglements_groupes: [part('g1', 'p1', -120), part('g2', 'p2', -80)] })
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(2\)/ })
+    await act(async () => { bouton.click() })
+
+    expect(lignesDe('p1')).toEqual([['606100', '2025-01-06', 120, null], ['512000', '2025-01-06', 120, 'g']])
+    expect(lignesDe('p2')).toEqual([['606100', '2025-01-06', 80, null], ['512000', '2025-01-06', 80, 'g']])
+  })
+
+  it('une pièce payée en deux fois reçoit une contrepartie par paiement, et sa charge se répartit entre eux', async () => {
+    // 48 € prélevés seuls le 6 janvier, puis les 72 € restants dans un virement qui règle aussi une autre pièce.
+    const ACOMPTE = { ...VIREMENT, id: 'l1', montant: -48, piece_id: 'p1', reglement_groupe: false }
+    const SOLDE = { ...VIREMENT, id: 'g2', date: '2025-02-10', montant: -152 }
+    poser({
+      pieces: [P1, P2], lignes_bancaires: [ACOMPTE, SOLDE],
+      reglements_groupes: [part('s1', 'p1', -72, 'g2'), part('s2', 'p2', -80, 'g2')],
+    })
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(2\)/ })
+    await act(async () => { bouton.click() })
+
+    expect(lignesDe('p1')).toEqual([
+      ['606100', '2025-01-06', 48, null], ['606100', '2025-02-10', 72, null],
+      ['512000', '2025-01-06', 48, 'l1'], ['512000', '2025-02-10', 72, 'g2'],
+    ])
+  })
+
+  it('ne dit pas « à régénérer » une écriture qui suit la part de son virement', async () => {
+    poser({
+      pieces: [P1],
+      lignes_bancaires: [{ ...VIREMENT, montant: -120 }],
+      reglements_groupes: [part('g1', 'p1', -120)],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', date: '2025-01-06' }),
+        ecriture({ id: 'e2', date: '2025-01-06', compte: '512000', sens: 'credit', ligne_bancaire_id: 'g' }),
+      ],
+    })
+    monter()
+
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryAllByText(/à régénérer/)).toHaveLength(0)
+    expect(screen.queryAllByText(/sans contrepartie/)).toHaveLength(0)
+  })
+
+  it('suspend la génération et les exports quand les parts sont lues en partie', async () => {
+    poser({ pieces: [P1, P2], lignes_bancaires: [VIREMENT], reglements_groupes: [part('g1', 'p1', -120), part('g2', 'p2', -80)] })
+    faux.muetParTable = { reglements_groupes: 1 }
+    monter()
+
+    await screen.findByText(/La génération est suspendue/)
+    expect(screen.getByRole('button', { name: /Générer les écritures manquantes/ }).hasAttribute('disabled')).toBe(true)
+    expect(screen.getByRole('button', { name: /Exporter FEC/ }).hasAttribute('disabled')).toBe(true)
+  })
+})
+
 describe('EcrituresTab — le modèle comptable', () => {
   it('offre le choix sur un brouillon vide, l’enregistre sur le dossier, et montre alors les comptes de note de frais', async () => {
     poser({})

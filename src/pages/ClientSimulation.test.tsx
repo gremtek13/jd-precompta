@@ -1,7 +1,9 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSimulation from './ClientSimulation'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle, VentilationBancaire } from '../lib/types'
+import type {
+  Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle, ReglementGroupe, VentilationBancaire,
+} from '../lib/types'
 import type { Predicat } from '../test/filtresPostgrest'
 
 // LA SIMULATION DU CLIENT, dernier écran client sans test de rendu — et celui dont la projection
@@ -116,7 +118,7 @@ const ECHEANCIER_2026 = Array.from({ length: 12 }, (_, i) =>
 function poser(o: {
   recettes?: Piece[]; cotisations?: CotisationDeclaree[]; reperes?: ReferenceAnnuelle[]; assujetti?: boolean
   paiements?: LigneBancaire[]; modeComptable?: 'tresorerie' | 'engagement'; categories?: Categorie[]
-  ventilations?: VentilationBancaire[]
+  ventilations?: VentilationBancaire[]; reglements?: ReglementGroupe[]
 } = {}) {
   faux.parTable = {
     dossiers: [{ assujetti_tva: o.assujetti ?? false, mode_comptable: o.modeComptable ?? 'tresorerie' }],
@@ -127,6 +129,7 @@ function poser(o: {
     lignes_bancaires: o.paiements ?? [],
     categories: o.categories ?? [],
     ventilations_bancaires: o.ventilations ?? [],
+    reglements_groupes: o.reglements ?? [],
   }
   faux.refusees = new Set()
   faux.muet = {}
@@ -199,7 +202,7 @@ describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
   const encaissement = (date: string): LigneBancaire => ({
     id: 'l1', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
     piece_id: 'r1', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
 
@@ -236,6 +239,49 @@ describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
     vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
     poser({ recettes: [recette()], paiements: [encaissement('2026-04-10')] })
     faux.refusees = new Set(['lignes_bancaires'])
+    await monter()
+    screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
+  })
+})
+
+// UNE RECETTE RÉGLÉE AVEC D'AUTRES PAR UN SEUL VIREMENT (ligne 26) : encaissée à la date de ce virement, pour
+// sa part. Le virement ne porte aucune pièce — elles sont dans ses parts, que l'écran du client lit aussi.
+describe('ClientSimulation — des recettes encaissées par un virement groupé', () => {
+  const virement = (date: string): LigneBancaire => ({
+    id: 'g', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: true,
+    id_externe: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
+  })
+  const part = (id: string, pieceId: string, montant: number): ReglementGroupe => ({
+    id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'g', piece_id: pieceId, montant, created_at: '2026-01-06T09:00:00Z',
+  })
+  const RECETTES = [recette({ date_piece: '2025-12-29' }), recette({ id: 'r2', date_piece: '2025-12-30', montant_ttc: 300 })]
+
+  it('compte des recettes de décembre encaissées en janvier par un seul virement dans l’année qui commence', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ recettes: RECETTES, paiements: [virement('2026-01-06')], reglements: [part('g1', 'r1', 600), part('g2', 'r2', 300)] })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('900,00 €')
+  })
+
+  it('ne compte pas des recettes qu’un virement groupé encaissera plus tard', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({
+      recettes: [recette(), recette({ id: 'r2', montant_ttc: 300 })],
+      paiements: [virement('2026-04-10')], reglements: [part('g1', 'r1', 600), part('g2', 'r2', 300)],
+    })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('0,00 €')
+  })
+
+  it('prévient quand les parts ne sont lues qu’en partie', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ recettes: RECETTES, paiements: [virement('2026-01-06')], reglements: [part('g1', 'r1', 600), part('g2', 'r2', 300)] })
+    faux.muet = { reglements_groupes: 1 }
     await monter()
     screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
   })
@@ -320,7 +366,7 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
   const affecte = (date: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id: 'l-cpam', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, ...o,
   })
 
@@ -366,7 +412,7 @@ describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes
   const remise = (date: string): LigneBancaire => ({
     id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant: 870, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, reglement_groupe: false, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
   const part = (id: string, categorieId: string | null, montant: number): VentilationBancaire => ({

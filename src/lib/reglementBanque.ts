@@ -25,7 +25,10 @@ import type { LigneBancaire, Piece } from './types'
 // Ne touche à rien d'autre qu'une pièce en devise déjà rapprochée d'un mouvement : une pièce en euros
 // n'a pas de conversion à régler, et une pièce dont le montant d'origine n'a pas été lu n'a rien à
 // partir de quoi déduire un taux.
-export async function reglerPieceSurBanque(piece: Piece, ligne: LigneBancaire): Promise<Piece> {
+//
+// `ligne` : ce que la banque a payé pour CETTE pièce — le mouvement entier d'un rapprochement simple, la
+// part qui la règle dans un virement groupé (lib/reglementGroupe.ts). Seul son montant compte.
+export async function reglerPieceSurBanque(piece: Piece, ligne: Pick<LigneBancaire, 'montant'>): Promise<Piece> {
   const regle = piece.devise && piece.devise !== DEVISE_PIVOT
     ? reglerPieceEnDevise(piece, ligne)
     : reglerPieceEnEuros(piece, ligne)
@@ -57,14 +60,14 @@ export async function reglerPieceSurBanque(piece: Piece, ligne: LigneBancaire): 
 }
 
 // Le cas d'origine : un provisoire au taux BCE remplacé par le débit réel, sans seuil.
-function reglerPieceEnDevise(piece: Piece, ligne: LigneBancaire) {
+function reglerPieceEnDevise(piece: Piece, ligne: Pick<LigneBancaire, 'montant'>) {
   if (piece.montant_devise == null) return null
   return reglerSurMontantReel(piece, piece.montant_devise, ligne.montant)
 }
 
 // Le cas ajouté le 23/09/2026 : la banque fait foi SOUS LE SEUIL. Au-delà, on ne touche à rien —
 // c'est `rapprochementsEcartImportant` qui le dit, et le montant d'origine reste intact.
-function reglerPieceEnEuros(piece: Piece, ligne: LigneBancaire) {
+function reglerPieceEnEuros(piece: Piece, ligne: Pick<LigneBancaire, 'montant'>) {
   const ecart = ecartAvecBanque(piece, ligne)
   if (!ecart || !ecart.alignable) return null
   return { ...alignerMontantsSurBanque(piece, ligne.montant), taux_change: null as number | null }

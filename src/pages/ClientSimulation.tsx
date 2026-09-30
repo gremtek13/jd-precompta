@@ -4,8 +4,10 @@ import { useAuth } from '../context/AuthContext'
 import { aujourdHuiSql, formatMoney } from '../lib/format'
 import { ecartPct, projectionAnnuelle } from '../lib/estimation'
 import { partsDuReleve } from '../lib/partsDuReleve'
+import { paiementsDesPieces } from '../lib/rattachement'
 import type {
-  Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel, VentilationBancaire,
+  Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel, ReglementGroupe,
+  VentilationBancaire,
 } from '../lib/types'
 import { lireTout } from '../lib/lectureComplete'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
@@ -28,7 +30,11 @@ export default function ClientSimulation() {
   const [recettesValidees, setRecettesValidees] = useState<Piece[]>([])
   // Les encaissements rapprochés, qui datent chaque recette comme dans l'Estimation du cabinet :
   // « CA encaissé à date » ne compte que ce qui est entré (lib/rattachement.ts).
-  const [paiements, setPaiements] = useState<LigneBancaire[]>([])
+  const [mouvementsRapproches, setMouvementsRapproches] = useState<LigneBancaire[]>([])
+  // Les parts des virements qui règlent plusieurs pièces (lib/reglementGroupe.ts) : une recette réglée
+  // avec d'autres par un seul virement est encaissée à la date de ce virement. Le client les lit — sa
+  // policy le lui permet sur ses dossiers — et n'en voit que le total.
+  const [reglements, setReglements] = useState<ReglementGroupe[]>([])
   // Les catégories, qui disent quels mouvements AFFECTÉS sont des recettes (ligne 26.6) : les
   // encaissements de l'Assurance maladie sans bordereau, que l'Estimation du cabinet compte aussi. La
   // simulation n'en montre rien d'autre que le total — le client ne voit pas les catégories.
@@ -50,7 +56,10 @@ export default function ClientSimulation() {
   useEffect(() => {
     if (!dossierId) return
     async function load() {
-      const [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier, lecturePaiements, lectureCategories, lectureVentilations] = await Promise.all([
+      const [
+        lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lectureDossier, lecturePaiements,
+        lectureCategories, lectureVentilations, lectureReglements,
+      ] = await Promise.all([
         lireTout<CotisationDeclaree>((debut, fin) =>
           supabase.from('cotisations_declarees').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -86,10 +95,15 @@ export default function ClientSimulation() {
           supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).order('id').range(debut, fin),
         ),
+        lireTout<ReglementGroupe>((debut, fin) =>
+          supabase.from('reglements_groupes').select('*', { count: 'exact' })
+            .eq('dossier_id', dossierId).order('id').range(debut, fin),
+        ),
       ])
       setCotisations(lectureCotisations.lignes)
       setRecettesValidees(lectureRecettes.lignes)
-      setPaiements(lecturePaiements.lignes)
+      setMouvementsRapproches(lecturePaiements.lignes)
+      setReglements(lectureReglements.lignes)
       setCategories(lectureCategories.lignes)
       setVentilations(lectureVentilations.lignes)
       setReferences(lectureReferences.lignes)
@@ -106,8 +120,10 @@ export default function ClientSimulation() {
         ? messageErreur(lectureDossier.error, 'lecture refusée')
         : lectureDossier.data ? null : 'dossier introuvable'
       setLectureIncomplete(
-        [lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lecturePaiements, lectureCategories, lectureVentilations]
-          .find((l) => !l.complete)?.motif ?? motifDossier,
+        [
+          lectureCotisations, lectureRecettes, lectureReferences, lectureReferencesPostes, lecturePaiements, lectureCategories,
+          lectureVentilations, lectureReglements,
+        ].find((l) => !l.complete)?.motif ?? motifDossier,
       )
       setLoading(false)
     }
@@ -122,7 +138,8 @@ export default function ClientSimulation() {
   // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
   const projection = projectionAnnuelle(
-    recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, partsDuReleve(paiements, categories, ventilations),
+    recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiementsDesPieces(mouvementsRapproches, reglements), modeComptable,
+    partsDuReleve(mouvementsRapproches, categories, ventilations),
   )
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 

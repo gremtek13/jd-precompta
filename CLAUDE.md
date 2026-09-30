@@ -268,6 +268,10 @@ supabase/
                   connexionBancaire.sql : la connexion bancaire d'un dossier (connexions_bancaires,
                   fermée au navigateur) et l'identifiant externe d'un mouvement, par impersonation
                   des trois profils, à rejouer après toute migration qui touche l'une ou l'autre.
+                  reglementGroupe.sql : le règlement de plusieurs pièces par un mouvement, ses parts
+                  et le retrait des écritures du mouvement, par impersonation des trois profils, à
+                  rejouer après toute migration qui touche ses deux fonctions, la table
+                  reglements_groupes ou les contraintes de lignes_bancaires.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1307,6 +1311,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   publishable, les quinze Edge Functions sur les clés publishable et secrète, et plus aucune lecture
   des clés historiques, que Supabase coupe à la fin de 2026. Voir « les clés historiques de Supabase
   sont quittées » dans « Problèmes connus » (`lib/clePublique.ts`, `clesSupabase.test.ts`).
+- **Un virement règle plusieurs pièces (30/09/2026)**, ligne 26 : dans la fiche d'un mouvement (onglet
+  Banque), « Régler plusieurs pièces… » répartit un virement entre les factures qu'il solde — un avoir
+  déduit compris —, une part par pièce, et leur somme est le mouvement. Chaque pièce compte pour sa part
+  à la date du virement, dans la 2035 comme dans la CA3, et son écriture reçoit sa contrepartie banque.
+  Au passage, une pièce payée en plusieurs fois reçoit enfin une contrepartie par paiement. Voir « un
+  virement règle plusieurs pièces » dans « Problèmes connus » (`lib/reglementGroupe.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -5509,6 +5519,148 @@ d'environnement dans la même édition.
   qui n'est plus « à traiter » ; la TVA d'une part n'est pas ventilée — sur un dossier assujetti, une
   recette ne se ventile pas et une dépense passe TTC en charge, comme une affectation ; et le plan de
   trésorerie compte un mouvement ventilé en entier, comme tout mouvement.
+- **UN VIREMENT RÈGLE PLUSIEURS PIÈCES — LIGNE 26** (30/09/2026, `lib/reglementGroupe.ts`). Un mouvement
+  ne se rapprochait que d'UNE pièce (`lignes_bancaires.piece_id`). Un virement fournisseur qui solde trois
+  factures, un règlement client qui en paie deux, un avoir déduit d'un paiement : les autres pièces
+  restaient sans paiement — comptées à leur date de facture dans la 2035, dans AUCUNE déclaration de TVA
+  (la CA3 ne date une pièce qu'à son paiement), « à rapprocher » partout —, et l'écriture de la seule
+  pièce rapprochée portait en banque le virement entier.
+  **LE GESTE EST MANUEL** : l'opérateur choisit les pièces et la part de chacune, et leur somme est le
+  mouvement. Aucun moteur ne propose de regroupement, et c'est une mesure : le 19 puis le 30/09/2026,
+  aucun mouvement des quatre dossiers ne valait la somme de deux ou trois pièces sans paiement — rien sur
+  quoi régler un tel moteur.
+  **Le modèle** : les parts vivent dans `reglements_groupes` — la pièce, et le montant qui la règle, non
+  nul et SIGNÉ COMME LE RELEVÉ ; une part par pièce et par mouvement (contrainte unique TOTALE, nulls
+  distincts : deux pièces supprimées du même règlement ne doivent pas se heurter) — et le mouvement porte
+  le drapeau `reglement_groupe`, qui entre dans `lignes_bancaires_un_seul_rapprochement` et dans
+  `lignes_bancaires_reglement_groupe_rapproche` (rapproché, jamais personnel) ; son `piece_id` reste nul.
+  Le signe d'une part est celui qui RÈGLE sa pièce — une sortie pour une facture d'achat, une entrée pour
+  une facture de vente ou pour un avoir d'achat : c'est ce qui déduit un avoir d'un paiement. L'écran fait
+  saisir chaque part POSITIVE, et la conversion ne s'écrit qu'à un endroit (`partSigneeDe`,
+  `partSaisieDe`). Une pièce supprimée laisse sa part SANS pièce, au même montant (`on delete set null`) :
+  c'est ce qui permet de dire QUELLE somme du virement ne justifie plus rien. La policy suit la
+  convention, plus deux garanties que la relecture ne donne pas (le mouvement et la pièce appartiennent au
+  dossier annoncé) ; le client LIT les parts de ses dossiers — sa simulation date une recette au paiement
+  qui la règle — et n'en écrit aucune.
+  **LA BASE ÉCRIT LE RÈGLEMENT, PAS LES ÉCRITURES.** `regler_pieces_par_mouvement` (`SECURITY INVOKER`,
+  `admin_du_dossier`) refait les refus de l'écran dans le même ordre, plus celui d'une écriture validée,
+  écrit le drapeau et les parts en REMPLAÇANT un règlement précédent, et RETIRE les écritures du
+  mouvement ; `retirer_reglement_groupe` défait les trois. Les écritures se refont ensuite pièce par pièce,
+  par le chemin d'un rapprochement simple — la contrepartie banque de chaque part en trésorerie, le
+  règlement de son compte de tiers en engagement, à la date du mouvement. Un échec n'y défait pas le
+  règlement, déjà écrit : il est dit, et le contrôle des écritures le signale jusqu'à « Régénérer ». Que
+  les parts fassent le mouvement est un invariant ENTRE LIGNES, que la fonction vérifie et que
+  `reglementsGroupesIncoherents` dit s'il venait d'un autre chemin — la règle de la ventilation, pour la
+  même raison.
+  **UN REFUS DE PLUS QUE LA BASE : UNE PIÈCE NE SE PAIE PAS DEUX FOIS.** Une part qui dépasse ce qu'il reste
+  à régler de sa pièce, au-delà de l'écart d'alignement (`seuilAlignement`), est refusée avant le clic : la
+  2035 compte une pièce UNE fois (`partsDesPaiements` plafonne sa part), donc l'argent versé en trop n'y
+  serait nulle part, et son écriture resterait déséquilibrée. Sous l'écart, c'est un frais. **Sauf une
+  pièce en devise que cette part paie seule** : son montant en euros n'est qu'un provisoire au cours de la
+  BCE, que le débit réel dépasse souvent de l'écart de change de la banque, et la part DEVIENT son montant
+  — le règlement la règle sur la banque (`reglerPieceSurBanque`), comme un rapprochement simple. Trouvé en
+  écrivant le test de ce réalignement : le refus aurait bloqué un règlement juste. Payée aussi ailleurs,
+  ou sans montant d'origine, elle reste jugée sur ses euros. La Checklist dit une pièce payée plus que son
+  montant qu'un autre chemin aurait laissée passer — deux rapprochements, ou un rapprochement et une part.
+  **UNE PART EST UN PAIEMENT DE SA PIÈCE, ET UN SEUL TYPE LE DIT** (`PaiementDePiece`, lib/rattachement.ts) :
+  un mouvement rapproché de la pièce ou la part d'un virement groupé, à la date du mouvement et au montant
+  qui la règle, construits par `paiementsDesPieces(lignes, parts)` et nulle part ailleurs. Les parts y sont
+  OBLIGATOIRES, sans valeur par défaut, et une part ne compte que si son mouvement est lu, rapproché et
+  réglé en groupe. Le champ `origine` sert de garde : une ligne du relevé ne le porte pas, donc un filtre
+  sur `piece_id` — qui oublierait toutes les pièces d'un virement groupé — ne passe plus à la compilation
+  pour les paiements d'une pièce. La 2035, la CA3, la situation intermédiaire, les ratios et le
+  prévisionnel, l'estimation, la simulation client, la génération des écritures et leur contrôle ne
+  prennent que ce type.
+  **ET DEUX LECTURES ÉCARTAIENT LE VIREMENT GROUPÉ EN SILENCE** : TVA et Pièces ne lisaient que les
+  mouvements qui portent une pièce (`.not('piece_id', 'is', null)`), or un virement groupé n'en porte
+  aucune. Elles lisent désormais tous les mouvements RAPPROCHÉS. Pièces dit « Rapprochée » d'une pièce
+  payée par une part ; Banque ne la propose plus à un autre mouvement, ni au lot « Valider et
+  rapprocher », qui l'aurait rattachée à un second mouvement du même montant.
+  **LE DÉFAUT QU'IL A FALLU CORRIGER D'ABORD : UNE CONTREPARTIE BANQUE PAR PIÈCE, PAS PAR PAIEMENT.**
+  `synchroniserContrepartieBanque` sortait dès que la pièce portait UNE ligne de banque : une pièce payée
+  en deux fois — un acompte puis un virement groupé, ou deux paiements partiels — ne recevait jamais la
+  seconde, et son écriture restait déséquilibrée ; « Régénérer » gardait en trésorerie les lignes de
+  banque, donc ne savait pas la compléter ; et `retirerContrepartieBanque` retirait TOUTES celles de la
+  pièce, si bien qu'annuler l'un de ses deux paiements effaçait aussi la contrepartie de l'autre.
+  Désormais les lignes de banque se DÉDUISENT des paiements (`ligneContrepartieBanque`, dans le sens du
+  SIGNE du paiement) : la génération et « Régénérer » les écrivent dans les deux modèles, et les reprendre
+  ne perd rien ; le rapprochement est idempotent par MOUVEMENT ; l'annulation ne retire que la
+  contrepartie de CE mouvement ; et le contrôle compare les lignes de banque d'une pièce à ses paiements
+  (`banqueSuitLesPaiements`) — une par paiement non nul, désignée par son mouvement, à sa date et à son
+  montant. LE MONTANT AUTANT QUE LE MOUVEMENT : régler de nouveau un virement groupé avec d'autres parts
+  laisse le même mouvement en face de la même pièce. Une écriture n'est redatée au paiement que si CE
+  paiement règle la pièce à lui seul et qu'aucun autre ne la paie déjà, et `rendreAuxDatesDeFacture` rend
+  à leur date de facture les pièces que plus rien ne date — pas celles dont la base n'a pas rendu le
+  compte. **LATENT, et mesuré** : aucune pièce payée deux fois en base, aucune à plusieurs contreparties.
+  **Ce qui le lit, usage par usage** : Clôture (la 2035), TVA (une part rend sa pièce exigible ou
+  déductible à la date du virement, pour sa part), Financement, Estimation, la simulation client,
+  Écritures, Pièces, Banque et la Checklist lisent `reglements_groupes` (par `lireTout`, tri total), et une
+  lecture partielle des parts rejoint le drapeau de lecture partielle de chaque écran. Dans Banque, elle
+  suspend le règlement groupé, sa modification et son annulation — une pièce déjà payée paraîtrait à
+  régler, et celles d'un règlement annulé ne reviendraient pas toutes à leur date — et les lots de
+  rapprochement.
+  **L'écran** (`FormulaireReglementGroupe`, dans la fiche d'un mouvement, replié tant qu'on ne le demande
+  pas) : une ligne par pièce ; choisir une pièce propose ce qu'il en reste à régler, sans écraser un
+  montant saisi ; ne sont offertes que les pièces qui restent à régler au-delà de l'écart d'alignement,
+  celles de ce règlement et celles sans montant (les choisir dit pourquoi on ne peut pas), dans le sens du
+  mouvement d'abord puis par proximité de date, et une pièce déjà choisie sur une autre ligne ne l'est
+  plus ; le reste à répartir se lit à chaque frappe ; ce que la base refuserait est dit avant le clic ; et
+  rien ne part avant lui, sous le verrou partagé des écritures de rapprochement. Réglé, le mouvement dit
+  « Règle N pièces » (liste et fiche — jamais le nombre sur une lecture partielle, où il serait faux),
+  montre ses parts, se modifie en repartant d'elles ou s'annule par la base ; une part dont la pièce a été
+  supprimée y est dite. La mise en garde qui précède la suppression d'une pièce le dit aussi
+  (`AVERTISSEMENT_PAIEMENT_DEFAIT`, dans Pièces et dans la fiche d'une pièce).
+  **La Checklist gagne deux points, en erreur, qui mènent à Banque** : le virement groupé dont une part ne
+  justifie plus rien ou dont les parts ne font plus le mouvement — compté par MOUVEMENT, et tu sur une
+  lecture partielle des parts — et la pièce payée plus que son montant.
+  Migration `reglement_groupe_des_pieces` ; l'export porte 72 migrations, le socle 71 instructions,
+  l'inventaire 859 objets. `supabase/essais/reglementGroupe.sql` : 51 contrôles par impersonation des
+  trois profils, dont le contrôle POSITIF du chef, chaque refus jugé à sa raison, ce que les contraintes
+  tiennent seules (les fonctions d'avant et les mises à jour directes de Banque se heurtent chacune à une
+  contrainte nommée, deux pièces supprimées du même règlement ne se heurtent pas), et que rien ne reste ;
+  sans le `set local role anon`, son contrôle 1 vire au rouge. Le premier passage en rendait 50 : le
+  contrôle 9 attendait « 10 » d'une colonne `numeric(12,2)`, qui rend « 10.00 » — l'essai avait tort, pas
+  la fonction. La sauvegarde l'inscrit, relations comprises (`sauvegardeTables` et `sauvegardeRelations`
+  l'auraient refusée sinon).
+  **L'assistant, version 35** : `points_a_traiter` lit les parts, calcule les paiements par
+  `paiementsDesPieces` — sa copie comprise dans le contrôle des écritures — et rend les deux points de la
+  Checklist ; le prompt dit qu'une part est un paiement de sa pièce. `agentComptableReglementGroupe.test.ts`
+  compare la copie (bloc `── DÉBUT/FIN RÈGLEMENT GROUPÉ`) à `src/lib` et y plante six dérives ;
+  `agentComptableAnalyse.test.ts` en plante neuf de plus dans le contrôle des écritures. Déployée avec
+  `verify_jwt` relu et repassé à `false`, la v34 comparée au dépôt avant écrasement (identique,
+  1 630 lignes), aller-retour après : zéro différence sur 1 758 lignes, et le 401 de la fonction sans
+  session. Aucun appel au modèle.
+  **Les captures ont trouvé deux défauts d'affichage** : la fiche montrait toutes les parts positives, si
+  bien que deux factures et un avoir paraissaient faire plus que le virement — elles sont montrées dans le
+  sens du mouvement, l'avoir en négatif et nommé « avoir de », et un test le garde ; et le bouton
+  « Retirer » passait sous chaque ligne de part (la liste des pièces réclamait 180 pixels, 150
+  désormais). Le banc sert un virement fictif qui règle deux factures et déduit un avoir, et
+  `debordements.mjs` gagne une visite du relevé entier (« Tous ») : les pastilles d'un mouvement
+  rapproché, affecté, ventilé ou réglé en groupe n'apparaissent pas sous « Non rapprochés », le filtre par
+  défaut. 0 débordement aux quatre largeurs.
+  **LATENT** : aucun règlement groupé en base (30/09/2026).
+  **Cent quarante-neuf mutations, cent quarante-quatre mordent — la première passe n'en tuait que cent
+  dix-neuf sur cent quarante-cinq.** Quatre survivantes accusaient le HARNAIS : les refus des quatre autres
+  classements vivent dans `reglementGroupe.test.ts`, que ces mutations ne lançaient pas. Une accusait un
+  FAUX CLIENT : celui de Pièces acceptait `.not(…)` sans l'appliquer, donc le filtre qui écartait les
+  virements groupés pouvait revenir sans qu'un test tombe ; il l'applique désormais
+  (`src/test/filtresPostgrest.ts`). Seize accusaient des TESTS absents, tous écrits : une contrepartie de
+  trop à côté de la juste, qu'elle désigne un autre mouvement ou aucun — le cas existant se voyait à la
+  DATE avant d'atteindre la banque, et la copie de l'assistant y est mise à l'épreuve aussi —, un
+  mouvement marqué mais pas rapproché, une pièce sans montant qu'on a payée, l'ordre
+  des pièces proposées, un montant saisi qu'un choix de pièce écraserait, une alerte avant la saisie,
+  « Retirer » sous deux pièces, le nombre de pièces et un écart dits sur des parts lues en partie, la
+  validation en lot sur ces mêmes parts, une pastille « Rapproché » nue dans la fiche, le point de la
+  Checklist compté par raison au lieu de l'être par mouvement, et une pièce en devise réglée par sa part —
+  qui a trouvé l'écart de change ci-dessus ; les quatre mutations de son exemption mordent. **Cinq
+  survivent, et c'est dit** : les gardes des gestionnaires de Banque qui règlent ou annulent sur une
+  lecture partielle, et celle du refus, qu'aucun clic n'atteint, le bouton étant grisé ; le bouton du
+  formulaire grisé pendant l'écriture, que double le verrou partagé des écritures de rapprochement ; et le
+  détour de « Remettre à traiter » par l'annulation du règlement, que la fiche n'offre jamais sur un
+  virement groupé — défensif.
+  **CE QUI RESTE, dit plutôt que promis** : aucun moteur ne propose de regroupement (voir plus haut) ; le
+  lettrage (ligne 32) n'est pas produit ; et en engagement, une part qui diffère de sa facture sous l'écart
+  d'alignement reste absorbée comme au rapprochement simple, sans écriture de frais ni d'écart de change.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -6918,7 +7070,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3037 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3164 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -6941,6 +7093,7 @@ affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent c
 (`virementPersonnel.ts`), celles d'une échéance d'emprunt sur ses trois comptes
 (`echeanceEmprunt.ts`), et celles d'un mouvement ventilé sur plusieurs comptes
 (`ventilationBanque.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`),
+le règlement de plusieurs pièces par un virement (`reglementGroupe.ts`),
 et ce que la connexion bancaire décide sans rien appeler — la période proposée, ce qui s'importe
 vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le navigateur accepte
 (`clePublique.ts`). Les fichiers `*.test.ts` sont

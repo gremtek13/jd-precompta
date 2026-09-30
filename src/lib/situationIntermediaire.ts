@@ -1,7 +1,7 @@
 import { anneeDe, jourDe, moisDe } from './format'
 import type { PartDuReleve } from './partsDuReleve'
 import { montantRetenu } from './montantRetenu'
-import { paiementsParPiece, partDansLaPeriode, rattachements, type Paiement } from './rattachement'
+import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rattachement'
 import type { Categorie, CotisationDeclaree, Immobilisation, ModeComptable, Piece } from './types'
 
 // Exporté parce que `ratiosBancaires.ts` doit retrouver ce poste dans `totauxParPoste` pour calculer
@@ -64,10 +64,11 @@ export function calculerSituationIntermediaire(
   // TVA comprise pour un dossier exonéré, hors taxes pour un assujetti — la règle de la 2035 (voir
   // lib/montantRetenu.ts), sur l'état qu'on montre à une banque.
   assujettiTva: boolean,
-  // Les mouvements rapprochés, qui DATENT les pièces (voir lib/rattachement.ts) : une pièce compte
-  // dans la période de son paiement, comme dans la 2035 dont cet état est la version « à ce jour ».
-  // Sans valeur par défaut — une liste vide ferait tout compter à la date de facture.
-  lignesBancaires: readonly Paiement[],
+  // Les paiements de chaque pièce, parts de règlements groupés comprises (`paiementsDesPieces`), qui
+  // DATENT les pièces (voir lib/rattachement.ts) : une pièce compte dans la période de son paiement,
+  // comme dans la 2035 dont cet état est la version « à ce jour ». Sans valeur par défaut — une liste
+  // vide ferait tout compter à la date de facture.
+  paiements: PaiementsDesPieces,
   // Le modèle comptable du dossier : en ENGAGEMENT, une pièce compte à la date de sa facture, le
   // paiement ne datant rien (lib/rattachement.ts, `rattachements`). Sans valeur par défaut, pour la
   // même raison que les paiements.
@@ -81,7 +82,6 @@ export function calculerSituationIntermediaire(
   const categorieById = new Map(categories.map((c) => [c.id, c]))
   const immobilisationPieceIds = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
   const anneeFin = anneeDe(periodeFin)
-  const paiements = paiementsParPiece(lignesBancaires)
 
   const totauxParPoste = new Map<string, number>()
   for (const p of pieces) {
