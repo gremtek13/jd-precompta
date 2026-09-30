@@ -242,15 +242,15 @@ describe('ce qui se dit de la connexion', () => {
     })
     faux.reponses.choisir_compte = ok({ ok: true })
     monter()
-    const importerCompte = await screen.findAllByRole('button', { name: 'Importer ce compte' })
-    expect(importerCompte).toHaveLength(1)
+    const choisirCompte = await screen.findAllByRole('button', { name: 'Choisir ce compte' })
+    expect(choisirCompte).toHaveLength(1)
     expect(screen.getByText(/tenu en USD, et le relevé l'est en euros/)).toBeTruthy()
     expect(screen.getByText(/la banque ne rend pas ses mouvements/)).toBeTruthy()
     expect(screen.queryByRole('button', { name: 'Récupérer les mouvements' })).toBeNull()
 
     // La relecture rend l'état d'après : le compte est retenu, la récupération s'ouvre.
     etat = { configuree: true, connexion: connexion() }
-    await act(async () => { importerCompte[0].click() })
+    await act(async () => { choisirCompte[0].click() })
     expect(faux.invocations.find((c) => c.action === 'choisir_compte')).toEqual({
       action: 'choisir_compte', dossierId: 'dossier-de-test', empreinte: 'emp-courant',
     })
@@ -261,11 +261,11 @@ describe('ce qui se dit de la connexion', () => {
     etat.connexion = connexion({ compte_empreinte: null })
     faux.reponses.choisir_compte = ok({ ok: true })
     monter()
-    const importerCompte = await screen.findByRole('button', { name: 'Importer ce compte' })
+    const choisirCompte = await screen.findByRole('button', { name: 'Choisir ce compte' })
     faux.reponses.statut = 'attente'
-    await act(async () => { importerCompte.click() })
+    await act(async () => { choisirCompte.click() })
     // Le compte est retenu en base, mais l'écran montre encore l'état d'avant : rien ne doit partir.
-    expect(bouton('Importer ce compte').disabled).toBe(true)
+    expect(bouton('Choisir ce compte').disabled).toBe(true)
     expect(bouton('Retirer la connexion').disabled).toBe(true)
     etat = { configuree: true, connexion: connexion() }
     await act(async () => { faux.enAttente.find((a) => a.action === 'statut')!.resoudre({ data: etat, error: null }) })
@@ -310,6 +310,93 @@ describe('ce qui se dit de la connexion', () => {
       action: 'demarrer', dossierId: 'dossier-de-test', banque: { nom: 'Mock ASPSP', pays: 'FI' }, type_acces: 'personal',
     })
     expect(assign).toHaveBeenCalledWith('https://banque.exemple/reprise')
+  })
+})
+
+// LA PÉRIODE APRÈS UNE PREMIÈRE LECTURE. Mesuré sur le bac à sable de BBVA le 30/09/2026 : la lecture qui
+// suit l'accord a rendu 272 jours (relevé arrêté au 31/12/2025), la même a été refusée vingt-cinq secondes
+// plus tard (422, « Wrong transactions period requested »). Sans nouvel accord, une banque ne rend que les
+// 90 derniers jours ; proposer la période voulue ferait refuser chaque récupération.
+describe('la période, après une première lecture sous l’accord en cours', () => {
+  const releveArreteFin2025 = () => [ligne({ id: 'l-2025', date: '2025-12-31', id_externe: null })]
+
+  it('se borne aux 90 derniers jours, le dit, et offre de renouveler l’accord pour remonter plus loin', async () => {
+    etat.connexion = connexion({ derniere_recuperation: '2026-09-30T09:47:58+00:00' })
+    faux.reponses.demarrer = ok({ url: 'https://banque.exemple/renouveler', environnement: 'SANDBOX' })
+    monter({ lignes: releveArreteFin2025() })
+    await screen.findByRole('button', { name: 'Récupérer les mouvements' })
+    expect((screen.getByLabelText('Du') as HTMLInputElement).value).toBe('2026-07-03')
+    expect(screen.getByText(/la période commence le 03\/07\/2026 au lieu du 01\/01\/2026/)).toBeTruthy()
+    await act(async () => { bouton("Renouveler l'accord").click() })
+    expect(faux.invocations.at(-1)).toEqual({ action: 'demarrer', dossierId: 'dossier-de-test', renouveler: true })
+    expect(assign).toHaveBeenCalledWith('https://banque.exemple/renouveler')
+  })
+
+  // Le garde symétrique : sans lui, « se borne » serait satisfait par une carte qui borne TOUJOURS — et la
+  // lecture qui suit l'accord, la seule qui puisse combler un trou du relevé, n'irait plus le combler.
+  it('la lecture qui suit l’accord garde toute la période voulue, sans rien dire', async () => {
+    etat.connexion = connexion()
+    monter({ lignes: releveArreteFin2025() })
+    await screen.findByRole('button', { name: 'Récupérer les mouvements' })
+    expect((screen.getByLabelText('Du') as HTMLInputElement).value).toBe('2026-01-01')
+    expect(screen.queryByText(/ne rend plus que les 90 derniers jours/)).toBeNull()
+    expect(screen.queryByRole('button', { name: "Renouveler l'accord" })).toBeNull()
+  })
+
+  it('une lecture complète faite ici borne la suivante sans rechargement — et la note se tait devant l’aperçu', async () => {
+    etat.connexion = connexion()
+    monter({ lignes: releveArreteFin2025() })
+    await recupererAvec(recuperation({ du: '2026-01-01', mouvements: [mouvement({ date: '2026-02-02' })] }))
+    expect(faux.invocations.at(-1)).toEqual({ action: 'mouvements', dossierId: 'dossier-de-test', du: '2026-01-01', au: '2026-09-30' })
+    expect(screen.getByText('1 à importer')).toBeTruthy()
+    // Juste après une lecture réussie, « la banque ne rend plus que 90 jours » contredirait l'aperçu.
+    expect(screen.queryByText(/ne rend plus que les 90 derniers jours/)).toBeNull()
+    expect((screen.getByLabelText('Du') as HTMLInputElement).value).toBe('2026-07-03')
+    await recupererAvec(recuperation({ du: '2026-07-03' }))
+    expect(faux.invocations.at(-1)).toEqual({ action: 'mouvements', dossierId: 'dossier-de-test', du: '2026-07-03', au: '2026-09-30' })
+  })
+
+  it('une lecture INCOMPLÈTE ne borne rien : la suivante peut encore demander toute la période', async () => {
+    etat.connexion = connexion()
+    monter({ lignes: releveArreteFin2025() })
+    await recupererAvec(recuperation({ du: '2026-01-01', complete: false, motif: 'plus de 200 pages : réduis la période demandée' }))
+    expect((screen.getByLabelText('Du') as HTMLInputElement).value).toBe('2026-01-01')
+  })
+
+  it('une période refusée par la banque se dit avec la phrase de la fonction, et offre le renouvellement', async () => {
+    etat.connexion = connexion()
+    faux.reponses.mouvements = refus({
+      error: 'La banque refuse cette période : sans nouvel accord, elle ne rend que les 90 derniers jours.', periode_refusee: true,
+    }, 422)
+    monter({ lignes: releveArreteFin2025() })
+    const recuperer = await screen.findByRole('button', { name: 'Récupérer les mouvements' })
+    await act(async () => { recuperer.click() })
+    expect(screen.getByText(/La banque refuse cette période/)).toBeTruthy()
+    expect(bouton("Renouveler l'accord")).toBeTruthy()
+
+    // Ramenée dans les 90 jours, la période passe : la phrase et le bouton partent avec le refus.
+    fireEvent.change(screen.getByLabelText('Du'), { target: { value: '2026-07-03' } })
+    await recupererAvec(recuperation({ du: '2026-07-03' }))
+    expect(screen.queryByText(/La banque refuse cette période/)).toBeNull()
+    expect(screen.queryByRole('button', { name: "Renouveler l'accord" })).toBeNull()
+  })
+
+  it('un autre refus n’offre pas le renouvellement', async () => {
+    etat.connexion = connexion()
+    faux.reponses.mouvements = refus({ error: "Le prestataire bancaire n'a pas répondu à temps. Réessaie dans un instant." }, 504)
+    monter()
+    const recuperer = await screen.findByRole('button', { name: 'Récupérer les mouvements' })
+    await act(async () => { recuperer.click() })
+    expect(screen.getByText(/n'a pas répondu à temps/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: "Renouveler l'accord" })).toBeNull()
+  })
+
+  it('un accord qui expire garde UN seul bouton de renouvellement, en tête de la carte', async () => {
+    etat.connexion = connexion({ valide_jusqu_au: '2026-10-10T12:00:00+00:00', derniere_recuperation: '2026-09-30T09:47:58+00:00' })
+    monter({ lignes: releveArreteFin2025() })
+    await screen.findByText(/L'accord expire dans 10 jours/)
+    expect(screen.getByText(/ne rend plus que les 90 derniers jours/)).toBeTruthy()
+    expect(screen.getAllByRole('button', { name: "Renouveler l'accord" })).toHaveLength(1)
   })
 })
 

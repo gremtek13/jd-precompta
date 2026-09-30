@@ -33,8 +33,10 @@ const APERCU_MAX = 50
 // Un refus de la fonction porte parfois un DRAPEAU à côté de sa phrase : `fermeture_impossible` quand la
 // banque n'a pas pu être prévenue d'un retrait — c'est lui, et lui seul, qui ouvre « Retirer quand
 // même » : un retrait refusé par la base ne se force pas, et la question posée alors serait fausse.
-interface Drapeaux { fermeture_impossible: boolean }
-const SANS_DRAPEAU: Drapeaux = { fermeture_impossible: false }
+// `periode_refusee` quand la banque refuse la période demandée : sans nouvel accord, elle ne rend que
+// les 90 derniers jours, et c'est lui qui offre de renouveler l'accord.
+interface Drapeaux { fermeture_impossible: boolean; periode_refusee: boolean }
+const SANS_DRAPEAU: Drapeaux = { fermeture_impossible: false, periode_refusee: false }
 
 type Reponse<T> = { donnees: T; erreur: null; drapeaux: Drapeaux } | { donnees: null; erreur: string; drapeaux: Drapeaux }
 
@@ -50,8 +52,11 @@ async function appeler<T>(corps: Record<string, unknown>, repli: string): Promis
   let drapeaux = SANS_DRAPEAU
   if (copie) {
     try {
-      const corpsErreur = (await copie.json()) as { fermeture_impossible?: unknown } | null
-      drapeaux = { fermeture_impossible: corpsErreur?.fermeture_impossible === true }
+      const corpsErreur = (await copie.json()) as { fermeture_impossible?: unknown; periode_refusee?: unknown } | null
+      drapeaux = {
+        fermeture_impossible: corpsErreur?.fermeture_impossible === true,
+        periode_refusee: corpsErreur?.periode_refusee === true,
+      }
     } catch {
       // Un corps qui n'est pas du JSON (délai de la plateforme) ne porte aucun drapeau.
     }
@@ -95,6 +100,12 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
   const [changerDeCompte, setChangerDeCompte] = useState(false)
   // Le retrait a échoué parce que la banque n'a pas pu être prévenue : « Retirer quand même » est offert.
   const [retraitRefuse, setRetraitRefuse] = useState(false)
+  // La banque a refusé la période demandée : « Renouveler l'accord » est offert à côté des dates.
+  const [periodeRefusee, setPeriodeRefusee] = useState(false)
+  // Une lecture complète faite ICI, sous l'accord en cours : la connexion affichée ne porte pas encore sa
+  // date. La relire pour l'avoir ferait dépendre l'aperçu d'une seconde lecture — qui, en échouant,
+  // effacerait la carte entière, aperçu compris.
+  const [lueIci, setLueIci] = useState(false)
 
   useEffect(() => {
     let annule = false
@@ -116,7 +127,9 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
     if (verrou.current || redirection) return
     verrou.current = true
     setOccupe(true)
+    // Le drapeau suit la phrase qu'il accompagne : une nouvelle action efface l'une et l'autre.
     setErreur(null)
+    setPeriodeRefusee(false)
     setInfo(null)
     try {
       await action()
@@ -132,10 +145,20 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
   const connexion = statut?.connexion ?? null
   const environnement = connexion?.environnement ?? banques?.environnement ?? null
   const bloque = occupe || redirection
-  const periodeAffichee = periode ?? periodeParDefaut(lignes, aujourdHuiSql())
+  // Une lecture complète déjà faite sous l'accord en cours : la banque ne rend plus que 90 jours. La
+  // fonction remet `derniere_recuperation` à zéro à chaque accord, c'est ce qui rend ce signal juste.
+  const periodeProposee = periodeParDefaut(lignes, aujourdHuiSql(), lueIci || connexion?.derniere_recuperation != null)
+  // La période voulue ne se lit plus sans nouvel accord. Tu tant qu'un aperçu est à l'écran : juste
+  // après une lecture réussie, dire « la banque ne rend plus que 90 jours » contredirait ce qu'on voit.
+  const bornePourLAccord = periode === null && periodeProposee.debutVoulu !== null && !recuperation
+    ? periodeProposee.debutVoulu : null
+  const periodeAffichee = periode ?? { du: periodeProposee.du, au: periodeProposee.au }
   // Des jours ENTIERS arrondis vers le bas : négatif dès que l'échéance est passée, fût-ce d'une seconde.
   const jours = connexion ? joursAvantExpiration(connexion.valide_jusqu_au, new Date()) : null
   const expire = jours !== null && jours < 0
+  // L'accord expire ou a expiré : le bouton de renouvellement vit alors en tête de la carte, et c'est le
+  // seul — deux « Renouveler l'accord » dans la même carte feraient se demander lequel.
+  const alerteAccord = expire || (jours !== null && jours <= JOURS_ALERTE_ACCORD)
   const compteChoisi = connexion?.comptes.find((c) => c.empreinte === connexion.compte_empreinte) ?? null
   const plan = recuperation ? planImport(recuperation.mouvements, lignes) : null
   const banqueChoisie = banques?.liste.find((b) => cleBanque(b) === choix.banque) ?? null
@@ -170,8 +193,9 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
     setRecuperation(null)
     const r = await appeler<Recuperation>(
       { action: 'mouvements', dossierId, du: periodeAffichee.du, au: periodeAffichee.au }, "Les mouvements n'ont pas pu être récupérés.")
-    if (r.erreur !== null) { setErreur(r.erreur); return }
+    if (r.erreur !== null) { setErreur(r.erreur); setPeriodeRefusee(r.drapeaux.periode_refusee); return }
     setRecuperation(r.donnees)
+    if (r.donnees.complete) setLueIci(true)
   })
 
   const importer = () => sousVerrou(async () => {
@@ -364,7 +388,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
               pour ne pas interrompre la récupération.
             </p>
           )}
-          {(expire || (jours !== null && jours <= JOURS_ALERTE_ACCORD)) && (
+          {alerteAccord && (
             <button
               type="button"
               className="btn btn-primary btn-sm"
@@ -396,12 +420,12 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                       {c.nom ?? 'Compte'}{c.iban_fin && <> ····{c.iban_fin}</>}{c.devise && <> ({c.devise})</>}
                       {' '}
                       {c.empreinte === connexion.compte_empreinte
-                        ? <span className="badge badge-ok">importé</span>
+                        ? <span className="badge badge-ok">choisi</span>
                         : refus
                           ? <span className="muted">— {refus}</span>
                           : (
                             <button type="button" className="btn btn-outline btn-sm" disabled={bloque} onClick={() => choisirCompte(c.empreinte)}>
-                              Importer ce compte
+                              Choisir ce compte
                             </button>
                           )}
                     </li>
@@ -414,7 +438,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
           {compteChoisi && !changerDeCompte && (
             <>
               <p style={{ marginBottom: 8 }}>
-                Compte importé : {compteChoisi.nom ?? 'compte'}{compteChoisi.iban_fin && <> ····{compteChoisi.iban_fin}</>}
+                Compte choisi : {compteChoisi.nom ?? 'compte'}{compteChoisi.iban_fin && <> ····{compteChoisi.iban_fin}</>}
                 {connexion.comptes.length > 1 && (
                   <>
                     {' '}
@@ -441,6 +465,23 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                   </button>
                 </div>
               </div>
+              {bornePourLAccord && (
+                <p className="muted" style={{ marginBottom: 6 }}>
+                  Après une première lecture, la banque ne rend plus que les 90 derniers jours : la période commence le{' '}
+                  {formatDate(periodeAffichee.du)} au lieu du {formatDate(bornePourLAccord)}. Pour récupérer depuis le{' '}
+                  {formatDate(bornePourLAccord)}, renouvelle l'accord : la première lecture qui le suit peut remonter plus loin.
+                </p>
+              )}
+              {(bornePourLAccord || periodeRefusee) && !alerteAccord && (
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  disabled={bloque || !statut?.configuree}
+                  onClick={() => allerALaBanque({ renouveler: true })}
+                >
+                  Renouveler l'accord
+                </button>
+              )}
             </>
           )}
 

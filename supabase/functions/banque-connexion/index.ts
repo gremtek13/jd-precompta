@@ -400,6 +400,21 @@ function messageDuPrestataire(donnees: unknown): string | null {
   return texte === "" ? null : texte.slice(0, 300)
 }
 
+/**
+ * La banque refuse la PÉRIODE demandée (422, « Wrong transactions period requested »). Sans nouvel accord
+ * du titulaire, une banque ne rend que les 90 derniers jours (DSP2) ; seule la lecture qui suit l'accord
+ * peut remonter plus loin. Mesuré sur le bac à sable de BBVA le 30/09/2026 : une période de 272 jours
+ * rendue à la lecture qui suivait l'accord, refusée à la suivante. Reconnue au statut ET au message :
+ * un 422 dit aussi un en-tête manquant, qu'aucun renouvellement de l'accord ne réparerait.
+ */
+function periodeRefusee(statut: number, donnees: unknown): boolean {
+  return statut === 422 && /transactions? period/i.test(messageDuPrestataire(donnees) ?? "")
+}
+
+const PERIODE_REFUSEE = "La banque refuse cette période. Sans nouvel accord du titulaire, une banque ne rend que les " +
+  "90 derniers jours ; seule la première lecture qui suit l'accord peut remonter plus loin. Ramène la date « Du » " +
+  "dans les 90 derniers jours, ou renouvelle l'accord."
+
 /** Les banques proposées : leur nom, leur pays, les espaces de connexion qu'elles offrent, la durée d'accord. */
 function banquesDeLaListe(donnees: unknown): { nom: string; pays: string; types_acces: string[]; accord_jours: number | null }[] {
   const liste = (donnees ?? {}) as { aspsps?: unknown }
@@ -765,6 +780,9 @@ Deno.serve(async (req: Request) => {
       .update({
         etat: "active", session_id: sessionId, valide_jusqu_au: validite, comptes, environnement,
         compte_uid: retrouve?.uid ?? null, compte_empreinte: retrouve?.empreinte ?? null,
+        // Un accord NEUF : la lecture qui le suit peut remonter au-delà de 90 jours, et l'écran le sait à
+        // ce qu'aucune récupération complète n'est encore faite sous lui (voir `periodeParDefaut`).
+        derniere_recuperation: null,
         jeton_etat: crypto.randomUUID(),
       })
       .eq("id", connexion!.id).eq("jeton_etat", String(connexion!.jeton_etat)).select("id").maybeSingle()
@@ -829,7 +847,11 @@ Deno.serve(async (req: Request) => {
       return (r.donnees ?? {}) as PageBanque
     }, { maxPages: MAX_PAGES, echeance: debut + BUDGET_PAGES_MS, maintenant: () => Date.now() })
   } catch (e) {
-    if (e instanceof ErreurPrestataire) return erreurPrestataire(e.reponse)
+    if (e instanceof ErreurPrestataire) {
+      // Le drapeau ouvre « Renouveler l'accord » à l'écran : c'est le seul remède, avec une période plus courte.
+      if (periodeRefusee(e.reponse.statut, e.reponse.donnees)) return json({ error: PERIODE_REFUSEE, periode_refusee: true }, 422)
+      return erreurPrestataire(e.reponse)
+    }
     console.error(`[banque-connexion] mouvements : lecture interrompue (${(e as { name?: unknown })?.name ?? "?"})`)
     return json({ error: "La lecture des mouvements s'est interrompue : réessaie." }, 500)
   }

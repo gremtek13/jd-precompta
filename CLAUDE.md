@@ -1336,11 +1336,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   l'acquisition d'une immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y
   comparer, (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
-  (30/09/2026). Restent : la clé privée de l'application à poser dans les secrets des fonctions, puis
-  un premier essai du cabinet avec une banque fictive ; le choix du prestataire (sur devis) et son
-  contrat ; le chemin du CLIENT — seul le titulaire du compte peut donner l'accord, et l'écran
-  d'aujourd'hui fait cliquer le cabinet ; et la récupération automatique ou au clic, à trancher
-  (RGPD.md §8.8).
+  (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
+  fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
+  connexion bancaire récupère, l'écran importe » et « un retour sur l'onglet rechargeait l'application
+  entière »). Restent : le choix du prestataire (sur devis) et son contrat ; le chemin du CLIENT — seul le
+  titulaire du compte peut donner l'accord, et l'écran d'aujourd'hui fait cliquer le cabinet ; et la
+  récupération automatique ou au clic, à trancher (RGPD.md §8.8).
 - Test en conditions réelles du bac à sable Super PDP (émission de facture)
   avec l'utilisateur — plusieurs règles EN16931 déjà corrigées suite à des
   rejets réels du validateur (voir "Problèmes connus" ci-dessous pour les
@@ -5482,6 +5483,70 @@ d'environnement dans la même édition.
   entière (`vi.stubGlobal('location', …)`) ; un élément qui paraît après chargement se cherche HORS de
   l'`act` ; et un retour d'`upsert` lu par `.select(` passe pour une lecture de collection, d'où une
   exception inscrite dans `lecturesPaginees.test.ts`, bornée par la taille du lot.
+  **LE PREMIER ESSAI DU CABINET (30/09/2026) A TOUT FAIT TOURNER, ET TROUVÉ DEUX DÉFAUTS.** Clé posée, liste
+  des banques rendue (deux pour la France), accord donné à BBVA en espace professionnel (identifiants de
+  test `user1` / `1234` / `012345`, publiés dans la documentation du bac à sable d'Enable Banking), sept
+  comptes en euros ouverts, un choisi, 44 mouvements lus en trois pages. Rien n'a été importé, et c'est
+  ce qui a montré les deux défauts :
+  - **L'aperçu disparaissait au retour sur l'onglet** — le défaut n'était pas dans la carte mais dans le
+    contexte d'authentification, et il touchait toute l'application : voir « un retour sur l'onglet
+    rechargeait l'application entière ». Le cabinet est passé sur une autre fenêtre entre « Récupérer »
+    et « Importer », l'aperçu est parti avec la carte remontée, et le seul geste restant — recommencer
+    la récupération — a rencontré le second défaut.
+  - **LA BANQUE NE REND LA PÉRIODE VOULUE QU'UNE FOIS.** La même période, du 01/01/2026 au 30/09/2026 (272
+    jours : le relevé du dossier s'arrêtait au 31/12/2025), rendue à la lecture qui suivait l'accord, a été
+    refusée vingt-cinq secondes plus tard : 422, « Wrong transactions period requested ». Sans nouvel accord
+    du titulaire, une banque ne rend que les 90 derniers jours (DSP2) ; seule la lecture qui suit l'accord
+    peut remonter plus loin — et un jour de trop suffit à se faire refuser, 90 jours avant aujourd'hui en
+    faisant 91 avec les deux bornes. La carte proposait pourtant toujours la période voulue, donc chaque
+    récupération suivante était refusée, avec pour seule explication la phrase anglaise du prestataire.
+    **Corrigé** : dès qu'une lecture complète a eu lieu sous l'accord en cours, `periodeParDefaut` borne la
+    période aux 90 derniers jours et rend le début qu'elle aurait voulu ; la carte le DIT, avec « Renouveler
+    l'accord » — tu tant qu'un aperçu est affiché, qu'elle contredirait. La fonction reconnaît le refus au
+    statut ET au message (un 422 dit aussi un en-tête manquant, qu'un renouvellement ne réparerait pas), le
+    dit en français avec ses deux remèdes, et porte un drapeau `periode_refusee` qui offre le
+    renouvellement. Elle remet `derniere_recuperation` à zéro à chaque accord : c'est ce qui fait savoir à
+    l'écran que la lecture qui suit un renouvellement peut, elle, remonter plus loin. La lecture faite
+    dans l'écran même se retient dans l'écran, sans relire la connexion : une relecture qui échouerait
+    effacerait la carte entière, aperçu compris.
+  - **Au passage, un libellé trompeur** : « Importer ce compte » ne faisait que CHOISIR le compte, et le
+    badge « importé » s'affichait sur un compte dont aucun mouvement n'était encore entré. Ils disent
+    désormais « Choisir ce compte », « choisi » et « Compte choisi ».
+  **Mesures** : 7 tests de plus sur la carte et 11 mutations, toutes mordent (la borne jamais ou toujours
+  appliquée, la lecture ici oubliée, une lecture incomplète comptée, la note affichée devant l'aperçu, le
+  drapeau ignoré, lu ailleurs que dans le corps, jamais effacé, ou appliqué à tout refus, deux boutons de
+  renouvellement, le libellé d'avant) ; 4 cas de plus sur le module et 5 mutations, toutes mordent (dont la
+  borne à 90 jours au lieu de 89) ; 3 tests de plus sur la fonction et 6 mutations, toutes mordent (le
+  statut seul, le message seul, le code d'avant, le drapeau absent, l'accord neuf qui garderait sa date,
+  le message sans remède).
+  **`banque-connexion` version 3 en production le jour même** : `verify_jwt` relu (`true`) et repassé
+  explicitement, la version 2 comparée à `main` avant écrasement (identique, 861 lignes), aller-retour
+  après : zéro différence résiduelle sur 883 lignes. Sans jeton la passerelle refuse ; avec la seule clé
+  publique, la fonction démarre et rend son 401. Aucun appel au prestataire pour le vérifier.
+- **UN RETOUR SUR L'ONGLET RECHARGEAIT L'APPLICATION ENTIÈRE, ET EFFAÇAIT CE QUI ÉTAIT AFFICHÉ OU SAISI**
+  (trouvé le 30/09/2026 par le premier essai de la connexion bancaire, corrigé le jour même). Supabase
+  renvoie une COPIE neuve de la session chaque fois que l'onglet redevient visible — un « SIGNED_IN » émis
+  par sa reprise de session, vérifié dans le code d'auth-js (`_onVisibilityChanged`, `_recoverAndRefresh`)
+  — et à chaque jeton renouvelé (« TOKEN_REFRESHED », à peu près toutes les heures tant que l'onglet est
+  visible). `AuthContext` relisait les rôles sur l'OBJET session : chaque copie remettait `loading` à vrai,
+  `App.tsx` retombait sur « Chargement… », et TOUS les écrans étaient démontés puis remontés. Passer par
+  une autre fenêtre — ce qu'un cabinet fait sans arrêt, pour ouvrir un document, un courriel, un autre
+  logiciel — effaçait donc l'aperçu d'une récupération bancaire, une fiche de pièce en cours de saisie
+  dans le panneau de droite, un formulaire à moitié rempli, sans un mot. **La garde de sortie du panneau
+  de droite n'y pouvait rien** : elle retient une fiche qu'on chasse, pas une application qui se démonte.
+  Et chaque retour relisait toute la base de l'écran ouvert — deux fois, les deux événements arrivant
+  ensemble : c'est ce doublement, dans les journaux, qui a mis sur la piste.
+  **Le remède** : les rôles se relisent quand l'IDENTIFIANT change, jamais sur l'objet. La session du
+  contexte suit toujours la dernière reçue — les écrans n'en lisent que l'identifiant et l'adresse, et
+  aucun effet n'en dépendait (vérifié). `AuthContext.test.tsx` rejoue les événements à la main : une saisie
+  en cours survit à un « SIGNED_IN », à un « TOKEN_REFRESHED » et à un « USER_UPDATED » du même compte ; un
+  AUTRE compte relit les rôles et repart de zéro — le garde symétrique, sans lequel « ne rien relire »
+  serait satisfait par un contexte qui ne relit jamais ; une déconnexion revient à l'écran de connexion.
+  Quatre mutations, toutes mordent : le code tel qu'il était en fait tomber trois tests sur cinq, la
+  relecture jamais faite les cinq, et une session figée pour le même compte celui écrit pour elle.
+  **LATENT depuis la création du contexte** : il fallait un écran dont l'état compte, et un retour sur
+  l'onglet pendant qu'il le porte. Aucun test ne le voyait — un test d'écran double `useAuth` — et
+  personne ne le signalait : un écran qui se recharge a exactement l'air d'un écran qui charge.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -6722,7 +6787,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2974 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2993 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
