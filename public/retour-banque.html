@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <meta name="referrer" content="no-referrer" />
+    <title>Retour de la banque</title>
+    <script>
+      // La connexion bancaire (ligne 24) : la banque renvoie ici, à une adresse ordinaire, alors que
+      // l'application route derrière le « # » (HashRouter, GitHub Pages sans routage serveur). Ses
+      // paramètres — code d'autorisation et jeton de la demande, ou erreur — sont recopiés derrière le
+      // « # », et cette page est REMPLACÉE dans l'historique : le code ne reste pas dans une adresse que
+      // « précédent » ramènerait. L'adresse est déclarée chez Enable Banking et dans banque-connexion
+      // (URL_RETOUR) : la changer ici demande de la changer aux deux endroits.
+      location.replace('/#/retour-banque' + location.search)
+    </script>
+  </head>
+  <body>
+    <p><a href="/">Retour à l'application</a></p>
+  </body>
+</html>
