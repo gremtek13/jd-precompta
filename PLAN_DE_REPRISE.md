@@ -86,7 +86,7 @@ découvre avant.
    clients n'arrivent plus dans l'application.
 5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan. Elle est fermée pour le
    CONTENU, pas encore pour la PROCÉDURE** (voir la fin de ce point et le §4, étape 2).
-   Les migrations du projet (65 au 29/09/2026) sont exportées dans `supabase/schema/`, une par
+   Les migrations du projet (71 au 30/09/2026) sont exportées dans `supabase/schema/`, une par
    fichier, telles que la base les a enregistrées, et vérifiées par empreinte agrégée. Elles restent
    un EXPORT : la source de vérité est la base, les migrations continuent de s'appliquer par l'outil
    MCP, et l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie en une
@@ -151,6 +151,8 @@ gardés ; la présence des VALEURS se vérifie à la main, au moment de la repri
 | `AWS_SESSION_TOKEN` | `agent-comptable` | À laisser vide. Il ne sert qu'à des identifiants temporaires, et seul l'assistant le transmet : avec de tels identifiants, l'assistant marcherait et la lecture des pièces échouerait. Ceux d'un utilisateur IAM sont permanents. |
 | `AWS_REGION` | `evaluer-extraction`, `extract-piece`, `proposer-categorie` | Région de la lecture (Textract), de la citation des champs et de la proposition de catégorie (Bedrock) : `eu-central-1`, mesuré le 21/09/2026. Absente, le code retombe sur la même ; une région hors de l'UE serait un transfert (RGPD.md §8.1). L'assistant ne la lit pas : sa région est écrite dans son code. |
 | `AWS_TEXTRACT_BUCKET` | `extract-piece` | Seau S3 où un PDF séjourne le temps de sa lecture, dans la région de `AWS_REGION`. Sans lui, les images se lisent et **aucun PDF** — c'est-à-dire la plupart des dépôts. |
+| `ENABLE_BANKING_CLE_PRIVEE` | `banque-connexion` | La clé privée RSA de l'application enregistrée chez Enable Banking : le contenu ENTIER du fichier `.pem` téléchargé à l'enregistrement, de « -----BEGIN » à « -----END … KEY----- ». Elle ne se retrouve nulle part ailleurs — perdue, il faut enregistrer une nouvelle application, et reconnecter les banques. Absente, la connexion bancaire le dit et rien d'autre ne change. |
+| `ENABLE_BANKING_APPLICATION_ID` | `banque-connexion` | L'identifiant de cette application. À laisser vide pour l'application du bac à sable, écrite dans le code ; à poser avec la clé d'une application de production — un jeton signé par une clé et présenté sous l'identifiant d'une autre est refusé. |
 | `RESEND_API_KEY` | `receive-email`, `send-email` | Clé d'API Resend. Absente, plus aucun e-mail ne part, et aucun n'est accepté à l'arrivée. |
 | `RESEND_WEBHOOK_SECRET` | `receive-email` | Secret de signature du webhook de réception (`whsec_…`) — il change quand le webhook est recréé, voir le point 4. |
 
@@ -176,7 +178,7 @@ incompréhensible trois étapes plus loin.
    cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
    (inventaire du §3).
 2. **Le schéma — L'ÉTAPE QUI N'A JAMAIS ÉTÉ RÉPÉTÉE, et l'ordre écrit ici jusqu'au 29/09/2026
-   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 69 migrations, puis le
+   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 71 migrations, puis le
    socle, `socle/1_tables_sans_migration.sql` et `socle/2_objets_sans_migration.sql` —, vérifié nom
    par nom contre le catalogue le 29/09/2026. Mais les jouer « migrations d'abord, socle ensuite » bute
    dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que seul le socle

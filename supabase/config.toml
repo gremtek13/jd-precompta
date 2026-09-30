@@ -24,6 +24,9 @@ project_id = "jd-precompta"
 [functions.agent-comptable]
 verify_jwt = false
 
+[functions.banque-connexion]
+verify_jwt = true
+
 [functions.create-cabinet]
 verify_jwt = false
 
