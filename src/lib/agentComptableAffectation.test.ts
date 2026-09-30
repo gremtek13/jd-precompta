@@ -247,16 +247,18 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
   it('lit les mouvements rapprochés portant une catégorie, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, categorie_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)\.not\("categorie_id", "is", null\)/)
-    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve, rParts\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('passe les mouvements aux catégories sans compte ou sans poste, et rend les deux points de la Checklist', () => {
-    expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, rAffectes.lignes)')
-    expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, rAffectes.lignes)')
+    // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés (bloc
+    // VENTILATION, gardé par agentComptableVentilation.test.ts).
+    expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])')
+    expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])')
     expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes)')
     expect(corps).toContain('recettesAffecteesSurDossierAssujetti(affectes, dossier.assujetti_tva)')
     expect(corps).toMatch(/mouvements_affectes_a_reaffecter: affectesAReaffecter\.length/)
-    expect(corps).toMatch(/encaissements_affectes_en_recette_sur_dossier_assujetti: recettesAffecteesAssujetti\.length/)
+    expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sur_dossier_assujetti: recettesAffecteesAssujetti\.length \+ recettesVentileesAssujetti\.length/)
   })
 
   it('dit au modèle qu’une écriture de mouvement affecté sans pièce n’est pas une anomalie', () => {

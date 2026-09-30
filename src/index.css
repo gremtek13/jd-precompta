@@ -731,7 +731,7 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 /* Les parts d'une ventilation : le compte prend la place, le montant garde la sienne. La ligne passe à
    la ligne sous une largeur étroite plutôt que de déborder sous le volet (règle du dépôt, voir
    outils/captures/debordements.mjs). */
-.fiche-mouvement-parts { display: flex; flex-direction: column; gap: 8px; }
+.fiche-mouvement-parts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
 .fiche-mouvement-part { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .fiche-mouvement-part select { flex: 1 1 180px; min-width: 0; }
 .fiche-mouvement-part input { flex: 0 1 110px; min-width: 80px; }

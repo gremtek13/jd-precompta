@@ -80,7 +80,7 @@ function ligne(id: string, date: string, libelle: string, montant: number, statu
   return {
     id, dossier_id: 'd1', date, libelle, montant, statut, piece_id: pieceId, cotisation_id: null, categorie_id: categorie,
     prelevement_personnel: false, source_fichier: 'releve-septembre.csv', libelle_brut: null, created_at: MAINTENANT,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
   }
 }
 
@@ -121,7 +121,7 @@ function paiementTva(id: string, date: string, libelle: string, montant: number,
   return {
     id, dossier_id: 'd7', date, libelle, montant, statut: 'rapprochee', piece_id: pieceId, cotisation_id: null, categorie_id: null,
     prelevement_personnel: false, source_fichier: 'releve-2026.csv', libelle_brut: null, created_at: MAINTENANT,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
   }
 }
 
@@ -242,6 +242,20 @@ const TABLES: Record<string, Ligne[]> = {
     ecritureReleve('r10', 'l16', '2026-08-28', '661100', 'PRLV ECHEANCE PRET VEHICULE', 'debit', 45),
     ecritureReleve('r11', 'l16', '2026-08-28', '616800', 'PRLV ECHEANCE PRET VEHICULE', 'debit', 12.5),
     ecritureReleve('r12', 'l16', '2026-08-28', '512000', 'PRLV ECHEANCE PRET VEHICULE', 'credit', 348.51),
+    // Les deux mouvements ventilés : une ligne par part, puis la banque.
+    ecritureReleve('r13', 'l18', '2026-09-16', '626000', 'PRLV SEPA FORFAIT MOBILE', 'debit', 42),
+    ecritureReleve('r14', 'l18', '2026-09-16', '108000', 'PRLV SEPA FORFAIT MOBILE', 'debit', 18),
+    ecritureReleve('r15', 'l18', '2026-09-16', '512000', 'PRLV SEPA FORFAIT MOBILE', 'credit', 60),
+    ecritureReleve('r16', 'l19', '2026-09-19', '706000', 'REMISE CB SEPTEMBRE', 'credit', 490),
+    ecritureReleve('r17', 'l19', '2026-09-19', '627000', 'REMISE CB SEPTEMBRE', 'debit', 4.7),
+    ecritureReleve('r18', 'l19', '2026-09-19', '512000', 'REMISE CB SEPTEMBRE', 'debit', 485.3),
+  ],
+  // Les parts des deux mouvements ventilés, signées comme le relevé.
+  ventilations_bancaires: [
+    { id: 'vb1', dossier_id: 'd1', ligne_bancaire_id: 'l18', categorie_id: 'c1', part_personnelle: false, montant: -42, created_at: MAINTENANT },
+    { id: 'vb2', dossier_id: 'd1', ligne_bancaire_id: 'l18', categorie_id: null, part_personnelle: true, montant: -18, created_at: MAINTENANT },
+    { id: 'vb3', dossier_id: 'd1', ligne_bancaire_id: 'l19', categorie_id: 'c9', part_personnelle: false, montant: 490, created_at: MAINTENANT },
+    { id: 'vb4', dossier_id: 'd1', ligne_bancaire_id: 'l19', categorie_id: 'c10', part_personnelle: false, montant: -4.7, created_at: MAINTENANT },
   ],
   // Un prêt du cabinet infirmier, débloqué fin juillet : 15 000 € à 3,6 % sur 48 mois, soit 336,01 € par
   // mois, plus 12,50 € d'assurance. C'est lui qui fait paraître l'emprunt dans Financement, le découpage
@@ -311,6 +325,12 @@ const TABLES: Record<string, Ligne[]> = {
     mouvementEmprunt('l15', '2026-07-28', 'DEBLOCAGE PRET VEHICULE', 15000, null, 0, 0),
     mouvementEmprunt('l16', '2026-08-28', 'PRLV ECHEANCE PRET VEHICULE', -348.51, 1, 45, 12.5),
     ligne('l17', '2026-09-28', 'PRLV ECHEANCE PRET VEHICULE', -348.51, 'non_rapprochee', null),
+    // Deux mouvements VENTILÉS sur plusieurs comptes (lib/ventilationBanque.ts) : un forfait mobile payé
+    // depuis le compte pro, professionnel pour 42 € et personnel pour 18 € ; et une remise de carte dont
+    // la banque a retenu sa commission — 490 € d'honoraires, 4,70 € de frais, 485,30 € versés. Leurs
+    // parts sont dans `ventilations_bancaires`, leurs écritures au brouillon.
+    { ...ligne('l18', '2026-09-16', 'PRLV SEPA FORFAIT MOBILE', -60, 'rapprochee', null), ventilee: true },
+    { ...ligne('l19', '2026-09-19', 'REMISE CB SEPTEMBRE', 485.3, 'rapprochee', null), ventilee: true },
     ...TVA_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
   ],

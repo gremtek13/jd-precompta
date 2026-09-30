@@ -121,6 +121,14 @@ const VUES = [
   { nom: 'pc-emprunt-rapproche', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: '28/08/2026' },
   { nom: 'mobile-emprunt-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'PRLV ECHEANCE PRET VEHICULE' },
   { nom: 'pc-emprunt-financement', chemin: '#/dossiers/d1/financement', l: 1440, h: 900, theme: 'light', reduite: false },
+  // La ventilation d'un mouvement sur plusieurs comptes (lib/ventilationBanque.ts) : le formulaire déplié
+  // sur un mouvement à traiter, deux lignes vides ; puis un forfait mobile en partie personnel et une
+  // remise de carte avec sa commission, ouverts sous « Tous ».
+  { nom: 'pc-ventiler-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Ventiler sur plusieurs comptes' },
+  { nom: 'pc-ventiler-1280', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Ventiler sur plusieurs comptes' },
+  { nom: 'mobile-ventiler-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Ventiler sur plusieurs comptes' },
+  { nom: 'pc-ventile-mobile', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'PRLV SEPA FORFAIT MOBILE' },
+  { nom: 'pc-ventile-remise', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Tous', cellule: 'REMISE CB SEPTEMBRE', apres: 'Modifier la ventilation' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

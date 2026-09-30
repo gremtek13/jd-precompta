@@ -34,14 +34,16 @@
 // Fichier auto-porteur, comme les autres fonctions de ce dossier (déployées par copier-coller dans
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts,
 // src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
-// src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/format.ts et
-// src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
+// src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
+// src/lib/format.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `rattachementsTresorerie` et `analyserEcritures` et les exécute
 // contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que rien ne
 // puisse le voir. Le bloc AFFECTATION (mouvements du relevé affectés sans justificatif, virements
-// personnels) l'est de même par src/lib/agentComptableAffectation.test.ts, et le bloc EMPRUNT
-// (échéances d'emprunt) par src/lib/agentComptableEmprunt.test.ts.
+// personnels) l'est de même par src/lib/agentComptableAffectation.test.ts, le bloc EMPRUNT
+// (échéances d'emprunt) par src/lib/agentComptableEmprunt.test.ts, et le bloc VENTILATION (mouvements
+// ventilés sur plusieurs comptes, copié de src/lib/ventilationBanque.ts) par
+// src/lib/agentComptableVentilation.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -638,6 +640,132 @@ function echeancesDesynchronisees(ecritures: readonly EcritureRow[], lignes: rea
 }
 // ── FIN EMPRUNT ──────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT VENTILATION ────────────────────────────────────────────────────────────────────────────
+// LES MOUVEMENTS VENTILÉS SUR PLUSIEURS COMPTES — copiés de src/lib/ventilationBanque.ts (ligne 26.6 de
+// la feuille de route, 30/09/2026). Un mouvement du relevé se répartit sur plusieurs comptes — une remise
+// de carte et la commission que la banque en retient, un paiement en partie personnel — et s'écrit face à
+// la banque, une ligne par part. La Checklist en tire trois points que l'assistant doit dire comme elle :
+// le mouvement dont l'écriture ne suit plus ses parts (le compte d'une catégorie a changé depuis), celui
+// dont les parts ne font plus le mouvement, et la part de recettes d'un dossier devenu assujetti. Et les
+// catégories que les parts désignent comptent parmi les catégories utilisées, sans compte ou sans poste.
+// Lit `natureDuCompte`, `compteDuDirigeant`, `ecrituresSansPieceParMouvement` et `ecritureConforme` du
+// bloc AFFECTATION, plus haut.
+// Gardé par `agentComptableVentilation.test.ts`, qui extrait ce bloc et le compare à src/lib.
+interface MouvementVentileRow { id: string; date: string; montant: number; statut: string; ventilee: boolean }
+interface PartVentilationRow { ligne_bancaire_id: string; categorie_id: string | null; part_personnelle: boolean; montant: number }
+
+const centimesVentilation = (n: number) => Math.round(n * 100)
+
+// L'écriture d'un mouvement ventilé, sans son libellé : le contrôle ne le compare pas. Une ligne par part
+// — le compte de sa catégorie, ou celui du dirigeant —, puis la banque. Le sens vient du SIGNE : une part
+// positive crédite son compte, une négative le débite, et la banque prend le sens du mouvement. Nulle
+// quand une part ne peut pas s'écrire : sa catégorie manque, ou n'a plus de compte de résultat.
+function ecritureDeLaVentilation(
+  ligne: Pick<MouvementVentileRow, "montant">,
+  parts: readonly PartVentilationRow[],
+  categories: readonly CategorieRow[],
+  modele: ModeleComptable,
+): { compte: string; sens: string; montant: number }[] | null {
+  const parId = new Map(categories.map((c) => [c.id, c]))
+  const lignes: { compte: string; sens: string; montant: number }[] = []
+  for (const p of parts) {
+    let compte: string | null = null
+    if (p.part_personnelle) {
+      compte = compteDuDirigeant(modele)
+    } else if (p.categorie_id) {
+      const c = parId.get(p.categorie_id)
+      compte = c && natureDuCompte(c.compte_comptable) ? c.compte_comptable : null
+    }
+    if (!compte) return null
+    lignes.push({ compte, sens: p.montant > 0 ? "credit" : "debit", montant: Math.abs(centimesVentilation(p.montant)) / 100 })
+  }
+  lignes.push({ compte: COMPTE_BANQUE, sens: ligne.montant > 0 ? "debit" : "credit", montant: Math.abs(centimesVentilation(ligne.montant)) / 100 })
+  return lignes
+}
+
+function partsParMouvement(parts: readonly PartVentilationRow[]): Map<string, PartVentilationRow[]> {
+  const parLigne = new Map<string, PartVentilationRow[]>()
+  for (const p of parts) parLigne.set(p.ligne_bancaire_id, [...(parLigne.get(p.ligne_bancaire_id) ?? []), p])
+  return parLigne
+}
+
+// Les parts des mouvements rapprochés ET ventilés, avec la nature de leur catégorie. La part personnelle
+// n'en est pas — ni charge ni recette —, et une catégorie absente de la liste écarte sa part.
+function partsDesVentilations(
+  lignes: readonly MouvementVentileRow[], ventilations: readonly PartVentilationRow[], categories: readonly CategorieRow[],
+): { ligne: MouvementVentileRow; nature: "recette" | "depense" | null }[] {
+  const parLigne = partsParMouvement(ventilations)
+  const parId = new Map(categories.map((c) => [c.id, c]))
+  const resultat: { ligne: MouvementVentileRow; nature: "recette" | "depense" | null }[] = []
+  for (const ligne of lignes) {
+    if (ligne.statut !== "rapprochee" || !ligne.ventilee) continue
+    for (const part of parLigne.get(ligne.id) ?? []) {
+      if (!part.categorie_id) continue
+      const categorie = parId.get(part.categorie_id)
+      if (!categorie) continue
+      resultat.push({ ligne, nature: natureDuCompte(categorie.compte_comptable) })
+    }
+  }
+  return resultat
+}
+
+// Les mouvements ventilés en partie en recette sur un dossier DEVENU assujetti : leur TVA collectée n'est
+// dans aucune CA3. Un mouvement par entrée, même s'il porte deux parts de recette.
+function recettesVentileesSurDossierAssujetti(
+  parts: readonly { ligne: MouvementVentileRow; nature: "recette" | "depense" | null }[], assujettiTva: boolean,
+): MouvementVentileRow[] {
+  if (!assujettiTva) return []
+  const parLigne = new Map<string, MouvementVentileRow>()
+  for (const p of parts) if (p.nature === "recette") parLigne.set(p.ligne.id, p.ligne)
+  return [...parLigne.values()]
+}
+
+// Un mouvement ventilé qui porte moins de deux parts ou des parts qui ne font pas son montant, ou des parts
+// sur un mouvement qui n'est pas ventilé.
+function ventilationsIncoherentes(
+  lignes: readonly MouvementVentileRow[], ventilations: readonly PartVentilationRow[],
+): { ligne: MouvementVentileRow; raison: string }[] {
+  const parLigne = partsParMouvement(ventilations)
+  const incoherentes: { ligne: MouvementVentileRow; raison: string }[] = []
+  for (const ligne of lignes) {
+    const parts = parLigne.get(ligne.id) ?? []
+    if (ligne.ventilee) {
+      if (parts.length < 2) incoherentes.push({ ligne, raison: "moins_de_deux_parts" })
+      else if (parts.reduce((s, p) => s + centimesVentilation(p.montant), 0) !== centimesVentilation(ligne.montant)) {
+        incoherentes.push({ ligne, raison: "somme_differente" })
+      }
+    } else if (parts.length > 0) {
+      incoherentes.push({ ligne, raison: "parts_sans_ventilation" })
+    }
+  }
+  return incoherentes
+}
+
+// Un mouvement ventilé dont l'écriture n'est plus celle que ses parts produiraient. Seules les ventilations
+// COHÉRENTES sont jugées (les autres sont dites par `ventilationsIncoherentes`), et une catégorie absente de
+// la liste écarte le mouvement ; une catégorie sortie des comptes de résultat le rend périmé.
+function mouvementsVentilesDesynchronises(
+  ecritures: readonly EcritureRow[],
+  lignes: readonly MouvementVentileRow[],
+  ventilations: readonly PartVentilationRow[],
+  categories: readonly CategorieRow[],
+  modele: ModeleComptable,
+): MouvementVentileRow[] {
+  const ecrituresParLigne = ecrituresSansPieceParMouvement(ecritures)
+  const parLigne = partsParMouvement(ventilations)
+  const incoherentes = new Set(ventilationsIncoherentes(lignes, ventilations).map((v) => v.ligne.id))
+  const connues = new Set(categories.map((c) => c.id))
+  return lignes.filter((ligne) => {
+    if (!ligne.ventilee || ligne.statut !== "rapprochee" || incoherentes.has(ligne.id)) return false
+    const parts = parLigne.get(ligne.id) ?? []
+    if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false
+    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele)
+    if (!attendue) return true
+    return !ecritureConforme(ecrituresParLigne.get(ligne.id) ?? [], attendue, ligne.date)
+  })
+}
+// ── FIN VENTILATION ──────────────────────────────────────────────────────────────────────────────
+
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
 function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
   if (!assujettiTva) return []
@@ -929,7 +1057,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée ou par un mouvement affecté), pièces validées sans TVA renseignée, encaissements affectés en recette sur un dossier assujetti, virements personnels sans leur écriture. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sur un dossier assujetti, virements personnels sans leur écriture. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -1087,7 +1215,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve, rParts] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
       lireTout<PieceRow>((d, f) =>
         admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
@@ -1111,20 +1239,25 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       lireTout<VirementPersonnelRow>((d, f) =>
         admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
       // Les EMPRUNTS et le RELEVÉ ENTIER (bloc EMPRUNT) : le relevé dit ce qu'il couvre, et ses mouvements
-      // rapprochés d'un emprunt, les échéances payées et leur découpage.
+      // rapprochés d'un emprunt, les échéances payées et leur découpage. Et lesquels sont VENTILÉS (bloc
+      // VENTILATION) : le relevé entier, pour voir aussi des parts posées sur un mouvement qui ne l'est pas.
       lireTout<EmpruntRow>((d, f) =>
         admin.from("emprunts").select("id, nom, capital_initial, taux_annuel, date_debut, duree_mois", { count: "exact" }).eq("dossier_id", dossierId).order("date_debut").order("id").range(d, f)),
-      lireTout<MouvementEmpruntRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<MouvementEmpruntRow & MouvementVentileRow>((d, f) =>
+        admin.from("lignes_bancaires").select("id, date, montant, statut, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // Les PARTS des mouvements ventilés (bloc VENTILATION) : leurs catégories comptent comme celles des
+      // pièces, et l'écriture du mouvement doit les suivre.
+      lireTout<PartVentilationRow>((d, f) =>
+        admin.from("ventilations_bancaires").select("ligne_bancaire_id, categorie_id, part_personnelle, montant", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
-    // Correctif audit sécurité (indicateurs/IA, Importante) : ces huit lectures alimentent des
+    // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
     // retombant silencieusement sur un tableau vide masquerait une vraie anomalie derrière un faux
     // "tout va bien" plutôt que de dire que le contrôle n'a pas pu être fait.
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve, rParts]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -1140,8 +1273,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const modele = modeleDuDossier(dossier)
     const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, rPaiements.lignes, modele)
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
-    const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, rAffectes.lignes)
-    const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped, rAffectes.lignes)
+    // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
+    const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])
+    const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])
     const sansTva = piecesSansTva(piecesTyped, dossier.assujetti_tva)
     const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped)
     const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes)
@@ -1150,6 +1284,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const couverture = couvertureDuReleve(rReleve.lignes)
     const echeancesManquantes = couverture ? echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin) : []
     const echeancesPerimees = echeancesDesynchronisees(ecrituresTyped, rReleve.lignes)
+    const recettesVentileesAssujetti = recettesVentileesSurDossierAssujetti(
+      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped), dossier.assujetti_tva)
+    const ventilationsFausses = ventilationsIncoherentes(rReleve.lignes, rParts.lignes)
+    const ventilesPerimes = mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele)
 
     return {
       ecritures_desequilibrees: groupesDesequilibres.length,
@@ -1171,13 +1309,19 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       categories_sans_compte_comptable: catSansCompte.map((c) => c.libelle),
       categories_sans_poste_2035: catSansPoste.map((c) => c.libelle),
       pieces_validees_sans_tva_renseignee: sansTva.length,
-      encaissements_affectes_en_recette_sur_dossier_assujetti: recettesAffecteesAssujetti.length,
+      // Le libellé de la Checklist, qui compte ensemble les encaissements affectés et les mouvements ventilés
+      // en partie en recette : les deux se réparent pareil, en rapprochant leur facture à la place.
+      encaissements_affectes_ou_ventiles_en_recette_sur_dossier_assujetti: recettesAffecteesAssujetti.length + recettesVentileesAssujetti.length,
       // Le libellé de la Checklist : classés sans leur écriture, ils manquent au FEC et à la trésorerie.
       virements_personnels_sans_ecriture: virementsAEcrire.length,
       // Les libellés de la Checklist : le relevé couvre ces échéances et aucun mouvement ne les paie — leurs
       // intérêts ne sont pas comptés ; et l'écriture d'une échéance rapprochée qui ne suit plus son découpage.
       echeances_emprunt_couvertes_par_le_releve_sans_mouvement_rapproche: echeancesManquantes.length,
       echeances_emprunt_dont_l_ecriture_ne_suit_plus_le_decoupage: echeancesPerimees.length,
+      // Les libellés de la Checklist : l'écriture d'un mouvement ventilé qui ne suit plus ses parts, et des
+      // parts qui ne font plus le mouvement.
+      mouvements_ventiles_dont_l_ecriture_ne_suit_plus_les_parts: ventilesPerimes.length,
+      mouvements_ventiles_dont_les_parts_ne_font_plus_le_mouvement: ventilationsFausses.length,
     }
   }
 
@@ -1322,6 +1466,7 @@ Règles impératives :
 - Repères PCG utiles : comptes 6xxx = charges (sens normal débit), 7xxx = produits (sens normal crédit), 445660 = TVA déductible, 445710 = TVA collectée, 512000 = banque.
 - Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au 512000, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
+- Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).

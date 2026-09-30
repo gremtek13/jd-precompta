@@ -80,7 +80,8 @@ export default function FormulaireVentilation({
 
   return (
     <>
-      <div className="fiche-mouvement-parts">
+      {/* `field` donne aux listes et aux montants le style des autres champs du volet. */}
+      <div className="field fiche-mouvement-parts">
         {parts.map((p, i) => (
           <div key={p.cle} className="fiche-mouvement-part">
             <select aria-label={`Compte de la part ${i + 1}`} value={p.cible} onChange={(e) => modifier(p.cle, { cible: e.target.value })}>
