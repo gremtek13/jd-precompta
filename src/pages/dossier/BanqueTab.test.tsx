@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, VentilationBancaire } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
@@ -70,6 +70,9 @@ const faux = vi.hoisted(() => ({
   // Les emprunts du dossier (lib/echeanceEmprunt.ts) : une lecture qui peut être partielle, et deux
   // fonctions SQL que le faux serveur APPLIQUE au relevé.
   emprunts: [] as Emprunt[],
+  // Les parts des mouvements ventilés (lib/ventilationBanque.ts) : une lecture qui peut être partielle, et
+  // deux fonctions SQL que le faux serveur APPLIQUE au relevé et à ses parts.
+  ventilations: [] as VentilationBancaire[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -132,7 +135,8 @@ vi.mock('../../lib/supabase', async () => {
             : table === 'categories' ? filtrer(faux.categories, predicats)
               : table === 'regles_affectation_bancaire' ? filtrer(faux.reglesAffectation, predicats)
                 : table === 'cotisations_declarees' ? faux.cotisations
-                  : table === 'emprunts' ? faux.emprunts : []
+                  : table === 'emprunts' ? faux.emprunts
+                    : table === 'ventilations_bancaires' ? faux.ventilations : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         }
@@ -193,6 +197,9 @@ vi.mock('../../lib/supabase', async () => {
         if (table === 'emprunts') {
           return Promise.resolve({ data: faux.emprunts, error: null, count: faux.emprunts.length }).then(suite)
         }
+        if (table === 'ventilations_bancaires') {
+          return Promise.resolve({ data: faux.ventilations, error: null, count: faux.ventilations.length }).then(suite)
+        }
         if (table === 'categories') {
           const lues = filtrer(faux.categories, predicats)
           return Promise.resolve({ data: lues, error: null, count: lues.length }).then(suite)
@@ -235,6 +242,20 @@ vi.mock('../../lib/supabase', async () => {
       return Promise.resolve({ data: envoi.length, error: null })
     }
     const id = args.p_ligne_bancaire_id
+    // La ventilation (lib/ventilationBanque.ts) : les parts remplacent celles du mouvement, ou partent avec
+    // la ventilation — l'écriture n'étant pas relue ici.
+    if (nom === 'ventiler_mouvement_bancaire') {
+      const parts = args.p_parts as { categorie_id: string | null; part_personnelle: boolean; montant: number }[]
+      faux.ventilations = [
+        ...faux.ventilations.filter((v) => v.ligne_bancaire_id !== id),
+        ...parts.map((part, i): VentilationBancaire => ({
+          id: `part-${String(id)}-${i}`, dossier_id: 'dossier-de-test', ligne_bancaire_id: String(id),
+          categorie_id: part.categorie_id, part_personnelle: part.part_personnelle, montant: part.montant,
+          created_at: '2025-06-02T10:00:00Z',
+        })),
+      ]
+    }
+    if (nom === 'retirer_ventilation_mouvement_bancaire') faux.ventilations = faux.ventilations.filter((v) => v.ligne_bancaire_id !== id)
     faux.lignes = faux.lignes.map((l): LigneBancaire => {
       if (l.id !== id) return l
       // Le virement personnel (lib/virementPersonnel.ts) : classé et écrit, ou remis à traiter et
@@ -251,6 +272,8 @@ vi.mock('../../lib/supabase', async () => {
       if (nom === 'retirer_echeance_emprunt') {
         return { ...l, statut: 'non_rapprochee', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null }
       }
+      if (nom === 'ventiler_mouvement_bancaire') return { ...l, statut: 'rapprochee', ventilee: true }
+      if (nom === 'retirer_ventilation_mouvement_bancaire') return { ...l, statut: 'non_rapprochee', ventilee: false }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), statut: 'rapprochee' }
         : { ...l, categorie_id: null, statut: 'non_rapprochee' }
@@ -319,6 +342,7 @@ function reinitialiser() {
   faux.refusAuEnvoi = null
   faux.cotisations = []
   faux.emprunts = []
+  faux.ventilations = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -2058,5 +2082,334 @@ describe('BanqueTab — une échéance d’emprunt se découpe et s’écrit', (
     expect(faux.rpcs.filter((r) => r.nom === 'affecter_mouvements_bancaires')).toEqual([])
     await ouvrir('PRLV BANQUE DU MIDI ECHEANCE')
     expect(within(volet()).getByText(/La liste des emprunts n’a pas pu être lue en entier/)).toBeTruthy()
+  })
+})
+
+describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
+  const TELEPHONE = categorieDeTest({
+    id: 'cat-tel', code: 'telephone', libelle: 'Téléphone', ordre: 40, compte_comptable: '626000',
+    poste_2035: 'Frais postaux et de télécommunications',
+  })
+  const FRAIS = categorieDeTest()
+  const RECETTES = categorieDeTest({
+    id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  })
+  const PARTS: VentilationBancaire[] = [
+    {
+      id: 'part-1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-1', categorie_id: 'cat-tel', part_personnelle: false,
+      montant: -84, created_at: '2025-06-02T10:00:00Z',
+    },
+    {
+      id: 'part-2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-1', categorie_id: null, part_personnelle: true,
+      montant: -36, created_at: '2025-06-02T10:00:00Z',
+    },
+  ]
+  const VENTILEE: Partial<LigneBancaire> = { statut: 'rapprochee', ventilee: true }
+
+  function preparer(ligne: Partial<LigneBancaire> = {}, parts: VentilationBancaire[] = []) {
+    reinitialiser()
+    faux.pieces = []
+    faux.categories = [TELEPHONE, FRAIS, RECETTES]
+    faux.lignes = [ligneDeTest({ libelle: 'PRLV OPERATEUR MOBILE', montant: -120, ...ligne })]
+    faux.ventilations = parts
+  }
+  async function voirLesRapproches() {
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+  }
+  async function deplier() {
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ventiler sur plusieurs comptes…' }).click() })
+  }
+  function saisir(numero: number, cible: string, montant: string) {
+    fireEvent.change(within(volet()).getByLabelText(`Compte de la part ${numero}`), { target: { value: cible } })
+    fireEvent.change(within(volet()).getByLabelText(`Montant de la part ${numero}`), { target: { value: montant } })
+  }
+  const ventilations = () => faux.rpcs.filter((r) => r.nom === 'ventiler_mouvement_bancaire')
+
+  it('ne ventile qu’au clic, par la base, et reste sur le mouvement ventilé', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    saisir(1, 'cat-tel', '84')
+    saisir(2, 'dirigeant', '36')
+    expect(within(volet()).getByText('Les parts font le mouvement.')).toBeTruthy()
+    expect(faux.rpcs).toEqual([])
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ventiler' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByText('Ventilé sur 2 comptes')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{
+      nom: 'ventiler_mouvement_bancaire',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1',
+        // Signées comme le relevé : l'opérateur a saisi « 84 » et « 36 » dans le sens du paiement.
+        p_parts: [
+          { categorie_id: 'cat-tel', part_personnelle: false, montant: -84 },
+          { categorie_id: null, part_personnelle: true, montant: -36 },
+        ],
+        p_ecritures: [
+          { compte: '626000', sens: 'debit', montant: 84, libelle: 'PRLV OPERATEUR MOBILE' },
+          { compte: '108000', sens: 'debit', montant: 36, libelle: 'PRLV OPERATEUR MOBILE' },
+          { compte: '512000', sens: 'credit', montant: 120, libelle: 'PRLV OPERATEUR MOBILE' },
+        ],
+      },
+    }])
+    // Jamais une mise à jour directe de la ligne : la ventilation, ses parts et son écriture partent ensemble.
+    expect(faux.updatesLignes).toEqual([])
+    const parts = within(volet()).getByText('Téléphone (626000)').closest('dl')
+    expect(parts?.textContent).toMatch(/Téléphone \(626000\)84,00.*Part personnelle \(108000\)36,00/)
+    expect(within(volet()).getByRole('button', { name: 'Annuler la ventilation' })).toBeTruthy()
+  })
+
+  it('en engagement, la part personnelle va au compte choisi pour le dirigeant', async () => {
+    preparer()
+    rendre(ENGAGEMENT)
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    saisir(1, 'cat-tel', '84')
+    saisir(2, 'dirigeant', '36')
+    expect(within(volet()).getByText(/La part personnelle s’écrit sur le compte 455000/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ventiler' }).click() })
+    expect((ventilations()[0].args.p_ecritures as { compte: string }[]).map((e) => e.compte)).toEqual(['626000', '455000', '512000'])
+  })
+
+  it('demande chaque part avant de crier à l’erreur, puis dit le reste à ventiler', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    const bouton = () => within(volet()).getByRole('button', { name: 'Ventiler' })
+    // Deux lignes vides : une consigne, pas une faute.
+    expect(within(volet()).getByText('Choisis le compte et le montant de chaque part.')).toBeTruthy()
+    expect(within(volet()).queryByText(/Chaque part/)).toBeNull()
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    saisir(1, 'cat-tel', '84')
+    saisir(2, 'dirigeant', '30')
+    expect(within(volet()).getByText(/Reste à ventiler : 6,00/)).toBeTruthy()
+    expect(within(volet()).getByText(/Les parts font 114,00.*au lieu des 120,00.*du mouvement\./)).toBeTruthy()
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    saisir(2, 'dirigeant', '40')
+    expect(within(volet()).getByText(/Les parts dépassent le mouvement de 4,00/)).toBeTruthy()
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    saisir(2, 'dirigeant', '36')
+    expect(bouton().hasAttribute('disabled')).toBe(false)
+  })
+
+  it('la remise nette de sa commission : un montant négatif va en sens inverse', async () => {
+    preparer({ libelle: 'REMISE CB', montant: 95 })
+    rendre()
+    await ouvrir('REMISE CB')
+    await deplier()
+    saisir(1, 'cat-recettes', '100')
+    saisir(2, 'cat-frais', '-5')
+    // Ni l'une ni l'autre ne diminue sa catégorie : aucune mise en garde.
+    expect(within(volet()).queryByText(/diminue/)).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ventiler' }).click() })
+    expect(ventilations()[0].args).toMatchObject({
+      p_parts: [
+        { categorie_id: 'cat-recettes', part_personnelle: false, montant: 100 },
+        { categorie_id: 'cat-frais', part_personnelle: false, montant: -5 },
+      ],
+      p_ecritures: [
+        { compte: '706000', sens: 'credit', montant: 100 },
+        { compte: '627000', sens: 'debit', montant: 5 },
+        { compte: '512000', sens: 'debit', montant: 95 },
+      ],
+    })
+  })
+
+  it('nomme une part qui diminue sa catégorie, sans la refuser — c’est un remboursement', async () => {
+    preparer({ libelle: 'REMISE CB', montant: 95 })
+    rendre()
+    await ouvrir('REMISE CB')
+    await deplier()
+    saisir(1, 'cat-recettes', '90')
+    saisir(2, 'cat-frais', '5')
+    expect(within(volet()).getByText(/La part « Frais bancaires » diminue sa catégorie au lieu de l’augmenter/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Ventiler' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('refuse une part de recette sur un dossier assujetti, avant le clic', async () => {
+    preparer({ libelle: 'REMISE CB', montant: 95 })
+    rendre(TRESORERIE, true)
+    await ouvrir('REMISE CB')
+    await deplier()
+    saisir(1, 'cat-recettes', '100')
+    saisir(2, 'cat-frais', '-5')
+    expect(within(volet()).getByText(/Sur un dossier assujetti à la TVA, une recette sans facture/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Ventiler' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('ajoute et retire une part, jamais en dessous de deux', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    expect(within(volet()).queryByRole('button', { name: /Retirer la part/ })).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ajouter une part' }).click() })
+    saisir(1, 'cat-tel', '60')
+    saisir(2, 'cat-frais', '24')
+    saisir(3, 'dirigeant', '36')
+    expect(within(volet()).getByText('Les parts font le mouvement.')).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Retirer la part 2' }).click() })
+    // La part retirée est bien la deuxième : il reste le téléphone et la part personnelle.
+    expect((within(volet()).getByLabelText('Compte de la part 2') as HTMLSelectElement).value).toBe('dirigeant')
+    expect(within(volet()).getByText(/Reste à ventiler : 24,00/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: /Retirer la part/ })).toBeNull()
+  })
+
+  it('ne ventile qu’une fois, même sur trois clics rapprochés', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    saisir(1, 'cat-tel', '84')
+    saisir(2, 'dirigeant', '36')
+    const bouton = within(volet()).getByRole('button', { name: 'Ventiler' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(ventilations()).toHaveLength(1)
+  })
+
+  // Relâché avant la relecture, le verrou laisserait le formulaire cliquable sur un mouvement déjà ventilé.
+  it('reste verrouillé tant que la relecture du relevé n’est pas revenue', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    saisir(1, 'cat-tel', '84')
+    saisir(2, 'dirigeant', '36')
+    faux.retenirLectureLignes = true
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ventiler' }).click() })
+    expect(within(volet()).getByRole('button', { name: 'Ventiler' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { faux.resoudreLectureLignes?.() })
+    await waitFor(() => expect(within(volet()).getByText('Ventilé sur 2 comptes')).toBeTruthy())
+  })
+
+  // LE VERROU EST PARTAGÉ AVEC LES LOTS, comme pour l'affectation.
+  it('« Tout rapprocher » en cours retient aussi la ventilation', async () => {
+    preparer()
+    faux.pieces = [pieceDeTest()]
+    faux.lignes = [ligneDeTest(), ligneDeTest({ id: 'ligne-2', libelle: 'PRLV OPERATEUR MOBILE', montant: -120 })]
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    saisir(1, 'cat-tel', '84')
+    saisir(2, 'dirigeant', '36')
+    const ventiler = within(volet()).getByRole('button', { name: 'Ventiler' })
+    expect(ventiler.hasAttribute('disabled')).toBe(false)
+    await act(async () => { screen.getByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ }).click() })
+    expect(ventiler.hasAttribute('disabled')).toBe(true)
+    await act(async () => { ventiler.click() })
+    expect(ventilations()).toEqual([])
+  })
+
+  it('un refus de la base se dit, et le mouvement reste à traiter', async () => {
+    preparer()
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await deplier()
+    saisir(1, 'cat-tel', '84')
+    saisir(2, 'dirigeant', '36')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ventiler' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/La ventilation n'a pas pu être enregistrée : refus simulé/)))
+    expect(within(volet()).getByText('Non rapproché')).toBeTruthy()
+  })
+
+  it('ne propose de ventiler ni un mouvement affecté, ni un mouvement de zéro euro', async () => {
+    preparer({ statut: 'rapprochee', categorie_id: 'cat-tel' })
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).queryByRole('button', { name: 'Ventiler sur plusieurs comptes…' })).toBeNull()
+    cleanup()
+    preparer({ montant: 0 })
+    rendre()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).queryByRole('button', { name: 'Ventiler sur plusieurs comptes…' })).toBeNull()
+  })
+
+  it('la liste dit « Ventilé sur 2 comptes », jamais un « Rapproché » nu ni « sans justificatif »', async () => {
+    preparer(VENTILEE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    expect(await screen.findByText('Ventilé sur 2 comptes')).toBeTruthy()
+    expect(screen.queryByText(/^Rapproché$/)).toBeNull()
+    expect(screen.queryByText('Rapproché sans justificatif')).toBeNull()
+  })
+
+  it('la fiche montre les parts dans le sens du mouvement, et annule la ventilation par la base', async () => {
+    preparer(VENTILEE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    const parts = within(volet()).getByText('Téléphone (626000)').closest('dl')
+    expect(parts?.textContent).toMatch(/Téléphone \(626000\)84,00.*Part personnelle \(108000\)36,00/)
+    expect(within(volet()).queryByText('Rapproché avec')).toBeNull()
+    expect(within(volet()).queryByText(/^Rapproché$/)).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler la ventilation' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_ventilation_mouvement_bancaire', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('dit une annulation que la base refuse, et le mouvement reste ventilé', async () => {
+    preparer(VENTILEE, PARTS)
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler la ventilation' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/La ventilation n'a pas pu être annulée : refus simulé/)))
+    expect(within(volet()).getByText('Ventilé sur 2 comptes')).toBeTruthy()
+  })
+
+  it('modifie une ventilation en repartant de ses parts', async () => {
+    preparer(VENTILEE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Modifier la ventilation…' }).click() })
+    // Les parts en place, dans le sens du mouvement.
+    expect((within(volet()).getByLabelText('Compte de la part 1') as HTMLSelectElement).value).toBe('cat-tel')
+    expect((within(volet()).getByLabelText('Montant de la part 1') as HTMLInputElement).value).toBe('84.00')
+    expect((within(volet()).getByLabelText('Compte de la part 2') as HTMLSelectElement).value).toBe('dirigeant')
+    expect((within(volet()).getByLabelText('Montant de la part 2') as HTMLInputElement).value).toBe('36.00')
+    saisir(1, 'cat-tel', '96')
+    saisir(2, 'dirigeant', '24')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Enregistrer la ventilation' }).click() })
+    expect(ventilations()[0].args.p_parts).toEqual([
+      { categorie_id: 'cat-tel', part_personnelle: false, montant: -96 },
+      { categorie_id: null, part_personnelle: true, montant: -24 },
+    ])
+  })
+
+  it('des parts lues en partie : l’écran le dit, et la modification est suspendue', async () => {
+    preparer(VENTILEE, PARTS)
+    faux.muet = { ventilations_bancaires: 1 }
+    rendre()
+    expect(await screen.findByText(/Les parts des mouvements ventilés n'ont pas pu être lues en entier/)).toBeTruthy()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).getByText(/celles de ce mouvement peuvent manquer ci-dessous/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Modifier la ventilation…' })).toBeNull()
+    // Le garde symétrique : lues en entier, la modification est offerte.
+    cleanup()
+    preparer(VENTILEE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).getByRole('button', { name: 'Modifier la ventilation…' })).toBeTruthy()
+  })
+
+  it('dit une part dont la catégorie n’a pas de poste 2035', async () => {
+    preparer(VENTILEE, PARTS)
+    faux.categories = [{ ...TELEPHONE, poste_2035: null }, FRAIS, RECETTES]
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('PRLV OPERATEUR MOBILE')
+    expect(within(volet()).getByText(/« Téléphone » n’a pas de poste 2035 : sa part n’entre dans aucun total/)).toBeTruthy()
   })
 })

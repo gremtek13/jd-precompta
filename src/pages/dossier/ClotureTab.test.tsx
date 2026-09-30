@@ -724,6 +724,83 @@ describe('ClotureTab — les mouvements du relevé affectés sans justificatif',
   })
 })
 
+// UN MOUVEMENT VENTILÉ SUR PLUSIEURS COMPTES (lib/ventilationBanque.ts) compte dans la 2035 par ses parts,
+// chacune dans le poste de sa catégorie, la part personnelle dans aucun. Ce que ce bloc garde et qu'aucun
+// test de `src/lib` ne peut voir : que l'écran LISE les parts — elles vivent dans leur propre table — et
+// les passe au moteur, qu'une lecture partielle des parts bloque le formulaire, et que la liste des
+// mouvements absents dise le montant de la PART, pas du mouvement entier.
+describe('ClotureTab — les mouvements ventilés sur plusieurs comptes', () => {
+  const RECETTES = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const FRAIS = {
+    id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 70,
+    compte_comptable: '627000', poste_2035: 'Frais financiers',
+  }
+  function mouvement(o: Record<string, unknown> = {}) {
+    return {
+      id: 'l-v', dossier_id: 'dossier-de-test', date: '2025-06-10', libelle: 'REMISE CB', montant: 4950,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      ventilee: true, source_fichier: null, libelle_brut: null, created_at: '2025-06-11T09:00:00Z', ...o,
+    }
+  }
+  function part(id: string, categorieId: string | null, montant: number) {
+    return {
+      id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-v', categorie_id: categorieId,
+      part_personnelle: categorieId === null, montant, created_at: '2025-06-11T09:00:00Z',
+    }
+  }
+
+  it('compte la recette brute et la commission d’une remise, chacune dans son poste', async () => {
+    // 5 000 € de recettes, 120 € d'achat, 50 € de commission, 600 € de cotisations : 4 230 € de bénéfice.
+    poser()
+    faux.parTable.categories = [CATEGORIE, RECETTES, FRAIS]
+    faux.parTable.lignes_bancaires = [mouvement()]
+    faux.parTable.ventilations_bancaires = [part('v1', 'cat-recettes', 5000), part('v2', 'cat-frais', -50)]
+    monter(2025)
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre.parentElement!).getByText(/Bénéfice de 4\s230 € : case 5QC/)
+  })
+
+  it('ne compte jamais la part personnelle', async () => {
+    // 120 € de facture et 84 € de la part professionnelle d'un paiement de 120 €, 600 € de cotisations :
+    // 804 € de déficit. Comptée, la part personnelle de 36 € en ferait 840.
+    poser()
+    faux.parTable.lignes_bancaires = [mouvement({ libelle: 'PRLV OPERATEUR', montant: -120 })]
+    faux.parTable.ventilations_bancaires = [part('v1', 'cat-achats', -84), part('v2', null, -36)]
+    monter(2025)
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre.parentElement!).getByText(/Déficit de 804 € : case 5QE/)
+  })
+
+  it('refuse le formulaire sur des parts lues en partie', async () => {
+    poser({ ventilations_bancaires: 1 })
+    faux.parTable.categories = [CATEGORIE, RECETTES, FRAIS]
+    faux.parTable.lignes_bancaires = [mouvement()]
+    faux.parTable.ventilations_bancaires = [part('v1', 'cat-recettes', 5000), part('v2', 'cat-frais', -50)]
+    monter(2025)
+    expect(await screen.findByText(/mouvements du relevé et leurs ventilations/)).toBeTruthy()
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('dit la part qu’une catégorie sans poste laisse hors de la déclaration, à son montant', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, { ...FRAIS, poste_2035: null }]
+    faux.parTable.lignes_bancaires = [mouvement({ libelle: 'PRLV OPERATEUR', montant: -120 })]
+    faux.parTable.ventilations_bancaires = [part('v1', 'cat-achats', -84), part('v2', 'cat-frais', -36)]
+    monter(2025)
+    const titre = await screen.findByText(/Mouvements affectés absents du récapitulatif \(1\)/)
+    const ligne = within(titre.closest('.card')!).getByText('PRLV OPERATEUR').closest('tr')!
+    // La part de 36 €, jamais le mouvement entier : 120 € manqueraient à la déclaration.
+    expect(ligne.textContent).toMatch(/-36,00/)
+    expect(ligne.textContent).not.toMatch(/120,00/)
+    // Et la catégorie rejoint les postes manquants, où l'on renseigne le poste.
+    await screen.findByText('Postes manquants')
+  })
+})
+
 // UNE ÉCHÉANCE D'EMPRUNT RAPPROCHÉE COMPTE DANS LA 2035 PAR SES INTÉRÊTS ET SON ASSURANCE, JAMAIS PAR SON
 // CAPITAL (lib/echeanceEmprunt.ts). Ce que ce bloc garde et qu'aucun test de `src/lib` ne peut voir : que
 // l'écran passe le découpage gardé sur les mouvements au moteur, et DISE les échéances de l'exercice que

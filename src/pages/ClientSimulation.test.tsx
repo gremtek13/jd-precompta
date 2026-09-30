@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSimulation from './ClientSimulation'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle } from '../lib/types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, ReferenceAnnuelle, VentilationBancaire } from '../lib/types'
 import type { Predicat } from '../test/filtresPostgrest'
 
 // LA SIMULATION DU CLIENT, dernier écran client sans test de rendu — et celui dont la projection
@@ -116,6 +116,7 @@ const ECHEANCIER_2026 = Array.from({ length: 12 }, (_, i) =>
 function poser(o: {
   recettes?: Piece[]; cotisations?: CotisationDeclaree[]; reperes?: ReferenceAnnuelle[]; assujetti?: boolean
   paiements?: LigneBancaire[]; modeComptable?: 'tresorerie' | 'engagement'; categories?: Categorie[]
+  ventilations?: VentilationBancaire[]
 } = {}) {
   faux.parTable = {
     dossiers: [{ assujetti_tva: o.assujetti ?? false, mode_comptable: o.modeComptable ?? 'tresorerie' }],
@@ -125,6 +126,7 @@ function poser(o: {
     references_postes_annuels: [],
     lignes_bancaires: o.paiements ?? [],
     categories: o.categories ?? [],
+    ventilations_bancaires: o.ventilations ?? [],
   }
   faux.refusees = new Set()
   faux.muet = {}
@@ -346,6 +348,52 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
     const FRAIS: Categorie = { ...RECETTES, id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' }
     poser({ paiements: [affecte('2026-03-10')], categories: [RECETTES, FRAIS] })
     faux.muet = { categories: 1 }
+    await monter()
+    screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
+  })
+})
+
+// UN ENCAISSEMENT VENTILÉ SUR PLUSIEURS COMPTES (lib/ventilationBanque.ts) — une remise de carte dont
+// la banque a retenu sa commission — compte dans le chiffre d'affaires du client par sa part de
+// recettes, BRUTE : c'est ce qu'il a facturé, la commission étant une charge. Les parts vivent dans leur
+// propre table, que l'écran doit lire.
+describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes', () => {
+  const RECETTES: Categorie = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const FRAIS: Categorie = { ...RECETTES, id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 70, compte_comptable: '627000', poste_2035: 'Frais financiers' }
+  const remise = (date: string): LigneBancaire => ({
+    id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant: 870, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true,
+    source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
+  })
+  const part = (id: string, categorieId: string | null, montant: number): VentilationBancaire => ({
+    id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-v', categorie_id: categorieId,
+    part_personnelle: categorieId === null, montant, created_at: '2026-03-10T09:00:00Z',
+  })
+
+  it('compte la recette brute d’une remise, pas le net versé ni la part personnelle', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    // 870 € versés : 900 € d'honoraires, 50 € d'apport personnel, moins 80 € de commission.
+    poser({
+      paiements: [remise('2026-03-10')], categories: [RECETTES, FRAIS],
+      ventilations: [part('v1', 'cat-recettes', 900), part('v2', null, 50), part('v3', 'cat-frais', -80)],
+    })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('900,00 €')
+  })
+
+  it('prévient quand les parts ne sont lues qu’en partie', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({
+      paiements: [remise('2026-03-10')], categories: [RECETTES, FRAIS],
+      ventilations: [part('v1', 'cat-recettes', 950), part('v2', 'cat-frais', -80)],
+    })
+    faux.muet = { ventilations_bancaires: 1 }
     await monter()
     screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
   })

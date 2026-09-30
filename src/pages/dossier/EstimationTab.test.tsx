@@ -26,6 +26,8 @@ const faux = vi.hoisted(() => ({
   cotisations: [] as unknown[],
   // Les mouvements rapprochés, qui datent chaque pièce comme dans la 2035 (lib/rattachement.ts).
   paiements: [] as unknown[],
+  // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts).
+  ventilations: [] as unknown[],
   // Les tables dont la lecture est REFUSÉE : `lireTout` les rend incomplètes, sans aucune ligne.
   refusees: new Set<string>(),
 }))
@@ -68,7 +70,8 @@ vi.mock('../../lib/supabase', async () => {
           : table === 'categories' ? faux.categories
           : table === 'immobilisations' ? faux.immobilisations
           : table === 'cotisations_declarees' ? faux.cotisations
-          : table === 'lignes_bancaires' ? faux.paiements : [], predicats)
+          : table === 'lignes_bancaires' ? faux.paiements
+          : table === 'ventilations_bancaires' ? faux.ventilations : [], predicats)
         if (table === 'pieces' && faux.muetPieces != null) {
           const rendu = donnees.slice(debut, Math.min(fin + 1, faux.muetPieces))
           return Promise.resolve({ data: rendu, error: null, count: donnees.length }).then(suite)
@@ -483,6 +486,75 @@ describe('EstimationTab — les mouvements affectés sans justificatif', () => {
     vi.useFakeTimers({ toFake: ['Date'] })
     vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
     faux.paiements = [mouvement('cpam', 'cat-recettes', '2026-03-10', 900)]
+    await rendre()
+    expect(valeur('CA encaissé à date')).toBe('900,00 €')
+    vi.useRealTimers()
+  })
+})
+
+// UN MOUVEMENT VENTILÉ SUR PLUSIEURS COMPTES (lib/ventilationBanque.ts) compte dans les repères par ses
+// parts, chacune dans le poste de sa catégorie, la part personnelle dans aucun. Les parts vivent dans
+// leur propre table : ce qui se joue ici est que l'écran la LISE, la passe aux trois calculs, et qu'une
+// lecture partielle des parts suspende les repères comme celle des pièces.
+describe('EstimationTab — les mouvements ventilés sur plusieurs comptes', () => {
+  const annee = new Date().getFullYear() - 1
+  const RECETTES = categorieDeTest({ id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Ventes / prestations', compte_comptable: '706000', poste_2035: 'Recettes' })
+  const FRAIS = categorieDeTest({ id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' })
+  const mouvement = (date: string, montant: number) => ({
+    id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, ventilee: true,
+    source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
+  })
+  const part = (id: string, categorieId: string | null, montant: number) => ({
+    id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-v', categorie_id: categorieId,
+    part_personnelle: categorieId === null, montant, created_at: '2025-06-11T09:00:00Z',
+  })
+  beforeEach(() => {
+    faux.categories = [categorieDeTest(), RECETTES, FRAIS]
+    faux.immobilisations = []
+    faux.upserts = []
+    faux.upsertsAnnuels = []
+    faux.muetPieces = null
+    faux.pieces = []
+  })
+  afterEach(() => {
+    faux.paiements = []
+    faux.ventilations = []
+    faux.refusees = new Set()
+  })
+
+  it('le repère annuel compte la recette brute d’une remise, pas le net versé', async () => {
+    faux.paiements = [mouvement(`${annee}-06-10`, 4950)]
+    faux.ventilations = [part('v1', 'cat-recettes', 5000), part('v2', 'cat-frais', -50)]
+    await rendre()
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: 5000 })
+  })
+
+  it('le détail par poste compte la part de chaque catégorie, jamais la part personnelle', async () => {
+    faux.paiements = [mouvement(`${annee}-06-10`, -120)]
+    faux.ventilations = [part('v1', 'cat-frais', -84), part('v2', null, -36)]
+    const bouton = await rendre()
+    await act(async () => { bouton.click() })
+    expect(faux.upserts).toEqual([expect.objectContaining({ annee, poste: 'Frais financiers', montant: 84 })])
+  })
+
+  it('suspend les deux calculs quand les parts n’ont pas pu être lues', async () => {
+    faux.paiements = [mouvement(`${annee}-06-10`, 4950)]
+    faux.refusees = new Set(['ventilations_bancaires'])
+    await rendre()
+    await screen.findByText(/Calcul suspendu/)
+    const annuel = screen.getByRole('button', { name: 'Calculer CA + cotisations' })
+    expect(annuel.hasAttribute('disabled')).toBe(true)
+    await act(async () => { annuel.click() })
+    expect(faux.upsertsAnnuels).toHaveLength(0)
+  })
+
+  it('la projection compte la recette ventilée déjà reçue', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    faux.paiements = [mouvement('2026-03-10', 870)]
+    faux.ventilations = [part('v1', 'cat-recettes', 900), part('v2', 'cat-frais', -30)]
     await rendre()
     expect(valeur('CA encaissé à date')).toBe('900,00 €')
     vi.useRealTimers()

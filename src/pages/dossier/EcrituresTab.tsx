@@ -15,7 +15,8 @@ import {
   ecritureDuMouvement, idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, refusAffectation,
   type MouvementAffecte,
 } from '../../lib/affectationBanque'
-import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece, VentilationBancaire } from '../../lib/types'
+import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, refusVentilation } from '../../lib/ventilationBanque'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -65,6 +66,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // la piste d'audit de l'exercice qu'elle ouvre.
   const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
   const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
+  // Les parts des mouvements ventilés (lib/ventilationBanque.ts) : de quoi dire une écriture qui ne les
+  // suit plus, et la réécrire. À part de `brouillonIncomplet` : le FEC et la piste d'audit n'en dépendent
+  // pas — l'écriture d'un mouvement ventilé est au brouillon, et le prédicat du relevé se lit sur la ligne.
+  const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
+  const [ventilationsIncompletes, setVentilationsIncompletes] = useState<string | null>(null)
   const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -99,13 +105,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Par pièce : régénérer, c'est supprimer puis réécrire, et deux clics du même rendu réécriraient deux
   // fois — en engagement, la facture ET ses règlements en double.
   const regenerationsEnCours = useRef<Set<string>>(new Set())
-  // Par mouvement, pour la même raison : réaffecter remplace l'écriture d'un mouvement affecté.
+  // Par mouvement, pour la même raison : réaffecter remplace l'écriture d'un mouvement affecté, réécrire
+  // celle d'un mouvement ventilé — un mouvement n'est jamais les deux.
   const reaffectationsEnCours = useRef<Set<string>>(new Set())
   const [reaffectation, setReaffectation] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
-    const [lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux] = await Promise.all([
+    const [lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -143,8 +150,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('a_nouveaux').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('compte').order('id').range(debut, fin),
       ),
+      lireTout<VentilationBancaire>((debut, fin) =>
+        supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     setLignesBancaires(lectureLignes.lignes)
+    setVentilations(lectureVentilations.lignes)
+    setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
     setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
     setEcritures(brouillon.lignes)
@@ -166,10 +179,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
-  // Catégories utilisées par au moins une pièce validée ou un mouvement affecté mais sans compte
-  // associé — impossible de générer l'écriture correspondante tant que ce n'est pas renseigné (voir
-  // lib/controles.ts).
-  const categoriesSansCompte = calculerCategoriesSansCompte(categories, piecesValidees, lignesBancaires)
+  // Catégories utilisées par au moins une pièce validée, un mouvement affecté ou une part d'un mouvement
+  // ventilé mais sans compte associé — impossible de générer l'écriture correspondante tant que ce n'est
+  // pas renseigné (voir lib/controles.ts).
+  const categoriesSansCompte = calculerCategoriesSansCompte(categories, piecesValidees, [...lignesBancaires, ...ventilations])
 
   // Valeur affichée dans le champ tant que le cabinet n'a rien tapé : la suggestion connue pour ce
   // code de catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -293,6 +306,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
   // de la catégorie a changé depuis (voir lib/affectationBanque.ts).
   const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories))
+  // Les mouvements ventilés dont l'écriture n'est plus celle que leurs parts produiraient — le compte d'une
+  // catégorie a changé depuis (voir lib/ventilationBanque.ts). Sur des parts lues EN ENTIER seulement : une
+  // part non lue ferait passer une ventilation pour incohérente, donc la tairait ici.
+  const ventilesPerimes = ventilationsIncompletes ? [] : mouvementsVentilesDesynchronises(ecritures, lignesBancaires, ventilations, categories, modele)
   const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
   // Export de la piste d'audit de l'exercice (voir lib/pisteAudit.ts) : depuis chaque écriture, le
@@ -402,6 +419,38 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       setError(messageErreur(err, 'Le mouvement n’a pas pu être réaffecté.'))
     } finally {
       reaffectationsEnCours.current.delete(m.ligne.id)
+      setReaffectation(null)
+    }
+  }
+
+  // Réécrit l'écriture d'un mouvement ventilé depuis ses parts, sur les comptes ACTUELS de leurs catégories,
+  // par la même fonction que la ventilation (`ventiler_mouvement_bancaire`), qui remplace les parts et
+  // l'écriture dans la même transaction — les parts renvoyées sont celles qu'on a lues, inchangées. Sur ce
+  // clic seulement, comme « Réaffecter », et jamais sur des parts lues en partie : il les remplacerait.
+  async function reecrireVentilation(ligne: LigneBancaire) {
+    if (ventilationsIncompletes || reaffectationsEnCours.current.has(ligne.id)) return
+    const parts = ventilations.filter((v) => v.ligne_bancaire_id === ligne.id)
+    const refus = refusVentilation(ligne, parts, categories, assujettiTva)
+    const ecriture = refus ? null : ecritureDeLaVentilation(ligne, parts, categories, modele)
+    if (!ecriture) {
+      setError(refus ?? 'Une part n’a plus de compte de charge ou de produit : modifie la ventilation depuis la fiche du mouvement, dans Banque.')
+      return
+    }
+    reaffectationsEnCours.current.add(ligne.id)
+    setReaffectation(ligne.id)
+    setError(null)
+    try {
+      const { error: rpcError } = await supabase.rpc('ventiler_mouvement_bancaire', {
+        p_ligne_bancaire_id: ligne.id,
+        p_parts: parts.map((p) => ({ categorie_id: p.categorie_id, part_personnelle: p.part_personnelle, montant: p.montant })),
+        p_ecritures: ecriture,
+      })
+      if (rpcError) throw rpcError
+      await load()
+    } catch (err) {
+      setError(messageErreur(err, 'L’écriture de la ventilation n’a pas pu être réécrite.'))
+    } finally {
+      reaffectationsEnCours.current.delete(ligne.id)
       setReaffectation(null)
     }
   }
@@ -756,6 +805,57 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </div>
       )}
 
+      <BandeauLecturePartielle
+        quoi="Les parts des mouvements ventilés"
+        motif={ventilationsIncompletes}
+        consequence={
+          'Un mouvement ventilé dont l’écriture ne suit plus ses parts peut donc ne pas être signalé, et ' +
+          '« Réécrire » est suspendu. Le FEC et la piste d’audit n’en dépendent pas. Recharge la page.'
+        }
+      />
+
+      {ventilesPerimes.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Mouvements ventilés à réécrire <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            L’écriture de ces mouvements ventilés n’est plus celle que leurs parts produiraient : le compte d’une
+            catégorie a changé depuis. Aucun total ne bouge, et c’est ce qui rend l’écart invisible ailleurs.
+            « Réécrire » la reprend sur les comptes actuels ; si une catégorie n’a plus de compte de charge ou de
+            produit, modifie la ventilation depuis la fiche du mouvement, dans Banque.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th></th></tr></thead>
+              <tbody>
+                {ventilesPerimes.map((l) => {
+                  const parts = ventilations.filter((v) => v.ligne_bancaire_id === l.id)
+                  const reecrivable = ecritureDeLaVentilation(l, parts, categories, modele) !== null
+                  return (
+                    <tr key={l.id}>
+                      <td>{formatDate(l.date)}</td>
+                      <td>{l.libelle}</td>
+                      <td>{formatMoney(l.montant)}</td>
+                      <td>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          disabled={reaffectation === l.id || !reecrivable}
+                          title={!reecrivable ? 'Une catégorie de cette ventilation n’a plus de compte de charge ou de produit : modifie la ventilation dans Banque.' : undefined}
+                          onClick={() => reecrireVentilation(l)}
+                        >
+                          {reaffectation === l.id ? 'Réécriture…' : 'Réécrire'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {ruptures.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -820,7 +920,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         <div className="card" style={{ marginBottom: 20 }}>
           <h3 style={{ marginTop: 0 }}>Comptes manquants</h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            Ces catégories sont utilisées par des pièces validées ou des mouvements affectés mais n'ont pas encore de
+            Ces catégories sont utilisées par des pièces validées ou des mouvements affectés ou ventilés mais n'ont pas encore de
             compte comptable associé — les écritures correspondantes ne peuvent pas être générées tant que ce n'est pas fait. Un compte déjà
             renseigné est une suggestion à vérifier, pas une valeur figée — modifie-le avant d'enregistrer si besoin.
           </p>

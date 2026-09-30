@@ -1275,3 +1275,156 @@ describe('EcrituresTab — les échéances d’emprunt', () => {
     expect(screen.getByText(/4 écritures ne seront pas dans ce FEC/)).toBeTruthy()
   })
 })
+
+// UN MOUVEMENT VENTILÉ SUR PLUSIEURS COMPTES (lib/ventilationBanque.ts). Son écriture, sans pièce, face au
+// 512000, est justifiée par le relevé comme celle d'un mouvement affecté : ni rupture, ni absence du FEC.
+// Ce que ce bloc garde et qu'aucun test de `src/lib` ne peut voir : que l'écran LISE les parts, propose de
+// réécrire une écriture qui ne les suit plus, en renvoyant les MÊMES parts — jamais sur une lecture
+// partielle, qui les remplacerait par ce qu'on en a lu.
+describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () => {
+  const TELEPHONE = {
+    id: 'cat-tel', dossier_id: null, code: 'telephone', libelle: 'Téléphone', ordre: 40,
+    compte_comptable: '626000', poste_2035: 'Frais postaux et de télécommunications',
+  }
+  function mouvement(o: Record<string, unknown> = {}) {
+    return {
+      id: 'l-v', dossier_id: 'dossier-de-test', date: '2025-03-31', libelle: 'PRLV OPERATEUR MOBILE', montant: -120,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      ventilee: true, source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
+    }
+  }
+  function part(id: string, categorieId: string | null, montant: number, ligneId = 'l-v') {
+    return {
+      id, dossier_id: 'dossier-de-test', ligne_bancaire_id: ligneId, categorie_id: categorieId,
+      part_personnelle: categorieId === null, montant, created_at: '2025-04-02T09:00:00Z',
+    }
+  }
+  const PARTS = [part('v1', 'cat-tel', -84), part('v2', null, -36)]
+  function ecrituresDe(ligneId: string, date: string, compteTel = '626000') {
+    return [
+      ecriture({ id: `${ligneId}-1`, piece_id: null, ligne_bancaire_id: ligneId, date, compte: compteTel, sens: 'debit', montant: 84, libelle: 'PRLV OPERATEUR MOBILE' }),
+      ecriture({ id: `${ligneId}-2`, piece_id: null, ligne_bancaire_id: ligneId, date, compte: '108000', sens: 'debit', montant: 36, libelle: 'PRLV OPERATEUR MOBILE' }),
+      ecriture({ id: `${ligneId}-3`, piece_id: null, ligne_bancaire_id: ligneId, date, compte: '512000', sens: 'credit', montant: 120, libelle: 'PRLV OPERATEUR MOBILE' }),
+    ]
+  }
+  // Une catégorie dont le compte a changé depuis la ventilation : l'écriture reste sur l'ancien.
+  const RECOMPTEE = { ...TELEPHONE, compte_comptable: '626100' }
+
+  it('ne crie pas à la rupture, et porte l’écriture au FEC, au journal de banque, le relevé pour pièce', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, TELEPHONE], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
+    monter()
+    await screen.findByText(/3 écritures proposées/)
+    expect(screen.queryByText("Piste d'audit rompue")).toBeNull()
+    expect(screen.queryByText(/pas dans ce FEC/)).toBeNull()
+    expect(screen.queryByText('Mouvements ventilés à réécrire')).toBeNull()
+
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
+    expect(lignes.map((l) => [l[0], l[2], l[8]])).toEqual([
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf'],
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf'],
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf'],
+    ])
+  })
+
+  it('compte parmi les catégories sans compte celle qu’une part désigne', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, { ...TELEPHONE, compte_comptable: null }], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS })
+    monter()
+    const titre = await screen.findByText('Comptes manquants')
+    expect(titre.closest('.card')!.textContent).toMatch(/Téléphone/)
+  })
+
+  it('propose de réécrire l’écriture qui ne suit plus les parts, et renvoie les MÊMES parts', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECOMPTEE], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
+    monter()
+    expect(await screen.findByText('Mouvements ventilés à réécrire')).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Réécrire' }).click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'ventiler_mouvement_bancaire',
+      args: {
+        p_ligne_bancaire_id: 'l-v',
+        p_parts: [
+          { categorie_id: 'cat-tel', part_personnelle: false, montant: -84 },
+          { categorie_id: null, part_personnelle: true, montant: -36 },
+        ],
+        p_ecritures: [
+          { compte: '626100', sens: 'debit', montant: 84, libelle: 'PRLV OPERATEUR MOBILE' },
+          { compte: '108000', sens: 'debit', montant: 36, libelle: 'PRLV OPERATEUR MOBILE' },
+          { compte: '512000', sens: 'credit', montant: 120, libelle: 'PRLV OPERATEUR MOBILE' },
+        ],
+      },
+    }])
+    // Relue, l'écriture suit les parts : le panneau disparaît.
+    await waitFor(() => expect(screen.queryByText('Mouvements ventilés à réécrire')).toBeNull())
+  })
+
+  it('en engagement, la part personnelle se réécrit sur le compte choisi pour le dirigeant', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECOMPTEE], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
+    monter(false, ENGAGEMENT)
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs[0].args.p_ecritures).toEqual(expect.arrayContaining([
+      { compte: '455000', sens: 'debit', montant: 36, libelle: 'PRLV OPERATEUR MOBILE' },
+    ]))
+  })
+
+  it("trois clics rapprochés ne réécrivent qu'une fois", async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECOMPTEE], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.rpcs).toHaveLength(1)
+  })
+
+  // Le verrou tient jusqu'à la RELECTURE : réécrire un second mouvement rend son bouton au premier (l'état
+  // n'en retient qu'un), et le premier, encore porté par la liste le temps que la relecture revienne, se
+  // réécrirait une seconde fois.
+  it('ne réécrit pas deux fois un mouvement dont la relecture n’est pas revenue', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, RECOMPTEE],
+      lignes_bancaires: [mouvement(), mouvement({ id: 'l-v2', date: '2025-04-30' })],
+      ventilations_bancaires: [...PARTS, part('w1', 'cat-tel', -84, 'l-v2'), part('w2', null, -36, 'l-v2')],
+      ecritures_brouillon: [...ecrituresDe('l-v', '2025-03-31'), ...ecrituresDe('l-v2', '2025-04-30')],
+    })
+    monter()
+    const [premier, second] = await screen.findAllByRole('button', { name: 'Réécrire' })
+    faux.retenirApresRpc = true
+    await act(async () => { premier.click() })
+    await act(async () => { second.click() })
+    await waitFor(() => expect(premier.hasAttribute('disabled')).toBe(false))
+    await act(async () => { premier.click() })
+    expect(faux.rpcs.map((r) => r.args.p_ligne_bancaire_id)).toEqual(['l-v', 'l-v2'])
+
+    await act(async () => { faux.relacher?.() })
+    await waitFor(() => expect(screen.queryByText('Mouvements ventilés à réécrire')).toBeNull())
+  })
+
+  it('dit une réécriture que la base refuse, et garde le mouvement à réécrire', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECOMPTEE], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
+    faux.erreurRpc = 'refus simulé'
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click() })
+    expect(await screen.findByText('refus simulé')).toBeTruthy()
+    expect(screen.getByText('Mouvements ventilés à réécrire')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Réécrire' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('ne propose pas de réécrire sur une catégorie sortie des comptes de résultat, et dit où aller', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, { ...TELEPHONE, compte_comptable: '108000' }], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/modifie la ventilation dans Banque/)
+  })
+
+  it('sur des parts lues en partie, le dit, ne propose rien et laisse le FEC s’exporter', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECOMPTEE], lignes_bancaires: [mouvement()], ventilations_bancaires: PARTS, ecritures_brouillon: ecrituresDe('l-v', '2025-03-31') })
+    faux.muetParTable = { ventilations_bancaires: 1 }
+    monter()
+    expect(await screen.findByText(/Les parts des mouvements ventilés/)).toBeTruthy()
+    expect(screen.queryByText('Mouvements ventilés à réécrire')).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    expect(telecharge.fichiers).toHaveLength(1)
+  })
+})

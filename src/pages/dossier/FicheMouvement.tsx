@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react'
+import { Fragment, useState, type ReactNode } from 'react'
 import { EntetePanneau } from '../../components/PanneauDroit'
 import { IconAttention, IconChevron, IconCoche, IconPrecedent } from '../../components/icons'
 import {
@@ -19,7 +19,9 @@ import {
 } from '../../lib/echeanceEmprunt'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, VentilationBancaire } from '../../lib/types'
+import { montantSaisi, ventilationsIncoherentes, type PartSaisie } from '../../lib/ventilationBanque'
+import FormulaireVentilation from './FormulaireVentilation'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
 // d'ordinateur, comme la fiche d'une pièce (voir FichePiece). Il remplace la fenêtre qui assombrissait
@@ -61,6 +63,12 @@ import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectat
 // modifiables, le capital se recalcule, et rien ne s'écrit avant le clic. Un mouvement qui ressemble à
 // une échéance (`empruntPlausible`) la voit proposée en tête, formulaire déplié ; les autres gardent le
 // geste à portée, replié, sous « Sans justificatif ».
+//
+// ET UN MOUVEMENT SE VENTILE SUR PLUSIEURS COMPTES (lib/ventilationBanque.ts) : deux dépenses dans un même
+// paiement, une part personnelle — l'abonnement pris en charge en partie —, une remise de carte créditée
+// nette de sa commission. Une part par compte, leur somme est le mouvement, et rien ne s'écrit avant le
+// clic. Un mouvement ventilé montre ses parts, se modifie ou s'annule — par la base, qui retire les parts
+// et l'écriture avec la ventilation.
 
 export interface NavigationMouvement {
   position: string
@@ -121,6 +129,13 @@ interface FicheMouvementProps {
   empruntsIncomplets: string | null
   onRapprocherEmprunt: (empruntId: string, decoupage: DecoupageEcheance) => void
   onRetirerEmprunt: () => void
+  // Les parts de CE mouvement s'il est ventilé, et le drapeau de leur lecture : lues en partie, les parts
+  // montrées peuvent être incomplètes, et la modification est suspendue — elle repartirait des seules
+  // parts lues.
+  ventilations: VentilationBancaire[]
+  ventilationsIncompletes: string | null
+  onVentiler: (parts: PartSaisie[]) => void
+  onRetirerVentilation: () => void
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -406,6 +421,7 @@ export default function FicheMouvement({
   piecesRapprochees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
+  ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   // Le choix à la main ne s'applique qu'au clic sur « Associer », jamais au changement de la liste :
@@ -438,6 +454,24 @@ export default function FicheMouvement({
   const empruntOffert = aTraiter && ligne.montant !== 0 && (emprunts.length > 0 || !!empruntsIncomplets)
   const [empruntDeplie, setEmpruntDeplie] = useState(false)
   const [correctionDepliee, setCorrectionDepliee] = useState(false)
+
+  // La ventilation : repliée tant qu'on ne la demande pas — la plupart des mouvements vont à UN compte.
+  const ventile = ligne.statut === 'rapprochee' && ligne.ventilee
+  const [ventilationDepliee, setVentilationDepliee] = useState(false)
+  const [modificationDepliee, setModificationDepliee] = useState(false)
+  // Défensif : la base écrit le drapeau et les parts ensemble, et vérifie leur somme. Jugé sur des parts
+  // lues EN ENTIER seulement — sinon une part non lue passerait pour une part manquante.
+  const ventilationIncoherente = ventile && !ventilationsIncompletes && ventilationsIncoherentes([ligne], ventilations).length > 0
+  const libellePart = (v: VentilationBancaire) => {
+    if (v.part_personnelle) return `Part personnelle (${compteDirigeant})`
+    const c = categories.find((x) => x.id === v.categorie_id)
+    return c ? `${c.libelle} (${c.compte_comptable ?? 'sans compte'})` : 'Catégorie non lue'
+  }
+  const categoriesDesParts = ventilations
+    .map((v) => (v.categorie_id ? categories.find((c) => c.id === v.categorie_id) ?? null : null))
+    .filter((c): c is Categorie => c !== null)
+  const partsHorsResultat = categoriesDesParts.filter((c) => !natureDuCompte(c.compte_comptable))
+  const partsSansPoste = categoriesDesParts.filter((c) => natureDuCompte(c.compte_comptable) && !c.poste_2035)
 
   // Ce qui se propose à l'affectation : les catégories d'un compte de résultat, dans l'ordre du sens
   // du mouvement — les recettes d'abord pour un encaissement, les dépenses d'abord pour un paiement.
@@ -636,6 +670,15 @@ export default function FicheMouvement({
         Annuler le rapprochement
       </button>
     )
+  } else if (ventile) {
+    // Par la base : les parts et l'écriture partent avec la ventilation (`retirer_ventilation_mouvement_bancaire`).
+    // Une remise à « à traiter » par une simple mise à jour, la contrainte `lignes_bancaires_ventilation_rapprochee`
+    // la refuserait de toute façon.
+    principal = (
+      <button type="button" className="btn btn-outline" disabled={occupe} onClick={onRetirerVentilation}>
+        Annuler la ventilation
+      </button>
+    )
   } else if (affecte) {
     // Par la base, jamais par une remise à « à traiter » : l'écriture du mouvement part avec son
     // affectation, dans la même transaction (`retirer_affectation_mouvement_bancaire`).
@@ -711,7 +754,12 @@ export default function FicheMouvement({
               {deblocage ? 'Déblocage d’emprunt' : `Échéance n° ${ligne.emprunt_echeance}`}{empruntLie ? ` — ${empruntLie.nom}` : ''}
             </span>
           )}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && <span className="badge badge-ok">Rapproché</span>}
+          {ventile && (
+            <span className="badge badge-ok">
+              {ventilations.length >= 2 ? `Ventilé sur ${ventilations.length} comptes` : 'Ventilé'}
+            </span>
+          )}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && <span className="badge badge-ok">Rapproché</span>}
           {ecart && <span className="badge badge-danger">Écart de {formatMoney(ecart.ecart)} avec la pièce</span>}
           {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
@@ -887,6 +935,31 @@ export default function FicheMouvement({
           </section>
         )}
 
+        {aTraiter && ligne.montant !== 0 && (
+          <section className="fiche-mouvement-section">
+            <h3>Sur plusieurs comptes</h3>
+            {ventilationDepliee ? (
+              <FormulaireVentilation
+                ligne={ligne} categories={categories} partsExistantes={[]} assujettiTva={assujettiTva}
+                compteDirigeant={compteDirigeant} occupe={occupe} verbe="Ventiler" onVentiler={onVentiler}
+              />
+            ) : (
+              <>
+                <p className="fiche-mouvement-note">
+                  Un paiement qui relève de plusieurs comptes — deux dépenses, une part personnelle comme un
+                  abonnement pris en charge en partie, une remise de carte créditée nette de sa commission — se
+                  ventile : une part par compte, et leur somme est le mouvement.
+                </p>
+                <div className="fiche-mouvement-boutons">
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setVentilationDepliee(true)}>
+                    Ventiler sur plusieurs comptes…
+                  </button>
+                </div>
+              </>
+            )}
+          </section>
+        )}
+
         {empruntOffert && !plausible && (
           <section className="fiche-mouvement-section">
             <h3>{deblocage ? 'Déblocage d’emprunt' : 'Échéance d’emprunt'}</h3>
@@ -970,6 +1043,69 @@ export default function FicheMouvement({
           </section>
         )}
 
+        {ventile && (
+          <section className="fiche-mouvement-section">
+            <h3>Ventilé sur plusieurs comptes</h3>
+            {ventilationsIncompletes && (
+              <p className="fiche-mouvement-note">
+                Les parts des mouvements ventilés n’ont pas pu être lues en entier : celles de ce mouvement peuvent
+                manquer ci-dessous, et la modifier est suspendu. Recharge la page.
+              </p>
+            )}
+            {ventilations.length > 0 ? (
+              <div className="carte-rapprochement">
+                <dl className="decoupage-emprunt">
+                  {ventilations.map((v) => (
+                    <Fragment key={v.id}>
+                      <dt>{libellePart(v)}</dt>
+                      <dd>{formatMoney(montantSaisi(ligne, v))}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              </div>
+            ) : !ventilationsIncompletes && (
+              <p className="fiche-mouvement-note">Aucune part lue pour ce mouvement.</p>
+            )}
+            {/* Ce que la 2035 ne comptera pas, dit ici — c'est l'écran où l'on arbitre ce mouvement. */}
+            {ventilationIncoherente && (
+              <p className="fiche-mouvement-alerte">
+                Les parts enregistrées ne font plus le montant du mouvement : la 2035 compte ce qu’elles disent,
+                l’écriture autre chose. Modifie la ventilation, ou annule-la.
+              </p>
+            )}
+            {partsHorsResultat.length > 0 && (
+              <p className="fiche-mouvement-alerte">
+                {partsHorsResultat.length > 1
+                  ? `Les comptes de ${partsHorsResultat.map((c) => `« ${c.libelle} »`).join(', ')} ne sont plus des comptes de charge ou de produit : leurs parts ne comptent dans aucun total, et l’écriture n’est plus juste. Modifie la ventilation.`
+                  : `Le compte de « ${partsHorsResultat[0].libelle} » n’est plus un compte de charge ou de produit : sa part ne compte dans aucun total, et l’écriture n’est plus juste. Modifie la ventilation.`}
+              </p>
+            )}
+            {partsSansPoste.length > 0 && (
+              <p className="fiche-mouvement-alerte">
+                {partsSansPoste.length > 1
+                  ? `${partsSansPoste.map((c) => `« ${c.libelle} »`).join(', ')} n’ont pas de poste 2035 : leurs parts n’entrent dans aucun total de la 2035 tant qu’il n’est pas renseigné (Clôture).`
+                  : `« ${partsSansPoste[0].libelle} » n’a pas de poste 2035 : sa part n’entre dans aucun total de la 2035 tant qu’il n’est pas renseigné (Clôture).`}
+              </p>
+            )}
+            <p className="fiche-mouvement-note">
+              Écrit au brouillon face à la banque, une ligne par part. Chaque part compte dans la 2035 dans le poste
+              de sa catégorie, à la date du mouvement ; la part personnelle n’y compte pas.
+            </p>
+            {!ventilationsIncompletes && (modificationDepliee ? (
+              <FormulaireVentilation
+                ligne={ligne} categories={categories} partsExistantes={ventilations} assujettiTva={assujettiTva}
+                compteDirigeant={compteDirigeant} occupe={occupe} verbe="Enregistrer la ventilation" onVentiler={onVentiler}
+              />
+            ) : (
+              <div className="fiche-mouvement-boutons">
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setModificationDepliee(true)}>
+                  Modifier la ventilation…
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+
         {ligne.prelevement_personnel && (
           <section className="fiche-mouvement-section">
             <h3>Virement personnel</h3>
@@ -1018,7 +1154,7 @@ export default function FicheMouvement({
           </section>
         )}
 
-        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && (
+        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && (
           <section className="fiche-mouvement-section">
             <h3>Rapproché avec</h3>
             {piecePayee && <CartePiece piece={piecePayee} />}

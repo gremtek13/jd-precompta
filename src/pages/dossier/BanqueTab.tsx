@@ -6,7 +6,10 @@ import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LigneP
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
 import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import type { ModeleComptable } from '../../lib/engagement'
-import type { Categorie, ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree, StatutLigneBancaire } from '../../lib/types'
+import type {
+  Categorie, ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree,
+  StatutLigneBancaire, VentilationBancaire,
+} from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -29,6 +32,7 @@ import {
 } from '../../lib/reglesAffectation'
 import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
+import { ecritureDeLaVentilation, refusVentilation, type PartSaisie } from '../../lib/ventilationBanque'
 import { lireTout } from '../../lib/lectureComplete'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import PanneauDroit from '../../components/PanneauDroit'
@@ -84,6 +88,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // pourrait entrer dans le lot des règles d'affectation, qui est alors suspendu.
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
   const [empruntsIncomplets, setEmpruntsIncomplets] = useState<string | null>(null)
+  // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts). Leur drapeau est à
+  // part : lues en partie, elles ne changent aucun mouvement — un mouvement ventilé s'affiche sans toutes
+  // ses parts, et les modifier est suspendu, puisque la modification repartirait des seules parts lues.
+  const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
+  const [ventilationsIncompletes, setVentilationsIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
   // Exercice partagé avec Pièces/Écritures/Statistiques/Clôture, sélectionné dans l'en-tête du
@@ -182,6 +191,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     )
     setEmpruntsIncomplets(lectureEmprunts.complete ? null : lectureEmprunts.motif)
 
+    // Deux parts ou plus par mouvement ventilé. Tri TOTAL sur l'identifiant.
+    const lectureVentilations = await lireTout<VentilationBancaire>((debut, fin) =>
+      supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    )
+    setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
+
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -196,6 +212,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setRegles(lectureRegles.lignes)
     setReglesAffectation(lectureReglesAffectation.lignes)
     setEmprunts(lectureEmprunts.lignes)
+    setVentilations(lectureVentilations.lignes)
     setRelevesIncoherents(controles)
     setLoading(false)
   }
@@ -480,6 +497,33 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     return true
   }
 
+  // LIGNE 26.6 : un mouvement ventilé sur plusieurs comptes. L'écriture est composée ici
+  // (lib/ventilationBanque.ts, testé) ; `ventiler_mouvement_bancaire` la VÉRIFIE contre le mouvement et les
+  // parts, puis écrit la ventilation, ses parts et son écriture dans une seule transaction. Ventiler de
+  // nouveau un mouvement ventilé remplace ses parts et son écriture. Les refus de la base sont refaits ici.
+  async function ventiler(ligne: LigneBancaire, parts: PartSaisie[]): Promise<boolean> {
+    const refus = refusVentilation(ligne, parts, categories, assujettiTva)
+    const ecriture = refus ? null : ecritureDeLaVentilation(ligne, parts, categories, modele)
+    if (!ecriture) {
+      window.alert(refus ?? 'Une part n’a pas de compte de charge ou de produit : la ventilation ne peut pas s’écrire.')
+      return false
+    }
+    const { error } = await supabase.rpc('ventiler_mouvement_bancaire', {
+      p_ligne_bancaire_id: ligne.id,
+      p_parts: parts.map((part) => ({ categorie_id: part.categorie_id, part_personnelle: part.part_personnelle, montant: part.montant })),
+      p_ecritures: ecriture,
+    })
+    if (error) { window.alert(`La ventilation n'a pas pu être enregistrée : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
+  // La ventilation, ses parts et son écriture partent ENSEMBLE, par la base.
+  async function retirerVentilation(ligneId: string): Promise<boolean> {
+    const { error } = await supabase.rpc('retirer_ventilation_mouvement_bancaire', { p_ligne_bancaire_id: ligneId })
+    if (error) { window.alert(`La ventilation n'a pas pu être annulée : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
   // L'erreur est lue, et plus seulement suivie d'une relecture : le panneau reste sur le mouvement
   // après l'action, donc un échec muet laisserait l'opérateur croire le mouvement classé.
   async function ignorer(ligneId: string): Promise<boolean> {
@@ -536,6 +580,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     await supabase.from('regles_bancaires_ignorees').delete().eq('id', id)
     load()
   }
+
+  // Les parts de chaque mouvement ventilé : la pastille de la liste en dit le nombre, la fiche les montre.
+  const partsParLigne = useMemo(() => {
+    const m = new Map<string, VentilationBancaire[]>()
+    for (const v of ventilations) m.set(v.ligne_bancaire_id, [...(m.get(v.ligne_bancaire_id) ?? []), v])
+    return m
+  }, [ventilations])
 
   // Mémoïsée parce que `planAuto` en dépend : recréée à chaque rendu, elle relançait le plan — un
   // produit mouvements × pièces — à chaque frappe dans la recherche, et rendait son `useMemo` inopérant.
@@ -812,6 +863,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         consequence={
           'Un emprunt peut donc manquer au choix de la fiche d’un mouvement, et un paiement qui ressemble à ' +
           'l’une de ses échéances n’être pas reconnu : l’affectation en lot est suspendue. Recharge la page.'
+        }
+      />
+
+      <BandeauLecturePartielle
+        quoi="Les parts des mouvements ventilés"
+        motif={ventilationsIncompletes}
+        consequence={
+          'Un mouvement ventilé peut donc s’afficher sans toutes ses parts, et modifier une ventilation est ' +
+          'suspendu. Recharge la page.'
         }
       />
 
@@ -1289,7 +1349,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                           {empruntDuMouvement ? ` — ${empruntDuMouvement.nom}` : ''}
                         </span>
                       )}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !mouvementRapprocheSansObjet(l) && (
+                      {/* Ventilé : ses parts vivent à part, et la pastille en dit le nombre plutôt qu'un « Rapproché » nu. */}
+                      {l.statut === 'rapprochee' && l.ventilee && (
+                        <span className="badge badge-ok">
+                          {(partsParLigne.get(l.id)?.length ?? 0) >= 2 ? `Ventilé sur ${partsParLigne.get(l.id)!.length} comptes` : 'Ventilé'}
+                        </span>
+                      )}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !mouvementRapprocheSansObjet(l) && (
                         <span className="badge badge-ok">
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
@@ -1352,6 +1418,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             empruntsIncomplets={empruntsIncomplets}
             onRapprocherEmprunt={(empruntId, decoupage) => agirSurMouvement(() => rapprocherEmprunt(ligneOuverte, empruntId, decoupage))}
             onRetirerEmprunt={() => agirSurMouvement(() => retirerEmprunt(ligneOuverte.id))}
+            ventilations={partsParLigne.get(ligneOuverte.id) ?? []}
+            ventilationsIncompletes={ventilationsIncompletes}
+            onVentiler={(parts) => agirSurMouvement(() => ventiler(ligneOuverte, parts))}
+            onRetirerVentilation={() => agirSurMouvement(() => retirerVentilation(ligneOuverte.id))}
           />
         </PanneauDroit>
       )}
