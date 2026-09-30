@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from '../lib/supabase'
+import { messageErreur } from '../lib/messageErreur'
 
 type Role = 'cabinet' | 'client' | null
 
@@ -51,11 +52,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isSuperAdmin, setIsSuperAdmin] = useState(false)
   const [estChef, setEstChef] = useState(false)
   const [monCabinetId, setMonCabinetId] = useState<string | null>(null)
-  const [loading, setLoading] = useState(true)
+  // Tant que Supabase n'a pas répondu, `session` vaut null sans vouloir dire « déconnecté ».
+  const [sessionConnue, setSessionConnue] = useState(false)
+  // L'identifiant pour lequel les rôles ci-dessus ont été lus : `undefined` avant toute lecture, `null`
+  // pour « personne ». Les rôles voyagent avec lui, comme l'identité d'un dossier avec son identifiant
+  // (voir DossierDetail).
+  const [rolesDe, setRolesDe] = useState<string | null | undefined>(undefined)
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => setSession(s))
+    supabase.auth.getSession()
+      .then(({ data }) => setSession(data.session))
+      // Une lecture qui lève ne doit pas laisser « Chargement… » à l'écran pour toujours : faute de
+      // session, c'est l'écran de connexion qui s'affiche — comme avant que le chargement se déduise.
+      .catch((e: unknown) => console.error('[session] lecture impossible :', messageErreur(e, 'raison inconnue')))
+      .finally(() => setSessionConnue(true))
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s)
+      setSessionConnue(true)
+    })
     return () => sub.subscription.unsubscribe()
   }, [])
 
@@ -67,6 +81,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // saisissait — l'aperçu d'une récupération bancaire disparaissait ainsi après un passage par une
   // autre fenêtre, et chaque écran relisait toute sa base, deux fois.
   const userId = session?.user.id ?? null
+
+  // Le chargement se DÉDUIT, il ne se pose pas. Posé par l'effet qui lit les rôles, il retombait
+  // à faux dès le premier rendu — aucune session n'étant encore connue, il n'y avait rien à lire —, puis
+  // ne repassait à vrai qu'APRÈS le rendu qui recevait la session. Entre les deux, l'application
+  // affichait l'écran de connexion au démarrage, puis montait ses écrans sans rôle, qu'elle démontait
+  // aussitôt ; et quand un autre compte se connectait, un rendu passait avec sa session et les rôles du
+  // compte précédent. Déduit, il est vrai DANS le rendu où la session arrive ou change de compte.
+  // Personne n'étant connecté, il n'y a rien à attendre : l'écran de connexion vient tout de suite.
+  const loading = !sessionConnue || (userId !== null && rolesDe !== userId)
 
   useEffect(() => {
     let cancelled = false
@@ -80,10 +103,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsSuperAdmin(false)
         setEstChef(false)
         setMonCabinetId(null)
-        setLoading(false)
+        setRolesDe(null)
         return
       }
-      setLoading(true)
 
       const { data: adminRow } = await supabase
         .from('cabinet_admins')
@@ -103,7 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setIsSuperAdmin(!!estSuperAdmin)
         setEstChef(!!estSuperAdmin || adminRow.role === 'comptable_en_chef')
         setMonCabinetId(adminRow.cabinet_id)
-        setLoading(false)
+        setRolesDe(userId)
         return
       }
 
@@ -145,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsSuperAdmin(false)
       setEstChef(false)
       setMonCabinetId(cabinetId)
-      setLoading(false)
+      setRolesDe(userId)
     }
 
     resolveRole()

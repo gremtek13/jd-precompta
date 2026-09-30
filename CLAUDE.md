@@ -5547,6 +5547,26 @@ d'environnement dans la même édition.
   **LATENT depuis la création du contexte** : il fallait un écran dont l'état compte, et un retour sur
   l'onglet pendant qu'il le porte. Aucun test ne le voyait — un test d'écran double `useAuth` — et
   personne ne le signalait : un écran qui se recharge a exactement l'air d'un écran qui charge.
+  **ET LE PREMIER CORRECTIF A ÉCHOUÉ EN CI UNE FOIS SUR PLUSIEURS — le test avait raison, le code
+  laissait passer des rendus faux.** `loading` était un ÉTAT, remis à faux par l'effet dès le premier
+  rendu (aucune session n'étant encore connue, il n'y avait rien à lire) et remis à vrai seulement APRÈS
+  le rendu qui recevait la session. Entre les deux : au démarrage, l'écran de connexion s'affichait un
+  instant, puis la coque se montait sans rôle et se démontait aussitôt ; à la connexion d'un AUTRE
+  compte, un rendu passait avec sa session et les rôles du précédent. Le test, lui, attendait le champ de
+  saisie : il le trouvait parfois dans ce montage d'un instant, y écrivait, et le remontage suivant
+  effaçait la saisie — `verifier` a échoué sous un fuseau et réussi sous les trois autres, sur le même
+  commit. Relancer jusqu'au vert aurait publié le défaut.
+  **Le chargement se DÉDUIT désormais** : de la session connue (`getSession` a répondu, ou un événement
+  est arrivé) et de l'identifiant pour lequel les rôles ont été lus — les rôles voyagent avec lui, comme
+  l'identité d'un dossier avec le sien. Il est vrai dans le rendu même où la session arrive ou change de
+  compte. Personne n'étant connecté, rien n'est à attendre : l'écran de connexion vient tout de suite, et
+  un `getSession` qui lève y mène aussi au lieu de laisser « Chargement… » pour toujours. Le test retient
+  la réponse de la session et celle des rôles d'un compte, et consigne ce que chaque rendu COMMIS
+  affiche : c'est la seule façon de voir un rendu d'un instant. Cinq cas de plus. Dix mutations, toutes
+  mordent, dont le premier correctif tel qu'il était (quatre tests tombent), le chargement sans la
+  session connue, sans l'identifiant des rôles, l'identifiant gardé à la déconnexion, l'événement qui
+  ne rend plus la session connue, et l'erreur de `getSession` avalée. Rejoué quarante fois sous les
+  quatre fuseaux : aucun échec.
 - **Sur la 2035-A, une case n'appartient pas à la ligne en face de laquelle elle est imprimée.**
   Les lignes 17, 18, 20, 21, 22, 23, 24, 26, 27, 28 et 30 n'ont aucune case à elles : elles
   passent par trois totaux groupés, `BH` (travaux, fournitures et services extérieurs, lignes
@@ -6787,7 +6807,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 2993 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 2998 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
