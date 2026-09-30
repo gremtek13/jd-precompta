@@ -88,6 +88,9 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'tiers_categories_cabinet', parent: 'cabinets', colonne: 'cabinet_id', aLaSuppression: 'bloque' },
   { enfant: 'tiers_categories_cabinet', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
   { enfant: 'vehicules', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'ventilations_bancaires', parent: 'categories', colonne: 'categorie_id', aLaSuppression: 'bloque' },
+  { enfant: 'ventilations_bancaires', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'ventilations_bancaires', parent: 'lignes_bancaires', colonne: 'ligne_bancaire_id', aLaSuppression: 'cascade' },
   { enfant: 'volet_social_pamc', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
 ]
 
@@ -140,6 +143,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'tiers_categories_cabinet',
   'immobilisations',
   'lignes_bancaires',
+  'ventilations_bancaires',
   'piece_commentaires',
   'piece_textes_ocr',
   'ecritures_brouillon',
@@ -431,6 +435,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   supplements: { acces: 'direct' },
   tiers_categories: { acces: 'direct' },
   vehicules: { acces: 'direct' },
+  ventilations_bancaires: { acces: 'direct' },
   volet_social_pamc: { acces: 'direct' },
 }
 

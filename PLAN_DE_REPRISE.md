@@ -165,7 +165,7 @@ incompréhensible trois étapes plus loin.
    cette région : elle est écrite dans le code de l'assistant et lue dans `AWS_REGION` pour le reste
    (inventaire du §3).
 2. **Le schéma — L'ÉTAPE QUI N'A JAMAIS ÉTÉ RÉPÉTÉE, et l'ordre écrit ici jusqu'au 29/09/2026
-   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 66 migrations, puis le
+   échoue.** Tout ce que la base contient est dans `supabase/schema/` — les 68 migrations, puis le
    socle, `socle/1_tables_sans_migration.sql` et `socle/2_objets_sans_migration.sql` —, vérifié nom
    par nom contre le catalogue le 29/09/2026. Mais les jouer « migrations d'abord, socle ensuite » bute
    dès `20260904160206`, qui pose une policy sur `references_annuelles`, une table que seul le socle

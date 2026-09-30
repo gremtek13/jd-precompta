@@ -290,7 +290,7 @@ def main() -> int:
     fichiers = sorted(RACINE.glob('*.sql')) + sorted((RACINE / 'socle').glob('*.sql'))
     lignes = sorted(inventaire(fichiers))
     # Un plancher : un inventaire vide aurait l'empreinte d'une liste vide, et « l'export ne contient
-    # rien » ne doit pas pouvoir passer pour « l'export concorde ». 43 tables au 29/09/2026.
+    # rien » ne doit pas pouvoir passer pour « l'export concorde ». 44 tables au 29/09/2026.
     if len([l for l in lignes if l.startswith('rls|')]) < 40:
         print(f'inventaire anormalement court ({len(lignes)} lignes) : lecture aveugle ?', file=sys.stderr)
         return 1
