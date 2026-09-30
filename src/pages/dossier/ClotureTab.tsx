@@ -15,12 +15,12 @@ import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
-import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
+import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
 import { partsDuReleve } from '../../lib/partsDuReleve'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
 import type {
-  Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, VehiculeDossier, VentilationBancaire,
+  Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -56,6 +56,9 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts) : elles vivent
   // dans leur propre table, et la 2035 les compte comme des mouvements affectés.
   const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
+  // Les parts des virements qui règlent PLUSIEURS pièces (lib/reglementGroupe.ts) : chacune date sa pièce
+  // comme un rapprochement simple.
+  const [reglements, setReglements] = useState<ReglementGroupe[]>([])
   // Les emprunts, pour dire les échéances que l'échéancier prévoit dans l'exercice et qu'aucun
   // mouvement ne paie (lib/echeanceEmprunt.ts). Leur drapeau est à part : la 2035 lit le découpage
   // gardé sur les mouvements rapprochés, pas les emprunts — lus en partie, ils ne faussent aucune case,
@@ -94,7 +97,10 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     // cotisation ou une immobilisation manquante est tout aussi plausible, fausse et signée.
     // Le tri est TOTAL partout (`id` en départage) : sans clé unique, deux tranches se recouvrent
     // ou sautent des lignes, et rien ne le signale.
-    const [lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations] = await Promise.all([
+    const [
+      lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
+      { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements,
+    ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -142,8 +148,15 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Les parts des virements groupés : tronquées, elles font retomber sur leur date de facture des
+      // pièces réglées une autre année — le même drapeau que les mouvements.
+      lireTout<ReglementGroupe>((debut, fin) =>
+        supabase.from('reglements_groupes').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     setVentilations(lectureVentilations.lignes)
+    setReglements(lectureReglements.lignes)
     setEmprunts(lectureEmprunts.lignes)
     setEmpruntsIncomplets(lectureEmprunts.complete ? null : lectureEmprunts.motif)
     setDossier(dossierData ?? null)
@@ -162,8 +175,10 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     // écran ne le dise. Ce n'est pas une lecture « partielle » au sens du plafond PostgREST, mais
     // le refus qu'elle appelle est exactement le même.
     setLectureIncomplete(
-      [lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, lectureVentilations]
-        .find((l) => !l.complete)?.motif
+      [
+        lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, lectureVentilations,
+        lectureReglements,
+      ].find((l) => !l.complete)?.motif
       ?? (dossierError ? messageErreur(dossierError, "l'identité du dossier n'a pas pu être lue") : null),
     )
     setImmobilisations(lectureImmobilisations.lignes)
@@ -206,7 +221,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // L'année d'une pièce est celle de son paiement, ou de sa facture à défaut (voir lib/rattachement.ts)
   // — la même que celle où le moteur la compte, sans quoi un exercice où une pièce compte pourrait
   // manquer à la liste. En engagement, celle de sa facture.
-  const paiements = paiementsParPiece(lignesBancaires)
+  const paiements = paiementsDesPieces(lignesBancaires, reglements)
   const parts = partsDuReleve(lignesBancaires, categories, ventilations)
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
@@ -227,7 +242,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva, lignesBancaires, parts),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva, paiements, parts),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans

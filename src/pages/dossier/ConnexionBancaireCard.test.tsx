@@ -87,7 +87,7 @@ function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
     id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2026-09-01', montant: -10,
     libelle: 'PRLV SEPA FICTIF', libelle_brut: null, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     created_at: '2026-09-01T09:00:00Z', ...o,
   }
 }

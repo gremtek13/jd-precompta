@@ -74,13 +74,18 @@ const pieces: Ligne[] = [
   piece('p6', '2026-08-25', 'SCI Les Tilleuls', 650, 0, 'c6', 'validee'),
   piece('p7', '2026-08-21', 'Papeterie Moderne', 27.35, 4.56, 'c7', 'validee'),
   piece('p8', '2026-08-18', 'LogiSoins', 29, 4.83, null, 'a_valider'),
+  // Deux factures d'un même fournisseur et l'avoir qu'il a consenti, réglés par UN virement (l20, voir
+  // `reglements_groupes`) : 264 + 132 − 24 = 372 €.
+  piece('p9', '2026-09-03', 'Médical Équipement Pro', 264, 44, 'c2', 'validee'),
+  piece('p10', '2026-09-09', 'Médical Équipement Pro', 132, 22, 'c2', 'validee'),
+  piece('p11', '2026-09-12', 'Médical Équipement Pro', -24, -4, 'c2', 'validee'),
 ]
 
 function ligne(id: string, date: string, libelle: string, montant: number, statut: string, pieceId: string | null, categorie: string | null = null): Ligne {
   return {
     id, dossier_id: 'd1', date, libelle, montant, statut, piece_id: pieceId, cotisation_id: null, categorie_id: categorie,
     prelevement_personnel: false, source_fichier: 'releve-septembre.csv', libelle_brut: null, created_at: MAINTENANT,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
     id_externe: null,
   }
 }
@@ -105,6 +110,16 @@ function ecritureReleve(id: string, mouvement: string, date: string, compte: str
   }
 }
 
+// L'écriture d'une pièce du cabinet infirmier réglée par un VIREMENT GROUPÉ (lib/reglementGroupe.ts) : la
+// charge au TTC — le dossier ne récupère pas la TVA —, datée au paiement, et une contrepartie banque au
+// montant de SA part, désignant le virement. Un avoir va dans l'autre sens.
+function ecriturePiece(id: string, pieceId: string, mouvement: string | null, date: string, compte: string, sens: 'debit' | 'credit', montant: number): Ligne {
+  return {
+    id, dossier_id: 'd1', piece_id: pieceId, ligne_bancaire_id: mouvement, date, compte, libelle: 'Médical Équipement Pro', sens, montant,
+    statut: 'proposee', created_at: MAINTENANT,
+  }
+}
+
 // Les pièces du dossier assujetti (d7), sur les deuxième et troisième trimestres 2026 : la déclaration
 // que l'onglet TVA propose dépend du jour où le banc tourne (la dernière période close), et chacun des
 // deux trimestres porte des recettes, des achats, et le second une recette qu'aucun paiement ne date.
@@ -122,7 +137,7 @@ function paiementTva(id: string, date: string, libelle: string, montant: number,
   return {
     id, dossier_id: 'd7', date, libelle, montant, statut: 'rapprochee', piece_id: pieceId, cotisation_id: null, categorie_id: null,
     prelevement_personnel: false, source_fichier: 'releve-2026.csv', libelle_brut: null, created_at: MAINTENANT,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
     id_externe: null,
   }
 }
@@ -251,6 +266,20 @@ const TABLES: Record<string, Ligne[]> = {
     ecritureReleve('r16', 'l19', '2026-09-19', '706000', 'REMISE CB SEPTEMBRE', 'credit', 490),
     ecritureReleve('r17', 'l19', '2026-09-19', '627000', 'REMISE CB SEPTEMBRE', 'debit', 4.7),
     ecritureReleve('r18', 'l19', '2026-09-19', '512000', 'REMISE CB SEPTEMBRE', 'debit', 485.3),
+    // Les trois pièces du virement groupé l20 : chacune sa charge, datée au virement, et sa contrepartie.
+    ecriturePiece('g1', 'p9', null, '2026-09-23', '606300', 'debit', 264),
+    ecriturePiece('g2', 'p9', 'l20', '2026-09-23', '512000', 'credit', 264),
+    ecriturePiece('g3', 'p10', null, '2026-09-23', '606300', 'debit', 132),
+    ecriturePiece('g4', 'p10', 'l20', '2026-09-23', '512000', 'credit', 132),
+    ecriturePiece('g5', 'p11', null, '2026-09-23', '606300', 'credit', 24),
+    ecriturePiece('g6', 'p11', 'l20', '2026-09-23', '512000', 'debit', 24),
+  ],
+  // Les parts du virement groupé l20, signées comme le relevé : les deux factures en sortie, l'avoir en
+  // entrée, déduit du paiement.
+  reglements_groupes: [
+    { id: 'rg1', dossier_id: 'd1', ligne_bancaire_id: 'l20', piece_id: 'p9', montant: -264, created_at: MAINTENANT },
+    { id: 'rg2', dossier_id: 'd1', ligne_bancaire_id: 'l20', piece_id: 'p10', montant: -132, created_at: MAINTENANT },
+    { id: 'rg3', dossier_id: 'd1', ligne_bancaire_id: 'l20', piece_id: 'p11', montant: 24, created_at: MAINTENANT },
   ],
   // Les parts des deux mouvements ventilés, signées comme le relevé.
   ventilations_bancaires: [
@@ -333,6 +362,9 @@ const TABLES: Record<string, Ligne[]> = {
     // parts sont dans `ventilations_bancaires`, leurs écritures au brouillon.
     { ...ligne('l18', '2026-09-16', 'PRLV SEPA FORFAIT MOBILE', -60, 'rapprochee', null), ventilee: true },
     { ...ligne('l19', '2026-09-19', 'REMISE CB SEPTEMBRE', 485.3, 'rapprochee', null), ventilee: true },
+    // Un VIREMENT qui règle plusieurs pièces (lib/reglementGroupe.ts) : deux factures d'un fournisseur, moins
+    // l'avoir qu'il a consenti. Ses parts sont dans `reglements_groupes`, ses écritures au brouillon.
+    { ...ligne('l20', '2026-09-23', 'VIR SEPA MEDICAL EQUIPEMENT PRO FACTURES AOUT SEPT', -372, 'rapprochee', null), reglement_groupe: true },
     ...TVA_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
   ],

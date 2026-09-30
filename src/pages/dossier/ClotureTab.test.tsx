@@ -217,6 +217,54 @@ describe("ClotureTab — l'exercice du paiement", () => {
   })
 })
 
+// UN VIREMENT QUI RÈGLE PLUSIEURS PIÈCES (ligne 26) : chaque part est un paiement de sa pièce, et la 2035 la
+// compte à la date du virement, comme un rapprochement simple. Le virement ne porte aucune pièce — elles sont
+// dans ses parts, que l'écran doit LIRE : sans elles, les deux factures retomberaient sur leur date de facture.
+describe("ClotureTab — l'exercice d'un virement qui règle plusieurs pièces", () => {
+  const DECEMBRE_A = { ...PIECE, id: 'pa', tiers: 'ALPHA', date_piece: '2025-12-20', montant_ttc: 120 }
+  const DECEMBRE_B = { ...PIECE, id: 'pb', tiers: 'BETA', date_piece: '2025-12-22', montant_ttc: 80 }
+  const VIREMENT_DE_JANVIER = {
+    id: 'l-g', dossier_id: 'dossier-de-test', date: '2026-01-05', libelle: 'VIR FOURNISSEURS', montant: -200,
+    statut: 'rapprochee', piece_id: null, cotisation_id: null, reglement_groupe: true, prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: '2026-01-06T09:00:00Z',
+  }
+  const PARTS = [
+    { id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-g', piece_id: 'pa', montant: -120, created_at: '2026-01-06T09:00:00Z' },
+    { id: 'g2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-g', piece_id: 'pb', montant: -80, created_at: '2026-01-06T09:00:00Z' },
+  ]
+
+  function poserGroupe() {
+    poser()
+    faux.parTable.pieces = [DECEMBRE_A, DECEMBRE_B]
+    faux.parTable.lignes_bancaires = [VIREMENT_DE_JANVIER]
+    faux.parTable.reglements_groupes = PARTS
+  }
+
+  it("compte les deux factures dans l'exercice du virement, et ne les dit pas comptées à leur date de facture", async () => {
+    poserGroupe()
+    const en2025 = monter(2025)
+    const titre2025 = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    // 2025 ne garde que ses deux échéances de cotisation.
+    within(titre2025.parentElement!).getByText(/Déficit de 600 € : case 5QE/)
+    expect(screen.queryAllByText(/Pièces comptées à leur date de facture/)).toHaveLength(0)
+    en2025.unmount()
+
+    monter(2026)
+    const titre2026 = await screen.findByText(/Report sur la déclaration des revenus 2026/)
+    within(titre2026.parentElement!).getByText(/Déficit de 200 € : case 5QE/)
+  })
+
+  it('refuse de remplir le formulaire quand les parts sont lues en partie', async () => {
+    poserGroupe()
+    faux.muetApresParTable = { reglements_groupes: 1 }
+    monter(2026)
+
+    await screen.findByText(/n'a pas pu être lue en entier/)
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+  })
+})
+
 describe('ClotureTab — le refus de remplir une 2035 sur une lecture partielle', () => {
   it('bloque le formulaire quand ce sont les COTISATIONS qui manquent, pas les pièces', async () => {
     // Les pièces sont lues en entier : un garde-fou qui ne regarde qu'elles laisse donc passer,

@@ -129,6 +129,16 @@ const VUES = [
   { nom: 'mobile-ventiler-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Ventiler sur plusieurs comptes' },
   { nom: 'pc-ventile-mobile', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'PRLV SEPA FORFAIT MOBILE' },
   { nom: 'pc-ventile-remise', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Tous', cellule: 'REMISE CB SEPTEMBRE', apres: 'Modifier la ventilation' },
+  // Un virement qui règle plusieurs pièces (lib/reglementGroupe.ts) : le formulaire déplié sur un mouvement
+  // à traiter, deux lignes vides ; puis le virement groupé du banc — deux factures et l'avoir déduit —,
+  // ouvert sous « Tous », et son formulaire de modification, prérempli de ses parts.
+  { nom: 'pc-regler-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Régler plusieurs pièces' },
+  { nom: 'pc-regler-1024', chemin: '#/dossiers/d1/banque', l: 1024, h: 768, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Régler plusieurs pièces' },
+  { nom: 'mobile-regler-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'PRLV SEPA GARAGE DU CENTRE', apres: 'Régler plusieurs pièces' },
+  { nom: 'pc-groupe-clair', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO' },
+  { nom: 'pc-groupe-sombre', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO' },
+  { nom: 'pc-groupe-modifier', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO', apres: 'Modifier le règlement' },
+  { nom: 'mobile-groupe-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

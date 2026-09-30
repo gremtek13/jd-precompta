@@ -91,6 +91,20 @@ export interface VentilationBancaire {
   created_at: string
 }
 
+// Une PART d'un mouvement qui règle plusieurs pièces (ligne 26) — la table `reglements_groupes`. Elle
+// désigne la pièce réglée et le montant qui la règle, SIGNÉ COMME LE RELEVÉ et jamais nul ; son signe est
+// celui qui règle la pièce (une sortie pour une facture d'achat, une entrée pour une facture de vente ou
+// pour un avoir d'achat). `piece_id` est nul quand la pièce a été supprimée depuis (`on delete set null`) :
+// la part garde son montant, et l'application la signale. Une pièce ne reçoit qu'une part par mouvement.
+export interface ReglementGroupe {
+  id: string
+  dossier_id: string
+  ligne_bancaire_id: string
+  piece_id: string | null
+  montant: number
+  created_at: string
+}
+
 // Contrôle de cohérence d'un relevé bancaire importé : solde d'ouverture + somme des mouvements
 // doit donner le solde de clôture. Conservé en base (et non affiché une fois puis jeté) parce qu'un
 // relevé incomplet est une information qui doit survivre à la fermeture d'une alerte — voir
@@ -159,6 +173,13 @@ export interface LigneBancaire {
   // rapproché et jamais personnel (`lignes_bancaires_ventilation_rapprochee`). Que les parts fassent le
   // montant, seule la fonction le vérifie — un contrôle de l'application dit un écart.
   ventilee: boolean
+  // Le mouvement RÈGLE PLUSIEURS PIÈCES (ligne 26) : ses parts sont dans `reglements_groupes`, une pièce
+  // et le montant qui la règle chacune, et leur somme est le mouvement. `piece_id` reste nul. Posé avec
+  // les parts par la fonction SQL `regler_pieces_par_mouvement` (voir lib/reglementGroupe.ts), retiré avec
+  // elles par `retirer_reglement_groupe`. La base le tient comme `ventilee` : exclusif de tout autre lien
+  // (`lignes_bancaires_un_seul_rapprochement`), rapproché et jamais personnel
+  // (`lignes_bancaires_reglement_groupe_rapproche`).
+  reglement_groupe: boolean
   // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
   // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.
   // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien

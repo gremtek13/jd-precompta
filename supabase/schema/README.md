@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 69 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 72 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -74,8 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 30/09/2026** : 71 fichiers, 71 migrations, empreinte globale
-`2bedf0bc0d4e91a88407fa055ca05f12` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 30/09/2026** : 72 fichiers, 72 migrations, empreinte globale
+`24e08a86f0cfb563102b7a4faf3f8962` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -107,12 +107,12 @@ ne s'appliquent pas tout seuls.
 Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
-  le socle au caractère près (71 instructions, empreinte `0438dec76ec4b996ffd53c86ad9c3bed` le
-  30/09/2026, après la connexion bancaire), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  le socle au caractère près (71 instructions, empreinte `ad8694fe1ecdd724cffe279ad7d5a0fa` le
+  30/09/2026, après le règlement groupé de plusieurs pièces), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (838 objets, empreinte `cbffd36c9ccc9827d1677b8e1d9e36b8` le 30/09/2026, après l'espace de connexion à la banque). C'est le seul qui voie un
+  (859 objets, empreinte `aba7aae3d336f9abec2071769e72f136` le 30/09/2026, après le règlement groupé de plusieurs pièces). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.

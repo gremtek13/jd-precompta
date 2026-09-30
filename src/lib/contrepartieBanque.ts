@@ -1,9 +1,10 @@
 import { supabase } from './supabase'
 import { COMPTE_BANQUE } from './comptes'
+import { ligneContrepartieBanque } from './ecritures'
 import { lignesReglementEngagement, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
-import { partsDesPaiements } from './rattachement'
-import type { LigneBancaire, Piece } from './types'
+import { partsDesPaiements, type PaiementDePiece } from './rattachement'
+import type { Piece } from './types'
 
 // Les deux seules opérations d'écritures qui parlent à Supabase, tenues à l'écart de `ecritures.ts`
 // pour que celui-ci reste purement calculatoire. Ce n'est pas qu'une question de rangement : un
@@ -35,8 +36,11 @@ import type { LigneBancaire, Piece } from './types'
 // tiers contre la banque, à la date du mouvement. Rien n'y est redaté — la facture reste à sa date,
 // c'est tout l'objet de ce modèle. Sans valeur par défaut pour le modèle : appelée en trésorerie sur un
 // dossier en engagement, elle redaterait sa facture au paiement.
+//
+// `paiement` : le mouvement entier d'un rapprochement simple, ou la PART d'un virement qui règle
+// plusieurs pièces (lib/reglementGroupe.ts) — la contrepartie porte ce qu'il paie de CETTE pièce.
 export async function synchroniserContrepartieBanque(
-  dossierId: string, piece: Piece, ligne: LigneBancaire, modele: ModeleComptable,
+  dossierId: string, piece: Piece, paiement: Pick<PaiementDePiece, 'id' | 'date' | 'montant'>, modele: ModeleComptable,
 ) {
   const { data: existantes, error: lectureError } = await supabase
     .from('ecritures_brouillon')
@@ -48,8 +52,8 @@ export async function synchroniserContrepartieBanque(
     // la facture ET ses règlements. Et idempotente PAR MOUVEMENT, non par pièce : une pièce payée en
     // plusieurs fois reçoit un règlement par paiement, et un second passage n'en double aucun.
     if (!existantes || !existantes.some((e) => !e.ligne_bancaire_id)) return
-    if (existantes.some((e) => e.ligne_bancaire_id === ligne.id)) return
-    const reglement = lignesReglementEngagement(dossierId, piece, ligne, modele.compteNotesDeFrais)
+    if (existantes.some((e) => e.ligne_bancaire_id === paiement.id)) return
+    const reglement = lignesReglementEngagement(dossierId, piece, paiement, modele.compteNotesDeFrais)
     if (reglement.length === 0) return
     const { error } = await supabase.from('ecritures_brouillon').insert(reglement)
     if (error) throw error
@@ -61,43 +65,42 @@ export async function synchroniserContrepartieBanque(
   // refusée rendait `existantes` nul et ressemblait à « pas encore d'écriture », donc à un abandon
   // silencieux et légitime.
   if (!existantes || existantes.length === 0) return
-  if (existantes.some((e) => e.compte === COMPTE_BANQUE)) return
+  // IDEMPOTENTE PAR MOUVEMENT, et non plus par pièce : elle sortait dès que la pièce portait UNE
+  // contrepartie, donc une pièce payée en deux fois — un acompte puis un virement groupé — ne recevait
+  // jamais la seconde, et son écriture restait déséquilibrée.
+  if (existantes.some((e) => e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === paiement.id)) return
+  const contrepartie = ligneContrepartieBanque(dossierId, piece, paiement)
+  if (!contrepartie) return
 
   // L'ÉCRITURE PASSE À LA DATE DU PAIEMENT, comme la 2035 compte la pièce (lib/rattachement.ts) :
   // générée avant le rapprochement, elle portait la date de facture, et une facture de décembre
-  // réglée en janvier aurait gardé sa charge dans l'exercice d'avant. Seulement quand ce paiement
-  // RÈGLE la pièce : un paiement partiel laisse les lignes où elles sont, et le contrôle des écritures
-  // demande alors « Régénérer », qui les répartit entre le paiement et la facture.
+  // réglée en janvier aurait gardé sa charge dans l'exercice d'avant. Seulement quand CE paiement
+  // RÈGLE la pièce à lui seul, et qu'aucun autre ne la paie déjà : un paiement partiel, ou le second
+  // d'une pièce payée en plusieurs fois, laisse les lignes où elles sont, et le contrôle des écritures
+  // demande alors « Régénérer », qui les répartit entre les paiements et la facture.
   //
   // AVANT la contrepartie, et c'est l'ordre qui garde les messages vrais : si la date échoue, rien
   // n'est écrit ; si la contrepartie échoue ensuite, l'écriture est à la bonne date et l'appelant dit
   // bien que la contrepartie n'a pas été créée.
-  if (partsDesPaiements(piece, [ligne]).reste === 0) {
+  const autrePaiement = existantes.some((e) => e.compte === COMPTE_BANQUE)
+  if (!autrePaiement && partsDesPaiements(piece, [paiement]).reste === 0) {
     const { error: dateError } = await supabase.from('ecritures_brouillon')
-      .update({ date: ligne.date }).eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
+      .update({ date: paiement.date }).eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
     if (dateError) throw dateError
   }
 
-  const { error } = await supabase.from('ecritures_brouillon').insert({
-    dossier_id: dossierId,
-    piece_id: piece.id,
-    ligne_bancaire_id: ligne.id,
-    date: ligne.date,
-    compte: COMPTE_BANQUE,
-    libelle: piece.tiers ?? piece.nom_fichier,
-    montant: Math.abs(ligne.montant),
-    sens: ligne.montant >= 0 ? 'debit' : 'credit',
-    statut: 'proposee',
-  })
+  const { error } = await supabase.from('ecritures_brouillon').insert(contrepartie)
   if (error) throw error
 }
 
 // Retire la contrepartie banque d'une pièce — appelée quand un rapprochement est annulé, sinon la
-// ligne banque resterait affichée comme si le mouvement était toujours rapproché.
+// ligne banque resterait affichée comme si le mouvement était toujours rapproché. Celle de CE mouvement
+// seulement : elle retirait toutes celles de la pièce, donc annuler l'un de ses deux paiements effaçait
+// aussi la contrepartie de l'autre.
 //
-// Et l'écriture RETOURNE À LA DATE DE SA FACTURE : plus rien ne la date au paiement, donc elle compte
-// de nouveau là où la 2035 la compte (lib/rattachement.ts). `piece` nul — une pièce que l'écran n'a
-// pas sous la main — laisse la date telle quelle, et le contrôle des écritures la signalera.
+// Et l'écriture RETOURNE À LA DATE DE SA FACTURE quand plus aucun paiement ne la date (voir
+// `rendreAuxDatesDeFacture`). `piece` nul — une pièce que l'écran n'a pas sous la main — laisse la date
+// telle quelle, et le contrôle des écritures la signalera.
 //
 // EN ENGAGEMENT, elle retire le RÈGLEMENT de CE mouvement, ses deux lignes, et rien d'autre : la
 // facture reste à sa date, et les règlements des autres paiements de la pièce restent en place.
@@ -109,10 +112,33 @@ export async function retirerContrepartieBanque(
     if (error) throw error
     return
   }
-  const { error } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('compte', COMPTE_BANQUE)
+  const { error } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', pieceId).eq('ligne_bancaire_id', ligneId)
   if (error) throw error
   if (!piece) return
-  const { error: dateError } = await supabase.from('ecritures_brouillon')
-    .update({ date: piece.date_piece ?? dateLocaleDe(piece.created_at) }).eq('piece_id', pieceId)
-  if (dateError) throw dateError
+  await rendreAuxDatesDeFacture([{ id: pieceId, ...piece }], modele)
+}
+
+// Les pièces qu'un mouvement a cessé de payer — un rapprochement annulé, un règlement groupé retiré ou
+// réglé de nouveau sans elles — RETOURNENT À LA DATE DE LEUR FACTURE quand plus aucune contrepartie
+// banque ne les date : elles comptent de nouveau là où la 2035 les compte (lib/rattachement.ts). Une
+// pièce qu'un autre paiement date encore garde ses lignes, et le contrôle des écritures demande
+// « Régénérer », qui les répartit entre les paiements qui restent. La base a déjà retiré les lignes du
+// mouvement quand c'est elle qui l'a défait (`retirer_reglement_groupe`, `regler_pieces_par_mouvement`).
+//
+// EN ENGAGEMENT, rien : la facture n'a jamais quitté sa date.
+export async function rendreAuxDatesDeFacture(
+  pieces: readonly Pick<Piece, 'id' | 'date_piece' | 'created_at'>[], modele: ModeleComptable,
+) {
+  if (modele.mode === 'engagement') return
+  for (const piece of pieces) {
+    const { count, error: lectureError } = await supabase.from('ecritures_brouillon')
+      .select('id', { count: 'exact', head: true }).eq('piece_id', piece.id).eq('compte', COMPTE_BANQUE)
+    if (lectureError) throw lectureError
+    // Un compte que la base n'a pas rendu ne dit pas « plus aucun paiement » : on ne redate rien plutôt
+    // que de ramener à sa facture une pièce qu'un paiement date peut-être encore.
+    if (count == null || count > 0) continue
+    const { error: dateError } = await supabase.from('ecritures_brouillon')
+      .update({ date: piece.date_piece ?? dateLocaleDe(piece.created_at) }).eq('piece_id', piece.id)
+    if (dateError) throw dateError
+  }
 }

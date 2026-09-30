@@ -19,8 +19,13 @@ import {
 } from '../../lib/echeanceEmprunt'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
-import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, VentilationBancaire } from '../../lib/types'
+import type { PaiementsDesPieces } from '../../lib/rattachement'
+import { nomDeLaPiece, reglementsGroupesIncoherents, type PartReglement } from '../../lib/reglementGroupe'
+import type {
+  Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, ReglementGroupe, VentilationBancaire,
+} from '../../lib/types'
 import { montantSaisi, ventilationsIncoherentes, type PartSaisie } from '../../lib/ventilationBanque'
+import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
 
 // Le rapprochement d'un mouvement bancaire, dans le panneau de droite — étape 2 de l'interface
@@ -69,6 +74,12 @@ import FormulaireVentilation from './FormulaireVentilation'
 // nette de sa commission. Une part par compte, leur somme est le mouvement, et rien ne s'écrit avant le
 // clic. Un mouvement ventilé montre ses parts, se modifie ou s'annule — par la base, qui retire les parts
 // et l'écriture avec la ventilation.
+//
+// ET UN VIREMENT RÈGLE PLUSIEURS PIÈCES (ligne 26, lib/reglementGroupe.ts) : trois factures soldées par un
+// seul virement, deux factures payées par un client, un avoir déduit d'un paiement. Une part par pièce,
+// saisie positive, et leur somme est le mouvement ; chaque part est un paiement de sa pièce, que la 2035,
+// la TVA et les écritures lisent comme un rapprochement simple. Rien ne s'écrit avant le clic, et un
+// règlement se modifie ou s'annule par la base, qui retire les parts et les écritures du mouvement.
 
 export interface NavigationMouvement {
   position: string
@@ -136,6 +147,15 @@ interface FicheMouvementProps {
   ventilationsIncompletes: string | null
   onVentiler: (parts: PartSaisie[]) => void
   onRetirerVentilation: () => void
+  // Les parts de CE mouvement s'il règle plusieurs pièces, et les paiements de toutes les pièces — de quoi
+  // dire ce qu'il reste à régler de chacune. `reglementsIncomplets` : les parts des règlements groupés n'ont
+  // pas pu être lues en entier — une pièce déjà payée paraîtrait à régler, et les pièces d'un règlement
+  // annulé ne retourneraient pas toutes à leur date de facture : régler, modifier et annuler sont suspendus.
+  reglements: ReglementGroupe[]
+  reglementsIncomplets: string | null
+  paiements: PaiementsDesPieces
+  onReglerEnGroupe: (parts: PartReglement[]) => void
+  onRetirerReglementGroupe: () => void
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -422,6 +442,7 @@ export default function FicheMouvement({
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
+  reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   // Le choix à la main ne s'applique qu'au clic sur « Associer », jamais au changement de la liste :
@@ -472,6 +493,26 @@ export default function FicheMouvement({
     .filter((c): c is Categorie => c !== null)
   const partsHorsResultat = categoriesDesParts.filter((c) => !natureDuCompte(c.compte_comptable))
   const partsSansPoste = categoriesDesParts.filter((c) => natureDuCompte(c.compte_comptable) && !c.poste_2035)
+
+  // Le règlement de plusieurs pièces : replié tant qu'on ne le demande pas, comme la ventilation.
+  const regleEnGroupe = ligne.statut === 'rapprochee' && ligne.reglement_groupe
+  const [reglementDeplie, setReglementDeplie] = useState(false)
+  const [modificationReglementDepliee, setModificationReglementDepliee] = useState(false)
+  // Jugé sur des parts lues EN ENTIER seulement — une part non lue passerait pour une part manquante.
+  const incoherencesGroupe = regleEnGroupe && !reglementsIncomplets ? reglementsGroupesIncoherents([ligne], reglements) : []
+  const libellePieceReglee = (r: ReglementGroupe) => {
+    if (!r.piece_id) return 'Pièce supprimée'
+    const piece = pieces.find((p) => p.id === r.piece_id)
+    if (!piece) return 'Pièce non lue'
+    const montant = piece.montant_ttc == null
+      ? 'montant non lu'
+      : piece.montant_ttc < 0 ? `avoir de ${formatMoney(-piece.montant_ttc)}` : `facture de ${formatMoney(piece.montant_ttc)}`
+    return `${nomDeLaPiece(piece)}${piece.date_piece ? ` — ${formatDate(piece.date_piece)}` : ''} (${montant})`
+  }
+  // Chaque part dans le SENS DU MOUVEMENT, comme le reste à répartir du formulaire : les parts font alors le
+  // montant du virement, et l'avoir qu'il déduit y figure en négatif. Montrées toutes positives, deux
+  // factures et un avoir paraîtraient faire plus que le virement.
+  const partReglee = (r: ReglementGroupe) => r.montant * (Math.sign(ligne.montant) || 1)
 
   // Ce qui se propose à l'affectation : les catégories d'un compte de résultat, dans l'ordre du sens
   // du mouvement — les recettes d'abord pour un encaissement, les dépenses d'abord pour un paiement.
@@ -670,6 +711,15 @@ export default function FicheMouvement({
         Annuler le rapprochement
       </button>
     )
+  } else if (regleEnGroupe) {
+    // Par la base : les parts et les écritures du mouvement partent avec le règlement (`retirer_reglement_groupe`).
+    // Suspendu sur une lecture partielle des parts : les pièces qu'il réglait retournent à la date de leur
+    // facture, et celles qu'on n'a pas lues n'y retourneraient pas.
+    principal = (
+      <button type="button" className="btn btn-outline" disabled={occupe || !!reglementsIncomplets} onClick={onRetirerReglementGroupe}>
+        Annuler le règlement groupé
+      </button>
+    )
   } else if (ventile) {
     // Par la base : les parts et l'écriture partent avec la ventilation (`retirer_ventilation_mouvement_bancaire`).
     // Une remise à « à traiter » par une simple mise à jour, la contrainte `lignes_bancaires_ventilation_rapprochee`
@@ -759,7 +809,12 @@ export default function FicheMouvement({
               {ventilations.length >= 2 ? `Ventilé sur ${ventilations.length} comptes` : 'Ventilé'}
             </span>
           )}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && <span className="badge badge-ok">Rapproché</span>}
+          {regleEnGroupe && (
+            <span className="badge badge-ok">
+              {!reglementsIncomplets && reglements.length >= 2 ? `Règle ${reglements.length} pièces` : 'Règle plusieurs pièces'}
+            </span>
+          )}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && <span className="badge badge-ok">Rapproché</span>}
           {ecart && <span className="badge badge-danger">Écart de {formatMoney(ecart.ecart)} avec la pièce</span>}
           {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
@@ -897,6 +952,30 @@ export default function FicheMouvement({
                 Toutes les pièces et échéances de ce dossier sont déjà rapprochées d’un autre mouvement — si
                 aucune ne correspond en réalité, vérifie un éventuel rapprochement fait par erreur ailleurs.
               </p>
+            )}
+          </section>
+        )}
+
+        {aTraiter && ligne.montant !== 0 && (
+          <section className="fiche-mouvement-section">
+            <h3>Plusieurs pièces</h3>
+            {reglementDeplie ? (
+              <FormulaireReglementGroupe
+                ligne={ligne} pieces={pieces} paiements={paiements} partsExistantes={[]} suspension={reglementsIncomplets}
+                occupe={occupe} verbe="Régler ces pièces" onRegler={onReglerEnGroupe}
+              />
+            ) : (
+              <>
+                <p className="fiche-mouvement-note">
+                  Un virement qui solde plusieurs factures — ou un règlement client qui en paie plusieurs, un avoir
+                  déduit d’un paiement — se répartit entre elles : une part par pièce, et leur somme est le mouvement.
+                </p>
+                <div className="fiche-mouvement-boutons">
+                  <button type="button" className="btn btn-outline btn-sm" onClick={() => setReglementDeplie(true)}>
+                    Régler plusieurs pièces…
+                  </button>
+                </div>
+              </>
             )}
           </section>
         )}
@@ -1043,6 +1122,57 @@ export default function FicheMouvement({
           </section>
         )}
 
+        {regleEnGroupe && (
+          <section className="fiche-mouvement-section">
+            <h3>Règle plusieurs pièces</h3>
+            {reglementsIncomplets && (
+              <p className="fiche-mouvement-note">
+                Les parts des règlements groupés n’ont pas pu être lues en entier : celles de ce mouvement peuvent
+                manquer ci-dessous, et le modifier comme l’annuler est suspendu. Recharge la page.
+              </p>
+            )}
+            {reglements.length > 0 ? (
+              <div className="carte-rapprochement">
+                <dl className="decoupage-emprunt">
+                  {reglements.map((r) => (
+                    <Fragment key={r.id}>
+                      <dt>{libellePieceReglee(r)}</dt>
+                      <dd>{formatMoney(partReglee(r))}</dd>
+                    </Fragment>
+                  ))}
+                </dl>
+              </div>
+            ) : !reglementsIncomplets && (
+              <p className="fiche-mouvement-note">Aucune part lue pour ce mouvement.</p>
+            )}
+            {/* Ce qui ne justifie plus rien, dit ici — c'est l'écran où l'on arbitre ce mouvement. */}
+            {incoherencesGroupe.map((i) => (
+              <p key={i.raison} className="fiche-mouvement-alerte">
+                {i.raison === 'part_sans_piece'
+                  ? `Une pièce que ce mouvement réglait a été supprimée : sa part (${formatMoney(Math.abs(i.montant))}) ne justifie plus rien. Modifie le règlement, ou annule-le.`
+                  : `Les parts ne font plus le montant du mouvement (écart de ${formatMoney(Math.abs(i.montant))}) : la 2035 compte ce qu’elles disent, l’écriture autre chose. Modifie le règlement, ou annule-le.`}
+              </p>
+            ))}
+            <p className="fiche-mouvement-note">
+              Montants dans le sens du mouvement : un avoir déduit du virement y figure en négatif. Chaque pièce compte
+              pour sa part à la date du mouvement, dans la 2035 comme dans la déclaration de TVA, et son écriture reçoit
+              une contrepartie banque de ce montant.
+            </p>
+            {!reglementsIncomplets && (modificationReglementDepliee ? (
+              <FormulaireReglementGroupe
+                ligne={ligne} pieces={pieces} paiements={paiements} partsExistantes={reglements} suspension={reglementsIncomplets}
+                occupe={occupe} verbe="Enregistrer le règlement" onRegler={onReglerEnGroupe}
+              />
+            ) : (
+              <div className="fiche-mouvement-boutons">
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setModificationReglementDepliee(true)}>
+                  Modifier le règlement…
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+
         {ventile && (
           <section className="fiche-mouvement-section">
             <h3>Ventilé sur plusieurs comptes</h3>
@@ -1154,7 +1284,7 @@ export default function FicheMouvement({
           </section>
         )}
 
-        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && (
+        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && (
           <section className="fiche-mouvement-section">
             <h3>Rapproché avec</h3>
             {piecePayee && <CartePiece piece={piecePayee} />}

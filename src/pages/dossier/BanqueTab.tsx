@@ -4,12 +4,14 @@ import { detectColumnMapping, libelleDeLigne, parseCsv, parseDateBancaire, parse
 import { extractPdfLignes } from '../../lib/pdfText'
 import { parseLignesFromPdf, type FormatMontant, type LigneExtraite, type LignePdf } from '../../lib/relevePdf'
 import { anneeDe, formatDate, formatMoney, jourDe, moisDe } from '../../lib/format'
-import { retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
+import { rendreAuxDatesDeFacture, retirerContrepartieBanque, synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
   Categorie, ControleReleveBancaire, CotisationDeclaree, DocumentDivers, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree,
-  StatutLigneBancaire, VentilationBancaire,
+  ReglementGroupe, StatutLigneBancaire, VentilationBancaire,
 } from '../../lib/types'
+import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
+import { nomDeLaPiece, refusReglementGroupe, type PartReglement } from '../../lib/reglementGroupe'
 import { useAnnee } from '../../context/AnneeContext'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -95,6 +97,12 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // ses parts, et les modifier est suspendu, puisque la modification repartirait des seules parts lues.
   const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
   const [ventilationsIncompletes, setVentilationsIncompletes] = useState<string | null>(null)
+  // Les parts des virements qui règlent plusieurs pièces (lib/reglementGroupe.ts, ligne 26). Chacune est un
+  // PAIEMENT de sa pièce : lues en partie, elles laissent une pièce payée paraître sans paiement — donc de
+  // nouveau candidate au rapprochement, jusque dans les lots —, et le mouvement sans toutes ses pièces. Le
+  // règlement groupé et les lots qui rapprochent des pièces sont alors suspendus.
+  const [reglements, setReglements] = useState<ReglementGroupe[]>([])
+  const [reglementsIncomplets, setReglementsIncomplets] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
   // Exercice partagé avec Pièces/Écritures/Statistiques/Clôture, sélectionné dans l'en-tête du
@@ -200,6 +208,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     )
     setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
 
+    // Deux parts ou plus par virement qui règle plusieurs pièces. Tri TOTAL sur l'identifiant.
+    const lectureReglements = await lireTout<ReglementGroupe>((debut, fin) =>
+      supabase.from('reglements_groupes').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    )
+    setReglementsIncomplets(lectureReglements.complete ? null : lectureReglements.motif)
+
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -215,6 +230,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setReglesAffectation(lectureReglesAffectation.lignes)
     setEmprunts(lectureEmprunts.lignes)
     setVentilations(lectureVentilations.lignes)
+    setReglements(lectureReglements.lignes)
     setRelevesIncoherents(controles)
     setLoading(false)
   }
@@ -227,10 +243,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // des pièces déjà relues par le cabinet : rapprocher sur de l'OCR non validé reviendrait à écrire
   // une écriture comptable sur un montant que personne n'a confirmé.
   const piecesValidees = useMemo(() => pieces.filter((p) => p.statut === 'validee'), [pieces])
-  const piecesRapprochees = useMemo(
-    () => new Set(lignes.map((l) => l.piece_id).filter((id): id is string => id != null)),
-    [lignes],
-  )
+  // Les paiements de chaque pièce : les mouvements rapprochés d'elle, et les parts des virements qui en
+  // règlent plusieurs (lib/rattachement.ts). Une pièce payée, en tout ou en partie, n'est plus candidate :
+  // une pièce réglée par la part d'un virement groupé se laisserait sinon rapprocher d'un second mouvement.
+  const paiements = useMemo(() => paiementsDesPieces(lignes, reglements), [lignes, reglements])
+  const piecesRapprochees = useMemo(() => piecesPayees(paiements), [paiements])
   const piecesSansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id))
   // Sous-ensemble plus grave que la simple absence de rapprochement : un montant qui n'apparaît nulle
   // part dans le relevé, à AUCUNE date, signale soit un relevé incomplet soit un montant faux — voir
@@ -384,6 +401,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // mouvement redevient « à traiter », sans rien qui le rattache.
   async function remettreATraiter(ligneId: string): Promise<boolean> {
     const ligne = lignes.find((l) => l.id === ligneId)
+    // Un règlement groupé part avec ses parts et ses écritures, par la base : une simple remise à « à
+    // traiter », la contrainte `lignes_bancaires_reglement_groupe_rapproche` la refuserait.
+    if (ligne?.reglement_groupe) return retirerReglementGroupe(ligneId)
     // Un virement personnel part avec son écriture, par la base (`retirer_virement_personnel`) : une
     // simple remise à « à traiter » la laisserait au brouillon sans plus rien qui la justifie — une
     // rupture de la piste d'audit, et un prélèvement compté dans la trésorerie d'un mouvement à traiter.
@@ -526,6 +546,85 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     return true
   }
 
+  // LIGNE 26 : un virement qui règle plusieurs pièces. Les parts sont vérifiées ici (lib/reglementGroupe.ts,
+  // testé) ; `regler_pieces_par_mouvement` refait les refus de la base, écrit le règlement et ses parts —
+  // en remplaçant celles d'un règlement précédent — et retire les écritures du mouvement, dans une seule
+  // transaction. Les écritures se refont ENSUITE, pièce par pièce, par le chemin d'un rapprochement simple :
+  // la contrepartie banque de chaque part (le règlement du compte de tiers en engagement), à la date du
+  // mouvement. Un échec n'y défait pas le règlement, déjà écrit : il est dit, et le contrôle des écritures
+  // le signale jusqu'à « Régénérer ».
+  //
+  // Suspendu sur une lecture partielle des parts : une pièce payée par une part non lue paraîtrait à régler,
+  // et le refus d'un second paiement ne la verrait pas.
+  async function reglerEnGroupe(ligne: LigneBancaire, parts: PartReglement[]): Promise<boolean> {
+    if (reglementsIncomplets) {
+      window.alert(`Les parts des règlements groupés n'ont pas pu être lues en entier (${reglementsIncomplets}) : recharge la page avant de régler plusieurs pièces.`)
+      return false
+    }
+    const refus = refusReglementGroupe(ligne, parts, pieces, paiements)
+    if (refus) { window.alert(refus); return false }
+    const avant = reglements.flatMap((r) => (r.ligne_bancaire_id === ligne.id && r.piece_id ? [r.piece_id] : []))
+    const { error } = await supabase.rpc('regler_pieces_par_mouvement', {
+      p_ligne_bancaire_id: ligne.id,
+      p_parts: parts.map((part) => ({ piece_id: part.piece_id, montant: part.montant })),
+    })
+    if (error) { window.alert(`Le règlement groupé n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
+
+    const echecs: string[] = []
+    // La base vient de retirer les écritures de ce mouvement : les pièces qu'il réglait AVANT retournent
+    // d'abord à la date de leur facture quand plus rien ne les date ; chaque part reçoit ensuite sa
+    // contrepartie, qui redate sa pièce au mouvement quand elle la règle à elle seule.
+    try {
+      await rendreAuxDatesDeFacture(pieces.filter((p) => avant.includes(p.id)), modele)
+    } catch (err) {
+      echecs.push(`retour à la date de facture : ${messageErreur(err, 'raison inconnue')}`)
+    }
+    for (const part of parts) {
+      const pieceAvant = pieces.find((p) => p.id === part.piece_id)
+      if (!pieceAvant) continue
+      try {
+        // Réglée sur la banque seulement quand cette part est son SEUL paiement : c'est alors ce que la banque
+        // a payé pour elle, et une pièce en devise quitte son cours provisoire. Payée aussi ailleurs, la part
+        // n'en est qu'une fraction, et l'aligner dessus fausserait la pièce (voir lib/reglementBanque.ts).
+        const autres = (paiements.get(pieceAvant.id) ?? []).filter((paiement) => paiement.id !== ligne.id)
+        const piece = autres.length === 0 ? await reglerPieceSurBanque(pieceAvant, { montant: part.montant }) : pieceAvant
+        await synchroniserContrepartieBanque(dossierId, piece, { id: ligne.id, date: ligne.date, montant: part.montant }, modele)
+      } catch (err) {
+        echecs.push(`${nomDeLaPiece(pieceAvant)} : ${messageErreur(err, 'raison inconnue')}`)
+      }
+    }
+    if (echecs.length > 0) {
+      window.alert(
+        `Le règlement groupé est enregistré, mais des écritures n'ont pas pu suivre :\n${echecs.join('\n')}\n\n`
+        + 'Le contrôle des écritures (Écritures) les signale : « Régénérer » les remet en place.',
+      )
+    }
+    return true
+  }
+
+  // Le règlement, ses parts et les écritures du mouvement partent ENSEMBLE, par la base
+  // (`retirer_reglement_groupe`). Les pièces qu'il réglait retournent ensuite à la date de leur facture quand
+  // plus rien ne les date. Suspendu sur une lecture partielle des parts : celles qu'on n'a pas lues n'y
+  // retourneraient pas.
+  async function retirerReglementGroupe(ligneId: string): Promise<boolean> {
+    if (reglementsIncomplets) {
+      window.alert(`Les parts des règlements groupés n'ont pas pu être lues en entier (${reglementsIncomplets}) : recharge la page avant d'annuler ce règlement.`)
+      return false
+    }
+    const reglees = reglements.flatMap((r) => (r.ligne_bancaire_id === ligneId && r.piece_id ? [r.piece_id] : []))
+    const { error } = await supabase.rpc('retirer_reglement_groupe', { p_ligne_bancaire_id: ligneId })
+    if (error) { window.alert(`Le règlement groupé n'a pas pu être annulé : ${messageErreur(error, 'raison inconnue')}`); return false }
+    try {
+      await rendreAuxDatesDeFacture(pieces.filter((p) => reglees.includes(p.id)), modele)
+    } catch (err) {
+      window.alert(
+        `Le règlement groupé est annulé, mais les écritures de ses pièces n'ont pas pu revenir à la date de leur facture : ${messageErreur(err, 'raison inconnue')}\n\n`
+        + 'Le contrôle des écritures (Écritures) les signale : « Régénérer » les remet en place.',
+      )
+    }
+    return true
+  }
+
   // L'erreur est lue, et plus seulement suivie d'une relecture : le panneau reste sur le mouvement
   // après l'action, donc un échec muet laisserait l'opérateur croire le mouvement classé.
   async function ignorer(ligneId: string): Promise<boolean> {
@@ -590,6 +689,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     return m
   }, [ventilations])
 
+  // Les parts de chaque virement qui règle plusieurs pièces : la pastille de la liste en dit le nombre, la
+  // fiche les montre.
+  const reglementsParLigne = useMemo(() => {
+    const m = new Map<string, ReglementGroupe[]>()
+    for (const r of reglements) m.set(r.ligne_bancaire_id, [...(m.get(r.ligne_bancaire_id) ?? []), r])
+    return m
+  }, [reglements])
+
   // Mémoïsée parce que `planAuto` en dépend : recréée à chaque rendu, elle relançait le plan — un
   // produit mouvements × pièces — à chaque frappe dans la recherche, et rendait son `useMemo` inopérant.
   const nonRapprochees = useMemo(() => lignes.filter((l) => l.statut === 'non_rapprochee'), [lignes])
@@ -610,9 +717,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // Appariements où le montant, la date ET le fournisseur concordent — le seul cas où valider une
   // pièce n'apprend rien à personne. Le tri vit dans lib/appariementBanque.ts, testé ; ici il ne
   // reste que l'écriture en base. Voir ce module pour pourquoi trois signaux et pas deux.
+  //
+  // Seules les pièces que rien ne paie encore y entrent : une pièce réglée par la part d'un virement groupé
+  // — ou déjà rapprochée — que le lot « Valider et rapprocher » rattacherait à un second mouvement du même
+  // montant serait payée deux fois.
   const { certains: appariementsCertains, aArbitrer: appariementsDouteux } = useMemo(
-    () => analyserAppariements(pieces, lignes),
-    [pieces, lignes],
+    () => analyserAppariements(pieces.filter((p) => !piecesRapprochees.has(p.id)), lignes),
+    [pieces, lignes, piecesRapprochees],
   )
   const certainsAValider = appariementsCertains.filter((a) => a.piece.statut !== 'validee')
 
@@ -623,8 +734,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // le lot rattache alors le mauvais justificatif, et le second lot VALIDE la pièce sur cette
   // fausse certitude. Le rapprochement ligne à ligne, lui, reste ouvert : c'est l'opérateur qui y
   // tranche, bandeaux sous les yeux.
-  const lotAutomatiqueSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes
-  const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes
+  // Les parts des règlements groupés en font partie : une pièce payée par une part non lue paraîtrait seule
+  // candidate, et le lot la rapprocherait d'un second mouvement.
+  const lotAutomatiqueSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes ?? reglementsIncomplets
+  const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes ?? reglementsIncomplets
 
   // LES AFFECTATIONS QUE LES RÈGLES PROPOSENT (lib/reglesAffectation.ts). Un mouvement qui a peut-être
   // son justificatif — une pièce ou une échéance du même montant, une pièce du même tiers — en est
@@ -874,6 +987,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         consequence={
           'Un mouvement ventilé peut donc s’afficher sans toutes ses parts, et modifier une ventilation est ' +
           'suspendu. Recharge la page.'
+        }
+      />
+
+      <BandeauLecturePartielle
+        quoi="Les parts des virements qui règlent plusieurs pièces"
+        motif={reglementsIncomplets}
+        consequence={
+          'Une pièce déjà payée peut donc paraître sans paiement, et un virement groupé s’afficher sans toutes ses ' +
+          'pièces. Régler plusieurs pièces et les rapprochements en lot sont suspendus. Recharge la page.'
         }
       />
 
@@ -1365,7 +1487,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                           {(partsParLigne.get(l.id)?.length ?? 0) >= 2 ? `Ventilé sur ${partsParLigne.get(l.id)!.length} comptes` : 'Ventilé'}
                         </span>
                       )}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !mouvementRapprocheSansObjet(l) && (
+                      {/* Règle plusieurs pièces : ses parts vivent à part, et la pastille en dit le nombre — pas
+                          sur une lecture partielle des parts, où il serait faux. */}
+                      {l.statut === 'rapprochee' && l.reglement_groupe && (
+                        <span className="badge badge-ok">
+                          {!reglementsIncomplets && (reglementsParLigne.get(l.id)?.length ?? 0) >= 2
+                            ? `Règle ${reglementsParLigne.get(l.id)!.length} pièces`
+                            : 'Règle plusieurs pièces'}
+                        </span>
+                      )}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !mouvementRapprocheSansObjet(l) && (
                         <span className="badge badge-ok">
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
@@ -1432,6 +1563,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             ventilationsIncompletes={ventilationsIncompletes}
             onVentiler={(parts) => agirSurMouvement(() => ventiler(ligneOuverte, parts))}
             onRetirerVentilation={() => agirSurMouvement(() => retirerVentilation(ligneOuverte.id))}
+            reglements={reglementsParLigne.get(ligneOuverte.id) ?? []}
+            reglementsIncomplets={reglementsIncomplets}
+            paiements={paiements}
+            onReglerEnGroupe={(parts) => agirSurMouvement(() => reglerEnGroupe(ligneOuverte, parts))}
+            onRetirerReglementGroupe={() => agirSurMouvement(() => retirerReglementGroupe(ligneOuverte.id))}
           />
         </PanneauDroit>
       )}

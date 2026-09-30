@@ -1,5 +1,6 @@
 import { libelleExploitable } from './appariementBanque'
 import { COMPTE_BANQUE } from './comptes'
+import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { Categorie, EcritureBrouillon, LigneBancaire } from './types'
 
 // UN MOUVEMENT BANCAIRE SANS JUSTIFICATIF S'AFFECTE À UNE CATÉGORIE (ligne 26.6 de la feuille de
@@ -36,7 +37,7 @@ export type MouvementBancaire = Pick<
   LigneBancaire,
   'id' | 'date' | 'libelle' | 'libelle_brut' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
   | 'prelevement_personnel' | 'source_fichier' | 'emprunt_id' | 'emprunt_echeance' | 'emprunt_interets' | 'emprunt_assurance'
-  | 'ventilee'
+  | 'ventilee' | 'reglement_groupe'
 >
 
 // Pourquoi ce mouvement ne peut pas être affecté à cette catégorie, dit AVANT d'écrire. La base refait
@@ -47,6 +48,7 @@ export function refusAffectation(
   categorie: Pick<Categorie, 'libelle' | 'compte_comptable'>,
   assujettiTva: boolean,
 ): string | null {
+  if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
   if (ligne.piece_id || ligne.cotisation_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) {
     return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, ventilé sur plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.'
   }

@@ -383,11 +383,15 @@ export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonn
 // UN MOUVEMENT VENTILÉ (lib/ventilationBanque.ts) non plus, pour la même raison : sa preuve est le
 // relevé, ses parts vivent dans leur propre table, et la catégorie d'une part ne se supprime pas (clé
 // sans action). Un écart entre le drapeau et ses parts, lui, est dit par `ventilationsIncoherentes`.
+//
+// UN MOUVEMENT QUI RÈGLE PLUSIEURS PIÈCES (lib/reglementGroupe.ts) non plus : ses pièces sont dans ses
+// PARTS, pas sur la ligne. La pièce supprimée d'une part, elle, laisse cette part sans pièce — la forme
+// groupée de ce contrôle, dite par `reglementsGroupesIncoherents`.
 export function mouvementRapprocheSansObjet(
-  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'ventilee'>,
+  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'ventilee' | 'reglement_groupe'>,
 ): boolean {
   return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id && !ligne.categorie_id && !ligne.emprunt_id
-    && !ligne.ventilee
+    && !ligne.ventilee && !ligne.reglement_groupe
 }
 
 // Ce que TOUTE suppression d'une pièce ou d'une échéance de cotisation fait au rapprochement qui
@@ -398,6 +402,14 @@ export const AVERTISSEMENT_RAPPROCHEMENT_DEFAIT =
   'Si un mouvement bancaire est rapproché dessus, le lien est défait sans que le mouvement '
   + 'redevienne à traiter : il restera marqué rapproché sans justificatif, et signalé comme tel '
   + 'dans Banque et dans la Checklist.'
+
+// La même mise en garde pour une PIÈCE, qu'un virement qui en règle plusieurs peut aussi payer (ligne 26) :
+// sa part garde son montant (`on delete set null`) et ne justifie plus rien, ce que dit
+// `reglementsGroupesIncoherents`. Une échéance de cotisation n'est jamais réglée ainsi, d'où deux phrases.
+export const AVERTISSEMENT_PAIEMENT_DEFAIT =
+  'Si un mouvement bancaire est rapproché dessus, le lien est défait sans que le mouvement '
+  + 'redevienne à traiter : il restera marqué rapproché sans justificatif — et la part d’un virement '
+  + 'qui règle plusieurs pièces ne justifiera plus rien —, signalé comme tel dans Banque et dans la Checklist.'
 
 export function mouvementsRapprochesSansObjet(lignes: LigneBancaire[]): LigneBancaire[] {
   return lignes.filter(mouvementRapprocheSansObjet)

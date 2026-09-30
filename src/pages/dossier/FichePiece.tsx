@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { cleFournisseur, normalizeTiers, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
 import { suggererCategorie } from '../../lib/tiersCategories'
-import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT, LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
+import { AVERTISSEMENT_PAIEMENT_DEFAIT, LIBELLE_MOTIF_TVA, piecesTvaImpossible } from '../../lib/controles'
 import { convertirMontants, deviseDuTexte, DEVISE_PIVOT, libelleConversion } from '../../lib/devises'
 import { tauxBce } from '../../lib/tauxChange'
 import { useAuth } from '../../context/AuthContext'
@@ -463,7 +463,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
   async function handleDelete() {
     if (!piece) return
     if (!window.confirm(
-      `Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.\n\n${AVERTISSEMENT_RAPPROCHEMENT_DEFAIT}`,
+      `Supprimer définitivement la pièce "${piece.nom_fichier}" ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}`,
     )) return
     setDeleting(true)
     setError(null)

@@ -28,6 +28,8 @@ const faux = vi.hoisted(() => ({
   paiements: [] as unknown[],
   // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts).
   ventilations: [] as unknown[],
+  // Les parts des virements qui règlent plusieurs pièces (lib/reglementGroupe.ts).
+  reglements: [] as unknown[],
   // Les tables dont la lecture est REFUSÉE : `lireTout` les rend incomplètes, sans aucune ligne.
   refusees: new Set<string>(),
 }))
@@ -71,7 +73,8 @@ vi.mock('../../lib/supabase', async () => {
           : table === 'immobilisations' ? faux.immobilisations
           : table === 'cotisations_declarees' ? faux.cotisations
           : table === 'lignes_bancaires' ? faux.paiements
-          : table === 'ventilations_bancaires' ? faux.ventilations : [], predicats)
+          : table === 'ventilations_bancaires' ? faux.ventilations
+          : table === 'reglements_groupes' ? faux.reglements : [], predicats)
         if (table === 'pieces' && faux.muetPieces != null) {
           const rendu = donnees.slice(debut, Math.min(fin + 1, faux.muetPieces))
           return Promise.resolve({ data: rendu, error: null, count: donnees.length }).then(suite)
@@ -425,6 +428,62 @@ describe('EstimationTab — une pièce compte à la date de son paiement', () =>
     await screen.findByText(/Calcul suspendu/)
     expect(screen.getByRole('button', { name: 'Calculer CA + cotisations' }).hasAttribute('disabled')).toBe(true)
     faux.refusees = new Set()
+  })
+})
+
+// UN VIREMENT QUI RÈGLE PLUSIEURS PIÈCES (ligne 26) : chaque part date sa pièce comme un rapprochement simple.
+// Le virement ne porte aucune pièce — elles sont dans ses parts, que l'écran doit lire : sans elles, les
+// pièces retomberaient sur leur date de facture, dans l'exercice d'avant.
+describe('EstimationTab — une pièce réglée par un virement groupé', () => {
+  const annee = new Date().getFullYear() - 1
+  const groupe = (date: string, montant: number) => ({
+    id: 'g', dossier_id: 'dossier-de-test', date, libelle: 'VIR GROUPE', montant, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, reglement_groupe: true, prelevement_personnel: false, source_fichier: null,
+    libelle_brut: null, created_at: `${date}T09:00:00Z`,
+  })
+  const part = (id: string, pieceId: string, montant: number) => ({
+    id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'g', piece_id: pieceId, montant, created_at: '2026-01-01T09:00:00Z',
+  })
+  beforeEach(() => {
+    faux.categories = [categorieDeTest()]
+    faux.immobilisations = []
+    faux.upserts = []
+    faux.upsertsAnnuels = []
+    faux.muetPieces = null
+  })
+  afterEach(() => { faux.paiements = []; faux.reglements = []; faux.refusees = new Set() })
+
+  it('le repère annuel ne compte pas des recettes qu’un virement groupé encaisse l’année suivante', async () => {
+    faux.pieces = [
+      pieceDeTest({ id: 'va', type_piece: 'vente', categorie_id: null, date_piece: `${annee}-12-28` }),
+      pieceDeTest({ id: 'vb', type_piece: 'vente', categorie_id: null, date_piece: `${annee}-12-29`, montant_ht: 500, montant_ttc: 600 }),
+    ]
+    faux.paiements = [groupe(`${annee + 1}-01-04`, 1800)]
+    faux.reglements = [part('g1', 'va', 1200), part('g2', 'vb', 600)]
+    await rendre()
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: null })
+  })
+
+  it('le détail par poste ne compte pas une charge qu’un virement groupé paie l’année suivante', async () => {
+    faux.pieces = [
+      pieceDeTest({ id: 'payee-apres', date_piece: `${annee}-12-30` }),
+      pieceDeTest({ id: 'aussi-apres', date_piece: `${annee}-12-31`, montant_ht: 200, montant_ttc: 240 }),
+      pieceDeTest({ id: 'payee-dans-l-annee', date_piece: `${annee}-03-01`, montant_ht: 300 }),
+    ]
+    faux.paiements = [groupe(`${annee + 1}-01-02`, -1440)]
+    faux.reglements = [part('g1', 'payee-apres', -1200), part('g2', 'aussi-apres', -240)]
+    const bouton = await rendre()
+    await act(async () => { bouton.click() })
+    expect(faux.upserts).toEqual([expect.objectContaining({ annee, poste: 'Loyer', montant: 300 })])
+  })
+
+  it('les deux calculs se suspendent quand les parts sont lues en partie', async () => {
+    faux.pieces = [pieceDeTest()]
+    faux.refusees = new Set(['reglements_groupes'])
+    await rendre()
+    await screen.findByText(/Calcul suspendu/)
+    expect(screen.getByRole('button', { name: 'Calculer CA + cotisations' }).hasAttribute('disabled')).toBe(true)
   })
 })
 

@@ -2,7 +2,7 @@ import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, LIBELLES_CO
 import { COMPTES_DE_TIERS, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
 import { montantRetenu, tvaVentilee } from './montantRetenu'
-import { paiementsParPiece, rattachementsTresorerie, type Paiement, type PaiementIdentifie } from './rattachement'
+import { rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
 import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
@@ -33,9 +33,10 @@ export interface LigneAGenerer {
   statut: 'proposee'
   compte: string
   montant: number
-  // Le mouvement bancaire d'une écriture de RÈGLEMENT, en engagement (voir lib/engagement.ts) ; absent
-  // des lignes d'une facture. C'est lui qui range l'écriture au journal de banque dans le FEC, et qui
-  // la retire quand le rapprochement est annulé.
+  // Le mouvement bancaire d'une ligne de BANQUE — la contrepartie d'un paiement en trésorerie, les deux
+  // lignes d'un règlement en engagement (voir lib/engagement.ts) ; absent des lignes d'une facture et de
+  // la charge. C'est lui qui range un règlement au journal de banque dans le FEC, et qui retire la ligne
+  // quand le rapprochement est annulé.
   ligne_bancaire_id?: string
 }
 
@@ -64,7 +65,8 @@ export interface LigneAGenerer {
 // somme reste celle de la pièce. Une part que rien ne date (ni paiement, ni date de pièce) prend la
 // date du DÉPÔT, le repli d'avant.
 export function lignesChargeProduitPourPiece(
-  dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean, paiements: readonly Paiement[],
+  dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean,
+  paiements: readonly Pick<PaiementDePiece, 'date' | 'montant'>[],
 ): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const libelle = piece.tiers ?? piece.nom_fichier
@@ -96,24 +98,51 @@ export function lignesChargeProduitPourPiece(
   })
 }
 
+// La contrepartie BANQUE d'un paiement, en trésorerie : la banque au montant de CE paiement — le mouvement
+// entier d'un rapprochement, la part d'un règlement groupé —, à sa date, et dans le sens de son SIGNE,
+// jamais du type de la pièce. Un compte banque est un compte d'actif : une entrée l'augmente au débit, une
+// sortie le diminue au crédit, quel que soit le type de la pièce en face — c'est ce qui écrit juste un
+// remboursement, ou l'avoir déduit d'un virement groupé. Un paiement de zéro euro n'en écrit aucune.
+//
+// Écrite ici, et non plus seulement au rapprochement (contrepartieBanque.ts) : une pièce payée en
+// plusieurs fois — un acompte puis un virement groupé — n'en recevait qu'UNE, celle du premier paiement,
+// et son écriture restait déséquilibrée sans que rien ne sache la compléter.
+export function ligneContrepartieBanque(
+  dossierId: string, piece: Pick<Piece, 'id' | 'tiers' | 'nom_fichier'>,
+  paiement: Pick<PaiementDePiece, 'id' | 'date' | 'montant'>,
+): LigneAGenerer | null {
+  if (!paiement.montant) return null
+  return {
+    dossier_id: dossierId, piece_id: piece.id, ligne_bancaire_id: paiement.id, date: paiement.date,
+    libelle: piece.tiers ?? piece.nom_fichier, statut: 'proposee', compte: COMPTE_BANQUE,
+    montant: Math.abs(paiement.montant), sens: paiement.montant > 0 ? 'debit' : 'credit',
+  }
+}
+
 // Ce qu'une pièce produit au brouillon selon le MODÈLE COMPTABLE du dossier — le seul point d'entrée de
-// la génération et de la régénération (EcrituresTab). En trésorerie, la charge ou le produit datés
-// comme la 2035 compte la pièce, la contrepartie banque s'y ajoutant au rapprochement
-// (contrepartieBanque.ts) ; en engagement, l'écriture de la facture à sa date et un règlement par
-// mouvement rapproché (lib/engagement.ts). `mouvements` : les mouvements rapprochés de CETTE pièce.
+// la génération et de la régénération (EcrituresTab). En trésorerie, la charge ou le produit datés comme
+// la 2035 compte la pièce, et une contrepartie banque par paiement ; en engagement, l'écriture de la
+// facture à sa date et un règlement par paiement (lib/engagement.ts). Dans les deux modèles, les lignes
+// de banque se déduisent des paiements : les reprendre ne perd rien.
+//
+// `paiements` : ceux de CETTE pièce, tirés de `paiementsDesPieces` — le type refuse une ligne du relevé
+// filtrée sur `piece_id`, qui oublierait les parts des virements groupés.
 export function lignesPourPiece(
   dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean,
-  mouvements: readonly PaiementIdentifie[], modele: ModeleComptable,
+  paiements: readonly PaiementDePiece[], modele: ModeleComptable,
 ): LigneAGenerer[] {
   if (modele.mode === 'engagement') {
-    return lignesEngagementPourPiece(dossierId, piece, compteComptable, assujettiTva, modele.compteNotesDeFrais, mouvements)
+    return lignesEngagementPourPiece(dossierId, piece, compteComptable, assujettiTva, modele.compteNotesDeFrais, paiements)
   }
-  return lignesChargeProduitPourPiece(dossierId, piece, compteComptable, assujettiTva, mouvements)
+  return [
+    ...lignesChargeProduitPourPiece(dossierId, piece, compteComptable, assujettiTva, paiements),
+    ...paiements.flatMap((p) => ligneContrepartieBanque(dossierId, piece, p) ?? []),
+  ]
 }
 
 // Les dates d'écriture d'une pièce et la part de chacune : les rattachements de lib/rattachement.ts,
 // la part sans date reportée à la date de DÉPÔT, et deux parts à la même date réunies en une.
-function datesDEcriture(piece: Piece, paiements: readonly Paiement[]): { date: string; part: number }[] {
+function datesDEcriture(piece: Piece, paiements: readonly Pick<PaiementDePiece, 'date' | 'montant'>[]): { date: string; part: number }[] {
   const reunies: { date: string; part: number }[] = []
   for (const r of rattachementsTresorerie(piece, paiements)) {
     const date = r.date ?? dateLocaleDe(piece.created_at)
@@ -136,7 +165,7 @@ function repartir(montant: number, parts: number[]): number[] {
 // Les dates que les lignes d'une pièce DOIVENT porter, ou null quand l'une d'elles serait le repli sur
 // la date de dépôt — un INSTANT lu dans le fuseau de qui génère, donc rien qu'on puisse opposer à une
 // écriture générée ailleurs (voir analyserEcritures).
-function datesAttendues(piece: Piece, paiements: readonly Paiement[]): Set<string> | null {
+function datesAttendues(piece: Piece, paiements: readonly PaiementDePiece[]): Set<string> | null {
   const rattachements = rattachementsTresorerie(piece, paiements)
   if (rattachements.some((r) => r.date === null)) return null
   return new Set(rattachements.map((r) => r.date!))
@@ -293,26 +322,28 @@ export function ecrituresSansObjet(
 // part de l'écriture et non de la pièce.
 export function analyserEcritures(
   ecritures: EcritureBrouillon[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean,
-  // Les mouvements rapprochés, qui décident de la DATE qu'une écriture doit porter en trésorerie, et
-  // des RÈGLEMENTS qu'une pièce doit porter en engagement. Sans valeur par défaut : une liste vide
-  // ferait attendre la date de facture partout, et signaler « à régénérer » toute écriture justement
-  // datée à son paiement.
-  lignesBancaires: readonly PaiementIdentifie[],
+  // Les paiements de chaque pièce, parts de virements groupés comprises (`paiementsDesPieces`), qui
+  // décident de la DATE qu'une écriture doit porter en trésorerie, et des lignes de BANQUE qu'une pièce
+  // doit porter dans les deux modèles. Sans valeur par défaut : une liste vide ferait attendre la date de
+  // facture partout, et signaler « à régénérer » toute écriture justement datée à son paiement.
+  paiements: PaiementsDesPieces,
   // Le modèle comptable du dossier (lib/engagement.ts), qui décide de ce qu'une écriture DOIT
   // contenir. Sans valeur par défaut non plus : lu en trésorerie, le brouillon d'un dossier en
   // engagement ferait signaler « à régénérer » chacune de ses écritures justes.
   modele: ModeleComptable,
 ): AnalyseEcritures {
-  const paiements = paiementsParPiece(lignesBancaires)
   const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
     if (!e.piece_id) continue
     piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
   }
-  // Une pièce dont aucune ligne ne touche la banque : en trésorerie, la charge sans sa contrepartie ;
-  // en engagement, la facture sans règlement. Dans les deux cas, un paiement que le rapprochement ne
-  // connaît pas encore.
-  const nbSansContrepartie = [...piecesParGroupe.values()].filter((rows) => !rows.some((r) => r.compte === COMPTE_BANQUE)).length
+  // Une pièce dont aucune ligne ne touche la banque ET qu'aucun paiement ne règle : en trésorerie, la
+  // charge sans sa contrepartie ; en engagement, la facture sans règlement. Un paiement que le
+  // rapprochement ne connaît pas encore. Une pièce PAYÉE sans ligne de banque n'est pas « en attente de
+  // rapprochement » — elle l'est déjà : son écriture est à régénérer, et c'est `piecesDesynchronisees`
+  // qui la dit.
+  const nbSansContrepartie = [...piecesParGroupe.entries()]
+    .filter(([pieceId, rows]) => !rows.some((r) => r.compte === COMPTE_BANQUE) && !paiements.has(pieceId)).length
 
   const groupesDesequilibres = modele.mode === 'engagement'
     ? desequilibresEngagement(piecesParGroupe)
@@ -335,14 +366,45 @@ export function analyserEcritures(
   return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
 }
 
+// Les lignes de BANQUE d'une pièce suivent-elles exactement ses paiements ? Une contrepartie par paiement
+// non nul — ni une de moins, ni une de plus —, désignée par son mouvement, à sa date et à son montant
+// signé (un débit est une entrée). C'est la même question dans les deux modèles : la contrepartie d'un
+// paiement en trésorerie, la ligne de banque d'un règlement en engagement.
+//
+// LE MONTANT AUTANT QUE LE MOUVEMENT, et c'est la part d'un virement groupé qui l'impose : la régler de
+// nouveau avec d'autres montants laisse le même mouvement en face de la même pièce, et une comparaison des
+// seuls identifiants déclarerait juste une banque restée sur l'ancienne part. Une ligne de banque qui ne
+// désigne plus aucun mouvement (le mouvement supprimé, la clé mise à nul) n'est la contrepartie de rien.
+function banqueSuitLesPaiements(lignesBanque: readonly EcritureBrouillon[], paiements: readonly PaiementDePiece[]): boolean {
+  const attendus = new Map(paiements.filter((m) => m.montant !== 0).map((m) => [m.id, m]))
+  const presents = new Map<string, { montant: number; dates: Set<string> }>()
+  for (const e of lignesBanque) {
+    if (!e.ligne_bancaire_id) return false
+    const present = presents.get(e.ligne_bancaire_id) ?? { montant: 0, dates: new Set<string>() }
+    present.montant += e.sens === 'debit' ? e.montant : -e.montant
+    present.dates.add(e.date)
+    presents.set(e.ligne_bancaire_id, present)
+  }
+  if (attendus.size !== presents.size) return false
+  for (const [id, paiement] of attendus) {
+    const present = presents.get(id)
+    if (!present || Math.abs(present.montant - paiement.montant) > EPSILON_EQUILIBRE) return false
+    if (present.dates.size !== 1 || !present.dates.has(paiement.date)) return false
+  }
+  return true
+}
+
 // En TRÉSORERIE, ce qui rend l'écriture d'une pièce périmée : son compte, sa TVA, ses dates ou son
-// total ne sont plus ceux que la pièce produirait aujourd'hui.
+// total ne sont plus ceux que la pièce produirait aujourd'hui, ou ses contreparties banque ne sont plus
+// ses paiements.
 function tresorerieDesynchronisee(
   p: Piece, compte: string, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
-  paiementsPiece: readonly Paiement[],
+  paiementsPiece: readonly PaiementDePiece[],
 ): boolean {
   const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE)
-  if (lignes.length === 0) return false // pas encore générée — pas une désynchronisation
+  // Pas encore générée — pas une désynchronisation. Des contreparties SANS leur charge, en revanche, en
+  // sont une : la génération ne les produit jamais ainsi, et « Régénérer » reconstruit les deux.
+  if (lignes.length === 0) return groupe.length > 0
   // Signé par rapport au sens naturel de la pièce (achat = débit, vente = crédit) : une simple somme
   // des montants (toujours positifs) donnerait un faux "désynchronisée" sur une pièce à montant
   // négatif (avoir, remboursement), dont les lignes sont correctement enregistrées au sens inverse
@@ -403,7 +465,12 @@ function tresorerieDesynchronisee(
     if (presentes.size !== attendues.size || [...attendues].some((d) => !presentes.has(d))) return true
   }
   const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-  return Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE
+  if (Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE) return true
+  // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT. Le rapprochement n'en écrivait qu'une par pièce — celle du
+  // premier paiement —, donc une pièce payée en deux fois, ou réglée en partie par un virement groupé,
+  // gardait une écriture déséquilibrée que rien ne savait compléter. « Régénérer » réécrit désormais la
+  // banque avec la charge, depuis les paiements.
+  return !banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)
 }
 
 // En ENGAGEMENT (lib/engagement.ts), ce qu'une pièce doit porter au brouillon : l'écriture de sa
@@ -415,7 +482,7 @@ function tresorerieDesynchronisee(
 // règlement que plus rien ne rapproche en solderait une qui court encore.
 function engagementDesynchronise(
   p: Piece, compte: string, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementIdentifie[], compteNotesDeFrais: CompteNotesDeFrais,
+  paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: CompteNotesDeFrais,
 ): boolean {
   const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== COMPTE_BANQUE)
   const reglements = groupe.filter((e) => e.ligne_bancaire_id)
@@ -440,12 +507,13 @@ function engagementDesynchronise(
   const totalTiers = facture.filter((e) => e.compte === tiers).reduce((sum, e) => sum + signe(e, sensTiers), 0)
   if (Math.abs(totalTiers - p.montant_ttc!) > EPSILON_EQUILIBRE) return true
 
-  // Exactement les mouvements rapprochés de la pièce — ni un de moins, ni un de plus —, sur son compte
-  // de tiers ACTUEL.
-  const attendus = new Set(paiementsPiece.map((m) => m.id))
+  // Exactement les paiements de la pièce — ni un de moins, ni un de plus —, sur son compte de tiers
+  // ACTUEL, et chacun à son montant : un paiement de zéro euro n'écrit aucun règlement.
+  const attendus = new Set(paiementsPiece.filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
-  return reglements.some((e) => e.compte !== COMPTE_BANQUE && e.compte !== tiers)
+  if (reglements.some((e) => e.compte !== COMPTE_BANQUE && e.compte !== tiers)) return true
+  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)
 }
 
 // En engagement, CHAQUE écriture s'équilibre seule — la facture comme chaque règlement

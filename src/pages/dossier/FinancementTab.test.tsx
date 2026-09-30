@@ -26,6 +26,8 @@ const faux = vi.hoisted(() => ({
   paiements: [] as unknown[],
   // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts).
   ventilations: [] as unknown[],
+  // Les parts des virements qui règlent plusieurs pièces (lib/reglementGroupe.ts).
+  reglements: [] as unknown[],
   // Les tables dont la lecture ÉCHOUE. Un faux client qui ne sait pas refuser ne peut rien dire de
   // la famille « le vide est une affirmation » : il rend le même objet dans les deux cas.
   refusees: new Set<string>(),
@@ -71,7 +73,8 @@ vi.mock('../../lib/supabase', async () => {
           : table === 'ecritures_brouillon' ? faux.ecritures
           : table === 'a_nouveaux' ? faux.aNouveaux
           : table === 'lignes_bancaires' ? faux.paiements
-          : table === 'ventilations_bancaires' ? faux.ventilations : [], predicats)
+          : table === 'ventilations_bancaires' ? faux.ventilations
+          : table === 'reglements_groupes' ? faux.reglements : [], predicats)
         const muet = faux.muet[table]
         if (muet != null) {
           return Promise.resolve({ data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }).then(suite)
@@ -144,6 +147,7 @@ afterEach(() => {
   faux.aNouveaux = []
   faux.paiements = []
   faux.ventilations = []
+  faux.reglements = []
   faux.emprunts = []
   faux.suppressions = []
   faux.misesAJour = []
@@ -480,6 +484,46 @@ describe('FinancementTab — une recette compte à son encaissement', () => {
   })
 })
 
+// UN VIREMENT QUI RÈGLE PLUSIEURS RECETTES (ligne 26) : chacune compte à la date du virement, comme un
+// encaissement rapproché seul. Le virement ne porte aucune pièce — elles sont dans ses parts, que l'écran doit
+// lire : sans elles, les deux recettes retomberaient sur leur date de facture, avant l'état arrêté au 30 juin.
+describe('FinancementTab — des recettes encaissées par un virement groupé', () => {
+  const VIREMENT_DE_JUILLET = {
+    id: 'g', dossier_id: 'd', date: '2026-07-02', libelle: 'VIR CPAM', montant: 15000, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, reglement_groupe: true, prelevement_personnel: false, source_fichier: null,
+    libelle_brut: null, created_at: '2026-07-03T09:00:00Z',
+  }
+  const PARTS = [
+    { id: 'g1', dossier_id: 'd', ligne_bancaire_id: 'g', piece_id: 'v1', montant: 10000, created_at: '2026-07-03T09:00:00Z' },
+    { id: 'g2', dossier_id: 'd', ligne_bancaire_id: 'g', piece_id: 'v2', montant: 5000, created_at: '2026-07-03T09:00:00Z' },
+  ]
+
+  it('ne les porte pas au 30 juin, et les porte au 31 juillet', async () => {
+    faux.pieces = [recette(), recette({ id: 'v2', montant_ht: 5000, montant_ttc: 5000 })]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [VIREMENT_DE_JUILLET]
+    faux.reglements = PARTS
+
+    const auJuin = await ouvrirLaSituation('2026-06-30')
+    expect(totalDuPoste(auJuin, 'Recettes')).toBeNull()
+    await act(async () => { fireEvent.change(screen.getByLabelText('À la date du'), { target: { value: '2026-07-31' } }) })
+    expect(totalDuPoste(auJuin, 'Recettes')).toMatch(/^15\s?000,00\s€$/)
+  })
+
+  it('dit la lecture partielle quand les parts sont lues en partie', async () => {
+    faux.pieces = [recette()]
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [VIREMENT_DE_JUILLET]
+    faux.reglements = PARTS
+    faux.muet = { reglements_groupes: 1 }
+    render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
+
+    expect(await screen.findByText(/n'ont pas pu être lu/)).toBeTruthy()
+  })
+})
+
 // LE PRÉREMPLISSAGE N'ÉCRIT RIEN LUI-MÊME — mais ce qu'il pose part tel quel au premier « Enregistrer »,
 // sur le document qu'on montre à une banque, et la fenêtre recouvre le bandeau qui dirait que la
 // lecture est incomplète. Sur une lecture partielle, il se suspend.
@@ -767,7 +811,7 @@ describe('FinancementTab — les emprunts et le relevé', () => {
       id: 'l', dossier_id: 'd', date: '2025-03-06', libelle: 'PRLV ECHEANCE PRET', libelle_brut: null, montant: -540,
       statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
       source_fichier: null, emprunt_id: 'emp-1', emprunt_echeance: 2, emprunt_interets: 34.55, emprunt_assurance: 21.03,
-      ventilee: false, id_externe: null, created_at: '2025-03-06T09:00:00Z', ...o,
+      ventilee: false, reglement_groupe: false, id_externe: null, created_at: '2025-03-06T09:00:00Z', ...o,
     }
   }
   const ECHEANCE_2 = mouvement({ id: 'l-ech-2' })

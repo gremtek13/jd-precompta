@@ -6,6 +6,7 @@ import { libelleExploitable } from './appariementBanque'
 import { COMPTE_BANQUE } from './comptes'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
+import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { Categorie, EcritureBrouillon, VentilationBancaire } from './types'
 import { compteDuDirigeant } from './virementPersonnel'
 
@@ -65,6 +66,7 @@ export function refusVentilation(
   categories: readonly Pick<Categorie, 'id' | 'libelle' | 'compte_comptable'>[],
   assujettiTva: boolean,
 ): string | null {
+  if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
   if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.emprunt_id || ligne.prelevement_personnel) {
     return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, affecté à une catégorie ou classé en virement personnel : annule d’abord ce classement.'
   }

@@ -1,21 +1,22 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
+import { COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
 import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresSansObjet, lignesPourPiece, piecesAComptabiliser, soldeCompte } from '../../lib/ecritures'
 import type { MotifSansObjet } from '../../lib/ecritures'
-import { synchroniserContrepartieBanque } from '../../lib/contrepartieBanque'
 import { COMPTES_NOTES_DE_FRAIS, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
-import { anneesDesRattachements, paiementsParPiece, rattachements } from '../../lib/rattachement'
+import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
 import {
   ecritureDuMouvement, idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, refusAffectation,
   type MouvementAffecte,
 } from '../../lib/affectationBanque'
-import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece, VentilationBancaire } from '../../lib/types'
+import type {
+  ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire,
+} from '../../lib/types'
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, refusVentilation } from '../../lib/ventilationBanque'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -66,6 +67,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // la piste d'audit de l'exercice qu'elle ouvre.
   const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
   const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
+  // Les parts des virements qui règlent PLUSIEURS pièces (lib/reglementGroupe.ts) : chacune est un
+  // paiement de sa pièce, qui date sa charge et porte sa contrepartie banque comme un rapprochement simple.
+  const [reglements, setReglements] = useState<ReglementGroupe[]>([])
   // Les parts des mouvements ventilés (lib/ventilationBanque.ts) : de quoi dire une écriture qui ne les
   // suit plus, et la réécrire. À part de `brouillonIncomplet` : le FEC et la piste d'audit n'en dépendent
   // pas — l'écriture d'un mouvement ventilé est au brouillon, et le prédicat du relevé se lit sur la ligne.
@@ -112,7 +116,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   async function load() {
     setLoading(true)
-    const [lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations] = await Promise.all([
+    const [
+      lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
+      lectureReglements,
+    ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
@@ -154,8 +161,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Les parts des virements groupés : elles datent et règlent l'écriture de leurs pièces, comme les
+      // mouvements ci-dessus — donc le même drapeau, qui suspend la génération et les deux exports.
+      lireTout<ReglementGroupe>((debut, fin) =>
+        supabase.from('reglements_groupes').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     setLignesBancaires(lectureLignes.lignes)
+    setReglements(lectureReglements.lignes)
     setVentilations(lectureVentilations.lignes)
     setVentilationsIncompletes(lectureVentilations.complete ? null : lectureVentilations.motif)
     setCategories(lectureCategories.lignes)
@@ -167,7 +181,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     // immobilisations en font partie : la première décide du compte de chaque écriture, la seconde
     // de quelles pièces n'en produisent pas.
     setBrouillonIncomplet(
-      [brouillon, lecturePieces, lectureLignes, lectureCategories, lectureImmobilisations]
+      [brouillon, lecturePieces, lectureLignes, lectureReglements, lectureCategories, lectureImmobilisations]
         .find((l) => !l.complete)?.motif ?? null,
     )
     setANouveauxIncomplets(lectureANouveaux.motif)
@@ -217,6 +231,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // c'est un actif qui s'amortit, pas une charge courante, et l'y laisser compterait la dépense
   // deux fois.
   const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, immobilisationPieceIds)
+  // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent sa charge et portent
+  // ses contreparties banque (lib/rattachement.ts).
+  const paiements = paiementsDesPieces(lignesBancaires, reglements)
   const enAttente = aComptabiliser
     .filter(({ piece }) => !ecritures.some((e) => e.piece_id === piece.id))
     .map(({ piece }) => piece)
@@ -234,26 +251,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setError(null)
     try {
       const comptes = new Map(aComptabiliser.map(({ piece, compte }) => [piece.id, compte]))
-      // Selon le modèle du dossier : en trésorerie, datées au paiement quand le rapprochement le connaît,
-      // comme la 2035 compte la pièce ; en engagement, la facture à sa date et un règlement par
-      // mouvement déjà rapproché (lib/engagement.ts).
+      // Selon le modèle du dossier : en trésorerie, la charge datée au paiement quand le rapprochement le
+      // connaît, comme la 2035 compte la pièce, et une contrepartie banque par paiement ; en engagement,
+      // la facture à sa date et un règlement par paiement (lib/engagement.ts). Dans les deux, une pièce
+      // déjà rapprochée — ou réglée en partie par un virement groupé — reçoit sa banque tout de suite.
       const rows = enAttente.flatMap((p) =>
-        lignesPourPiece(dossierId, p, comptes.get(p.id)!, assujettiTva, lignesBancaires.filter((l) => l.piece_id === p.id), modele))
+        lignesPourPiece(dossierId, p, comptes.get(p.id)!, assujettiTva, paiements.get(p.id) ?? [], modele))
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
-
-      // Une pièce déjà rapprochée d'un mouvement bancaire au moment où son écriture est générée (import
-      // en masse d'anciens exercices, par exemple) doit recevoir sa contrepartie tout de suite — sinon
-      // il faudrait re-toucher le rapprochement dans Banque pour que la partie double se complète. En
-      // engagement, ses règlements sont déjà dans les lignes ci-dessus.
-      if (modele.mode === 'tresorerie') {
-        await Promise.all(
-          enAttente.map((p) => {
-            const ligne = lignesBancaires.find((l) => l.piece_id === p.id)
-            return ligne ? synchroniserContrepartieBanque(dossierId, p, ligne, modele) : Promise.resolve()
-          }),
-        )
-      }
       // Relu AVANT de relâcher le verrou : relâché plus tôt, `enAttente` porterait encore les pièces
       // qu'on vient de comptabiliser le temps que la relecture revienne, et un clic à ce moment-là
       // les générerait une seconde fois.
@@ -288,7 +293,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignesBancaires, modele)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele)
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
   const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
@@ -346,7 +351,6 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       // En engagement, celui de sa facture, où son écriture de facture est datée.
       // Une pièce que rien ne date n'appartient à aucun exercice : elle est jointe à chacun, et la
       // colonne « Ce qui manque » le dit (voir lib/pisteAudit.ts) plutôt que de la taire.
-      const paiements = paiementsParPiece(lignesBancaires)
       const piecesExercice = piecesValidees.filter((p) => {
         const parts = rattachements(p, paiements.get(p.id) ?? [], modele.mode)
         return parts.some((r) => r.date === null) || anneesDesRattachements(parts).includes(anneeFilter)
@@ -361,14 +365,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   }
 
   // Reprend les écritures d'une pièce d'après ses montants actuels — jamais automatique, seulement sur
-  // ce clic explicite. En TRÉSORERIE, les lignes charge/produit + TVA seulement : la contrepartie banque
-  // porte le montant du mouvement réel, indépendant d'une correction sur la pièce. En ENGAGEMENT, TOUT —
-  // la facture et ses règlements, qui se déduisent des mouvements rapprochés (lib/engagement.ts) : c'est
-  // ce qui répare un règlement resté sur l'ancien compte de tiers d'une pièce devenue note de frais.
+  // ce clic explicite. TOUT, dans les deux modèles : la charge ou la facture, et les lignes de banque, qui
+  // se déduisent des paiements — une contrepartie par paiement en trésorerie, un règlement par paiement en
+  // engagement (lib/ecritures.ts). Les reprendre ne perd rien, et c'est ce qui complète une pièce payée en
+  // plusieurs fois, ou réglée en partie par un virement groupé, dont le rapprochement n'avait écrit qu'une
+  // contrepartie ; en engagement, ce qui répare un règlement resté sur l'ancien compte de tiers.
   //
-  // SUSPENDUE SUR UNE LECTURE PARTIELLE, comme la génération : les mouvements rapprochés datent la
-  // charge en trésorerie et décident des règlements en engagement — lus à moitié, régénérer daterait
-  // mal, ou SUPPRIMERAIT des règlements qui existent.
+  // SUSPENDUE SUR UNE LECTURE PARTIELLE, comme la génération : les paiements datent la charge en
+  // trésorerie et décident des lignes de banque dans les deux modèles — lus à moitié, régénérer daterait
+  // mal, ou SUPPRIMERAIT des contreparties qui existent.
   async function regenererEcriture(piece: Piece) {
     const compte = categorieById(piece.categorie_id)?.compte_comptable
     if (!compte || brouillonIncomplet !== null || regenerationsEnCours.current.has(piece.id)) return
@@ -376,12 +381,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setRegenerating(piece.id)
     setError(null)
     try {
-      const { error: deleteError } = modele.mode === 'engagement'
-        ? await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
-        : await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
+      const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
       if (deleteError) throw deleteError
       const { error: insertError } = await supabase.from('ecritures_brouillon')
-        .insert(lignesPourPiece(dossierId, piece, compte, assujettiTva, lignesBancaires.filter((l) => l.piece_id === piece.id), modele))
+        .insert(lignesPourPiece(dossierId, piece, compte, assujettiTva, paiements.get(piece.id) ?? [], modele))
       if (insertError) throw insertError
       load()
     } catch (err) {
@@ -723,19 +726,21 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             <p className="muted" style={{ marginTop: -8 }}>
               Ces pièces ont changé depuis que leurs écritures ont été générées : montant TTC,
               ventilation de la TVA, catégorie (donc compte), date, type (donc compte de tiers — un achat
-              devenu note de frais quitte le 401), ou rapprochements — un paiement rapproché sans
-              règlement laisse au 401 une dette déjà payée. « Régénérer » reprend la facture et ses
-              règlements d’après la pièce et ses rapprochements actuels.
+              devenu note de frais quitte le 401), ou paiements — un paiement rapproché sans règlement
+              laisse au 401 une dette déjà payée, et la part d’un virement groupé réglé de nouveau change
+              le montant du sien. « Régénérer » reprend la facture et ses règlements d’après la pièce et
+              ses paiements actuels.
             </p>
           ) : (
             <p className="muted" style={{ marginTop: -8 }}>
-              Ces pièces ont été modifiées depuis que leur écriture a été générée : montant TTC,
-              ventilation de la TVA, catégorie (donc compte) ou date. Les trois dernières ne déplacent
-              AUCUN total — une catégorie change le compte qui part en FEC, une date change l'EXERCICE
-              dans lequel l'écriture tombe alors que la 2035 lit celle de la pièce, et une TVA corrigée
-              à TTC constant change la répartition entre charge et TVA déductible à somme juste.
-              Reprend tout cela à jour sans toucher à une éventuelle contrepartie banque déjà
-              rapprochée, dont la date est celle du paiement.
+              Ces pièces ont changé depuis que leur écriture a été générée : montant TTC, ventilation de
+              la TVA, catégorie (donc compte), date, ou paiements. Plusieurs ne déplacent AUCUN total —
+              une catégorie change le compte qui part en FEC, une date change l'EXERCICE dans lequel
+              l'écriture tombe alors que la 2035 lit celle du paiement, et une TVA corrigée à TTC constant
+              change la répartition entre charge et TVA déductible à somme juste. Et chaque paiement doit
+              avoir sa contrepartie banque : une pièce payée en deux fois, ou réglée en partie par un
+              virement groupé, n’en avait qu’une. « Régénérer » reprend la charge et ses contreparties
+              d’après la pièce et ses paiements actuels.
             </p>
           )}
           <table>

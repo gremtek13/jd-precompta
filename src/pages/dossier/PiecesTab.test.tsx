@@ -4,7 +4,8 @@ import { AnneeProvider } from '../../context/AnneeContext'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import PiecesTab from './PiecesTab'
 import type { Piece, PieceCommentaire } from '../../lib/types'
-import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
+import type { Predicat } from '../../test/filtresPostgrest'
+import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
 
 // L'ÉCRAN OÙ LA PIÈCE SE CORRIGE. Cinq contrôles de la famille « donnée démontrée fausse » y
 // envoient l'opérateur depuis la Checklist (`cible: 'pieces'`), et trois seulement marquaient la
@@ -33,7 +34,9 @@ const faux = vi.hoisted(() => ({
   erreurPresence: null as string | null,
 }))
 
-vi.mock('../../lib/supabase', () => ({
+vi.mock('../../lib/supabase', async () => {
+  const { filtrer, predicatNot } = await import('../../test/filtresPostgrest')
+  return {
   supabase: {
     from: (table: string) => {
       const chaine: Record<string, unknown> = {}
@@ -41,6 +44,10 @@ vi.mock('../../lib/supabase', () => ({
       let debut = 0
       let fin = Number.MAX_SAFE_INTEGER
       let valeurMaj: Record<string, unknown> = {}
+      // `.not` est APPLIQUÉ à la lecture (voir src/test/filtresPostgrest.ts) : accepté sans effet, il laissait
+      // ce test vert avec la lecture des mouvements rapprochés restreinte à ceux qui portent une pièce — le
+      // filtre qui cachait les pièces payées par la part d'un virement groupé (ligne 26).
+      const predicats: Predicat[] = []
       Object.assign(chaine, {
         select: () => chaine,
         delete: () => { operation = 'delete'; return chaine },
@@ -51,7 +58,7 @@ vi.mock('../../lib/supabase', () => ({
           return chaine
         },
         is: () => chaine,
-        not: () => chaine,
+        not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
         or: () => chaine,
         order: () => chaine,
         range: (d: number, f: number) => { debut = d; fin = f; return chaine },
@@ -74,7 +81,7 @@ vi.mock('../../lib/supabase', () => ({
               return { data: [], error: null, count: 0 }
             }).then(suite)
           }
-          const toutes = faux.parTable[table] ?? []
+          const toutes = filtrer(faux.parTable[table] ?? [], predicats)
           const plafond = faux.muetApres[table]
           const finReelle = plafond === undefined ? debut + (fin - debut + 1) : Math.min(debut + (fin - debut + 1), plafond)
           return Promise.resolve({
@@ -93,7 +100,8 @@ vi.mock('../../lib/supabase', () => ({
       from: () => ({ createSignedUrl: () => Promise.resolve({ data: null, error: { message: 'non utilisé' } }) }),
     },
   },
-}))
+  }
+})
 
 // `PiecesTab` lit `monCabinetId` du contexte d'authentification, pour la règle tiers → catégorie
 // partagée par le cabinet. Monter un AuthProvider complet ferait dépendre ce test d'une session
@@ -253,7 +261,7 @@ describe('PiecesTab — supprimer une sélection dit ce que ça défait', () => 
     const bouton = await selectionner()
     await act(async () => { bouton.click() })
 
-    expect(message).toContain(AVERTISSEMENT_RAPPROCHEMENT_DEFAIT)
+    expect(message).toContain(AVERTISSEMENT_PAIEMENT_DEFAIT)
     expect(faux.suppressions).toHaveLength(0)
     expect(message).not.toMatch(/pack déjà généré/)
   })
@@ -514,5 +522,37 @@ describe('PiecesTab — la fiche n’offre la proposition de catégorie que si e
     monter('toutes')
     await ouvrir('ALPHA')
     expect(proposer()).toBeTruthy()
+  })
+})
+
+// UNE PIÈCE PAYÉE PAR LA PART D'UN VIREMENT GROUPÉ (ligne 26). Le virement ne porte aucune pièce : elles sont
+// dans ses parts. Lu comme avant — les seuls mouvements qui portent une pièce —, l'écran dirait « Non
+// rapprochée » d'une facture payée, et l'opérateur irait chercher un paiement qui existe.
+describe('PiecesTab — une pièce réglée par un virement groupé', () => {
+  const ligneDe = async (tiers: string) => {
+    const cellules = await screen.findAllByText(tiers)
+    const ligne = cellules.map((c) => c.closest('tr')).find((tr) => tr !== null)
+    if (!ligne) throw new Error(`Aucune ligne ne porte « ${tiers} »`)
+    return ligne
+  }
+
+  it('est dite « Rapprochée » comme une autre, et celle que rien ne paie reste « Non rapprochée »', async () => {
+    poser([piece({ id: 'p-groupe', statut: 'validee', tiers: 'ALPHA' }), piece({ id: 'p-libre', statut: 'validee', tiers: 'BETA' })])
+    faux.parTable.lignes_bancaires = [{ id: 'vir', piece_id: null, date: '2026-03-15', montant: -240, statut: 'rapprochee', reglement_groupe: true }]
+    faux.parTable.reglements_groupes = [{ ligne_bancaire_id: 'vir', piece_id: 'p-groupe', montant: -120 }]
+    monter('toutes')
+
+    expect(within(await ligneDe('ALPHA')).getByText('Rapprochée')).toBeTruthy()
+    expect(within(await ligneDe('BETA')).getByText('Non rapprochée')).toBeTruthy()
+  })
+
+  it('des parts lues en partie : l’écran le dit, au lieu de laisser la pièce « non rapprochée » sans un mot', async () => {
+    poser([piece({ id: 'p-groupe', statut: 'validee', tiers: 'ALPHA' })])
+    faux.parTable.lignes_bancaires = [{ id: 'vir', piece_id: null, date: '2026-03-15', montant: -240, statut: 'rapprochee', reglement_groupe: true }]
+    faux.parTable.reglements_groupes = [{ ligne_bancaire_id: 'vir', piece_id: 'p-groupe', montant: -120 }]
+    faux.muetApres = { reglements_groupes: 0 }
+    monter('toutes')
+
+    expect(await screen.findByText(/Les listes de référence du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
   })
 })

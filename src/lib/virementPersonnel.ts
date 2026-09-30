@@ -3,6 +3,7 @@ import {
 } from './affectationBanque'
 import { COMPTE_EXPLOITANT } from './comptes'
 import type { ModeleComptable } from './engagement'
+import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { EcritureBrouillon } from './types'
 
 // UN VIREMENT PERSONNEL S'ÉCRIT SUR LE COMPTE DU DIRIGEANT (ligne 26.6 de la feuille de route, étape a).
@@ -37,6 +38,7 @@ export function compteDuDirigeant(modele: ModeleComptable): string {
 // refait les mêmes refus : l'écran les dit pour qu'on ne clique pas pour rien, la base pour qu'aucun
 // chemin ne les contourne.
 export function refusVirementPersonnel(ligne: MouvementBancaire): string | null {
+  if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
   if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee) {
     return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, affecté à une catégorie ou ventilé sur plusieurs comptes : annule d’abord ce classement.'
   }

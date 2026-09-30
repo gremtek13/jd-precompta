@@ -1,5 +1,5 @@
 import { seuilAlignement } from './alignementBanque'
-import type { LigneBancaire, ModeComptable, Piece } from './types'
+import type { LigneBancaire, ModeComptable, Piece, ReglementGroupe } from './types'
 
 // LA DATE À LAQUELLE UNE PIÈCE COMPTE, DANS UNE COMPTABILITÉ DE TRÉSORERIE (BNC, déclaration 2035).
 //
@@ -23,28 +23,72 @@ import type { LigneBancaire, ModeComptable, Piece } from './types'
 // même question — quand cette pièce a-t-elle été réglée ? — et une règle écrite deux fois n'attend
 // que de diverger.
 
-/** Ce dont le rattachement a besoin d'un mouvement bancaire : le reste de la ligne ne décide de rien. */
-export type Paiement = Pick<LigneBancaire, 'piece_id' | 'date' | 'montant' | 'statut'>
+// LES PAIEMENTS D'UNE PIÈCE, tels que tous les calculs les lisent : un mouvement RAPPROCHÉ de la pièce, ou
+// la PART d'un mouvement qui règle plusieurs pièces (lib/reglementGroupe.ts, ligne 26 de la feuille de
+// route). Une part est un paiement de sa pièce à la date du mouvement et de son montant : la 2035, la TVA
+// et les écritures la lisent comme un rapprochement simple.
+export interface PaiementDePiece {
+  /** Le mouvement bancaire : en engagement il désigne le règlement de la pièce, en trésorerie sa
+   *  contrepartie banque. Deux parts d'un même mouvement portent le même, sur deux pièces différentes. */
+  id: string
+  date: string
+  /** Ce que CE mouvement paie de CETTE pièce, signé comme le relevé : tout le mouvement pour un
+   *  rapprochement, sa part pour un règlement groupé. */
+  montant: number
+  /** `groupe` : la part d'un règlement groupé. Le champ sert aussi de garde : une ligne du relevé ne le
+   *  porte pas, donc ne peut pas passer à la compilation pour les paiements d'une pièce — un filtre sur
+   *  `piece_id` oublierait toutes les pièces réglées par un virement groupé. */
+  origine: 'rapprochement' | 'groupe'
+}
 
-/**
- * Un paiement dont on connaît le MOUVEMENT : en engagement, chaque règlement est une écriture qui
- * désigne sa ligne bancaire (lib/engagement.ts), et le contrôle des écritures compare ces désignations
- * aux rapprochements.
- */
-export type PaiementIdentifie = Paiement & Pick<LigneBancaire, 'id'>
+/** Les paiements de chaque pièce, par identifiant de pièce. Ne se construit que par `paiementsDesPieces`,
+ *  qui exige les parts des règlements groupés. */
+export type PaiementsDesPieces = ReadonlyMap<string, readonly PaiementDePiece[]>
 
-// Les paiements rapprochés de chaque pièce. Seul un mouvement RAPPROCHÉ paie une pièce : le statut est
-// relu ici plutôt que supposé du côté de l'appelant, un `piece_id` sur une ligne remise à traiter
-// étant exactement le lien qui ne doit plus rien dater.
-export function paiementsParPiece<T extends Paiement>(lignes: readonly T[]): Map<string, T[]> {
-  const parPiece = new Map<string, T[]>()
+/** Ce que `paiementsDesPieces` lit d'une ligne du relevé. */
+export type LignePayante = Pick<LigneBancaire, 'id' | 'piece_id' | 'date' | 'montant' | 'statut' | 'reglement_groupe'>
+
+/** Ce qu'il lit d'une part de règlement groupé. */
+export type PartReglee = Pick<ReglementGroupe, 'ligne_bancaire_id' | 'piece_id' | 'montant'>
+
+// Les paiements de chaque pièce. Seul un mouvement RAPPROCHÉ paie une pièce : le statut est relu ici
+// plutôt que supposé du côté de l'appelant, un `piece_id` sur une ligne remise à traiter étant exactement
+// le lien qui ne doit plus rien dater. Une part ne compte que si son mouvement est lu, rapproché et réglé
+// en groupe — une part que rien ne rattache à un tel mouvement, ou dont la pièce a été supprimée, ne paie
+// rien, et `reglementsGroupesIncoherents` le dit.
+//
+// LES PARTS SONT OBLIGATOIRES, sans valeur par défaut : oubliées, toutes les pièces d'un virement groupé
+// retomberaient sans paiement — comptées à leur date de facture dans la 2035, dans AUCUNE déclaration de
+// TVA, et « à rapprocher » partout.
+//
+// Chaque liste est triée par date puis par mouvement, pour que deux lectures du même relevé rendent la
+// même chose quel que soit l'ordre de la requête — la répartition des centimes d'une écriture en dépend.
+export function paiementsDesPieces(lignes: readonly LignePayante[], reglements: readonly PartReglee[]): PaiementsDesPieces {
+  const mouvements = new Map(lignes.map((l) => [l.id, l]))
+  const parPiece = new Map<string, PaiementDePiece[]>()
+  const ajouter = (pieceId: string, paiement: PaiementDePiece) => {
+    const liste = parPiece.get(pieceId) ?? []
+    liste.push(paiement)
+    parPiece.set(pieceId, liste)
+  }
   for (const ligne of lignes) {
     if (ligne.statut !== 'rapprochee' || !ligne.piece_id) continue
-    const liste = parPiece.get(ligne.piece_id) ?? []
-    liste.push(ligne)
-    parPiece.set(ligne.piece_id, liste)
+    ajouter(ligne.piece_id, { id: ligne.id, date: ligne.date, montant: ligne.montant, origine: 'rapprochement' })
   }
+  for (const part of reglements) {
+    if (!part.piece_id) continue
+    const mouvement = mouvements.get(part.ligne_bancaire_id)
+    if (!mouvement || mouvement.statut !== 'rapprochee' || !mouvement.reglement_groupe) continue
+    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: 'groupe' })
+  }
+  for (const liste of parPiece.values()) liste.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
   return parPiece
+}
+
+// Les pièces qu'au moins un paiement règle, en tout ou en partie : ce que les écrans excluent des
+// candidates à un rapprochement, et ce qu'ils disent « rapprochée ».
+export function piecesPayees(paiements: PaiementsDesPieces): ReadonlySet<string> {
+  return new Set(paiements.keys())
 }
 
 export interface PartsReglees {
@@ -136,9 +180,12 @@ export function rattachementsTresorerie(
 // partie. Une pièce sans date n'y compte nulle part, comme en trésorerie, et les écrans la disent
 // « sans date ». Sans valeur par défaut pour le modèle : un appelant qui l'oublie doit le découvrir à la
 // compilation, pas en lisant une situation intermédiaire datée au paiement dans une société à l'IS.
+//
+// `paiements` : ceux de CETTE pièce, tirés de `paiementsDesPieces` — le type refuse une ligne du relevé
+// filtrée sur `piece_id`, qui ne porterait pas les parts d'un règlement groupé.
 export function rattachements(
   piece: Pick<Piece, 'date_piece' | 'montant_ttc' | 'type_piece'>,
-  paiements: readonly Pick<LigneBancaire, 'date' | 'montant'>[],
+  paiements: readonly PaiementDePiece[],
   mode: ModeComptable,
 ): Rattachement[] {
   if (mode === 'engagement') return [{ date: piece.date_piece, part: 1, source: 'facture' }]

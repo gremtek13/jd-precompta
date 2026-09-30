@@ -4,7 +4,8 @@ import { AnneeProvider } from '../../context/AnneeContext'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type {
-  Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree, VentilationBancaire,
+  Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, RegleBancaireIgnoree, ReglementGroupe,
+  VentilationBancaire,
 } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Emprunt } from '../../lib/emprunts'
@@ -75,6 +76,9 @@ const faux = vi.hoisted(() => ({
   // Les parts des mouvements ventilés (lib/ventilationBanque.ts) : une lecture qui peut être partielle, et
   // deux fonctions SQL que le faux serveur APPLIQUE au relevé et à ses parts.
   ventilations: [] as VentilationBancaire[],
+  // Les parts des virements qui règlent plusieurs pièces (lib/reglementGroupe.ts) : une lecture qui peut être
+  // partielle, et deux fonctions SQL que le faux serveur APPLIQUE au relevé et à ses parts.
+  reglements: [] as ReglementGroupe[],
   // La connexion bancaire de la carte (ConnexionBancaireCard) : aucune par défaut. Les tests de CÂBLAGE la
   // programment — la connexion que rend `statut`, et ce que rend la récupération.
   connexionBancaire: null as null | { connexion: Record<string, unknown>; recuperation: Record<string, unknown> },
@@ -146,7 +150,8 @@ vi.mock('../../lib/supabase', async () => {
                 : table === 'cotisations_declarees' ? faux.cotisations
                   : table === 'emprunts' ? faux.emprunts
                     : table === 'ventilations_bancaires' ? faux.ventilations
-                      : table === 'regles_bancaires_ignorees' ? faux.reglesIgnorees : []
+                      : table === 'reglements_groupes' ? faux.reglements
+                        : table === 'regles_bancaires_ignorees' ? faux.reglesIgnorees : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         }
@@ -187,7 +192,7 @@ vi.mock('../../lib/supabase', async () => {
             libelle: String(l.libelle), montant: Number(l.montant), statut: l.statut as LigneBancaire['statut'],
             piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
             source_fichier: String(l.source_fichier), libelle_brut: null, emprunt_id: null, emprunt_echeance: null,
-            emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: String(l.id_externe),
+            emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: String(l.id_externe),
             created_at: '2025-06-20T09:00:00Z',
           }))]
           return Promise.resolve({ data: ecrites.map((l) => ({ id_externe: l.id_externe })), error: null }).then(suite)
@@ -227,6 +232,9 @@ vi.mock('../../lib/supabase', async () => {
         }
         if (table === 'ventilations_bancaires') {
           return Promise.resolve({ data: faux.ventilations, error: null, count: faux.ventilations.length }).then(suite)
+        }
+        if (table === 'reglements_groupes') {
+          return Promise.resolve({ data: faux.reglements, error: null, count: faux.reglements.length }).then(suite)
         }
         if (table === 'categories') {
           const lues = filtrer(faux.categories, predicats)
@@ -284,6 +292,19 @@ vi.mock('../../lib/supabase', async () => {
       ]
     }
     if (nom === 'retirer_ventilation_mouvement_bancaire') faux.ventilations = faux.ventilations.filter((v) => v.ligne_bancaire_id !== id)
+    // Le règlement de plusieurs pièces (lib/reglementGroupe.ts) : les parts remplacent celles du mouvement, ou
+    // partent avec le règlement — les écritures n'étant pas relues ici.
+    if (nom === 'regler_pieces_par_mouvement') {
+      const parts = args.p_parts as { piece_id: string; montant: number }[]
+      faux.reglements = [
+        ...faux.reglements.filter((r) => r.ligne_bancaire_id !== id),
+        ...parts.map((part, i): ReglementGroupe => ({
+          id: `groupe-${String(id)}-${i}`, dossier_id: 'dossier-de-test', ligne_bancaire_id: String(id),
+          piece_id: part.piece_id, montant: part.montant, created_at: '2025-06-02T10:00:00Z',
+        })),
+      ]
+    }
+    if (nom === 'retirer_reglement_groupe') faux.reglements = faux.reglements.filter((r) => r.ligne_bancaire_id !== id)
     faux.lignes = faux.lignes.map((l): LigneBancaire => {
       if (l.id !== id) return l
       // Le virement personnel (lib/virementPersonnel.ts) : classé et écrit, ou remis à traiter et
@@ -302,6 +323,8 @@ vi.mock('../../lib/supabase', async () => {
       }
       if (nom === 'ventiler_mouvement_bancaire') return { ...l, statut: 'rapprochee', ventilee: true, id_externe: null }
       if (nom === 'retirer_ventilation_mouvement_bancaire') return { ...l, statut: 'non_rapprochee', ventilee: false, id_externe: null }
+      if (nom === 'regler_pieces_par_mouvement') return { ...l, statut: 'rapprochee', reglement_groupe: true }
+      if (nom === 'retirer_reglement_groupe') return { ...l, statut: 'non_rapprochee', reglement_groupe: false }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), statut: 'rapprochee' }
         : { ...l, categorie_id: null, statut: 'non_rapprochee' }
@@ -337,7 +360,7 @@ function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
     id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -100,
     libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     created_at: '2025-06-02T09:00:00Z', ...o,
   }
 }
@@ -389,6 +412,7 @@ function reinitialiser() {
   faux.cotisations = []
   faux.emprunts = []
   faux.ventilations = []
+  faux.reglements = []
   faux.connexionBancaire = null
   faux.reglesIgnorees = []
 }
@@ -2515,6 +2539,456 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
     await ouvrir('REMISE CB')
     await deplier()
     expect(groupes()).toEqual(['Recettes', 'Dépenses', 'Hors résultat'])
+  })
+})
+
+// UN VIREMENT QUI RÈGLE PLUSIEURS PIÈCES (ligne 26, lib/reglementGroupe.ts). Le calcul est gardé par ses
+// propres tests ; ici, ce qu'aucun d'eux ne voit : que le geste ne part qu'au clic et par la base, que chaque
+// part reçoive SA contrepartie, que les pièces d'un règlement annulé retournent à la date de leur facture, et
+// qu'une pièce réglée par une part cesse d'être candidate partout ailleurs sur cet écran.
+describe('BanqueTab — un virement qui règle plusieurs pièces', () => {
+  const ALPHA = pieceDeTest({ id: 'piece-a', tiers: 'Alpha', nom_fichier: 'alpha.pdf', montant_ttc: 300, date_piece: '2025-05-20' })
+  const BETA = pieceDeTest({ id: 'piece-b', tiers: 'Beta', nom_fichier: 'beta.pdf', montant_ttc: 200, date_piece: '2025-05-25' })
+  const AVOIR_BETA = pieceDeTest({ id: 'avoir-b', tiers: 'Beta', nom_fichier: 'avoir.pdf', montant_ttc: -50, date_piece: '2025-05-28' })
+  const GAMMA = pieceDeTest({ id: 'piece-c', tiers: 'Gamma', nom_fichier: 'gamma.pdf', montant_ttc: 200, date_piece: '2025-05-26' })
+  const part = (id: string, pieceId: string | null, montant: number): ReglementGroupe => ({
+    id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-1', piece_id: pieceId, montant, created_at: '2025-06-02T10:00:00Z',
+  })
+  const PARTS = [part('groupe-1', 'piece-a', -300), part('groupe-2', 'piece-b', -200)]
+  const REGLE: Partial<LigneBancaire> = { statut: 'rapprochee', reglement_groupe: true }
+
+  function preparer(ligne: Partial<LigneBancaire> = {}, parts: ReglementGroupe[] = []) {
+    reinitialiser()
+    faux.pieces = [ALPHA, BETA, AVOIR_BETA, GAMMA]
+    faux.lignes = [ligneDeTest({ libelle: 'VIR FOURNISSEURS', montant: -500, ...ligne })]
+    faux.reglements = parts
+  }
+  async function voirLesRapproches() {
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+  }
+  async function deplier() {
+    await act(async () => { within(volet()).getByRole('button', { name: 'Régler plusieurs pièces…' }).click() })
+  }
+  function choisir(numero: number, pieceId: string, montant?: string) {
+    fireEvent.change(within(volet()).getByLabelText(`Pièce ${numero}`), { target: { value: pieceId } })
+    if (montant !== undefined) fireEvent.change(within(volet()).getByLabelText(`Part de la pièce ${numero}`), { target: { value: montant } })
+  }
+  const saisie = (numero: number) => (within(volet()).getByLabelText(`Part de la pièce ${numero}`) as HTMLInputElement).value
+  const bouton = (nom = 'Régler ces pièces') => within(volet()).getByRole('button', { name: nom })
+  const reglementsRpc = () => faux.rpcs.filter((r) => r.nom === 'regler_pieces_par_mouvement')
+
+  it('règle les pièces au clic, par la base, une contrepartie par part, et reste sur le mouvement', async () => {
+    preparer()
+    faux.ecritures = [{ id: 'charge', compte: '606100', ligne_bancaire_id: null }]
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    // Choisir une pièce propose ce qu'il en reste à régler.
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-b')
+    expect([saisie(1), saisie(2)]).toEqual(['300.00', '200.00'])
+    expect(within(volet()).getByText('Les parts font le mouvement.')).toBeTruthy()
+    expect(faux.rpcs).toEqual([])
+    await act(async () => { bouton().click() })
+
+    await waitFor(() => expect(within(volet()).getByText('Règle 2 pièces')).toBeTruthy())
+    expect(reglementsRpc()).toEqual([{
+      nom: 'regler_pieces_par_mouvement',
+      // Signées comme le relevé : l'opérateur a saisi « 300 » et « 200 », qui règlent deux factures d'achat.
+      args: { p_ligne_bancaire_id: 'ligne-1', p_parts: [{ piece_id: 'piece-a', montant: -300 }, { piece_id: 'piece-b', montant: -200 }] },
+    }])
+    // Jamais une mise à jour directe du mouvement : le règlement et ses parts partent ensemble, par la base.
+    expect(faux.updatesLignes).toEqual([])
+    // Chaque part reçoit sa contrepartie banque, à son montant et à la date du mouvement…
+    expect(faux.insertions.filter((i) => i.table === 'ecritures_brouillon').map((i) => i.valeur)).toEqual([
+      expect.objectContaining({ piece_id: 'piece-a', ligne_bancaire_id: 'ligne-1', compte: '512000', montant: 300, sens: 'credit', date: '2025-06-02' }),
+      expect.objectContaining({ piece_id: 'piece-b', ligne_bancaire_id: 'ligne-1', compte: '512000', montant: 200, sens: 'credit', date: '2025-06-02' }),
+    ])
+    // … et chaque pièce, réglée entière par sa part, passe à la date du paiement.
+    expect(faux.updatesEcritures.map((u) => [u.valeur, u.filtres])).toEqual([
+      [{ date: '2025-06-02' }, ['piece_id=piece-a', 'compte!=512000']],
+      [{ date: '2025-06-02' }, ['piece_id=piece-b', 'compte!=512000']],
+    ])
+    const parts = within(volet()).getByText(/Alpha — 20\/05\/2025/).closest('dl')
+    expect(parts?.textContent).toMatch(/Alpha — 20\/05\/2025 \(facture de 300,00.*\)300,00.*Beta — 25\/05\/2025 \(facture de 200,00.*\)200,00/)
+    expect(bouton('Annuler le règlement groupé')).toBeTruthy()
+    expect(within(volet()).queryByText('Rapproché avec')).toBeNull()
+  })
+
+  it('en engagement, chaque part écrit le règlement de sa facture', async () => {
+    preparer()
+    faux.ecritures = [{ id: 'facture', compte: '606100', ligne_bancaire_id: null }]
+    rendre(ENGAGEMENT)
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-b')
+    await act(async () => { bouton().click() })
+    await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
+    await waitFor(() => expect(faux.insertions.filter((i) => i.table === 'ecritures_brouillon')).toHaveLength(2))
+    const reglements = faux.insertions.filter((i) => i.table === 'ecritures_brouillon').map((i) => i.valeur as unknown as Record<string, unknown>[])
+    expect(reglements.map((r) => r.map((l) => [l.piece_id, l.compte, l.sens, l.montant, l.ligne_bancaire_id]))).toEqual([
+      [['piece-a', '401000', 'debit', 300, 'ligne-1'], ['piece-a', '512000', 'credit', 300, 'ligne-1']],
+      [['piece-b', '401000', 'debit', 200, 'ligne-1'], ['piece-b', '512000', 'credit', 200, 'ligne-1']],
+    ])
+    // Rien n'est redaté en engagement : la facture reste à sa date.
+    expect(faux.updatesEcritures).toEqual([])
+  })
+
+  it('demande chaque part avant de crier à l’erreur, puis dit le reste à répartir', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    expect(within(volet()).getByText('Choisis la pièce et le montant de chaque part.')).toBeTruthy()
+    // Demander n'est pas refuser : aucune alerte tant que les parts ne sont pas saisies.
+    const section = within(volet()).getByRole('heading', { name: 'Plusieurs pièces' }).closest('section')!
+    expect(section.querySelectorAll('.fiche-mouvement-alerte')).toHaveLength(0)
+    choisir(1, 'piece-a')
+    expect(section.querySelectorAll('.fiche-mouvement-alerte')).toHaveLength(0)
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    choisir(1, 'piece-a', '300')
+    choisir(2, 'piece-b', '150')
+    expect(within(volet()).getByText(/Reste à répartir : 50,00/)).toBeTruthy()
+    expect(within(volet()).getByText(/Les parts font 450,00.*au lieu des 500,00.*du mouvement\./)).toBeTruthy()
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    choisir(2, 'piece-b', '250')
+    expect(within(volet()).getByText(/Les parts dépassent le mouvement de 50,00/)).toBeTruthy()
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    choisir(2, 'piece-b', '200')
+    expect(bouton().hasAttribute('disabled')).toBe(false)
+  })
+
+  it('un avoir se déduit : sa part, saisie positive, part dans l’autre sens', async () => {
+    preparer({ montant: -450 })
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-b')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ajouter une pièce' }).click() })
+    choisir(3, 'avoir-b')
+    expect(saisie(3)).toBe('50.00')
+    expect(within(volet()).getByText('Les parts font le mouvement.')).toBeTruthy()
+    await act(async () => { bouton().click() })
+    expect(reglementsRpc()[0].args.p_parts).toEqual([
+      { piece_id: 'piece-a', montant: -300 }, { piece_id: 'piece-b', montant: -200 }, { piece_id: 'avoir-b', montant: 50 },
+    ])
+    // Réglé, le mouvement montre ses parts DANS SON SENS : l'avoir y figure en négatif, nommé comme tel, et
+    // les trois font le virement — montrées toutes positives, elles feraient 550 € pour un virement de 450 €.
+    await waitFor(() => expect(within(volet()).getByText('Règle 3 pièces')).toBeTruthy())
+    const parts = within(volet()).getByText(/Beta — 28\/05\/2025/).closest('dl')
+    expect(parts?.textContent).toMatch(/Alpha — 20\/05\/2025 \(facture de 300,00[^)]*\)300,00/)
+    expect(parts?.textContent).toMatch(/Beta — 28\/05\/2025 \(avoir de 50,00[^)]*\)[-−]50,00/)
+  })
+
+  it('refuse avant le clic une part qui paierait une pièce deux fois, et dit ce qu’il en reste', async () => {
+    preparer({ montant: -400 })
+    // Alpha a déjà reçu un acompte de 100 € par un autre mouvement : il en reste 200 à régler.
+    faux.lignes = [...faux.lignes, ligneDeTest({ id: 'acompte', libelle: 'ACOMPTE ALPHA', montant: -100, statut: 'rapprochee', piece_id: 'piece-a' })]
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    expect(within(within(volet()).getByLabelText('Pièce 1')).getByRole('option', { name: /Alpha.*\(reste 200,00.*\)/ })).toBeTruthy()
+    choisir(1, 'piece-a', '250')
+    choisir(2, 'piece-b', '150')
+    expect(within(volet()).getByText(/La part de la pièce « Alpha » dépasse ce qu’il en reste à régler \(200,00.*\) : une pièce ne se paie pas deux fois\./)).toBeTruthy()
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    choisir(1, 'piece-a', '200')
+    choisir(2, 'piece-b', '200')
+    expect(bouton().hasAttribute('disabled')).toBe(false)
+  })
+
+  it('n’offre pas une pièce déjà réglée, ni deux fois la même', async () => {
+    preparer({ montant: -400 })
+    faux.lignes = [...faux.lignes, ligneDeTest({ id: 'paye', libelle: 'PRLV GAMMA', montant: -200, statut: 'rapprochee', piece_id: 'piece-c' })]
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    const options = (numero: number) => [...(within(volet()).getByLabelText(`Pièce ${numero}`) as HTMLSelectElement).options].map((o) => o.value)
+    expect(options(1)).not.toContain('piece-c')
+    choisir(1, 'piece-a')
+    expect(options(2)).not.toContain('piece-a')
+    expect(options(1)).toContain('piece-a')
+  })
+
+  it('ne règle qu’une fois, même sur trois clics rapprochés', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-b')
+    const regler = bouton()
+    await act(async () => { regler.click(); regler.click(); regler.click() })
+    expect(reglementsRpc()).toHaveLength(1)
+  })
+
+  it('un refus de la base se dit, et le mouvement reste à traiter', async () => {
+    preparer()
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-b')
+    await act(async () => { bouton().click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/Le règlement groupé n'a pas pu être enregistré : refus simulé/)))
+    expect(within(volet()).getByText('Non rapproché')).toBeTruthy()
+    expect(faux.insertions).toEqual([])
+  })
+
+  it('une contrepartie refusée est dite, le règlement restant enregistré', async () => {
+    preparer()
+    faux.ecritures = [{ id: 'charge', compte: '606100', ligne_bancaire_id: null }]
+    faux.erreurInsertionEcritures = 'insertion refusée'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-b')
+    await act(async () => { bouton().click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(
+      /Le règlement groupé est enregistré, mais des écritures n'ont pas pu suivre :\nAlpha : insertion refusée\nBeta : insertion refusée/,
+    )))
+    await waitFor(() => expect(within(volet()).getByText('Règle 2 pièces')).toBeTruthy())
+  })
+
+  it('la liste dit « Règle 2 pièces », jamais un « Rapproché » nu ni « sans justificatif »', async () => {
+    preparer(REGLE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    expect(await screen.findByText('Règle 2 pièces')).toBeTruthy()
+    expect(screen.queryByText(/^Rapproché( —.*)?$/)).toBeNull()
+    expect(screen.queryByText('Rapproché sans justificatif')).toBeNull()
+    // La fiche non plus : sa pastille dit le règlement, jamais un « Rapproché » qui ferait chercher UNE pièce.
+    await ouvrir('VIR FOURNISSEURS')
+    expect(within(volet()).getByText('Règle 2 pièces', { selector: '.badge' })).toBeTruthy()
+    expect(within(volet()).queryAllByText('Rapproché', { selector: '.badge' })).toHaveLength(0)
+  })
+
+  it('annule le règlement par la base, et ses pièces retournent à la date de leur facture', async () => {
+    preparer(REGLE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    await act(async () => { bouton('Annuler le règlement groupé').click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_reglement_groupe', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+    expect(faux.updatesEcritures.map((u) => [u.valeur, u.filtres])).toEqual([
+      [{ date: '2025-05-20' }, ['piece_id=piece-a']],
+      [{ date: '2025-05-25' }, ['piece_id=piece-b']],
+    ])
+  })
+
+  it('dit une annulation que la base refuse, et le mouvement reste réglé', async () => {
+    preparer(REGLE, PARTS)
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    await act(async () => { bouton('Annuler le règlement groupé').click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/Le règlement groupé n'a pas pu être annulé : refus simulé/)))
+    expect(within(volet()).getByText('Règle 2 pièces')).toBeTruthy()
+    expect(faux.updatesEcritures).toEqual([])
+  })
+
+  it('modifie un règlement en repartant de ses parts, et la pièce qui en sort retourne à sa date de facture', async () => {
+    preparer(REGLE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Modifier le règlement…' }).click() })
+    expect((within(volet()).getByLabelText('Pièce 1') as HTMLSelectElement).value).toBe('piece-a')
+    expect([saisie(1), saisie(2)]).toEqual(['300.00', '200.00'])
+    choisir(2, 'piece-c')
+    await act(async () => { bouton('Enregistrer le règlement').click() })
+    await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
+    expect(reglementsRpc()[0].args.p_parts).toEqual([{ piece_id: 'piece-a', montant: -300 }, { piece_id: 'piece-c', montant: -200 }])
+    await waitFor(() => expect(faux.updatesEcritures.map((u) => u.filtres)).toContainEqual(['piece_id=piece-b']))
+    expect(faux.updatesEcritures.find((u) => u.filtres[0] === 'piece_id=piece-b')?.valeur).toEqual({ date: '2025-05-25' })
+  })
+
+  it('dit une part dont la pièce a été supprimée depuis', async () => {
+    preparer(REGLE, [PARTS[0], part('groupe-2', null, -200)])
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    expect(within(volet()).getByText('Pièce supprimée')).toBeTruthy()
+    expect(within(volet()).getByText(/Une pièce que ce mouvement réglait a été supprimée : sa part \(200,00.*\) ne justifie plus rien/)).toBeTruthy()
+    // Le garde symétrique : un règlement dont toutes les pièces existent ne dit rien.
+    cleanup()
+    preparer(REGLE, PARTS)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    expect(within(volet()).queryByText(/ne justifie plus rien/)).toBeNull()
+  })
+
+  it('des parts lues en partie : l’écran le dit, et régler, modifier et annuler sont suspendus', async () => {
+    preparer(REGLE, PARTS)
+    faux.lignes = [...faux.lignes, ligneDeTest({ id: 'ligne-2', libelle: 'VIR CLIENTS', montant: -400 })]
+    faux.muet = { reglements_groupes: 1 }
+    rendre()
+    expect(await screen.findByText(/Les parts des virements qui règlent plusieurs pièces n'ont pas pu être lues en entier/)).toBeTruthy()
+    await ouvrir('VIR CLIENTS')
+    await deplier()
+    expect(within(volet()).getByText(/Régler plusieurs pièces est suspendu/)).toBeTruthy()
+    choisir(1, 'piece-c')
+    choisir(2, 'piece-b')
+    expect(bouton().hasAttribute('disabled')).toBe(true)
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    // Le nombre de pièces n'est pas dit sur des parts lues en partie : il serait faux.
+    expect(within(volet()).getByText('Règle plusieurs pièces', { selector: '.badge' })).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Modifier le règlement…' })).toBeNull()
+    expect(bouton('Annuler le règlement groupé').hasAttribute('disabled')).toBe(true)
+  })
+
+  it('une pièce que règle un virement groupé n’est plus candidate ailleurs, ni au lot « Valider et rapprocher »', async () => {
+    const monter = (groupe: boolean) => {
+      reinitialiser()
+      faux.pieces = [{ ...ALPHA, statut: 'a_valider' }, BETA]
+      faux.lignes = [
+        ligneDeTest({ libelle: 'VIR FOURNISSEURS', montant: -500, ...(groupe ? REGLE : {}) }),
+        ligneDeTest({ id: 'ligne-2', libelle: 'PRLV ALPHA', montant: -300, date: '2025-05-21' }),
+      ]
+      faux.reglements = groupe ? PARTS : []
+      rendre()
+    }
+    monter(true)
+    await ouvrir('PRLV ALPHA')
+    expect(within(volet()).queryByRole('option', { name: /Alpha/ })).toBeNull()
+    expect(screen.queryByText(/Sans doute possible/)).toBeNull()
+    // Le garde symétrique : la même pièce, que rien ne paie, est bien candidate — sans quoi ce test serait
+    // satisfait par un écran qui ne propose jamais rien.
+    cleanup()
+    monter(false)
+    await ouvrir('PRLV ALPHA')
+    expect(within(volet()).getByRole('option', { name: /Alpha/ })).toBeTruthy()
+    expect(screen.getByText(/Sans doute possible \(1\)/)).toBeTruthy()
+  })
+
+  it('une lecture partielle des parts suspend les lots de rapprochement', async () => {
+    reinitialiser()
+    faux.reglements = [part('ailleurs', 'piece-autre', -50)]
+    faux.muet = { reglements_groupes: 0 }
+    rendre()
+    expect(await screen.findByText(/Rapprochement automatique suspendu : une lecture est incomplète/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Tout rapprocher automatiquement/ }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('offre d’abord les pièces que le mouvement règle dans son sens, puis les plus proches en date', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    const options = [...(within(volet()).getByLabelText('Pièce 1') as HTMLSelectElement).options].map((o) => o.value)
+    // Un paiement règle d'abord des factures d'achat — la plus proche du virement en tête : Gamma le 26/05, Beta le
+    // 25/05, Alpha le 20/05 —, et l'avoir, qui se règle par une entrée, vient après elles bien qu'il soit le plus
+    // proche en date.
+    expect(options).toEqual(['', 'piece-c', 'piece-b', 'piece-a', 'avoir-b'])
+  })
+
+  it('ne propose de retirer une pièce qu’au-delà de deux : un règlement groupé en porte au moins deux', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    expect(within(volet()).queryAllByRole('button', { name: /^Retirer la pièce/ })).toHaveLength(0)
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ajouter une pièce' }).click() })
+    expect(within(volet()).getAllByRole('button', { name: /^Retirer la pièce/ })).toHaveLength(3)
+    await act(async () => { within(volet()).getByRole('button', { name: 'Retirer la pièce 3' }).click() })
+    expect(within(volet()).queryByLabelText('Pièce 3')).toBeNull()
+    expect(within(volet()).queryAllByRole('button', { name: /^Retirer la pièce/ })).toHaveLength(0)
+  })
+
+  it('choisir une pièce n’écrase pas un montant déjà saisi', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    fireEvent.change(within(volet()).getByLabelText('Part de la pièce 1'), { target: { value: '250' } })
+    choisir(1, 'piece-a')
+    expect(saisie(1)).toBe('250')
+    // Le garde symétrique : sur une part vide, choisir propose ce qu'il reste à régler.
+    choisir(2, 'piece-b')
+    expect(saisie(2)).toBe('200.00')
+  })
+
+  it('une pièce en devise que sa part règle seule passe au débit réel ; payée aussi ailleurs, elle ne bouge pas', async () => {
+    const USD = pieceDeTest({
+      id: 'piece-usd', tiers: 'Delta', nom_fichier: 'delta.pdf', date_piece: '2025-05-27',
+      devise: 'USD', montant_devise: 108, montant_ttc: 100, taux_change: 1.08, conversion_source: 'bce',
+    })
+    // Seule payée par sa part : le débit réel, 103 €, dépasse le provisoire de l'écart de change — et le devient.
+    preparer({ montant: -403 })
+    faux.pieces = [ALPHA, USD]
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-usd', '103')
+    expect(bouton().hasAttribute('disabled')).toBe(false)
+    await act(async () => { bouton().click() })
+    await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ montant_ttc: 103, conversion_source: 'banque' })]))
+
+    // Un acompte l'a déjà payée en partie : sa part n'en est qu'une fraction, et rien ne la réaligne dessus.
+    cleanup()
+    preparer({ montant: -351 })
+    faux.pieces = [ALPHA, USD]
+    faux.lignes = [...faux.lignes, ligneDeTest({ id: 'acompte', libelle: 'ACOMPTE DELTA', montant: -50, statut: 'rapprochee', piece_id: 'piece-usd' })]
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a')
+    choisir(2, 'piece-usd', '51')
+    await act(async () => { bouton().click() })
+    await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
+    await waitFor(() => expect(within(volet()).getByText('Règle 2 pièces')).toBeTruthy())
+    expect(faux.updatesPieces).toEqual([])
+  })
+
+  it('ne dit pas le nombre de pièces sur des parts lues en partie, même quand il en a lu plusieurs', async () => {
+    preparer(REGLE, [...PARTS.map((p, i) => (i === 1 ? { ...p, montant: -150 } : p)), part('groupe-3', 'piece-c', -50)])
+    faux.muet = { reglements_groupes: 2 }
+    rendre()
+    await voirLesRapproches()
+    expect(await screen.findByText('Règle plusieurs pièces')).toBeTruthy()
+    expect(screen.queryAllByText(/^Règle \d+ pièces$/)).toHaveLength(0)
+    await ouvrir('VIR FOURNISSEURS')
+    expect(within(volet()).getByText('Règle plusieurs pièces', { selector: '.badge' })).toBeTruthy()
+    expect(within(volet()).queryAllByText(/^Règle \d+ pièces$/)).toHaveLength(0)
+    // Deux parts lues sur trois ne font pas le mouvement : sur une lecture partielle, ce n'est pas un écart.
+    expect(within(volet()).queryAllByText(/ne font plus le montant du mouvement/)).toHaveLength(0)
+  })
+
+  it('une lecture partielle des parts suspend aussi la validation en lot', async () => {
+    reinitialiser()
+    faux.pieces = [{ ...ALPHA, statut: 'a_valider' }]
+    faux.lignes = [ligneDeTest({ id: 'ligne-2', libelle: 'PRLV ALPHA', montant: -300, date: '2025-05-21' })]
+    faux.reglements = [part('ailleurs', 'piece-autre', -50)]
+    faux.muet = { reglements_groupes: 0 }
+    rendre()
+    expect(await screen.findByText(/Validation en lot suspendue : une lecture est incomplète/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Valider et rapprocher cette pièce' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('ne propose de régler plusieurs pièces ni sur un mouvement déjà rapproché, ni sur un mouvement de zéro euro', async () => {
+    preparer({ statut: 'rapprochee', piece_id: 'piece-a' })
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    expect(within(volet()).queryByRole('button', { name: 'Régler plusieurs pièces…' })).toBeNull()
+    cleanup()
+    preparer({ montant: 0 })
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    expect(within(volet()).queryByRole('button', { name: 'Régler plusieurs pièces…' })).toBeNull()
   })
 })
 

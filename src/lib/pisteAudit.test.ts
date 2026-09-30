@@ -90,7 +90,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est invisible aux trois contrôles de analyserEcritures', () => {
     const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } =
-      analyserEcritures([orpheline], [], true, [], TRESORERIE)
+      analyserEcritures([orpheline], [], true, new Map(), TRESORERIE)
     expect(nbSansContrepartie).toBe(0)
     expect(groupesDesequilibres).toEqual([])
     expect(piecesDesynchronisees).toEqual([])
@@ -137,7 +137,7 @@ describe('absenceFec', () => {
 const ligneBancaire = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-03-12', libelle: 'PRLV SEPA TRANSMEDICAL',
   montant: -100, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-03-12T00:00:00Z', ...o,
 })
@@ -316,7 +316,7 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     const [ligne] = pisteAudit(part, [], [telephone], [])
     expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'PRLV OPERATEUR', []])
     // La ventilation annulée, elle n'a plus de justificatif.
-    const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false, id_externe: null }], [])
+    const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false, reglement_groupe: false, id_externe: null }], [])
     expect(annule.manque).toEqual(['justificatif'])
   })
 })

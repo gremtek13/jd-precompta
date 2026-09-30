@@ -36,6 +36,12 @@ const VISITES = [
     dossier: 'd2', onglet: 'banque', nom: 'banque/connecter',
     apres: (page) => page.getByRole('button', { name: 'Connecter une banque' }).click(),
   },
+  // Le relevé entier : les pastilles d'un mouvement rapproché, affecté, ventilé ou réglé en groupe ne
+  // paraissent pas sous « Non rapprochés », le filtre par défaut.
+  {
+    dossier: 'd1', onglet: 'banque', nom: 'banque/tous',
+    apres: (page) => page.getByRole('button', { name: 'Tous', exact: true }).click(),
+  },
 ]
 const largeur = Number(process.argv[2] ?? 1440)
 const avecPanneau = process.argv[3] !== 'sans'

@@ -35,15 +35,17 @@
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts,
 // src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
 // src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
-// src/lib/format.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
+// src/lib/reglementGroupe.ts, src/lib/format.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers
+// n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
-// extrait `piecesAComptabiliser`, `rattachementsTresorerie` et `analyserEcritures` et les exécute
-// contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que rien ne
-// puisse le voir. Le bloc AFFECTATION (mouvements du relevé affectés sans justificatif, virements
+// extrait `piecesAComptabiliser`, `paiementsDesPieces`, `rattachementsTresorerie` et `analyserEcritures`
+// et les exécute contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que
+// rien ne puisse le voir. Le bloc AFFECTATION (mouvements du relevé affectés sans justificatif, virements
 // personnels) l'est de même par src/lib/agentComptableAffectation.test.ts, le bloc EMPRUNT
-// (échéances d'emprunt) par src/lib/agentComptableEmprunt.test.ts, et le bloc VENTILATION (mouvements
+// (échéances d'emprunt) par src/lib/agentComptableEmprunt.test.ts, le bloc VENTILATION (mouvements
 // ventilés sur plusieurs comptes, copié de src/lib/ventilationBanque.ts) par
-// src/lib/agentComptableVentilation.test.ts.
+// src/lib/agentComptableVentilation.test.ts, et le bloc RÈGLEMENT GROUPÉ (virements qui règlent plusieurs
+// pièces, copié de src/lib/reglementGroupe.ts) par src/lib/agentComptableReglementGroupe.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -138,7 +140,15 @@ function piecesAComptabiliser(
 // la facture sinon — la règle de la 2035 (CGI, art. 93 : recettes encaissées, dépenses payées). Sans
 // elle, l'assistant signalerait « à régénérer » toute écriture justement datée à son paiement, et se
 // tairait sur celle restée à la date de facture.
-interface PaiementRow { id: string; piece_id: string | null; date: string; montant: number; statut: string }
+//
+// LES PAIEMENTS D'UNE PIÈCE : un mouvement RAPPROCHÉ de la pièce, ou la PART d'un virement qui règle
+// plusieurs pièces (ligne 26, `reglements_groupes`). Sans les parts, une pièce réglée par un virement
+// groupé passerait pour « en attente de rapprochement », et son écriture juste pour « à régénérer ».
+interface LignePayanteRow { id: string; piece_id: string | null; date: string; montant: number; statut: string; reglement_groupe: boolean }
+interface PartRegleeRow { ligne_bancaire_id: string; piece_id: string | null; montant: number }
+// `id` : le mouvement — la contrepartie banque en trésorerie, le règlement en engagement. `montant` : ce
+// que CE mouvement paie de CETTE pièce, signé comme le relevé.
+interface PaiementDePiece { id: string; date: string; montant: number; origine: "rapprochement" | "groupe" }
 
 const SEUIL_ALIGNEMENT_RELATIF = 0.02
 const SEUIL_ALIGNEMENT_PLAFOND_EUR = 5
@@ -147,20 +157,34 @@ function seuilAlignement(montantPiece: number): number {
   return Math.min(Math.abs(montantPiece) * SEUIL_ALIGNEMENT_RELATIF, SEUIL_ALIGNEMENT_PLAFOND_EUR)
 }
 
-function paiementsParPiece(lignes: readonly PaiementRow[]): Map<string, PaiementRow[]> {
-  const parPiece = new Map<string, PaiementRow[]>()
+// Seul un mouvement RAPPROCHÉ paie une pièce, et une part ne compte que si son mouvement est lu, rapproché
+// et réglé en groupe. Chaque liste est triée par date puis par mouvement, pour que deux lectures du même
+// relevé rendent la même chose quel que soit l'ordre de la requête.
+function paiementsDesPieces(lignes: readonly LignePayanteRow[], reglements: readonly PartRegleeRow[]): Map<string, PaiementDePiece[]> {
+  const mouvements = new Map(lignes.map((l) => [l.id, l]))
+  const parPiece = new Map<string, PaiementDePiece[]>()
+  const ajouter = (pieceId: string, paiement: PaiementDePiece) => {
+    const liste = parPiece.get(pieceId) ?? []
+    liste.push(paiement)
+    parPiece.set(pieceId, liste)
+  }
   for (const ligne of lignes) {
     if (ligne.statut !== "rapprochee" || !ligne.piece_id) continue
-    const liste = parPiece.get(ligne.piece_id) ?? []
-    liste.push(ligne)
-    parPiece.set(ligne.piece_id, liste)
+    ajouter(ligne.piece_id, { id: ligne.id, date: ligne.date, montant: ligne.montant, origine: "rapprochement" })
   }
+  for (const part of reglements) {
+    if (!part.piece_id) continue
+    const mouvement = mouvements.get(part.ligne_bancaire_id)
+    if (!mouvement || mouvement.statut !== "rapprochee" || !mouvement.reglement_groupe) continue
+    ajouter(part.piece_id, { id: mouvement.id, date: mouvement.date, montant: part.montant, origine: "groupe" })
+  }
+  for (const liste of parPiece.values()) liste.sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
   return parPiece
 }
 
 function partsDesPaiements(
   piece: Pick<PieceRow, "montant_ttc">,
-  paiements: readonly Pick<PaiementRow, "date" | "montant">[],
+  paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
 ): { parts: { date: string; part: number }[]; reste: number } {
   const paye = paiements.reduce((s, m) => s + Math.abs(m.montant), 0)
   if (paye === 0) return { parts: [], reste: 1 }
@@ -181,7 +205,7 @@ const ORDRE_SOURCE: Record<SourceRattachement, number> = { paiement: 0, note_de_
 
 function rattachementsTresorerie(
   piece: Pick<PieceRow, "date_piece" | "montant_ttc" | "type_piece">,
-  paiements: readonly Pick<PaiementRow, "date" | "montant">[],
+  paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
 ): Rattachement[] {
   const { parts, reste } = partsDesPaiements(piece, paiements)
   const fractions: Rattachement[] = parts.map((p) => ({ date: p.date, part: p.part, source: "paiement" }))
@@ -243,10 +267,34 @@ function compteDeTiers(piece: Pick<PieceRow, "type_piece">, compteNotesDeFrais: 
 }
 
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
-function datesAttendues(piece: PieceRow, paiements: readonly PaiementRow[]): Set<string> | null {
+function datesAttendues(piece: PieceRow, paiements: readonly PaiementDePiece[]): Set<string> | null {
   const rattachements = rattachementsTresorerie(piece, paiements)
   if (rattachements.some((r) => r.date === null)) return null
   return new Set(rattachements.map((r) => r.date!))
+}
+
+// Les lignes de BANQUE d'une pièce suivent-elles exactement ses paiements ? Une contrepartie par paiement
+// non nul — ni une de moins, ni une de plus —, désignée par son mouvement, à sa date et à son montant
+// signé (un débit est une entrée) : la contrepartie d'un paiement en trésorerie, la ligne de banque d'un
+// règlement en engagement. Le montant autant que le mouvement : régler de nouveau un virement groupé avec
+// d'autres parts laisse le même mouvement en face de la même pièce.
+function banqueSuitLesPaiements(lignesBanque: readonly EcritureRow[], paiements: readonly PaiementDePiece[]): boolean {
+  const attendus = new Map(paiements.filter((m) => m.montant !== 0).map((m) => [m.id, m]))
+  const presents = new Map<string, { montant: number; dates: Set<string> }>()
+  for (const e of lignesBanque) {
+    if (!e.ligne_bancaire_id) return false
+    const present = presents.get(e.ligne_bancaire_id) ?? { montant: 0, dates: new Set<string>() }
+    present.montant += e.sens === "debit" ? e.montant : -e.montant
+    present.dates.add(e.date)
+    presents.set(e.ligne_bancaire_id, present)
+  }
+  if (attendus.size !== presents.size) return false
+  for (const [id, paiement] of attendus) {
+    const present = presents.get(id)
+    if (!present || Math.abs(present.montant - paiement.montant) > EPSILON_EQUILIBRE) return false
+    if (present.dates.size !== 1 || !present.dates.has(paiement.date)) return false
+  }
+  return true
 }
 
 // QUATRE COMPARAISONS, PAS UNE. Cette copie n'en portait qu'une — le TOTAL — pendant que
@@ -255,10 +303,11 @@ function datesAttendues(piece: PieceRow, paiements: readonly PaiementRow[]): Set
 // est de répondre « quelles sont les anomalies ? ». Deux livrables, deux réponses.
 function tresorerieDesynchronisee(
   p: PieceRow, compte: string, groupe: readonly EcritureRow[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementRow[],
+  paiementsPiece: readonly PaiementDePiece[],
 ): boolean {
   const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE)
-  if (lignes.length === 0) return false // pas encore générée — pas une désynchronisation
+  // Pas encore générée — pas une désynchronisation. Des contreparties SANS leur charge en sont une.
+  if (lignes.length === 0) return groupe.length > 0
   const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
   // LE COMPTE : recatégoriser une pièce validée ne réécrit pas son écriture, et le total ne bouge
   // pas d'un centime. Les comptes de TVA sont exclus, sinon toute facture au taux normal serait
@@ -286,7 +335,11 @@ function tresorerieDesynchronisee(
     if (presentes.size !== attendues.size || [...attendues].some((d) => !presentes.has(d))) return true
   }
   const total = lignes.reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
-  return Math.abs(total - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE
+  if (Math.abs(total - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE) return true
+  // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT : une pièce payée en deux fois, ou réglée en partie par un
+  // virement groupé, n'en recevait qu'une au rapprochement — une écriture déséquilibrée que « Régénérer »
+  // réécrit désormais depuis les paiements.
+  return !banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)
 }
 
 // En ENGAGEMENT, l'écriture de la FACTURE — charge ou produit, TVA, et le compte de tiers qui porte le
@@ -296,7 +349,7 @@ function tresorerieDesynchronisee(
 // une dette déjà payée, et un règlement que plus rien ne rapproche en solderait une qui court encore.
 function engagementDesynchronise(
   p: PieceRow, compte: string, groupe: readonly EcritureRow[], assujettiTva: boolean,
-  paiementsPiece: readonly PaiementRow[], compteNotesDeFrais: string,
+  paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: string,
 ): boolean {
   const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== COMPTE_BANQUE)
   const reglements = groupe.filter((e) => e.ligne_bancaire_id)
@@ -317,11 +370,13 @@ function engagementDesynchronise(
   const totalTiers = facture.filter((e) => e.compte === tiers).reduce((s, e) => s + signe(e, sensTiers), 0)
   if (Math.abs(totalTiers - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE) return true
 
-  // Exactement les mouvements rapprochés de la pièce, sur son compte de tiers ACTUEL.
-  const attendus = new Set(paiementsPiece.map((m) => m.id))
+  // Exactement les paiements de la pièce — rapprochements et parts de virements groupés —, sur son compte
+  // de tiers ACTUEL, et chacun à son montant : un paiement de zéro euro n'écrit aucun règlement.
+  const attendus = new Set(paiementsPiece.filter((m) => m.montant !== 0).map((m) => m.id))
   const presents = new Set(reglements.map((e) => e.ligne_bancaire_id!))
   if (attendus.size !== presents.size || [...attendus].some((id) => !presents.has(id))) return true
-  return reglements.some((e) => e.compte !== COMPTE_BANQUE && e.compte !== tiers)
+  if (reglements.some((e) => e.compte !== COMPTE_BANQUE && e.compte !== tiers)) return true
+  return !banqueSuitLesPaiements(reglements.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)
 }
 
 // En engagement, CHAQUE écriture s'équilibre seule — la facture comme chaque règlement — et chacune
@@ -342,19 +397,21 @@ function desequilibresEngagement(groupes: ReadonlyMap<string, readonly EcritureR
   return desequilibres
 }
 
+// `paiements` : ceux de chaque pièce, parts des virements groupés comprises (`paiementsDesPieces`).
 function analyserEcritures(
   ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean,
-  lignesBancaires: readonly PaiementRow[], modele: ModeleComptable,
+  paiements: ReadonlyMap<string, readonly PaiementDePiece[]>, modele: ModeleComptable,
 ) {
-  const paiements = paiementsParPiece(lignesBancaires)
   const piecesParGroupe = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
     if (!e.piece_id) continue
     piecesParGroupe.set(e.piece_id, [...(piecesParGroupe.get(e.piece_id) ?? []), e])
   }
-  // Une pièce dont aucune ligne ne touche la banque : en trésorerie, la charge sans sa contrepartie ;
-  // en engagement, la facture sans règlement.
-  const nbSansContrepartie = [...piecesParGroupe.values()].filter((rows) => !rows.some((r) => r.compte === COMPTE_BANQUE)).length
+  // Une pièce dont aucune ligne ne touche la banque ET qu'aucun paiement ne règle : en trésorerie, la
+  // charge sans sa contrepartie ; en engagement, la facture sans règlement. Une pièce PAYÉE sans ligne de
+  // banque est « à régénérer », et c'est `piecesDesynchronisees` qui la dit.
+  const nbSansContrepartie = [...piecesParGroupe.entries()]
+    .filter(([pieceId, rows]) => !rows.some((r) => r.compte === COMPTE_BANQUE) && !paiements.has(pieceId)).length
 
   const groupesDesequilibres = modele.mode === "engagement"
     ? desequilibresEngagement(piecesParGroupe)
@@ -373,6 +430,64 @@ function analyserEcritures(
 
   return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
 }
+
+// ── DÉBUT RÈGLEMENT GROUPÉ ───────────────────────────────────────────────────────────────────────
+// Dupliqué depuis src/lib/reglementGroupe.ts. UN VIREMENT QUI RÈGLE PLUSIEURS PIÈCES (ligne 26 de la
+// feuille de route) : la Checklist en dit deux choses que l'assistant doit dire aussi — le virement dont une
+// part ne justifie plus rien (sa pièce supprimée depuis, la clé mise à nul) ou dont les parts ne font plus
+// le mouvement, et la pièce payée plus que son montant, que la 2035 ne compte qu'une fois. Le bloc lit
+// `seuilAlignement`, `LignePayanteRow`, `PartRegleeRow` et `PaiementDePiece` du bloc copié de
+// src/lib/rattachement.ts, plus haut : `agentComptableReglementGroupe.test.ts` les extrait ensemble et
+// compare le tout à src/lib.
+const centimesGroupe = (euros: number) => Math.round(euros * 100)
+
+type RaisonIncoherenceGroupe = "part_sans_piece" | "somme_differente" | "parts_sans_reglement"
+
+// Une part non lue passerait pour une part manquante : à n'appeler que sur des lectures COMPLÈTES du relevé
+// et des parts — `points_a_traiter` refuse de répondre sur une lecture partielle. Une part dont le
+// mouvement n'a pas été lu n'est jugée sur rien.
+function reglementsGroupesIncoherents<L extends Pick<LignePayanteRow, "id" | "montant" | "statut" | "reglement_groupe">>(
+  lignes: readonly L[],
+  reglements: readonly PartRegleeRow[],
+): { ligne: L; raison: RaisonIncoherenceGroupe; montant: number }[] {
+  const parLigne = new Map<string, PartRegleeRow[]>()
+  for (const r of reglements) parLigne.set(r.ligne_bancaire_id, [...(parLigne.get(r.ligne_bancaire_id) ?? []), r])
+  const incoherents: { ligne: L; raison: RaisonIncoherenceGroupe; montant: number }[] = []
+  for (const ligne of lignes) {
+    const parts = parLigne.get(ligne.id) ?? []
+    if (ligne.reglement_groupe && ligne.statut === "rapprochee") {
+      const sansPiece = parts.filter((p) => !p.piece_id)
+      if (sansPiece.length > 0) {
+        incoherents.push({ ligne, raison: "part_sans_piece", montant: sansPiece.reduce((s, p) => s + centimesGroupe(p.montant), 0) / 100 })
+      }
+      const somme = parts.reduce((s, p) => s + centimesGroupe(p.montant), 0)
+      if (somme !== centimesGroupe(ligne.montant)) {
+        incoherents.push({ ligne, raison: "somme_differente", montant: (centimesGroupe(ligne.montant) - somme) / 100 })
+      }
+    } else if (parts.length > 0) {
+      incoherents.push({ ligne, raison: "parts_sans_reglement", montant: parts.reduce((s, p) => s + centimesGroupe(p.montant), 0) / 100 })
+    }
+  }
+  return incoherents
+}
+
+// Deux rapprochements, ou un rapprochement et la part d'un virement groupé, sur la même facture, au-delà de
+// l'écart d'alignement. Seules les pièces FOURNIES sont examinées.
+function piecesPayeesEnTrop<P extends Pick<PieceRow, "id" | "montant_ttc">>(
+  pieces: readonly P[],
+  paiements: ReadonlyMap<string, readonly PaiementDePiece[]>,
+): { piece: P; paye: number; enTrop: number }[] {
+  const resultat: { piece: P; paye: number; enTrop: number }[] = []
+  for (const piece of pieces) {
+    if (piece.montant_ttc == null) continue
+    const paye = centimesGroupe((paiements.get(piece.id) ?? []).reduce((s, p) => s + Math.abs(p.montant), 0))
+    const du = centimesGroupe(Math.abs(piece.montant_ttc))
+    const enTrop = paye - du
+    if (enTrop > centimesGroupe(seuilAlignement(piece.montant_ttc))) resultat.push({ piece, paye: paye / 100, enTrop: enTrop / 100 })
+  }
+  return resultat
+}
+// ── FIN RÈGLEMENT GROUPÉ ─────────────────────────────────────────────────────────────────────────
 
 // ── DÉBUT AFFECTATION ────────────────────────────────────────────────────────────────────────────
 // LES MOUVEMENTS DU RELEVÉ AFFECTÉS À UNE CATÉGORIE SANS JUSTIFICATIF — copiés de
@@ -1057,7 +1172,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sur un dossier assujetti, virements personnels sans leur écriture. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -1215,7 +1330,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve, rParts] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
       lireTout<PieceRow>((d, f) =>
         admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
@@ -1227,10 +1342,6 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
         admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       lireTout<{ piece_id: string | null }>((d, f) =>
         admin.from("immobilisations").select("piece_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
-      // Les paiements rapprochés, qui DATENT les écritures en trésorerie (voir le bloc copié de
-      // src/lib/rattachement.ts) et que les RÈGLEMENTS doivent suivre un par un en engagement.
-      lireTout<PaiementRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, piece_id, date, montant, statut", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("piece_id", "is", null).order("id").range(d, f)),
       // Les mouvements AFFECTÉS à une catégorie sans justificatif (bloc AFFECTATION) : leurs catégories
       // comptent comme celles des pièces, et leur écriture doit suivre la catégorie.
       lireTout<MouvementAffecteRow>((d, f) =>
@@ -1241,14 +1352,21 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les EMPRUNTS et le RELEVÉ ENTIER (bloc EMPRUNT) : le relevé dit ce qu'il couvre, et ses mouvements
       // rapprochés d'un emprunt, les échéances payées et leur découpage. Et lesquels sont VENTILÉS (bloc
       // VENTILATION) : le relevé entier, pour voir aussi des parts posées sur un mouvement qui ne l'est pas.
+      // Et ce qui PAIE une pièce (bloc copié de src/lib/rattachement.ts) : un mouvement rapproché d'elle, ou
+      // un virement qui en règle plusieurs — le relevé entier encore, pour voir aussi les parts d'un virement
+      // qui ne règle plus en groupe (bloc RÈGLEMENT GROUPÉ). Les paiements DATENT les écritures en
+      // trésorerie et décident de leurs lignes de banque dans les deux modèles.
       lireTout<EmpruntRow>((d, f) =>
         admin.from("emprunts").select("id, nom, capital_initial, taux_annuel, date_debut, duree_mois", { count: "exact" }).eq("dossier_id", dossierId).order("date_debut").order("id").range(d, f)),
-      lireTout<MouvementEmpruntRow & MouvementVentileRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow>((d, f) =>
+        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les PARTS des mouvements ventilés (bloc VENTILATION) : leurs catégories comptent comme celles des
       // pièces, et l'écriture du mouvement doit les suivre.
       lireTout<PartVentilationRow>((d, f) =>
         admin.from("ventilations_bancaires").select("ligne_bancaire_id, categorie_id, part_personnelle, montant", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // Les PARTS des virements qui règlent plusieurs pièces : chacune est un paiement de sa pièce.
+      lireTout<PartRegleeRow>((d, f) =>
+        admin.from("reglements_groupes").select("ligne_bancaire_id, piece_id, montant", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -1257,7 +1375,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rPaiements, rAffectes, rVirements, rEmprunts, rReleve, rParts]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -1271,7 +1389,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     )
     const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, immobilisationPieceIds)
     const modele = modeleDuDossier(dossier)
-    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, rPaiements.lignes, modele)
+    const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes)
+    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele)
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
     // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])
@@ -1288,6 +1407,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped), dossier.assujetti_tva)
     const ventilationsFausses = ventilationsIncoherentes(rReleve.lignes, rParts.lignes)
     const ventilesPerimes = mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele)
+    // Comptés par MOUVEMENT, comme la Checklist : une part sans pièce et une somme qui ne tombe plus juste
+    // sont deux raisons pour un seul virement à reprendre.
+    const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))
+    const payeesEnTrop = piecesPayeesEnTrop(piecesTyped, paiements)
 
     return {
       ecritures_desequilibrees: groupesDesequilibres.length,
@@ -1322,6 +1445,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // parts qui ne font plus le mouvement.
       mouvements_ventiles_dont_l_ecriture_ne_suit_plus_les_parts: ventilesPerimes.length,
       mouvements_ventiles_dont_les_parts_ne_font_plus_le_mouvement: ventilationsFausses.length,
+      // Les libellés de la Checklist : un virement groupé dont une part ne justifie plus rien ou dont les parts
+      // ne font plus le mouvement, et une pièce payée plus que son montant — un paiement en double ?
+      virements_groupes_dont_une_part_ne_justifie_plus_rien_ou_dont_les_parts_ne_font_plus_le_mouvement: reglementsFaux.size,
+      pieces_payees_plus_que_leur_montant: payeesEnTrop.length,
     }
   }
 
@@ -1493,6 +1620,7 @@ Règles impératives :
 - Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au 512000, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
+- Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).

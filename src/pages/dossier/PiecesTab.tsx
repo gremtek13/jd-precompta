@@ -2,7 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { suggererCategorie } from '../../lib/tiersCategories'
-import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT, LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesTvaImpossible } from '../../lib/controles'
+import { AVERTISSEMENT_PAIEMENT_DEFAIT, LIBELLE_MOTIF_TVA, moisEnDoubleSurAbonnement, piecesADateImpossible, piecesDeviseNonConvertie, piecesTvaImpossible } from '../../lib/controles'
 import { messageErreur } from '../../lib/messageErreur'
 import { DEVISE_PIVOT } from '../../lib/devises'
 import { piecesARelire, relireDocuments } from '../../lib/relectureDocuments'
@@ -10,6 +10,7 @@ import { piecesAvecTexteOcr, texteOcrDeLaPiece } from '../../lib/texteOcr'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { grouperParTiers } from '../../lib/suggestionTiers'
 import { lireTout } from '../../lib/lectureComplete'
+import { paiementsDesPieces, piecesPayees, type LignePayante, type PartReglee } from '../../lib/rattachement'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
@@ -118,14 +119,19 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     const piecesData = lecturePieces.lignes
     setLectureIncomplete(lecturePieces.complete ? null : lecturePieces.motif)
 
-    const lectureRapprochees = await lireTout<{ piece_id: string | null }>((debut, fin) =>
-      supabase.from('lignes_bancaires').select('piece_id', { count: 'exact' })
+    // Les mouvements RAPPROCHÉS, et pas seulement ceux qui portent une pièce : un virement qui règle
+    // plusieurs pièces n'en porte aucune — elles sont dans ses parts (lib/reglementGroupe.ts), lues juste
+    // après. Une pièce payée avec d'autres est rapprochée comme une autre, et le badge doit le dire.
+    const lectureRapprochees = await lireTout<LignePayante>((debut, fin) =>
+      supabase.from('lignes_bancaires').select('id, piece_id, date, montant, statut, reglement_groupe', { count: 'exact' })
         .eq('dossier_id', dossierId)
         .eq('statut', 'rapprochee')
-        .not('piece_id', 'is', null)
         .order('id').range(debut, fin),
     )
-    const lignesBancairesData = lectureRapprochees.lignes
+    const lectureReglements = await lireTout<PartReglee>((debut, fin) =>
+      supabase.from('reglements_groupes').select('ligne_bancaire_id, piece_id, montant', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    )
 
     const lectureCategories = await lireTout<Categorie>((debut, fin) =>
       supabase.from('categories').select('*', { count: 'exact' })
@@ -158,7 +164,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     // (`sousDossierLabel` rend « — » pour un sous-dossier absent, le badge de rapprochement retombe
     // sur « non rapprochée »), ou taisent une catégorie déjà arbitrée.
     setReferencesIncompletes(
-      [lectureRapprochees, lectureCategories, lectureSousDossiers, lectureTiersCategories, lectureTiersCabinet]
+      [lectureRapprochees, lectureReglements, lectureCategories, lectureSousDossiers, lectureTiersCategories, lectureTiersCabinet]
         .find((l) => !l.complete)?.motif ?? null,
     )
 
@@ -184,7 +190,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     setSousDossiers(lectureSousDossiers.lignes)
     setTiersCategories(lectureTiersCategories.lignes)
     setTiersCategoriesCabinet(lectureTiersCabinet.lignes)
-    setPiecesRapprochees(new Set((lignesBancairesData ?? []).map((l) => l.piece_id as string)))
+    setPiecesRapprochees(new Set(piecesPayees(paiementsDesPieces(lectureRapprochees.lignes, lectureReglements.lignes))))
     setLoading(false)
   }
 
@@ -401,7 +407,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   async function deleteSelection() {
     if (selected.size === 0) return
     if (!window.confirm(
-      `Supprimer définitivement ${selected.size} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_RAPPROCHEMENT_DEFAIT}`,
+      `Supprimer définitivement ${selected.size} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}`,
     )) return
     let supprimees = 0
     const echecs: string[] = []

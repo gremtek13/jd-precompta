@@ -737,7 +737,9 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    outils/captures/debordements.mjs). */
 .fiche-mouvement-parts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 4px; }
 .fiche-mouvement-part { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.fiche-mouvement-part select { flex: 1 1 180px; min-width: 0; }
+/* Une base de 150 px garde « Retirer » sur la ligne de sa pièce dans le volet (vu sur capture, à 180 px il passait
+   dessous et semblait appartenir à la ligne suivante) ; la liste prend ensuite toute la place qui reste. */
+.fiche-mouvement-part select { flex: 1 1 150px; min-width: 0; }
 .fiche-mouvement-part input { flex: 0 1 110px; min-width: 80px; }
 .fiche-mouvement-reste { margin: 0; font-size: 0.86rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .decoupage-emprunt {

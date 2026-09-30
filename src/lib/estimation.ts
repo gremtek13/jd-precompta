@@ -1,7 +1,7 @@
 import { anneeDe } from './format'
 import type { PartDuReleve } from './partsDuReleve'
 import { montantRetenu } from './montantRetenu'
-import { paiementsParPiece, partDansLaPeriode, rattachements, type Paiement } from './rattachement'
+import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rattachement'
 import { moisEcoulesDeLAnnee } from './situationIntermediaire'
 import type { CotisationDeclaree, ModeComptable, Piece } from './types'
 
@@ -13,14 +13,15 @@ import type { CotisationDeclaree, ModeComptable, Piece } from './types'
 // taxes pour un assujetti — comme dans la 2035 dont ces repères sont l'estimation (voir
 // lib/montantRetenu.ts). Sans valeur par défaut, pour la même raison qu'elle.
 //
-// `lignesBancaires` DATE chaque pièce comme la 2035 : une recette compte l'année de son
-// ENCAISSEMENT quand le rapprochement la connaît, sa date de facture à défaut (lib/rattachement.ts).
-// Sans valeur par défaut non plus : une liste vide ferait tout compter à la date de facture.
+// `paiements` DATE chaque pièce comme la 2035 : une recette compte l'année de son ENCAISSEMENT quand le
+// rapprochement la connaît — ou la part d'un virement groupé qui la règle (`paiementsDesPieces`) —, sa
+// date de facture à défaut (lib/rattachement.ts). Sans valeur par défaut non plus : une liste vide
+// ferait tout compter à la date de facture.
 //
 // `mode`, le modèle comptable du dossier : en ENGAGEMENT, une pièce compte à la date de sa facture,
 // et le paiement ne date rien. Obligatoire comme les deux autres, dans chaque calcul de ce module.
 function montantDansLaPeriode(
-  pieces: Piece[], paiements: Map<string, Paiement[]>, debut: string, fin: string, assujettiTva: boolean,
+  pieces: Piece[], paiements: PaiementsDesPieces, debut: string, fin: string, assujettiTva: boolean,
   mode: ModeComptable,
 ): number {
   return pieces.reduce((sum, p) => {
@@ -51,14 +52,14 @@ function cotisationsDeLaPeriode(cotisations: CotisationDeclaree[], debut: string
 
 export function totauxPourAnnee(
   pieces: Piece[], cotisations: CotisationDeclaree[], annee: number, assujettiTva: boolean,
-  lignesBancaires: readonly Paiement[], mode: ModeComptable,
+  paiements: PaiementsDesPieces, mode: ModeComptable,
   // Sans valeur par défaut, comme les paiements : voir `recettesAffecteesDansLaPeriode`.
   partsDuReleve: readonly PartDuReleve[],
 ) {
   const debut = `${annee}-01-01`
   const fin = `${annee}-12-31`
   return {
-    ca: montantDansLaPeriode(pieces, paiementsParPiece(lignesBancaires), debut, fin, assujettiTva, mode)
+    ca: montantDansLaPeriode(pieces, paiements, debut, fin, assujettiTva, mode)
       + recettesAffecteesDansLaPeriode(partsDuReleve, debut, fin),
     cotis: cotisationsDeLaPeriode(cotisations, debut, fin),
   }
@@ -96,13 +97,13 @@ export interface ProjectionAnnuelle {
  */
 export function projectionAnnuelle(
   recettes: Piece[], cotisations: CotisationDeclaree[], dateDuJour: string, assujettiTva: boolean,
-  lignesBancaires: readonly Paiement[], mode: ModeComptable,
+  paiements: PaiementsDesPieces, mode: ModeComptable,
   partsDuReleve: readonly PartDuReleve[],
 ): ProjectionAnnuelle {
   const annee = anneeDe(dateDuJour)
   // Du 1er janvier à aujourd'hui : la borne du jour fait un « à date », pour les recettes (à leur
   // encaissement) comme pour les échéances. La même règle de montant que le calcul des repères.
-  const ca = montantDansLaPeriode(recettes, paiementsParPiece(lignesBancaires), `${annee}-01-01`, dateDuJour, assujettiTva, mode)
+  const ca = montantDansLaPeriode(recettes, paiements, `${annee}-01-01`, dateDuJour, assujettiTva, mode)
     + recettesAffecteesDansLaPeriode(partsDuReleve, `${annee}-01-01`, dateDuJour)
   const cotis = cotisationsDeLaPeriode(cotisations, `${annee}-01-01`, dateDuJour)
   const moisEcoules = moisEcoulesDeLAnnee(dateDuJour)
@@ -148,13 +149,12 @@ export function chargesParPostePourAnnee(
   assujettiTva: boolean,
   // Comme la 2035 : une dépense compte l'année de son PAIEMENT (lib/rattachement.ts) — de sa facture,
   // en engagement.
-  lignesBancaires: readonly Paiement[],
+  paiements: PaiementsDesPieces,
   mode: ModeComptable,
   // Les dépenses payées sans justificatif — les frais bancaires, les intérêts et l'assurance d'une
   // échéance d'emprunt — à la date du mouvement, dans leur poste (lib/partsDuReleve.ts).
   partsDuReleve: readonly PartDuReleve[],
 ): Map<string, number> {
-  const paiements = paiementsParPiece(lignesBancaires)
   const totaux = new Map<string, number>()
   for (const p of piecesValidees) {
     if (p.type_piece === 'vente') continue

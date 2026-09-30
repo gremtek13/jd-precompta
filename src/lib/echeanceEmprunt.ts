@@ -6,6 +6,7 @@ import { ecartEnJours, libelleExploitable } from './appariementBanque'
 import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT } from './comptes'
 import { genererEcheancier, type Emprunt, type LigneEcheancier } from './emprunts'
 import { ajouterJours, formatDate } from './format'
+import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { EcritureBrouillon } from './types'
 
 // UNE ÉCHÉANCE D'EMPRUNT S'ÉCRIT SUR SES COMPTES (ligne 26.6 de la feuille de route, étape a).
@@ -59,6 +60,7 @@ const auCentime = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
 // contourne. Un mouvement déjà rapproché d'un EMPRUNT n'est pas refusé : un nouveau rapprochement
 // remplace le précédent (une autre échéance, un autre découpage).
 export function refusEcheanceEmprunt(ligne: MouvementBancaire): string | null {
+  if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
   if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.ventilee || ligne.prelevement_personnel) {
     return 'Ce mouvement est rapproché d’une pièce ou d’une cotisation, affecté à une catégorie, ventilé sur plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.'
   }

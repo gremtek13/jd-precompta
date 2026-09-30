@@ -15,8 +15,13 @@ import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/
 import { calculerEvolutionMensuelle, soldesFinDeMois } from '../../lib/tableauPilotage'
 import { ouvertureBanque } from '../../lib/aNouveaux'
 import type { OuvertureBanque } from '../../lib/planTresorerie'
-import type { ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire, NatureImmobilisation, Piece, VentilationBancaire } from '../../lib/types'
+import type {
+  ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire,
+  NatureImmobilisation, Piece, ReglementGroupe, VentilationBancaire,
+} from '../../lib/types'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSurDossierAssujetti, ventilationsIncoherentes } from '../../lib/ventilationBanque'
+import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
+import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from '../../lib/reglementGroupe'
 import type { DossierTab } from '../../components/DossierParcours'
 import KpiTile from '../../components/widgets/KpiTile'
 import Widget from '../../components/widgets/Widget'
@@ -84,6 +89,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // alors, et le bandeau de lecture partielle dit pourquoi — crier au loup sur un artefact de lecture est
   // ce que `rupturesPisteAudit` refuse déjà.
   const [ventilationsPartielles, setVentilationsPartielles] = useState(false)
+  // Les parts des virements qui règlent PLUSIEURS pièces (lib/reglementGroupe.ts) : elles datent et règlent
+  // leurs pièces comme des rapprochements simples, et deux points de cette liste en dépendent. Lues en
+  // partie, une part non lue ferait passer son règlement pour incohérent : ce point-là se tait alors.
+  const [reglements, setReglements] = useState<ReglementGroupe[]>([])
+  const [reglementsPartiels, setReglementsPartiels] = useState(false)
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations. Sans ce drapeau, l'écran
   // qui prétend dire ce qui MANQUE affirmait « à renseigner » sur une lecture refusée — et passait
@@ -120,6 +130,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       lectureANouveaux,
       lectureEmprunts,
       lectureVentilations,
+      lectureReglements,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -176,6 +187,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
         supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      lireTout<ReglementGroupe>((debut, fin) =>
+        supabase.from('reglements_groupes').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('id').range(debut, fin),
+      ),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -200,9 +215,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     setLectureIncomplete(
       [
         lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
-        lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations,
+        lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations, lectureReglements,
       ].find((l) => !l.complete)?.motif ?? null,
     )
+    setReglements(lectureReglements.lignes)
+    setReglementsPartiels(!lectureReglements.complete)
     setEmprunts(lectureEmprunts.lignes)
     setVentilations(lectureVentilations.lignes)
     setVentilationsPartielles(!lectureVentilations.complete)
@@ -285,9 +302,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id),
   )
   const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, immobilisationPieceIds)
-  // Les mouvements rapprochés décident de la date qu'une écriture doit porter (lib/rattachement.ts) :
-  // `lignes` porte tout le relevé, et `analyserEcritures` n'en retient que les rapprochés.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, lignes, modele)
+  // Les paiements de chaque pièce — mouvements rapprochés et parts des virements groupés — décident de la
+  // date qu'une écriture doit porter et de ses lignes de banque (lib/rattachement.ts). `lignes` porte tout
+  // le relevé, et `paiementsDesPieces` n'en retient que les rapprochés.
+  const paiements = paiementsDesPieces(lignes, reglements)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele)
   const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
@@ -374,7 +393,16 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // le relevé importé, à aucune date, révèle soit un relevé incomplet soit un montant faux — voir
   // lib/appariementBanque.ts. Ne porte que sur les pièces jamais rattachées à un mouvement, comme
   // BanqueTab.
-  const piecesRapprocheesIds = new Set(lignes.filter((l) => l.piece_id).map((l) => l.piece_id))
+  // Réglées par un rapprochement simple OU par la part d'un virement groupé : une pièce payée avec d'autres
+  // n'a pas son montant sur une ligne du relevé, et ce n'est pas un montant suspect.
+  const piecesRapprocheesIds = piecesPayees(paiements)
+  // Un virement groupé dont une part ne justifie plus rien — sa pièce supprimée depuis —, ou dont les parts
+  // ne font plus le mouvement (défensif, la base vérifie la somme). Et une pièce payée plus que son montant :
+  // la 2035 la compte une fois, l'argent versé en trop n'y est nulle part (lib/reglementGroupe.ts).
+  // Compté par MOUVEMENT : une part sans pièce et une somme qui ne tombe plus juste sont deux raisons pour un
+  // seul virement à reprendre.
+  const reglementsFaux = reglementsPartiels ? [] : [...new Set(reglementsGroupesIncoherents(lignes, reglements).map((r) => r.ligne.id))]
+  const payeesEnTrop = piecesPayeesEnTrop(piecesValidees, paiements)
   // `piecesValidees` et non `pieces` : ce contrôle ne vise que les pièces VALIDÉES, et son libellé le
   // dit. L'état s'appelait `pieces` quand ce point a été écrit, alors qu'il ne portait déjà que les
   // validées — c'est exactement le nom trompeur que le renommage a supprimé.
@@ -460,6 +488,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     { id: 'immos-sans-justificatif', label: 'immobilisation(s) dont le justificatif a été supprimé', action: "Retrouver le justificatif ou retirer l'immobilisation", nb: immosSansJustificatif.length, cible: 'immobilisations', severite: 'erreur' },
     { id: 'ecart-rapprochement', label: 'rapprochement(s) dont le montant ne correspond pas au mouvement', action: 'Vérifier le montant ou le rapprochement', nb: ecartsRapprochement.length, cible: 'banque', severite: 'erreur' },
     { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
+    // La forme groupée du point ci-dessus : une part d'un virement qui règle plusieurs pièces a perdu la
+    // sienne, ou les parts ne font plus le mouvement. « Erreur » pour la même raison.
+    { id: 'reglements-groupes-incoherents', label: 'virement(s) groupé(s) dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement', action: 'Régler de nouveau ou annuler ces virements', nb: reglementsFaux.length, cible: 'banque', severite: 'erreur' },
+    // « Erreur » : la 2035 compte la pièce une fois, et l'argent versé en trop n'y est nulle part.
+    { id: 'pieces-payees-en-trop', label: 'pièce(s) payée(s) plus que leur montant — un paiement en double ?', action: 'Annuler le paiement en trop', nb: payeesEnTrop.length, cible: 'banque', severite: 'erreur' },
     // Plus de point « déclaration de TVA en écart avec le brouillon » (retiré le 28/09/2026) : le
     // brouillon date la TVA à la PIÈCE et ne porte aucune écriture pour un bien immobilisé, donc il
     // ne pouvait pas dire ce qu'une CA3 déposée sur les encaissements devait contenir — il aurait
