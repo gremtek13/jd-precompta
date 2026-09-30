@@ -13,7 +13,9 @@
 --     personne ne peut utiliser) ;
 --   - ce que la table refuse SEULE : une session sur une connexion en attente, une connexion active
 --     sans échéance, un environnement, un pays, un fournisseur inconnus, un compte choisi sans son
---     empreinte, des comptes qui ne sont pas une liste, une session ou un jeton de retour en double ;
+--     empreinte, des comptes qui ne sont pas une liste, une session ou un jeton de retour en double, une
+--     DEUXIÈME connexion pour un même dossier (l'application ne tient qu'un relevé par dossier) et un
+--     espace de connexion qui n'est ni professionnel ni particulier ;
 --   - que l'identifiant externe DÉDOUBLONNE : le chef importe un mouvement qui en porte un, le même
 --     identifiant est refusé dans le même dossier, `on conflict do nothing` le laisse passer sans rien
 --     écrire, deux mouvements d'un relevé (identifiant nul) s'empilent comme avant, et le même
@@ -26,10 +28,13 @@
 -- `raise`, et un refus se juge à son code ET à son message — un P0001 sans rapport ressemblerait sinon
 -- à un refus.
 --
--- ÉPROUVÉ LE 30/09/2026 : 20 contrôles sur 20, le texte transmis comparé au fichier dans le journal de
--- session (identique). Et l'essai sait échouer : sans les `set local role`, les contrôles 1 à 4 virent
--- au rouge — sous `postgres`, qui ne subit pas la RLS, chaque profil voit, modifie et supprime la
--- connexion, et l'écrit.
+-- ÉPROUVÉ LE 30/09/2026 : 20 contrôles sur 20, puis 22 sur 22 après les migrations
+-- `connexion_bancaire_une_par_dossier` et `connexion_bancaire_type_acces` du même jour — qui ont ajouté
+-- les contrôles 15 et 16, fait passer les doublons des contrôles 13 et 14 sur deux dossiers, et fait
+-- relire l'espace de connexion au contrôle 5 —, le texte transmis comparé au fichier dans le journal de
+-- session (identique chaque fois). Et l'essai sait échouer : sans les `set local role`, les
+-- contrôles 1 à 4 virent au rouge — sous `postgres`, qui ne subit pas la RLS, chaque profil voit,
+-- modifie et supprime la connexion, et l'écrit.
 drop table if exists essai_connexion;
 create temp table essai_connexion (controle text, observe text, ok boolean);
 
@@ -95,14 +100,14 @@ begin
     update connexions_bancaires
        set etat = 'active', session_id = 'essai-session-service', valide_jusqu_au = now() + interval '90 days',
            comptes = jsonb_build_array(jsonb_build_object('uid', 'essai-compte', 'empreinte', 'essai-empreinte')),
-           compte_uid = 'essai-compte', compte_empreinte = 'essai-empreinte'
+           compte_uid = 'essai-compte', compte_empreinte = 'essai-empreinte', type_acces = 'personal'
      where id = connexion;
     get diagnostics n_maj = row_count;
-    select etat || ':' || jsonb_array_length(comptes)::text || ':' || compte_empreinte into obs
+    select etat || ':' || jsonb_array_length(comptes)::text || ':' || compte_empreinte || ':' || type_acces into obs
       from connexions_bancaires where id = connexion;
     delete from connexions_bancaires where id = connexion;
     get diagnostics n_supp = row_count;
-    ok := n_maj = 1 and obs = 'active:1:essai-empreinte' and n_supp = 1;
+    ok := n_maj = 1 and obs = 'active:1:essai-empreinte:personal' and n_supp = 1;
     accepte := true;
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate; message := sqlerrm;
@@ -112,7 +117,7 @@ begin
     'relue : ' || coalesce(obs, '?') || ', modifiées : ' || coalesce(n_maj::text, '?') || ', supprimées : ' || coalesce(n_supp::text, '?'),
     accepte and code_recu = 'P0001' and coalesce(ok, false));
 
-  -- ══ 6 à 14. Ce que la table refuse seule ══════════════════════════════════════════════════════════
+  -- ══ 6 à 16. Ce que la table refuse seule ══════════════════════════════════════════════════════════
   for obs, message in
     select * from (values
       ('6. session sur une connexion en attente', 'connexions_bancaires_etat_coherent'),
@@ -123,7 +128,9 @@ begin
       ('11. compte choisi sans empreinte', 'connexions_bancaires_compte_choisi'),
       ('12. comptes qui ne sont pas une liste', 'connexions_bancaires_comptes'),
       ('13. session en double', 'connexions_bancaires_session_unique'),
-      ('14. jeton de retour en double', 'connexions_bancaires_jeton_etat_unique')
+      ('14. jeton de retour en double', 'connexions_bancaires_jeton_etat_unique'),
+      ('15. deux connexions pour un même dossier', 'connexions_bancaires_dossier_unique'),
+      ('16. espace de connexion inconnu', 'connexions_bancaires_type_acces')
     ) as cas(nom, contrainte)
   loop
     accepte := false; code_recu := null;
@@ -152,13 +159,21 @@ begin
         elsif obs like '12.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, comptes)
             values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', '{}'::jsonb);
+        -- 13 et 14 : deux DOSSIERS, pour que seule la contrainte visée puisse refuser — dans un seul
+        -- dossier, la règle « une connexion par dossier » refuserait la première.
         elsif obs like '13.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, etat, session_id, valide_jusqu_au)
             values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session-double', now() + interval '1 day'),
-                   (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session-double', now() + interval '1 day');
-        else
+                   (dossier_du_client, 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session-double', now() + interval '1 day');
+        elsif obs like '14.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, jeton_etat)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', jeton), (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', jeton);
+            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', jeton), (dossier_du_client, 'Mock ASPSP', 'FR', 'SANDBOX', jeton);
+        elsif obs like '15.%' then
+          insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement)
+            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX'), (dossier_test, 'Crédit Fictif', 'FR', 'SANDBOX');
+        else
+          insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, type_acces)
+            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', 'corporate');
         end if;
         accepte := true;
         raise exception 'ANNULATION_ESSAI';
@@ -166,12 +181,12 @@ begin
       end;
       reset role;
       insert into essai_connexion values (obs, coalesce(code_recu, '?') || ' ' || coalesce(recu, ''),
-        not accepte and code_recu = case when obs like '13.%' or obs like '14.%' then '23505' else '23514' end
+        not accepte and code_recu = case when obs like '13.%' or obs like '14.%' or obs like '15.%' then '23505' else '23514' end
         and recu like '%' || contrainte || '%');
     end;
   end loop;
 
-  -- ══ 15. Le chef importe un mouvement identifié ; le même identifiant est refusé dans le dossier ═══
+  -- ══ 17. Le chef importe un mouvement identifié ; le même identifiant est refusé dans le dossier ═══
   accepte := false; code_recu := null; message := null; n := null;
   begin
     set local role authenticated;
@@ -186,11 +201,11 @@ begin
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
   reset role;
-  insert into essai_connexion values ('15. le chef importe, et le même identifiant est refusé',
+  insert into essai_connexion values ('17. le chef importe, et le même identifiant est refusé',
     'premier : ' || coalesce(n::text, '?') || ' — ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
     not accepte and n = 1 and code_recu = '23505' and message like '%lignes_bancaires_id_externe_unique%');
 
-  -- ══ 16. `on conflict do nothing` laisse passer le doublon sans rien écrire ══════════════════════════
+  -- ══ 18. `on conflict do nothing` laisse passer le doublon sans rien écrire ══════════════════════════
   -- C'est la forme de l'upsert `ignoreDuplicates` du client : deux imports qui se croisent ne doivent ni
   -- doubler un mouvement ni échouer.
   accepte := false; code_recu := null; message := null; n := null; vus := null;
@@ -209,11 +224,11 @@ begin
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
   reset role;
-  insert into essai_connexion values ('16. on conflict do nothing : rien d''écrit, rien de levé',
+  insert into essai_connexion values ('18. on conflict do nothing : rien d''écrit, rien de levé',
     'écrites : ' || coalesce(n::text, '?') || ', présentes : ' || coalesce(vus::text, '?'),
     accepte and code_recu = 'P0001' and n = 0 and vus = 1);
 
-  -- ══ 17. Deux mouvements d'un relevé (identifiant nul) s'empilent comme avant ═══════════════════════
+  -- ══ 19. Deux mouvements d'un relevé (identifiant nul) s'empilent comme avant ═══════════════════════
   accepte := false; code_recu := null; message := null; vus := null;
   begin
     set local role authenticated;
@@ -226,11 +241,11 @@ begin
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
   reset role;
-  insert into essai_connexion values ('17. deux mouvements sans identifiant s''empilent',
+  insert into essai_connexion values ('19. deux mouvements sans identifiant s''empilent',
     'écrits : ' || coalesce(vus::text, '?') || ' — ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
     accepte and code_recu = 'P0001' and vus = 2);
 
-  -- ══ 18. Le même identifiant vit dans deux dossiers ══════════════════════════════════════════════════
+  -- ══ 20. Le même identifiant vit dans deux dossiers ══════════════════════════════════════════════════
   accepte := false; code_recu := null; message := null; vus := null;
   begin
     insert into lignes_bancaires (dossier_id, date, libelle, montant, id_externe)
@@ -241,11 +256,11 @@ begin
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
-  insert into essai_connexion values ('18. le même identifiant dans deux dossiers',
+  insert into essai_connexion values ('20. le même identifiant dans deux dossiers',
     'écrits : ' || coalesce(vus::text, '?') || ' — ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
     accepte and code_recu = 'P0001' and vus = 2);
 
-  -- ══ 19. La suppression d'un dossier emporte sa connexion ════════════════════════════════════════════
+  -- ══ 21. La suppression d'un dossier emporte sa connexion ════════════════════════════════════════════
   accepte := false; code_recu := null; message := null; vus := null;
   begin
     insert into dossiers (cabinet_id, nom) values (cabinet, 'Essai connexion jetable') returning id into dossier_jetable;
@@ -257,15 +272,15 @@ begin
     raise exception 'ANNULATION_ESSAI';
   exception when others then code_recu := sqlstate; message := sqlerrm;
   end;
-  insert into essai_connexion values ('19. la suppression d''un dossier emporte sa connexion',
+  insert into essai_connexion values ('21. la suppression d''un dossier emporte sa connexion',
     'restantes : ' || coalesce(vus::text, '?') || ' — ' || coalesce(code_recu, '?') || ' ' || coalesce(message, ''),
     accepte and code_recu = 'P0001' and vus = 0);
 
-  -- ══ 20. Rien n'est resté ════════════════════════════════════════════════════════════════════════════
+  -- ══ 22. Rien n'est resté ════════════════════════════════════════════════════════════════════════════
   select count(*) into nb_connexions_apres from connexions_bancaires;
   select count(*) into nb_lignes_apres from lignes_bancaires;
   select count(*) into nb_dossiers_apres from dossiers;
-  insert into essai_connexion values ('20. rien n''est resté en base',
+  insert into essai_connexion values ('22. rien n''est resté en base',
     'connexions ' || nb_connexions_avant || ' -> ' || nb_connexions_apres || ', mouvements ' || nb_lignes_avant || ' -> '
       || nb_lignes_apres || ', dossiers ' || nb_dossiers_avant || ' -> ' || nb_dossiers_apres,
     nb_connexions_avant = nb_connexions_apres and nb_lignes_avant = nb_lignes_apres and nb_dossiers_avant = nb_dossiers_apres);

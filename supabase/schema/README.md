@@ -74,8 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 30/09/2026** : 69 fichiers, 69 migrations, empreinte globale
-`1e90206d58743accd3763977f6806ccf` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 30/09/2026** : 71 fichiers, 71 migrations, empreinte globale
+`2bedf0bc0d4e91a88407fa055ca05f12` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -112,7 +112,7 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (836 objets, empreinte `a613ccf9ac4f9f816841032a4a528ed9` le 30/09/2026). C'est le seul qui voie un
+  (838 objets, empreinte `cbffd36c9ccc9827d1677b8e1d9e36b8` le 30/09/2026, après l'espace de connexion à la banque). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.
