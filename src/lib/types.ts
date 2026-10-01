@@ -150,6 +150,12 @@ export interface LigneBancaire {
   // categorie_id, emprunt_id) <= 1). Ce commentaire a affirmé du 23/09 au 29/09/2026 qu'aucune
   // contrainte CHECK n'existait : c'était faux, `pg_constraint` la rend depuis le 22/09 au moins (le
   // socle l'exporte déjà), et rien n'avait recoupé l'affirmation avec l'export qui portait la réponse.
+  //
+  // ET IL S'ÉCRIT (ligne 26.6, étape b, lib/cotisationRapprochee.ts) : posé par `rapprocher_cotisation`
+  // AVEC son écriture — le 646000 face à la banque, la CSG-CRDS au 108000 en trésorerie —, retiré avec
+  // elle par `retirer_rapprochement_cotisation`. La base tient le reste : un mouvement qui porte une
+  // échéance est rapproché et jamais personnel (`lignes_bancaires_cotisation_rapprochee`), et une échéance
+  // ne se rapproche que d'un mouvement (`lignes_bancaires_cotisation_unique`).
   cotisation_id: string | null
   // La catégorie d'un mouvement SANS justificatif (ligne 26.6 de la feuille de route) : frais
   // bancaires, encaissements de l'Assurance maladie, remboursements. Le mouvement est alors rapproché,
