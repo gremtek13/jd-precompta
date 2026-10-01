@@ -10,7 +10,7 @@ import {
   justificatifPossible, motifPropose, mouvementsCouverts, normaliserPourRegle, refusMotif, regleApplicable, sensDuMouvement,
 } from '../../lib/reglesAffectation'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
-import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT, LIBELLES_COMPTES } from '../../lib/comptes'
+import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_EXPLOITANT, COMPTE_INTERETS_EMPRUNT, LIBELLES_COMPTES } from '../../lib/comptes'
 import { ouvrirJustificatif } from '../../lib/depot'
 import {
   capitalDeLEcheance, decoupageDuMouvement, decoupagePourEcheance, echeanceProposee, echeancesOccupees, empruntPlausible,
@@ -25,7 +25,7 @@ import { nomDeLaPiece, reglementsGroupesIncoherents, type PartReglement } from '
 import type {
   Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, RegleAffectationBancaire, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
-import { refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
+import { ecritureDeLaCotisation, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
 import { montantSaisi, ventilationsIncoherentes, type PartSaisie } from '../../lib/ventilationBanque'
 import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
@@ -82,6 +82,13 @@ import FormulaireVentilation from './FormulaireVentilation'
 // saisie positive, et leur somme est le mouvement ; chaque part est un paiement de sa pièce, que la 2035,
 // la TVA et les écritures lisent comme un rapprochement simple. Rien ne s'écrit avant le clic, et un
 // règlement se modifie ou s'annule par la base, qui retire les parts et les écritures du mouvement.
+//
+// ET UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE S'ÉCRIT (ligne 26.6, lib/cotisationRapprochee.ts) : la cotisation
+// au 646000 et, en trésorerie, sa CSG-CRDS au 108000, face à la banque. Ce que la base refuserait est dit
+// avant le clic, et un rapprochement posé qui ne peut pas s'écrire le dit sur le mouvement. La fiche dit
+// comment l'échéance s'écrit ; elle ne dit pas si l'écriture d'un rapprochement posé AVANT qu'il s'écrive
+// manque — elle ne lit pas le brouillon —, et renvoie à l'onglet Cotisations, qui le lit, le montre et
+// l'écrit.
 
 export interface NavigationMouvement {
   position: string
@@ -592,6 +599,10 @@ export default function FicheMouvement({
   // s'écrit pas.
   const refusEcheance = (c: CotisationDeclaree) => refusRapprochementCotisation(ligne, c, modeComptable)
   const refusEcheancePayee = cotisationPayee ? refusEcheance(cotisationPayee) : null
+  // Comment elle s'écrit, hors banque : la cotisation au 646000, sa CSG-CRDS au 108000 en trésorerie.
+  const ecritureEcheancePayee = cotisationPayee && !refusEcheancePayee
+    ? ecritureDeLaCotisation(ligne, cotisationPayee, modeComptable).filter((l) => l.compte !== COMPTE_BANQUE)
+    : []
   // Seconde copie de la pastille de la liste, gardée par son propre test : le panneau est l'écran où
   // l'on ARBITRE, donc celui où l'écart doit se lire.
   const ecart = (() => {
@@ -1383,6 +1394,13 @@ export default function FicheMouvement({
             <h3>Rapproché avec</h3>
             {piecePayee && <CartePiece piece={piecePayee} />}
             {cotisationPayee && <CarteCotisation cotisation={cotisationPayee} />}
+            {ecritureEcheancePayee.length > 0 && (
+              <p className="fiche-mouvement-note">
+                S’écrit face à la banque :{' '}
+                {ecritureEcheancePayee.map((l) => `${formatMoney(l.montant)} au ${l.compte} — ${LIBELLES_COMPTES[l.compte] ?? l.compte}${l.compte === COMPTE_EXPLOITANT ? ' (sa CSG-CRDS)' : ''}`).join(' ; ')}.
+                {' '}« Annuler le rapprochement » retire aussi son écriture ; l’onglet Cotisations dit si elle manque, et l’écrit.
+              </p>
+            )}
             {/* Le lien existe mais la ligne n'a pas été lue — une lecture partielle, que le bandeau en
                 tête de l'écran annonce déjà. Dit ici plutôt qu'une section vide sous « Rapproché avec ». */}
             {ligne.piece_id && !piecePayee && <p className="fiche-mouvement-note">La pièce rapprochée ne figure pas parmi les pièces lues.</p>}

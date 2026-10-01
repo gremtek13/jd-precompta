@@ -936,6 +936,107 @@ function mouvementsVentilesDesynchronises(
 }
 // ── FIN VENTILATION ──────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT COTISATION ─────────────────────────────────────────────────────────────────────────────
+// LES ÉCHÉANCES DE COTISATION RAPPROCHÉES D'UN MOUVEMENT — copiées de src/lib/cotisationRapprochee.ts
+// (ligne 26.6 de la feuille de route, étape b, 01/10/2026). Une échéance rapprochée s'écrit désormais face à
+// la banque : la cotisation au 646000 et, en trésorerie, sa CSG-CRDS au 108000. La Checklist en tire deux
+// points que l'assistant doit dire comme elle : les échéances payées dont l'écriture manque ou n'est plus à
+// jour — celles rapprochées avant que le rapprochement écrive, absentes du FEC —, et les rapprochements qui
+// ne peuvent pas s'écrire (un encaissement sur un appel, un mouvement de zéro euro, une CSG-CRDS qui dépasse
+// le mouvement), qui ne datent rien. Une copie restée muette répondrait « rien à signaler » sur un dossier
+// dont le FEC n'a aucune cotisation.
+// Gardé par `agentComptableCotisation.test.ts`, qui extrait ce bloc et le compare à src/lib.
+interface CotisationRow { id: string; echeance: string; montant_appele: number; montant_verse: number | null; montant_csg_crds: number | null }
+interface MouvementCotisationRow {
+  id: string; date: string; montant: number; statut: string; cotisation_id: string | null
+  piece_id: string | null; categorie_id: string | null; emprunt_id: string | null
+  ventilee: boolean; prelevement_personnel: boolean; reglement_groupe: boolean
+}
+
+const COMPTE_COTISATIONS_EXPLOITANT = "646000"
+
+const centimesCotisation = (n: number) => Math.round(n * 100)
+const auCentimeCotisation = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
+
+// Le montant d'une échéance : le versement saisi, sinon l'appel. Son SIGNE dit ce qu'elle est.
+function montantDeLEcheance(c: Pick<CotisationRow, "montant_verse" | "montant_appele">): number {
+  return c.montant_verse ?? c.montant_appele
+}
+
+// La CSG-CRDS que l'écriture porte au 108000 : celle de l'échéance en trésorerie, quand elle est saisie ;
+// rien en engagement.
+function csgDeLEcriture(c: Pick<CotisationRow, "montant_csg_crds">, mode: ModeComptable): number {
+  return mode === "tresorerie" && c.montant_csg_crds != null ? Math.abs(c.montant_csg_crds) : 0
+}
+
+// Pourquoi ce rapprochement ne peut pas s'écrire, ou `null` : les refus de src/lib et de
+// `rapprocher_cotisation`, dans le même ordre. L'assistant les COMPTE, comme la Checklist ; la raison est
+// un code et non la phrase de l'écran.
+function refusRapprochementCotisation(ligne: MouvementCotisationRow, cotisation: CotisationRow, mode: ModeComptable): string | null {
+  if (ligne.reglement_groupe) return "regle_en_groupe"
+  if (ligne.piece_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) return "deja_classe"
+  if (ligne.montant === 0) return "mouvement_a_zero"
+  const montant = montantDeLEcheance(cotisation)
+  if (montant === 0) return "echeance_a_zero"
+  if (montant > 0 && ligne.montant > 0) return "encaissement_sur_un_appel"
+  if (montant < 0 && ligne.montant < 0) return "prelevement_sur_un_remboursement"
+  const csg = csgDeLEcriture(cotisation, mode)
+  if (!auCentimeCotisation(csg)) return "csg_pas_au_centime"
+  if (centimesCotisation(csg) > centimesCotisation(Math.abs(ligne.montant))) return "csg_au_dela_du_mouvement"
+  return null
+}
+
+// L'écriture d'une échéance rapprochée, sans son libellé (le contrôle ne le compare pas) : une ligne par
+// compte non nul, dans le sens du mouvement, calculée en centimes.
+function ecritureDeLaCotisation(ligne: Pick<MouvementCotisationRow, "montant">, cotisation: Pick<CotisationRow, "montant_csg_crds">, mode: ModeComptable) {
+  const total = centimesCotisation(Math.abs(ligne.montant))
+  const csg = centimesCotisation(csgDeLEcriture(cotisation, mode))
+  const sortie = ligne.montant < 0
+  const sensCompte = sortie ? "debit" : "credit"
+  return [
+    { compte: COMPTE_BANQUE, sens: sortie ? "credit" : "debit", montant: total / 100 },
+    { compte: COMPTE_COTISATIONS_EXPLOITANT, sens: sensCompte, montant: (total - csg) / 100 },
+    { compte: COMPTE_EXPLOITANT, sens: sensCompte, montant: csg / 100 },
+  ].filter((l) => l.montant > 0)
+}
+
+// Les mouvements rapprochés d'une échéance LUE, avec elle.
+function rapprochementsDeCotisation(
+  lignes: readonly MouvementCotisationRow[], cotisations: readonly CotisationRow[],
+): { ligne: MouvementCotisationRow; cotisation: CotisationRow }[] {
+  const parId = new Map(cotisations.map((c) => [c.id, c]))
+  const rapprochements: { ligne: MouvementCotisationRow; cotisation: CotisationRow }[] = []
+  for (const ligne of lignes) {
+    if (ligne.statut !== "rapprochee" || !ligne.cotisation_id) continue
+    const cotisation = parId.get(ligne.cotisation_id)
+    if (cotisation) rapprochements.push({ ligne, cotisation })
+  }
+  return rapprochements
+}
+
+// Les échéances payées dont l'écriture n'est pas celle que le rapprochement produirait aujourd'hui —
+// absente, le cas réel, ou périmée par une CSG-CRDS saisie depuis. Un rapprochement qui ne peut pas
+// s'écrire n'y est pas : il est compté à part.
+function cotisationsAEcrire(
+  ecritures: readonly EcritureRow[], lignes: readonly MouvementCotisationRow[], cotisations: readonly CotisationRow[], mode: ModeComptable,
+): { ligne: MouvementCotisationRow; cotisation: CotisationRow }[] {
+  const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  return rapprochementsDeCotisation(lignes, cotisations).filter(({ ligne, cotisation }) =>
+    !refusRapprochementCotisation(ligne, cotisation, mode)
+    && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode), ligne.date))
+}
+
+// Les rapprochements qui ne peuvent pas s'écrire, avec leur raison.
+function rapprochementsCotisationRefuses(
+  lignes: readonly MouvementCotisationRow[], cotisations: readonly CotisationRow[], mode: ModeComptable,
+): { ligne: MouvementCotisationRow; cotisation: CotisationRow; raison: string }[] {
+  return rapprochementsDeCotisation(lignes, cotisations).flatMap(({ ligne, cotisation }) => {
+    const raison = refusRapprochementCotisation(ligne, cotisation, mode)
+    return raison ? [{ ligne, cotisation, raison }] : []
+  })
+}
+// ── FIN COTISATION ───────────────────────────────────────────────────────────────────────────────
+
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
 function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
   if (!assujettiTva) return []
@@ -1227,7 +1328,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -1385,7 +1486,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
       lireTout<PieceRow>((d, f) =>
         admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
@@ -1410,11 +1511,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Et ce qui PAIE une pièce (bloc copié de src/lib/rattachement.ts) : un mouvement rapproché d'elle, ou
       // un virement qui en règle plusieurs — le relevé entier encore, pour voir aussi les parts d'un virement
       // qui ne règle plus en groupe (bloc RÈGLEMENT GROUPÉ). Les paiements DATENT les écritures en
-      // trésorerie et décident de leurs lignes de banque dans les deux modèles.
+      // trésorerie et décident de leurs lignes de banque dans les deux modèles. Et ce qui paie une ÉCHÉANCE
+      // DE COTISATION (bloc COTISATION), avec ce qui empêcherait son écriture.
       lireTout<EmpruntRow>((d, f) =>
         admin.from("emprunts").select("id, nom, capital_initial, taux_annuel, date_debut, duree_mois", { count: "exact" }).eq("dossier_id", dossierId).order("date_debut").order("id").range(d, f)),
-      lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow & MouvementCotisationRow>((d, f) =>
+        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les PARTS des mouvements ventilés (bloc VENTILATION) : leurs catégories comptent comme celles des
       // pièces, et l'écriture du mouvement doit les suivre.
       lireTout<PartVentilationRow>((d, f) =>
@@ -1422,6 +1524,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les PARTS des virements qui règlent plusieurs pièces : chacune est un paiement de sa pièce.
       lireTout<PartRegleeRow>((d, f) =>
         admin.from("reglements_groupes").select("ligne_bancaire_id, piece_id, montant", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // Les ÉCHÉANCES DE COTISATION (bloc COTISATION) : celle qu'un mouvement rapproché paie doit avoir son
+      // écriture, sans quoi elle manque au FEC.
+      lireTout<CotisationRow>((d, f) =>
+        admin.from("cotisations_declarees").select("id, echeance, montant_appele, montant_verse, montant_csg_crds", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -1430,7 +1536,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -1466,6 +1572,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // sont deux raisons pour un seul virement à reprendre.
     const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))
     const payeesEnTrop = piecesPayeesEnTrop(piecesTyped, paiements)
+    const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode)
+    const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode)
 
     return {
       ecritures_desequilibrees: groupesDesequilibres.length,
@@ -1505,6 +1613,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // ne font plus le mouvement, et une pièce payée plus que son montant — un paiement en double ?
       virements_groupes_dont_une_part_ne_justifie_plus_rien_ou_dont_les_parts_ne_font_plus_le_mouvement: reglementsFaux.size,
       pieces_payees_plus_que_leur_montant: payeesEnTrop.length,
+      // Les libellés de la Checklist : une échéance payée par un mouvement rapproché dont l'écriture manque —
+      // rapprochée avant que le rapprochement écrive — ou n'est plus à jour, absente du FEC ; et un
+      // rapprochement qui ne peut pas s'écrire (un encaissement sur un appel), qui ne date rien.
+      echeances_de_cotisation_payees_dont_l_ecriture_manque_ou_n_est_plus_a_jour: cotisationsSansEcriture.length,
+      rapprochements_d_une_echeance_de_cotisation_qui_ne_peuvent_pas_s_ecrire: cotisationsRefusees.length,
     }
   }
 
@@ -1679,6 +1792,7 @@ Règles impératives :
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
+- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).
 - Réponds en français, de façon concise, avec des montants exacts et la période concernée. Utilise des puces si ça aide.`
