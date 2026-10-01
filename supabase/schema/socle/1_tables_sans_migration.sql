@@ -51,6 +51,10 @@ create table public.cotisations_declarees (
   constraint cotisations_declarees_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE
 );
 
+-- RÉGÉNÉRÉE LE 01/10/2026 depuis le catalogue, après la migration `dotations_aux_amortissements`
+-- (colonne `compte_immobilisation`, sa contrainte) — ligne 26.6 de la feuille de route, étape b. Le
+-- compte d'une nature est celui de l'immobilisation (classe 20 ou 21) ; son compte d'amortissement
+-- s'en déduit (`compte_amortissement`), donc n'est écrit nulle part.
 create table public.natures_immobilisation (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid,
@@ -58,8 +62,10 @@ create table public.natures_immobilisation (
   duree_annees_defaut integer not null,
   ordre integer default 0 not null,
   created_at timestamp with time zone default now() not null,
+  compte_immobilisation text default '218000'::text not null,
   constraint natures_immobilisation_pkey PRIMARY KEY (id),
-  constraint natures_immobilisation_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE
+  constraint natures_immobilisation_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
+  constraint natures_immobilisation_compte_immobilisation_format CHECK ((compte_immobilisation ~ '^2[01][0-9]{4}$'::text))
 );
 
 create table public.sous_dossiers (
@@ -165,7 +171,8 @@ create table public.tiers_categories (
 -- `id_externe`, sa contrainte unique) — ligne 24 —, puis `reglement_groupe_des_pieces` (colonne
 -- `reglement_groupe`, sa contrainte, la contrainte d'un seul rapprochement élargie) — ligne 26 ; et LE
 -- 01/10/2026 après `recettes_assujetties_du_releve` (colonne `taux_tva`, sa contrainte) — ligne 26.6.
--- Les onze autres tables sont celles du 22/09/2026.
+-- Les onze autres tables sont celles du 22/09/2026, à trois près : `natures_immobilisation`,
+-- `immobilisations` et `ecritures_brouillon`, régénérées le 01/10/2026 — voir leur en-tête.
 create table public.lignes_bancaires (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -226,6 +233,9 @@ create table public.documents_divers (
   constraint documents_divers_categorie_check CHECK ((categorie = ANY (ARRAY['releve_bancaire'::text, 'cotisation'::text, 'attestation'::text, 'autre'::text])))
 );
 
+-- RÉGÉNÉRÉE LE 01/10/2026 depuis le catalogue, après `dotations_aux_amortissements` (colonne
+-- `date_mise_en_service`, la contrainte `immobilisations_valeur_au_centime`). Sans date de mise en
+-- service, l'amortissement part de la date d'acquisition.
 create table public.immobilisations (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -236,17 +246,25 @@ create table public.immobilisations (
   duree_annees integer default 5 not null,
   created_at timestamp with time zone default now() not null,
   nature_id uuid,
+  date_mise_en_service date,
   constraint immobilisations_piece_id_unique UNIQUE (piece_id),
   constraint immobilisations_pkey PRIMARY KEY (id),
   constraint immobilisations_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint immobilisations_nature_id_fkey FOREIGN KEY (nature_id) REFERENCES natures_immobilisation(id),
   constraint immobilisations_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
   constraint immobilisations_duree_positive CHECK ((duree_annees > 0)),
+  constraint immobilisations_valeur_au_centime CHECK ((valeur = round(valeur, 2))),
   constraint immobilisations_valeur_positive CHECK ((valeur > (0)::numeric))
 );
 
 -- Les deux clés étrangères en ON DELETE SET NULL sont exactement celles qui produisent les ruptures
--- de piste d'audit décrites dans CLAUDE.md : Postgres efface le lien sans un mot.
+-- de piste d'audit décrites dans CLAUDE.md : Postgres efface le lien sans un mot. La troisième,
+-- `immobilisation_id`, est SANS action, et c'est voulu : une dotation ne se détache pas de son bien en
+-- silence — un bien amorti se retire par `retirer_immobilisation`, qui emporte ses dotations.
+--
+-- RÉGÉNÉRÉE LE 01/10/2026 depuis le catalogue, après `dotations_aux_amortissements` (colonne
+-- `immobilisation_id`, sa clé, ses deux contraintes, son index) — ligne 26.6, étape b. Une dotation ne
+-- porte ni pièce ni mouvement, et tombe au 31 décembre.
 create table public.ecritures_brouillon (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -259,10 +277,14 @@ create table public.ecritures_brouillon (
   sens text not null,
   statut text default 'proposee'::text not null,
   created_at timestamp with time zone default now() not null,
+  immobilisation_id uuid,
   constraint ecritures_brouillon_pkey PRIMARY KEY (id),
   constraint ecritures_brouillon_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
+  constraint ecritures_brouillon_immobilisation_id_fkey FOREIGN KEY (immobilisation_id) REFERENCES immobilisations(id),
   constraint ecritures_brouillon_ligne_bancaire_id_fkey FOREIGN KEY (ligne_bancaire_id) REFERENCES lignes_bancaires(id) ON DELETE SET NULL,
   constraint ecritures_brouillon_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
+  constraint ecritures_brouillon_dotation_au_31_decembre CHECK (((immobilisation_id IS NULL) OR ((EXTRACT(month FROM date) = (12)::numeric) AND (EXTRACT(day FROM date) = (31)::numeric)))),
+  constraint ecritures_brouillon_dotation_sans_piece_ni_mouvement CHECK (((immobilisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL)))),
   constraint ecritures_brouillon_montant_positif CHECK ((montant > (0)::numeric)),
   constraint ecritures_brouillon_sens_check CHECK ((sens = ANY (ARRAY['debit'::text, 'credit'::text]))),
   constraint ecritures_brouillon_statut_check CHECK ((statut = ANY (ARRAY['proposee'::text, 'validee'::text])))
@@ -277,6 +299,7 @@ CREATE INDEX lignes_bancaires_statut_idx ON public.lignes_bancaires USING btree 
 CREATE INDEX lignes_bancaires_categorie_id_idx ON public.lignes_bancaires USING btree (categorie_id);
 CREATE INDEX lignes_bancaires_emprunt_id_idx ON public.lignes_bancaires USING btree (emprunt_id);
 CREATE INDEX ecritures_brouillon_ligne_bancaire_id_idx ON public.ecritures_brouillon USING btree (ligne_bancaire_id);
+CREATE INDEX ecritures_brouillon_immobilisation_id_idx ON public.ecritures_brouillon USING btree (immobilisation_id);
 
 -- ─────────────────────────────── 4. RLS
 --
