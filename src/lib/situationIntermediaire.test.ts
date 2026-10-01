@@ -3,6 +3,7 @@ import { partsDuReleve } from './partsDuReleve'
 import { calculerSituationIntermediaire, fractionDeLAnnee, moisEcoulesDeLAnnee } from './situationIntermediaire'
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece } from './types'
 import { paiementsDesPieces } from './rattachement'
+import { cotisationsComptees } from './cotisationRapprochee'
 
 const categorie = { id: 'c1', libelle: 'Achats', poste_2035: 'Achats', compte_comptable: '606100' } as Categorie
 const recette = { id: 'c2', libelle: 'Recettes', poste_2035: 'Recettes', compte_comptable: '706000' } as Categorie
@@ -112,8 +113,29 @@ describe('calculerSituationIntermediaire', () => {
       { id: 'y', dossier_id: 'd1', echeance: '2026-03-05', montant_appele: 400, montant_verse: null },
       { id: 'z', dossier_id: 'd1', echeance: '2027-01-05', montant_appele: 999, montant_verse: null }, // hors période
     ] as CotisationDeclaree[]
-    const s = calculerSituationIntermediaire([], [], [], cotisations, '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [])
+    const s = calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, [], 'tresorerie'), '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [])
     expect(s.totauxParPoste.find(([p]) => p === 'Cotisations sociales personnelles')?.[1]).toBe(-680)
+  })
+
+  it('compte une échéance prélevée à la date et pour le montant du prélèvement', () => {
+    // Une échéance du 28 juin prélevée le 2 juillet, pour 290 € au lieu des 300 appelés : hors d'un état
+    // arrêté au 30 juin, dans celui du 31 juillet — la règle de la 2035 (lib/cotisationRapprochee.ts).
+    const cotisations = [
+      { id: 'c', dossier_id: 'd1', echeance: '2026-06-28', montant_appele: 300, montant_verse: null, montant_csg_crds: null },
+    ] as CotisationDeclaree[]
+    const prelevement: LigneBancaire = {
+      id: 'l-urssaf', dossier_id: 'd1', date: '2026-07-02', libelle: 'PRLV URSSAF', montant: -290, statut: 'rapprochee',
+      piece_id: null, cotisation_id: 'c', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
+      libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+      reglement_groupe: false, id_externe: null, created_at: '2026-07-03T09:00:00Z',
+    }
+    const poste = (fin: string, lignes: LigneBancaire[]) =>
+      calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, lignes, 'tresorerie'), '2026-01-01', fin, true, new Map(), 'tresorerie', [])
+        .totauxParPoste.find(([p]) => p === 'Cotisations sociales personnelles')?.[1]
+    expect(poste('2026-06-30', [prelevement])).toBeUndefined()
+    expect(poste('2026-07-31', [prelevement])).toBe(-290)
+    // Sans le prélèvement, l'échéance : le garde symétrique.
+    expect(poste('2026-06-30', [])).toBe(-300)
   })
 
   // LA DOTATION SUIT LA PÉRIODE ANNONCÉE — elle comptait une année entière quelle que soit la date.

@@ -5,6 +5,7 @@ import { aujourdHuiSql, formatMoney } from '../lib/format'
 import { ecartPct, projectionAnnuelle } from '../lib/estimation'
 import { partsDuReleve } from '../lib/partsDuReleve'
 import { paiementsDesPieces } from '../lib/rattachement'
+import { cotisationsComptees } from '../lib/cotisationRapprochee'
 import type {
   Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel, ReglementGroupe,
   VentilationBancaire,
@@ -80,8 +81,8 @@ export default function ClientSimulation() {
           .eq('dossier_id', dossierId).order('annee', { ascending: false }).order('poste').order('id').range(debut, fin),
       ),
         supabase.from('dossiers').select('assujetti_tva, mode_comptable').eq('id', dossierId).maybeSingle(),
-        // Tous les rapprochés : ceux d'une pièce la datent, ceux affectés à une catégorie comptent
-        // eux-mêmes (voir `categories` plus haut).
+        // Tous les rapprochés : ceux d'une pièce ou d'une échéance de cotisation la datent, ceux affectés
+        // à une catégorie comptent eux-mêmes (voir `categories` plus haut).
         lireTout<LigneBancaire>((debut, fin) =>
           supabase.from('lignes_bancaires').select('*', { count: 'exact' })
             .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
@@ -137,8 +138,10 @@ export default function ClientSimulation() {
 
   // Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés viennent du même instant.
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
+  // Les cotisations comptent à la date du prélèvement qui les paie, sinon à leur échéance — comme au cabinet.
   const projection = projectionAnnuelle(
-    recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiementsDesPieces(mouvementsRapproches, reglements), modeComptable,
+    recettesValidees, cotisationsComptees(cotisations, mouvementsRapproches, modeComptable), aujourdHuiSql(), assujettiTva,
+    paiementsDesPieces(mouvementsRapproches, reglements), modeComptable,
     partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva),
   )
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null

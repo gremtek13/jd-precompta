@@ -29,6 +29,11 @@ export const COMPTE_EMPRUNT = '164000'
 export const COMPTE_INTERETS_EMPRUNT = '661100'
 export const COMPTE_ASSURANCE_EMPRUNT = '616800'
 
+// Le compte d'une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement (voir lib/cotisationRapprochee.ts) :
+// les cotisations sociales personnelles de l'exploitant, face à la banque. Sa CSG-CRDS passe au 108000
+// en trésorerie. La base vérifie ce numéro exactement (`rapprocher_cotisation`).
+export const COMPTE_COTISATIONS_EXPLOITANT = '646000'
+
 // Le libellé des comptes que l'application tient elle-même, et qu'aucune catégorie ne porte : sans
 // lui, la balance les afficherait « — » et le FEC les nommerait par leur numéro. UN SEUL endroit : il
 // vivait en deux copies, dans `ecritures.ts` et dans `fec.ts`, et un compte ajouté à l'une seulement
@@ -45,4 +50,5 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_EMPRUNT]: 'Emprunts auprès des établissements de crédit',
   [COMPTE_INTERETS_EMPRUNT]: 'Intérêts des emprunts et dettes',
   [COMPTE_ASSURANCE_EMPRUNT]: 'Assurance des emprunts',
+  [COMPTE_COTISATIONS_EXPLOITANT]: "Cotisations sociales personnelles de l'exploitant",
 }

@@ -342,11 +342,30 @@ export function candidatsPieces(
 }
 
 /**
+ * Le sens qu'une échéance de cotisation attend du mouvement qui la paie : un appel (montant positif) se
+ * paie par un PRÉLÈVEMENT, un remboursement (une échéance négative) arrive par un ENCAISSEMENT, et une
+ * échéance de zéro euro n'attend rien. Le montant comparé est celui de `candidatsCotisations` : le
+ * versement saisi, sinon l'appel.
+ *
+ * La comparaison des montants se fait en valeur absolue (`montantEgal`) : sans ce contrôle, un
+ * encaissement du montant d'un appel lui était proposé, et « Tout rapprocher » l'aurait rapproché sans
+ * qu'on le voie — un remboursement compté comme une charge. Depuis que le rapprochement S'ÉCRIT
+ * (lib/cotisationRapprochee.ts), la base le refuse ; ici, on ne le propose plus.
+ */
+export function sensCotisationCoherent(
+  c: Pick<CotisationRapprochable, 'montant_appele' | 'montant_verse'>,
+  ligne: Pick<LigneBancaire, 'montant'>,
+): boolean {
+  const montant = c.montant_verse ?? c.montant_appele
+  return (montant > 0 && ligne.montant < 0) || (montant < 0 && ligne.montant > 0)
+}
+
+/**
  * Les échéances de cotisation qui conviennent à ce mouvement.
  *
  * Comparées au montant réellement VERSÉ quand il est connu — un appel n'est pas toujours prélevé
  * pour son montant appelé exact (régularisation, paiement partiel) — sinon au montant appelé, seul
- * chiffre disponible avant paiement.
+ * chiffre disponible avant paiement. Dans le SENS que l'échéance attend (`sensCotisationCoherent`).
  */
 export function candidatsCotisations<C extends CotisationRapprochable>(
   ligne: LigneBancaire,
@@ -356,6 +375,7 @@ export function candidatsCotisations<C extends CotisationRapprochable>(
 ): C[] {
   return cotisations.filter((c) =>
     !dejaRapprochees.has(c.id)
+    && sensCotisationCoherent(c, ligne)
     && montantEgal(c.montant_verse ?? c.montant_appele, ligne.montant)
     && Math.abs(jourDe(c.echeance) - jourDe(ligne.date)) <= joursTolerance)
 }

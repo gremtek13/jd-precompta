@@ -430,6 +430,28 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [retire])).slice(1)).toEqual([])
   })
 
+  it('porte de même une échéance de cotisation, la cotisation au 646000 et sa CSG-CRDS au 108000', () => {
+    // Le prélèvement de l'Urssaf rapproché de son échéance (lib/cotisationRapprochee.ts) : une écriture,
+    // le relevé pour pièce, chaque compte nommé.
+    const urssaf = mouvement('l-urssaf', {
+      date: '2026-03-05', montant: -500, libelle: 'PRLV URSSAF', categorie_id: null, cotisation_id: 'c1',
+    })
+    const ecritures = [
+      ligne('', { id: 'u1', piece_id: null, ligne_bancaire_id: 'l-urssaf', compte: '646000', sens: 'debit', montant: 451.5, date: '2026-03-05', libelle: 'PRLV URSSAF' }),
+      ligne('', { id: 'u2', piece_id: null, ligne_bancaire_id: 'l-urssaf', compte: '108000', sens: 'debit', montant: 48.5, date: '2026-03-05', libelle: 'PRLV URSSAF' }),
+      ligne('', { id: 'u3', piece_id: null, ligne_bancaire_id: 'l-urssaf', compte: COMPTE_BANQUE, sens: 'credit', montant: 500, date: '2026-03-05', libelle: 'PRLV URSSAF' }),
+    ]
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [urssaf])).slice(1)
+    expect(rows.map((r) => [r[0], r[2], r[4], r[5], r[8], r[11], r[12]])).toEqual([
+      ['BQ', 'BQ00001', '646000', "Cotisations sociales personnelles de l'exploitant", 'releve-mars-2026.pdf', '451,50', '0,00'],
+      ['BQ', 'BQ00001', '108000', "Compte de l'exploitant", 'releve-mars-2026.pdf', '48,50', '0,00'],
+      ['BQ', 'BQ00001', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '500,00'],
+    ])
+    // Le garde symétrique : le rapprochement annulé, la même écriture n'a plus de justificatif.
+    const annule = { ...urssaf, statut: 'non_rapprochee' as const, cotisation_id: null }
+    expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule])).slice(1)).toEqual([])
+  })
+
   it('porte de même un mouvement ventilé, une ligne par part face à la banque', () => {
     // lib/ventilationBanque.ts : l'abonnement pris en charge à 70 %, la part personnelle sur le compte de
     // l'exploitant. Une écriture, le relevé pour pièce.

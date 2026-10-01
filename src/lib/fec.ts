@@ -96,7 +96,8 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
 // AUXILIAIRE du tiers (CompAuxNum, CompAuxLib), un seul libellé par numéro dans tout le fichier.
 //
 // UN MOUVEMENT JUSTIFIÉ PAR LE RELEVÉ (ligne 26.6, `mouvementJustifieParLeReleve`) — affecté à une
-// catégorie, rapproché d'un emprunt, ventilé sur plusieurs comptes ou classé en virement personnel — fait
+// catégorie, rapproché d'un emprunt ou d'une échéance de cotisation, ventilé sur plusieurs comptes ou
+// classé en virement personnel — fait
 // une écriture au journal de BANQUE, dans les deux modèles : sa pièce est le RELEVÉ qui le porte
 // (PieceRef), à la date du mouvement (PieceDate). C'est ce qui manquait pour que le FEC porte chaque euro
 // du relevé : un encaissement de l'Assurance maladie ou un prélèvement de l'exploitant n'y était nulle

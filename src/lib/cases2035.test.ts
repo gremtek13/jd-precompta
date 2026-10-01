@@ -16,6 +16,7 @@ import {
 } from './declaration2035'
 import type { Declaration2035, LigneDeclaration } from './declaration2035'
 import type { Categorie, CotisationDeclaree, Piece, VehiculeDossier } from './types'
+import { cotisationsComptees } from './cotisationRapprochee'
 
 const ligne = (o: Partial<LigneDeclaration>): LigneDeclaration =>
   ({ poste: 'Achats', nature: 'depense', montant: 100, nbPieces: 1, nbMouvements: 0, ...o })
@@ -527,7 +528,7 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
     const categories = [{ id: 'c-rec', poste_2035: 'Recettes' }] as Categorie[]
     const recette = { id: 'r', statut: 'validee', type_piece: 'vente', date_piece: '2025-06-15', montant_ht: 50_000, montant_ttc: 50_000, categorie_id: 'c-rec' } as Piece
     const avec = (montant_csg_crds: number | null) =>
-      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], [cotisation({ montant_csg_crds })], [], true, new Map(), [])).valeurs
+      valeursDesCases(calculerDeclaration2035(2025, [recette], categories, [], cotisationsComptees([cotisation({ montant_csg_crds })], [], 'tresorerie'), [], true, new Map(), [])).valeurs
 
     const brute = avec(null)
     const ventilee = avec(970)

@@ -5,6 +5,7 @@ import { extractPiece } from '../../lib/extraction'
 import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from '../../lib/estimation'
 import { partsDuReleve } from '../../lib/partsDuReleve'
 import { paiementsDesPieces } from '../../lib/rattachement'
+import { cotisationsComptees } from '../../lib/cotisationRapprochee'
 import type {
   Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, ReferenceAnnuelle, ReferencePosteAnnuel, ReglementGroupe,
   VentilationBancaire,
@@ -119,7 +120,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
       // Ce qui date une recette ou une dépense : son paiement rapproché, sa date de facture à défaut.
       // Et les mouvements AFFECTÉS à une catégorie sans justificatif (ligne 26.6), qui comptent
       // eux-mêmes : pour un infirmier, les encaissements de l'Assurance maladie sont presque tout son
-      // chiffre d'affaires.
+      // chiffre d'affaires. Et les mouvements qui paient une échéance de cotisation, qui la datent.
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
@@ -172,7 +173,10 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
   const parts = partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva)
   const paiements = paiementsDesPieces(mouvementsRapproches, reglements)
-  const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts)
+  // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance
+  // (lib/cotisationRapprochee.ts) : la règle de la 2035.
+  const comptees = cotisationsComptees(cotisations, mouvementsRapproches, modeComptable)
+  const projection = projectionAnnuelle(recettesValidees, comptees, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 
   // Préremplit le formulaire de saisie manuelle depuis une ancienne 2035 (PDF) plutôt que d'obliger à
@@ -245,7 +249,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
     setCalculating(true)
     setError(null)
     try {
-      const { ca, cotis } = totauxPourAnnee(recettesValidees, cotisations, annee, assujettiTva, paiements, modeComptable, parts)
+      const { ca, cotis } = totauxPourAnnee(recettesValidees, comptees, annee, assujettiTva, paiements, modeComptable, parts)
       const { error: upsertError } = await supabase.from('references_annuelles').upsert(
         {
           dossier_id: dossierId,

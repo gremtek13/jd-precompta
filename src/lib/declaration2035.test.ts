@@ -7,6 +7,7 @@ import {
 import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
+import { cotisationsComptees } from './cotisationRapprochee'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -25,7 +26,9 @@ const calcul = (o: {
   pieces?: Piece[]; immos?: Immobilisation[]; cotis?: CotisationDeclaree[]; annee?: number
   vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]; mouvements?: PartDuReleve[]
 }) => calculerDeclaration2035(
-  o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [], o.cotis ?? [], o.vehicules ?? [], true,
+  o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [],
+  // Les échéances comptées comme à l'écran : au mouvement qui les paie quand `paiements` en porte un.
+  cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], true,
   paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [],
 )
 
@@ -522,6 +525,29 @@ describe('amortissements et cotisations', () => {
     })
     expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)).toBeUndefined()
   })
+
+  // UNE ÉCHÉANCE PAYÉE PAR UN MOUVEMENT RAPPROCHÉ COMPTE L'ANNÉE DE SON PRÉLÈVEMENT, pour le montant
+  // prélevé (lib/cotisationRapprochee.ts) : c'est l'année et le montant de son écriture au FEC. Avant,
+  // l'échéance de décembre prélevée en janvier partait dans la 2035 de l'année d'avant.
+  it('compte une échéance de décembre prélevée en janvier l’année du prélèvement, pour son montant', () => {
+    const decembre = { id: 'c-dec', echeance: '2025-12-05', montant_appele: 500, montant_verse: null, montant_csg_crds: null } as CotisationDeclaree
+    const prelevement = paiement({ id: 'l-urssaf', piece_id: null, cotisation_id: 'c-dec', date: '2026-01-06', montant: -498.5 })
+    const cotisationsDe = (annee: number, paiements: LigneBancaire[]) =>
+      calcul({ annee, cotis: [decembre], paiements }).depenses.find((l) => l.poste === POSTE_COTISATIONS)?.montant
+    expect(cotisationsDe(2025, [prelevement])).toBeUndefined()
+    expect(cotisationsDe(2026, [prelevement])).toBe(498.5)
+    // Sans le prélèvement, l'échéance et l'appel : le garde symétrique.
+    expect(cotisationsDe(2025, [])).toBe(500)
+    expect(cotisationsDe(2026, [])).toBeUndefined()
+  })
+
+  it('la CSG-CRDS d’une échéance prélevée suit l’année du prélèvement', () => {
+    const decembre = { id: 'c-dec', echeance: '2025-12-05', montant_appele: 970, montant_verse: null, montant_csg_crds: 970 } as CotisationDeclaree
+    const prelevement = paiement({ id: 'l-urssaf', piece_id: null, cotisation_id: 'c-dec', date: '2026-01-06', montant: -970 })
+    const d = calcul({ annee: 2026, cotis: [decembre], paiements: [prelevement] })
+    expect(d.depenses.find((l) => l.poste === POSTE_CSG_DEDUCTIBLE)?.montant).toBe(680)
+    expect(calcul({ annee: 2025, cotis: [decembre], paiements: [prelevement] }).depenses.find((l) => l.poste === POSTE_CSG_DEDUCTIBLE)).toBeUndefined()
+  })
 })
 
 // LA CSG-CRDS SORT DE LA LIGNE 25, SA PART DÉDUCTIBLE VA EN LIGNE 14 (case BV).
@@ -590,7 +616,7 @@ describe('calculerDeclaration2035 — la CSG-CRDS ventilée', () => {
       cotis({ montant_verse: 1000, montant_csg_crds: 33.34 }),
     ]
     const d = calcul({ cotis: lot })
-    const part = partCsgNonDeductible(lot, 2025)!
+    const part = partCsgNonDeductible(cotisationsComptees(lot, [], 'tresorerie'), 2025)!
     expect(d.depenses.find((l) => l.poste === POSTE_CSG_DEDUCTIBLE)?.montant).toBe(part.csgDeductible)
     expect(d.depenses.find((l) => l.poste === POSTE_COTISATIONS)?.montant).toBe(3000 - part.totalCsgCrds)
   })
@@ -738,17 +764,19 @@ const cotisation = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => 
   montant_appele: 3000, montant_verse: 3000, montant_csg_crds: 970,
   previsionnel: false, created_at: '2025-03-05T09:00:00Z', ...o,
 })
+// Des échéances qu'aucun mouvement ne paie : elles comptent à leur échéance, pour le versement saisi.
+const aEcheance = (cs: CotisationDeclaree[]) => cotisationsComptees(cs, [], 'tresorerie')
 
 describe('partCsgNonDeductible', () => {
   it('se tait quand l’exercice ne porte aucune cotisation', () => {
     // Rien à dire, donc rien à afficher : une mise en garde permanente cesse d'être lue.
-    expect(partCsgNonDeductible([], 2025)).toBeNull()
-    expect(partCsgNonDeductible([cotisation({ echeance: '2024-03-05' })], 2025)).toBeNull()
+    expect(partCsgNonDeductible(aEcheance([]), 2025)).toBeNull()
+    expect(partCsgNonDeductible(aEcheance([cotisation({ echeance: '2024-03-05' })]), 2025)).toBeNull()
   })
 
   it('chiffre la part à réintégrer', () => {
     // 970 € de CSG-CRDS : 6,8/9,7 déductibles = 680,00 €, donc 290,00 € déduits à tort.
-    expect(partCsgNonDeductible([cotisation()], 2025)).toEqual({
+    expect(partCsgNonDeductible(aEcheance([cotisation()]), 2025)).toEqual({
       nbVentilees: 1, nbSansVentilation: 0,
       totalCsgCrds: 970, csgDeductible: 680, csgNonDeductible: 290,
     })
@@ -760,7 +788,7 @@ describe('partCsgNonDeductible', () => {
     // diffèrent sur aucun des 20 millions de montants au centime de 0,01 € à 200 000 €. La mutation
     // correspondante ne mord donc pas, et c'est écrit dans le module plutôt que maquillé ici.
     for (const montant of [0.01, 3.33, 99.99, 1234.56, 970, 4567.89]) {
-      const part = partCsgNonDeductible([cotisation({ montant_csg_crds: montant })], 2025)!
+      const part = partCsgNonDeductible(aEcheance([cotisation({ montant_csg_crds: montant })]), 2025)!
       expect(part.csgDeductible + part.csgNonDeductible).toBeCloseTo(montant, 10)
     }
   })
@@ -769,11 +797,11 @@ describe('partCsgNonDeductible', () => {
     // Le point du contrôle : « pas de CSG saisie » n'est pas « pas de CSG ». Les confondre ferait
     // annoncer « rien à réintégrer » sur un dossier qui n'a jamais renseigné le détail — la famille
     // des lectures dont l'échec ressemble à un résultat vide, appliquée à une saisie.
-    expect(partCsgNonDeductible([
+    expect(partCsgNonDeductible(aEcheance([
       cotisation({ id: 'a' }),
       cotisation({ id: 'b', montant_csg_crds: null }),
       cotisation({ id: 'c', montant_csg_crds: null }),
-    ], 2025)).toEqual({
+    ]), 2025)).toEqual({
       nbVentilees: 1, nbSansVentilation: 2,
       totalCsgCrds: 970, csgDeductible: 680, csgNonDeductible: 290,
     })
@@ -784,17 +812,17 @@ describe('partCsgNonDeductible', () => {
     // cotisation, donc `null`, indistinguable d'un filtre trop large. Un appel de retraite sans
     // ligne de CSG est un cas réel, et il ne doit rien déclencher — c'est lui qui sépare
     // « l'écran avertit quand il faut » de « l'écran avertit toujours ».
-    expect(partCsgNonDeductible([cotisation({ montant_csg_crds: 0 })], 2025)).toEqual({
+    expect(partCsgNonDeductible(aEcheance([cotisation({ montant_csg_crds: 0 })]), 2025)).toEqual({
       nbVentilees: 1, nbSansVentilation: 0,
       totalCsgCrds: 0, csgDeductible: 0, csgNonDeductible: 0,
     })
   })
 
   it('ne retient que les cotisations de l’exercice demandé', () => {
-    const part = partCsgNonDeductible([
+    const part = partCsgNonDeductible(aEcheance([
       cotisation({ id: 'a', echeance: '2025-03-05' }),
       cotisation({ id: 'b', echeance: '2024-03-05' }),
-    ], 2025)!
+    ]), 2025)!
     expect(part.nbVentilees).toBe(1)
     expect(part.totalCsgCrds).toBe(970)
   })

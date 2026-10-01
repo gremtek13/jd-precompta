@@ -3,6 +3,7 @@ import { partsDuReleve } from './partsDuReleve'
 import { chargesParPostePourAnnee, ecartPct, projectionAnnuelle, totauxPourAnnee } from './estimation'
 import type { Categorie, CotisationDeclaree, LigneBancaire, Piece } from './types'
 import { paiementsDesPieces } from './rattachement'
+import { cotisationsComptees } from './cotisationRapprochee'
 
 const piece = (o: Partial<Piece>): Piece => ({
   id: 'p', dossier_id: 'd1', nom_fichier: 'x.pdf', statut: 'validee', type_piece: 'vente',
@@ -12,6 +13,8 @@ const piece = (o: Partial<Piece>): Piece => ({
 
 const cotisation = (o: Partial<CotisationDeclaree>): CotisationDeclaree =>
   ({ id: 'c', dossier_id: 'd1', echeance: '2026-02-05', montant_appele: 300, montant_verse: null, ...o } as CotisationDeclaree)
+// Des échéances qu'aucun mouvement ne paie : elles comptent à leur échéance (lib/cotisationRapprochee.ts).
+const aEcheance = (cs: CotisationDeclaree[]) => cotisationsComptees(cs, [], 'tresorerie')
 
 // Un mouvement rapproché d'une pièce : c'est lui qui la date, comme dans la 2035 (lib/rattachement.ts).
 const paiement = (pieceId: string, date: string, montant: number): LigneBancaire => ({
@@ -160,8 +163,8 @@ describe('totauxPourAnnee', () => {
     const totaux = totauxPourAnnee(
       [piece({ id: 'a', date_piece: '2026-01-01', montant_ttc: 100 }),
        piece({ id: 'b', date_piece: '2025-12-31', montant_ttc: 900 })],
-      [cotisation({ echeance: '2026-02-05', montant_appele: 300 }),
-       cotisation({ echeance: '2025-02-05', montant_appele: 999 })],
+      aEcheance([cotisation({ echeance: '2026-02-05', montant_appele: 300 }),
+       cotisation({ echeance: '2025-02-05', montant_appele: 999 })]),
       2026, true, new Map(),
       'tresorerie', [],
     )
@@ -184,10 +187,10 @@ describe('totauxPourAnnee', () => {
   })
 
   it('retient le montant versé d’une cotisation, sinon celui appelé', () => {
-    const cotis = totauxPourAnnee([], [
+    const cotis = totauxPourAnnee([], aEcheance([
       cotisation({ id: 'x', montant_appele: 300, montant_verse: 280 }),
       cotisation({ id: 'y', montant_appele: 400, montant_verse: null }),
-    ], 2026, true, new Map(), 'tresorerie', []).cotis
+    ]), 2026, true, new Map(), 'tresorerie', []).cotis
     expect(cotis).toBe(680)
   })
 
@@ -207,8 +210,8 @@ describe('totauxPourAnnee', () => {
 describe('projectionAnnuelle', () => {
   // Un échéancier créé d'avance pour toute l'année, comme le fait « Créer l'échéancier » depuis un
   // appel de cotisation : douze échéances de 100 €, le 5 de chaque mois.
-  const echeancier = Array.from({ length: 12 }, (_, i) =>
-    cotisation({ id: `e${i}`, echeance: `2026-${String(i + 1).padStart(2, '0')}-05`, montant_appele: 100 }))
+  const echeancier = aEcheance(Array.from({ length: 12 }, (_, i) =>
+    cotisation({ id: `e${i}`, echeance: `2026-${String(i + 1).padStart(2, '0')}-05`, montant_appele: 100 })))
 
   it('divise par les mois ÉCOULÉS, pas par le numéro du mois', () => {
     // Le 1er février, un mois et un jour sont écoulés (31/30 en 30/360). Le numéro du mois en
@@ -232,6 +235,15 @@ describe('projectionAnnuelle', () => {
     const mois = (2 * 30 + 20) / 30
     expect(p.moisEcoules).toBeCloseTo(mois, 10)
     expect(p.cotisationsProjetees).toBeCloseTo((300 * 12) / mois, 6)
+  })
+
+  it('« à date » compte une échéance au jour de son prélèvement, pas de son échéance', () => {
+    // L'échéance du 5 mars prélevée le 9 : au 7 mars, elle n'est pas encore payée (lib/cotisationRapprochee.ts).
+    const mars = cotisation({ id: 'mars', echeance: '2026-03-05', montant_appele: 100 })
+    const prelevement: LigneBancaire = { ...paiement('x', '2026-03-09', -100), id: 'l-mars', piece_id: null, cotisation_id: 'mars' }
+    const auSept = (lignes: LigneBancaire[]) => projectionAnnuelle([], cotisationsComptees([mars], lignes, 'tresorerie'), '2026-03-07', true, new Map(), 'tresorerie', []).cotis
+    expect(auSept([prelevement])).toBe(0)
+    expect(auSept([])).toBe(100)
   })
 
   it('compte l’échéance du jour : elle est appelée', () => {
