@@ -17,7 +17,7 @@ import { refusVirementPersonnel } from './virementPersonnel'
 function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'g', dossier_id: 'd1', date: '2026-03-10', libelle: 'VIR FOURNISSEUR', libelle_brut: null, montant: -900,
-    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
     ventilee: false, reglement_groupe: false, id_externe: null, created_at: '2026-03-11T09:00:00Z', ...o,
   }
@@ -178,7 +178,7 @@ describe('les autres classements refusent un mouvement réglé en groupe', () =>
   }
 
   it('dit d’annuler d’abord le règlement groupé', () => {
-    expect(refusAffectation(groupe, categorie, false)).toBe(REFUS_REGLE_EN_GROUPE)
+    expect(refusAffectation(groupe, categorie, false, null)).toBe(REFUS_REGLE_EN_GROUPE)
     expect(refusVirementPersonnel(groupe)).toBe(REFUS_REGLE_EN_GROUPE)
     expect(refusEcheanceEmprunt(groupe)).toBe(REFUS_REGLE_EN_GROUPE)
     expect(refusVentilation(groupe, [], [categorie], false)).toBe(REFUS_REGLE_EN_GROUPE)

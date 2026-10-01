@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ecritureDuMouvement } from './affectationBanque'
 import {
-  envoisDuLot, justificatifPossible, libelleCorrespond, motDistinctif, motifPropose, mouvementATraiter, mouvementsCouverts,
+  envoisDuLot, justificatifPossible, REFUS_REGLE_SANS_TAUX, libelleCorrespond, motDistinctif, motifPropose, mouvementATraiter, mouvementsCouverts,
   normaliserPourRegle,
   planAffectationParRegles, refusMotif, regleApplicable, sensDuMouvement, TAILLE_ENVOI_AFFECTATION, totauxParCategorie,
 } from './reglesAffectation'
@@ -10,7 +10,7 @@ import type { Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectat
 function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'd1', date: '2025-03-12', libelle: 'PRLV SEPA TRANSMEDICAL ECH/150325', montant: -38.4,
-    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     source_fichier: 'releve-2025.csv', libelle_brut: null, created_at: '2025-04-01T10:00:00Z', ...o,
   }
@@ -44,7 +44,7 @@ function categorie(o: Partial<Categorie> = {}): Categorie {
 function regle(o: Partial<RegleAffectationBancaire> = {}): RegleAffectationBancaire {
   return {
     id: 'r1', dossier_id: 'd1', motif: 'transmedical', sens: 'decaissement', categorie_id: 'cat-honoraires',
-    created_at: '2025-04-02T10:00:00Z', ...o,
+    taux_tva: null, created_at: '2025-04-02T10:00:00Z', ...o,
   }
 }
 
@@ -245,11 +245,27 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
     expect(plan.conflits).toEqual([])
   })
 
-  it('une recette sur un dossier assujetti est refusée, avec la raison de l’affectation à l’unité', () => {
+  it('sur un dossier assujetti, une règle de recette sans taux ne range rien, et dit où le taux se choisit', () => {
     const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CPAM 13', montant: 48.2 })], regles, [HONORAIRES, RECETTES, FRAIS], true, aucunJustificatif)
     expect(plan.propositions).toEqual([])
-    expect(plan.refus.map((r) => r.ligne.id)).toEqual(['b'])
-    expect(plan.refus[0].raison).toMatch(/assujetti à la TVA/)
+    expect(plan.refus.map((r) => [r.ligne.id, r.raison])).toEqual([['b', REFUS_REGLE_SANS_TAUX]])
+  })
+
+  it('sur un dossier assujetti, la règle de recette transmet son taux — exonération comprise', () => {
+    for (const taux of [20, 0]) {
+      const avecTaux = [regle({ id: 'r2', motif: 'client', sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: taux })]
+      const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })], avecTaux, [RECETTES], true, aucunJustificatif)
+      expect(plan.refus).toEqual([])
+      expect(plan.propositions.map((p) => [p.ligne.id, p.taux])).toEqual([['b', taux]])
+    }
+  })
+
+  it('un taux gardé par la règle ne s’applique plus sur un dossier qui a cessé d’être assujetti, ni à une dépense', () => {
+    const recette = regle({ id: 'r2', motif: 'client', sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: 20 })
+    const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })], [recette], [RECETTES], false, aucunJustificatif)
+    expect(plan.propositions.map((p) => p.taux)).toEqual([null])
+    const depense = planAffectationParRegles([ligne()], [regle({ taux_tva: 20 })], [HONORAIRES], true, aucunJustificatif)
+    expect(depense.propositions.map((p) => p.taux)).toEqual([null])
   })
 
   it('une catégorie que la règle vise mais qu’on n’a pas lue est refusée, jamais devinée', () => {
@@ -356,9 +372,22 @@ describe('envoisDuLot — ce qui part vers la base', () => {
       [regle(), regle({ id: 'r2', motif: 'cpam', sens: 'encaissement', categorie_id: 'cat-recettes' })],
       [HONORAIRES, RECETTES], false, aucunJustificatif)
     expect(envoisDuLot(plan.propositions)).toEqual([[
-      { ligne_bancaire_id: 'a', categorie_id: 'cat-honoraires', ecritures: ecritureDuMouvement(plan.propositions[0].ligne, '622600') },
-      { ligne_bancaire_id: 'b', categorie_id: 'cat-recettes', ecritures: ecritureDuMouvement(plan.propositions[1].ligne, '706000') },
+      { ligne_bancaire_id: 'a', categorie_id: 'cat-honoraires', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[0].ligne, '622600', null) },
+      { ligne_bancaire_id: 'b', categorie_id: 'cat-recettes', taux_tva: null, ecritures: ecritureDuMouvement(plan.propositions[1].ligne, '706000', null) },
     ]])
+  })
+
+  it('une recette taxée part avec son taux, et l’écriture à trois lignes qu’il donne', () => {
+    const plan = planAffectationParRegles([ligne({ id: 'b', libelle: 'VIR CLIENT DUPONT', montant: 120 })],
+      [regle({ id: 'r2', motif: 'client', sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: 20 })],
+      [RECETTES], true, aucunJustificatif)
+    const [[envoi]] = envoisDuLot(plan.propositions)
+    expect(envoi.taux_tva).toBe(20)
+    expect(envoi.ecritures.map((e) => [e.compte, e.sens, e.montant])).toEqual([
+      ['706000', 'credit', 100],
+      ['445710', 'credit', 20],
+      ['512000', 'debit', 120],
+    ])
   })
 
   it('découpe le lot en envois de la taille demandée, sans rien perdre ni doubler', () => {

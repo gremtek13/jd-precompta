@@ -73,6 +73,10 @@ export interface RegleAffectationBancaire {
   motif: string
   sens: SensMouvementBancaire
   categorie_id: string
+  // Le taux de TVA que la règle propose avec sa catégorie, pour une recette d'un dossier assujetti : le lot
+  // le transmet à l'affectation. Nul pour une dépense et sur un dossier non assujetti
+  // (`regles_affectation_bancaire_taux_tva`).
+  taux_tva: number | null
   created_at: string
 }
 
@@ -88,6 +92,10 @@ export interface VentilationBancaire {
   categorie_id: string | null
   part_personnelle: boolean
   montant: number
+  // Le taux de TVA d'une part de RECETTE sur un dossier assujetti, comme sur un mouvement affecté (voir
+  // `LigneBancaire.taux_tva`). Nul pour une part de dépense, pour la part personnelle et sur un dossier non
+  // assujetti (`ventilations_bancaires_taux_tva`).
+  taux_tva: number | null
   created_at: string
 }
 
@@ -150,6 +158,13 @@ export interface LigneBancaire {
   // catégorie sur un mouvement non rapproché ou classé en virement personnel
   // (`lignes_bancaires_affectation_rapprochee`).
   categorie_id: string | null
+  // Le taux de TVA d'une RECETTE affectée sur un dossier assujetti (20, 10, 5,5 ou 8,5 ; zéro : exonérée
+  // ou non imposable), choisi à l'affectation — jamais deviné, un relevé ne le dit pas (voir
+  // lib/tvaDuReleve.ts). Nul pour une dépense, sur un dossier non assujetti et sur un mouvement non
+  // affecté. Écrit avec l'affectation par `affecter_mouvement_bancaire`, qui l'exige pour une recette d'un
+  // dossier assujetti et le refuse ailleurs, effacé avec elle ; la base n'admet pas un taux sans catégorie
+  // (`lignes_bancaires_taux_tva`).
+  taux_tva: number | null
   // L'emprunt dont le mouvement est une ÉCHÉANCE (une sortie) ou le DÉBLOCAGE (une entrée) — ligne 26.6,
   // étape (a). Écrit avec son écriture par la fonction SQL `rapprocher_echeance_emprunt`, retiré avec
   // elle par `retirer_echeance_emprunt` (voir lib/echeanceEmprunt.ts). Le DÉCOUPAGE validé par le cabinet

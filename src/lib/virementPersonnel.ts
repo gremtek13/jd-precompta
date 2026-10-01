@@ -46,8 +46,9 @@ export function refusVirementPersonnel(ligne: MouvementBancaire): string | null 
   return null
 }
 
+// Sans TVA : un virement personnel n'est ni une recette ni une dépense, il ne collecte ni ne déduit rien.
 export function ecritureDuVirementPersonnel(ligne: MouvementBancaire, modele: ModeleComptable): LigneEcritureMouvement[] {
-  return ecritureDuMouvement(ligne, compteDuDirigeant(modele))
+  return ecritureDuMouvement(ligne, compteDuDirigeant(modele), null)
 }
 
 // LES VIREMENTS PERSONNELS À ÉCRIRE : ceux dont l'écriture n'est pas celle que le classement produirait

@@ -424,7 +424,7 @@ describe('moisEnDoubleSurAbonnement', () => {
 // manquantes qu'aucune relecture ne montrait.
 const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
-  montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
+  montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-03-10T00:00:00Z', ...o,
@@ -479,7 +479,7 @@ describe('mouvementsRapprochesSansObjet', () => {
     // Ligne 26.6 : un encaissement de l’Assurance maladie rangé en recettes est rapproché sans pièce ni
     // échéance, et il n’est pas orphelin. Le signaler ferait crier au loup sur chaque encaissement.
     expect(mouvementsRapprochesSansObjet([
-      ligne({ id: 'cpam', piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', montant: 250 }),
+      ligne({ id: 'cpam', piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', taux_tva: null, montant: 250 }),
     ])).toEqual([])
   })
 

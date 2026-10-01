@@ -16,7 +16,7 @@ const cotisation = (o: Partial<CotisationDeclaree>): CotisationDeclaree =>
 // Un mouvement rapproché d'une pièce : c'est lui qui la date, comme dans la 2035 (lib/rattachement.ts).
 const paiement = (pieceId: string, date: string, montant: number): LigneBancaire => ({
   id: `l-${pieceId}`, dossier_id: 'd1', date, libelle: 'VIR', montant, statut: 'rapprochee', piece_id: pieceId,
-  cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+  cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
   created_at: `${date}T09:00:00Z`,
 })
@@ -70,7 +70,12 @@ describe('les repères comptent les mouvements du relevé affectés sans justifi
   const mouvement = (id: string, categorieId: string, date: string, montant: number): LigneBancaire => ({
     ...paiement(id, date, montant), id, piece_id: null, categorie_id: categorieId,
   })
-  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categories, [])
+  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categories, [], false)
+
+  it("compte au hors taxe la recette taxée d'un dossier assujetti (lib/tvaDuReleve.ts)", () => {
+    const taxee = partsDuReleve([{ ...mouvement('cli', 'c-recettes', '2026-03-12', 1200), taux_tva: 20 }], categories, [], true)
+    expect(totauxPourAnnee([], [], 2026, true, new Map(), 'tresorerie', taxee).ca).toBe(1000)
+  })
 
   it("ajoute au chiffre d'affaires un encaissement affecté, l'année de sa date", () => {
     const cpam = releve(mouvement('cpam', 'c-recettes', '2026-03-12', 1250))

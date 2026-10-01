@@ -1,6 +1,8 @@
 import { piecesDeviseNonConvertie, piecesTvaImpossible, LIBELLE_MOTIF_TVA } from './controles'
 import { ajouterJours, ajouterMois, dernierJourDuMois } from './format'
+import type { PartDuReleve } from './partsDuReleve'
 import { partsDesPaiements, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
+import { horsTaxeEtTva } from './tvaDuReleve'
 import type { DeclarationTva, PeriodiciteTva, Piece } from './types'
 
 // LA CA3 CASE PAR CASE — le formulaire 3310-CA3-SD (millésime 2026), préparé depuis les pièces
@@ -28,6 +30,12 @@ import type { DeclarationTva, PeriodiciteTva, Piece } from './types'
 //     partiel ne rend exigible que ce qui a été payé.
 // Une pièce qu'aucun paiement ne date ne compte dans AUCUNE déclaration, et elle est rendue à part
 // (`nonPlacees`) : se taire sur elle ferait passer une recette oubliée pour une recette inexistante.
+//
+// LES RECETTES DU RELEVÉ — affectées ou ventilées sans facture (lib/tvaDuReleve.ts) — comptent à la date
+// de leur ENCAISSEMENT, la seule qu'elles ont, à leur taux : le hors taxe sur la ligne du taux, la TVA à
+// côté, et une recette exonérée en E2. Deux cas les écartent, et l'écran les montre : une recette sans
+// taux (affectée avant que le dossier devienne assujetti), et toute recette du relevé sur option pour les
+// débits — la TVA y est due à la date de la facture, que le relevé ne donne pas.
 //
 // CE QUE CE CALCUL NE FAIT PAS, et l'écran le dit : l'autoliquidation (services achetés à un
 // fournisseur étranger, lignes A3 et B4), le coefficient de déduction d'une activité en partie
@@ -222,6 +230,27 @@ export interface PieceRetenue {
   ligne: LigneTaux | 'E2' | 'F8' | 'B5' | '15' | '19' | '20'
 }
 
+// Une recette du relevé retenue — un mouvement affecté ou une part ventilée —, et sa ligne. Un
+// remboursement versé à un client (une sortie sur une catégorie de recettes) se déclare comme un avoir
+// consenti : sa base en B5, sa taxe en 21.
+export interface RecetteDuReleveRetenue {
+  part: PartDuReleve
+  ligne: LigneTaux | 'E2' | 'F8' | 'B5'
+}
+
+export type MotifReleveEcarte = 'sans_taux' | 'sur_debits'
+
+export interface RecetteDuReleveEcartee {
+  part: PartDuReleve
+  motif: MotifReleveEcarte
+  detail: string
+}
+
+export const LIBELLE_MOTIF_RELEVE: Record<MotifReleveEcarte, string> = {
+  sans_taux: "recette du relevé sans taux de TVA, affectée avant que le dossier devienne assujetti : réaffecte-la en choisissant son taux",
+  sur_debits: "sur option pour les débits, la TVA est due à la date de la facture, que le relevé ne donne pas",
+}
+
 export interface PieceNonPlacee {
   piece: Piece
   motif: MotifNonPlacee
@@ -244,6 +273,9 @@ export interface DeclarationCa3 {
   // Achats en devise, sans TVA, payés dans la période : si ce sont des services achetés à un
   // fournisseur étranger, la TVA est à autoliquider (ligne A3), ce que ce calcul ne fait pas.
   achatsEnDeviseSansTva: Piece[]
+  // Les recettes du relevé encaissées dans la période : retenues à leur taux, ou écartées avec leur motif.
+  releveRetenues: RecetteDuReleveRetenue[]
+  releveEcartees: RecetteDuReleveEcartee[]
 }
 
 export interface DonneesTva {
@@ -255,6 +287,10 @@ export interface DonneesTva {
   // virement, pour la part qui la règle.
   paiements: PaiementsDesPieces
   pieceIdsImmobilisees: ReadonlySet<string>
+  // Les parts du relevé (`partsDuReleve`, assujettissement compris) : seules les RECETTES y comptent, les
+  // dépenses sans facture n'ouvrant aucun droit à déduction. Sans valeur par défaut, comme partout : une
+  // liste oubliée ferait disparaître de la CA3, en silence, la TVA collectée sur les encaissements.
+  releve: readonly PartDuReleve[]
 }
 
 const centimes = (euros: number) => Math.round(euros * 100)
@@ -289,6 +325,8 @@ export function calculerCa3(
   const aValider: Piece[] = []
   const nonPlacees: PieceNonPlacee[] = []
   const achatsEnDeviseSansTva: Piece[] = []
+  const releveRetenues: RecetteDuReleveRetenue[] = []
+  const releveEcartees: RecetteDuReleveEcartee[] = []
 
   for (const piece of donnees.pieces) {
     const recette = piece.type_piece === 'vente'
@@ -395,6 +433,40 @@ export function calculerCa3(
     retenues.push({ piece, part, ligne })
   }
 
+  for (const part of donnees.releve) {
+    if (part.nature !== 'recette') continue
+    if (part.ligne.date < periode.debut || part.ligne.date > periode.fin) continue
+    if (surDebits) {
+      releveEcartees.push({ part, motif: 'sur_debits', detail: LIBELLE_MOTIF_RELEVE.sur_debits })
+      continue
+    }
+    const ligneDuTauxReleve = TAUX_RECONNUS.find((r) => r.taux === part.taux)?.ligne
+    if (part.taux == null || (part.taux !== 0 && !ligneDuTauxReleve)) {
+      releveEcartees.push({ part, motif: 'sans_taux', detail: LIBELLE_MOTIF_RELEVE.sans_taux })
+      continue
+    }
+    // Le hors taxe et la TVA, au centime, du calcul même qui a écrit l'écriture : la CA3 et le brouillon
+    // disent le même montant.
+    const { ht, tva } = horsTaxeEtTva(part.montantReleve, part.taux)
+    const sortie = part.montantReleve < 0
+    // Zéro : exonérée ou non imposable, aucune ligne de taux.
+    if (!ligneDuTauxReleve) {
+      cumul[sortie ? 'F8' : 'E2'] += centimes(ht)
+      releveRetenues.push({ part, ligne: sortie ? 'F8' : 'E2' })
+      continue
+    }
+    if (sortie) {
+      cumul.B5 += centimes(ht)
+      cumul.l21 += centimes(tva)
+      releveRetenues.push({ part, ligne: 'B5' })
+      continue
+    }
+    cumul.A1 += centimes(ht)
+    cumul[`base${ligneDuTauxReleve}`] += centimes(ht)
+    cumul[`taxe${ligneDuTauxReleve}`] += centimes(tva)
+    releveRetenues.push({ part, ligne: ligneDuTauxReleve })
+  }
+
   const arrondis = Object.fromEntries(Object.entries(cumul).map(([cle, total]) => [cle, arrondiFiscal(total)])) as typeof cumul
   const l22 = Math.max(0, Math.round(creditAnterieur))
   const l16 = arrondis.taxe08 + arrondis.taxe09 + arrondis.taxe9B + arrondis.taxe10 + arrondis.l15
@@ -413,6 +485,8 @@ export function calculerCa3(
     aValider,
     nonPlacees: nonPlacees.sort((a, b) => (b.piece.date_piece ?? '9999').localeCompare(a.piece.date_piece ?? '9999')),
     achatsEnDeviseSansTva,
+    releveRetenues,
+    releveEcartees,
   }
 }
 

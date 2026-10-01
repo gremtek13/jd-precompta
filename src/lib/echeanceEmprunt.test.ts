@@ -22,7 +22,7 @@ const ECHEANCIER = genererEcheancier(EMPRUNT)
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
     id: 'l1', date: '2025-02-06', libelle: 'PRLV ECHEANCE PRET', libelle_brut: null, montant: -540,
-    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: 'releve-fevrier.csv', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
     emprunt_assurance: null, ventilee: false, reglement_groupe: false, ...o,
   }
@@ -346,7 +346,7 @@ describe('partsDesEcheances — ce que la 2035 compte d’une échéance', () =>
     const parts = partsDuReleve([
       mouvement({ id: 'frais', statut: 'rapprochee', categorie_id: 'cat-frais', montant: -8.5 }),
       rapproche({ id: 'pret' }),
-    ], [categorie], [])
+    ], [categorie], [], false)
     expect(parts.map((p) => [p.origine, p.ligne.id, p.libelle, p.poste, p.nature, p.montantPoste])).toEqual([
       ['affectation', 'frais', 'Frais bancaires', 'Frais financiers', 'depense', 8.5],
       ['emprunt', 'pret', LIBELLE_INTERETS_EMPRUNT, POSTE_INTERETS_EMPRUNT, 'depense', 36],

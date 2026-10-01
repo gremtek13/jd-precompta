@@ -1,6 +1,7 @@
 import { libelleExploitable } from './appariementBanque'
-import { COMPTE_BANQUE } from './comptes'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE } from './comptes'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
+import { horsTaxeEtTva, horsTaxeSigne, tauxApplicable, tauxPrisEnCharge, tauxRequis } from './tvaDuReleve'
 import type { Categorie, EcritureBrouillon, LigneBancaire } from './types'
 
 // UN MOUVEMENT BANCAIRE SANS JUSTIFICATIF S'AFFECTE À UNE CATÉGORIE (ligne 26.6 de la feuille de
@@ -15,10 +16,11 @@ import type { Categorie, EcritureBrouillon, LigneBancaire } from './types'
 // mouvement du relevé ; c'est la condition pour que son FEC soit celui du dossier.
 //
 // CE QUI S'ÉCRIT : le compte de la catégorie face à la banque, au montant, à la date et dans le sens
-// du mouvement. L'écriture est composée ICI (testée), et la fonction SQL `affecter_mouvement_bancaire`
-// la vérifie contre le mouvement et la catégorie puis l'écrit AVEC l'affectation, dans une seule
-// transaction : un mouvement affecté sans écriture compterait dans la 2035 et pas dans le FEC, une
-// écriture sans affectation l'inverse (voir `supabase/essais/affectation.sql`).
+// du mouvement — et, pour une recette d'un dossier assujetti, la TVA collectée à son taux, la recette au
+// hors taxe (lib/tvaDuReleve.ts). L'écriture est composée ICI (testée), et la fonction SQL
+// `affecter_mouvement_bancaire` la vérifie contre le mouvement, la catégorie et le taux puis l'écrit AVEC
+// l'affectation, dans une seule transaction : un mouvement affecté sans écriture compterait dans la 2035
+// et pas dans le FEC, une écriture sans affectation l'inverse (voir `supabase/essais/affectation.sql`).
 
 export type NatureCompte = 'recette' | 'depense'
 
@@ -36,17 +38,22 @@ export function natureDuCompte(compte: string | null | undefined): NatureCompte 
 export type MouvementBancaire = Pick<
   LigneBancaire,
   'id' | 'date' | 'libelle' | 'libelle_brut' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
-  | 'prelevement_personnel' | 'source_fichier' | 'emprunt_id' | 'emprunt_echeance' | 'emprunt_interets' | 'emprunt_assurance'
+  | 'taux_tva' | 'prelevement_personnel' | 'source_fichier' | 'emprunt_id' | 'emprunt_echeance' | 'emprunt_interets' | 'emprunt_assurance'
   | 'ventilee' | 'reglement_groupe'
 >
 
-// Pourquoi ce mouvement ne peut pas être affecté à cette catégorie, dit AVANT d'écrire. La base refait
-// les mêmes refus (`affecter_mouvement_bancaire`) : l'écran les dit pour qu'on ne clique pas pour rien,
-// la base pour qu'aucun chemin ne les contourne.
+// Pourquoi ce mouvement ne peut pas être affecté à cette catégorie, à ce taux, dit AVANT d'écrire. La
+// base refait les mêmes refus, dans le même ordre (`affecter_mouvement_bancaire`) : l'écran les dit pour
+// qu'on ne clique pas pour rien, la base pour qu'aucun chemin ne les contourne.
+//
+// LE TAUX EST UN PARAMÈTRE OBLIGATOIRE, sans valeur par défaut : nul pour une catégorie sans TVA, le taux
+// choisi pour une recette d'un dossier assujetti. Un appelant qui l'oublierait enverrait à la base une
+// recette sans taux, qu'elle refuse — mieux vaut que le compilateur le lui dise.
 export function refusAffectation(
   ligne: MouvementBancaire,
   categorie: Pick<Categorie, 'libelle' | 'compte_comptable'>,
   assujettiTva: boolean,
+  taux: number | null,
 ): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
   if (ligne.piece_id || ligne.cotisation_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) {
@@ -56,13 +63,17 @@ export function refusAffectation(
   if (!nature) {
     return `La catégorie « ${categorie.libelle} » n’a pas de compte de charge ou de produit (classe 6 ou 7).`
   }
-  // UNE RECETTE D'UN DOSSIER ASSUJETTI PORTE DE LA TVA, que rien ici ne saurait calculer : ni le taux,
-  // ni la part hors taxes ne se lisent sur un relevé. L'écrire au TTC en 706 compterait la TVA
-  // collectée dans le chiffre d'affaires, et la CA3 ne la verrait pas. Refusé tant qu'une étape ne
-  // demande pas le taux — la facture, elle, le porte.
-  if (assujettiTva && nature === 'recette') {
-    return 'Sur un dossier assujetti à la TVA, une recette sans facture n’est pas encore prise en charge : sa TVA ne serait pas calculée. Dépose la facture et rapproche-la.'
+  // UNE RECETTE D'UN DOSSIER ASSUJETTI PORTE DE LA TVA, que le relevé ne dit pas : son taux se choisit
+  // (lib/tvaDuReleve.ts). Écrite sans, au TTC en 706, elle compterait la taxe en chiffre d'affaires, et
+  // aucune CA3 ne la verrait. Un débit sur une catégorie de recettes en porte aussi : c'est la TVA
+  // collectée qu'il diminue.
+  if (tauxRequis(assujettiTva, nature) && taux == null) {
+    return 'Sur un dossier assujetti à la TVA, une recette porte son taux : choisis-le, ou « exonérée ».'
   }
+  if (!tauxRequis(assujettiTva, nature) && taux != null) {
+    return 'Un taux de TVA ne s’applique qu’à une recette d’un dossier assujetti.'
+  }
+  if (taux != null && !tauxPrisEnCharge(taux)) return 'Ce taux de TVA n’est pas pris en charge.'
   if (ligne.montant === 0) return 'Un mouvement de zéro euro n’a rien à écrire.'
   return null
 }
@@ -88,15 +99,25 @@ export interface LigneEcritureMouvement {
 // pièce (voir contrepartieBanque.ts) : une entrée d'argent augmente la banque au débit, une sortie la
 // diminue au crédit, et la catégorie prend le sens inverse. Un remboursement reçu sur une charge la
 // crédite donc, et la diminue, sans cas à part.
-export function ecritureDuMouvement(ligne: MouvementBancaire, compteCategorie: string): LigneEcritureMouvement[] {
-  const montant = Math.abs(ligne.montant)
+//
+// AVEC UN TAUX, la catégorie prend le hors taxe et la TVA collectée (445710) le reste, du même côté
+// qu'elle : trois lignes, la banque au TTC. Sans taux — ou à zéro —, deux lignes, comme toujours. Le
+// taux est celui qui s'APPLIQUE (`tauxApplicable`), pas forcément celui qu'on a gardé.
+export function ecritureDuMouvement(
+  ligne: MouvementBancaire,
+  compteCategorie: string,
+  taux: number | null,
+): LigneEcritureMouvement[] {
+  const { ht, tva } = horsTaxeEtTva(ligne.montant, taux)
   const entree = ligne.montant >= 0
+  const sensCompte = entree ? 'credit' : 'debit'
   // Le libellé complet quand l'import n'a gardé que le générique « Mouvement bancaire » : c'est ce
   // qu'un vérificateur lira dans le FEC pour retrouver la ligne du relevé.
   const libelle = libelleExploitable(ligne) || ligne.libelle
   return [
-    { compte: compteCategorie, sens: entree ? 'credit' : 'debit', montant, libelle },
-    { compte: COMPTE_BANQUE, sens: entree ? 'debit' : 'credit', montant, libelle },
+    { compte: compteCategorie, sens: sensCompte, montant: ht, libelle },
+    ...(tva > 0 ? [{ compte: COMPTE_TVA_COLLECTEE, sens: sensCompte, montant: tva, libelle } as const] : []),
+    { compte: COMPTE_BANQUE, sens: entree ? 'debit' : 'credit', montant: Math.abs(ligne.montant), libelle },
   ]
 }
 
@@ -107,9 +128,13 @@ export interface MouvementAffecte {
   // l'affectation, que la base aurait refusée sinon. Le mouvement ne compte alors dans aucun poste,
   // et son écriture est à reprendre (voir `mouvementsAffectesDesynchronises`).
   nature: NatureCompte | null
+  // Le taux de TVA qui s'applique AUJOURD'HUI (`tauxApplicable`) : celui gardé sur le mouvement, pour une
+  // recette d'un dossier assujetti ; nul ailleurs. Nul AUSSI pour une recette d'un dossier assujetti
+  // affectée sans taux — avant qu'il le devienne —, que `recettesAffecteesSansTaux` montre.
+  taux: number | null
   // Ce que le mouvement ajoute à son poste, positif quand il l'augmente : une recette encaissée ou
-  // une dépense payée, négatif pour un remboursement dans l'un ou l'autre sens. Sans objet quand la
-  // nature est nulle.
+  // une dépense payée, négatif pour un remboursement dans l'un ou l'autre sens — au HORS TAXE pour une
+  // recette taxée, la TVA collectée n'étant pas une recette. Sans objet quand la nature est nulle.
   montantPoste: number
 }
 
@@ -117,9 +142,14 @@ export interface MouvementAffecte {
 // supposé de l'appelant, comme dans `paiementsParPiece` — et la base garantit qu'une catégorie ne vit
 // que sur un mouvement rapproché. Une catégorie absente de la liste fournie (une lecture partielle,
 // que l'écran signale déjà) écarte le mouvement : on ne compte pas ce qu'on ne sait pas ranger.
+//
+// L'ASSUJETTISSEMENT EST UN PARAMÈTRE OBLIGATOIRE : c'est lui qui décide si le taux gardé s'applique,
+// donc si une recette compte au hors taxe ou au TTC. Un appelant qui l'oublierait compterait la TVA
+// collectée dans les recettes de la 2035.
 export function mouvementsAffectes(
   lignes: readonly MouvementBancaire[],
   categories: readonly Categorie[],
+  assujettiTva: boolean,
 ): MouvementAffecte[] {
   const parId = new Map(categories.map((c) => [c.id, c]))
   const affectes: MouvementAffecte[] = []
@@ -128,11 +158,14 @@ export function mouvementsAffectes(
     const categorie = parId.get(ligne.categorie_id)
     if (!categorie) continue
     const nature = natureDuCompte(categorie.compte_comptable)
+    const taux = tauxApplicable(assujettiTva, nature, ligne.taux_tva)
+    const horsTaxe = horsTaxeSigne(ligne.montant, taux)
     affectes.push({
       ligne,
       categorie,
       nature,
-      montantPoste: nature === 'depense' ? -ligne.montant : ligne.montant,
+      taux,
+      montantPoste: nature === 'depense' ? -horsTaxe : horsTaxe,
     })
   }
   return affectes
@@ -175,17 +208,17 @@ export function referenceDuReleve(ligne: Pick<LigneBancaire, 'source_fichier'>):
   return ligne.source_fichier?.trim() || 'Relevé bancaire'
 }
 
-// LES RECETTES AFFECTÉES D'UN DOSSIER DEVENU ASSUJETTI. La base refuse d'en affecter une nouvelle sur
-// un dossier assujetti (sa TVA ne se lit pas sur un relevé) ; mais un dossier peut le DEVENIR après
-// coup — le cabinet coche « assujetti » dans l'en-tête —, et les encaissements déjà affectés restent
-// alors écrits au TTC en 706 : leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe
-// comme du chiffre d'affaires. Rien ne les réécrit : on les montre, et le geste est de retrouver la
-// facture et de la rapprocher à la place.
-export function recettesAffecteesSurDossierAssujetti(
+// LES RECETTES AFFECTÉES SANS TAUX D'UN DOSSIER ASSUJETTI. La base n'en affecte plus une sans son taux
+// sur un dossier assujetti ; mais un dossier peut le DEVENIR après coup — le cabinet coche « assujetti »
+// dans l'en-tête —, et les encaissements déjà affectés restent alors écrits au TTC en 706 : leur TVA
+// collectée n'est dans aucune CA3, et la 2035 compte la taxe comme du chiffre d'affaires. Rien ne les
+// réécrit sans qu'on choisisse leur taux : on les montre, et le geste est de les réaffecter en le
+// choisissant — ou de rapprocher leur facture à la place.
+export function recettesAffecteesSansTaux(
   affectes: readonly MouvementAffecte[],
   assujettiTva: boolean,
 ): MouvementAffecte[] {
-  return assujettiTva ? affectes.filter((m) => m.nature === 'recette') : []
+  return assujettiTva ? affectes.filter((m) => m.nature === 'recette' && m.taux === null) : []
 }
 
 // Tolérance de deux centimes, celle du contrôle des écritures d'une pièce (voir ecritures.ts).
@@ -196,7 +229,9 @@ const EPSILON = 0.02
 // `affecter_mouvement_bancaire` les écrit ensemble, donc le cas ne vient pas d'un échec à mi-chemin ;
 // il vient d'une CATÉGORIE dont le compte a changé depuis — le même défaut que celui d'une pièce
 // recatégorisée (voir `analyserEcritures`), et invisible de la même façon, les totaux ne bougeant
-// pas. « Réaffecter » la réécrit. Le libellé n'est pas comparé : il ne change rien à ce qui est compté.
+// pas —, ou d'un dossier qui a cessé d'être assujetti : sa recette porte encore sa TVA, que le taux
+// qui s'applique n'a plus. « Réaffecter » la réécrit. Le libellé n'est pas comparé : il ne change rien
+// à ce qui est compté.
 export function mouvementsAffectesDesynchronises(
   ecritures: readonly EcritureBrouillon[],
   affectes: readonly MouvementAffecte[],
@@ -204,7 +239,7 @@ export function mouvementsAffectesDesynchronises(
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
     if (!m.nature || !m.categorie.compte_comptable) return true
-    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable), m.ligne.date)
+    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux), m.ligne.date)
   })
 }
 

@@ -10,8 +10,9 @@ import {
   periodesDeLAnnee,
   type DonneesTva,
 } from './declarationTva'
+import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces, type PartReglee } from './rattachement'
-import type { DeclarationTva, LigneBancaire, Piece } from './types'
+import type { Categorie, DeclarationTva, LigneBancaire, Piece, VentilationBancaire } from './types'
 
 // Jeu d'essai typé SANS `as` : le compilateur vérifie chaque champ contre la table, et un champ
 // oublié ou mal typé échoue au build plutôt que de laisser un test prouver autre chose.
@@ -29,7 +30,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'd1', date: '2027-02-20', libelle: 'VIR CLIENT', montant: 1200,
-    statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+    statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: '2027-02-21T09:00:00Z', ...o,
   }
@@ -48,8 +49,9 @@ const T2 = { debut: '2027-04-01', fin: '2027-06-30' }
 
 function donnees(
   pieces: Piece[], lignesBancaires: LigneBancaire[] = [], immobilisees: string[] = [], parts: PartReglee[] = [],
+  releve: PartDuReleve[] = [],
 ): DonneesTva {
-  return { pieces, paiements: paiementsDesPieces(lignesBancaires, parts), pieceIdsImmobilisees: new Set(immobilisees) }
+  return { pieces, paiements: paiementsDesPieces(lignesBancaires, parts), pieceIdsImmobilisees: new Set(immobilisees), releve }
 }
 
 describe('periodesDeLAnnee', () => {
@@ -477,5 +479,111 @@ describe('comparerDeclarations', () => {
     const decl = declaration({ tva_declaree: 200 })
     expect(comparerDeclarations([decl], d, true)[0].enEcart).toBe(false)
     expect(comparerDeclarations([decl], d, false)[0]).toMatchObject({ recalcul: 0, enEcart: true })
+  })
+})
+
+describe('calculerCa3 — les recettes du relevé', () => {
+  // lib/tvaDuReleve.ts : sur un dossier assujetti, une recette encaissée sans facture — affectée ou ventilée
+  // depuis le relevé — porte son taux, et sa TVA collectée entre dans la CA3 à la date de l'encaissement.
+  const categories: Categorie[] = [
+    { id: 'c-recettes', dossier_id: null, code: 'ventes', libelle: 'Ventes / prestations', ordre: 80, compte_comptable: '706000', poste_2035: 'Recettes' },
+    { id: 'c-frais', dossier_id: null, code: 'frais', libelle: 'Frais bancaires', ordre: 70, compte_comptable: '627000', poste_2035: 'Frais financiers' },
+  ]
+  const encaissement = (o: Partial<LigneBancaire> = {}) =>
+    mouvement({ id: 'enc', piece_id: null, categorie_id: 'c-recettes', taux_tva: 20, date: '2027-02-15', montant: 120, ...o })
+  const releve = (lignes: LigneBancaire[], ventilations: VentilationBancaire[] = []) => partsDuReleve(lignes, categories, ventilations, true)
+  const ca3 = (lignes: LigneBancaire[], surDebits = false, ventilations: VentilationBancaire[] = []) =>
+    calculerCa3(donnees([], [], [], [], releve(lignes, ventilations)), T1, surDebits, 0)
+
+  it('une recette taxée : le hors taxe sur la ligne de son taux, la TVA à côté', () => {
+    const d = ca3([encaissement()])
+    expect(d.cases).toMatchObject({ A1: 100, base08: 100, taxe08: 20, l16: 20, lTD: 20 })
+    expect(d.releveRetenues.map((r) => [r.part.ligne.id, r.ligne])).toEqual([['enc', '08']])
+    expect(d.netPeriode).toBe(20)
+  })
+
+  it('chaque taux sur sa ligne', () => {
+    const d = ca3([
+      encaissement({ id: 'a', taux_tva: 10, montant: 110 }),
+      encaissement({ id: 'b', taux_tva: 5.5, montant: 105.5 }),
+      encaissement({ id: 'c', taux_tva: 8.5, montant: 108.5 }),
+    ])
+    expect(d.cases).toMatchObject({ base9B: 100, taxe9B: 10, base09: 100, taxe09: 6, base10: 100, taxe10: 9, A1: 300 })
+    expect(d.releveRetenues.map((r) => r.ligne)).toEqual(['9B', '09', '10'])
+  })
+
+  it('une recette exonérée va en E2, sans taxe', () => {
+    const d = ca3([encaissement({ taux_tva: 0 })])
+    expect(d.cases).toMatchObject({ E2: 120, A1: 0, l16: 0 })
+    expect(d.releveRetenues.map((r) => r.ligne)).toEqual(['E2'])
+  })
+
+  it('un remboursement versé se déclare comme un avoir consenti : B5 et 21, jamais une ligne négative', () => {
+    const d = ca3([encaissement(), encaissement({ id: 'rembourse', montant: -60 })])
+    expect(d.cases).toMatchObject({ A1: 100, taxe08: 20, B5: 50, l21: 10, l16: 20, l23: 10, lTD: 10 })
+    expect(d.releveRetenues.map((r) => r.ligne)).toEqual(['08', 'B5'])
+  })
+
+  it('un remboursement exonéré va en F8', () => {
+    const d = ca3([encaissement({ taux_tva: 0, montant: -40 })])
+    expect(d.cases).toMatchObject({ F8: 40, E2: 0 })
+  })
+
+  it('compte à la date de l’encaissement, et pas hors de la période', () => {
+    expect(ca3([encaissement({ date: '2027-04-02' })]).cases.A1).toBe(0)
+    expect(ca3([encaissement({ date: '2027-03-31' })]).cases.A1).toBe(100)
+  })
+
+  it('une part de recette ventilée compte pour son montant, la commission jamais', () => {
+    const remise = mouvement({ id: 'v', piece_id: null, ventilee: true, date: '2027-02-15', montant: 115 })
+    const parts: VentilationBancaire[] = [
+      { id: 'a', dossier_id: 'd1', ligne_bancaire_id: 'v', categorie_id: 'c-recettes', part_personnelle: false, montant: 120, taux_tva: 20, created_at: '2027-02-15T10:00:00Z' },
+      { id: 'b', dossier_id: 'd1', ligne_bancaire_id: 'v', categorie_id: 'c-frais', part_personnelle: false, montant: -5, taux_tva: null, created_at: '2027-02-15T10:00:00Z' },
+    ]
+    const d = ca3([remise], false, parts)
+    expect(d.cases).toMatchObject({ A1: 100, base08: 100, taxe08: 20 })
+    expect(d.releveRetenues.map((r) => [r.part.origine, r.part.libelle, r.ligne])).toEqual([['ventilation', 'Ventes / prestations', '08']])
+  })
+
+  it('une dépense du relevé n’ouvre aucune déduction', () => {
+    const d = ca3([encaissement({ id: 'frais', categorie_id: 'c-frais', taux_tva: null, montant: -8.5 })])
+    expect(d.neant).toBe(true)
+    expect(d.releveRetenues).toEqual([])
+    expect(d.releveEcartees).toEqual([])
+  })
+
+  it('une recette sans taux est écartée et dite — pas devinée', () => {
+    const d = ca3([encaissement({ taux_tva: null })])
+    expect(d.cases.A1).toBe(0)
+    expect(d.cases.E2).toBe(0)
+    expect(d.releveEcartees.map((e) => [e.part.ligne.id, e.motif])).toEqual([['enc', 'sans_taux']])
+  })
+
+  it('un taux que la base n’admet pas est écarté, jamais rangé en E2 comme une exonération', () => {
+    // Défensif : la base n'écrit que 20, 10, 5,5, 8,5 ou zéro. Une part venue d'ailleurs ne doit pas
+    // passer pour une recette non imposable.
+    const [part] = releve([encaissement()])
+    const d = calculerCa3(donnees([], [], [], [], [{ ...part, taux: 2.1 }]), T1, false, 0)
+    expect(d.cases.E2).toBe(0)
+    expect(d.releveEcartees.map((e) => e.motif)).toEqual(['sans_taux'])
+  })
+
+  it('sur option pour les débits, toute recette du relevé est écartée : la date de facture manque', () => {
+    const d = ca3([encaissement(), encaissement({ id: 'soins', taux_tva: 0 })], true)
+    expect(d.cases.A1).toBe(0)
+    expect(d.cases.E2).toBe(0)
+    expect(d.releveEcartees.map((e) => e.motif)).toEqual(['sur_debits', 'sur_debits'])
+  })
+
+  it('les totaux en centimes, arrondis à l’euro une seule fois', () => {
+    // Trois encaissements de 3,00 € à 20 % : 0,50 € de TVA chacun, 1,50 € au total — 2 €, pas 3 × 1 €.
+    const d = ca3([encaissement({ id: 'a', montant: 3 }), encaissement({ id: 'b', montant: 3 }), encaissement({ id: 'c', montant: 3 })])
+    expect(d.cases.taxe08).toBe(2)
+    expect(d.cases.base08).toBe(8)
+  })
+
+  it('le recalcul d’une déclaration déposée compte aussi les recettes du relevé', () => {
+    const d = donnees([], [], [], [], releve([encaissement()]))
+    expect(comparerDeclarations([declaration({ tva_declaree: 20 })], d, false)[0]).toMatchObject({ recalcul: 20, enEcart: false })
   })
 })
