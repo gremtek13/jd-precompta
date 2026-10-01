@@ -3,7 +3,8 @@ import type { PartDuReleve } from './partsDuReleve'
 import { montantRetenu } from './montantRetenu'
 import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rattachement'
 import { moisEcoulesDeLAnnee } from './situationIntermediaire'
-import type { CotisationDeclaree, ModeComptable, Piece } from './types'
+import type { CotisationComptee } from './cotisationRapprochee'
+import type { ModeComptable, Piece } from './types'
 
 // Calculs partagés entre l'Estimation cabinet (EstimationTab, un dossier à la fois) et la Simulation
 // côté client (ClientSimulation, lecture seule) — mêmes chiffres, un seul endroit à faire évoluer si
@@ -42,16 +43,17 @@ function recettesAffecteesDansLaPeriode(parts: readonly PartDuReleve[], debut: s
   )
 }
 
-// Les cotisations restent à leur ÉCHÉANCE, comme dans la 2035 : un prélèvement de l'Urssaf tombe le
-// jour de l'échéance qu'il paie.
-function cotisationsDeLaPeriode(cotisations: CotisationDeclaree[], debut: string, fin: string): number {
+// Les cotisations comptent comme dans la 2035 (`cotisationsComptees`, lib/cotisationRapprochee.ts) : à la
+// date et au montant du mouvement qui les paie, sinon à leur échéance. Sans valeur par défaut, comme les
+// paiements.
+function cotisationsDeLaPeriode(cotisations: readonly CotisationComptee[], debut: string, fin: string): number {
   return cotisations
-    .filter((c) => c.echeance >= debut && c.echeance <= fin)
-    .reduce((sum, c) => sum + (c.montant_verse ?? c.montant_appele), 0)
+    .filter((c) => c.date >= debut && c.date <= fin)
+    .reduce((sum, c) => sum + c.montant, 0)
 }
 
 export function totauxPourAnnee(
-  pieces: Piece[], cotisations: CotisationDeclaree[], annee: number, assujettiTva: boolean,
+  pieces: Piece[], cotisations: readonly CotisationComptee[], annee: number, assujettiTva: boolean,
   paiements: PaiementsDesPieces, mode: ModeComptable,
   // Sans valeur par défaut, comme les paiements : voir `recettesAffecteesDansLaPeriode`.
   partsDuReleve: readonly PartDuReleve[],
@@ -71,7 +73,7 @@ export interface ProjectionAnnuelle {
   moisEcoules: number
   /** Recettes du 1er janvier à aujourd'hui inclus, à la date de leur encaissement (lib/rattachement.ts). */
   ca: number
-  /** Échéances du 1er janvier à aujourd'hui inclus : « appelées à date », jamais une à venir. */
+  /** Échéances du 1er janvier à aujourd'hui inclus, à la date de leur paiement quand le relevé le connaît : « appelées à date », jamais une à venir. */
   cotis: number
   /** Null sous un mois d'observation : ramener quelques jours à douze mois n'est pas une projection. */
   caProjete: number | null
@@ -96,7 +98,7 @@ export interface ProjectionAnnuelle {
  *    même règle s'applique ici (`moisEcoulesDeLAnnee`, 30/360), plancher d'un mois compris.
  */
 export function projectionAnnuelle(
-  recettes: Piece[], cotisations: CotisationDeclaree[], dateDuJour: string, assujettiTva: boolean,
+  recettes: Piece[], cotisations: readonly CotisationComptee[], dateDuJour: string, assujettiTva: boolean,
   paiements: PaiementsDesPieces, mode: ModeComptable,
   partsDuReleve: readonly PartDuReleve[],
 ): ProjectionAnnuelle {

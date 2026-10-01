@@ -17,6 +17,7 @@ import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
 import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
 import { partsDuReleve } from '../../lib/partsDuReleve'
+import { cotisationsComptees } from '../../lib/cotisationRapprochee'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
 import type {
@@ -127,8 +128,9 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
       // d'un infirmier, qui ne transmet pas ses bordereaux. Tronquée, cette lecture ferait retomber sur
       // leur date de facture des pièces payées une autre année, ou retirerait des recettes : une 2035
       // plausible, fausse et signée, comme pour les quatre autres entrées. Elle rejoint donc le même
-      // drapeau. Tous les rapprochés : une ligne rapprochée d'une échéance n'y fait rien, et un filtre
-      // plus fin serait un second endroit où oublier les affectés.
+      // drapeau. Tous les rapprochés : une ligne rapprochée d'une échéance de cotisation la DATE (elle
+      // compte l'année de son prélèvement, lib/cotisationRapprochee.ts), et un filtre plus fin serait un
+      // second endroit où oublier les affectés.
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
@@ -223,12 +225,15 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // manquer à la liste. En engagement, celle de sa facture.
   const paiements = paiementsDesPieces(lignesBancaires, reglements)
   const parts = partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)
+  // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance :
+  // la 2035 et le FEC disent la même année (lib/cotisationRapprochee.ts).
+  const comptees = cotisationsComptees(cotisations, lignesBancaires, modeComptable)
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
     // Un exercice qui n'a que des encaissements sans bordereau, ou des intérêts d'emprunt, doit se
     // proposer comme un autre.
     ...parts.map((m) => anneeDe(m.ligne.date)),
-    ...cotisations.map((c) => anneeDe(c.echeance)),
+    ...comptees.map((c) => anneeDe(c.date)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
   ])].sort((a, b) => b - a)
@@ -242,7 +247,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, cotisations, vehicules, assujettiTva, paiements, parts),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -282,7 +287,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // ses voisines. Ce qui reste vrai, et que rien ne peut calculer : une cotisation dont la CSG-CRDS
   // n'est pas saisie garde sa part non déductible dans la ligne 25.
   const csgSansVentilation: { annee: number; part: PartCsgNonDeductible }[] = declarations
-    .map((d) => ({ annee: d.annee, part: partCsgNonDeductible(cotisations, d.annee) }))
+    .map((d) => ({ annee: d.annee, part: partCsgNonDeductible(comptees, d.annee) }))
     .filter((x): x is { annee: number; part: PartCsgNonDeductible } =>
       x.part !== null && x.part.nbSansVentilation > 0)
 

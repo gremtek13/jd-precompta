@@ -154,9 +154,9 @@ export interface LignePisteAudit {
 // la chaîne est complète.
 //
 // Le justificatif d'un mouvement JUSTIFIÉ PAR LE RELEVÉ (ligne 26.6, `mouvementJustifieParLeReleve` :
-// affecté, rapproché d'un emprunt, ventilé ou classé en virement personnel) est le relevé qui le porte :
-// son écriture n'a pas de pièce, et ce n'est pas une rupture. `lignesBancaires` suffit à le savoir —
-// l'export relit le relevé en entier.
+// affecté, rapproché d'un emprunt ou d'une échéance de cotisation, ventilé ou classé en virement personnel)
+// est le relevé qui le porte : son écriture n'a pas de pièce, et ce n'est pas une rupture.
+// `lignesBancaires` suffit à le savoir — l'export relit le relevé en entier.
 export function pisteAudit(
   ecritures: EcritureBrouillon[],
   pieces: Piece[],

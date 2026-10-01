@@ -4,7 +4,8 @@ import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
 import { partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
+import type { CotisationComptee } from './cotisationRapprochee'
+import type { Categorie, Immobilisation, Piece, VehiculeDossier } from './types'
 
 // Moteur de la déclaration 2035 (bénéfices non commerciaux, régime de la déclaration contrôlée).
 //
@@ -231,6 +232,10 @@ export interface PartCsgNonDeductible {
 // SAISIE. Les additionner ferait annoncer « rien à réintégrer » sur un dossier qui n'a simplement
 // jamais renseigné le détail.
 //
+// LES COTISATIONS SONT CELLES DE `cotisationsComptees` (lib/cotisationRapprochee.ts) : une échéance payée
+// par un mouvement rapproché compte l'année de ce mouvement, et sa CSG-CRDS avec elle — la même année que
+// l'écriture qui la passe au 108000. Une CSG-CRDS d'un remboursement est négative et diminue le total.
+//
 // Le non déductible se déduit du déductible (`total - déductible`) plutôt que de se calculer sur
 // 2,9/9,7. **Et la raison d'abord écrite ici était FAUSSE** : « deux arrondis indépendants
 // laisseraient un centime d'écart » — mesuré sur les 20 000 000 de montants au centime de 0,01 € à
@@ -241,12 +246,12 @@ export interface PartCsgNonDeductible {
 // assertion de complaisance.
 // Ce qui décide vraiment : la forme par complément tient PAR CONSTRUCTION, sans dépendre de cette
 // coïncidence ni du jour où l'un des deux taux changera (ils bougent d'une année sur l'autre).
-export function partCsgNonDeductible(cotisations: CotisationDeclaree[], annee: number): PartCsgNonDeductible | null {
-  const deLAnnee = cotisations.filter((c) => anneeDe(c.echeance) === annee)
+export function partCsgNonDeductible(cotisations: readonly CotisationComptee[], annee: number): PartCsgNonDeductible | null {
+  const deLAnnee = cotisations.filter((c) => anneeDe(c.date) === annee)
   if (deLAnnee.length === 0) return null
 
-  const ventilees = deLAnnee.filter((c) => c.montant_csg_crds != null)
-  const totalCsgCrds = arrondi(ventilees.reduce((s, c) => s + (c.montant_csg_crds ?? 0), 0))
+  const ventilees = deLAnnee.filter((c) => c.csgCrds != null)
+  const totalCsgCrds = arrondi(ventilees.reduce((s, c) => s + (c.csgCrds ?? 0), 0))
   const deductible = csgDeductible(totalCsgCrds)
 
   return {
@@ -263,7 +268,11 @@ export function calculerDeclaration2035(
   pieces: Piece[],
   categories: Categorie[],
   immobilisations: Immobilisation[],
-  cotisations: CotisationDeclaree[],
+  // Les échéances de cotisation à la date et au montant auxquels elles comptent (`cotisationsComptees`,
+  // lib/cotisationRapprochee.ts) : celles du mouvement qui les paie, sinon leur échéance. Un tableau
+  // d'échéances brutes ne passe plus : il ferait compter à son échéance une cotisation que le FEC porte
+  // à son paiement, l'année d'après.
+  cotisations: readonly CotisationComptee[],
   // Sans valeur par défaut, volontairement : un appelant qui oublie les véhicules doit s'en rendre
   // compte à la compilation, pas en découvrant une case BJ vide sur un formulaire déjà déposé.
   vehicules: VehiculeDossier[],
@@ -370,12 +379,11 @@ export function calculerDeclaration2035(
   const totalAmortissements = immobilisations.reduce((somme, i) => somme + dotationPourAnnee(i, annee), 0)
   if (totalAmortissements > 0) ajouter(POSTE_AMORTISSEMENTS, 'depense', totalAmortissements, 0)
 
-  // Le montant réellement versé fait foi ; à défaut, l'appel. Une cotisation appelée mais non payée
-  // reste une charge de l'exercice en comptabilité d'engagement — et ce dossier suit l'appel tant
-  // que le versement n'est pas saisi, plutôt que d'oublier la ligne.
+  // Le paiement fait foi quand le rapprochement le connaît — sa date et son montant, ceux du FEC ; à
+  // défaut, le versement saisi ou l'appel, à l'échéance (voir `cotisationsComptees`).
   const totalCotisationsBrut = cotisations.reduce((somme, c) => {
-    if (anneeDe(c.echeance) !== annee) return somme
-    return somme + (c.montant_verse ?? c.montant_appele)
+    if (anneeDe(c.date) !== annee) return somme
+    return somme + c.montant
   }, 0)
 
   // LA CSG-CRDS SORT DE LA LIGNE 25 ET SA PART DÉDUCTIBLE REJOINT LA LIGNE 14 (voir plus haut).

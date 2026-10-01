@@ -2,11 +2,13 @@ import { describe, expect, it } from 'vitest'
 import {
   JOURS_TOLERANCE,
   analyserAppariements,
+  candidatsCotisations,
   ecartEnJours,
   libelleExploitable,
   motsIdentifiants,
   piecesMontantIntrouvableEnBanque,
   planRapprochementAutomatique,
+  sensCotisationCoherent,
   tiersConfirmeParBanque,
 } from './appariementBanque'
 import type { CotisationRapprochable } from './appariementBanque'
@@ -520,6 +522,25 @@ describe('planRapprochementAutomatique', () => {
         [ligne({ id: 'l1' })], [], [cot({ id: 'c1' }), cot({ id: 'c2' })], vide)
       expect(plan.retenus).toEqual([])
       expect(plan.ecartesPourAmbiguite).toBe(1)
+    })
+
+    it('dans le sens que l’échéance attend : un appel se paie par un prélèvement, un remboursement arrive par un encaissement', () => {
+      // Sans ce contrôle, un encaissement du montant d'un appel lui était proposé, et « Tout rapprocher »
+      // l'aurait rapproché : un remboursement compté en charge. Depuis que le rapprochement s'écrit
+      // (lib/cotisationRapprochee.ts), la base le refuse — ici, on ne le propose plus.
+      const encaissement = ligne({ id: 'l1', montant: 38.4 })
+      expect(planRapprochementAutomatique([encaissement], [], [cot({})], vide).retenus).toEqual([])
+      expect(planRapprochementAutomatique([encaissement], [], [cot({ montant_appele: -38.4 })], vide).retenus)
+        .toEqual([{ ligneId: 'l1', cotisationId: 'c1' }])
+      expect(planRapprochementAutomatique([ligne({ id: 'l1' })], [], [cot({ montant_appele: -38.4 })], vide).retenus).toEqual([])
+      // Le versement saisi fait foi sur l'appel, pour le sens comme pour le montant.
+      expect(candidatsCotisations(encaissement, [cot({ montant_verse: -38.4 })], new Set()).map((c) => c.id)).toEqual(['c1'])
+    })
+
+    it('une échéance de zéro euro n’attend aucun mouvement', () => {
+      expect(sensCotisationCoherent({ montant_appele: 0, montant_verse: null }, { montant: -1 })).toBe(false)
+      expect(sensCotisationCoherent({ montant_appele: 0, montant_verse: null }, { montant: 1 })).toBe(false)
+      expect(sensCotisationCoherent({ montant_appele: 100, montant_verse: null }, { montant: 0 })).toBe(false)
     })
 
     it('laisse la précédence à la pièce, comme avant', () => {

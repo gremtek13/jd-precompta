@@ -238,10 +238,13 @@ describe('mouvementsAffectes — ce qui compte dans un poste', () => {
 })
 
 describe('mouvementJustifieParLeReleve — le relevé pour seul justificatif', () => {
-  it('un mouvement affecté à une catégorie, rapproché d’un emprunt, ventilé, ou classé en virement personnel', () => {
+  it('un mouvement affecté à une catégorie, rapproché d’un emprunt ou d’une échéance de cotisation, ventilé, ou classé en virement personnel', () => {
     expect(mouvementJustifieParLeReleve(mouvement({ statut: 'rapprochee', categorie_id: 'cat-frais' }))).toBe(true)
     expect(mouvementJustifieParLeReleve(mouvement({ statut: 'rapprochee', emprunt_id: 'emp1', emprunt_echeance: 1 }))).toBe(true)
     expect(mouvementJustifieParLeReleve(mouvement({ montant: 20000, statut: 'rapprochee', emprunt_id: 'emp1' }))).toBe(true)
+    // Une échéance de cotisation rapprochée s'écrit depuis le 01/10/2026 (lib/cotisationRapprochee.ts) :
+    // son écriture au 646000 face à la banque n'a pas de pièce, le relevé la justifie.
+    expect(mouvementJustifieParLeReleve(mouvement({ statut: 'rapprochee', cotisation_id: 'c1' }))).toBe(true)
     // Ventilé : ses parts vivent dans leur table, et le prédicat ne les lit pas — une part qu'on n'a pas
     // su lire ne fait pas d'une écriture juste une rupture.
     expect(mouvementJustifieParLeReleve(mouvement({ statut: 'rapprochee', ventilee: true }))).toBe(true)
@@ -252,10 +255,9 @@ describe('mouvementJustifieParLeReleve — le relevé pour seul justificatif', (
     ])]).toEqual(['v'])
   })
 
-  it('ni un mouvement rapproché d’une pièce ou d’une échéance, ni un mouvement ignoré ou à traiter', () => {
+  it('ni un mouvement rapproché d’une pièce, ni un mouvement ignoré ou à traiter', () => {
     const cas: Partial<MouvementBancaire>[] = [
       { statut: 'rapprochee', piece_id: 'p1' },
-      { statut: 'rapprochee', cotisation_id: 'c1' },
       { statut: 'ignoree' },
       { statut: 'non_rapprochee' },
       // Une catégorie sur un mouvement qui n'est pas rapproché : un état que la base refuse
@@ -265,6 +267,8 @@ describe('mouvementJustifieParLeReleve — le relevé pour seul justificatif', (
       { statut: 'non_rapprochee', emprunt_id: 'emp1' },
       // Et d'une ventilation (`lignes_bancaires_ventilation_rapprochee`).
       { statut: 'non_rapprochee', ventilee: true },
+      // Et d'une échéance de cotisation (`lignes_bancaires_cotisation_rapprochee`).
+      { statut: 'non_rapprochee', cotisation_id: 'c1' },
     ]
     for (const o of cas) expect(mouvementJustifieParLeReleve(mouvement(o))).toBe(false)
   })

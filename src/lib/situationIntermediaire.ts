@@ -2,7 +2,8 @@ import { anneeDe, jourDe, moisDe } from './format'
 import type { PartDuReleve } from './partsDuReleve'
 import { montantRetenu } from './montantRetenu'
 import { partDansLaPeriode, rattachements, type PaiementsDesPieces } from './rattachement'
-import type { Categorie, CotisationDeclaree, Immobilisation, ModeComptable, Piece } from './types'
+import type { CotisationComptee } from './cotisationRapprochee'
+import type { Categorie, Immobilisation, ModeComptable, Piece } from './types'
 
 // Exporté parce que `ratiosBancaires.ts` doit retrouver ce poste dans `totauxParPoste` pour calculer
 // la CAF. Il le cherchait par une chaîne littérale écrite de son côté : renommer le poste ici aurait
@@ -59,7 +60,11 @@ export function moisEcoulesDeLAnnee(dateDuJour: string): number {
 }
 
 export function calculerSituationIntermediaire(
-  pieces: Piece[], categories: Categorie[], immobilisations: Immobilisation[], cotisations: CotisationDeclaree[],
+  pieces: Piece[], categories: Categorie[], immobilisations: Immobilisation[],
+  // Les échéances à la date et au montant auxquels elles comptent (`cotisationsComptees`,
+  // lib/cotisationRapprochee.ts) : celles du mouvement qui les paie, sinon leur échéance — la règle de la
+  // 2035, et la date de l'écriture du FEC.
+  cotisations: readonly CotisationComptee[],
   periodeDebut: string, periodeFin: string,
   // TVA comprise pour un dossier exonéré, hors taxes pour un assujetti — la règle de la 2035 (voir
   // lib/montantRetenu.ts), sur l'état qu'on montre à une banque.
@@ -142,8 +147,8 @@ export function calculerSituationIntermediaire(
   }
 
   const totalCotisations = cotisations.reduce((sum, c) => {
-    if (c.echeance < periodeDebut || c.echeance > periodeFin) return sum
-    return sum + (c.montant_verse ?? c.montant_appele)
+    if (c.date < periodeDebut || c.date > periodeFin) return sum
+    return sum + c.montant
   }, 0)
   if (totalCotisations > 0) totauxParPoste.set(POSTE_COTISATIONS, -totalCotisations)
 

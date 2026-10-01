@@ -306,6 +306,21 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     expect(retire.manque).toEqual(['justificatif'])
   })
 
+  it('donne aussi le relevé pour justificatif à une échéance de cotisation', () => {
+    // lib/cotisationRapprochee.ts : le prélèvement de l'Urssaf s'écrit sur le 646000 et le 108000, sans pièce.
+    const urssaf = ligneBancaire({
+      id: 'l-urssaf', piece_id: null, categorie_id: null, cotisation_id: 'c1', montant: -500, libelle: 'PRLV URSSAF',
+      source_fichier: 'releve-mars-2026.pdf',
+    })
+    const cotisation = [ecriture({ id: 'u1', piece_id: null, ligne_bancaire_id: 'l-urssaf', compte: '646000', montant: 500, date: '2026-03-05' })]
+    const [ligne] = pisteAudit(cotisation, [], [urssaf], [])
+    expect([ligne.pieceFichier, ligne.pieceDate, ligne.mouvementLibelle, ligne.manque])
+      .toEqual(['Relevé bancaire : releve-mars-2026.pdf', urssaf.date, 'PRLV URSSAF', []])
+    // Le rapprochement annulé, elle n'a plus de justificatif.
+    const [annule] = pisteAudit(cotisation, [], [{ ...urssaf, statut: 'non_rapprochee', cotisation_id: null }], [])
+    expect(annule.manque).toEqual(['justificatif'])
+  })
+
   it('donne aussi le relevé pour justificatif à un mouvement ventilé', () => {
     // lib/ventilationBanque.ts : une ligne par part, sans pièce.
     const telephone = ligneBancaire({
