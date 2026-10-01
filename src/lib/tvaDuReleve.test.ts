@@ -131,7 +131,7 @@ describe('le taux qui s’applique', () => {
     for (const taux of [2.1, 7, 19.6, -20, 200]) expect(tauxPrisEnCharge(taux)).toBe(false)
   })
 
-  it('se dit en français : « 5,5 % », « exonérée »', () => {
-    expect(TAUX_TVA_RELEVE.map(libelleTaux)).toEqual(['20 %', '10 %', '5,5 %', '8,5 %', 'exonérée'])
+  it('se dit en français : « 5,5 % », « exonérée », l’espace avant « % » insécable', () => {
+    expect(TAUX_TVA_RELEVE.map(libelleTaux)).toEqual(['20\u00a0%', '10\u00a0%', '5,5\u00a0%', '8,5\u00a0%', 'exonérée'])
   })
 })

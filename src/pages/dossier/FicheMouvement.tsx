@@ -491,16 +491,26 @@ export default function FicheMouvement({
   // Défensif : la base écrit le drapeau et les parts ensemble, et vérifie leur somme. Jugé sur des parts
   // lues EN ENTIER seulement — sinon une part non lue passerait pour une part manquante.
   const ventilationIncoherente = ventile && !ventilationsIncompletes && ventilationsIncoherentes([ligne], ventilations).length > 0
+  // Le taux d'une part de recette se dit à côté d'elle, tel qu'il s'applique AUJOURD'HUI — comme celui d'une
+  // recette affectée : un dossier qui a cessé d'être assujetti garde le taux en base, mais ne l'écrit plus.
   const libellePart = (v: VentilationBancaire) => {
     if (v.part_personnelle) return `Part personnelle (${compteDirigeant})`
     const c = categories.find((x) => x.id === v.categorie_id)
-    return c ? `${c.libelle} (${c.compte_comptable ?? 'sans compte'})` : 'Catégorie non lue'
+    if (!c) return 'Catégorie non lue'
+    const taux = tauxApplicable(assujettiTva, natureDuCompte(c.compte_comptable), v.taux_tva)
+    return `${c.libelle} (${c.compte_comptable ?? 'sans compte'})${taux != null ? ` · TVA ${libelleTaux(taux)}` : ''}`
   }
   const categoriesDesParts = ventilations
     .map((v) => (v.categorie_id ? categories.find((c) => c.id === v.categorie_id) ?? null : null))
     .filter((c): c is Categorie => c !== null)
   const partsHorsResultat = categoriesDesParts.filter((c) => !natureDuCompte(c.compte_comptable))
   const partsSansPoste = categoriesDesParts.filter((c) => natureDuCompte(c.compte_comptable) && !c.poste_2035)
+  // Les parts de recette SANS TAUX d'un dossier assujetti — ventilées avant qu'il le devienne : la pastille
+  // « TVA à choisir » de la liste et le point de la Checklist envoient ici, la fiche dit laquelle et quoi faire.
+  const partsRecetteSansTaux = ventilations.filter((v) => {
+    const c = !v.part_personnelle && v.categorie_id ? categories.find((x) => x.id === v.categorie_id) : undefined
+    return !!c && tauxRequis(assujettiTva, natureDuCompte(c.compte_comptable)) && v.taux_tva == null
+  })
 
   // Le règlement de plusieurs pièces : replié tant qu'on ne le demande pas, comme la ventilation.
   const regleEnGroupe = ligne.statut === 'rapprochee' && ligne.reglement_groupe
@@ -1246,6 +1256,13 @@ export default function FicheMouvement({
                 {partsHorsResultat.length > 1
                   ? `Les comptes de ${partsHorsResultat.map((c) => `« ${c.libelle} »`).join(', ')} ne sont plus des comptes de charge ou de produit : leurs parts ne comptent dans aucun total, et l’écriture n’est plus juste. Modifie la ventilation.`
                   : `Le compte de « ${partsHorsResultat[0].libelle} » n’est plus un compte de charge ou de produit : sa part ne compte dans aucun total, et l’écriture n’est plus juste. Modifie la ventilation.`}
+              </p>
+            )}
+            {partsRecetteSansTaux.length > 0 && (
+              <p className="fiche-mouvement-alerte">
+                {partsRecetteSansTaux.length > 1
+                  ? `Le dossier est assujetti à la TVA et ${partsRecetteSansTaux.length} parts de recette n’ont pas de taux : leur TVA n’est dans aucune déclaration, et la 2035 la compte en recette. Modifie la ventilation pour choisir leur taux.`
+                  : `Le dossier est assujetti à la TVA et la part « ${libellePart(partsRecetteSansTaux[0])} » n’a pas de taux : sa TVA n’est dans aucune déclaration, et la 2035 la compte en recette. Modifie la ventilation pour choisir son taux.`}
               </p>
             )}
             {partsSansPoste.length > 0 && (
