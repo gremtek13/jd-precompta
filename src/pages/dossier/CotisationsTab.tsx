@@ -3,7 +3,7 @@ import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, formatDate, formatMoney, slugify } from '../../lib/format'
 import { extractPiece, fichierDejaPresent, hashFichier } from '../../lib/extraction'
-import type { CotisationDeclaree, DocumentDivers } from '../../lib/types'
+import type { CotisationDeclaree, DocumentDivers, EcritureBrouillon, LigneBancaire, ModeComptable } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -14,7 +14,9 @@ import { messageErreur } from '../../lib/messageErreur'
 // même endroit que le contrôle qui s'en sert (voir `partCsgNonDeductible`) : une règle recopiée
 // deux fois n'attend pas de diverger, elle attend un troisième appelant.
 import { csgDeductible as partDeductible } from '../../lib/declaration2035'
-import { AVERTISSEMENT_RAPPROCHEMENT_DEFAIT } from '../../lib/controles'
+import {
+  avertissementRetraitEcheance, cotisationsAEcrire, ecritureDeLaCotisation, rapprochementsCotisationRefuses,
+} from '../../lib/cotisationRapprochee'
 import { ouvrirApercu } from '../../lib/apercu'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
@@ -22,8 +24,24 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 // URSSAF (montants connus tardivement, jamais déductibles d'un relevé bancaire seul) et calcul
 // proposé de la répartition CSG déductible/non déductible — uniquement sur la part CSG-CRDS
 // explicitement renseignée, jamais sur le montant appelé total qui cumule d'autres cotisations.
-export default function CotisationsTab({ dossierId }: { dossierId: string }) {
+//
+// LIGNE 26.6, ÉTAPE (b) : une échéance rapprochée d'un mouvement S'ÉCRIT (lib/cotisationRapprochee.ts).
+// La colonne « Paiement » dit quel mouvement la paie et si son écriture est au brouillon ; « Écrire les
+// N » écrit celles qu'un rapprochement d'avant le 01/10/2026 a laissées sans écriture. Le mode comptable
+// décide de la CSG-CRDS : au 108000 en trésorerie, au 646000 avec le reste en engagement.
+export default function CotisationsTab({ dossierId, modeComptable }: { dossierId: string; modeComptable: ModeComptable }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
+  // Les mouvements rapprochés d'une échéance, et les écritures sans pièce du dossier : ce qui dit quelle
+  // échéance est payée, et si son paiement est écrit. Chacune son drapeau : leurs conséquences diffèrent.
+  const [paiements, setPaiements] = useState<LigneBancaire[]>([])
+  const [paiementsIncomplets, setPaiementsIncomplets] = useState<string | null>(null)
+  const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
+  const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
+  // UN verrou pour les deux gestes qui écrivent le relevé : « Écrire les N » et « Retirer ». Retirée pendant
+  // que le lot tourne, une échéance serait réécrite par le lot, qui l'a prise avant. Un `useRef`, posé
+  // avant le premier `await` (voir CLAUDE.md, « un verrou d'exécution »).
+  const ecritureEnCours = useRef(false)
+  const [enCours, setEnCours] = useState(false)
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   // À part de `lectureIncomplete`, qui couvre aussi les justificatifs : ce sont les ÉCHÉANCES lues
   // qui dédoublonnent la création ci-dessous, et un justificatif manquant n'y change rien.
@@ -50,7 +68,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   async function load() {
     setLoading(true)
-    const [lectureCotisations, lectureDocuments] = await Promise.all([
+    const [lectureCotisations, lectureDocuments, lecturePaiements, lectureEcritures] = await Promise.all([
       // Tri TOTAL : `echeance` n'est pas unique, donc `id` départage — sans lui, deux tranches
       // se recouvrent ou sautent des lignes, et rien ne le signale.
       lireTout<CotisationDeclaree>((debut, fin) =>
@@ -63,12 +81,29 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         supabase.from('documents_divers').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('categorie', 'cotisation').order('id').range(debut, fin),
       ),
+      // Les mouvements qui paient une échéance : rapprochés, portant une échéance.
+      lireTout<LigneBancaire>((debut, fin) =>
+        supabase.from('lignes_bancaires').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'rapprochee').not('cotisation_id', 'is', null)
+          .order('date', { ascending: false }).order('id').range(debut, fin),
+      ),
+      // Les écritures SANS PIÈCE du dossier : celles des mouvements écrits depuis le relevé, dont les
+      // échéances payées. Lues pour savoir lesquelles ont la leur.
+      lireTout<EcritureBrouillon>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).is('piece_id', null)
+          .order('id').range(debut, fin),
+      ),
     ])
     setCotisations(lectureCotisations.lignes)
     setCotisationsIncompletes(lectureCotisations.complete ? null : lectureCotisations.motif)
     setDocumentsCotisation(lectureDocuments.lignes)
+    setPaiements(lecturePaiements.lignes)
+    setPaiementsIncomplets(lecturePaiements.complete ? null : lecturePaiements.motif)
+    setEcritures(lectureEcritures.lignes)
+    setEcrituresIncompletes(lectureEcritures.complete ? null : lectureEcritures.motif)
     setLectureIncomplete(
-      [lectureCotisations, lectureDocuments]
+      [lectureCotisations, lectureDocuments, lecturePaiements]
         .find((l) => !l.complete)?.motif ?? null,
     )
     setLoading(false)
@@ -103,14 +138,57 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     }
   }
 
-  // `lignes_bancaires.cotisation_id` est en `ON DELETE SET NULL` : retirer une échéance défait en
-  // silence le rapprochement du prélèvement qui la payait, et `statut` reste `'rapprochee'`. La
-  // confirmation le NOMME — c'est la seule occasion de le dire, et une cotisation n'engendre aucune
-  // écriture, donc aucun autre contrôle du dossier ne parlerait de ce mouvement.
-  async function supprimer(id: string) {
-    if (!window.confirm(`Retirer cette échéance ?\n\n${AVERTISSEMENT_RAPPROCHEMENT_DEFAIT}`)) return
-    await supabase.from('cotisations_declarees').delete().eq('id', id)
-    load()
+  // `lignes_bancaires.cotisation_id` est en `ON DELETE SET NULL` : une suppression directe laisserait le
+  // prélèvement qui la paie « rapproché » sans plus rien qui le justifie, et son écriture au brouillon.
+  // `supprimer_echeance_cotisation` remet ce mouvement à traiter et retire son écriture, puis l'échéance,
+  // dans une transaction — et refuse sur une écriture validée. La confirmation NOMME le mouvement : une
+  // confirmation nomme ce qu'on perd. Sous le verrou des écritures du relevé, et son refus se dit : un
+  // retrait qui échoue sans un mot laisserait recliquer pour le même silence.
+  async function supprimer(c: CotisationDeclaree) {
+    if (ecritureEnCours.current) return
+    const message = avertissementRetraitEcheance(paiementDe.get(c.id) ?? null, paiementsIncomplets === null)
+    if (!window.confirm(`Retirer cette échéance ?\n\n${message}`)) return
+    ecritureEnCours.current = true
+    setEnCours(true)
+    try {
+      const { error: erreurRetrait } = await supabase.rpc('supprimer_echeance_cotisation', { p_cotisation_id: c.id })
+      if (erreurRetrait) setError(`L’échéance n’a pas pu être retirée : ${messageErreur(erreurRetrait, 'raison inconnue')}`)
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  // Chaque échéance par la même fonction de la base que le rapprochement de l'onglet Banque : elle vérifie
+  // l'écriture et l'écrit avec le rapprochement, et remplace celle qui ne correspond plus. Un échec
+  // n'interrompt pas le lot, et se dit. Le verrou se relâche APRÈS la relecture : relâché avant, la liste
+  // montrerait encore « Écrire les N » sur des échéances déjà écrites, le temps qu'elle revienne.
+  async function ecrireLesEcheances() {
+    if (ecritureEnCours.current || ecritureSuspendue || aEcrire.length === 0) return
+    ecritureEnCours.current = true
+    setEnCours(true)
+    try {
+      const echecs: string[] = []
+      for (const { ligne, cotisation } of aEcrire) {
+        const { error: erreurEcriture } = await supabase.rpc('rapprocher_cotisation', {
+          p_ligne_bancaire_id: ligne.id,
+          p_cotisation_id: cotisation.id,
+          p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modeComptable),
+        })
+        if (erreurEcriture) echecs.push(messageErreur(erreurEcriture, 'raison inconnue'))
+      }
+      if (echecs.length > 0) {
+        window.alert(
+          `${aEcrire.length - echecs.length} échéance(s) écrite(s) sur ${aEcrire.length}. `
+          + `${echecs.length} n’ont pas pu l’être : ${echecs[0]}`,
+        )
+      }
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
   }
 
   async function attacherDocument(cotisationId: string, documentId: string) {
@@ -242,6 +320,27 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
 
   const documentsNonRattaches = documentsCotisation.filter((d) => !d.attached_to_cotisation_id)
 
+  // Le mouvement qui paie chaque échéance — un au plus (contrainte `lignes_bancaires_cotisation_unique`).
+  const paiementDe = new Map(paiements.flatMap((l) => (l.cotisation_id ? [[l.cotisation_id, l] as const] : [])))
+  const aEcrire = cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable)
+  const idsAEcrire = new Set(aEcrire.map((r) => r.cotisation.id))
+  const lignesEcrites = new Set(ecritures.map((e) => e.ligne_bancaire_id))
+  // Un rapprochement qui ne PEUT pas s'écrire — un encaissement rapproché d'un appel : sa raison, montrée
+  // sur la ligne. Le geste est d'annuler ce rapprochement dans l'onglet Banque.
+  const refuses = new Map(rapprochementsCotisationRefuses(paiements, cotisations, modeComptable).map((r) => [r.cotisation.id, r.raison]))
+  // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE (voir CLAUDE.md) : une échéance dont le paiement ou
+  // l'écriture n'a pas été lu paraîtrait à écrire, ou écrite ; et un échéancier lu à moitié en cacherait.
+  const ecritureSuspendue = cotisationsIncompletes ?? paiementsIncomplets ?? ecrituresIncompletes
+
+  // Le versé d'une échéance : le montant saisi, sinon celui du mouvement rapproché qui la paie, quand ce
+  // rapprochement s'écrit. Une échéance prélevée sans versement saisi n'est plus « à verser » — le relevé
+  // fait foi, comme dans la 2035 et l'échéancier des dettes de Financement.
+  function verseDe(c: CotisationDeclaree): number | null {
+    if (c.montant_verse != null) return c.montant_verse
+    const paiement = paiementDe.get(c.id)
+    return paiement && !refuses.has(c.id) ? -paiement.montant : null
+  }
+
   const anneesDisponibles = [...new Set(cotisations.map((c) => anneeDe(c.echeance)))].sort((a, b) => b - a)
   const cotisationsFiltrees = anneeFilter === 'toutes' ? cotisations : cotisations.filter((c) => anneeDe(c.echeance) === anneeFilter)
 
@@ -253,25 +352,33 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
     correspondALaRecherche(
       [c.echeance, formatDate(c.echeance), c.montant_appele, c.montant_verse, c.montant_csg_crds,
         c.previsionnel ? 'prévisionnel' : null,
+        paiementDe.has(c.id) ? formatDate(paiementDe.get(c.id)!.date) : null,
         documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)?.nom_fichier],
       recherche,
     ),
   )
 
   const totalAppele = cotisationsFiltrees.reduce((sum, c) => sum + c.montant_appele, 0)
-  const totalVerse = cotisationsFiltrees.reduce((sum, c) => sum + (c.montant_verse ?? 0), 0)
+  const totalVerse = cotisationsFiltrees.reduce((sum, c) => sum + (verseDe(c) ?? 0), 0)
   const totalCsgDeductible = cotisationsFiltrees.reduce((sum, c) => sum + (csgDeductible(c.montant_csg_crds) ?? 0), 0)
 
   return (
     <>
       <BandeauLecturePartielle
-        quoi="Les cotisations et leurs justificatifs"
+        quoi="Les cotisations, leurs justificatifs et leurs paiements"
         accord="lus"
         motif={lectureIncomplete}
         consequence={
-          'Les totaux appelé et versé ci-dessous portent donc sur une partie de l’exercice, et un appel ' +
-          'peut paraître sans justificatif alors qu’il en a un.'
+          'Les totaux appelé et versé ci-dessous portent donc sur une partie de l’exercice, un appel ' +
+          'peut paraître sans justificatif ou sans paiement alors qu’il en a un, et l’écriture des ' +
+          'échéances payées est suspendue.'
         }
+      />
+      <BandeauLecturePartielle
+        quoi="Les écritures des échéances payées"
+        accord="lues"
+        motif={ecrituresIncompletes}
+        consequence="Une échéance payée peut paraître sans écriture alors qu’elle en a une : leur écriture est suspendue."
       />
       <BrouillonBanner />
 
@@ -396,6 +503,36 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
         </div>
       )}
 
+      {aEcrire.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <strong>
+            {aEcrire.length === 1
+              ? '1 échéance payée dont l’écriture manque ou n’est plus à jour'
+              : `${aEcrire.length} échéances payées dont l’écriture manque ou n’est plus à jour`}
+          </strong>
+          <p className="muted" style={{ margin: '6px 0 10px' }}>
+            Une échéance rapprochée de son prélèvement avant que ce rapprochement s’écrive n’a pas d’écriture :
+            elle manque au FEC, et la trésorerie de l’application ne retrouve pas le relevé. Une CSG-CRDS saisie
+            depuis change aussi l’écriture. Le bouton écrit chacune
+            {modeComptable === 'tresorerie' ? ' au compte 646000, sa CSG-CRDS au 108000,' : ' au compte 646000,'} face à
+            la banque.
+          </p>
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            disabled={enCours || !!ecritureSuspendue}
+            onClick={ecrireLesEcheances}
+          >
+            {enCours ? 'Écriture…' : aEcrire.length === 1 ? 'Écrire cette échéance' : `Écrire les ${aEcrire.length}`}
+          </button>
+          {ecritureSuspendue && (
+            <p className="muted" style={{ margin: '8px 0 0' }}>
+              Suspendu : la lecture est partielle ({ecritureSuspendue}), et ce compte peut être faux. Recharge la page.
+            </p>
+          )}
+        </div>
+      )}
+
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
       {cotisationsFiltrees.length > 0 && (
@@ -447,6 +584,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
                 <th>Versé</th>
                 <th>dont CSG-CRDS</th>
                 <th>CSG déductible</th>
+                <th>Paiement</th>
                 <th>Pièce jointe</th>
                 <th></th>
               </tr>
@@ -455,6 +593,9 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
               {cotisationsAffichees.map((c) => {
                 const documentAttache = documentsCotisation.find((d) => d.attached_to_cotisation_id === c.id)
                 const documentsDisponibles = documentsNonRattaches
+                const paiement = paiementDe.get(c.id)
+                const refus = refuses.get(c.id)
+                const verse = verseDe(c)
                 return (
                   <tr key={c.id}>
                     <td>
@@ -462,9 +603,35 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
                       {c.previsionnel && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Prévisionnel</span>}
                     </td>
                     <td>{formatMoney(c.montant_appele)}</td>
-                    <td>{c.montant_verse != null ? formatMoney(c.montant_verse) : '—'}</td>
+                    <td>
+                      {verse == null
+                        ? '—'
+                        : c.montant_verse != null
+                          ? formatMoney(verse)
+                          // Le montant du mouvement qui la paie, faute de versement saisi : dit d'où il vient.
+                          : <>{formatMoney(verse)} <span className="muted">(relevé)</span></>}
+                    </td>
                     <td>{c.montant_csg_crds != null ? formatMoney(c.montant_csg_crds) : '—'}</td>
                     <td>{csgDeductible(c.montant_csg_crds) != null ? formatMoney(csgDeductible(c.montant_csg_crds)) : '—'}</td>
+                    <td>
+                      {/* Sur une lecture partielle du relevé, on ne sait pas : on ne dit rien plutôt que
+                          d'annoncer « — » sur une échéance dont le paiement n'a pas été lu. */}
+                      {paiementsIncomplets || !paiement
+                        ? <span className="muted">—</span>
+                        : (
+                          <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                            <span>{paiement.montant > 0 ? 'Remboursée' : 'Prélevée'} le {formatDate(paiement.date)}</span>
+                            {refus
+                              ? <span className="badge badge-danger" title={refus}>Ne s’écrit pas</span>
+                              : ecrituresIncompletes
+                                ? null
+                                : idsAEcrire.has(c.id)
+                                  ? <span className="badge badge-warning">{lignesEcrites.has(paiement.id) ? 'À réécrire' : 'Sans écriture'}</span>
+                                  : <span className="badge badge-ok">Écrite</span>}
+                            {refus && <span className="muted" style={{ flexBasis: '100%', fontSize: '0.85rem' }}>{refus} Annule ce rapprochement dans l’onglet Banque.</span>}
+                          </span>
+                        )}
+                    </td>
                     <td onClick={(e) => e.stopPropagation()}>
                       {documentAttache ? (
                         <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -487,7 +654,7 @@ export default function CotisationsTab({ dossierId }: { dossierId: string }) {
                       )}
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-danger btn-sm" onClick={() => supprimer(c.id)}>Retirer</button>
+                      <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => supprimer(c)}>Retirer</button>
                     </td>
                   </tr>
                 )

@@ -217,6 +217,65 @@ describe("ClotureTab — l'exercice du paiement", () => {
   })
 })
 
+// UNE ÉCHÉANCE DE COTISATION COMPTE À SON PRÉLÈVEMENT (lib/cotisationRapprochee.ts) : rapprochée d'un
+// mouvement, elle compte l'année et pour le montant du relevé — ceux de son écriture au FEC. Ce qui se joue
+// ici est le CÂBLAGE : que l'écran passe le relevé au calcul, et DISE les échéances comptées à leur date.
+describe('ClotureTab — une échéance de cotisation compte à son prélèvement', () => {
+  const PRELEVEE_EN_JANVIER = {
+    id: 'l-urssaf', dossier_id: 'dossier-de-test', date: '2026-01-06', libelle: 'PRLV URSSAF', montant: -300,
+    statut: 'rapprochee', piece_id: null, cotisation_id: 'c1', categorie_id: null, emprunt_id: null, ventilee: false,
+    reglement_groupe: false, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+    created_at: '2026-01-07T09:00:00Z',
+  }
+  const TITRE = /Cotisations comptées à leur échéance/
+  function poserDecembre(prelevee: boolean) {
+    // La pièce d'achat de mars 2025 (120 €) reste, pour que 2025 ait toujours un résultat à reporter.
+    poser({}, [], [cotisation('c1', { echeance: '2025-12-05', montant_appele: 300, montant_verse: null })])
+    faux.parTable.lignes_bancaires = prelevee ? [PRELEVEE_EN_JANVIER] : []
+  }
+
+  it('compte une échéance de décembre prélevée en janvier dans l’exercice du prélèvement', async () => {
+    poserDecembre(true)
+    const en2025 = monter(2025)
+    const titre2025 = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre2025.parentElement!).getByText(/Déficit de 120 € : case 5QE/)
+    en2025.unmount()
+
+    monter(2026)
+    const titre2026 = await screen.findByText(/Report sur la déclaration des revenus 2026/)
+    within(titre2026.parentElement!).getByText(/Déficit de 300 € : case 5QE/)
+  })
+
+  it('sans prélèvement rapproché, elle compte à son échéance, et la carte le dit', async () => {
+    poserDecembre(false)
+    monter(2025)
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre.parentElement!).getByText(/Déficit de 420 € : case 5QE/)
+    expect(screen.getByText('Cotisations comptées à leur échéance (1)')).toBeTruthy()
+  })
+
+  it('se tait sur une échéance prélevée', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « l'écran dit la supposition » serait satisfait par un écran qui la dit
+    // toujours.
+    poserDecembre(true)
+    monter(2026)
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
+  })
+
+  it('propose l’exercice du prélèvement quand toutes les années sont affichées', async () => {
+    poserDecembre(true)
+    faux.parTable.pieces = []
+    render(
+      <AnneeProvider defaut="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="tresorerie" />
+      </AnneeProvider>,
+    )
+    await screen.findByText(/Report sur la déclaration des revenus 2026/)
+    expect(screen.queryByText(/Report sur la déclaration des revenus 2025/)).toBeNull()
+  })
+})
+
 // UN VIREMENT QUI RÈGLE PLUSIEURS PIÈCES (ligne 26) : chaque part est un paiement de sa pièce, et la 2035 la
 // compte à la date du virement, comme un rapprochement simple. Le virement ne porte aucune pièce — elles sont
 // dans ses parts, que l'écran doit LIRE : sans elles, les deux factures retomberaient sur leur date de facture.

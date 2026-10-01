@@ -429,6 +429,12 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // l'écran qui remplit la 2035, parce que c'est la seule chose qui distingue « payée en décembre » de
   // « facturée en décembre et payée on ne sait quand ».
   const sansPaiement = declarations.flatMap((d) => d.sansPaiementConnu.map((s) => ({ annee: d.annee, ...s })))
+  // Les échéances de cotisation qu'aucun prélèvement rapproché ne date : elles comptent à leur échéance,
+  // pour le versement saisi ou l'appel — une SUPPOSITION, dite comme celle des pièces ci-dessus
+  // (lib/cotisationRapprochee.ts). Seulement celles des exercices affichés.
+  const echeancesSansPaiement = comptees
+    .filter((c) => c.ligne === null && exercices.includes(anneeDe(c.date)))
+    .sort((x, y) => x.date.localeCompare(y.date))
 
   // LA CARTE DES POSTES MANQUANTS VIT DANS LES DEUX MODÈLES. En engagement la 2035 n'est pas produite,
   // mais le poste regroupe encore les recettes et les charges de la situation intermédiaire (onglet
@@ -665,6 +671,35 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
                       <td>{p.tiers ?? p.nom_fichier}</td>
                       <td>{formatDate(p.date_piece)}</td>
                       <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(montant)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        </div>
+      )}
+
+      {echeancesSansPaiement.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Cotisations comptées à leur échéance ({echeancesSansPaiement.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Aucun prélèvement rapproché ne paie ces échéances : elles comptent dans l'exercice de leur
+            échéance, pour le versement saisi ou l'appel. Une cotisation se déduit l'année où elle est
+            payée — rapprocher l'échéance de son prélèvement dans l'onglet Banque la compte à la date et
+            au montant du relevé, et l'écrit.
+          </p>
+          <details>
+            <summary>Voir les échéances</summary>
+            <div className="table-scroll">
+              <table>
+                <thead><tr><th>Exercice</th><th>Échéance</th><th style={{ textAlign: 'right' }}>Montant compté</th></tr></thead>
+                <tbody>
+                  {echeancesSansPaiement.map((c) => (
+                    <tr key={c.cotisation.id}>
+                      <td>{anneeDe(c.date)}</td>
+                      <td>{formatDate(c.date)}{c.cotisation.previsionnel ? ' (prévisionnelle)' : ''}</td>
+                      <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(c.montant)}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -255,6 +255,19 @@ describe('EstimationTab — la projection de l’année', () => {
   afterEach(() => {
     vi.useRealTimers()
     faux.cotisations = []
+    faux.paiements = []
+  })
+
+  it('une échéance compte au jour et pour le montant de son prélèvement (lib/cotisationRapprochee.ts)', async () => {
+    // Janvier prélevé 98 € au lieu de 100, mars prélevé le 25 — après le 20 : « à date », 98 + 100 (février).
+    const prelevement = (cotisationId: string, date: string, montant: number) => ({
+      id: `l-${cotisationId}`, dossier_id: 'dossier-de-test', date, libelle: 'PRLV URSSAF', montant, statut: 'rapprochee',
+      piece_id: null, cotisation_id: cotisationId, categorie_id: null, emprunt_id: null, ventilee: false, reglement_groupe: false,
+      prelevement_personnel: false, source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
+    })
+    faux.paiements = [prelevement('e0', '2026-01-06', -98), prelevement('e2', '2026-03-25', -100)]
+    await rendre()
+    expect(valeur('Cotisations appelées à date')).toBe('198,00 €')
   })
 
   it('ne ramène à douze mois que ce qui est échu, sur les mois réellement écoulés', async () => {

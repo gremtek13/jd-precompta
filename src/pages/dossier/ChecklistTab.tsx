@@ -9,6 +9,7 @@ import { rupturesPisteAudit } from '../../lib/pisteAudit'
 import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux } from '../../lib/affectationBanque'
 import { virementsPersonnelsAEcrire } from '../../lib/virementPersonnel'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
+import { cotisationsAEcrire, rapprochementsCotisationRefuses } from '../../lib/cotisationRapprochee'
 import type { Emprunt } from '../../lib/emprunts'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
@@ -328,6 +329,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Les virements personnels sans leur écriture — classés avant que ce classement s'écrive
   // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie.
   const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele)
+  // Les échéances de cotisation payées par un mouvement rapproché dont l'écriture manque ou n'est plus
+  // celle du rapprochement — rapprochées avant qu'il s'écrive, ou une CSG-CRDS saisie depuis
+  // (lib/cotisationRapprochee.ts). Elles ont l'air payées, et manquent au FEC comme à la trésorerie.
+  const cotisationsSansEcriture = cotisationsAEcrire(ecritures, lignes, cotisations, modele.mode)
+  // Un rapprochement d'échéance qui ne PEUT pas s'écrire — un encaissement rapproché d'un appel, posé
+  // quand l'écran ne regardait pas le sens : il ne date rien et n'a pas d'écriture.
+  const cotisationsRefusees = rapprochementsCotisationRefuses(lignes, cotisations, modele.mode)
   // Les échéances d'emprunt que le relevé COUVRE — du premier mouvement au dernier, moins la marge laissée
   // au prélèvement — et qu'aucun mouvement ne paie : leurs intérêts manquent aux comptes, et le
   // prélèvement attend quelque part dans le relevé. Hors de cette fenêtre, on ne réclame rien : avant le
@@ -479,6 +487,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     // « Erreur » comme une pièce validée sans catégorie : le virement a l'air traité — il est classé —,
     // donc plus personne ne le regarde, et il manque au FEC. L'onglet Virements les montre et les écrit.
     { id: 'virements-sans-ecriture', label: 'virement(s) personnel(s) sans écriture — absents du FEC et de la trésorerie', action: 'Écrire ces virements', nb: virementsAEcrire.length, cible: 'virements', severite: 'erreur' },
+    // « Erreur » pour la même raison : l'échéance a l'air payée, son prélèvement est rapproché, et rien ne
+    // l'écrit. L'onglet Cotisations les montre et les écrit.
+    { id: 'cotisations-sans-ecriture', label: 'échéance(s) de cotisation payée(s) dont l’écriture manque ou n’est plus à jour — absentes du FEC', action: 'Écrire ces échéances', nb: cotisationsSansEcriture.length, cible: 'cotisations', severite: 'erreur' },
+    // « Erreur » : un encaissement rapproché d'un appel compterait un remboursement comme une charge ; il
+    // ne s'écrit pas, et l'échéance reste comptée à sa date. Le geste est d'annuler le rapprochement.
+    { id: 'cotisations-rapprochement-refuse', label: 'rapprochement(s) d’une échéance de cotisation qui ne peuvent pas s’écrire', action: 'Annuler ces rapprochements', nb: cotisationsRefusees.length, cible: 'banque', severite: 'erreur', detail: 'Dans Banque, filtre « Rapprochés » : ils portent la pastille « Ne s’écrit pas ».' },
     // Avant les autres points d'Écritures : ceux-là disent qu'il MANQUE quelque chose, celui-ci que
     // le brouillon compte quelque chose de faux — une charge immobilisée y est comptée deux fois.
     { id: 'ecritures-sans-objet', label: 'écriture(s) que la pièce ne justifie plus', action: "Retirer l'écriture ou corriger la pièce", nb: ecrituresSansObjetDuDossier.length, cible: 'ecritures', severite: 'erreur' },
