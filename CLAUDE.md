@@ -276,6 +276,10 @@ supabase/
                   écriture, leur retrait et la suppression d'une échéance, par impersonation des trois
                   profils, à rejouer après toute migration qui touche ses trois fonctions, la table
                   cotisations_declarees ou les contraintes de lignes_bancaires.
+                  dotations.sql : la dotation aux amortissements d'un bien et son écriture, le retrait
+                  d'un bien avec ses dotations, par impersonation des trois profils, à rejouer après
+                  toute migration qui touche ses deux fonctions, le calcul de la base, les tables
+                  immobilisations et natures_immobilisation ou les contraintes d'ecritures_brouillon.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1333,6 +1337,14 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   prélèvement. L'onglet Cotisations dit quel mouvement paie chaque échéance et écrit celles qu'un
   rapprochement d'avant a laissées sans écriture. Voir « une échéance de cotisation rapprochée s'écrit »
   dans « Problèmes connus » (`lib/cotisationRapprochee.ts`).
+- **Les dotations aux amortissements s'écrivent (01/10/2026)**, ligne 26.6, étape (b), deuxième brique : la
+  dotation d'un bien est celle de la règle fiscale — prorata temporis depuis sa mise en service, le reliquat
+  après la durée —, et l'onglet Immobilisations l'écrit au brouillon au 31 décembre, le 681100 au débit et
+  le compte 28 que donne la nature du bien au crédit. Une nature porte son compte d'immobilisation, un bien
+  se modifie et déplie son tableau d'amortissement, et la Checklist réclame la dotation d'un exercice fini
+  qui manque. La case CH de la 2035, la situation intermédiaire, le FEC (journal des opérations diverses)
+  et la piste d'audit disent le même chiffre. Voir « les dotations aux amortissements s'écrivent » dans
+  « Problèmes connus » (`lib/amortissements.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1368,9 +1380,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   comptes ; un virement personnel s'écrit sur le compte du dirigeant (108 en trésorerie), une
   échéance d'emprunt sur ses trois comptes (164, 661, 616), et une recette d'un dossier assujetti porte
   le taux de TVA que le cabinet choisit. L'étape (b) a commencé le 01/10/2026 : une échéance de
-  cotisation rapprochée de son prélèvement s'écrit (646, et 108 pour sa CSG-CRDS en trésorerie). Restent
-  (b) les dotations, l'acquisition d'une immobilisation et le forfait kilométrique, (c) tirer la 2035 des
-  écritures ou l'y comparer, (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
+  cotisation rapprochée de son prélèvement s'écrit (646, et 108 pour sa CSG-CRDS en trésorerie), et les
+  dotations aux amortissements s'écrivent (681100 face au compte 28 de la nature du bien), prorata
+  temporis depuis la mise en service. Restent (b) l'acquisition d'une immobilisation et le forfait
+  kilométrique, (c) tirer la 2035 des écritures ou l'y comparer, (d) valider un exercice, (e) les
+  vingt-deux champs et Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -2788,7 +2802,11 @@ d'environnement dans la même édition.
   écrite dans une feuille « Pièces manquantes » du récapitulatif *et* remontée à l'écran.
   Auparavant l'Excel l'annonçait, le total la comptait, l'archive ne la contenait pas.
 - **ET UNE RÉSERVE QUI RENVOIE À UN BANDEAU QUI NE LA PORTE PAS N'EST PAS DITE NON PLUS**
-  (21/09/2026). `dotationPourAnnee` compte la dotation d'amortissement EN ENTIER dès l'année
+  (21/09/2026). **REMPLACÉ LE 01/10/2026** : la dotation est désormais celle de la règle fiscale, et elle
+  s'écrit (voir « les dotations aux amortissements s'écrivent ») ; `dotationPourAnnee`,
+  `dotationsNonProratisees`, `RESERVE_PRORATA_TEMPORIS` et la carte qui montrait l'écart n'existent plus.
+  Ce qui suit dit pourquoi le silence coûtait, et la règle tient : une réserve se dit là où le chiffre se
+  lit. `dotationPourAnnee` comptait la dotation d'amortissement EN ENTIER dès l'année
   d'acquisition ; l'amortissement fiscal se calcule **prorata temporis** depuis la mise en service,
   et le reliquat se déduit une année de plus, au-delà de la durée. La simplification est ASSUMÉE et
   écrite dans `types.ts` — le modèle ne porte pas de date de mise en service, et l'arbitrage reste
@@ -2832,6 +2850,9 @@ d'environnement dans la même édition.
   **Et `dansLaDuree` ne comparait que des ANNÉES** : un matériel acquis le 15 décembre était amorti
   en entier sur une situation arrêtée au 30 juin. Ce n'est pas une approximation de prorata, c'est
   une charge pour un bien qui n'existe pas encore à la date de l'état.
+  **DEPUIS LE 01/10/2026 LA PÉRIODE PART DE LA MISE EN SERVICE** (`dotationSurPeriode`, l'écart du cumul
+  entre la veille du début et la fin de la période) : la réserve « la fraction part du 1er janvier » qui
+  suit ne vaut plus, et l'année civile entière rend exactement la dotation de l'exercice.
   **CE N'EST PAS LA RÉSERVE CI-DESSUS, et la frontière est le point** : `RESERVE_PRORATA_TEMPORIS`
   porte sur la date de MISE EN SERVICE, absente du modèle, donc on SIGNALE sans corriger. Ici la
   longueur de la période est connue exactement et le document n'est pas signé : une charge rapportée
@@ -2929,7 +2950,7 @@ d'environnement dans la même édition.
   « observé sur une partie » est une moyenne juste dont l'assiette est plus courte que l'étiquette ne
   le laisse croire. Les fondre ferait porter à l'un la conséquence de l'autre — même raison que les
   DEUX bandeaux de `BandeauLecturePartielle`. Et la réserve est **rendue vide quand elle n'apprend
-  rien**, comme `dotationsNonProratisees`.
+  rien**, comme l'était `dotationsNonProratisees`.
   **Sept mutations mordent, et la DISCRIMINATION est le résultat** : le diviseur et les deux compteurs
   ne font tomber que des tests de module, le câblage de la modale Dettes & ratios ne fait tomber qu'un
   test d'écran — donc les deux câblages sont gardés séparément, là où une seule assertion aurait laissé
@@ -3115,7 +3136,7 @@ d'environnement dans la même édition.
   écrits en dur DANS le composant, donc hors de portée des tests et invisibles pour le moteur. Ils
   vivent désormais à côté du contrôle qui s'en sert (`partCsgNonDeductible`, lib/declaration2035.ts).
   **On signale, on ne corrige pas** — l'en-tête du moteur le dit (« il totalise, il ne déclare pas »),
-  et c'est le parti pris de `doublonFraisVehicules` comme de `dotationsNonProratisees`.
+  et c'est le parti pris de `doublonFraisVehicules` comme ce l'était de `dotationsNonProratisees`.
   **Deux états distincts, et c'est le cœur du contrôle** : ce qu'on sait chiffrer, et ce qu'on ne sait
   pas. Une cotisation sans ventilation ne vaut pas « zéro de CSG » — les confondre ferait annoncer
   « rien à réintégrer » sur un dossier qui n'a jamais renseigné le détail, **ce qui est le cas de toute
@@ -3553,18 +3574,18 @@ d'environnement dans la même édition.
   `piece_id: piece.id` — une immobilisation naît d'une pièce validée, jamais d'une saisie libre.
   Un `piece_id` nul ne peut donc venir que de la suppression de cette pièce.
   **CE QUE ÇA COÛTE, et c'est pire que les deux précédents** : `calculerDeclaration2035` totalise
-  `dotationPourAnnee` sur TOUTES les immobilisations sans regarder ce lien, donc la dotation part en
-  **case CH d'une 2035 SIGNÉE** alors que le justificatif n'existe plus — et son fichier non plus.
-  La piste d'audit ne peut rien en dire : elle part de l'écriture et du justificatif, et une
-  immobilisation n'y a **aucune ligne**. Le registre, lui, affichait la colonne « Dotation
-  annuelle » sans un mot sur le lien manquant.
+  la dotation (`dotationDeLExercice` depuis le 01/10/2026) sur TOUTES les immobilisations sans regarder ce
+  lien, donc elle part en **case CH d'une 2035 SIGNÉE** alors que le justificatif n'existe plus — et son
+  fichier non plus. La piste d'audit ne pouvait rien en dire tant qu'aucune dotation ne s'écrivait ;
+  depuis, la ligne d'une dotation dont le bien a perdu sa facture la nomme manquante. Le registre, lui,
+  affichait la colonne « Dotation annuelle » sans un mot sur le lien manquant.
   **LATENT, et mesuré** : 2 immobilisations en base, toutes deux rattachées.
   **ANNÉE-LIBRE DANS LE CONTRÔLE, CADRÉ SUR L'EXERCICE À CLÔTURE, et c'est la moitié qui se raconte
   mal** : un bien détaché l'est quelle que soit l'année, donc la Checklist le compte sur le dossier
   entier ; mais sa CONSÉQUENCE est datée — un bien amorti jusqu'en 2019 n'envoie plus rien en case CH
   de la 2035 de 2025, et le signaler là serait crier au loup sur le document qu'on signe. D'où le
-  filtre `dotationPourAnnee(i, d.annee) > 0` **dans l'écran et pas dans le contrôle**.
-  Trois écrans, comme `dotationsNonProratisees` dont c'est le précédent exact : pastille sur la ligne
+  filtre `dotationDeLExercice(i, d.annee) > 0` **dans l'écran et pas dans le contrôle**.
+  Trois écrans, comme `dotationsNonProratisees` (retirée depuis) dont c'était le précédent exact : pastille sur la ligne
   du registre, point « erreur » en Checklist (cible `immobilisations`), et carte chiffrée à Clôture,
   là où la déclaration se produit.
   **ET LES DEUX JEUX D'ESSAI DES ÉCRANS CONCERNÉS ÉTAIENT INFIDÈLES DE LA MÊME FAÇON** :
@@ -3664,8 +3685,8 @@ d'environnement dans la même édition.
   valeurs absolues 7 500 € — identiques), 0 au statut inattendu, 0 portant un lien. Le correctif ne
   change donc aucun chiffre existant.
   **ON NE TRANCHE PAS CE QU'EST UN APPORT** : on l'écarte d'un total qui ne le désigne pas, et on le
-  DIT — la mention étant **rendue vide quand elle n'apprend rien**, comme `dotationsNonProratisees` et
-  `reserveSurMoyenne`. Depuis le 29/09/2026 le virement s'ÉCRIT sur le compte du dirigeant (voir « un
+  DIT — la mention étant **rendue vide quand elle n'apprend rien**, comme l'était `dotationsNonProratisees`
+  et comme `reserveSurMoyenne`. Depuis le 29/09/2026 le virement s'ÉCRIT sur le compte du dirigeant (voir « un
   virement personnel s'écrit sur le compte du dirigeant »), et c'est le SIGNE du mouvement qui décide
   du sens : un apport crédite ce compte, un prélèvement le débite. La mention le dit, et rappelle
   qu'un encaissement classé là par erreur manquerait aux recettes.
@@ -5858,6 +5879,116 @@ d'environnement dans la même édition.
   liasse, que l'application ne produit pas — un traitement à confirmer avec l'expert-comptable du cabinet ; et
   une échéance supprimée hors de l'application laisse encore son mouvement « rapproché » sans justificatif, ce
   que `mouvementsRapprochesSansObjet` signale.
+- **LES DOTATIONS AUX AMORTISSEMENTS S'ÉCRIVENT, AU CALCUL DE LA RÈGLE FISCALE — LIGNE 26.6, ÉTAPE (B),
+  DEUXIÈME BRIQUE** (01/10/2026, `lib/amortissements.ts`). La 2035 comptait la dotation d'un bien en case CH
+  depuis le registre, et rien ne l'écrivait : ni 681100 ni compte 28 au brouillon, donc rien au FEC — un
+  vérificateur qui additionne le fichier ne retrouvait pas la déclaration. Et le chiffre était connu pour
+  faux : l'annuité PLEINE dès l'année d'acquisition, sous une réserve qui disait de la reprendre à la main
+  avant de signer (voir « une réserve qui renvoie à un bandeau », remplacée par ce qui suit). L'écrire tel
+  quel au FEC aurait gravé une dotation fausse : le calcul a changé d'abord.
+  **LE CALCUL EST CELUI DE LA RÈGLE FISCALE** : linéaire, prorata temporis depuis la MISE EN SERVICE (sinon
+  l'acquisition), en mois de trente jours (30/360, le 31 compté comme le 30), le reliquat déduit une année
+  de plus, après la durée. **Le cumul s'arrondit, pas l'annuité** : l'amortissement cumulé au soir d'un jour
+  vaut la valeur × les jours en service ÷ (360 × la durée), au centime, le demi-centime vers le haut,
+  plafonné à la valeur ; la dotation d'un exercice est l'écart de deux cumuls au 31 décembre. Leur somme
+  fait donc EXACTEMENT la valeur, sans dernière annuité qui rattrape les arrondis. 12 000 € sur 5 ans mis en
+  service le 1er juillet 2025 : 1 200 € en 2025, 2 400 € de 2026 à 2029, 1 200 € en 2030.
+  **LE MÊME CALCUL EN BASE, EN ENTIERS** (`amortissement_cumule_centimes`, `dotation_amortissement`) : la base
+  REFAIT le calcul et refuse une écriture qui ne vaut pas sa dotation au centime — un arrondi qui différerait
+  d'un centime d'un côté ferait refuser une écriture juste. D'où des centimes en BigInt dans l'application,
+  comme le `bigint` de la base, et une valeur de bien au centime, contrainte en base
+  (`immobilisations_valeur_au_centime`). La parité est éprouvée sur une table relevée en base.
+  **Le modèle** (migration `dotations_aux_amortissements`) : la NATURE porte son compte d'immobilisation
+  (`compte_immobilisation`, classe 20 ou 21, six chiffres — les huit natures du cabinet ont reçu celui que
+  leur libellé désigne), et le compte d'amortissement s'en déduit, 28 suivi du compte sans son 2 (218300 →
+  281830). Un bien porte sa mise en service (`date_mise_en_service`, nulle : l'acquisition). L'écriture d'une
+  dotation désigne son bien (`ecritures_brouillon.immobilisation_id`, clé SANS action à la suppression), ne
+  porte ni pièce ni mouvement et tombe au 31 décembre : deux contraintes le tiennent.
+  **La dotation et son écriture partent ENSEMBLE**, par `ecrire_dotation_amortissement` : l'écriture est
+  composée par l'application (`ecritureDeLaDotation`), comparée en multiensemble au calcul de la base, et
+  remplace celle de l'exercice ; une dotation devenue nulle retire celle qui était écrite.
+  `retirer_immobilisation` retire un bien ET ses dotations. Toutes deux sont `SECURITY INVOKER`, vérifient
+  `admin_du_dossier` et refusent une dotation validée, un exercice à venir (l'année lue à Paris), un exercice
+  antérieur à l'ouverture du dossier — son amortissement est dans les à-nouveaux — et un bien sans nature.
+  `supabase/essais/dotations.sql` : 30 contrôles par impersonation des trois profils, dont le contrôle
+  POSITIF du chef, chaque refus jugé à sa raison, ce que les contraintes tiennent seules, et que rien ne
+  reste ; sans le `set local role anon`, ses contrôles 1 et 2 virent au rouge. Ce qu'il ne peut pas jouer
+  sans une instruction de suppression — qu'un bien qui porte une dotation ne se supprime pas directement, et
+  que la suppression d'un dossier passe — est lu au catalogue, et annoncé comme tel. L'export porte 75
+  migrations, le socle 72 instructions, l'inventaire 886 objets, et la sauvegarde la nouvelle relation.
+  **RIEN NE S'ÉCRIT SANS CLIC** : l'onglet Immobilisations compare chaque exercice du tableau d'amortissement
+  de chaque bien au brouillon (`dotationsDuRegistre` : à écrire, à réécrire, à retirer, écrite, ou validée
+  et divergente), et « Écrire les N » les écrit une à une par la base, un refus n'interrompant pas le lot.
+  Un seul verrou tient l'écriture des dotations, la modification et le retrait d'un bien — modifié pendant
+  le lot, un bien verrait sa dotation écrite d'après l'ancien registre —, et il se relâche après la
+  relecture. Une lecture partielle des dotations, des natures ou de l'ouverture suspend l'écriture. La
+  dotation de l'exercice EN COURS s'écrit dès aujourd'hui sans être réclamée ; un bien sans nature dit
+  pourquoi la sienne ne s'écrit pas ; une dotation validée qui diverge se dit sans se réécrire.
+  **L'écran** : la nature d'une candidate se choisit avant de l'enregistrer, puisqu'elle donne le compte 28 ;
+  une nature propre au dossier s'ajoute avec son compte (`refusNature`) ; un bien se MODIFIE — libellé,
+  nature, valeur, acquisition, mise en service, durée (`refusBien`, et une seule lecture de la valeur
+  saisie, `valeurSaisie`, pour le refus et pour l'écriture) — sans que ses dotations se réécrivent d'elles-
+  mêmes : elles paraissent « à réécrire » ; chaque bien déplie son tableau d'amortissement, exercice par
+  exercice avec l'état de son écriture (« Dans les à-nouveaux » avant l'ouverture, « À venir » après
+  l'exercice en cours) ; et le retrait d'un bien passe par la base, nomme les exercices des dotations qui
+  partent avec lui — sauf sur une lecture partielle, où il dit que leur liste n'a pas pu être lue — et se
+  refuse avant de demander quand l'une est validée. **Le sélecteur d'exercice a changé de sens** : il
+  filtrait sur l'année d'ACQUISITION, ce qui ne disait rien d'une dotation — un bien de 2023 a la sienne en
+  2025 ; il montre désormais les biens acquis jusqu'à l'exercice choisi, avec leur dotation de cet exercice,
+  celle que la case CH totalise.
+  **Ce qui le compte** : la 2035 (`dotationDeLExercice`, case CH), la situation intermédiaire, les ratios et
+  le prévisionnel (`dotationSurPeriode` : l'écart du cumul entre la veille du début et la fin de la période,
+  donc depuis la mise en service et non plus depuis le 1er janvier) ; le FEC, une écriture par bien et par
+  exercice au journal des OPÉRATIONS DIVERSES (OD), au 31 décembre, « Tableau d'amortissement <année> »
+  pour pièce ; la piste d'audit, le tableau d'amortissement pour justificatif et la facture d'acquisition
+  pour preuve, son empreinte comprise ; et la balance des comptes comme le FEC nomment le 681100 et les
+  comptes 28 (`libelleCompteTenu` : un seul libellé par numéro, celui d'un compte 28 ouvert par la balance
+  reprise compris). Les ruptures de la piste d'audit et `absenceFec` ne comptent pas une dotation : son bien
+  ne tombe jamais à nul sous elle.
+  **ET LA PISTE D'AUDIT CHERCHAIT D'ABORD LA FACTURE AU MAUVAIS ENDROIT** — trouvé en l'écrivant : parmi les
+  pièces de l'EXERCICE exporté. Or un bien acheté en 2025 s'amortit encore en 2026, et sa facture est la
+  preuve de sa dotation 2026 : cherchée là, elle aurait manqué à chaque exercice après le premier, et chaque
+  dotation aurait annoncé « facture d'acquisition hors du jeu chargé ». Le registre (`RegistreAudit`) arrive
+  avec TOUTES les pièces validées, en paramètre obligatoire.
+  **La Checklist** réclame, en erreur, la dotation d'un exercice FINI qui n'est pas écrite, et toute dotation
+  écrite qui ne suit plus le registre (`dotationsEnDefaut`) — la 2035 la compte depuis le registre, le FEC
+  depuis le brouillon : sans elle, les deux livrables diffèrent de la case CH. Elle nomme les exercices, mène
+  à Immobilisations, et se tait sur une lecture partielle de l'ouverture plutôt que de réclamer un exercice
+  repris.
+  **La carte « Première annuité d'amortissement à reprendre »** de Clôture et d'Immobilisations
+  (`dotationsNonProratisees`, `RESERVE_PRORATA_TEMPORIS`) **disparaît** : l'écart qu'elle chiffrait n'existe
+  plus.
+  **L'assistant, version 38** : `points_a_traiter` rend le point de la Checklist (bloc `── DÉBUT/FIN
+  AMORTISSEMENT` : rang 360, cumul au centime, compte 28 tiré de la nature, états), et le prompt dit qu'une
+  dotation au 681100 face au 28, sans pièce ni mouvement, n'est pas une anomalie.
+  `agentComptableAmortissement.test.ts` compare la copie à `src/lib` et y plante des dérives. Déployée avec
+  `verify_jwt` relu et repassé à `false`, la v37 comparée au dépôt avant écrasement (identique), aller-retour
+  après : zéro différence sur 2 085 lignes, et le 401 de la fonction sans session. Aucun appel au modèle.
+  **Le banc** sert un registre fictif cohérent avec la reprise du cabinet infirmier (dotations 2022 à 2025
+  dans les à-nouveaux, 2026 à écrire), un bien sans nature sur le dossier assujetti et une dotation 2025
+  manquante en engagement. Les captures ont trouvé deux défauts d'affichage : « 10 ans » passait à la ligne
+  dans le registre, et le tableau des candidates se comprimait sur téléphone jusqu'à couper son bouton — il
+  se replie désormais en fiche empilée (`table-formulaire`). `debordements.mjs` gagne cinq visites (le tableau
+  d'amortissement, le formulaire de modification et celui d'une nature, qui ne paraissent qu'après un clic,
+  puis les dossiers assujetti et en engagement) : 0 débordement aux quatre largeurs.
+  **LATENT, et mesuré** (01/10/2026) : deux biens en base, dans deux bacs à sable abandonnés, dont un sans
+  nature ; aucune mise en service saisie, aucune écriture de dotation, et le dossier `test` n'en porte aucun.
+  **Quatre-vingt-quinze mutations, quatre-vingt-quatorze mordent — la première passe n'en tuait que
+  quatre-vingt-cinq sur quatre-vingt-quatorze.** Sept survivantes accusaient des tests absents, tous écrits :
+  une dotation écrite que la Checklist réclamerait, deux exercices d'un même bien réunis en une écriture du
+  FEC, les natures du cabinet non lues par la Checklist — son faux client acceptait le filtre sans
+  l'appliquer, il l'applique désormais aux natures (`src/test/filtresPostgrest.ts`) —, une mise en service
+  effacée écrite en texte vide, le refus d'une modification tu, et deux verrous que rien n'éprouvait, celui
+  d'une nature (trois envois en ajoutaient trois) et celui du retrait d'un bien. La huitième — la virgule de
+  la valeur ignorée à l'enregistrement — ne pouvait pas mordre par l'écran, le champ étant numérique : la
+  valeur se lit désormais par une seule fonction pour le refus et pour l'écriture (`valeurSaisie`), que le
+  module éprouve, un champ vide ne valant pas zéro. **Une survit, et c'est dit** : une dotation validée
+  envoyée à la base — `refusDotation` la refuse toujours avant, donc l'écran ne l'envoie jamais.
+  **CE QUI RESTE, dit plutôt que promis** : l'ACQUISITION d'un bien n'a toujours pas d'écriture — la facture
+  d'une immobilisation ne produit aucune ligne, et le FEC porte l'amortissement d'un bien qu'il n'a jamais
+  vu entrer (étape b3) ; la cession ou la mise au rebut d'un bien, avec sa valeur nette comptable et sa plus
+  ou moins-value, ne sont pas modélisées, ni l'amortissement dégressif ; le seuil de 500 € reste fixe ; et
+  l'exercice reste l'année civile.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -7267,7 +7398,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3402 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3536 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -7293,7 +7424,9 @@ affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent c
 le règlement de plusieurs pièces par un virement (`reglementGroupe.ts`), la TVA d'une recette
 encaissée sans facture sur un dossier assujetti (`tvaDuReleve.ts`, contre la fonction de la base),
 l'écriture d'une échéance de cotisation payée par le relevé et la date à laquelle elle compte
-(`cotisationRapprochee.ts`), et ce que la connexion bancaire décide sans rien appeler — la période
+(`cotisationRapprochee.ts`), la dotation aux amortissements d'un bien, prorata temporis depuis sa mise
+en service et au centime du calcul de la base (`amortissements.ts`), et ce que la connexion bancaire
+décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
 `tsc -b` les type-vérifie avec le reste.

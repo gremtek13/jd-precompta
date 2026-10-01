@@ -24,6 +24,8 @@ const faux = vi.hoisted(() => ({
   // L'erreur que rend la base à une insertion — telle que supabase-js la rend : un objet NU, jamais une
   // instance d'`Error` (voir lib/messageErreur.ts).
   refusInsertion: null as Record<string, unknown> | null,
+  // L'erreur que rend la base à une modification du registre.
+  refusModification: null as Record<string, unknown> | null,
   inserees: [] as { table: string; valeur: Record<string, unknown> }[],
   modifiees: [] as { table: string; valeur: Record<string, unknown> }[],
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
@@ -96,6 +98,7 @@ vi.mock('../../lib/supabase', async () => {
               return Promise.resolve({ data: null, error: faux.refusInsertion, count: 0 }).then(suite)
             }
             if (operation === 'update') {
+              if (faux.refusModification) return Promise.resolve({ data: null, error: faux.refusModification, count: 0 }).then(suite)
               if (table === 'immobilisations') {
                 faux.immobilisations = faux.immobilisations.map((i) =>
                   predicats.every((p) => p(i as unknown as Record<string, unknown>)) ? { ...i, ...valeur } : i)
@@ -163,6 +166,7 @@ function poser(immos: Immobilisation[], o: { pieces?: Piece[]; ecritures?: Ecrit
   faux.aNouveaux = o.ouverture ? [{ id: 'an-1', dossier_id: 'dossier-de-test', date: o.ouverture }] : []
   faux.muetApres = {}
   faux.refusInsertion = null
+  faux.refusModification = null
   faux.inserees = []
   faux.modifiees = []
   faux.rpcs = []
@@ -502,6 +506,20 @@ describe('ImmobilisationsTab — retirer un bien', () => {
     expect(faux.rpcs).toHaveLength(0)
   })
 
+  // Trois clics rapprochés ne retirent qu'une fois : le deuxième retrait ne trouverait plus le bien, et
+  // dirait un échec sur un retrait réussi. Le verrou est le même que celui de l'écriture des dotations.
+  it('trois clics rapprochés ne retirent qu’une fois', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    poser([immobilisation()])
+    monter()
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+
+    const bouton = within(registre().getByText('Ordinateur').closest('tr')!).getByRole('button', { name: 'Retirer' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    await screen.findByText("Aucune immobilisation enregistrée pour l'instant.")
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_immobilisation', args: { p_immobilisation_id: 'i-1' } }])
+  })
+
   it('dit le refus de la base', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     poser([immobilisation()])
@@ -554,6 +572,33 @@ describe('ImmobilisationsTab — modifier un bien', () => {
     carte().getByText(euros('600,00'))
     expect(faux.rpcs).toHaveLength(0)
   })
+
+  // UNE MISE EN SERVICE EFFACÉE S'ÉCRIT ABSENTE, pas en texte vide : la base refuserait '' pour une date, et
+  // l'amortissement doit repartir de l'acquisition.
+  it('écrit une mise en service effacée comme absente', async () => {
+    poser([immobilisation({ date_mise_en_service: '2025-10-01' })])
+    monter()
+    const formulaire = await ouvrir()
+
+    fireEvent.change(formulaire.getByLabelText('Mise en service'), { target: { value: '' } })
+    fireEvent.click(formulaire.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(faux.modifiees).toHaveLength(1))
+    expect(faux.modifiees[0].valeur.date_mise_en_service).toBeNull()
+  })
+
+  // Le refus de la base se DIT, et le formulaire reste ouvert sur la saisie : le bien n'a pas changé, et
+  // fermer le formulaire sans un mot ferait croire le contraire.
+  it('dit le refus de la base, et garde la saisie', async () => {
+    poser([immobilisation()])
+    faux.refusModification = { message: 'la valeur doit être au centime' }
+    monter()
+    const formulaire = await ouvrir()
+
+    fireEvent.change(formulaire.getByLabelText('Durée (années)'), { target: { value: '4' } })
+    fireEvent.click(formulaire.getByRole('button', { name: 'Enregistrer' }))
+    await screen.findByText('Le bien n’a pas pu être modifié : la valeur doit être au centime')
+    expect(screen.getByRole('form', { name: 'Modifier Ordinateur' })).toBeDefined()
+  })
 })
 
 describe('ImmobilisationsTab — natures et comptes', () => {
@@ -591,6 +636,22 @@ describe('ImmobilisationsTab — natures et comptes', () => {
       valeur: { dossier_id: 'dossier-de-test', libelle: 'Matériel médical', duree_annees_defaut: 7, compte_immobilisation: '215400' },
     })
     await waitFor(() => expect(screen.queryByRole('form', { name: 'Ajouter une nature' })).toBeNull())
+  })
+
+  // Trois envois rapprochés — trois clics, ou « Entrée » trois fois dans un champ — n'ajoutent qu'une nature :
+  // le bouton n'est pas grisé pendant l'envoi, c'est le verrou qui tient.
+  it('trois envois rapprochés n’ajoutent qu’une nature', async () => {
+    poser([])
+    monter()
+    fireEvent.click(await screen.findByRole('button', { name: '+ Nature' }))
+    const formulaire = within(screen.getByRole('form', { name: 'Ajouter une nature' }))
+    fireEvent.change(formulaire.getByLabelText('Nom'), { target: { value: 'Matériel médical' } })
+    fireEvent.change(formulaire.getByLabelText('Compte d’immobilisation'), { target: { value: '215400' } })
+
+    const bouton = formulaire.getByRole('button', { name: 'Ajouter' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Ajouter une nature' })).toBeNull())
+    expect(faux.inserees).toHaveLength(1)
   })
 })
 

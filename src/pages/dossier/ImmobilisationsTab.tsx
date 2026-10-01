@@ -4,7 +4,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, aujourdHuiSql, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
 import {
   compteAmortissement, dateDeLaDotation, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, planAmortissement, refusBien,
-  refusNature,
+  refusNature, valeurSaisie,
   type DotationDuRegistre, type EtatDotation,
 } from '../../lib/amortissements'
 import { immobilisationSansJustificatif } from '../../lib/controles'
@@ -351,7 +351,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
       const { error: erreurModification } = await supabase.from('immobilisations').update({
         libelle: b.libelle.trim(),
         nature_id: b.natureId || null,
-        valeur: Math.round(Number(b.valeur.replace(',', '.')) * 100) / 100,
+        valeur: Math.round(valeurSaisie(b.valeur) * 100) / 100,
         date_acquisition: b.dateAcquisition,
         date_mise_en_service: b.dateMiseEnService || null,
         duree_annees: Number(b.duree),
