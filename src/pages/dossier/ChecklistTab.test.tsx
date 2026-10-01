@@ -969,6 +969,25 @@ describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () =
     expect(screen.queryAllByText(/sur un dossier assujetti/)).toHaveLength(0)
   })
 
+  it('sur un dossier assujetti, la part de recette écrite avec sa TVA suit ses parts', async () => {
+    // L'écriture que la base a vérifiée : la recette au hors taxe, la TVA collectée à côté. Comparée à une
+    // écriture attendue sans TVA — le statut du dossier oublié —, elle serait « à réécrire » à tort.
+    const encaissement = ventile({ libelle: 'REMISE CB', montant: 4950 })
+    const parts = [{ ...part('v1', 'cat-recettes', 5000), taux_tva: 20 }, part('v2', 'cat-tel', -50)]
+    const ecritures = [
+      ecritureDe({ id: 'e1', compte: '706000', libelle: 'REMISE CB', montant: 4166.67, sens: 'credit' }),
+      ecritureDe({ id: 'e2', compte: '445710', libelle: 'REMISE CB', montant: 833.33, sens: 'credit' }),
+      ecritureDe({ id: 'e3', compte: '626000', libelle: 'REMISE CB', montant: 50 }),
+      ecritureDe({ id: 'e4', compte: '512000', libelle: 'REMISE CB', montant: 4950 }),
+    ]
+    poser({ lignes: [encaissement, aTraiter()], categories: [RECETTES, TELEPHONE], ecritures, ventilations: parts })
+    monter(true)
+    // Ancré sur un point que ce jeu d'essai déclenche forcément.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/ne suit plus les parts/)).toHaveLength(0)
+    expect(screen.queryAllByText(/sur un dossier assujetti/)).toHaveLength(0)
+  })
+
   it('compte la catégorie sans poste 2035 qu’une part désigne', async () => {
     poser({ lignes: [ventile()], categories: [{ ...TELEPHONE, poste_2035: null }], ecritures: ECRITURE, ventilations: PARTS })
     monter()

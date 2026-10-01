@@ -1317,6 +1317,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   à la date du virement, dans la 2035 comme dans la CA3, et son écriture reçoit sa contrepartie banque.
   Au passage, une pièce payée en plusieurs fois reçoit enfin une contrepartie par paiement. Voir « un
   virement règle plusieurs pièces » dans « Problèmes connus » (`lib/reglementGroupe.ts`).
+- **Une recette du relevé d'un dossier assujetti porte son taux de TVA (01/10/2026)**, ligne 26.6, étape
+  (a), fin : sur un dossier assujetti, une recette encaissée sans facture au dossier s'affecte ou se
+  ventile en choisissant son taux — 20, 10, 5,5, 8,5 % ou exonérée —, qui n'est jamais deviné. Sa
+  catégorie reçoit le hors taxe et le 445710 la TVA collectée ; la 2035 ne compte que le hors taxe, et la
+  CA3 la compte à son encaissement. Voir « une recette du relevé d'un dossier assujetti porte son taux »
+  dans « Problèmes connus » (`lib/tvaDuReleve.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1346,12 +1352,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   vingt-deux champs d'un BNC en comptabilité de trésorerie (que l'outil de la DGFiP n'exige pas) et les
   montants en devise, qui attendent la réponse de l'expert-comptable du cabinet — voir « le FEC suit
   l'article A47 A-1 » dans « Problèmes connus ».
-- Tenir toute la comptabilité d'un BNC (ligne 26.6) : l'étape (a) est livrée EN PARTIE (29 et
-  30/09/2026) — un mouvement sans justificatif s'affecte à une catégorie de charge ou de produit, un
+- Tenir toute la comptabilité d'un BNC (ligne 26.6) : l'étape (a) est livrée (du 29/09 au
+  01/10/2026) — un mouvement sans justificatif s'affecte à une catégorie de charge ou de produit, un
   par un depuis sa fiche ou en lot par des règles apprises par libellé, ou se ventile sur plusieurs
-  comptes ; un virement personnel s'écrit sur le compte du dirigeant (108 en trésorerie), et une
-  échéance d'emprunt sur ses trois comptes (164, 661, 616). Reste pour (a) : les recettes d'un dossier
-  assujetti, dont la TVA ne se lit pas sur un relevé. Puis (b) écrire les cotisations, les dotations,
+  comptes ; un virement personnel s'écrit sur le compte du dirigeant (108 en trésorerie), une
+  échéance d'emprunt sur ses trois comptes (164, 661, 616), et une recette d'un dossier assujetti porte
+  le taux de TVA que le cabinet choisit. Restent (b) écrire les cotisations, les dotations,
   l'acquisition d'une immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y
   comparer, (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
@@ -4928,9 +4934,11 @@ d'environnement dans la même édition.
   devise sans TVA payés dans la période), le coefficient de déduction (il le signale dès qu'une recette
   va en E2), les exclusions du droit à déduction, les taux particuliers, le remboursement d'un crédit,
   les taxes assimilées, la régularisation, et les factures émises dans l'application — une recette
-  n'est comptée que si son justificatif est dans Justificatifs, comme pour la 2035.
-  **UNE LECTURE PARTIELLE SUSPEND L'ENREGISTREMENT** (pièces, paiements, immobilisations, et
-  l'historique, dont dépend le crédit proposé), et le verrou tient jusqu'à la relecture : relâché
+  n'est comptée que si son justificatif est dans Justificatifs, ou, depuis le 01/10/2026, si son
+  encaissement est affecté ou ventilé depuis le relevé avec son taux, comme pour la 2035 (voir « une
+  recette du relevé d'un dossier assujetti porte son taux »).
+  **UNE LECTURE PARTIELLE SUSPEND L'ENREGISTREMENT** (pièces, paiements, immobilisations, catégories et
+  parts ventilées, et l'historique, dont dépend le crédit proposé), et le verrou tient jusqu'à la relecture : relâché
   avant, un second clic enregistrerait la même déclaration, la mention « déjà déposée » n'étant pas
   revenue. Le chargement se fait sans état posé dans l'effet, sur le modèle de `VoletSocialCard` : le
   lint ne compte pas un avertissement de plus.
@@ -5126,11 +5134,13 @@ d'environnement dans la même édition.
   diminuerait les dépenses au lieu d'augmenter les recettes — un résultat juste, une 2035 fausse sur
   deux lignes.
   **Refusé, et dit avant le clic** (la base refait les mêmes refus) : un mouvement déjà rapproché ou
-  classé en virement personnel, une catégorie sans compte de résultat, un mouvement de zéro euro, et
-  UNE RECETTE SUR UN DOSSIER ASSUJETTI — sa TVA ne se lit pas sur un relevé, et l'écrire au TTC en 706
-  compterait la taxe en chiffre d'affaires sans qu'aucune CA3 la voie. Un dossier qui le DEVIENT garde
-  ses recettes affectées : la Checklist les montre, et le geste est de rapprocher leur facture à la
-  place.
+  classé en virement personnel, une catégorie sans compte de résultat et un mouvement de zéro euro. UNE
+  RECETTE SUR UN DOSSIER ASSUJETTI l'a d'abord été aussi — sa TVA ne se lit pas sur un relevé, et
+  l'écrire au TTC en 706 compterait la taxe en chiffre d'affaires sans qu'aucune CA3 la voie ; depuis le
+  01/10/2026 elle s'affecte avec le taux que le cabinet choisit (voir « une recette du relevé d'un
+  dossier assujetti porte son taux »). Un dossier qui le DEVIENT garde ses recettes affectées sans
+  taux : la Checklist les montre, et le geste est de choisir leur taux — ou de rapprocher leur facture
+  à la place.
   **Ce qui le compte, usage par usage** — toujours à la date du MOUVEMENT, et par un paramètre
   OBLIGATOIRE, sans valeur par défaut : l'oublier rendrait la 2035 d'un infirmier presque sans
   recettes. La 2035 (`nbMouvements` à part de `nbPieces`, pour ne pas faire chercher des pièces qui
@@ -5149,7 +5159,7 @@ d'environnement dans la même édition.
   ne sert qu'au relevé compte dans les comptes et les postes manquants ; et la Checklist gagne deux
   points — le mouvement dont l'écriture ne suit plus sa catégorie (son compte a changé depuis : le
   défaut d'une pièce recatégorisée, invisible de même puisque les totaux ne bougent pas, et
-  « Réaffecter », dans Écritures, la réécrit) et la recette affectée d'un dossier assujetti.
+  « Réaffecter », dans Écritures, la réécrit) et la recette affectée sans taux d'un dossier assujetti.
   **L'écran** : dans la fiche d'un mouvement, sous « Sans justificatif », les catégories de résultat
   dans l'ordre du sens (les recettes d'abord pour un encaissement), et l'affectation ne part QU'AU CLIC
   sur « Affecter » — sur une liste déroulante qui a le focus, les flèches du clavier changent la
@@ -5490,8 +5500,8 @@ d'environnement dans la même édition.
   invisible de même, les totaux ne bougeant pas), qui mène à Écritures, où « Réécrire » la reprend depuis
   les mêmes parts par la même fonction ; et la ventilation dont les parts ne font plus le mouvement
   (défensif), qui mène à Banque et se TAIT sur une lecture partielle des parts — une part non lue ferait
-  passer sa ventilation pour incohérente. Une recette ventilée sur un dossier devenu assujetti rejoint le
-  point des encaissements affectés en recette. Écritures, lui, ne propose AUCUNE réécriture sur une
+  passer sa ventilation pour incohérente. Une part de recette sans taux sur un dossier assujetti rejoint
+  le point des encaissements affectés en recette sans taux. Écritures, lui, ne propose AUCUNE réécriture sur une
   lecture partielle des parts, même pour un mouvement dont toutes les parts ont été lues : c'est
   l'ensemble qui décide de ce qui est périmé.
   **L'assistant, version 32** : `points_a_traiter` rend les deux points de la Checklist, compte les
@@ -5516,9 +5526,10 @@ d'environnement dans la même édition.
   sur un refus — sa jumelle mord.
   **CE QUI RESTE, dit plutôt que promis** : aucune règle ne propose de ventilation — une règle
   d'affectation met un mouvement dans UNE catégorie, et le lot ne touche jamais un mouvement ventilé,
-  qui n'est plus « à traiter » ; la TVA d'une part n'est pas ventilée — sur un dossier assujetti, une
-  recette ne se ventile pas et une dépense passe TTC en charge, comme une affectation ; et le plan de
-  trésorerie compte un mouvement ventilé en entier, comme tout mouvement.
+  qui n'est plus « à traiter » ; sur un dossier assujetti, une part de DÉPENSE passe TTC en charge, comme
+  une affectation — sa TVA déductible demande une facture —, quand une part de recette porte son taux
+  depuis le 01/10/2026 ; et le plan de trésorerie compte un mouvement ventilé en entier, comme tout
+  mouvement.
 - **UN VIREMENT RÈGLE PLUSIEURS PIÈCES — LIGNE 26** (30/09/2026, `lib/reglementGroupe.ts`). Un mouvement
   ne se rapprochait que d'UNE pièce (`lignes_bancaires.piece_id`). Un virement fournisseur qui solde trois
   factures, un règlement client qui en paie deux, un avoir déduit d'un paiement : les autres pièces
@@ -5661,6 +5672,86 @@ d'environnement dans la même édition.
   **CE QUI RESTE, dit plutôt que promis** : aucun moteur ne propose de regroupement (voir plus haut) ; le
   lettrage (ligne 32) n'est pas produit ; et en engagement, une part qui diffère de sa facture sous l'écart
   d'alignement reste absorbée comme au rapprochement simple, sans écriture de frais ni d'écart de change.
+- **UNE RECETTE DU RELEVÉ D'UN DOSSIER ASSUJETTI PORTE SON TAUX — LIGNE 26.6, ÉTAPE (A), FIN**
+  (01/10/2026, `lib/tvaDuReleve.ts`). L'affectation et la ventilation REFUSAIENT une recette sur un dossier
+  assujetti : sa TVA ne se lit pas sur un relevé, et l'écrire au TTC en 706 aurait compté la taxe en chiffre
+  d'affaires sans qu'aucune CA3 la voie. Un client qui vire, un organisme qui règle, sans facture au dossier :
+  sur un dossier assujetti, rien de cela ne s'écrivait, et l'étape (a) restait ouverte sur ce seul point.
+  **Le taux se choisit, il ne se devine jamais** : 20, 10, 5,5 ou 8,5 %, ou « exonérée » (zéro) — les actes de
+  soins d'un praticien dont une autre activité est taxée, une recette non imposable. 2,1 % n'en est pas : sa
+  ligne de la CA3 dépend du territoire (T6, 11 ou T4), et c'est une facture qui le dit, pas un relevé. Le taux
+  se GARDE sur le mouvement, sur la part ventilée et sur la règle d'affectation, que le lot reprend ; une
+  règle de recette sans taux ne range rien sur un dossier assujetti, et le lot dit pourquoi.
+  **La TVA se calcule sur le montant encaissé, qui est TTC** : TTC × taux / (100 + taux), au centime, le
+  demi-centime vers le haut — en arithmétique ENTIÈRE, des centimes et des dixièmes de point, la même dans
+  l'application (`horsTaxeEtTva`) et en base (`tva_incluse`), qui VÉRIFIE l'écriture : un arrondi qui
+  différerait d'un centime ferait refuser une écriture juste, et personne ne comprendrait pourquoi. Le test
+  confronte l'application à une table relevée sur `tva_incluse` le 01/10/2026, puis à une référence écrite
+  autrement (quotient et reste en entiers exacts) sur chaque centime jusqu'à 2 000 €, aux cinq taux. Le hors
+  taxe se calcule en centimes aussi : 492,60 − 82,10 en flottants donne 410,50000000000006, que la base
+  refuserait. L'écriture d'une recette taxée porte la banque au TTC, la catégorie au hors taxe et le 445710 à
+  la TVA, du côté de la catégorie ; une part de recette d'un mouvement ventilé prend ses deux lignes de même.
+  **Ce qui décide qu'un taux s'applique est le statut ACTUEL du dossier** (`tauxApplicable`), comme pour une
+  pièce (`montantRetenu`) : un dossier redevenu non assujetti compte ses recettes au TTC, son écriture attendue
+  n'a plus de TVA, et « Réaffecter » ou « Réécrire » la reprend au taux qui s'applique aujourd'hui. Une recette
+  affectée SANS taux — avant que le dossier devienne assujetti — reste comptée au TTC : on ne devine pas sa
+  TVA, on la montre.
+  **En base** (migration `recettes_assujetties_du_releve`) : `taux_tva` sur `lignes_bancaires`,
+  `ventilations_bancaires` et `regles_affectation_bancaire`, avec leurs contraintes (cinq valeurs, et un taux
+  seulement là où une catégorie est désignée) ; `affecter_mouvement_bancaire` prend le taux en quatrième
+  argument et l'EXIGE pour une recette d'un dossier assujetti, le REFUSE ailleurs — sur une dépense, il dirait
+  une TVA déductible que seule la facture ouvre ; le lot le transmet, le retrait l'efface, et la ventilation
+  écrit la TVA de chaque part de recette. La base vérifie l'écriture en multiensemble contre le mouvement, la
+  catégorie et le taux. Les trois essais rejoués en entier : affectation 35/35, règles 25/25, ventilation
+  68/68 ; l'export porte 73 migrations, le socle 71 instructions, l'inventaire 866 objets.
+  **Ce qui le compte** : la 2035, la situation intermédiaire, les ratios et le prévisionnel, l'estimation et
+  la simulation client comptent le hors taxe d'une recette taxée (`partsDuReleve`, dont l'assujettissement
+  est un paramètre OBLIGATOIRE — une valeur par défaut compterait la TVA collectée dans les recettes, ou la
+  retirerait d'un dossier qui ne la collecte pas). **La CA3** compte une recette du relevé à son
+  ENCAISSEMENT, à son taux — une exonérée en E2, un remboursement en B5 et 21 — et l'ÉCARTE en le disant
+  quand elle n'a pas de taux, ou sur option pour les débits, la TVA y étant due à la date de la facture,
+  que le relevé ne donne pas. Le détail des recettes du relevé retenues se déplie sous la déclaration ; une
+  lecture partielle des catégories ou des parts ventilées suspend l'enregistrement.
+  **Les écrans** : la fiche d'un mouvement demande le taux d'une recette d'un dossier assujetti, présélectionne
+  celui de la règle qui la propose et dit le hors taxe et la TVA avant le clic ; la ventilation demande
+  celui de chaque part de recette. Banque montre le taux affecté et la pastille « TVA à choisir » ; la fiche
+  nomme la recette ou la part sans taux et dit quoi faire ; la Checklist compte les deux ensemble, en erreur,
+  et mène à Banque, filtre « Rapprochés » ; Écritures réaffecte et réécrit au taux qui s'applique
+  aujourd'hui, et renvoie à Banque quand il manque.
+  **L'assistant, version 36** : les copies des blocs AFFECTATION et VENTILATION suivent `src/lib`, le point
+  devient « encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti », et le
+  prompt dit qu'une recette taxée compte au hors taxe. Les gardes comparent les copies dans les deux statuts
+  et y plantent les dérives du taux. **ET LEUR HELPER MENTAIT** : `echoue` acceptait TOUTE exception, si bien
+  qu'un test qui levait une `ReferenceError` — une variable déclarée dans un autre bloc `describe` — faisait
+  passer une dérive pour attrapée ; c'est `tsc -b` qui l'a vu, pas un test. Il n'accepte plus qu'un échec
+  d'assertion, dans les trois gardes, et la variable remise à sa mauvaise place le fait désormais tomber.
+  Déployée avec `verify_jwt` relu et repassé à `false`, la v35 comparée au dépôt avant écrasement
+  (identique, 1 758 lignes), aller-retour après : zéro différence sur 1 815 lignes, et le 401 de la fonction
+  sans session. Aucun appel au modèle.
+  **Les captures ont trouvé deux défauts** : la fiche d'un mouvement ventilé ne disait ni le taux de chaque
+  part de recette ni laquelle en manquait — la pastille et la Checklist y envoyaient sans qu'elle le dise —,
+  et « TVA 20 % » se coupait entre le nombre et son signe : l'espace avant « % » est désormais insécable
+  (`libelleTaux`). Le banc sert, sur le dossier assujetti, un acompte affecté à 20 %, des honoraires
+  affectés sans taux et une remise de carte ventilée dont la part de recette porte son taux ; la CA3 de son
+  troisième trimestre compte 4 200 € de base et 840 € de TVA, et écarte les honoraires en le disant.
+  `debordements.mjs` visite désormais la Banque, les Écritures et la Checklist de ce dossier : 0
+  débordement aux quatre largeurs.
+  **Quatre-vingt-six mutations, toutes mordent — la première passe en laissait deux en vie**, et les deux
+  accusaient des tests absents, écrits depuis : la borne de DÉBUT de la période de la CA3, seule la fin
+  étant éprouvée (un encaissement de décembre serait entré dans la déclaration de janvier), et le statut de
+  TVA transmis au contrôle des ventilations de la Checklist — aucun jeu d'essai n'y portait une part de
+  recette ÉCRITE avec sa TVA, si bien qu'un contrôle qui l'oubliait aurait déclaré « à réécrire » chaque
+  ventilation juste d'un dossier assujetti sans qu'un test tombe. Deux mutations visaient un texte mal
+  recopié dans le harnais (Clôture, Estimation) : corrigées, elles mordent. Les six de la fiche d'un
+  mouvement (le taux affecté, demandé, transmis, présélectionné depuis la règle, la recette sans taux
+  nommée, le refus qui ne se répète pas) mordent chacune sur le test écrit pour elle.
+  **LATENT, et mesuré** : aucun mouvement, aucune part ni aucune règle ne porte de taux en base, et aucun des
+  deux dossiers assujettis — des bacs à sable abandonnés — n'a de mouvement affecté (01/10/2026). Le dossier
+  vivant, `test`, est une infirmière exonérée.
+  **CE QUI RESTE, dit plutôt que promis** : la TVA d'une DÉPENSE du relevé ne se déduit pas — une dépense
+  affectée ou ventilée passe TTC en charge, sa TVA déductible demandant une facture ; une recette encaissée
+  en espèces n'a pas de mouvement à affecter ; et sur option pour les débits, une recette du relevé reste à
+  reporter à la main.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -7070,7 +7161,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3164 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3277 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -7093,7 +7184,8 @@ affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent c
 (`virementPersonnel.ts`), celles d'une échéance d'emprunt sur ses trois comptes
 (`echeanceEmprunt.ts`), et celles d'un mouvement ventilé sur plusieurs comptes
 (`ventilationBanque.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`),
-le règlement de plusieurs pièces par un virement (`reglementGroupe.ts`),
+le règlement de plusieurs pièces par un virement (`reglementGroupe.ts`), la TVA d'une recette
+encaissée sans facture sur un dossier assujetti (`tvaDuReleve.ts`, contre la fonction de la base),
 et ce que la connexion bancaire décide sans rien appeler — la période proposée, ce qui s'importe
 vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le navigateur accepte
 (`clePublique.ts`). Les fichiers `*.test.ts` sont
