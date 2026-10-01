@@ -272,6 +272,10 @@ supabase/
                   et le retrait des écritures du mouvement, par impersonation des trois profils, à
                   rejouer après toute migration qui touche ses deux fonctions, la table
                   reglements_groupes ou les contraintes de lignes_bancaires.
+                  cotisationRapprochee.sql : l'échéance de cotisation rapprochée d'un mouvement et son
+                  écriture, leur retrait et la suppression d'une échéance, par impersonation des trois
+                  profils, à rejouer après toute migration qui touche ses trois fonctions, la table
+                  cotisations_declarees ou les contraintes de lignes_bancaires.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1323,6 +1327,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   catégorie reçoit le hors taxe et le 445710 la TVA collectée ; la 2035 ne compte que le hors taxe, et la
   CA3 la compte à son encaissement. Voir « une recette du relevé d'un dossier assujetti porte son taux »
   dans « Problèmes connus » (`lib/tvaDuReleve.ts`).
+- **Une échéance de cotisation rapprochée s'écrit (01/10/2026)**, ligne 26.6, étape (b), première brique :
+  rapprochée de son prélèvement (onglet Banque), une échéance s'écrit face à la banque — la cotisation au
+  646000 et, en trésorerie, sa CSG-CRDS au 108000 — et compte dans la 2035 à la date et au montant du
+  prélèvement. L'onglet Cotisations dit quel mouvement paie chaque échéance et écrit celles qu'un
+  rapprochement d'avant a laissées sans écriture. Voir « une échéance de cotisation rapprochée s'écrit »
+  dans « Problèmes connus » (`lib/cotisationRapprochee.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1357,9 +1367,10 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   par un depuis sa fiche ou en lot par des règles apprises par libellé, ou se ventile sur plusieurs
   comptes ; un virement personnel s'écrit sur le compte du dirigeant (108 en trésorerie), une
   échéance d'emprunt sur ses trois comptes (164, 661, 616), et une recette d'un dossier assujetti porte
-  le taux de TVA que le cabinet choisit. Restent (b) écrire les cotisations, les dotations,
-  l'acquisition d'une immobilisation et le forfait kilométrique, (c) tirer la 2035 des écritures ou l'y
-  comparer, (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
+  le taux de TVA que le cabinet choisit. L'étape (b) a commencé le 01/10/2026 : une échéance de
+  cotisation rapprochée de son prélèvement s'écrit (646, et 108 pour sa CSG-CRDS en trésorerie). Restent
+  (b) les dotations, l'acquisition d'une immobilisation et le forfait kilométrique, (c) tirer la 2035 des
+  écritures ou l'y comparer, (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -3463,7 +3474,10 @@ d'environnement dans la même édition.
     rapprochement** : une pièce sans tiers rend exactement le même libellé nu (`piecePayee.tiers ?? ''`).
     Le mouvement est en prime sorti du filtre « Non rapprochés », donc de la vue par défaut ;
   - la **piste d'audit** part de l'écriture et du justificatif, jamais du mouvement — et une
-    cotisation n'engendre AUCUNE écriture, donc sur ce chemin-là rien nulle part n'en parlerait.
+    cotisation n'engendrait AUCUNE écriture, donc sur ce chemin-là rien nulle part n'en parlait (vrai
+    jusqu'au 01/10/2026 : une échéance rapprochée s'écrit depuis, et la retirer depuis l'onglet
+    Cotisations passe par la base, qui remet son mouvement à traiter — voir « une échéance de cotisation
+    rapprochée s'écrit »).
   Le rapprochement était la seule chose qui rattachait cet euro à un justificatif ; le lien nul, plus
   aucun écran ne peut le retrouver.
   **LATENT, et mesuré** : 26 lignes rapprochées en base, 12 sur une pièce, 14 sur une cotisation,
@@ -3518,7 +3532,8 @@ d'environnement dans la même édition.
   liste l'aurait laissé mentir tout seul. Le point de Checklist retiré et le point qui compte TOUS
   les mouvements font tomber un test chacun (les deux gardes symétriques). Les trois confirmations
   (`PiecesTab` en lot, `PieceFormModal` à l'unité, `CotisationsTab`) sont gardées une par une, et
-  **l'alerte de lot TELLE QU'ELLE ÉTAIT** — la cause inventée — mord aussi.
+  **l'alerte de lot TELLE QU'ELLE ÉTAIT** — la cause inventée — mord aussi. Celle de `CotisationsTab` nomme
+  désormais le mouvement qui paie l'échéance (`avertissementRetraitEcheance`, 01/10/2026).
   **Deux jeux d'essai ont été TYPÉS au passage, sans `as`** (`ligneDeTest` de BanqueTab, la fabrique
   de ChecklistTab) : le compilateur a sorti `created_at`, absent depuis toujours du premier. Même
   remède que les cinq colonnes du `piece()` de PiecesTab.
@@ -4994,11 +5009,11 @@ d'environnement dans la même édition.
     repassé à `false`, la v26 comparée à `main` AVANT écrasement (identique), aller-retour après : zéro
     différence résiduelle sur 1 035 lignes, et le 401 de la fonction sans session. Aucun appel au
     modèle.
-  **Les cotisations restent comptées à leur ÉCHÉANCE**, et c'est dit plutôt que promis : ce ne sont
+  **Les cotisations restaient comptées à leur ÉCHÉANCE**, et c'était dit plutôt que promis : ce ne sont
   pas des pièces, et un appel est d'ordinaire prélevé le jour de son échéance. Mesuré sur tous les
   dossiers : 14 mouvements rapprochés d'une cotisation, aucun dans une autre année que son échéance.
-  Une échéance de décembre prélevée en janvier compterait encore dans l'année d'avant — à reprendre
-  le jour où le cas se présente, `cotisation_id` portant déjà le lien.
+  **Repris le 01/10/2026** : une échéance rapprochée compte désormais à la date et au montant de son
+  prélèvement — voir « une échéance de cotisation rapprochée s'écrit ».
   **MESURÉ SUR `test`** : 11 pièces validées, 10 réglées par un mouvement rapproché, aucune dans une
   autre année que sa facture, aucun paiement partiel, aucune écriture — la 2035 du dossier ne bouge
   pas. Quatre paiements tombent dans un autre MOIS que leur facture : une situation intermédiaire
@@ -5752,6 +5767,97 @@ d'environnement dans la même édition.
   affectée ou ventilée passe TTC en charge, sa TVA déductible demandant une facture ; une recette encaissée
   en espèces n'a pas de mouvement à affecter ; et sur option pour les débits, une recette du relevé reste à
   reporter à la main.
+- **UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE S'ÉCRIT — LIGNE 26.6, ÉTAPE (B), PREMIÈRE BRIQUE** (01/10/2026,
+  `lib/cotisationRapprochee.ts`). Rapprocher une échéance de son prélèvement ne posait que le lien : ni
+  écriture au brouillon ni ligne au FEC, et le compte 512 de l'application ne retrouvait pas le prélèvement
+  de l'Urssaf. La 2035 comptait la cotisation à son échéance ; le FEC, nulle part.
+  **CE QUI S'ÉCRIT**, à la date et dans le sens du mouvement : la cotisation au 646000 (cotisations sociales
+  personnelles de l'exploitant), face à la banque. En TRÉSORERIE, la CSG-CRDS de l'échéance, quand elle est
+  saisie, passe ENTIÈRE au 108000 : c'est ce que fait l'expert-comptable du cabinet sur la 2035 relevée le
+  22/09/2026, et ce que fait déjà le moteur (`partCsgNonDeductible`), si bien que l'écriture et la
+  déclaration disent la même chose. En ENGAGEMENT, tout va au 646000. Un prélèvement paie une échéance
+  positive, un encaissement reçoit une échéance négative (un remboursement), et l'écriture suit le sens du
+  mouvement : un remboursement crédite le 646000.
+  **Le rapprochement et son écriture partent ENSEMBLE**, par `rapprocher_cotisation`, qui vérifie l'écriture
+  composée par l'application (`ecritureDeLaCotisation`) — une ligne par compte non nul, la CSG-CRDS au 108000
+  en trésorerie et nulle part en engagement, l'équilibre — et REMPLACE celle d'un rapprochement précédent du
+  même mouvement ; `retirer_rapprochement_cotisation` défait les deux ; `supprimer_echeance_cotisation` remet
+  à traiter le mouvement qui paie l'échéance et retire son écriture AVANT de la supprimer. Toutes trois sont
+  `SECURITY INVOKER`, vérifient `admin_du_dossier` et refusent une écriture validée. Deux contraintes tiennent
+  le reste sans le code : un mouvement qui porte une échéance est rapproché et jamais personnel
+  (`lignes_bancaires_cotisation_rapprochee`), et une échéance ne se paie qu'une fois
+  (`lignes_bancaires_cotisation_unique`, contrainte TOTALE). Migration `cotisation_rapprochee_ecrite` ;
+  l'export porte 74 migrations, le socle 71 instructions, l'inventaire 871 objets.
+  `supabase/essais/cotisationRapprochee.sql` : 51 contrôles par impersonation des trois profils, dont le
+  contrôle POSITIF du chef, chaque refus jugé à sa raison, ce que les contraintes tiennent seules (les
+  fonctions des autres classements et les mises à jour directes de Banque se heurtent à un refus nommé), ce
+  que fait une suppression DIRECTE d'échéance, et que rien ne reste ; sans les `set local role anon`, ses
+  contrôles 1 à 3 virent au rouge.
+  **CE QUE LA BASE REFUSE EST DIT AVANT LE CLIC** (`refusRapprochementCotisation`, dans le même ordre) : un
+  mouvement déjà classé ou réglé en groupe, un mouvement ou une échéance de zéro euro, un encaissement sur un
+  appel, un prélèvement sur un remboursement, une CSG-CRDS qui n'est pas au centime ou qui dépasse le
+  mouvement — en trésorerie seulement, puisqu'en engagement elle ne va pas au 108000. La fiche d'un mouvement
+  grise ses boutons et dit la raison. Et les candidats ne proposent plus une échéance à contresens
+  (`sensCotisationCoherent`) : les montants se comparaient en valeur absolue, donc un encaissement du montant
+  d'un appel lui était proposé, et « Tout rapprocher » l'aurait rapproché sans qu'on le voie.
+  **UNE ÉCHÉANCE PAYÉE COMPTE À SON PRÉLÈVEMENT** (`cotisationsComptees`) : à la date et pour le montant du
+  mouvement — ceux de l'écriture, donc du FEC — dans la 2035, la situation intermédiaire, les ratios et le
+  prévisionnel de Financement, l'estimation et la simulation client ; sa CSG-CRDS reste celle saisie sur
+  l'échéance, dans le sens du paiement. Une échéance de décembre prélevée en janvier compte l'année du
+  prélèvement : la 2035 et le FEC disent enfin la même année. Sans mouvement, elle compte à son échéance, pour
+  le versement saisi ou l'appel — une SUPPOSITION, que Clôture liste (« Cotisations comptées à leur
+  échéance ») comme elle liste les pièces comptées à leur date de facture. Un rapprochement qui ne PEUT pas
+  s'écrire ne date rien. Les moteurs ne prennent que les échéances ainsi comptées : un tableau d'échéances
+  brutes ne passe plus à la compilation.
+  **UNE ÉCHÉANCE QUE LE RELEVÉ PAIE N'EST PLUS UNE DETTE** : l'échéancier des dettes et le plan de trésorerie de
+  Financement ne la comptent plus parmi ce qui reste à payer, même sans versement saisi — une cotisation
+  prélevée restait « due » sur l'état qu'on montre à une banque. L'onglet Cotisations reprend le montant du
+  relevé dans « Versé », marqué « (relevé) ».
+  **LE FEC ET LA PISTE D'AUDIT** passent par le cinquième cas de `mouvementJustifieParLeReleve` : une écriture
+  au journal de banque, le relevé pour pièce.
+  **LES RAPPROCHEMENTS D'AVANT N'ONT PAS D'ÉCRITURE**, et rien ne les écrit sans clic : l'onglet Cotisations
+  dit pour chaque échéance le mouvement qui la paie et l'état de son écriture (« Écrite », « Sans écriture »,
+  « À réécrire » quand une CSG-CRDS saisie depuis la change, « Ne s'écrit pas » avec sa raison), et « Écrire
+  les N » les écrit une par une par la même fonction, un échec n'interrompant pas le lot. Suspendu sur une
+  lecture partielle des échéances, des paiements ou des écritures — et la colonne ne dit alors rien du
+  paiement ; un seul verrou pour le lot et « Retirer », relâché APRÈS la relecture. La Checklist gagne deux
+  points, en erreur : les échéances payées dont l'écriture manque ou n'est plus à jour (mène à Cotisations), et
+  les rapprochements qui ne peuvent pas s'écrire (mène à Banque, filtre « Rapprochés », où ils portent la
+  pastille « Ne s'écrit pas »).
+  **RETIRER UNE ÉCHÉANCE PASSE PAR LA BASE** : supprimée directement, elle laissait le prélèvement « rapproché »
+  sans plus rien qui le justifie — et désormais son écriture derrière lui. La confirmation nomme le mouvement
+  qui la paie (`avertissementRetraitEcheance`), au conditionnel sur un relevé lu en partie, et son refus se dit.
+  Annuler un rapprochement d'échéance dans Banque passe aussi par la base ; et rapprocher une PIÈCE ne remet
+  plus à zéro le lien d'une échéance : posé ailleurs entre-temps, il fait refuser la mise à jour au lieu d'en
+  orpheliner l'écriture.
+  **L'assistant, version 37** : `points_a_traiter` rend les deux points de la Checklist ; le prompt dit qu'une
+  échéance rapprochée s'écrit sans pièce, au 646000 et, en trésorerie, sa CSG-CRDS au 108000.
+  `agentComptableCotisation.test.ts` compare la copie (bloc `── DÉBUT/FIN COTISATION`) à `src/lib` dans les
+  deux modèles et y plante dix dérives. Déployée avec `verify_jwt` relu et repassé à `false`, la v36 comparée
+  au dépôt avant écrasement (identique, 1 815 lignes), aller-retour après : zéro différence sur 1 931 lignes, et
+  le 401 de la fonction sans session. Aucun appel au modèle.
+  **Le banc** sert, sur le cabinet infirmier, un appel prélevé et écrit, une échéance de la caisse de retraite
+  rapprochée sans écriture, un remboursement rapproché à tort d'un appel et un appel que rien ne paie :
+  0 débordement aux quatre largeurs.
+  **LATENT, et mesuré** (01/10/2026, des comptes seulement) : seul le bac à sable `2023` porte des
+  rapprochements d'échéance — 14, aucun écrit, dont 2 encaissements rapprochés d'un appel, qui ne s'écrivent
+  pas —, et aucune de ses 43 échéances n'a de CSG-CRDS saisie. Le dossier vivant, `test`, n'a pas d'échéance.
+  **Cent vingt-huit mutations, cent vingt-cinq mordent — la première passe n'en tuait que cent deux.** Les
+  vingt-trois autres accusaient des tests absents, écrits depuis : une écriture entière datée à l'échéance, la
+  CSG-CRDS d'un remboursement dans la 2035, le remboursement nommé dans la confirmation, les refus selon le
+  modèle (pastille de Banque, Checklist), « Tout rapprocher » en engagement, une échéance refusée parmi
+  plusieurs, le verrou du retrait, un relevé lu en partie qui rend quand même un paiement, les écritures lues
+  en partie, la recherche par la date du prélèvement, la carte de Clôture et sa CSG-CRDS, les repères de
+  l'Estimation, la CAF et le prévisionnel de Financement, et le modèle que la page passe à l'onglet
+  Cotisations. **Trois survivent, et c'est dit** : les gardes des gestionnaires de Banque et de Cotisations,
+  derrière un bouton déjà grisé, et le filtre sur le statut de la lecture des paiements, que
+  `lignes_bancaires_cotisation_rapprochee` rend redondant.
+  **CE QUI RESTE, dit plutôt que promis** : une échéance payée depuis le compte PERSONNEL n'a pas de mouvement à
+  rapprocher, donc pas d'écriture — elle compte à son échéance dans la 2035, et le FEC ne la porte pas ; en
+  engagement, la part non déductible de la CSG-CRDS d'un exploitant reste au 646000, à réintégrer sur la
+  liasse, que l'application ne produit pas — un traitement à confirmer avec l'expert-comptable du cabinet ; et
+  une échéance supprimée hors de l'application laisse encore son mouvement « rapproché » sans justificatif, ce
+  que `mouvementsRapprochesSansObjet` signale.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -7161,7 +7267,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3277 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3402 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -7186,10 +7292,11 @@ affecté sans justificatif (`affectationBanque.ts`), les règles qui proposent c
 (`ventilationBanque.ts`), que les moteurs lisent avec les mouvements affectés (`partsDuReleve.ts`),
 le règlement de plusieurs pièces par un virement (`reglementGroupe.ts`), la TVA d'une recette
 encaissée sans facture sur un dossier assujetti (`tvaDuReleve.ts`, contre la fonction de la base),
-et ce que la connexion bancaire décide sans rien appeler — la période proposée, ce qui s'importe
-vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le navigateur accepte
-(`clePublique.ts`). Les fichiers `*.test.ts` sont
-posés à côté de leur module, et `tsc -b` les type-vérifie avec le reste.
+l'écriture d'une échéance de cotisation payée par le relevé et la date à laquelle elle compte
+(`cotisationRapprochee.ts`), et ce que la connexion bancaire décide sans rien appeler — la période
+proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
+navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
+`tsc -b` les type-vérifie avec le reste.
 
 **Deux projets Vitest, et la séparation porte une règle** (`vitest.config.ts`) : « logique »
 (`src/**/*.test.ts`, environnement `node`, rien à charger) et « écrans » (`src/**/*.test.tsx`,
@@ -7213,11 +7320,12 @@ celui-là mentait sur le seul défaut qu'il prétendait garder.
 29/09/2026). Un faux qui répond `not: () => chaine` rend les mêmes lignes avec ou sans le filtre : il
 ne peut pas voir qu'un écran filtre TROP. Cinq écrans lisaient les mouvements rapprochés restreints à
 ceux qui portent une pièce — le défaut même que l'affectation d'un mouvement corrige —, et leurs tests
-restaient verts avec ce filtre remis. Le module modélise `.eq`, `.not(colonne, 'is', null)` et les
-termes `eq`/`is.null` d'un `.or`, et LÈVE sur toute autre forme : un filtre accepté sans être appliqué
-est exactement la panne qu'il corrige. Il sert aujourd'hui aux faux clients de Banque (catégories),
-Écritures, Clôture, Estimation, Financement et de la simulation client ; un nouveau test d'écran dont
-un filtre décide de ce qu'il montre s'y branche plutôt que d'accepter le filtre en silence. Et comme
+restaient verts avec ce filtre remis. Le module modélise `.eq`, `.is(colonne, null)`,
+`.not(colonne, 'is', null)` et les termes `eq`/`is.null` d'un `.or`, et LÈVE sur toute autre forme : un
+filtre accepté sans être appliqué est exactement la panne qu'il corrige. Il sert aujourd'hui aux faux
+clients de Banque (catégories), Écritures, Clôture, Estimation, Financement, Cotisations, Pièces, TVA,
+Virements et de la simulation client ; un nouveau test d'écran dont un filtre décide de ce qu'il
+montre s'y branche plutôt que d'accepter le filtre en silence. Et comme
 toute fabrique de faux, il se charge DANS la fabrique de `vi.mock` (`await import(…)`) : une variable
 du module de test y serait lue avant d'exister, `vi.mock` étant remonté en tête de fichier.
 
