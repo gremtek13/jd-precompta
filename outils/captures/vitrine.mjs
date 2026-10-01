@@ -139,6 +139,17 @@ const VUES = [
   { nom: 'pc-groupe-sombre', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO' },
   { nom: 'pc-groupe-modifier', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO', apres: 'Modifier le règlement' },
   { nom: 'mobile-groupe-clair', chemin: '#/dossiers/d1/banque', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR SEPA MEDICAL EQUIPEMENT PRO' },
+  // Les recettes du relevé d'un dossier assujetti (lib/tvaDuReleve.ts) : un acompte affecté à 20 %, des
+  // honoraires affectés avant l'assujettissement, sans taux — l'avertissement et le choix du taux —, une
+  // remise ventilée dont la part de recette porte son taux ; puis la déclaration qui les compte ou les écarte,
+  // et le point de la Checklist.
+  { nom: 'pc-recette-taxee', chemin: '#/dossiers/d7/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR ATELIER RIVIERE ACOMPTE MISSION' },
+  { nom: 'pc-recette-sans-taux', chemin: '#/dossiers/d7/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR CABINET NOEL HONORAIRES' },
+  { nom: 'pc-recette-sans-taux-sombre', chemin: '#/dossiers/d7/banque', l: 1280, h: 800, theme: 'dark', reduite: false, clic: 'Tous', cellule: 'VIR CABINET NOEL HONORAIRES' },
+  { nom: 'mobile-recette-sans-taux', chemin: '#/dossiers/d7/banque', l: 390, h: 844, theme: 'light', reduite: false, clic: 'Tous', cellule: 'VIR CABINET NOEL HONORAIRES' },
+  { nom: 'pc-recette-ventilee', chemin: '#/dossiers/d7/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'REMISE CB SEPTEMBRE CONSEIL', apres: 'Modifier la ventilation' },
+  { nom: 'pc-recette-tva', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-recette-checklist', chemin: '#/dossiers/d7/checklist', l: 1440, h: 900, theme: 'light', reduite: false },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
