@@ -31,8 +31,10 @@ export function tauxPrisEnCharge(taux: number): boolean {
   return (TAUX_TVA_RELEVE as readonly number[]).includes(taux)
 }
 
+// L'espace avant « % » est INSÉCABLE : dans la fiche d'un mouvement, « TVA 20 % » se coupait en fin de ligne
+// entre le nombre et son signe — vu sur une capture, pas en relisant.
 export function libelleTaux(taux: number): string {
-  return taux === 0 ? 'exonérée' : `${String(taux).replace('.', ',')} %`
+  return taux === 0 ? 'exonérée' : `${String(taux).replace('.', ',')}\u00a0%`
 }
 
 // Un taux est demandé pour une RECETTE d'un dossier assujetti, et pour rien d'autre : sur une dépense, il

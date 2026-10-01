@@ -1372,7 +1372,7 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
     preparer({ libelle: 'VIR CPAM', montant: 120, statut: 'rapprochee', categorie_id: 'cat-recettes', taux_tva: 20 })
     rendre(TRESORERIE, true)
     await voirLesRapproches()
-    await waitFor(() => expect(ligne().textContent).toMatch(/Affecté — Ventes \/ prestations · TVA 20 %/))
+    await waitFor(() => expect(ligne().textContent).toMatch(/Affecté — Ventes \/ prestations · TVA 20\u00a0%/))
     expect(ligne().textContent).not.toMatch(/TVA à choisir/)
     await ouvrir('VIR CPAM')
     expect((within(volet()).getByLabelText('Taux de TVA de cette recette') as HTMLSelectElement).value).toBe('20')
@@ -2535,6 +2535,55 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
     await voirLesRapproches()
     await waitFor(() => expect(ligne().textContent).toMatch(/Ventilé sur 2 comptes/))
     expect(ligne().textContent).not.toMatch(/TVA à choisir/)
+  })
+
+  it('la fiche d’un mouvement ventilé dit le taux de chaque part de recette, et nomme celle qui n’en a pas', async () => {
+    const parts = (taux: number | null): VentilationBancaire[] => [
+      { ...PARTS[0], categorie_id: 'cat-recettes', montant: 100, taux_tva: taux },
+      { ...PARTS[1], categorie_id: 'cat-frais', part_personnelle: false, montant: -5 },
+    ]
+    preparer({ ...VENTILEE, libelle: 'REMISE CB', montant: 95 }, parts(20))
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await ouvrir('REMISE CB')
+    expect(within(volet()).getByText('Ventes / prestations (706000) · TVA 20 %')).toBeTruthy()
+    expect(within(volet()).queryByText(/n’a pas de taux/)).toBeNull()
+    cleanup()
+
+    preparer({ ...VENTILEE, libelle: 'REMISE CB', montant: 95 }, parts(null))
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await ouvrir('REMISE CB')
+    expect(within(volet()).getByText(
+      'Le dossier est assujetti à la TVA et la part « Ventes / prestations (706000) » n’a pas de taux : sa TVA n’est dans aucune déclaration, et la 2035 la compte en recette. Modifie la ventilation pour choisir son taux.',
+    )).toBeTruthy()
+    expect(within(volet()).queryByText(/· TVA/)).toBeNull()
+    cleanup()
+
+    // Deux parts de recette sans taux : la phrase les compte.
+    preparer({ ...VENTILEE, libelle: 'REMISE CB', montant: 95 }, [
+      { ...PARTS[0], categorie_id: 'cat-recettes', montant: 60, taux_tva: null },
+      { ...PARTS[1], categorie_id: 'cat-frais', part_personnelle: false, montant: -5 },
+      { ...PARTS[1], id: 'part-3', categorie_id: 'cat-formation', part_personnelle: false, montant: 40, taux_tva: null },
+    ])
+    faux.categories = [...faux.categories, categorieDeTest({
+      id: 'cat-formation', code: 'formation', libelle: 'Formations dispensées', ordre: 11, compte_comptable: '706100', poste_2035: 'Recettes',
+    })]
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await ouvrir('REMISE CB')
+    expect(within(volet()).getByText(/et 2 parts de recette n’ont pas de taux : leur TVA n’est dans aucune déclaration/)).toBeTruthy()
+    cleanup()
+
+    // Le garde symétrique : sur un dossier exonéré, le taux gardé en base ne s'écrit plus — ni montré, ni
+    // réclamé.
+    preparer({ ...VENTILEE, libelle: 'REMISE CB', montant: 95 }, parts(20))
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('REMISE CB')
+    expect(within(volet()).getByText('Ventes / prestations (706000)')).toBeTruthy()
+    expect(within(volet()).queryByText(/· TVA/)).toBeNull()
+    expect(within(volet()).queryByText(/n’a pas de taux/)).toBeNull()
   })
 
   it('ajoute et retire une part, jamais en dessous de deux', async () => {
