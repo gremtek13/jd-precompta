@@ -222,7 +222,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // — la même que celle où le moteur la compte, sans quoi un exercice où une pièce compte pourrait
   // manquer à la liste. En engagement, celle de sa facture.
   const paiements = paiementsDesPieces(lignesBancaires, reglements)
-  const parts = partsDuReleve(lignesBancaires, categories, ventilations)
+  const parts = partsDuReleve(lignesBancaires, categories, ventilations, assujettiTva)
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
     // Un exercice qui n'a que des encaissements sans bordereau, ou des intérêts d'emprunt, doit se

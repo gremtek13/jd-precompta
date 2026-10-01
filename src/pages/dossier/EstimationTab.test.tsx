@@ -497,7 +497,7 @@ describe('EstimationTab — les mouvements affectés sans justificatif', () => {
   const FRAIS = categorieDeTest({ id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' })
   const mouvement = (id: string, categorieId: string, date: string, montant: number) => ({
     id, dossier_id: 'dossier-de-test', date, libelle: 'VIR', montant, statut: 'rapprochee',
-    piece_id: null, cotisation_id: null, categorie_id: categorieId, prelevement_personnel: false,
+    piece_id: null, cotisation_id: null, categorie_id: categorieId, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
   beforeEach(() => {
@@ -515,6 +515,20 @@ describe('EstimationTab — les mouvements affectés sans justificatif', () => {
     await rendre()
     await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
     expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: 5000 })
+  })
+
+  it('sur un dossier assujetti, le repère compte un encaissement taxé au hors taxe', async () => {
+    faux.paiements = [{ ...mouvement('cpam', 'cat-recettes', `${annee}-06-10`, 6000), taux_tva: 20 }]
+    await rendre(true)
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: 5000 })
+  })
+
+  it('sur un dossier qui a cessé d’être assujetti, le même encaissement compte entier', async () => {
+    faux.paiements = [{ ...mouvement('cpam', 'cat-recettes', `${annee}-06-10`, 6000), taux_tva: 20 }]
+    await rendre(false)
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, chiffre_affaires: 6000 })
   })
 
   it('le détail par poste compte une dépense affectée dans son poste', async () => {
@@ -561,7 +575,7 @@ describe('EstimationTab — les mouvements ventilés sur plusieurs comptes', () 
   const FRAIS = categorieDeTest({ id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' })
   const mouvement = (date: string, montant: number) => ({
     id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant, statut: 'rapprochee',
-    piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, ventilee: true,
+    piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, ventilee: true,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
   const part = (id: string, categorieId: string | null, montant: number) => ({

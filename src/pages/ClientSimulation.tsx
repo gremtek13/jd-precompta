@@ -139,7 +139,7 @@ export default function ClientSimulation() {
   // Le calcul est celui de l'Estimation du cabinet (lib/estimation.ts) — mêmes chiffres des deux côtés.
   const projection = projectionAnnuelle(
     recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiementsDesPieces(mouvementsRapproches, reglements), modeComptable,
-    partsDuReleve(mouvementsRapproches, categories, ventilations),
+    partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva),
   )
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null
 

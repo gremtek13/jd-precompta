@@ -721,7 +721,7 @@ describe('ClotureTab — les mouvements du relevé affectés sans justificatif',
   function mouvement(o: Record<string, unknown> = {}) {
     return {
       id: 'l-cpam', dossier_id: 'dossier-de-test', date: '2025-06-10', libelle: 'VIR CPAM', montant: 5000,
-      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', prelevement_personnel: false,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', taux_tva: null, prelevement_personnel: false,
       source_fichier: null, libelle_brut: null, created_at: '2025-06-11T09:00:00Z', ...o,
     }
   }
@@ -735,6 +735,28 @@ describe('ClotureTab — les mouvements du relevé affectés sans justificatif',
     monter(2025)
     const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
     within(titre.parentElement!).getByText(/Bénéfice de 4\s280 € : case 5QC/)
+  })
+
+  // LES RECETTES DU RELEVÉ D'UN DOSSIER ASSUJETTI PORTENT LEUR TAUX (lib/tvaDuReleve.ts) : la 2035 compte le
+  // hors taxe, la TVA collectée n'étant pas une recette. Ce qui se joue ici est le CÂBLAGE : que l'écran
+  // passe le statut du dossier aux parts du relevé — et c'est le statut ACTUEL qui décide.
+  it('sur un dossier assujetti, compte un encaissement taxé au hors taxe — sa TVA n’est pas une recette', async () => {
+    // 6 000 € encaissés à 20 % : 5 000 € de recettes, 1 000 € de TVA collectée.
+    poser()
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.lignes_bancaires = [mouvement({ montant: 6000, taux_tva: 20 })]
+    monter(2025, true)
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre.parentElement!).getByText(/Bénéfice de 4\s280 € : case 5QC/)
+  })
+
+  it('un dossier qui a cessé d’être assujetti compte la recette entière : le taux gardé ne s’applique plus', async () => {
+    poser()
+    faux.parTable.categories = [CATEGORIE, RECETTES]
+    faux.parTable.lignes_bancaires = [mouvement({ montant: 6000, taux_tva: 20 })]
+    monter(2025, false)
+    const titre = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(titre.parentElement!).getByText(/Bénéfice de 5\s280 € : case 5QC/)
   })
 
   it('propose l’exercice d’un encaissement quand toutes les années sont affichées', async () => {
@@ -789,7 +811,7 @@ describe('ClotureTab — les mouvements ventilés sur plusieurs comptes', () => 
   function mouvement(o: Record<string, unknown> = {}) {
     return {
       id: 'l-v', dossier_id: 'dossier-de-test', date: '2025-06-10', libelle: 'REMISE CB', montant: 4950,
-      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       ventilee: true, source_fichier: null, libelle_brut: null, created_at: '2025-06-11T09:00:00Z', ...o,
     }
   }
@@ -865,7 +887,7 @@ describe('ClotureTab — les échéances d’emprunt', () => {
     const e = ECHEANCIER[numero - 1]
     return {
       id: `l-ech-${numero}`, dossier_id: 'dossier-de-test', date: e.date, libelle: 'PRLV ECHEANCE PRET', montant: -540,
-      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       source_fichier: null, libelle_brut: null, created_at: `${e.date}T09:00:00Z`,
       emprunt_id: 'emp-1', emprunt_echeance: numero, emprunt_interets: e.interets, emprunt_assurance: 21.03, ...o,
     }

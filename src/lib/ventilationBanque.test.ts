@@ -5,7 +5,7 @@ import { formatMoney } from './format'
 import { partsDuReleve } from './partsDuReleve'
 import type { Categorie, EcritureBrouillon, VentilationBancaire } from './types'
 import {
-  ecritureDeLaVentilation, montantSaisi, montantSigne, mouvementsVentilesDesynchronises, partsDesVentilations,
+  ecritureDeLaVentilation, montantSaisi, montantSigne, mouvementsVentilesDesynchronises, partsAReecrire, partsDesVentilations,
   recettesVentileesSansTaux, refusVentilation, resteAVentiler, ventilationsIncoherentes, type PartSaisie,
 } from './ventilationBanque'
 
@@ -309,6 +309,39 @@ describe('ecritureDeLaVentilation — une ligne par part, puis la banque', () =>
     expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: 'cat-vide' }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE, false)).toBeNull()
     // Une part sans cible n'a pas de compte non plus.
     expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: null }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE, false)).toBeNull()
+  })
+})
+
+describe('partsAReecrire — les parts telles que « Réécrire » les renvoie à la base', () => {
+  const TAXEE: PartSaisie[] = [{ ...REMISE_PARTS[0], taux_tva: 20 }, REMISE_PARTS[1]]
+
+  it('garde le taux là où il s’applique, et rien d’autre ne change', () => {
+    expect(partsAReecrire(TAXEE, CATEGORIES, true)).toEqual(TAXEE)
+    expect(partsAReecrire(TELEPHONE_70, CATEGORIES, false)).toEqual(TELEPHONE_70)
+  })
+
+  it('un dossier qui a cessé d’être assujetti réécrit sa recette sans taux — la base refuserait le taux gardé', () => {
+    const reecrites = partsAReecrire(TAXEE, CATEGORIES, false)
+    expect(reecrites).toEqual([{ ...TAXEE[0], taux_tva: null }, TAXEE[1]])
+    expect(refusVentilation(REMISE, TAXEE, CATEGORIES, false)).not.toBeNull()
+    expect(refusVentilation(REMISE, reecrites, CATEGORIES, false)).toBeNull()
+  })
+
+  it('une recette sans taux d’un dossier devenu assujetti le reste : la réécriture est refusée, rien n’est deviné', () => {
+    const reecrites = partsAReecrire(REMISE_PARTS, CATEGORIES, true)
+    expect(reecrites).toEqual(REMISE_PARTS)
+    expect(refusVentilation(REMISE, reecrites, CATEGORIES, true)).toMatch(/« Ventes \/ prestations » est une recette/)
+  })
+
+  it('aucun taux sur une part sans catégorie ni sur une catégorie qui n’a pas été lue', () => {
+    expect(partsAReecrire([
+      { categorie_id: null, part_personnelle: true, montant: 50, taux_tva: 20 },
+      { categorie_id: 'cat-inconnue', part_personnelle: false, montant: 45, taux_tva: 20 },
+    ], CATEGORIES, true).map((p) => p.taux_tva)).toEqual([null, null])
+  })
+
+  it('ne rend que les champs d’une part saisie — pas l’identifiant ni le mouvement de la part lue', () => {
+    expect(Object.keys(partsAReecrire([part()], CATEGORIES, false)[0]).sort()).toEqual(['categorie_id', 'montant', 'part_personnelle', 'taux_tva'])
   })
 })
 

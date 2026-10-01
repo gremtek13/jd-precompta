@@ -16,8 +16,12 @@ import {
   type LigneAffichee,
   type MotifNonPlacee,
 } from '../../lib/declarationTva'
+import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
 import { paiementsDesPieces } from '../../lib/rattachement'
-import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe } from '../../lib/types'
+import { horsTaxeEtTva, libelleTaux } from '../../lib/tvaDuReleve'
+import type {
+  Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, VentilationBancaire,
+} from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BrouillonBanner from '../../components/BrouillonBanner'
 
@@ -57,6 +61,8 @@ const TOUJOURS_AFFICHEES = new Set(['16', '23', '28', '32'])
 
 const nomPiece = (p: Piece) => p.tiers ?? p.nom_fichier
 const pourcentage = (part: number) => `${Math.round(part * 100)} %`
+// Une recette du relevé se reconnaît à sa catégorie et au libellé du mouvement.
+const nomRecette = (p: PartDuReleve) => `${p.libelle} — ${p.ligne.libelle}`
 
 interface Lu {
   pieces: Piece[]
@@ -66,16 +72,23 @@ interface Lu {
   reglements: ReglementGroupe[]
   pieceIdsImmobilisees: ReadonlySet<string>
   declarations: DeclarationTva[]
+  // Ce qui range les RECETTES DU RELEVÉ — encaissées sans facture, affectées ou ventilées
+  // (lib/tvaDuReleve.ts) : leurs catégories, et les parts des mouvements ventilés.
+  categories: Categorie[]
+  ventilations: VentilationBancaire[]
   // Le motif de chaque lecture restée incomplète, nul quand elle est entière.
   lectures: {
     pieces: string | null; lignes: string | null; reglements: string | null; immobilisations: string | null; declarations: string | null
+    categories: string | null; ventilations: string | null
   }
 }
 
 // Lues par tranches (voir lib/lectureComplete.ts) : une déclaration bâtie sur une partie des pièces ou
 // des paiements a exactement l'air d'une déclaration juste.
 async function lireDonnees(dossierId: string): Promise<Lu> {
-  const [lecturePieces, lectureLignes, lectureReglements, lectureImmobilisations, lectureDeclarations] = await Promise.all([
+  const [
+    lecturePieces, lectureLignes, lectureReglements, lectureImmobilisations, lectureDeclarations, lectureCategories, lectureVentilations,
+  ] = await Promise.all([
     lireTout<Piece>((debut, fin) =>
       supabase.from('pieces').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
@@ -98,6 +111,16 @@ async function lireDonnees(dossierId: string): Promise<Lu> {
       supabase.from('declarations_tva').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('periode_debut', { ascending: false }).order('id').range(debut, fin),
     ),
+    // Les catégories du dossier ET celles du cabinet : c'est la classe de leur compte qui dit qu'un
+    // mouvement affecté est une recette.
+    lireTout<Categorie>((debut, fin) =>
+      supabase.from('categories').select('*', { count: 'exact' })
+        .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
+    ),
+    lireTout<VentilationBancaire>((debut, fin) =>
+      supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('id').range(debut, fin),
+    ),
   ])
   return {
     pieces: lecturePieces.lignes,
@@ -105,12 +128,16 @@ async function lireDonnees(dossierId: string): Promise<Lu> {
     reglements: lectureReglements.lignes,
     pieceIdsImmobilisees: new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)),
     declarations: lectureDeclarations.lignes,
+    categories: lectureCategories.lignes,
+    ventilations: lectureVentilations.lignes,
     lectures: {
       pieces: lecturePieces.motif,
       lignes: lectureLignes.motif,
       reglements: lectureReglements.motif,
       immobilisations: lectureImmobilisations.motif,
       declarations: lectureDeclarations.motif,
+      categories: lectureCategories.motif,
+      ventilations: lectureVentilations.motif,
     },
   }
 }
@@ -173,7 +200,9 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
   const pieces = lu?.pieces ?? []
   const lignesBancaires = lu?.lignesBancaires ?? []
   const declarations = lu?.declarations ?? []
-  const lectures = lu?.lectures ?? { pieces: null, lignes: null, reglements: null, immobilisations: null, declarations: null }
+  const lectures = lu?.lectures ?? {
+    pieces: null, lignes: null, reglements: null, immobilisations: null, declarations: null, categories: null, ventilations: null,
+  }
   const periodeParDefaut = dernierePeriodeClose(aujourdHuiSql(), periodicite)
   const selection = choix && choix.periodicite === periodicite
     ? choix
@@ -192,7 +221,10 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
   ])].sort((a, b) => b - a)
 
   const donnees: DonneesTva = {
-    pieces, paiements: paiementsDesPieces(lignesBancaires, lu?.reglements ?? []), pieceIdsImmobilisees: lu?.pieceIdsImmobilisees ?? new Set(),
+    pieces,
+    paiements: paiementsDesPieces(lignesBancaires, lu?.reglements ?? []),
+    pieceIdsImmobilisees: lu?.pieceIdsImmobilisees ?? new Set(),
+    releve: partsDuReleve(lignesBancaires, lu?.categories ?? [], lu?.ventilations ?? [], assujettiTva),
   }
   const precedente = declarationPrecedente(declarations, periode.debut)
   const creditPropose = precedente ? creditReporte(precedente) : 0
@@ -209,6 +241,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE : le montant proposé vient d'un calcul qui ne
   // voit qu'une partie des pièces, et le crédit proposé d'un historique qui peut en manquer une.
   const lectureIncomplete = lectures.pieces ?? lectures.lignes ?? lectures.reglements ?? lectures.immobilisations ?? lectures.declarations
+    ?? lectures.categories ?? lectures.ventilations
 
   async function enregistrer() {
     if (enregistrement.current || lectureIncomplete || !montantValide || !creditValide) return
@@ -286,6 +319,12 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
         motif={lectures.declarations}
         consequence="Le crédit à reporter proposé et l’historique ci-dessous peuvent en manquer une."
       />
+      <BandeauLecturePartielle
+        quoi="Les catégories et les parts ventilées"
+        accord="lues"
+        motif={lectures.categories ?? lectures.ventilations}
+        consequence="Une recette encaissée sans facture, affectée ou ventilée depuis le relevé, peut manquer à la déclaration."
+      />
 
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ marginTop: 0 }}>Régime de TVA</h3>
@@ -316,10 +355,11 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
         {erreurRegime && <p className="error-text">{erreurRegime}</p>}
         <p className="muted" style={{ marginBottom: 0 }}>
           Une recette compte à la date de son encaissement, c’est-à-dire du mouvement bancaire rapproché
-          — ou à la date de sa facture sur option pour les débits. Un achat compte à la date de son
-          paiement ; une note de frais, payée hors du compte professionnel, à sa date. À partir du
-          1er janvier 2027 le régime simplifié disparaît : la CA3 devient trimestrielle, mensuelle sur
-          demande.
+          — ou à la date de sa facture sur option pour les débits. Une recette encaissée sans facture,
+          affectée ou ventilée depuis le relevé, compte à la date du mouvement, au taux choisi en
+          l’affectant. Un achat compte à la date de son paiement ; une note de frais, payée hors du
+          compte professionnel, à sa date. À partir du 1er janvier 2027 le régime simplifié disparaît :
+          la CA3 devient trimestrielle, mensuelle sur demande.
         </p>
       </div>
 
@@ -444,6 +484,30 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
               </div>
             )}
 
+            {ca3.releveEcartees.length > 0 && (
+              <div style={{ marginTop: 16 }}>
+                <p className="error-text" style={{ marginBottom: 6 }}>
+                  {ca3.releveEcartees.length} recette(s) du relevé encaissée(s) dans la période ne sont pas dans les
+                  cases ci-dessus. Corrigez-les dans Banque, ou reportez-les à la main.
+                </p>
+                <div className="table-scroll">
+                  <table>
+                    <thead><tr><th>Date</th><th>Recette</th><th>Montant</th><th>Pourquoi</th></tr></thead>
+                    <tbody>
+                      {ca3.releveEcartees.map((e, i) => (
+                        <tr key={`${e.part.ligne.id}-${i}`}>
+                          <td>{formatDate(e.part.ligne.date)}</td>
+                          <td>{nomRecette(e.part)}</td>
+                          <td>{formatMoney(e.part.montantReleve)}</td>
+                          <td>{e.detail}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
             {ca3.aValider.length > 0 && (
               <p className="error-text">
                 {ca3.aValider.length} pièce(s) encore à valider tombent dans cette période et ne sont pas
@@ -521,6 +585,32 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
               </details>
             )}
 
+            {ca3.releveRetenues.length > 0 && (
+              <details style={{ marginTop: 12 }}>
+                <summary>Les {ca3.releveRetenues.length} recette(s) du relevé retenues, ligne par ligne</summary>
+                <div className="table-scroll">
+                  <table>
+                    <thead><tr><th>Ligne</th><th>Date</th><th>Recette</th><th>Taux</th><th>HT</th><th>TVA</th></tr></thead>
+                    <tbody>
+                      {ca3.releveRetenues.map((r, i) => {
+                        const { ht, tva } = horsTaxeEtTva(r.part.montantReleve, r.part.taux)
+                        return (
+                          <tr key={`${r.part.ligne.id}-${i}`}>
+                            <td>{r.ligne}</td>
+                            <td>{formatDate(r.part.ligne.date)}</td>
+                            <td>{nomRecette(r.part)}</td>
+                            <td>{r.part.taux == null ? '' : libelleTaux(r.part.taux)}</td>
+                            <td>{formatMoney(r.part.montantReleve < 0 ? -ht : ht)}</td>
+                            <td>{formatMoney(r.part.montantReleve < 0 ? -tva : tva)}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            )}
+
             <details style={{ marginTop: 12 }}>
               <summary>Ce que ce calcul ne fait pas</summary>
               <ul className="muted">
@@ -536,7 +626,8 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
                 <li>La régularisation d’une période déjà déposée (lignes 5B et 2C).</li>
                 <li>
                   Les factures émises dans l’application : une recette n’est comptée que si son justificatif est
-                  dans Justificatifs, comme pour la 2035.
+                  dans Justificatifs, ou si son encaissement est affecté ou ventilé depuis le relevé, comme pour
+                  la 2035.
                 </li>
                 <li>La dernière CA12 (régime simplifié, exercice 2026), à déposer au plus tard le 4 mai 2027.</li>
               </ul>

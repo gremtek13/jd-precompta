@@ -17,7 +17,8 @@ import {
 import type {
   ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
-import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, refusVentilation } from '../../lib/ventilationBanque'
+import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsAReecrire, refusVentilation } from '../../lib/ventilationBanque'
+import { libelleTaux } from '../../lib/tvaDuReleve'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -309,12 +310,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé.
   const horsFec = absenceFec(ecrituresFiltrees, idsJustifies)
   // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
-  // de la catégorie a changé depuis (voir lib/affectationBanque.ts).
-  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories))
+  // de la catégorie a changé depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore
+  // sa TVA (voir lib/affectationBanque.ts).
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories, assujettiTva))
   // Les mouvements ventilés dont l'écriture n'est plus celle que leurs parts produiraient — le compte d'une
   // catégorie a changé depuis (voir lib/ventilationBanque.ts). Sur des parts lues EN ENTIER seulement : une
   // part non lue ferait passer une ventilation pour incohérente, donc la tairait ici.
-  const ventilesPerimes = ventilationsIncompletes ? [] : mouvementsVentilesDesynchronises(ecritures, lignesBancaires, ventilations, categories, modele)
+  const ventilesPerimes = ventilationsIncompletes ? [] : mouvementsVentilesDesynchronises(ecritures, lignesBancaires, ventilations, categories, modele, assujettiTva)
   const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
   // Export de la piste d'audit de l'exercice (voir lib/pisteAudit.ts) : depuis chaque écriture, le
@@ -397,10 +399,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   // Réécrit l'écriture d'un mouvement affecté sur le compte ACTUEL de sa catégorie, par la même fonction
   // que l'affectation (`affecter_mouvement_bancaire`), qui remplace l'écriture précédente dans la même
-  // transaction. Sur ce clic seulement, comme « Régénérer ».
+  // transaction. Sur ce clic seulement, comme « Régénérer ». Le taux est celui qui s'applique AUJOURD'HUI
+  // (`MouvementAffecte.taux`) : une recette d'un dossier qui a cessé d'être assujetti se réécrit au TTC, et
+  // la base refuserait le taux gardé. Celle d'un dossier devenu assujetti qui n'en a pas est refusée : son
+  // taux se choisit dans la fiche du mouvement, rien ne le devine.
   async function reaffecter(m: MouvementAffecte) {
     if (reaffectationsEnCours.current.has(m.ligne.id)) return
-    const refus = refusAffectation(m.ligne, m.categorie, assujettiTva)
+    const refus = refusAffectation(m.ligne, m.categorie, assujettiTva, m.taux)
     if (refus || !m.categorie.compte_comptable) {
       setError(refus ?? `La catégorie « ${m.categorie.libelle} » n’a pas de compte.`)
       return
@@ -412,7 +417,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const { error: rpcError } = await supabase.rpc('affecter_mouvement_bancaire', {
         p_ligne_bancaire_id: m.ligne.id,
         p_categorie_id: m.categorie.id,
-        p_ecritures: ecritureDuMouvement(m.ligne, m.categorie.compte_comptable),
+        p_ecritures: ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux),
+        p_taux_tva: m.taux,
       })
       if (rpcError) throw rpcError
       // Relu AVANT de relâcher le verrou : le panneau porte encore le mouvement tant que la relecture
@@ -428,13 +434,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
   // Réécrit l'écriture d'un mouvement ventilé depuis ses parts, sur les comptes ACTUELS de leurs catégories,
   // par la même fonction que la ventilation (`ventiler_mouvement_bancaire`), qui remplace les parts et
-  // l'écriture dans la même transaction — les parts renvoyées sont celles qu'on a lues, inchangées. Sur ce
-  // clic seulement, comme « Réaffecter », et jamais sur des parts lues en partie : il les remplacerait.
+  // l'écriture dans la même transaction — les parts renvoyées sont celles qu'on a lues, avec le seul taux qui
+  // s'applique aujourd'hui (`partsAReecrire`). Sur ce clic seulement, comme « Réaffecter », et jamais sur des
+  // parts lues en partie : il les remplacerait.
   async function reecrireVentilation(ligne: LigneBancaire) {
     if (ventilationsIncompletes || reaffectationsEnCours.current.has(ligne.id)) return
-    const parts = ventilations.filter((v) => v.ligne_bancaire_id === ligne.id)
+    const parts = partsAReecrire(ventilations.filter((v) => v.ligne_bancaire_id === ligne.id), categories, assujettiTva)
     const refus = refusVentilation(ligne, parts, categories, assujettiTva)
-    const ecriture = refus ? null : ecritureDeLaVentilation(ligne, parts, categories, modele)
+    const ecriture = refus ? null : ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
     if (!ecriture) {
       setError(refus ?? 'Une part n’a plus de compte de charge ou de produit : modifie la ventilation depuis la fiche du mouvement, dans Banque.')
       return
@@ -445,7 +452,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     try {
       const { error: rpcError } = await supabase.rpc('ventiler_mouvement_bancaire', {
         p_ligne_bancaire_id: ligne.id,
-        p_parts: parts.map((p) => ({ categorie_id: p.categorie_id, part_personnelle: p.part_personnelle, montant: p.montant })),
+        p_parts: parts.map((p) => ({ categorie_id: p.categorie_id, part_personnelle: p.part_personnelle, montant: p.montant, taux_tva: p.taux_tva })),
         p_ecritures: ecriture,
       })
       if (rpcError) throw rpcError
@@ -774,36 +781,45 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             Mouvements affectés à réaffecter <span className="badge badge-danger">à traiter</span>
           </h3>
           <p className="muted" style={{ marginTop: -8 }}>
-            Ces mouvements du relevé sont affectés à une catégorie dont le compte a changé depuis : leur
-            écriture porte encore l’ancien, ou n’existe plus. Aucun total ne bouge, et c’est ce qui rend
-            l’écart invisible ailleurs. « Réaffecter » la réécrit sur le compte actuel de la catégorie ;
-            si la catégorie n’a plus de compte de charge ou de produit, choisis-en une autre depuis la
-            fiche du mouvement, dans Banque.
+            Ces mouvements du relevé sont affectés à une catégorie dont le compte a changé depuis — ou ce
+            sont des recettes d’un dossier qui a cessé d’être assujetti à la TVA : leur écriture porte encore
+            l’ancien compte ou la TVA, ou n’existe plus. Aucun total ne bouge, et c’est ce qui rend l’écart
+            invisible ailleurs. « Réaffecter » la réécrit sur le compte actuel de la catégorie, au taux qui
+            s’applique aujourd’hui ; si la catégorie n’a plus de compte de charge ou de produit, ou si la
+            recette attend son taux, c’est depuis la fiche du mouvement, dans Banque.
           </p>
           <div className="table-scroll">
             <table>
               <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th>Catégorie</th><th></th></tr></thead>
               <tbody>
-                {affectesPerimes.map((m) => (
-                  <tr key={m.ligne.id}>
-                    <td>{formatDate(m.ligne.date)}</td>
-                    <td>{m.ligne.libelle}</td>
-                    <td>{formatMoney(m.ligne.montant)}</td>
-                    <td>
-                      {m.categorie.libelle} <span className="muted">({m.categorie.compte_comptable ?? 'sans compte'})</span>
-                    </td>
-                    <td>
-                      <button
-                        className="btn btn-outline btn-sm"
-                        disabled={reaffectation === m.ligne.id || !m.nature}
-                        title={!m.nature ? 'Le compte de cette catégorie n’est pas un compte de charge ou de produit : choisis une autre catégorie dans Banque.' : undefined}
-                        onClick={() => reaffecter(m)}
-                      >
-                        {reaffectation === m.ligne.id ? 'Réaffectation…' : 'Réaffecter'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {affectesPerimes.map((m) => {
+                  // Dit AVANT le clic, comme dans la fiche : une recette qui attend son taux ne se réaffecte
+                  // pas d'ici, la base la refuserait.
+                  const refus = m.nature ? refusAffectation(m.ligne, m.categorie, assujettiTva, m.taux) : null
+                  return (
+                    <tr key={m.ligne.id}>
+                      <td>{formatDate(m.ligne.date)}</td>
+                      <td>{m.ligne.libelle}</td>
+                      <td>{formatMoney(m.ligne.montant)}</td>
+                      <td>
+                        {m.categorie.libelle} <span className="muted">({m.categorie.compte_comptable ?? 'sans compte'})</span>
+                        {m.taux != null && <span className="muted"> · TVA {libelleTaux(m.taux)}</span>}
+                      </td>
+                      <td>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          disabled={reaffectation === m.ligne.id || !m.nature || refus !== null}
+                          title={!m.nature
+                            ? 'Le compte de cette catégorie n’est pas un compte de charge ou de produit : choisis une autre catégorie dans Banque.'
+                            : refus ? `${refus} Depuis la fiche du mouvement, dans Banque.` : undefined}
+                          onClick={() => reaffecter(m)}
+                        >
+                          {reaffectation === m.ligne.id ? 'Réaffectation…' : 'Réaffecter'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -826,17 +842,19 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           </h3>
           <p className="muted" style={{ marginTop: -8 }}>
             L’écriture de ces mouvements ventilés n’est plus celle que leurs parts produiraient : le compte d’une
-            catégorie a changé depuis. Aucun total ne bouge, et c’est ce qui rend l’écart invisible ailleurs.
-            « Réécrire » la reprend sur les comptes actuels ; si une catégorie n’a plus de compte de charge ou de
-            produit, modifie la ventilation depuis la fiche du mouvement, dans Banque.
+            catégorie a changé depuis, ou le dossier a cessé d’être assujetti à la TVA. Aucun total ne bouge, et
+            c’est ce qui rend l’écart invisible ailleurs. « Réécrire » la reprend sur les comptes actuels, au taux
+            qui s’applique aujourd’hui ; si une catégorie n’a plus de compte de charge ou de produit, ou si une
+            part de recette attend son taux, modifie la ventilation depuis la fiche du mouvement, dans Banque.
           </p>
           <div className="table-scroll">
             <table>
               <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th></th></tr></thead>
               <tbody>
                 {ventilesPerimes.map((l) => {
-                  const parts = ventilations.filter((v) => v.ligne_bancaire_id === l.id)
-                  const reecrivable = ecritureDeLaVentilation(l, parts, categories, modele) !== null
+                  const parts = partsAReecrire(ventilations.filter((v) => v.ligne_bancaire_id === l.id), categories, assujettiTva)
+                  const refus = refusVentilation(l, parts, categories, assujettiTva)
+                  const reecrivable = !refus && ecritureDeLaVentilation(l, parts, categories, modele, assujettiTva) !== null
                   return (
                     <tr key={l.id}>
                       <td>{formatDate(l.date)}</td>
@@ -846,7 +864,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                         <button
                           className="btn btn-outline btn-sm"
                           disabled={reaffectation === l.id || !reecrivable}
-                          title={!reecrivable ? 'Une catégorie de cette ventilation n’a plus de compte de charge ou de produit : modifie la ventilation dans Banque.' : undefined}
+                          title={!reecrivable
+                            ? refus
+                              ? `${refus} Modifie la ventilation depuis la fiche du mouvement, dans Banque.`
+                              : 'Une catégorie de cette ventilation n’a plus de compte de charge ou de produit : modifie la ventilation dans Banque.'
+                            : undefined}
                           onClick={() => reecrireVentilation(l)}
                         >
                           {reaffectation === l.id ? 'Réécriture…' : 'Réécrire'}

@@ -22,7 +22,7 @@ import {
   libelleExploitable, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
 import { mouvementRapprocheSansObjet } from '../../lib/controles'
-import { ecritureDuMouvement, refusAffectation } from '../../lib/affectationBanque'
+import { ecritureDuMouvement, mouvementsAffectes, recettesAffecteesSansTaux, refusAffectation } from '../../lib/affectationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, refusVirementPersonnel } from '../../lib/virementPersonnel'
 import {
   echeancesOccupees, ecritureDeLEcheance, empruntPlausible, raisonEmpruntPlausible, refusDecoupage, refusEcheanceEmprunt,
@@ -34,7 +34,8 @@ import {
 } from '../../lib/reglesAffectation'
 import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
-import { ecritureDeLaVentilation, refusVentilation, type PartSaisie } from '../../lib/ventilationBanque'
+import { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, refusVentilation, type PartSaisie } from '../../lib/ventilationBanque'
+import { libelleTaux } from '../../lib/tvaDuReleve'
 import { lireTout } from '../../lib/lectureComplete'
 import { statutPourLibelle } from '../../lib/reglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -439,10 +440,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // l'affectation — une règle sans l'affectation qui l'a fait naître proposerait une catégorie que
   // personne n'a encore choisie. Remplacée si elle existe déjà pour ce motif et ce sens (contrainte
   // totale `regles_affectation_bancaire_unique`, que l'`onConflict` vise).
-  async function affecter(ligne: LigneBancaire, categorieId: string, motifRegle: string | null): Promise<boolean> {
+  //
+  // `taux` : celui d'une recette d'un dossier assujetti (lib/tvaDuReleve.ts), choisi dans la fiche ; la
+  // base l'exige là et le refuse ailleurs. La règle retenue le garde, pour que le lot le reprenne.
+  async function affecter(ligne: LigneBancaire, categorieId: string, motifRegle: string | null, taux: number | null): Promise<boolean> {
     const categorie = categories.find((c) => c.id === categorieId)
     if (!categorie) return false
-    const refus = refusAffectation(ligne, categorie, assujettiTva)
+    const refus = refusAffectation(ligne, categorie, assujettiTva, taux)
     if (refus || !categorie.compte_comptable) {
       window.alert(refus ?? `La catégorie « ${categorie.libelle} » n’a pas de compte.`)
       return false
@@ -450,13 +454,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     const { error } = await supabase.rpc('affecter_mouvement_bancaire', {
       p_ligne_bancaire_id: ligne.id,
       p_categorie_id: categorie.id,
-      p_ecritures: ecritureDuMouvement(ligne, categorie.compte_comptable),
+      p_ecritures: ecritureDuMouvement(ligne, categorie.compte_comptable, taux),
+      p_taux_tva: taux,
     })
     if (error) { window.alert(`L'affectation n'a pas pu être enregistrée : ${messageErreur(error, 'raison inconnue')}`); return false }
     const sens = sensDuMouvement(ligne)
     if (motifRegle !== null && sens && !refusMotif(motifRegle) && !reglesAffectationIncompletes) {
       const { error: erreurRegle } = await supabase.from('regles_affectation_bancaire').upsert(
-        { dossier_id: dossierId, motif: normaliserPourRegle(motifRegle), sens, categorie_id: categorie.id },
+        { dossier_id: dossierId, motif: normaliserPourRegle(motifRegle), sens, categorie_id: categorie.id, taux_tva: taux },
         { onConflict: 'dossier_id,motif,sens' },
       )
       if (erreurRegle) {
@@ -525,14 +530,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // nouveau un mouvement ventilé remplace ses parts et son écriture. Les refus de la base sont refaits ici.
   async function ventiler(ligne: LigneBancaire, parts: PartSaisie[]): Promise<boolean> {
     const refus = refusVentilation(ligne, parts, categories, assujettiTva)
-    const ecriture = refus ? null : ecritureDeLaVentilation(ligne, parts, categories, modele)
+    const ecriture = refus ? null : ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
     if (!ecriture) {
       window.alert(refus ?? 'Une part n’a pas de compte de charge ou de produit : la ventilation ne peut pas s’écrire.')
       return false
     }
     const { error } = await supabase.rpc('ventiler_mouvement_bancaire', {
       p_ligne_bancaire_id: ligne.id,
-      p_parts: parts.map((part) => ({ categorie_id: part.categorie_id, part_personnelle: part.part_personnelle, montant: part.montant })),
+      p_parts: parts.map((part) => ({
+        categorie_id: part.categorie_id, part_personnelle: part.part_personnelle, montant: part.montant, taux_tva: part.taux_tva,
+      })),
       p_ecritures: ecriture,
     })
     if (error) { window.alert(`La ventilation n'a pas pu être enregistrée : ${messageErreur(error, 'raison inconnue')}`); return false }
@@ -688,6 +695,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     for (const v of ventilations) m.set(v.ligne_bancaire_id, [...(m.get(v.ligne_bancaire_id) ?? []), v])
     return m
   }, [ventilations])
+
+  // Les recettes du relevé écrites SANS TAUX sur un dossier assujetti — affectées ou ventilées avant qu'il le
+  // devienne : leur TVA n'est dans aucune CA3, et la 2035 compte la taxe en recette. La Checklist les compte et
+  // envoie ici ; la pastille « TVA à choisir » les montre dans la liste, la fiche dit quoi faire.
+  const idsRecettesSansTaux = useMemo(() => {
+    if (!assujettiTva) return new Set<string>()
+    return new Set([
+      ...recettesAffecteesSansTaux(mouvementsAffectes(lignes, categories, true), true).map((m) => m.ligne.id),
+      ...recettesVentileesSansTaux(partsDesVentilations(lignes, ventilations, categories, true), true).map((l) => l.id),
+    ])
+  }, [assujettiTva, lignes, categories, ventilations])
 
   // Les parts de chaque virement qui règle plusieurs pièces : la pastille de la liste en dit le nombre, la
   // fiche les montre.
@@ -1257,7 +1275,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
               <p className="muted" style={{ margin: '4px 0 0' }}>
                 Chaque mouvement ci-dessous porte un libellé qu'une de vos règles reconnaît. Rien n'est écrit
                 sans ce clic : chacun le sera sur le compte de sa catégorie face à la banque, comme une
-                affectation faite à la main, et compté dans la 2035 à sa date.
+                affectation faite à la main — une recette d'un dossier assujetti au hors taxe, sa TVA à côté,
+                au taux de sa règle —, et compté dans la 2035 à sa date.
               </p>
             </div>
             {planRegles.propositions.length > 0 && (
@@ -1312,7 +1331,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                           {libelleExploitable(p.ligne)}
                         </td>
                         <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(p.ligne.montant)}</td>
-                        <td>{p.categorie.libelle}</td>
+                        <td>
+                          {p.categorie.libelle}
+                          {p.taux != null ? ` (TVA ${libelleTaux(p.taux)})` : ''}
+                        </td>
                         <td>« {p.regle.motif} »</td>
                       </tr>
                     ))}
@@ -1472,6 +1494,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                       {!l.prelevement_personnel && l.statut === 'rapprochee' && l.categorie_id && (
                         <span className="badge badge-ok">
                           Affecté{categorieAffectee ? ` — ${categorieAffectee.libelle}` : ''}
+                          {assujettiTva && l.taux_tva != null ? ` · TVA ${libelleTaux(l.taux_tva)}` : ''}
                         </span>
                       )}
                       {/* Rapproché d'un emprunt : l'échéance qu'il paie, ou son déblocage — pas un « Rapproché » nu. */}
@@ -1503,6 +1526,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                           {cotisationPayee ? ` — Cotisation du ${formatDate(cotisationPayee.echeance)}` : ''}
                         </span>
                       )}
+                      {/* Une recette écrite sans taux sur un dossier assujetti : sa TVA n'est dans aucune CA3. */}
+                      {idsRecettesSansTaux.has(l.id) && <span className="badge badge-danger">TVA à choisir</span>}
                       {/* Sous le seuil la pièce a été ALIGNÉE sur la banque, donc il ne reste aucun
                           écart à montrer. Au-dessus, on n'a rien écrasé — et sans cette pastille la
                           seule chose qui le dirait est le déséquilibre des écritures, qui n'existe
@@ -1553,7 +1578,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             onIgnorer={() => agirSurMouvement(() => ignorer(ligneOuverte.id))}
             onToujoursIgnorer={() => agirSurMouvement(() => toujoursIgnorer(ligneOuverte))}
             onRemettreATraiter={() => agirSurMouvement(() => remettreATraiter(ligneOuverte.id))}
-            onAffecter={(categorieId, motifRegle) => agirSurMouvement(() => affecter(ligneOuverte, categorieId, motifRegle))}
+            onAffecter={(categorieId, motifRegle, taux) => agirSurMouvement(() => affecter(ligneOuverte, categorieId, motifRegle, taux))}
             onRetirerAffectation={() => agirSurMouvement(() => retirerAffectation(ligneOuverte.id))}
             emprunts={emprunts}
             empruntsIncomplets={empruntsIncomplets}

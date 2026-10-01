@@ -20,6 +20,7 @@ import {
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
+import { horsTaxeEtTva, libelleTaux, TAUX_TVA_RELEVE, tauxApplicable, tauxRequis } from '../../lib/tvaDuReleve'
 import { nomDeLaPiece, reglementsGroupesIncoherents, type PartReglement } from '../../lib/reglementGroupe'
 import type {
   Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, ReglementGroupe, VentilationBancaire,
@@ -110,8 +111,8 @@ interface FicheMouvementProps {
   regles: RegleAffectationBancaire[]
   reglesIncompletes: string | null
   lignes: LigneBancaire[]
-  // Une recette sans facture n'est pas encore prise en charge sur un dossier assujetti : sa TVA ne se
-  // lit pas sur un relevé (voir `refusAffectation`).
+  // Sur un dossier assujetti, une recette sans facture porte son taux de TVA, que le relevé ne dit pas :
+  // la fiche le demande (voir lib/tvaDuReleve.ts).
   assujettiTva: boolean
   // Le compte sur lequel un virement personnel s'écrit — celui de l'exploitant en trésorerie, celui du
   // dirigeant en engagement (`compteDuDirigeant`).
@@ -132,7 +133,8 @@ interface FicheMouvementProps {
   onToujoursIgnorer: () => void
   onRemettreATraiter: () => void
   // `motifRegle` : le motif à retenir en règle d'affectation, ou null pour n'affecter que ce mouvement.
-  onAffecter: (categorieId: string, motifRegle: string | null) => void
+  // `taux` : celui d'une recette d'un dossier assujetti, nul ailleurs — la règle retenue le garde aussi.
+  onAffecter: (categorieId: string, motifRegle: string | null, taux: number | null) => void
   onRetirerAffectation: () => void
   // Les emprunts du dossier, pour rapprocher une échéance ou un déblocage. `empruntsIncomplets` : la
   // liste n'a pas pu être lue en entier — un emprunt peut manquer au choix, et la fiche le dit.
@@ -459,6 +461,12 @@ export default function FicheMouvement({
   // l'écriture sur le compte ACTUEL de la catégorie — le geste qui répare une écriture périmée. À
   // traiter, elle part de la catégorie qu'une règle propose, quand elle en propose une.
   const [categorieChoisie, setCategorieChoisie] = useState(ligne.categorie_id ?? regleProposee?.categorie_id ?? '')
+  // Le taux de TVA d'une recette : celui en place, sinon celui de la règle qui la propose — présélectionné
+  // comme sa catégorie, jamais écrit sans le clic. '' tant qu'il n'est pas choisi.
+  const [tauxChoisi, setTauxChoisi] = useState(() => {
+    const garde = ligne.categorie_id ? ligne.taux_tva : regleProposee?.taux_tva
+    return garde == null ? '' : String(garde)
+  })
   // Retenir une règle : cochée à la main, jamais d'office — le motif décide de ce qu'elle désignera.
   const sens = sensDuMouvement(ligne)
   const [retenirRegle, setRetenirRegle] = useState(false)
@@ -518,15 +526,25 @@ export default function FicheMouvement({
   // du mouvement — les recettes d'abord pour un encaissement, les dépenses d'abord pour un paiement.
   const categorieAffectee = ligne.categorie_id ? categories.find((c) => c.id === ligne.categorie_id) ?? null : null
   const natureAffectee = categorieAffectee ? natureDuCompte(categorieAffectee.compte_comptable) : null
+  // Le taux de la recette affectée, tel qu'il s'applique AUJOURD'HUI : un dossier qui a cessé d'être assujetti
+  // garde le taux en base, mais ne l'écrit plus — le montrer ferait croire à une TVA que rien ne déclare.
+  const tauxAffecte = affecte ? tauxApplicable(assujettiTva, natureAffectee, ligne.taux_tva) : null
   const categoriesRecettes = categories.filter((c) => natureDuCompte(c.compte_comptable) === 'recette')
   const categoriesDepenses = categories.filter((c) => natureDuCompte(c.compte_comptable) === 'depense')
   const groupesDeCategories = ligne.montant >= 0
     ? [{ titre: 'Recettes', liste: categoriesRecettes }, { titre: 'Dépenses', liste: categoriesDepenses }]
     : [{ titre: 'Dépenses', liste: categoriesDepenses }, { titre: 'Recettes', liste: categoriesRecettes }]
   const categorieCible = categorieChoisie ? categories.find((c) => c.id === categorieChoisie) ?? null : null
-  const refus = categorieCible ? refusAffectation(ligne, categorieCible, assujettiTva) : null
   const natureCible = categorieCible ? natureDuCompte(categorieCible.compte_comptable) : null
+  // Le taux n'est demandé — et n'est envoyé — que pour une recette d'un dossier assujetti.
+  const tauxDemande = tauxRequis(assujettiTva, natureCible)
+  const taux = tauxDemande && tauxChoisi !== '' ? Number(tauxChoisi) : null
+  const refus = categorieCible ? refusAffectation(ligne, categorieCible, assujettiTva, taux) : null
+  // Le taux qui manque n'est pas une faute : c'est la question que la liste des taux pose. Le bouton
+  // attend, sans message en rouge.
+  const tauxManquant = tauxDemande && taux == null
   const inhabituel = !refus && natureCible ? sensInhabituel(ligne, natureCible) : false
+  const ventilationTva = taux ? horsTaxeEtTva(ligne.montant, taux) : null
 
   // Ce que la règle retenue désignerait, et pourquoi elle ne peut pas l'être.
   const refusRegle = retenirRegle ? refusMotif(motifRegle) : null
@@ -608,15 +626,35 @@ export default function FicheMouvement({
             type="button"
             className="btn btn-outline"
             disabled={!categorieCible || !!refus || occupe || regleBloquee}
-            onClick={() => onAffecter(categorieChoisie, retenirRegle ? motifNormalise : null)}
+            onClick={() => onAffecter(categorieChoisie, retenirRegle ? motifNormalise : null, taux)}
           >
             {verbe}
           </button>
         </div>
+        {tauxDemande && (
+          <div className="fiche-mouvement-taux">
+            <label htmlFor="affecter-taux">Taux de TVA de cette recette</label>
+            <select id="affecter-taux" value={tauxChoisi} onChange={(e) => setTauxChoisi(e.target.value)}>
+              <option value="">— Choisir le taux —</option>
+              {TAUX_TVA_RELEVE.map((t) => (
+                <option key={t} value={String(t)}>{t === 0 ? 'Exonérée ou non imposable' : libelleTaux(t)}</option>
+              ))}
+            </select>
+            <p className="fiche-mouvement-note">
+              {tauxManquant
+                ? 'Le dossier est assujetti à la TVA, et le relevé ne dit pas celle d’une recette : choisis son taux. Rien n’est deviné.'
+                : ventilationTva
+                  ? `Recette au hors taxe : ${formatMoney(ventilationTva.ht)} · TVA collectée (445710) : ${formatMoney(ventilationTva.tva)}. Elle entre dans la CA3 à la date du mouvement.`
+                  : 'Sans TVA : la recette entière, en E2 de la CA3 (opérations non imposables).'}
+            </p>
+          </div>
+        )}
         {regleProposee && categorieChoisie === regleProposee.categorie_id && (
           <p className="fiche-mouvement-note">
             Une règle range les {regleProposee.sens === 'encaissement' ? 'encaissements' : 'paiements'} contenant
-            {' '}« {regleProposee.motif} » dans cette catégorie : elle est présélectionnée, rien n’est écrit sans ton clic.
+            {' '}« {regleProposee.motif} » dans cette catégorie
+            {tauxDemande && regleProposee.taux_tva != null ? `, ${regleProposee.taux_tva === 0 ? 'sans TVA' : `à ${libelleTaux(regleProposee.taux_tva)}`}` : ''}
+            {' '}: elle est présélectionnée, rien n’est écrit sans ton clic.
           </p>
         )}
         {resultatRegle?.etat === 'conflit' && (
@@ -626,7 +664,7 @@ export default function FicheMouvement({
             la règle qui n’a pas lieu d’être.
           </p>
         )}
-        {refus && <p className="fiche-mouvement-alerte">{refus}</p>}
+        {refus && !tauxManquant && <p className="fiche-mouvement-alerte">{refus}</p>}
         {inhabituel && (
           <p className="fiche-mouvement-alerte">
             {ligne.montant > 0
@@ -1258,6 +1296,7 @@ export default function FicheMouvement({
                     <span>
                       Compte {categorieAffectee.compte_comptable ?? '—'}
                       {categorieAffectee.poste_2035 ? ` · ${categorieAffectee.poste_2035}` : ''}
+                      {tauxAffecte != null ? ` · TVA ${libelleTaux(tauxAffecte)}` : ''}
                     </span>
                   </div>
                 </div>
@@ -1272,6 +1311,14 @@ export default function FicheMouvement({
               <p className="fiche-mouvement-alerte">
                 Le compte de cette catégorie n’est plus un compte de charge ou de produit : ce mouvement
                 ne compte dans aucun total, et son écriture n’est plus juste. Réaffecte-le.
+              </p>
+            )}
+            {/* Une recette affectée avant que le dossier devienne assujetti : sa TVA n'est dans aucune CA3 tant
+                qu'on ne choisit pas son taux — le point que la Checklist compte. */}
+            {tauxRequis(assujettiTva, natureAffectee) && ligne.taux_tva == null && (
+              <p className="fiche-mouvement-alerte">
+                Le dossier est assujetti à la TVA et cette recette n’a pas de taux : sa TVA n’est dans aucune
+                déclaration, et la 2035 la compte en recette. Choisis son taux ci-dessous et réaffecte-la.
               </p>
             )}
             {categorieAffectee && natureAffectee && !categorieAffectee.poste_2035 && (

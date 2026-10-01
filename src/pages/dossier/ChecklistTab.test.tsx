@@ -89,7 +89,7 @@ function piece(o: Partial<Piece> = {}): Piece {
 function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'dossier-de-test', date: '2026-03-10', libelle: 'PRLV SEPA FOURNISSEUR',
-    montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
+    montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     prelevement_personnel: false, source_fichier: null, libelle_brut: null,
     created_at: '2026-03-10T00:00:00Z', ...o,
@@ -668,7 +668,7 @@ describe('ChecklistTab — les mouvements affectés sans justificatif', () => {
     id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
     compte_comptable: '706000', poste_2035: 'Recettes',
   }
-  const cpam = () => ligne({ id: 'l-cpam', libelle: 'VIR CPAM', montant: 250, piece_id: null, categorie_id: 'cat-recettes' })
+  const cpam = (o: Partial<LigneBancaire> = {}) => ligne({ id: 'l-cpam', libelle: 'VIR CPAM', montant: 250, piece_id: null, categorie_id: 'cat-recettes', ...o })
   function ecritureDe(o: Partial<EcritureBrouillon>): EcritureBrouillon {
     return {
       id: 'e1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2026-03-10',
@@ -696,16 +696,28 @@ describe('ChecklistTab — les mouvements affectés sans justificatif', () => {
     expect(point.textContent).toMatch(/^1 /)
   })
 
-  it('compte la recette affectée d’un dossier assujetti — et se tait sur un dossier exonéré', async () => {
+  it('compte la recette affectée SANS TAUX d’un dossier assujetti — et se tait sur un dossier exonéré', async () => {
     poser({ lignes: [cpam()], categories: [RECETTES], ecritures: ECRITURE_CPAM })
     const { unmount } = monter(true)
-    const point = await screen.findByText(/en recette sans TVA, sur un dossier assujetti/)
+    const point = await screen.findByText(/en recette sans taux de TVA, sur un dossier assujetti/)
     expect(point.textContent).toMatch(/^1 /)
+    // Le point dit où les trouver : sous le filtre « Rapprochés » de Banque, qui ne s'ouvre pas dessus.
+    expect(screen.getByText(/filtre « Rapprochés » : ils portent la pastille « TVA à choisir »/)).toBeTruthy()
     unmount()
     poser({ lignes: [cpam(), ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })], categories: [RECETTES], ecritures: ECRITURE_CPAM })
     monter(false)
     await screen.findByText(/non rapprochée\(s\)/)
     expect(screen.queryAllByText(/sur un dossier assujetti/)).toHaveLength(0)
+  })
+
+  it('se tait sur une recette affectée AVEC son taux — et attend alors son écriture au hors taxe, TVA à côté', async () => {
+    // L'écriture en place est au TTC : avec un taux, l'affectation écrirait le hors taxe et la TVA collectée,
+    // donc le mouvement est « à réaffecter » — c'est l'ancre qui prouve que l'écran a fini de lire.
+    poser({ lignes: [cpam({ taux_tva: 20 })], categories: [RECETTES], ecritures: ECRITURE_CPAM })
+    monter(true)
+    const ancre = await screen.findByText(/affecté\(s\) dont l’écriture ne suit plus la catégorie/)
+    expect(ancre.textContent).toMatch(/^1 /)
+    expect(screen.queryAllByText(/sans taux de TVA, sur un dossier assujetti/)).toHaveLength(0)
   })
 
   it('compte la catégorie sans poste 2035 d’un mouvement affecté', async () => {
@@ -876,7 +888,7 @@ describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () =
   function part(id: string, categorieId: string | null, montant: number): VentilationBancaire {
     return {
       id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-v', categorie_id: categorieId,
-      part_personnelle: categorieId === null, montant, created_at: '2026-03-10T00:00:00Z',
+      part_personnelle: categorieId === null, montant, taux_tva: null, created_at: '2026-03-10T00:00:00Z',
     }
   }
   const PARTS = [part('v1', 'cat-tel', -84), part('v2', null, -36)]
@@ -936,14 +948,21 @@ describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () =
     expect(screen.queryAllByText(/ne suit plus les parts/)).toHaveLength(0)
   })
 
-  it('compte la part de recettes d’un dossier assujetti — et se tait sur un dossier exonéré', async () => {
+  it('compte la part de recettes SANS TAUX d’un dossier assujetti — et se tait sur un dossier exonéré', async () => {
     const encaissement = ventile({ libelle: 'REMISE CB', montant: 4950 })
     const parts = [part('v1', 'cat-recettes', 5000), part('v2', 'cat-tel', -50)]
     poser({ lignes: [encaissement], categories: [RECETTES, TELEPHONE], ventilations: parts })
     const { unmount } = monter(true)
-    const point = await screen.findByText(/en recette sans TVA, sur un dossier assujetti/)
+    const point = await screen.findByText(/en recette sans taux de TVA, sur un dossier assujetti/)
     expect(point.textContent).toMatch(/^1 /)
     unmount()
+    // Le garde symétrique : la part de recette porte son taux. Sans écriture posée, le mouvement est « à
+    // réécrire » — l'ancre qui prouve que l'écran a fini de lire.
+    poser({ lignes: [encaissement], categories: [RECETTES, TELEPHONE], ventilations: [{ ...parts[0], taux_tva: 20 }, parts[1]] })
+    const second = monter(true)
+    await screen.findByText(/ventilé\(s\) dont l’écriture ne suit plus les parts/)
+    expect(screen.queryAllByText(/sans taux de TVA, sur un dossier assujetti/)).toHaveLength(0)
+    second.unmount()
     poser({ lignes: [encaissement, aTraiter()], categories: [RECETTES, TELEPHONE], ventilations: parts })
     monter(false)
     await screen.findByText(/non rapprochée\(s\)/)

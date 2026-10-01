@@ -173,7 +173,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   const soldeBanque = soldeBanqueADate(lignesBanque, ouverture, aujourdHuiSql())
   // Ce que le relevé ajoute sans pièce aux trois états — mouvements affectés, échéances d'emprunt, parts
   // ventilées (lib/partsDuReleve.ts) —, calculé une fois et passé aux trois fenêtres qui le comptent.
-  const partsReleve = partsDuReleve(mouvementsRapproches, categories, ventilations)
+  const partsReleve = partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva)
   // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent les pièces des trois
   // états comme dans la 2035.
   const paiements = paiementsDesPieces(mouvementsRapproches, reglements)

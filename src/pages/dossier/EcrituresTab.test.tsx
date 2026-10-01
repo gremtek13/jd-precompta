@@ -353,7 +353,7 @@ describe("EcrituresTab — retrait d'une écriture sans objet", () => {
       immobilisations: [{ id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1' }],
       lignes_bancaires: [{
         id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-10', libelle: 'ACHAT',
-        montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null,
+        montant: -120, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
         prelevement_personnel: false, source_fichier: null, libelle_brut: null, created_at: '2025-03-10T09:00:00Z',
       }],
     })
@@ -1109,7 +1109,7 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
   function mouvement(o: Record<string, unknown> = {}) {
     return {
       id: 'l-frais', dossier_id: 'dossier-de-test', date: '2025-03-31', libelle: 'FRAIS TENUE DE COMPTE', montant: -8.5,
-      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: 'cat-frais', prelevement_personnel: false,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: 'cat-frais', taux_tva: null, prelevement_personnel: false,
       source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
     }
   }
@@ -1174,6 +1174,7 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
           { compte: '627100', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
           { compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
         ],
+        p_taux_tva: null,
       },
     }])
     // Relue, l'écriture suit la catégorie : le panneau disparaît.
@@ -1247,6 +1248,88 @@ describe('EcrituresTab — les mouvements affectés sans justificatif', () => {
     expect(bouton.hasAttribute('disabled')).toBe(true)
     expect(bouton.getAttribute('title')).toMatch(/choisis une autre catégorie dans Banque/)
   })
+
+  // LES RECETTES DU RELEVÉ PORTENT LEUR TAUX DE TVA sur un dossier assujetti (lib/tvaDuReleve.ts), et le
+  // taux qui s'applique est celui du statut ACTUEL du dossier.
+  const RECETTES = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const recette = (o: Record<string, unknown> = {}) => mouvement({
+    id: 'l-cpam', libelle: 'VIR CPAM', montant: 120, categorie_id: 'cat-recettes', ...o,
+  })
+  const ECRITURE_TAXEE = [
+    ecriture({ id: 'r1', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2025-03-31', compte: '706000', sens: 'credit', montant: 100, libelle: 'VIR CPAM' }),
+    ecriture({ id: 'r2', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2025-03-31', compte: '445710', sens: 'credit', montant: 20, libelle: 'VIR CPAM' }),
+    ecriture({ id: 'r3', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2025-03-31', compte: '512000', sens: 'debit', montant: 120, libelle: 'VIR CPAM' }),
+  ]
+
+  it('se tait sur une recette taxée d’un dossier assujetti dont l’écriture porte sa TVA', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECETTES], lignes_bancaires: [recette({ taux_tva: 20 })], ecritures_brouillon: ECRITURE_TAXEE })
+    monter(true)
+    await screen.findByText(/3 écritures proposées/)
+    expect(screen.queryByText('Mouvements affectés à réaffecter')).toBeNull()
+  })
+
+  it('un dossier qui a cessé d’être assujetti : la recette écrite avec sa TVA est à réaffecter, au TTC et sans taux', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECETTES], lignes_bancaires: [recette({ taux_tva: 20 })], ecritures_brouillon: ECRITURE_TAXEE })
+    monter(false)
+    expect(await screen.findByText('Mouvements affectés à réaffecter')).toBeTruthy()
+    // Le taux gardé ne s'applique plus : la ligne ne le montre pas.
+    expect(screen.queryByText(/· TVA 20 %/)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Réaffecter' }).click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'affecter_mouvement_bancaire',
+      args: {
+        p_ligne_bancaire_id: 'l-cpam',
+        p_categorie_id: 'cat-recettes',
+        p_ecritures: [
+          { compte: '706000', sens: 'credit', montant: 120, libelle: 'VIR CPAM' },
+          { compte: '512000', sens: 'debit', montant: 120, libelle: 'VIR CPAM' },
+        ],
+        p_taux_tva: null,
+      },
+    }])
+  })
+
+  it('réaffecte une recette taxée dont la catégorie a changé de compte, avec son taux', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...RECETTES, compte_comptable: '706100' }],
+      lignes_bancaires: [recette({ taux_tva: 20 })],
+      ecritures_brouillon: ECRITURE_TAXEE,
+    })
+    monter(true)
+    expect(await screen.findByText('Mouvements affectés à réaffecter')).toBeTruthy()
+    expect(screen.getByText(/· TVA 20 %/)).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Réaffecter' }).click() })
+    expect(faux.rpcs[0].args).toEqual({
+      p_ligne_bancaire_id: 'l-cpam',
+      p_categorie_id: 'cat-recettes',
+      p_ecritures: [
+        { compte: '706100', sens: 'credit', montant: 100, libelle: 'VIR CPAM' },
+        { compte: '445710', sens: 'credit', montant: 20, libelle: 'VIR CPAM' },
+        { compte: '512000', sens: 'debit', montant: 120, libelle: 'VIR CPAM' },
+      ],
+      p_taux_tva: 20,
+    })
+  })
+
+  it('une recette sans taux d’un dossier assujetti ne se réaffecte pas d’ici : son taux se choisit dans Banque', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...RECETTES, compte_comptable: '706100' }],
+      lignes_bancaires: [recette()],
+      ecritures_brouillon: [
+        ecriture({ id: 'r1', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2025-03-31', compte: '706000', sens: 'credit', montant: 120, libelle: 'VIR CPAM' }),
+        ecriture({ id: 'r3', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2025-03-31', compte: '512000', sens: 'debit', montant: 120, libelle: 'VIR CPAM' }),
+      ],
+    })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: 'Réaffecter' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/une recette porte son taux.*Depuis la fiche du mouvement, dans Banque/)
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
+  })
 })
 
 describe('EcrituresTab — ce que le FEC ne contiendra pas, bien accordé', () => {
@@ -1271,7 +1354,7 @@ describe('EcrituresTab — les virements personnels', () => {
   function virement(o: Record<string, unknown> = {}) {
     return {
       id: 'l-perso', dossier_id: 'dossier-de-test', date: '2025-03-20', libelle: 'VIR PERSO', montant: -500,
-      statut: 'ignoree', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: true,
+      statut: 'ignoree', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: true,
       source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
     }
   }
@@ -1315,7 +1398,7 @@ describe('EcrituresTab — les échéances d’emprunt', () => {
   function echeance(o: Record<string, unknown> = {}) {
     return {
       id: 'l-ech', dossier_id: 'dossier-de-test', date: '2025-03-06', libelle: 'PRLV ECHEANCE PRET', montant: -540,
-      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       emprunt_id: 'emp-1', emprunt_echeance: 2, emprunt_interets: 34.55, emprunt_assurance: 21.03,
       source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
     }
@@ -1365,14 +1448,14 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
   function mouvement(o: Record<string, unknown> = {}) {
     return {
       id: 'l-v', dossier_id: 'dossier-de-test', date: '2025-03-31', libelle: 'PRLV OPERATEUR MOBILE', montant: -120,
-      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       ventilee: true, source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
     }
   }
   function part(id: string, categorieId: string | null, montant: number, ligneId = 'l-v') {
     return {
       id, dossier_id: 'dossier-de-test', ligne_bancaire_id: ligneId, categorie_id: categorieId,
-      part_personnelle: categorieId === null, montant, created_at: '2025-04-02T09:00:00Z',
+      part_personnelle: categorieId === null, montant, taux_tva: null as number | null, created_at: '2025-04-02T09:00:00Z',
     }
   }
   const PARTS = [part('v1', 'cat-tel', -84), part('v2', null, -36)]
@@ -1420,8 +1503,8 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
       args: {
         p_ligne_bancaire_id: 'l-v',
         p_parts: [
-          { categorie_id: 'cat-tel', part_personnelle: false, montant: -84 },
-          { categorie_id: null, part_personnelle: true, montant: -36 },
+          { categorie_id: 'cat-tel', part_personnelle: false, montant: -84, taux_tva: null },
+          { categorie_id: null, part_personnelle: true, montant: -36, taux_tva: null },
         ],
         p_ecritures: [
           { compte: '626100', sens: 'debit', montant: 84, libelle: 'PRLV OPERATEUR MOBILE' },
@@ -1491,7 +1574,86 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
     monter()
     const bouton = await screen.findByRole('button', { name: 'Réécrire' })
     expect(bouton.hasAttribute('disabled')).toBe(true)
-    expect(bouton.getAttribute('title')).toMatch(/modifie la ventilation dans Banque/)
+    expect(bouton.getAttribute('title')).toMatch(/« Téléphone » n’a pas de compte de charge ou de produit.*Modifie la ventilation depuis la fiche du mouvement, dans Banque/)
+  })
+
+  // LES PARTS DE RECETTE PORTENT LEUR TAUX sur un dossier assujetti, et « Réécrire » renvoie le taux qui
+  // s'applique AUJOURD'HUI (`partsAReecrire`).
+  const RECETTES = {
+    id: 'cat-recettes', dossier_id: null, code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  }
+  const FRAIS = {
+    id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 70,
+    compte_comptable: '627000', poste_2035: 'Frais financiers',
+  }
+  const remise = () => mouvement({ id: 'l-r', libelle: 'REMISE CB', montant: 95 })
+  const partsRemise = (taux: number | null) => [
+    { ...part('r1', 'cat-recettes', 100, 'l-r'), taux_tva: taux },
+    part('r2', 'cat-frais', -5, 'l-r'),
+  ]
+  const ecritureRemise = (compteRecette: string, taxee: boolean) => [
+    ecriture({ id: 'e1', piece_id: null, ligne_bancaire_id: 'l-r', date: '2025-03-31', compte: compteRecette, sens: 'credit', montant: taxee ? 83.33 : 100, libelle: 'REMISE CB' }),
+    ...(taxee ? [ecriture({ id: 'e2', piece_id: null, ligne_bancaire_id: 'l-r', date: '2025-03-31', compte: '445710', sens: 'credit', montant: 16.67, libelle: 'REMISE CB' })] : []),
+    ecriture({ id: 'e3', piece_id: null, ligne_bancaire_id: 'l-r', date: '2025-03-31', compte: '627000', sens: 'debit', montant: 5, libelle: 'REMISE CB' }),
+    ecriture({ id: 'e4', piece_id: null, ligne_bancaire_id: 'l-r', date: '2025-03-31', compte: '512000', sens: 'debit', montant: 95, libelle: 'REMISE CB' }),
+  ]
+
+  it('se tait sur une remise taxée d’un dossier assujetti dont l’écriture porte la TVA de sa part de recette', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECETTES, FRAIS], lignes_bancaires: [remise()], ventilations_bancaires: partsRemise(20), ecritures_brouillon: ecritureRemise('706000', true) })
+    monter(true)
+    await screen.findByText(/4 écritures proposées/)
+    expect(screen.queryByText('Mouvements ventilés à réécrire')).toBeNull()
+  })
+
+  it('un dossier qui a cessé d’être assujetti : la remise est à réécrire, au TTC et sans taux', async () => {
+    poser({ categories: [CATEGORIE_ACHATS, RECETTES, FRAIS], lignes_bancaires: [remise()], ventilations_bancaires: partsRemise(20), ecritures_brouillon: ecritureRemise('706000', true) })
+    monter(false)
+    expect(await screen.findByText('Mouvements ventilés à réécrire')).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Réécrire' }).click() })
+    expect(faux.rpcs[0].args).toEqual({
+      p_ligne_bancaire_id: 'l-r',
+      p_parts: [
+        { categorie_id: 'cat-recettes', part_personnelle: false, montant: 100, taux_tva: null },
+        { categorie_id: 'cat-frais', part_personnelle: false, montant: -5, taux_tva: null },
+      ],
+      p_ecritures: [
+        { compte: '706000', sens: 'credit', montant: 100, libelle: 'REMISE CB' },
+        { compte: '627000', sens: 'debit', montant: 5, libelle: 'REMISE CB' },
+        { compte: '512000', sens: 'debit', montant: 95, libelle: 'REMISE CB' },
+      ],
+    })
+  })
+
+  it('réécrit une remise taxée dont la catégorie a changé de compte, avec le taux de sa part', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...RECETTES, compte_comptable: '706100' }, FRAIS],
+      lignes_bancaires: [remise()], ventilations_bancaires: partsRemise(20), ecritures_brouillon: ecritureRemise('706000', true),
+    })
+    monter(true)
+    // Cherché HORS de l'`act` : dedans, React retient les mises à jour jusqu'à la sortie.
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click() })
+    expect((faux.rpcs[0].args.p_parts as { taux_tva: number | null }[]).map((p) => p.taux_tva)).toEqual([20, null])
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '706100', sens: 'credit', montant: 83.33, libelle: 'REMISE CB' },
+      { compte: '445710', sens: 'credit', montant: 16.67, libelle: 'REMISE CB' },
+      { compte: '627000', sens: 'debit', montant: 5, libelle: 'REMISE CB' },
+      { compte: '512000', sens: 'debit', montant: 95, libelle: 'REMISE CB' },
+    ])
+  })
+
+  it('une part de recette sans taux d’un dossier assujetti ne se réécrit pas d’ici : son taux se choisit dans Banque', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS, { ...RECETTES, compte_comptable: '706100' }, FRAIS],
+      lignes_bancaires: [remise()], ventilations_bancaires: partsRemise(null), ecritures_brouillon: ecritureRemise('706000', false),
+    })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/la part « Ventes \/ prestations » est une recette : choisis son taux.*Modifie la ventilation depuis la fiche du mouvement, dans Banque/)
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
   })
 
   // Trouvé par mutation : le premier test de lecture partielle ne coupait que les parts du mouvement à
