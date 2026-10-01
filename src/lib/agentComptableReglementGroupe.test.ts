@@ -144,7 +144,7 @@ describe('agent-comptable / points_a_traiter lit les parts des virements groupé
   it('lit les parts et le relevé entier, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("reglements_groupes"\)\.select\("ligne_bancaire_id, piece_id, montant", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, [^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('compte les virements par MOUVEMENT et les pièces payées en trop, comme la Checklist', () => {

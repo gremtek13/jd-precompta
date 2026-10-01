@@ -150,6 +150,21 @@ const VUES = [
   { nom: 'pc-recette-ventilee', chemin: '#/dossiers/d7/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'REMISE CB SEPTEMBRE CONSEIL', apres: 'Modifier la ventilation' },
   { nom: 'pc-recette-tva', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'light', reduite: false },
   { nom: 'pc-recette-checklist', chemin: '#/dossiers/d7/checklist', l: 1440, h: 900, theme: 'light', reduite: false },
+  // Les dotations aux amortissements (lib/amortissements.ts) : le registre du cabinet infirmier — un fauteuil
+  // de soins repris au 1er janvier 2026, dont l'amortissement antérieur est dans les à-nouveaux et la dotation
+  // 2026 à écrire, et un ordinateur de 2026 dont la dotation est écrite —, le tableau d'amortissement déplié,
+  // la modification d'un bien, les natures et leurs comptes ; puis l'ordinateur du dossier d7, sans nature,
+  // dont la dotation ne se compose pas, et la Checklist de la société en engagement, qui réclame la dotation
+  // 2025 de son écran de studio.
+  { nom: 'pc-immobilisations-clair', chemin: '#/dossiers/d1/immobilisations', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-immobilisations-sombre', chemin: '#/dossiers/d1/immobilisations', l: 1280, h: 800, theme: 'dark', reduite: false },
+  { nom: 'pc-immobilisations-tableau', chemin: '#/dossiers/d1/immobilisations', l: 1440, h: 900, theme: 'light', reduite: false, apres: '^Tableau$', vers: 'Amortissement cumulé' },
+  { nom: 'pc-immobilisations-modifier', chemin: '#/dossiers/d1/immobilisations', l: 1440, h: 900, theme: 'light', reduite: false, apres: '^Modifier$', vers: 'L’amortissement part de la mise en service' },
+  { nom: 'pc-immobilisations-natures', chemin: '#/dossiers/d1/immobilisations', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Natures et comptes' },
+  { nom: 'pc-immobilisations-1024', chemin: '#/dossiers/d1/immobilisations', l: 1024, h: 768, theme: 'light', reduite: false, apres: '^Tableau$', vers: 'Amortissement cumulé' },
+  { nom: 'mobile-immobilisations-clair', chemin: '#/dossiers/d1/immobilisations', l: 390, h: 844, theme: 'light', reduite: false },
+  { nom: 'pc-immobilisations-sans-nature', chemin: '#/dossiers/d7/immobilisations', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-immobilisations-checklist', chemin: '#/dossiers/d8/checklist', l: 1440, h: 900, theme: 'light', reduite: false },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

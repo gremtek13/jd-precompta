@@ -249,7 +249,7 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
     expect(corps).toMatch(/from\("cotisations_declarees"\)\.select\("id, echeance, montant_appele, montant_verse, montant_csg_crds"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     // Le relevé entier porte ce qui décide d'un refus : le lien, et tout autre classement du mouvement.
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, prelevement_personnel, emprunt_id, [^"]*ventilee"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('rend les deux points de la Checklist, selon le modèle du dossier', () => {

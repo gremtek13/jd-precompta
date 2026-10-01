@@ -303,7 +303,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
   it('lit les mouvements rapprochés portant une catégorie, avec leur taux, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, categorie_id, taux_tva"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)\.not\("categorie_id", "is", null\)/)
-    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('passe les mouvements aux catégories sans compte ou sans poste, et rend les deux points de la Checklist', () => {
@@ -363,7 +363,7 @@ describe('le garde-fou sait encore échouer', () => {
   })
 
   it('attrape une copie qui ne compare plus la date', () => {
-    const derivee = planter(' && e.date === date', '')
+    const derivee = planter(' && e.date === date && Math.abs', ' && Math.abs')
     echoue(() => memeResultat(conforme('encaissement', '706000', 100, '2025-04-01'), [ligne({ id: 'encaissement' })], false, derivee))
   })
 

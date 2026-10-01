@@ -470,7 +470,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
             )}
           </div>
           {natureOuverte === 'candidates' && formulaireNature}
-          <p className="muted" style={{ marginTop: -8 }}>
+          <p className="muted">
             Pièces validées de {formatMoney(SEUIL_IMMOBILISATION)} ou plus — à toi de décider si c'est un
             investissement (matériel, véhicule…) ou une simple charge importante. La nature suggère une
             durée usuelle, toujours modifiable, et donne le compte du bien. {assujettiTva
@@ -478,16 +478,26 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
               : 'Montants TVA comprise : le dossier est exonéré, la TVA fait partie du prix.'}
           </p>
           {/* Dans un conteneur qui défile, comme les autres tableaux : avec le panneau de droite ouvert,
-              la colonne du bouton débordait du panneau central et passait sous le volet. */}
+              la colonne du bouton débordait du panneau central et passait sous le volet. Et
+              `table-formulaire` : une ligne se REMPLIT, donc sur téléphone elle se replie en fiche
+              empilée au lieu de se comprimer jusqu'à couper le bouton — voir index.css. */}
           <div className="table-scroll">
-            <table>
-              <thead><tr><th>Pièce</th><th>Montant</th><th>Nature</th><th>Durée (années)</th><th></th></tr></thead>
+            <table className="table-formulaire">
+              <thead>
+                <tr>
+                  <th>Pièce</th>
+                  <th>Montant</th>
+                  <th style={{ width: 200 }}>Nature</th>
+                  <th style={{ width: 110 }}>Durée (années)</th>
+                  <th></th>
+                </tr>
+              </thead>
               <tbody>
                 {candidates.map((p) => (
                   <tr key={p.id}>
-                    <td>{p.tiers ?? p.nom_fichier}</td>
-                    <td>{formatMoney(montantRetenu(p, assujettiTva))}</td>
-                    <td>
+                    <td data-libelle="Pièce">{p.tiers ?? p.nom_fichier}</td>
+                    <td data-libelle="Montant">{formatMoney(montantRetenu(p, assujettiTva))}</td>
+                    <td data-libelle="Nature">
                       <select
                         aria-label={`Nature de ${p.tiers ?? p.nom_fichier}`}
                         style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px' }}
@@ -498,17 +508,18 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                         {natures.map((n) => <option key={n.id} value={n.id}>{n.libelle}</option>)}
                       </select>
                     </td>
-                    <td>
+                    <td data-libelle="Durée (années)">
                       <input
                         type="number"
                         min={1}
-                        style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px', width: 70 }}
+                        aria-label={`Durée de ${p.tiers ?? p.nom_fichier}`}
+                        style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px' }}
                         placeholder={String(DUREE_DEFAUT_ANNEES)}
                         value={durees[p.id] ?? ''}
                         onChange={(e) => setDurees((prev) => ({ ...prev, [p.id]: e.target.value }))}
                       />
                     </td>
-                    <td>
+                    <td className="td-action">
                       <button className="btn btn-outline btn-sm" disabled={saving === p.id} onClick={() => enregistrer(p)}>
                         {saving === p.id ? 'Enregistrement…' : 'Enregistrer comme immobilisation'}
                       </button>
@@ -537,7 +548,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
               </button>
             )}
           </div>
-          <p className="muted" style={{ marginTop: -8 }}>
+          <p className="muted">
             Chaque dotation s’écrit au 31 décembre de son exercice : le compte 681100 au débit, le compte
             d’amortissement du bien au crédit — celui que sa nature donne. Elle compte prorata temporis depuis la
             mise en service, et le FEC la porte au journal des opérations diverses. Celle de l’exercice en cours
@@ -636,7 +647,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                     <td>
                       {i.date_mise_en_service ? formatDate(i.date_mise_en_service) : <span className="muted">à l’acquisition</span>}
                     </td>
-                    <td>{i.duree_annees} an{i.duree_annees > 1 ? 's' : ''}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{i.duree_annees} an{i.duree_annees > 1 ? 's' : ''}</td>
                     <td style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(dotationDeLExercice(i, exerciceAffiche))}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
@@ -739,7 +750,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
             <button className="btn btn-outline btn-sm" onClick={() => setNatureOuverte('natures')}>+ Nature</button>
           )}
         </div>
-        <p className="muted" style={{ marginTop: -8 }}>
+        <p className="muted">
           La nature d’un bien donne sa durée usuelle et son compte d’immobilisation ; la dotation crédite le compte
           d’amortissement qui s’en déduit (2183 → 28183). Les natures partagées par le cabinet ne se modifient
           qu’en administration ; une nature propre à ce dossier peut porter un autre compte.
