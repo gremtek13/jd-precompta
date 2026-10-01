@@ -165,6 +165,27 @@ export function ecritureDeLaVentilation(
   return lignes
 }
 
+// LES PARTS TELLES QU'ELLES SE RÉÉCRIVENT SOUS LE STATUT ACTUEL DU DOSSIER (« Réécrire », dans Écritures) :
+// le taux d'une part ne reste que là où il s'applique. Un dossier qui a cessé d'être assujetti réécrit donc
+// ses recettes au TTC — la base refuserait un taux qui ne s'applique plus, et la 2035 les compte déjà ainsi.
+// Une part de recette SANS taux d'un dossier devenu assujetti reste sans taux : `refusVentilation` la refuse,
+// et c'est dans la fiche du mouvement qu'on le choisit. Rien ne le devine.
+export function partsAReecrire(
+  parts: readonly PartSaisie[],
+  categories: readonly Pick<Categorie, 'id' | 'compte_comptable'>[],
+  assujettiTva: boolean,
+): PartSaisie[] {
+  const parId = new Map(categories.map((c) => [c.id, c]))
+  return parts.map((p) => ({
+    categorie_id: p.categorie_id,
+    part_personnelle: p.part_personnelle,
+    montant: p.montant,
+    taux_tva: p.categorie_id
+      ? tauxApplicable(assujettiTva, natureDuCompte(parId.get(p.categorie_id)?.compte_comptable), p.taux_tva)
+      : null,
+  }))
+}
+
 // Les parts, rangées par mouvement.
 export function partsParMouvement<P extends Pick<VentilationBancaire, 'ligne_bancaire_id'>>(parts: readonly P[]): Map<string, P[]> {
   const parLigne = new Map<string, P[]>()

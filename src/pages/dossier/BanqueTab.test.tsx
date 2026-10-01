@@ -190,7 +190,7 @@ vi.mock('../../lib/supabase', async () => {
           faux.lignes = [...faux.lignes, ...ecrites.map((l, i): LigneBancaire => ({
             id: `importee-${faux.lignes.length + i}`, dossier_id: String(l.dossier_id), date: String(l.date),
             libelle: String(l.libelle), montant: Number(l.montant), statut: l.statut as LigneBancaire['statut'],
-            piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+            piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
             source_fichier: String(l.source_fichier), libelle_brut: null, emprunt_id: null, emprunt_echeance: null,
             emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: String(l.id_externe),
             created_at: '2025-06-20T09:00:00Z',
@@ -266,14 +266,14 @@ vi.mock('../../lib/supabase', async () => {
     faux.rpcs.push({ nom, args })
     if (faux.erreurRpc) return Promise.resolve({ data: null, error: { message: faux.erreurRpc } })
     if (nom === 'affecter_mouvements_bancaires') {
-      const envoi = args.p_affectations as { ligne_bancaire_id: string; categorie_id: string }[]
+      const envoi = args.p_affectations as { ligne_bancaire_id: string; categorie_id: string; taux_tva: number | null }[]
       const rang = faux.rpcs.filter((r) => r.nom === nom).length
       if (faux.refusAuEnvoi === rang) {
         return Promise.resolve({ data: null, error: { message: 'Le mouvement du 02/06/2025 (-100,00 €) n\'est plus à traiter : il a changé depuis l\'affichage.' } })
       }
       faux.lignes = faux.lignes.map((l): LigneBancaire => {
         const a = envoi.find((x) => x.ligne_bancaire_id === l.id)
-        return a ? { ...l, categorie_id: a.categorie_id, statut: 'rapprochee' } : l
+        return a ? { ...l, categorie_id: a.categorie_id, taux_tva: a.taux_tva, statut: 'rapprochee' } : l
       })
       return Promise.resolve({ data: envoi.length, error: null })
     }
@@ -281,12 +281,12 @@ vi.mock('../../lib/supabase', async () => {
     // La ventilation (lib/ventilationBanque.ts) : les parts remplacent celles du mouvement, ou partent avec
     // la ventilation — l'écriture n'étant pas relue ici.
     if (nom === 'ventiler_mouvement_bancaire') {
-      const parts = args.p_parts as { categorie_id: string | null; part_personnelle: boolean; montant: number }[]
+      const parts = args.p_parts as { categorie_id: string | null; part_personnelle: boolean; montant: number; taux_tva: number | null }[]
       faux.ventilations = [
         ...faux.ventilations.filter((v) => v.ligne_bancaire_id !== id),
         ...parts.map((part, i): VentilationBancaire => ({
           id: `part-${String(id)}-${i}`, dossier_id: 'dossier-de-test', ligne_bancaire_id: String(id),
-          categorie_id: part.categorie_id, part_personnelle: part.part_personnelle, montant: part.montant,
+          categorie_id: part.categorie_id, part_personnelle: part.part_personnelle, montant: part.montant, taux_tva: part.taux_tva,
           created_at: '2025-06-02T10:00:00Z',
         })),
       ]
@@ -326,8 +326,8 @@ vi.mock('../../lib/supabase', async () => {
       if (nom === 'regler_pieces_par_mouvement') return { ...l, statut: 'rapprochee', reglement_groupe: true }
       if (nom === 'retirer_reglement_groupe') return { ...l, statut: 'non_rapprochee', reglement_groupe: false }
       return nom === 'affecter_mouvement_bancaire'
-        ? { ...l, categorie_id: String(args.p_categorie_id), statut: 'rapprochee' }
-        : { ...l, categorie_id: null, statut: 'non_rapprochee' }
+        ? { ...l, categorie_id: String(args.p_categorie_id), taux_tva: (args.p_taux_tva as number | null | undefined) ?? null, statut: 'rapprochee' }
+        : { ...l, categorie_id: null, taux_tva: null, statut: 'non_rapprochee' }
     })
     return Promise.resolve({ data: 2, error: null })
   }
@@ -359,7 +359,7 @@ function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -100,
     libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
-    piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
+    piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     created_at: '2025-06-02T09:00:00Z', ...o,
   }
@@ -1146,6 +1146,7 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
           { compte: '627000', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
           { compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
         ],
+        p_taux_tva: null,
       },
     }])
     // Jamais une mise à jour directe de la ligne : l'affectation et son écriture partent ensemble.
@@ -1165,15 +1166,79 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
     ])
   })
 
-  it('refuse une recette sur un dossier assujetti, avant le clic', async () => {
+  const choisirTaux = (taux: string) => fireEvent.change(within(volet()).getByLabelText('Taux de TVA de cette recette'), { target: { value: taux } })
+
+  it('sur un dossier assujetti, une recette demande son taux — rien n’est deviné — et s’écrit au hors taxe avec sa TVA', async () => {
+    preparer({ libelle: 'VIR CPAM', montant: 120 })
+    rendre(TRESORERIE, true)
+    await ouvrir('VIR CPAM')
+    choisir('cat-recettes')
+    // Le taux manque : le bouton attend, et la fiche pose la question — sans crier à l'erreur.
+    expect((within(volet()).getByLabelText('Taux de TVA de cette recette') as HTMLSelectElement).value).toBe('')
+    expect(within(volet()).getByText(/le relevé ne dit pas celle d’une recette : choisis son taux/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Affecter' }).hasAttribute('disabled')).toBe(true)
+    expect(within(volet()).queryByText(/porte son taux/)).toBeNull()
+    expect(faux.rpcs).toEqual([])
+
+    choisirTaux('20')
+    expect(within(volet()).getByText(/Recette au hors taxe : 100,00.*TVA collectée \(445710\) : 20,00/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'affecter_mouvement_bancaire',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1',
+        p_categorie_id: 'cat-recettes',
+        p_ecritures: [
+          { compte: '706000', sens: 'credit', montant: 100, libelle: 'VIR CPAM' },
+          { compte: '445710', sens: 'credit', montant: 20, libelle: 'VIR CPAM' },
+          { compte: '512000', sens: 'debit', montant: 120, libelle: 'VIR CPAM' },
+        ],
+        p_taux_tva: 20,
+      },
+    }])
+    // Le taux affecté se lit ensuite sur le mouvement.
+    await waitFor(() => expect(within(volet()).getByText(/Compte 706000 · Recettes · TVA 20 %/)).toBeTruthy())
+  })
+
+  it('une recette exonérée d’un dossier assujetti s’écrit entière, sans ligne de TVA, au taux zéro', async () => {
     preparer({ libelle: 'VIR CPAM', montant: 250 })
     rendre(TRESORERIE, true)
     await ouvrir('VIR CPAM')
     choisir('cat-recettes')
-    expect(within(volet()).getByText(/Sur un dossier assujetti à la TVA, une recette sans facture/)).toBeTruthy()
-    expect(within(volet()).getByRole('button', { name: 'Affecter' }).hasAttribute('disabled')).toBe(true)
-    // Une dépense, elle, s'affecte sur ce même dossier : pas de TVA déductible sans facture.
+    choisirTaux('0')
+    expect(within(volet()).getByText(/Sans TVA : la recette entière, en E2 de la CA3/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    expect(faux.rpcs[0].args).toEqual({
+      p_ligne_bancaire_id: 'ligne-1',
+      p_categorie_id: 'cat-recettes',
+      p_ecritures: [
+        { compte: '706000', sens: 'credit', montant: 250, libelle: 'VIR CPAM' },
+        { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM' },
+      ],
+      p_taux_tva: 0,
+    })
+  })
+
+  it('une dépense du même dossier ne demande aucun taux, et n’emporte pas celui choisi pour une recette', async () => {
+    preparer({ libelle: 'VIR CPAM', montant: 250 })
+    rendre(TRESORERIE, true)
+    await ouvrir('VIR CPAM')
+    choisir('cat-recettes')
+    choisirTaux('20')
+    // Une dépense : pas de TVA déductible sans facture, donc pas de taux — et pas celui resté de la recette.
     choisir('cat-frais')
+    expect(within(volet()).queryByLabelText('Taux de TVA de cette recette')).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    expect(faux.rpcs[0].args.p_taux_tva).toBeNull()
+    expect((faux.rpcs[0].args.p_ecritures as { compte: string }[]).map((l) => l.compte)).toEqual(['627000', '512000'])
+  })
+
+  it('sur un dossier exonéré, aucune recette ne demande de taux', async () => {
+    preparer({ libelle: 'VIR CPAM', montant: 250 })
+    rendre()
+    await ouvrir('VIR CPAM')
+    choisir('cat-recettes')
+    expect(within(volet()).queryByLabelText('Taux de TVA de cette recette')).toBeNull()
     expect(within(volet()).getByRole('button', { name: 'Affecter' }).hasAttribute('disabled')).toBe(false)
   })
 
@@ -1291,6 +1356,38 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
     expect(within(volet()).getByText(/Le compte de cette catégorie n’est plus un compte de charge ou de produit/)).toBeTruthy()
   })
 
+  it('la liste montre « TVA à choisir » sur une recette affectée sans taux d’un dossier assujetti, et le taux des autres', async () => {
+    const ligne = () => screen.getAllByText('VIR CPAM').find((e) => e.closest('tr')?.classList.contains('clickable'))!.closest('tr')!
+    preparer({ libelle: 'VIR CPAM', montant: 120, statut: 'rapprochee', categorie_id: 'cat-recettes' })
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await waitFor(() => expect(ligne().textContent).toMatch(/TVA à choisir/))
+    // La fiche dit quoi faire, et propose de choisir le taux.
+    await ouvrir('VIR CPAM')
+    expect(within(volet()).getByText(/cette recette n’a pas de taux : sa TVA n’est dans aucune/)).toBeTruthy()
+    expect((within(volet()).getByLabelText('Taux de TVA de cette recette') as HTMLSelectElement).value).toBe('')
+    cleanup()
+
+    // Le garde symétrique : avec son taux, la pastille le dit et rien n'est à choisir.
+    preparer({ libelle: 'VIR CPAM', montant: 120, statut: 'rapprochee', categorie_id: 'cat-recettes', taux_tva: 20 })
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await waitFor(() => expect(ligne().textContent).toMatch(/Affecté — Ventes \/ prestations · TVA 20 %/))
+    expect(ligne().textContent).not.toMatch(/TVA à choisir/)
+    await ouvrir('VIR CPAM')
+    expect((within(volet()).getByLabelText('Taux de TVA de cette recette') as HTMLSelectElement).value).toBe('20')
+    cleanup()
+
+    // Un dossier qui a cessé d'être assujetti : le taux gardé ne se montre plus, et rien n'est à choisir.
+    preparer({ libelle: 'VIR CPAM', montant: 120, statut: 'rapprochee', categorie_id: 'cat-recettes', taux_tva: 20 })
+    rendre()
+    await voirLesRapproches()
+    await waitFor(() => expect(ligne().textContent).toMatch(/Affecté — Ventes \/ prestations/))
+    expect(ligne().textContent).not.toMatch(/TVA/)
+    await ouvrir('VIR CPAM')
+    expect(within(volet()).queryByText(/TVA 20 %/)).toBeNull()
+  })
+
   it('dit qu’aucune catégorie n’a de compte de charge ou de produit, au lieu d’une liste vide', async () => {
     preparer()
     faux.categories = [BILAN]
@@ -1328,7 +1425,7 @@ describe('BanqueTab — affecter un mouvement sans justificatif à une catégori
 function regleDeTest(o: Partial<RegleAffectationBancaire> = {}): RegleAffectationBancaire {
   return {
     id: 'regle-1', dossier_id: 'dossier-de-test', motif: 'cpam', sens: 'encaissement', categorie_id: 'cat-recettes',
-    created_at: '2025-07-01T09:00:00Z', ...o,
+    taux_tva: null, created_at: '2025-07-01T09:00:00Z', ...o,
   }
 }
 
@@ -1378,15 +1475,15 @@ describe('BanqueTab — les règles d’affectation et le lot', () => {
       nom: 'affecter_mouvements_bancaires',
       args: {
         p_affectations: [
-          { ligne_bancaire_id: 'l-cpam-1', categorie_id: 'cat-recettes', ecritures: [
+          { ligne_bancaire_id: 'l-cpam-1', categorie_id: 'cat-recettes', taux_tva: null, ecritures: [
             { compte: '706000', sens: 'credit', montant: 250, libelle: 'VIR CPAM 13 SOINS' },
             { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM 13 SOINS' },
           ] },
-          { ligne_bancaire_id: 'l-cpam-2', categorie_id: 'cat-recettes', ecritures: [
+          { ligne_bancaire_id: 'l-cpam-2', categorie_id: 'cat-recettes', taux_tva: null, ecritures: [
             { compte: '706000', sens: 'credit', montant: 180, libelle: 'VIR CPAM 13 SOINS' },
             { compte: '512000', sens: 'debit', montant: 180, libelle: 'VIR CPAM 13 SOINS' },
           ] },
-          { ligne_bancaire_id: 'l-frais', categorie_id: 'cat-frais', ecritures: [
+          { ligne_bancaire_id: 'l-frais', categorie_id: 'cat-frais', taux_tva: null, ecritures: [
             { compte: '627000', sens: 'debit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
             { compte: '512000', sens: 'credit', montant: 8.5, libelle: 'FRAIS TENUE DE COMPTE' },
           ] },
@@ -1396,6 +1493,57 @@ describe('BanqueTab — les règles d’affectation et le lot', () => {
     // Le relevé relu, plus rien n'est proposé : la carte disparaît.
     await waitFor(() => expect(screen.queryByText(/Affectations proposées par vos règles/)).toBeNull())
     expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('sur un dossier assujetti, une règle de recette porte son taux : le lot l’écrit au hors taxe, sa TVA à côté', async () => {
+    preparer()
+    faux.reglesAffectation = [
+      regleDeTest({ taux_tva: 20 }),
+      regleDeTest({ id: 'regle-2', motif: 'frais', sens: 'decaissement', categorie_id: 'cat-frais' }),
+    ]
+    rendre(TRESORERIE, true)
+    expect(await screen.findByText('Affectations proposées par vos règles (3)')).toBeTruthy()
+    // Le taux de la règle se lit sur chaque recette proposée, pas sur la dépense.
+    expect(screen.getAllByText('Ventes / prestations (TVA 20 %)')).toHaveLength(2)
+    expect(screen.getAllByText('Frais bancaires').some((e) => e.tagName === 'TD')).toBe(true)
+
+    await act(async () => { screen.getByRole('button', { name: 'Affecter les 3' }).click() })
+    const envoi = envoisDuLot()[0].args.p_affectations as { ligne_bancaire_id: string; taux_tva: number | null; ecritures: unknown }[]
+    expect(envoi.find((a) => a.ligne_bancaire_id === 'l-cpam-1')).toEqual({
+      ligne_bancaire_id: 'l-cpam-1', categorie_id: 'cat-recettes', taux_tva: 20, ecritures: [
+        { compte: '706000', sens: 'credit', montant: 208.33, libelle: 'VIR CPAM 13 SOINS' },
+        { compte: '445710', sens: 'credit', montant: 41.67, libelle: 'VIR CPAM 13 SOINS' },
+        { compte: '512000', sens: 'debit', montant: 250, libelle: 'VIR CPAM 13 SOINS' },
+      ],
+    })
+    expect(envoi.find((a) => a.ligne_bancaire_id === 'l-frais')?.taux_tva).toBeNull()
+  })
+
+  it('sur un dossier assujetti, une règle de recette SANS taux ne propose rien : le lot dirait une TVA qu’on ne connaît pas', async () => {
+    preparer()
+    rendre(TRESORERIE, true)
+    expect(await screen.findByText('Affectations proposées par vos règles (1)')).toBeTruthy()
+    expect(screen.getByText(/2 mouvements que l'affectation refuserait/)).toBeTruthy()
+    expect(screen.getAllByText(/cette règle n’en dit pas/)).toHaveLength(2)
+    await act(async () => { screen.getByRole('button', { name: 'Affecter ce mouvement' }).click() })
+    expect((envoisDuLot()[0].args.p_affectations as { ligne_bancaire_id: string }[]).map((a) => a.ligne_bancaire_id)).toEqual(['l-frais'])
+  })
+
+  it('la fiche présélectionne le taux de la règle, et la règle retenue garde le taux choisi', async () => {
+    preparer()
+    faux.reglesAffectation = [regleDeTest({ taux_tva: 20 })]
+    rendre(TRESORERIE, true)
+    await ouvrir('VIR CPAM 13 SOINS')
+    expect((within(volet()).getByLabelText('Catégorie') as HTMLSelectElement).value).toBe('cat-recettes')
+    expect((within(volet()).getByLabelText('Taux de TVA de cette recette') as HTMLSelectElement).value).toBe('20')
+    expect(within(volet()).getByText(/dans cette catégorie\s*, à 20 %/)).toBeTruthy()
+    // L'opérateur corrige le taux et retient la règle : elle garde celui qu'il a choisi.
+    fireEvent.change(within(volet()).getByLabelText('Taux de TVA de cette recette'), { target: { value: '10' } })
+    await act(async () => { within(volet()).getByRole('checkbox').click() })
+    await act(async () => { within(volet()).getByRole('button', { name: 'Affecter' }).click() })
+    expect(faux.rpcs[0].args.p_taux_tva).toBe(10)
+    expect(faux.upserts).toHaveLength(1)
+    expect(faux.upserts[0].valeur).toMatchObject({ sens: 'encaissement', categorie_id: 'cat-recettes', taux_tva: 10 })
   })
 
   it('la liste signale un mouvement qu’une règle propose', async () => {
@@ -1608,7 +1756,7 @@ describe('BanqueTab — les règles d’affectation et le lot', () => {
     expect(faux.rpcs.map((r) => r.nom)).toEqual(['affecter_mouvement_bancaire'])
     expect(faux.upserts).toEqual([{
       table: 'regles_affectation_bancaire',
-      valeur: { dossier_id: 'dossier-de-test', motif: 'swisslife', sens: 'decaissement', categorie_id: 'cat-assurance' },
+      valeur: { dossier_id: 'dossier-de-test', motif: 'swisslife', sens: 'decaissement', categorie_id: 'cat-assurance', taux_tva: null },
       options: { onConflict: 'dossier_id,motif,sens' },
     }])
   })
@@ -2170,11 +2318,11 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
   const PARTS: VentilationBancaire[] = [
     {
       id: 'part-1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-1', categorie_id: 'cat-tel', part_personnelle: false,
-      montant: -84, created_at: '2025-06-02T10:00:00Z',
+      montant: -84, taux_tva: null, created_at: '2025-06-02T10:00:00Z',
     },
     {
       id: 'part-2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-1', categorie_id: null, part_personnelle: true,
-      montant: -36, created_at: '2025-06-02T10:00:00Z',
+      montant: -36, taux_tva: null, created_at: '2025-06-02T10:00:00Z',
     },
   ]
   const VENTILEE: Partial<LigneBancaire> = { statut: 'rapprochee', ventilee: true, id_externe: null }
@@ -2216,8 +2364,8 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
         p_ligne_bancaire_id: 'ligne-1',
         // Signées comme le relevé : l'opérateur a saisi « 84 » et « 36 » dans le sens du paiement.
         p_parts: [
-          { categorie_id: 'cat-tel', part_personnelle: false, montant: -84 },
-          { categorie_id: null, part_personnelle: true, montant: -36 },
+          { categorie_id: 'cat-tel', part_personnelle: false, montant: -84, taux_tva: null },
+          { categorie_id: null, part_personnelle: true, montant: -36, taux_tva: null },
         ],
         p_ecritures: [
           { compte: '626000', sens: 'debit', montant: 84, libelle: 'PRLV OPERATEUR MOBILE' },
@@ -2301,15 +2449,92 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
     expect(within(volet()).getByRole('button', { name: 'Ventiler' }).hasAttribute('disabled')).toBe(false)
   })
 
-  it('refuse une part de recette sur un dossier assujetti, avant le clic', async () => {
+  it('sur un dossier assujetti, une part de recette demande son taux, et s’écrit au hors taxe avec sa TVA', async () => {
     preparer({ libelle: 'REMISE CB', montant: 95 })
     rendre(TRESORERIE, true)
     await ouvrir('REMISE CB')
     await deplier()
     saisir(1, 'cat-recettes', '100')
     saisir(2, 'cat-frais', '-5')
-    expect(within(volet()).getByText(/Sur un dossier assujetti à la TVA, une recette sans facture/)).toBeTruthy()
+    // Le taux de la recette manque : le bouton attend, et le formulaire pose la question. La commission, une
+    // dépense, n'en demande pas.
+    expect(within(volet()).getByText('Choisis le taux de TVA de chaque part de recette : le relevé ne le dit pas.')).toBeTruthy()
     expect(within(volet()).getByRole('button', { name: 'Ventiler' }).hasAttribute('disabled')).toBe(true)
+    expect(within(volet()).queryByLabelText('Taux de TVA de la part 2')).toBeNull()
+    expect(faux.rpcs).toEqual([])
+
+    fireEvent.change(within(volet()).getByLabelText('Taux de TVA de la part 1'), { target: { value: '20' } })
+    expect(within(volet()).getByText(/hors taxe 83,33.*TVA 16,67/)).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ventiler' }).click() })
+    expect(ventilations()).toEqual([{
+      nom: 'ventiler_mouvement_bancaire',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1',
+        p_parts: [
+          { categorie_id: 'cat-recettes', part_personnelle: false, montant: 100, taux_tva: 20 },
+          { categorie_id: 'cat-frais', part_personnelle: false, montant: -5, taux_tva: null },
+        ],
+        p_ecritures: [
+          { compte: '706000', sens: 'credit', montant: 83.33, libelle: 'REMISE CB' },
+          { compte: '445710', sens: 'credit', montant: 16.67, libelle: 'REMISE CB' },
+          { compte: '627000', sens: 'debit', montant: 5, libelle: 'REMISE CB' },
+          { compte: '512000', sens: 'debit', montant: 95, libelle: 'REMISE CB' },
+        ],
+      },
+    }])
+  })
+
+  it('un taux choisi pour une recette ne part pas avec la part si elle devient une dépense', async () => {
+    preparer({ libelle: 'REMISE CB', montant: 95 })
+    rendre(TRESORERIE, true)
+    await ouvrir('REMISE CB')
+    await deplier()
+    saisir(1, 'cat-recettes', '100')
+    fireEvent.change(within(volet()).getByLabelText('Taux de TVA de la part 1'), { target: { value: '20' } })
+    saisir(1, 'cat-tel', '100')
+    saisir(2, 'cat-frais', '-5')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Ventiler' }).click() })
+    expect((ventilations()[0].args.p_parts as { taux_tva: number | null }[]).map((p) => p.taux_tva)).toEqual([null, null])
+  })
+
+  it('sur un dossier exonéré, aucune part ne demande de taux', async () => {
+    preparer({ libelle: 'REMISE CB', montant: 95 })
+    rendre()
+    await ouvrir('REMISE CB')
+    await deplier()
+    saisir(1, 'cat-recettes', '100')
+    saisir(2, 'cat-frais', '-5')
+    expect(within(volet()).queryByLabelText('Taux de TVA de la part 1')).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Ventiler' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('la liste montre « TVA à choisir » sur un mouvement ventilé dont une part de recette n’a pas de taux, sur un dossier assujetti', async () => {
+    const parts = (taux: number | null): VentilationBancaire[] => [
+      { ...PARTS[0], categorie_id: 'cat-recettes', montant: 100, taux_tva: taux },
+      { ...PARTS[1], categorie_id: 'cat-frais', part_personnelle: false, montant: -5 },
+    ]
+    const ligne = () => screen.getAllByText('REMISE CB').find((e) => e.closest('tr')?.classList.contains('clickable'))!.closest('tr')!
+    preparer({ ...VENTILEE, libelle: 'REMISE CB', montant: 95 }, parts(null))
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await waitFor(() => expect(ligne().textContent).toMatch(/Ventilé sur 2 comptes/))
+    expect(ligne().textContent).toMatch(/TVA à choisir/)
+    cleanup()
+
+    // Le garde symétrique : la part porte son taux.
+    preparer({ ...VENTILEE, libelle: 'REMISE CB', montant: 95 }, parts(20))
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await waitFor(() => expect(ligne().textContent).toMatch(/Ventilé sur 2 comptes/))
+    expect(ligne().textContent).not.toMatch(/TVA à choisir/)
+    cleanup()
+
+    // Et sur un dossier exonéré, rien à choisir.
+    preparer({ ...VENTILEE, libelle: 'REMISE CB', montant: 95 }, parts(null))
+    rendre()
+    await voirLesRapproches()
+    await waitFor(() => expect(ligne().textContent).toMatch(/Ventilé sur 2 comptes/))
+    expect(ligne().textContent).not.toMatch(/TVA à choisir/)
   })
 
   it('ajoute et retire une part, jamais en dessous de deux', async () => {
@@ -2453,8 +2678,26 @@ describe('BanqueTab — ventiler un mouvement sur plusieurs comptes', () => {
     saisir(2, 'dirigeant', '24')
     await act(async () => { within(volet()).getByRole('button', { name: 'Enregistrer la ventilation' }).click() })
     expect(ventilations()[0].args.p_parts).toEqual([
-      { categorie_id: 'cat-tel', part_personnelle: false, montant: -96 },
-      { categorie_id: null, part_personnelle: true, montant: -24 },
+      { categorie_id: 'cat-tel', part_personnelle: false, montant: -96, taux_tva: null },
+      { categorie_id: null, part_personnelle: true, montant: -24, taux_tva: null },
+    ])
+  })
+
+  it('modifie une ventilation d’un dossier assujetti en repartant du taux de chaque part de recette', async () => {
+    preparer({ ...VENTILEE, libelle: 'REMISE CB', montant: 95 }, [
+      { ...PARTS[0], categorie_id: 'cat-recettes', montant: 100, taux_tva: 20 },
+      { ...PARTS[1], id: 'part-2', categorie_id: 'cat-frais', part_personnelle: false, montant: -5, taux_tva: null },
+    ])
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await ouvrir('REMISE CB')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Modifier la ventilation…' }).click() })
+    expect((within(volet()).getByLabelText('Taux de TVA de la part 1') as HTMLSelectElement).value).toBe('20')
+    expect(within(volet()).queryByLabelText('Taux de TVA de la part 2')).toBeNull()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Enregistrer la ventilation' }).click() })
+    expect(ventilations()[0].args.p_parts).toEqual([
+      { categorie_id: 'cat-recettes', part_personnelle: false, montant: 100, taux_tva: 20 },
+      { categorie_id: 'cat-frais', part_personnelle: false, montant: -5, taux_tva: null },
     ])
   })
 

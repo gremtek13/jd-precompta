@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
 import type { Categorie, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
@@ -739,7 +739,7 @@ describe('FinancementTab — un dossier exonéré compte TVA comprise', () => {
 describe('FinancementTab — les mouvements affectés sans justificatif', () => {
   const ENCAISSEMENT_AFFECTE = {
     id: 'l-cpam', dossier_id: 'd', date: '2026-05-12', libelle: 'VIR CPAM', montant: 4000, statut: 'rapprochee',
-    piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', prelevement_personnel: false,
+    piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', taux_tva: null, prelevement_personnel: false,
     source_fichier: null, libelle_brut: null, created_at: '2026-05-13T09:00:00Z',
   }
 
@@ -750,6 +750,18 @@ describe('FinancementTab — les mouvements affectés sans justificatif', () => 
     faux.paiements = [ENCAISSEMENT_AFFECTE]
     const auJuin = await ouvrirLaSituation('2026-06-30')
     expect(totalDuPoste(auJuin, 'Recettes')).toMatch(/^4\s?000,00\s€$/)
+  })
+
+  it('sur un dossier assujetti, porte un encaissement taxé au hors taxe — et entier sur un dossier qui ne l’est plus', async () => {
+    faux.pieces = []
+    faux.categories = [CATEGORIE]
+    faux.immobilisations = []
+    faux.paiements = [{ ...ENCAISSEMENT_AFFECTE, montant: 4800, taux_tva: 20 }]
+    const assujetti = await ouvrirLaSituation('2026-06-30', true)
+    expect(totalDuPoste(assujetti, 'Recettes')).toMatch(/^4\s?000,00\s€$/)
+    cleanup()
+    const exonere = await ouvrirLaSituation('2026-06-30', false)
+    expect(totalDuPoste(exonere, 'Recettes')).toMatch(/^4\s?800,00\s€$/)
   })
 
   it('ne le porte pas à un état arrêté avant lui', async () => {
@@ -809,7 +821,7 @@ describe('FinancementTab — les emprunts et le relevé', () => {
   function mouvement(o: Partial<LigneBancaire>): LigneBancaire {
     return {
       id: 'l', dossier_id: 'd', date: '2025-03-06', libelle: 'PRLV ECHEANCE PRET', libelle_brut: null, montant: -540,
-      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
       source_fichier: null, emprunt_id: 'emp-1', emprunt_echeance: 2, emprunt_interets: 34.55, emprunt_assurance: 21.03,
       ventilee: false, reglement_groupe: false, id_externe: null, created_at: '2025-03-06T09:00:00Z', ...o,
     }
@@ -980,7 +992,7 @@ describe('FinancementTab — les mouvements ventilés sur plusieurs comptes', ()
   function mouvement(o: Partial<LigneBancaire> = {}) {
     return {
       id: 'l-v', dossier_id: 'd', date: '2026-05-12', libelle: 'REMISE CB', montant: 4950, statut: 'rapprochee',
-      piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, ventilee: true, id_externe: null,
+      piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, ventilee: true, id_externe: null,
       source_fichier: null, libelle_brut: null, created_at: '2026-05-13T09:00:00Z', ...o,
     }
   }

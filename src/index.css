@@ -724,6 +724,9 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 .fiche-mouvement-case { display: flex; align-items: flex-start; gap: 6px; font-size: 0.82rem; font-weight: 600; line-height: 1.4; }
 .fiche-mouvement-case input { margin-top: 2px; flex: none; }
 .fiche-mouvement-regle input[type="text"] { width: 100%; min-width: 0; }
+/* Le taux de TVA d'une recette : sous la liste des catégories, comme la règle. */
+.fiche-mouvement-taux { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.fiche-mouvement-taux select { width: 100%; min-width: 0; }
 .fiche-mouvement-origine { margin: 0; font-size: 0.75rem; color: var(--color-text-light); overflow-wrap: anywhere; }
 /* Le découpage d'une échéance d'emprunt : numéro, intérêts, assurance côte à côte — trois nombres
    courts. `min-width: 0`, sinon la largeur propre d'un champ numérique renvoie chacun à la ligne. Les
@@ -741,6 +744,10 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    dessous et semblait appartenir à la ligne suivante) ; la liste prend ensuite toute la place qui reste. */
 .fiche-mouvement-part select { flex: 1 1 150px; min-width: 0; }
 .fiche-mouvement-part input { flex: 0 1 110px; min-width: 80px; }
+/* Le taux de TVA d'une part de recette, sous sa ligne : la fiche est étroite, et une troisième liste sur la
+   même ligne renverrait le montant à la ligne suivante. */
+.fiche-mouvement-part-taux { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 0.82rem; color: var(--color-text-light); }
+.fiche-mouvement-part-taux select { flex: 0 1 230px; min-width: 0; }
 .fiche-mouvement-reste { margin: 0; font-size: 0.86rem; font-weight: 600; font-variant-numeric: tabular-nums; }
 .decoupage-emprunt {
   margin: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; font-size: 0.84rem;

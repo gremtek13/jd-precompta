@@ -170,7 +170,7 @@ export default function EstimationTab({ dossierId, assujettiTva, modeComptable }
   // ni de logique de régularisation URSSAF (calcul provisionnel réel bien plus complexe) — juste un
   // repère pour anticiper. Relue à chaque rendu, d'UNE date du jour : l'année et les mois écoulés
   // viennent du même instant, et le calcul est celui de la Simulation client (lib/estimation.ts).
-  const parts = partsDuReleve(mouvementsRapproches, categories, ventilations)
+  const parts = partsDuReleve(mouvementsRapproches, categories, ventilations, assujettiTva)
   const paiements = paiementsDesPieces(mouvementsRapproches, reglements)
   const projection = projectionAnnuelle(recettesValidees, cotisations, aujourdHuiSql(), assujettiTva, paiements, modeComptable, parts)
   const referenceN1 = references.find((r) => r.annee === projection.annee - 1) ?? null

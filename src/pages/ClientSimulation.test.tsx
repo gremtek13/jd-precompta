@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ClientSimulation from './ClientSimulation'
 import type {
@@ -201,7 +201,7 @@ describe('ClientSimulation — la projection de l’année', () => {
 describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
   const encaissement = (date: string): LigneBancaire => ({
     id: 'l1', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 600, statut: 'rapprochee',
-    piece_id: 'r1', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
+    piece_id: 'r1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
@@ -249,7 +249,7 @@ describe('ClientSimulation — le chiffre d’affaires encaissé', () => {
 describe('ClientSimulation — des recettes encaissées par un virement groupé', () => {
   const virement = (date: string): LigneBancaire => ({
     id: 'g', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
-    piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
+    piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: true,
     id_externe: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
@@ -365,7 +365,7 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
   }
   const affecte = (date: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id: 'l-cpam', dossier_id: 'dossier-de-test', date, libelle: 'VIR CPAM', montant: 900, statut: 'rapprochee',
-    piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', prelevement_personnel: false,
+    piece_id: null, cotisation_id: null, categorie_id: 'cat-recettes', taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`, ...o,
   })
@@ -376,6 +376,18 @@ describe('ClientSimulation — les encaissements affectés sans justificatif', (
     poser({ paiements: [affecte('2026-03-10')], categories: [RECETTES] })
     await monter()
     expect(valeur('CA encaissé à date')).toBe('900,00 €')
+  })
+
+  it('sur un dossier assujetti, compte un encaissement taxé au hors taxe — entier quand il ne l’est plus', async () => {
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({ paiements: [affecte('2026-03-10', { montant: 1080, taux_tva: 20 })], categories: [RECETTES], assujetti: true })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('900,00 €')
+    cleanup()
+    poser({ paiements: [affecte('2026-03-10', { montant: 1080, taux_tva: 20 })], categories: [RECETTES], assujetti: false })
+    await monter()
+    expect(valeur('CA encaissé à date')).toBe('1 080,00 €')
   })
 
   it('ne compte pas un encaissement à venir, ni un mouvement dont la catégorie n’a pas été lue', async () => {
@@ -411,13 +423,13 @@ describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes
   const FRAIS: Categorie = { ...RECETTES, id: 'cat-frais', code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 70, compte_comptable: '627000', poste_2035: 'Frais financiers' }
   const remise = (date: string): LigneBancaire => ({
     id: 'l-v', dossier_id: 'dossier-de-test', date, libelle: 'REMISE CB', montant: 870, statut: 'rapprochee',
-    piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+    piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, reglement_groupe: false, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: `${date}T09:00:00Z`,
   })
   const part = (id: string, categorieId: string | null, montant: number): VentilationBancaire => ({
     id, dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-v', categorie_id: categorieId,
-    part_personnelle: categorieId === null, montant, created_at: '2026-03-10T09:00:00Z',
+    part_personnelle: categorieId === null, montant, taux_tva: null, created_at: '2026-03-10T09:00:00Z',
   })
 
   it('compte la recette brute d’une remise, pas le net versé ni la part personnelle', async () => {

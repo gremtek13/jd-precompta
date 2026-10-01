@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TvaTab from './TvaTab'
-import type { DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe } from '../../lib/types'
+import type { Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, VentilationBancaire } from '../../lib/types'
 import type { Predicat } from '../../test/filtresPostgrest'
 
 // LE CALCUL EST DANS lib/declarationTva.ts ET SE TESTE LÀ. Ce qui se joue ici est ce qu'aucun test du
@@ -25,7 +25,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatEq, predicatNot } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   return {
     supabase: {
       from: (table: string) => {
@@ -40,6 +40,7 @@ vi.mock('../../lib/supabase', async () => {
           select: () => lecture,
           eq: (colonne: string, valeur: unknown) => { predicats.push(predicatEq(colonne, valeur)); return lecture },
           not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return lecture },
+          or: (expression: string) => { predicats.push(predicatOr(expression)); return lecture },
           order: () => lecture,
           range: (d: number, f: number) => { debut = d; fin = f; return lecture },
           then: (suite: (r: unknown) => unknown) => {
@@ -104,10 +105,23 @@ function piece(o: Partial<Piece> = {}): Piece {
 function paiement(pieceId: string, montant: number, date: string): LigneBancaire {
   return {
     id: `m-${pieceId}`, dossier_id: 'd', date, libelle: 'VIREMENT', montant, statut: 'rapprochee',
-    piece_id: pieceId, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
+    piece_id: pieceId, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     libelle_brut: null, created_at: `${date}T09:00:00Z`,
   }
+}
+
+// Les recettes encaissées SANS FACTURE (lib/tvaDuReleve.ts) : une catégorie de recettes du cabinet, et un
+// virement affecté à elle depuis le relevé, à son taux.
+const RECETTES: Categorie = {
+  id: 'c-recettes', dossier_id: null, code: 'ventes', libelle: 'Ventes / prestations', ordre: 80, compte_comptable: '706000', poste_2035: 'Recettes',
+}
+const FRAIS: Categorie = {
+  id: 'c-frais', dossier_id: null, code: 'frais', libelle: 'Frais bancaires', ordre: 70, compte_comptable: '627000', poste_2035: 'Frais financiers',
+}
+
+function encaissementAffecte(o: Partial<LigneBancaire> = {}): LigneBancaire {
+  return { ...paiement('x', 600, '2027-03-12'), id: 'enc', libelle: 'VIR CLIENT MARTIN', piece_id: null, categorie_id: 'c-recettes', taux_tva: 20, ...o }
 }
 
 function declaration(o: Partial<DeclarationTva> = {}): DeclarationTva {
@@ -129,6 +143,8 @@ function dossierCourant() {
     immobilisations: [],
     declarations_tva: [],
     reglements_groupes: [],
+    categories: [RECETTES, FRAIS],
+    ventilations_bancaires: [],
   }
 }
 
@@ -341,6 +357,61 @@ describe('l’onglet TVA', () => {
     expect(within(l08).getByText(MONTANT('300,00 €'))).toBeTruthy()
     expect(within(ligneDe('TVA nette due')).getByText(MONTANT('250,00 €'))).toBeTruthy()
     expect(screen.queryByText(/ne sont rattachées à aucun paiement/)).toBeNull()
+  })
+
+  // LES RECETTES ENCAISSÉES SANS FACTURE (lib/tvaDuReleve.ts) : affectées depuis le relevé à leur taux, elles
+  // entrent dans la CA3 à la date du virement. L'écran doit lire les catégories — du cabinet comprises — et
+  // les parts ventilées pour les voir.
+  it('compte la recette affectée depuis le relevé, à son taux, et la montre', async () => {
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, encaissementAffecte()]
+    await afficher()
+    const l08 = ligneDe('Taux normal 20 %')
+    expect(within(l08).getByText(MONTANT('1 500,00 €'))).toBeTruthy()
+    expect(within(l08).getByText(MONTANT('300,00 €'))).toBeTruthy()
+    expect(within(ligneDe('TVA nette due')).getByText(MONTANT('250,00 €'))).toBeTruthy()
+    fireEvent.click(screen.getByText('Les 1 recette(s) du relevé retenues, ligne par ligne'))
+    const ligne = ligneDe('Ventes / prestations — VIR CLIENT MARTIN')
+    expect(within(ligne).getByText('20 %')).toBeTruthy()
+    expect(within(ligne).getByText(MONTANT('500,00 €'))).toBeTruthy()
+    expect(within(ligne).getByText(MONTANT('100,00 €'))).toBeTruthy()
+  })
+
+  it('compte la part de recette d’un mouvement ventilé', async () => {
+    const remise: LigneBancaire = { ...encaissementAffecte(), id: 'v', libelle: 'REMISE CB', categorie_id: null, taux_tva: null, ventilee: true, montant: 1180 }
+    const part = (o: Partial<VentilationBancaire>): VentilationBancaire => ({
+      id: 'a', dossier_id: 'd', ligne_bancaire_id: 'v', categorie_id: 'c-recettes', part_personnelle: false, montant: 1200, taux_tva: 20,
+      created_at: '2027-03-12T10:00:00Z', ...o,
+    })
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, remise]
+    faux.tables.ventilations_bancaires = [part({}), part({ id: 'b', categorie_id: 'c-frais', montant: -20, taux_tva: null })]
+    await afficher()
+    expect(within(ligneDe('Taux normal 20 %')).getByText(MONTANT('2 000,00 €'))).toBeTruthy()
+    expect(within(ligneDe('Taux normal 20 %')).getByText(MONTANT('400,00 €'))).toBeTruthy()
+  })
+
+  it('écarte et dit la recette du relevé sans taux, au lieu de deviner sa TVA', async () => {
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, encaissementAffecte({ taux_tva: null })]
+    await afficher()
+    expect(within(ligneDe('Taux normal 20 %')).getByText(MONTANT('1 000,00 €'))).toBeTruthy()
+    expect(screen.getByText(/1 recette\(s\) du relevé encaissée\(s\) dans la période ne sont pas dans les cases/)).toBeTruthy()
+    expect(within(ligneDe('Ventes / prestations — VIR CLIENT MARTIN')).getByText(/réaffecte-la en choisissant son taux/)).toBeTruthy()
+  })
+
+  it('sur option pour les débits, écarte la recette du relevé : sa date de facture manque', async () => {
+    faux.tables.lignes_bancaires = [...faux.tables.lignes_bancaires, encaissementAffecte()]
+    await afficher({ surDebits: true })
+    expect(within(ligneDe('Ventes / prestations — VIR CLIENT MARTIN')).getByText(/la TVA est due à la date de la facture/)).toBeTruthy()
+  })
+
+  it('suspend l’enregistrement quand les catégories ou les parts ventilées sont lues en partie', async () => {
+    for (const table of ['categories', 'ventilations_bancaires']) {
+      faux.tronquees = new Set([table])
+      const { unmount } = render(<Hote />)
+      await act(async () => {})
+      expect(screen.getByText(/Les catégories et les parts ventilées n'ont pas pu être lues en entier/)).toBeTruthy()
+      expect((screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement).disabled).toBe(true)
+      unmount()
+    }
   })
 
   it('suspend l’enregistrement quand les parts des virements groupés sont lues en partie', async () => {

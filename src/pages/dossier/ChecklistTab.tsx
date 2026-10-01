@@ -6,7 +6,7 @@ import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobi
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
-import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSurDossierAssujetti } from '../../lib/affectationBanque'
+import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux } from '../../lib/affectationBanque'
 import { virementsPersonnelsAEcrire } from '../../lib/virementPersonnel'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
@@ -19,7 +19,7 @@ import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire,
   NatureImmobilisation, Piece, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
-import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSurDossierAssujetti, ventilationsIncoherentes } from '../../lib/ventilationBanque'
+import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from '../../lib/ventilationBanque'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from '../../lib/reglementGroupe'
 import type { DossierTab } from '../../components/DossierParcours'
@@ -310,20 +310,21 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
-  const affectes = mouvementsAffectes(lignes, categories)
+  const affectes = mouvementsAffectes(lignes, categories, assujettiTva)
   const ruptures = rupturesPisteAudit(ecritures, idsMouvementsJustifiesParLeReleve(lignes))
   // L'écriture d'un mouvement affecté que son affectation ne produirait plus — la catégorie a changé de
-  // compte depuis. Même famille que les pièces « à régénérer », invisible de la même façon.
+  // compte depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore sa TVA. Même
+  // famille que les pièces « à régénérer », invisible de la même façon.
   const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes)
-  // Des encaissements affectés en recette alors que le dossier est (devenu) assujetti : leur TVA
-  // collectée n'est dans aucune CA3.
-  const recettesSansTva = recettesAffecteesSurDossierAssujetti(affectes, assujettiTva)
+  // Des encaissements affectés en recette SANS TAUX alors que le dossier est assujetti — affectés avant
+  // qu'il le devienne : leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe en recette.
+  const recettesSansTva = recettesAffecteesSansTaux(affectes, assujettiTva)
   // Les mêmes, par une part d'un mouvement ventilé : un seul point, les deux se réparent pareil.
-  const recettesVentileesSansTva = recettesVentileesSurDossierAssujetti(partsDesVentilations(lignes, ventilations, categories), assujettiTva)
+  const recettesVentileesSansTva = recettesVentileesSansTaux(partsDesVentilations(lignes, ventilations, categories, assujettiTva), assujettiTva)
   // Une ventilation dont les parts ne font plus le mouvement (défensif, la base vérifie la somme), et une
   // écriture de mouvement ventilé qui ne suit plus ses parts — le compte d'une catégorie a changé depuis.
   const ventilationsFausses = ventilationsPartielles ? [] : ventilationsIncoherentes(lignes, ventilations)
-  const ventilesPerimes = mouvementsVentilesDesynchronises(ecritures, lignes, ventilations, categories, modele)
+  const ventilesPerimes = mouvementsVentilesDesynchronises(ecritures, lignes, ventilations, categories, modele, assujettiTva)
   // Les virements personnels sans leur écriture — classés avant que ce classement s'écrive
   // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie.
   const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele)
@@ -469,9 +470,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     // « Erreur » : la 2035 compte ce que disent les parts, l'écriture autre chose. Défensif — la base
     // vérifie la somme —, mais une part écrite ou retirée par un autre chemin ne se verrait nulle part.
     { id: 'ventilations-incoherentes', label: 'mouvement(s) ventilé(s) dont les parts ne font plus le mouvement', action: 'Modifier ou annuler ces ventilations', nb: ventilationsFausses.length, cible: 'banque', severite: 'erreur' },
-    // « Erreur » : la TVA collectée d'un assujetti manque à sa CA3, et la 2035 compte la taxe comme du
-    // chiffre d'affaires. Rien ne les réécrit : la facture, déposée et rapprochée, les remplace.
-    { id: 'recettes-affectees-assujetti', label: 'encaissement(s) affecté(s) ou ventilé(s) en recette sans TVA, sur un dossier assujetti', action: 'Rapprocher leur facture à la place', nb: recettesSansTva.length + recettesVentileesSansTva.length, cible: 'banque', severite: 'erreur' },
+    // « Erreur » : la TVA collectée d'un assujetti manque à sa CA3 — l'onglet TVA écarte ces recettes —, et
+    // la 2035 compte la taxe comme du chiffre d'affaires. Rien ne choisit le taux à la place du cabinet : la
+    // fiche du mouvement le demande, et réaffecter (ou ventiler de nouveau) l'écrit. Dans la liste de Banque,
+    // ces mouvements portent la pastille « TVA à choisir » — sous le filtre « Rapprochés » : le filtre par
+    // défaut, « Non rapprochés », ne les montre pas.
+    { id: 'recettes-affectees-assujetti', label: 'encaissement(s) affecté(s) ou ventilé(s) en recette sans taux de TVA, sur un dossier assujetti', action: 'Choisir leur taux de TVA', nb: recettesSansTva.length + recettesVentileesSansTva.length, cible: 'banque', severite: 'erreur', detail: 'Dans Banque, filtre « Rapprochés » : ils portent la pastille « TVA à choisir ».' },
     // « Erreur » comme une pièce validée sans catégorie : le virement a l'air traité — il est classé —,
     // donc plus personne ne le regarde, et il manque au FEC. L'onglet Virements les montre et les écrit.
     { id: 'virements-sans-ecriture', label: 'virement(s) personnel(s) sans écriture — absents du FEC et de la trésorerie', action: 'Écrire ces virements', nb: virementsAEcrire.length, cible: 'virements', severite: 'erreur' },
