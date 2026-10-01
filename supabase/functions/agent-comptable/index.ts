@@ -35,8 +35,8 @@
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts,
 // src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
 // src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
-// src/lib/reglementGroupe.ts, src/lib/format.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers
-// n'étant pas empaquetés avec la fonction.
+// src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/format.ts et src/lib/controles.ts plutôt
+// qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `paiementsDesPieces`, `rattachementsTresorerie` et `analyserEcritures`
 // et les exécute contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que
