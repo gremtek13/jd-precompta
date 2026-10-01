@@ -35,8 +35,8 @@
 // le Dashboard Supabase) : quelques fonctions pures sont dupliquées depuis src/lib/ecritures.ts,
 // src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
 // src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
-// src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/format.ts et
-// src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
+// src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/amortissements.ts,
+// src/lib/format.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `paiementsDesPieces`, `rattachementsTresorerie` et `analyserEcritures`
 // et les exécute contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que
@@ -45,9 +45,10 @@
 // (échéances d'emprunt) par src/lib/agentComptableEmprunt.test.ts, le bloc VENTILATION (mouvements
 // ventilés sur plusieurs comptes, copié de src/lib/ventilationBanque.ts) par
 // src/lib/agentComptableVentilation.test.ts, le bloc RÈGLEMENT GROUPÉ (virements qui règlent plusieurs
-// pièces, copié de src/lib/reglementGroupe.ts) par src/lib/agentComptableReglementGroupe.test.ts, et le bloc
+// pièces, copié de src/lib/reglementGroupe.ts) par src/lib/agentComptableReglementGroupe.test.ts, le bloc
 // COTISATION (échéances de cotisation rapprochées d'un mouvement, copié de src/lib/cotisationRapprochee.ts)
-// par src/lib/agentComptableCotisation.test.ts.
+// par src/lib/agentComptableCotisation.test.ts, et le bloc AMORTISSEMENT (dotations aux amortissements,
+// copié de src/lib/amortissements.ts) par src/lib/agentComptableAmortissement.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -1039,7 +1040,7 @@ function rapprochementsCotisationRefuses(
 }
 // ── FIN COTISATION ───────────────────────────────────────────────────────────────────────────────
 
-// ── DÉBUT AMORTISSEMENT ──────────────────────────────────────────────────────────────────────────────
+// ── DÉBUT AMORTISSEMENT ──────────────────────────────────────────────────────────────────────────
 // LES DOTATIONS AUX AMORTISSEMENTS QUI MANQUENT AU BROUILLON (01/10/2026, ligne 26.6, étape b). La 2035 compte
 // la dotation d'un bien depuis le registre, le FEC ne la porte que si elle est écrite — au 31 décembre, le
 // 681100 au débit, le compte d'amortissement du bien au crédit. La Checklist réclame celle d'un exercice FINI
@@ -1168,7 +1169,7 @@ function dotationsDuRegistre(
 function dotationsEnDefaut<D extends { annee: number; etat: EtatDotation }>(dotations: readonly D[], anneeCourante: number): D[] {
   return dotations.filter((d) => d.etat !== "ecrite" && (d.etat !== "a_ecrire" || d.annee < anneeCourante))
 }
-// ── FIN AMORTISSEMENT ────────────────────────────────────────────────────────────────────────────────
+// ── FIN AMORTISSEMENT ────────────────────────────────────────────────────────────────────────────
 
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
 function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
