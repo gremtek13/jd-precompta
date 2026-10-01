@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  amortissementCumuleCentimes, compteAmortissement, dotationAEcrire, dotationConforme, dotationDeLExercice,
+  acquisitionsDesBiens, amortissementCumuleCentimes, bienRepris, compteAmortissement, dotationAEcrire, dotationConforme, dotationDeLExercice, montantDeFactureDifferent,
   dotationsDuRegistre, dotationsEnDefaut, dotationSurPeriode, ecritureDeLaDotation, FORMAT_COMPTE_IMMOBILISATION, miseEnService,
   planAmortissement, rang360, refusBien, REFUS_DOTATION_SANS_NATURE, refusDotation, refusNature, valeurSaisie,
 } from './amortissements'
@@ -411,5 +411,98 @@ describe('refusNature — le compte d’une nature est un compte d’immobilisat
   it('refuse un nom vide et une durée qui n’est pas un entier d’au moins un an', () => {
     expect(refusNature(saisie({ libelle: '' }))).toBe('Donnez un nom à la nature.')
     expect(refusNature(saisie({ duree: '0' }))).toBe('La durée usuelle est un nombre entier d’années, au moins un.')
+  })
+})
+
+// L'ÉCRITURE D'ACQUISITION (lib/ecritures.ts, `piecesAComptabiliser`) : la facture d'un bien s'écrit sur le
+// compte d'immobilisation de sa nature — ou rien. `acquisitionsDesBiens` dit lequel, pièce par pièce.
+describe('acquisitionsDesBiens — ce que la facture de chaque bien écrit', () => {
+  const FAUTEUIL: NatureImmobilisation = {
+    id: 'n-fauteuil', dossier_id: 'd1', libelle: 'Fauteuil de soins', duree_annees_defaut: 10, ordre: 3, compte_immobilisation: '215400',
+  }
+
+  it('rend le compte de la nature, qu’elle soit du cabinet ou du dossier', () => {
+    const biens = [bien({ id: 'a', piece_id: 'pa' }), bien({ id: 'b', piece_id: 'pb', nature_id: 'n-fauteuil' })]
+    expect([...acquisitionsDesBiens(biens, [INFORMATIQUE, FAUTEUIL], null)]).toEqual([
+      ['pa', { compte: '218300', motif: null }], ['pb', { compte: '215400', motif: null }],
+    ])
+  })
+
+  it('ne rend aucun compte pour un bien sans nature, ou d’une nature qu’on n’a pas lue — jamais un compte deviné', () => {
+    // Présent et non absent : la pièce reste celle d'un BIEN, que la génération n'écrit pas — ni en charge sur
+    // sa catégorie, ce que l'acquisition existe pour remplacer.
+    const biens = [bien({ id: 'a', piece_id: 'pa', nature_id: null }), bien({ id: 'b', piece_id: 'pb', nature_id: 'n-inconnue' })]
+    const acquisitions = acquisitionsDesBiens(biens, [INFORMATIQUE], null)
+    expect([...acquisitions]).toEqual([
+      ['pa', { compte: null, motif: 'sans_nature' }], ['pb', { compte: null, motif: 'sans_nature' }],
+    ])
+  })
+
+  it('ignore un bien dont la facture a été supprimée : il n’a pas d’acquisition à écrire', () => {
+    expect([...acquisitionsDesBiens([bien({ piece_id: null })], [INFORMATIQUE], null)]).toEqual([])
+  })
+
+  // UN DOSSIER REPRIS : la balance reprise porte déjà la valeur brute des biens acquis avant son ouverture, en
+  // classe 2. L'acquisition d'un tel bien ne s'écrit pas — la règle de ses dotations d'avant l'ouverture.
+  it('n’écrit pas l’acquisition d’un bien acquis avant l’ouverture, nature connue ou pas', () => {
+    const biens = [
+      bien({ id: 'a', piece_id: 'pa', date_acquisition: '2025-12-31' }),
+      bien({ id: 'b', piece_id: 'pb', date_acquisition: '2021-03-15', nature_id: null }),
+    ]
+    expect([...acquisitionsDesBiens(biens, [INFORMATIQUE], '2026-01-01')]).toEqual([
+      ['pa', { compte: null, motif: 'repris' }], ['pb', { compte: null, motif: 'repris' }],
+    ])
+  })
+
+  it('écrit celle d’un bien acquis le jour de l’ouverture, ou après : la balance reprise est celle de la veille', () => {
+    const biens = [
+      bien({ id: 'a', piece_id: 'pa', date_acquisition: '2026-01-01' }),
+      bien({ id: 'b', piece_id: 'pb', date_acquisition: '2026-02-15' }),
+    ]
+    expect([...acquisitionsDesBiens(biens, [INFORMATIQUE], '2026-01-01')]).toEqual([
+      ['pa', { compte: '218300', motif: null }], ['pb', { compte: '218300', motif: null }],
+    ])
+  })
+
+  it('ne tient un bien pour repris que s’il y a une ouverture', () => {
+    expect(bienRepris(bien({ date_acquisition: '2001-01-01' }), null)).toBe(false)
+    expect(bienRepris(bien({ date_acquisition: '2025-12-31' }), '2026-01-01')).toBe(true)
+    expect(bienRepris(bien({ date_acquisition: '2026-01-01' }), '2026-01-01')).toBe(false)
+  })
+})
+
+// L'acquisition s'écrit au montant de la FACTURE, les dotations sur la valeur du REGISTRE : quand les deux
+// diffèrent, le compte du bien ne se recoupe plus avec son amortissement.
+describe('montantDeFactureDifferent — la valeur d’un bien qui ne suit plus sa facture', () => {
+  const facture = { montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 }
+
+  it('se tait sur un bien enregistré au montant retenu de sa facture', () => {
+    expect(montantDeFactureDifferent(bien({ valeur: 1000 }), facture, true, null)).toBeNull()
+    expect(montantDeFactureDifferent(bien({ valeur: 1200 }), facture, false, null)).toBeNull()
+  })
+
+  it('rend le montant de la facture quand la valeur en diffère — le hors taxe pour un dossier assujetti', () => {
+    // Un bien enregistré au TTC sur un dossier assujetti : il amortit une TVA que le dossier récupère.
+    expect(montantDeFactureDifferent(bien({ valeur: 1200 }), facture, true, null)).toBe(1000)
+    expect(montantDeFactureDifferent(bien({ valeur: 1000 }), facture, false, null)).toBe(1200)
+  })
+
+  it('compare au centime, pas au flottant près', () => {
+    // 0,1 + 0,2 ne vaut pas 0,3 en flottants : la comparaison se fait en centimes entiers.
+    expect(montantDeFactureDifferent(bien({ valeur: 0.3 }), { montant_ht: null, montant_tva: null, montant_ttc: 0.1 + 0.2 }, false, null)).toBeNull()
+    expect(montantDeFactureDifferent(bien({ valeur: 1000.01 }), facture, true, null)).toBe(1000)
+  })
+
+  it('n’a rien à comparer sans facture lue ni sans montant', () => {
+    expect(montantDeFactureDifferent(bien({ valeur: 1000 }), undefined, true, null)).toBeNull()
+    expect(montantDeFactureDifferent(bien({ valeur: 1000 }), { montant_ht: null, montant_tva: null, montant_ttc: null }, true, null)).toBeNull()
+  })
+
+  // Un bien repris : son acquisition ne s'écrit pas, la balance reprise porte sa valeur — la facture n'a donc
+  // rien à recouper avec le registre. Signaler l'écart ferait corriger une valeur que rien n'écrit.
+  it('se tait sur un bien acquis avant l’ouverture du dossier, et parle sur le même acquis après', () => {
+    const ancien = bien({ valeur: 1200, date_acquisition: '2024-05-02' })
+    expect(montantDeFactureDifferent(ancien, facture, true, '2026-01-01')).toBeNull()
+    expect(montantDeFactureDifferent(ancien, facture, true, '2024-01-01')).toBe(1000)
   })
 })

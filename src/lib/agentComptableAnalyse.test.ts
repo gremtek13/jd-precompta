@@ -1,7 +1,8 @@
 import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
-import { analyserEcritures, lignesPourPiece, piecesAComptabiliser } from './ecritures'
+import type { AcquisitionDuBien } from './amortissements'
+import { analyserEcritures, lignesPourPiece, piecesAComptabiliser, type CibleComptable } from './ecritures'
 import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import { rattachementsTresorerie, paiementsDesPieces, type PaiementsDesPieces, type PartReglee } from './rattachement'
 import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, Piece } from './types'
@@ -61,7 +62,8 @@ function extraire(source: string) {
   const bloc = source.slice(debut, fin + 2)
   for (const attendu of [
     'function piecesAComptabiliser(', 'function rattachementsTresorerie(', 'const COMPTE_BANQUE =',
-    'const COMPTE_FOURNISSEURS =', 'function compteDeTiers(', 'function engagementDesynchronise(',
+    'const COMPTE_FOURNISSEURS =', 'const COMPTE_FOURNISSEURS_IMMOBILISATIONS =', 'const COMPTE_TVA_IMMOBILISATIONS =',
+    'function compteTvaDe(', 'function compteDeTiers(', 'function engagementDesynchronise(',
     'function desequilibresEngagement(', 'function paiementsDesPieces(', 'function banqueSuitLesPaiements(',
   ] as const) {
     expect(bloc, `« ${attendu} » absent du bloc gardé`).toContain(attendu)
@@ -72,9 +74,9 @@ function extraire(source: string) {
   // main mentirait au premier cas tordu.
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces }`)() as {
-    piecesAComptabiliser: (p: Piece[], c: Categorie[], i: ReadonlySet<string>) => { piece: Piece; compte: string }[]
+    piecesAComptabiliser: (p: Piece[], c: Categorie[], biens: ReadonlyMap<string, AcquisitionDuBien>) => ({ piece: Piece } & CibleComptable)[]
     analyserEcritures: (
-      e: EcritureBrouillon[], a: { piece: Piece; compte: string }[], assujettiTva: boolean, paiements: PaiementsDesPieces,
+      e: EcritureBrouillon[], a: ({ piece: Piece } & CibleComptable)[], assujettiTva: boolean, paiements: PaiementsDesPieces,
       modele: ModeleComptable,
     ) => {
       nbSansContrepartie: number
@@ -89,6 +91,13 @@ function extraire(source: string) {
 const deployee = extraire(sourceDeployee())
 
 const COMPTE_ACHATS = '606100'
+// La cible d'une pièce ordinaire, et celle de la facture d'un bien immobilisé (lib/ecritures.ts).
+const cible = (compte: string): CibleComptable => ({ compte, immobilisation: false })
+const bien = (compte: string): CibleComptable => ({ compte, immobilisation: true })
+// Ce que la facture d'un bien du registre écrit (`acquisitionsDesBiens`) : le compte de sa nature, ou rien.
+const acq = (compte: string): AcquisitionDuBien => ({ compte, motif: null })
+const SANS_NATURE: AcquisitionDuBien = { compte: null, motif: 'sans_nature' }
+const REPRIS: AcquisitionDuBien = { compte: null, motif: 'repris' }
 const COMPTE_TVA_DEDUCTIBLE = '445660'
 const COMPTE_BANQUE = '512000'
 
@@ -154,12 +163,14 @@ const payee = (id: string, date = '2025-03-10') => paiement({ id: `l-${id}`, pie
  * déployée — les parts oubliées, un mouvement non rapproché retenu — mord ici comme sur le calcul.
  */
 function memeResultat(
-  ecritures: EcritureBrouillon[], pieces: Piece[], immos: string[] = [], copie = deployee, assujettiTva = true,
+  ecritures: EcritureBrouillon[], pieces: Piece[], biens: [string, AcquisitionDuBien][] = [], copie = deployee, assujettiTva = true,
   paiements: LigneBancaire[] = [], modele: ModeleComptable = TRESORERIE, parts: PartReglee[] = [],
 ) {
-  const ici = piecesAComptabiliser(pieces, categories, new Set(immos))
-  const la = copie.piecesAComptabiliser(pieces, categories, new Set(immos))
-  const resume = (a: { piece: Piece; compte: string }[]) => a.map((x) => `${x.piece.id}:${x.compte}`)
+  // `biens` : la pièce de chaque bien du registre, et ce que sa facture écrit — le compte de sa nature, ou rien
+  // (sans nature, ou acquis avant l'ouverture d'un dossier repris).
+  const ici = piecesAComptabiliser(pieces, categories, new Map(biens))
+  const la = copie.piecesAComptabiliser(pieces, categories, new Map(biens))
+  const resume = (a: ({ piece: Piece } & CibleComptable)[]) => a.map((x) => `${x.piece.id}:${x.compte}:${x.immobilisation}`)
   expect(resume(la), 'piecesAComptabiliser a dérivé').toEqual(resume(ici))
 
   const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele)
@@ -280,7 +291,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
   it('accepte une pièce réglée en partie, répartie sur ses deux dates', () => {
     const partiel = [paiement({ montant: -48 })]
     const p = piece({ id: 'p1' })
-    const reparties = lignesPourPiece('d1', p, COMPTE_ACHATS, true, paiementsDesPieces(partiel, []).get('p1') ?? [], TRESORERIE)
+    const reparties = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces(partiel, []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `r${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(reparties, [p], [], deployee, true, partiel).piecesDesynchronisees).toEqual([])
     // Et la même écriture tout entière au paiement ne l'est pas.
@@ -299,7 +310,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const genere = lignesPourPiece('d1', p, COMPTE_ACHATS, true, paiementsDesPieces([groupe], parts).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(genere, [p], [], deployee, true, [groupe], TRESORERIE, parts)).toEqual({
       nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [],
@@ -314,7 +325,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const groupe = paiement({ id: 'g', date: '2025-04-15', piece_id: null, montant: -272, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -72 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -200 }]
-    const genere = lignesPourPiece('d1', p, COMPTE_ACHATS, true, paiementsDesPieces([acompte, groupe], parts).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, groupe], parts).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `d${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(genere, [p], [], deployee, true, [acompte, groupe], TRESORERIE, parts).piecesDesynchronisees).toEqual([])
     const unSeul = genere.filter((e) => !(e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === 'g'))
@@ -331,7 +342,7 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const avant: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -118 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -182 }]
     const apres: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const ancienne = lignesPourPiece('d1', p, COMPTE_ACHATS, true, paiementsDesPieces([groupe], avant).get('p1') ?? [], TRESORERIE)
+    const ancienne = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], avant).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `o${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(memeResultat(ancienne, [p], [], deployee, true, [groupe], TRESORERIE, apres).piecesDesynchronisees).toEqual(['p1'])
   })
@@ -409,14 +420,50 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
   })
 
   it('écarte les mêmes pièces de la liste à comptabiliser', () => {
-    // Les quatre portes : montant absent, immobilisée, catégorie sans compte, catégorie inconnue.
+    // Les cinq portes : montant absent, bien sans nature, bien repris, catégorie sans compte, catégorie inconnue.
     memeResultat([], [
       piece({ id: 'ok' }),
       piece({ id: 'sans-montant', montant_ttc: null }),
       piece({ id: 'immo' }),
+      piece({ id: 'repris' }),
       piece({ id: 'sans-compte', categorie_id: 'cat-sans-compte' }),
       piece({ id: 'sans-categorie', categorie_id: null }),
-    ], ['immo'])
+    ], [['immo', SANS_NATURE], ['repris', REPRIS]])
+  })
+
+  // L'ÉCRITURE D'ACQUISITION (01/10/2026, ligne 26.6, étape b) : la facture d'un bien s'écrit sur le compte de
+  // sa nature, quelle que soit sa catégorie, et sa TVA en 445620.
+  it('écrit les mêmes biens sur le compte de leur nature, catégorie ou pas', () => {
+    const r = memeResultat([], [
+      piece({ id: 'bien' }),
+      piece({ id: 'bien-sans-categorie', categorie_id: null }),
+      piece({ id: 'bien-sur-categorie-sans-compte', categorie_id: 'cat-sans-compte' }),
+    ], [['bien', acq('218300')], ['bien-sans-categorie', acq('215400')], ['bien-sur-categorie-sans-compte', acq('218400')]])
+    expect(r.piecesDesynchronisees).toEqual([])
+  })
+
+  it('se tait sur l’acquisition telle que src/lib la génère, et voit la charge restée sur la catégorie', () => {
+    const p = piece({ id: 'p1' })
+    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], []).get('p1') ?? [], TRESORERIE)
+      .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+    expect(acquisition.map((e) => e.compte)).toEqual(['218300', '445620', COMPTE_BANQUE])
+    expect(memeResultat(acquisition, [p], [['p1', acq('218300')]], deployee, true, [paiement()]).piecesDesynchronisees).toEqual([])
+    // La même pièce écrite en charge avant d'être immobilisée : « à régénérer » des deux côtés.
+    const charge = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([paiement()], []).get('p1') ?? [], TRESORERIE)
+      .map((l, i) => ecriture({ ...l, id: `c${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+    expect(memeResultat(charge, [p], [['p1', acq('218300')]], deployee, true, [paiement()]).piecesDesynchronisees).toEqual(['p1'])
+    // Et l'acquisition d'un bien qu'on retire du registre l'est aussi : elle repasse en charge.
+    expect(memeResultat(acquisition, [p], [], deployee, true, [paiement()]).piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('se tait sur l’acquisition en engagement telle que src/lib la génère, dette au 404', () => {
+    const p = piece({ id: 'p1' })
+    const lignes = brouillonEngagement(p, [paiement()], { cible: bien('218300') })
+    expect([...new Set(lignes.map((e) => e.compte))]).toEqual(['218300', '445620', '404000', COMPTE_BANQUE])
+    expect(memeResultat(lignes, [p], [['p1', acq('218300')]], deployee, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual([])
+    // Une dette restée au 401 : « à régénérer » des deux côtés.
+    const au401 = lignes.map((e) => (e.compte === '404000' ? { ...e, compte: '401000' } : e))
+    expect(memeResultat(au401, [p], [['p1', acq('218300')]], deployee, true, [paiement()], ENGAGEMENT).piecesDesynchronisees).toEqual(['p1'])
   })
 })
 
@@ -425,9 +472,9 @@ describe('agent-comptable / analyserEcritures (copie déployée)', () => {
 // produit réellement.
 function brouillonEngagement(
   p: Piece, mouvements: readonly Pick<LigneBancaire, 'id' | 'date' | 'montant'>[],
-  o: { assujettiTva?: boolean; compteNotesDeFrais?: CompteNotesDeFrais } = {},
+  o: { assujettiTva?: boolean; compteNotesDeFrais?: CompteNotesDeFrais; cible?: CibleComptable } = {},
 ): EcritureBrouillon[] {
-  return lignesEngagementPourPiece('d1', p, COMPTE_ACHATS, o.assujettiTva ?? true, o.compteNotesDeFrais ?? '455000', mouvements)
+  return lignesEngagementPourPiece('d1', p, o.cible ?? cible(COMPTE_ACHATS), o.assujettiTva ?? true, o.compteNotesDeFrais ?? '455000', mouvements)
     .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
 }
 
@@ -630,9 +677,9 @@ describe('le garde-fou sait encore échouer', () => {
 
   function sansFiltreImmobilisation(): string {
     const source = sourceDeployee()
-    const avant = 'if (piece.montant_ttc == null || pieceIdsImmobilisees.has(piece.id)) return []'
-    expect(source.includes(avant), 'le filtre des immobilisations est introuvable').toBe(true)
-    return source.replace(avant, 'if (piece.montant_ttc == null) return []')
+    const avant = '    if (acquisition) return acquisition.compte'
+    expect(source.split(avant).length - 1, 'le filtre des immobilisations est introuvable ou ambigu').toBe(1)
+    return source.replace(avant, '    if (false) return acquisition.compte')
   }
 
   function sansPaiements(): string {
@@ -671,7 +718,34 @@ describe('le garde-fou sait encore échouer', () => {
     // deux implémentations tombent d'accord sur ce qu'elles en font. La porte d'entrée doit être
     // gardée autant que le calcul.
     const derivee = extraire(sansFiltreImmobilisation())
-    expect(() => memeResultat([], [piece({ id: 'immo' })], ['immo'], derivee)).toThrow()
+    expect(() => memeResultat([], [piece({ id: 'immo' })], [['immo', acq('218300')]], derivee)).toThrow()
+    expect(() => memeResultat([], [piece({ id: 'immo' })], [['immo', SANS_NATURE]], derivee)).toThrow()
+    expect(() => memeResultat([], [piece({ id: 'immo' })], [['immo', REPRIS]], derivee)).toThrow()
+  })
+
+  it('attrape une copie qui écrit la TVA d’un bien en 445660', () => {
+    const derivee = extraire(planter(
+      sourceDeployee(),
+      '  return immobilisation ? COMPTE_TVA_IMMOBILISATIONS : COMPTE_TVA_DEDUCTIBLE\n',
+      '  return COMPTE_TVA_DEDUCTIBLE\n',
+      'le compte de TVA d’un bien',
+    ))
+    const p = piece({ id: 'p1' })
+    const acquisition = lignesPourPiece('d1', p, bien('218300'), true, paiementsDesPieces([paiement()], []).get('p1') ?? [], TRESORERIE)
+      .map((l, i) => ecriture({ ...l, id: `a${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+    expect(() => memeResultat(acquisition, [p], [['p1', acq('218300')]], derivee, true, [paiement()])).toThrow()
+  })
+
+  it('attrape une copie qui doit la facture d’un bien au 401', () => {
+    const derivee = extraire(planter(
+      sourceDeployee(),
+      '  return immobilisation ? COMPTE_FOURNISSEURS_IMMOBILISATIONS : COMPTE_FOURNISSEURS\n',
+      '  return COMPTE_FOURNISSEURS\n',
+      'le compte de tiers d’un bien',
+    ))
+    const p = piece({ id: 'p1' })
+    expect(() => memeResultat(brouillonEngagement(p, [paiement()], { cible: bien('218300') }), [p], [['p1', acq('218300')]], derivee, true, [paiement()], ENGAGEMENT))
+      .toThrow()
   })
 
   // Le code d'avant ce chantier : tout jugé en trésorerie, quel que soit le modèle du dossier.
@@ -716,7 +790,7 @@ describe('le garde-fou sait encore échouer', () => {
     const p = piece({ id: 'p1' })
     const groupe = paiement({ id: 'g', piece_id: null, montant: -300, reglement_groupe: true })
     const parts: PartReglee[] = [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: -120 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -180 }]
-    const genere = lignesPourPiece('d1', p, COMPTE_ACHATS, true, paiementsDesPieces([groupe], parts).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([groupe], parts).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `g${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     expect(() => memeResultat(genere, [p], [], derivee, true, [groupe], TRESORERIE, parts)).toThrow()
   })
@@ -740,7 +814,7 @@ describe('le garde-fou sait encore échouer', () => {
     const p = piece({ id: 'p1' })
     const acompte = paiement({ id: 'a', date: '2025-03-20', montant: -48 })
     const solde = paiement({ id: 's', date: '2025-04-15', montant: -72 })
-    const genere = lignesPourPiece('d1', p, COMPTE_ACHATS, true, paiementsDesPieces([acompte, solde], []).get('p1') ?? [], TRESORERIE)
+    const genere = lignesPourPiece('d1', p, cible(COMPTE_ACHATS), true, paiementsDesPieces([acompte, solde], []).get('p1') ?? [], TRESORERIE)
       .map((l, i) => ecriture({ ...l, id: `d${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
     const unSeul = genere.filter((e) => !(e.compte === COMPTE_BANQUE && e.ligne_bancaire_id === 's'))
     expect(() => memeResultat(unSeul, [p], [], derivee, true, [acompte, solde])).toThrow()

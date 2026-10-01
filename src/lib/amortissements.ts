@@ -1,6 +1,7 @@
 import { COMPTE_DOTATIONS_AMORTISSEMENTS } from './comptes'
 import { anneeDe, jourDe, moisDe } from './format'
-import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
+import { montantRetenu } from './montantRetenu'
+import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from './types'
 
 // LES DOTATIONS AUX AMORTISSEMENTS (ligne 26.6 de la feuille de route, étape b).
 //
@@ -101,6 +102,63 @@ export function compteAmortissement(compteImmobilisation: string): string {
 
 /** Le 31 décembre d'un exercice : la date de sa dotation. */
 export const dateDeLaDotation = (annee: number) => `${annee}-12-31`
+
+// CE QUE LA FACTURE D'UN BIEN ÉCRIT (lib/ecritures.ts, `piecesAComptabiliser`) : son ACQUISITION, au compte
+// d'immobilisation de sa NATURE, non à celui de sa catégorie — ou rien, et pourquoi :
+// - `sans_nature` : son compte n'est pas connu, et rien ne s'écrit avant qu'on la choisisse ;
+// - `repris` : le bien est acquis AVANT l'ouverture d'un dossier repris (lib/aNouveaux.ts). La balance reprise
+//   porte déjà sa valeur brute, en classe 2 : l'écrire encore la compterait deux fois. C'est la règle de ses
+//   dotations d'avant l'ouverture (`dotationAEcrire`), pour la même raison. La date qui décide est celle du
+//   REGISTRE — l'acquisition —, pas celle d'un paiement que le relevé de l'application ne porte pas.
+// Un bien dont la facture a été supprimée (`piece_id` nul) n'a pas d'acquisition à écrire.
+export type AcquisitionDuBien =
+  | { compte: string; motif: null }
+  | { compte: null; motif: 'sans_nature' | 'repris' }
+
+/** Le bien est-il acquis avant l'ouverture du dossier — donc dans ses à-nouveaux ? */
+export function bienRepris(bien: Pick<Immobilisation, 'date_acquisition'>, ouverture: string | null): boolean {
+  return ouverture != null && bien.date_acquisition < ouverture
+}
+
+// La pièce de chaque bien du registre, et ce que sa facture écrit. `ouverture` : la date des à-nouveaux,
+// nulle pour un dossier qui n'a pas été repris — sans valeur par défaut : oubliée, elle ferait écrire une
+// seconde fois chaque bien que la balance reprise porte déjà.
+export function acquisitionsDesBiens(
+  immobilisations: readonly Pick<Immobilisation, 'piece_id' | 'nature_id' | 'date_acquisition'>[],
+  natures: readonly Pick<NatureImmobilisation, 'id' | 'compte_immobilisation'>[],
+  ouverture: string | null,
+): Map<string, AcquisitionDuBien> {
+  const compteParNature = new Map(natures.map((n) => [n.id, n.compte_immobilisation]))
+  const acquisitions = new Map<string, AcquisitionDuBien>()
+  for (const bien of immobilisations) {
+    if (!bien.piece_id) continue
+    if (bienRepris(bien, ouverture)) {
+      acquisitions.set(bien.piece_id, { compte: null, motif: 'repris' })
+      continue
+    }
+    const compte = (bien.nature_id ? compteParNature.get(bien.nature_id) : undefined) ?? null
+    acquisitions.set(bien.piece_id, compte ? { compte, motif: null } : { compte: null, motif: 'sans_nature' })
+  }
+  return acquisitions
+}
+
+// LA VALEUR D'UN BIEN QUI NE SUIT PLUS SA FACTURE. L'acquisition s'écrit au montant de la FACTURE — le hors
+// taxe pour un dossier assujetti, le TTC sinon (`montantRetenu`) —, les dotations sur la valeur du REGISTRE :
+// quand les deux diffèrent, le compte du bien ne se recoupe plus avec son amortissement, et le FEC le montre
+// à qui l'additionne. La valeur se saisit au montant retenu à l'enregistrement ; elle diverge quand on la
+// modifie, ou quand la facture porte autre chose que le bien — elle s'écrit alors en entier sur le compte du
+// bien, l'application n'ayant qu'une pièce par bien. Rend le montant de la facture quand il diffère au
+// centime, nul sinon — et nul sans facture lue ou sans montant, qui n'ont rien à comparer. Nul aussi pour un
+// bien REPRIS : son acquisition ne s'écrit pas (`acquisitionsDesBiens`), la balance reprise porte sa valeur.
+export function montantDeFactureDifferent(
+  bien: Pick<Immobilisation, 'valeur' | 'date_acquisition'>, facture: Pick<Piece, 'montant_ttc' | 'montant_ht' | 'montant_tva'> | undefined,
+  assujettiTva: boolean, ouverture: string | null,
+): number | null {
+  if (bienRepris(bien, ouverture)) return null
+  const montant = facture && facture.montant_ttc != null ? montantRetenu(facture, assujettiTva) : null
+  if (montant == null) return null
+  return Math.round(montant * 100) === Math.round(bien.valeur * 100) ? null : Math.round(montant * 100) / 100
+}
 
 // La dotation à ÉCRIRE pour un exercice : celle du calcul, sauf avant l'ouverture du dossier — ses
 // à-nouveaux portent déjà l'amortissement cumulé des exercices repris, et l'écrire encore le compterait deux

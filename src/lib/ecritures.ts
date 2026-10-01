@@ -1,8 +1,9 @@
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, libelleCompteTenu } from './comptes'
+import { COMPTE_BANQUE, libelleCompteTenu } from './comptes'
 import { COMPTES_DE_TIERS, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
-import { montantRetenu, tvaVentilee } from './montantRetenu'
+import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
 import { rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
+import type { AcquisitionDuBien } from './amortissements'
 import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
@@ -40,6 +41,16 @@ export interface LigneAGenerer {
   ligne_bancaire_id?: string
 }
 
+// OÙ UNE PIÈCE S'ÉCRIT : le compte de sa catégorie, ou — pour la facture d'un bien IMMOBILISÉ — le compte
+// d'immobilisation de sa nature (lib/amortissements.ts, `acquisitionsDesBiens`). C'est l'écriture d'ACQUISITION
+// (ligne 26.6, étape b) : sans elle, le FEC amortissait un bien qu'il n'avait jamais vu entrer, et le
+// paiement de sa facture manquait à la banque. L'immobilisation décide aussi du compte de TVA (445620 au
+// lieu de 445660) et, en engagement, du compte de tiers (404000 au lieu de 401000).
+export interface CibleComptable {
+  compte: string
+  immobilisation: boolean
+}
+
 // Ligne(s) charge/produit (+ TVA séparée le cas échéant) pour une pièce donnée — extrait de
 // EcrituresTab pour être appelé aussi bien en génération initiale (une pièce sans encore d'écriture)
 // qu'en régénération (une pièce déjà passée en écritures, mais modifiée depuis — voir
@@ -65,7 +76,7 @@ export interface LigneAGenerer {
 // somme reste celle de la pièce. Une part que rien ne date (ni paiement, ni date de pièce) prend la
 // date du DÉPÔT, le repli d'avant.
 export function lignesChargeProduitPourPiece(
-  dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean,
+  dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean,
   paiements: readonly Pick<PaiementDePiece, 'date' | 'montant'>[],
 ): LigneAGenerer[] {
   const sensPiece: 'debit' | 'credit' = piece.type_piece === 'vente' ? 'credit' : 'debit'
@@ -88,12 +99,10 @@ export function lignesChargeProduitPourPiece(
   const tvas = tva ? repartir(tva, fractions.map((f) => f.part)) : []
 
   return fractions.flatMap((f, i) => {
-    const lignes = [ligne(f.date, compteComptable, charges[i])]
+    const lignes = [ligne(f.date, cible.compte, charges[i])]
     // Rien à ventiler : la charge est ce qui a été payé, face au mouvement bancaire. Une part de TVA
     // arrondie à zéro sur un paiement partiel ne fait pas de ligne vide.
-    if (tva && tvas[i] !== 0) {
-      lignes.push(ligne(f.date, piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, tvas[i]))
-    }
+    if (tva && tvas[i] !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i]))
     return lignes
   })
 }
@@ -128,14 +137,14 @@ export function ligneContrepartieBanque(
 // `paiements` : ceux de CETTE pièce, tirés de `paiementsDesPieces` — le type refuse une ligne du relevé
 // filtrée sur `piece_id`, qui oublierait les parts des virements groupés.
 export function lignesPourPiece(
-  dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean,
+  dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean,
   paiements: readonly PaiementDePiece[], modele: ModeleComptable,
 ): LigneAGenerer[] {
   if (modele.mode === 'engagement') {
-    return lignesEngagementPourPiece(dossierId, piece, compteComptable, assujettiTva, modele.compteNotesDeFrais, paiements)
+    return lignesEngagementPourPiece(dossierId, piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements)
   }
   return [
-    ...lignesChargeProduitPourPiece(dossierId, piece, compteComptable, assujettiTva, paiements),
+    ...lignesChargeProduitPourPiece(dossierId, piece, cible, assujettiTva, paiements),
     ...paiements.flatMap((p) => ligneContrepartieBanque(dossierId, piece, p) ?? []),
   ]
 }
@@ -218,27 +227,39 @@ export interface AnalyseEcritures {
 // chaîne comptable (catégorie, compte de la catégorie, montant) plus une quatrième que rien ne
 // nommait : une pièce enregistrée en immobilisation est un ACTIF, pas une charge courante — elle
 // s'amortit, elle ne se déduit pas d'un coup.
-export interface PieceAComptabiliser {
+//
+// ET DEPUIS LE 01/10/2026 ELLE S'ÉCRIT QUAND MÊME, sur son compte d'IMMOBILISATION : c'est l'écriture
+// d'acquisition. Elle était écartée de tout, donc ni l'actif ni le paiement de sa facture n'entraient au
+// brouillon — le FEC amortissait un bien qu'il n'avait jamais vu entrer, et la banque de l'application
+// dépassait le relevé de tout ce que les biens avaient coûté. `acquisitions` : la pièce de chaque bien, et
+// le compte de sa nature — ou rien, pour un bien sans nature, qui ne s'écrit pas tant qu'on ne l'a pas
+// choisie, et pour un bien acquis avant l'ouverture d'un dossier repris, que les à-nouveaux portent déjà.
+// Sans valeur par défaut : une liste vide écrirait chaque bien en charge, sur sa catégorie.
+export interface PieceAComptabiliser extends CibleComptable {
   piece: Piece
-  compte: string
 }
 
 export function piecesAComptabiliser(
   piecesValidees: Piece[],
   categories: Categorie[],
-  pieceIdsImmobilisees: ReadonlySet<string>,
+  acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
 ): PieceAComptabiliser[] {
-  return piecesValidees.flatMap((piece) => {
-    if (piece.montant_ttc == null || pieceIdsImmobilisees.has(piece.id)) return []
+  return piecesValidees.flatMap((piece): PieceAComptabiliser[] => {
+    if (piece.montant_ttc == null) return []
+    const acquisition = acquisitions.get(piece.id)
+    if (acquisition) return acquisition.compte ? [{ piece, compte: acquisition.compte, immobilisation: true }] : []
     const compte = categories.find((c) => c.id === piece.categorie_id)?.compte_comptable
-    return compte ? [{ piece, compte }] : []
+    return compte ? [{ piece, compte, immobilisation: false }] : []
   })
 }
 
 // Pourquoi une pièce validée ne doit plus rien produire au brouillon. L'ordre compte : une pièce
-// immobilisée est le cas le plus coûteux ET celui où « Régénérer » est activement faux (il
-// réécrirait la charge), donc il se lit en premier.
-export type MotifSansObjet = 'immobilisee' | 'sans_categorie' | 'categorie_sans_compte' | 'sans_montant'
+// immobilisée se lit en premier, sa catégorie ne décidant plus de rien. Depuis que l'acquisition s'écrit,
+// deux biens seulement ne produisent rien : le bien SANS NATURE, dont le compte n'est pas connu — donc
+// « Régénérer » ne saurait pas où écrire, et une écriture déjà passée sur la catégorie compte une charge de
+// trop — et le bien REPRIS, acquis avant l'ouverture : la balance reprise le porte, et toute écriture de sa
+// facture le compte une seconde fois (ou compte en charge un bien qui s'amortit).
+export type MotifSansObjet = 'bien_sans_nature' | 'bien_repris' | 'sans_categorie' | 'categorie_sans_compte' | 'sans_montant'
 
 export interface EcritureSansObjet {
   piece: Piece
@@ -252,9 +273,14 @@ export interface EcritureSansObjet {
 function motifSansObjet(
   piece: Piece,
   categories: Categorie[],
-  pieceIdsImmobilisees: ReadonlySet<string>,
+  acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
 ): MotifSansObjet | null {
-  if (pieceIdsImmobilisees.has(piece.id)) return 'immobilisee'
+  const acquisition = acquisitions.get(piece.id)
+  if (acquisition) {
+    if (acquisition.motif === 'repris') return 'bien_repris'
+    if (acquisition.motif === 'sans_nature') return 'bien_sans_nature'
+    return piece.montant_ttc == null ? 'sans_montant' : null
+  }
   if (!piece.categorie_id) return 'sans_categorie'
   if (!categories.find((c) => c.id === piece.categorie_id)?.compte_comptable) return 'categorie_sans_compte'
   if (piece.montant_ttc == null) return 'sans_montant'
@@ -279,7 +305,7 @@ export function ecrituresSansObjet(
   ecritures: EcritureBrouillon[],
   piecesValidees: Piece[],
   categories: Categorie[],
-  pieceIdsImmobilisees: ReadonlySet<string>,
+  acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
 ): EcritureSansObjet[] {
   const parPiece = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
@@ -303,7 +329,7 @@ export function ecrituresSansObjet(
     // crier au loup sur un choix de chargement, et un avertissement qui se trompe emporte dans son
     // discrédit les avertissements voisins qui, eux, disent vrai.
     if (!piece) continue
-    const motif = motifSansObjet(piece, categories, pieceIdsImmobilisees)
+    const motif = motifSansObjet(piece, categories, acquisitions)
     if (!motif) continue
     sansObjet.push({
       piece,
@@ -355,12 +381,12 @@ export function analyserEcritures(
       }))
       .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
 
-  const piecesDesynchronisees = aComptabiliser.filter(({ piece, compte }) => {
+  const piecesDesynchronisees = aComptabiliser.filter(({ piece, ...cible }) => {
     const groupe = piecesParGroupe.get(piece.id) ?? []
     const paiementsPiece = paiements.get(piece.id) ?? []
     return modele.mode === 'engagement'
-      ? engagementDesynchronise(piece, compte, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
-      : tresorerieDesynchronisee(piece, compte, groupe, assujettiTva, paiementsPiece)
+      ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
+      : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece)
   }).map(({ piece }) => piece)
 
   return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
@@ -398,7 +424,7 @@ function banqueSuitLesPaiements(lignesBanque: readonly EcritureBrouillon[], paie
 // total ne sont plus ceux que la pièce produirait aujourd'hui, ou ses contreparties banque ne sont plus
 // ses paiements.
 function tresorerieDesynchronisee(
-  p: Piece, compte: string, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
+  p: Piece, cible: CibleComptable, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
   paiementsPiece: readonly PaiementDePiece[],
 ): boolean {
   const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE)
@@ -416,9 +442,12 @@ function tresorerieDesynchronisee(
   // écriture qui partira en FEC sur un compte que la pièce ne désigne plus, pendant que Clôture et
   // la 2035 lisent le poste 2035 de la catégorie ACTUELLE. Deux livrables, deux réponses, aucun
   // signal — c'est mot pour mot l'incohérence que rupturesPisteAudit a déjà coûté une fois.
-  const surUnAutreCompte = lignes.some(
-    (e) => e.compte !== compte && e.compte !== COMPTE_TVA_DEDUCTIBLE && e.compte !== COMPTE_TVA_COLLECTEE,
-  )
+  //
+  // Et le compte de TVA est celui que la génération écrit (`compteTvaDe`) : la facture d'un bien passe en
+  // 445620, celle d'une charge en 445660 — une pièce immobilisée après coup change de compte de TVA autant
+  // que de compte de charge.
+  const compteTva = compteTvaDe(p, cible.immobilisation)
+  const surUnAutreCompte = lignes.some((e) => e.compte !== cible.compte && e.compte !== compteTva)
   if (surUnAutreCompte) return true
   // ET LA VENTILATION DE LA TVA, QUE LE TOTAL NE PEUT PAS VOIR — le panneau annonçait pourtant
   // « montant, TVA » depuis toujours. Corriger `montant_tva` en gardant le TTC laisse le total du
@@ -436,7 +465,7 @@ function tresorerieDesynchronisee(
   // quoi une écriture juste, au TTC sur une seule ligne, serait signalée « à régénérer » à jamais,
   // et une écriture qui ventile encore sa TVA en 445660 ne le serait pas.
   const tvaEnregistree = lignes
-    .filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE)
+    .filter((e) => e.compte === compteTva)
     .reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
   if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
   // LA DATE AUTANT QUE LE COMPTE, ET ELLE COÛTE PLUS CHER QUE LUI. Une pièce validée sans date
@@ -481,7 +510,7 @@ function tresorerieDesynchronisee(
 // RAPPROCHEMENTS — un mouvement rapproché sans règlement laisserait au 401 une dette déjà payée, et un
 // règlement que plus rien ne rapproche en solderait une qui court encore.
 function engagementDesynchronise(
-  p: Piece, compte: string, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
+  p: Piece, cible: CibleComptable, groupe: readonly EcritureBrouillon[], assujettiTva: boolean,
   paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: CompteNotesDeFrais,
 ): boolean {
   const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== COMPTE_BANQUE)
@@ -489,13 +518,14 @@ function engagementDesynchronise(
   // Pas encore générée — pas une désynchronisation. Des règlements SANS leur facture, en revanche, en
   // sont une : la génération ne les produit jamais ainsi, et « Régénérer » reconstruit les deux.
   if (facture.length === 0) return reglements.length > 0
-  const tiers = compteDeTiers(p, compteNotesDeFrais)
+  const tiers = compteDeTiers(p, compteNotesDeFrais, cible.immobilisation)
   const sensPiece: 'debit' | 'credit' = p.type_piece === 'vente' ? 'credit' : 'debit'
   const sensTiers: 'debit' | 'credit' = sensPiece === 'debit' ? 'credit' : 'debit'
   const signe = (e: EcritureBrouillon, sens: 'debit' | 'credit') => (e.sens === sens ? e.montant : -e.montant)
-  const estTva = (e: EcritureBrouillon) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE
+  const compteTva = compteTvaDe(p, cible.immobilisation)
+  const estTva = (e: EcritureBrouillon) => e.compte === compteTva
 
-  if (facture.some((e) => e.compte !== compte && e.compte !== tiers && !estTva(e))) return true
+  if (facture.some((e) => e.compte !== cible.compte && e.compte !== tiers && !estTva(e))) return true
   const tvaEnregistree = facture.filter(estTva).reduce((sum, e) => sum + signe(e, sensPiece), 0)
   if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
   // La date de la FACTURE, sur toutes ses lignes. Sans date de pièce, le repli sur la date de dépôt est

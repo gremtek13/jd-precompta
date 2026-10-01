@@ -270,6 +270,33 @@ describe('synchroniserContrepartieBanque — en engagement', () => {
     expect(misesAJour).toEqual([])
   })
 
+  it('solde le 404 de la facture d’un bien immobilisé, pas le 401', async () => {
+    // L'écriture d'ACQUISITION crédite le 404000 : c'est elle que le règlement lit pour savoir quel compte solder.
+    reponses.select = { data: [{ id: 'e1', compte: '218300', ligne_bancaire_id: null }, { id: 'e2', compte: '404000', ligne_bancaire_id: null }], error: null }
+    await synchroniserContrepartieBanque('d1', piece(), ligne(-120), ENGAGEMENT)
+    expect(insere).toEqual([
+      expect.objectContaining({ compte: '404000', sens: 'debit', montant: 120, ligne_bancaire_id: 'l1' }),
+      expect.objectContaining({ compte: COMPTE_BANQUE, sens: 'credit', montant: 120, ligne_bancaire_id: 'l1' }),
+    ])
+  })
+
+  it('ne lit pas le 404 d’un RÈGLEMENT comme celui d’une facture de bien', async () => {
+    // Seule la facture (sans mouvement) dit ce qui est dû : un règlement d'un autre mouvement au 404, à côté
+    // d'une facture au 401, n'est pas une raison de solder le 404 — c'est une écriture à régénérer.
+    reponses.select = {
+      data: [
+        { id: 'e1', compte: '606100', ligne_bancaire_id: null }, { id: 'e2', compte: COMPTE_FOURNISSEURS, ligne_bancaire_id: null },
+        { id: 'e3', compte: '404000', ligne_bancaire_id: 'l9' },
+      ],
+      error: null,
+    }
+    await synchroniserContrepartieBanque('d1', piece(), ligne(-120), ENGAGEMENT)
+    expect(insere).toEqual([
+      expect.objectContaining({ compte: COMPTE_FOURNISSEURS, sens: 'debit', montant: 120, ligne_bancaire_id: 'l1' }),
+      expect.objectContaining({ compte: COMPTE_BANQUE, sens: 'credit', montant: 120, ligne_bancaire_id: 'l1' }),
+    ])
+  })
+
   it('n’écrit rien tant que la facture n’est pas générée — la génération écrira les deux', async () => {
     reponses.select = { data: [], error: null }
     await synchroniserContrepartieBanque('d1', piece(), ligne(-120), ENGAGEMENT)

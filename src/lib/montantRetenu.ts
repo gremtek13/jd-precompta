@@ -1,3 +1,4 @@
+import { COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS } from './comptes'
 import type { Piece } from './types'
 
 // QUEL MONTANT D'UNE PIÈCE COMPTE — HT OU TTC — ET CE N'EST PAS UN CHOIX DE PRÉSENTATION.
@@ -36,6 +37,16 @@ const auCentime = (montant: number) => Math.round(montant * 100) / 100
 // dossier exonéré — il ne la collecte pas et ne la récupère pas.
 export function tvaVentilee(piece: Montants, assujettiTva: boolean): number {
   return assujettiTva ? piece.montant_tva ?? 0 : 0
+}
+
+// Le compte de TVA d'une pièce : collectée pour une vente, déductible sur IMMOBILISATIONS pour la facture
+// d'un bien, déductible sur autres biens et services sinon — la répartition de la CA3 (lignes 19 et 20).
+// UN SEUL ENDROIT pour la génération et pour le contrôle des écritures (lib/ecritures.ts,
+// lib/engagement.ts) : un compte attendu d'un côté et écrit de l'autre finirait par différer, et chaque
+// écriture juste serait « à régénérer ».
+export function compteTvaDe(piece: Pick<Piece, 'type_piece'>, immobilisation: boolean): string {
+  if (piece.type_piece === 'vente') return COMPTE_TVA_COLLECTEE
+  return immobilisation ? COMPTE_TVA_IMMOBILISATIONS : COMPTE_TVA_DEDUCTIBLE
 }
 
 // Le montant qui entre en recette ou en dépense. Null quand on ne peut pas le connaître : un TTC

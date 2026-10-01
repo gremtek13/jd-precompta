@@ -4,15 +4,19 @@ import {
   lignesEngagementPourPiece, lignesFactureEngagement, lignesReglementEngagement, modeleDuDossier,
 } from './engagement'
 import {
-  COMPTE_BANQUE, COMPTE_CLIENTS, COMPTE_EXPLOITANT, COMPTE_FOURNISSEURS, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
-  LIBELLES_COMPTES,
+  COMPTE_BANQUE, COMPTE_CLIENTS, COMPTE_EXPLOITANT, COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_TVA_COLLECTEE,
+  COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS, LIBELLES_COMPTES,
 } from './comptes'
 import { dateLocaleDe } from './format'
-import type { LigneAGenerer } from './ecritures'
+import type { CibleComptable, LigneAGenerer } from './ecritures'
 import type { LigneBancaire, Piece } from './types'
 
 const ACHATS = '606100'
 const VENTES = '706000'
+// La cible d'une pièce ordinaire : le compte de sa catégorie. Celle de la facture d'un bien immobilisé
+// porte le compte de sa nature et `immobilisation` (lib/ecritures.ts, `CibleComptable`).
+const cible = (compte: string): CibleComptable => ({ compte, immobilisation: false })
+const bien = (compte: string): CibleComptable => ({ compte, immobilisation: true })
 
 // Jeu d'essai typé SANS `as` : le compilateur vérifie chaque champ contre la table.
 function piece(o: Partial<Piece> = {}): Piece {
@@ -41,25 +45,34 @@ const solde = (lignes: readonly LigneAGenerer[]) =>
 
 describe('compteDeTiers', () => {
   it('range une vente en 411, un achat et une pièce « autre » en 401', () => {
-    expect(compteDeTiers(piece({ type_piece: 'vente' }), '455000')).toBe(COMPTE_CLIENTS)
-    expect(compteDeTiers(piece({ type_piece: 'achat' }), '455000')).toBe(COMPTE_FOURNISSEURS)
-    expect(compteDeTiers(piece({ type_piece: 'autre' }), '455000')).toBe(COMPTE_FOURNISSEURS)
+    expect(compteDeTiers(piece({ type_piece: 'vente' }), '455000', false)).toBe(COMPTE_CLIENTS)
+    expect(compteDeTiers(piece({ type_piece: 'achat' }), '455000', false)).toBe(COMPTE_FOURNISSEURS)
+    expect(compteDeTiers(piece({ type_piece: 'autre' }), '455000', false)).toBe(COMPTE_FOURNISSEURS)
   })
 
   it('range une note de frais sur le compte que le dossier a choisi, quel qu’il soit', () => {
     for (const compte of ['455000', '108000', '467000'] as const) {
-      expect(compteDeTiers(piece({ type_piece: 'note_frais' }), compte)).toBe(compte)
+      expect(compteDeTiers(piece({ type_piece: 'note_frais' }), compte, false)).toBe(compte)
     }
+  })
+
+  it('doit la facture d’un bien immobilisé au 404, et elle seule', () => {
+    // L'écriture d'ACQUISITION : un fournisseur d'immobilisations n'est pas un fournisseur de biens et services.
+    expect(compteDeTiers(piece({ type_piece: 'achat' }), '455000', true)).toBe(COMPTE_FOURNISSEURS_IMMOBILISATIONS)
+    expect(compteDeTiers(piece({ type_piece: 'autre' }), '455000', true)).toBe(COMPTE_FOURNISSEURS_IMMOBILISATIONS)
+    // Une note de frais reste due au dirigeant, quel que soit ce qu'elle a payé.
+    expect(compteDeTiers(piece({ type_piece: 'note_frais' }), '108000', true)).toBe('108000')
   })
 
   it('ne connaît que des comptes de tiers que la balance sait nommer', () => {
     for (const compte of COMPTES_DE_TIERS) expect(LIBELLES_COMPTES[compte]).toBeTruthy()
+    expect(COMPTES_DE_TIERS.has(COMPTE_FOURNISSEURS_IMMOBILISATIONS)).toBe(true)
   })
 })
 
 describe('lignesFactureEngagement — la facture, à sa date, contre le compte de tiers', () => {
   it('passe un achat au débit, sa TVA au débit, et le TTC au crédit du 401', () => {
-    const lignes = lignesFactureEngagement('d1', piece(), ACHATS, true, '455000')
+    const lignes = lignesFactureEngagement('d1', piece(), cible(ACHATS), true, '455000')
     expect(lignes).toEqual([
       expect.objectContaining({ compte: ACHATS, sens: 'debit', montant: 100, date: '2026-03-10' }),
       expect.objectContaining({ compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20, date: '2026-03-10' }),
@@ -71,7 +84,7 @@ describe('lignesFactureEngagement — la facture, à sa date, contre le compte d
   })
 
   it('passe une vente au crédit, sa TVA collectée au crédit, et le TTC au débit du 411', () => {
-    const lignes = lignesFactureEngagement('d1', piece({ type_piece: 'vente', tiers: 'CPAM' }), VENTES, true, '455000')
+    const lignes = lignesFactureEngagement('d1', piece({ type_piece: 'vente', tiers: 'CPAM' }), cible(VENTES), true, '455000')
     expect(lignes).toEqual([
       expect.objectContaining({ compte: VENTES, sens: 'credit', montant: 100 }),
       expect.objectContaining({ compte: COMPTE_TVA_COLLECTEE, sens: 'credit', montant: 20 }),
@@ -81,7 +94,7 @@ describe('lignesFactureEngagement — la facture, à sa date, contre le compte d
   })
 
   it('passe le TTC en charge pour un dossier exonéré, sans ligne de TVA', () => {
-    const lignes = lignesFactureEngagement('d1', piece(), ACHATS, false, '455000')
+    const lignes = lignesFactureEngagement('d1', piece(), cible(ACHATS), false, '455000')
     expect(lignes).toEqual([
       expect.objectContaining({ compte: ACHATS, sens: 'debit', montant: 120 }),
       expect.objectContaining({ compte: COMPTE_FOURNISSEURS, sens: 'credit', montant: 120 }),
@@ -89,14 +102,14 @@ describe('lignesFactureEngagement — la facture, à sa date, contre le compte d
   })
 
   it('crédite le compte du dossier pour une note de frais payée par le dirigeant', () => {
-    const lignes = lignesFactureEngagement('d1', piece({ type_piece: 'note_frais' }), ACHATS, true, '108000')
+    const lignes = lignesFactureEngagement('d1', piece({ type_piece: 'note_frais' }), cible(ACHATS), true, '108000')
     expect(lignes.at(-1)).toMatchObject({ compte: COMPTE_EXPLOITANT, sens: 'credit', montant: 120 })
     expect(lignes.some((l) => l.compte === COMPTE_FOURNISSEURS)).toBe(false)
   })
 
   it('inverse les sens d’un avoir, les montants restant positifs', () => {
     const avoir = piece({ montant_ht: -100, montant_tva: -20, montant_ttc: -120 })
-    const lignes = lignesFactureEngagement('d1', avoir, ACHATS, true, '455000')
+    const lignes = lignesFactureEngagement('d1', avoir, cible(ACHATS), true, '455000')
     expect(lignes).toEqual([
       expect.objectContaining({ compte: ACHATS, sens: 'credit', montant: 100 }),
       expect.objectContaining({ compte: COMPTE_TVA_DEDUCTIBLE, sens: 'credit', montant: 20 }),
@@ -105,22 +118,46 @@ describe('lignesFactureEngagement — la facture, à sa date, contre le compte d
   })
 
   it('date une pièce sans date de son dépôt, comme en trésorerie', () => {
-    const lignes = lignesFactureEngagement('d1', piece({ date_piece: null }), ACHATS, true, '455000')
+    const lignes = lignesFactureEngagement('d1', piece({ date_piece: null }), cible(ACHATS), true, '455000')
     expect(new Set(lignes.map((l) => l.date))).toEqual(new Set([dateLocaleDe('2026-03-12T09:00:00Z')]))
   })
 
   it('laisse déséquilibrée une facture dont la TVA ne recoupe pas le TTC, pour que le contrôle le dise', () => {
     // Le compte de tiers porte ce qui est DÛ, le TTC ; forcer l'équilibre en y mettant HT + TVA
     // masquerait une pièce fausse sous une écriture juste en apparence.
-    const lignes = lignesFactureEngagement('d1', piece({ montant_ht: 100, montant_tva: 30, montant_ttc: 120 }), ACHATS, true, '455000')
+    const lignes = lignesFactureEngagement('d1', piece({ montant_ht: 100, montant_tva: 30, montant_ttc: 120 }), cible(ACHATS), true, '455000')
     expect(lignes.at(-1)).toMatchObject({ compte: COMPTE_FOURNISSEURS, montant: 120 })
     expect(solde(lignes)).toBe(10)
   })
 })
 
+describe('lignesFactureEngagement — la facture d’un bien immobilisé', () => {
+  it('passe le hors taxe au compte du bien, la TVA au 445620 et le TTC au crédit du 404', () => {
+    expect(lignesFactureEngagement('d1', piece(), bien('218300'), true, '455000')).toEqual([
+      expect.objectContaining({ compte: '218300', sens: 'debit', montant: 100, date: '2026-03-10' }),
+      expect.objectContaining({ compte: COMPTE_TVA_IMMOBILISATIONS, sens: 'debit', montant: 20, date: '2026-03-10' }),
+      expect.objectContaining({ compte: COMPTE_FOURNISSEURS_IMMOBILISATIONS, sens: 'credit', montant: 120, date: '2026-03-10' }),
+    ])
+  })
+
+  it('passe le TTC au compte du bien pour un dossier exonéré', () => {
+    expect(lignesFactureEngagement('d1', piece(), bien('218300'), false, '455000')).toEqual([
+      expect.objectContaining({ compte: '218300', sens: 'debit', montant: 120 }),
+      expect.objectContaining({ compte: COMPTE_FOURNISSEURS_IMMOBILISATIONS, sens: 'credit', montant: 120 }),
+    ])
+  })
+})
+
 describe('lignesReglementEngagement — le règlement, au mouvement, contre la banque', () => {
+  it('solde le 404 de la facture d’un bien, pas le 401', () => {
+    expect(lignesReglementEngagement('d1', piece(), mouvement(), '455000', true)).toEqual([
+      expect.objectContaining({ compte: COMPTE_FOURNISSEURS_IMMOBILISATIONS, sens: 'debit', montant: 120, ligne_bancaire_id: 'l1' }),
+      expect.objectContaining({ compte: COMPTE_BANQUE, sens: 'credit', montant: 120, ligne_bancaire_id: 'l1' }),
+    ])
+  })
+
   it('solde le 401 d’un achat payé : débit 401, crédit 512, datés et désignés du mouvement', () => {
-    const lignes = lignesReglementEngagement('d1', piece(), mouvement(), '455000')
+    const lignes = lignesReglementEngagement('d1', piece(), mouvement(), '455000', false)
     expect(lignes).toEqual([
       expect.objectContaining({ compte: COMPTE_FOURNISSEURS, sens: 'debit', montant: 120, date: '2026-04-05', ligne_bancaire_id: 'l1' }),
       expect.objectContaining({ compte: COMPTE_BANQUE, sens: 'credit', montant: 120, date: '2026-04-05', ligne_bancaire_id: 'l1' }),
@@ -128,7 +165,7 @@ describe('lignesReglementEngagement — le règlement, au mouvement, contre la b
   })
 
   it('solde le 411 d’une vente encaissée : débit 512, crédit 411', () => {
-    const lignes = lignesReglementEngagement('d1', piece({ type_piece: 'vente' }), mouvement({ montant: 120 }), '455000')
+    const lignes = lignesReglementEngagement('d1', piece({ type_piece: 'vente' }), mouvement({ montant: 120 }), '455000', false)
     expect(lignes).toEqual([
       expect.objectContaining({ compte: COMPTE_CLIENTS, sens: 'credit', montant: 120 }),
       expect.objectContaining({ compte: COMPTE_BANQUE, sens: 'debit', montant: 120 }),
@@ -136,7 +173,7 @@ describe('lignesReglementEngagement — le règlement, au mouvement, contre la b
   })
 
   it('lit la banque au signe du mouvement, pas au type de la pièce : un avoir remboursé entre en banque', () => {
-    const lignes = lignesReglementEngagement('d1', piece(), mouvement({ montant: 30 }), '455000')
+    const lignes = lignesReglementEngagement('d1', piece(), mouvement({ montant: 30 }), '455000', false)
     expect(lignes).toEqual([
       expect.objectContaining({ compte: COMPTE_FOURNISSEURS, sens: 'credit', montant: 30 }),
       expect.objectContaining({ compte: COMPTE_BANQUE, sens: 'debit', montant: 30 }),
@@ -144,7 +181,7 @@ describe('lignesReglementEngagement — le règlement, au mouvement, contre la b
   })
 
   it('rembourse le dirigeant depuis le compte bancaire de l’entreprise : débit 455, crédit 512', () => {
-    const lignes = lignesReglementEngagement('d1', piece({ type_piece: 'note_frais' }), mouvement({ montant: -100 }), '455000')
+    const lignes = lignesReglementEngagement('d1', piece({ type_piece: 'note_frais' }), mouvement({ montant: -100 }), '455000', false)
     expect(lignes).toEqual([
       expect.objectContaining({ compte: '455000', sens: 'debit', montant: 100 }),
       expect.objectContaining({ compte: COMPTE_BANQUE, sens: 'credit', montant: 100 }),
@@ -152,17 +189,17 @@ describe('lignesReglementEngagement — le règlement, au mouvement, contre la b
   })
 
   it('porte le montant du MOUVEMENT, pas celui de la pièce : un frais bancaire reste sur le compte de tiers', () => {
-    expect(lignesReglementEngagement('d1', piece(), mouvement({ montant: -118.5 }), '455000').map((l) => l.montant)).toEqual([118.5, 118.5])
+    expect(lignesReglementEngagement('d1', piece(), mouvement({ montant: -118.5 }), '455000', false).map((l) => l.montant)).toEqual([118.5, 118.5])
   })
 
   it('ne produit rien pour un mouvement à zéro', () => {
-    expect(lignesReglementEngagement('d1', piece(), mouvement({ montant: 0 }), '455000')).toEqual([])
+    expect(lignesReglementEngagement('d1', piece(), mouvement({ montant: 0 }), '455000', false)).toEqual([])
   })
 })
 
 describe('lignesEngagementPourPiece', () => {
   it('rend la facture puis un règlement par mouvement, dans l’ordre des dates', () => {
-    const lignes = lignesEngagementPourPiece('d1', piece(), ACHATS, true, '455000', [
+    const lignes = lignesEngagementPourPiece('d1', piece(), cible(ACHATS), true, '455000', [
       mouvement({ id: 'l2', date: '2026-05-02', montant: -70 }),
       mouvement({ id: 'l1', date: '2026-04-05', montant: -50 }),
     ])
@@ -190,7 +227,16 @@ describe('auxiliaireDuTiers — le compte auxiliaire du FEC', () => {
     expect(auxiliaireDuTiers(piece({ tiers: 'CARTE BANCAIRE' }), COMPTE_CLIENTS)).toEqual({ num: 'CDIVERS', lib: 'Clients divers' })
   })
 
-  it('ne donne d’auxiliaire qu’au 401 et au 411', () => {
+  it('donne aux fournisseurs d’immobilisations leurs propres auxiliaires, préfixés FI', () => {
+    // Un même fournisseur peut l'être des deux sortes : son auxiliaire du 404 ne doit pas porter le
+    // numéro de celui du 401, un CompAuxNum désignant un seul compte auxiliaire dans tout le fichier.
+    expect(auxiliaireDuTiers(piece({ tiers: 'Transmedical' }), COMPTE_FOURNISSEURS_IMMOBILISATIONS))
+      .toEqual({ num: 'FITRANSMEDICAL', lib: 'Transmedical' })
+    expect(auxiliaireDuTiers(piece({ tiers: null }), COMPTE_FOURNISSEURS_IMMOBILISATIONS))
+      .toEqual({ num: 'FIDIVERS', lib: 'Fournisseurs d’immobilisations divers' })
+  })
+
+  it('ne donne d’auxiliaire qu’au 401, au 404 et au 411', () => {
     for (const compte of [ACHATS, COMPTE_BANQUE, COMPTE_TVA_DEDUCTIBLE, '455000', '108000', '467000']) {
       expect(auxiliaireDuTiers(piece(), compte)).toBeNull()
     }

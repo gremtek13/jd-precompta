@@ -1,10 +1,10 @@
 import {
   COMPTE_AUTRES_DEBITEURS_CREDITEURS, COMPTE_BANQUE, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_EXPLOITANT,
-  COMPTE_FOURNISSEURS, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE,
+  COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS,
 } from './comptes'
 import { cleFournisseur, dateLocaleDe } from './format'
-import { montantRetenu, tvaVentilee } from './montantRetenu'
-import type { LigneAGenerer } from './ecritures'
+import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
+import type { CibleComptable, LigneAGenerer } from './ecritures'
 import type { CompteNotesDeFrais, Dossier, LigneBancaire, ModeComptable, Piece } from './types'
 
 // LA COMPTABILITÉ D'ENGAGEMENT (BIC, IS) — ligne 31 de la feuille de route, étape 1 (28/09/2026).
@@ -15,6 +15,7 @@ import type { CompteNotesDeFrais, Dossier, LigneBancaire, ModeComptable, Piece }
 // le paiement la solde ensuite, à sa propre date. Deux écritures, et un compte de tiers entre elles :
 //
 //   facture d'achat, à sa date (journal AC)  : débit 6… charge, débit 445660 TVA, crédit 401000
+//   facture d'un bien immobilisé (journal AC) : débit 2… immobilisation, débit 445620 TVA, crédit 404000
 //   facture de vente, à sa date (journal VE) : crédit 7… produit, crédit 445710 TVA, débit 411000
 //   note de frais, à sa date (journal AC)    : débit 6… charge, débit 445660 TVA, crédit 455, 108 ou 467
 //   règlement, au mouvement (journal BQ)     : le compte de tiers contre 512000
@@ -89,15 +90,22 @@ export const COMPTES_NOTES_DE_FRAIS: readonly { compte: CompteNotesDeFrais; libe
 // n'a pas de pièce, et aucun contrôle qui lit cette liste ne regarde une écriture sans pièce
 // (lib/virementPersonnel.ts).
 export const COMPTES_DE_TIERS: ReadonlySet<string> = new Set([
-  COMPTE_FOURNISSEURS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_EXPLOITANT, COMPTE_AUTRES_DEBITEURS_CREDITEURS,
+  COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_EXPLOITANT,
+  COMPTE_AUTRES_DEBITEURS_CREDITEURS,
 ])
 
 // Le compte de tiers d'une pièce : 411 pour une vente, le compte du dossier pour une note de frais,
-// 401 pour tout le reste — un achat, et une pièce « autre », qui passe en charge comme en trésorerie.
-export function compteDeTiers(piece: Pick<Piece, 'type_piece'>, compteNotesDeFrais: CompteNotesDeFrais): string {
+// 404 pour la facture d'un bien IMMOBILISÉ — la dette envers le vendeur d'une immobilisation, que le bilan
+// sépare des dettes fournisseurs —, 401 pour tout le reste : un achat, et une pièce « autre », qui passe
+// en charge comme en trésorerie. Une note de frais immobilisée reste au compte du dirigeant : c'est lui
+// qui a payé. Sans valeur par défaut pour `immobilisation` : l'oublier ferait solder au 401 la facture
+// d'un bien écrite au 404.
+export function compteDeTiers(
+  piece: Pick<Piece, 'type_piece'>, compteNotesDeFrais: CompteNotesDeFrais, immobilisation: boolean,
+): string {
   if (piece.type_piece === 'vente') return COMPTE_CLIENTS
   if (piece.type_piece === 'note_frais') return compteNotesDeFrais
-  return COMPTE_FOURNISSEURS
+  return immobilisation ? COMPTE_FOURNISSEURS_IMMOBILISATIONS : COMPTE_FOURNISSEURS
 }
 
 type Sens = 'debit' | 'credit'
@@ -116,7 +124,7 @@ function ligne(base: Omit<LigneAGenerer, 'sens' | 'compte' | 'montant'>, sensNor
 // dû. Pour une pièce cohérente la somme est nulle ; sur une pièce dont la TVA ne recoupe pas le TTC,
 // l'écriture ne s'équilibre pas, et le contrôle des écritures le dit plutôt que de le masquer.
 export function lignesFactureEngagement(
-  dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean, compteNotesDeFrais: CompteNotesDeFrais,
+  dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: CompteNotesDeFrais,
 ): LigneAGenerer[] {
   const sensPiece: Sens = piece.type_piece === 'vente' ? 'credit' : 'debit'
   const base = {
@@ -126,9 +134,9 @@ export function lignesFactureEngagement(
   }
   const ttc = piece.montant_ttc!
   const tva = tvaVentilee(piece, assujettiTva)
-  const lignes = [ligne(base, sensPiece, compteComptable, tva ? montantRetenu(piece, assujettiTva)! : ttc)]
-  if (tva) lignes.push(ligne(base, sensPiece, piece.type_piece === 'vente' ? COMPTE_TVA_COLLECTEE : COMPTE_TVA_DEDUCTIBLE, tva))
-  lignes.push(ligne(base, inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais), ttc))
+  const lignes = [ligne(base, sensPiece, cible.compte, tva ? montantRetenu(piece, assujettiTva)! : ttc)]
+  if (tva) lignes.push(ligne(base, sensPiece, compteTvaDe(piece, cible.immobilisation), tva))
+  lignes.push(ligne(base, inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation), ttc))
   return lignes
 }
 
@@ -140,7 +148,7 @@ export function lignesFactureEngagement(
 // la pièce : un frais bancaire ou un paiement partiel reste lisible sur le compte de tiers.
 export function lignesReglementEngagement(
   dossierId: string, piece: Pick<Piece, 'id' | 'type_piece' | 'tiers' | 'nom_fichier'>,
-  mouvement: Pick<LigneBancaire, 'id' | 'date' | 'montant'>, compteNotesDeFrais: CompteNotesDeFrais,
+  mouvement: Pick<LigneBancaire, 'id' | 'date' | 'montant'>, compteNotesDeFrais: CompteNotesDeFrais, immobilisation: boolean,
 ): LigneAGenerer[] {
   if (!mouvement.montant) return []
   const base = {
@@ -150,7 +158,7 @@ export function lignesReglementEngagement(
   const sensBanque: Sens = mouvement.montant > 0 ? 'debit' : 'credit'
   const montant = Math.abs(mouvement.montant)
   return [
-    { ...base, compte: compteDeTiers(piece, compteNotesDeFrais), sens: inverse(sensBanque), montant },
+    { ...base, compte: compteDeTiers(piece, compteNotesDeFrais, immobilisation), sens: inverse(sensBanque), montant },
     { ...base, compte: COMPTE_BANQUE, sens: sensBanque, montant },
   ]
 }
@@ -160,14 +168,14 @@ export function lignesReglementEngagement(
 // les reprendre ne perd rien, et c'est ce qui répare un règlement passé sur l'ancien compte de tiers
 // d'une pièce dont le type a changé depuis.
 export function lignesEngagementPourPiece(
-  dossierId: string, piece: Piece, compteComptable: string, assujettiTva: boolean,
+  dossierId: string, piece: Piece, cible: CibleComptable, assujettiTva: boolean,
   compteNotesDeFrais: CompteNotesDeFrais, mouvements: readonly Pick<LigneBancaire, 'id' | 'date' | 'montant'>[],
 ): LigneAGenerer[] {
   return [
-    ...lignesFactureEngagement(dossierId, piece, compteComptable, assujettiTva, compteNotesDeFrais),
+    ...lignesFactureEngagement(dossierId, piece, cible, assujettiTva, compteNotesDeFrais),
     ...[...mouvements]
       .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
-      .flatMap((m) => lignesReglementEngagement(dossierId, piece, m, compteNotesDeFrais)),
+      .flatMap((m) => lignesReglementEngagement(dossierId, piece, m, compteNotesDeFrais, cible.immobilisation)),
   ]
 }
 
@@ -176,17 +184,24 @@ export interface CompteAuxiliaire {
   lib: string
 }
 
-// Le compte AUXILIAIRE d'une ligne de 401 ou de 411 dans le FEC (CompAuxNum, CompAuxLib). Le numéro
-// vient de la CLÉ D'IDENTITÉ du tiers (`cleFournisseur`), jamais de son nom tel que l'OCR l'a lu :
+// Le compte AUXILIAIRE d'une ligne de 401, de 404 ou de 411 dans le FEC (CompAuxNum, CompAuxLib). Le
+// numéro vient de la CLÉ D'IDENTITÉ du tiers (`cleFournisseur`), jamais de son nom tel que l'OCR l'a lu :
 // « Transmedical » et « Transmedical / et redevient » sont le même fournisseur, et deux comptes
 // auxiliaires pour lui partageraient son solde en deux moitiés dont aucune ne dirait ce qu'on lui doit.
 // Un tiers sans clé (« CARTE BANCAIRE », un nom illisible) va au compte « divers » plutôt que d'en
 // recevoir un inventé. Le libellé proposé est le nom lu ; `genererFec` n'en garde qu'un par numéro.
+// Le vendeur d'une immobilisation a son auxiliaire à lui (FI…), rattaché au 404 : le même numéro sous le
+// 401 et sous le 404 ferait d'un seul compte auxiliaire deux dettes de natures différentes.
+const AUXILIAIRES: Readonly<Record<string, { prefixe: string; divers: string }>> = {
+  [COMPTE_FOURNISSEURS]: { prefixe: 'F', divers: 'Fournisseurs divers' },
+  [COMPTE_FOURNISSEURS_IMMOBILISATIONS]: { prefixe: 'FI', divers: 'Fournisseurs d’immobilisations divers' },
+  [COMPTE_CLIENTS]: { prefixe: 'C', divers: 'Clients divers' },
+}
+
 export function auxiliaireDuTiers(piece: Pick<Piece, 'tiers'>, compte: string): CompteAuxiliaire | null {
-  if (compte !== COMPTE_FOURNISSEURS && compte !== COMPTE_CLIENTS) return null
-  const fournisseur = compte === COMPTE_FOURNISSEURS
-  const prefixe = fournisseur ? 'F' : 'C'
+  const auxiliaire = AUXILIAIRES[compte]
+  if (!auxiliaire) return null
   const cle = cleFournisseur(piece.tiers)
-  if (!cle) return { num: `${prefixe}DIVERS`, lib: fournisseur ? 'Fournisseurs divers' : 'Clients divers' }
-  return { num: `${prefixe}${cle.toUpperCase()}`, lib: piece.tiers!.replace(/\s+/g, ' ').trim() }
+  if (!cle) return { num: `${auxiliaire.prefixe}DIVERS`, lib: auxiliaire.divers }
+  return { num: `${auxiliaire.prefixe}${cle.toUpperCase()}`, lib: piece.tiers!.replace(/\s+/g, ' ').trim() }
 }

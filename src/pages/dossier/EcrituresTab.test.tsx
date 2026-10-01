@@ -216,7 +216,7 @@ function poser(tables: Partial<Record<string, unknown[]>>) {
   faux.retenirApresRpc = false
   faux.parTable = {
     categories: [CATEGORIE_ACHATS], pieces: [], ecritures_brouillon: [],
-    immobilisations: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [], reglements_groupes: [],
+    immobilisations: [], natures_immobilisation: [], lignes_bancaires: [], declarations_tva: [], a_nouveaux: [], reglements_groupes: [],
     ...tables,
   } as Record<string, unknown[]>
 }
@@ -246,7 +246,7 @@ function monter(assujettiTva = false, modele: ModeleComptable = TRESORERIE, anne
 }
 
 describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
-  it("voit la charge d'une pièce devenue immobilisation, que les trois autres contrôles manquent", async () => {
+  it("voit la charge d'une pièce devenue un bien sans nature, que les trois autres contrôles manquent", async () => {
     // Le geste réel : la pièce est validée, catégorisée, son écriture est générée — PUIS le cabinet
     // l'enregistre en immobilisation depuis l'autre onglet. Rien ne retire l'écriture, et la dépense
     // part alors en charge ET en amortissement.
@@ -265,13 +265,15 @@ describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
         ecriture({ id: 'e1', compte: '606100', sens: 'debit', montant: 120 }),
         ecriture({ id: 'e2', compte: '512000', sens: 'credit', montant: 120 }),
       ],
-      immobilisations: [{ id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1' }],
+      // SANS NATURE : son compte d'immobilisation n'est pas connu, donc rien ne sait réécrire la pièce. Avec
+      // une nature, c'est « à régénérer » (voir l'écriture d'acquisition, plus bas).
+      immobilisations: [{ id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: null }],
     })
     monter()
 
     await screen.findByText('Écritures que la pièce ne justifie plus')
-    expect(screen.getByText(/Enregistrée en immobilisation/)).toBeDefined()
-    expect(screen.getByText(/Le FEC et la balance portent la charge entière/)).toBeDefined()
+    expect(screen.getByText(/Enregistrée en immobilisation, sans nature/)).toBeDefined()
+    expect(screen.getByText(/Choisir sa nature dans l'onglet Immobilisations, puis régénérer/)).toBeDefined()
     // Et les trois contrôles qui partent de la pièce ne disent rien : c'est bien lui, et lui seul
     // qui voit cette charge. Les badges du pied de page sont le signal le plus court de leur
     // silence — `queryByText` lit le TEXTE rendu, jamais le balisage.
@@ -287,6 +289,190 @@ describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
 
     await screen.findByText(/1 écriture proposée/)
     expect(screen.queryByText('Écritures que la pièce ne justifie plus')).toBeNull()
+  })
+})
+
+// L'ÉCRITURE D'ACQUISITION (ligne 26.6, étape b) : la facture d'un bien s'écrit sur le compte d'immobilisation
+// de sa NATURE — lue avec celles du cabinet —, sa TVA au 445620. Ce que ces tests gardent et qu'aucun test de
+// lib ne voit : l'écran LIT les natures, les passe à la génération, à la régénération et aux contrôles, et
+// suspend la génération quand elles sont lues en partie.
+describe('EcrituresTab — l’écriture d’acquisition d’un bien', () => {
+  const NATURE = { id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300' }
+  const BIEN = { id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: 'n1' }
+  const facture = (o: Record<string, unknown> = {}) => piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120, ...o })
+
+  it('génère l’acquisition sur le compte du bien et sa TVA en 445620, pas la charge de sa catégorie', async () => {
+    poser({ pieces: [facture()], immobilisations: [BIEN], natures_immobilisation: [NATURE] })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => [l.compte, l.montant])).toEqual([['218300', 100], ['445620', 20]])
+  })
+
+  it('génère l’acquisition d’un bien sans catégorie, et ne le compte pas parmi les pièces sans catégorie', async () => {
+    poser({ pieces: [facture({ categorie_id: null })], immobilisations: [BIEN], natures_immobilisation: [NATURE] })
+    monter(true)
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    expect(screen.queryByText('Pièces validées sans catégorie')).toBeNull()
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => l.compte)).toEqual(['218300', '445620'])
+  })
+
+  it('n’écrit pas un bien sans nature : ni sur le compte d’un bien, ni en charge', async () => {
+    poser({ pieces: [facture()], immobilisations: [{ ...BIEN, nature_id: null }], natures_immobilisation: [NATURE] })
+    monter(true)
+    // Attendre la FIN du chargement : le compte « 0 écriture proposée » s'affiche dès le premier rendu.
+    await screen.findByText("Aucune écriture proposée pour l'instant.")
+    expect(screen.queryByRole('button', { name: /Générer les écritures manquantes \(1\)/ })).toBeNull()
+    expect(screen.queryByText(/en attente de génération/)).toBeNull()
+  })
+
+  it('dit « à régénérer » la charge d’une pièce immobilisée après coup, et Régénérer la passe sur le compte du bien', async () => {
+    poser({
+      pieces: [facture()], immobilisations: [BIEN], natures_immobilisation: [NATURE],
+      ecritures_brouillon: [ecriture({ id: 'e1', montant: 100 }), ecriture({ id: 'e2', compte: '445660', montant: 20 })],
+    })
+    monter(true)
+    await screen.findByText('Écritures à régénérer')
+    // Le bien a une nature : l'écriture n'est pas « sans objet », elle est à réécrire.
+    expect(screen.queryByText('Écritures que la pièce ne justifie plus')).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Régénérer' }).click() })
+    expect(faux.insertions.at(-1)!.lignes.map((l) => [l.compte, l.montant])).toEqual([['218300', 100], ['445620', 20]])
+  })
+
+  it('se tait sur une acquisition déjà écrite comme la génération l’écrit', async () => {
+    poser({
+      pieces: [facture()], immobilisations: [BIEN], natures_immobilisation: [NATURE],
+      ecritures_brouillon: [ecriture({ id: 'e1', compte: '218300', montant: 100 }), ecriture({ id: 'e2', compte: '445620', montant: 20 })],
+    })
+    monter(true)
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryAllByText(/à régénérer/)).toHaveLength(0)
+    expect(screen.queryByText('Écritures que la pièce ne justifie plus')).toBeNull()
+    // Et sa TVA, au 445620, compte dans la TVA déductible : elle se déduit comme celle d'un achat.
+    expect(screen.getByText('TVA déductible (achats)').parentElement?.textContent).toMatch(/20,00\s€/)
+  })
+
+  it('suspend la génération quand les natures sont lues en partie : un bien paraîtrait sans nature', async () => {
+    poser({ pieces: [facture()], immobilisations: [BIEN], natures_immobilisation: [NATURE, { ...NATURE, id: 'n2' }] })
+    faux.muetParTable = { natures_immobilisation: 1 }
+    monter(true)
+    await screen.findByText(/La génération est suspendue/)
+    const bouton = screen.getByRole('button', { name: /Générer les écritures manquantes/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.insertions).toHaveLength(0)
+  })
+
+  // UN DOSSIER REPRIS (lib/aNouveaux.ts) : la balance reprise porte déjà, en classe 2, la valeur brute des
+  // biens acquis avant son ouverture. Écrire encore leur acquisition la compterait deux fois.
+  const OUVERTURE = [
+    {
+      id: 'an-1', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '218300', compte_origine: '2183',
+      libelle: 'Matériel informatique', sens: 'debit', montant: 1200, source_nom: 'balance-2025.csv',
+      source_empreinte: 'b'.repeat(64), created_at: '2026-09-26T10:00:00Z',
+    },
+    {
+      id: 'an-2', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '108000', compte_origine: '108',
+      libelle: 'Compte de l’exploitant', sens: 'credit', montant: 1200, source_nom: 'balance-2025.csv',
+      source_empreinte: 'b'.repeat(64), created_at: '2026-09-26T10:00:00Z',
+    },
+  ]
+  const BIEN_REPRIS = { ...BIEN, date_acquisition: '2025-03-10' }
+  const acquisitionEcrite = () => [
+    ecriture({ id: 'e1', compte: '218300', montant: 100 }),
+    ecriture({ id: 'e2', compte: '445620', montant: 20 }),
+    ecriture({ id: 'e3', compte: '512000', sens: 'credit', montant: 120 }),
+  ]
+
+  it('n’écrit pas l’acquisition d’un bien acquis avant l’ouverture du dossier', async () => {
+    poser({ pieces: [facture()], immobilisations: [BIEN_REPRIS], natures_immobilisation: [NATURE], a_nouveaux: OUVERTURE })
+    monter(true)
+    await screen.findByText("Aucune écriture proposée pour l'instant.")
+    expect(screen.queryByRole('button', { name: /Générer les écritures manquantes \(1\)/ })).toBeNull()
+    expect(screen.queryByText(/en attente de génération/)).toBeNull()
+  })
+
+  // GARDE SYMÉTRIQUE : la balance reprise est celle de la veille de l'ouverture. Un bien acquis le jour même
+  // n'y est pas, et son acquisition s'écrit.
+  it('écrit celle d’un bien acquis le jour de l’ouverture', async () => {
+    poser({
+      pieces: [facture({ date_piece: '2026-01-01' })], immobilisations: [{ ...BIEN, date_acquisition: '2026-01-01' }],
+      natures_immobilisation: [NATURE], a_nouveaux: OUVERTURE,
+    })
+    monter(true, TRESORERIE, 2026)
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => [l.compte, l.montant])).toEqual([['218300', 100], ['445620', 20]])
+  })
+
+  it('voit l’écriture d’un bien repris, et la retire en entier en disant que la balance reprise le porte', async () => {
+    let message = ''
+    vi.stubGlobal('confirm', (m: string) => { message = m; return true })
+    poser({
+      pieces: [facture()], immobilisations: [BIEN_REPRIS], natures_immobilisation: [NATURE], a_nouveaux: OUVERTURE,
+      ecritures_brouillon: acquisitionEcrite(),
+    })
+    monter(true)
+    await screen.findByText('Écritures que la pièce ne justifie plus')
+    expect(screen.getByText(/Bien acquis avant l'ouverture du dossier : la balance reprise porte déjà sa valeur/)).toBeDefined()
+    // Ce n'est pas une écriture à réécrire : rien ne doit s'écrire.
+    expect(screen.queryByText('Écritures à régénérer')).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: /Retirer l'écriture/ }).click() })
+    expect(message).toMatch(/la balance reprise porte déjà son acquisition/)
+    expect(message).not.toMatch(/une fois sa nature choisie/)
+    expect(faux.parTable.ecritures_brouillon).toEqual([])
+    vi.unstubAllGlobals()
+  })
+
+  it('dit la nature à choisir, pas la balance reprise, dans la confirmation du retrait d’un bien sans nature', async () => {
+    let message = ''
+    vi.stubGlobal('confirm', (m: string) => { message = m; return false })
+    poser({
+      pieces: [facture()], immobilisations: [{ ...BIEN, nature_id: null }], natures_immobilisation: [NATURE],
+      ecritures_brouillon: acquisitionEcrite().map((e) => (e.compte === '218300' ? { ...e, compte: '606100' } : e)),
+    })
+    monter(true)
+    await screen.findByText('Écritures que la pièce ne justifie plus')
+    await act(async () => { screen.getByRole('button', { name: /Retirer l'écriture/ }).click() })
+    expect(message).toMatch(/une fois sa nature choisie/)
+    expect(message).not.toMatch(/balance reprise/)
+    vi.unstubAllGlobals()
+  })
+
+  // C'EST L'OUVERTURE QUI DIT SI UN BIEN EST REPRIS : lue en partie, la génération attend dès qu'un bien est
+  // en attente — l'écrire pourrait compter une seconde fois ce que la balance reprise porte.
+  it('suspend la génération d’un bien quand l’ouverture est lue en partie, et dit pourquoi', async () => {
+    poser({
+      pieces: [facture()], immobilisations: [{ ...BIEN, date_acquisition: '2026-02-01' }], natures_immobilisation: [NATURE],
+      a_nouveaux: OUVERTURE,
+    })
+    faux.muetParTable = { a_nouveaux: 1 }
+    monter(true)
+    await screen.findByText(/Les à-nouveaux du dossier n'ont pas pu être lus en entier/)
+    expect(screen.getByText(/elle attend donc une lecture complète tant qu’un bien est en attente/)).toBeDefined()
+    const bouton = screen.getByRole('button', { name: /Générer les écritures manquantes/ })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/À-nouveaux lus incomplètement/)
+    await act(async () => { bouton.click() })
+    expect(faux.insertions).toHaveLength(0)
+  })
+
+  it('suspend « Régénérer » sur la facture d’un bien quand l’ouverture est lue en partie', async () => {
+    poser({
+      pieces: [facture()], immobilisations: [{ ...BIEN, date_acquisition: '2026-02-01' }], natures_immobilisation: [NATURE],
+      a_nouveaux: OUVERTURE,
+      ecritures_brouillon: [ecriture({ id: 'e1', montant: 100 }), ecriture({ id: 'e2', compte: '445660', montant: 20 })],
+    })
+    faux.muetParTable = { a_nouveaux: 1 }
+    monter(true)
+    await screen.findByText('Écritures à régénérer')
+    const bouton = screen.getByRole('button', { name: 'Régénérer' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/si la balance reprise porte déjà ce bien/)
+    await act(async () => { bouton.click() })
+    expect(faux.suppressions).toHaveLength(0)
+    expect(faux.insertions).toHaveLength(0)
   })
 })
 

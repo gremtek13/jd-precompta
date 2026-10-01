@@ -976,6 +976,34 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     expect(modale.textContent).not.toMatch(/484,42/)
   })
 
+  // LE PAIEMENT D'UN BIEN IMMOBILISÉ, écrit au 512 depuis que l'acquisition s'écrit (ligne 26.6, étape b) :
+  // le solde le compte, la moyenne des décaissements non — un investissement ne se répète pas chaque mois.
+  function ecrituresAvecAcquisition() {
+    const mois = (d: number) => ajouterMois(premierJourDuMoisCourant(), -d).slice(0, 7)
+    const rythme = [1, 2, 3, 4, 5, 6].map((d) => ({ date: `${mois(d)}-15`, sens: 'credit', montant: 600, ligne_bancaire_id: null, piece_id: null }))
+    return [...rythme, { date: `${mois(3)}-20`, sens: 'credit', montant: 12000, ligne_bancaire_id: 'l-bien', piece_id: 'p1' }]
+  }
+
+  it('le plan de trésorerie écarte le paiement d’un bien immobilisé de la moyenne, pas du solde', async () => {
+    preparer()
+    faux.ecritures = ecrituresAvecAcquisition()
+    faux.immobilisations = [immobilisation()]
+    const modale = await ouvrirLePlan('Plan de trésorerie')
+    expect(modale.textContent).toMatch(/d'encaissements, 600,00\s€ de décaissements/)
+    expect(within(modale).getByText(/Le paiement d’un bien immobilisé non plus/)).toBeTruthy()
+    // Le solde, lui, le compte : − (6 × 600 + 12 000).
+    expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.textContent).toMatch(/-15\s?600,00\s€/)
+  })
+
+  it('un décaissement qui ne paie pas un bien reste dans la moyenne, et rien n’est dit', async () => {
+    // Le garde symétrique : la même écriture, sans bien au registre, est un décaissement ordinaire.
+    preparer()
+    faux.ecritures = ecrituresAvecAcquisition()
+    const modale = await ouvrirLePlan('Plan de trésorerie')
+    expect(modale.textContent).toMatch(/d'encaissements, 2\s?600,00\s€ de décaissements/)
+    expect(within(modale).queryByText(/bien immobilisé non plus/)).toBeNull()
+  })
+
   it('le taux d’endettement ne compte pas le déblocage non plus, et le dit', async () => {
     preparer()
     faux.ecritures = ecrituresDuPlan(true)

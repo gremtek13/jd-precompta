@@ -333,6 +333,45 @@ describe('genererFec — en engagement', () => {
   })
 })
 
+// L'ÉCRITURE D'ACQUISITION (ligne 26.6, étape b) : la facture d'un bien entre au FEC sur le compte du bien, au
+// journal des achats, sa TVA au 445620 ; en engagement, sa dette au 404000, avec son auxiliaire propre.
+describe('genererFec — l’acquisition d’un bien immobilisé', () => {
+  const facture = piece('bien', { tiers: 'Transmedical', nom_fichier: 'fauteuil.pdf', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 })
+
+  it('porte la facture d’un bien au journal des achats, sur le compte du bien, face à la banque en trésorerie', () => {
+    const brouillon = [
+      ligne('bien', { id: 'b1', compte: '215400', montant: 1000, date: '2026-04-05' }),
+      ligne('bien', { id: 'b2', compte: '445620', montant: 200, date: '2026-04-05' }),
+      ligne('bien', { id: 'b3', compte: COMPTE_BANQUE, sens: 'credit', montant: 1200, date: '2026-04-05', ligne_bancaire_id: 'l-bien' }),
+    ]
+    const r = colonnes(genererFec(brouillon, [facture], [], [], 'tresorerie', [])).slice(1)
+    expect(r.map((x) => [x[0], x[2], x[4], x[5], x[8], x[11], x[12]])).toEqual([
+      ['AC', 'AC00001', '215400', 'Matériel industriel', 'fauteuil.pdf', '1000,00', '0,00'],
+      ['AC', 'AC00001', '445620', 'TVA déductible sur immobilisations', 'fauteuil.pdf', '200,00', '0,00'],
+      ['AC', 'AC00001', COMPTE_BANQUE, 'Banque', 'fauteuil.pdf', '0,00', '1200,00'],
+    ])
+  })
+
+  it('en engagement, doit la facture au 404 avec un auxiliaire FI, distinct de celui du 401 du même fournisseur', () => {
+    const achat = piece('achat', { tiers: 'Transmedical', montant_ttc: 120 })
+    const brouillon = [
+      ligne('achat', { id: 'a1', compte: '606100', montant: 120 }),
+      ligne('achat', { id: 'a2', compte: '401000', sens: 'credit', montant: 120 }),
+      ligne('bien', { id: 'b1', compte: '215400', montant: 1000 }),
+      ligne('bien', { id: 'b2', compte: '445620', montant: 200 }),
+      ligne('bien', { id: 'b3', compte: '404000', sens: 'credit', montant: 1200 }),
+      ligne('bien', { id: 'b4', compte: '404000', sens: 'debit', montant: 1200, date: '2026-04-05', ligne_bancaire_id: 'l-bien' }),
+      ligne('bien', { id: 'b5', compte: COMPTE_BANQUE, sens: 'credit', montant: 1200, date: '2026-04-05', ligne_bancaire_id: 'l-bien' }),
+    ]
+    const r = colonnes(genererFec(brouillon, [achat, facture], [], [], 'engagement', [])).slice(1)
+    expect(r.filter((x) => x[4] === '404000').map((x) => [x[0], x[5], x[6], x[7]])).toEqual([
+      ['AC', "Fournisseurs d'immobilisations", 'FITRANSMEDICAL', 'Transmedical'],
+      ['BQ', "Fournisseurs d'immobilisations", 'FITRANSMEDICAL', 'Transmedical'],
+    ])
+    expect(r.find((x) => x[4] === '401000')![6]).toBe('FTRANSMEDICAL')
+  })
+})
+
 describe('genererFec — les mouvements du relevé affectés sans justificatif', () => {
   // Ligne 26.6 : un encaissement de l'Assurance maladie rangé en recettes, des frais bancaires. Ils
   // n'ont pas de pièce ; leur justificatif est le relevé qui les porte.

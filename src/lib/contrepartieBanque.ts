@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { COMPTE_BANQUE } from './comptes'
+import { COMPTE_BANQUE, COMPTE_FOURNISSEURS_IMMOBILISATIONS } from './comptes'
 import { ligneContrepartieBanque } from './ecritures'
 import { lignesReglementEngagement, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
@@ -53,7 +53,11 @@ export async function synchroniserContrepartieBanque(
     // plusieurs fois reçoit un règlement par paiement, et un second passage n'en double aucun.
     if (!existantes || !existantes.some((e) => !e.ligne_bancaire_id)) return
     if (existantes.some((e) => e.ligne_bancaire_id === paiement.id)) return
-    const reglement = lignesReglementEngagement(dossierId, piece, paiement, modele.compteNotesDeFrais)
+    // Le règlement solde le compte de tiers que la FACTURE a crédité : 404000 pour la facture d'un bien
+    // immobilisé, que l'écriture générée porte déjà — le lire là évite de relire le registre ici, et un
+    // règlement au 401 laisserait au 404 une dette payée.
+    const immobilisation = existantes.some((e) => !e.ligne_bancaire_id && e.compte === COMPTE_FOURNISSEURS_IMMOBILISATIONS)
+    const reglement = lignesReglementEngagement(dossierId, piece, paiement, modele.compteNotesDeFrais, immobilisation)
     if (reglement.length === 0) return
     const { error } = await supabase.from('ecritures_brouillon').insert(reglement)
     if (error) throw error

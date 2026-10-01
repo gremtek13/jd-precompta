@@ -271,8 +271,8 @@ describe('agent-comptable / points_a_traiter lit les parts des mouvements ventil
   })
 
   it('passe les parts aux catégories sans compte ou sans poste, et rend les trois points de la Checklist', () => {
-    expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])')
-    expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])')
+    expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
+    expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
     expect(corps).toContain('recettesVentileesSansTaux(\n      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva)')
     expect(corps).toContain('ventilationsIncoherentes(rReleve.lignes, rParts.lignes)')
     expect(corps).toContain('mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva)')

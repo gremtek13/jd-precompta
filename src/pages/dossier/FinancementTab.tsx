@@ -21,7 +21,7 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 // `ligne_bancaire_id` : le mouvement du relevé dont l'écriture est la contrepartie — de quoi reconnaître
 // celles d'un DÉBLOCAGE d'emprunt, que le solde compte et la moyenne des encaissements non.
-interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number; ligne_bancaire_id: string | null }
+interface LigneBanque { date: string; sens: 'debit' | 'credit'; montant: number; ligne_bancaire_id: string | null; piece_id: string | null }
 
 // Première brique du "dossier bancaire automatisé" — l'échéancier des emprunts (voir lib/emprunts.ts),
 // avec quelques ratios simples qui ne demandent pas de résoudre au préalable la question, plus large,
@@ -108,7 +108,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
       // pouvoir aussi répondre "à telle date" dans la situation intermédiaire ci-dessous — sur tout
       // l'historique du brouillon d'écritures, comme un relevé, pas borné à l'année en cours.
       lireTout<{ date: string; sens: string; montant: number; ligne_bancaire_id: string | null }>((debut, fin) =>
-        supabase.from('ecritures_brouillon').select('date, sens, montant, ligne_bancaire_id', { count: 'exact' })
+        supabase.from('ecritures_brouillon').select('date, sens, montant, ligne_bancaire_id, piece_id', { count: 'exact' })
           .eq('dossier_id', dossierId).eq('compte', COMPTE_BANQUE).order('id').range(debut, fin),
       ),
       lireTout<ANouveau>((debut, fin) =>
@@ -191,9 +191,16 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   // LES DÉBLOCAGES D'EMPRUNT NE SONT PAS UN RYTHME D'ACTIVITÉ (lib/echeanceEmprunt.ts) : écrits au 512, ils
   // entreraient dans la moyenne des encaissements du plan de trésorerie et flatteraient le taux
   // d'endettement, sur le document qu'on présente à une banque. Le solde, lui, les compte.
+  //
+  // NI LE PAIEMENT D'UN BIEN IMMOBILISÉ : son acquisition s'écrit au 512 depuis le 01/10/2026 (ligne 26.6,
+  // étape b), et la moyenne des décaissements le projetterait chaque mois, comme si le cabinet achetait un
+  // fauteuil ou un ordinateur tous les mois. Un investissement ne se répète pas ; le solde, lui, le compte.
   const deblocages = idsDeblocagesEmprunt(mouvementsRapproches)
-  const lignesDuRythme = lignesBanque.filter((l) => !l.ligne_bancaire_id || !deblocages.has(l.ligne_bancaire_id))
-  const deblocagesEcartes = lignesBanque.length - lignesDuRythme.length
+  const pieceIdsImmobilisees = new Set(immobilisations.flatMap((i) => (i.piece_id ? [i.piece_id] : [])))
+  const sansDeblocages = lignesBanque.filter((l) => !l.ligne_bancaire_id || !deblocages.has(l.ligne_bancaire_id))
+  const lignesDuRythme = sansDeblocages.filter((l) => !l.piece_id || !pieceIdsImmobilisees.has(l.piece_id))
+  const deblocagesEcartes = lignesBanque.length - sansDeblocages.length
+  const acquisitionsEcartees = sansDeblocages.length - lignesDuRythme.length
 
   // Les mouvements rapprochés de chaque emprunt : ses échéances payées, et son déblocage.
   const rapprochementsDe = (e: Emprunt) => mouvementsRapproches.filter((l) => l.emprunt_id === e.id)
@@ -403,6 +410,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
           lignesBanque={lignesBanque}
           lignesDuRythme={lignesDuRythme}
           deblocagesEcartes={deblocagesEcartes}
+          acquisitionsEcartees={acquisitionsEcartees}
           ouverture={ouverture}
           soldeActuel={soldeBanque}
           emprunts={emprunts}
@@ -550,14 +558,16 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
   )
 }
 
-function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
-  lignesBanque: LigneBanque[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; ouverture: OuvertureBanque | null; soldeActuel: number
+function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, acquisitionsEcartees, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
+  lignesBanque: LigneBanque[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; acquisitionsEcartees: number
+  ouverture: OuvertureBanque | null; soldeActuel: number
   emprunts: Emprunt[]; cotisations: CotisationDeclaree[]; onClose: () => void
 }) {
   const [nbMoisHistorique, setNbMoisHistorique] = useState(6)
   const [nbMoisProjection, setNbMoisProjection] = useState(6)
 
-  // Le solde de départ compte tout ; la moyenne, le seul rythme d'activité — sans les déblocages d'emprunt.
+  // Le solde de départ compte tout ; la moyenne, le seul rythme d'activité — sans les déblocages d'emprunt
+  // ni le paiement des biens immobilisés.
   const plan = calculerPlanTresorerie(lignesDuRythme, soldeActuel, nbMoisHistorique, nbMoisProjection)
   // Une projection bâtie sur rien a exactement la même tête qu'une projection bâtie sur six mois.
   const reserve = reserveSurMoyenne(plan)
@@ -597,6 +607,7 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, 
           {formatMoney(plan.moyenneDecaissements)} de décaissements — mensualités d'emprunts et cotisations déjà payées comprises, puisqu'elles
           transitent par le même compte banque.
           {deblocagesEcartes > 0 && ' Les fonds reçus d’un emprunt n’entrent pas dans cette moyenne : le solde les compte, mais ils ne disent rien du rythme d’activité.'}
+          {acquisitionsEcartees > 0 && ' Le paiement d’un bien immobilisé non plus : un investissement ne se répète pas chaque mois, et le solde le compte déjà.'}
         </p>
         {reserveAffichee && (
           <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserveAffichee}</p>
