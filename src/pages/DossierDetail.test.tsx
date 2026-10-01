@@ -141,6 +141,10 @@ vi.mock('./dossier/ClotureTab', () => doubleTva('Clôture'))
 vi.mock('./dossier/EstimationTab', () => doubleTva('Estimation'))
 vi.mock('./dossier/FinancementTab', () => doubleTva('Financement'))
 vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
+// Cotisations écrit une échéance payée dans le modèle du dossier (lib/cotisationRapprochee.ts) : sa
+// CSG-CRDS au 108000 en trésorerie, au 646000 avec le reste en engagement. Doublé pour montrer le modèle
+// qu'il REÇOIT — il ne lit pas le statut TVA, que le double affiche sans conséquence.
+vi.mock('./dossier/CotisationsTab', () => doubleTva('Cotisations'))
 // Banque refuse, avant le clic, d'affecter une recette sans facture à un dossier assujetti (sa TVA ne
 // se lit pas sur un relevé) : un statut qui ne lui parviendrait pas laisserait passer l'affectation, que
 // seule la base refuserait alors.
@@ -464,7 +468,7 @@ describe('Page d’un dossier — le modèle comptable', () => {
     expect(screen.getByText('Écritures — engagement — 108000')).toBeTruthy()
   })
 
-  it.each([['cloture', 'Clôture'], ['estimation', 'Estimation'], ['financement', 'Financement']])(
+  it.each([['cloture', 'Clôture'], ['estimation', 'Estimation'], ['financement', 'Financement'], ['cotisations', 'Cotisations']])(
     'l’onglet %s reçoit le modèle du dossier affiché',
     async (onglet, libelle) => {
       await afficher(`/dossiers/d1/${onglet}`)

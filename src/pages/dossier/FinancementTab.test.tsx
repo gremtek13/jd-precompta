@@ -1180,4 +1180,39 @@ describe('FinancementTab — une échéance de cotisation payée par le relevé'
     const auJuin = await ouvrirLaSituation('2026-06-30', false)
     expect(totalDuPoste(auJuin, 'Cotisations sociales personnelles')).toMatch(/^-500,00\s€$/)
   })
+
+  // Les deux autres calculs de l'écran qui comptent les cotisations, chacun par son propre câblage : la CAF
+  // que les ratios annualisent, et les charges de référence que le prévisionnel reprend.
+  it('la CAF des ratios compte l’échéance payée d’avance, au montant du prélèvement', async () => {
+    // 10 000 € encaissés ; l'échéance du 5 octobre prélevée le 28 août : 9 600 € au 1er septembre, ramenés à
+    // douze mois sur 241 jours (30/360) — 14 340,25 €. Comptée à son échéance, elle ne serait pas encore là.
+    poser([
+      prelevement({ id: 'l-cpam', date: '2026-05-12', libelle: 'VIR CPAM', montant: 10000, cotisation_id: null, categorie_id: 'cat-recettes' }),
+      prelevement({ id: 'l-avance', date: '2026-08-28', montant: -400, cotisation_id: 'c-avance' }),
+    ])
+    faux.categories = [CATEGORIE]
+    faux.cotisations = [echeance({ id: 'c-avance', echeance: '2026-10-05', montant_appele: 400 })]
+    const modale = await ouvrirLaCarte('Dettes & ratios bancaires')
+    const ligne = (within(modale).getByText(/CAF annuelle estimée/).textContent ?? '').replace(/\s/g, ' ')
+    expect(ligne).toContain('14 340,25 €')
+  })
+
+  it('le prévisionnel se précharge des cotisations prélevées dans l’année de référence', async () => {
+    // Année de référence 2025 : juin prélevé 198 € au lieu de 200 ; décembre prélevé en janvier 2026, donc hors
+    // de l'année. Les charges de référence sont les 198 € que la 2035 de 2025 porte.
+    poser([
+      prelevement({ id: 'l-juin', date: '2025-06-09', montant: -198, cotisation_id: 'c-juin' }),
+      prelevement({ id: 'l-dec', date: '2026-01-06', montant: -300, cotisation_id: 'c-dec' }),
+    ])
+    faux.cotisations = [
+      echeance({ id: 'c-juin', echeance: '2025-06-05', montant_appele: 200 }),
+      echeance({ id: 'c-dec', echeance: '2025-12-05', montant_appele: 300 }),
+    ]
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    await waitFor(() => expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.querySelector('strong')?.textContent).not.toBe('—'))
+    const titre = screen.getByRole('heading', { name: 'Prévisionnel à 3 ans', level: 3 })
+    await act(async () => { within(titre.parentElement as HTMLElement).getByRole('button').click() })
+    await act(async () => { screen.getByRole('button', { name: 'Précharger depuis cette année' }).click() })
+    expect((screen.getByLabelText('Charges de référence (€)') as HTMLInputElement).value).toBe('198')
+  })
 })

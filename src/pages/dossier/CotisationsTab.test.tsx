@@ -238,6 +238,18 @@ describe('CotisationsTab — retirer une échéance dit ce que ça défait, et p
     expect(faux.ecritures).toEqual([])
   })
 
+  it('deux clics rapprochés sur « Retirer » ne retirent qu’une fois', async () => {
+    // Le bouton se grise sur un état React, donc au rendu SUIVANT : deux clics du même rendu entrent tous
+    // deux dans le gestionnaire. C'est le verrou qui arrête le second.
+    faux.cotisations = [cotisation()]
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: 'Retirer' })
+    await act(async () => { bouton.click(); bouton.click() })
+    expect(faux.rpcs.filter((r) => r.nom === 'supprimer_echeance_cotisation')).toHaveLength(1)
+  })
+
   it('dit le refus de la base au lieu de se taire', async () => {
     faux.cotisations = [cotisation()]
     faux.erreurRpc = 'L\'écriture du mouvement qui paie cette échéance est validée : l\'échéance ne se supprime plus.'
@@ -286,6 +298,8 @@ describe('CotisationsTab — la colonne Paiement', () => {
     expect(screen.getByText('Remboursée le 06/03/2026')).toBeTruthy()
     // Il n'est pas à écrire : « Écrire » échouerait.
     expect(screen.queryByRole('button', { name: /^Écrire/ })).toBeNull()
+    // Et il ne paie rien : le versé ne le reprend pas.
+    expect(screen.queryByText('(relevé)')).toBeNull()
   })
 
   it('ne dit rien du paiement sur un relevé lu en partie', async () => {
@@ -299,6 +313,24 @@ describe('CotisationsTab — la colonne Paiement', () => {
     expect(screen.queryByText('Sans écriture')).toBeNull()
   })
 
+  it('sur un relevé lu en partie, un paiement LU ne se dit pas non plus, et l’écriture se suspend', async () => {
+    // La lecture rend le prélèvement de la première échéance et s'arrête avant celui de la seconde : ce
+    // qu'on a lu peut être juste, mais ce qu'on n'a pas lu paraîtrait impayé. On ne dit rien du paiement,
+    // on n'écrit rien, et le bandeau dit pourquoi.
+    faux.cotisations = [cotisation({ id: 'cot-1' }), cotisation({ id: 'cot-2', echeance: '2026-04-05' })]
+    faux.lignes = [ligne({ id: 'l-1' }), ligne({ id: 'l-2', cotisation_id: 'cot-2', date: '2026-04-06' })]
+    faux.muetApres.lignes_bancaires = 1
+    monter()
+
+    const bouton = await screen.findByRole('button', { name: 'Écrire cette échéance' })
+    expect(screen.queryByText(/Prélevée le/)).toBeNull()
+    expect(screen.getByText(/Les cotisations, leurs justificatifs et leurs paiements n'ont pas pu être lus en entier/)).toBeTruthy()
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(screen.getByText(/Suspendu : la lecture est partielle/)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
   it('ne lit que les mouvements rapprochés d’une échéance', async () => {
     // Un mouvement rapproché d'une PIÈCE n'est pas un paiement d'échéance : le filtre de la lecture
     // l'écarte. Accepté sans effet, il ferait paraître l'échéance payée.
@@ -308,6 +340,19 @@ describe('CotisationsTab — la colonne Paiement', () => {
 
     await screen.findByRole('button', { name: 'Retirer' })
     expect(screen.queryByText(/Prélevée le/)).toBeNull()
+  })
+
+  it('la recherche trouve une échéance par la date de son prélèvement', async () => {
+    faux.cotisations = [cotisation({ id: 'cot-1' }), cotisation({ id: 'cot-2', echeance: '2026-04-05' })]
+    faux.lignes = [ligne({ id: 'l-1' }), ligne({ id: 'l-2', cotisation_id: 'cot-2', date: '2026-04-09' })]
+    faux.ecritures = [...ecritureJuste('l-1'), ...ecritureJuste('l-2', 420, '2026-04-09')]
+    monter()
+
+    await screen.findByText('Prélevée le 09/04/2026')
+    const champ = screen.getByRole('searchbox', { name: 'Rechercher une échéance, un montant…' })
+    await act(async () => { fireEvent.change(champ, { target: { value: '09/04/2026' } }) })
+    expect(screen.getByText('Prélevée le 09/04/2026')).toBeTruthy()
+    expect(screen.queryByText('Prélevée le 06/03/2026')).toBeNull()
   })
 
   it('le versé est celui du relevé quand rien n’est saisi, et le total le compte', async () => {
@@ -338,6 +383,7 @@ describe('CotisationsTab — écrire les échéances payées', () => {
     monter()
 
     await screen.findByText('1 échéance payée dont l’écriture manque ou n’est plus à jour')
+    expect(screen.getByText(/Le bouton écrit chacune au compte 646000, sa CSG-CRDS au 108000, face à\s+la banque\./)).toBeTruthy()
     await act(async () => { screen.getByRole('button', { name: 'Écrire cette échéance' }).click() })
 
     expect(faux.rpcs).toEqual([{
@@ -363,6 +409,9 @@ describe('CotisationsTab — écrire les échéances payées', () => {
     monter('engagement')
 
     const bouton = await screen.findByRole('button', { name: 'Écrire cette échéance' })
+    // La carte dit ce que le bouton écrit : rien au 108000 dans ce modèle.
+    expect(screen.getByText(/Le bouton écrit chacune au compte 646000, face à\s+la banque\./)).toBeTruthy()
+    expect(screen.queryByText(/sa CSG-CRDS au 108000/)).toBeNull()
     await act(async () => { bouton.click() })
     expect(faux.rpcs[0].args.p_ecritures).toEqual([
       { compte: '512000', sens: 'credit', montant: 420, libelle: 'PRLV URSSAF' },
@@ -395,8 +444,9 @@ describe('CotisationsTab — écrire les échéances payées', () => {
     const bouton = await screen.findByRole('button', { name: 'Écrire cette échéance' })
     expect(bouton.hasAttribute('disabled')).toBe(true)
     expect(screen.getByText(/Suspendu : la lecture est partielle/)).toBeTruthy()
-    // La colonne ne l'affirme pas non plus.
+    // La colonne ne l'affirme pas non plus, et le bandeau dit lesquelles n'ont pas été lues.
     expect(screen.queryByText('Sans écriture')).toBeNull()
+    expect(screen.getByText(/Les écritures des échéances payées n'ont pas pu être lues en entier/)).toBeTruthy()
     await act(async () => { bouton.click() })
     expect(faux.rpcs).toEqual([])
   })

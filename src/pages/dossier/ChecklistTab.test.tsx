@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react'
+import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
@@ -400,8 +400,10 @@ describe('ChecklistTab — le 1er janvier, l’exercice révolu reste réclamé 
 // manque. Les deux clés du côté banque sont en `ON DELETE SET NULL` : supprimer la pièce ou
 // l'échéance de cotisation défait le lien sans un mot et laisse `statut` à `'rapprochee'`.
 //
-// Une cotisation n'engendre aucune écriture — la piste d'audit et les contrôles d'Écritures partent
-// tous de l'écriture ou de la pièce, jamais du mouvement. Personne d'autre n'en parlerait.
+// Une échéance retirée depuis l'onglet Cotisations passe par la base, qui remet son mouvement à traiter
+// (`supprimer_echeance_cotisation`, 01/10/2026) ; supprimée autrement, le lien tombe sans un mot, et ce
+// point est le seul à partir du MOUVEMENT — la piste d'audit et les contrôles d'Écritures partent de
+// l'écriture ou de la pièce.
 describe('ChecklistTab — un mouvement rapproché qui ne désigne plus rien', () => {
   const POINT = /rapproché\(s\) sans justificatif/
 
@@ -862,8 +864,24 @@ describe('ChecklistTab — les échéances de cotisation payées', () => {
     expect(point.textContent).toMatch(/^1 /)
     // Il n'est pas « à écrire » : « Écrire » échouerait.
     expect(screen.queryAllByText(/de cotisation payée\(s\)/)).toHaveLength(0)
+    // Et il dit où le trouver : Banque s'ouvre sur les non rapprochés, où il n'est pas.
+    expect(screen.getByText('Dans Banque, filtre « Rapprochés » : ils portent la pastille « Ne s’écrit pas ».')).toBeTruthy()
     screen.getByRole('button', { name: 'Annuler ces rapprochements' }).click()
     expect(onNavigate).toHaveBeenCalledWith('banque')
+  })
+
+  it('le mode arrive jusqu’aux refus : une CSG-CRDS au-delà du mouvement ne gêne qu’en trésorerie', async () => {
+    poser({ lignes: [prelevement()], cotisations: [echeance({ montant_csg_crds: 150 })] })
+    monter()
+    const refuse = await screen.findByText(/rapprochement\(s\) d’une échéance de cotisation qui ne peuvent pas s’écrire/)
+    expect(refuse.textContent).toMatch(/^1 /)
+    cleanup()
+
+    // En engagement elle reste au 646000 : rien n'empêche l'écriture, qui est seulement à écrire.
+    poser({ lignes: [prelevement()], cotisations: [echeance({ montant_csg_crds: 150 })] })
+    monter(false, ENGAGEMENT)
+    await screen.findByText(/de cotisation payée\(s\) dont l’écriture manque/)
+    expect(screen.queryAllByText(/qui ne peuvent pas s’écrire/)).toHaveLength(0)
   })
 })
 

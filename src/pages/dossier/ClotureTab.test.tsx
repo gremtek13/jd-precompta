@@ -263,6 +263,32 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
     expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 
+  it('la carte ne liste que les échéances de l’exercice affiché, et dit les prévisionnelles', async () => {
+    poser({}, [], [
+      cotisation('c1', { echeance: '2025-12-05', montant_appele: 300, montant_verse: null, previsionnel: true }),
+      cotisation('c2', { echeance: '2024-06-05', montant_appele: 200, montant_verse: null }),
+    ])
+    monter(2025)
+    const carte = within((await screen.findByText('Cotisations comptées à leur échéance (1)')).closest('.card')!)
+    carte.getByText('05/12/2025 (prévisionnelle)')
+    expect(carte.queryByText(/05\/06\/2024/)).toBeNull()
+  })
+
+  it('la CSG-CRDS non saisie se signale dans l’exercice du prélèvement, pas dans celui de l’échéance', async () => {
+    // L'échéance de décembre (sans CSG-CRDS saisie) prélevée en janvier compte en 2026 : c'est la 2035 de
+    // 2026 qui la porte ligne 25, donc là qu'il faut dire que sa part non déductible n'est pas chiffrable.
+    const CSG = /Cotisations dont la CSG-CRDS n’est pas saisie/
+    poserDecembre(true)
+    const en2026 = monter(2026)
+    const titre = await screen.findByText(CSG)
+    within(titre.closest('.card')!).getByText(/1 — part non déductible non chiffrable/)
+    en2026.unmount()
+
+    monter(2025)
+    await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    expect(screen.queryAllByText(CSG)).toHaveLength(0)
+  })
+
   it('propose l’exercice du prélèvement quand toutes les années sont affichées', async () => {
     poserDecembre(true)
     faux.parTable.pieces = []

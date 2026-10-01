@@ -2126,6 +2126,50 @@ describe('BanqueTab — une échéance de cotisation rapprochée s’écrit', ()
     expect(within(volet()).queryByText(/ne peut pas s’écrire/)).toBeNull()
   })
 
+  it('« Tout rapprocher » écrit dans le modèle du dossier : en engagement, la CSG-CRDS reste au 646000', async () => {
+    preparer()
+    rendre(ENGAGEMENT)
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    await act(async () => { bouton.click() })
+
+    await waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '512000', sens: 'credit', montant: 100, libelle: 'PRLV URSSAF' },
+      { compte: '646000', sens: 'debit', montant: 100, libelle: 'PRLV URSSAF' },
+    ])
+  })
+
+  it('la pastille suit le modèle : une CSG-CRDS au-delà du mouvement ne gêne qu’en trésorerie', async () => {
+    // En trésorerie la CSG-CRDS passe au 108000 : plus grande que le prélèvement, l'écriture est impossible.
+    preparer({ statut: 'rapprochee', cotisation_id: 'cot-1' }, { montant_csg_crds: 150 })
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    expect(await screen.findByText('Ne s’écrit pas')).toBeTruthy()
+
+    // En engagement elle reste au 646000 avec le reste : rien n'empêche l'écriture.
+    cleanup()
+    preparer({ statut: 'rapprochee', cotisation_id: 'cot-1' }, { montant_csg_crds: 150 })
+    rendre(ENGAGEMENT)
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    expect(await screen.findByText(/Rapproché — Cotisation du 05\/06\/2025/)).toBeTruthy()
+    expect(screen.queryByText('Ne s’écrit pas')).toBeNull()
+  })
+
+  it('parmi plusieurs échéances, celle que la base refuserait ne s’associe pas, et dit pourquoi', async () => {
+    preparer()
+    faux.cotisations = [echeance(), echeance({ id: 'cot-2', echeance: '2025-06-07', montant_csg_crds: 150 })]
+    rendre()
+    await ouvrir('PRLV URSSAF')
+
+    const boutons = within(volet()).getAllByRole('button', { name: 'Associer celle-ci' })
+    expect(boutons).toHaveLength(2)
+    const refuses = boutons.filter((b) => b.hasAttribute('disabled'))
+    expect(refuses).toHaveLength(1)
+    expect(refuses[0].getAttribute('title')).toMatch(/La CSG-CRDS de cette échéance \(150,00\s€\) dépasse le mouvement \(100,00\s€\)\./)
+    await act(async () => { refuses[0].click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
   it('rapprocher une pièce ne touche pas au lien d’une échéance : la base refuserait le conflit', async () => {
     // Le lien vers une échéance n'est plus remis à zéro par la mise à jour d'une pièce : posé entre-temps
     // ailleurs, il ferait refuser la mise à jour au lieu d'être défait en silence, son écriture laissée.
