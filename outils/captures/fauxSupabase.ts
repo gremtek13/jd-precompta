@@ -235,6 +235,37 @@ const ENGAGEMENT_D8 = {
   ],
 }
 
+// Les ÉCHÉANCES DE COTISATION du cabinet infirmier (lib/cotisationRapprochee.ts) : l'appel d'août de l'Urssaf,
+// prélevé et écrit — la cotisation au 646000, sa CSG-CRDS au 108000 ; l'échéance de septembre de la caisse
+// de retraite, rapprochée avant que le rapprochement écrive, donc sans écriture (« Écrire les 1 » dans
+// Cotisations, un point de la Checklist) ; un remboursement rapproché à tort d'un appel, qui ne s'écrit pas
+// (la pastille « Ne s'écrit pas » dans Banque) ; et l'appel d'octobre, que rien ne paie encore.
+function echeanceCotisation(id: string, echeance: string, appele: number, csg: number | null): Ligne {
+  return {
+    id, dossier_id: 'd1', echeance, montant_appele: appele, montant_verse: null, montant_csg_crds: csg,
+    previsionnel: false, created_at: MAINTENANT,
+  }
+}
+
+const COTISATIONS_D1 = {
+  echeances: [
+    echeanceCotisation('cs1', '2026-08-05', 520, 48.5),
+    echeanceCotisation('cs2', '2026-09-05', 310, null),
+    echeanceCotisation('cs3', '2026-09-20', 180, null),
+    echeanceCotisation('cs4', '2026-10-05', 520, 48.5),
+  ],
+  lignes: [
+    { ...ligne('l21', '2026-08-05', 'PRLV URSSAF COTISATIONS AOUT', -520, 'rapprochee', null), cotisation_id: 'cs1' },
+    { ...ligne('l22', '2026-09-07', 'PRLV CAISSE RETRAITE ECHEANCE SEPTEMBRE', -310, 'rapprochee', null), cotisation_id: 'cs2' },
+    { ...ligne('l23', '2026-09-21', 'VIR URSSAF REMBOURSEMENT', 180, 'rapprochee', null), cotisation_id: 'cs3' },
+  ],
+  ecritures: [
+    ecritureReleve('r28', 'l21', '2026-08-05', '646000', 'PRLV URSSAF COTISATIONS AOUT', 'debit', 471.5),
+    ecritureReleve('r29', 'l21', '2026-08-05', '108000', 'PRLV URSSAF COTISATIONS AOUT', 'debit', 48.5),
+    ecritureReleve('r30', 'l21', '2026-08-05', '512000', 'PRLV URSSAF COTISATIONS AOUT', 'credit', 520),
+  ],
+}
+
 // Une conversation d'assistant, pour photographier le panneau de droite ouvert — mêmes données
 // fictives que le reste (Télécom Plus, LogiSoins) : le texte des réponses est écrit ici, jamais tiré
 // d'un vrai échange.
@@ -278,6 +309,7 @@ const TABLES: Record<string, Ligne[]> = {
   ecritures_brouillon: [
     ...ENGAGEMENT_D8.ecritures,
     ...RELEVE_D7.ecritures,
+    ...COTISATIONS_D1.ecritures,
     ecritureReleve('r1', 'l8', '2026-08-20', '706000', 'VIR CPAM REMBOURSEMENTS AOUT', 'credit', 1850.4),
     ecritureReleve('r2', 'l8', '2026-08-20', '512000', 'VIR CPAM REMBOURSEMENTS AOUT', 'debit', 1850.4),
     ecritureReleve('r3', 'l9', '2026-08-31', '627000', 'FRAIS TENUE DE COMPTE', 'debit', 8.5),
@@ -399,10 +431,12 @@ const TABLES: Record<string, Ligne[]> = {
     // Un VIREMENT qui règle plusieurs pièces (lib/reglementGroupe.ts) : deux factures d'un fournisseur, moins
     // l'avoir qu'il a consenti. Ses parts sont dans `reglements_groupes`, ses écritures au brouillon.
     { ...ligne('l20', '2026-09-23', 'VIR SEPA MEDICAL EQUIPEMENT PRO FACTURES AOUT SEPT', -372, 'rapprochee', null), reglement_groupe: true },
+    ...COTISATIONS_D1.lignes,
     ...TVA_D7.lignes,
     ...RELEVE_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
   ],
+  cotisations_declarees: COTISATIONS_D1.echeances,
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte

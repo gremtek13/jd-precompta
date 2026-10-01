@@ -2091,6 +2091,26 @@ describe('BanqueTab — une échéance de cotisation rapprochée s’écrit', ()
     expect(await screen.findByText('Ne s’écrit pas')).toBeTruthy()
     await ouvrir('PRLV URSSAF')
     expect(within(volet()).getByText(/Ce rapprochement ne peut pas s’écrire : Ce mouvement est un encaissement/)).toBeTruthy()
+    // Et la fiche ne prétend pas dire comment il s'écrit.
+    expect(within(volet()).queryByText(/S’écrit face à la banque/)).toBeNull()
+  })
+
+  it('la fiche dit comment l’échéance payée s’écrit — sans le 108000 en engagement', async () => {
+    // Sans cette note, une échéance écrite et une échéance rapprochée avant que le rapprochement écrive se
+    // ressemblaient dans la fiche : elle ne lit pas le brouillon, et renvoie à l'onglet Cotisations.
+    preparer({ statut: 'rapprochee', cotisation_id: 'cot-1' })
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await ouvrir('PRLV URSSAF')
+    expect(within(volet()).getByText(/S’écrit face à la banque : 90,30\s€ au 646000 — Cotisations sociales personnelles de l'exploitant ; 9,70\s€ au 108000 — Compte de l'exploitant \(sa CSG-CRDS\)\. « Annuler le rapprochement » retire aussi son écriture ; l’onglet Cotisations dit si elle manque, et l’écrit\./)).toBeTruthy()
+
+    cleanup()
+    preparer({ statut: 'rapprochee', cotisation_id: 'cot-1' })
+    rendre(ENGAGEMENT)
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await ouvrir('PRLV URSSAF')
+    expect(within(volet()).getByText(/S’écrit face à la banque : 100,00\s€ au 646000 — Cotisations sociales personnelles de l'exploitant\./)).toBeTruthy()
+    expect(within(volet()).queryByText(/108000/)).toBeNull()
   })
 
   it('aucune pastille sur un prélèvement qui paie son appel', async () => {
