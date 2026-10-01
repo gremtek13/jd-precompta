@@ -43,7 +43,7 @@ export interface ExerciceAReclamer {
 // On rend l'exercice en cours, et le PRÉCÉDENT tant qu'il n'est pas clôturé. Pas ceux d'avant : un
 // dossier ouvert depuis cinq ans dont personne n'a jamais coché la clôture afficherait cinq
 // exercices réclamés en permanence, et une mise en garde permanente cesse d'être lue puis emporte
-// ses voisines dans son discrédit (même arbitrage que `dotationsNonProratisees`).
+// ses voisines dans son discrédit (même arbitrage que `detailPiecesSansDate`).
 //
 // CE QUE ÇA LAISSE DEHORS, dit plutôt que tu : un exercice jamais clôturé cesse d'être réclamé ici
 // quand il devient N-2. Ce n'est pas un oubli silencieux — l'onglet Clôture, lui, porte l'exercice

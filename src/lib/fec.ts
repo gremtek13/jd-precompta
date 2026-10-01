@@ -1,7 +1,7 @@
 import type { ANouveau, Categorie, EcritureBrouillon, ModeComptable, Piece } from './types'
 import { idsMouvementsJustifiesParLeReleve, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
 import { libelleEcritureANouveau } from './aNouveaux'
-import { LIBELLES_COMPTES } from './comptes'
+import { libelleCompteTenu } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
@@ -45,11 +45,10 @@ function champFec(valeur: string): string {
 }
 
 // Libellé du compte pour la colonne CompteLib — les comptes que l'application tient elle-même (TVA,
-// banque, tiers) d'abord, sinon celui de la catégorie qui porte ce compte_comptable, sinon le numéro de
-// compte lui-même à défaut de mieux.
+// banque, tiers, dotations et amortissements) d'abord, sinon celui de la catégorie qui porte ce
+// compte_comptable, sinon le numéro de compte lui-même à défaut de mieux.
 export function libelleCompte(compte: string, categories: Categorie[]): string {
-  if (LIBELLES_COMPTES[compte]) return LIBELLES_COMPTES[compte]
-  return categories.find((c) => c.compte_comptable === compte)?.libelle ?? compte
+  return libelleCompteTenu(compte) ?? categories.find((c) => c.compte_comptable === compte)?.libelle ?? compte
 }
 
 // LES À-NOUVEAUX OUVRENT LE FICHIER. Un FEC commence par les écritures d'ouverture : sans elles, le
@@ -70,7 +69,7 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
       'AN00001',
       yyyymmdd(a.date),
       champFec(a.compte),
-      champFec(LIBELLES_COMPTES[a.compte] ?? (a.libelle || a.compte)),
+      champFec(libelleCompteTenu(a.compte) ?? (a.libelle || a.compte)),
       '', '',
       champFec(a.source_nom),
       yyyymmdd(a.date),
@@ -101,8 +100,13 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
 // une écriture au journal de BANQUE, dans les deux modèles : sa pièce est le RELEVÉ qui le porte
 // (PieceRef), à la date du mouvement (PieceDate). C'est ce qui manquait pour que le FEC porte chaque euro
 // du relevé : un encaissement de l'Assurance maladie ou un prélèvement de l'exploitant n'y était nulle
-// part. Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et `absenceFec`
-// les chiffre.
+// part.
+//
+// UNE DOTATION AUX AMORTISSEMENTS (lib/amortissements.ts) fait une écriture par bien et par exercice au
+// journal des OPÉRATIONS DIVERSES (OD), au 31 décembre : sa pièce est le TABLEAU D'AMORTISSEMENT de
+// l'exercice, qui la justifie (PieceRef). Sans elle, le 681100 de la 2035 n'était nulle part dans le
+// fichier. Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et
+// `absenceFec` les chiffre.
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : exporté en trésorerie, le brouillon d'un dossier en engagement mettrait
@@ -126,6 +130,8 @@ export function genererFec(
       cle = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
     } else if (e.ligne_bancaire_id && idsJustifies.has(e.ligne_bancaire_id)) {
       cle = `releve|${e.ligne_bancaire_id}`
+    } else if (e.immobilisation_id) {
+      cle = `dotation|${e.immobilisation_id}|${e.date}`
     } else continue
     groupes.set(cle, [...(groupes.get(cle) ?? []), e])
   }
@@ -149,15 +155,21 @@ export function genererFec(
   const entrees = [...groupes.entries()]
     .map(([cle, rows]) => {
       const pieceId = rows[0].piece_id
+      if (!pieceId && rows[0].immobilisation_id && !rows[0].ligne_bancaire_id) {
+        return {
+          cle, pieceId: null, rows, reglement: false, dotation: true, date: rows[0].date, ordre: plusAncienne(rows),
+          pieceRef: `Tableau d'amortissement ${rows[0].date.slice(0, 4)}`,
+        }
+      }
       if (!pieceId) {
         const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!
         return {
-          cle, pieceId: null, rows, reglement: true, date: mouvement.date, ordre: plusAncienne(rows),
+          cle, pieceId: null, rows, reglement: true, dotation: false, date: mouvement.date, ordre: plusAncienne(rows),
           pieceRef: referenceDuReleve(mouvement),
         }
       }
       return {
-        cle, pieceId, rows, reglement: cle !== pieceId, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows),
+        cle, pieceId, rows, reglement: cle !== pieceId, dotation: false, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows),
         pieceRef: null,
       }
     })
@@ -172,10 +184,10 @@ export function genererFec(
   // de la même façon.
   const libellesAuxiliaires = new Map<string, string>()
 
-  for (const { pieceId, rows, date, reglement, pieceRef: refReleve } of entrees) {
+  for (const { pieceId, rows, date, reglement, dotation, pieceRef: refReleve } of entrees) {
     const piece = pieceId ? pieceById.get(pieceId) : undefined
-    const journalCode = reglement ? 'BQ' : piece?.type_piece === 'vente' ? 'VE' : 'AC'
-    const journalLib = reglement ? 'Banque' : piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
+    const journalCode = dotation ? 'OD' : reglement ? 'BQ' : piece?.type_piece === 'vente' ? 'VE' : 'AC'
+    const journalLib = dotation ? 'Opérations diverses' : reglement ? 'Banque' : piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
     compteurs[journalCode] = (compteurs[journalCode] ?? 0) + 1
     const ecritureNum = `${journalCode}${String(compteurs[journalCode]).padStart(5, '0')}`
     const pieceRef = refReleve ?? piece?.nom_fichier ?? pieceId!.slice(0, 8)

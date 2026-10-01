@@ -14,9 +14,7 @@ import {
   ecritureDuMouvement, idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, refusAffectation,
   type MouvementAffecte,
 } from '../../lib/affectationBanque'
-import type {
-  ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire,
-} from '../../lib/types'
+import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Immobilisation, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire } from '../../lib/types'
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsAReecrire, refusVentilation } from '../../lib/ventilationBanque'
 import { libelleTaux } from '../../lib/tvaDuReleve'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -76,6 +74,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // pas — l'écriture d'un mouvement ventilé est au brouillon, et le prédicat du relevé se lit sur la ligne.
   const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
   const [ventilationsIncompletes, setVentilationsIncompletes] = useState<string | null>(null)
+  const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
@@ -138,9 +137,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       ),
       // Paginée comme le reste : cette liste EXCLUT du brouillon les pièces devenues des actifs.
       // Tronquée, elle laisserait générer une charge sur une immobilisation — exactement ce que
-      // `ecrituresSansObjet` signale ensuite, mais produit par la lecture plutôt que par un geste.
-      lireTout<{ piece_id: string | null }>((debut, fin) =>
-        supabase.from('immobilisations').select('piece_id, id', { count: 'exact' })
+      // `ecrituresSansObjet` signale ensuite, mais produit par la lecture plutôt que par un geste. Et
+      // elle nomme le bien d'une dotation aux amortissements dans la piste d'audit, avec sa facture.
+      lireTout<Immobilisation>((debut, fin) =>
+        supabase.from('immobilisations').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
       // Les mouvements RAPPROCHÉS : ceux d'une pièce datent et règlent son écriture, ceux AFFECTÉS à une
@@ -186,6 +186,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         .find((l) => !l.complete)?.motif ?? null,
     )
     setANouveauxIncomplets(lectureANouveaux.motif)
+    setImmobilisations(lectureImmobilisations.lignes)
     setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
     setLoading(false)
   }
@@ -357,7 +358,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         const parts = rattachements(p, paiements.get(p.id) ?? [], modele.mode)
         return parts.some((r) => r.date === null) || anneesDesRattachements(parts).includes(anneeFilter)
       })
-      const contenu = genererPisteAuditCsv(pisteAudit(ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice))
+      // Les factures d'acquisition se cherchent parmi TOUTES les pièces validées : un bien acheté un autre
+      // exercice s'amortit dans celui-ci, et sa facture est la preuve de sa dotation.
+      const contenu = genererPisteAuditCsv(pisteAudit(
+        ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice, { immobilisations, factures: piecesValidees },
+      ))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {
       setError(messageErreur(err, "L'export de la piste d'audit a échoué."))

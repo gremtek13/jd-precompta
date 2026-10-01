@@ -482,3 +482,42 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     expect([...parNumero.values()].every((s) => Math.abs(s) < 0.005)).toBe(true)
   })
 })
+
+// UNE DOTATION AUX AMORTISSEMENTS (lib/amortissements.ts) : une écriture par bien et par exercice, au
+// journal des OPÉRATIONS DIVERSES, au 31 décembre, le tableau d'amortissement pour pièce. Sans elle, le
+// 681100 de la case CH n'était nulle part dans le fichier.
+describe('genererFec — les dotations aux amortissements', () => {
+  const dotation = (immobilisationId: string, montant: number, o: Partial<EcritureBrouillon> = {}): EcritureBrouillon[] => [
+    ligne('', { id: `${immobilisationId}-d`, piece_id: null, immobilisation_id: immobilisationId, date: '2026-12-31', compte: '681100', sens: 'debit', montant, libelle: 'Dotation 2026 — Ordinateur', ...o }),
+    ligne('', { id: `${immobilisationId}-c`, piece_id: null, immobilisation_id: immobilisationId, date: '2026-12-31', compte: '281830', sens: 'credit', montant, libelle: 'Dotation 2026 — Ordinateur', ...o }),
+  ]
+
+  it('portent une écriture par bien au journal OD, le tableau d’amortissement pour pièce', () => {
+    const rows = colonnes(genererFec([...dotation('i1', 400), ...dotation('i2', 150)], [], [], [], 'tresorerie', [])).slice(1)
+    expect(rows.map((r) => [r[0], r[1], r[2], r[3], r[4], r[5], r[6], r[8], r[9], r[11], r[12]])).toEqual([
+      ['OD', 'Opérations diverses', 'OD00001', '20261231', '681100', 'Dotations aux amortissements des immobilisations', '', "Tableau d'amortissement 2026", '20261231', '400,00', '0,00'],
+      ['OD', 'Opérations diverses', 'OD00001', '20261231', '281830', 'Amortissements du matériel de bureau et matériel informatique', '', "Tableau d'amortissement 2026", '20261231', '0,00', '400,00'],
+      ['OD', 'Opérations diverses', 'OD00002', '20261231', '681100', 'Dotations aux amortissements des immobilisations', '', "Tableau d'amortissement 2026", '20261231', '150,00', '0,00'],
+      ['OD', 'Opérations diverses', 'OD00002', '20261231', '281830', 'Amortissements du matériel de bureau et matériel informatique', '', "Tableau d'amortissement 2026", '20261231', '0,00', '150,00'],
+    ])
+  })
+
+  it('numérotent leur journal à part, après les écritures de l’année', () => {
+    const rows = colonnes(genererFec([ligne('p1'), ligne('p1', { compte: COMPTE_BANQUE, sens: 'credit' }), ...dotation('i1', 400)], [piece('p1')], [], [], 'tresorerie', [])).slice(1)
+    expect(rows.map((r) => r[2])).toEqual(['AC00001', 'AC00001', 'OD00001', 'OD00001'])
+  })
+
+  it('ne font pas entrer une écriture sans pièce ni bien — le reste d’une pièce supprimée', () => {
+    expect(colonnes(genererFec([ligne('', { piece_id: null })], [], [], [], 'tresorerie', [])).slice(1)).toEqual([])
+  })
+
+  it('nomment un compte 28 ouvert par les à-nouveaux comme celui que la dotation crédite', () => {
+    const ouverture: ANouveau = {
+      id: 'an1', dossier_id: 'd1', date: '2026-01-01', compte: '281830', compte_origine: '28183', libelle: 'Amort. matériel info',
+      sens: 'credit', montant: 600, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), created_at: '2026-02-01T00:00:00Z',
+    }
+    const rows = colonnes(genererFec(dotation('i1', 400), [], [], [ouverture], 'tresorerie', [])).slice(1)
+    expect(new Set(rows.filter((r) => r[4] === '281830').map((r) => r[5])))
+      .toEqual(new Set(['Amortissements du matériel de bureau et matériel informatique']))
+  })
+})

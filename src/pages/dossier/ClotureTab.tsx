@@ -4,8 +4,8 @@ import { anneeDe, aujourdHuiSql, formatMoney, formatDate } from '../../lib/forma
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { montantRetenu } from '../../lib/montantRetenu'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
-import { calculerDeclaration2035, dotationPourAnnee, dotationsNonProratisees, partCsgNonDeductible, RESERVE_PRORATA_TEMPORIS,
-  type DotationNonProratisee, type PartCsgNonDeductible } from '../../lib/declaration2035'
+import { calculerDeclaration2035, partCsgNonDeductible, type PartCsgNonDeductible } from '../../lib/declaration2035'
+import { dotationDeLExercice } from '../../lib/amortissements'
 import {
   CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases,
   valeursDesCases,
@@ -291,13 +291,6 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     .filter((x): x is { annee: number; part: PartCsgNonDeductible } =>
       x.part !== null && x.part.nbSansVentilation > 0)
 
-  // Première annuité d'un bien acquis en cours d'année : l'application la compte en entier, la règle
-  // fiscale la réduit prorata temporis (voir `dotationsNonProratisees`). La réserve vivait jusqu'ici
-  // dans un commentaire de source, sur l'écran d'à côté — donc nulle part pour qui remplit la 2035.
-  const dotationsAReprendre: { annee: number; dotations: DotationNonProratisee[] }[] = declarations
-    .map((d) => ({ annee: d.annee, dotations: dotationsNonProratisees(immobilisations, d.annee) }))
-    .filter((x) => x.dotations.length > 0)
-
   // UNE DOTATION SANS JUSTIFICATIF SUR LE DOCUMENT QU'ON SIGNE. `immobilisations.piece_id` est en
   // `ON DELETE SET NULL` : supprimer la pièce détache l'immobilisation sans un mot, et
   // `calculerDeclaration2035` totalise la dotation sans regarder ce lien. CADRÉ SUR L'EXERCICE de
@@ -306,8 +299,8 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // année-là, pas un bien amorti depuis longtemps.
   const amortissementsSansJustificatif = declarations.flatMap((d) =>
     immobilisationsSansJustificatif(immobilisations)
-      .filter((i) => dotationPourAnnee(i, d.annee) > 0)
-      .map((i) => ({ annee: d.annee, immo: i, dotation: dotationPourAnnee(i, d.annee) })),
+      .filter((i) => dotationDeLExercice(i, d.annee) > 0)
+      .map((i) => ({ annee: d.annee, immo: i, dotation: dotationDeLExercice(i, d.annee) })),
   )
 
   // LES ÉCHÉANCES D'EMPRUNT QUE L'ÉCHÉANCIER PRÉVOIT DANS L'EXERCICE ET QU'AUCUN MOUVEMENT NE PAIE : la 2035
@@ -807,43 +800,6 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
                   <td style={{ textAlign: 'right' }}>{formatMoney(dotation)}</td>
                 </tr>
               ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {dotationsAReprendre.length > 0 && (
-        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
-          <h3 style={{ marginTop: 0 }}>
-            Première annuité d’amortissement à reprendre ({dotationsAReprendre.reduce((n, x) => n + x.dotations.length, 0)})
-          </h3>
-          <p className="muted" style={{ marginTop: -8 }}>{RESERVE_PRORATA_TEMPORIS}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Exercice</th>
-                <th>Bien</th>
-                <th>Acquisition</th>
-                <th style={{ textAlign: 'right' }}>Dotation comptée</th>
-                <th style={{ textAlign: 'right' }}>Prorata temporis</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dotationsAReprendre.flatMap(({ annee, dotations }) =>
-                dotations.map((d) => (
-                  <tr key={`${annee}-${d.libelle}-${d.dateAcquisition}`}>
-                    <td>{annee}</td>
-                    <td>{d.libelle}</td>
-                    <td>{formatDate(d.dateAcquisition)}</td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
-                      {formatMoney(d.dotationComptee)}
-                    </td>
-                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                      {formatMoney(d.dotationProratisee)}
-                    </td>
-                  </tr>
-                )),
-              )}
             </tbody>
           </table>
         </div>

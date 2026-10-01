@@ -92,7 +92,7 @@ const LIGNES: LigneBancaire[] = [
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'encaissement', date: '2025-03-10',
-  compte: '706000', libelle: 'VIR CPAM', sens: 'credit', montant: 100, statut: 'proposee', created_at: '2025-03-10T09:00:00Z', ...o,
+  compte: '706000', libelle: 'VIR CPAM', sens: 'credit', montant: 100, statut: 'proposee', immobilisation_id: null, created_at: '2025-03-10T09:00:00Z', ...o,
 })
 const conforme = (id: string, compte: string, montant: number, date = '2025-03-10'): EcritureBrouillon[] => {
   const entree = montant >= 0

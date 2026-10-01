@@ -1,10 +1,14 @@
-import { useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, type FormEvent } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
-import { anneeDe, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
-import { dotationsNonProratisees, RESERVE_PRORATA_TEMPORIS } from '../../lib/declaration2035'
+import { anneeDe, aujourdHuiSql, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
+import {
+  compteAmortissement, dateDeLaDotation, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, planAmortissement, refusBien,
+  refusNature,
+  type DotationDuRegistre, type EtatDotation,
+} from '../../lib/amortissements'
 import { immobilisationSansJustificatif } from '../../lib/controles'
-import type { Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
+import type { ANouveau, EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import AnneeTabs, { type ValeurAnnee } from '../../components/AnneeTabs'
 import BarreRecherche from '../../components/BarreRecherche'
@@ -18,24 +22,55 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 // version couvre le cas standard.
 const SEUIL_IMMOBILISATION = 500
 const DUREE_DEFAUT_ANNEES = 5
+const COMPTE_IMMOBILISATION_DEFAUT = '218000'
+
+const LIBELLE_ETAT: Record<EtatDotation, string> = {
+  a_ecrire: 'À écrire',
+  a_reecrire: 'À réécrire',
+  a_retirer: 'À retirer',
+  ecrite: 'Écrite',
+  validee: 'Validée, ne suit plus le registre',
+}
+
+// Ce que la Checklist réclame, dit dans la carte — accordé, la phrase se lisant d'un coup d'œil.
+function phraseEnDefaut(n: number): string {
+  return n === 1
+    ? '1 dotation manque à un exercice fini ou ne suit plus le registre : la Checklist la réclame.'
+    : `${n} dotations manquent à un exercice fini ou ne suivent plus le registre : la Checklist les réclame.`
+}
+
+interface BienEnEdition {
+  libelle: string
+  natureId: string
+  valeur: string
+  dateAcquisition: string
+  dateMiseEnService: string
+  duree: string
+}
 
 // Palier 5, brique 2 — registre des immobilisations. Une pièce validée dépassant le seuil est
 // proposée comme candidate ; c'est toujours le cabinet qui décide de l'enregistrer comme telle
 // (jamais automatique). La nature du bien (téléphone, véhicule...) suggère une durée d'amortissement
-// usuelle — toujours modifiable, l'arbitrage réel restant à l'expert-comptable. La dotation annuelle
-// affichée est un calcul linéaire simple, sans prorata temporis.
+// usuelle et donne son COMPTE — d'où vient le compte 28 que la dotation crédite.
 //
-// CETTE RÉSERVE-LÀ RENVOYAIT À « LE BANDEAU », QUI NE LA PORTE PAS : le bandeau de cet écran est le
-// rappel générique « Brouillon », affiché partout, et il ne dit rien de la première annuité. La
-// réserve ne vivait donc que dans ce commentaire, pendant que l'écran affichait une colonne
-// « Dotation annuelle » qui a toutes les apparences d'une annuité calculée. Elle est désormais
-// CALCULÉE et montrée (voir `dotationsNonProratisees`), et seulement quand elle apprend quelque
-// chose — un bien acquis le 1er janvier a bien une première annuité pleine.
+// LES DOTATIONS S'ÉCRIVENT DEPUIS CET ÉCRAN (ligne 26.6, étape b — lib/amortissements.ts) : chaque bien,
+// chaque exercice de son tableau d'amortissement, comparé au brouillon. « Écrire les N » les écrit par la
+// fonction de la base, qui refait le calcul et refuse une écriture qui ne vaut pas sa dotation au centime.
+// Rien ne s'écrit sans ce clic. L'amortissement est celui de la règle fiscale — prorata temporis depuis la
+// mise en service, le reliquat après la durée —, et la colonne « Dotation » le montre : elle affichait
+// jusqu'au 01/10/2026 l'annuité pleine dès l'acquisition, sous une réserve qui disait de la reprendre.
 export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossierId: string; assujettiTva: boolean }) {
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
+  const [ecrituresDotations, setEcrituresDotations] = useState<EcritureBrouillon[]>([])
+  const [ouverture, setOuverture] = useState<string | null>(null)
+  // À PART de `lectureIncomplete` : ce sont les dotations écrites, les natures (leurs comptes) et
+  // l'ouverture du dossier qui décident de ce que « Écrire les N » écrirait. Lues en partie, l'écriture se
+  // suspend — un bandeau ne suffit pas quand un bouton à côté écrit (CLAUDE.md, « une lecture partielle ne
+  // commande pas d'écriture »).
+  const [dotationsIncompletes, setDotationsIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [naturesChoisies, setNaturesChoisies] = useState<Record<string, string>>({})
@@ -43,10 +78,25 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   const [saving, setSaving] = useState<string | null>(null)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [recherche, setRecherche] = useState('')
+  const [plansOuverts, setPlansOuverts] = useState<Set<string>>(new Set())
+  const [edition, setEdition] = useState<{ id: string; bien: BienEnEdition } | null>(null)
+  const [nouvelleNature, setNouvelleNature] = useState({ libelle: '', duree: String(DUREE_DEFAUT_ANNEES), compte: COMPTE_IMMOBILISATION_DEFAUT })
+  // Le formulaire d'une nouvelle nature s'ouvre là où on l'a demandé : dans la carte des candidates, où
+  // l'on cherche la nature d'une pièce, ou dans celle des natures.
+  const [natureOuverte, setNatureOuverte] = useState<'candidates' | 'natures' | null>(null)
+  // UN verrou pour les gestes qui écrivent le registre ou ses dotations : « Écrire les N », « Retirer » et
+  // « Enregistrer » une modification. Retiré ou modifié pendant le lot, un bien verrait sa dotation écrite
+  // par le lot, qui l'a composée avant. Un `useRef`, posé avant le premier `await` et relâché dans un
+  // `finally`, APRÈS la relecture (voir CLAUDE.md, « un verrou d'exécution »).
+  const ecritureEnCours = useRef(false)
+  const [enCours, setEnCours] = useState(false)
+  const natureEnCours = useRef(false)
 
+  // `loading` ne repasse pas à vrai au rechargement : après une écriture, l'écran garde ce qu'il montrait —
+  // bouton grisé sous le verrou — jusqu'à ce que la relecture revienne, au lieu de vider la carte qu'on
+  // vient d'utiliser. Un autre dossier remonte l'onglet (`AnneeProvider key`), donc repart à vrai.
   async function load() {
-    setLoading(true)
-    const [lecturePieces, lectureImmobilisations, lectureNatures] = await Promise.all([
+    const [lecturePieces, lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture] = await Promise.all([
       // Lue par tranches (voir lib/lectureComplete.ts) : c'est parmi ces pièces qu'on choisit celle
       // à immobiliser, et une liste tronquée ne paraît pas tronquée.
       // `piecesValidees` et non `pieces` : la lecture ne rend QUE les validées, et le filtre est
@@ -65,18 +115,35 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
         supabase.from('natures_immobilisation').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('ordre').order('id').range(debut, fin),
       ),
+      // Les dotations ÉCRITES au brouillon : celles qu'on compare au tableau d'amortissement.
+      lireTout<EcritureBrouillon>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).not('immobilisation_id', 'is', null).order('date').order('id').range(debut, fin),
+      ),
+      // L'ouverture du dossier : avant elle, l'amortissement est dans les à-nouveaux et ne s'écrit pas.
+      lireTout<Pick<ANouveau, 'id' | 'date'>>((debut, fin) =>
+        supabase.from('a_nouveaux').select('id, date', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
+      ),
     ])
     setPiecesValidees(lecturePieces.lignes)
     setImmobilisations(lectureImmobilisations.lignes)
     setNatures(lectureNatures.lignes)
-    setLectureIncomplete(
-      [lecturePieces, lectureImmobilisations, lectureNatures]
-        .find((l) => !l.complete)?.motif ?? null,
+    setEcrituresDotations(lectureDotations.lignes)
+    setOuverture(lectureOuverture.lignes[0]?.date ?? null)
+    setLectureIncomplete([lecturePieces, lectureImmobilisations].find((l) => !l.complete)?.motif ?? null)
+    setDotationsIncompletes(
+      [lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture].find((l) => !l.complete)?.motif ?? null,
     )
     setLoading(false)
   }
 
   useEffect(() => { load() }, [dossierId])
+
+  // L'exercice en cours, lu à chaque rendu : un onglet laissé ouvert au passage d'une année doit passer à la
+  // nouvelle (voir CLAUDE.md, « maintenant lu au chargement d'un module est figé »).
+  const anneeCourante = anneeDe(aujourdHuiSql())
+  const natureParId = new Map(natures.map((n) => [n.id, n]))
 
   const dejaEnregistrees = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
   // La valeur d'un bien est celle qui s'amortit : hors taxes pour un dossier assujetti, qui récupère la
@@ -87,14 +154,23 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
     const valeur = montantRetenu(p, assujettiTva)
     return valeur != null && valeur >= SEUIL_IMMOBILISATION && !dejaEnregistrees.has(p.id)
   })
-  const natureLabel = (id: string | null) => natures.find((n) => n.id === id)?.libelle ?? '—'
+  const natureLabel = (id: string | null) => (id ? natureParId.get(id)?.libelle : undefined) ?? '—'
 
-  // Le filtre par année ne porte que sur le registre déjà enregistré — les candidates restent toujours
-  // toutes affichées (une pièce ancienne oubliée reste à traiter quelle que soit l'année sélectionnée).
-  const anneesDisponibles = [...new Set(immobilisations.map((i) => anneeDe(i.date_acquisition)))].sort((a, b) => b - a)
+  // L'EXERCICE choisi est celui dont la colonne « Dotation » montre la dotation, et le registre en montre les
+  // biens : ceux acquis au plus tard cette année-là, amortis ou non — le tableau des immobilisations d'un
+  // exercice, celui que la case CH totalise. Il filtrait jusqu'au 01/10/2026 sur l'année d'ACQUISITION, ce qui
+  // ne disait rien d'une dotation : un bien de 2023 a la sienne en 2025. Les candidates restent toujours toutes
+  // affichées (une pièce ancienne oubliée reste à traiter quelle que soit l'année sélectionnée).
+  const premiereAcquisition = immobilisations.length > 0 ? Math.min(...immobilisations.map((i) => anneeDe(i.date_acquisition))) : null
+  const derniereAnnee = Math.max(anneeCourante, ...immobilisations.map((i) => anneeDe(i.date_acquisition)))
+  const anneesDisponibles = premiereAcquisition == null
+    ? []
+    : Array.from({ length: derniereAnnee - premiereAcquisition + 1 }, (_, k) => derniereAnnee - k)
   const immobilisationsFiltrees = anneeFilter === 'toutes'
     ? immobilisations
-    : immobilisations.filter((i) => anneeDe(i.date_acquisition) === anneeFilter)
+    : immobilisations.filter((i) => typeof anneeFilter === 'number' && anneeDe(i.date_acquisition) <= anneeFilter)
+  // « Toutes » : la colonne montre l'exercice en cours.
+  const exerciceAffiche = typeof anneeFilter === 'number' ? anneeFilter : anneeCourante
 
   // La recherche ne porte que sur le registre, pas sur les candidates : celles-ci sont une liste de
   // tâches à traiter, bornée par le seuil, et en masquer une derrière un filtre de texte reviendrait
@@ -106,43 +182,58 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
     ),
   )
 
-  // La même fonction que Clôture, appelée sur chaque exercice d'acquisition présent : la colonne
-  // « Dotation annuelle » ci-dessous est pleine pour tout le monde, et il faut dire pour qui c'est
-  // faux.
-  //
-  // Sur l'ensemble d'AVANT la recherche, jamais sur `immobilisationsAffichees` — et c'est la règle
-  // du projet prise par son côté le plus coûteux : une recherche ne doit pas fabriquer une ALERTE
-  // (le piège de la Balance des comptes), mais elle doit encore moins en faire disparaître une, ce
-  // qui fabrique une BONNE nouvelle que personne n'ira vérifier (le piège de la liste des dossiers).
-  // La note NOMME le bien, donc elle reste exploitable même si la recherche le masque.
-  const dotationsAReprendre = anneesDisponibles.flatMap((a) => dotationsNonProratisees(immobilisationsFiltrees, a))
+  // LES DOTATIONS DU REGISTRE, sur le registre ENTIER — jamais sur ce qu'une recherche ou un exercice
+  // laisse voir : une dotation à écrire ne disparaît pas d'un mot tapé (la règle « une recherche filtre
+  // l'affichage, jamais un total », prise par son côté le plus coûteux).
+  const dotations = dotationsDuRegistre(immobilisations, natures, ecrituresDotations, ouverture, anneeCourante)
+  const aTraiter = dotations.filter((d) => d.etat !== 'ecrite')
+  const aEcrire = aTraiter.filter((d) => d.etat !== 'validee' && !d.refus)
+  // Ce que la Checklist réclame : un exercice révolu sans sa dotation, ou une dotation qui ne suit plus le
+  // registre. La dotation de l'exercice EN COURS peut s'écrire dès aujourd'hui sans manquer encore : la
+  // carte la propose sans s'alarmer, sans quoi elle serait en alerte toute l'année.
+  const enDefaut = dotationsEnDefaut(dotations, anneeCourante)
+  const ecritureSuspendue = dotationsIncompletes !== null
+  const dotationsDuBien = (id: string) => dotations.filter((d) => d.immobilisation.id === id)
 
   // Changer la nature choisie pré-remplit la durée suggérée, sans écraser une durée déjà modifiée à la
   // main pour cette pièce.
   function choisirNature(pieceId: string, natureId: string) {
     setNaturesChoisies((prev) => ({ ...prev, [pieceId]: natureId }))
-    const nature = natures.find((n) => n.id === natureId)
+    const nature = natureParId.get(natureId)
     if (nature && !durees[pieceId]) {
       setDurees((prev) => ({ ...prev, [pieceId]: String(nature.duree_annees_defaut) }))
     }
   }
 
-  async function ajouterNature() {
-    const libelle = window.prompt('Nom de la nature (ex : Matériel médical, Mobilier...)')
-    if (!libelle || !libelle.trim()) return
-    const dureeStr = window.prompt('Durée d\'amortissement usuelle (en années)', String(DUREE_DEFAUT_ANNEES))
-    const duree = parseInt(dureeStr ?? '', 10)
-    if (!duree || duree < 1) return
-    const { error: insertError } = await supabase.from('natures_immobilisation').insert({
-      dossier_id: dossierId,
-      libelle: libelle.trim(),
-      duree_annees_defaut: duree,
-    })
-    if (insertError) {
-      window.alert(insertError.message)
+  // Une nature PROPRE au dossier, avec son compte : les natures partagées par le cabinet portent le leur, et
+  // seul un super-administrateur les modifie (policy de `natures_immobilisation`).
+  async function ajouterNature(e: FormEvent) {
+    e.preventDefault()
+    if (natureEnCours.current) return
+    const refus = refusNature(nouvelleNature)
+    if (refus) {
+      setError(refus)
       return
     }
-    load()
+    natureEnCours.current = true
+    try {
+      const { error: insertError } = await supabase.from('natures_immobilisation').insert({
+        dossier_id: dossierId,
+        libelle: nouvelleNature.libelle.trim(),
+        duree_annees_defaut: Number(nouvelleNature.duree),
+        compte_immobilisation: nouvelleNature.compte.trim(),
+      })
+      if (insertError) {
+        setError(`La nature n’a pas pu être ajoutée : ${messageErreur(insertError, 'raison inconnue')}`)
+        return
+      }
+      setError(null)
+      setNouvelleNature({ libelle: '', duree: String(DUREE_DEFAUT_ANNEES), compte: COMPTE_IMMOBILISATION_DEFAUT })
+      setNatureOuverte(null)
+      await load()
+    } finally {
+      natureEnCours.current = false
+    }
   }
 
   async function enregistrer(piece: Piece) {
@@ -151,13 +242,19 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
       setError('Durée invalide.')
       return
     }
+    // La nature d'abord : c'est elle qui donne le compte d'amortissement, sans lequel la dotation du bien ne
+    // pourrait pas s'écrire. La demander ici coûte un clic ; l'oublier laissait le bien sans compte.
+    if (!naturesChoisies[piece.id]) {
+      setError('Choisissez la nature du bien : c’est elle qui donne son compte d’amortissement.')
+      return
+    }
     setSaving(piece.id)
     setError(null)
     try {
       const { error: insertError } = await supabase.from('immobilisations').insert({
         dossier_id: dossierId,
         piece_id: piece.id,
-        nature_id: naturesChoisies[piece.id] || null,
+        nature_id: naturesChoisies[piece.id],
         libelle: piece.tiers ?? piece.nom_fichier,
         valeur: montantRetenu(piece, assujettiTva),
         date_acquisition: piece.date_piece ?? dateLocaleDe(piece.created_at),
@@ -185,7 +282,17 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
     }
   }
 
+  // PAR LA BASE, PLUS PAR UNE SUPPRESSION DIRECTE : la clé d'une dotation vers son bien est sans action, et
+  // `retirer_immobilisation` retire le bien ET ses dotations écrites en une transaction — elle refuse si
+  // l'une est validée. La suppression d'avant jetait son erreur : le bien réapparaissait au rechargement,
+  // sans un mot. La confirmation NOMME ce qui part avec lui.
   async function retirer(i: Immobilisation) {
+    if (ecritureEnCours.current) return
+    const sesDotations = ecrituresDotations.filter((e) => e.immobilisation_id === i.id)
+    if (sesDotations.some((e) => e.statut !== 'proposee')) {
+      setError('Une dotation de ce bien est validée : il ne se retire plus.')
+      return
+    }
     // La phrase « la pièce redevient une charge » suppose qu'il RESTE une pièce. Sur une
     // immobilisation dont le justificatif a été supprimé — l'état que signale
     // `immobilisationSansJustificatif`, et dont l'action recommandée EST ce bouton — elle est
@@ -195,10 +302,144 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
       ? 'Retirer cette immobilisation ? Son justificatif a déjà été supprimé : l’amortissement '
         + 'disparaît de la 2035 et rien ne le remplace — cette dépense ne sera plus comptée nulle part.'
       : 'Retirer cette immobilisation ? La pièce redevient une charge courante ordinaire.'
-    if (!window.confirm(confirmation)) return
-    await supabase.from('immobilisations').delete().eq('id', i.id)
-    load()
+    // Sur une lecture partielle des dotations, la liste des exercices pourrait en oublier : on ne la cite
+    // pas, et on dit pourquoi. La base, elle, les retire toutes.
+    const exercices = [...new Set(sesDotations.map((e) => anneeDe(e.date)))].sort((a, b) => a - b)
+    const dotationsQuiPartent = dotationsIncompletes
+      ? ' Ses dotations écrites au brouillon partent avec lui — leur liste n’a pas pu être lue en entier.'
+      : exercices.length > 0
+        ? ` Ses dotations écrites au brouillon (${exercices.join(', ')}) partent avec lui.`
+        : ''
+    if (!window.confirm(confirmation + dotationsQuiPartent)) return
+    ecritureEnCours.current = true
+    setEnCours(true)
+    try {
+      const { error: erreurRetrait } = await supabase.rpc('retirer_immobilisation', { p_immobilisation_id: i.id })
+      if (erreurRetrait) setError(`Le bien n’a pas pu être retiré : ${messageErreur(erreurRetrait, 'raison inconnue')}`)
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
   }
+
+  function ouvrirEdition(i: Immobilisation) {
+    setError(null)
+    setEdition({
+      id: i.id,
+      bien: {
+        libelle: i.libelle, natureId: i.nature_id ?? '', valeur: String(i.valeur), dateAcquisition: i.date_acquisition,
+        dateMiseEnService: i.date_mise_en_service ?? '', duree: String(i.duree_annees),
+      },
+    })
+  }
+
+  // Modifier un bien ne réécrit PAS ses dotations : le tableau les dira « à réécrire », et c'est le clic sur
+  // « Écrire les N » qui les remplace. Une modification n'écrit rien d'autre que le bien.
+  async function enregistrerEdition(e: FormEvent) {
+    e.preventDefault()
+    if (!edition || ecritureEnCours.current) return
+    const b = edition.bien
+    const refus = refusBien({ libelle: b.libelle, valeur: b.valeur, dateAcquisition: b.dateAcquisition, dateMiseEnService: b.dateMiseEnService, duree: b.duree })
+    if (refus) {
+      setError(refus)
+      return
+    }
+    ecritureEnCours.current = true
+    setEnCours(true)
+    try {
+      const { error: erreurModification } = await supabase.from('immobilisations').update({
+        libelle: b.libelle.trim(),
+        nature_id: b.natureId || null,
+        valeur: Math.round(Number(b.valeur.replace(',', '.')) * 100) / 100,
+        date_acquisition: b.dateAcquisition,
+        date_mise_en_service: b.dateMiseEnService || null,
+        duree_annees: Number(b.duree),
+      }).eq('id', edition.id)
+      if (erreurModification) {
+        setError(`Le bien n’a pas pu être modifié : ${messageErreur(erreurModification, 'raison inconnue')}`)
+        return
+      }
+      setError(null)
+      setEdition(null)
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  // Chaque dotation par la fonction de la base, une à une : elle refait le calcul, vérifie l'écriture et
+  // remplace celle qui ne correspond plus — une dotation à retirer part avec une écriture vide. Un échec
+  // n'interrompt pas le lot, et se dit. Le verrou se relâche APRÈS la relecture : relâché avant, la carte
+  // montrerait encore « Écrire les N » sur des dotations déjà écrites, le temps qu'elle revienne.
+  async function ecrireLesDotations() {
+    if (ecritureEnCours.current || ecritureSuspendue || aEcrire.length === 0) return
+    ecritureEnCours.current = true
+    setEnCours(true)
+    try {
+      const echecs: string[] = []
+      for (const d of aEcrire) {
+        const { error: erreurEcriture } = await supabase.rpc('ecrire_dotation_amortissement', {
+          p_immobilisation_id: d.immobilisation.id,
+          p_annee: d.annee,
+          p_ecritures: d.attendues ?? [],
+        })
+        if (erreurEcriture) echecs.push(`${d.immobilisation.libelle} (${d.annee}) : ${messageErreur(erreurEcriture, 'raison inconnue')}`)
+      }
+      setError(echecs.length > 0
+        ? `Dotations écrites : ${aEcrire.length - echecs.length} sur ${aEcrire.length}. `
+          + `Refusée${echecs.length > 1 ? 's' : ''} par la base : ${echecs.join(' ; ')}`
+        : null)
+      await load()
+    } finally {
+      ecritureEnCours.current = false
+      setEnCours(false)
+    }
+  }
+
+  function basculerPlan(id: string) {
+    setPlansOuverts((prev) => {
+      const suivant = new Set(prev)
+      if (suivant.has(id)) suivant.delete(id)
+      else suivant.add(id)
+      return suivant
+    })
+  }
+
+  // Ce que dit le tableau d'un exercice de son plan : l'état de son écriture, ou pourquoi il n'en a pas.
+  function etatDeLExercice(i: Immobilisation, annee: number): string {
+    const d = dotationsDuBien(i.id).find((x) => x.annee === annee)
+    if (d) return LIBELLE_ETAT[d.etat]
+    if (annee > anneeCourante) return 'À venir'
+    if (ouverture && dateDeLaDotation(annee) < ouverture) return 'Dans les à-nouveaux'
+    return '—'
+  }
+
+  const compteDe = (n: NatureImmobilisation) => `${n.compte_immobilisation} → ${compteAmortissement(n.compte_immobilisation)}`
+
+  const formulaireNature = (
+    <form onSubmit={ajouterNature} aria-label="Ajouter une nature" style={{ marginBottom: 12 }}>
+      <div className="field-row aligne-bas">
+        <label className="field">
+          Nom
+          <input value={nouvelleNature.libelle} placeholder="Matériel médical, mobilier…" onChange={(e) => setNouvelleNature({ ...nouvelleNature, libelle: e.target.value })} />
+        </label>
+        <label className="field">
+          Durée usuelle (années)
+          <input type="number" min={1} value={nouvelleNature.duree} onChange={(e) => setNouvelleNature({ ...nouvelleNature, duree: e.target.value })} />
+        </label>
+        <label className="field">
+          Compte d’immobilisation
+          <input inputMode="numeric" value={nouvelleNature.compte} onChange={(e) => setNouvelleNature({ ...nouvelleNature, compte: e.target.value })} />
+        </label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <button type="submit" className="btn btn-primary btn-sm">Ajouter</button>
+          <button type="button" className="btn btn-outline btn-sm" onClick={() => setNatureOuverte(null)}>Annuler</button>
+        </div>
+      </div>
+    </form>
+  )
 
   return (
     <>
@@ -210,18 +451,29 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
           'du dossier, et une pièce déjà immobilisée peut réapparaître dans les candidates.'
         }
       />
+      <BandeauLecturePartielle
+        quoi="Les dotations écrites au brouillon, les natures, les immobilisations ou l’ouverture du dossier"
+        motif={dotationsIncompletes}
+        consequence={
+          'L’état des dotations ci-dessous peut être faux — une dotation écrite peut y paraître à écrire — : '
+          + 'leur écriture est suspendue jusqu’au rechargement de la page.'
+        }
+      />
       <BrouillonBanner />
 
       {candidates.length > 0 && (
         <div className="card" style={{ marginBottom: 20 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
             <h3 style={{ marginTop: 0 }}>Candidates à l'immobilisation</h3>
-            <button className="btn btn-outline btn-sm" onClick={ajouterNature}>+ Nature</button>
+            {natureOuverte !== 'candidates' && (
+              <button className="btn btn-outline btn-sm" onClick={() => setNatureOuverte('candidates')}>+ Nature</button>
+            )}
           </div>
+          {natureOuverte === 'candidates' && formulaireNature}
           <p className="muted" style={{ marginTop: -8 }}>
             Pièces validées de {formatMoney(SEUIL_IMMOBILISATION)} ou plus — à toi de décider si c'est un
             investissement (matériel, véhicule…) ou une simple charge importante. La nature suggère une
-            durée usuelle, toujours modifiable. {assujettiTva
+            durée usuelle, toujours modifiable, et donne le compte du bien. {assujettiTva
               ? 'Montants hors taxes : le dossier est assujetti et récupère la TVA.'
               : 'Montants TVA comprise : le dossier est exonéré, la TVA fait partie du prix.'}
           </p>
@@ -237,6 +489,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                     <td>{formatMoney(montantRetenu(p, assujettiTva))}</td>
                     <td>
                       <select
+                        aria-label={`Nature de ${p.tiers ?? p.nom_fichier}`}
                         style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px' }}
                         value={naturesChoisies[p.id] ?? ''}
                         onChange={(e) => choisirNature(p.id, e.target.value)}
@@ -270,6 +523,62 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
 
       {error && <p className="error-text">{error}</p>}
 
+      {!loading && aTraiter.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, ...(enDefaut.length > 0 ? { borderLeft: '3px solid var(--color-warning)' } : {}) }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+            <h3 style={{ marginTop: 0 }}>Dotations aux amortissements à écrire ({aTraiter.length})</h3>
+            {aEcrire.length > 0 && (
+              <button
+                className="btn btn-primary btn-sm"
+                disabled={enCours || ecritureSuspendue}
+                onClick={ecrireLesDotations}
+              >
+                {enCours ? 'Écriture…' : aEcrire.length === 1 ? 'Écrire cette dotation' : `Écrire les ${aEcrire.length}`}
+              </button>
+            )}
+          </div>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Chaque dotation s’écrit au 31 décembre de son exercice : le compte 681100 au débit, le compte
+            d’amortissement du bien au crédit — celui que sa nature donne. Elle compte prorata temporis depuis la
+            mise en service, et le FEC la porte au journal des opérations diverses. Celle de l’exercice en cours
+            peut s’écrire dès aujourd’hui ; la Checklist ne la réclame qu’une fois l’exercice fini. Un exercice
+            tenu dans un autre logiciel s’ouvre par une balance reprise (onglet Informations) : ses dotations sont
+            alors dans les à-nouveaux, et ne se demandent plus ici.
+          </p>
+          {enDefaut.length > 0 && (
+            <p><strong>{phraseEnDefaut(enDefaut.length)}</strong></p>
+          )}
+          {ecritureSuspendue && (
+            <p className="error-text">Écriture suspendue : une lecture est partielle (voir plus haut). Rechargez la page.</p>
+          )}
+          <div className="table-scroll">
+            <table aria-label="Dotations à écrire">
+              <thead>
+                <tr>
+                  <th>Bien</th>
+                  <th>Exercice</th>
+                  <th style={{ textAlign: 'right' }}>Dotation</th>
+                  <th>État</th>
+                </tr>
+              </thead>
+              <tbody>
+                {aTraiter.map((d: DotationDuRegistre) => (
+                  <tr key={`${d.immobilisation.id}-${d.annee}`}>
+                    <td>{d.immobilisation.libelle}</td>
+                    <td>{d.annee}{d.annee === anneeCourante ? ' (en cours)' : ''}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(d.montant)}</td>
+                    <td>
+                      {LIBELLE_ETAT[d.etat]}
+                      {d.refus && <div className="muted" style={{ fontSize: '0.85em' }}>{d.refus}</div>}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
       <div style={{ marginBottom: 14 }}>
@@ -282,39 +591,6 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
         />
       </div>
 
-      {dotationsAReprendre.length > 0 && (
-        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-warning)' }}>
-          <h3 style={{ marginTop: 0 }}>
-            Première annuité à reprendre ({dotationsAReprendre.length})
-          </h3>
-          <p className="muted" style={{ marginTop: -8 }}>{RESERVE_PRORATA_TEMPORIS}</p>
-          <table>
-            <thead>
-              <tr>
-                <th>Bien</th>
-                <th>Acquisition</th>
-                <th style={{ textAlign: 'right' }}>Dotation comptée</th>
-                <th style={{ textAlign: 'right' }}>Prorata temporis</th>
-              </tr>
-            </thead>
-            <tbody>
-              {dotationsAReprendre.map((d) => (
-                <tr key={`${d.libelle}-${d.dateAcquisition}`}>
-                  <td>{d.libelle}</td>
-                  <td>{formatDate(d.dateAcquisition)}</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
-                    {formatMoney(d.dotationComptee)}
-                  </td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatMoney(d.dotationProratisee)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
       <div className="card table-scroll" style={{ padding: 0 }}>
         {loading ? (
           <p className="muted" style={{ padding: 20 }}>Chargement…</p>
@@ -325,43 +601,165 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
               : "Aucune immobilisation enregistrée pour l'instant."}
           </div>
         ) : (
-          <table>
+          <table aria-label="Registre des immobilisations">
             <thead>
               <tr>
                 <th>Libellé</th>
                 <th>Nature</th>
                 <th>Valeur</th>
-                <th>Date d'acquisition</th>
+                <th>Acquisition</th>
+                <th>Mise en service</th>
                 <th>Durée</th>
-                <th>Dotation annuelle</th>
+                <th>Dotation {exerciceAffiche}</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {immobilisationsAffichees.map((i) => (
-                <tr key={i.id}>
-                  <td>
-                    {i.libelle}
-                    {/* `piece_id` nul ne peut venir que d'une pièce supprimée : le seul chemin de
-                        création de cet écran pose toujours le lien. La dotation, elle, continue de
-                        partir en case CH — voir `immobilisationSansJustificatif`. */}
-                    {immobilisationSansJustificatif(i) && (
-                      <span className="badge badge-danger" style={{ marginLeft: 8 }}>Justificatif supprimé</span>
-                    )}
-                  </td>
-                  <td>{natureLabel(i.nature_id)}</td>
-                  <td>{formatMoney(i.valeur)}</td>
-                  <td>{formatDate(i.date_acquisition)}</td>
-                  <td>{i.duree_annees} an{i.duree_annees > 1 ? 's' : ''}</td>
-                  <td>{formatMoney(i.valeur / i.duree_annees)}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    <button className="btn btn-danger btn-sm" onClick={() => retirer(i)}>Retirer</button>
-                  </td>
-                </tr>
+                <Fragment key={i.id}>
+                  <tr>
+                    <td>
+                      {i.libelle}
+                      {/* `piece_id` nul ne peut venir que d'une pièce supprimée : le seul chemin de
+                          création de cet écran pose toujours le lien. La dotation, elle, continue de
+                          partir en case CH — voir `immobilisationSansJustificatif`. */}
+                      {immobilisationSansJustificatif(i) && (
+                        <span className="badge badge-danger" style={{ marginLeft: 8 }}>Justificatif supprimé</span>
+                      )}
+                    </td>
+                    <td>
+                      {natureLabel(i.nature_id)}
+                      {!i.nature_id && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Nature à choisir</span>}
+                    </td>
+                    <td>{formatMoney(i.valeur)}</td>
+                    <td>{formatDate(i.date_acquisition)}</td>
+                    <td>
+                      {i.date_mise_en_service ? formatDate(i.date_mise_en_service) : <span className="muted">à l’acquisition</span>}
+                    </td>
+                    <td>{i.duree_annees} an{i.duree_annees > 1 ? 's' : ''}</td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(dotationDeLExercice(i, exerciceAffiche))}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                        <button className="btn btn-outline btn-sm" aria-expanded={plansOuverts.has(i.id)} onClick={() => basculerPlan(i.id)}>
+                          Tableau
+                        </button>
+                        <button className="btn btn-outline btn-sm" disabled={enCours} onClick={() => ouvrirEdition(i)}>Modifier</button>
+                        <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => retirer(i)}>Retirer</button>
+                      </div>
+                    </td>
+                  </tr>
+                  {edition?.id === i.id && (
+                    <tr>
+                      <td colSpan={8}>
+                        <form onSubmit={enregistrerEdition} aria-label={`Modifier ${i.libelle}`}>
+                          <div className="field-row">
+                            <label className="field">
+                              Libellé
+                              <input value={edition.bien.libelle} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, libelle: e.target.value } })} />
+                            </label>
+                            <label className="field">
+                              Nature
+                              <select value={edition.bien.natureId} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, natureId: e.target.value } })}>
+                                <option value="">— Choisir —</option>
+                                {natures.map((n) => <option key={n.id} value={n.id}>{n.libelle} ({n.compte_immobilisation})</option>)}
+                              </select>
+                            </label>
+                            <label className="field">
+                              Valeur
+                              <input type="number" min={0.01} step="0.01" value={edition.bien.valeur} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, valeur: e.target.value } })} />
+                            </label>
+                          </div>
+                          <div className="field-row">
+                            <label className="field">
+                              Acquisition
+                              <input type="date" value={edition.bien.dateAcquisition} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, dateAcquisition: e.target.value } })} />
+                            </label>
+                            <label className="field">
+                              Mise en service
+                              <input type="date" value={edition.bien.dateMiseEnService} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, dateMiseEnService: e.target.value } })} />
+                            </label>
+                            <label className="field">
+                              Durée (années)
+                              <input type="number" min={1} value={edition.bien.duree} onChange={(e) => setEdition({ ...edition, bien: { ...edition.bien, duree: e.target.value } })} />
+                            </label>
+                          </div>
+                          <p className="muted">
+                            L’amortissement part de la mise en service — de l’acquisition quand elle est vide. Les dotations déjà
+                            écrites ne changent pas d’elles-mêmes : elles paraîtront « à réécrire » ci-dessus.
+                            {ecrituresDotations.some((x) => x.immobilisation_id === i.id && x.statut !== 'proposee')
+                              && ' Une dotation de ce bien est validée : elle ne se réécrira pas, et le brouillon validé divergera du registre.'}
+                          </p>
+                          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                            <button type="submit" className="btn btn-primary btn-sm" disabled={enCours}>{enCours ? 'Enregistrement…' : 'Enregistrer'}</button>
+                            <button type="button" className="btn btn-outline btn-sm" onClick={() => setEdition(null)}>Annuler</button>
+                          </div>
+                        </form>
+                      </td>
+                    </tr>
+                  )}
+                  {plansOuverts.has(i.id) && (
+                    <tr>
+                      <td colSpan={8}>
+                        <table aria-label={`Tableau d’amortissement de ${i.libelle}`}>
+                          <thead>
+                            <tr>
+                              <th>Exercice</th>
+                              <th style={{ textAlign: 'right' }}>Dotation</th>
+                              <th style={{ textAlign: 'right' }}>Amortissement cumulé</th>
+                              <th style={{ textAlign: 'right' }}>Valeur nette</th>
+                              <th>Écriture</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {planAmortissement(i).map((a) => (
+                              <tr key={a.annee}>
+                                <td>{a.annee}</td>
+                                <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.dotation)}</td>
+                                <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.cumul)}</td>
+                                <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.valeurNette)}</td>
+                                <td>{etatDeLExercice(i, a.annee)}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               ))}
             </tbody>
           </table>
         )}
+      </div>
+
+      <div className="card" style={{ marginTop: 20 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', flexWrap: 'wrap', gap: 8 }}>
+          <h3 style={{ marginTop: 0 }}>Natures et comptes</h3>
+          {natureOuverte !== 'natures' && (
+            <button className="btn btn-outline btn-sm" onClick={() => setNatureOuverte('natures')}>+ Nature</button>
+          )}
+        </div>
+        <p className="muted" style={{ marginTop: -8 }}>
+          La nature d’un bien donne sa durée usuelle et son compte d’immobilisation ; la dotation crédite le compte
+          d’amortissement qui s’en déduit (2183 → 28183). Les natures partagées par le cabinet ne se modifient
+          qu’en administration ; une nature propre à ce dossier peut porter un autre compte.
+        </p>
+        {natureOuverte === 'natures' && formulaireNature}
+        <div className="table-scroll">
+          <table aria-label="Natures">
+            <thead><tr><th>Nature</th><th>Durée usuelle</th><th>Comptes</th><th></th></tr></thead>
+            <tbody>
+              {natures.map((n) => (
+                <tr key={n.id}>
+                  <td>{n.libelle}</td>
+                  <td>{n.duree_annees_defaut} an{n.duree_annees_defaut > 1 ? 's' : ''}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>{compteDe(n)}</td>
+                  <td className="muted">{n.dossier_id ? 'Propre au dossier' : 'Partagée par le cabinet'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </>
   )

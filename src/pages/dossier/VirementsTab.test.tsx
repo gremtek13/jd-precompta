@@ -53,7 +53,7 @@ vi.mock('../../lib/supabase', async () => {
       faux.ecritures.push(...(args.p_ecritures as Record<string, unknown>[]).map((e, i): EcritureBrouillon => ({
         id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: id,
         date: ligne.date, compte: e.compte as string, libelle: e.libelle as string, montant: e.montant as number,
-        sens: e.sens as 'debit' | 'credit', statut: 'proposee', created_at: '2026-09-29T10:00:00Z',
+        sens: e.sens as 'debit' | 'credit', statut: 'proposee', immobilisation_id: null, created_at: '2026-09-29T10:00:00Z',
       })))
     } else {
       faux.lignes = faux.lignes.map((l) => (l.id === id ? { ...l, statut: 'non_rapprochee', prelevement_personnel: false } : l))
@@ -119,7 +119,7 @@ const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
 const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
   id: 'e-1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-1', date: '2025-06-02',
   compte: '108000', libelle: 'VIREMENT COMPTE PERSO', montant: 1000, sens: 'debit', statut: 'proposee',
-  created_at: '2025-06-02T10:00:00Z', ...o,
+  immobilisation_id: null, created_at: '2025-06-02T10:00:00Z', ...o,
 })
 
 // L'écriture juste d'un prélèvement de 1 000 € en trésorerie : le compte de l'exploitant au débit.

@@ -73,7 +73,7 @@ export function calculerPlanTresorerie(
 
 // LA RÉSERVE QUI MANQUAIT À LA MOYENNE. Rendue `null` quand elle n'apprend rien — une mise en garde
 // permanente cesse d'être lue, puis emporte ses voisines dans son discrédit (même arbitrage que
-// `dotationsNonProratisees` et `detailPiecesSansDate`).
+// `detailPiecesSansDate`).
 //
 // Les deux cas ne disent PAS la même chose, et les fondre ferait porter à l'un la conséquence de
 // l'autre : « rien à observer » est une moyenne qui ne repose sur rien, « observé sur une partie »

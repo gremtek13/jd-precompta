@@ -508,7 +508,7 @@ describe('mouvementsRapprochesSansObjet', () => {
 // TYPÉ sans `as` : le compilateur confronte chaque champ à `Immobilisation`, donc à la table.
 const immobilisation = (o: Partial<Immobilisation> = {}): Immobilisation => ({
   id: 'i1', dossier_id: 'd1', piece_id: 'p1', nature_id: null, libelle: 'Ordinateur portable',
-  valeur: 1200, date_acquisition: '2026-03-10', duree_annees: 3,
+  valeur: 1200, date_acquisition: '2026-03-10', date_mise_en_service: null, duree_annees: 3,
   created_at: '2026-03-10T00:00:00Z', ...o,
 })
 
