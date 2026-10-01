@@ -420,8 +420,7 @@ export function mouvementsRapprochesSansObjet(lignes: LigneBancaire[]): LigneBan
 // CE QUE ÇA COÛTE, ET POURQUOI ALIGNER SERAIT PIRE QUE SE TAIRE : un écart large est presque
 // toujours un paiement PARTIEL ou un règlement GROUPÉ. Écraser la pièce enregistrerait alors une
 // facture de 1 000 € comme une dépense de 500 €, sur une pièce déjà validée, et le montant d'origine
-// serait perdu. On signale, on ne corrige pas — le parti pris de `doublonFraisVehicules` et de
-// `dotationsNonProratisees`.
+// serait perdu. On signale, on ne corrige pas — le parti pris de `doublonFraisVehicules`.
 //
 // ET L'ÉCART NE SE VOIT NULLE PART AILLEURS TANT QUE LES ÉCRITURES N'ONT PAS ÉTÉ GÉNÉRÉES :
 // `synchroniserContrepartieBanque` écrit la contrepartie sur `Math.abs(ligne.montant)` et la charge
@@ -463,10 +462,10 @@ export function rapprochementsEcartImportant(lignes: LigneBancaire[], pieces: Pi
 // immobilisation naît d'une pièce validée, jamais d'une saisie libre. Un `piece_id` nul ne peut donc
 // venir que de la suppression de cette pièce.
 //
-// CE QUE ÇA COÛTE : `calculerDeclaration2035` totalise `dotationPourAnnee` sur TOUTES les
-// immobilisations sans regarder ce lien, donc la dotation part en case CH d'une 2035 **signée** alors
-// que le justificatif n'existe plus — et son fichier non plus. La piste d'audit ne peut rien en dire :
-// elle part de l'écriture et du justificatif, et une immobilisation n'y a aucune ligne. L'écran du
+// CE QUE ÇA COÛTE : `calculerDeclaration2035` totalise la dotation (`dotationDeLExercice`) sur TOUTES
+// les immobilisations sans regarder ce lien, donc elle part en case CH d'une 2035 **signée** alors que
+// le justificatif n'existe plus — et son fichier non plus. La piste d'audit le dit depuis que la
+// dotation s'écrit (« facture d'acquisition » manquante sur sa ligne, lib/pisteAudit.ts) ; l'écran du
 // registre, lui, affichait la dotation sans un mot sur le lien manquant.
 //
 // ANNÉE-LIBRE, délibérément : une immobilisation sans justificatif l'est quelle que soit l'année. La

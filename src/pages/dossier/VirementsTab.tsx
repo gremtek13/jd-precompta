@@ -203,7 +203,7 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
           <span className="muted" style={{ display: 'block' }}>Total prélevé{anneeFilter !== 'toutes' ? ` en ${anneeFilter}` : ''}</span>
           <strong style={{ fontSize: '1.3rem' }}>{formatMoney(total)}</strong>
           {/* Rendu seulement quand il apprend quelque chose — une mise en garde permanente cesse
-              d'être lue, puis emporte ses voisines (voir `dotationsNonProratisees`). */}
+              d'être lue, puis emporte ses voisines (voir `detailPiecesSansDate`). */}
           {apports.length > 0 && (
             <p className="muted" style={{ marginTop: 8, marginBottom: 0, color: 'var(--color-danger)' }}>
               {apports.length} mouvement(s) ENTRANT(s), pour {formatMoney(totalApports)}, ne sont pas

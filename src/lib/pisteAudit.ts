@@ -1,7 +1,7 @@
 import { libelleEcritureANouveau } from './aNouveaux'
 import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { COMPTE_BANQUE } from './comptes'
-import type { ANouveau, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import type { ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, Piece } from './types'
 
 // Piste d'audit fiable — les ruptures de la chaîne « écriture → justificatif → opération réelle ».
 //
@@ -50,10 +50,17 @@ export interface RuptureAudit {
 // encaissement de l'Assurance maladie comme une écriture sans justificatif. Et l'écriture d'un mouvement
 // qu'on a ensuite supprimé redevient une rupture : la clé est en `ON DELETE SET NULL`, son
 // `ligne_bancaire_id` tombe à nul et ne désigne plus aucun mouvement.
+//
+// NI LA DOTATION AUX AMORTISSEMENTS (lib/amortissements.ts) : son justificatif est le TABLEAU
+// D'AMORTISSEMENT du bien qu'elle désigne. Sa clé est SANS action à la suppression — un bien amorti ne
+// se supprime qu'avec ses dotations —, donc `immobilisation_id` ne tombe jamais à nul sous elle, et le lire
+// suffit, sans dépendre du registre chargé à côté.
 export function rupturesPisteAudit(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
-    if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies)) ruptures.push({ ecriture, motif: 'sans_justificatif' })
+    if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id) {
+      ruptures.push({ ecriture, motif: 'sans_justificatif' })
+    }
     if (ecriture.compte === COMPTE_BANQUE && !ecriture.ligne_bancaire_id) {
       ruptures.push({ ecriture, motif: 'sans_mouvement' })
     }
@@ -92,9 +99,10 @@ export interface AbsenceFec {
 // incomplet peut se déclarer est donc l'écran qui l'engendre.
 //
 // Les écritures des mouvements justifiés par le relevé, elles, y sont — au journal de banque, avec le
-// relevé pour pièce (voir `genererFec`).
+// relevé pour pièce (voir `genererFec`) —, comme les dotations aux amortissements, au journal des
+// opérations diverses avec le tableau d'amortissement pour pièce.
 export function absenceFec(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): AbsenceFec {
-  const horsFec = ecritures.filter((e) => !e.piece_id && !ecritureDuReleve(e, idsJustifies))
+  const horsFec = ecritures.filter((e) => !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id)
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -157,17 +165,35 @@ export interface LignePisteAudit {
 // affecté, rapproché d'un emprunt ou d'une échéance de cotisation, ventilé ou classé en virement personnel)
 // est le relevé qui le porte : son écriture n'a pas de pièce, et ce n'est pas une rupture.
 // `lignesBancaires` suffit à le savoir — l'export relit le relevé en entier.
+//
+// Le justificatif d'une DOTATION AUX AMORTISSEMENTS est le TABLEAU D'AMORTISSEMENT du bien, que le
+// registre permet de nommer ; la facture d'acquisition du bien en est la preuve, et son empreinte est
+// rendue avec lui. Une dotation dont le bien a perdu sa facture le dit : c'est l'amortissement d'une
+// dépense que plus rien ne justifie (voir `immobilisationSansJustificatif`). Obligatoire, sans valeur par
+// défaut : l'oublier ferait nommer chaque dotation « bien hors du jeu chargé ».
+export interface RegistreAudit {
+  immobilisations: readonly Immobilisation[]
+  // Les factures d'acquisition, cherchées parmi TOUTES les pièces validées et non parmi celles de
+  // l'exercice : un bien acheté en 2025 s'amortit encore en 2026, et sa facture est la preuve de sa
+  // dotation 2026. Cherchées dans `pieces`, elles auraient manqué à chaque exercice après le premier.
+  factures: readonly Piece[]
+}
+
 export function pisteAudit(
   ecritures: EcritureBrouillon[],
   pieces: Piece[],
   lignesBancaires: LigneBancaire[],
   aNouveaux: readonly ANouveau[],
+  registre: RegistreAudit,
 ): LignePisteAudit[] {
   const pieceParId = new Map(pieces.map((p) => [p.id, p]))
   const ligneParId = new Map(lignesBancaires.map((l) => [l.id, l]))
+  const bienParId = new Map(registre.immobilisations.map((i) => [i.id, i]))
+  const factureParId = new Map(registre.factures.map((p) => [p.id, p]))
   const piecesCitees = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
 
   const depuisEcritures = ecritures.map((e): LignePisteAudit => {
+    if (!e.piece_id && !e.ligne_bancaire_id && e.immobilisation_id) return ligneDeDotation(e, bienParId, factureParId)
     const piece = e.piece_id ? pieceParId.get(e.piece_id) ?? null : null
     const mouvement = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
     const releve = !e.piece_id && mouvement && mouvementJustifieParLeReleve(mouvement) ? mouvement : null
@@ -263,6 +289,43 @@ export function pisteAudit(
       a.compte.localeCompare(b.compte) ||
       (a.ecritureId ?? a.pieceId ?? '').localeCompare(b.ecritureId ?? b.pieceId ?? ''),
   )
+}
+
+// La ligne d'une dotation : le tableau d'amortissement pour justificatif, au 31 décembre, et la facture
+// d'acquisition du bien pour preuve — son nom et son empreinte. Rien du relevé : une dotation ne se paie
+// pas.
+function ligneDeDotation(
+  e: EcritureBrouillon,
+  bienParId: ReadonlyMap<string, Immobilisation>,
+  factureParId: ReadonlyMap<string, Piece>,
+): LignePisteAudit {
+  const bien = bienParId.get(e.immobilisation_id!) ?? null
+  const facture = bien?.piece_id ? factureParId.get(bien.piece_id) ?? null : null
+  const manque: string[] = []
+  // Même distinction qu'ailleurs : un lien nul est une rupture, un lien vers une ligne absente du jeu
+  // chargé est un filtre de l'appelant.
+  if (!bien) manque.push('bien hors du jeu chargé')
+  else if (!bien.piece_id) manque.push('facture d’acquisition')
+  else if (!facture) manque.push('facture d’acquisition hors du jeu chargé')
+  const tableau = `Tableau d'amortissement : ${bien?.libelle ?? 'bien'}`
+  return {
+    ecritureId: e.id,
+    date: e.date,
+    compte: e.compte,
+    libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0,
+    credit: e.sens === 'credit' ? e.montant : 0,
+    pieceId: facture?.id ?? null,
+    pieceTiers: facture?.tiers ?? null,
+    pieceDate: e.date,
+    pieceMontantTtc: null,
+    pieceFichier: facture ? `${tableau} — facture ${facture.nom_fichier}` : tableau,
+    pieceEmpreinte: facture?.storage_hash ?? null,
+    mouvementDate: null,
+    mouvementLibelle: null,
+    mouvementMontant: null,
+    manque,
+  }
 }
 
 const COLONNES_PISTE = [

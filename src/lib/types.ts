@@ -324,6 +324,11 @@ export interface EcritureBrouillon {
   sens: SensEcriture
   statut: StatutEcriture
   created_at: string
+  // Le bien dont cette écriture est la DOTATION aux amortissements (ligne 26.6, étape b — voir
+  // lib/amortissements.ts) : au 31 décembre, sans pièce ni mouvement, justifiée par le tableau
+  // d'amortissement. Nul sur toute autre écriture. Clé sans action à la suppression : un bien dont une
+  // dotation est écrite ne se retire que par `retirer_immobilisation`, qui emporte ses dotations.
+  immobilisation_id: string | null
 }
 
 // Solde d'ouverture d'un compte de bilan, repris de la balance d'un dossier venu d'un autre logiciel
@@ -380,32 +385,39 @@ export interface VoletSocialPamc {
   recettes_structures: number | null
 }
 
-// Nature d'un bien immobilisé (téléphone, véhicule, mobilier...) — sert uniquement à suggérer une
-// durée d'amortissement usuelle à l'enregistrement d'une immobilisation ; les catégories de dépense
-// (Achats fournisseurs, Autre...) ne s'y prêtent pas, un téléphone et une voiture tombant souvent dans
-// la même catégorie de dépense alors qu'ils n'ont pas la même durée d'usage. dossier_id null = règle
-// partagée par tous les dossiers, sinon spécifique à un dossier.
+// Nature d'un bien immobilisé (téléphone, véhicule, mobilier...) — elle suggère une durée
+// d'amortissement usuelle à l'enregistrement d'une immobilisation, et elle porte le COMPTE de classe 2 du
+// bien, d'où se déduit son compte d'amortissement (`compteAmortissement`, lib/amortissements.ts) : c'est
+// lui que la dotation crédite. Les catégories de dépense (Achats fournisseurs, Autre...) ne s'y prêtent
+// pas, un téléphone et une voiture tombant souvent dans la même catégorie de dépense alors qu'ils n'ont
+// pas la même durée d'usage. dossier_id null = règle partagée par tous les dossiers, sinon spécifique à
+// un dossier.
 export interface NatureImmobilisation {
   id: string
   dossier_id: string | null
   libelle: string
   duree_annees_defaut: number
   ordre: number
+  // Immobilisation incorporelle (20…) ou corporelle (21…), six chiffres — la base le vérifie.
+  compte_immobilisation: string
 }
 
 // Palier 5, brique 2 — registre des immobilisations. Une pièce validée dépassant le seuil peut être
-// enregistrée ici plutôt que traitée comme une charge courante ; la durée d'amortissement n'est
-// qu'une suggestion (linéaire, sans prorata temporis) — l'arbitrage réel reste à l'expert-comptable.
-// L'écart de la PREMIÈRE annuité est chiffré et montré : voir `dotationsNonProratisees`
-// (lib/declaration2035.ts), appelée par les onglets Immobilisations et Clôture.
+// enregistrée ici plutôt que traitée comme une charge courante ; la durée d'amortissement est une
+// suggestion de la nature, l'arbitrage réel restant à l'expert-comptable. L'amortissement est
+// LINÉAIRE, PRORATA TEMPORIS depuis la mise en service (lib/amortissements.ts) : c'est le calcul que la
+// 2035 compte en case CH et que la base vérifie quand la dotation s'écrit.
 export interface Immobilisation {
   id: string
   dossier_id: string
   piece_id: string | null
   nature_id: string | null
   libelle: string
+  // Au centime : la base le garantit, le calcul la prenant en centimes entiers.
   valeur: number
   date_acquisition: string
+  // Le point de départ de l'amortissement. Nulle, c'est la date d'acquisition (`miseEnService`).
+  date_mise_en_service: string | null
   duree_annees: number
   created_at: string
 }

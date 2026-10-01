@@ -55,7 +55,7 @@ const balanceDesComptes = extraire(readFileSync(SOURCE, 'utf8'))
 
 const ecriture = (date: string, compte: string, sens: SensEcriture, montant: number): EcritureBrouillon => ({
   id: `${date}-${compte}-${sens}-${montant}`, dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: null,
-  date, compte, libelle: 'x', montant, sens, statut: 'proposee', created_at: `${date}T09:00:00Z`,
+  date, compte, libelle: 'x', montant, sens, statut: 'proposee', immobilisation_id: null, created_at: `${date}T09:00:00Z`,
 })
 const aNouveau = (compte: string, sens: SensEcriture, montant: number, date = '2026-01-01'): ANouveau => ({
   id: `an-${compte}-${sens}-${montant}`, dossier_id: 'd1', date, compte, compte_origine: compte, libelle: `Compte ${compte}`,

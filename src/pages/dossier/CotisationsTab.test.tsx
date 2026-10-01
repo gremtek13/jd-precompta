@@ -49,7 +49,7 @@ vi.mock('../../lib/supabase', async () => {
       faux.ecritures.push(...(args.p_ecritures as Record<string, unknown>[]).map((e, i): EcritureBrouillon => ({
         id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: id,
         date: ligne.date, compte: e.compte as string, libelle: e.libelle as string, montant: e.montant as number,
-        sens: e.sens as 'debit' | 'credit', statut: 'proposee', created_at: '2026-10-01T10:00:00Z',
+        sens: e.sens as 'debit' | 'credit', statut: 'proposee', immobilisation_id: null, created_at: '2026-10-01T10:00:00Z',
       })))
     } else if (nom === 'supprimer_echeance_cotisation') {
       const id = args.p_cotisation_id as string
@@ -143,7 +143,7 @@ const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
 const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
   id: 'e-1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-1', date: '2026-03-06',
   compte: '646000', libelle: 'PRLV URSSAF', montant: 420, sens: 'debit', statut: 'proposee',
-  created_at: '2026-03-06T10:00:00Z', ...o,
+  immobilisation_id: null, created_at: '2026-03-06T10:00:00Z', ...o,
 })
 
 // L'écriture juste du prélèvement de 420 € d'une échéance sans CSG-CRDS saisie.

@@ -1,4 +1,4 @@
-import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, LIBELLES_COMPTES } from './comptes'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, libelleCompteTenu } from './comptes'
 import { COMPTES_DE_TIERS, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
 import { montantRetenu, tvaVentilee } from './montantRetenu'
@@ -552,10 +552,10 @@ export interface LigneBalance {
 // Balance des comptes (onglet Statistiques) — un compte par ligne, tous confondus (charge, produit,
 // TVA, banque), avec son nombre d'écritures et ses totaux débit/crédit. Sert à repérer d'un coup d'œil
 // un compte au solde anormal (une charge créditrice, par exemple) sans avoir à parcourir le journal
-// ligne à ligne comme dans EcrituresTab. Le libellé vient de la catégorie associée à ce compte
-// (compte_comptable) quand elle existe, sinon des trois comptes fixes ci-dessus, sinon de la balance
-// reprise, sinon "—" (compte entré à la main sur une catégorie propre à un dossier, jamais recroisé ici
-// avec son libellé).
+// ligne à ligne comme dans EcrituresTab. Le libellé est celui d'un compte que l'application tient
+// elle-même (`libelleCompteTenu` : banque, TVA, tiers, dotations et amortissements), sinon celui de la
+// catégorie associée à ce compte (compte_comptable), sinon celui de la balance reprise, sinon "—"
+// (compte entré à la main sur une catégorie propre à un dossier, jamais recroisé ici avec son libellé).
 //
 // Les À-NOUVEAUX y entrent comme les écritures de l'exercice qu'ils ouvrent — l'appelant les filtre
 // sur l'exercice affiché, comme il filtre le brouillon (voir lib/aNouveaux.ts). Une balance de
@@ -585,7 +585,7 @@ export function calculerBalance(
       const totalCredit = lignes.filter((l) => l.sens === 'credit').reduce((sum, l) => sum + l.montant, 0)
       return {
         compte,
-        libelle: LIBELLES_COMPTES[compte] ?? libelleParCompte.get(compte) ?? '—',
+        libelle: libelleCompteTenu(compte) ?? libelleParCompte.get(compte) ?? '—',
         nbEcritures: lignes.length,
         totalDebit,
         totalCredit,

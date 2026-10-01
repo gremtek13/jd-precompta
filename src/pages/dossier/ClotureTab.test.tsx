@@ -102,7 +102,7 @@ function cotisation(id: string, o: Record<string, unknown> = {}) {
 function immobilisation(o: Partial<Immobilisation> = {}): Immobilisation {
   return {
     id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: null,
-    libelle: 'Ordinateur', valeur: 12000, date_acquisition: '2025-01-01', duree_annees: 5,
+    libelle: 'Ordinateur', valeur: 12000, date_acquisition: '2025-01-01', date_mise_en_service: null, duree_annees: 5,
     created_at: '2025-01-01T09:00:00Z', ...o,
   }
 }
@@ -372,52 +372,42 @@ describe('ClotureTab — le refus de remplir une 2035 sur une lecture partielle'
   })
 })
 
-// LA PREMIÈRE ANNUITÉ D'AMORTISSEMENT, DITE LÀ OÙ ELLE EST SIGNÉE.
+// LA DOTATION DE LA CASE CH EST CELLE DE LA RÈGLE FISCALE (ligne 26.6, étape b).
 //
-// `dotationPourAnnee` compte la dotation en entier dès l'année d'acquisition ; l'amortissement
-// fiscal se calcule prorata temporis. La simplification est assumée — mais la réserve ne vivait que
-// dans un commentaire de source de l'onglet Immobilisations, renvoyant à « le bandeau », qui est le
-// rappel générique « Brouillon ». Personne, en remplissant la 2035, ne pouvait l'apprendre.
-//
-// Ce que ce test garde et qu'aucun test de `src/lib` ne peut garder : le CÂBLAGE. `dotationsNon-
-// Proratisees` est juste et testée à part ; ce qui manquait, c'est qu'un écran l'APPELLE.
-describe('ClotureTab — la première annuité d’amortissement à reprendre', () => {
-  it('montre l’écart, chiffré, pour un bien acquis en cours d’année', async () => {
+// Jusqu'au 01/10/2026 elle partait en entier dès l'année d'acquisition, sous une carte qui disait de reprendre
+// la première annuité. Le moteur compte désormais prorata temporis depuis la mise en service
+// (lib/amortissements.ts, testé à part) ; ce qui se joue ici est le CÂBLAGE — que la case CH du formulaire
+// porte ce calcul, et que la carte de réserve, devenue sans objet, ne soit plus là pour dire le contraire.
+describe('ClotureTab — la dotation aux amortissements de la case CH', () => {
+  // La ligne d'une case du formulaire : son code, puis son montant.
+  async function montantDeLaCase(code: string) {
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    const ligne = screen.getAllByText(code).map((c) => c.closest('tr')!).find((tr) => tr.querySelector('td')?.textContent === code)!
+    return ligne.querySelectorAll('td')[ligne.querySelectorAll('td').length - 1].textContent
+  }
+
+  it('compte six mois pour un bien acquis le 1er juillet', async () => {
     poser({}, [immobilisation({ date_acquisition: '2025-07-01' })])
     monter()
 
-    const titre = await screen.findByText(/Première annuité d’amortissement à reprendre \(1\)/)
-    // Borné à la carte d'avertissement : 2 400,00 € figure AUSSI dans le tableau du formulaire, au
-    // poste Amortissements — c'est d'ailleurs la preuve que la dotation entière y part bien. Sans
-    // ce cadrage, `findByText` échoue en « Found multiple elements », qui ne ressemble pas au
-    // défaut gardé (piège déjà payé sur EcrituresTab).
-    const carte = within(titre.closest('.card')!)
-    carte.getByText(/prorata temporis/)
-    // Les deux montants côte à côte : la réserve sans le chiffre ne dit pas ce qu'elle coûte.
-    // `\s` plutôt qu'une espace : `toLocaleString('fr-FR')` sépare les milliers par une espace
-    // fine insécable (U+202F), celle-là même qui fait échouer la génération de PDF (voir CLAUDE.md).
-    carte.getByText(/^2\s400,00\s€$/)
-    carte.getByText(/^1\s200,00\s€$/)
+    expect(await montantDeLaCase('CH')).toMatch(/^1\s200,00\s€$/)
+    expect(screen.queryAllByText(/Première annuité d’amortissement à reprendre/)).toHaveLength(0)
   })
 
-  it('se tait quand le bien est acquis le 1er janvier', async () => {
-    // Garde SYMÉTRIQUE, et il porte l'essentiel : sans lui, « l'écran avertit » serait satisfait par
-    // un écran qui avertit TOUJOURS — et une mise en garde permanente cesse d'être lue.
+  it('part de la mise en service quand elle est saisie', async () => {
+    poser({}, [immobilisation({ date_acquisition: '2025-01-01', date_mise_en_service: '2025-07-01' })])
+    monter()
+
+    expect(await montantDeLaCase('CH')).toMatch(/^1\s200,00\s€$/)
+  })
+
+  it('compte une annuité pleine pour un bien acquis le 1er janvier', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « la dotation est proratisée » serait satisfait par un écran qui
+    // raboterait aussi l'année pleine.
     poser({}, [immobilisation()])
     monter()
 
-    // Ancré sur quelque chose que ce jeu de données produit forcément, sinon un écran encore en
-    // chargement rendrait le test vert pour une raison fausse.
-    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
-    expect(screen.queryAllByText(/Première annuité d’amortissement à reprendre/)).toHaveLength(0)
-  })
-
-  it('se tait quand le dossier ne porte aucune immobilisation', async () => {
-    poser()
-    monter()
-
-    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
-    expect(screen.queryAllByText(/Première annuité d’amortissement à reprendre/)).toHaveLength(0)
+    expect(await montantDeLaCase('CH')).toMatch(/^2\s400,00\s€$/)
   })
 })
 

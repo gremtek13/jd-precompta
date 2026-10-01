@@ -10,6 +10,7 @@ import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffect
 import { virementsPersonnelsAEcrire } from '../../lib/virementPersonnel'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import { cotisationsAEcrire, rapprochementsCotisationRefuses } from '../../lib/cotisationRapprochee'
+import { dotationsDuRegistre, dotationsEnDefaut } from '../../lib/amortissements'
 import type { Emprunt } from '../../lib/emprunts'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
@@ -110,8 +111,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   const [anneesCloturees, setAnneesCloturees] = useState<number[]>([])
   const [clotureInconnue, setClotureInconnue] = useState<string | null>(null)
   // Le solde de la banque à l'ouverture d'un dossier repris (voir lib/aNouveaux.ts) : la tuile de
-  // trésorerie en part. À part de `lectureIncomplete`, qui parle des POINTS de la liste — l'ouverture
-  // n'en commande aucun, elle ne décide que de cette tuile.
+  // trésorerie en part. À part de `lectureIncomplete`, qui parle des POINTS de la liste — l'ouverture n'en
+  // commande qu'un, les dotations aux amortissements (un exercice repris n'en demande pas), qui se TAIT
+  // quand elle est lue à moitié.
   const [ouverture, setOuverture] = useState<OuvertureBanque | null>(null)
   const [ouvertureIncomplete, setOuvertureIncomplete] = useState<string | null>(null)
 
@@ -398,6 +400,16 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // La TROISIÈME clé en `ON DELETE SET NULL` de `pieces` : supprimer une pièce immobilisée détache
   // son immobilisation sans un mot, et la dotation continue de partir en case CH d'une 2035 signée.
   const immosSansJustificatif = immobilisationsSansJustificatif(immobilisations)
+  // Les dotations aux amortissements qui manquent au brouillon : celle d'un exercice FINI qui n'est pas
+  // écrite, et celle qui ne suit plus le registre (lib/amortissements.ts). La 2035 compte la dotation depuis
+  // le registre, le FEC depuis le brouillon : sans elle, les deux livrables diffèrent de la case CH. La
+  // dotation de l'exercice EN COURS ne manque pas encore — l'onglet Immobilisations la propose sans la
+  // réclamer. Elle dépend de l'ouverture du dossier, avant laquelle l'amortissement est dans les
+  // à-nouveaux : lue à moitié, le point se tait plutôt que de réclamer un exercice repris.
+  const dotationsManquantes = ouvertureIncomplete !== null
+    ? []
+    : dotationsEnDefaut(dotationsDuRegistre(immobilisations, natures, ecritures, ouverture?.date ?? null, anneeCourante), anneeCourante)
+  const exercicesDesDotations = [...new Set(dotationsManquantes.map((d) => d.annee))].sort((a, b) => a - b)
   // Signal plus grave que « en attente de rapprochement » : un montant qui n'apparaît nulle part dans
   // le relevé importé, à aucune date, révèle soit un relevé incomplet soit un montant faux — voir
   // lib/appariementBanque.ts. Ne porte que sur les pièces jamais rattachées à un mouvement, comme
@@ -504,6 +516,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     // qui part sur un document signé sans pièce derrière — et le registre est le seul écran qui
     // puisse encore la montrer, la piste d'audit ne couvrant pas les immobilisations.
     { id: 'immos-sans-justificatif', label: 'immobilisation(s) dont le justificatif a été supprimé', action: "Retrouver le justificatif ou retirer l'immobilisation", nb: immosSansJustificatif.length, cible: 'immobilisations', severite: 'erreur' },
+    // « Erreur » : la 2035 compte la dotation depuis le registre, le FEC ne la porte que si elle est écrite —
+    // les deux livrables diffèrent de la case CH, comme pour un virement personnel sans écriture.
+    {
+      id: 'dotations-a-ecrire', label: 'dotation(s) aux amortissements à écrire ou qui ne suivent plus le registre',
+      action: 'Écrire les dotations', nb: dotationsManquantes.length, cible: 'immobilisations', severite: 'erreur',
+      detail: exercicesDesDotations.length > 0 ? `Exercice${exercicesDesDotations.length > 1 ? 's' : ''} : ${exercicesDesDotations.join(', ')}.` : undefined,
+    },
     { id: 'ecart-rapprochement', label: 'rapprochement(s) dont le montant ne correspond pas au mouvement', action: 'Vérifier le montant ou le rapprochement', nb: ecartsRapprochement.length, cible: 'banque', severite: 'erreur' },
     { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
     // La forme groupée du point ci-dessus : une part d'un virement qui règle plusieurs pièces a perdu la

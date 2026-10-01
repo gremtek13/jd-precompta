@@ -1683,3 +1683,55 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
     expect(telecharge.fichiers).toHaveLength(1)
   })
 })
+
+// LIGNE 26.6, ÉTAPE B : la dotation aux amortissements s'écrit sans pièce ni mouvement, au 31 décembre,
+// depuis l'onglet Immobilisations. Ce que ce bloc garde et qu'aucun test de `src/lib` ne peut voir : que
+// l'onglet ne crie pas à la rupture sur elle, qu'il la porte au FEC au journal des opérations diverses, et
+// que sa piste d'audit retrouve la facture d'un bien acheté UN AUTRE exercice — elle se cherchait parmi les
+// pièces de l'exercice exporté, et manquait donc à chaque dotation après la première.
+describe('EcrituresTab — les dotations aux amortissements', () => {
+  const FACTURE = piece({
+    id: 'p-ordi', nom_fichier: 'facture-ordinateur.pdf', date_piece: '2025-07-01', montant_ttc: 1200, storage_hash: 'f'.repeat(64),
+    tiers: 'BOULANGER',
+  })
+  const BIEN = {
+    id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p-ordi', nature_id: 'n1', libelle: 'Ordinateur', valeur: 1200,
+    date_acquisition: '2025-07-01', date_mise_en_service: null, duree_annees: 3, created_at: '2025-07-02T09:00:00Z',
+  }
+  const DOTATION_2026 = [
+    ecriture({ id: 'd1', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '681100', sens: 'debit', montant: 400, libelle: 'Dotation 2026 — Ordinateur' }),
+    ecriture({ id: 'd2', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '281830', sens: 'credit', montant: 400, libelle: 'Dotation 2026 — Ordinateur' }),
+  ]
+
+  it('ne crie pas à la rupture, et porte la dotation au FEC, au journal des opérations diverses', async () => {
+    poser({ pieces: [FACTURE], immobilisations: [BIEN], ecritures_brouillon: DOTATION_2026 })
+    monter(false, TRESORERIE, 2026)
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryByText("Piste d'audit rompue")).toBeNull()
+    expect(screen.queryByText(/pas dans ce FEC/)).toBeNull()
+
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
+    expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual([
+      ['OD', 'OD00001', "Tableau d'amortissement 2026", '20261231'],
+      ['OD', 'OD00001', "Tableau d'amortissement 2026", '20261231'],
+    ])
+  })
+
+  it('le garde symétrique : la même écriture sans son bien est une rupture, et sort du FEC', async () => {
+    poser({ pieces: [FACTURE], immobilisations: [BIEN], ecritures_brouillon: DOTATION_2026.map((e) => ({ ...e, immobilisation_id: null })) })
+    monter(false, TRESORERIE, 2026)
+    expect(await screen.findByText("Piste d'audit rompue")).toBeTruthy()
+    expect(screen.getByText(/2 écritures ne seront pas dans ce FEC/)).toBeTruthy()
+  })
+
+  it('retrouve la facture d’un bien acheté un autre exercice dans la piste d’audit', async () => {
+    poser({ pieces: [FACTURE], immobilisations: [BIEN], ecritures_brouillon: DOTATION_2026 })
+    monter(false, TRESORERIE, 2026)
+    await screen.findByText(/2 écritures proposées/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
+    const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
+    expect(csv).toMatch(/Tableau d'amortissement : Ordinateur — facture facture-ordinateur\.pdf;f{64}/)
+    expect(csv).not.toMatch(/hors du jeu chargé/)
+  })
+})

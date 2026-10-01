@@ -3,7 +3,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
 import type {
-  Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, ReglementGroupe, VentilationBancaire,
+  ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire, NatureImmobilisation, Piece, ReglementGroupe,
+  VentilationBancaire,
 } from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 
@@ -103,7 +104,7 @@ function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
 function immobilisation(o: Partial<Immobilisation> = {}): Immobilisation {
   return {
     id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: null,
-    libelle: 'Ordinateur', valeur: 1200, date_acquisition: '2026-03-10', duree_annees: 3,
+    libelle: 'Ordinateur', valeur: 1200, date_acquisition: '2026-03-10', date_mise_en_service: null, duree_annees: 3,
     created_at: '2026-03-10T00:00:00Z', ...o,
   }
 }
@@ -124,13 +125,14 @@ function poser(pieces: {
   ventilations?: unknown[]
   reglements?: unknown[]
   cotisations?: unknown[]
+  natures?: unknown[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
     'pieces:a_valider': pieces.aValider ?? [],
     pieces: [...(pieces.validees ?? []), ...(pieces.aValider ?? [])],
     cotisations_declarees: pieces.cotisations ?? [], lignes_bancaires: pieces.lignes ?? [], immobilisations: pieces.immos ?? [],
-    natures_immobilisation: [], categories: pieces.categories ?? [], ecritures_brouillon: pieces.ecritures ?? [],
+    natures_immobilisation: pieces.natures ?? [], categories: pieces.categories ?? [], ecritures_brouillon: pieces.ecritures ?? [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
     exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], emprunts: pieces.emprunts ?? [],
     ventilations_bancaires: pieces.ventilations ?? [], reglements_groupes: pieces.reglements ?? [],
@@ -467,6 +469,86 @@ describe('ChecklistTab — une immobilisation dont le justificatif a été suppr
   })
 })
 
+// LES DOTATIONS AUX AMORTISSEMENTS QUI MANQUENT AU BROUILLON (ligne 26.6, étape b). La 2035 compte la
+// dotation depuis le registre, le FEC ne la porte que si elle est écrite : sans ce point, les deux livrables
+// diffèrent de la case CH sans que rien le dise. `dotationsEnDefaut` est testée à part
+// (amortissements.test.ts) ; ici c'est le CÂBLAGE — que l'écran passe le registre, les natures, le brouillon
+// et l'ouverture, et ne réclame pas l'exercice en cours.
+describe('ChecklistTab — les dotations aux amortissements', () => {
+  const POINT = /dotation\(s\) aux amortissements à écrire/
+  const NATURE: NatureImmobilisation = {
+    id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300',
+  }
+  // Acquis le 1er juillet 2025 : 1 200 € en 2025, 2 400 € en 2026.
+  const BIEN = immobilisation({ id: 'b1', nature_id: 'n1', valeur: 12000, duree_annees: 5, date_acquisition: '2025-07-01' })
+  function dotation(annee: number, montant: number): EcritureBrouillon[] {
+    const base = {
+      dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, date: `${annee}-12-31`,
+      libelle: `Dotation ${annee} — Ordinateur`, montant, statut: 'proposee' as const, immobilisation_id: 'b1',
+      created_at: '2026-01-02T09:00:00Z',
+    }
+    return [
+      { ...base, id: `d${annee}a`, compte: '681100', sens: 'debit' },
+      { ...base, id: `d${annee}b`, compte: '281830', sens: 'credit' },
+    ]
+  }
+  // Une ligne non rapprochée : un point que ce jeu d'essai déclenche forcément, pour qu'une ABSENCE ne soit
+  // pas vérifiée sur un écran encore en chargement.
+  const ANCRE = ligne({ statut: 'non_rapprochee', piece_id: null, cotisation_id: null })
+  const OUVERTURE: ANouveau = {
+    id: 'an1', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '512000', compte_origine: '512000',
+    libelle: 'Banque', sens: 'debit', montant: 1000, source_nom: 'balance.csv', source_empreinte: 'e', created_at: '2026-01-05T09:00:00Z',
+  }
+
+  // L'HORLOGE EST FIXÉE : c'est l'exercice en cours qui décide de ce qui est réclamé. Seul `Date` est feint.
+  beforeEach(() => { vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-01T10:00:00')) })
+  afterEach(() => { vi.useRealTimers() })
+
+  it('réclame la dotation d’un exercice fini qui n’est pas écrite', async () => {
+    poser({ immos: [BIEN], natures: [NATURE] })
+    monter()
+
+    const trouve = await screen.findByText(POINT)
+    expect(trouve.textContent).toMatch(/^1 /)
+    screen.getByText('Exercice : 2025.')
+  })
+
+  it('réclame une dotation écrite qui ne suit plus le registre, même de l’exercice en cours', async () => {
+    poser({ immos: [BIEN], natures: [NATURE], ecritures: [...dotation(2025, 1200), ...dotation(2026, 2000)] })
+    monter()
+
+    const trouve = await screen.findByText(POINT)
+    expect(trouve.textContent).toMatch(/^1 /)
+    screen.getByText('Exercice : 2026.')
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la Checklist réclame les dotations » serait satisfait par un point qui
+  // réclamerait aussi l'exercice en cours, c'est-à-dire en permanence.
+  it('ne réclame pas l’exercice en cours, ni une dotation écrite', async () => {
+    poser({ immos: [BIEN], natures: [NATURE], ecritures: dotation(2025, 1200), lignes: [ANCRE] })
+    monter()
+
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+
+  it('ne réclame pas un exercice repris dans les à-nouveaux', async () => {
+    poser({ immos: [BIEN], natures: [NATURE], aNouveaux: [OUVERTURE], lignes: [ANCRE] })
+    monter()
+
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+
+  it('se tait quand l’ouverture est lue à moitié, plutôt que de réclamer un exercice repris', async () => {
+    poser({ immos: [BIEN], natures: [NATURE], aNouveaux: [OUVERTURE], tronquees: ['a_nouveaux'], lignes: [ANCRE] })
+    monter()
+
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+})
+
 // L'AUTRE MOITIÉ DE « LA BANQUE FAIT FOI » (décision du cabinet, 23/09/2026), vue depuis l'écran
 // qui prétend dire ce qui manque. Sous le seuil la pièce est alignée au rapprochement et il n'y a
 // rien à compter ; au-dessus, un écart large est presque toujours un paiement partiel ou groupé, on
@@ -678,7 +760,7 @@ describe('ChecklistTab — les mouvements affectés sans justificatif', () => {
     return {
       id: 'e1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-cpam', date: '2026-03-10',
       compte: '706000', libelle: 'VIR CPAM', montant: 250, sens: 'credit', statut: 'proposee',
-      created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   const ECRITURE_CPAM = [ecritureDe({ id: 'e1' }), ecritureDe({ id: 'e2', compte: '512000', sens: 'debit' })]
@@ -745,7 +827,7 @@ describe('ChecklistTab — les virements personnels', () => {
     return {
       id: 'v1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-perso', date: '2026-03-10',
       compte: '108000', libelle: 'VIR PERSO', montant: 500, sens: 'debit', statut: 'proposee',
-      created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   const ecrit = (compte = '108000') => [ecritureDe({ id: 'v1', compte }), ecritureDe({ id: 'v2', compte: '512000', sens: 'credit' })]
@@ -797,7 +879,7 @@ describe('ChecklistTab — les échéances de cotisation payées', () => {
     return {
       id: 'u1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-urssaf', date: '2026-03-10',
       compte: '646000', libelle: 'PRLV URSSAF', montant: 90.3, sens: 'debit', statut: 'proposee',
-      created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   const ecrite = [
@@ -907,7 +989,7 @@ describe('ChecklistTab — les échéances d’emprunt', () => {
     return {
       id: 'e', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-ech-2', date: '2025-03-06',
       compte: '512000', libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee',
-      created_at: '2025-03-06T09:00:00Z', ...o,
+      immobilisation_id: null, created_at: '2025-03-06T09:00:00Z', ...o,
     }
   }
   const ecritureDeLEcheance2 = [
@@ -1004,7 +1086,7 @@ describe('ChecklistTab — les mouvements ventilés sur plusieurs comptes', () =
     return {
       id: 'e1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-v', date: '2026-03-10',
       compte: '626000', libelle: 'PRLV OPERATEUR', montant: 84, sens: 'debit', statut: 'proposee',
-      created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   const ECRITURE = [
@@ -1125,7 +1207,7 @@ describe('ChecklistTab — les virements qui règlent plusieurs pièces', () => 
     return {
       id: 'e1', dossier_id: 'dossier-de-test', piece_id: 'pa', ligne_bancaire_id: null, date: '2026-03-10',
       compte: '606100', libelle: 'ALPHA', montant: 300, sens: 'debit', statut: 'proposee',
-      created_at: '2026-03-10T00:00:00Z', ...o,
+      immobilisation_id: null, created_at: '2026-03-10T00:00:00Z', ...o,
     }
   }
   // Chaque pièce, réglée entière par sa part, porte sa charge à la date du virement et une contrepartie de

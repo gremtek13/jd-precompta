@@ -145,7 +145,8 @@ describe('calculerSituationIntermediaire', () => {
   // Aucun des tests ci-dessus ne pouvait le voir : ils exercent tous une année civile COMPLÈTE,
   // le seul cas où l'ancienne convention et la bonne coïncident.
   describe('la dotation est rapportée à la période', () => {
-    const MATERIEL = immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-01-05' })
+    // Mis en service l'an dernier : 2026 est une année pleine de son amortissement.
+    const MATERIEL = immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2025-01-05' })
     const vente = (montant: number, date: string) =>
       piece({ id: 'v' + date, type_piece: 'vente', categorie_id: 'c2', montant_ttc: montant, date_piece: date })
     const dotation = (s: ReturnType<typeof calculerSituationIntermediaire>) =>
@@ -166,6 +167,19 @@ describe('calculerSituationIntermediaire', () => {
         [vente(10000, '2026-05-10')], [categorie, recette], [MATERIEL], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [])
       expect(dotation(s)).toBe(-1200)
       expect(s.resultat).toBe(8800)
+    })
+
+    // LE PRORATA TEMPORIS DEPUIS LA MISE EN SERVICE (lib/amortissements.ts) : la fraction partait du 1er
+    // janvier quelle que soit la date du bien, donc un matériel mis en service le 1er avril comptait trois
+    // mois de dotation de trop sur l'état du premier semestre.
+    it('ne compte un bien que depuis sa mise en service', () => {
+      const avril = immo({ valeur: 12000, duree_annees: 5, date_acquisition: '2026-03-20', date_mise_en_service: '2026-04-01' })
+      const semestre = calculerSituationIntermediaire(
+        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-06-30', true, new Map(), 'tresorerie', [])
+      expect(dotation(semestre)).toBe(-600)   // 90 jours sur les 1 800 de la durée
+      const annee = calculerSituationIntermediaire(
+        [vente(10000, '2026-05-10')], [categorie, recette], [avril], [], '2026-01-01', '2026-12-31', true, new Map(), 'tresorerie', [])
+      expect(dotation(annee)).toBe(-1800)     // la case CH de la 2035 de l'exercice
     })
 
     it('ignore un bien acquis APRÈS la date de l’état', () => {
@@ -228,8 +242,8 @@ describe('calculerSituationIntermediaire', () => {
     it('rend 58/360 au 28 février, et c’est la convention 30/360, pas un défaut', () => {
       // Écrit ici pour que personne ne « corrige » ce chiffre en croyant à un bug : en 30/360, un
       // mois vaut 30 jours et février en compte 28 ou 29 réels, qui ne sont PAS ramenés à 30 (seul
-      // le 31 l'est). C'est la même convention que `fractionPremiereAnnee` dans declaration2035.ts,
-      // et en avoir deux différentes pour la même dotation serait pire que l'écart de 2/360.
+      // le 31 l'est). C'est la même convention que `rang360` dans amortissements.ts, et en avoir deux
+      // différentes pour la même dotation serait pire que l'écart de 2/360.
       expect(fractionDeLAnnee('2026-01-01', '2026-02-28')).toBeCloseTo(58 / 360, 10)
       expect(fractionDeLAnnee('2026-01-01', '2026-03-31')).toBeCloseTo(90 / 360, 10)
     })

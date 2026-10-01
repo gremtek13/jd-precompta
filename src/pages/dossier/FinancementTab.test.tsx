@@ -110,11 +110,15 @@ const CATEGORIE: Categorie = {
   compte_comptable: '706000', poste_2035: 'Recettes',
 }
 
+// Typé sans `as` : le compilateur confronte le jeu d'essai à la table. Le bien est en service depuis janvier
+// 2025, donc amorti toute l'année 2026 — la dotation de l'exercice d'acquisition se compte prorata temporis
+// depuis la mise en service (lib/amortissements.ts), et ce n'est pas ce que ces tests regardent.
 function immobilisation(o: Partial<Immobilisation> = {}): Immobilisation {
   return {
-    id: 'i1', dossier_id: 'd', piece_id: null, nature_id: null, libelle: 'Matériel',
-    valeur: 12000, duree_annees: 5, date_acquisition: '2026-01-05', ...o,
-  } as Immobilisation
+    id: 'i1', dossier_id: 'd', piece_id: 'p1', nature_id: null, libelle: 'Matériel',
+    valeur: 12000, duree_annees: 5, date_acquisition: '2025-01-05', date_mise_en_service: null,
+    created_at: '2025-01-05T09:00:00Z', ...o,
+  }
 }
 
 async function ouvrirLaSituation(au: string, assujettiTva = true, modeComptable: 'tresorerie' | 'engagement' = 'tresorerie') {
