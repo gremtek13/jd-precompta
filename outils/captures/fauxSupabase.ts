@@ -84,7 +84,7 @@ const pieces: Ligne[] = [
 function ligne(id: string, date: string, libelle: string, montant: number, statut: string, pieceId: string | null, categorie: string | null = null): Ligne {
   return {
     id, dossier_id: 'd1', date, libelle, montant, statut, piece_id: pieceId, cotisation_id: null, categorie_id: categorie,
-    prelevement_personnel: false, source_fichier: 'releve-septembre.csv', libelle_brut: null, created_at: MAINTENANT,
+    taux_tva: null, prelevement_personnel: false, source_fichier: 'releve-septembre.csv', libelle_brut: null, created_at: MAINTENANT,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
     id_externe: null,
   }
@@ -133,10 +133,10 @@ function pieceTva(id: string, date: string, tiers: string, ht: number, tva: numb
   }
 }
 
-function paiementTva(id: string, date: string, libelle: string, montant: number, pieceId: string): Ligne {
+function paiementTva(id: string, date: string, libelle: string, montant: number, pieceId: string | null): Ligne {
   return {
     id, dossier_id: 'd7', date, libelle, montant, statut: 'rapprochee', piece_id: pieceId, cotisation_id: null, categorie_id: null,
-    prelevement_personnel: false, source_fichier: 'releve-2026.csv', libelle_brut: null, created_at: MAINTENANT,
+    taux_tva: null, prelevement_personnel: false, source_fichier: 'releve-2026.csv', libelle_brut: null, created_at: MAINTENANT,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
     id_externe: null,
   }
@@ -157,6 +157,38 @@ const TVA_D7 = {
     paiementTva('t3', '2026-06-20', 'CB TECHNO PLUS', -1800, 'a2'),
     paiementTva('t4', '2026-08-14', 'VIR GROUPE HELIOS', 3000, 'v2'),
     paiementTva('t5', '2026-07-20', 'PRLV LOGICIEL FACTURATION', -60, 'a3'),
+  ],
+}
+
+// Les recettes du dossier assujetti encaissées SANS facture au dossier (lib/tvaDuReleve.ts), au troisième
+// trimestre : un acompte affecté à 20 % — la catégorie au hors taxe, le 445710 à côté —, des honoraires
+// affectés avant que le dossier devienne assujetti, sans taux (« TVA à choisir » dans Banque, un point de la
+// Checklist, une recette que l'onglet TVA écarte en le disant), et une remise de carte ventilée dont la part
+// de recette porte son taux. Leurs écritures sont celles que la base écrit.
+function ecritureD7(...args: Parameters<typeof ecritureReleve>): Ligne {
+  return { ...ecritureReleve(...args), dossier_id: 'd7' }
+}
+
+const RELEVE_D7 = {
+  lignes: [
+    { ...paiementTva('t6', '2026-08-12', 'VIR ATELIER RIVIERE ACOMPTE MISSION', 1800, null), categorie_id: 'c9', taux_tva: 20 },
+    { ...paiementTva('t7', '2026-09-17', 'VIR CABINET NOEL HONORAIRES', 360, null), categorie_id: 'c9' },
+    { ...paiementTva('t8', '2026-09-24', 'REMISE CB SEPTEMBRE CONSEIL', 237.6, null), ventilee: true },
+  ],
+  ventilations: [
+    { id: 'vb5', dossier_id: 'd7', ligne_bancaire_id: 't8', categorie_id: 'c9', part_personnelle: false, montant: 240, taux_tva: 20, created_at: MAINTENANT },
+    { id: 'vb6', dossier_id: 'd7', ligne_bancaire_id: 't8', categorie_id: 'c10', part_personnelle: false, montant: -2.4, taux_tva: null, created_at: MAINTENANT },
+  ],
+  ecritures: [
+    ecritureD7('r19', 't6', '2026-08-12', '706000', 'VIR ATELIER RIVIERE ACOMPTE MISSION', 'credit', 1500),
+    ecritureD7('r20', 't6', '2026-08-12', '445710', 'VIR ATELIER RIVIERE ACOMPTE MISSION', 'credit', 300),
+    ecritureD7('r21', 't6', '2026-08-12', '512000', 'VIR ATELIER RIVIERE ACOMPTE MISSION', 'debit', 1800),
+    ecritureD7('r22', 't7', '2026-09-17', '706000', 'VIR CABINET NOEL HONORAIRES', 'credit', 360),
+    ecritureD7('r23', 't7', '2026-09-17', '512000', 'VIR CABINET NOEL HONORAIRES', 'debit', 360),
+    ecritureD7('r24', 't8', '2026-09-24', '706000', 'REMISE CB SEPTEMBRE CONSEIL', 'credit', 200),
+    ecritureD7('r25', 't8', '2026-09-24', '445710', 'REMISE CB SEPTEMBRE CONSEIL', 'credit', 40),
+    ecritureD7('r26', 't8', '2026-09-24', '627000', 'REMISE CB SEPTEMBRE CONSEIL', 'debit', 2.4),
+    ecritureD7('r27', 't8', '2026-09-24', '512000', 'REMISE CB SEPTEMBRE CONSEIL', 'debit', 237.6),
   ],
 }
 
@@ -245,6 +277,7 @@ const TABLES: Record<string, Ligne[]> = {
   pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces],
   ecritures_brouillon: [
     ...ENGAGEMENT_D8.ecritures,
+    ...RELEVE_D7.ecritures,
     ecritureReleve('r1', 'l8', '2026-08-20', '706000', 'VIR CPAM REMBOURSEMENTS AOUT', 'credit', 1850.4),
     ecritureReleve('r2', 'l8', '2026-08-20', '512000', 'VIR CPAM REMBOURSEMENTS AOUT', 'debit', 1850.4),
     ecritureReleve('r3', 'l9', '2026-08-31', '627000', 'FRAIS TENUE DE COMPTE', 'debit', 8.5),
@@ -283,10 +316,11 @@ const TABLES: Record<string, Ligne[]> = {
   ],
   // Les parts des deux mouvements ventilés, signées comme le relevé.
   ventilations_bancaires: [
-    { id: 'vb1', dossier_id: 'd1', ligne_bancaire_id: 'l18', categorie_id: 'c1', part_personnelle: false, montant: -42, created_at: MAINTENANT },
-    { id: 'vb2', dossier_id: 'd1', ligne_bancaire_id: 'l18', categorie_id: null, part_personnelle: true, montant: -18, created_at: MAINTENANT },
-    { id: 'vb3', dossier_id: 'd1', ligne_bancaire_id: 'l19', categorie_id: 'c9', part_personnelle: false, montant: 490, created_at: MAINTENANT },
-    { id: 'vb4', dossier_id: 'd1', ligne_bancaire_id: 'l19', categorie_id: 'c10', part_personnelle: false, montant: -4.7, created_at: MAINTENANT },
+    { id: 'vb1', dossier_id: 'd1', ligne_bancaire_id: 'l18', categorie_id: 'c1', part_personnelle: false, montant: -42, taux_tva: null, created_at: MAINTENANT },
+    { id: 'vb2', dossier_id: 'd1', ligne_bancaire_id: 'l18', categorie_id: null, part_personnelle: true, montant: -18, taux_tva: null, created_at: MAINTENANT },
+    { id: 'vb3', dossier_id: 'd1', ligne_bancaire_id: 'l19', categorie_id: 'c9', part_personnelle: false, montant: 490, taux_tva: null, created_at: MAINTENANT },
+    { id: 'vb4', dossier_id: 'd1', ligne_bancaire_id: 'l19', categorie_id: 'c10', part_personnelle: false, montant: -4.7, taux_tva: null, created_at: MAINTENANT },
+    ...RELEVE_D7.ventilations,
   ],
   // Un prêt du cabinet infirmier, débloqué fin juillet : 15 000 € à 3,6 % sur 48 mois, soit 336,01 € par
   // mois, plus 12,50 € d'assurance. C'est lui qui fait paraître l'emprunt dans Financement, le découpage
@@ -321,9 +355,9 @@ const TABLES: Record<string, Ligne[]> = {
   // proposés sur deux catégories, et un prélèvement « telecom » que la règle reconnaît mais que le lot
   // écarte — sa facture (p1, du même montant) attend d'être rapprochée.
   regles_affectation_bancaire: [
-    { id: 'ra1', dossier_id: 'd1', motif: 'cpam', sens: 'encaissement', categorie_id: 'c9', created_at: MAINTENANT },
-    { id: 'ra2', dossier_id: 'd1', motif: 'frais', sens: 'decaissement', categorie_id: 'c10', created_at: MAINTENANT },
-    { id: 'ra3', dossier_id: 'd1', motif: 'telecom', sens: 'decaissement', categorie_id: 'c1', created_at: MAINTENANT },
+    { id: 'ra1', dossier_id: 'd1', motif: 'cpam', sens: 'encaissement', categorie_id: 'c9', taux_tva: null, created_at: MAINTENANT },
+    { id: 'ra2', dossier_id: 'd1', motif: 'frais', sens: 'decaissement', categorie_id: 'c10', taux_tva: null, created_at: MAINTENANT },
+    { id: 'ra3', dossier_id: 'd1', motif: 'telecom', sens: 'decaissement', categorie_id: 'c1', taux_tva: null, created_at: MAINTENANT },
   ],
   lignes_bancaires: [
     ligne('l1', '2026-09-15', 'PRLV SEPA TELECOM PLUS', -39.99, 'non_rapprochee', null),
@@ -366,6 +400,7 @@ const TABLES: Record<string, Ligne[]> = {
     // l'avoir qu'il a consenti. Ses parts sont dans `reglements_groupes`, ses écritures au brouillon.
     { ...ligne('l20', '2026-09-23', 'VIR SEPA MEDICAL EQUIPEMENT PRO FACTURES AOUT SEPT', -372, 'rapprochee', null), reglement_groupe: true },
     ...TVA_D7.lignes,
+    ...RELEVE_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
   ],
 }

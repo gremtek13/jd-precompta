@@ -42,6 +42,14 @@ const VISITES = [
     dossier: 'd1', onglet: 'banque', nom: 'banque/tous',
     apres: (page) => page.getByRole('button', { name: 'Tous', exact: true }).click(),
   },
+  // Le dossier assujetti : ses recettes du relevé, taxées ou sans taux — la pastille « TVA à choisir », le
+  // taux d'une recette affectée —, leurs écritures au 445710, et le point de la Checklist qui les compte.
+  {
+    dossier: 'd7', onglet: 'banque', nom: 'assujetti/banque',
+    apres: (page) => page.getByRole('button', { name: 'Tous', exact: true }).click(),
+  },
+  { dossier: 'd7', onglet: 'ecritures', nom: 'assujetti/ecritures' },
+  { dossier: 'd7', onglet: 'checklist', nom: 'assujetti/checklist' },
 ]
 const largeur = Number(process.argv[2] ?? 1440)
 const avecPanneau = process.argv[3] !== 'sans'
