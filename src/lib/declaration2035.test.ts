@@ -827,6 +827,21 @@ describe('partCsgNonDeductible', () => {
     expect(part.totalCsgCrds).toBe(970)
   })
 
+  // Un REMBOURSEMENT de l'Urssaf rapproché de son encaissement compte en négatif, sa CSG-CRDS aussi
+  // (`cotisationsComptees`) : elle DIMINUE la CSG de l'année, comme l'écriture qui crédite le 108000.
+  // Additionnée en valeur absolue, elle ferait réintégrer une CSG que l'exploitant s'est vu rendre.
+  it('la CSG-CRDS d’un remboursement encaissé diminue celle de l’année', () => {
+    const appel = cotisation({ id: 'a', montant_verse: null, montant_appele: 3000, montant_csg_crds: 970 })
+    const rembt = cotisation({ id: 'r', echeance: '2025-06-05', montant_verse: null, montant_appele: -300, montant_csg_crds: 97 })
+    const encaissement = paiement({
+      id: 'l-r', date: '2025-06-09', montant: 300, piece_id: null, cotisation_id: 'r',
+    })
+    const part = partCsgNonDeductible(cotisationsComptees([appel, rembt], [encaissement], 'tresorerie'), 2025)!
+    expect(part.nbVentilees).toBe(2)
+    expect(part.totalCsgCrds).toBe(873)
+    expect(part.csgDeductible + part.csgNonDeductible).toBeCloseTo(873, 10)
+  })
+
   it('csgDeductible applique 6,8 sur 9,7, arrondi au centime', () => {
     expect(csgDeductible(970)).toBe(680)
     expect(csgDeductible(100)).toBe(70.1)

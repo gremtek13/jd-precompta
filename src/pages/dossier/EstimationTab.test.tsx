@@ -370,7 +370,24 @@ describe('EstimationTab — une pièce compte à la date de son paiement', () =>
     faux.upsertsAnnuels = []
     faux.muetPieces = null
   })
-  afterEach(() => { faux.paiements = [] })
+  afterEach(() => { faux.paiements = []; faux.cotisations = [] })
+
+  it('le repère annuel compte une échéance de cotisation au jour et pour le montant de son prélèvement', async () => {
+    // Juin prélevé 198 € au lieu de 200 ; décembre prélevé en janvier de l'année suivante, donc hors de
+    // l'année. Le repère enregistre 198 €, ce que la 2035 de l'année portera ligne 25.
+    faux.pieces = []
+    faux.cotisations = [
+      cotisationDeTest({ id: 'juin', echeance: `${annee}-06-05`, montant_appele: 200 }),
+      cotisationDeTest({ id: 'dec', echeance: `${annee}-12-05`, montant_appele: 300 }),
+    ]
+    faux.paiements = [
+      { ...paiement('x', `${annee}-06-07`, -198), id: 'l-juin', piece_id: null, cotisation_id: 'juin' },
+      { ...paiement('x', `${annee + 1}-01-06`, -300), id: 'l-dec', piece_id: null, cotisation_id: 'dec' },
+    ]
+    await rendre()
+    await act(async () => { screen.getByRole('button', { name: 'Calculer CA + cotisations' }).click() })
+    expect(faux.upsertsAnnuels[0]).toMatchObject({ annee, total_cotisations_sociales: 198 })
+  })
 
   it('le repère annuel ne compte pas une recette encaissée l’année suivante', async () => {
     faux.pieces = [pieceDeTest({ type_piece: 'vente', categorie_id: null, date_piece: `${annee}-12-28` })]

@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest'
 import type { MouvementBancaire } from './affectationBanque'
 import { COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT, LIBELLES_COMPTES } from './comptes'
 import {
-  cotisationsAEcrire, cotisationsComptees, csgDeLEcriture, ecritureDeLaCotisation, montantDeLEcheance,
-  rapprochementsCotisationRefuses, REFUS_COTISATION_CLASSEE, refusRapprochementCotisation,
+  avertissementRetraitEcheance, cotisationsAEcrire, cotisationsComptees, csgDeLEcriture, ecritureDeLaCotisation,
+  montantDeLEcheance, rapprochementsCotisationRefuses, REFUS_COTISATION_CLASSEE, refusRapprochementCotisation,
 } from './cotisationRapprochee'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon } from './types'
@@ -325,6 +325,13 @@ describe('cotisationsAEcrire — les échéances payées dont l’écriture manq
     expect(cotisationsAEcrire(autreDate, [rapproche()], [cotisation()], 'tresorerie')).toHaveLength(1)
   })
 
+  // L'écriture ENTIÈRE à la date de l'échéance, cohérente avec elle-même : seule la comparaison à la date
+  // du MOUVEMENT la voit. Une comparaison qui prendrait la date de la première ligne présente se tairait.
+  it('toute l’écriture datée à l’échéance plutôt qu’au prélèvement', () => {
+    const aLEcheance = ECRITE.map((e) => ({ ...e, date: '2025-12-05' }))
+    expect(cotisationsAEcrire(aLEcheance, [rapproche()], [cotisation()], 'tresorerie')).toHaveLength(1)
+  })
+
   it('ignore les écritures d’une pièce sur le même mouvement : elles appartiennent à la pièce', () => {
     const avecPiece = [...ECRITE, ecriture({ id: 'p', piece_id: 'p1', compte: '606100', sens: 'debit', montant: 12 })]
     expect(cotisationsAEcrire(avecPiece, [rapproche()], [cotisation()], 'tresorerie')).toEqual([])
@@ -354,5 +361,24 @@ describe('rapprochementsCotisationRefuses — ce qui ne s’écrira pas, avec sa
     const depasse = [cotisation({ montant_csg_crds: 900 })]
     expect(rapprochementsCotisationRefuses([rapproche()], depasse, 'tresorerie')).toHaveLength(1)
     expect(rapprochementsCotisationRefuses([rapproche()], depasse, 'engagement')).toEqual([])
+  })
+})
+
+describe('avertissementRetraitEcheance — la confirmation nomme le mouvement qui paie l’échéance', () => {
+  it('un prélèvement, avec sa date et son montant', () => {
+    const phrase = avertissementRetraitEcheance(mouvement(), true)
+    expect(phrase).toMatch(/^Le prélèvement du 06\/01\/2026 \(500,00\s€\) qui la paie redevient à traiter, et son écriture est retirée du brouillon\.$/)
+  })
+
+  it('un remboursement se nomme remboursement', () => {
+    const phrase = avertissementRetraitEcheance(mouvement({ montant: 180 }), true)
+    expect(phrase).toMatch(/^Le remboursement du 06\/01\/2026 \(180,00\s€\) qui la paie/)
+  })
+
+  it('sans mouvement : « aucun » sur un relevé lu en entier, le conditionnel sur un relevé lu en partie', () => {
+    expect(avertissementRetraitEcheance(null, true)).toBe('Aucun mouvement bancaire ne la paie.')
+    expect(avertissementRetraitEcheance(null, false)).toBe(
+      'Si un mouvement bancaire la paie, il redevient à traiter, et son écriture est retirée du brouillon.',
+    )
   })
 })
