@@ -154,6 +154,8 @@ create table public.tiers_categories (
 -- `lignes_bancaires_echeance_emprunt_unique` : une échéance ne se rapproche que d'un mouvement.
 -- `lignes_bancaires_id_externe_unique` : un mouvement récupéré par la connexion bancaire ne s'importe
 -- qu'une fois dans un dossier ; totale, elle laisse s'empiler les mouvements d'un relevé (identifiant nul).
+-- `lignes_bancaires_taux_tva` : le taux de TVA d'une recette affectée sur un dossier assujetti — un taux
+-- reconnu, et seulement sur un mouvement affecté à une catégorie.
 --
 -- RÉGÉNÉRÉE LE 29/09/2026 depuis le catalogue, après les migrations
 -- `affectation_des_mouvements_bancaires` (colonne `categorie_id`, ses deux contraintes, son index) et
@@ -161,8 +163,9 @@ create table public.tiers_categories (
 -- ligne 26.6 de la feuille de route —, puis `ventilation_des_mouvements_bancaires` (colonne `ventilee`,
 -- ses deux contraintes) ; et LE 30/09/2026 après `connexion_bancaire_enable_banking` (colonne
 -- `id_externe`, sa contrainte unique) — ligne 24 —, puis `reglement_groupe_des_pieces` (colonne
--- `reglement_groupe`, sa contrainte, la contrainte d'un seul rapprochement élargie) — ligne 26. Les
--- onze autres tables sont celles du 22/09/2026.
+-- `reglement_groupe`, sa contrainte, la contrainte d'un seul rapprochement élargie) — ligne 26 ; et LE
+-- 01/10/2026 après `recettes_assujetties_du_releve` (colonne `taux_tva`, sa contrainte) — ligne 26.6.
+-- Les onze autres tables sont celles du 22/09/2026.
 create table public.lignes_bancaires (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -184,6 +187,7 @@ create table public.lignes_bancaires (
   ventilee boolean default false not null,
   id_externe text,
   reglement_groupe boolean default false not null,
+  taux_tva numeric(4,2),
   constraint lignes_bancaires_echeance_emprunt_unique UNIQUE (emprunt_id, emprunt_echeance),
   constraint lignes_bancaires_id_externe_unique UNIQUE (dossier_id, id_externe),
   constraint lignes_bancaires_pkey PRIMARY KEY (id),
@@ -197,6 +201,7 @@ create table public.lignes_bancaires (
   constraint lignes_bancaires_emprunt_rapproche CHECK (((emprunt_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_reglement_groupe_rapproche CHECK (((NOT reglement_groupe) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_statut_check CHECK ((statut = ANY (ARRAY['non_rapprochee'::text, 'rapprochee'::text, 'ignoree'::text]))),
+  constraint lignes_bancaires_taux_tva CHECK (((taux_tva IS NULL) OR ((categorie_id IS NOT NULL) AND (taux_tva = ANY (ARRAY[(0)::numeric, 5.5, 8.5, (10)::numeric, (20)::numeric]))))),
   constraint lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, NULLIF(ventilee, false), NULLIF(reglement_groupe, false)) <= 1)),
   constraint lignes_bancaires_ventilation_rapprochee CHECK (((NOT ventilee) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel))))
 );
