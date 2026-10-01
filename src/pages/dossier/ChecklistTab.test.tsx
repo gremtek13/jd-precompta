@@ -29,41 +29,54 @@ const faux = vi.hoisted(() => ({
   tronquees: new Set<string>(),
 }))
 
-vi.mock('../../lib/supabase', () => ({
-  supabase: {
-    from: (table: string) => {
-      const chaine: Record<string, unknown> = {}
-      let debut = 0
-      let fin = Number.MAX_SAFE_INTEGER
-      // Le statut demandé décide de ce que rend la table `pieces` : c'est tout l'objet du test, les
-      // deux piles devant être distinguables.
-      let statut: string | null = null
-      Object.assign(chaine, {
-        select: () => chaine,
-        eq: (colonne: string, valeur: string) => { if (colonne === 'statut') statut = valeur; return chaine },
-        is: () => chaine,
-        not: () => chaine,
-        or: () => chaine,
-        order: () => chaine,
-        range: (d: number, f: number) => { debut = d; fin = f; return chaine },
-        maybeSingle: () => Promise.resolve({ data: null, error: null }),
-        then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number }) => unknown) => {
-          const cle = table === 'pieces' && statut ? `pieces:${statut}` : table
-          if (faux.refusees.has(table)) {
-            return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: 0 }).then(suite)
-          }
-          const toutes = faux.parTable[cle] ?? []
-          return Promise.resolve({
-            data: toutes.slice(debut, debut + (fin - debut + 1)),
-            error: null,
-            count: faux.tronquees.has(table) ? toutes.length + 5 : toutes.length,
-          }).then(suite)
-        },
-      })
-      return chaine
+vi.mock('../../lib/supabase', async () => {
+  // Chargé DANS la fabrique : `vi.mock` est remonté en tête du fichier, avant tout import du test.
+  const { filtrer, predicatEq, predicatOr } = await import('../../test/filtresPostgrest')
+  // Les tables dont le faux APPLIQUE les filtres : les natures du cabinet n'appartiennent à aucun dossier,
+  // et une lecture qui ne demanderait que celles du dossier les perdrait toutes — avec elles le compte 28
+  // de chaque dotation, qui paraîtrait alors à réécrire.
+  const filtrees = new Set(['natures_immobilisation'])
+  return {
+    supabase: {
+      from: (table: string) => {
+        const chaine: Record<string, unknown> = {}
+        let debut = 0
+        let fin = Number.MAX_SAFE_INTEGER
+        const predicats: ReturnType<typeof predicatEq>[] = []
+        // Le statut demandé décide de ce que rend la table `pieces` : c'est tout l'objet du test, les
+        // deux piles devant être distinguables.
+        let statut: string | null = null
+        Object.assign(chaine, {
+          select: () => chaine,
+          eq: (colonne: string, valeur: string) => {
+            if (colonne === 'statut') statut = valeur
+            if (filtrees.has(table)) predicats.push(predicatEq(colonne, valeur))
+            return chaine
+          },
+          is: () => chaine,
+          not: () => chaine,
+          or: (expression: string) => { if (filtrees.has(table)) predicats.push(predicatOr(expression)); return chaine },
+          order: () => chaine,
+          range: (d: number, f: number) => { debut = d; fin = f; return chaine },
+          maybeSingle: () => Promise.resolve({ data: null, error: null }),
+          then: (suite: (r: { data: unknown[] | null; error: { message: string } | null; count: number }) => unknown) => {
+            const cle = table === 'pieces' && statut ? `pieces:${statut}` : table
+            if (faux.refusees.has(table)) {
+              return Promise.resolve({ data: null, error: { message: 'permission denied' }, count: 0 }).then(suite)
+            }
+            const toutes = filtrer(faux.parTable[cle] ?? [], predicats)
+            return Promise.resolve({
+              data: toutes.slice(debut, debut + (fin - debut + 1)),
+              error: null,
+              count: faux.tronquees.has(table) ? toutes.length + 5 : toutes.length,
+            }).then(suite)
+          },
+        })
+        return chaine
+      },
     },
-  },
-}))
+  }
+})
 
 // Deux lectures best-effort que le composant fait hors du client Supabase.
 vi.mock('../../lib/controlesReleves', () => ({ chargerRelevesIncoherents: async () => [] }))

@@ -502,6 +502,22 @@ describe('genererFec — les dotations aux amortissements', () => {
     ])
   })
 
+  // Deux exercices d'un même bien sont deux écritures, chacune à son 31 décembre : réunies sous le seul bien,
+  // elles feraient une écriture datée de deux jours, que le FEC ne sait pas porter.
+  it('séparent les exercices d’un même bien', () => {
+    const exercice2025 = [
+      ligne('', { id: 'i1-d-2025', piece_id: null, immobilisation_id: 'i1', date: '2025-12-31', compte: '681100', sens: 'debit', montant: 200, libelle: 'Dotation 2025 — Ordinateur' }),
+      ligne('', { id: 'i1-c-2025', piece_id: null, immobilisation_id: 'i1', date: '2025-12-31', compte: '281830', sens: 'credit', montant: 200, libelle: 'Dotation 2025 — Ordinateur' }),
+    ]
+    const rows = colonnes(genererFec([...exercice2025, ...dotation('i1', 400)], [], [], [], 'tresorerie', [])).slice(1)
+    expect(rows.map((r) => [r[2], r[3], r[4], r[11], r[12]])).toEqual([
+      ['OD00001', '20251231', '681100', '200,00', '0,00'],
+      ['OD00001', '20251231', '281830', '0,00', '200,00'],
+      ['OD00002', '20261231', '681100', '400,00', '0,00'],
+      ['OD00002', '20261231', '281830', '0,00', '400,00'],
+    ])
+  })
+
   it('numérotent leur journal à part, après les écritures de l’année', () => {
     const rows = colonnes(genererFec([ligne('p1'), ligne('p1', { compte: COMPTE_BANQUE, sens: 'credit' }), ...dotation('i1', 400)], [piece('p1')], [], [], 'tresorerie', [])).slice(1)
     expect(rows.map((r) => r[2])).toEqual(['AC00001', 'AC00001', 'OD00001', 'OD00001'])

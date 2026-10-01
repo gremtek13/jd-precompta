@@ -253,6 +253,13 @@ export function dotationsEnDefaut(dotations: readonly DotationDuRegistre[], anne
   return dotations.filter((d) => d.etat !== 'ecrite' && (d.etat !== 'a_ecrire' || d.annee < anneeCourante))
 }
 
+// La valeur d'un bien telle que le formulaire la donne, en texte : la virgule française vaut le point, et
+// ce qui n'est pas un nombre rend NaN. Une seule lecture pour le refus et pour l'écriture — deux lectures
+// finiraient par ne plus s'accorder, et l'écran écrirait autre chose que ce qu'il a accepté.
+export function valeurSaisie(texte: string): number {
+  return texte.trim() ? Number(texte.replace(',', '.').trim()) : Number.NaN
+}
+
 // Ce que la base refuserait d'un bien saisi ou modifié, dit avant d'enregistrer — et ce qui, sans être
 // refusé par elle, n'a pas de sens : une mise en service qui précède l'acquisition ferait amortir le bien
 // avant qu'il n'existe. Les montants arrivent du formulaire en texte, virgule comprise.
@@ -260,8 +267,8 @@ export function refusBien(saisie: {
   libelle: string; valeur: string; dateAcquisition: string; dateMiseEnService: string; duree: string
 }): string | null {
   if (!saisie.libelle.trim()) return 'Donnez un libellé au bien.'
-  const valeur = Number(saisie.valeur.replace(',', '.').trim())
-  if (!saisie.valeur.trim() || !Number.isFinite(valeur) || valeur <= 0) return 'La valeur du bien doit être un montant positif.'
+  const valeur = valeurSaisie(saisie.valeur)
+  if (!Number.isFinite(valeur) || valeur <= 0) return 'La valeur du bien doit être un montant positif.'
   if (Math.abs(valeur * 100 - Math.round(valeur * 100)) > 1e-6) return 'La valeur du bien se saisit au centime.'
   if (!/^\d+$/.test(saisie.duree.trim()) || Number(saisie.duree) < 1) return 'La durée d’amortissement est un nombre entier d’années, au moins un.'
   if (!/^\d{4}-\d{2}-\d{2}$/.test(saisie.dateAcquisition)) return 'Donnez la date d’acquisition du bien.'

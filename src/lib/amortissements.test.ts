@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   amortissementCumuleCentimes, compteAmortissement, dotationAEcrire, dotationConforme, dotationDeLExercice,
   dotationsDuRegistre, dotationsEnDefaut, dotationSurPeriode, ecritureDeLaDotation, FORMAT_COMPTE_IMMOBILISATION, miseEnService,
-  planAmortissement, rang360, refusBien, REFUS_DOTATION_SANS_NATURE, refusDotation, refusNature,
+  planAmortissement, rang360, refusBien, REFUS_DOTATION_SANS_NATURE, refusDotation, refusNature, valeurSaisie,
 } from './amortissements'
 import { COMPTE_DOTATIONS_AMORTISSEMENTS, libelleCompteTenu } from './comptes'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
@@ -326,6 +326,26 @@ describe('dotationsEnDefaut — ce que la Checklist réclame', () => {
       ['i1', 2025, 'a_ecrire'],
       ['i2', 2026, 'a_reecrire'],
     ])
+  })
+
+  // Une dotation écrite qui suit le registre ne se réclame pas, même d'un exercice révolu : c'est l'état
+  // qu'on attend de toutes.
+  it('ne réclame pas une dotation écrite qui suit le registre', () => {
+    const r = dotationsDuRegistre([bien()], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2026)
+    expect(r.map((d) => [d.annee, d.etat])).toEqual([[2025, 'ecrite'], [2026, 'a_ecrire']])
+    expect(dotationsEnDefaut(r, 2026)).toEqual([])
+  })
+})
+
+describe('valeurSaisie — la valeur d’un bien telle que le formulaire la donne', () => {
+  it('lit la virgule française comme le point', () => {
+    expect(valeurSaisie('12000,50')).toBe(12000.5)
+    expect(valeurSaisie(' 1200.25 ')).toBe(1200.25)
+  })
+
+  // Un champ vide n'est pas une valeur nulle : Number('') vaut 0, et ce zéro passerait pour une saisie.
+  it.each(['', '   ', 'abc'])('rend NaN sur « %s », jamais un nombre', (texte) => {
+    expect(valeurSaisie(texte)).toBeNaN()
   })
 })
 
