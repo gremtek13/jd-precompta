@@ -430,6 +430,23 @@ describe('ClotureTab — la facture d’un bien n’est pas une pièce sans cat�
     monter()
     await screen.findByText(/Pièces validées sans catégorie/)
   })
+
+  // Ni parmi les catégories à qui il manque un poste : la 2035 écarte la facture d'un bien, donc le poste de
+  // sa catégorie ne décide de rien — la carte enverrait compléter un poste qui ne compte nulle part.
+  it('ne réclame pas de poste pour la catégorie de la facture d’un bien', async () => {
+    poser({}, [immobilisation()])
+    faux.parTable.categories = [{ ...CATEGORIE, poste_2035: null }]
+    monter()
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryByText('Postes manquants')).toBeNull()
+  })
+
+  it('réclame toujours le poste de la catégorie d’une pièce qui n’est pas un bien', async () => {
+    poser({}, [])
+    faux.parTable.categories = [{ ...CATEGORIE, poste_2035: null }]
+    monter()
+    await screen.findByText('Postes manquants')
+  })
 })
 
 // CE QUI RESTE À SAISIR SUR LA CSG-CRDS, DIT SUR L'ÉCRAN QUI REMPLIT LE FORMULAIRE.

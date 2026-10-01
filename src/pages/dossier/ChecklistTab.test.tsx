@@ -784,18 +784,35 @@ describe('ChecklistTab — l’acquisition d’un bien immobilisé', () => {
     expect(screen.queryByText(SANS_OBJET)).toBeNull()
   })
 
-  it('ne réclame pas de catégorie, ni de compte de catégorie, pour la facture d’un bien', async () => {
-    // « Invisibles en compta » serait faux : son acquisition s'écrit sur le compte du bien, et le bien s'amortit.
+  it('ne réclame pas de catégorie, ni de compte ou de poste de catégorie, pour la facture d’un bien', async () => {
+    // « Invisibles en compta » serait faux : son acquisition s'écrit sur le compte du bien, et le bien s'amortit ;
+    // et la 2035 l'écarte, donc le poste de sa catégorie ne décide de rien non plus.
     const sansCompte = { ...categorie, id: 'cat-sans-compte', libelle: 'À classer', compte_comptable: null }
+    const sansPoste = { ...categorie, id: 'cat-sans-poste', libelle: 'Divers', poste_2035: null }
     poser({
-      validees: [facture({ categorie_id: null }), facture({ id: 'p2', categorie_id: 'cat-sans-compte' })],
-      categories: [categorie, sansCompte], natures: [NATURE],
-      immos: [immobilisation({ nature_id: 'n1' }), immobilisation({ id: 'i2', piece_id: 'p2', nature_id: 'n1' })],
+      validees: [
+        facture({ categorie_id: null }), facture({ id: 'p2', categorie_id: 'cat-sans-compte' }),
+        facture({ id: 'p3', categorie_id: 'cat-sans-poste' }),
+      ],
+      categories: [categorie, sansCompte, sansPoste], natures: [NATURE],
+      immos: [
+        immobilisation({ nature_id: 'n1' }), immobilisation({ id: 'i2', piece_id: 'p2', nature_id: 'n1' }),
+        immobilisation({ id: 'i3', piece_id: 'p3', nature_id: 'n1' }),
+      ],
     })
     monter(true)
     await charge()
     expect(screen.queryByText(/sans catégorie/)).toBeNull()
     expect(screen.queryByText(/catégorie\(s\) sans compte comptable/)).toBeNull()
+    expect(screen.queryByText(/catégorie\(s\) sans poste 2035/)).toBeNull()
+  })
+
+  it('réclame toujours le poste de la catégorie d’une pièce qui n’est pas un bien', async () => {
+    // Le garde symétrique du précédent, pour le poste.
+    const sansPoste = { ...categorie, id: 'cat-sans-poste', libelle: 'Divers', poste_2035: null }
+    poser({ validees: [facture({ categorie_id: 'cat-sans-poste' })], categories: [categorie, sansPoste], natures: [NATURE] })
+    monter(true)
+    await screen.findByText(/catégorie\(s\) sans poste 2035/)
   })
 
   it('réclame toujours la catégorie d’une pièce qui n’est pas un bien', async () => {
@@ -836,6 +853,20 @@ describe('ChecklistTab — l’acquisition d’un bien immobilisé', () => {
     await screen.findByText(/l’écriture de la facture d’un bien — c’est l’ouverture qui dit/)
     await charge()
     expect(screen.queryByText(A_REGENERER)).toBeNull()
+    expect(screen.queryByText(SANS_OBJET)).toBeNull()
+  })
+
+  // Et la charge d'un bien SANS NATURE se tait aussi : « sans objet », elle le serait de toute façon, mais pour
+  // une raison que l'ouverture décide — choisir sa nature ou retirer l'écriture d'un bien repris — et que la
+  // Checklist ne peut pas dire sans la lire en entier.
+  it('se tait sur la charge d’un bien sans nature quand l’ouverture est lue à moitié', async () => {
+    poser({
+      validees: [facture()], categories: [categorie], natures: [NATURE], aNouveaux: [OUVERTURE], tronquees: ['a_nouveaux'],
+      immos: [immobilisation({ nature_id: null })], ecritures: [ecriture('e1', '606100', 100), ecriture('e2', '445660', 20)],
+    })
+    monter(true)
+    await screen.findByText(/l’écriture de la facture d’un bien — c’est l’ouverture qui dit/)
+    await charge()
     expect(screen.queryByText(SANS_OBJET)).toBeNull()
   })
 

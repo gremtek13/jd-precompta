@@ -146,8 +146,13 @@ vi.mock('../../lib/supabase', async () => {
             }
             // Les `.eq` d'une LECTURE s'appliquent aussi, sauf le cadrage par dossier, que le jeu d'essai
             // ne renseigne pas : sans cela, la lecture des mouvements restreinte aux seuls rapprochés
-            // restait verte en cachant les virements personnels, dont l'écriture va au FEC.
-            const egalites = filtres.filter(([colonne]) => colonne !== 'dossier_id' && !colonne.startsWith('!'))
+            // restait verte en cachant les virements personnels, dont l'écriture va au FEC. SAUF pour les
+            // natures, que le jeu d'essai renseigne : celles du cabinet n'appartiennent à aucun dossier, et
+            // une lecture qui ne demanderait que celles du dossier les perdrait toutes — avec elles le compte
+            // de chaque bien, dont l'acquisition ne s'écrirait plus. Le cadrage ignoré, ce test restait vert
+            // avec cette lecture-là.
+            const egalites = filtres
+              .filter(([colonne]) => (colonne !== 'dossier_id' || table === 'natures_immobilisation') && !colonne.startsWith('!'))
               .map(([colonne, valeur]) => predicatEq(colonne, valeur))
             const toutes = filtrer(faux.parTable[table] ?? [], [...predicats, ...egalites])
             const demande = fin - debut + 1
@@ -316,6 +321,28 @@ describe('EcrituresTab — l’écriture d’acquisition d’un bien', () => {
     expect(screen.queryByText('Pièces validées sans catégorie')).toBeNull()
     await act(async () => { bouton.click() })
     expect(faux.insertions[0].lignes.map((l) => l.compte)).toEqual(['218300', '445620'])
+  })
+
+  // Sa catégorie ne décide de rien : la facture d'un bien s'écrit sur le compte de sa nature. Réclamer un compte
+  // pour elle enverrait compléter une catégorie qui n'écrit rien.
+  it('ne réclame pas de compte pour la catégorie de la facture d’un bien', async () => {
+    const sansCompte = { ...CATEGORIE_ACHATS, id: 'cat-sans-compte', code: 'divers', libelle: 'À classer', compte_comptable: null }
+    poser({
+      pieces: [facture({ categorie_id: 'cat-sans-compte' })], categories: [CATEGORIE_ACHATS, sansCompte],
+      immobilisations: [BIEN], natures_immobilisation: [NATURE],
+    })
+    monter(true)
+    await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    expect(screen.queryByText('Comptes manquants')).toBeNull()
+  })
+
+  it('réclame toujours le compte de la catégorie d’une pièce qui n’est pas un bien', async () => {
+    // Le garde symétrique : sans lui, « le bien n'est pas réclamé » serait satisfait par une carte qui ne
+    // réclame plus rien.
+    const sansCompte = { ...CATEGORIE_ACHATS, id: 'cat-sans-compte', code: 'divers', libelle: 'À classer', compte_comptable: null }
+    poser({ pieces: [facture({ categorie_id: 'cat-sans-compte' })], categories: [CATEGORIE_ACHATS, sansCompte], natures_immobilisation: [NATURE] })
+    monter(true)
+    await screen.findByText('Comptes manquants')
   })
 
   it('n’écrit pas un bien sans nature : ni sur le compte d’un bien, ni en charge', async () => {

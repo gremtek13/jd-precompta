@@ -1054,6 +1054,29 @@ describe("l'écriture d'acquisition d'un bien", () => {
       .toEqual([facture])
   })
 
+  // DÉFENSIF, et dit comme tel : aucune génération ne partage la TVA d'un bien entre les deux comptes. Mais une
+  // ligne au 445660 dans l'écriture d'un bien porterait sa TVA sur la mauvaise ligne de la CA3 sans déplacer un
+  // centime du total ni du 445620 — seule la question « un autre compte ? » la voit.
+  it('voit une ligne au 445660 à côté d’une TVA juste au 445620', () => {
+    const cats = [categorie()]
+    const acquisition = enBase(lignesPourPiece('d1', facture, bien('218300'), true, payes(reglement), TRESORERIE))
+      .flatMap((e) => (e.compte === '218300'
+        ? [{ ...e, montant: 995 }, { ...e, id: `${e.id}-tva`, compte: COMPTE_TVA_DEDUCTIBLE, montant: 5 }]
+        : [e]))
+    const aComptabiliser = piecesAComptabiliser([facture], cats, new Map([['p1', acq('218300')]]))
+    expect(analyserEcritures(acquisition, aComptabiliser, true, paiementsDesPieces([reglement], []), TRESORERIE).piecesDesynchronisees)
+      .toEqual([facture])
+  })
+
+  // En ENGAGEMENT, la dette au 404000 SOLDE l'écriture d'un bien : comptée parmi ce que la pièce porte en trop,
+  // elle ferait annoncer « 0,00 € » pour l'acquisition d'un bien repris que la balance reprise porte déjà.
+  it('compte ce que l’acquisition d’un bien repris porte en trop, sans la dette au 404000 qui la solde', () => {
+    const acquisition = enBase(lignesPourPiece('d1', facture, bien('218300'), true, [], ENGAGEMENT))
+    expect(acquisition.map((e) => e.compte)).toEqual(['218300', '445620', '404000'])
+    expect(ecrituresSansObjet(acquisition, [facture], [categorie()], new Map([['p1', { compte: null, motif: 'repris' as const }]])))
+      .toEqual([expect.objectContaining({ motif: 'bien_repris', nbLignes: 2, montant: 1200 })])
+  })
+
   it('nomme les comptes que l’acquisition mouvemente', () => {
     const balance = calculerBalance(['218300', '205000', '445620', '404000'].map((compte) => ecriture({ compte })), [], [])
     expect(balance.map((l) => [l.compte, l.libelle])).toEqual([
@@ -1061,6 +1084,16 @@ describe("l'écriture d'acquisition d'un bien", () => {
       ['218300', 'Matériel de bureau et matériel informatique'],
       ['404000', "Fournisseurs d'immobilisations"],
       ['445620', 'TVA déductible sur immobilisations'],
+    ])
+  })
+
+  // Un compte de classe 2 qu'aucune nature du cabinet ne désigne garde un libellé — incorporelle en 20,
+  // corporelle en 21 —, sans quoi la balance et le FEC le nommeraient de son seul numéro.
+  it('nomme d’un libellé générique un compte d’immobilisation qu’aucune nature du cabinet ne désigne', () => {
+    const balance = calculerBalance(['201100', '213500'].map((compte) => ecriture({ compte })), [], [])
+    expect(balance.map((l) => [l.compte, l.libelle])).toEqual([
+      ['201100', 'Immobilisations incorporelles'],
+      ['213500', 'Immobilisations corporelles'],
     ])
   })
 })

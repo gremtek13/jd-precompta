@@ -1345,6 +1345,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   qui manque. La case CH de la 2035, la situation intermédiaire, le FEC (journal des opérations diverses)
   et la piste d'audit disent le même chiffre. Voir « les dotations aux amortissements s'écrivent » dans
   « Problèmes connus » (`lib/amortissements.ts`).
+- **L'acquisition d'une immobilisation s'écrit (01/10/2026)**, ligne 26.6, étape (b), troisième brique : la
+  facture d'un bien du registre s'écrit sur le compte d'immobilisation de sa nature — au hors taxe et sa TVA
+  au 445620 pour un dossier assujetti, au TTC pour un exonéré —, reçoit sa contrepartie banque au paiement
+  comme toute pièce, et en engagement sa dette va au 404000. Un bien sans nature ne s'écrit pas tant qu'on ne
+  l'a pas choisie, ni un bien acquis avant l'ouverture d'un dossier repris, que la balance reprise porte
+  déjà. Voir « l'acquisition d'un bien s'écrit sur le compte de sa nature » dans « Problèmes connus »
+  (`acquisitionsDesBiens`, `lib/ecritures.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1367,8 +1374,8 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   les nomme : le lettrage, les écarts de change et les frais bancaires (le rapprochement règle encore
   la pièce sur la banque, donc réécrit la facture — à trancher avec le cabinet), les auxiliaires des
   à-nouveaux, le report d'un exercice sur l'autre, la TVA des livraisons de biens, la liasse (2033 ou
-  2050), l'écriture d'acquisition d'une immobilisation et les exercices qui ne suivent pas l'année
-  civile.
+  2050) et les exercices qui ne suivent pas l'année civile. L'écriture d'acquisition d'une immobilisation
+  est faite (01/10/2026, sa dette au 404000).
 - FEC conforme à l'article A47 A-1 du LPF, la norme de sortie des écritures : la virgule décimale est
   corrigée, et le compte d'une catégorie doit commencer par trois chiffres (28/09/2026). Restent les
   vingt-deux champs d'un BNC en comptabilité de trésorerie (que l'outil de la DGFiP n'exige pas) et les
@@ -1380,11 +1387,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   comptes ; un virement personnel s'écrit sur le compte du dirigeant (108 en trésorerie), une
   échéance d'emprunt sur ses trois comptes (164, 661, 616), et une recette d'un dossier assujetti porte
   le taux de TVA que le cabinet choisit. L'étape (b) a commencé le 01/10/2026 : une échéance de
-  cotisation rapprochée de son prélèvement s'écrit (646, et 108 pour sa CSG-CRDS en trésorerie), et les
+  cotisation rapprochée de son prélèvement s'écrit (646, et 108 pour sa CSG-CRDS en trésorerie), les
   dotations aux amortissements s'écrivent (681100 face au compte 28 de la nature du bien), prorata
-  temporis depuis la mise en service. Restent (b) l'acquisition d'une immobilisation et le forfait
-  kilométrique, (c) tirer la 2035 des écritures ou l'y comparer, (d) valider un exercice, (e) les
-  vingt-deux champs et Test Compta Demat.
+  temporis depuis la mise en service, et la facture d'un bien s'écrit sur le compte d'immobilisation de
+  sa nature (sa TVA au 445620, sa dette au 404000 en engagement). Restent (b) le forfait kilométrique,
+  (c) tirer la 2035 des écritures ou l'y comparer, (d) valider un exercice, (e) les vingt-deux champs et
+  Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -4294,15 +4302,18 @@ d'environnement dans la même édition.
   exactement ce que `groupesDesequilibres` signale, et que plus aucun geste ne pourrait éteindre. On
   échangerait une alerte vraie contre une alerte fausse et DÉFINITIVE. Vérifié en posant la mutation,
   pas déduit : le panneau « Écritures déséquilibrées » apparaît bel et bien.
-  **Réservé au motif `immobilisee`**, délibérément : pour les trois autres, l'écriture DOIT revenir
+  **Réservé aux motifs d'un BIEN**, délibérément : pour les trois autres, l'écriture DOIT revenir
   une fois la pièce corrigée en amont, et un bouton « Retirer » y ferait disparaître une charge
   réelle d'un clic, sans trace — que personne ne chercherait, le panneau étant alors vide.
-  **Ce que le retrait laisse, et qui est écrit plutôt que tu** : l'application ne modélise AUCUNE
-  écriture d'acquisition (aucun compte de classe 2 sur `natures_immobilisation`, vérifié en base),
-  donc le FEC ne portera pas cet achat. C'est un manque pré-existant, et il est moins faux que la
-  charge : après retrait, le FEC, la balance et la 2035 écartent tous les trois la pièce et disent
-  enfin la même chose, la dépense restant comptée par l'amortissement. La piste d'audit, elle,
-  continue de la voir — en justificatif validé que rien ne comptabilise, ce qui est la vérité.
+  **DEPUIS LE 01/10/2026 L'ACQUISITION S'ÉCRIT** (voir « l'acquisition d'un bien s'écrit sur le compte
+  de sa nature ») : ce qui était écrit ici — « l'application ne modélise AUCUNE écriture
+  d'acquisition, donc le FEC ne portera pas cet achat » — ne vaut plus. La facture d'un bien n'est
+  plus « sans objet » : elle s'écrit sur le compte de sa nature, et « Régénérer » y passe l'écriture
+  d'une pièce immobilisée après coup — le geste qui était « activement faux » devient le bon. Le motif
+  `immobilisee` a disparu au profit de deux : `bien_sans_nature` (son compte n'est pas connu : choisir
+  la nature puis régénérer, ou retirer) et `bien_repris` (acquis avant l'ouverture d'un dossier
+  repris : la balance reprise porte sa valeur, et retirer est le seul geste juste). « Retirer
+  l'écriture » leur est réservé.
   Pas de verrou `useRef` : une suppression est idempotente, deux clics retirent les mêmes lignes.
   **Le faux client du test SUPPRIME vraiment**, donc le `load()` qui suit relit un jeu réellement
   amputé : les assertions portent sur ce que l'écran montre APRÈS, pas sur la méthode appelée — c'est
@@ -4470,12 +4481,14 @@ d'environnement dans la même édition.
     d'une pièce payée en devise et que l'application le connaît.
   - **EcritureLet et DateLet restent vides**, ce que la norme admet (« à blanc si non utilisé »). Le
     lettrage est la ligne 32.
-  - **Ce fichier n'est pas le FEC légal du dossier.** Il ne porte que ce que l'application écrit : les
-    justificatifs et leur banque, et les à-nouveaux. Il n'a ni cotisations sociales, ni
-    amortissements, ni prélèvements de l'exploitant, ni mouvements sans justificatif. Ses écritures
-    sont des brouillons, sans procédure de validation : ValidDate y vaut la date d'écriture, ce que la
-    notice n'admet que d'un logiciel sans mode brouillard. C'est un fichier d'IMPORT pour
-    l'expert-comptable ; le FEC remis à l'administration est celui de son logiciel.
+  - **Ce fichier n'est pas le FEC légal du dossier.** Il ne porte que ce que l'application écrit. Le
+    28/09/2026, c'était les justificatifs et leur banque, et les à-nouveaux ; depuis la ligne 26.6 (du 29/09
+    au 01/10/2026), ce sont aussi les mouvements du relevé affectés ou ventilés sans justificatif, les
+    virements personnels, les échéances d'emprunt et de cotisation, les dotations aux amortissements et
+    l'acquisition des biens. Il n'a toujours ni le forfait kilométrique, ni les mouvements que personne
+    n'a encore traités. Ses écritures sont des brouillons, sans procédure de validation : ValidDate y vaut
+    la date d'écriture, ce que la notice n'admet que d'un logiciel sans mode brouillard. C'est un fichier
+    d'IMPORT pour l'expert-comptable ; le FEC remis à l'administration est celui de son logiciel.
   - **Il n'est jamais passé au validateur de la DGFiP**, faute de pouvoir l'exécuter ici : ses règles
     ont été lues (ci-dessus), pas éprouvées. Le vrai test est un import dans le logiciel de
     l'expert-comptable.
@@ -4960,9 +4973,10 @@ d'environnement dans la même édition.
   **ET LA COMPARAISON AU BROUILLON EST RETIRÉE DES TROIS ENDROITS QUI LA FAISAIENT** : la carte
   « Déclarations de TVA » d'Écritures, le point « en écart avec le brouillon » de la Checklist, et
   l'assistant (version 26 : il dit qu'il ne vérifie pas les déclarations, au lieu de répondre « rien à
-  signaler »). Le brouillon date la TVA à la PIÈCE et ne porte aucune écriture pour un bien immobilisé,
-  dont la TVA va pourtant en ligne 19 : il aurait crié à l'erreur sur des déclarations justes dès la
-  première déposée sur les encaissements. Mesuré, aucune déclaration n'était enregistrée : ce contrôle
+  signaler »). Le brouillon date la TVA à la PIÈCE et ne portait alors aucune écriture pour un bien
+  immobilisé, dont la TVA va pourtant en ligne 19 — il la porte depuis le 01/10/2026, au 445620, mais
+  ses dates ne suivent toujours pas la règle d'exigibilité de la déclaration : il aurait crié à
+  l'erreur sur des déclarations justes dès la première déposée sur les encaissements. Mesuré, aucune déclaration n'était enregistrée : ce contrôle
   n'avait jamais parlé. **Il n'est PAS remis dans la Checklist** tant que la régularisation d'une
   période déposée (lignes 5B et 2C) n'est pas modélisée : l'écart y resterait en erreur une fois
   régularisé, et une mise en garde permanente cesse d'être lue.
@@ -5124,8 +5138,9 @@ d'environnement dans la même édition.
     aucun solde n'est reporté d'un exercice sur l'autre ;
   - la CA3 traite toute vente comme une prestation de services : la TVA d'une livraison de biens,
     exigible à la livraison, n'est pas modélisée ;
-  - la liasse (2033 ou 2050) n'est pas préparée, et l'acquisition d'une immobilisation n'a toujours
-    pas d'écriture ;
+  - la liasse (2033 ou 2050) n'est pas préparée ; l'acquisition d'une immobilisation, elle, s'écrit
+    depuis le 01/10/2026, sa dette au 404000 (voir « l'acquisition d'un bien s'écrit sur le compte de
+    sa nature ») ;
   - l'exercice reste l'année civile.
   **LATENT, et c'est voulu** : aucun dossier en base n'est en engagement, tous restant en trésorerie
   par décision du cabinet. Le banc de capture porte une société fictive en engagement (d8) :
@@ -5984,11 +5999,95 @@ d'environnement dans la même édition.
   valeur se lit désormais par une seule fonction pour le refus et pour l'écriture (`valeurSaisie`), que le
   module éprouve, un champ vide ne valant pas zéro. **Une survit, et c'est dit** : une dotation validée
   envoyée à la base — `refusDotation` la refuse toujours avant, donc l'écran ne l'envoie jamais.
-  **CE QUI RESTE, dit plutôt que promis** : l'ACQUISITION d'un bien n'a toujours pas d'écriture — la facture
-  d'une immobilisation ne produit aucune ligne, et le FEC porte l'amortissement d'un bien qu'il n'a jamais
-  vu entrer (étape b3) ; la cession ou la mise au rebut d'un bien, avec sa valeur nette comptable et sa plus
-  ou moins-value, ne sont pas modélisées, ni l'amortissement dégressif ; le seuil de 500 € reste fixe ; et
-  l'exercice reste l'année civile.
+  **CE QUI RESTE, dit plutôt que promis** : la cession ou la mise au rebut d'un bien, avec sa valeur nette
+  comptable et sa plus ou moins-value, ne sont pas modélisées, ni l'amortissement dégressif ; le seuil de
+  500 € reste fixe ; et l'exercice reste l'année civile. L'ACQUISITION d'un bien, qui manquait — le FEC
+  portait l'amortissement d'un bien qu'il n'avait jamais vu entrer —, s'écrit depuis le même jour (étape
+  b3, voir l'entrée suivante).
+- **L'ACQUISITION D'UN BIEN S'ÉCRIT SUR LE COMPTE DE SA NATURE — LIGNE 26.6, ÉTAPE (B), TROISIÈME BRIQUE**
+  (01/10/2026, `acquisitionsDesBiens` dans `lib/amortissements.ts`, `lib/ecritures.ts`). La facture d'un bien
+  inscrit au registre ne produisait AUCUNE écriture : `piecesAComptabiliser` l'écartait de la charge — à
+  juste titre, un bien s'amortit, il ne se déduit pas d'un coup — et rien ne l'écrivait ailleurs. Le FEC
+  portait donc l'amortissement d'un bien qu'il n'avait jamais vu entrer, la balance n'avait aucun compte de
+  classe 2, et la banque de l'application dépassait le relevé de tout ce que les biens avaient coûté, leur
+  paiement n'ayant pas de contrepartie.
+  **CE QUI S'ÉCRIT** : la facture d'un bien passe par le chemin de toute pièce (`lignesPourPiece`), sur une
+  CIBLE (`CibleComptable`) — le compte d'immobilisation de sa NATURE au lieu de celui de sa catégorie. Le
+  montant est celui de `montantRetenu` : le hors taxe pour un dossier assujetti, le TTC pour un exonéré,
+  qui ne récupère pas la TVA (elle entre dans le coût du bien). La TVA d'un assujetti va au 445620,
+  déductible sur immobilisations (ligne 19 de la CA3), et non au 445660 — `compteTvaDe`, un seul endroit
+  pour la génération et le contrôle. En trésorerie, l'écriture est datée au paiement comme toute pièce, et
+  le rapprochement lui donne sa contrepartie banque. En ENGAGEMENT, la dette va au 404000 — fournisseurs
+  d'immobilisations, que le bilan sépare des fournisseurs —, son règlement la solde au 404000 (le
+  rapprochement le lit sur la facture déjà écrite plutôt que de relire le registre), et le FEC lui donne
+  un compte auxiliaire à part, préfixé FI : le même numéro sous le 401 et sous le 404 ferait d'un
+  auxiliaire deux dettes de natures différentes. Une note de frais immobilisée reste au compte du
+  dirigeant : c'est lui qui a payé. Les comptes 2… ont leur libellé (`libelleCompteTenu`), dans la balance
+  comme dans le FEC, et la TVA déductible qu'Écritures totalise compte le 445620.
+  **DEUX BIENS NE S'ÉCRIVENT PAS, ET L'ÉCRAN DIT POURQUOI** (`AcquisitionDuBien`) :
+  - **sans nature** : son compte n'est pas connu, et rien ne s'écrit avant qu'on la choisisse. Une écriture
+    déjà passée sur sa catégorie — la charge d'avant — est « sans objet » (`bien_sans_nature`) : choisir
+    la nature puis régénérer la passe sur le compte du bien, ou la retirer ;
+  - **repris**, acquis AVANT l'ouverture d'un dossier repris (`bienRepris` : la date d'acquisition du
+    registre contre celle des à-nouveaux) : la balance reprise porte déjà sa valeur brute en classe 2, et
+    la banque d'ouverture son paiement. L'écrire encore la compterait deux fois — la règle de ses dotations
+    d'avant l'ouverture (`dotationAEcrire`), pour la même raison. Une écriture qui en existe est « sans
+    objet » (`bien_repris`), et la retirer est le seul geste juste.
+  Le motif `immobilisee` des écritures sans objet disparaît au profit de ces deux-là, qui gardent seuls
+  « Retirer l'écriture », chacun avec la confirmation qui lui est propre.
+  **L'OUVERTURE DÉCIDE DE CE QUI EST REPRIS, DONC UNE OUVERTURE LUE EN PARTIE SUSPEND** : dans Écritures, la
+  génération attend une lecture complète des à-nouveaux dès qu'un bien est en attente — les autres pièces
+  n'en dépendent pas, et les suspendre bloquerait un geste que rien ne fausse —, et « Régénérer » se grise
+  sur la facture d'un bien ; dans la Checklist, les points qui jugent l'écriture d'une facture de bien se
+  taisent sur ces pièces-là, comme celui des dotations — ils réclameraient sinon l'acquisition d'un bien que
+  les à-nouveaux portent peut-être. Le bandeau de l'ouverture le dit dans les deux écrans. Et les natures
+  entrent dans le drapeau de lecture partielle d'Écritures : une nature non lue ferait passer son bien pour
+  un bien sans nature.
+  **CE QUI NE COMPTE PLUS LA FACTURE D'UN BIEN** : `categoriesSansCompte`, `categoriesSansPoste` et
+  `piecesValideesSansCategorie` — sa catégorie ne décide de rien : elle s'écrit sur le compte de sa nature,
+  et la 2035 l'écarte —, dans Écritures, Clôture, la Checklist et l'assistant. Et le plan de trésorerie de
+  Financement écarte son paiement de la moyenne des décaissements, en le disant : un investissement ne se
+  répète pas chaque mois, et le solde, lui, le compte déjà.
+  **UNE PIÈCE PAR BIEN, ET L'ÉCART SE DIT** : l'acquisition s'écrit au montant de la FACTURE, les dotations
+  sur la valeur du REGISTRE. Quand les deux diffèrent — une valeur modifiée, ou une facture qui porte aussi
+  des charges et s'écrit alors en entier sur le compte du bien —, le compte du bien ne se recoupe plus avec
+  son amortissement. Immobilisations le dit, par un badge « Facture : … » sur la ligne et une phrase
+  au-dessus du registre (`montantDeFactureDifferent`), comptée sur le registre ENTIER — une recherche ne
+  fait pas disparaître l'écart — et muette pour un bien repris.
+  **L'assistant, version 39** : sa copie du contrôle des écritures prend la même cible (blocs AMORTISSEMENT
+  et AFFECTATION, `acquisitionsDesBiens` lu avec l'ouverture), ses contrôles de catégorie écartent la
+  facture d'un bien, et le prompt dit où elle s'écrit et que celle d'un bien repris ne s'écrit pas — sans
+  quoi il prendrait un 218300 pour une anomalie. Les gardes (`agentComptableAnalyse`,
+  `agentComptableAmortissement`, `agentComptableAffectation`) comparent les copies à `src/lib` et y plantent
+  des dérives. Déployée avec `verify_jwt` relu et repassé à `false`, la v38 comparée au dépôt avant
+  écrasement (identique, 2 085 lignes), aller-retour après : zéro différence sur 2 153 lignes, et le 401 de
+  la fonction sans session. Aucun appel au modèle.
+  **Aucune migration** : le compte d'immobilisation vit sur la nature depuis les dotations, et la génération
+  écrit au brouillon par le chemin de toute pièce.
+  **Le banc** sert l'acquisition de l'ordinateur du cabinet infirmier, au TTC, le dossier étant exonéré — le
+  fauteuil repris n'en a pas —, et celle de l'écran de studio de la société en engagement (218300, 445620,
+  404000) ; `vitrine.mjs` sait désormais choisir un exercice de l'en-tête (`exercice`) pour les montrer.
+  0 débordement aux quatre largeurs.
+  **LATENT, et mesuré** (01/10/2026) : deux biens en base, dans des bacs à sable abandonnés, dont un sans
+  nature ; aucune ligne de classe 2, de 445620 ni de 404000, aucune écriture sur la facture d'un bien, et
+  le dossier `test` n'en porte aucun.
+  **Soixante et onze mutations, soixante-dix mordent — la première passe en laissait dix en vie.** Huit
+  accusaient des tests absents, tous écrits : le libellé générique d'un compte de classe 2 qu'aucune nature
+  ne désigne ; la dette au 404000 comptée dans ce que l'écriture d'un bien repris porte en trop, qui
+  annonçait « 0,00 € » en engagement ; le câblage des contrôles de catégorie dans Écritures, la Checklist et
+  Clôture, qu'aucun écran n'éprouvait sur la facture d'un bien ; la charge d'un bien sans nature, qui doit se
+  taire dans la Checklist sur une ouverture lue à moitié ; et l'écart de facture compté sur le registre
+  AFFICHÉ, qu'une recherche faisait disparaître. Une neuvième, une ligne au 445660 à côté d'une TVA juste au
+  445620, est gardée par un cas DÉFENSIF, annoncé comme tel : aucune génération ne produit ce partage. Et
+  une accusait le FAUX CLIENT d'Écritures : il ignorait le cadrage par dossier de toute lecture, si bien
+  qu'une lecture des seules natures du dossier — qui perdrait toutes celles du cabinet, donc le compte de
+  chaque bien — restait verte ; il l'applique désormais aux natures, et neuf tests tombent. **Une survit,
+  et c'est dit** : la garde du gestionnaire de « Régénérer » sur la facture d'un bien quand l'ouverture est
+  lue à moitié, qu'aucun clic n'atteint, le bouton étant grisé — sa jumelle mord.
+  **CE QUI RESTE, dit plutôt que promis** : une facture qui porte un bien ET des charges s'écrit en entier
+  sur le compte du bien — une pièce par bien ; le badge le montre ; la cession ou la mise au rebut d'un bien
+  ne sont pas modélisées ; et la facture d'un bien sans nature ou repris reste, dans la piste d'audit, un
+  justificatif que rien ne comptabilise — ce qui est vrai.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -7398,7 +7497,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3536 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3628 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -7425,8 +7524,9 @@ le règlement de plusieurs pièces par un virement (`reglementGroupe.ts`), la TV
 encaissée sans facture sur un dossier assujetti (`tvaDuReleve.ts`, contre la fonction de la base),
 l'écriture d'une échéance de cotisation payée par le relevé et la date à laquelle elle compte
 (`cotisationRapprochee.ts`), la dotation aux amortissements d'un bien, prorata temporis depuis sa mise
-en service et au centime du calcul de la base (`amortissements.ts`), et ce que la connexion bancaire
-décide sans rien appeler — la période
+en service et au centime du calcul de la base (`amortissements.ts`), l'écriture d'acquisition d'un bien
+sur le compte de sa nature, ou pourquoi il n'en a pas (`acquisitionsDesBiens`, `ecritures.ts`), et ce que
+la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
 `tsc -b` les type-vérifie avec le reste.

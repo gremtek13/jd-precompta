@@ -221,6 +221,18 @@ describe('ImmobilisationsTab — la valeur d’un bien qui ne suit plus sa factu
     expect(screen.queryByText(/enregistrés? au\s+montant de/)).toBeNull()
   })
 
+  // « Une recherche filtre l'affichage, jamais un total » : la phrase au-dessus du registre compte les biens du
+  // registre ENTIER. Un mot tapé qui cache la ligne ne fait pas disparaître l'écart — on le corrigerait sinon
+  // moins souvent qu'on le cherche.
+  it('garde l’écart dit quand une recherche cache le bien', async () => {
+    poser([immobilisation()], { pieces: [facture] })
+    monter(true)
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    fireEvent.change(screen.getByPlaceholderText(/Rechercher un libellé/), { target: { value: 'Fauteuil' } })
+    screen.getByText('Aucune immobilisation ne correspond à « Fauteuil ».')
+    screen.getByText(/Un bien n’est pas enregistré au\s+montant de\s+sa facture/)
+  })
+
   it('se tait sur un bien dont la facture n’est pas lue : rien à comparer', async () => {
     poser([immobilisation()], { pieces: [] })
     monter(true)

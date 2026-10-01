@@ -165,6 +165,12 @@ const VUES = [
   { nom: 'mobile-immobilisations-clair', chemin: '#/dossiers/d1/immobilisations', l: 390, h: 844, theme: 'light', reduite: false },
   { nom: 'pc-immobilisations-sans-nature', chemin: '#/dossiers/d7/immobilisations', l: 1440, h: 900, theme: 'light', reduite: false },
   { nom: 'pc-immobilisations-checklist', chemin: '#/dossiers/d8/checklist', l: 1440, h: 900, theme: 'light', reduite: false },
+  // L'acquisition d'un bien (lib/ecritures.ts) : l'ordinateur du cabinet sur le compte de sa nature, au TTC — le
+  // dossier est exonéré — et sans écriture pour le fauteuil repris ; puis l'écran de studio de la société en
+  // engagement, sa TVA au 445620 et sa dette au 404000.
+  { nom: 'pc-acquisition-ecritures', chemin: '#/dossiers/d1/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Informatique Pro' },
+  { nom: 'pc-acquisition-engagement', chemin: '#/dossiers/d8/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Studio Lumière' },
+  { nom: 'mobile-acquisition-ecritures', chemin: '#/dossiers/d1/ecritures', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Informatique Pro' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -191,6 +197,11 @@ for (const v of VUES) {
   if (v.compte) {
     await page.getByRole('button', { name: /^Compte de / }).click()
     await page.waitForTimeout(300)
+  }
+  // Un exercice choisi dans le sélecteur de l'en-tête du dossier : ses boutons sont des onglets.
+  if (v.exercice) {
+    await page.getByRole('tab', { name: v.exercice, exact: true }).first().click()
+    await page.waitForTimeout(600)
   }
   if (v.clic) {
     await page.getByRole('button', { name: v.clic, exact: true }).click()
