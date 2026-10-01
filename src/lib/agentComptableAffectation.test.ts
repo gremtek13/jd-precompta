@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import {
-  mouvementsAffectes, mouvementsAffectesDesynchronises, natureDuCompte, recettesAffecteesSurDossierAssujetti,
+  mouvementsAffectes, mouvementsAffectesDesynchronises, natureDuCompte, recettesAffecteesSansTaux,
 } from './affectationBanque'
 import { categoriesSansCompte, categoriesSansPoste } from './controles'
 import type { ModeleComptable } from './engagement'
@@ -14,8 +14,9 @@ import { compteDuDirigeant, virementsPersonnelsAEcrire } from './virementPersonn
 // Depuis qu'un mouvement du relevé s'affecte à une catégorie sans justificatif, trois contrôles de la
 // Checklist en dépendent : les catégories qu'il utilise (sans compte ou sans poste, elles le sortent
 // de la 2035), les mouvements dont l'écriture ne suit plus la catégorie, et les recettes affectées
-// d'un dossier devenu assujetti. `agent-comptable` est auto-portée : elle recopie ces fonctions entre
-// les bornes `── DÉBUT/FIN AFFECTATION`, et ce test les compare à `src/lib` sur une batterie commune.
+// SANS TAUX de TVA d'un dossier assujetti — depuis le 01/10/2026, une recette d'un dossier assujetti
+// porte son taux, et compte au hors taxe. `agent-comptable` est auto-portée : elle recopie ces fonctions
+// entre les bornes `── DÉBUT/FIN AFFECTATION`, et ce test les compare à `src/lib` sur une batterie commune.
 //
 // CE QU'UNE DÉRIVE COÛTERAIT : l'assistant répondrait « aucune catégorie sans compte » ou « rien à
 // réaffecter » sur un dossier où la Checklist en compte — la panne que `agentComptableAnalyse` a déjà
@@ -29,9 +30,11 @@ function sourceDeployee(): string {
 
 interface Copie {
   natureDuCompte: typeof natureDuCompte
-  mouvementsAffectes: (l: LigneBancaire[], c: Categorie[]) => { ligne: { id: string }; categorie: { id: string }; nature: string | null; montantPoste: number }[]
+  mouvementsAffectes: (l: LigneBancaire[], c: Categorie[], assujetti: boolean) => {
+    ligne: { id: string }; categorie: { id: string }; nature: string | null; taux: number | null; montantPoste: number
+  }[]
   mouvementsAffectesDesynchronises: (e: EcritureBrouillon[], a: ReturnType<Copie['mouvementsAffectes']>) => { ligne: { id: string } }[]
-  recettesAffecteesSurDossierAssujetti: (a: ReturnType<Copie['mouvementsAffectes']>, assujetti: boolean) => { ligne: { id: string } }[]
+  recettesAffecteesSansTaux: (a: ReturnType<Copie['mouvementsAffectes']>, assujetti: boolean) => { ligne: { id: string } }[]
   categoriesSansCompte: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[]) => Categorie[]
   categoriesSansPoste: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[]) => Categorie[]
   compteDuDirigeant: typeof compteDuDirigeant
@@ -39,8 +42,8 @@ interface Copie {
 }
 
 // Prend la SOURCE en paramètre : c'est ce qui permet de lui donner une source où une dérive a été
-// plantée. Le bloc lit `COMPTE_BANQUE`, déclaré plus haut dans la fonction : sa valeur est reprise de
-// la MÊME source, pour qu'une dérive du numéro de compte morde ici aussi.
+// plantée. Le bloc lit `COMPTE_BANQUE` et `COMPTE_TVA_COLLECTEE`, déclarés plus haut dans la fonction :
+// leur valeur est reprise de la MÊME source, pour qu'une dérive d'un numéro de compte morde ici aussi.
 function extraire(source: string): Copie {
   const debut = source.indexOf('// ── DÉBUT AFFECTATION')
   const fin = source.indexOf('// ── FIN AFFECTATION')
@@ -48,9 +51,11 @@ function extraire(source: string): Copie {
   expect(fin).toBeGreaterThan(debut)
   const banque = /const COMPTE_BANQUE = "(\d+)"/.exec(source)
   expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\n${source.slice(debut, fin)}`
+  const tva = /const COMPTE_TVA_COLLECTEE = "(\d+)"/.exec(source)
+  expect(tva, '`COMPTE_TVA_COLLECTEE` introuvable dans la source').not.toBeNull()
+  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_TVA_COLLECTEE = "${tva![1]}"\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSurDossierAssujetti, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)() as Copie
+  return new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)() as Copie
 }
 
 const deployee = extraire(sourceDeployee())
@@ -99,22 +104,30 @@ const conforme = (id: string, compte: string, montant: number, date = '2025-03-1
 
 const piece = (o: Partial<Piece>): Piece => ({ id: 'p1', categorie_id: 'recettes', ...o }) as Piece
 
-const resumeAffectes = (a: { ligne: { id: string }; categorie: { id: string }; nature: string | null; montantPoste: number }[]) =>
-  a.map((m) => `${m.ligne.id}:${m.categorie.id}:${m.nature}:${m.montantPoste}`)
+const resumeAffectes = (a: { ligne: { id: string }; categorie: { id: string }; nature: string | null; taux: number | null; montantPoste: number }[]) =>
+  a.map((m) => `${m.ligne.id}:${m.categorie.id}:${m.nature}:${m.taux}:${m.montantPoste}`)
 const ids = (a: { ligne: { id: string } }[]) => a.map((m) => m.ligne.id)
 const libelles = (c: Categorie[]) => c.map((x) => x.libelle)
 
 /** Les deux copies doivent rendre EXACTEMENT la même chose sur les mêmes entrées. */
 function memeResultat(ecritures: EcritureBrouillon[], lignes: LigneBancaire[], assujetti: boolean, copie: Copie = deployee) {
-  const ici = mouvementsAffectes(lignes, CATEGORIES)
-  const la = copie.mouvementsAffectes(lignes, CATEGORIES)
+  const ici = mouvementsAffectes(lignes, CATEGORIES, assujetti)
+  const la = copie.mouvementsAffectes(lignes, CATEGORIES, assujetti)
   expect(resumeAffectes(la), 'mouvementsAffectes a dérivé').toEqual(resumeAffectes(ici))
   expect(ids(copie.mouvementsAffectesDesynchronises(ecritures, la)), 'mouvementsAffectesDesynchronises a dérivé')
     .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici)))
-  expect(ids(copie.recettesAffecteesSurDossierAssujetti(la, assujetti)), 'recettesAffecteesSurDossierAssujetti a dérivé')
-    .toEqual(ids(recettesAffecteesSurDossierAssujetti(ici, assujetti)))
+  expect(ids(copie.recettesAffecteesSansTaux(la, assujetti)), 'recettesAffecteesSansTaux a dérivé')
+    .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti)))
   return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici)) }
 }
+
+// Une recette taxée, écrite comme l'affectation l'écrit : le hors taxe au 706, la TVA au 445710, le
+// mouvement entier à la banque.
+const taxee = (id: string, ht: number, tva: number): EcritureBrouillon[] => [
+  ecriture({ id: `${id}-c`, ligne_bancaire_id: id, compte: '706000', sens: 'credit', montant: ht }),
+  ecriture({ id: `${id}-t`, ligne_bancaire_id: id, compte: '445710', sens: 'credit', montant: tva }),
+  ecriture({ id: `${id}-b`, ligne_bancaire_id: id, compte: '512000', sens: 'debit', montant: Math.round((ht + tva) * 100) / 100 }),
+]
 
 describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
   it('n’est pas la fonction de src/lib elle-même', () => {
@@ -136,13 +149,53 @@ describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
     // frais (négatif pour son poste), une reprise de recette, un compte de bilan (sans nature) — et
     // écarte le mouvement non rapproché, celui sans catégorie et celui dont la catégorie n'est pas lue.
     expect(r.affectes).toEqual([
-      'encaissement:recettes:recette:100',
-      'frais:frais:depense:12.5',
-      'remboursement:frais:depense:-30',
-      'reprise:recettes:recette:-40',
-      'bilan:bilan:null:-500',
-      'sans-compte:sans-compte:null:-8',
+      'encaissement:recettes:recette:null:100',
+      'frais:frais:depense:null:12.5',
+      'remboursement:frais:depense:null:-30',
+      'reprise:recettes:recette:null:-40',
+      'bilan:bilan:null:null:-500',
+      'sans-compte:sans-compte:null:null:-8',
     ])
+  })
+
+  it('compte une recette taxée au hors taxe sur un dossier assujetti — entière ailleurs, son taux gardé ne s’appliquant plus', () => {
+    const lignes = [
+      ligne({ id: 'taxee', montant: 120, taux_tva: 20 }),
+      ligne({ id: 'exoneree', montant: 50, taux_tva: 0 }),
+      ligne({ id: 'sans-taux', montant: 80 }),
+      ligne({ id: 'reprise-taxee', montant: -60, taux_tva: 20 }),
+      ligne({ id: 'grosse', montant: 98765.43, taux_tva: 5.5 }),
+      // Un demi-centime de TVA monte : 0,03 € à 20 % en porte 0,005 €, rendu 0,01 €.
+      ligne({ id: 'demi', montant: 0.03, taux_tva: 20 }),
+      // Une dépense ne porte pas de taux en base ; si elle en portait un, il ne s'appliquerait pas.
+      ligne({ id: 'frais-taux', montant: -12, categorie_id: 'frais', taux_tva: 20 }),
+    ]
+    expect(memeResultat([], lignes, true).affectes).toEqual([
+      'taxee:recettes:recette:20:100',
+      'exoneree:recettes:recette:0:50',
+      'sans-taux:recettes:recette:null:80',
+      'reprise-taxee:recettes:recette:20:-50',
+      'grosse:recettes:recette:5.5:93616.52',
+      'demi:recettes:recette:20:0.02',
+      'frais-taux:frais:depense:null:12',
+    ])
+    expect(memeResultat([], lignes, false).affectes).toEqual([
+      'taxee:recettes:recette:null:120',
+      'exoneree:recettes:recette:null:50',
+      'sans-taux:recettes:recette:null:80',
+      'reprise-taxee:recettes:recette:null:-60',
+      'grosse:recettes:recette:null:98765.43',
+      'demi:recettes:recette:null:0.03',
+      'frais-taux:frais:depense:null:12',
+    ])
+  })
+
+  it('attend l’écriture au hors taxe avec sa TVA, et la voit périmée quand le statut du dossier change', () => {
+    const lignes = [ligne({ id: 'avec-tva', montant: 120, taux_tva: 20 }), ligne({ id: 'au-ttc', montant: 120, taux_tva: 20 })]
+    const ecritures = [...taxee('avec-tva', 100, 20), ...conforme('au-ttc', '706000', 120)]
+    // Assujetti, l'écriture au TTC est périmée ; qui ne l'est plus, celle qui porte encore la TVA.
+    expect(memeResultat(ecritures, lignes, true).aReaffecter).toEqual(['au-ttc'])
+    expect(memeResultat(ecritures, lignes, false).aReaffecter).toEqual(['avec-tva'])
   })
 
   it('se tait sur des écritures conformes', () => {
@@ -177,10 +230,13 @@ describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
     expect(memeResultat(ecritures, lignes, false).aReaffecter).toEqual(['encaissement', 'frais', 'bilan'])
   })
 
-  it('rend les recettes affectées d’un dossier assujetti, et rien sinon', () => {
-    memeResultat([], LIGNES, true)
-    memeResultat([], LIGNES, false)
-    expect(ids(recettesAffecteesSurDossierAssujetti(mouvementsAffectes(LIGNES, CATEGORIES), true))).toEqual(['encaissement', 'reprise'])
+  it('rend les recettes affectées SANS TAUX d’un dossier assujetti, et rien sinon', () => {
+    const lignes = [...LIGNES, ligne({ id: 'taxee', montant: 120, taux_tva: 20 }), ligne({ id: 'exoneree', montant: 50, taux_tva: 0 })]
+    memeResultat([], lignes, true)
+    memeResultat([], lignes, false)
+    // Celle qui porte un taux — exonération comprise — n'en est pas.
+    expect(ids(recettesAffecteesSansTaux(mouvementsAffectes(lignes, CATEGORIES, true), true))).toEqual(['encaissement', 'reprise'])
+    expect(ids(recettesAffecteesSansTaux(mouvementsAffectes(lignes, CATEGORIES, false), false))).toEqual([])
   })
 
   it('compte une catégorie utilisée par une pièce OU par un mouvement affecté', () => {
@@ -245,8 +301,8 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
   const source = sourceDeployee()
   const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
 
-  it('lit les mouvements rapprochés portant une catégorie, sous le même refus de lecture partielle', () => {
-    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, categorie_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)\.not\("categorie_id", "is", null\)/)
+  it('lit les mouvements rapprochés portant une catégorie, avec leur taux, sous le même refus de lecture partielle', () => {
+    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, categorie_id, taux_tva"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)\.not\("categorie_id", "is", null\)/)
     expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
@@ -255,10 +311,15 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
     // VENTILATION, gardé par agentComptableVentilation.test.ts).
     expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])')
     expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])')
+    expect(corps).toContain('mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)')
     expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes)')
-    expect(corps).toContain('recettesAffecteesSurDossierAssujetti(affectes, dossier.assujetti_tva)')
+    expect(corps).toContain('recettesAffecteesSansTaux(affectes, dossier.assujetti_tva)')
     expect(corps).toMatch(/mouvements_affectes_a_reaffecter: affectesAReaffecter\.length/)
-    expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sur_dossier_assujetti: recettesAffecteesAssujetti\.length \+ recettesVentileesAssujetti\.length/)
+    expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sans_taux_de_tva_sur_dossier_assujetti: recettesAffecteesSansTva\.length \+ recettesVentileesSansTva\.length/)
+  })
+
+  it('dit au modèle qu’une recette d’un dossier assujetti porte son taux, et qu’elle compte au hors taxe', () => {
+    expect(source).toMatch(/Sur un dossier assujetti à la TVA, une recette du relevé[^\n]*porte le taux de TVA[^\n]*la 2035 ne compte que le hors taxe[^\n]*Une recette sans taux sur un dossier assujetti est un point à traiter/)
   })
 
   it('dit au modèle qu’une écriture de mouvement affecté sans pièce n’est pas une anomalie', () => {
@@ -282,7 +343,15 @@ describe('le garde-fou sait encore échouer', () => {
     expect(source.split(avant).length - 1, `motif à planter introuvable ou ambigu : ${avant}`).toBe(1)
     return extraire(source.replace(avant, apres))
   }
-  const echoue = (f: () => void) => expect(f).toThrow()
+  // Une dérive doit faire échouer une ASSERTION. Une `ReferenceError` ou un `TypeError` levés par le test
+  // lui-même — un helper hors de portée, une copie qui plante — passeraient sinon pour une dérive attrapée :
+  // c'est ainsi qu'une de ces dérives est d'abord passée, le 01/10/2026, pour une raison qui n'était pas la
+  // sienne.
+  const echoue = (f: () => void) => {
+    let erreur: unknown = null
+    try { f() } catch (e) { erreur = e }
+    expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+  }
 
   it('attrape une copie qui ne compte plus les mouvements dans les catégories', () => {
     const derivee = planter(
@@ -309,8 +378,42 @@ describe('le garde-fou sait encore échouer', () => {
   })
 
   it('attrape une copie qui signe le poste d’un remboursement à l’envers', () => {
-    const derivee = planter('montantPoste: nature === "depense" ? -ligne.montant : ligne.montant', 'montantPoste: Math.abs(ligne.montant)')
+    const derivee = planter('montantPoste: nature === "depense" ? -horsTaxe : horsTaxe', 'montantPoste: Math.abs(horsTaxe)')
     echoue(() => memeResultat([], LIGNES, false, derivee))
+  })
+
+  // LE TAUX DE TVA D'UNE RECETTE (01/10/2026) : chaque morceau de la copie qui le porte.
+  const TAXEE = [ligne({ id: 'taxee', montant: 120, taux_tva: 20 })]
+
+  it('attrape une copie qui n’écrit plus la ligne de TVA collectée', () => {
+    const derivee = planter('    ...(tva > 0 ? [{ compte: COMPTE_TVA_COLLECTEE, sens: sensCompte, montant: tva }] : []),\n', '')
+    echoue(() => memeResultat(taxee('taxee', 100, 20), TAXEE, true, derivee))
+  })
+
+  it('attrape une copie qui écrit la banque au hors taxe', () => {
+    const derivee = planter('{ compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant: Math.abs(ligne.montant) }', '{ compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant: ht }')
+    echoue(() => memeResultat(taxee('taxee', 100, 20), TAXEE, true, derivee))
+  })
+
+  it('attrape une copie qui applique le taux gardé sans regarder le statut du dossier', () => {
+    const derivee = planter('return assujettiTva && nature === "recette" ? taux : null', 'return nature === "recette" ? taux : null')
+    echoue(() => memeResultat([], TAXEE, false, derivee))
+  })
+
+  it('attrape une copie qui arrondit le demi-centime vers le bas', () => {
+    const derivee = planter('const numerateur = 2 * centimes * t + 1000 + t', 'const numerateur = 2 * centimes * t + t')
+    echoue(() => memeResultat([], [ligne({ id: 'demi', montant: 0.03, taux_tva: 20 })], true, derivee))
+  })
+
+  it('attrape une copie qui compte toute recette d’un dossier assujetti, même avec son taux', () => {
+    const derivee = planter('affectes.filter((m) => m.nature === "recette" && m.taux === null)', 'affectes.filter((m) => m.nature === "recette")')
+    echoue(() => memeResultat([], TAXEE, true, derivee))
+  })
+
+  it('attrape une copie dont la TVA ne va plus au 445710', () => {
+    const source = sourceDeployee()
+    const derivee = extraire(source.replace('const COMPTE_TVA_COLLECTEE = "445710"', 'const COMPTE_TVA_COLLECTEE = "445660"'))
+    echoue(() => memeResultat(taxee('taxee', 100, 20), TAXEE, true, derivee))
   })
 
   it('attrape une copie qui écrit toujours sur le compte de l’exploitant', () => {

@@ -211,7 +211,15 @@ describe('le garde-fou du bloc EMPRUNT sait encore échouer', () => {
     }
     return extraire(source)
   }
-  const echoue = (f: () => void) => expect(f).toThrow()
+  // Une dérive doit faire échouer une ASSERTION. Une `ReferenceError` ou un `TypeError` levés par le test
+  // lui-même — un helper hors de portée, une copie qui plante — passeraient sinon pour une dérive attrapée :
+  // c'est ainsi qu'une de ces dérives est d'abord passée, le 01/10/2026, pour une raison qui n'était pas la
+  // sienne.
+  const echoue = (f: () => void) => {
+    let erreur: unknown = null
+    try { f() } catch (e) { erreur = e }
+    expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+  }
 
   it('attrape un mois qui ne se ramène plus au dernier jour', () => {
     const derivee = planter(['  const jourCible = Math.min(jour, dernierJour)\n  return `${anneeCible}-${String(moisCible + 1).padStart(2, "0")}', '  const jourCible = jour\n  return `${anneeCible}-${String(moisCible + 1).padStart(2, "0")}'])

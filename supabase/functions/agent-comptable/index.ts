@@ -501,8 +501,11 @@ function piecesPayeesEnTrop<P extends Pick<PieceRow, "id" | "montant_ttc">>(
 // ET LES VIREMENTS PERSONNELS (src/lib/virementPersonnel.ts) : un virement entre le compte pro et le
 // compte personnel s'écrit sur le compte du dirigeant face à la banque, et ceux classés avant qu'il
 // s'écrive n'ont pas d'écriture — la Checklist les compte, l'assistant aussi.
+// ET LE TAUX DE TVA D'UNE RECETTE (src/lib/tvaDuReleve.ts, 01/10/2026) : sur un dossier assujetti, une
+// recette affectée porte son taux — sa catégorie prend le hors taxe, le 445710 la TVA collectée, et la 2035
+// ne compte que le hors taxe. Le taux qui s'applique est celui du statut ACTUEL du dossier.
 // Gardé par `agentComptableAffectation.test.ts`, qui extrait ce bloc et le compare à src/lib.
-interface MouvementAffecteRow { id: string; date: string; montant: number; statut: string; categorie_id: string | null }
+interface MouvementAffecteRow { id: string; date: string; montant: number; statut: string; categorie_id: string | null; taux_tva: number | null }
 
 // La nature se lit au COMPTE, un invariant du plan comptable : classe 7 un produit, classe 6 une charge.
 function natureDuCompte(compte: string | null | undefined): "recette" | "depense" | null {
@@ -512,14 +515,43 @@ function natureDuCompte(compte: string | null | undefined): "recette" | "depense
   return null
 }
 
+// Le taux qui s'applique AUJOURD'HUI : celui gardé, pour une recette d'un dossier assujetti ; rien ailleurs.
+function tauxApplicable(assujettiTva: boolean, nature: "recette" | "depense" | null, taux: number | null): number | null {
+  return assujettiTva && nature === "recette" ? taux : null
+}
+
+// Le hors taxe et la TVA d'un montant TTC, positifs, au centime — en centimes et en dixièmes de point,
+// comme `tva_incluse` en base : ⌊(2·c·t + 1000 + t) / (2·(1000 + t))⌋, le demi-centime vers le haut. Sans
+// taux, tout est hors taxe.
+function horsTaxeEtTva(montant: number, taux: number | null): { ht: number; tva: number } {
+  const centimes = Math.round(Math.abs(montant) * 100)
+  let tva = 0
+  if (taux != null) {
+    const t = Math.round(taux * 10)
+    const numerateur = 2 * centimes * t + 1000 + t
+    const denominateur = 2 * (1000 + t)
+    tva = (numerateur - (numerateur % denominateur)) / denominateur
+  }
+  return { ht: (centimes - tva) / 100, tva: tva / 100 }
+}
+
+// Le hors taxe d'un montant, SIGNÉ comme lui.
+function horsTaxeSigne(montant: number, taux: number | null): number {
+  const { ht } = horsTaxeEtTva(montant, taux)
+  return montant < 0 ? -ht : ht
+}
+
 interface MouvementAffecte {
   ligne: MouvementAffecteRow
   categorie: CategorieRow
   nature: "recette" | "depense" | null
+  taux: number | null
   montantPoste: number
 }
 
-function mouvementsAffectes(lignes: readonly MouvementAffecteRow[], categories: readonly CategorieRow[]): MouvementAffecte[] {
+function mouvementsAffectes(
+  lignes: readonly MouvementAffecteRow[], categories: readonly CategorieRow[], assujettiTva: boolean,
+): MouvementAffecte[] {
   const parId = new Map(categories.map((c) => [c.id, c]))
   const affectes: MouvementAffecte[] = []
   for (const ligne of lignes) {
@@ -527,19 +559,24 @@ function mouvementsAffectes(lignes: readonly MouvementAffecteRow[], categories: 
     const categorie = parId.get(ligne.categorie_id)
     if (!categorie) continue
     const nature = natureDuCompte(categorie.compte_comptable)
-    affectes.push({ ligne, categorie, nature, montantPoste: nature === "depense" ? -ligne.montant : ligne.montant })
+    const taux = tauxApplicable(assujettiTva, nature, ligne.taux_tva)
+    const horsTaxe = horsTaxeSigne(ligne.montant, taux)
+    affectes.push({ ligne, categorie, nature, taux, montantPoste: nature === "depense" ? -horsTaxe : horsTaxe })
   }
   return affectes
 }
 
 // L'écriture qu'une affectation produit, sans son libellé : le contrôle ne le compare pas. Le sens
-// vient du signe du mouvement, jamais de la nature de la catégorie.
-function ecritureDuMouvement(ligne: Pick<MouvementAffecteRow, "montant">, compteCategorie: string) {
-  const montant = Math.abs(ligne.montant)
+// vient du signe du mouvement, jamais de la nature de la catégorie. Avec un taux, la catégorie prend le
+// hors taxe et le 445710 la TVA, du même côté qu'elle ; la banque garde le montant du mouvement.
+function ecritureDuMouvement(ligne: Pick<MouvementAffecteRow, "montant">, compteCategorie: string, taux: number | null) {
+  const { ht, tva } = horsTaxeEtTva(ligne.montant, taux)
   const entree = ligne.montant >= 0
+  const sensCompte = entree ? "credit" : "debit"
   return [
-    { compte: compteCategorie, sens: entree ? "credit" : "debit", montant },
-    { compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant },
+    { compte: compteCategorie, sens: sensCompte, montant: ht },
+    ...(tva > 0 ? [{ compte: COMPTE_TVA_COLLECTEE, sens: sensCompte, montant: tva }] : []),
+    { compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant: Math.abs(ligne.montant) },
   ]
 }
 
@@ -574,12 +611,13 @@ function ecritureConforme(
 
 // Un mouvement affecté dont l'écriture n'est plus celle que son affectation produirait : absente, sur
 // un autre compte, d'un autre montant, dans un autre sens ou à une autre date — le cas d'une catégorie
-// dont le compte a changé depuis. « Réaffecter » (onglet Écritures) la réécrit.
+// dont le compte a changé depuis, ou d'une recette taxée d'un dossier qui a cessé d'être assujetti.
+// « Réaffecter » (onglet Écritures) la réécrit.
 function mouvementsAffectesDesynchronises(ecritures: readonly EcritureRow[], affectes: readonly MouvementAffecte[]): MouvementAffecte[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
     if (!m.nature || !m.categorie.compte_comptable) return true
-    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable), m.ligne.date)
+    return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux), m.ligne.date)
   })
 }
 
@@ -605,13 +643,13 @@ function virementsPersonnelsAEcrire(
   return lignes.filter((l) =>
     l.prelevement_personnel
     && !l.piece_id && !l.cotisation_id && !l.categorie_id && l.montant !== 0
-    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(modele)), l.date))
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(modele), null), l.date))
 }
 
-// Les recettes affectées d'un dossier DEVENU assujetti : écrites au TTC en 706, leur TVA collectée
-// n'est dans aucune CA3.
-function recettesAffecteesSurDossierAssujetti(affectes: readonly MouvementAffecte[], assujettiTva: boolean): MouvementAffecte[] {
-  return assujettiTva ? affectes.filter((m) => m.nature === "recette") : []
+// Les recettes affectées SANS TAUX d'un dossier assujetti — affectées avant qu'il le devienne : écrites au
+// TTC en 706, leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe en recette.
+function recettesAffecteesSansTaux(affectes: readonly MouvementAffecte[], assujettiTva: boolean): MouvementAffecte[] {
+  return assujettiTva ? affectes.filter((m) => m.nature === "recette" && m.taux === null) : []
 }
 
 // Une catégorie compte dès qu'une pièce validée OU un mouvement affecté l'utilise.
@@ -761,38 +799,50 @@ function echeancesDesynchronisees(ecritures: readonly EcritureRow[], lignes: rea
 // de carte et la commission que la banque en retient, un paiement en partie personnel — et s'écrit face à
 // la banque, une ligne par part. La Checklist en tire trois points que l'assistant doit dire comme elle :
 // le mouvement dont l'écriture ne suit plus ses parts (le compte d'une catégorie a changé depuis), celui
-// dont les parts ne font plus le mouvement, et la part de recettes d'un dossier devenu assujetti. Et les
+// dont les parts ne font plus le mouvement, et la part de recettes SANS TAUX d'un dossier assujetti. Et les
 // catégories que les parts désignent comptent parmi les catégories utilisées, sans compte ou sans poste.
-// Lit `natureDuCompte`, `compteDuDirigeant`, `ecrituresSansPieceParMouvement` et `ecritureConforme` du
-// bloc AFFECTATION, plus haut.
+// Sur un dossier assujetti, une part de recette porte son taux : sa catégorie prend le hors taxe, le 445710
+// la TVA collectée, du même côté.
+// Lit `natureDuCompte`, `compteDuDirigeant`, `ecrituresSansPieceParMouvement`, `ecritureConforme`,
+// `tauxApplicable` et `horsTaxeEtTva` du bloc AFFECTATION, plus haut.
 // Gardé par `agentComptableVentilation.test.ts`, qui extrait ce bloc et le compare à src/lib.
 interface MouvementVentileRow { id: string; date: string; montant: number; statut: string; ventilee: boolean }
-interface PartVentilationRow { ligne_bancaire_id: string; categorie_id: string | null; part_personnelle: boolean; montant: number }
+interface PartVentilationRow {
+  ligne_bancaire_id: string; categorie_id: string | null; part_personnelle: boolean; montant: number; taux_tva: number | null
+}
 
 const centimesVentilation = (n: number) => Math.round(n * 100)
 
 // L'écriture d'un mouvement ventilé, sans son libellé : le contrôle ne le compare pas. Une ligne par part
 // — le compte de sa catégorie, ou celui du dirigeant —, puis la banque. Le sens vient du SIGNE : une part
-// positive crédite son compte, une négative le débite, et la banque prend le sens du mouvement. Nulle
+// positive crédite son compte, une négative le débite, et la banque prend le sens du mouvement. Une part de
+// recette taxée prend deux lignes, du même côté : sa catégorie au hors taxe, le 445710 à côté. Nulle
 // quand une part ne peut pas s'écrire : sa catégorie manque, ou n'a plus de compte de résultat.
 function ecritureDeLaVentilation(
   ligne: Pick<MouvementVentileRow, "montant">,
   parts: readonly PartVentilationRow[],
   categories: readonly CategorieRow[],
   modele: ModeleComptable,
+  assujettiTva: boolean,
 ): { compte: string; sens: string; montant: number }[] | null {
   const parId = new Map(categories.map((c) => [c.id, c]))
   const lignes: { compte: string; sens: string; montant: number }[] = []
   for (const p of parts) {
     let compte: string | null = null
+    let taux: number | null = null
     if (p.part_personnelle) {
       compte = compteDuDirigeant(modele)
     } else if (p.categorie_id) {
       const c = parId.get(p.categorie_id)
-      compte = c && natureDuCompte(c.compte_comptable) ? c.compte_comptable : null
+      const nature = natureDuCompte(c?.compte_comptable)
+      compte = c && nature ? c.compte_comptable : null
+      taux = tauxApplicable(assujettiTva, nature, p.taux_tva)
     }
     if (!compte) return null
-    lignes.push({ compte, sens: p.montant > 0 ? "credit" : "debit", montant: Math.abs(centimesVentilation(p.montant)) / 100 })
+    const sens = p.montant > 0 ? "credit" : "debit"
+    const { ht, tva } = horsTaxeEtTva(p.montant, taux)
+    lignes.push({ compte, sens, montant: ht })
+    if (tva > 0) lignes.push({ compte: COMPTE_TVA_COLLECTEE, sens, montant: tva })
   }
   lignes.push({ compte: COMPTE_BANQUE, sens: ligne.montant > 0 ? "debit" : "credit", montant: Math.abs(centimesVentilation(ligne.montant)) / 100 })
   return lignes
@@ -804,34 +854,37 @@ function partsParMouvement(parts: readonly PartVentilationRow[]): Map<string, Pa
   return parLigne
 }
 
-// Les parts des mouvements rapprochés ET ventilés, avec la nature de leur catégorie. La part personnelle
-// n'en est pas — ni charge ni recette —, et une catégorie absente de la liste écarte sa part.
+// Les parts des mouvements rapprochés ET ventilés, avec la nature de leur catégorie et le taux qui s'y
+// applique aujourd'hui. La part personnelle n'en est pas — ni charge ni recette —, et une catégorie absente
+// de la liste écarte sa part.
+interface PartVentilee { ligne: MouvementVentileRow; nature: "recette" | "depense" | null; taux: number | null }
 function partsDesVentilations(
   lignes: readonly MouvementVentileRow[], ventilations: readonly PartVentilationRow[], categories: readonly CategorieRow[],
-): { ligne: MouvementVentileRow; nature: "recette" | "depense" | null }[] {
+  assujettiTva: boolean,
+): PartVentilee[] {
   const parLigne = partsParMouvement(ventilations)
   const parId = new Map(categories.map((c) => [c.id, c]))
-  const resultat: { ligne: MouvementVentileRow; nature: "recette" | "depense" | null }[] = []
+  const resultat: PartVentilee[] = []
   for (const ligne of lignes) {
     if (ligne.statut !== "rapprochee" || !ligne.ventilee) continue
     for (const part of parLigne.get(ligne.id) ?? []) {
       if (!part.categorie_id) continue
       const categorie = parId.get(part.categorie_id)
       if (!categorie) continue
-      resultat.push({ ligne, nature: natureDuCompte(categorie.compte_comptable) })
+      const nature = natureDuCompte(categorie.compte_comptable)
+      resultat.push({ ligne, nature, taux: tauxApplicable(assujettiTva, nature, part.taux_tva) })
     }
   }
   return resultat
 }
 
-// Les mouvements ventilés en partie en recette sur un dossier DEVENU assujetti : leur TVA collectée n'est
-// dans aucune CA3. Un mouvement par entrée, même s'il porte deux parts de recette.
-function recettesVentileesSurDossierAssujetti(
-  parts: readonly { ligne: MouvementVentileRow; nature: "recette" | "depense" | null }[], assujettiTva: boolean,
-): MouvementVentileRow[] {
+// Les mouvements ventilés avec une part de recette SANS TAUX sur un dossier assujetti — ventilés avant qu'il
+// le devienne : leur TVA collectée n'est dans aucune CA3. Un mouvement par entrée, même s'il porte deux
+// parts de recette sans taux.
+function recettesVentileesSansTaux(parts: readonly PartVentilee[], assujettiTva: boolean): MouvementVentileRow[] {
   if (!assujettiTva) return []
   const parLigne = new Map<string, MouvementVentileRow>()
-  for (const p of parts) if (p.nature === "recette") parLigne.set(p.ligne.id, p.ligne)
+  for (const p of parts) if (p.nature === "recette" && p.taux === null) parLigne.set(p.ligne.id, p.ligne)
   return [...parLigne.values()]
 }
 
@@ -858,13 +911,15 @@ function ventilationsIncoherentes(
 
 // Un mouvement ventilé dont l'écriture n'est plus celle que ses parts produiraient. Seules les ventilations
 // COHÉRENTES sont jugées (les autres sont dites par `ventilationsIncoherentes`), et une catégorie absente de
-// la liste écarte le mouvement ; une catégorie sortie des comptes de résultat le rend périmé.
+// la liste écarte le mouvement ; une catégorie sortie des comptes de résultat le rend périmé, comme une part
+// taxée d'un dossier qui a cessé d'être assujetti.
 function mouvementsVentilesDesynchronises(
   ecritures: readonly EcritureRow[],
   lignes: readonly MouvementVentileRow[],
   ventilations: readonly PartVentilationRow[],
   categories: readonly CategorieRow[],
   modele: ModeleComptable,
+  assujettiTva: boolean,
 ): MouvementVentileRow[] {
   const ecrituresParLigne = ecrituresSansPieceParMouvement(ecritures)
   const parLigne = partsParMouvement(ventilations)
@@ -874,7 +929,7 @@ function mouvementsVentilesDesynchronises(
     if (!ligne.ventilee || ligne.statut !== "rapprochee" || incoherentes.has(ligne.id)) return false
     const parts = parLigne.get(ligne.id) ?? []
     if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false
-    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele)
+    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
     if (!attendue) return true
     return !ecritureConforme(ecrituresParLigne.get(ligne.id) ?? [], attendue, ligne.date)
   })
@@ -1172,7 +1227,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -1345,7 +1400,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les mouvements AFFECTÉS à une catégorie sans justificatif (bloc AFFECTATION) : leurs catégories
       // comptent comme celles des pièces, et leur écriture doit suivre la catégorie.
       lireTout<MouvementAffecteRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, categorie_id", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("categorie_id", "is", null).order("id").range(d, f)),
+        admin.from("lignes_bancaires").select("id, date, montant, statut, categorie_id, taux_tva", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "rapprochee").not("categorie_id", "is", null).order("id").range(d, f)),
       // Les VIREMENTS PERSONNELS (bloc AFFECTATION) : ceux classés sans leur écriture manquent au FEC.
       lireTout<VirementPersonnelRow>((d, f) =>
         admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
@@ -1363,7 +1418,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les PARTS des mouvements ventilés (bloc VENTILATION) : leurs catégories comptent comme celles des
       // pièces, et l'écriture du mouvement doit les suivre.
       lireTout<PartVentilationRow>((d, f) =>
-        admin.from("ventilations_bancaires").select("ligne_bancaire_id, categorie_id, part_personnelle, montant", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+        admin.from("ventilations_bancaires").select("ligne_bancaire_id, categorie_id, part_personnelle, montant, taux_tva", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les PARTS des virements qui règlent plusieurs pièces : chacune est un paiement de sa pièce.
       lireTout<PartRegleeRow>((d, f) =>
         admin.from("reglements_groupes").select("ligne_bancaire_id, piece_id, montant", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
@@ -1396,17 +1451,17 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])
     const sansTva = piecesSansTva(piecesTyped, dossier.assujetti_tva)
-    const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped)
+    const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)
     const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes)
-    const recettesAffecteesAssujetti = recettesAffecteesSurDossierAssujetti(affectes, dossier.assujetti_tva)
+    const recettesAffecteesSansTva = recettesAffecteesSansTaux(affectes, dossier.assujetti_tva)
     const virementsAEcrire = virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele)
     const couverture = couvertureDuReleve(rReleve.lignes)
     const echeancesManquantes = couverture ? echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin) : []
     const echeancesPerimees = echeancesDesynchronisees(ecrituresTyped, rReleve.lignes)
-    const recettesVentileesAssujetti = recettesVentileesSurDossierAssujetti(
-      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped), dossier.assujetti_tva)
+    const recettesVentileesSansTva = recettesVentileesSansTaux(
+      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva)
     const ventilationsFausses = ventilationsIncoherentes(rReleve.lignes, rParts.lignes)
-    const ventilesPerimes = mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele)
+    const ventilesPerimes = mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva)
     // Comptés par MOUVEMENT, comme la Checklist : une part sans pièce et une somme qui ne tombe plus juste
     // sont deux raisons pour un seul virement à reprendre.
     const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))
@@ -1433,8 +1488,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       categories_sans_poste_2035: catSansPoste.map((c) => c.libelle),
       pieces_validees_sans_tva_renseignee: sansTva.length,
       // Le libellé de la Checklist, qui compte ensemble les encaissements affectés et les mouvements ventilés
-      // en partie en recette : les deux se réparent pareil, en rapprochant leur facture à la place.
-      encaissements_affectes_ou_ventiles_en_recette_sur_dossier_assujetti: recettesAffecteesAssujetti.length + recettesVentileesAssujetti.length,
+      // en partie en recette SANS TAUX sur un dossier assujetti : les deux se réparent pareil, en choisissant
+      // leur taux depuis la fiche du mouvement, dans Banque — ou en rapprochant leur facture à la place.
+      encaissements_affectes_ou_ventiles_en_recette_sans_taux_de_tva_sur_dossier_assujetti: recettesAffecteesSansTva.length + recettesVentileesSansTva.length,
       // Le libellé de la Checklist : classés sans leur écriture, ils manquent au FEC et à la trésorerie.
       virements_personnels_sans_ecriture: virementsAEcrire.length,
       // Les libellés de la Checklist : le relevé couvre ces échéances et aucun mouvement ne les paie — leurs
@@ -1618,6 +1674,7 @@ Règles impératives :
 - Si les données sont insuffisantes pour répondre avec certitude, dis-le plutôt que de deviner.
 - Repères PCG utiles : comptes 6xxx = charges (sens normal débit), 7xxx = produits (sens normal crédit), 445660 = TVA déductible, 445710 = TVA collectée, 512000 = banque.
 - Un mouvement du relevé peut être AFFECTÉ à une catégorie sans justificatif (frais bancaires, virements de l'Assurance maladie) : son écriture, face au 512000, n'a pas de pièce, ce n'est pas une anomalie, et il compte dans la 2035 à la date du mouvement.
+- Sur un dossier assujetti à la TVA, une recette du relevé — affectée, ou part d'un mouvement ventilé — porte le taux de TVA que le cabinet a choisi : sa catégorie reçoit le hors taxe, le 445710 la TVA collectée, et la 2035 ne compte que le hors taxe. Une recette sans taux sur un dossier assujetti est un point à traiter : sa TVA n'est dans aucune déclaration.
 - Un VIREMENT PERSONNEL (entre le compte pro et le compte personnel de l'exploitant : un prélèvement ou un apport) s'écrit sur le compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} — face au 512000, sans pièce : ce n'est pas une anomalie, et ce n'est ni une charge ni une recette.
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
