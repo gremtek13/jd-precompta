@@ -267,7 +267,7 @@ describe('agent-comptable / points_a_traiter lit les parts des mouvements ventil
   it('lit les parts — leur taux compris — et le drapeau du relevé entier, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("ventilations_bancaires"\)\.select\("ligne_bancaire_id, categorie_id, part_personnelle, montant, taux_tva", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*ventilee"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('passe les parts aux catégories sans compte ou sans poste, et rend les trois points de la Checklist', () => {

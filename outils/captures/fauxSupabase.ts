@@ -79,6 +79,11 @@ const pieces: Ligne[] = [
   piece('p9', '2026-09-03', 'Médical Équipement Pro', 264, 44, 'c2', 'validee'),
   piece('p10', '2026-09-09', 'Médical Équipement Pro', 132, 22, 'c2', 'validee'),
   piece('p11', '2026-09-12', 'Médical Équipement Pro', -24, -4, 'c2', 'validee'),
+  // Deux biens IMMOBILISÉS (voir `immobilisations`) : un fauteuil de soins acheté avant la reprise du
+  // dossier — son amortissement jusqu'à fin 2025 est dans les à-nouveaux (`an2`, `an3`) — et un ordinateur
+  // acheté en 2026. Leur facture est le justificatif de chacune de leurs dotations.
+  piece('p12', '2021-12-20', 'Fauteuils Médicaux du Sud', 3200, 0, 'c2', 'validee'),
+  piece('p13', '2026-02-15', 'Informatique Pro', 1200, 0, 'c7', 'validee'),
 ]
 
 function ligne(id: string, date: string, libelle: string, montant: number, statut: string, pieceId: string | null, categorie: string | null = null): Ligne {
@@ -213,6 +218,9 @@ const ENGAGEMENT_D8 = {
     pieceEngagement('e1', '2026-07-10', 'Maison Arlan', 3000, 600, 'vente', 'c9'),
     pieceEngagement('e2', '2026-08-05', 'Imprimerie Duval', 450, 90, 'achat', 'c7'),
     pieceEngagement('e3', '2026-09-01', 'Cloud Hébergement', 100, 20, 'achat', 'c8'),
+    // Un écran de studio acheté en septembre 2025 et immobilisé, dont la dotation 2025 n'est pas écrite : la
+    // Checklist la réclame.
+    pieceEngagement('e4', '2025-09-01', 'Studio Lumière', 2400, 480, 'achat', 'c7'),
   ],
   lignes: [
     { ...paiementTva('b1', '2026-07-25', 'VIR MAISON ARLAN', 3600, 'e1'), dossier_id: 'd8' },
@@ -307,6 +315,10 @@ const TABLES: Record<string, Ligne[]> = {
   categories,
   pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces],
   ecritures_brouillon: [
+    // La dotation 2026 de l'ordinateur du cabinet, telle que `ecrire_dotation_amortissement` l'écrit : au
+    // 31 décembre, sans pièce ni mouvement, le 681100 face au compte d'amortissement de sa nature.
+    { ...ecritureReleve('am1', '', '2026-12-31', '681100', 'Dotation 2026 — Ordinateur du cabinet', 'debit', 351.11), ligne_bancaire_id: null, immobilisation_id: 'i-d1b' },
+    { ...ecritureReleve('am2', '', '2026-12-31', '281830', 'Dotation 2026 — Ordinateur du cabinet', 'credit', 351.11), ligne_bancaire_id: null, immobilisation_id: 'i-d1b' },
     ...ENGAGEMENT_D8.ecritures,
     ...RELEVE_D7.ecritures,
     ...COTISATIONS_D1.ecritures,
@@ -361,11 +373,39 @@ const TABLES: Record<string, Ligne[]> = {
     id: 'em1', dossier_id: 'd1', nom: 'Prêt véhicule', organisme_preteur: 'Banque Régionale', capital_initial: 15000,
     taux_annuel: 3.6, date_debut: '2026-07-28', duree_mois: 48, created_at: MAINTENANT,
   }],
-  // L'ordinateur du dossier d7 est immobilisé : sa TVA va en ligne 19 de la CA3, pas en 20.
-  immobilisations: [{
-    id: 'i-d7', dossier_id: 'd7', piece_id: 'a2', nature_id: null, libelle: 'Ordinateur portable', valeur: 1500,
-    date_acquisition: '2026-06-18', duree_annees: 3, created_at: MAINTENANT,
-  }],
+  // L'ordinateur du dossier d7 est immobilisé : sa TVA va en ligne 19 de la CA3, pas en 20. Sans nature,
+  // sa dotation ne se compose pas, et le registre le dit.
+  //
+  // Les biens du cabinet infirmier (lib/amortissements.ts) : le fauteuil de soins, mis en service le 1er
+  // janvier 2022 et amorti sur dix ans — 1 280 € jusqu'à fin 2025, ceux de la balance reprise —, dont la
+  // dotation 2026 (320 €) reste à écrire ; et un ordinateur acheté le 15 février 2026, dont la dotation 2026
+  // (351,11 €, prorata temporis) est déjà écrite.
+  //
+  // L'écran de studio de la société en engagement (d8), mis en service le 1er septembre 2025 : sa dotation
+  // 2025 (266,67 €) manque, et la Checklist la réclame.
+  immobilisations: [
+    {
+      id: 'i-d7', dossier_id: 'd7', piece_id: 'a2', nature_id: null, libelle: 'Ordinateur portable', valeur: 1500,
+      date_acquisition: '2026-06-18', date_mise_en_service: null, duree_annees: 3, created_at: MAINTENANT,
+    },
+    {
+      id: 'i-d1', dossier_id: 'd1', piece_id: 'p12', nature_id: 'n2', libelle: 'Fauteuil de soins', valeur: 3200,
+      date_acquisition: '2021-12-20', date_mise_en_service: '2022-01-01', duree_annees: 10, created_at: MAINTENANT,
+    },
+    {
+      id: 'i-d1b', dossier_id: 'd1', piece_id: 'p13', nature_id: 'n1', libelle: 'Ordinateur du cabinet', valeur: 1200,
+      date_acquisition: '2026-02-15', date_mise_en_service: null, duree_annees: 3, created_at: MAINTENANT,
+    },
+    {
+      id: 'i-d8', dossier_id: 'd8', piece_id: 'e4', nature_id: 'n1', libelle: 'Écran de studio', valeur: 2400,
+      date_acquisition: '2025-09-01', date_mise_en_service: null, duree_annees: 3, created_at: MAINTENANT,
+    },
+  ],
+  // Les natures : une partagée par le cabinet, une propre au cabinet infirmier, chacune avec son compte.
+  natures_immobilisation: [
+    { id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300' },
+    { id: 'n2', dossier_id: 'd1', libelle: 'Matériel médical', duree_annees_defaut: 10, ordre: 2, compte_immobilisation: '215400' },
+  ],
   // La déclaration du premier trimestre, déposée : l'historique de l'onglet TVA la compare au calcul.
   declarations_tva: [{
     id: 'dt1', dossier_id: 'd7', periode_debut: '2026-01-01', periode_fin: '2026-03-31', tva_declaree: 0,

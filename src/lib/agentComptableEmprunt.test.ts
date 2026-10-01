@@ -186,7 +186,7 @@ describe('agent-comptable / points_a_traiter lit les emprunts et le relevé', ()
     // Le relevé ENTIER, sans filtre de statut : c'est lui qui dit ce qu'il couvre — et, avec `ventilee`, ce
     // que le bloc VENTILATION en lit.
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(corps).toMatch(/rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('borne la réclamation à la couverture du relevé, et rend les deux points de la Checklist', () => {

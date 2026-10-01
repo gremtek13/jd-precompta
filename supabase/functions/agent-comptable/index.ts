@@ -1039,6 +1039,137 @@ function rapprochementsCotisationRefuses(
 }
 // ── FIN COTISATION ───────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT AMORTISSEMENT ──────────────────────────────────────────────────────────────────────────────
+// LES DOTATIONS AUX AMORTISSEMENTS QUI MANQUENT AU BROUILLON (01/10/2026, ligne 26.6, étape b). La 2035 compte
+// la dotation d'un bien depuis le registre, le FEC ne la porte que si elle est écrite — au 31 décembre, le
+// 681100 au débit, le compte d'amortissement du bien au crédit. La Checklist réclame celle d'un exercice FINI
+// qui n'est pas écrite, et toute dotation écrite qui ne suit plus le registre. Le calcul est celui de la base
+// (`amortissement_cumule_centimes`) : linéaire, prorata temporis depuis la mise en service, en mois de trente
+// jours, le CUMUL arrondi au centime et non l'annuité, en entiers. Copié de src/lib/amortissements.ts et gardé
+// par src/lib/agentComptableAmortissement.test.ts, qui extrait ce bloc et le compare à src/lib.
+interface ImmobilisationRow {
+  id: string; nature_id: string | null; libelle: string; valeur: number
+  date_acquisition: string; date_mise_en_service: string | null; duree_annees: number
+}
+interface NatureRow { id: string; compte_immobilisation: string }
+interface EcritureDotationRow {
+  date: string; compte: string; sens: "debit" | "credit"; montant: number; statut: string; immobilisation_id: string | null
+}
+
+const COMPTE_DOTATIONS_AMORTISSEMENTS = "681100"
+
+function miseEnServiceDuBien(bien: Pick<ImmobilisationRow, "date_acquisition" | "date_mise_en_service">): string {
+  return bien.date_mise_en_service ?? bien.date_acquisition
+}
+
+// Le rang d'un jour en mois de trente jours, le 31 compté comme le 30 — `rang_360` en base.
+function rang360(date: string): number {
+  return Number(date.slice(0, 4)) * 360 + (Number(date.slice(5, 7)) - 1) * 30 + Math.min(Number(date.slice(8, 10)), 30) - 1
+}
+
+// L'amortissement cumulé au soir du jour de rang `rang`, en centimes : la valeur × les jours en service ÷
+// (360 × la durée), le demi-centime vers le haut, plafonné à la valeur.
+function amortissementCumuleCentimes(bien: Omit<ImmobilisationRow, "id" | "nature_id" | "libelle">, rang: number): bigint {
+  const duree = BigInt(bien.duree_annees)
+  const jours = BigInt(Math.min(Math.max(rang - rang360(miseEnServiceDuBien(bien)) + 1, 0), 360 * bien.duree_annees))
+  return (2n * BigInt(Math.round(bien.valeur * 100)) * jours + 360n * duree) / (720n * duree)
+}
+
+function dotationDeLExercice(bien: Omit<ImmobilisationRow, "id" | "nature_id" | "libelle">, annee: number): number {
+  return Number(
+    amortissementCumuleCentimes(bien, rang360(`${annee}-12-31`)) - amortissementCumuleCentimes(bien, rang360(`${annee - 1}-12-31`)),
+  ) / 100
+}
+
+// 28 suivi du compte sans son 2, sur six chiffres (218300 → 281830) — `compte_amortissement` en base.
+function compteAmortissement(compteImmobilisation: string): string {
+  return `28${compteImmobilisation.slice(1, 5)}`
+}
+
+const dateDeLaDotation = (annee: number) => `${annee}-12-31`
+
+// Avant l'ouverture d'un dossier repris, l'amortissement est dans les à-nouveaux : rien à écrire.
+function dotationAEcrire(bien: Omit<ImmobilisationRow, "id" | "nature_id" | "libelle">, annee: number, ouverture: string | null): number {
+  if (ouverture && dateDeLaDotation(annee) < ouverture) return 0
+  return dotationDeLExercice(bien, annee)
+}
+
+function ecritureDeLaDotation(
+  bien: Omit<ImmobilisationRow, "id" | "nature_id">, compteImmobilisation: string, annee: number, ouverture: string | null,
+) {
+  const montant = dotationAEcrire(bien, annee, ouverture)
+  if (montant <= 0) return []
+  const libelle = `Dotation ${annee} — ${bien.libelle}`
+  return [
+    { compte: COMPTE_DOTATIONS_AMORTISSEMENTS, sens: "debit" as const, montant, libelle },
+    { compte: compteAmortissement(compteImmobilisation), sens: "credit" as const, montant, libelle },
+  ]
+}
+
+// Exactement l'écriture attendue — mêmes lignes, au 31 décembre, au centime, sans tolérance.
+function dotationConforme(
+  presentes: readonly Pick<EcritureDotationRow, "compte" | "sens" | "montant" | "date">[],
+  attendues: readonly { compte: string; sens: "debit" | "credit"; montant: number }[],
+  annee: number,
+): boolean {
+  if (presentes.length !== attendues.length) return false
+  const restantes = [...presentes]
+  for (const a of attendues) {
+    const i = restantes.findIndex((e) => e.compte === a.compte && e.sens === a.sens && e.date === dateDeLaDotation(annee)
+      && Math.round(e.montant * 100) === Math.round(a.montant * 100))
+    if (i < 0) return false
+    restantes.splice(i, 1)
+  }
+  return true
+}
+
+type EtatDotation = "a_ecrire" | "a_reecrire" | "a_retirer" | "ecrite" | "validee"
+
+// Chaque exercice du registre — de la mise en service à l'exercice en cours, plus ceux où une dotation est
+// écrite — comparé au brouillon. Un exercice sans dotation ni écriture n'est pas rendu.
+function dotationsDuRegistre(
+  immobilisations: readonly ImmobilisationRow[],
+  natures: readonly NatureRow[],
+  ecritures: readonly EcritureDotationRow[],
+  ouverture: string | null,
+  anneeCourante: number,
+): { immobilisation: ImmobilisationRow; annee: number; montant: number; etat: EtatDotation }[] {
+  const natureParId = new Map(natures.map((n) => [n.id, n]))
+  const ecrituresParBien = new Map<string, EcritureDotationRow[]>()
+  for (const e of ecritures) {
+    if (!e.immobilisation_id) continue
+    ecrituresParBien.set(e.immobilisation_id, [...(ecrituresParBien.get(e.immobilisation_id) ?? []), e])
+  }
+  const resultat: { immobilisation: ImmobilisationRow; annee: number; montant: number; etat: EtatDotation }[] = []
+  for (const bien of immobilisations) {
+    const nature = bien.nature_id ? natureParId.get(bien.nature_id) : undefined
+    const sesEcritures = ecrituresParBien.get(bien.id) ?? []
+    const annees = new Set<number>()
+    for (let a = Number(miseEnServiceDuBien(bien).slice(0, 4)); a <= anneeCourante; a++) annees.add(a)
+    for (const e of sesEcritures) annees.add(Number(e.date.slice(0, 4)))
+    for (const annee of [...annees].sort((a, b) => a - b)) {
+      const presentes = sesEcritures.filter((e) => Number(e.date.slice(0, 4)) === annee)
+      const montant = dotationAEcrire(bien, annee, ouverture)
+      if (montant <= 0 && presentes.length === 0) continue
+      const attendues = montant <= 0 ? [] : nature ? ecritureDeLaDotation(bien, nature.compte_immobilisation, annee, ouverture) : null
+      let etat: EtatDotation
+      if (presentes.length === 0) etat = "a_ecrire"
+      else if (attendues && dotationConforme(presentes, attendues, annee)) etat = "ecrite"
+      else if (presentes.some((e) => e.statut !== "proposee")) etat = "validee"
+      else etat = montant <= 0 ? "a_retirer" : "a_reecrire"
+      resultat.push({ immobilisation: bien, annee, montant, etat })
+    }
+  }
+  return resultat
+}
+
+// Ce que la Checklist réclame : la dotation d'un exercice RÉVOLU qui n'est pas écrite, et toute dotation
+// écrite qui ne suit plus le registre — celle de l'exercice en cours ne manque pas encore.
+function dotationsEnDefaut<D extends { annee: number; etat: EtatDotation }>(dotations: readonly D[], anneeCourante: number): D[] {
+  return dotations.filter((d) => d.etat !== "ecrite" && (d.etat !== "a_ecrire" || d.annee < anneeCourante))
+}
+// ── FIN AMORTISSEMENT ────────────────────────────────────────────────────────────────────────────────
+
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
 function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
   if (!assujettiTva) return []
@@ -1330,7 +1461,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -1488,7 +1619,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
       lireTout<PieceRow>((d, f) =>
         admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
@@ -1496,10 +1627,14 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
         admin.from("pieces").select("confiance", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "a_valider").order("id").range(d, f)),
       lireTout<CategorieRow>((d, f) =>
         admin.from("categories").select("id, libelle, compte_comptable, poste_2035", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
-      lireTout<EcritureRow>((d, f) =>
-        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
-      lireTout<{ piece_id: string | null }>((d, f) =>
-        admin.from("immobilisations").select("piece_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // `statut` et `immobilisation_id` : une DOTATION aux amortissements (bloc AMORTISSEMENT) est une écriture
+      // sans pièce ni mouvement, qui désigne son bien ; validée, elle ne se réécrit plus.
+      lireTout<EcritureRow & EcritureDotationRow>((d, f) =>
+        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // Le REGISTRE (bloc AMORTISSEMENT) : chaque bien, de quoi calculer sa dotation de chaque exercice. Et
+      // `piece_id`, qui écarte la pièce immobilisée des charges à comptabiliser.
+      lireTout<ImmobilisationRow & { piece_id: string | null }>((d, f) =>
+        admin.from("immobilisations").select("id, piece_id, nature_id, libelle, valeur, date_acquisition, date_mise_en_service, duree_annees", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les mouvements AFFECTÉS à une catégorie sans justificatif (bloc AFFECTATION) : leurs catégories
       // comptent comme celles des pièces, et leur écriture doit suivre la catégorie.
       lireTout<MouvementAffecteRow>((d, f) =>
@@ -1530,6 +1665,14 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // écriture, sans quoi elle manque au FEC.
       lireTout<CotisationRow>((d, f) =>
         admin.from("cotisations_declarees").select("id, echeance, montant_appele, montant_verse, montant_csg_crds", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // Les NATURES (bloc AMORTISSEMENT) : le compte d'immobilisation d'où la dotation tire son compte 28 — sans
+      // nature, une dotation ne se compose pas. Celles du cabinet comprises, comme les catégories.
+      lireTout<NatureRow>((d, f) =>
+        admin.from("natures_immobilisation").select("id, compte_immobilisation", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
+      // L'OUVERTURE d'un dossier repris (bloc AMORTISSEMENT) : avant elle, l'amortissement est dans les
+      // à-nouveaux, et aucune dotation ne s'écrit. Une seule ouverture par dossier, la base le garantit.
+      lireTout<{ date: string }>((d, f) =>
+        admin.from("a_nouveaux").select("id, date", { count: "exact" }).eq("dossier_id", dossierId).order("date").order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -1538,7 +1681,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -1576,6 +1719,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const payeesEnTrop = piecesPayeesEnTrop(piecesTyped, paiements)
     const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode)
     const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode)
+    // L'exercice en cours, dans le fuseau du cabinet : sa dotation ne manque pas encore.
+    const anneeCourante = Number(aujourdHuiCabinet().slice(0, 4))
+    const dotationsManquantes = dotationsEnDefaut(
+      dotationsDuRegistre(rImmobilisations.lignes, rNatures.lignes, ecrituresTyped, rANouveaux.lignes[0]?.date ?? null, anneeCourante),
+      anneeCourante,
+    )
 
     return {
       ecritures_desequilibrees: groupesDesequilibres.length,
@@ -1620,6 +1769,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // rapprochement qui ne peut pas s'écrire (un encaissement sur un appel), qui ne date rien.
       echeances_de_cotisation_payees_dont_l_ecriture_manque_ou_n_est_plus_a_jour: cotisationsSansEcriture.length,
       rapprochements_d_une_echeance_de_cotisation_qui_ne_peuvent_pas_s_ecrire: cotisationsRefusees.length,
+      // Le libellé de la Checklist : la dotation d'un exercice fini qui n'est pas écrite, ou une dotation écrite
+      // qui ne suit plus le registre — absente du FEC, ou fausse, pendant que la 2035 la compte en case CH.
+      dotations_aux_amortissements_a_ecrire_ou_qui_ne_suivent_plus_le_registre: dotationsManquantes.length,
     }
   }
 
@@ -1794,6 +1946,7 @@ Règles impératives :
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
+- Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).
