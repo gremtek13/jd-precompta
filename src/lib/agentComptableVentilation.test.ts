@@ -74,7 +74,7 @@ const CATEGORIES: Categorie[] = [
 
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2025-03-31', libelle: 'PRLV OPERATEUR', montant: -120, statut: 'rapprochee',
-  piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+  piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: true, reglement_groupe: false, id_externe: null,
   source_fichier: null, libelle_brut: null, created_at: '2025-04-01T09:00:00Z', ...o,
 })

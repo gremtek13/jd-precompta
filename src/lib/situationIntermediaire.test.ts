@@ -62,7 +62,7 @@ describe('calculerSituationIntermediaire', () => {
     // facture de janvier réglée en février, et porte celle de décembre réglée en janvier.
     const paiement = (pieceId: string, date: string, montant: number): LigneBancaire => ({
       id: `l-${pieceId}`, dossier_id: 'd1', date, libelle: 'PRLV', montant, statut: 'rapprochee',
-      piece_id: pieceId, cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
+      piece_id: pieceId, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
       libelle_brut: null, created_at: `${date}T09:00:00Z`,
     })
@@ -83,7 +83,7 @@ describe('calculerSituationIntermediaire', () => {
     // à la date de facture, donc dans l'exercice d'avant.
     const acompte: LigneBancaire = {
       id: 'l-acompte', dossier_id: 'd1', date: '2026-01-10', libelle: 'PRLV', montant: -80, statut: 'rapprochee',
-      piece_id: 'partielle', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null,
+      piece_id: 'partielle', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
       libelle_brut: null, created_at: '2026-01-10T09:00:00Z',
     }
@@ -231,7 +231,7 @@ describe('calculerSituationIntermediaire — en engagement', () => {
     const facture = piece({ id: 'dec', date_piece: '2025-12-20', montant_ttc: 300 })
     const paiement = {
       id: 'l1', dossier_id: 'd1', date: '2026-01-10', libelle: 'PRLV', montant: -300, statut: 'rapprochee',
-      piece_id: 'dec', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      piece_id: 'dec', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
       emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
       created_at: '2026-01-11T00:00:00Z',
     } satisfies LigneBancaire
@@ -252,18 +252,26 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
   const toutes = [categorie, recette, frais, sansPoste, exploitant]
   const mouvement = (o: Partial<LigneBancaire>): LigneBancaire => ({
     id: 'm', dossier_id: 'd1', date: '2026-01-20', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
-    piece_id: null, cotisation_id: null, categorie_id: 'c2', prelevement_personnel: false, source_fichier: null,
+    piece_id: null, cotisation_id: null, categorie_id: 'c2', taux_tva: null, prelevement_personnel: false, source_fichier: null,
     emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
     libelle_brut: null, created_at: '2026-01-21T00:00:00Z', ...o,
   })
   const situation = (lignes: LigneBancaire[], fin = '2026-01-31') =>
-    calculerSituationIntermediaire([], toutes, [], [], '2026-01-01', fin, true, new Map(), 'tresorerie', partsDuReleve(lignes, toutes, []))
+    calculerSituationIntermediaire([], toutes, [], [], '2026-01-01', fin, true, new Map(), 'tresorerie', partsDuReleve(lignes, toutes, [], true))
 
   it('porte un encaissement affecté en recette', () => {
     const s = situation([mouvement({})])
     expect(s.recettes).toBe(250)
     expect(s.resultat).toBe(250)
     expect(s.totauxParPoste).toEqual([['Recettes', 250]])
+  })
+
+  // lib/tvaDuReleve.ts : sur un dossier assujetti, la TVA collectée sur un encaissement n'est pas une
+  // recette — l'état la retire, comme il retire celle d'une facture de vente.
+  it('porte une recette taxée au hors taxe', () => {
+    const s = situation([mouvement({ taux_tva: 20, montant: 240 })])
+    expect(s.recettes).toBe(200)
+    expect(s.totauxParPoste).toEqual([['Recettes', 200]])
   })
 
   it('laisse hors de l’état un mouvement daté après la date d’arrêt', () => {

@@ -109,7 +109,7 @@ describe('calculerDeclaration2035 — ce qui est écarté est dit', () => {
 // Un mouvement rapproché d'une pièce : c'est lui qui la date (lib/rattachement.ts).
 const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
-  piece_id: 'p', cotisation_id: null, categorie_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+  piece_id: 'p', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
@@ -248,7 +248,8 @@ describe('calculerDeclaration2035 — les mouvements du relevé affectés sans j
   ] as Categorie[]
   const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
     paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
-  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, [])
+  // Un infirmier exonéré : ses recettes ne portent pas de TVA.
+  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, [], false)
 
   it('compte un encaissement affecté en recette, sans en faire une pièce', () => {
     const d = calcul({ mouvements: releve(affecte({ id: 'cpam', categorie_id: 'c-recettes', montant: 250 })) })
@@ -318,7 +319,7 @@ describe('calculerDeclaration2035 — les échéances d’emprunt rapprochées',
     piece_id: null, date: '2025-03-06', montant: -540, emprunt_id: 'emp1', emprunt_echeance: 2,
     emprunt_interets: 36, emprunt_assurance: 21.03, ...o,
   })
-  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, [])
+  const releve = (...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, [], true)
 
   it('compte les intérêts en frais financiers et l’assurance en primes, jamais le capital', () => {
     const d = calcul({ mouvements: releve(echeance()) })
@@ -369,9 +370,9 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
     paiement({ id: 'v', piece_id: null, ventilee: true, id_externe: null, date: '2025-03-12', montant: -120, ...o })
   const part = (o: Partial<VentilationBancaire>): VentilationBancaire => ({
     id: 'x', dossier_id: 'd1', ligne_bancaire_id: 'v', categorie_id: 'c-tel', part_personnelle: false, montant: -84,
-    created_at: '2025-03-12T10:00:00Z', ...o,
+    taux_tva: null, created_at: '2025-03-12T10:00:00Z', ...o,
   })
-  const releve = (lignes: LigneBancaire[], parts: VentilationBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, parts)
+  const releve = (lignes: LigneBancaire[], parts: VentilationBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, parts, false)
 
   it('compte chaque part dans son poste, et jamais la part personnelle', () => {
     const d = calcul({
@@ -415,6 +416,58 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
     expect(calcul({ annee: 2025, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(0)
     expect(calcul({ annee: 2026, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(120)
     expect(calcul({ mouvements: releve([ventile({ ventilee: false, reglement_groupe: false, id_externe: null, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
+  })
+})
+
+describe('calculerDeclaration2035 — les recettes du relevé d’un dossier assujetti', () => {
+  // lib/tvaDuReleve.ts : sur un dossier assujetti, une recette encaissée sans facture porte son taux, et
+  // la TVA collectée qu'elle contient n'est pas une recette. La 2035 compte le hors taxe — 100 € sur 120 €
+  // encaissés à 20 % —, comme pour une facture de vente.
+  const categoriesDuReleve = [
+    { id: 'c-recettes', libelle: 'Recettes', compte_comptable: '706000', poste_2035: 'Recettes' },
+    { id: 'c-frais', libelle: 'Frais bancaires', compte_comptable: '627000', poste_2035: 'Frais financiers' },
+  ] as Categorie[]
+  const encaissement = (o: Partial<LigneBancaire> = {}): LigneBancaire =>
+    paiement({ id: 'enc', piece_id: null, categorie_id: 'c-recettes', taux_tva: 20, date: '2025-03-12', montant: 120, ...o })
+  const releve = (assujetti: boolean, ...lignes: LigneBancaire[]) => partsDuReleve(lignes, categoriesDuReleve, [], assujetti)
+
+  it('compte le hors taxe d’une recette taxée, pas la TVA qu’elle contient', () => {
+    expect(calcul({ mouvements: releve(true, encaissement()) }).totalRecettes).toBe(100)
+    expect(calcul({ mouvements: releve(true, encaissement({ taux_tva: 5.5, montant: 105.5 })) }).totalRecettes).toBe(100)
+  })
+
+  it('une recette exonérée compte entière', () => {
+    expect(calcul({ mouvements: releve(true, encaissement({ taux_tva: 0 })) }).totalRecettes).toBe(120)
+  })
+
+  it('un rejet de virement taxé diminue les recettes de son hors taxe', () => {
+    const d = calcul({ mouvements: releve(true, encaissement(), encaissement({ id: 'rejet', montant: -60 })) })
+    expect(d.totalRecettes).toBe(50)
+  })
+
+  it('un dossier qui a cessé d’être assujetti compte le TTC, même avec le taux gardé', () => {
+    // La règle de `montantRetenu` pour une pièce : ce qui décide est le statut ACTUEL du dossier.
+    expect(calcul({ mouvements: releve(false, encaissement()) }).totalRecettes).toBe(120)
+  })
+
+  it('une recette affectée sans taux reste comptée au TTC : on ne devine pas sa TVA', () => {
+    expect(calcul({ mouvements: releve(true, encaissement({ taux_tva: null })) }).totalRecettes).toBe(120)
+  })
+
+  it('une remise ventilée : la recette au hors taxe, la commission entière', () => {
+    const mouvements = partsDuReleve(
+      [paiement({ id: 'v', piece_id: null, ventilee: true, date: '2025-03-12', montant: 95 })],
+      categoriesDuReleve,
+      [
+        { id: 'a', dossier_id: 'd1', ligne_bancaire_id: 'v', categorie_id: 'c-recettes', part_personnelle: false, montant: 100, taux_tva: 20, created_at: '2025-03-12T10:00:00Z' },
+        { id: 'b', dossier_id: 'd1', ligne_bancaire_id: 'v', categorie_id: 'c-frais', part_personnelle: false, montant: -5, taux_tva: null, created_at: '2025-03-12T10:00:00Z' },
+      ],
+      true,
+    )
+    const d = calcul({ mouvements })
+    // 100 € TTC à 20 % : 16,67 € de TVA, 83,33 € de recettes.
+    expect(d.totalRecettes).toBe(83.33)
+    expect(d.totalDepenses).toBe(5)
   })
 })
 

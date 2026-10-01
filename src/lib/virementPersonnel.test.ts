@@ -12,7 +12,7 @@ const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeF
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
     id: 'l1', date: '2025-03-12', libelle: 'VIR PERSONNEL', libelle_brut: null, montant: -500,
-    statut: 'ignoree', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: true,
+    statut: 'ignoree', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: true,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
     ...o,
   }

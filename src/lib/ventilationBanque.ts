@@ -3,10 +3,11 @@ import {
   type LigneEcritureMouvement, type MouvementBancaire, type NatureCompte,
 } from './affectationBanque'
 import { libelleExploitable } from './appariementBanque'
-import { COMPTE_BANQUE } from './comptes'
+import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE } from './comptes'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
+import { horsTaxeEtTva, horsTaxeSigne, tauxApplicable, tauxPrisEnCharge, tauxRequis } from './tvaDuReleve'
 import type { Categorie, EcritureBrouillon, VentilationBancaire } from './types'
 import { compteDuDirigeant } from './virementPersonnel'
 
@@ -20,18 +21,19 @@ import { compteDuDirigeant } from './virementPersonnel'
 //     commission au 627, en sens inverse du mouvement.
 //
 // UNE PART S'ÉCRIT COMME UNE AFFECTATION DE SON MONTANT (voir affectationBanque.ts) : le compte de sa
-// catégorie — ou celui du dirigeant — dans le sens de son SIGNE, jamais dans celui de la nature du compte.
-// Le montant d'une part est signé comme le relevé (positif, une entrée ; négatif, une sortie), et la somme
-// des parts est le mouvement. L'écriture est composée ICI (testée) ; la fonction SQL
-// `ventiler_mouvement_bancaire` la vérifie, puis l'écrit AVEC la ventilation et ses parts, dans une
-// transaction (voir `supabase/essais/ventilation.sql`).
+// catégorie — ou celui du dirigeant — dans le sens de son SIGNE, jamais dans celui de la nature du compte ;
+// et une part de recette d'un dossier assujetti porte son taux, sa catégorie au hors taxe et la TVA
+// collectée sur une ligne à côté (lib/tvaDuReleve.ts). Le montant d'une part est signé comme le relevé
+// (positif, une entrée ; négatif, une sortie), et la somme des parts est le mouvement. L'écriture est
+// composée ICI (testée) ; la fonction SQL `ventiler_mouvement_bancaire` la vérifie, puis l'écrit AVEC la
+// ventilation et ses parts, dans une transaction (voir `supabase/essais/ventilation.sql`).
 //
 // CE QUE LA BASE NE TIENT PAS SEULE : que les parts d'un mouvement ventilé fassent son montant. C'est un
 // invariant entre lignes, qu'aucune contrainte de ligne ne dit, et un déclencheur différé rendrait
 // impossible la restauration d'une sauvegarde. La fonction le vérifie ; `ventilationsIncoherentes` dit un
 // écart venu d'un autre chemin (défensif).
 
-export type PartSaisie = Pick<VentilationBancaire, 'categorie_id' | 'part_personnelle' | 'montant'>
+export type PartSaisie = Pick<VentilationBancaire, 'categorie_id' | 'part_personnelle' | 'montant' | 'taux_tva'>
 
 const centimes = (n: number) => Math.round(n * 100)
 const auCentime = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-6
@@ -90,24 +92,32 @@ export function refusVentilation(
     return `Les parts font ${formatMoney(dansLeSens(ligne, somme / 100))} au lieu des ${formatMoney(Math.abs(ligne.montant))} du mouvement.`
   }
   const parId = new Map(categories.map((c) => [c.id, c]))
-  const ciblees = []
+  // Chaque part, avec la catégorie qu'elle vise — nulle pour la part personnelle.
+  const ciblees: { part: PartSaisie; categorie: Pick<Categorie, 'libelle' | 'compte_comptable'> | null }[] = []
   for (const p of parts) {
-    if (!p.categorie_id) continue
-    const c = parId.get(p.categorie_id)
-    if (!c) return 'Cette catégorie n’existe pas pour ce dossier.'
-    ciblees.push(c)
+    const c = p.categorie_id ? parId.get(p.categorie_id) : null
+    if (p.categorie_id && !c) return 'Cette catégorie n’existe pas pour ce dossier.'
+    ciblees.push({ part: p, categorie: c ?? null })
   }
   // La première dans l'ordre des libellés, comme la base : deux catégories fautives ne font pas deux
   // messages différents selon l'ordre des parts.
-  const horsResultat = ciblees.filter((c) => !natureDuCompte(c.compte_comptable)).sort((a, b) => a.libelle.localeCompare(b.libelle))
-  if (horsResultat.length > 0) {
-    return `La catégorie « ${horsResultat[0].libelle} » n’a pas de compte de charge ou de produit (classe 6 ou 7).`
+  const premiere = (fautives: typeof ciblees) =>
+    fautives.flatMap((x) => (x.categorie ? [x.categorie.libelle] : [])).sort((a, b) => a.localeCompare(b))[0]
+  const horsResultat = premiere(ciblees.filter((x) => x.categorie && !natureDuCompte(x.categorie.compte_comptable)))
+  if (horsResultat !== undefined) {
+    return `La catégorie « ${horsResultat} » n’a pas de compte de charge ou de produit (classe 6 ou 7).`
   }
-  // UNE RECETTE D'UN DOSSIER ASSUJETTI PORTE DE LA TVA, que rien ici ne saurait calculer — le refus de
-  // l'affectation, pour la même raison (voir `refusAffectation`).
-  if (assujettiTva && ciblees.some((c) => natureDuCompte(c.compte_comptable) === 'recette')) {
-    return 'Sur un dossier assujetti à la TVA, une recette sans facture n’est pas encore prise en charge : sa TVA ne serait pas calculée. Dépose la facture et rapproche-la.'
+  // UNE PART DE RECETTE D'UN DOSSIER ASSUJETTI PORTE SON TAUX, que le relevé ne dit pas — la règle de
+  // l'affectation (voir `refusAffectation`), part par part, dans l'ordre de la base.
+  const requis = (x: (typeof ciblees)[number]) => tauxRequis(assujettiTva, natureDuCompte(x.categorie?.compte_comptable))
+  const sansTaux = premiere(ciblees.filter((x) => requis(x) && x.part.taux_tva == null))
+  if (sansTaux !== undefined) {
+    return `Sur un dossier assujetti à la TVA, la part « ${sansTaux} » est une recette : choisis son taux, ou « exonérée ».`
   }
+  if (ciblees.some((x) => x.part.taux_tva != null && !requis(x))) {
+    return 'Un taux de TVA ne s’applique qu’à une part de recette d’un dossier assujetti.'
+  }
+  if (parts.some((p) => p.taux_tva != null && !tauxPrisEnCharge(p.taux_tva))) return 'Ce taux de TVA n’est pas pris en charge.'
   return null
 }
 
@@ -117,6 +127,10 @@ export function refusVentilation(
 // montants passent par les centimes, pour que les lignes s'équilibrent exactement — la base refuse une
 // écriture déséquilibrée d'un centime.
 //
+// UNE PART DE RECETTE TAXÉE prend deux lignes, du même côté : sa catégorie au hors taxe, la TVA collectée
+// (445710) à côté. Le taux est celui qui S'APPLIQUE (`tauxApplicable`) : un taux resté d'avant que le
+// dossier cesse d'être assujetti ne s'écrit plus — et l'écriture qui le porte encore est à réécrire.
+//
 // NUL quand une part ne peut pas s'écrire : sa catégorie est absente de la liste fournie, ou n'a plus de
 // compte de résultat. L'appelant l'a refusée avant (`refusVentilation`) ou le signale
 // (`mouvementsVentilesDesynchronises`).
@@ -125,20 +139,27 @@ export function ecritureDeLaVentilation(
   parts: readonly PartSaisie[],
   categories: readonly Pick<Categorie, 'id' | 'compte_comptable'>[],
   modele: ModeleComptable,
+  assujettiTva: boolean,
 ): LigneEcritureMouvement[] | null {
   const libelle = libelleExploitable(ligne) || ligne.libelle
   const parId = new Map(categories.map((c) => [c.id, c]))
   const lignes: LigneEcritureMouvement[] = []
   for (const p of parts) {
     let compte: string | null = null
+    let taux: number | null = null
     if (p.part_personnelle) {
       compte = compteDuDirigeant(modele)
     } else if (p.categorie_id) {
       const c = parId.get(p.categorie_id)
-      compte = c && natureDuCompte(c.compte_comptable) ? c.compte_comptable : null
+      const nature = natureDuCompte(c?.compte_comptable)
+      compte = c && nature ? c.compte_comptable : null
+      taux = tauxApplicable(assujettiTva, nature, p.taux_tva)
     }
     if (!compte) return null
-    lignes.push({ compte, sens: p.montant > 0 ? 'credit' : 'debit', montant: Math.abs(centimes(p.montant)) / 100, libelle })
+    const sens = p.montant > 0 ? 'credit' : 'debit'
+    const { ht, tva } = horsTaxeEtTva(p.montant, taux)
+    lignes.push({ compte, sens, montant: ht, libelle })
+    if (tva > 0) lignes.push({ compte: COMPTE_TVA_COLLECTEE, sens, montant: tva, libelle })
   }
   lignes.push({ compte: COMPTE_BANQUE, sens: ligne.montant > 0 ? 'debit' : 'credit', montant: Math.abs(centimes(ligne.montant)) / 100, libelle })
   return lignes
@@ -158,9 +179,11 @@ export interface PartVentilee {
   nature: NatureCompte | null
   // Le montant de la part, signé comme le relevé.
   montant: number
+  // Le taux de TVA qui s'applique aujourd'hui à la part (voir `MouvementAffecte.taux`).
+  taux: number | null
   // Ce que la part ajoute à son poste, positif quand elle l'augmente : une recette encaissée ou une
   // dépense payée ; négatif pour la commission retenue sur une remise rangée en recettes, ou un
-  // remboursement.
+  // remboursement — au HORS TAXE pour une part de recette taxée.
   montantPoste: number
 }
 
@@ -169,11 +192,13 @@ export interface PartVentilee {
 // dirigeant, ni charge ni recette. Seuls comptent les mouvements RAPPROCHÉS et VENTILÉS — une part dont le
 // mouvement ne l'est pas est un écart que `ventilationsIncoherentes` dit, pas une dépense. Une catégorie
 // absente de la liste fournie (une lecture partielle, que l'écran signale déjà) écarte la part : on ne
-// compte pas ce qu'on ne sait pas ranger.
+// compte pas ce qu'on ne sait pas ranger. L'assujettissement décide du taux qui s'applique, comme pour
+// `mouvementsAffectes`.
 export function partsDesVentilations(
   lignes: readonly MouvementBancaire[],
   ventilations: readonly VentilationBancaire[],
   categories: readonly Categorie[],
+  assujettiTva: boolean,
 ): PartVentilee[] {
   const parLigne = partsParMouvement(ventilations)
   const parId = new Map(categories.map((c) => [c.id, c]))
@@ -185,23 +210,27 @@ export function partsDesVentilations(
       const categorie = parId.get(part.categorie_id)
       if (!categorie) continue
       const nature = natureDuCompte(categorie.compte_comptable)
-      resultat.push({ ligne, categorie, nature, montant: part.montant, montantPoste: nature === 'depense' ? -part.montant : part.montant })
+      const taux = tauxApplicable(assujettiTva, nature, part.taux_tva)
+      const horsTaxe = horsTaxeSigne(part.montant, taux)
+      resultat.push({
+        ligne, categorie, nature, montant: part.montant, taux, montantPoste: nature === 'depense' ? -horsTaxe : horsTaxe,
+      })
     }
   }
   return resultat
 }
 
-// LES MOUVEMENTS VENTILÉS EN PARTIE EN RECETTE SUR UN DOSSIER DEVENU ASSUJETTI : le pendant de
-// `recettesAffecteesSurDossierAssujetti`. La base refuse d'en ventiler un nouveau, mais un dossier peut le
-// devenir après coup, et ses recettes restent écrites au TTC : leur TVA collectée n'est dans aucune CA3.
-// Un mouvement par entrée, même s'il porte deux parts de recette.
-export function recettesVentileesSurDossierAssujetti(
+// LES MOUVEMENTS VENTILÉS AVEC UNE PART DE RECETTE SANS TAUX SUR UN DOSSIER ASSUJETTI : le pendant de
+// `recettesAffecteesSansTaux`. La base n'en ventile plus un sans le taux de chaque part de recette, mais
+// un dossier peut devenir assujetti après coup, et ses recettes restent écrites au TTC : leur TVA
+// collectée n'est dans aucune CA3. Un mouvement par entrée, même s'il porte deux parts sans taux.
+export function recettesVentileesSansTaux(
   parts: readonly PartVentilee[],
   assujettiTva: boolean,
 ): MouvementBancaire[] {
   if (!assujettiTva) return []
   const parLigne = new Map<string, MouvementBancaire>()
-  for (const p of parts) if (p.nature === 'recette') parLigne.set(p.ligne.id, p.ligne)
+  for (const p of parts) if (p.nature === 'recette' && p.taux === null) parLigne.set(p.ligne.id, p.ligne)
   return [...parLigne.values()]
 }
 
@@ -242,7 +271,8 @@ export function ventilationsIncoherentes(
 // compte, d'un autre montant, dans un autre sens ou à une autre date. La transaction de la base les écrit
 // ensemble ; le cas vient d'une CATÉGORIE dont le compte a changé depuis — le défaut d'un mouvement affecté
 // dont la catégorie a changé de compte (`mouvementsAffectesDesynchronises`), invisible de la même façon,
-// les totaux ne bougeant pas. « Réécrire » la réécrit depuis les mêmes parts.
+// les totaux ne bougeant pas —, ou d'un dossier qui a cessé d'être assujetti, dont une part de recette
+// porte encore sa TVA. « Réécrire » la réécrit depuis les mêmes parts.
 //
 // Ne juge que les ventilations COHÉRENTES — les autres sont dites par `ventilationsIncoherentes`, et les
 // compter ici ferait dire deux fois la même chose. Une catégorie absente de la liste fournie écarte le
@@ -254,6 +284,7 @@ export function mouvementsVentilesDesynchronises<L extends MouvementBancaire>(
   ventilations: readonly VentilationBancaire[],
   categories: readonly Categorie[],
   modele: ModeleComptable,
+  assujettiTva: boolean,
 ): L[] {
   const ecrituresParLigne = ecrituresSansPieceParMouvement(ecritures)
   const parLigne = partsParMouvement(ventilations)
@@ -263,7 +294,7 @@ export function mouvementsVentilesDesynchronises<L extends MouvementBancaire>(
     if (!ligne.ventilee || ligne.statut !== 'rapprochee' || incoherentes.has(ligne.id)) return false
     const parts = parLigne.get(ligne.id) ?? []
     if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false
-    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele)
+    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
     if (!attendue) return true
     return !ecritureConforme(ecrituresParLigne.get(ligne.id) ?? [], attendue, ligne.date)
   })

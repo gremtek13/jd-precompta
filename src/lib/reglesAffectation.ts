@@ -1,8 +1,9 @@
 import {
   candidatsCotisations, candidatsPieces, libelleExploitable, sensCoherent, tiersConfirmeParBanque, type CotisationRapprochable,
 } from './appariementBanque'
-import { ecritureDuMouvement, refusAffectation, type LigneEcritureMouvement } from './affectationBanque'
+import { ecritureDuMouvement, natureDuCompte, refusAffectation, type LigneEcritureMouvement } from './affectationBanque'
 import { recollerSiglesPointes } from './format'
+import { tauxApplicable, tauxRequis } from './tvaDuReleve'
 import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire, SensMouvementBancaire } from './types'
 
 // LES RÈGLES D'AFFECTATION APPRISES PAR LIBELLÉ (ligne 26.6 de la feuille de route, étape a).
@@ -22,6 +23,11 @@ import type { Categorie, LigneBancaire, Piece, RegleAffectationBancaire, SensMou
 // LE SENS FAIT PARTIE DE LA RÈGLE : « amazon » en paiement est un achat ; en encaissement c'est un
 // remboursement, que la même règle ne doit pas ranger sans qu'on le voie. Un mouvement de l'autre sens
 // reste à traiter : un faux négatif coûte un clic, un faux positif écrit une écriture fausse.
+//
+// LE TAUX DE TVA AUSSI, pour une recette d'un dossier assujetti (lib/tvaDuReleve.ts) : la règle le garde
+// tel qu'il a été choisi à l'affectation qui l'a fait naître, et le lot le transmet. Une règle qui n'en
+// dit pas — retenue avant que le dossier devienne assujetti — ne range pas de recette : sa TVA se
+// choisirait en masse, sur un seul clic, sans que personne l'ait choisie.
 
 /** Le sens d'un mouvement ; nul pour un mouvement de zéro euro, qui n'a rien à affecter. */
 export function sensDuMouvement(ligne: Pick<LigneBancaire, 'montant'>): SensMouvementBancaire | null {
@@ -206,6 +212,9 @@ export interface PropositionRegle {
   ligne: LigneBancaire
   regle: RegleAffectationBancaire
   categorie: Categorie
+  // Le taux que l'affectation portera : celui de la règle pour une recette d'un dossier assujetti, nul
+  // ailleurs (`tauxApplicable`).
+  taux: number | null
 }
 
 export interface RefusRegle {
@@ -224,8 +233,9 @@ export interface PlanAffectationParRegles {
   // Désignés par une règle, mais qui ont peut-être leur justificatif (`justificatifPossible`) : à
   // rapprocher, pas à affecter.
   aRapprocher: RefusRegle[]
-  // Désignés par une règle, mais que l'affectation refuserait : une recette sur un dossier assujetti,
-  // une catégorie dont le compte n'est plus de résultat. Montrés avec leur raison, jamais écrits.
+  // Désignés par une règle, mais que l'affectation refuserait : une recette d'un dossier assujetti dont la
+  // règle ne dit pas le taux, une catégorie dont le compte n'est plus de résultat. Montrés avec leur
+  // raison, jamais écrits.
   refus: RefusRegle[]
   conflits: ConflitRegles[]
 }
@@ -264,12 +274,23 @@ export function planAffectationParRegles(
       plan.refus.push({ ligne, regle: resultat.regle, raison: 'La catégorie de cette règle ne figure pas parmi les catégories lues.' })
       continue
     }
-    const raison = refusAffectation(ligne, categorie, assujettiTva)
+    const nature = natureDuCompte(categorie.compte_comptable)
+    if (tauxRequis(assujettiTva, nature) && resultat.regle.taux_tva == null) {
+      plan.refus.push({ ligne, regle: resultat.regle, raison: REFUS_REGLE_SANS_TAUX })
+      continue
+    }
+    const taux = tauxApplicable(assujettiTva, nature, resultat.regle.taux_tva)
+    const raison = refusAffectation(ligne, categorie, assujettiTva, taux)
     if (raison) plan.refus.push({ ligne, regle: resultat.regle, raison })
-    else plan.propositions.push({ ligne, regle: resultat.regle, categorie })
+    else plan.propositions.push({ ligne, regle: resultat.regle, categorie, taux })
   }
   return plan
 }
+
+// Le refus qu'on dirait de l'affectation à l'unité (« choisis-le ») ne se suit pas depuis la carte du lot :
+// on n'y choisit rien. Il dit donc où le taux se choisit.
+export const REFUS_REGLE_SANS_TAUX =
+  'Sur un dossier assujetti à la TVA, une recette porte son taux, et cette règle n’en dit pas : affecte ce mouvement depuis sa fiche en choisissant le taux, et retiens la règle de nouveau.'
 
 export interface TotalCategorie {
   categorie: Categorie
@@ -294,6 +315,9 @@ export function totauxParCategorie(propositions: readonly PropositionRegle[]): T
 export interface AffectationEnvoyee {
   ligne_bancaire_id: string
   categorie_id: string
+  // Transmis à `affecter_mouvement_bancaire` par le lot, qui le refuse ailleurs que sur une recette d'un
+  // dossier assujetti et l'exige là.
+  taux_tva: number | null
   ecritures: LigneEcritureMouvement[]
 }
 
@@ -311,7 +335,12 @@ export function envoisDuLot(
   // Une proposition a passé `refusAffectation`, donc sa catégorie a un compte de résultat ; le filtre ne
   // sert qu'au typage.
   const affectations = propositions.flatMap((p) => p.categorie.compte_comptable
-    ? [{ ligne_bancaire_id: p.ligne.id, categorie_id: p.categorie.id, ecritures: ecritureDuMouvement(p.ligne, p.categorie.compte_comptable) }]
+    ? [{
+        ligne_bancaire_id: p.ligne.id,
+        categorie_id: p.categorie.id,
+        taux_tva: p.taux,
+        ecritures: ecritureDuMouvement(p.ligne, p.categorie.compte_comptable, p.taux),
+      }]
     : [])
   const envois: AffectationEnvoyee[][] = []
   for (let i = 0; i < affectations.length; i += taille) envois.push(affectations.slice(i, i + taille))

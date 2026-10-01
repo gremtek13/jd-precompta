@@ -6,7 +6,7 @@ import { partsDuReleve } from './partsDuReleve'
 import type { Categorie, EcritureBrouillon, VentilationBancaire } from './types'
 import {
   ecritureDeLaVentilation, montantSaisi, montantSigne, mouvementsVentilesDesynchronises, partsDesVentilations,
-  recettesVentileesSurDossierAssujetti, refusVentilation, resteAVentiler, ventilationsIncoherentes, type PartSaisie,
+  recettesVentileesSansTaux, refusVentilation, resteAVentiler, ventilationsIncoherentes, type PartSaisie,
 } from './ventilationBanque'
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
@@ -16,7 +16,7 @@ const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeF
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
     id: 'l1', date: '2025-03-12', libelle: 'PRLV SEPA OPERATEUR MOBILE', libelle_brut: null, montant: -120,
-    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, prelevement_personnel: false,
+    statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
     ...o,
   }
@@ -40,22 +40,22 @@ const CATEGORIES = [TELEPHONE, FOURNITURES, RECETTES, FRAIS, BILAN, SANS_COMPTE]
 // L'abonnement téléphonique pris en charge à 70 % : la part professionnelle en charge, le reste
 // prélevé par l'exploitant.
 const TELEPHONE_70: PartSaisie[] = [
-  { categorie_id: 'cat-tel', part_personnelle: false, montant: -84 },
-  { categorie_id: null, part_personnelle: true, montant: -36 },
+  { categorie_id: 'cat-tel', part_personnelle: false, montant: -84, taux_tva: null },
+  { categorie_id: null, part_personnelle: true, montant: -36, taux_tva: null },
 ]
 
 // Une remise de carte bancaire créditée NETTE de sa commission : la recette brute, la commission en
 // sens inverse du mouvement.
 const REMISE = mouvement({ id: 'remise', libelle: 'REMISE CB', montant: 95 })
 const REMISE_PARTS: PartSaisie[] = [
-  { categorie_id: 'cat-recettes', part_personnelle: false, montant: 100 },
-  { categorie_id: 'cat-frais', part_personnelle: false, montant: -5 },
+  { categorie_id: 'cat-recettes', part_personnelle: false, montant: 100, taux_tva: null },
+  { categorie_id: 'cat-frais', part_personnelle: false, montant: -5, taux_tva: null },
 ]
 
 function part(o: Partial<VentilationBancaire> = {}): VentilationBancaire {
   return {
     id: 'v1', dossier_id: 'd1', ligne_bancaire_id: 'l1', categorie_id: 'cat-tel', part_personnelle: false,
-    montant: -84, created_at: '2025-03-12T10:00:00Z', ...o,
+    montant: -84, taux_tva: null, created_at: '2025-03-12T10:00:00Z', ...o,
   }
 }
 
@@ -70,7 +70,7 @@ function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
 const VENTILE = mouvement({ statut: 'rapprochee', ventilee: true })
 const PARTS_TELEPHONE = [
   part({ id: 'v1', categorie_id: 'cat-tel', montant: -84 }),
-  part({ id: 'v2', categorie_id: null, part_personnelle: true, montant: -36 }),
+  part({ id: 'v2', categorie_id: null, part_personnelle: true, montant: -36, taux_tva: null }),
 ]
 const ECRITURE_TELEPHONE = [
   ecriture({ id: 'e1', compte: '626000', sens: 'debit', montant: 84 }),
@@ -141,8 +141,8 @@ describe('refusVentilation — dit avant d’écrire ce que la base refuserait',
 
   it('refuse une part sans cible ou à deux cibles', () => {
     for (const cible of [
-      { categorie_id: null, part_personnelle: false },
-      { categorie_id: 'cat-tel', part_personnelle: true },
+      { categorie_id: null, part_personnelle: false, taux_tva: null },
+      { categorie_id: 'cat-tel', part_personnelle: true, taux_tva: null },
     ]) {
       expect(refusVentilation(mouvement(), [{ ...cible, montant: -84 }, TELEPHONE_70[1]], CATEGORIES, false))
         .toBe('Chaque part va à une catégorie ou au compte du dirigeant, jamais aux deux ni à aucun.')
@@ -158,20 +158,20 @@ describe('refusVentilation — dit avant d’écrire ce que la base refuserait',
 
   it('refuse deux parts à la même catégorie, ou deux parts personnelles', () => {
     expect(refusVentilation(mouvement(), [
-      { categorie_id: 'cat-tel', part_personnelle: false, montant: -60 },
-      { categorie_id: 'cat-tel', part_personnelle: false, montant: -60 },
+      { categorie_id: 'cat-tel', part_personnelle: false, montant: -60, taux_tva: null },
+      { categorie_id: 'cat-tel', part_personnelle: false, montant: -60, taux_tva: null },
     ], CATEGORIES, false)).toBe('Deux parts vont à la même catégorie, ou au compte du dirigeant : réunis-les en une.')
     expect(refusVentilation(mouvement(), [
-      { categorie_id: null, part_personnelle: true, montant: -60 },
-      { categorie_id: null, part_personnelle: true, montant: -60 },
+      { categorie_id: null, part_personnelle: true, montant: -60, taux_tva: null },
+      { categorie_id: null, part_personnelle: true, montant: -60, taux_tva: null },
     ], CATEGORIES, false)).toBe('Deux parts vont à la même catégorie, ou au compte du dirigeant : réunis-les en une.')
   })
 
   it('refuse des parts qui ne font pas le mouvement, dites dans le sens du mouvement', () => {
     // Un paiement de 150 € ventilé en 80 et 40 : l'opérateur a saisi « 80 » et « 40 », pas « −80 ».
     expect(refusVentilation(mouvement({ montant: -150 }), [
-      { categorie_id: 'cat-tel', part_personnelle: false, montant: -80 },
-      { categorie_id: null, part_personnelle: true, montant: -40 },
+      { categorie_id: 'cat-tel', part_personnelle: false, montant: -80, taux_tva: null },
+      { categorie_id: null, part_personnelle: true, montant: -40, taux_tva: null },
     ], CATEGORIES, false)).toBe(`Les parts font ${formatMoney(120)} au lieu des ${formatMoney(150)} du mouvement.`)
     // Au centime : 84,00 + 35,99 ne font pas 120,00.
     expect(refusVentilation(mouvement(), [TELEPHONE_70[0], { ...TELEPHONE_70[1], montant: -35.99 }], CATEGORIES, false))
@@ -185,22 +185,49 @@ describe('refusVentilation — dit avant d’écrire ce que la base refuserait',
 
   it('refuse une catégorie sans compte de résultat, en nommant la première dans l’ordre des libellés', () => {
     expect(refusVentilation(mouvement(), [
-      { categorie_id: 'cat-vide', part_personnelle: false, montant: -60 },
-      { categorie_id: 'cat-bilan', part_personnelle: false, montant: -60 },
+      { categorie_id: 'cat-vide', part_personnelle: false, montant: -60, taux_tva: null },
+      { categorie_id: 'cat-bilan', part_personnelle: false, montant: -60, taux_tva: null },
     ], CATEGORIES, false)).toBe('La catégorie « Autre » n’a pas de compte de charge ou de produit (classe 6 ou 7).')
     // Dans l'autre ordre des parts, le même nom : le message ne dépend pas de la saisie.
     expect(refusVentilation(mouvement(), [
-      { categorie_id: 'cat-bilan', part_personnelle: false, montant: -60 },
-      { categorie_id: 'cat-vide', part_personnelle: false, montant: -60 },
+      { categorie_id: 'cat-bilan', part_personnelle: false, montant: -60, taux_tva: null },
+      { categorie_id: 'cat-vide', part_personnelle: false, montant: -60, taux_tva: null },
     ], CATEGORIES, false)).toBe('La catégorie « Autre » n’a pas de compte de charge ou de produit (classe 6 ou 7).')
   })
 
-  it('refuse une part de recette sur un dossier assujetti, pas une ventilation en dépenses', () => {
-    expect(refusVentilation(REMISE, REMISE_PARTS, CATEGORIES, true)).toMatch(/assujetti à la TVA/)
+  it('sur un dossier assujetti, une part de recette porte son taux, nommée — pas une part de dépense', () => {
+    expect(refusVentilation(REMISE, REMISE_PARTS, CATEGORIES, true))
+      .toBe('Sur un dossier assujetti à la TVA, la part « Ventes / prestations » est une recette : choisis son taux, ou « exonérée ».')
     expect(refusVentilation(mouvement(), [
-      { categorie_id: 'cat-tel', part_personnelle: false, montant: -84 },
-      { categorie_id: 'cat-fourn', part_personnelle: false, montant: -36 },
+      { categorie_id: 'cat-tel', part_personnelle: false, montant: -84, taux_tva: null },
+      { categorie_id: 'cat-fourn', part_personnelle: false, montant: -36, taux_tva: null },
     ], CATEGORIES, true)).toBeNull()
+    // Son taux choisi — ou l'exonération — la rend ventilable.
+    for (const taux of [20, 0]) {
+      expect(refusVentilation(REMISE, [{ ...REMISE_PARTS[0], taux_tva: taux }, REMISE_PARTS[1]], CATEGORIES, true)).toBeNull()
+    }
+  })
+
+  it('nomme la première part sans taux dans l’ordre des libellés, comme la base', () => {
+    const categories = [...CATEGORIES, categorie({ id: 'cat-annexes', libelle: 'Activités annexes', compte_comptable: '708000', poste_2035: 'Recettes' })]
+    const parts: PartSaisie[] = [
+      { categorie_id: 'cat-recettes', part_personnelle: false, montant: 60, taux_tva: null },
+      { categorie_id: 'cat-annexes', part_personnelle: false, montant: 35, taux_tva: null },
+    ]
+    expect(refusVentilation(REMISE, parts, categories, true)).toMatch(/« Activités annexes »/)
+    expect(refusVentilation(REMISE, [...parts].reverse(), categories, true)).toMatch(/« Activités annexes »/)
+  })
+
+  it('refuse un taux sur une part de dépense, sur la part personnelle ou sur un dossier exonéré', () => {
+    const inapplicable = 'Un taux de TVA ne s’applique qu’à une part de recette d’un dossier assujetti.'
+    expect(refusVentilation(REMISE, [{ ...REMISE_PARTS[0], taux_tva: 20 }, { ...REMISE_PARTS[1], taux_tva: 20 }], CATEGORIES, true)).toBe(inapplicable)
+    expect(refusVentilation(mouvement(), [TELEPHONE_70[0], { ...TELEPHONE_70[1], taux_tva: 20 }], CATEGORIES, true)).toBe(inapplicable)
+    expect(refusVentilation(REMISE, [{ ...REMISE_PARTS[0], taux_tva: 20 }, REMISE_PARTS[1]], CATEGORIES, false)).toBe(inapplicable)
+  })
+
+  it('refuse un taux que la base ne prend pas en charge', () => {
+    expect(refusVentilation(REMISE, [{ ...REMISE_PARTS[0], taux_tva: 2.1 }, REMISE_PARTS[1]], CATEGORIES, true))
+      .toBe('Ce taux de TVA n’est pas pris en charge.')
   })
 
   it('le premier refus l’emporte, dans l’ordre de la base', () => {
@@ -218,7 +245,7 @@ describe('ecritureDeLaVentilation — une ligne par part, puis la banque', () =>
     Math.round(lignes.reduce((s, l) => s + (l.sens === 'debit' ? l.montant : -l.montant), 0) * 100)
 
   it('l’abonnement mixte : la charge et le compte de l’exploitant au débit, la banque au crédit', () => {
-    const lignes = ecritureDeLaVentilation(mouvement(), TELEPHONE_70, CATEGORIES, TRESORERIE)!
+    const lignes = ecritureDeLaVentilation(mouvement(), TELEPHONE_70, CATEGORIES, TRESORERIE, false)!
     expect(lignes.map((l) => [l.compte, l.sens, l.montant])).toEqual([
       ['626000', 'debit', 84],
       ['108000', 'debit', 36],
@@ -228,12 +255,12 @@ describe('ecritureDeLaVentilation — une ligne par part, puis la banque', () =>
   })
 
   it('en engagement, la part personnelle va au compte choisi pour le dirigeant', () => {
-    const lignes = ecritureDeLaVentilation(mouvement(), TELEPHONE_70, CATEGORIES, ENGAGEMENT_SOCIETE)!
+    const lignes = ecritureDeLaVentilation(mouvement(), TELEPHONE_70, CATEGORIES, ENGAGEMENT_SOCIETE, false)!
     expect(lignes.map((l) => l.compte)).toEqual(['626000', '455000', '512000'])
   })
 
   it('la remise : la recette brute au crédit, la commission au débit, la banque au débit du net', () => {
-    const lignes = ecritureDeLaVentilation(REMISE, REMISE_PARTS, CATEGORIES, TRESORERIE)!
+    const lignes = ecritureDeLaVentilation(REMISE, REMISE_PARTS, CATEGORIES, TRESORERIE, false)!
     expect(lignes.map((l) => [l.compte, l.sens, l.montant])).toEqual([
       ['706000', 'credit', 100],
       ['627000', 'debit', 5],
@@ -242,34 +269,52 @@ describe('ecritureDeLaVentilation — une ligne par part, puis la banque', () =>
     expect(equilibre(lignes)).toBe(0)
   })
 
+  it('une remise taxée : la recette au hors taxe, la TVA collectée à côté, la commission entière', () => {
+    const lignes = ecritureDeLaVentilation(REMISE, [{ ...REMISE_PARTS[0], taux_tva: 20 }, REMISE_PARTS[1]], CATEGORIES, TRESORERIE, true)!
+    expect(lignes.map((l) => [l.compte, l.sens, l.montant])).toEqual([
+      ['706000', 'credit', 83.33],
+      ['445710', 'credit', 16.67],
+      ['627000', 'debit', 5],
+      ['512000', 'debit', 95],
+    ])
+    expect(equilibre(lignes)).toBe(0)
+  })
+
+  it('le taux gardé ne s’écrit plus sur un dossier qui a cessé d’être assujetti, ni à zéro', () => {
+    const taxee: PartSaisie[] = [{ ...REMISE_PARTS[0], taux_tva: 20 }, REMISE_PARTS[1]]
+    expect(ecritureDeLaVentilation(REMISE, taxee, CATEGORIES, TRESORERIE, false)!.map((l) => l.compte)).toEqual(['706000', '627000', '512000'])
+    const exoneree: PartSaisie[] = [{ ...REMISE_PARTS[0], taux_tva: 0 }, REMISE_PARTS[1]]
+    expect(ecritureDeLaVentilation(REMISE, exoneree, CATEGORIES, TRESORERIE, true)!.map((l) => l.compte)).toEqual(['706000', '627000', '512000'])
+  })
+
   it('équilibrée au centime, même sur des montants que les flottants arrondissent mal', () => {
     const lignes = ecritureDeLaVentilation(mouvement({ montant: -0.3 }), [
-      { categorie_id: 'cat-tel', part_personnelle: false, montant: -0.1 },
-      { categorie_id: 'cat-fourn', part_personnelle: false, montant: -0.2 },
-    ], CATEGORIES, TRESORERIE)!
+      { categorie_id: 'cat-tel', part_personnelle: false, montant: -0.1, taux_tva: null },
+      { categorie_id: 'cat-fourn', part_personnelle: false, montant: -0.2, taux_tva: null },
+    ], CATEGORIES, TRESORERIE, false)!
     expect(lignes.map((l) => l.montant)).toEqual([0.1, 0.2, 0.3])
     expect(equilibre(lignes)).toBe(0)
   })
 
   it('le libellé complet quand l’import n’a gardé que le générique', () => {
     const lignes = ecritureDeLaVentilation(
-      mouvement({ libelle: 'Mouvement bancaire', libelle_brut: 'PRLV SEPA OPERATEUR MOBILE REF 42' }), TELEPHONE_70, CATEGORIES, TRESORERIE,
+      mouvement({ libelle: 'Mouvement bancaire', libelle_brut: 'PRLV SEPA OPERATEUR MOBILE REF 42' }), TELEPHONE_70, CATEGORIES, TRESORERIE, false,
     )!
     expect(new Set(lignes.map((l) => l.libelle))).toEqual(new Set(['PRLV SEPA OPERATEUR MOBILE REF 42']))
   })
 
   it('nulle quand une part ne peut pas s’écrire : catégorie absente, ou sortie des comptes de résultat', () => {
-    expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: 'cat-inconnue' }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE)).toBeNull()
-    expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: 'cat-bilan' }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE)).toBeNull()
-    expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: 'cat-vide' }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE)).toBeNull()
+    expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: 'cat-inconnue' }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE, false)).toBeNull()
+    expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: 'cat-bilan' }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE, false)).toBeNull()
+    expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: 'cat-vide' }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE, false)).toBeNull()
     // Une part sans cible n'a pas de compte non plus.
-    expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: null }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE)).toBeNull()
+    expect(ecritureDeLaVentilation(mouvement(), [{ ...TELEPHONE_70[0], categorie_id: null }, TELEPHONE_70[1]], CATEGORIES, TRESORERIE, false)).toBeNull()
   })
 })
 
 describe('partsDesVentilations — ce que la ventilation met dans les postes de la 2035', () => {
   it('une part par catégorie, jamais la part personnelle, à la date du mouvement', () => {
-    const parts = partsDesVentilations([VENTILE], PARTS_TELEPHONE, CATEGORIES)
+    const parts = partsDesVentilations([VENTILE], PARTS_TELEPHONE, CATEGORIES, false)
     expect(parts.map((p) => [p.categorie.id, p.nature, p.montantPoste, p.ligne.date])).toEqual([
       ['cat-tel', 'depense', 84, '2025-03-12'],
     ])
@@ -280,18 +325,30 @@ describe('partsDesVentilations — ce que la ventilation met dans les postes de 
     const parts = partsDesVentilations([remise], [
       part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 100 }),
       part({ id: 'r2', ligne_bancaire_id: 'remise', categorie_id: 'cat-frais', montant: -5 }),
-    ], CATEGORIES)
+    ], CATEGORIES, false)
     expect(parts.map((p) => [p.categorie.id, p.nature, p.montantPoste])).toEqual([
       ['cat-recettes', 'recette', 100],
       ['cat-frais', 'depense', 5],
     ])
   })
 
+  it('une part de recette taxée compte au hors taxe sur un dossier assujetti, au TTC ailleurs', () => {
+    const remise = { ...REMISE, statut: 'rapprochee' as const, ventilee: true }
+    const parts = [
+      part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 100, taux_tva: 20 }),
+      part({ id: 'r2', ligne_bancaire_id: 'remise', categorie_id: 'cat-frais', montant: -5 }),
+    ]
+    expect(partsDesVentilations([remise], parts, CATEGORIES, true).map((p) => [p.categorie.id, p.taux, p.montantPoste]))
+      .toEqual([['cat-recettes', 20, 83.33], ['cat-frais', null, 5]])
+    expect(partsDesVentilations([remise], parts, CATEGORIES, false).map((p) => [p.categorie.id, p.taux, p.montantPoste]))
+      .toEqual([['cat-recettes', null, 100], ['cat-frais', null, 5]])
+  })
+
   it('un remboursement dans un paiement diminue son poste', () => {
     const parts = partsDesVentilations([mouvement({ statut: 'rapprochee', ventilee: true, montant: -95 })], [
       part({ id: 'a', categorie_id: 'cat-tel', montant: -100 }),
       part({ id: 'b', categorie_id: 'cat-fourn', montant: 5 }),
-    ], CATEGORIES)
+    ], CATEGORIES, false)
     expect(parts.map((p) => [p.categorie.id, p.montantPoste])).toEqual([['cat-tel', 100], ['cat-fourn', -5]])
   })
 
@@ -300,7 +357,7 @@ describe('partsDesVentilations — ce que la ventilation met dans les postes de 
       mouvement({ statut: 'rapprochee', ventilee: false, reglement_groupe: false }),
       mouvement({ statut: 'non_rapprochee', ventilee: true }),
     ]) {
-      expect(partsDesVentilations([ligne], PARTS_TELEPHONE, CATEGORIES)).toEqual([])
+      expect(partsDesVentilations([ligne], PARTS_TELEPHONE, CATEGORIES, false)).toEqual([])
     }
   })
 
@@ -308,7 +365,7 @@ describe('partsDesVentilations — ce que la ventilation met dans les postes de 
     const parts = partsDesVentilations([VENTILE], [
       part({ id: 'a', categorie_id: 'cat-inconnue', montant: -60 }),
       part({ id: 'b', categorie_id: 'cat-bilan', montant: -60 }),
-    ], CATEGORIES)
+    ], CATEGORIES, false)
     expect(parts.map((p) => [p.categorie.id, p.nature, p.montantPoste])).toEqual([['cat-bilan', null, -60]])
   })
 
@@ -316,15 +373,29 @@ describe('partsDesVentilations — ce que la ventilation met dans les postes de 
     const parts = partsDesVentilations([VENTILE], [
       ...PARTS_TELEPHONE,
       part({ id: 'autre', ligne_bancaire_id: 'l2', categorie_id: 'cat-fourn', montant: -10 }),
-    ], CATEGORIES)
+    ], CATEGORIES, false)
     expect(parts.map((p) => p.categorie.id)).toEqual(['cat-tel'])
   })
 })
 
 describe('partsDuReleve — la ventilation rejoint les autres sources', () => {
+  it('porte le taux qui s’applique, et le hors taxe dans le poste, ce que la CA3 relit', () => {
+    const recette = mouvement({ id: 'client', statut: 'rapprochee', categorie_id: 'cat-recettes', taux_tva: 20, montant: 120 })
+    const remise = { ...REMISE, statut: 'rapprochee' as const, ventilee: true }
+    const parts = [
+      part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 110, taux_tva: 10 }),
+      part({ id: 'r2', ligne_bancaire_id: 'remise', categorie_id: 'cat-frais', montant: -15 }),
+    ]
+    expect(partsDuReleve([recette, remise], CATEGORIES, parts, true).map((p) => [p.origine, p.taux, p.montantPoste, p.montantReleve]))
+      .toEqual([['affectation', 20, 100, 120], ['ventilation', 10, 100, 110], ['ventilation', null, 15, -15]])
+    // Sur un dossier qui ne l'est plus, aucun taux ne s'applique : le TTC compte.
+    expect(partsDuReleve([recette, remise], CATEGORIES, parts, false).map((p) => [p.taux, p.montantPoste]))
+      .toEqual([[null, 120], [null, 110], [null, 15]])
+  })
+
   it('une part par catégorie, avec son libellé et son poste, à côté des mouvements affectés', () => {
     const affecte = mouvement({ id: 'frais', statut: 'rapprochee', categorie_id: 'cat-frais', montant: -8.5 })
-    const parts = partsDuReleve([affecte, VENTILE], CATEGORIES, PARTS_TELEPHONE)
+    const parts = partsDuReleve([affecte, VENTILE], CATEGORIES, PARTS_TELEPHONE, false)
     expect(parts.map((p) => [p.ligne.id, p.origine, p.libelle, p.poste, p.nature, p.montantPoste])).toEqual([
       ['frais', 'affectation', 'Frais bancaires', 'Frais financiers', 'depense', 8.5],
       ['l1', 'ventilation', 'Téléphone', 'Frais postaux et de télécommunications', 'depense', 84],
@@ -332,28 +403,39 @@ describe('partsDuReleve — la ventilation rejoint les autres sources', () => {
   })
 })
 
-describe('recettesVentileesSurDossierAssujetti — la TVA qu’aucune CA3 ne voit', () => {
+describe('recettesVentileesSansTaux — la TVA qu’aucune CA3 ne voit', () => {
   const remise = { ...REMISE, statut: 'rapprochee' as const, ventilee: true }
-  const parts = partsDesVentilations([remise, VENTILE], [
+  const lignes = [remise, VENTILE]
+  const parts = (assujetti: boolean) => partsDesVentilations(lignes, [
     part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 100 }),
     part({ id: 'r2', ligne_bancaire_id: 'remise', categorie_id: 'cat-frais', montant: -5 }),
     ...PARTS_TELEPHONE,
-  ], CATEGORIES)
+  ], CATEGORIES, assujetti)
 
-  it('un mouvement par entrée, s’il porte une part de recette', () => {
-    expect(recettesVentileesSurDossierAssujetti(parts, true).map((l) => l.id)).toEqual(['remise'])
+  it('un mouvement par entrée, s’il porte une part de recette sans taux', () => {
+    expect(recettesVentileesSansTaux(parts(true), true).map((l) => l.id)).toEqual(['remise'])
   })
 
-  it('un mouvement qui porte deux parts de recette n’est compté qu’une fois', () => {
+  it('se tait quand chaque part de recette porte son taux, exonération comprise', () => {
+    for (const taux of [20, 0]) {
+      const avecTaux = partsDesVentilations([remise], [
+        part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 100, taux_tva: taux }),
+        part({ id: 'r2', ligne_bancaire_id: 'remise', categorie_id: 'cat-frais', montant: -5 }),
+      ], CATEGORIES, true)
+      expect(recettesVentileesSansTaux(avecTaux, true)).toEqual([])
+    }
+  })
+
+  it('un mouvement qui porte deux parts de recette sans taux n’est compté qu’une fois', () => {
     const deux = partsDesVentilations([remise], [
       part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 60 }),
       part({ id: 'r3', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes-2', montant: 35 }),
-    ], [...CATEGORIES, categorie({ id: 'cat-recettes-2', libelle: 'Autres produits', compte_comptable: '758000' })])
-    expect(recettesVentileesSurDossierAssujetti(deux, true).map((l) => l.id)).toEqual(['remise'])
+    ], [...CATEGORIES, categorie({ id: 'cat-recettes-2', libelle: 'Autres produits', compte_comptable: '758000' })], true)
+    expect(recettesVentileesSansTaux(deux, true).map((l) => l.id)).toEqual(['remise'])
   })
 
   it('rien sur un dossier exonéré', () => {
-    expect(recettesVentileesSurDossierAssujetti(parts, false)).toEqual([])
+    expect(recettesVentileesSansTaux(parts(false), false)).toEqual([])
   })
 })
 
@@ -384,8 +466,8 @@ describe('ventilationsIncoherentes — le drapeau et les parts ne disent plus la
 
 describe('mouvementsVentilesDesynchronises — l’écriture que les parts produiraient aujourd’hui', () => {
   it('se tait quand l’écriture est celle attendue, dans n’importe quel ordre', () => {
-    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE)).toEqual([])
-    expect(mouvementsVentilesDesynchronises([...ECRITURE_TELEPHONE].reverse(), [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE)).toEqual([])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false)).toEqual([])
+    expect(mouvementsVentilesDesynchronises([...ECRITURE_TELEPHONE].reverse(), [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false)).toEqual([])
   })
 
   it('une écriture absente, sur un autre compte, d’un autre montant ou à une autre date', () => {
@@ -398,36 +480,69 @@ describe('mouvementsVentilesDesynchronises — l’écriture que les parts produ
       ECRITURE_TELEPHONE.map((e) => ({ ...e, date: '2025-03-13' })),
     ]
     for (const ecritures of cas) {
-      expect(mouvementsVentilesDesynchronises(ecritures, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE).map((l) => l.id)).toEqual(['l1'])
+      expect(mouvementsVentilesDesynchronises(ecritures, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false).map((l) => l.id)).toEqual(['l1'])
     }
   })
 
   it('une catégorie dont le compte a changé depuis — le cas réel', () => {
     const recomptee = [{ ...TELEPHONE, compte_comptable: '626100' }, ...CATEGORIES.slice(1)]
-    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, recomptee, TRESORERIE).map((l) => l.id)).toEqual(['l1'])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, recomptee, TRESORERIE, false).map((l) => l.id)).toEqual(['l1'])
     // Sortie des comptes de résultat : l'écriture ne peut plus être celle d'une ventilation.
     const bilan = [{ ...TELEPHONE, compte_comptable: '108000' }, ...CATEGORIES.slice(1)]
-    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, bilan, TRESORERIE).map((l) => l.id)).toEqual(['l1'])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, bilan, TRESORERIE, false).map((l) => l.id)).toEqual(['l1'])
   })
 
   it('en engagement, la part personnelle attendue est sur le compte du dirigeant choisi', () => {
-    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, CATEGORIES, ENGAGEMENT_SOCIETE).map((l) => l.id)).toEqual(['l1'])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, CATEGORIES, ENGAGEMENT_SOCIETE, false).map((l) => l.id)).toEqual(['l1'])
     const au455 = ECRITURE_TELEPHONE.map((e) => e.compte === '108000' ? { ...e, compte: '455000' } : e)
-    expect(mouvementsVentilesDesynchronises(au455, [VENTILE], PARTS_TELEPHONE, CATEGORIES, ENGAGEMENT_SOCIETE)).toEqual([])
+    expect(mouvementsVentilesDesynchronises(au455, [VENTILE], PARTS_TELEPHONE, CATEGORIES, ENGAGEMENT_SOCIETE, false)).toEqual([])
   })
 
   it('ne juge pas ce qu’il n’a pas lu : une catégorie absente de la liste écarte le mouvement', () => {
-    expect(mouvementsVentilesDesynchronises([], [VENTILE], PARTS_TELEPHONE, CATEGORIES.filter((c) => c.id !== 'cat-tel'), TRESORERIE)).toEqual([])
+    expect(mouvementsVentilesDesynchronises([], [VENTILE], PARTS_TELEPHONE, CATEGORIES.filter((c) => c.id !== 'cat-tel'), TRESORERIE, false)).toEqual([])
   })
 
   it('ne redit pas une ventilation incohérente, ni un mouvement qui n’est pas ventilé', () => {
-    expect(mouvementsVentilesDesynchronises([], [VENTILE], [PARTS_TELEPHONE[0]], CATEGORIES, TRESORERIE)).toEqual([])
-    expect(mouvementsVentilesDesynchronises([], [mouvement({ statut: 'rapprochee', categorie_id: 'cat-tel' })], [], CATEGORIES, TRESORERIE)).toEqual([])
+    expect(mouvementsVentilesDesynchronises([], [VENTILE], [PARTS_TELEPHONE[0]], CATEGORIES, TRESORERIE, false)).toEqual([])
+    expect(mouvementsVentilesDesynchronises([], [mouvement({ statut: 'rapprochee', categorie_id: 'cat-tel' })], [], CATEGORIES, TRESORERIE, false)).toEqual([])
+  })
+
+  describe('une remise taxée', () => {
+    const remise = { ...REMISE, statut: 'rapprochee' as const, ventilee: true }
+    const parts = [
+      part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 100, taux_tva: 20 }),
+      part({ id: 'r2', ligne_bancaire_id: 'remise', categorie_id: 'cat-frais', montant: -5 }),
+    ]
+    const sur = (o: Partial<EcritureBrouillon>) => ecriture({ ligne_bancaire_id: 'remise', libelle: 'REMISE CB', ...o })
+    const taxee = [
+      sur({ id: 'a', compte: '706000', sens: 'credit', montant: 83.33 }),
+      sur({ id: 'b', compte: '445710', sens: 'credit', montant: 16.67 }),
+      sur({ id: 'c', compte: '627000', sens: 'debit', montant: 5 }),
+      sur({ id: 'd', compte: '512000', sens: 'debit', montant: 95 }),
+    ]
+    const auTtc = [
+      sur({ id: 'a', compte: '706000', sens: 'credit', montant: 100 }),
+      sur({ id: 'c', compte: '627000', sens: 'debit', montant: 5 }),
+      sur({ id: 'd', compte: '512000', sens: 'debit', montant: 95 }),
+    ]
+
+    it('se tait sur les quatre lignes attendues', () => {
+      expect(mouvementsVentilesDesynchronises(taxee, [remise], parts, CATEGORIES, TRESORERIE, true)).toEqual([])
+    })
+
+    it('signale la recette écrite au TTC alors que sa part porte son taux', () => {
+      expect(mouvementsVentilesDesynchronises(auTtc, [remise], parts, CATEGORIES, TRESORERIE, true).map((l) => l.id)).toEqual(['remise'])
+    })
+
+    it('un dossier qui a cessé d’être assujetti attend l’écriture sans TVA', () => {
+      expect(mouvementsVentilesDesynchronises(taxee, [remise], parts, CATEGORIES, TRESORERIE, false).map((l) => l.id)).toEqual(['remise'])
+      expect(mouvementsVentilesDesynchronises(auTtc, [remise], parts, CATEGORIES, TRESORERIE, false)).toEqual([])
+    })
   })
 
   it('les écritures d’une pièce sur le même mouvement ne comptent pas', () => {
     // La contrepartie banque d'une pièce désigne aussi un mouvement : elle appartient à la pièce.
     const avecPiece = [...ECRITURE_TELEPHONE, ecriture({ id: 'p', piece_id: 'p1', compte: '512000', sens: 'credit', montant: 120 })]
-    expect(mouvementsVentilesDesynchronises(avecPiece, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE)).toEqual([])
+    expect(mouvementsVentilesDesynchronises(avecPiece, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false)).toEqual([])
   })
 })
