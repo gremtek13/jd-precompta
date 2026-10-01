@@ -532,6 +532,11 @@ describe('calculerCa3 — les recettes du relevé', () => {
   it('compte à la date de l’encaissement, et pas hors de la période', () => {
     expect(ca3([encaissement({ date: '2027-04-02' })]).cases.A1).toBe(0)
     expect(ca3([encaissement({ date: '2027-03-31' })]).cases.A1).toBe(100)
+    // La borne de début aussi : un encaissement de décembre appartient à la déclaration d'avant, et une
+    // recette sans taux d'avant la période ne se dit pas écartée de celle-ci.
+    expect(ca3([encaissement({ date: '2026-12-31' })]).cases.A1).toBe(0)
+    expect(ca3([encaissement({ date: '2027-01-01' })]).cases.A1).toBe(100)
+    expect(ca3([encaissement({ date: '2026-12-31', taux_tva: null })]).releveEcartees).toEqual([])
   })
 
   it('une part de recette ventilée compte pour son montant, la commission jamais', () => {
