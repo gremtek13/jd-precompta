@@ -114,28 +114,48 @@ interface CategorieRow { id: string; libelle: string; compte_comptable: string |
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
 const COMPTE_TVA_DEDUCTIBLE = "445660"
 const COMPTE_TVA_COLLECTEE = "445710"
+// La TVA déductible de la facture d'un BIEN immobilisé (ligne 19 de la CA3) — src/lib/comptes.ts.
+const COMPTE_TVA_IMMOBILISATIONS = "445620"
 const COMPTE_BANQUE = "512000"
 const EPSILON_EQUILIBRE = 0.02
 
-interface PieceAComptabiliser {
-  piece: PieceRow
+// Où une pièce s'écrit : le compte de sa catégorie, ou — pour la facture d'un bien IMMOBILISÉ — le compte
+// d'immobilisation de sa nature (l'écriture d'ACQUISITION). L'immobilisation décide aussi du compte de TVA
+// (445620) et, en engagement, du compte de tiers (404000).
+interface CibleComptable {
   compte: string
+  immobilisation: boolean
+}
+
+interface PieceAComptabiliser extends CibleComptable {
+  piece: PieceRow
 }
 
 // Ce qu'une pièce validée DOIT produire au brouillon, et sur QUEL compte — la forme exacte de
 // `piecesAComptabiliser` dans src/lib/ecritures.ts. L'ancienne version de cette fonction filtrait
 // les mêmes pièces mais JETAIT le compte attendu, ce qui rendait trois des quatre comparaisons
-// ci-dessous impossibles à écrire.
+// ci-dessous impossibles à écrire. `acquisitions` : la pièce de chaque bien du registre et le compte de
+// sa nature — ou rien, pour un bien sans nature et pour un bien acquis avant l'ouverture d'un dossier
+// repris, qui ne s'écrivent pas (bloc AMORTISSEMENT, `acquisitionsDesBiens`).
 function piecesAComptabiliser(
   piecesValidees: PieceRow[],
   categories: CategorieRow[],
-  pieceIdsImmobilisees: ReadonlySet<string>,
+  acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
 ): PieceAComptabiliser[] {
-  return piecesValidees.flatMap((piece) => {
-    if (piece.montant_ttc == null || pieceIdsImmobilisees.has(piece.id)) return []
+  return piecesValidees.flatMap((piece): PieceAComptabiliser[] => {
+    if (piece.montant_ttc == null) return []
+    const acquisition = acquisitions.get(piece.id)
+    if (acquisition) return acquisition.compte ? [{ piece, compte: acquisition.compte, immobilisation: true }] : []
     const compte = categories.find((c) => c.id === piece.categorie_id)?.compte_comptable
-    return compte ? [{ piece, compte }] : []
+    return compte ? [{ piece, compte, immobilisation: false }] : []
   })
+}
+
+// Le compte de TVA d'une pièce : collectée pour une vente, déductible sur immobilisation pour la facture d'un
+// bien, déductible sur biens et services sinon — src/lib/montantRetenu.ts.
+function compteTvaDe(piece: Pick<PieceRow, "type_piece">, immobilisation: boolean): string {
+  if (piece.type_piece === "vente") return COMPTE_TVA_COLLECTEE
+  return immobilisation ? COMPTE_TVA_IMMOBILISATIONS : COMPTE_TVA_DEDUCTIBLE
 }
 
 // ---- Dupliqué depuis src/lib/rattachement.ts et src/lib/alignementBanque.ts ----------------------
@@ -242,6 +262,7 @@ function rattachementsTresorerie(
 // l'assistant jugerait le brouillon d'un dossier en engagement avec les règles de la trésorerie, et
 // annoncerait « à régénérer » chacune de ses écritures justes.
 const COMPTE_FOURNISSEURS = "401000"
+const COMPTE_FOURNISSEURS_IMMOBILISATIONS = "404000"
 const COMPTE_CLIENTS = "411000"
 
 type ModeComptable = "tresorerie" | "engagement"
@@ -262,11 +283,12 @@ function tvaVentilee(piece: Pick<PieceRow, "montant_tva">, assujettiTva: boolean
   return assujettiTva ? piece.montant_tva ?? 0 : 0
 }
 
-// 411 pour une vente, le compte du dossier pour une note de frais, 401 pour tout le reste.
-function compteDeTiers(piece: Pick<PieceRow, "type_piece">, compteNotesDeFrais: string): string {
+// 411 pour une vente, le compte du dossier pour une note de frais, 404 pour la facture d'un bien
+// immobilisé, 401 pour tout le reste.
+function compteDeTiers(piece: Pick<PieceRow, "type_piece">, compteNotesDeFrais: string, immobilisation: boolean): string {
   if (piece.type_piece === "vente") return COMPTE_CLIENTS
   if (piece.type_piece === "note_frais") return compteNotesDeFrais
-  return COMPTE_FOURNISSEURS
+  return immobilisation ? COMPTE_FOURNISSEURS_IMMOBILISATIONS : COMPTE_FOURNISSEURS
 }
 
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
@@ -305,7 +327,7 @@ function banqueSuitLesPaiements(lignesBanque: readonly EcritureRow[], paiements:
 // régénérer » là où la Checklist du même dossier en comptait, sur l'outil dont toute la raison d'être
 // est de répondre « quelles sont les anomalies ? ». Deux livrables, deux réponses.
 function tresorerieDesynchronisee(
-  p: PieceRow, compte: string, groupe: readonly EcritureRow[], assujettiTva: boolean,
+  p: PieceRow, cible: CibleComptable, groupe: readonly EcritureRow[], assujettiTva: boolean,
   paiementsPiece: readonly PaiementDePiece[],
 ): boolean {
   const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE)
@@ -313,17 +335,17 @@ function tresorerieDesynchronisee(
   if (lignes.length === 0) return groupe.length > 0
   const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
   // LE COMPTE : recatégoriser une pièce validée ne réécrit pas son écriture, et le total ne bouge
-  // pas d'un centime. Les comptes de TVA sont exclus, sinon toute facture au taux normal serait
-  // signalée dès la première.
-  const surUnAutreCompte = lignes.some(
-    (e) => e.compte !== compte && e.compte !== COMPTE_TVA_DEDUCTIBLE && e.compte !== COMPTE_TVA_COLLECTEE,
-  )
+  // pas d'un centime. Le compte de TVA est exclu, sinon toute facture au taux normal serait
+  // signalée dès la première — celui que la génération écrit (`compteTvaDe`) : la facture d'un bien
+  // passe en 445620, celle d'une charge en 445660.
+  const compteTva = compteTvaDe(p, cible.immobilisation)
+  const surUnAutreCompte = lignes.some((e) => e.compte !== cible.compte && e.compte !== compteTva)
   if (surUnAutreCompte) return true
   // LA VENTILATION DE LA TVA, que le total ne peut pas voir : corriger `montant_tva` en gardant le
   // TTC laisse la somme du groupe rigoureusement inchangée, les deux lignes se compensant. La TVA
   // attendue est celle que la génération ventile : rien pour un dossier exonéré (voir tvaVentilee).
   const tvaEnregistree = lignes
-    .filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE)
+    .filter((e) => e.compte === compteTva)
     .reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
   if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
   // LA DATE, et elle coûte plus cher que le compte : une pièce validée sans date reçoit une
@@ -351,20 +373,21 @@ function tresorerieDesynchronisee(
 // les règlements suivent les RAPPROCHEMENTS — un mouvement rapproché sans règlement laisserait au 401
 // une dette déjà payée, et un règlement que plus rien ne rapproche en solderait une qui court encore.
 function engagementDesynchronise(
-  p: PieceRow, compte: string, groupe: readonly EcritureRow[], assujettiTva: boolean,
+  p: PieceRow, cible: CibleComptable, groupe: readonly EcritureRow[], assujettiTva: boolean,
   paiementsPiece: readonly PaiementDePiece[], compteNotesDeFrais: string,
 ): boolean {
   const facture = groupe.filter((e) => !e.ligne_bancaire_id && e.compte !== COMPTE_BANQUE)
   const reglements = groupe.filter((e) => e.ligne_bancaire_id)
   // Pas encore générée — pas une désynchronisation. Des règlements SANS leur facture en sont une.
   if (facture.length === 0) return reglements.length > 0
-  const tiers = compteDeTiers(p, compteNotesDeFrais)
+  const tiers = compteDeTiers(p, compteNotesDeFrais, cible.immobilisation)
   const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
   const sensTiers: "debit" | "credit" = sensPiece === "debit" ? "credit" : "debit"
   const signe = (e: EcritureRow, sens: "debit" | "credit") => (e.sens === sens ? e.montant : -e.montant)
-  const estTva = (e: EcritureRow) => e.compte === COMPTE_TVA_DEDUCTIBLE || e.compte === COMPTE_TVA_COLLECTEE
+  const compteTva = compteTvaDe(p, cible.immobilisation)
+  const estTva = (e: EcritureRow) => e.compte === compteTva
 
-  if (facture.some((e) => e.compte !== compte && e.compte !== tiers && !estTva(e))) return true
+  if (facture.some((e) => e.compte !== cible.compte && e.compte !== tiers && !estTva(e))) return true
   const tvaEnregistree = facture.filter(estTva).reduce((s, e) => s + signe(e, sensPiece), 0)
   if (Math.abs(tvaEnregistree - tvaVentilee(p, assujettiTva)) > EPSILON_EQUILIBRE) return true
   if (p.date_piece && facture.some((e) => e.date !== p.date_piece)) return true
@@ -423,12 +446,12 @@ function analyserEcritures(
       .map(([pieceId, rows]) => ({ pieceId, solde: rows.reduce((s, r) => s + (r.sens === "debit" ? r.montant : -r.montant), 0) }))
       .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
 
-  const piecesDesynchronisees = aComptabiliser.filter(({ piece, compte }) => {
+  const piecesDesynchronisees = aComptabiliser.filter(({ piece, ...cible }) => {
     const groupe = piecesParGroupe.get(piece.id) ?? []
     const paiementsPiece = paiements.get(piece.id) ?? []
     return modele.mode === "engagement"
-      ? engagementDesynchronise(piece, compte, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
-      : tresorerieDesynchronisee(piece, compte, groupe, assujettiTva, paiementsPiece)
+      ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
+      : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece)
   }).map(({ piece }) => piece)
 
   return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
@@ -655,19 +678,26 @@ function recettesAffecteesSansTaux(affectes: readonly MouvementAffecte[], assuje
   return assujettiTva ? affectes.filter((m) => m.nature === "recette" && m.taux === null) : []
 }
 
-// Une catégorie compte dès qu'une pièce validée OU un mouvement affecté l'utilise.
+// Une catégorie compte dès qu'une pièce validée OU un mouvement affecté l'utilise — jamais la facture d'un
+// bien du registre, qui s'écrit sur le compte de sa nature et que la 2035 écarte.
 function categoriesSansCompte(
   categories: CategorieRow[], pieces: PieceRow[], mouvements: readonly Pick<MouvementAffecteRow, "categorie_id">[],
+  pieceIdsImmobilisees: ReadonlySet<string>,
 ) {
-  return categories.filter((c) => !c.compte_comptable && utilisee(c, pieces, mouvements))
+  return categories.filter((c) => !c.compte_comptable && utilisee(c, pieces, mouvements, pieceIdsImmobilisees))
 }
 function categoriesSansPoste(
   categories: CategorieRow[], pieces: PieceRow[], mouvements: readonly Pick<MouvementAffecteRow, "categorie_id">[],
+  pieceIdsImmobilisees: ReadonlySet<string>,
 ) {
-  return categories.filter((c) => !c.poste_2035 && utilisee(c, pieces, mouvements))
+  return categories.filter((c) => !c.poste_2035 && utilisee(c, pieces, mouvements, pieceIdsImmobilisees))
 }
-function utilisee(c: CategorieRow, pieces: PieceRow[], mouvements: readonly Pick<MouvementAffecteRow, "categorie_id">[]): boolean {
-  return pieces.some((p) => p.categorie_id === c.id) || mouvements.some((m) => m.categorie_id === c.id)
+function utilisee(
+  c: CategorieRow, pieces: PieceRow[], mouvements: readonly Pick<MouvementAffecteRow, "categorie_id">[],
+  pieceIdsImmobilisees: ReadonlySet<string>,
+): boolean {
+  return pieces.some((p) => p.categorie_id === c.id && !pieceIdsImmobilisees.has(p.id))
+    || mouvements.some((m) => m.categorie_id === c.id)
 }
 // ── FIN AFFECTATION ──────────────────────────────────────────────────────────────────────────────
 
@@ -1169,6 +1199,38 @@ function dotationsDuRegistre(
 function dotationsEnDefaut<D extends { annee: number; etat: EtatDotation }>(dotations: readonly D[], anneeCourante: number): D[] {
   return dotations.filter((d) => d.etat !== "ecrite" && (d.etat !== "a_ecrire" || d.annee < anneeCourante))
 }
+
+// L'ÉCRITURE D'ACQUISITION : la facture d'un bien s'écrit sur le compte d'immobilisation de sa nature — ou
+// rien, et pourquoi : `sans_nature`, son compte n'est pas connu ; `repris`, le bien est acquis AVANT
+// l'ouverture d'un dossier repris, et la balance reprise porte déjà sa valeur brute — l'écrire encore la
+// compterait deux fois, la règle de ses dotations d'avant l'ouverture. Un bien dont la facture a été
+// supprimée n'a pas d'acquisition à écrire.
+type AcquisitionDuBien =
+  | { compte: string; motif: null }
+  | { compte: null; motif: "sans_nature" | "repris" }
+
+function bienRepris(bien: Pick<ImmobilisationRow, "date_acquisition">, ouverture: string | null): boolean {
+  return ouverture != null && bien.date_acquisition < ouverture
+}
+
+function acquisitionsDesBiens(
+  immobilisations: readonly Pick<ImmobilisationRow & { piece_id: string | null }, "piece_id" | "nature_id" | "date_acquisition">[],
+  natures: readonly Pick<NatureRow, "id" | "compte_immobilisation">[],
+  ouverture: string | null,
+): Map<string, AcquisitionDuBien> {
+  const compteParNature = new Map(natures.map((n) => [n.id, n.compte_immobilisation]))
+  const acquisitions = new Map<string, AcquisitionDuBien>()
+  for (const bien of immobilisations) {
+    if (!bien.piece_id) continue
+    if (bienRepris(bien, ouverture)) {
+      acquisitions.set(bien.piece_id, { compte: null, motif: "repris" })
+      continue
+    }
+    const compte = (bien.nature_id ? compteParNature.get(bien.nature_id) : undefined) ?? null
+    acquisitions.set(bien.piece_id, compte ? { compte, motif: null } : { compte: null, motif: "sans_nature" })
+  }
+  return acquisitions
+}
 // ── FIN AMORTISSEMENT ────────────────────────────────────────────────────────────────────────────
 
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
@@ -1633,7 +1695,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       lireTout<EcritureRow & EcritureDotationRow>((d, f) =>
         admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Le REGISTRE (bloc AMORTISSEMENT) : chaque bien, de quoi calculer sa dotation de chaque exercice. Et
-      // `piece_id`, qui écarte la pièce immobilisée des charges à comptabiliser.
+      // `piece_id` : la facture d'un bien s'écrit sur le compte de sa nature, pas sur sa catégorie.
       lireTout<ImmobilisationRow & { piece_id: string | null }>((d, f) =>
         admin.from("immobilisations").select("id, piece_id, nature_id, libelle, valeur, date_acquisition, date_mise_en_service, duree_annees", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les mouvements AFFECTÉS à une catégorie sans justificatif (bloc AFFECTATION) : leurs catégories
@@ -1666,12 +1728,14 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // écriture, sans quoi elle manque au FEC.
       lireTout<CotisationRow>((d, f) =>
         admin.from("cotisations_declarees").select("id, echeance, montant_appele, montant_verse, montant_csg_crds", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
-      // Les NATURES (bloc AMORTISSEMENT) : le compte d'immobilisation d'où la dotation tire son compte 28 — sans
-      // nature, une dotation ne se compose pas. Celles du cabinet comprises, comme les catégories.
+      // Les NATURES (bloc AMORTISSEMENT) : le compte d'immobilisation d'où la dotation tire son compte 28, et sur
+      // lequel la facture du bien s'écrit — sans nature, ni l'une ni l'autre ne se compose. Celles du cabinet
+      // comprises, comme les catégories.
       lireTout<NatureRow>((d, f) =>
         admin.from("natures_immobilisation").select("id, compte_immobilisation", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
-      // L'OUVERTURE d'un dossier repris (bloc AMORTISSEMENT) : avant elle, l'amortissement est dans les
-      // à-nouveaux, et aucune dotation ne s'écrit. Une seule ouverture par dossier, la base le garantit.
+      // L'OUVERTURE d'un dossier repris (bloc AMORTISSEMENT) : avant elle, l'amortissement et la valeur des
+      // biens sont dans les à-nouveaux — ni dotation ni acquisition ne s'écrit. Une seule ouverture par
+      // dossier, la base le garantit.
       lireTout<{ date: string }>((d, f) =>
         admin.from("a_nouveaux").select("id, date", { count: "exact" }).eq("dossier_id", dossierId).order("date").order("id").range(d, f)),
     ])
@@ -1691,17 +1755,20 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const piecesTyped = rPieces.lignes
     const categoriesTyped = rCategories.lignes
     const ecrituresTyped = rEcritures.lignes
-    const immobilisationPieceIds = new Set(
-      rImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id),
-    )
-    const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, immobilisationPieceIds)
+    // La facture d'un bien s'écrit sur le compte de sa nature (bloc AMORTISSEMENT) : c'est son acquisition —
+    // sauf un bien sans nature, et un bien acquis avant l'ouverture d'un dossier repris, que la balance
+    // reprise porte déjà. Une seule ouverture par dossier, la base le garantit.
+    const ouverture = rANouveaux.lignes[0]?.date ?? null
+    const acquisitions = acquisitionsDesBiens(rImmobilisations.lignes, rNatures.lignes, ouverture)
+    const pieceIdsImmobilisees = new Set(acquisitions.keys())
+    const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions)
     const modele = modeleDuDossier(dossier)
     const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes)
     const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele)
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
     // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
-    const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])
-    const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])
+    const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
+    const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
     const sansTva = piecesSansTva(piecesTyped, dossier.assujetti_tva)
     const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)
     const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes)
@@ -1723,7 +1790,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // L'exercice en cours, dans le fuseau du cabinet : sa dotation ne manque pas encore.
     const anneeCourante = Number(aujourdHuiCabinet().slice(0, 4))
     const dotationsManquantes = dotationsEnDefaut(
-      dotationsDuRegistre(rImmobilisations.lignes, rNatures.lignes, ecrituresTyped, rANouveaux.lignes[0]?.date ?? null, anneeCourante),
+      dotationsDuRegistre(rImmobilisations.lignes, rNatures.lignes, ecrituresTyped, ouverture, anneeCourante),
       anneeCourante,
     )
 
@@ -1931,7 +1998,7 @@ Deno.serve(async (req: Request) => {
   // anomalie, ou chercherait la contrepartie banque d'une facture d'engagement qui n'a pas encore été
   // réglée.
   const repereModele = dossierRow.mode_comptable === "engagement"
-    ? `engagement (BIC, IS) — une facture crée une dette en 401000 Fournisseurs ou une créance en 411000 Clients à sa date, et son paiement la solde à sa propre date ; une note de frais payée par le dirigeant passe par le compte ${dossierRow.compte_notes_de_frais}. La 2035 n'est pas produite pour ce dossier.`
+    ? `engagement (BIC, IS) — une facture crée une dette en 401000 Fournisseurs (404000 Fournisseurs d'immobilisations pour celle d'un bien) ou une créance en 411000 Clients à sa date, et son paiement la solde à sa propre date ; une note de frais payée par le dirigeant passe par le compte ${dossierRow.compte_notes_de_frais}. La 2035 n'est pas produite pour ce dossier.`
     : "trésorerie (BNC, 2035) — une pièce compte à la date de son paiement, sa date de facture à défaut."
   const systemPrompt = `Tu es l'assistant comptable interne du cabinet JD Consult, pour le dossier "${dossierRow.nom}" (précomptabilité — un brouillon à vérifier, jamais une comptabilité tenue).
 
@@ -1947,6 +2014,7 @@ Règles impératives :
 - Un mouvement du relevé peut être VENTILÉ sur plusieurs comptes (une remise de carte et la commission que la banque en retient, un paiement en partie personnel) : son écriture, face au 512000, sans pièce, porte une ligne par part ; la part personnelle va au compte du dirigeant, ni charge ni recette, et les autres comptent dans la 2035 à la date du mouvement. Ce n'est pas une anomalie.
 - Un VIREMENT peut RÉGLER PLUSIEURS PIÈCES (un paiement qui solde plusieurs factures, un avoir déduit d'un paiement) : chaque pièce reçoit sa PART du mouvement, qui la paie à la date du mouvement. Une pièce payée en plusieurs fois porte au brouillon une ligne de banque par paiement, au montant de ce paiement : ce n'est pas une anomalie.
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
+- La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au 445620 : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.
 - Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
 - Modèle comptable du dossier : ${repereModele}

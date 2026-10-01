@@ -3,8 +3,8 @@ import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { anneeDe, aujourdHuiSql, dateLocaleDe, formatDate, formatMoney } from '../../lib/format'
 import {
-  compteAmortissement, dateDeLaDotation, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, planAmortissement, refusBien,
-  refusNature, valeurSaisie,
+  compteAmortissement, dateDeLaDotation, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, montantDeFactureDifferent,
+  planAmortissement, refusBien, refusNature, valeurSaisie,
   type DotationDuRegistre, type EtatDotation,
 } from '../../lib/amortissements'
 import { immobilisationSansJustificatif } from '../../lib/controles'
@@ -194,6 +194,15 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   const enDefaut = dotationsEnDefaut(dotations, anneeCourante)
   const ecritureSuspendue = dotationsIncompletes !== null
   const dotationsDuBien = (id: string) => dotations.filter((d) => d.immobilisation.id === id)
+
+  // La valeur d'un bien qui ne suit plus sa FACTURE : l'acquisition s'écrit au montant de la facture, les
+  // dotations sur la valeur du registre (lib/amortissements.ts). Comptée sur le registre ENTIER, comme les
+  // dotations : un mot tapé dans la recherche ne fait pas disparaître l'écart. Rien pour un bien acquis
+  // avant l'ouverture du dossier : son acquisition ne s'écrit pas, la balance reprise porte sa valeur.
+  const factureParPiece = new Map(piecesValidees.map((p) => [p.id, p]))
+  const factureDifferente = (i: Immobilisation) =>
+    i.piece_id ? montantDeFactureDifferent(i, factureParPiece.get(i.piece_id), assujettiTva, ouverture) : null
+  const nbValeursHorsFacture = immobilisations.filter((i) => factureDifferente(i) != null).length
 
   // Changer la nature choisie pré-remplit la durée suggérée, sans écraser une durée déjà modifiée à la
   // main pour cette pièce.
@@ -592,6 +601,16 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
 
       <AnneeTabs annees={anneesDisponibles} valeur={anneeFilter} onChange={setAnneeFilter} />
 
+      {nbValeursHorsFacture > 0 && (
+        <p className="muted" style={{ marginTop: 0 }}>
+          {nbValeursHorsFacture === 1 ? 'Un bien n’est pas enregistré' : `${nbValeursHorsFacture} biens ne sont pas enregistrés`} au
+          montant de {nbValeursHorsFacture === 1 ? 'sa facture' : 'leur facture'} (badge « Facture : … ») : l’acquisition s’écrit au
+          montant de la facture{assujettiTva ? ' hors taxe' : ''}, les dotations sur la valeur du registre, et le compte du bien ne se
+          recoupe plus avec son amortissement. Corriger la valeur — ou, si la facture porte aussi des charges, savoir qu’elle
+          s’écrit en entier sur le compte du bien.
+        </p>
+      )}
+
       <div style={{ marginBottom: 14 }}>
         <BarreRecherche
           valeur={recherche}
@@ -642,7 +661,12 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                       {natureLabel(i.nature_id)}
                       {!i.nature_id && <span className="badge badge-warning" style={{ marginLeft: 8 }}>Nature à choisir</span>}
                     </td>
-                    <td>{formatMoney(i.valeur)}</td>
+                    <td>
+                      {formatMoney(i.valeur)}
+                      {factureDifferente(i) != null && (
+                        <span className="badge badge-warning" style={{ marginLeft: 8 }}>Facture : {formatMoney(factureDifferente(i))}</span>
+                      )}
+                    </td>
                     <td>{formatDate(i.date_acquisition)}</td>
                     <td>
                       {i.date_mise_en_service ? formatDate(i.date_mise_en_service) : <span className="muted">à l’acquisition</span>}

@@ -189,6 +189,57 @@ const carte = () => within(screen.getByRole('table', { name: 'Dotations à écri
 // `\s` : `toLocaleString('fr-FR')` sépare les milliers par une espace fine insécable (U+202F).
 const euros = (texte: string) => new RegExp(`^${texte.replace(/ /g, '\\s')}\\s€$`)
 
+// L'ACQUISITION S'ÉCRIT AU MONTANT DE LA FACTURE, les dotations sur la valeur du REGISTRE (ligne 26.6, étape b) :
+// quand les deux diffèrent, le compte du bien ne se recoupe plus avec son amortissement. Le registre le dit, bien
+// par bien, avec le montant de la facture.
+describe('ImmobilisationsTab — la valeur d’un bien qui ne suit plus sa facture', () => {
+  const facture: Piece = {
+    id: 'piece-1', dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload',
+    storage_path: 'dossier-de-test/ordinateur.pdf', nom_fichier: 'ordinateur.pdf', storage_hash: null,
+    date_piece: '2025-07-01', tiers: 'MATÉRIEL INFORMATIQUE', montant_ht: 10000, montant_tva: 2000,
+    montant_ttc: 12000, devise: 'EUR', montant_devise: null, taux_change: null,
+    conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    created_at: '2025-07-01T09:00:00Z', updated_at: '2025-07-01T09:00:00Z',
+  }
+
+  it('montre le montant de la facture quand la valeur en diffère — le hors taxe d’un dossier assujetti', async () => {
+    // Un bien de 12 000 € enregistré au TTC sur un dossier assujetti : sa facture vaut 10 000 € hors taxe.
+    poser([immobilisation()], { pieces: [facture] })
+    monter(true)
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    registre().getByText(/^Facture : 10\s000,00\s€$/)
+    screen.getByText(/Un bien n’est pas enregistré au\s+montant de\s+sa facture/)
+  })
+
+  it('se tait sur un bien enregistré au montant de sa facture', async () => {
+    // Le garde symétrique : sans lui, « le registre signale l'écart » serait satisfait par un badge toujours là.
+    poser([immobilisation()], { pieces: [facture] })
+    monter(false)
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    expect(registre().queryByText(/^Facture :/)).toBeNull()
+    expect(screen.queryByText(/enregistrés? au\s+montant de/)).toBeNull()
+  })
+
+  it('se tait sur un bien dont la facture n’est pas lue : rien à comparer', async () => {
+    poser([immobilisation()], { pieces: [] })
+    monter(true)
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    expect(registre().queryByText(/^Facture :/)).toBeNull()
+  })
+
+  // Un bien acquis AVANT l'ouverture d'un dossier repris : son acquisition ne s'écrit pas, la balance reprise
+  // porte sa valeur. Rien à recouper avec la facture — l'écart signalé ferait corriger une valeur que rien
+  // n'écrit. Le même bien, sur un dossier ouvert avant lui, parle (premier test de ce bloc).
+  it('se tait sur un bien acquis avant l’ouverture du dossier', async () => {
+    poser([immobilisation()], { pieces: [facture], ouverture: '2026-01-01' })
+    monter(true)
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    expect(registre().queryByText(/^Facture :/)).toBeNull()
+    expect(screen.queryByText(/enregistrés? au\s+montant de/)).toBeNull()
+  })
+})
+
 describe('ImmobilisationsTab — la dotation du registre', () => {
   it('compte prorata temporis depuis l’acquisition : 1 200 € en 2025 pour un bien acquis le 1er juillet', async () => {
     poser([immobilisation()])

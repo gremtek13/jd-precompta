@@ -191,13 +191,18 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   useEffect(() => { load() }, [dossierId])
 
 
+  // La facture d'un bien du registre : la 2035 l'écarte — le bien compte par sa dotation —, donc sa
+  // catégorie ne décide de rien ici.
+  const pieceIdsImmobilisees = new Set(immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id))
   // Catégories utilisées par une pièce validée, un mouvement affecté ou une part d'un mouvement ventilé
   // mais sans poste 2035 associé — le regroupement par poste les ignorera tant que ce n'est pas renseigné
   // (voir lib/controles.ts).
-  const categoriesSansPoste = calculerCategoriesSansPoste(categories, piecesValidees, [...lignesBancaires, ...ventilations])
+  const categoriesSansPoste = calculerCategoriesSansPoste(
+    categories, piecesValidees, [...lignesBancaires, ...ventilations], pieceIdsImmobilisees,
+  )
   // Même famille que « Postes manquants », un cran plus tôt dans la chaîne : sans catégorie du tout,
   // le montant n'atteint même pas la question du poste (voir lib/controles.ts).
-  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees)
+  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees)
 
   // Valeur affichée tant que le cabinet n'a rien tapé : la suggestion connue pour ce code de
   // catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".

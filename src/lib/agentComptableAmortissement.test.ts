@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import {
-  compteAmortissement, dotationAEcrire, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, rang360,
+  acquisitionsDesBiens, bienRepris, compteAmortissement, dotationAEcrire, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut, rang360,
+  type AcquisitionDuBien,
 } from './amortissements'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
 
@@ -35,6 +36,8 @@ interface Copie {
     immobilisations: Immobilisation[], natures: NatureImmobilisation[], ecritures: EcritureBrouillon[], ouverture: string | null, anneeCourante: number,
   ) => Dotation[]
   dotationsEnDefaut: (dotations: Dotation[], anneeCourante: number) => Dotation[]
+  bienRepris: (bien: Pick<Immobilisation, 'date_acquisition'>, ouverture: string | null) => boolean
+  acquisitionsDesBiens: (immobilisations: Immobilisation[], natures: NatureImmobilisation[], ouverture: string | null) => Map<string, AcquisitionDuBien>
 }
 
 // Le bloc AMORTISSEMENT se suffit à lui-même : il ne lit rien d'autre de la fonction.
@@ -44,7 +47,7 @@ function extraire(source: string): Copie {
   expect(debut, 'bornes du bloc AMORTISSEMENT introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
   expect(fin).toBeGreaterThan(debut)
   const js = ts.transpileModule(source.slice(debut, fin), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { rang360, dotationDeLExercice, compteAmortissement, dotationAEcrire, dotationsDuRegistre, dotationsEnDefaut }`)() as Copie
+  return new Function(`${js}\nreturn { rang360, dotationDeLExercice, compteAmortissement, dotationAEcrire, dotationsDuRegistre, dotationsEnDefaut, bienRepris, acquisitionsDesBiens }`)() as Copie
 }
 
 const deployee = extraire(sourceDeployee())
@@ -152,6 +155,34 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
     const tous = new Set(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026).map((d) => d.etat))
     expect([...tous].sort()).toEqual(['a_ecrire', 'a_reecrire', 'a_retirer', 'ecrite', 'validee'])
   })
+
+  // L'ÉCRITURE D'ACQUISITION : la facture d'un bien s'écrit sur le compte de sa nature — ou rien. Un bien d'une
+  // nature partagée, d'une nature du dossier, sans nature, d'une nature inconnue, sans facture, et, pour un
+  // dossier repris, acquis la veille de l'ouverture, le jour même, et longtemps avant sans nature.
+  it('rend la même acquisition de chaque bien, avec ou sans ouverture', () => {
+    const apres = '2026-03-01'
+    const biens = [
+      bien({ id: 'b1', piece_id: 'p1', date_acquisition: apres }),
+      bien({ id: 'b2', piece_id: 'p2', nature_id: 'n-fauteuil', date_acquisition: apres }),
+      bien({ id: 'b3', piece_id: 'p3', nature_id: null, date_acquisition: apres }),
+      bien({ id: 'b4', piece_id: 'p4', nature_id: 'n-inconnue', date_acquisition: apres }),
+      bien({ id: 'b5', piece_id: null }),
+      bien({ id: 'b6', piece_id: 'p6', date_acquisition: '2025-12-31' }),
+      bien({ id: 'b7', piece_id: 'p7', date_acquisition: '2026-01-01' }),
+      bien({ id: 'b8', piece_id: 'p8', date_acquisition: '2019-06-01', nature_id: null }),
+    ]
+    for (const ouverture of [null, '2026-01-01']) {
+      const attendu = acquisitionsDesBiens(biens, NATURES, ouverture)
+      expect([...deployee.acquisitionsDesBiens(biens, NATURES, ouverture)], String(ouverture)).toEqual([...attendu])
+    }
+    // Et la batterie exerce bien chaque cas : sans quoi l'égalité ne prouverait rien.
+    const motifs = [...acquisitionsDesBiens(biens, NATURES, '2026-01-01')].map(([p, a]) => [p, a.compte ?? a.motif])
+    expect(motifs).toEqual([
+      ['p1', '218300'], ['p2', '215400'], ['p3', 'sans_nature'], ['p4', 'sans_nature'],
+      ['p6', 'repris'], ['p7', '218300'], ['p8', 'repris'],
+    ])
+    expect(deployee.bienRepris(bien({ date_acquisition: '2025-12-31' }), '2026-01-01')).toBe(bienRepris(bien({ date_acquisition: '2025-12-31' }), '2026-01-01'))
+  })
 })
 
 describe('agent-comptable / points_a_traiter lit le registre et ses dotations', () => {
@@ -169,8 +200,16 @@ describe('agent-comptable / points_a_traiter lit le registre et ses dotations', 
 
   it('rend le point de la Checklist, l’exercice en cours lu dans le fuseau du cabinet', () => {
     expect(corps).toContain('const anneeCourante = Number(aujourdHuiCabinet().slice(0, 4))')
-    expect(corps).toMatch(/dotationsEnDefaut\(\s*dotationsDuRegistre\(rImmobilisations\.lignes, rNatures\.lignes, ecrituresTyped, rANouveaux\.lignes\[0\]\?\.date \?\? null, anneeCourante\),\s*anneeCourante,\s*\)/)
+    expect(corps).toContain('const ouverture = rANouveaux.lignes[0]?.date ?? null')
+    expect(corps).toMatch(/dotationsEnDefaut\(\s*dotationsDuRegistre\(rImmobilisations\.lignes, rNatures\.lignes, ecrituresTyped, ouverture, anneeCourante\),\s*anneeCourante,\s*\)/)
     expect(corps).toMatch(/dotations_aux_amortissements_a_ecrire_ou_qui_ne_suivent_plus_le_registre: dotationsManquantes\.length/)
+  })
+
+  // L'ACQUISITION : sans cette phrase, le modèle prendrait la facture d'un bien sur un compte de classe 2 — ou
+  // celle d'un bien repris, qui ne s'écrit pas du tout — pour une anomalie à signaler.
+  it('dit au modèle où s’écrit la facture d’un bien, et que celle d’un bien repris ne s’écrit pas', () => {
+    expect(source).toMatch(/La facture d'un BIEN IMMOBILISÉ[^\n]*s'écrit sur le compte d'immobilisation de sa nature[^\n]*sa TVA au 445620[^\n]*Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur\. Rien de cela n'est une anomalie\./)
+    expect(source).toMatch(/401000 Fournisseurs \(404000 Fournisseurs d'immobilisations pour celle d'un bien\)/)
   })
 
   it('dit au modèle qu’une dotation s’écrit sans pièce, au 31 décembre, et l’annonce dans l’outil', () => {
@@ -208,6 +247,24 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
     expect(etats(rendu)).toEqual(etats(attendu))
     expect(etats(copie.dotationsEnDefaut(rendu, anneeCourante))).toEqual(etats(dotationsEnDefaut(attendu, anneeCourante)))
   }
+
+  it('attrape un bien sans nature à qui l’on prêterait un compte', () => {
+    const derivee = planter(['(bien.nature_id ? compteParNature.get(bien.nature_id) : undefined) ?? null', 'compteParNature.get(bien.nature_id ?? \'\') ?? "218000"'])
+    const biens = [bien({ id: 'b3', piece_id: 'p3', nature_id: null })]
+    echoue(() => expect([...derivee.acquisitionsDesBiens(biens, NATURES, null)]).toEqual([...acquisitionsDesBiens(biens, NATURES, null)]))
+  })
+
+  it('attrape l’acquisition d’un bien repris qu’on écrirait encore', () => {
+    const derivee = planter(['    if (bienRepris(bien, ouverture)) {\n      acquisitions.set(bien.piece_id, { compte: null, motif: "repris" })\n      continue\n    }\n', ''])
+    const biens = [bien({ id: 'b6', piece_id: 'p6', date_acquisition: '2025-12-31' })]
+    echoue(() => expect([...derivee.acquisitionsDesBiens(biens, NATURES, '2026-01-01')]).toEqual([...acquisitionsDesBiens(biens, NATURES, '2026-01-01')]))
+  })
+
+  it('attrape un bien acquis le jour de l’ouverture qu’on tiendrait pour repris', () => {
+    const derivee = planter(['  return ouverture != null && bien.date_acquisition < ouverture', '  return ouverture != null && bien.date_acquisition <= ouverture'])
+    const biens = [bien({ id: 'b7', piece_id: 'p7', date_acquisition: '2026-01-01' })]
+    echoue(() => expect([...derivee.acquisitionsDesBiens(biens, NATURES, '2026-01-01')]).toEqual([...acquisitionsDesBiens(biens, NATURES, '2026-01-01')]))
+  })
 
   it('attrape une annuité arrondie vers le bas au lieu du demi-centime vers le haut', () => {
     const derivee = planter(['(2n * BigInt(Math.round(bien.valeur * 100)) * jours + 360n * duree) / (720n * duree)', '(BigInt(Math.round(bien.valeur * 100)) * jours) / (360n * duree)'])

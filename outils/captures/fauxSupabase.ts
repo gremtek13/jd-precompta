@@ -80,8 +80,9 @@ const pieces: Ligne[] = [
   piece('p10', '2026-09-09', 'Médical Équipement Pro', 132, 22, 'c2', 'validee'),
   piece('p11', '2026-09-12', 'Médical Équipement Pro', -24, -4, 'c2', 'validee'),
   // Deux biens IMMOBILISÉS (voir `immobilisations`) : un fauteuil de soins acheté avant la reprise du
-  // dossier — son amortissement jusqu'à fin 2025 est dans les à-nouveaux (`an2`, `an3`) — et un ordinateur
-  // acheté en 2026. Leur facture est le justificatif de chacune de leurs dotations.
+  // dossier — sa valeur et son amortissement jusqu'à fin 2025 sont dans les à-nouveaux (`an2`, `an3`), donc
+  // son acquisition ne s'écrit pas — et un ordinateur acheté en 2026, dont l'acquisition est écrite (`ac1`).
+  // Leur facture est le justificatif de chacune de leurs dotations.
   piece('p12', '2021-12-20', 'Fauteuils Médicaux du Sud', 3200, 0, 'c2', 'validee'),
   piece('p13', '2026-02-15', 'Informatique Pro', 1200, 0, 'c7', 'validee'),
 ]
@@ -240,6 +241,11 @@ const ENGAGEMENT_D8 = {
     ecriture('w11', 'e3', '2026-09-01', '651000', 'Cloud Hébergement', 'debit', 100),
     ecriture('w12', 'e3', '2026-09-01', '445660', 'Cloud Hébergement', 'debit', 20),
     ecriture('w13', 'e3', '2026-09-01', '401000', 'Cloud Hébergement', 'credit', 120),
+    // L'ACQUISITION de l'écran de studio (lib/ecritures.ts) : le bien au compte de sa nature, sa TVA au 445620
+    // (sur immobilisations), la dette au 404000 (fournisseurs d'immobilisations), à la date de la facture.
+    ecriture('w14', 'e4', '2025-09-01', '218300', 'Studio Lumière', 'debit', 2400),
+    ecriture('w15', 'e4', '2025-09-01', '445620', 'Studio Lumière', 'debit', 480),
+    ecriture('w16', 'e4', '2025-09-01', '404000', 'Studio Lumière', 'credit', 2880),
   ],
 }
 
@@ -315,6 +321,10 @@ const TABLES: Record<string, Ligne[]> = {
   categories,
   pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces],
   ecritures_brouillon: [
+    // L'ACQUISITION de l'ordinateur du cabinet, telle que la génération l'écrit (lib/ecritures.ts) : sa facture sur
+    // le compte de sa nature, au TTC — le dossier est exonéré —, à sa date, son paiement n'étant pas rapproché. Le
+    // fauteuil, acquis avant la reprise du dossier, n'en a pas : la balance reprise porte déjà sa valeur (`an2`).
+    { ...ecriturePiece('ac1', 'p13', null, '2026-02-15', '218300', 'debit', 1200), libelle: 'Informatique Pro' },
     // La dotation 2026 de l'ordinateur du cabinet, telle que `ecrire_dotation_amortissement` l'écrit : au
     // 31 décembre, sans pièce ni mouvement, le 681100 face au compte d'amortissement de sa nature.
     { ...ecritureReleve('am1', '', '2026-12-31', '681100', 'Dotation 2026 — Ordinateur du cabinet', 'debit', 351.11), ligne_bancaire_id: null, immobilisation_id: 'i-d1b' },

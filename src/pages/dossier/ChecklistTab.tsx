@@ -10,7 +10,7 @@ import { idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffect
 import { virementsPersonnelsAEcrire } from '../../lib/virementPersonnel'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import { cotisationsAEcrire, rapprochementsCotisationRefuses } from '../../lib/cotisationRapprochee'
-import { dotationsDuRegistre, dotationsEnDefaut } from '../../lib/amortissements'
+import { acquisitionsDesBiens, dotationsDuRegistre, dotationsEnDefaut } from '../../lib/amortissements'
 import type { Emprunt } from '../../lib/emprunts'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
@@ -112,8 +112,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   const [clotureInconnue, setClotureInconnue] = useState<string | null>(null)
   // Le solde de la banque à l'ouverture d'un dossier repris (voir lib/aNouveaux.ts) : la tuile de
   // trésorerie en part. À part de `lectureIncomplete`, qui parle des POINTS de la liste — l'ouverture n'en
-  // commande qu'un, les dotations aux amortissements (un exercice repris n'en demande pas), qui se TAIT
-  // quand elle est lue à moitié.
+  // commande que deux : les dotations aux amortissements (un exercice repris n'en demande pas) et
+  // l'écriture de la facture d'un bien (un bien repris n'en demande pas). Lue à moitié, ils se TAISENT.
   const [ouverture, setOuverture] = useState<OuvertureBanque | null>(null)
   const [ouvertureIncomplete, setOuvertureIncomplete] = useState<string | null>(null)
 
@@ -301,16 +301,23 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Clôture (postes manquants), pour ne pas avoir à visiter chaque onglet pour savoir si quelque chose
   // a besoin d'attention. Toujours les mêmes calculs (lib/controles.ts, lib/ecritures.ts) — rien de
   // recalculé différemment ici, juste rassemblé.
-  const immobilisationPieceIds = new Set(
-    immobilisations.map((i) => i.piece_id).filter((id): id is string => !!id),
-  )
-  const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, immobilisationPieceIds)
+  // La facture d'un bien s'écrit sur le compte d'immobilisation de sa nature — ou rien : un bien sans
+  // nature, et un bien acquis avant l'ouverture d'un dossier repris, que la balance reprise porte déjà
+  // (lib/amortissements.ts). C'est l'OUVERTURE qui dit si un bien est repris : lue à moitié, les points qui
+  // jugent l'écriture d'une facture de bien se taisent sur ces pièces-là, comme celui des dotations — ils
+  // réclameraient sinon l'acquisition d'un bien que les à-nouveaux portent peut-être.
+  const acquisitions = acquisitionsDesBiens(immobilisations, natures, ouverture?.date ?? null)
+  const pieceIdsImmobilisees = new Set(acquisitions.keys())
+  const piecesJugees = ouvertureIncomplete !== null
+    ? piecesValidees.filter((p) => !pieceIdsImmobilisees.has(p.id))
+    : piecesValidees
+  const aComptabiliser = piecesAComptabiliser(piecesJugees, categories, acquisitions)
   // Les paiements de chaque pièce — mouvements rapprochés et parts des virements groupés — décident de la
   // date qu'une écriture doit porter et de ses lignes de banque (lib/rattachement.ts). `lignes` porte tout
   // le relevé, et `paiementsDesPieces` n'en retient que les rapprochés.
   const paiements = paiementsDesPieces(lignes, reglements)
   const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele)
-  const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
+  const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions)
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
   const affectes = mouvementsAffectes(lignes, categories, assujettiTva)
@@ -349,10 +356,11 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   const echeancesPerimees = echeancesDesynchronisees(ecritures, lignes)
   const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === 'basse')
   // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
-  const catSansCompte = categoriesSansCompte(categories, piecesValidees, [...lignes, ...ventilations])
-  const catSansPoste = categoriesSansPoste(categories, piecesValidees, [...lignes, ...ventilations])
+  // La facture d'un bien n'y compte pas : elle s'écrit sur le compte de sa nature, et la 2035 l'écarte.
+  const catSansCompte = categoriesSansCompte(categories, piecesValidees, [...lignes, ...ventilations], pieceIdsImmobilisees)
+  const catSansPoste = categoriesSansPoste(categories, piecesValidees, [...lignes, ...ventilations], pieceIdsImmobilisees)
   const sansTva = piecesSansTva(piecesValidees, assujettiTva)
-  const sansCategorie = piecesValideesSansCategorie(piecesValidees)
+  const sansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees)
   // Une pièce datée après son dépôt n'est pas « en attente » : elle est dans un autre exercice, donc
   // absente de Clôture, de la 2035 et de la Balance sans être comptée nulle part comme manquante.
   //
@@ -722,7 +730,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
         motif={ouvertureIncomplete}
         consequence={
           'La tuile Trésorerie ne peut donc pas partir du solde repris : elle n’affiche aucun montant, ' +
-          'plutôt qu’un solde faux — et un rouge faux. Recharge la page.'
+          'plutôt qu’un solde faux — et un rouge faux. Et les points qui en dépendent se taisent : les ' +
+          'dotations aux amortissements, et l’écriture de la facture d’un bien — c’est l’ouverture qui dit ' +
+          's’il est acquis avant elle, donc déjà dans la balance reprise. Recharge la page.'
         }
       />
       {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (

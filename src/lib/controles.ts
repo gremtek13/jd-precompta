@@ -16,10 +16,16 @@ import { ecartAvecBanque, type EcartBanque } from './alignementBanque'
 // N'importe quelles lignes du relevé : seule une ligne affectée porte une catégorie. Les PARTS d'un
 // mouvement ventilé (lib/ventilationBanque.ts) portent elles aussi `categorie_id` : l'appelant les passe
 // avec les mouvements, `[...lignes, ...ventilations]`.
+//
+// UNE PIÈCE IMMOBILISÉE NE COMPTE PAS : son écriture d'acquisition va sur le compte de la NATURE du bien
+// (`acquisitionsDesBiens`, lib/amortissements.ts) — ou nulle part, pour un bien sans nature ou repris —, et la
+// 2035 l'écarte : sa catégorie ne décide de rien.
+// `pieceIdsImmobilisees`, sans valeur par défaut : la pièce de chaque bien du registre.
 export function categoriesSansCompte(
   categories: Categorie[], pieces: Piece[], mouvements: readonly Pick<LigneBancaire, 'categorie_id'>[],
+  pieceIdsImmobilisees: ReadonlySet<string>,
 ): Categorie[] {
-  return categories.filter((c) => !c.compte_comptable && utilisee(c, pieces, mouvements))
+  return categories.filter((c) => !c.compte_comptable && utilisee(c, pieces, mouvements, pieceIdsImmobilisees))
 }
 
 // Même logique côté poste de la 2035 (voir ClotureTab) — une pièce dont la catégorie n'a pas de poste
@@ -27,12 +33,17 @@ export function categoriesSansCompte(
 // pas de poste à l'affectation.
 export function categoriesSansPoste(
   categories: Categorie[], pieces: Piece[], mouvements: readonly Pick<LigneBancaire, 'categorie_id'>[],
+  pieceIdsImmobilisees: ReadonlySet<string>,
 ): Categorie[] {
-  return categories.filter((c) => !c.poste_2035 && utilisee(c, pieces, mouvements))
+  return categories.filter((c) => !c.poste_2035 && utilisee(c, pieces, mouvements, pieceIdsImmobilisees))
 }
 
-function utilisee(c: Categorie, pieces: Piece[], mouvements: readonly Pick<LigneBancaire, 'categorie_id'>[]): boolean {
-  return pieces.some((p) => p.categorie_id === c.id) || mouvements.some((m) => m.categorie_id === c.id)
+function utilisee(
+  c: Categorie, pieces: Piece[], mouvements: readonly Pick<LigneBancaire, 'categorie_id'>[],
+  pieceIdsImmobilisees: ReadonlySet<string>,
+): boolean {
+  return pieces.some((p) => p.categorie_id === c.id && !pieceIdsImmobilisees.has(p.id))
+    || mouvements.some((m) => m.categorie_id === c.id)
 }
 
 // Pièces VALIDÉES sans aucune catégorie. C'est le trou que les deux contrôles ci-dessus ne voient
@@ -49,8 +60,11 @@ function utilisee(c: Categorie, pieces: Piece[], mouvements: readonly Pick<Ligne
 // Seulement les validées, délibérément. Une pièce « à valider » sans catégorie est la situation
 // NORMALE — c'est la corbeille d'arrivée — et la signaler noierait le vrai signal : le même dossier
 // en portait 30 d'un coup.
-export function piecesValideesSansCategorie(pieces: Piece[]): Piece[] {
-  return pieces.filter((p) => p.statut === 'validee' && !p.categorie_id)
+//
+// Et jamais la facture d'un bien IMMOBILISÉ : elle s'écrit sur le compte de la nature du bien, s'amortit,
+// et la 2035 l'écarte. Dire d'elle qu'elle « ne compte nulle part » serait faux deux fois.
+export function piecesValideesSansCategorie(pieces: Piece[], pieceIdsImmobilisees: ReadonlySet<string>): Piece[] {
+  return pieces.filter((p) => p.statut === 'validee' && !p.categorie_id && !pieceIdsImmobilisees.has(p.id))
 }
 
 // UN POINT DE CHECKLIST DOIT VÉRIFIER QUE SA CIBLE PEUT MONTRER CE QU'IL COMPTE — et la pièce SANS

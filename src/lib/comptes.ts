@@ -10,12 +10,19 @@
 export const COMPTE_TVA_DEDUCTIBLE = '445660'
 export const COMPTE_TVA_COLLECTEE = '445710'
 export const COMPTE_BANQUE = '512000'
+// La TVA déductible sur IMMOBILISATIONS (voir lib/ecritures.ts, l'écriture d'acquisition) : le plan
+// comptable la sépare de celle des autres biens et services, comme la CA3, qui la porte en ligne 19 et
+// non en ligne 20.
+export const COMPTE_TVA_IMMOBILISATIONS = '445620'
 
 // Les comptes de tiers d'un dossier tenu en ENGAGEMENT (voir lib/engagement.ts) : la facture y crée
 // une dette ou une créance à sa date, et le paiement la solde. Un compte collectif par nature de
 // tiers, le détail par fournisseur ou par client vivant dans le compte AUXILIAIRE du FEC.
 export const COMPTE_FOURNISSEURS = '401000'
 export const COMPTE_CLIENTS = '411000'
+// La dette envers le vendeur d'un BIEN IMMOBILISÉ : le plan comptable la sépare des dettes fournisseurs,
+// comme le bilan (« dettes sur immobilisations »).
+export const COMPTE_FOURNISSEURS_IMMOBILISATIONS = '404000'
 // Le compte d'une note de frais que le dirigeant a payée de sa poche, au choix du dossier.
 export const COMPTE_COURANT_ASSOCIE = '455000'
 export const COMPTE_EXPLOITANT = '108000'
@@ -47,7 +54,9 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_BANQUE]: 'Banque',
   [COMPTE_TVA_DEDUCTIBLE]: 'TVA déductible',
   [COMPTE_TVA_COLLECTEE]: 'TVA collectée',
+  [COMPTE_TVA_IMMOBILISATIONS]: 'TVA déductible sur immobilisations',
   [COMPTE_FOURNISSEURS]: 'Fournisseurs',
+  [COMPTE_FOURNISSEURS_IMMOBILISATIONS]: "Fournisseurs d'immobilisations",
   [COMPTE_CLIENTS]: 'Clients',
   [COMPTE_COURANT_ASSOCIE]: 'Associés — comptes courants',
   [COMPTE_EXPLOITANT]: "Compte de l'exploitant",
@@ -74,15 +83,33 @@ const LIBELLES_AMORTISSEMENTS: Readonly<Record<string, string>> = {
   '281840': 'Amortissements du mobilier',
 }
 
-// Le libellé d'un compte que l'application tient elle-même — un compte fixe, ou un compte d'amortissement
-// —, nul pour un compte qu'une catégorie porte. UN SEUL ENDROIT pour la balance des comptes, le FEC et
-// ses à-nouveaux : un même CompteNum ne porte qu'un CompteLib dans tout le fichier, et un compte 28
-// ouvert par la balance reprise doit s'appeler comme celui que la dotation crédite.
+// LES COMPTES D'IMMOBILISATION que l'écriture d'acquisition débite : celui que porte la nature du bien,
+// classe 20 ou 21 sur six chiffres. Même raison que pour les comptes 28 : une table pour ceux que les
+// natures du cabinet désignent, un libellé générique pour les autres.
+const LIBELLES_IMMOBILISATIONS: Readonly<Record<string, string>> = {
+  '205000': 'Concessions et droits similaires, brevets, licences, logiciels',
+  '215400': 'Matériel industriel',
+  '218000': 'Autres immobilisations corporelles',
+  '218100': 'Installations générales, agencements, aménagements divers',
+  '218200': 'Matériel de transport',
+  '218300': 'Matériel de bureau et matériel informatique',
+  '218400': 'Mobilier',
+}
+
+// Le libellé d'un compte que l'application tient elle-même — un compte fixe, un compte d'immobilisation ou
+// un compte d'amortissement —, nul pour un compte qu'une catégorie porte. UN SEUL ENDROIT pour la balance
+// des comptes, le FEC et ses à-nouveaux : un même CompteNum ne porte qu'un CompteLib dans tout le fichier,
+// et un compte 2… ou 28… ouvert par la balance reprise doit s'appeler comme celui que l'acquisition débite
+// ou que la dotation crédite.
 export function libelleCompteTenu(compte: string): string | null {
   if (LIBELLES_COMPTES[compte]) return LIBELLES_COMPTES[compte]
   if (/^28\d{4}$/.test(compte)) {
     return LIBELLES_AMORTISSEMENTS[compte]
       ?? (compte.startsWith('280') ? 'Amortissements des immobilisations incorporelles' : 'Amortissements des immobilisations corporelles')
+  }
+  if (/^2[01]\d{4}$/.test(compte)) {
+    return LIBELLES_IMMOBILISATIONS[compte]
+      ?? (compte.startsWith('20') ? 'Immobilisations incorporelles' : 'Immobilisations corporelles')
   }
   return null
 }

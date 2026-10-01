@@ -35,8 +35,8 @@ interface Copie {
   }[]
   mouvementsAffectesDesynchronises: (e: EcritureBrouillon[], a: ReturnType<Copie['mouvementsAffectes']>) => { ligne: { id: string } }[]
   recettesAffecteesSansTaux: (a: ReturnType<Copie['mouvementsAffectes']>, assujetti: boolean) => { ligne: { id: string } }[]
-  categoriesSansCompte: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[]) => Categorie[]
-  categoriesSansPoste: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[]) => Categorie[]
+  categoriesSansCompte: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[], immobilisees: ReadonlySet<string>) => Categorie[]
+  categoriesSansPoste: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[], immobilisees: ReadonlySet<string>) => Categorie[]
   compteDuDirigeant: typeof compteDuDirigeant
   virementsPersonnelsAEcrire: (e: EcritureBrouillon[], l: LigneBancaire[], m: ModeleComptable) => { id: string }[]
 }
@@ -242,15 +242,31 @@ describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
   it('compte une catégorie utilisée par une pièce OU par un mouvement affecté', () => {
     const pieces = [piece({ id: 'p1', categorie_id: 'recettes' })]
     for (const mouvements of [LIGNES, [], [ligne({ id: 'z', categorie_id: 'sans-poste' })]]) {
-      expect(libelles(deployee.categoriesSansCompte(CATEGORIES, pieces, mouvements)))
-        .toEqual(libelles(categoriesSansCompte(CATEGORIES, pieces, mouvements)))
-      expect(libelles(deployee.categoriesSansPoste(CATEGORIES, pieces, mouvements)))
-        .toEqual(libelles(categoriesSansPoste(CATEGORIES, pieces, mouvements)))
+      expect(libelles(deployee.categoriesSansCompte(CATEGORIES, pieces, mouvements, new Set())))
+        .toEqual(libelles(categoriesSansCompte(CATEGORIES, pieces, mouvements, new Set())))
+      expect(libelles(deployee.categoriesSansPoste(CATEGORIES, pieces, mouvements, new Set())))
+        .toEqual(libelles(categoriesSansPoste(CATEGORIES, pieces, mouvements, new Set())))
     }
     // Et la batterie exerce bien les mouvements : sans eux, « À classer » et « Apport » se taisent.
-    expect(libelles(categoriesSansCompte(CATEGORIES, pieces, LIGNES))).toEqual(['À classer'])
-    expect(libelles(categoriesSansPoste(CATEGORIES, pieces, LIGNES))).toEqual(['Apport'])
-    expect(libelles(categoriesSansPoste(CATEGORIES, pieces, []))).toEqual([])
+    expect(libelles(categoriesSansCompte(CATEGORIES, pieces, LIGNES, new Set()))).toEqual(['À classer'])
+    expect(libelles(categoriesSansPoste(CATEGORIES, pieces, LIGNES, new Set()))).toEqual(['Apport'])
+    expect(libelles(categoriesSansPoste(CATEGORIES, pieces, [], new Set()))).toEqual([])
+  })
+
+  it('ne compte pas la facture d’un bien, qui s’écrit sur le compte de sa nature', () => {
+    // La pièce d'un bien du registre : sa catégorie ne décide ni de son écriture ni de la 2035.
+    const pieces = [piece({ id: 'immo', categorie_id: 'sans-compte' }), piece({ id: 'autre', categorie_id: 'bilan' })]
+    for (const immobilisees of [new Set<string>(), new Set(['immo']), new Set(['immo', 'autre'])]) {
+      expect(libelles(deployee.categoriesSansCompte(CATEGORIES, pieces, [], immobilisees)))
+        .toEqual(libelles(categoriesSansCompte(CATEGORIES, pieces, [], immobilisees)))
+      expect(libelles(deployee.categoriesSansPoste(CATEGORIES, pieces, [], immobilisees)))
+        .toEqual(libelles(categoriesSansPoste(CATEGORIES, pieces, [], immobilisees)))
+    }
+    // Et la batterie exerce bien l'exclusion : sans elle, « À classer » et « Apport » seraient signalés.
+    expect(libelles(categoriesSansCompte(CATEGORIES, pieces, [], new Set()))).toEqual(['À classer'])
+    expect(libelles(categoriesSansCompte(CATEGORIES, pieces, [], new Set(['immo'])))).toEqual([])
+    expect(libelles(categoriesSansPoste(CATEGORIES, pieces, [], new Set()))).toEqual(['Apport'])
+    expect(libelles(categoriesSansPoste(CATEGORIES, pieces, [], new Set(['immo', 'autre'])))).toEqual([])
   })
 })
 
@@ -309,8 +325,13 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
   it('passe les mouvements aux catégories sans compte ou sans poste, et rend les deux points de la Checklist', () => {
     // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés (bloc
     // VENTILATION, gardé par agentComptableVentilation.test.ts).
-    expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])')
-    expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes])')
+    // Et la pièce de chaque bien du registre, que sa catégorie ne décide plus (bloc AMORTISSEMENT,
+    // `acquisitionsDesBiens`) — l'ouverture d'un dossier repris dit lesquels la balance reprise porte déjà.
+    expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
+    expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
+    expect(corps).toContain('const acquisitions = acquisitionsDesBiens(rImmobilisations.lignes, rNatures.lignes, ouverture)')
+    expect(corps).toContain('const pieceIdsImmobilisees = new Set(acquisitions.keys())')
+    expect(corps).toContain('piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions)')
     expect(corps).toContain('mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)')
     expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes)')
     expect(corps).toContain('recettesAffecteesSansTaux(affectes, dossier.assujetti_tva)')
@@ -354,12 +375,16 @@ describe('le garde-fou sait encore échouer', () => {
   }
 
   it('attrape une copie qui ne compte plus les mouvements dans les catégories', () => {
-    const derivee = planter(
-      'return pieces.some((p) => p.categorie_id === c.id) || mouvements.some((m) => m.categorie_id === c.id)',
-      'return pieces.some((p) => p.categorie_id === c.id)',
-    )
-    echoue(() => expect(libelles(derivee.categoriesSansCompte(CATEGORIES, [], LIGNES)))
-      .toEqual(libelles(categoriesSansCompte(CATEGORIES, [], LIGNES))))
+    const derivee = planter('\n    || mouvements.some((m) => m.categorie_id === c.id)', '')
+    echoue(() => expect(libelles(derivee.categoriesSansCompte(CATEGORIES, [], LIGNES, new Set())))
+      .toEqual(libelles(categoriesSansCompte(CATEGORIES, [], LIGNES, new Set()))))
+  })
+
+  it('attrape une copie qui compte la facture d’un bien dans les catégories', () => {
+    const derivee = planter(' && !pieceIdsImmobilisees.has(p.id))', ')')
+    const pieces = [piece({ id: 'immo', categorie_id: 'sans-compte' })]
+    echoue(() => expect(libelles(derivee.categoriesSansCompte(CATEGORIES, pieces, [], new Set(['immo']))))
+      .toEqual(libelles(categoriesSansCompte(CATEGORIES, pieces, [], new Set(['immo'])))))
   })
 
   it('attrape une copie qui ne compare plus la date', () => {

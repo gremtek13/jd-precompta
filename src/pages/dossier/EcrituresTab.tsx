@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
-import { COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from '../../lib/comptes'
+import { COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS } from '../../lib/comptes'
 import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresSansObjet, lignesPourPiece, piecesAComptabiliser, soldeCompte } from '../../lib/ecritures'
-import type { MotifSansObjet } from '../../lib/ecritures'
+import type { EcritureSansObjet, MotifSansObjet } from '../../lib/ecritures'
 import { COMPTES_NOTES_DE_FRAIS, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
@@ -14,7 +14,11 @@ import {
   ecritureDuMouvement, idsMouvementsJustifiesParLeReleve, mouvementsAffectes, mouvementsAffectesDesynchronises, refusAffectation,
   type MouvementAffecte,
 } from '../../lib/affectationBanque'
-import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Immobilisation, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VentilationBancaire } from '../../lib/types'
+import type {
+  ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Immobilisation, LigneBancaire, ModeComptable, NatureImmobilisation, Piece,
+  ReglementGroupe, VentilationBancaire,
+} from '../../lib/types'
+import { acquisitionsDesBiens } from '../../lib/amortissements'
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsAReecrire, refusVentilation } from '../../lib/ventilationBanque'
 import { libelleTaux } from '../../lib/tvaDuReleve'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -28,14 +32,16 @@ import { messageErreur } from '../../lib/messageErreur'
 // retirer une écriture est un arbitrage comptable, et les trois derniers motifs se réparent en
 // AMONT (sur la pièce), après quoi « Régénérer » reprend la bonne écriture.
 const LIBELLE_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
-  immobilisee: "Enregistrée en immobilisation : c'est un actif qui s'amortit",
+  bien_sans_nature: "Enregistrée en immobilisation, sans nature : son compte d'immobilisation n'est pas connu",
+  bien_repris: "Bien acquis avant l'ouverture du dossier : la balance reprise porte déjà sa valeur",
   sans_categorie: 'La catégorie a été retirée',
   categorie_sans_compte: "La catégorie n'a plus de compte comptable",
   sans_montant: 'Le montant TTC a été effacé',
 }
 
 const ACTION_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
-  immobilisee: "Le FEC et la balance portent la charge entière, l'amortissement la remplace par la dotation : les deux ne se recoupent plus. Retirer l'écriture ci-contre — ou l'immobilisation, depuis son onglet, si c'en est une par erreur.",
+  bien_sans_nature: "Le FEC et la balance la portent en charge, alors que le bien s'amortit. Choisir sa nature dans l'onglet Immobilisations, puis régénérer : l'écriture passe sur le compte du bien. Ou retirer l'écriture ci-contre — ou l'immobilisation, si c'en est une par erreur.",
+  bien_repris: "Le FEC et la balance le comptent une seconde fois — ou en charge, si l'écriture précède son inscription au registre. Retirer l'écriture ci-contre : les à-nouveaux portent son acquisition, et ses dotations s'écrivent à partir de l'ouverture.",
   sans_categorie: "Redonner une catégorie à la pièce depuis Justificatifs, puis régénérer l'écriture.",
   categorie_sans_compte: 'Renseigner le compte de la catégorie ci-dessous, puis régénérer.',
   sans_montant: 'Remettre le montant TTC de la pièce depuis Justificatifs, puis régénérer.',
@@ -75,7 +81,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
   const [ventilationsIncompletes, setVentilationsIncompletes] = useState<string | null>(null)
   const [immobilisations, setImmobilisations] = useState<Immobilisation[]>([])
-  const [immobilisationPieceIds, setImmobilisationPieceIds] = useState<Set<string>>(new Set())
+  // Les natures des biens : la facture d'un bien s'écrit sur le compte d'immobilisation de sa nature
+  // (l'écriture d'ACQUISITION, lib/amortissements.ts, `acquisitionsDesBiens`).
+  const [natures, setNatures] = useState<NatureImmobilisation[]>([])
   const [loading, setLoading] = useState(true)
   const [generating, setGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -94,8 +102,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // l'export se refuse donc, plutôt que de produire un fichier fiscal faux.
   const [brouillonIncomplet, setBrouillonIncomplet] = useState<string | null>(null)
   // À PART du drapeau précédent, et c'est le point : une ouverture lue à moitié ouvrirait le FEC et la
-  // piste d'audit amputés, mais la génération des écritures n'en dépend pas — la suspendre pour ça
-  // bloquerait un geste que rien ne fausse.
+  // piste d'audit amputés, mais la génération des écritures n'en dépend que pour la facture d'un BIEN —
+  // c'est l'ouverture qui dit s'il est repris (voir `biensSansOuverture`). La suspendre pour toutes les
+  // pièces bloquerait un geste que rien ne fausse.
   const [aNouveauxIncomplets, setANouveauxIncomplets] = useState<string | null>(null)
   // Verrou d'exécution de la génération : `generating` est un état React, qui ne prend effet qu'au
   // rendu suivant — un double clic du même rendu passerait les deux, et chaque pièce en attente
@@ -118,7 +127,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setLoading(true)
     const [
       lectureCategories, lecturePieces, brouillon, lectureImmobilisations, lectureLignes, lectureANouveaux, lectureVentilations,
-      lectureReglements,
+      lectureReglements, lectureNatures,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -168,6 +177,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         supabase.from('reglements_groupes').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Celles du dossier ET celles du cabinet (`dossier_id` nul) : ce sont presque toutes des natures
+      // partagées, et un filtre sur le seul dossier les écarterait toutes — chaque bien paraîtrait sans
+      // nature, donc sans compte, et son acquisition ne s'écrirait pas.
+      lireTout<NatureImmobilisation>((debut, fin) =>
+        supabase.from('natures_immobilisation').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
+      ),
     ])
     setLignesBancaires(lectureLignes.lignes)
     setReglements(lectureReglements.lignes)
@@ -178,27 +194,37 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setEcritures(brouillon.lignes)
     setANouveaux(lectureANouveaux.lignes)
     // Un seul drapeau pour TOUTES les collections dont dépendent le FEC et la piste d'audit, et
-    // l'écran n'a rien de plus utile à dire selon laquelle a manqué. Les catégories et les
-    // immobilisations en font partie : la première décide du compte de chaque écriture, la seconde
-    // de quelles pièces n'en produisent pas.
+    // l'écran n'a rien de plus utile à dire selon laquelle a manqué. Les catégories, les
+    // immobilisations et leurs natures en font partie : la première décide du compte de chaque
+    // écriture, les deux autres de quelles pièces s'écrivent sur le compte d'un bien — une nature non
+    // lue ferait passer son bien pour un bien sans nature, dont l'acquisition ne s'écrit pas.
     setBrouillonIncomplet(
-      [brouillon, lecturePieces, lectureLignes, lectureReglements, lectureCategories, lectureImmobilisations]
+      [brouillon, lecturePieces, lectureLignes, lectureReglements, lectureCategories, lectureImmobilisations, lectureNatures]
         .find((l) => !l.complete)?.motif ?? null,
     )
     setANouveauxIncomplets(lectureANouveaux.motif)
     setImmobilisations(lectureImmobilisations.lignes)
-    setImmobilisationPieceIds(new Set(lectureImmobilisations.lignes.map((i) => i.piece_id).filter((id): id is string => !!id)))
+    setNatures(lectureNatures.lignes)
     setLoading(false)
   }
 
   useEffect(() => { load() }, [dossierId])
 
-  const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
+  // La pièce de chaque bien du registre, et ce que sa facture écrit : le compte d'immobilisation de sa
+  // nature — ou rien, pour un bien sans nature, et pour un bien acquis avant l'ouverture d'un dossier
+  // repris, que les à-nouveaux portent déjà (lib/amortissements.ts). Une seule ouverture par dossier, la
+  // base le garantit : la date de n'importe quel à-nouveau est la sienne.
+  const ouverture = aNouveaux[0]?.date ?? null
+  const acquisitions = acquisitionsDesBiens(immobilisations, natures, ouverture)
+  const pieceIdsImmobilisees = new Set(acquisitions.keys())
 
   // Catégories utilisées par au moins une pièce validée, un mouvement affecté ou une part d'un mouvement
   // ventilé mais sans compte associé — impossible de générer l'écriture correspondante tant que ce n'est
-  // pas renseigné (voir lib/controles.ts).
-  const categoriesSansCompte = calculerCategoriesSansCompte(categories, piecesValidees, [...lignesBancaires, ...ventilations])
+  // pas renseigné (voir lib/controles.ts). La facture d'un bien n'y compte pas : elle s'écrit sur le
+  // compte de sa nature.
+  const categoriesSansCompte = calculerCategoriesSansCompte(
+    categories, piecesValidees, [...lignesBancaires, ...ventilations], pieceIdsImmobilisees,
+  )
 
   // Valeur affichée dans le champ tant que le cabinet n'a rien tapé : la suggestion connue pour ce
   // code de catégorie, sinon vide — jamais enregistrée avant le clic explicite sur "Enregistrer".
@@ -229,16 +255,20 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   }
 
   // Ce que chaque pièce validée doit produire, et sur quel compte — règle unique, partagée avec la
-  // Checklist (voir lib/ecritures.ts). Une pièce enregistrée comme immobilisation en est exclue :
-  // c'est un actif qui s'amortit, pas une charge courante, et l'y laisser compterait la dépense
-  // deux fois.
-  const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, immobilisationPieceIds)
+  // Checklist (voir lib/ecritures.ts). La facture d'un bien immobilisé s'écrit sur le compte de sa
+  // NATURE, pas sur sa catégorie : c'est un actif qui s'amortit, pas une charge courante, et la passer
+  // en charge compterait la dépense deux fois. Un bien sans nature ne s'écrit pas.
+  const aComptabiliser = piecesAComptabiliser(piecesValidees, categories, acquisitions)
   // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent sa charge et portent
   // ses contreparties banque (lib/rattachement.ts).
   const paiements = paiementsDesPieces(lignesBancaires, reglements)
   const enAttente = aComptabiliser
     .filter(({ piece }) => !ecritures.some((e) => e.piece_id === piece.id))
     .map(({ piece }) => piece)
+  // UNE OUVERTURE LUE EN PARTIE NE DIT PAS QUELS BIENS SONT REPRIS : l'acquisition d'un bien acquis avant
+  // elle s'écrirait une seconde fois, la balance reprise la portant déjà. La génération attend donc une
+  // lecture complète dès qu'un bien est en attente — les autres pièces ne dépendent pas des à-nouveaux.
+  const biensSansOuverture = aNouveauxIncomplets !== null && enAttente.some((p) => pieceIdsImmobilisees.has(p.id))
 
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE. `enAttente`, ce sont les pièces à
   // comptabiliser MOINS celles dont on a LU l'écriture : sur un brouillon lu à moitié, il porte des
@@ -247,18 +277,18 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // moitié feraient pire : une charge pour un bien qui s'amortit déjà. `brouillonIncomplet` couvre
   // les cinq lectures dont dépend la génération, les mêmes que celles des deux exports.
   async function genererEcritures() {
-    if (enAttente.length === 0 || brouillonIncomplet !== null || generationEnCours.current || changementModeleEnCours.current) return
+    if (enAttente.length === 0 || brouillonIncomplet !== null || biensSansOuverture || generationEnCours.current || changementModeleEnCours.current) return
     generationEnCours.current = true
     setGenerating(true)
     setError(null)
     try {
-      const comptes = new Map(aComptabiliser.map(({ piece, compte }) => [piece.id, compte]))
+      const cibles = new Map(aComptabiliser.map(({ piece, compte, immobilisation }) => [piece.id, { compte, immobilisation }]))
       // Selon le modèle du dossier : en trésorerie, la charge datée au paiement quand le rapprochement le
       // connaît, comme la 2035 compte la pièce, et une contrepartie banque par paiement ; en engagement,
       // la facture à sa date et un règlement par paiement (lib/engagement.ts). Dans les deux, une pièce
       // déjà rapprochée — ou réglée en partie par un virement groupé — reçoit sa banque tout de suite.
       const rows = enAttente.flatMap((p) =>
-        lignesPourPiece(dossierId, p, comptes.get(p.id)!, assujettiTva, paiements.get(p.id) ?? [], modele))
+        lignesPourPiece(dossierId, p, cibles.get(p.id)!, assujettiTva, paiements.get(p.id) ?? [], modele))
       const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
       if (insertError) throw insertError
       // Relu AVANT de relâcher le verrou : relâché plus tôt, `enAttente` porterait encore les pièces
@@ -288,7 +318,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     correspondALaRecherche([e.date, formatDate(e.date), e.compte, e.libelle, e.sens, e.montant], recherche),
   )
 
-  const tvaDeductible = soldeCompte(ecrituresFiltrees, COMPTE_TVA_DEDUCTIBLE, 'debit')
+  // Sur les biens et services (445660) ET sur les immobilisations (445620) : la TVA de l'acquisition d'un bien
+  // se déduit comme l'autre — en ligne 19 de la CA3 plutôt qu'en ligne 20.
+  const tvaDeductible = soldeCompte(ecrituresFiltrees, COMPTE_TVA_DEDUCTIBLE, 'debit') + soldeCompte(ecrituresFiltrees, COMPTE_TVA_IMMOBILISATIONS, 'debit')
   const tvaCollectee = soldeCompte(ecrituresFiltrees, COMPTE_TVA_COLLECTEE, 'credit')
 
   // Trois contrôles d'intégrité du brouillon (voir lib/ecritures.ts) — volontairement indépendants du
@@ -298,7 +330,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele)
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
-  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, immobilisationPieceIds)
+  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions)
 
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
@@ -381,9 +413,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // SUSPENDUE SUR UNE LECTURE PARTIELLE, comme la génération : les paiements datent la charge en
   // trésorerie et décident des lignes de banque dans les deux modèles — lus à moitié, régénérer daterait
   // mal, ou SUPPRIMERAIT des contreparties qui existent.
+  //
+  // Sur la cible de la génération (`piecesAComptabiliser`) : le compte de la catégorie, ou celui du bien
+  // pour la facture d'une immobilisation — c'est ce qui fait passer sur le compte du bien l'écriture d'une
+  // pièce immobilisée après coup.
   async function regenererEcriture(piece: Piece) {
-    const compte = categorieById(piece.categorie_id)?.compte_comptable
-    if (!compte || brouillonIncomplet !== null || regenerationsEnCours.current.has(piece.id)) return
+    const cible = aComptabiliser.find((a) => a.piece.id === piece.id)
+    if (!cible || brouillonIncomplet !== null || regenerationsEnCours.current.has(piece.id)) return
+    // Le bien d'une ouverture lue en partie : on ne sait pas s'il est repris (voir `biensSansOuverture`).
+    if (cible.immobilisation && aNouveauxIncomplets !== null) return
     regenerationsEnCours.current.add(piece.id)
     setRegenerating(piece.id)
     setError(null)
@@ -391,7 +429,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
       if (deleteError) throw deleteError
       const { error: insertError } = await supabase.from('ecritures_brouillon')
-        .insert(lignesPourPiece(dossierId, piece, compte, assujettiTva, paiements.get(piece.id) ?? [], modele))
+        .insert(lignesPourPiece(
+          dossierId, piece, { compte: cible.compte, immobilisation: cible.immobilisation }, assujettiTva, paiements.get(piece.id) ?? [], modele,
+        ))
       if (insertError) throw insertError
       load()
     } catch (err) {
@@ -503,27 +543,32 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // exactement ce que `groupesDesequilibres` signale, et que plus aucun geste ne pourrait éteindre.
   // On échangerait une alerte vraie contre une alerte fausse et définitive.
   //
-  // Réservé au motif `immobilisee`, délibérément. Pour les trois autres, l'écriture DOIT exister une
-  // fois la pièce corrigée en amont : y offrir « Retirer » permettrait de faire disparaître une
-  // charge réelle d'un clic, sans trace. Inversement « Régénérer » est activement faux ici — il
-  // réécrirait la charge qu'on vient d'ôter.
+  // Réservé aux deux motifs d'un BIEN, délibérément. Pour les trois autres, l'écriture DOIT exister une
+  // fois la pièce corrigée en amont : y offrir « Retirer » permettrait de faire disparaître une charge
+  // réelle d'un clic, sans trace.
   //
-  // Ce que ce retrait laisse, et qu'il faut savoir : l'application ne modélise aucune écriture
-  // d'acquisition (pas de compte de classe 2 sur `natures_immobilisation`), donc le FEC ne portera
-  // pas cet achat. C'est un manque pré-existant, et il est moins faux que la charge : après retrait,
-  // le FEC, la balance et la 2035 écartent tous les trois la pièce et disent enfin la même chose.
-  // La dépense reste comptée, par l'amortissement, depuis l'onglet Immobilisations.
+  // Depuis que l'acquisition s'écrit (lib/ecritures.ts, `piecesAComptabiliser`), ces deux motifs désignent :
+  // - la facture d'un bien SANS NATURE : son compte d'immobilisation n'est pas connu, donc ni la génération
+  //   ni « Régénérer » ne savent où l'écrire. Retirer l'écriture ôte la charge qu'elle porte encore ; une
+  //   fois la nature choisie, la pièce revient parmi celles à comptabiliser et la génération écrit son
+  //   acquisition sur le compte du bien. Choisir la nature d'abord, puis régénérer, mène au même endroit en
+  //   un geste de moins ;
+  // - la facture d'un bien REPRIS, acquis avant l'ouverture du dossier : la balance reprise porte déjà sa
+  //   valeur, en classe 2, et ses paiements d'alors sont dans la banque d'ouverture. Rien ne doit s'écrire,
+  //   et retirer est le SEUL geste juste.
   //
   // Pas de verrou `useRef` ici, contrairement aux gestes qui DUPLIQUENT : une suppression est
   // idempotente, deux clics retirent les mêmes lignes. `retrait` n'est qu'un état d'affichage.
-  async function retirerEcriture(piece: Piece) {
+  async function retirerEcriture({ piece, motif }: EcritureSansObjet) {
     if (!window.confirm(
       `Retirer du brouillon l'écriture de « ${piece.tiers ?? piece.nom_fichier} » ? `
       + (modele.mode === 'engagement'
         ? 'Sa ligne de charge, sa TVA, sa dette envers le fournisseur et ses règlements partent ensemble. '
         : 'Sa ligne de charge, sa TVA et sa contrepartie banque partent ensemble. ')
       + "La pièce, son rapprochement bancaire et l'immobilisation ne bougent pas : la dépense reste "
-      + "comptée par l'amortissement.",
+      + (motif === 'bien_repris'
+        ? "comptée par l'amortissement, et la balance reprise porte déjà son acquisition."
+        : "comptée par l'amortissement, et son acquisition s'écrira sur le compte du bien une fois sa nature choisie."),
     )) return
     setRetrait(piece.id)
     setError(null)
@@ -539,7 +584,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   }
 
   const piecesSansTva = calculerPiecesSansTva(piecesValidees, assujettiTva)
-  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees)
+  const piecesSansCategorie = piecesValideesSansCategorie(piecesValidees, pieceIdsImmobilisees)
   // Cet onglet ne charge que les pièces VALIDÉES : ce sont donc les TVA fausses déjà figées dans une
   // écriture et parties en déduction. Les autres se voient en amont, dans Justificatifs, là où on
   // peut encore les corriger avant de valider.
@@ -641,15 +686,15 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                   <td>{LIBELLE_MOTIF_SANS_OBJET[o.motif]}</td>
                   <td className="muted">
                     {ACTION_MOTIF_SANS_OBJET[o.motif]}
-                    {/* Le bouton n'existe QUE pour une pièce immobilisée. Les trois autres motifs se
+                    {/* Le bouton n'existe QUE pour la facture d'un bien. Les trois autres motifs se
                         réparent en amont puis se régénèrent : l'écriture doit y revenir, pas
                         disparaître. */}
-                    {o.motif === 'immobilisee' && (
+                    {(o.motif === 'bien_sans_nature' || o.motif === 'bien_repris') && (
                       <div style={{ marginTop: 8 }}>
                         <button
                           className="btn btn-danger btn-sm"
                           disabled={retrait === o.piece.id}
-                          onClick={() => retirerEcriture(o.piece)}
+                          onClick={() => retirerEcriture(o)}
                         >
                           {retrait === o.piece.id ? 'Retrait…' : "Retirer l'écriture"}
                         </button>
@@ -766,8 +811,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                   <td>
                     <button
                       className="btn btn-outline btn-sm"
-                      disabled={regenerating === p.id || brouillonIncomplet !== null}
-                      title={brouillonIncomplet ? `Lecture incomplète (${brouillonIncomplet}) — régénérer maintenant pourrait mal dater l’écriture, ou retirer des règlements.` : undefined}
+                      disabled={regenerating === p.id || brouillonIncomplet !== null || (aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id))}
+                      title={brouillonIncomplet
+                        ? `Lecture incomplète (${brouillonIncomplet}) — régénérer maintenant pourrait mal dater l’écriture, ou retirer des règlements.`
+                        : aNouveauxIncomplets !== null && pieceIdsImmobilisees.has(p.id)
+                        ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas si la balance reprise porte déjà ce bien.`
+                        : undefined}
                       onClick={() => regenererEcriture(p)}
                     >
                       {regenerating === p.id ? 'Régénération…' : 'Régénérer'}
@@ -997,10 +1046,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             <span className="muted" style={{ display: 'block' }}>Solde</span>
             <strong>{formatMoney(tvaCollectee - tvaDeductible)}</strong>
           </div>
-          {/* Ces soldes datent la TVA à la date de chaque PIÈCE, et le brouillon ne porte aucune
-              écriture pour un bien immobilisé : ils ne disent donc pas ce qu'une déclaration doit
-              contenir. C'est l'onglet TVA qui la prépare, en suivant la règle d'exigibilité du
-              dossier — et c'est là que les déclarations déposées s'enregistrent et se comparent. */}
+          {/* Ces soldes datent la TVA à la date de chaque PIÈCE : ils ne disent donc pas ce qu'une
+              déclaration doit contenir. C'est l'onglet TVA qui la prépare, en suivant la règle
+              d'exigibilité du dossier — et c'est là que les déclarations déposées s'enregistrent et se
+              comparent. */}
           <p className="muted" style={{ flexBasis: '100%', margin: 0 }}>
             Ces totaux datent la TVA à la date de chaque pièce. La déclaration se prépare dans l'onglet TVA,
             qui suit la date d'exigibilité (l'encaissement, sauf option pour les débits).
@@ -1030,10 +1079,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         </p>
         <button
           className="btn btn-primary btn-sm"
-          disabled={generating || changementModele || enAttente.length === 0 || brouillonIncomplet !== null}
+          disabled={generating || changementModele || enAttente.length === 0 || brouillonIncomplet !== null || biensSansOuverture}
           title={
             brouillonIncomplet
               ? `Lecture incomplète (${brouillonIncomplet}) — générer maintenant pourrait doubler des écritures déjà passées.`
+              : biensSansOuverture
+              ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — on ne sait pas quels biens la balance reprise porte déjà : leur acquisition s’écrirait une seconde fois.`
               : undefined
           }
           onClick={genererEcritures}
@@ -1064,8 +1115,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         motif={aNouveauxIncomplets}
         consequence={
           'Les exports FEC et piste d’audit sont bloqués : ils s’ouvrent par eux, et un fichier fiscal dont ' +
-          'l’ouverture est amputée ne peut pas le dire. La génération des écritures, elle, n’en dépend pas. ' +
-          'Recharge la page.'
+          'l’ouverture est amputée ne peut pas le dire. La génération des écritures n’en dépend que pour la ' +
+          'facture d’un bien : c’est l’ouverture qui dit s’il est acquis avant elle, donc déjà dans la balance ' +
+          'reprise — elle attend donc une lecture complète tant qu’un bien est en attente, comme « Régénérer » ' +
+          'sur la facture d’un bien. Recharge la page.'
         }
       />
 

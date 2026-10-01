@@ -23,7 +23,7 @@ describe('categoriesSansCompte', () => {
       categorie({ id: 'inutilisee', compte_comptable: null }),
       categorie({ id: 'complete', compte_comptable: '606100' }),
     ]
-    const manquantes = categoriesSansCompte(categories, [piece({ categorie_id: 'utilisee' })], [])
+    const manquantes = categoriesSansCompte(categories, [piece({ categorie_id: 'utilisee' })], [], new Set())
     expect(manquantes.map((c) => c.id)).toEqual(['utilisee'])
   })
 
@@ -31,11 +31,21 @@ describe('categoriesSansCompte', () => {
     // Un mouvement affecté sans justificatif (lib/affectationBanque.ts) : sa catégorie avait un compte
     // à l’affectation, la base l’exige, mais on peut le lui retirer ensuite.
     const categories = [categorie({ id: 'frais', compte_comptable: null }), categorie({ id: 'inutilisee', compte_comptable: null })]
-    expect(categoriesSansCompte(categories, [], [{ categorie_id: 'frais' }, { categorie_id: null }]).map((c) => c.id)).toEqual(['frais'])
+    expect(categoriesSansCompte(categories, [], [{ categorie_id: 'frais' }, { categorie_id: null }], new Set()).map((c) => c.id)).toEqual(['frais'])
   })
 
   it('ne signale rien quand tout est renseigné', () => {
-    expect(categoriesSansCompte([categorie({})], [piece({})], [])).toEqual([])
+    expect(categoriesSansCompte([categorie({})], [piece({})], [], new Set())).toEqual([])
+  })
+
+  it('ne compte pas la facture d’un bien : elle s’écrit sur le compte de sa nature', () => {
+    // L'écriture d'ACQUISITION (lib/ecritures.ts) ne lit pas la catégorie : un compte qui lui manque n'y
+    // bloque rien. Une autre pièce de la même catégorie, elle, la fait signaler.
+    const categories = [categorie({ id: 'sans', compte_comptable: null })]
+    const facture = piece({ id: 'immo', categorie_id: 'sans' })
+    expect(categoriesSansCompte(categories, [facture], [], new Set(['immo']))).toEqual([])
+    expect(categoriesSansCompte(categories, [facture, piece({ id: 'autre', categorie_id: 'sans' })], [], new Set(['immo'])).map((c) => c.id))
+      .toEqual(['sans'])
   })
 })
 
@@ -48,7 +58,7 @@ describe('categoriesSansPoste', () => {
     const manquantes = categoriesSansPoste(categories, [
       piece({ id: 'a', categorie_id: 'sans' }),
       piece({ id: 'b', categorie_id: 'avec' }),
-    ], [])
+    ], [], new Set())
     expect(manquantes.map((c) => c.id)).toEqual(['sans'])
   })
 
@@ -56,7 +66,12 @@ describe('categoriesSansPoste', () => {
     // La base n’exige pas de poste à l’affectation : le mouvement sort alors de la 2035, et c’est ici
     // que la Checklist et Clôture le voient.
     const categories = [categorie({ id: 'sans', poste_2035: null }), categorie({ id: 'avec', poste_2035: 'Achats' })]
-    expect(categoriesSansPoste(categories, [], [{ categorie_id: 'sans' }, { categorie_id: 'avec' }]).map((c) => c.id)).toEqual(['sans'])
+    expect(categoriesSansPoste(categories, [], [{ categorie_id: 'sans' }, { categorie_id: 'avec' }], new Set()).map((c) => c.id)).toEqual(['sans'])
+  })
+
+  it('ne compte pas la facture d’un bien : la 2035 l’écarte, le bien compte par sa dotation', () => {
+    const categories = [categorie({ id: 'sans', poste_2035: null })]
+    expect(categoriesSansPoste(categories, [piece({ id: 'immo', categorie_id: 'sans' })], [], new Set(['immo']))).toEqual([])
   })
 })
 
@@ -89,17 +104,24 @@ describe('piecesValideesSansCategorie', () => {
     // Le cas que ni categoriesSansCompte ni categoriesSansPoste ne peuvent voir : ils partent d'une
     // catégorie, et ici il n'y en a pas. La pièce est pourtant aussi stérile — ni écriture, ni 2035.
     const orpheline = piece({ id: 'orpheline', categorie_id: null })
-    expect(piecesValideesSansCategorie([orpheline, piece({ id: 'ok' })]).map((p) => p.id)).toEqual(['orpheline'])
+    expect(piecesValideesSansCategorie([orpheline, piece({ id: 'ok' })], new Set()).map((p) => p.id)).toEqual(['orpheline'])
   })
 
   it('ne signale pas une pièce encore à valider', () => {
     // C'est la corbeille d'arrivée : une pièce qui attend son arbitrage n'a pas à avoir de catégorie,
     // et les signaler noierait le vrai signal — un dossier réel en portait 30 face à 10 validées.
-    expect(piecesValideesSansCategorie([piece({ statut: 'a_valider', categorie_id: null })])).toEqual([])
+    expect(piecesValideesSansCategorie([piece({ statut: 'a_valider', categorie_id: null })], new Set())).toEqual([])
   })
 
   it('ne signale rien quand toutes les pièces validées sont catégorisées', () => {
-    expect(piecesValideesSansCategorie([piece({}), piece({ id: 'b' })])).toEqual([])
+    expect(piecesValideesSansCategorie([piece({}), piece({ id: 'b' })], new Set())).toEqual([])
+  })
+
+  it('ne signale pas la facture d’un bien : elle s’écrit sur le compte de sa nature et s’amortit', () => {
+    // « Elle ne compte nulle part » y serait faux deux fois : l'acquisition l'écrit, la dotation la déduit.
+    const facture = piece({ id: 'immo', categorie_id: null })
+    expect(piecesValideesSansCategorie([facture, piece({ id: 'orpheline', categorie_id: null })], new Set(['immo'])).map((p) => p.id))
+      .toEqual(['orpheline'])
   })
 
   it('reste indifférent au montant et au sens de la pièce', () => {
@@ -107,7 +129,7 @@ describe('piecesValideesSansCategorie', () => {
     // Constaté en production, l'une des onze était un avoir à −214,21 €.
     const recette = piece({ id: 'recette', type_piece: 'vente', categorie_id: null })
     const avoir = piece({ id: 'avoir', montant_ttc: -214.21, categorie_id: null })
-    expect(piecesValideesSansCategorie([recette, avoir]).map((p) => p.id)).toEqual(['recette', 'avoir'])
+    expect(piecesValideesSansCategorie([recette, avoir], new Set()).map((p) => p.id)).toEqual(['recette', 'avoir'])
   })
 })
 

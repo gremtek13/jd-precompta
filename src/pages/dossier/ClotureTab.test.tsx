@@ -411,6 +411,27 @@ describe('ClotureTab — la dotation aux amortissements de la case CH', () => {
   })
 })
 
+// LA FACTURE D'UN BIEN NE DÉPEND PLUS DE SA CATÉGORIE (ligne 26.6, étape b) : la 2035 l'écarte, le bien y
+// compte par sa dotation, et son acquisition s'écrit sur le compte de sa nature. « Pièces validées sans
+// catégorie » dirait d'elle qu'elle ne compte nulle part, ce qui serait faux deux fois.
+describe('ClotureTab — la facture d’un bien n’est pas une pièce sans catégorie', () => {
+  it('ne la range pas parmi les pièces validées sans catégorie', async () => {
+    poser({}, [immobilisation()])
+    faux.parTable.pieces = [{ ...PIECE, categorie_id: null }]
+    monter()
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryByText(/Pièces validées sans catégorie/)).toBeNull()
+  })
+
+  it('range toujours là une pièce sans catégorie qui n’est pas un bien', async () => {
+    // Le garde symétrique : sans lui, le test ci-dessus serait satisfait par une carte qui ne dit plus rien.
+    poser({}, [])
+    faux.parTable.pieces = [{ ...PIECE, categorie_id: null }]
+    monter()
+    await screen.findByText(/Pièces validées sans catégorie/)
+  })
+})
+
 // CE QUI RESTE À SAISIR SUR LA CSG-CRDS, DIT SUR L'ÉCRAN QUI REMPLIT LE FORMULAIRE.
 //
 // Depuis le 22/09/2026 le moteur SORT la CSG-CRDS saisie de la ligne 25 et porte ses 6,8 points

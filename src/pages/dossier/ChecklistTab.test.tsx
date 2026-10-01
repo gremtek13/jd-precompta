@@ -729,6 +729,127 @@ describe('ChecklistTab — les écritures à régénérer suivent le statut TVA'
   })
 })
 
+// L'ÉCRITURE D'ACQUISITION (ligne 26.6, étape b) : la facture d'un bien s'écrit sur le compte de sa NATURE. La
+// Checklist le lit des natures qu'elle charge déjà pour les dotations : une écriture restée en charge est « à
+// régénérer » quand la nature est connue, « sans objet » sinon — et le bien ne dépend plus de sa catégorie.
+describe('ChecklistTab — l’acquisition d’un bien immobilisé', () => {
+  const NATURE = {
+    id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300',
+  }
+  const categorie = {
+    id: 'cat-achats', dossier_id: null, code: 'achats_fournisseurs', libelle: 'Achats', ordre: 1,
+    compte_comptable: '606100', poste_2035: 'Achats',
+  }
+  const facture = (o: Partial<Piece> = {}) => piece({
+    statut: 'validee', date_piece: '2026-03-10', categorie_id: 'cat-achats', montant_ht: 100, montant_tva: 20, montant_ttc: 120, ...o,
+  })
+  const ecriture = (id: string, compte: string, montant: number) => ({
+    id, dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: null, date: '2026-03-10',
+    libelle: 'FOURNISSEUR', sens: 'debit', statut: 'proposee', compte, montant, immobilisation_id: null,
+    created_at: '2026-03-10T09:00:00Z',
+  })
+  const A_REGENERER = /écriture\(s\) à régénérer/
+  const SANS_OBJET = /écriture\(s\) que la pièce ne justifie plus/
+  // L'ancre : ce que l'écran affiche forcément une fois chargé — vérifier une absence avant serait vert pour rien.
+  const charge = () => screen.findAllByText(/^Relevés bancaires \d{4}$/)
+
+  it('dit « à régénérer » la charge d’une pièce immobilisée dont la nature est connue', async () => {
+    poser({
+      validees: [facture()], categories: [categorie], natures: [NATURE],
+      immos: [immobilisation({ nature_id: 'n1' })], ecritures: [ecriture('e1', '606100', 100), ecriture('e2', '445660', 20)],
+    })
+    monter(true)
+    await screen.findByText(A_REGENERER)
+    expect(screen.queryByText(SANS_OBJET)).toBeNull()
+  })
+
+  it('dit « sans objet » la charge d’un bien sans nature : son compte n’est pas connu', async () => {
+    poser({
+      validees: [facture()], categories: [categorie], natures: [NATURE],
+      immos: [immobilisation({ nature_id: null })], ecritures: [ecriture('e1', '606100', 100), ecriture('e2', '445660', 20)],
+    })
+    monter(true)
+    await screen.findByText(SANS_OBJET)
+    expect(screen.queryByText(A_REGENERER)).toBeNull()
+  })
+
+  it('se tait sur une acquisition écrite comme la génération l’écrit', async () => {
+    poser({
+      validees: [facture()], categories: [categorie], natures: [NATURE],
+      immos: [immobilisation({ nature_id: 'n1' })], ecritures: [ecriture('e1', '218300', 100), ecriture('e2', '445620', 20)],
+    })
+    monter(true)
+    await charge()
+    expect(screen.queryByText(A_REGENERER)).toBeNull()
+    expect(screen.queryByText(SANS_OBJET)).toBeNull()
+  })
+
+  it('ne réclame pas de catégorie, ni de compte de catégorie, pour la facture d’un bien', async () => {
+    // « Invisibles en compta » serait faux : son acquisition s'écrit sur le compte du bien, et le bien s'amortit.
+    const sansCompte = { ...categorie, id: 'cat-sans-compte', libelle: 'À classer', compte_comptable: null }
+    poser({
+      validees: [facture({ categorie_id: null }), facture({ id: 'p2', categorie_id: 'cat-sans-compte' })],
+      categories: [categorie, sansCompte], natures: [NATURE],
+      immos: [immobilisation({ nature_id: 'n1' }), immobilisation({ id: 'i2', piece_id: 'p2', nature_id: 'n1' })],
+    })
+    monter(true)
+    await charge()
+    expect(screen.queryByText(/sans catégorie/)).toBeNull()
+    expect(screen.queryByText(/catégorie\(s\) sans compte comptable/)).toBeNull()
+  })
+
+  it('réclame toujours la catégorie d’une pièce qui n’est pas un bien', async () => {
+    // Le garde symétrique : sans lui, « le bien n'est pas réclamé » serait satisfait par un point qui ne
+    // réclame plus rien.
+    poser({ validees: [facture({ categorie_id: null })], categories: [categorie], natures: [NATURE] })
+    monter(true)
+    await screen.findByText(/sans catégorie/)
+  })
+
+  // UN DOSSIER REPRIS : la balance reprise porte la valeur brute des biens acquis avant son ouverture. Toute
+  // écriture de leur facture les compte une seconde fois — elle n'a plus d'objet, et rien n'est à régénérer.
+  const OUVERTURE: ANouveau = {
+    id: 'an1', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '218300', compte_origine: '2183',
+    libelle: 'Matériel informatique', sens: 'debit', montant: 1200, source_nom: 'balance.csv', source_empreinte: 'e',
+    created_at: '2026-01-05T09:00:00Z',
+  }
+
+  it('dit « sans objet » l’écriture de la facture d’un bien acquis avant l’ouverture', async () => {
+    poser({
+      validees: [facture({ date_piece: '2025-03-10' })], categories: [categorie], natures: [NATURE], aNouveaux: [OUVERTURE],
+      immos: [immobilisation({ nature_id: 'n1', date_acquisition: '2025-03-10' })],
+      ecritures: [ecriture('e1', '218300', 100), ecriture('e2', '445620', 20)],
+    })
+    monter(true)
+    await screen.findByText(SANS_OBJET)
+    expect(screen.queryByText(A_REGENERER)).toBeNull()
+  })
+
+  // C'EST L'OUVERTURE QUI DIT SI UN BIEN EST REPRIS : lue à moitié, les points qui jugent l'écriture de la
+  // facture d'un bien se taisent — comme celui des dotations —, et le bandeau le dit.
+  it('se tait sur la facture d’un bien quand l’ouverture est lue à moitié, et le dit', async () => {
+    poser({
+      validees: [facture()], categories: [categorie], natures: [NATURE], aNouveaux: [OUVERTURE], tronquees: ['a_nouveaux'],
+      immos: [immobilisation({ nature_id: 'n1' })], ecritures: [ecriture('e1', '606100', 100), ecriture('e2', '445660', 20)],
+    })
+    monter(true)
+    await screen.findByText(/l’écriture de la facture d’un bien — c’est l’ouverture qui dit/)
+    await charge()
+    expect(screen.queryByText(A_REGENERER)).toBeNull()
+    expect(screen.queryByText(SANS_OBJET)).toBeNull()
+  })
+
+  // GARDE SYMÉTRIQUE : la même lecture partielle ne fait pas taire une pièce qui n'est pas un bien.
+  it('juge toujours l’écriture d’une pièce ordinaire quand l’ouverture est lue à moitié', async () => {
+    poser({
+      validees: [facture()], categories: [categorie], natures: [NATURE], aNouveaux: [OUVERTURE], tronquees: ['a_nouveaux'],
+      ecritures: [ecriture('e1', '628000', 100), ecriture('e2', '445660', 20)],
+    })
+    monter(true)
+    await screen.findByText(A_REGENERER)
+  })
+})
+
 // EN ENGAGEMENT (lib/engagement.ts), la Checklist lit le brouillon dans le modèle du dossier : lue en
 // trésorerie, chaque facture juste paraîtrait « à régénérer ».
 describe('ChecklistTab — en engagement', () => {
