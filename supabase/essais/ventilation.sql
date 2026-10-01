@@ -13,15 +13,19 @@
 --   - CE QUI s'écrit : la banque au montant et dans le sens du mouvement, une ligne par part dans le sens de
 --     son signe — une part de sens contraire comprise, la commission retenue sur une remise —, le compte du
 --     dirigeant lu dans le modèle du dossier ; une seconde ventilation REMPLACE la première ; un retrait
---     défait les trois ;
+--     défait les trois ; et sur un dossier ASSUJETTI, une part de recette taxée s'écrit au hors taxe, sa
+--     TVA collectée sur une ligne à côté, son taux gardé sur la part, une part exonérée au taux zéro ;
 --   - CE QUI est refusé, avec sa RAISON : des parts mal formées (moins de deux, deux cibles, aucune, zéro,
 --     pas au centime, une cible deux fois, une somme qui n'est pas le mouvement), une catégorie d'un autre
---     dossier ou sans compte de résultat, une recette sur un dossier assujetti, une écriture qui ne
+--     dossier ou sans compte de résultat, une part de recette d'un dossier assujetti sans son taux, un
+--     taux sur une part de dépense, sur la part personnelle, sur un dossier exonéré ou hors de la liste,
+--     une TVA mal répartie, une écriture qui ne
 --     correspond pas, un mouvement déjà rapproché, affecté, personnel ou d'emprunt, un mouvement de zéro
 --     euro, une écriture validée ;
 --   - CE QUE LES CONTRAINTES TIENNENT SANS LE CODE : les fonctions d'avant et les mises à jour directes de
 --     l'écran Banque ne connaissent pas la ventilation, et chacune se heurte à une contrainte nommée ; une
---     part mal formée écrite directement aussi ; une catégorie ventilée ne se supprime pas, et la
+--     part mal formée écrite directement aussi — un taux sur la part personnelle ou hors de la liste
+--     compris ; une catégorie ventilée ne se supprime pas, et la
 --     suppression d'un DOSSIER passe quand même ;
 --   - et que RIEN ne reste en base après l'essai.
 --
@@ -35,6 +39,10 @@
 -- REJOUÉ LE 30/09/2026 après `ventilations_bancaires_lecture_client_une_evaluation`, qui réécrit la policy
 -- de lecture du client : 59 sur 59, le corps transmis identique au fichier (seule la requête finale, un
 -- résumé, différait).
+-- REJOUÉ LE 01/10/2026 après `recettes_assujetties_du_releve`, qui ajoute le taux de TVA d'une part : 68
+-- contrôles sur 68 (les neuf nouveaux, 24 et 59 à 67, compris), le texte transmis identique au fichier.
+-- Les contrôles 59 et 65 forment une paire : même remise, même taux, et 65 ne déplace qu'un centime de la
+-- TVA vers la recette — le premier passe, le second est refusé.
 drop table if exists essai_ventilation;
 create temp table essai_ventilation (controle text, observe text, ok boolean);
 
@@ -54,7 +62,7 @@ declare
 
   -- Les parts d'essai de `debit` (une sortie) : 70 % en achats, le reste en frais bancaires, ou en part
   -- personnelle ; et celles de `credit` (une entrée) : la recette brute et la commission retenue.
-  tot numeric; p1 numeric; p2 numeric; brut numeric;
+  tot numeric; p1 numeric; p2 numeric; brut numeric; tva_brut numeric;
   parts_categories jsonb; ecriture_categories jsonb;
   parts_personnelle jsonb; ecriture_personnelle jsonb;
   parts_remise jsonb; ecriture_remise jsonb;
@@ -356,10 +364,10 @@ begin
     end;
   end loop;
 
-  -- 22. Une catégorie d'un autre dossier ; 23. une catégorie sans compte de résultat ; 24. une recette sur
-  -- un dossier assujetti. Chacune se crée ou se règle DANS la sous-transaction.
+  -- 22. Une catégorie d'un autre dossier ; 23. une catégorie sans compte de résultat ; 24. une part de
+  -- recette sans son taux, sur un dossier assujetti. Chacune se crée ou se règle DANS la sous-transaction.
   for obs in select unnest(array['22. une catégorie d''un autre dossier', '23. une catégorie sans compte de résultat',
-                                 '24. une recette sur un dossier assujetti']) loop
+                                 '24. une part de recette sans taux, dossier assujetti']) loop
     accepte := false; code_recu := null; message := null;
     begin
       if obs like '22.%' then
@@ -389,7 +397,7 @@ begin
       not accepte and code_recu = '22023' and message = case
         when obs like '22.%' then 'Cette catégorie n''existe pas pour ce dossier.'
         when obs like '23.%' then 'La catégorie « Essai sans résultat » n''a pas de compte de charge ou de produit (classe 6 ou 7).'
-        else 'Sur un dossier assujetti à la TVA, une recette sans facture n''est pas encore prise en charge : sa TVA ne serait pas calculée. Dépose la facture et rapproche-la.' end);
+        else 'Sur un dossier assujetti à la TVA, la part « ' || cat_recettes.libelle || ' » est une recette : choisis son taux, ou « exonérée ».' end);
   end loop;
 
   -- ══ 25 à 31. Les écritures que la base refuse, chacune pour SA raison ════════════════════════════
@@ -784,12 +792,134 @@ begin
   insert into essai_ventilation values ('58. supprimer le dossier emporte ses parts', coalesce(obs, coalesce(code_recu, '?') || ' ' || coalesce(message, '')),
     accepte and code_recu = 'P0001' and coalesce(ok, false));
 
-  -- ══ 59. Rien n'est resté ══════════════════════════════════════════════════════════════════════════
+  -- ══ 59 et 60. Une part de recette d'un dossier ASSUJETTI porte son taux ══════════════════════════
+  -- La remise : 5 € de commission retenus sur une recette brute taxée à 20 %, ou exonérée. Le dossier
+  -- devient assujetti DANS la sous-transaction ; la TVA attendue est recalculée ici, par `round`, et non
+  -- par la fonction qu'on éprouve.
+  tva_brut := round(brut * 20 / 120, 2);
+  for obs in select unnest(array['59. une remise taxée à 20 % : la recette au hors taxe, la TVA à côté',
+                                 '60. une remise exonérée : trois lignes, le taux zéro gardé']) loop
+    accepte := false; code_recu := null; ok := false;
+    declare ecr text; vu text; recu text;
+    begin
+      begin
+        update dossiers set assujetti_tva = true where id = dossier_test;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+        if obs like '59.%' then
+          n := ventiler_mouvement_bancaire(credit.id, jsonb_build_array(
+            jsonb_build_object('categorie_id', cat_recettes.id, 'montant', brut, 'taux_tva', 20),
+            jsonb_build_object('categorie_id', cat_frais.id, 'montant', -5)), jsonb_build_array(
+            jsonb_build_object('compte', '512000', 'sens', 'debit', 'montant', credit.montant),
+            jsonb_build_object('compte', cat_recettes.compte_comptable, 'sens', 'credit', 'montant', brut - tva_brut),
+            jsonb_build_object('compte', '445710', 'sens', 'credit', 'montant', tva_brut),
+            jsonb_build_object('compte', cat_frais.compte_comptable, 'sens', 'debit', 'montant', 5)));
+        else
+          n := ventiler_mouvement_bancaire(credit.id, jsonb_build_array(
+            jsonb_build_object('categorie_id', cat_recettes.id, 'montant', brut, 'taux_tva', 0),
+            jsonb_build_object('categorie_id', cat_frais.id, 'montant', -5)), ecriture_remise);
+        end if;
+        select string_agg(e.compte || ':' || e.sens || ':' || e.montant::text, ',' order by e.compte) into ecr
+          from ecritures_brouillon e where e.ligne_bancaire_id = credit.id and e.piece_id is null;
+        select case when obs like '59.%'
+                 then n = 4 and ecr = '445710:credit:' || tva_brut::text || ',512000:debit:' || credit.montant::text || ','
+                                      || cat_frais.compte_comptable || ':debit:5,'
+                                      || cat_recettes.compte_comptable || ':credit:' || (brut - tva_brut)::text
+                 else n = 3 end
+               and (select taux_tva from ventilations_bancaires where ligne_bancaire_id = credit.id and categorie_id = cat_recettes.id)
+                   = case when obs like '59.%' then 20 else 0 end
+               and (select taux_tva is null from ventilations_bancaires where ligne_bancaire_id = credit.id and categorie_id = cat_frais.id),
+               coalesce(ecr, 'aucune écriture')
+          into ok, vu;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_recu := sqlstate; recu := sqlerrm;
+      end;
+      reset role;
+      insert into essai_ventilation values (obs, coalesce(vu, coalesce(code_recu, '?') || ' ' || coalesce(recu, '')),
+        accepte and code_recu = 'P0001' and coalesce(ok, false));
+    end;
+  end loop;
+
+  -- ══ 61 à 65. Les taux que la base refuse, chacun pour SA raison ══════════════════════════════════
+  for obs, message in
+    select * from (values
+      ('61. un taux sur une part de dépense', 'Un taux de TVA ne s''applique qu''à une part de recette d''un dossier assujetti.'),
+      ('62. un taux sur la part personnelle', 'Un taux de TVA ne s''applique qu''à une part de recette d''un dossier assujetti.'),
+      ('63. un taux sur une part de recette, dossier exonéré', 'Un taux de TVA ne s''applique qu''à une part de recette d''un dossier assujetti.'),
+      ('64. un taux qui n''est pas pris en charge', 'Ce taux de TVA n''est pas pris en charge.'),
+      ('65. la TVA mal répartie', 'L''écriture proposée ne correspond pas à ce mouvement et à cette ventilation.')
+    ) as cas(nom, attendu)
+  loop
+    accepte := false; code_recu := null;
+    declare attendu text := message; recu text;
+    begin
+      begin
+        if obs not like '63.%' then
+          update dossiers set assujetti_tva = true where id = dossier_test;
+        end if;
+        set local role authenticated;
+        perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
+        if obs like '61.%' then
+          perform ventiler_mouvement_bancaire(debit.id, jsonb_build_array(
+            jsonb_build_object('categorie_id', cat_achats.id, 'montant', -p1, 'taux_tva', 20),
+            jsonb_build_object('categorie_id', cat_frais.id, 'montant', -p2)), ecriture_categories);
+        elsif obs like '62.%' then
+          perform ventiler_mouvement_bancaire(debit.id, jsonb_build_array(
+            jsonb_build_object('categorie_id', cat_achats.id, 'montant', -p1),
+            jsonb_build_object('part_personnelle', true, 'montant', -p2, 'taux_tva', 20)), ecriture_personnelle);
+        elsif obs like '65.%' then
+          perform ventiler_mouvement_bancaire(credit.id, jsonb_build_array(
+            jsonb_build_object('categorie_id', cat_recettes.id, 'montant', brut, 'taux_tva', 20),
+            jsonb_build_object('categorie_id', cat_frais.id, 'montant', -5)), jsonb_build_array(
+            jsonb_build_object('compte', '512000', 'sens', 'debit', 'montant', credit.montant),
+            jsonb_build_object('compte', cat_recettes.compte_comptable, 'sens', 'credit', 'montant', brut - tva_brut + 0.01),
+            jsonb_build_object('compte', '445710', 'sens', 'credit', 'montant', tva_brut - 0.01),
+            jsonb_build_object('compte', cat_frais.compte_comptable, 'sens', 'debit', 'montant', 5)));
+        else
+          perform ventiler_mouvement_bancaire(credit.id, jsonb_build_array(
+            jsonb_build_object('categorie_id', cat_recettes.id, 'montant', brut, 'taux_tva', case when obs like '64.%' then 7 else 20 end),
+            jsonb_build_object('categorie_id', cat_frais.id, 'montant', -5)), ecriture_remise);
+        end if;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_recu := sqlstate; recu := sqlerrm;
+      end;
+      reset role;
+      insert into essai_ventilation values (obs, coalesce(code_recu, '?') || ' ' || coalesce(recu, ''),
+        not accepte and code_recu = '22023' and recu = attendu);
+    end;
+  end loop;
+
+  -- ══ 66 et 67. Le taux d'une part, tenu par la contrainte SEULE ════════════════════════════════════
+  for obs in select unnest(array['66. un taux sur la part personnelle, écrit directement',
+                                 '67. un taux hors de la liste, écrit directement']) loop
+    accepte := false; code_recu := null;
+    declare recu text;
+    begin
+      begin
+        if obs like '66.%' then
+          insert into ventilations_bancaires (dossier_id, ligne_bancaire_id, categorie_id, part_personnelle, montant, taux_tva)
+          values (dossier_test, debit.id, null, true, -p1, 20);
+        else
+          insert into ventilations_bancaires (dossier_id, ligne_bancaire_id, categorie_id, part_personnelle, montant, taux_tva)
+          values (dossier_test, debit.id, cat_achats.id, false, -p1, 7);
+        end if;
+        accepte := true;
+        raise exception 'ANNULATION_ESSAI';
+      exception when others then code_recu := sqlstate; recu := sqlerrm;
+      end;
+      insert into essai_ventilation values (obs, coalesce(code_recu, '?') || ' ' || coalesce(recu, ''),
+        not accepte and code_recu = '23514' and recu like '%"ventilations_bancaires_taux_tva"%');
+    end;
+  end loop;
+
+  -- ══ 68. Rien n'est resté ══════════════════════════════════════════════════════════════════════════
   select count(*) into nb_apres from ecritures_brouillon;
   select string_agg(concat_ws(':', l.id, l.statut, l.piece_id, l.categorie_id, l.prelevement_personnel, l.montant,
                               l.emprunt_id, l.ventilee), '|' order by l.id)
     into etat_apres from lignes_bancaires l where l.id in (debit.id, credit.id, du_client.id, avec_piece.id);
-  insert into essai_ventilation values ('59. rien n''est resté en base',
+  insert into essai_ventilation values ('68. rien n''est resté en base',
     'écritures ' || nb_avant || ' -> ' || nb_apres || ', parts ' || parts_avant || ' -> ' || (select count(*) from ventilations_bancaires)
       || ', mouvements ' || (etat_avant = etat_apres)::text
       || ', dossiers ' || dossiers_avant || ' -> ' || (select count(*) from dossiers)
