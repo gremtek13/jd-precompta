@@ -2,7 +2,9 @@ import { render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ChecklistTab from './ChecklistTab'
 import type { ModeleComptable } from '../../lib/engagement'
-import type { Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, ReglementGroupe, VentilationBancaire } from '../../lib/types'
+import type {
+  Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, ReglementGroupe, VentilationBancaire,
+} from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 
 // L'ÉCRAN QUI PRÉTEND DIRE CE QUI MANQUE — donc celui dont le SILENCE est le plus dangereux, parce
@@ -121,12 +123,13 @@ function poser(pieces: {
   emprunts?: unknown[]
   ventilations?: unknown[]
   reglements?: unknown[]
+  cotisations?: unknown[]
 }) {
   faux.parTable = {
     'pieces:validee': pieces.validees ?? [],
     'pieces:a_valider': pieces.aValider ?? [],
     pieces: [...(pieces.validees ?? []), ...(pieces.aValider ?? [])],
-    cotisations_declarees: [], lignes_bancaires: pieces.lignes ?? [], immobilisations: pieces.immos ?? [],
+    cotisations_declarees: pieces.cotisations ?? [], lignes_bancaires: pieces.lignes ?? [], immobilisations: pieces.immos ?? [],
     natures_immobilisation: [], categories: pieces.categories ?? [], ecritures_brouillon: pieces.ecritures ?? [],
     declarations_tva: [], documents_divers: [], informations_dossier: [],
     exercices_clotures: pieces.clotures ?? [], a_nouveaux: pieces.aNouveaux ?? [], emprunts: pieces.emprunts ?? [],
@@ -774,6 +777,93 @@ describe('ChecklistTab — les virements personnels', () => {
 
     const point = await screen.findByText(/personnel\(s\) sans écriture/)
     expect(point.textContent).toMatch(/^1 /)
+  })
+})
+
+// LES ÉCHÉANCES DE COTISATION PAYÉES (lib/cotisationRapprochee.ts). Ce que le module ne peut pas voir : que
+// l'écran LISE les échéances avec le relevé et le brouillon, passe le MODE au contrôle, et mène chaque
+// point à l'onglet qui sait le traiter.
+describe('ChecklistTab — les échéances de cotisation payées', () => {
+  const echeance = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => ({
+    id: 'cot-1', dossier_id: 'dossier-de-test', echeance: '2026-03-05', montant_appele: 100, montant_verse: null,
+    montant_csg_crds: 9.7, previsionnel: false, created_at: '2026-01-10T09:00:00Z', ...o,
+  })
+  const prelevement = (o: Partial<LigneBancaire> = {}) => ligne({
+    id: 'l-urssaf', libelle: 'PRLV URSSAF', montant: -100, statut: 'rapprochee', piece_id: null, cotisation_id: 'cot-1', ...o,
+  })
+  function ecritureDe(o: Partial<EcritureBrouillon>): EcritureBrouillon {
+    return {
+      id: 'u1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-urssaf', date: '2026-03-10',
+      compte: '646000', libelle: 'PRLV URSSAF', montant: 90.3, sens: 'debit', statut: 'proposee',
+      created_at: '2026-03-10T00:00:00Z', ...o,
+    }
+  }
+  const ecrite = [
+    ecritureDe({ id: 'u1' }),
+    ecritureDe({ id: 'u2', compte: '108000', montant: 9.7 }),
+    ecritureDe({ id: 'u3', compte: '512000', sens: 'credit', montant: 100 }),
+  ]
+
+  it('compte l’échéance rapprochée sans son écriture, et mène à l’onglet Cotisations', async () => {
+    const onNavigate = vi.fn()
+    poser({ lignes: [prelevement()], cotisations: [echeance()] })
+    render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />)
+
+    const point = await screen.findByText(/échéance\(s\) de cotisation payée\(s\) dont l’écriture manque/)
+    expect(point.textContent).toMatch(/^1 /)
+    screen.getByRole('button', { name: 'Écrire ces échéances' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('cotisations')
+  })
+
+  it('écrite, elle n’est ni un point, ni un rapprochement sans justificatif, ni une rupture', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « le point compte les échéances sans écriture » serait satisfait par un
+    // point qui compte toutes les échéances payées.
+    poser({
+      lignes: [prelevement(), ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })],
+      cotisations: [echeance()], ecritures: ecrite,
+    })
+    monter()
+
+    // Ancré sur un point que ce jeu d'essai déclenche forcément.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/de cotisation payée\(s\)/)).toHaveLength(0)
+    expect(screen.queryAllByText(/rapproché\(s\) sans justificatif/)).toHaveLength(0)
+    expect(screen.queryAllByText(/piste d'audit rompue/)).toHaveLength(0)
+  })
+
+  it('le mode arrive jusqu’au contrôle : en engagement, la CSG-CRDS reste au 646000', async () => {
+    // La même écriture — tout au 646000 — est périmée en trésorerie, où la CSG-CRDS passe au 108000, et
+    // juste en engagement.
+    const toutAu646 = [ecritureDe({ id: 'u1', montant: 100 }), ecritureDe({ id: 'u3', compte: '512000', sens: 'credit', montant: 100 })]
+    poser({
+      lignes: [prelevement(), ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })],
+      cotisations: [echeance()], ecritures: toutAu646,
+    })
+    monter(false, ENGAGEMENT)
+    // Ancré sur un point que ce jeu d'essai déclenche forcément.
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/de cotisation payée\(s\)/)).toHaveLength(0)
+  })
+
+  it('le même jeu en trésorerie est compté', async () => {
+    const toutAu646 = [ecritureDe({ id: 'u1', montant: 100 }), ecritureDe({ id: 'u3', compte: '512000', sens: 'credit', montant: 100 })]
+    poser({ lignes: [prelevement()], cotisations: [echeance()], ecritures: toutAu646 })
+    monter()
+    const point = await screen.findByText(/de cotisation payée\(s\) dont l’écriture manque/)
+    expect(point.textContent).toMatch(/^1 /)
+  })
+
+  it('compte le rapprochement qui ne peut pas s’écrire, et mène à Banque', async () => {
+    const onNavigate = vi.fn()
+    poser({ lignes: [prelevement({ montant: 100 })], cotisations: [echeance()] })
+    render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />)
+
+    const point = await screen.findByText(/rapprochement\(s\) d’une échéance de cotisation qui ne peuvent pas s’écrire/)
+    expect(point.textContent).toMatch(/^1 /)
+    // Il n'est pas « à écrire » : « Écrire » échouerait.
+    expect(screen.queryAllByText(/de cotisation payée\(s\)/)).toHaveLength(0)
+    screen.getByRole('button', { name: 'Annuler ces rapprochements' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('banque')
   })
 })
 

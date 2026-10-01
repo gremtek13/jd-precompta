@@ -1,7 +1,7 @@
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { libelleExploitable } from './appariementBanque'
 import { COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT } from './comptes'
-import { formatMoney } from './format'
+import { formatDate, formatMoney } from './format'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon, ModeComptable } from './types'
 
@@ -213,4 +213,20 @@ export function rapprochementsCotisationRefuses<L extends MouvementBancaire>(
     const raison = refusRapprochementCotisation(ligne, cotisation, mode)
     return raison ? [{ ligne, cotisation, raison }] : []
   })
+}
+
+// CE QUE LE RETRAIT D'UNE ÉCHÉANCE DÉFAIT, dit dans sa confirmation — une confirmation nomme ce qu'on perd.
+// `supprimer_echeance_cotisation` remet à traiter le mouvement qui la paie et retire son écriture, dans la
+// même transaction. Le mouvement est nommé quand on le connaît ; sur une lecture partielle du relevé, on
+// ne sait pas s'il y en a un, et la phrase le dit au conditionnel plutôt que d'affirmer « aucun ».
+export function avertissementRetraitEcheance(
+  paiement: Pick<MouvementBancaire, 'date' | 'montant'> | null,
+  releveLuEnEntier: boolean,
+): string {
+  if (paiement) {
+    const nature = paiement.montant > 0 ? 'Le remboursement' : 'Le prélèvement'
+    return `${nature} du ${formatDate(paiement.date)} (${formatMoney(Math.abs(paiement.montant))}) qui la paie redevient à traiter, et son écriture est retirée du brouillon.`
+  }
+  if (!releveLuEnEntier) return 'Si un mouvement bancaire la paie, il redevient à traiter, et son écriture est retirée du brouillon.'
+  return 'Aucun mouvement bancaire ne la paie.'
 }

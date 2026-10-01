@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import FinancementTab from './FinancementTab'
-import type { Categorie, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
+import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece } from '../../lib/types'
 import type { Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { ajouterMois, premierJourDuMoisCourant } from '../../lib/format'
@@ -28,6 +28,8 @@ const faux = vi.hoisted(() => ({
   ventilations: [] as unknown[],
   // Les parts des virements qui règlent plusieurs pièces (lib/reglementGroupe.ts).
   reglements: [] as unknown[],
+  // Les échéances de cotisation, que le relevé paie ou non (lib/cotisationRapprochee.ts).
+  cotisations: [] as unknown[],
   // Les tables dont la lecture ÉCHOUE. Un faux client qui ne sait pas refuser ne peut rien dire de
   // la famille « le vide est une affirmation » : il rend le même objet dans les deux cas.
   refusees: new Set<string>(),
@@ -74,7 +76,8 @@ vi.mock('../../lib/supabase', async () => {
           : table === 'a_nouveaux' ? faux.aNouveaux
           : table === 'lignes_bancaires' ? faux.paiements
           : table === 'ventilations_bancaires' ? faux.ventilations
-          : table === 'reglements_groupes' ? faux.reglements : [], predicats)
+          : table === 'reglements_groupes' ? faux.reglements
+          : table === 'cotisations_declarees' ? faux.cotisations : [], predicats)
         const muet = faux.muet[table]
         if (muet != null) {
           return Promise.resolve({ data: donnees.slice(debut, Math.min(fin + 1, muet)), error: null, count: donnees.length }).then(suite)
@@ -148,6 +151,7 @@ afterEach(() => {
   faux.paiements = []
   faux.ventilations = []
   faux.reglements = []
+  faux.cotisations = []
   faux.emprunts = []
   faux.suppressions = []
   faux.misesAJour = []
@@ -1062,5 +1066,118 @@ describe('FinancementTab — les mouvements ventilés sur plusieurs comptes', ()
     faux.muet = { ventilations_bancaires: 1 }
     render(<FinancementTab dossierId="d" assujettiTva modeComptable="tresorerie" />)
     expect(await screen.findByText(/Les données du dossier bancaire/)).toBeTruthy()
+  })
+})
+
+// UNE ÉCHÉANCE QUE LE RELEVÉ PAIE N'EST PLUS UNE DETTE (lib/cotisationRapprochee.ts). Avant, seul un
+// versement saisi la retirait des « cotisations sociales dues » et des échéances à venir : une cotisation
+// prélevée restait due sur l'état qu'on montre à une banque. Et la situation intermédiaire la compte à la
+// date et au montant du prélèvement, comme la 2035. Ce qui se joue ici est le CÂBLAGE : l'écran calcule
+// deux listes — les échéances datées, celles qui restent à payer — et les passe à trois fenêtres, ce
+// qu'aucun test de `src/lib` ne voit.
+describe('FinancementTab — une échéance de cotisation payée par le relevé', () => {
+  function echeance(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
+    return {
+      id: 'c-due', dossier_id: 'd', echeance: '2026-11-05', montant_appele: 300, montant_verse: null,
+      montant_csg_crds: null, previsionnel: false, created_at: '2026-01-02T09:00:00Z', ...o,
+    }
+  }
+  function prelevement(o: Partial<LigneBancaire> = {}): LigneBancaire {
+    return {
+      id: 'l-passee', dossier_id: 'd', date: '2026-08-20', libelle: 'PRLV URSSAF', montant: -500, statut: 'rapprochee',
+      piece_id: null, cotisation_id: 'c-passee', categorie_id: null, taux_tva: null, emprunt_id: null,
+      emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+      reglement_groupe: false, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+      id_externe: null, created_at: '2026-08-21T09:00:00Z', ...o,
+    }
+  }
+  // Une échéance passée, prélevée à sa date ; une à venir, payée d'avance ; une à venir que rien ne paie.
+  const ECHEANCES = [
+    echeance({ id: 'c-passee', echeance: '2026-08-20', montant_appele: 500 }),
+    echeance({ id: 'c-avance', echeance: '2026-10-05', montant_appele: 400 }),
+    echeance(),
+  ]
+  const PRELEVEMENTS = [
+    prelevement(),
+    prelevement({ id: 'l-avance', date: '2026-08-28', montant: -400, cotisation_id: 'c-avance' }),
+  ]
+  function poser(paiements: LigneBancaire[]) {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date(2026, 8, 1, 12, 0, 0))   // 1er septembre 2026, midi (heure locale)
+    faux.pieces = []
+    faux.categories = []
+    faux.immobilisations = []
+    faux.ecritures = []
+    faux.cotisations = ECHEANCES
+    faux.paiements = paiements
+  }
+  async function ouvrirLaCarte(carte: string) {
+    render(<FinancementTab dossierId="d" assujettiTva={false} modeComptable="tresorerie" />)
+    const titre = await screen.findByRole('heading', { name: carte, level: 3 })
+    await waitFor(() => expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.querySelector('strong')?.textContent).not.toBe('—'))
+    await act(async () => { within(titre.closest('div')!).getByRole('button', { name: 'Générer' }).click() })
+    return screen.getByRole('heading', { name: carte, level: 2 }).closest('.card') as HTMLElement
+  }
+  function cotisationsDues(modale: HTMLElement): string {
+    return (within(modale).getByText('Cotisations sociales dues').parentElement?.querySelector('strong')?.textContent ?? '')
+      .replace(/\s/g, ' ')
+  }
+  // Les montants des lignes « Cotisation sociale » d'une liste d'échéances, dans l'ordre des dates.
+  function echeancesDeCotisation(modale: HTMLElement): string[] {
+    return within(modale).queryAllByRole('row')
+      .filter((r) => r.textContent?.includes('Cotisation sociale'))
+      .map((r) => (r.lastElementChild?.textContent ?? '').replace(/\s/g, ' '))
+  }
+
+  it('ne compte plus dans les cotisations dues ni dans les échéances à venir ce que le relevé paie', async () => {
+    poser(PRELEVEMENTS)
+    const modale = await ouvrirLaCarte('Dettes & ratios bancaires')
+    expect(cotisationsDues(modale)).toBe('300,00 €')
+    expect(echeancesDeCotisation(modale)).toEqual(['300,00 €'])
+  })
+
+  it('compte en revanche ce que rien ne paie', async () => {
+    // GARDE SYMÉTRIQUE : sans lui, « une échéance payée n'est plus due » serait satisfait par un écran qui
+    // ne compte plus aucune cotisation.
+    poser([])
+    const modale = await ouvrirLaCarte('Dettes & ratios bancaires')
+    expect(cotisationsDues(modale)).toBe('1 200,00 €')
+    expect(echeancesDeCotisation(modale)).toEqual(['400,00 €', '300,00 €'])
+  })
+
+  it('un encaissement rapproché d’un appel ne le paie pas', async () => {
+    // Le rapprochement qui ne s'écrit pas : un encaissement ne paie pas un appel de cotisation, donc
+    // l'échéance reste due — sans quoi un rapprochement fait à l'envers effacerait une dette.
+    poser([prelevement({ montant: 500 })])
+    const modale = await ouvrirLaCarte('Dettes & ratios bancaires')
+    expect(cotisationsDues(modale)).toBe('1 200,00 €')
+  })
+
+  it('le plan de trésorerie ne liste plus l’échéance payée d’avance', async () => {
+    poser(PRELEVEMENTS)
+    const modale = await ouvrirLaCarte('Plan de trésorerie')
+    expect(echeancesDeCotisation(modale)).toEqual(['300,00 €'])
+    cleanup()
+    poser([])
+    const sansPaiement = await ouvrirLaCarte('Plan de trésorerie')
+    expect(echeancesDeCotisation(sansPaiement)).toEqual(['400,00 €', '300,00 €'])
+  })
+
+  it('la situation intermédiaire la compte à la date et au montant du prélèvement', async () => {
+    // Appelée 500 € pour le 20 juin, prélevée 480 € le 3 juillet : rien au 30 juin, 480 € au 31 juillet.
+    poser([prelevement({ id: 'l-juillet', date: '2026-07-03', montant: -480, cotisation_id: 'c-juin' })])
+    faux.cotisations = [echeance({ id: 'c-juin', echeance: '2026-06-20', montant_appele: 500 })]
+    const auJuin = await ouvrirLaSituation('2026-06-30', false)
+    expect(totalDuPoste(auJuin, 'Cotisations sociales personnelles')).toBeNull()
+    cleanup()
+    const auJuillet = await ouvrirLaSituation('2026-07-31', false)
+    expect(totalDuPoste(auJuillet, 'Cotisations sociales personnelles')).toMatch(/^-480,00\s€$/)
+  })
+
+  it('la situation intermédiaire la compte à son échéance quand rien ne la paie', async () => {
+    poser([])
+    faux.cotisations = [echeance({ id: 'c-juin', echeance: '2026-06-20', montant_appele: 500 })]
+    const auJuin = await ouvrirLaSituation('2026-06-30', false)
+    expect(totalDuPoste(auJuin, 'Cotisations sociales personnelles')).toMatch(/^-500,00\s€$/)
   })
 })

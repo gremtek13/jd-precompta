@@ -335,7 +335,7 @@ export default function DossierDetail() {
             />
           )}
           {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
-          {tab === 'cotisations' && <CotisationsTab dossierId={id} />}
+          {tab === 'cotisations' && modele && <CotisationsTab dossierId={id} modeComptable={modele.mode} />}
           {tab === 'cloture' && modele && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
           {tab === 'estimation' && modele && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
           {tab === 'financement' && modele && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}

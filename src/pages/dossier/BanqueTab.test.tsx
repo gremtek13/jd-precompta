@@ -325,6 +325,9 @@ vi.mock('../../lib/supabase', async () => {
       if (nom === 'retirer_ventilation_mouvement_bancaire') return { ...l, statut: 'non_rapprochee', ventilee: false, id_externe: null }
       if (nom === 'regler_pieces_par_mouvement') return { ...l, statut: 'rapprochee', reglement_groupe: true }
       if (nom === 'retirer_reglement_groupe') return { ...l, statut: 'non_rapprochee', reglement_groupe: false }
+      // L'échéance de cotisation (lib/cotisationRapprochee.ts) : rapprochée avec son écriture, ou retirée.
+      if (nom === 'rapprocher_cotisation') return { ...l, statut: 'rapprochee', cotisation_id: String(args.p_cotisation_id) }
+      if (nom === 'retirer_rapprochement_cotisation') return { ...l, statut: 'non_rapprochee', cotisation_id: null }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), taux_tva: (args.p_taux_tva as number | null | undefined) ?? null, statut: 'rapprochee' }
         : { ...l, categorie_id: null, taux_tva: null, statut: 'non_rapprochee' }
@@ -821,7 +824,10 @@ describe('BanqueTab — le mouvement dans le panneau de droite', () => {
     await ouvrir()
     await act(async () => { within(volet()).getByRole('button', { name: 'Remettre à traiter' }).click() })
     await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
-    expect(faux.updatesLignes).toEqual([expect.objectContaining({ statut: 'non_rapprochee', piece_id: null, cotisation_id: null })])
+    expect(faux.updatesLignes).toEqual([expect.objectContaining({ statut: 'non_rapprochee', piece_id: null })])
+    // Sans `cotisation_id` : un rapprochement d'échéance posé entre-temps ailleurs ferait refuser la mise à
+    // jour, au lieu d'être défait en silence en laissant son écriture au brouillon.
+    expect(faux.updatesLignes[0]).not.toHaveProperty('cotisation_id')
   })
 })
 
@@ -1968,6 +1974,149 @@ describe('BanqueTab — le virement personnel s’écrit', () => {
 
     await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
     expect(faux.rpcs).toEqual([])
+  })
+})
+
+// UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE S'ÉCRIT (lib/cotisationRapprochee.ts). Ce qu'aucun test de `src/lib`
+// ne peut voir : que le rapprochement parte par la fonction de la base avec son écriture — jamais par une
+// mise à jour de la ligne —, depuis la fiche comme depuis « Tout rapprocher » ; que l'annulation passe par
+// la base, qui retire l'écriture ; que ce que la base refuserait soit dit avant le clic ; et qu'un
+// rapprochement qui ne peut pas s'écrire se voie dans la liste et la fiche.
+describe('BanqueTab — une échéance de cotisation rapprochée s’écrit', () => {
+  function echeance(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
+    return {
+      id: 'cot-1', dossier_id: 'dossier-de-test', echeance: '2025-06-05', montant_appele: 100, montant_verse: null,
+      montant_csg_crds: 9.7, previsionnel: false, created_at: '2025-01-10T09:00:00Z', ...o,
+    }
+  }
+  function preparer(ligne: Partial<LigneBancaire> = {}, cotisation: Partial<CotisationDeclaree> = {}) {
+    reinitialiser()
+    faux.pieces = []
+    faux.cotisations = [echeance(cotisation)]
+    faux.lignes = [ligneDeTest({ libelle: 'PRLV URSSAF', date: '2025-06-06', ...ligne })]
+  }
+
+  it('rapproche l’échéance proposée par la base, avec son écriture, et reste sur le mouvement', async () => {
+    preparer()
+    rendre()
+    await ouvrir('PRLV URSSAF')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette échéance' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Rapproché avec' })).toBeTruthy())
+    expect(faux.rpcs).toEqual([{
+      nom: 'rapprocher_cotisation',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1',
+        p_cotisation_id: 'cot-1',
+        p_ecritures: [
+          { compte: '512000', sens: 'credit', montant: 100, libelle: 'PRLV URSSAF' },
+          { compte: '646000', sens: 'debit', montant: 90.3, libelle: 'PRLV URSSAF' },
+          { compte: '108000', sens: 'debit', montant: 9.7, libelle: 'PRLV URSSAF' },
+        ],
+      },
+    }])
+    // Plus de mise à jour directe du relevé : un rapprochement sans son écriture manquerait au FEC.
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('en engagement, la CSG-CRDS reste au 646000', async () => {
+    preparer()
+    rendre(ENGAGEMENT)
+    await ouvrir('PRLV URSSAF')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette échéance' }).click() })
+
+    await waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '512000', sens: 'credit', montant: 100, libelle: 'PRLV URSSAF' },
+      { compte: '646000', sens: 'debit', montant: 100, libelle: 'PRLV URSSAF' },
+    ])
+  })
+
+  it('une CSG-CRDS plus grande que le mouvement : dit avant le clic, et rien ne part', async () => {
+    preparer({}, { montant_csg_crds: 150 })
+    rendre()
+    await ouvrir('PRLV URSSAF')
+
+    const bouton = within(volet()).getByRole('button', { name: 'Associer cette échéance' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(within(volet()).getByText(/La CSG-CRDS de cette échéance \(150,00\s€\) dépasse le mouvement \(100,00\s€\)\./)).toBeTruthy()
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs).toEqual([])
+  })
+
+  it('le choix à la main dit le refus avant le clic : un encaissement ne paie pas un appel', async () => {
+    // Le sens écarte l'échéance des propositions ; le choix à la main l'offre encore, et le dit.
+    preparer({ montant: 100, libelle: 'VIR URSSAF' })
+    rendre()
+    await ouvrir('VIR URSSAF')
+    const liste = within(volet()).getByLabelText('Échéance de cotisation') as HTMLSelectElement
+    await act(async () => { fireEvent.change(liste, { target: { value: 'cot-1' } }) })
+
+    expect(within(volet()).getByText(/Ce mouvement est un encaissement : il ne paie pas un appel de cotisation\./)).toBeTruthy()
+    const associer = within(liste.closest('.field') as HTMLElement).getByRole('button', { name: 'Associer' })
+    expect(associer.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('annuler le rapprochement passe par la base, qui retire son écriture', async () => {
+    preparer({ statut: 'rapprochee', cotisation_id: 'cot-1' })
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await ouvrir('PRLV URSSAF')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Annuler le rapprochement' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_rapprochement_cotisation', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('« Tout rapprocher » passe une échéance par la base, avec son écriture', async () => {
+    preparer()
+    rendre()
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    await act(async () => { bouton.click() })
+
+    await waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    expect(faux.rpcs[0]).toEqual({
+      nom: 'rapprocher_cotisation',
+      args: expect.objectContaining({ p_ligne_bancaire_id: 'ligne-1', p_cotisation_id: 'cot-1' }),
+    })
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('« Ne s’écrit pas » sur un encaissement rapproché d’un appel, et la fiche dit pourquoi', async () => {
+    preparer({ montant: 100, statut: 'rapprochee', cotisation_id: 'cot-1' })
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+
+    expect(await screen.findByText('Ne s’écrit pas')).toBeTruthy()
+    await ouvrir('PRLV URSSAF')
+    expect(within(volet()).getByText(/Ce rapprochement ne peut pas s’écrire : Ce mouvement est un encaissement/)).toBeTruthy()
+  })
+
+  it('aucune pastille sur un prélèvement qui paie son appel', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « la pastille dit le rapprochement qui ne s'écrit pas » serait
+    // satisfait par une pastille sur TOUT rapprochement d'échéance.
+    preparer({ statut: 'rapprochee', cotisation_id: 'cot-1' })
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+
+    expect(await screen.findByText(/Rapproché — Cotisation du 05\/06\/2025/)).toBeTruthy()
+    expect(screen.queryByText('Ne s’écrit pas')).toBeNull()
+    await ouvrir('PRLV URSSAF')
+    expect(within(volet()).queryByText(/ne peut pas s’écrire/)).toBeNull()
+  })
+
+  it('rapprocher une pièce ne touche pas au lien d’une échéance : la base refuserait le conflit', async () => {
+    // Le lien vers une échéance n'est plus remis à zéro par la mise à jour d'une pièce : posé entre-temps
+    // ailleurs, il ferait refuser la mise à jour au lieu d'être défait en silence, son écriture laissée.
+    reinitialiser()
+    faux.majImmediate = true
+    rendre()
+    await ouvrir()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
+
+    await waitFor(() => expect(faux.updatesLignes).toHaveLength(1))
+    expect(faux.updatesLignes[0]).toEqual({ statut: 'rapprochee', piece_id: 'piece-1' })
   })
 })
 

@@ -394,18 +394,16 @@ export function mouvementRapprocheSansObjet(
     && !ligne.ventilee && !ligne.reglement_groupe
 }
 
-// Ce que TOUTE suppression d'une pièce ou d'une échéance de cotisation fait au rapprochement qui
-// la désignait, dit à l'opérateur AVANT qu'il confirme — la règle du projet est qu'une confirmation
-// nomme ce qu'on perd. Ici, elle vit à côté du contrôle qui la rend vraie plutôt que recopiée dans
-// les trois écrans qui l'affichent : la même phrase écrite trois fois n'attend pas de diverger.
-export const AVERTISSEMENT_RAPPROCHEMENT_DEFAIT =
-  'Si un mouvement bancaire est rapproché dessus, le lien est défait sans que le mouvement '
-  + 'redevienne à traiter : il restera marqué rapproché sans justificatif, et signalé comme tel '
-  + 'dans Banque et dans la Checklist.'
-
-// La même mise en garde pour une PIÈCE, qu'un virement qui en règle plusieurs peut aussi payer (ligne 26) :
-// sa part garde son montant (`on delete set null`) et ne justifie plus rien, ce que dit
-// `reglementsGroupesIncoherents`. Une échéance de cotisation n'est jamais réglée ainsi, d'où deux phrases.
+// Ce que TOUTE suppression d'une pièce fait au rapprochement qui la désignait, dit à l'opérateur AVANT
+// qu'il confirme — la règle du projet est qu'une confirmation nomme ce qu'on perd. Ici, elle vit à côté
+// du contrôle qui la rend vraie plutôt que recopiée dans les écrans qui l'affichent : la même phrase
+// écrite deux fois n'attend pas de diverger. Un virement qui règle plusieurs pièces (ligne 26) peut aussi
+// la payer : sa part garde son montant (`on delete set null`) et ne justifie plus rien, ce que dit
+// `reglementsGroupesIncoherents`.
+//
+// UNE ÉCHÉANCE DE COTISATION N'EST PLUS DANS CE CAS depuis le 01/10/2026 : elle se retire par la base
+// (`supprimer_echeance_cotisation`), qui remet à traiter le mouvement qui la paie et retire son écriture
+// — sa confirmation est `avertissementRetraitEcheance` (lib/cotisationRapprochee.ts).
 export const AVERTISSEMENT_PAIEMENT_DEFAIT =
   'Si un mouvement bancaire est rapproché dessus, le lien est défait sans que le mouvement '
   + 'redevienne à traiter : il restera marqué rapproché sans justificatif — et la part d’un virement '

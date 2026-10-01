@@ -36,6 +36,7 @@ import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, refusVentilation, type PartSaisie } from '../../lib/ventilationBanque'
 import { libelleTaux } from '../../lib/tvaDuReleve'
+import { ecritureDeLaCotisation, rapprochementsCotisationRefuses, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
 import { lireTout } from '../../lib/lectureComplete'
 import { statutPourLibelle } from '../../lib/reglesIgnorees'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -372,8 +373,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // contrepartie banque comme si le rapprochement avait réussi, laissant une écriture de contrepartie
   // pour un mouvement qui, en base, n'est pas réellement marqué rapproché. On vérifie maintenant
   // l'erreur avant d'enchaîner sur l'opération dépendante, et on la signale plutôt que de la taire.
+  //
+  // Le lien vers une échéance de cotisation n'est PAS remis à zéro ici : rapprochée d'une échéance, une
+  // ligne porte une écriture que seule la base retire (`retirer_rapprochement_cotisation`). Si un autre
+  // onglet l'a rapprochée entre-temps, la contrainte `lignes_bancaires_un_seul_rapprochement` refuse
+  // cette mise à jour, au lieu d'en défaire le lien en silence et de laisser son écriture derrière.
   async function rapprocher(ligneId: string, pieceId: string): Promise<boolean> {
-    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId, cotisation_id: null }).eq('id', ligneId)
+    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId }).eq('id', ligneId)
     if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return false }
     const ligne = lignes.find((l) => l.id === ligneId)
     const pieceAvant = pieces.find((p) => p.id === pieceId)
@@ -392,9 +398,23 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     return true
   }
 
+  // LIGNE 26.6, ÉTAPE (b) : une échéance de cotisation rapprochée S'ÉCRIT. L'écriture est composée ici
+  // (lib/cotisationRapprochee.ts, testé) — la cotisation au 646000, sa CSG-CRDS au 108000 en trésorerie,
+  // face à la banque — et `rapprocher_cotisation` la VÉRIFIE contre le mouvement, l'échéance et le mode
+  // du dossier, puis l'écrit AVEC le rapprochement, dans une transaction. Rejouée sur un mouvement déjà
+  // rapproché d'une échéance, elle remplace son rapprochement et son écriture.
   async function rapprocherCotisation(ligneId: string, cotisationId: string): Promise<boolean> {
-    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', cotisation_id: cotisationId, piece_id: null }).eq('id', ligneId)
-    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return false }
+    const ligne = lignes.find((l) => l.id === ligneId)
+    const cotisation = cotisations.find((c) => c.id === cotisationId)
+    if (!ligne || !cotisation) return false
+    const refus = refusRapprochementCotisation(ligne, cotisation, modele.mode)
+    if (refus) { window.alert(refus); return false }
+    const { error } = await supabase.rpc('rapprocher_cotisation', {
+      p_ligne_bancaire_id: ligne.id,
+      p_cotisation_id: cotisation.id,
+      p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode),
+    })
+    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
   }
 
@@ -413,9 +433,17 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       if (error) { window.alert(`Le virement personnel n'a pas pu être remis à traiter : ${messageErreur(error, 'raison inconnue')}`); return false }
       return true
     }
+    // Une échéance de cotisation part avec son écriture, par la base, pour la même raison.
+    if (ligne?.cotisation_id) {
+      const { error } = await supabase.rpc('retirer_rapprochement_cotisation', { p_ligne_bancaire_id: ligneId })
+      if (error) { window.alert(`Le rapprochement n'a pas pu être annulé : ${messageErreur(error, 'raison inconnue')}`); return false }
+      return true
+    }
     const ancienPieceId = ligne?.piece_id ?? null
+    // Sans `cotisation_id` : un rapprochement d'échéance posé entre-temps ailleurs fait refuser cette mise à
+    // jour (`lignes_bancaires_cotisation_rapprochee`), au lieu d'en orpheliner l'écriture.
     const { error } = await supabase.from('lignes_bancaires').update({
-      statut: 'non_rapprochee', piece_id: null, cotisation_id: null, prelevement_personnel: false,
+      statut: 'non_rapprochee', piece_id: null, prelevement_personnel: false,
     }).eq('id', ligneId)
     if (error) { window.alert(`Le mouvement n'a pas pu être remis à traiter : ${error.message}`); return false }
     // Ici l'échec compte double : l'annulation est enregistrée mais la contrepartie banque reste,
@@ -707,6 +735,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     ])
   }, [assujettiTva, lignes, categories, ventilations])
 
+  // Les mouvements rapprochés d'une échéance de cotisation qui ne PEUVENT pas s'écrire — un encaissement
+  // rapproché d'un appel, posé quand l'écran ne regardait pas le sens (lib/cotisationRapprochee.ts). La
+  // Checklist les compte et envoie ici ; la pastille « Ne s’écrit pas » les montre, la fiche dit pourquoi.
+  const idsCotisationsRefusees = useMemo(
+    () => new Set(rapprochementsCotisationRefuses(lignes, cotisations, modele.mode).map((r) => r.ligne.id)),
+    [lignes, cotisations, modele.mode],
+  )
+
   // Les parts de chaque virement qui règle plusieurs pièces : la pastille de la liste en dit le nombre, la
   // fiche les montre.
   const reglementsParLigne = useMemo(() => {
@@ -828,7 +864,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         // laisserait un mouvement rapproché sur une pièce restée « à valider ».
         const { error: errLigne } = await supabase
           .from('lignes_bancaires')
-          .update({ statut: 'rapprochee', piece_id: a.piece.id, cotisation_id: null })
+          .update({ statut: 'rapprochee', piece_id: a.piece.id })
           .eq('id', a.ligne.id)
         if (errLigne) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errLigne.message}`); continue }
 
@@ -867,13 +903,24 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     const maj = planAuto.retenus
     if (maj.length === 0 || lotAutomatiqueSuspendu) return
     await sousVerrou(setRapprochementAuto, async () => {
-      const resultats = await Promise.all(
-        maj.map((m) =>
-          supabase
-            .from('lignes_bancaires')
-            .update({ statut: 'rapprochee', piece_id: m.pieceId ?? null, cotisation_id: m.cotisationId ?? null })
-            .eq('id', m.ligneId),
-        ),
+      // Une échéance de cotisation passe par la base, qui écrit son écriture avec le rapprochement ; une
+      // pièce, par une mise à jour suivie de sa contrepartie, comme à la main.
+      const resultats: { error: { message: string } | null }[] = await Promise.all(
+        maj.map(async (m) => {
+          if (m.cotisationId) {
+            const ligne = lignes.find((l) => l.id === m.ligneId)
+            const cotisation = cotisations.find((c) => c.id === m.cotisationId)
+            if (!ligne || !cotisation) return { error: { message: 'mouvement ou échéance introuvable' } }
+            const { error } = await supabase.rpc('rapprocher_cotisation', {
+              p_ligne_bancaire_id: ligne.id,
+              p_cotisation_id: cotisation.id,
+              p_ecritures: ecritureDeLaCotisation(ligne, cotisation, modele.mode),
+            })
+            return { error: error ? { message: messageErreur(error, 'raison inconnue') } : null }
+          }
+          const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: m.pieceId }).eq('id', m.ligneId)
+          return { error: error ? { message: messageErreur(error, 'raison inconnue') } : null }
+        }),
       )
       // Correctif audit sécurité (rapprochements, Importante) : seules les lignes réellement mises à
       // jour reçoivent leur contrepartie banque — jamais toutes en bloc, sinon un échec isolé (une
@@ -1528,6 +1575,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                       )}
                       {/* Une recette écrite sans taux sur un dossier assujetti : sa TVA n'est dans aucune CA3. */}
                       {idsRecettesSansTaux.has(l.id) && <span className="badge badge-danger">TVA à choisir</span>}
+                      {/* Un rapprochement d'échéance qui ne peut pas s'écrire : ni au FEC, ni dans la 2035 à sa date. */}
+                      {idsCotisationsRefusees.has(l.id) && <span className="badge badge-danger">Ne s’écrit pas</span>}
                       {/* Sous le seuil la pièce a été ALIGNÉE sur la banque, donc il ne reste aucun
                           écart à montrer. Au-dessus, on n'a rien écrasé — et sans cette pastille la
                           seule chose qui le dirait est le déséquilibre des écritures, qui n'existe
@@ -1566,6 +1615,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             lignes={lignes}
             assujettiTva={assujettiTva}
             compteDirigeant={compteDuDirigeant(modele)}
+            modeComptable={modele.mode}
             piecesRapprochees={piecesRapprochees}
             cotisationsRapprochees={cotisationsRapprochees}
             recurrence={suggestionRecurrente(ligneOuverte)}

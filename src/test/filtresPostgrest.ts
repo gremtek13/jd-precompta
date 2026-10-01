@@ -11,9 +11,9 @@
 //
 // Une forme que ce module ne connaît pas LÈVE au lieu d'être ignorée : un filtre accepté sans être
 // appliqué est exactement la panne qu'il corrige. Il ne modélise que ce dont les écrans se servent —
-// `.eq`, `.not(colonne, 'is', null)` et les termes `eq` et `is.null` d'un `.or` —, et un faux client
-// l'emploie table par table, là où l'écart entre « filtré » et « pas filtré » décide de ce que l'écran
-// montre.
+// `.eq`, `.is(colonne, null)`, `.not(colonne, 'is', null)` et les termes `eq` et `is.null` d'un `.or` —,
+// et un faux client l'emploie table par table, là où l'écart entre « filtré » et « pas filtré » décide
+// de ce que l'écran montre.
 
 export type Ligne = Record<string, unknown>
 export type Predicat = (ligne: Ligne) => boolean
@@ -27,6 +27,12 @@ export function predicatEq(colonne: string, valeur: unknown): Predicat {
 export function predicatNot(colonne: string, operateur: string, valeur: unknown): Predicat {
   if (operateur === 'is' && valeur === null) return (ligne) => ligne[colonne] != null
   throw new Error(`Faux client : .not('${colonne}', '${operateur}', …) n'est pas modélisé.`)
+}
+
+/** `.is(colonne, null)` — les lignes dont la colonne est vide. Rien d'autre n'est modélisé. */
+export function predicatIs(colonne: string, valeur: unknown): Predicat {
+  if (valeur === null) return (ligne) => ligne[colonne] == null
+  throw new Error(`Faux client : .is('${colonne}', …) n'est pas modélisé hors de null.`)
 }
 
 /**

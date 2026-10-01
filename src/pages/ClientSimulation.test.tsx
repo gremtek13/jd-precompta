@@ -456,3 +456,31 @@ describe('ClientSimulation — les encaissements ventilés sur plusieurs comptes
     screen.getByText(/Tes données n'ont pas pu être affichées en entier/)
   })
 })
+
+// UNE ÉCHÉANCE DE COTISATION COMPTE À LA DATE ET AU MONTANT DU PRÉLÈVEMENT QUI LA PAIE
+// (lib/cotisationRapprochee.ts), comme dans l'Estimation du cabinet et dans la 2035 : « appelées à date »
+// ne doit pas dire au client autre chose que ce que son cabinet déclare.
+describe('ClientSimulation — les cotisations prélevées', () => {
+  const prelevement = (o: Partial<LigneBancaire>): LigneBancaire => ({
+    id: 'l-urssaf', dossier_id: 'dossier-de-test', date: '2026-03-06', libelle: 'PRLV URSSAF', montant: -130, statut: 'rapprochee',
+    piece_id: null, cotisation_id: 'e2', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+    libelle_brut: null, created_at: '2026-03-07T09:00:00Z', ...o,
+  })
+
+  it('compte une échéance à la date et au montant de son prélèvement', async () => {
+    // Le 20 mars : l'échéance du 5 mars prélevée 130 € le 6, celle du 5 avril prélevée d'avance le 18 mars.
+    // « À date » : 100 + 100 + 130 + 100 = 430 €, et non les 300 € des trois échéances échues — le test de
+    // la projection, plus haut, garde ce second chiffre quand rien ne les paie.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-03-20T10:00:00Z'))
+    poser({
+      cotisations: ECHEANCIER_2026,
+      paiements: [prelevement({}), prelevement({ id: 'l-avance', date: '2026-03-18', montant: -100, cotisation_id: 'e3' })],
+    })
+    await monter()
+    expect(valeur('Cotisations appelées à date')).toBe('430,00 €')
+    // 430 € sur 2,7 mois, ramenés à douze.
+    expect(valeur("Cotisations projetées sur l'année")).toBe('1 935,00 €')
+  })
+})

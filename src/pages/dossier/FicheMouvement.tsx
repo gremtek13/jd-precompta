@@ -23,8 +23,9 @@ import type { PaiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux, TAUX_TVA_RELEVE, tauxApplicable, tauxRequis } from '../../lib/tvaDuReleve'
 import { nomDeLaPiece, reglementsGroupesIncoherents, type PartReglement } from '../../lib/reglementGroupe'
 import type {
-  Categorie, CotisationDeclaree, LigneBancaire, Piece, RegleAffectationBancaire, ReglementGroupe, VentilationBancaire,
+  Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, RegleAffectationBancaire, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
+import { refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
 import { montantSaisi, ventilationsIncoherentes, type PartSaisie } from '../../lib/ventilationBanque'
 import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
@@ -117,6 +118,9 @@ interface FicheMouvementProps {
   // Le compte sur lequel un virement personnel s'écrit — celui de l'exploitant en trésorerie, celui du
   // dirigeant en engagement (`compteDuDirigeant`).
   compteDirigeant: string
+  // Le mode comptable du dossier : une échéance rapprochée s'écrit, et sa CSG-CRDS passe au 108000 en
+  // trésorerie — elle peut alors empêcher l'écriture (lib/cotisationRapprochee.ts).
+  modeComptable: ModeComptable
   piecesRapprochees: ReadonlySet<string>
   cotisationsRapprochees: ReadonlySet<string>
   recurrence: RecurrenceMouvement | null
@@ -439,7 +443,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 }
 
 export default function FicheMouvement({
-  ligne, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant,
+  ligne, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -582,6 +586,12 @@ export default function FicheMouvement({
 
   const piecePayee = ligne.piece_id ? pieces.find((p) => p.id === ligne.piece_id) ?? null : null
   const cotisationPayee = ligne.cotisation_id ? cotisations.find((c) => c.id === ligne.cotisation_id) ?? null : null
+  // Un rapprochement d'échéance S'ÉCRIT (lib/cotisationRapprochee.ts) : ce que la base refuserait — une
+  // CSG-CRDS plus grande que le mouvement, une échéance de zéro euro, un sens contraire — est dit AVANT
+  // le clic, et le bouton se grise. Le même refus dit, sur un rapprochement déjà posé, pourquoi il ne
+  // s'écrit pas.
+  const refusEcheance = (c: CotisationDeclaree) => refusRapprochementCotisation(ligne, c, modeComptable)
+  const refusEcheancePayee = cotisationPayee ? refusEcheance(cotisationPayee) : null
   // Seconde copie de la pastille de la liste, gardée par son propre test : le panneau est l'écran où
   // l'on ARBITRE, donc celui où l'écart doit se lire.
   const ecart = (() => {
@@ -600,6 +610,8 @@ export default function FicheMouvement({
           scoreCorrespondance(a.montant_verse ?? a.montant_appele, a.echeance, ligne)
           - scoreCorrespondance(b.montant_verse ?? b.montant_appele, b.echeance, ligne))
     : []
+  const echeanceChoisie = cotisationChoisie ? cotisationsAuChoix.find((c) => c.id === cotisationChoisie) ?? null : null
+  const refusChoix = echeanceChoisie ? refusEcheance(echeanceChoisie) : null
   // Pourquoi rien n'est proposé, dit plutôt que deviné (voir audit ergonomie comparatif) : deux listes
   // vides ne disent pas si le dossier n'a rien à associer, ou si tout est déjà rapproché ailleurs.
   const aucuneReference = pieces.length === 0 && cotisations.length === 0
@@ -737,7 +749,12 @@ export default function FicheMouvement({
     )
   } else if (echeancesCandidates.length === 1) {
     principal = (
-      <button type="button" className="btn btn-primary" disabled={occupe} onClick={() => onRapprocherCotisation(echeancesCandidates[0].id)}>
+      <button
+        type="button"
+        className="btn btn-primary"
+        disabled={occupe || !!refusEcheance(echeancesCandidates[0])}
+        onClick={() => onRapprocherCotisation(echeancesCandidates[0].id)}
+      >
         Associer cette échéance
       </button>
     )
@@ -899,6 +916,7 @@ export default function FicheMouvement({
           <section className="fiche-mouvement-section">
             <h3>Échéance proposée</h3>
             <CarteCotisation cotisation={echeancesCandidates[0]} signaux={signauxCotisation(echeancesCandidates[0], ligne)} />
+            {refusEcheance(echeancesCandidates[0]) && <p className="fiche-mouvement-alerte">{refusEcheance(echeancesCandidates[0])}</p>}
           </section>
         )}
         {echeancesCandidates.length > 1 && (
@@ -910,7 +928,13 @@ export default function FicheMouvement({
                 cotisation={c}
                 signaux={signauxCotisation(c, ligne)}
                 action={(
-                  <button type="button" className="btn btn-outline btn-sm" disabled={occupe} onClick={() => onRapprocherCotisation(c.id)}>
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    disabled={occupe || !!refusEcheance(c)}
+                    title={refusEcheance(c) ?? undefined}
+                    onClick={() => onRapprocherCotisation(c.id)}
+                  >
                     Associer celle-ci
                   </button>
                 )}
@@ -982,10 +1006,16 @@ export default function FicheMouvement({
                       </option>
                     ))}
                   </select>
-                  <button type="button" className="btn btn-outline" disabled={!cotisationChoisie || occupe} onClick={() => onRapprocherCotisation(cotisationChoisie)}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    disabled={!cotisationChoisie || occupe || !!refusChoix}
+                    onClick={() => onRapprocherCotisation(cotisationChoisie)}
+                  >
                     Associer
                   </button>
                 </div>
+                {refusChoix && <p className="fiche-mouvement-alerte">{refusChoix}</p>}
               </div>
             )}
             {aucuneReference && (
@@ -1357,6 +1387,12 @@ export default function FicheMouvement({
                 tête de l'écran annonce déjà. Dit ici plutôt qu'une section vide sous « Rapproché avec ». */}
             {ligne.piece_id && !piecePayee && <p className="fiche-mouvement-note">La pièce rapprochée ne figure pas parmi les pièces lues.</p>}
             {ligne.cotisation_id && !cotisationPayee && <p className="fiche-mouvement-note">L’échéance rapprochée ne figure pas parmi les échéances lues.</p>}
+            {refusEcheancePayee && (
+              <p className="fiche-mouvement-alerte">
+                Ce rapprochement ne peut pas s’écrire : {refusEcheancePayee} L’échéance reste comptée à sa date, et
+                le mouvement manque au FEC. Annule-le pour le refaire.
+              </p>
+            )}
           </section>
         )}
         {sansObjet && (
