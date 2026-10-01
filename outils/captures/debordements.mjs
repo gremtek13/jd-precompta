@@ -50,6 +50,23 @@ const VISITES = [
   },
   { dossier: 'd7', onglet: 'ecritures', nom: 'assujetti/ecritures' },
   { dossier: 'd7', onglet: 'checklist', nom: 'assujetti/checklist' },
+  // Le registre des immobilisations déplié : le tableau d'amortissement d'un bien, le formulaire qui le
+  // modifie et celui d'une nature n'apparaissent qu'après un clic. Puis un bien sans nature et plusieurs
+  // candidates (dossier assujetti), et une dotation d'un exercice fini qui manque (engagement).
+  {
+    dossier: 'd1', onglet: 'immobilisations', nom: 'immobilisations/tableau',
+    apres: (page) => page.getByRole('button', { name: 'Tableau', exact: true }).first().click(),
+  },
+  {
+    dossier: 'd1', onglet: 'immobilisations', nom: 'immobilisations/modifier',
+    apres: (page) => page.getByRole('button', { name: 'Modifier', exact: true }).first().click(),
+  },
+  {
+    dossier: 'd1', onglet: 'immobilisations', nom: 'immobilisations/nature',
+    apres: (page) => page.getByRole('button', { name: '+ Nature', exact: true }).first().click(),
+  },
+  { dossier: 'd7', onglet: 'immobilisations', nom: 'assujetti/immobilisations' },
+  { dossier: 'd8', onglet: 'immobilisations', nom: 'engagement/immobilisations' },
 ]
 const largeur = Number(process.argv[2] ?? 1440)
 const avecPanneau = process.argv[3] !== 'sans'
