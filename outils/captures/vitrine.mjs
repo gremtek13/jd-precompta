@@ -171,6 +171,16 @@ const VUES = [
   { nom: 'pc-acquisition-ecritures', chemin: '#/dossiers/d1/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Informatique Pro' },
   { nom: 'pc-acquisition-engagement', chemin: '#/dossiers/d8/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Studio Lumière' },
   { nom: 'mobile-acquisition-ecritures', chemin: '#/dossiers/d1/ecritures', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Informatique Pro' },
+  // Le forfait kilométrique (lib/forfaitKilometrique.ts) : le cadre 7 du cabinet infirmier, chaque ligne avec l'état de
+  // son forfait — écrit, à réécrire, à écrire — et « Écrire les N » ; le point de la Checklist qui réclame celui du
+  // scooter ; et la Clôture, qui dit que le barème couvre déjà l'amortissement du scooter immobilisé.
+  { nom: 'pc-forfait-clair', chemin: '#/dossiers/d1/informations', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Véhicules et barème kilométrique' },
+  { nom: 'pc-forfait-sombre', chemin: '#/dossiers/d1/informations', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Véhicules et barème kilométrique' },
+  { nom: 'pc-forfait-assistant', chemin: '#/dossiers/d1/informations', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'Véhicules et barème kilométrique' },
+  { nom: 'pc-forfait-1024', chemin: '#/dossiers/d1/informations', l: 1024, h: 768, theme: 'light', reduite: false, vers: 'Véhicules et barème kilométrique' },
+  { nom: 'mobile-forfait-clair', chemin: '#/dossiers/d1/informations', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Véhicules et barème kilométrique' },
+  { nom: 'pc-forfait-checklist', chemin: '#/dossiers/d1/checklist', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'forfait(s) kilométrique(s)' },
+  { nom: 'pc-forfait-cloture', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Amortissement d’un véhicule déduit avec le barème' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

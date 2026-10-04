@@ -85,6 +85,9 @@ const pieces: Ligne[] = [
   // Leur facture est le justificatif de chacune de leurs dotations.
   piece('p12', '2021-12-20', 'Fauteuils Médicaux du Sud', 3200, 0, 'c2', 'validee'),
   piece('p13', '2026-02-15', 'Informatique Pro', 1200, 0, 'c7', 'validee'),
+  // Le scooter de tournée, immobilisé (`i-d1c`) ET déclaré au cadre 7 sous le barème (`ve3`) : la Clôture dit que
+  // le barème couvre déjà son amortissement, que la case CH déduit une seconde fois.
+  piece('p14', '2026-03-10', 'Moto Services', 4200, 0, 'c5', 'validee'),
 ]
 
 function ligne(id: string, date: string, libelle: string, montant: number, statut: string, pieceId: string | null, categorie: string | null = null): Ligne {
@@ -113,6 +116,28 @@ function ecritureReleve(id: string, mouvement: string, date: string, compte: str
   return {
     id, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: mouvement, date, compte, libelle, sens, montant,
     statut: 'proposee', created_at: MAINTENANT,
+  }
+}
+
+// Une ligne du CADRE 7 du cabinet infirmier (lib/forfaitKilometrique.ts) : un véhicule et ses kilomètres
+// professionnels d'un exercice.
+function vehicule(
+  id: string, annee: number, modele: string | null, type: string, puissance: number, motorisation: string,
+  carburant: string | null, km: number, inscrit = false,
+): Ligne {
+  return {
+    id, dossier_id: 'd1', annee, modele, type, puissance_fiscale: puissance, bareme: 'bnc', motorisation, carburant,
+    km_professionnel: km, inscrit_immobilisations: inscrit, amortissements_a_reintegrer: null, created_at: MAINTENANT,
+    updated_at: MAINTENANT,
+  }
+}
+
+// Le FORFAIT KILOMÉTRIQUE d'une ligne du cadre 7, tel que `ecrire_forfait_kilometrique` l'écrit : au 31
+// décembre, sans pièce, ni mouvement, ni bien, le 625110 face au compte de l'exploitant.
+function ecritureForfait(id: string, vehiculeId: string, libelle: string, compte: string, sens: 'debit' | 'credit', montant: number): Ligne {
+  return {
+    id, dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: vehiculeId,
+    date: '2026-12-31', compte, libelle, sens, montant, statut: 'proposee', created_at: MAINTENANT,
   }
 }
 
@@ -325,6 +350,14 @@ const TABLES: Record<string, Ligne[]> = {
     // le compte de sa nature, au TTC — le dossier est exonéré —, à sa date, son paiement n'étant pas rapproché. Le
     // fauteuil, acquis avant la reprise du dossier, n'en a pas : la balance reprise porte déjà sa valeur (`an2`).
     { ...ecriturePiece('ac1', 'p13', null, '2026-02-15', '218300', 'debit', 1200), libelle: 'Informatique Pro' },
+    { ...ecriturePiece('ac2', 'p14', null, '2026-03-10', '218200', 'debit', 4200), libelle: 'Moto Services' },
+    // Les forfaits 2026 du cadre 7 : celui de la Peugeot, au barème (8 400 km × 0,357 + 1 395 = 4 393,80 €) ; celui
+    // du scooter, écrit sur 2 400 km quand le cadre 7 en porte désormais 2 600 — à réécrire, et la Checklist le
+    // réclame. Le cyclomoteur n'en a pas encore : l'exercice en cours ne se réclame pas.
+    ecritureForfait('fk1', 've2', 'Indemnités kilométriques 2026 — Peugeot 208', '625110', 'debit', 4393.8),
+    ecritureForfait('fk2', 've2', 'Indemnités kilométriques 2026 — Peugeot 208', '108000', 'credit', 4393.8),
+    ecritureForfait('fk3', 've3', 'Indemnités kilométriques 2026 — Scooter de tournée', '625110', 'debit', 1348.8),
+    ecritureForfait('fk4', 've3', 'Indemnités kilométriques 2026 — Scooter de tournée', '108000', 'credit', 1348.8),
     // La dotation 2026 de l'ordinateur du cabinet, telle que `ecrire_dotation_amortissement` l'écrit : au
     // 31 décembre, sans pièce ni mouvement, le 681100 face au compte d'amortissement de sa nature.
     { ...ecritureReleve('am1', '', '2026-12-31', '681100', 'Dotation 2026 — Ordinateur du cabinet', 'debit', 351.11), ligne_bancaire_id: null, immobilisation_id: 'i-d1b' },
@@ -407,6 +440,10 @@ const TABLES: Record<string, Ligne[]> = {
       date_acquisition: '2026-02-15', date_mise_en_service: null, duree_annees: 3, created_at: MAINTENANT,
     },
     {
+      id: 'i-d1c', dossier_id: 'd1', piece_id: 'p14', nature_id: 'n3', libelle: 'Scooter de tournée', valeur: 4200,
+      date_acquisition: '2026-03-10', date_mise_en_service: null, duree_annees: 5, created_at: MAINTENANT,
+    },
+    {
       id: 'i-d8', dossier_id: 'd8', piece_id: 'e4', nature_id: 'n1', libelle: 'Écran de studio', valeur: 2400,
       date_acquisition: '2025-09-01', date_mise_en_service: null, duree_annees: 3, created_at: MAINTENANT,
     },
@@ -415,6 +452,15 @@ const TABLES: Record<string, Ligne[]> = {
   natures_immobilisation: [
     { id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300' },
     { id: 'n2', dossier_id: 'd1', libelle: 'Matériel médical', duree_annees_defaut: 10, ordre: 2, compte_immobilisation: '215400' },
+    { id: 'n3', dossier_id: null, libelle: 'Matériel de transport', duree_annees_defaut: 5, ordre: 3, compte_immobilisation: '218200' },
+  ],
+  // Le CADRE 7 du cabinet infirmier : la Peugeot en 2025 — avant la reprise du dossier, son forfait est dans les
+  // comptes repris — et en 2026, écrit ; le scooter de tournée, à réécrire ; un cyclomoteur, à écrire.
+  vehicules: [
+    vehicule('ve1', 2025, 'Peugeot 208', 'voiture', 5, 'thermique', 'diesel', 11200),
+    vehicule('ve2', 2026, 'Peugeot 208', 'voiture', 5, 'thermique', 'diesel', 8400),
+    vehicule('ve3', 2026, 'Scooter de tournée', 'moto', 3, 'electrique', null, 2600, true),
+    vehicule('ve4', 2026, null, 'cyclomoteur', 0, 'thermique', 'super_sans_plomb', 1200),
   ],
   // La déclaration du premier trimestre, déposée : l'historique de l'onglet TVA la compare au calcul.
   declarations_tva: [{
