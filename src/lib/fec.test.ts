@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { genererFec, libelleCompte, nomFichierFec } from './fec'
 import { COMPTE_BANQUE } from './comptes'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', nom_fichier: `${id}.pdf`, chemin_stockage: '', statut: 'validee',
@@ -80,7 +81,7 @@ describe('genererFec — la forme imposée par l’article A47 A-1', () => {
     [],
     [{
       id: 'an-1', dossier_id: 'd1', date: '2026-01-01', compte: '512000', compte_origine: '512000', libelle: 'Banque',
-      sens: 'debit', montant: 25000.1, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64),
+      sens: 'debit', montant: 25000.1, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
       created_at: '2026-09-26T10:00:00Z',
     }],
     'tresorerie', [],
@@ -203,7 +204,7 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
   const aNouveau = (o: Partial<ANouveau>): ANouveau => ({
     id: 'an-1', dossier_id: 'd1', date: '2026-01-01', compte: '512000', compte_origine: '51210000',
     libelle: 'Banque Populaire', sens: 'debit', montant: 6000, source_nom: 'balance-2025.csv',
-    source_empreinte: 'a'.repeat(64), created_at: '2026-09-26T10:00:00Z', ...o,
+    source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2026-09-26T10:00:00Z', ...o,
   })
   // Données HORS de l'ordre des comptes, comme la base peut les rendre : sans cela, le test du tri
   // passerait sur un tri absent.
@@ -569,7 +570,7 @@ describe('genererFec — les dotations aux amortissements', () => {
   it('nomment un compte 28 ouvert par les à-nouveaux comme celui que la dotation crédite', () => {
     const ouverture: ANouveau = {
       id: 'an1', dossier_id: 'd1', date: '2026-01-01', compte: '281830', compte_origine: '28183', libelle: 'Amort. matériel info',
-      sens: 'credit', montant: 600, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), created_at: '2026-02-01T00:00:00Z',
+      sens: 'credit', montant: 600, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2026-02-01T00:00:00Z',
     }
     const rows = colonnes(genererFec(dotation('i1', 400), [], [], [ouverture], 'tresorerie', [])).slice(1)
     expect(new Set(rows.filter((r) => r[4] === '281830').map((r) => r[5])))

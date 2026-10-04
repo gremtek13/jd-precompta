@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { compteDeLApplication, dateOuverture, ouvertureBanque, preparerANouveaux } from './aNouveaux'
 import type { LigneBalance } from './balanceImport'
 import type { ANouveau } from './types'
+import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 
 const ligne = (compte: string, debit: number, credit: number, libelle = ''): LigneBalance => ({ compte, libelle, debit, credit })
 
@@ -154,7 +155,7 @@ describe('dateOuverture', () => {
 describe('ouvertureBanque', () => {
   const aNouveau = (o: Partial<ANouveau>): ANouveau => ({
     id: 'a', dossier_id: 'd', date: '2026-01-01', compte: '512000', compte_origine: '512', libelle: 'Banque',
-    sens: 'debit', montant: 0, source_nom: 'balance.csv', source_empreinte: 'e'.repeat(64),
+    sens: 'debit', montant: 0, source_nom: 'balance.csv', source_empreinte: 'e'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
     created_at: '2026-09-26T10:00:00Z', ...o,
   })
 

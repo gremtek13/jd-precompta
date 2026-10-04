@@ -12,6 +12,7 @@ import { genererEcheancier, type Emprunt } from './emprunts'
 import { partsDuReleve } from './partsDuReleve'
 import type { Categorie, EcritureBrouillon } from './types'
 import { fichiersDuSchema } from '../test/schema'
+import { NON_VALIDEE } from '../test/ecritures'
 
 const EMPRUNT: Emprunt = {
   id: 'emp1', dossier_id: 'd1', nom: 'Prêt matériel', organisme_preteur: 'Banque', capital_initial: 12000,
@@ -36,7 +37,7 @@ function rapproche(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2025-02-06', compte: '512000',
-    libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, created_at: '2025-02-06T10:00:00Z',
+    libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-02-06T10:00:00Z',
     ...o,
   }
 }

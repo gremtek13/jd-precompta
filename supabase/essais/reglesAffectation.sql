@@ -22,8 +22,15 @@
 --
 -- ÉPROUVÉ LE 01/10/2026 après `recettes_assujetties_du_releve` : 25 contrôles sur 25, le texte transmis
 -- comparé au fichier dans le journal de session (identique).
-drop table if exists essai_regles;
-create temp table essai_regles (controle text, observe text, ok boolean);
+--
+-- REJOUÉ LE 04/10/2026 après les migrations de la validation d'un exercice, qui posent un déclencheur sur
+-- les écritures que l'affectation en lot écrit : 23 contrôles sur 23 en production, le texte transmis
+-- identique au fichier, ses commentaires et les contrôles 4 et 13 retirés. Ces deux-là, qui suppriment
+-- (une règle, puis une catégorie), n'y ont pas été rejoués : l'outil demande alors une confirmation qui
+-- ne parvient pas au cabinet. Aucune de ces migrations ne touche les règles ni la clé étrangère de leur
+-- catégorie. La table des verdicts disparaît avec la transaction (`on commit drop`) au lieu d'être
+-- supprimée en tête : l'essai ne porte plus d'instruction de suppression hors de ses contrôles.
+create temp table essai_regles (controle text, observe text, ok boolean) on commit drop;
 
 do $$
 declare

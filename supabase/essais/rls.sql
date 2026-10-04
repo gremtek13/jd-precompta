@@ -56,6 +56,15 @@
 -- compteur inchangé (6 -> 6) ; le chef, lui, obtient bien un numéro. Le reste du fichier n'a pas été
 -- relancé à cette occasion — il n'avait pas changé, et aucune migration n'est intervenue depuis.
 -- Dit comme tel plutôt que laissé croire à un passage complet.
+--
+-- 04/10/2026 — après les migrations de la validation d'un exercice, qui créent `exercices_valides` et
+-- ses deux policies : les invariants 1 à 3 seuls, rejoués sur les 48 tables du schéma (40 portant un
+-- `dossier_id`), nouvelle table comprise — 0 en faute. Et ils savent échouer : sans le changement de
+-- rôle, 29, 26 et 13 tables virent au rouge (les autres sont vides, où « refusé » et « rien à voir » se
+-- ressemblent par construction — `exercices_valides` en fait partie, aucun exercice n'étant validé).
+-- Les sections 4 à 6 et les mutations n'ont pas été relancées : ces migrations n'ajoutent que des
+-- policies de LECTURE et de restauration sur une table nouvelle, et la table des verdicts a été créée
+-- `on commit drop`, sans le `drop table` qui suit.
 
 -- `drop if exists` parce qu'une connexion réutilisée garde ses tables temporaires : sans lui, le
 -- second passage échoue sur « relation déjà existante » et on croit à une régression du schéma.

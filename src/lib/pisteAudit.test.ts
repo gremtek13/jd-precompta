@@ -12,6 +12,7 @@ import { COMPTE_BANQUE } from './comptes'
 import { analyserEcritures } from './ecritures'
 import type { ModeleComptable } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
+import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 
 // Sans registre : la plupart de ces cas n'ont pas de dotation, donc rien à y chercher.
 const SANS_REGISTRE: RegistreAudit = { immobilisations: [], factures: [], vehicules: [] }
@@ -377,7 +378,7 @@ describe('pisteAudit — les à-nouveaux', () => {
   const aNouveau = (o: Partial<ANouveau> = {}): ANouveau => ({
     id: 'an-1', dossier_id: 'd1', date: '2026-01-01', compte: COMPTE_BANQUE, compte_origine: '51210000',
     libelle: 'Banque Populaire', sens: 'debit', montant: 6000, source_nom: 'balance-2025.csv',
-    source_empreinte: 'f'.repeat(64), created_at: '2026-09-26T10:00:00Z', ...o,
+    source_empreinte: 'f'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2026-09-26T10:00:00Z', ...o,
   })
 
   it('les justifie par la balance reprise et son empreinte, sans rien déclarer manquant', () => {

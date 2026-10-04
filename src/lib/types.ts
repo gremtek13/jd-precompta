@@ -334,7 +334,25 @@ export interface EcritureBrouillon {
   // bien, justifiée par le barème. Nul sur toute autre écriture. Clé sans action à la suppression : un
   // véhicule dont le forfait est écrit ne se retire que par `retirer_vehicule`, qui emporte son forfait.
   vehicule_id: string | null
+  // Ce que porte une écriture VALIDÉE (ligne 26.6, étape d — voir supabase/essais/validationExercice.sql) :
+  // sa date de validation, son journal et son numéro définitif, et les champs du FEC qui se lisaient ailleurs
+  // — la référence et la date de sa pièce, le libellé de son compte, son compte auxiliaire —, pour que le FEC
+  // d'un exercice validé se relise depuis elle seule. Tous nuls sur une écriture proposée, tous posés (le
+  // compte auxiliaire excepté) sur une écriture validée : la contrainte `ecritures_brouillon_validation_complete`
+  // le tient en base, et une écriture validée ne se modifie plus.
+  valide_le: string | null
+  journal_code: JournalCode | null
+  numero_ecriture: number | null
+  piece_ref: string | null
+  piece_date: string | null
+  compte_lib: string | null
+  comp_aux_num: string | null
+  comp_aux_lib: string | null
 }
+
+// Les journaux du FEC : achats, ventes, banque et opérations diverses. Les à-nouveaux ont le leur (AN), qui
+// n'est pas un journal du brouillon.
+export type JournalCode = 'AC' | 'VE' | 'BQ' | 'OD'
 
 // Solde d'ouverture d'un compte de bilan, repris de la balance d'un dossier venu d'un autre logiciel
 // (voir lib/aNouveaux.ts). Toutes les lignes d'un dossier portent la même date — un 1er janvier — et
@@ -357,6 +375,10 @@ export interface ANouveau {
   // SHA-256 du fichier de balance : la preuve de ce qui a été repris, comme pour une pièce.
   source_empreinte: string
   created_at: string
+  // Ce que le FEC lit d'un à-nouveau, posé quand l'exercice qu'il ouvre est validé : le libellé de son compte
+  // et celui de son écriture. Nuls tous deux avant, posés tous deux après (`a_nouveaux_validation_complete`).
+  compte_lib: string | null
+  ecriture_lib: string | null
 }
 
 // La profession, au sens des règles de l'Urssaf pour les praticiens et auxiliaires médicaux
@@ -603,6 +625,31 @@ export interface ExerciceCloture {
   dossier_id: string
   annee: number
   cloture_le: string
+}
+
+// Un exercice VALIDÉ (ligne 26.6, étape d) : la procédure qui fige ses écritures — « le caractère définitif des
+// enregistrements du livre-journal est assuré […] par une procédure de validation, qui interdit toute
+// modification ou suppression de l'enregistrement » (PCG, art. 1031-3). À ne pas confondre avec la clôture
+// ci-dessus, qui ne fige rien : ce sont deux gestes séparés, par décision du cabinet.
+//
+// Une ligne par dossier et par exercice, écrite par `valider_exercice` et par elle seule, sous la main du chef
+// du cabinet ; rien ne la modifie ni ne la retire, sinon la suppression du dossier entier. L'empreinte est
+// CHAÎNÉE à celle de l'exercice validé précédent, et `verifier_exercice_valide` la recalcule : une écriture
+// modifiée par un chemin qui contourne les déclencheurs se voit. `declaration` est la 2035 telle qu'elle a été
+// validée — nulle en engagement, qui n'en produit pas.
+export interface ExerciceValide {
+  dossier_id: string
+  annee: number
+  valide_le: string
+  valide_par: string
+  mode_comptable: ModeComptable
+  nb_lignes: number
+  nb_ecritures: number
+  total_debit: number
+  total_credit: number
+  empreinte_precedente: string | null
+  empreinte: string
+  declaration: Record<string, unknown> | null
 }
 
 // Historique de l'agent comptable (voir AssistantTab, supabase/functions/agent-comptable) —

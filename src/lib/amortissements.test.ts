@@ -7,6 +7,7 @@ import {
 import { COMPTE_DOTATIONS_AMORTISSEMENTS, libelleCompteTenu } from './comptes'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
 import { fichiersDuSchema } from '../test/schema'
+import { NON_VALIDEE } from '../test/ecritures'
 
 // TYPÉ sans `as` : le compilateur confronte chaque champ à la table.
 const bien = (o: Partial<Immobilisation> = {}): Immobilisation => ({
@@ -21,7 +22,7 @@ const INFORMATIQUE: NatureImmobilisation = {
 }
 
 const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
-  id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, immobilisation_id: 'i1', vehicule_id: null, date: '2025-12-31',
+  id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, immobilisation_id: 'i1', vehicule_id: null, ...NON_VALIDEE, date: '2025-12-31',
   compte: COMPTE_DOTATIONS_AMORTISSEMENTS, libelle: 'Dotation 2025 — Ordinateur portable', montant: 200, sens: 'debit',
   statut: 'proposee', created_at: '2026-01-05T10:00:00Z', ...o,
 })

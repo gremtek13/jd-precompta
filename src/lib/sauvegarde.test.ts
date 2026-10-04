@@ -43,6 +43,13 @@ describe('ordre de restauration', () => {
     expect(ORDRE_RESTAURATION.length).toBe(new Set(ORDRE_RESTAURATION).size)
   })
 
+  it('restaure les exercices validés en dernier', () => {
+    // Réinsérée, une validation fige son exercice : la base refuse ensuite d'y poser une source ou une
+    // écriture, et le super-administrateur n'y réinsère plus d'écriture validée. Le tri ne la mettrait pas
+    // là, son seul parent étant le dossier : c'est ce test qui l'y garde.
+    expect(ORDRE_RESTAURATION[ORDRE_RESTAURATION.length - 1]).toBe('exercices_valides')
+  })
+
   it('signale un parent placé après son enfant', () => {
     // La preuve que le contrôle ci-dessus détecte quelque chose : un ordre délibérément faux.
     const faux = ['pieces', 'dossiers']

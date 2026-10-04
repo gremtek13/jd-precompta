@@ -6,6 +6,7 @@ import {
   type AcquisitionDuBien,
 } from './amortissements'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation } from './types'
+import { NON_VALIDEE } from '../test/ecritures'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES DOTATIONS AUX AMORTISSEMENTS (01/10/2026, ligne 26.6, étape b).
 //
@@ -80,7 +81,7 @@ const NATURES: NatureImmobilisation[] = [
 function ecrite(id: string, annee: number, montant: number, o: Partial<EcritureBrouillon> = {}): EcritureBrouillon[] {
   const base = {
     dossier_id: 'd', piece_id: null, ligne_bancaire_id: null, date: `${annee}-12-31`, libelle: `Dotation ${annee}`, montant,
-    statut: 'proposee' as const, immobilisation_id: id, vehicule_id: null, created_at: '2026-01-02T09:00:00Z',
+    statut: 'proposee' as const, immobilisation_id: id, vehicule_id: null, ...NON_VALIDEE, created_at: '2026-01-02T09:00:00Z',
   }
   return [
     { ...base, id: `${id}-${annee}-d`, compte: '681100', sens: 'debit', ...o },

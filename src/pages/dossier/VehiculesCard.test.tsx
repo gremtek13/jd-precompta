@@ -4,6 +4,7 @@ import { AnneeProvider } from '../../context/AnneeContext'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { EcritureBrouillon, VehiculeDossier } from '../../lib/types'
 import VehiculesCard from './VehiculesCard'
+import { NON_VALIDEE } from '../../test/ecritures'
 
 // Premier test d'ÉCRAN du dépôt. Il existe parce que les défauts qu'il vise ne sont visibles dans
 // aucun test de src/lib : la logique appelée derrière était juste dans les deux cas.
@@ -55,7 +56,7 @@ vi.mock('../../lib/supabase', async () => {
       faux.ecritures.push(...(args.p_ecritures as { compte: string; sens: 'debit' | 'credit'; montant: number; libelle: string }[])
         .map((e, i): EcritureBrouillon => ({
           id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null,
-          immobilisation_id: null, vehicule_id: id, date: `${vehicule.annee}-12-31`, compte: e.compte, libelle: e.libelle,
+          immobilisation_id: null, vehicule_id: id, ...NON_VALIDEE, date: `${vehicule.annee}-12-31`, compte: e.compte, libelle: e.libelle,
           montant: e.montant, sens: e.sens, statut: 'proposee', created_at: '2026-10-04T10:00:00Z',
         })))
     } else if (nom === 'retirer_vehicule') {
@@ -128,7 +129,7 @@ const vehicule = (o: Partial<VehiculeDossier> = {}): VehiculeDossier => ({
 // 12 000 km d'une 6 CV thermique en 2025 : 12 000 × 0,374 + 1 457 = 5 945 €.
 function forfait(montant: number, o: Partial<EcritureBrouillon> = {}, compte = '108000'): EcritureBrouillon[] {
   const base = {
-    dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: 'v1',
+    dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: 'v1', ...NON_VALIDEE,
     date: '2025-12-31', libelle: 'Indemnités kilométriques 2025 — Peugeot 308', montant, statut: 'proposee' as const,
     created_at: '2026-01-02T09:00:00Z',
   }

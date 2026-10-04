@@ -25,8 +25,14 @@
 -- les contrôles 1 et 2 virent au rouge (l'appel passe le droit d'exécution, et c'est la fonction qui
 -- refuse, avec un autre message). Les contrôles 3 à 6 restent verts sous cette mutation, et c'est
 -- attendu : leur refus vient du contrôle d'accès de la fonction, qui lit la session et non le rôle.
-drop table if exists essai_virement;
-create temp table essai_virement (controle text, observe text, ok boolean);
+--
+-- REJOUÉ LE 04/10/2026 après les migrations de la validation d'un exercice : l'écriture validée dont
+-- l'essai a besoin se pose désormais comme `valider_exercice` la pose, sous le réglage
+-- `jd.validation_exercice` du dossier et avec les champs que lit son FEC — une écriture ne passe plus à
+-- `validee` autrement. 28 contrôles sur 28 en production, le texte transmis identique au fichier sans ses
+-- commentaires. La table des verdicts disparaît avec la transaction (`on commit drop`) au lieu d'être
+-- supprimée en tête : l'essai ne porte plus d'instruction de suppression hors de ses contrôles.
+create temp table essai_virement (controle text, observe text, ok boolean) on commit drop;
 
 do $$
 declare
@@ -422,7 +428,14 @@ begin
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       perform classer_virement_personnel(debit.id, ecriture);
       reset role;
-      update ecritures_brouillon set statut = 'validee' where ligne_bancaire_id = debit.id and piece_id is null;
+      -- Une écriture se valide comme `valider_exercice` la valide : sous le réglage de son dossier, avec les
+      -- champs que son FEC lit (contrainte `ecritures_brouillon_validation_complete`).
+      perform set_config('jd.validation_exercice', dossier_test::text, true);
+      update ecritures_brouillon
+         set statut = 'validee', valide_le = now(), journal_code = 'BQ', numero_ecriture = 1,
+             piece_ref = 'essai', piece_date = date, compte_lib = 'essai'
+       where ligne_bancaire_id = debit.id and piece_id is null;
+      perform set_config('jd.validation_exercice', '', true);
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       if obs like '25.%' then

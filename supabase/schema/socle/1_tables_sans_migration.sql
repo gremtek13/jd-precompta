@@ -268,7 +268,11 @@ create table public.immobilisations (
 -- `immobilisation_id`, sa clé, ses deux contraintes, son index) — ligne 26.6, étape b. Une dotation ne
 -- porte ni pièce ni mouvement, et tombe au 31 décembre. PUIS LE 04/10/2026, après
 -- `ecritures_brouillon_vehicule` (colonne `vehicule_id`, sa clé, ses deux contraintes, son index) : un
--- forfait kilométrique ne porte ni pièce, ni mouvement, ni bien, et tombe lui aussi au 31 décembre.
+-- forfait kilométrique ne porte ni pièce, ni mouvement, ni bien, et tombe lui aussi au 31 décembre. PUIS
+-- ENCORE LE 04/10/2026, après `validation_des_exercices` (huit colonnes, une contrainte, deux index) : une
+-- écriture validée porte son numéro dans son journal, sa date de validation et ce que son FEC lit, et une
+-- écriture proposée n'en porte rien. Le déclencheur qui la rend intangible, `ecritures_brouillon_intangibles`,
+-- vit dans cette migration-là : ce socle ne porte pas les déclencheurs d'une table.
 create table public.ecritures_brouillon (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -283,6 +287,14 @@ create table public.ecritures_brouillon (
   created_at timestamp with time zone default now() not null,
   immobilisation_id uuid,
   vehicule_id uuid,
+  valide_le timestamp with time zone,
+  journal_code text,
+  numero_ecriture integer,
+  piece_ref text,
+  piece_date date,
+  compte_lib text,
+  comp_aux_num text,
+  comp_aux_lib text,
   constraint ecritures_brouillon_pkey PRIMARY KEY (id),
   constraint ecritures_brouillon_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_immobilisation_id_fkey FOREIGN KEY (immobilisation_id) REFERENCES immobilisations(id),
@@ -295,7 +307,8 @@ create table public.ecritures_brouillon (
   constraint ecritures_brouillon_forfait_sans_piece_ni_mouvement CHECK (((vehicule_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL)))),
   constraint ecritures_brouillon_montant_positif CHECK ((montant > (0)::numeric)),
   constraint ecritures_brouillon_sens_check CHECK ((sens = ANY (ARRAY['debit'::text, 'credit'::text]))),
-  constraint ecritures_brouillon_statut_check CHECK ((statut = ANY (ARRAY['proposee'::text, 'validee'::text])))
+  constraint ecritures_brouillon_statut_check CHECK ((statut = ANY (ARRAY['proposee'::text, 'validee'::text]))),
+  constraint ecritures_brouillon_validation_complete CHECK ((((statut = 'proposee'::text) AND (valide_le IS NULL) AND (journal_code IS NULL) AND (numero_ecriture IS NULL) AND (piece_ref IS NULL) AND (piece_date IS NULL) AND (compte_lib IS NULL) AND (comp_aux_num IS NULL) AND (comp_aux_lib IS NULL)) OR ((statut = 'validee'::text) AND (valide_le IS NOT NULL) AND (journal_code = ANY (ARRAY['AC'::text, 'VE'::text, 'BQ'::text, 'OD'::text])) AND (numero_ecriture >= 1) AND (btrim(piece_ref) <> ''::text) AND (piece_date IS NOT NULL) AND (btrim(compte_lib) <> ''::text) AND ((comp_aux_num IS NULL) = (comp_aux_lib IS NULL)) AND ((comp_aux_num IS NULL) OR ((btrim(comp_aux_num) <> ''::text) AND (btrim(comp_aux_lib) <> ''::text))))))
 );
 
 -- ─────────────────────────────── 3. index hors contraintes
@@ -309,6 +322,8 @@ CREATE INDEX lignes_bancaires_emprunt_id_idx ON public.lignes_bancaires USING bt
 CREATE INDEX ecritures_brouillon_ligne_bancaire_id_idx ON public.ecritures_brouillon USING btree (ligne_bancaire_id);
 CREATE INDEX ecritures_brouillon_immobilisation_id_idx ON public.ecritures_brouillon USING btree (immobilisation_id);
 CREATE INDEX ecritures_brouillon_vehicule_id_idx ON public.ecritures_brouillon USING btree (vehicule_id);
+CREATE INDEX ecritures_brouillon_dossier_date_idx ON public.ecritures_brouillon USING btree (dossier_id, date);
+CREATE INDEX ecritures_brouillon_piece_validee_idx ON public.ecritures_brouillon USING btree (piece_id) WHERE (statut = 'validee'::text);
 
 -- ─────────────────────────────── 4. RLS
 --

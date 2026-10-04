@@ -33,8 +33,18 @@
 -- rendait 50 : le contrôle 9 attendait « 10 » d'une colonne numeric(12,2), qui rend « 10.00 » — l'essai
 -- avait tort, pas la fonction. Et l'essai sait échouer : sans le `set local role anon`, le contrôle 1 vire
 -- au rouge (l'appel passe le droit d'exécution, et c'est la fonction qui refuse, avec un autre message).
-drop table if exists essai_reglement_groupe;
-create temp table essai_reglement_groupe (controle text, observe text, ok boolean);
+--
+-- REJOUÉ LE 04/10/2026 après les migrations de la validation d'un exercice : l'écriture validée dont
+-- l'essai a besoin se pose désormais comme `valider_exercice` la pose, sous le réglage
+-- `jd.validation_exercice` du dossier et avec les champs que lit son FEC — une écriture ne passe plus à
+-- `validee` autrement. 48 contrôles sur 48 en production, le texte transmis identique au fichier, ses
+-- commentaires et les contrôles 48 à 50 retirés. Ceux-là, qui suppriment (une pièce, puis un dossier),
+-- n'y ont pas été rejoués : l'outil demande alors une confirmation qui ne parvient pas au cabinet. La
+-- suppression d'un dossier à travers les nouveaux déclencheurs, écritures validées comprises, a été
+-- éprouvée sur une réplique locale du schéma. La table des verdicts disparaît avec la transaction (`on
+-- commit drop`) au lieu d'être supprimée en tête : l'essai ne porte plus d'instruction de suppression
+-- hors de ses contrôles.
+create temp table essai_reglement_groupe (controle text, observe text, ok boolean) on commit drop;
 
 do $$
 declare
@@ -411,8 +421,14 @@ begin
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       perform regler_pieces_par_mouvement(debit.id, parts_ab);
       reset role;
-      insert into ecritures_brouillon (dossier_id, piece_id, ligne_bancaire_id, date, compte, libelle, montant, sens, statut)
-      values (dossier_test, piece_a.id, debit.id, debit.date, '512000', 'essai', p1, 'credit', 'validee');
+      -- Une écriture se valide comme `valider_exercice` la valide : sous le réglage de son dossier, avec les
+      -- champs que son FEC lit (contrainte `ecritures_brouillon_validation_complete`).
+      perform set_config('jd.validation_exercice', dossier_test::text, true);
+      insert into ecritures_brouillon (dossier_id, piece_id, ligne_bancaire_id, date, compte, libelle, montant, sens, statut,
+                                       valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib)
+      values (dossier_test, piece_a.id, debit.id, debit.date, '512000', 'essai', p1, 'credit', 'validee',
+              now(), 'BQ', 1, 'essai', debit.date, 'essai');
+      perform set_config('jd.validation_exercice', '', true);
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       if obs like '30.%' then
