@@ -34,6 +34,12 @@ const faux = vi.hoisted(() => ({
   // La mise à jour d'un dossier (la bascule TVA de l'en-tête), retenue puis refusée à la demande.
   retenueMaj: null as Promise<void> | null,
   erreurMaj: null as { message: string } | null,
+  // Les exercices validés de chaque dossier (ExercicesValidesContext), leur lecture retenue ou refusée à la demande,
+  // et le nombre de fois qu'elle a eu lieu.
+  valides: {} as Record<string, number[]>,
+  retenuesValides: {} as Record<string, Promise<void>>,
+  erreurValides: null as string | null,
+  lecturesValides: 0,
 }))
 
 vi.mock('../lib/supabase', () => ({
@@ -72,6 +78,16 @@ vi.mock('../lib/supabase', () => ({
             const liste = Object.values(faux.dossiers).map((d) => ({ id: d.id, nom: d.nom }))
             return Promise.resolve({ data: liste, error: null, count: liste.length }).then(suite)
           }
+          if (table === 'exercices_valides') {
+            faux.lecturesValides++
+            const identifiant = dossierId
+            const lignes = (faux.valides[identifiant] ?? []).map((annee) => ({ dossier_id: identifiant, annee }))
+            return (faux.retenuesValides[identifiant] ?? Promise.resolve())
+              .then(() => (faux.erreurValides
+                ? { data: null, error: { message: faux.erreurValides }, count: null }
+                : { data: lignes, error: null, count: lignes.length }))
+              .then(suite)
+          }
           // Les trois lectures d'années : les dates des pièces du dossier, rien côté relevés et
           // écritures.
           if (table === 'pieces') {
@@ -95,14 +111,23 @@ vi.mock('../lib/supabase', () => ({
 // reçu au montage, et ne le relit plus ensuite.
 // La vue d'ensemble reçoit elle aussi le statut TVA : elle compte les recettes affectées d'un dossier
 // assujetti (lib/affectationBanque.ts) et les pièces au montant retenu (lib/montantRetenu.ts).
-vi.mock('./dossier/ChecklistTab', () => ({
-  default: ({ assujettiTva }: { assujettiTva: boolean }) => (
-    <>
-      <p>Vue d’ensemble du dossier</p>
-      <p>Vue d’ensemble — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
-    </>
-  ),
-}))
+// Elle lit aussi la frontière de validation du dossier, que la page lui fournit (ExercicesValidesContext) : le
+// double la montre.
+vi.mock('./dossier/ChecklistTab', async () => {
+  const { useExercicesValides } = await import('../context/ExercicesValidesContext')
+  return {
+    default: function DoubleVueDEnsemble({ assujettiTva }: { assujettiTva: boolean }) {
+      const { frontiere } = useExercicesValides()
+      return (
+        <>
+          <p>Vue d’ensemble du dossier</p>
+          <p>Vue d’ensemble — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
+          <p>Vue d’ensemble — frontière {frontiere ?? 'aucune'}</p>
+        </>
+      )
+    },
+  }
+})
 vi.mock('./dossier/PiecesTab', () => ({ default: () => <p>Liste des justificatifs</p> }))
 vi.mock('./dossier/InformationsTab', async () => {
   const { useState } = await import('react')
@@ -150,8 +175,11 @@ vi.mock('./dossier/EcrituresTab', () => ({
 // chaque préalable.
 // La double de Clôture choisit aussi un exercice, comme le fait sa carte de validation quand un préalable réclame
 // d'abord un autre exercice — par le vrai contexte d'exercice de la page.
+// Elle demande aussi à la page de relire les exercices validés après une validation : le double le fait, comme
+// la vraie, sur un clic.
 vi.mock('./dossier/ClotureTab', async () => {
   const { useAnnee } = await import('../context/AnneeContext')
+  const { useExercicesValides } = await import('../context/ExercicesValidesContext')
   return {
     default: function DoubleCloture({ assujettiTva, modele, onNavigate }: {
       assujettiTva: boolean
@@ -159,8 +187,11 @@ vi.mock('./dossier/ClotureTab', async () => {
       onNavigate: (tab: 'banque') => void
     }) {
       const { setAnnee } = useAnnee()
+      const { frontiere, relire } = useExercicesValides()
       return (
         <>
+          <p>Clôture — frontière {frontiere ?? 'aucune'}</p>
+          <button onClick={() => { void relire() }}>Relire les exercices validés</button>
           <p>Clôture — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
           <p>Clôture — modèle {modele.mode}</p>
           <p>Clôture — dirigeant {modele.compteNotesDeFrais}</p>
@@ -275,6 +306,10 @@ beforeEach(() => {
   faux.erreurAnnees = null
   faux.retenueMaj = null
   faux.erreurMaj = null
+  faux.valides = {}
+  faux.retenuesValides = {}
+  faux.erreurValides = null
+  faux.lecturesValides = 0
 })
 
 describe('Page d’un dossier — l’assistant dans le panneau de droite', () => {
@@ -552,5 +587,71 @@ describe('Page d’un dossier — le modèle comptable', () => {
     await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Passer en engagement' })) })
     expect(screen.getByRole('button', { name: 'Comptabilité : engagement' })).toBeTruthy()
     expect(screen.getByText('Écritures — engagement — 455000')).toBeTruthy()
+  })
+})
+
+// LES EXERCICES VALIDÉS (ligne 26.6, étape d) : la page les lit avec l'identité du dossier et les fournit à ses
+// onglets, qui y lisent la FRONTIÈRE — ce que la validation a figé. Un onglet qui ne la connaîtrait pas proposerait
+// de modifier ce que la base refuse, et crierait « à régénérer » sur ce que rien ne réécrira plus.
+describe('Page d’un dossier — les exercices validés', () => {
+  it('chaque onglet reçoit la frontière du dossier affiché', async () => {
+    faux.valides = { d1: [2024, 2025] }
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByText('Vue d’ensemble — frontière 2025-12-31')).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/checklist')
+    expect(screen.getByText('Vue d’ensemble — frontière aucune')).toBeTruthy()
+  })
+
+  it('pendant la lecture des exercices validés du dossier suivant, aucun onglet ne garde la frontière du précédent', async () => {
+    faux.valides = { d1: [2025] }
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByText('Vue d’ensemble — frontière 2025-12-31')).toBeTruthy()
+
+    const b = retenue()
+    faux.retenuesValides.d2 = b.promesse
+    await allerAuDossier('Bravo Santé')
+    expect(screen.queryAllByText(/Vue d’ensemble — frontière/)).toHaveLength(0)
+
+    await act(async () => { b.relacher() })
+    expect(await screen.findByText('Vue d’ensemble — frontière aucune')).toBeTruthy()
+  })
+
+  it('illisibles, ils le disent et les écrans ne s’affichent pas ; « Réessayer » relit', async () => {
+    faux.erreurValides = 'refus simulé'
+    await afficher('/dossiers/d1/checklist')
+    expect(screen.getByText(/Les exercices validés de ce dossier n’ont pas pu être lus \(lecture interrompue après 0 ligne\(s\) : refus simulé\)/)).toBeTruthy()
+    expect(screen.queryAllByText('Vue d’ensemble du dossier')).toHaveLength(0)
+    // L'identité, elle, a été lue : l'en-tête le dit.
+    expect(titre()).toBe('Cabinet Hélène')
+
+    faux.erreurValides = null
+    faux.valides = { d1: [2025] }
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Réessayer' })) })
+    expect(screen.getByText('Vue d’ensemble — frontière 2025-12-31')).toBeTruthy()
+  })
+
+  it('un exercice validé reste au sélecteur de l’en-tête, même quand rien ne le porte', async () => {
+    faux.valides = { d1: [2020] }
+    await afficher('/dossiers/d1/pieces')
+    const exercice = screen.getByRole('tablist', { name: 'Exercice' })
+    expect(within(exercice).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Toutes', '2026', '2025', '2020'])
+  })
+
+  it('une validation faite dans Clôture déplace la frontière pour tous les onglets', async () => {
+    faux.valides = { d1: [2024] }
+    await afficher('/dossiers/d1/cloture')
+    expect(screen.getByText('Clôture — frontière 2024-12-31')).toBeTruthy()
+    const lectures = faux.lecturesValides
+
+    faux.valides = { d1: [2024, 2025] }
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Relire les exercices validés' })) })
+    expect(faux.lecturesValides).toBe(lectures + 1)
+    expect(screen.getByText('Clôture — frontière 2025-12-31')).toBeTruthy()
+    // Et l'onglet suivant la lit aussi.
+    const arbre = screen.getByRole('region', { name: 'Dossier ouvert' })
+    await act(async () => { fireEvent.click(within(arbre).getByRole('link', { name: "Vue d'ensemble" })) })
+    expect(screen.getByText('Vue d’ensemble — frontière 2025-12-31')).toBeTruthy()
   })
 })

@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { AnneeProvider } from '../../context/AnneeContext'
+import { ContexteDossier } from '../../test/exercicesValides'
 import ClotureTab from './ClotureTab'
 import type { Immobilisation } from '../../lib/types'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
@@ -161,9 +161,9 @@ function poser(
 
 function monter(annee = 2025, assujettiTva = true) {
   return render(
-    <AnneeProvider defaut={annee}>
+    <ContexteDossier annee={annee}>
       <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} modele={TRESORERIE} />
-    </AnneeProvider>,
+    </ContexteDossier>,
   )
 }
 
@@ -229,9 +229,9 @@ describe("ClotureTab — l'exercice du paiement", () => {
     // 2025, et ses 120 € réglés en 2026 disparaissaient de la vue « toutes années ».
     poserDecembre(true)
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier annee="toutes">
         <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
 
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
@@ -327,9 +327,9 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
     poserDecembre(true)
     faux.parTable.pieces = []
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier annee="toutes">
         <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
     expect(screen.queryByText(/Report sur la déclaration des revenus 2025/)).toBeNull()
@@ -773,9 +773,9 @@ describe('ClotureTab — le statut TVA du dossier décide du montant déclaré',
 describe('ClotureTab — un dossier tenu en engagement', () => {
   function monterEngagement() {
     return render(
-      <AnneeProvider defaut={2025}>
+      <ContexteDossier annee={2025}>
         <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
   }
 
@@ -839,9 +839,9 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
       source_fichier: null, libelle_brut: null, created_at: '2026-01-05T09:00:00Z',
     }]
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier annee="toutes">
         <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     await screen.findByText('Exercice 2025')
     expect(screen.queryByText('Exercice 2026')).toBeNull()
@@ -911,9 +911,9 @@ describe('ClotureTab — les mouvements du relevé affectés sans justificatif',
     faux.parTable.categories = [CATEGORIE, RECETTES]
     faux.parTable.lignes_bancaires = [mouvement({ date: '2026-02-10' })]
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier annee="toutes">
         <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
   })
@@ -1298,9 +1298,9 @@ describe('ClotureTab — la concordance de la 2035 avec les écritures', () => {
   it('ne s’affiche pas pour un dossier tenu en engagement, qui ne produit pas de 2035', async () => {
     poserSansCotisation()
     render(
-      <AnneeProvider defaut={2025}>
+      <ContexteDossier annee={2025}>
         <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     await screen.findByText(/La 2035 n’est pas produite pour ce dossier/)
     expect(screen.queryAllByText(/Concordance avec les écritures/)).toHaveLength(0)
@@ -1387,7 +1387,11 @@ describe('ClotureTab — valider l’exercice', () => {
     faux.remplies = []
     faux.entetes = []
     faux.apresValidation = null
+    relirePage.mockClear()
   }
+  // Ce que la page du dossier relit après une validation : les exercices validés, que chaque onglet consulte pour
+  // savoir ce qui est figé (ExercicesValidesContext).
+  const relirePage = vi.fn(async () => {})
   const confirmer = (reponse: boolean) => {
     const messages: string[] = []
     vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { messages.push(m ?? ''); return reponse })
@@ -1395,9 +1399,9 @@ describe('ClotureTab — valider l’exercice', () => {
   }
   const monterAvec = (onNavigate = vi.fn()) => {
     render(
-      <AnneeProvider defaut={2025}>
+      <ContexteDossier annee={2025} relire={relirePage}>
         <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     return onNavigate
   }
@@ -1449,6 +1453,8 @@ describe('ClotureTab — valider l’exercice', () => {
     screen.getByText(/2035 validée le 15\/01\/2026 : elle est relue telle qu'elle a été validée/)
     expect(screen.queryAllByText(/Recalculée aujourd'hui, elle diffère/)).toHaveLength(0)
     expect(screen.queryAllByRole('button', { name: 'Valider l’exercice 2025' })).toHaveLength(0)
+    // La page relit les exercices validés : la frontière a bougé pour tous les onglets du dossier.
+    expect(relirePage).toHaveBeenCalledTimes(1)
   })
 
   it('nomme ce qu’on perd avant de valider, et n’appelle rien sur un refus', async () => {
@@ -1561,9 +1567,9 @@ describe('ClotureTab — valider l’exercice', () => {
     accepter()
     confirmer(true)
     render(
-      <AnneeProvider defaut={2025}>
+      <ContexteDossier annee={2025}>
         <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={ENGAGEMENT} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     const c = await carte()
     c.getByText(/Rien n.empêche de valider cet exercice/)
@@ -1687,9 +1693,9 @@ describe('ClotureTab — valider l’exercice', () => {
     poserTenu()
     faux.parTable.exercices_valides = [{ ...VALIDE_2023, mode_comptable: 'engagement', declaration: null }]
     render(
-      <AnneeProvider defaut={2025}>
+      <ContexteDossier annee={2025}>
         <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={ENGAGEMENT} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     const c = await carte()
     await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Exercice 2024' })) })
@@ -1700,9 +1706,9 @@ describe('ClotureTab — valider l’exercice', () => {
     poserTenu()
     faux.parTable.exercices_valides = [VALIDE_2023]
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier annee="toutes">
         <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     await screen.findByText(/^Exercice 2023 validé/)
     screen.getByRole('heading', { name: 'Valider l’exercice 2024' })
@@ -1714,9 +1720,9 @@ describe('ClotureTab — valider l’exercice', () => {
   it('sans exercice validé, n’ajoute aucun exercice vide', async () => {
     poserTenu()
     render(
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier annee="toutes">
         <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} />
-      </AnneeProvider>,
+      </ContexteDossier>,
     )
     await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })
     expect(screen.queryAllByRole('heading', { name: /^Valider l’exercice (2023|2024)$/ })).toHaveLength(0)

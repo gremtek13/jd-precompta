@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { rechercherCodeNaf } from '../lib/sirene'
 import { EXPLICATIONS_MODE, modeleDuDossier } from '../lib/engagement'
-import type { Dossier } from '../lib/types'
+import type { Dossier, ExerciceValide } from '../lib/types'
 import PiecesTab from './dossier/PiecesTab'
 import FacturesTab from './dossier/FacturesTab'
 import PacksTab from './dossier/PacksTab'
@@ -26,6 +26,7 @@ import AssistantDossier, { BoutonAssistant } from './dossier/AssistantDossier'
 import DossierParcours, { type DossierTab } from '../components/DossierParcours'
 import AnneeTabs, { type ValeurAnnee } from '../components/AnneeTabs'
 import { AnneeProvider, useAnnee } from '../context/AnneeContext'
+import { ExercicesValidesProvider } from '../context/ExercicesValidesContext'
 import Avatar from '../components/widgets/Avatar'
 import BandeauLecturePartielle from '../components/BandeauLecturePartielle'
 import { anneeDe } from '../lib/format'
@@ -76,13 +77,23 @@ export default function DossierDetail() {
   const [essaiDossier, setEssaiDossier] = useState(0)
   const [detectingNaf, setDetectingNaf] = useState(false)
   const [annees, setAnnees] = useState<{ id: string; liste: number[]; motif: string | null } | null>(null)
-  const anneesDisponibles = annees && annees.id === id ? annees.liste : null
   const motifAnnees = annees && annees.id === id ? annees.motif : null
+  // Les exercices validés du dossier (voir ExercicesValidesContext), lus comme son identité : avec
+  // l'identifiant pour lequel ils l'ont été. Sans eux, un onglet proposerait de modifier ce que la validation
+  // a figé, et crierait « à régénérer » sur des écritures que rien ne réécrira plus.
+  const [valides, setValides] = useState<{ id: string; exercices: ExerciceValide[]; erreur: string | null } | null>(null)
+  const exercicesValides = valides && valides.id === id ? valides.exercices : null
+  const erreurValides = valides && valides.id === id ? valides.erreur : null
+  // Un exercice validé reste au sélecteur de l'en-tête même quand rien ne le porte plus : un exercice vide se
+  // valide, et il doit rester où le retrouver.
+  const anneesDisponibles = annees && annees.id === id && exercicesValides
+    ? [...new Set([...annees.liste, ...exercicesValides.map((e) => e.annee)])].sort((a, b) => b - a)
+    : null
   // Les onglets ET le sélecteur d'exercice de l'en-tête — qui lit le même AnneeProvider — ne se
   // montent qu'une fois l'identité et les années du dossier de l'URL connues, jamais l'une sans
   // l'autre : les années arrivent souvent AVANT l'identité, et l'en-tête se rend aussi pendant
   // l'attente, hors de ce fournisseur, où le sélecteur lèverait et emporterait toute la page.
-  const pret = !erreurDossier && dossier !== null && anneesDisponibles !== null
+  const pret = !erreurDossier && !erreurValides && dossier !== null && anneesDisponibles !== null
   // Le modèle comptable du dossier (lib/engagement.ts), lu sur la ligne du dossier et JAMAIS supposé :
   // les onglets qui en dépendent ne se montent pas sans lui, plutôt que de retomber sur la trésorerie
   // — un dossier en engagement lu en trésorerie ferait signaler « à régénérer » toutes ses écritures.
@@ -118,6 +129,29 @@ export default function DossierDetail() {
     })
     return () => { annule = true }
   }, [id, essaiDossier])
+
+  // Lus par tranches comme les autres collections, et la lecture partielle tient lieu de refus : un exercice
+  // validé qu'on n'aurait pas lu laisserait les onglets proposer de modifier ce qu'il fige.
+  const lireExercicesValides = useCallback(async (dossierId: string) => {
+    const lecture = await lireTout<ExerciceValide>((debut, fin) =>
+      supabase.from('exercices_valides').select('*', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('annee').order('dossier_id').range(debut, fin),
+    )
+    return { id: dossierId, exercices: lecture.lignes, erreur: lecture.complete ? null : lecture.motif }
+  }, [])
+
+  useEffect(() => {
+    if (!id) return
+    let annule = false
+    lireExercicesValides(id).then((lus) => { if (!annule) setValides(lus) })
+    return () => { annule = true }
+  }, [id, essaiDossier, lireExercicesValides])
+
+  // Après une validation (Clôture) : chaque onglet doit voir la nouvelle frontière.
+  const relireExercicesValides = useCallback(async () => {
+    if (!id) return
+    setValides(await lireExercicesValides(id))
+  }, [id, lireExercicesValides])
 
   // Années réellement disponibles sur les trois sources datées qui alimentent les onglets partageant
   // l'exercice (voir TABS_AVEC_EXERCICE) — juste la colonne date de chacune, pas les lignes entières :
@@ -261,13 +295,14 @@ export default function DossierDetail() {
       {/* Les onglets ne se montent qu'avec l'identité du dossier de l'URL : plusieurs la RECOPIENT au
           montage (le formulaire d'Informations, par exemple), et montés trop tôt ils garderaient un
           SIRET vide — ou celui du dossier précédent — que le premier « Enregistrer » écrirait. */}
-      {erreurDossier ? (
+      {erreurDossier || erreurValides ? (
         <>
           {cockpit}
           <div className="card">
             <p className="error-text" style={{ marginTop: 0 }}>
-              Ce dossier n’a pas pu être lu ({erreurDossier}). Ses écrans ne s’affichent pas : ils
-              partiraient d’une identité vide — un SIRET vide sur une facture, par exemple.
+              {erreurDossier
+                ? `Ce dossier n’a pas pu être lu (${erreurDossier}). Ses écrans ne s’affichent pas : ils partiraient d’une identité vide — un SIRET vide sur une facture, par exemple.`
+                : `Les exercices validés de ce dossier n’ont pas pu être lus (${erreurValides}). Ses écrans ne s’affichent pas : ils proposeraient de modifier ce qu’une validation a figé.`}
             </p>
             <button type="button" className="btn btn-outline btn-sm" onClick={() => setEssaiDossier((n) => n + 1)}>
               Réessayer
@@ -286,73 +321,75 @@ export default function DossierDetail() {
           </div>
         </>
       ) : (
-        <AnneeProvider key={id} defaut={calculerAnneeParDefaut(anneesDisponibles)}>
-          {cockpit}
-          <DossierParcours tab={tab} onChange={allerA} />
-          <BandeauLecturePartielle
-            quoi="Les dates des justificatifs, relevés et écritures"
-            motif={motifAnnees}
-            consequence={
-              'Le sélecteur d’exercice de l’en-tête peut donc omettre une année — un exercice absent de ' +
-              'la liste n’est pas forcément vide —, et l’exercice ouvert d’office n’est peut-être pas le ' +
-              'plus récent.'
-            }
-          />
+        <ExercicesValidesProvider exercices={exercicesValides ?? []} relire={relireExercicesValides}>
+          <AnneeProvider key={id} defaut={calculerAnneeParDefaut(anneesDisponibles)}>
+            {cockpit}
+            <DossierParcours tab={tab} onChange={allerA} />
+            <BandeauLecturePartielle
+              quoi="Les dates des justificatifs, relevés et écritures"
+              motif={motifAnnees}
+              consequence={
+                'Le sélecteur d’exercice de l’en-tête peut donc omettre une année — un exercice absent de ' +
+                'la liste n’est pas forcément vide —, et l’exercice ouvert d’office n’est peut-être pas le ' +
+                'plus récent.'
+              }
+            />
 
-          {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modele={modele} onNavigate={allerA} />}
-          {tab === 'pieces' && <PiecesTab dossierId={id} />}
-          {tab === 'factures' && (
-            <FacturesTab
-              dossierId={id}
-              dossierNom={dossier?.nom ?? ''}
-              dossierSiret={dossier?.siret ?? null}
-              dossierAdresse={dossier?.adresse ?? null}
-              assujettiTva={dossier?.assujetti_tva ?? false}
-              onAdresseUpdated={(adresse) => modifierDossier(id, { adresse })}
-            />
-          )}
-          {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
-          {tab === 'banque' && modele && <BanqueTab dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false} />}
-          {tab === 'documents' && <DocumentsTab dossierId={id} />}
-          {tab === 'ecritures' && modele && (
-            <EcrituresTab
-              dossierId={id}
-              dossierNom={dossier?.nom ?? ''}
-              dossierSiret={dossier?.siret ?? null}
-              assujettiTva={dossier?.assujetti_tva ?? false}
-              modele={modele}
-              onModeleUpdated={(modification) => modifierDossier(id, modification)}
-            />
-          )}
-          {tab === 'statistiques' && <StatistiquesTab dossierId={id} onNavigate={allerA} />}
-          {tab === 'tva' && dossier && (
-            <TvaTab
-              dossierId={id}
-              assujettiTva={dossier.assujetti_tva}
-              periodicite={dossier.tva_periodicite}
-              surDebits={dossier.tva_sur_debits}
-              onRegimeUpdated={(modification) => modifierDossier(id, modification)}
-            />
-          )}
-          {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
-          {tab === 'cotisations' && modele && <CotisationsTab dossierId={id} modeComptable={modele.mode} />}
-          {tab === 'cloture' && modele && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modele={modele} onNavigate={allerA} />}
-          {tab === 'estimation' && modele && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
-          {tab === 'financement' && modele && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
-          {tab === 'supplements' && <SupplementsTab dossierId={id} />}
-          {tab === 'informations' && modele && (
-            <InformationsTab
-              dossierId={id}
-              dossierNom={dossier?.nom ?? ''}
-              dossierSiret={dossier?.siret ?? null}
-              dossierAdresse={dossier?.adresse ?? null}
-              modele={modele}
-              onIdentiteUpdated={(siret, adresse) => modifierDossier(id, { siret, adresse })}
-            />
-          )}
-          {tab === 'virements' && modele && <VirementsTab dossierId={id} modele={modele} />}
-          {tab === 'acces' && <AccesTab dossierId={id} dossierNom={dossier?.nom ?? ''} codeEmail={dossier?.code_email ?? null} />}
-        </AnneeProvider>
+            {tab === 'checklist' && modele && <ChecklistTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modele={modele} onNavigate={allerA} />}
+            {tab === 'pieces' && <PiecesTab dossierId={id} />}
+            {tab === 'factures' && (
+              <FacturesTab
+                dossierId={id}
+                dossierNom={dossier?.nom ?? ''}
+                dossierSiret={dossier?.siret ?? null}
+                dossierAdresse={dossier?.adresse ?? null}
+                assujettiTva={dossier?.assujetti_tva ?? false}
+                onAdresseUpdated={(adresse) => modifierDossier(id, { adresse })}
+              />
+            )}
+            {tab === 'packs' && dossier && <PacksTab dossierId={id} dossierNom={dossier.nom} />}
+            {tab === 'banque' && modele && <BanqueTab dossierId={id} modele={modele} assujettiTva={dossier?.assujetti_tva ?? false} />}
+            {tab === 'documents' && <DocumentsTab dossierId={id} />}
+            {tab === 'ecritures' && modele && (
+              <EcrituresTab
+                dossierId={id}
+                dossierNom={dossier?.nom ?? ''}
+                dossierSiret={dossier?.siret ?? null}
+                assujettiTva={dossier?.assujetti_tva ?? false}
+                modele={modele}
+                onModeleUpdated={(modification) => modifierDossier(id, modification)}
+              />
+            )}
+            {tab === 'statistiques' && <StatistiquesTab dossierId={id} onNavigate={allerA} />}
+            {tab === 'tva' && dossier && (
+              <TvaTab
+                dossierId={id}
+                assujettiTva={dossier.assujetti_tva}
+                periodicite={dossier.tva_periodicite}
+                surDebits={dossier.tva_sur_debits}
+                onRegimeUpdated={(modification) => modifierDossier(id, modification)}
+              />
+            )}
+            {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
+            {tab === 'cotisations' && modele && <CotisationsTab dossierId={id} modeComptable={modele.mode} />}
+            {tab === 'cloture' && modele && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modele={modele} onNavigate={allerA} />}
+            {tab === 'estimation' && modele && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
+            {tab === 'financement' && modele && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
+            {tab === 'supplements' && <SupplementsTab dossierId={id} />}
+            {tab === 'informations' && modele && (
+              <InformationsTab
+                dossierId={id}
+                dossierNom={dossier?.nom ?? ''}
+                dossierSiret={dossier?.siret ?? null}
+                dossierAdresse={dossier?.adresse ?? null}
+                modele={modele}
+                onIdentiteUpdated={(siret, adresse) => modifierDossier(id, { siret, adresse })}
+              />
+            )}
+            {tab === 'virements' && modele && <VirementsTab dossierId={id} modele={modele} />}
+            {tab === 'acces' && <AccesTab dossierId={id} dossierNom={dossier?.nom ?? ''} codeEmail={dossier?.code_email ?? null} />}
+          </AnneeProvider>
+        </ExercicesValidesProvider>
       )}
 
       <AssistantDossier dossierId={id} dossierNom={dossier?.nom ?? null} />
