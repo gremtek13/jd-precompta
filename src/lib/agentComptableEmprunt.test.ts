@@ -8,6 +8,7 @@ import {
 import { genererEcheancier, type Emprunt } from './emprunts'
 import { ajouterJours, ajouterMois } from './format'
 import type { EcritureBrouillon, LigneBancaire } from './types'
+import { NON_VALIDEE } from '../test/ecritures'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES ÉCHÉANCES D'EMPRUNT (29/09/2026, ligne 26.6).
 //
@@ -80,7 +81,7 @@ const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'l', date: '2025-02-06', compte: COMPTE_BANQUE,
-  libelle: 'PRLV ECHEANCE PRET', sens: 'credit', montant: 540, statut: 'proposee', immobilisation_id: null, vehicule_id: null, created_at: '2025-02-06T09:00:00Z', ...o,
+  libelle: 'PRLV ECHEANCE PRET', sens: 'credit', montant: 540, statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-02-06T09:00:00Z', ...o,
 })
 // L'écriture juste d'un mouvement, telle que src/lib la compose.
 const conforme = (l: LigneBancaire, date = l.date): EcritureBrouillon[] =>

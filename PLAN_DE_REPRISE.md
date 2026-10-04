@@ -86,7 +86,7 @@ découvre avant.
    clients n'arrivent plus dans l'application.
 5. **Rien sur le schéma — cette ligne était la faiblesse principale de ce plan. Elle est fermée pour le
    CONTENU, pas encore pour la PROCÉDURE** (voir la fin de ce point et le §4, étape 2).
-   Les migrations du projet (71 au 30/09/2026) sont exportées dans `supabase/schema/`, une par
+   Les migrations du projet (82 au 04/10/2026) sont exportées dans `supabase/schema/`, une par
    fichier, telles que la base les a enregistrées, et vérifiées par empreinte agrégée. Elles restent
    un EXPORT : la source de vérité est la base, les migrations continuent de s'appliquer par l'outil
    MCP, et l'export peut donc dériver. `supabase/schema/README.md` donne la requête qui le vérifie en une

@@ -284,6 +284,12 @@ supabase/
                   écriture, le retrait d'un véhicule avec son forfait, par impersonation des trois
                   profils, à rejouer après toute migration qui touche ses deux fonctions, le barème de
                   la base, la table vehicules ou les contraintes d'ecritures_brouillon.
+                  validationExercice.sql : la validation d'un exercice — qui valide, ce qui se refuse
+                  et pourquoi, ce qu'elle écrit, l'intangibilité, l'empreinte chaînée, les sources figées
+                  et ce que dit un refus à la frontière —, par impersonation des trois profils dans des
+                  dossiers jetables, à rejouer après toute migration qui touche la validation, ses
+                  déclencheurs, la table exercices_valides ou les contraintes d'ecritures_brouillon. Il
+                  se joue en UNE transaction (`psql -1` hors de l'outil d'exécution).
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1419,8 +1425,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   temporis depuis la mise en service, la facture d'un bien s'écrit sur le compte d'immobilisation de sa
   nature (sa TVA au 445620, sa dette au 404000 en engagement), et le forfait kilométrique du cadre 7
   s'écrit (625110 face au compte du dirigeant). L'étape (c) est livrée (04/10/2026) : la 2035 reste
-  calculée depuis les sources et se compare aux écritures, source par source, dans Clôture. Restent (d)
-  valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
+  calculée depuis les sources et se compare aux écritures, source par source, dans Clôture. L'étape (d),
+  valider un exercice, est EN COURS : sa base est en production (04/10/2026) — la validation, ses
+  refus, l'intangibilité, l'empreinte chaînée et les sources figées, éprouvés en base (voir « un
+  exercice validé se fige en base ») —, mais aucun écran ne la propose encore : restent la
+  numérotation du FEC partagée avec la base, les préalables vérifiés par l'application (la
+  concordance au centime), la carte « Valider l'exercice » de Clôture et les écrans qui disent ce
+  qu'un exercice validé fige. Reste ensuite (e), les vingt-deux champs et Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -6313,6 +6324,90 @@ d'environnement dans la même édition.
   des biens) et un tableau qui se replie posé hors de son enveloppe.
   **CE QUI RESTE** : la 2035 n'est pas TIRÉE des écritures, par choix (voir plus haut) ; l'étape (d), valider
   un exercice, s'appuiera sur cette concordance.
+- **UN EXERCICE VALIDÉ SE FIGE EN BASE — LIGNE 26.6, ÉTAPE (D), PREMIÈRE BRIQUE** (04/10/2026, migrations
+  `validation_des_exercices`, `sources_figees_par_la_validation`, `restauration_des_exercices_valides` et
+  `frontiere_de_la_validation`). Une comptabilité informatisée n'est régulière qu'après une procédure de
+  validation qui « interdit toute modification ou suppression de l'enregistrement » (PCG, art. 1031-3), et un
+  exercice clôturé ne se rouvre pas pour modifier ses écritures (BOI-BIC-DECLA-30-10-20-40) : une erreur trouvée
+  après se corrige sur l'exercice suivant, jamais en place. Tout restait brouillon jusqu'ici, et c'est ce qui
+  empêchait le FEC de l'application d'être celui du dossier.
+  **Décisions du cabinet (04/10/2026)** : la validation se refuse tant que la 2035 et les écritures ne concordent
+  pas au centime (en engagement, tant qu'une écriture est en anomalie) ; ce qui a produit les écritures validées
+  est figé avec elles ; valider et « Clôturer l'exercice » restent deux gestes séparés — la purge du texte lu et
+  la fin des relances n'y sont pas liées ; seul le chef du cabinet valide, et le super-administrateur. Une
+  validation porte sur l'exercice entier et ne se défait pas.
+  **CE QUE LA BASE GARDE, et qu'aucun appel ne contourne :**
+  - `valider_exercice` (`SECURITY DEFINER`, sous le verrou consultatif EXCLUSIF du dossier) refuse, en le disant :
+    un autre que le chef du cabinet ; un exercice en cours (l'année lue à Paris) ; un exercice pris hors de
+    l'ordre — celui des à-nouveaux d'abord, puis chaque année après la précédente ; une écriture antérieure non
+    validée (avant l'ouverture, elle dit de la retirer ou de la redater) ; un mouvement encore à traiter jusqu'au
+    31 décembre ; une 2035 absente en trésorerie, présente en engagement ; et une NUMÉROTATION, composée par
+    l'application, qui ne couvre pas exactement les écritures de l'exercice, dont les numéros d'un journal ne se
+    suivent pas depuis 1 dans l'ordre des dates, dont une écriture n'est pas équilibrée au centime ou porte deux
+    pièces, ou où un compte porte deux libellés. La CONCORDANCE avec la 2035, elle, est vérifiée par l'application
+    juste avant l'appel : la base ne sait pas calculer une 2035.
+  - Une écriture validée porte son journal, son numéro, sa date de validation et ce que le FEC lisait ailleurs —
+    la référence et la date de sa pièce, le libellé de son compte, son compte auxiliaire
+    (`ecritures_brouillon_validation_complete`) —, pour que le FEC d'un exercice validé se relise depuis elle
+    seule : une catégorie renommée, un tiers corrigé ou une évolution de l'application ne le changent plus. Les
+    à-nouveaux de l'exercice reçoivent de même le libellé de leur compte et celui de leur écriture.
+  - `exercices_valides` garde qui a validé et quand, les totaux, la 2035 telle qu'elle a été validée — une
+    évolution du calcul ne la change plus — et une EMPREINTE SHA-256 CHAÎNÉE à celle de l'exercice validé
+    précédent, écrite sous une forme qui ne dépend ni des réglages de la session ni de l'échelle d'un nombre (une
+    sauvegarde restaurée réécrit 12.50 en 12.5). `verifier_exercice_valide` la recalcule et vérifie le maillon :
+    une écriture modifiée par un chemin qui contourne les déclencheurs se voit. Le client ne lit rien de la table.
+  - L'INTANGIBILITÉ vit dans des DÉCLENCHEURS et non dans des policies : deux chemins écrivent le brouillon sans
+    passer par une fonction (« Régénérer », et le rapprochement qui redate), et une policy ne protège pas d'un
+    appel direct. Une écriture validée ne se modifie ni ne se supprime, même pour le propriétaire de la base ;
+    « validée » ne s'obtient que par `valider_exercice` ; et aucune écriture non validée ne se passe avant la
+    FRONTIÈRE, le 31 décembre du dernier exercice validé.
+  - LES SOURCES SONT FIGÉES AUSSI, puisque la 2035 se calcule depuis elles : une pièce qui porte une écriture
+    validée (ses montants, sa date, sa catégorie, son tiers et son fichier — pas ses notes, son sous-dossier ni
+    la confiance de sa lecture), un mouvement, une part ventilée ou réglée en groupe, un bien, une ligne du
+    cadre 7 et une échéance de cotisation d'un exercice validé, et les à-nouveaux dès qu'un exercice l'est. Ce qui
+    tomberait après coup dans un exercice validé ne s'insère plus, sauf un mouvement déjà connu qu'une connexion
+    bancaire réimporte — la base l'écarte (`on conflict do nothing`), et le déclencheur passe avant cet écart. Les
+    catégories et les natures restent libres : les écritures validées portent leur compte et son libellé.
+  - DEUX SORTIES SEULEMENT. La suppression du dossier entier : pendant sa cascade, ses lignes ne voient déjà
+    plus le dossier, et c'est ce critère, et lui seul, qui la laisse passer. Et la restauration d'une sauvegarde,
+    où le super-administrateur réinsère des écritures validées dans un dossier qui ne porte encore AUCUN exercice
+    validé. Chaque déclencheur prend le verrou du dossier en partagé : une source modifiée pendant une validation
+    attend qu'elle finisse, puis voit la frontière.
+  **TROIS DÉFAUTS TROUVÉS EN ÉCRIVANT L'ESSAI DE PRODUCTION, avant qu'aucun exercice ne soit validé :**
+  - l'exception de restauration laissait le super-administrateur insérer PARTOUT ce qu'un exercice validé
+    refuse ; or sur ce projet il est aussi le chef du cabinet, et l'écran ordinaire lui aurait laissé importer un
+    relevé dans un exercice validé. Elle n'était pas nécessaire : la restauration réinsère les exercices validés
+    en dernier, et tant qu'ils n'y sont pas aucune frontière n'existe ;
+  - les refus nommaient « validé » un exercice qui ne l'a jamais été. Tout ce qui précède le PREMIER exercice
+    validé est figé : un relevé de 2024 sur un dossier repris au 1er janvier 2025 et validé pour 2025 était
+    refusé par « L'exercice 2024 est validé » — faux, 2024 est dans les comptes repris. Un refus nomme désormais
+    l'exercice qui fige la date (`exercice_fige` : « figé par la validation de l'exercice 2025 ») ;
+  - une MODIFICATION faisait entrer dans un exercice validé ce qu'une insertion y refuse : la date d'acquisition
+    d'un bien avancée (l'écran « Modifier » le permet), la pièce d'un bien remplacée par une pièce dont l'écriture
+    est validée, et une ligne passée d'un dossier à l'autre, jugée sur la seule frontière du dossier qu'elle
+    quittait. La nouvelle ligne est maintenant jugée comme une insertion, sur la frontière de SON dossier.
+  **ÉPROUVÉ EN PRODUCTION** (`supabase/essais/validationExercice.sql`) : 145 contrôles sur 145, joués dans des
+  dossiers jetables d'un bloc qui s'annule entièrement — les comptes de douze tables identiques avant et après —,
+  et le texte transmis comparé au fichier (identique sur 418 lignes). Il ne porte aucune instruction de
+  suppression, que l'outil d'exécution soumet à une confirmation qui n'arrive pas ici : ce que fait une
+  suppression (refusée sur ce qui est figé, permise par la cascade d'un dossier) est éprouvé sur une réplique
+  locale du schéma et seulement LU au catalogue en production — plus faible, et dit comme tel. Trente-quatre
+  mutations sur la réplique, toutes mordent, dont le code tel qu'il était avant la migration corrective, fonction
+  par fonction. Une a d'abord survécu en accusant l'essai : `now()` vaut l'heure du début de la transaction, donc
+  la « sauvegarde » d'une ligne du cadre 7 qui posait `updated_at = now()` ne changeait rien.
+  **LA SAUVEGARDE** emporte `exercices_valides` et la restaure EN DERNIER : le tri ne l'y mettrait pas, son seul
+  parent étant le dossier, et posée avant elle ferait refuser la restauration de tout ce qui la suit. Un test le
+  garde (`sauvegarde.test.ts`). Les jeux d'essai étalent `NON_VALIDEE` et `A_NOUVEAU_NON_VALIDE`
+  (`src/test/ecritures.ts`) plutôt que de recopier huit champs nuls : une colonne de validation ajoutée demain ne
+  se reprend qu'à un endroit.
+  **CE QUI RESTE, dit plutôt que promis** : aucun écran ne valide encore. L'application doit composer la
+  numérotation avec la logique même de son FEC, vérifier la concordance avant l'appel, et dire ce qu'un exercice
+  validé fige au lieu de laisser la base refuser un geste qu'un écran propose. Une cotisation payée depuis le
+  compte PERSONNEL n'a pas de mouvement, donc pas d'écriture : la concordance la dirait en écart, et il faudra la
+  traiter avant de valider son exercice. Une opération découverte après coup se rattache, selon l'article 1031-4
+  du PCG, au premier jour de la période non encore clôturée, avec mention de sa date de survenance :
+  l'application ne le modélise pas, la base la refuse et le dit.
+  **LATENT** : aucun exercice validé et aucune écriture validée en base (04/10/2026).
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -7726,7 +7821,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3805 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3806 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),

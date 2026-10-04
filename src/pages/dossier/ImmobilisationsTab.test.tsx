@@ -2,6 +2,7 @@ import { act, render, screen, within, fireEvent, waitFor } from '@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ImmobilisationsTab from './ImmobilisationsTab'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
+import { NON_VALIDEE } from '../../test/ecritures'
 
 // LE REGISTRE DES IMMOBILISATIONS, ET LES DOTATIONS QUI S'EN ÉCRIVENT (ligne 26.6, étape b).
 //
@@ -55,7 +56,7 @@ vi.mock('../../lib/supabase', async () => {
         .map((e, i): EcritureBrouillon => ({
           id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null,
           date: `${annee}-12-31`, compte: e.compte, libelle: e.libelle, montant: e.montant, sens: e.sens,
-          statut: 'proposee', immobilisation_id: id, vehicule_id: null, created_at: '2026-10-01T10:00:00Z',
+          statut: 'proposee', immobilisation_id: id, vehicule_id: null, ...NON_VALIDEE, created_at: '2026-10-01T10:00:00Z',
         })))
     } else if (nom === 'retirer_immobilisation') {
       faux.ecritures = faux.ecritures.filter((e) => e.immobilisation_id !== id)
@@ -149,7 +150,7 @@ const NATURE_PROPRE: NatureImmobilisation = {
 function dotation(annee: number, montant: number, o: Partial<EcritureBrouillon> = {}): EcritureBrouillon[] {
   const base = {
     dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, date: `${annee}-12-31`,
-    libelle: `Dotation ${annee} — Ordinateur`, montant, statut: 'proposee' as const, immobilisation_id: 'i-1', vehicule_id: null,
+    libelle: `Dotation ${annee} — Ordinateur`, montant, statut: 'proposee' as const, immobilisation_id: 'i-1', vehicule_id: null, ...NON_VALIDEE,
     created_at: '2026-01-02T09:00:00Z',
   }
   return [

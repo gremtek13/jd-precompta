@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import { calculerBalance } from './ecritures'
 import { anneeDe } from './format'
 import type { ANouveau, EcritureBrouillon, SensEcriture } from './types'
+import { NON_VALIDEE, A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 
 // L'ASSISTANT ANNONCE LA MÊME BALANCE QUE L'ÉCRAN, À-NOUVEAUX COMPRIS (26/09/2026).
 //
@@ -55,11 +56,11 @@ const balanceDesComptes = extraire(readFileSync(SOURCE, 'utf8'))
 
 const ecriture = (date: string, compte: string, sens: SensEcriture, montant: number): EcritureBrouillon => ({
   id: `${date}-${compte}-${sens}-${montant}`, dossier_id: 'd1', piece_id: 'p1', ligne_bancaire_id: null,
-  date, compte, libelle: 'x', montant, sens, statut: 'proposee', immobilisation_id: null, vehicule_id: null, created_at: `${date}T09:00:00Z`,
+  date, compte, libelle: 'x', montant, sens, statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: `${date}T09:00:00Z`,
 })
 const aNouveau = (compte: string, sens: SensEcriture, montant: number, date = '2026-01-01'): ANouveau => ({
   id: `an-${compte}-${sens}-${montant}`, dossier_id: 'd1', date, compte, compte_origine: compte, libelle: `Compte ${compte}`,
-  sens, montant, source_nom: 'balance.csv', source_empreinte: 'e'.repeat(64), created_at: '2026-01-05T09:00:00Z',
+  sens, montant, source_nom: 'balance.csv', source_empreinte: 'e'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2026-01-05T09:00:00Z',
 })
 const bornes = (annee?: number) => (annee ? { date_debut: `${annee}-01-01`, date_fin: `${annee}-12-31` } : {})
 

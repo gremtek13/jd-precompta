@@ -14,6 +14,7 @@ import { ecritureDeLaVentilation } from './ventilationBanque'
 import type {
   Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire,
 } from './types'
+import { NON_VALIDEE } from '../test/ecritures'
 
 // LA CONCORDANCE DE LA 2035 AVEC LES ÉCRITURES (ligne 26.6, étape c). Les écritures de ces tests viennent des
 // VRAIS générateurs de l'application — celui d'une pièce, d'un mouvement affecté, d'une échéance d'emprunt,
@@ -70,7 +71,7 @@ const brouillon = (
 ): EcritureBrouillon[] => lignes.map((l) => ({
   id: `e${++numero}`, dossier_id: 'd1', piece_id: l.piece_id ?? null, ligne_bancaire_id: l.ligne_bancaire_id ?? null,
   date: l.date ?? '2025-03-15', compte: l.compte, libelle: l.libelle ?? 'écriture', montant: l.montant, sens: l.sens,
-  statut: 'proposee', created_at: '2025-03-16T09:00:00Z', immobilisation_id: null, vehicule_id: null, ...lien,
+  statut: 'proposee', created_at: '2025-03-16T09:00:00Z', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, ...lien,
 }))
 
 // UN DOSSIER COMPLET, écrit par l'application : une facture payée, une recette sans paiement rapproché, des

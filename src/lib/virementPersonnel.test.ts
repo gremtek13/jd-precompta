@@ -5,6 +5,7 @@ import type { EcritureBrouillon } from './types'
 import {
   compteDuDirigeant, ecritureDuVirementPersonnel, refusVirementPersonnel, virementsPersonnelsAEcrire,
 } from './virementPersonnel'
+import { NON_VALIDEE } from '../test/ecritures'
 
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const ENGAGEMENT_SOCIETE: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
@@ -21,7 +22,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2025-03-12', compte: '108000',
-    libelle: 'VIR PERSONNEL', montant: 500, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, created_at: '2025-03-12T10:00:00Z',
+    libelle: 'VIR PERSONNEL', montant: 500, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
     ...o,
   }
 }

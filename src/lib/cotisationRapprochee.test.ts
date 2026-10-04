@@ -8,6 +8,7 @@ import {
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon } from './types'
 import { fichiersDuSchema } from '../test/schema'
+import { NON_VALIDEE } from '../test/ecritures'
 
 function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
@@ -33,7 +34,7 @@ function cotisation(o: Partial<CotisationDeclaree> = {}): CotisationDeclaree {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2026-01-06', compte: COMPTE_BANQUE,
-    libelle: 'PRLV URSSAF', montant: 500, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, created_at: '2026-01-07T10:00:00Z',
+    libelle: 'PRLV URSSAF', montant: 500, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2026-01-07T10:00:00Z',
     ...o,
   }
 }

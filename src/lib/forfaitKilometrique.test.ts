@@ -6,6 +6,7 @@ import {
   forfaitsEnDefaut, nomDuVehicule, refusForfait,
 } from './forfaitKilometrique'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, VehiculeDossier } from './types'
+import { NON_VALIDEE } from '../test/ecritures'
 
 // TYPÉS sans `as` : le compilateur confronte chaque champ à la table.
 const vehicule = (o: Partial<VehiculeDossier> = {}): VehiculeDossier => ({
@@ -15,7 +16,7 @@ const vehicule = (o: Partial<VehiculeDossier> = {}): VehiculeDossier => ({
 })
 
 const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
-  id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: 'v1',
+  id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: 'v1', ...NON_VALIDEE,
   date: '2025-12-31', compte: COMPTE_INDEMNITES_KILOMETRIQUES, libelle: 'Indemnités kilométriques 2025 — Clio',
   montant: 23.81, sens: 'debit', statut: 'proposee', created_at: '2026-01-05T10:00:00Z', ...o,
 })

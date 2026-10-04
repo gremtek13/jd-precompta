@@ -39,8 +39,18 @@
 -- d'exécution, et c'est la fonction qui refuse, avec un autre message). Les autres restent verts sous cette
 -- mutation, et c'est attendu : leurs refus viennent du contrôle d'accès de la fonction, qui lit la session
 -- et non le rôle, ou des contraintes, qui valent pour tout le monde.
-drop table if exists essai_cotisation;
-create temp table essai_cotisation (controle text, observe text, ok boolean);
+--
+-- REJOUÉ LE 04/10/2026 après les migrations de la validation d'un exercice : l'écriture validée dont
+-- l'essai a besoin se pose désormais comme `valider_exercice` la pose, sous le réglage
+-- `jd.validation_exercice` du dossier et avec les champs que lit son FEC — une écriture ne passe plus à
+-- `validee` autrement. 49 contrôles sur 49 en production, le texte transmis identique au fichier, ses
+-- commentaires et les contrôles 49 et 50 retirés. Ces deux-là, qui suppriment (une échéance directement,
+-- puis un dossier), n'y ont pas été rejoués : l'outil demande alors une confirmation qui ne parvient pas
+-- au cabinet. La suppression d'un dossier à travers les nouveaux déclencheurs, écritures validées
+-- comprises, a été éprouvée sur une réplique locale du schéma. La table des verdicts disparaît avec la
+-- transaction (`on commit drop`) au lieu d'être supprimée en tête : l'essai ne porte plus d'instruction
+-- de suppression hors de ses contrôles.
+create temp table essai_cotisation (controle text, observe text, ok boolean) on commit drop;
 
 do $$
 declare
@@ -578,7 +588,14 @@ begin
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       perform rapprocher_cotisation(debit.id, cot, sans_csg);
       reset role;
-      update ecritures_brouillon set statut = 'validee' where ligne_bancaire_id = debit.id and piece_id is null;
+      -- Une écriture se valide comme `valider_exercice` la valide : sous le réglage de son dossier, avec les
+      -- champs que son FEC lit (contrainte `ecritures_brouillon_validation_complete`).
+      perform set_config('jd.validation_exercice', dossier_test::text, true);
+      update ecritures_brouillon
+         set statut = 'validee', valide_le = now(), journal_code = 'BQ', numero_ecriture = 1,
+             piece_ref = 'essai', piece_date = date, compte_lib = 'essai'
+       where ligne_bancaire_id = debit.id and piece_id is null;
+      perform set_config('jd.validation_exercice', '', true);
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       case substring(obs from '^(\d+)')

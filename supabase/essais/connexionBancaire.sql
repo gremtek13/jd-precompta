@@ -35,8 +35,22 @@
 -- session (identique chaque fois). Et l'essai sait échouer : sans les `set local role`, les
 -- contrôles 1 à 4 virent au rouge — sous `postgres`, qui ne subit pas la RLS, chaque profil voit,
 -- modifie et supprime la connexion, et l'écrit.
-drop table if exists essai_connexion;
-create temp table essai_connexion (controle text, observe text, ok boolean);
+--
+-- REJOUÉ LE 04/10/2026 après les migrations de la validation d'un exercice, qui posent un déclencheur sur
+-- les mouvements : les contrôles 13 et 14 ont ÉCHOUÉ, sans rapport avec elles. Depuis l'essai du cabinet
+-- du 30/09/2026, le dossier `test` porte une vraie connexion, et la règle « une connexion par dossier »
+-- refusait la première ligne avant la contrainte éprouvée — un essai qui dépendait de l'absence d'une
+-- donnée de production. Les connexions d'essai vont désormais dans un dossier du cabinet qui n'en porte
+-- aucune, et l'essai refuse de tourner s'il n'en trouve pas ; les contrôles 4 et 5, qui visaient eux
+-- aussi le dossier `test`, auraient échoué de même. Après correction : 16 contrôles sur 16 en production,
+-- le texte transmis identique au fichier, ses commentaires et les contrôles 1 à 5 et 21 retirés. Ceux-là,
+-- qui suppriment, n'y ont pas été rejoués : l'outil demande alors une confirmation qui ne parvient pas au
+-- cabinet. La suppression d'un dossier à travers les nouveaux déclencheurs, écritures validées comprises,
+-- a été éprouvée sur une réplique locale du schéma ; les contrôles 1 à 5, eux, ne sont éprouvés que dans
+-- leur forme d'avant, sur le dossier `test` le 30/09/2026. La table des verdicts disparaît avec la
+-- transaction (`on commit drop`) au lieu d'être supprimée en tête : l'essai ne porte plus d'instruction
+-- de suppression hors de ses contrôles.
+create temp table essai_connexion (controle text, observe text, ok boolean) on commit drop;
 
 do $$
 declare
@@ -48,7 +62,7 @@ declare
 
   accepte boolean; code_recu text; message text; obs text; ok boolean;
   vus int; n_maj int; n_supp int; n int;
-  connexion uuid; dossier_jetable uuid; cabinet uuid;
+  connexion uuid; dossier_jetable uuid; cabinet uuid; dossier_libre uuid;
   nb_connexions_avant int; nb_connexions_apres int; nb_lignes_avant int; nb_lignes_apres int; nb_dossiers_avant int; nb_dossiers_apres int;
 begin
   select count(*) into nb_connexions_avant from connexions_bancaires;
@@ -56,13 +70,24 @@ begin
   select count(*) into nb_dossiers_avant from dossiers;
   select cabinet_id into cabinet from dossiers where id = dossier_test;
   if cabinet is null then raise exception 'ESSAI_IMPOSSIBLE : dossier de test introuvable'; end if;
+  -- Les connexions d'essai vont dans un dossier du cabinet qui n'en porte AUCUNE, pour que chaque refus
+  -- vienne de la contrainte éprouvée : depuis l'essai du cabinet du 30/09/2026, le dossier `test` porte
+  -- une vraie connexion, et la règle « une connexion par dossier » refusait alors la première ligne
+  -- avant elle. Le dossier du client doit en être libre aussi (contrôles 3, 13 et 14).
+  select d.id into dossier_libre from dossiers d
+   where d.cabinet_id = cabinet and d.id <> dossier_du_client
+     and not exists (select 1 from connexions_bancaires c where c.dossier_id = d.id)
+   order by d.id limit 1;
+  if dossier_libre is null or exists (select 1 from connexions_bancaires c where c.dossier_id = dossier_du_client) then
+    raise exception 'ESSAI_IMPOSSIBLE : il faut deux dossiers du cabinet sans connexion bancaire, dont celui du client';
+  end if;
 
   -- ══ 1 à 4. Une connexion EXISTE, et personne ne l'atteint depuis le navigateur — pas même le chef ══
   for obs in select unnest(array['1. anonyme', '2. rattaché à rien', '3. client, son propre dossier', '4. chef du cabinet']) loop
     accepte := false; code_recu := null; message := null; vus := null; n_maj := null; n_supp := null;
     begin
       insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, etat, session_id, valide_jusqu_au)
-        values (case when obs like '4.%' then dossier_test else dossier_du_client end,
+        values (case when obs like '4.%' then dossier_libre else dossier_du_client end,
                 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session-visible', now() + interval '90 days');
       if obs like '1.%' then
         set local role anon;
@@ -78,7 +103,7 @@ begin
       delete from connexions_bancaires where session_id = 'essai-session-visible';
       get diagnostics n_supp = row_count;
       insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement)
-        values (case when obs like '4.%' then dossier_test else dossier_du_client end, 'Essai écrit', 'FR', 'SANDBOX');
+        values (case when obs like '4.%' then dossier_libre else dossier_du_client end, 'Essai écrit', 'FR', 'SANDBOX');
       accepte := true;
       raise exception 'ANNULATION_ESSAI';
     exception when others then code_recu := sqlstate; message := sqlerrm;
@@ -96,7 +121,7 @@ begin
   begin
     set local role service_role;
     insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, created_by)
-      values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', chef) returning id into connexion;
+      values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', chef) returning id into connexion;
     update connexions_bancaires
        set etat = 'active', session_id = 'essai-session-service', valide_jusqu_au = now() + interval '90 days',
            comptes = jsonb_build_array(jsonb_build_object('uid', 'essai-compte', 'empreinte', 'essai-empreinte')),
@@ -140,40 +165,40 @@ begin
         set local role service_role;
         if obs like '6.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, etat, session_id)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', 'en_attente', 'essai-session');
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', 'en_attente', 'essai-session');
         elsif obs like '7.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, etat, session_id)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session');
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session');
         elsif obs like '8.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'TEST');
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'TEST');
         elsif obs like '9.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement)
-            values (dossier_test, 'Mock ASPSP', 'fr', 'SANDBOX');
+            values (dossier_libre, 'Mock ASPSP', 'fr', 'SANDBOX');
         elsif obs like '10.%' then
           insert into connexions_bancaires (dossier_id, fournisseur, banque_nom, banque_pays, environnement)
-            values (dossier_test, 'autre', 'Mock ASPSP', 'FR', 'SANDBOX');
+            values (dossier_libre, 'autre', 'Mock ASPSP', 'FR', 'SANDBOX');
         elsif obs like '11.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, compte_uid)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', 'essai-compte');
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', 'essai-compte');
         elsif obs like '12.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, comptes)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', '{}'::jsonb);
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', '{}'::jsonb);
         -- 13 et 14 : deux DOSSIERS, pour que seule la contrainte visée puisse refuser — dans un seul
         -- dossier, la règle « une connexion par dossier » refuserait la première.
         elsif obs like '13.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, etat, session_id, valide_jusqu_au)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session-double', now() + interval '1 day'),
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session-double', now() + interval '1 day'),
                    (dossier_du_client, 'Mock ASPSP', 'FR', 'SANDBOX', 'active', 'essai-session-double', now() + interval '1 day');
         elsif obs like '14.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, jeton_etat)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', jeton), (dossier_du_client, 'Mock ASPSP', 'FR', 'SANDBOX', jeton);
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', jeton), (dossier_du_client, 'Mock ASPSP', 'FR', 'SANDBOX', jeton);
         elsif obs like '15.%' then
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX'), (dossier_test, 'Crédit Fictif', 'FR', 'SANDBOX');
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX'), (dossier_libre, 'Crédit Fictif', 'FR', 'SANDBOX');
         else
           insert into connexions_bancaires (dossier_id, banque_nom, banque_pays, environnement, type_acces)
-            values (dossier_test, 'Mock ASPSP', 'FR', 'SANDBOX', 'corporate');
+            values (dossier_libre, 'Mock ASPSP', 'FR', 'SANDBOX', 'corporate');
         end if;
         accepte := true;
         raise exception 'ANNULATION_ESSAI';

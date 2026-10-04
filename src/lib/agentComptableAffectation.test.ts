@@ -8,6 +8,7 @@ import { categoriesSansCompte, categoriesSansPoste } from './controles'
 import type { ModeleComptable } from './engagement'
 import type { Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { compteDuDirigeant, virementsPersonnelsAEcrire } from './virementPersonnel'
+import { NON_VALIDEE } from '../test/ecritures'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS AFFECTÉS (29/09/2026, ligne 26.6).
 //
@@ -92,7 +93,7 @@ const LIGNES: LigneBancaire[] = [
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'encaissement', date: '2025-03-10',
-  compte: '706000', libelle: 'VIR CPAM', sens: 'credit', montant: 100, statut: 'proposee', immobilisation_id: null, vehicule_id: null, created_at: '2025-03-10T09:00:00Z', ...o,
+  compte: '706000', libelle: 'VIR CPAM', sens: 'credit', montant: 100, statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-03-10T09:00:00Z', ...o,
 })
 const conforme = (id: string, compte: string, montant: number, date = '2025-03-10'): EcritureBrouillon[] => {
   const entree = montant >= 0

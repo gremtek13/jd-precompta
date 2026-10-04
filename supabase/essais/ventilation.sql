@@ -43,8 +43,19 @@
 -- contrôles sur 68 (les neuf nouveaux, 24 et 59 à 67, compris), le texte transmis identique au fichier.
 -- Les contrôles 59 et 65 forment une paire : même remise, même taux, et 65 ne déplace qu'un centime de la
 -- TVA vers la recette — le premier passe, le second est refusé.
-drop table if exists essai_ventilation;
-create temp table essai_ventilation (controle text, observe text, ok boolean);
+--
+-- REJOUÉ LE 04/10/2026 après les migrations de la validation d'un exercice : l'écriture validée dont
+-- l'essai a besoin se pose désormais comme `valider_exercice` la pose, sous le réglage
+-- `jd.validation_exercice` du dossier et avec les champs que lit son FEC — une écriture ne passe plus à
+-- `validee` autrement. 66 contrôles sur 66 en production, le texte transmis identique au fichier, ses
+-- commentaires et les contrôles 57 et 58 retirés. Ces deux-là, qui suppriment (une catégorie, puis un
+-- dossier), n'y ont pas été rejoués : l'outil demande alors une confirmation qui ne parvient pas au
+-- cabinet. Le premier éprouve une clé étrangère que ces migrations ne touchent pas ; la suppression d'un
+-- dossier à travers les nouveaux déclencheurs, écritures validées comprises, a été éprouvée sur une
+-- réplique locale du schéma. La table des verdicts disparaît avec la transaction (`on commit drop`) au
+-- lieu d'être supprimée en tête : l'essai ne porte plus d'instruction de suppression hors de ses
+-- contrôles.
+create temp table essai_ventilation (controle text, observe text, ok boolean) on commit drop;
 
 do $$
 declare
@@ -517,7 +528,14 @@ begin
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       perform ventiler_mouvement_bancaire(debit.id, parts_categories, ecriture_categories);
       reset role;
-      update ecritures_brouillon set statut = 'validee' where ligne_bancaire_id = debit.id and piece_id is null;
+      -- Une écriture se valide comme `valider_exercice` la valide : sous le réglage de son dossier, avec les
+      -- champs que son FEC lit (contrainte `ecritures_brouillon_validation_complete`).
+      perform set_config('jd.validation_exercice', dossier_test::text, true);
+      update ecritures_brouillon
+         set statut = 'validee', valide_le = now(), journal_code = 'BQ', numero_ecriture = 1,
+             piece_ref = 'essai', piece_date = date, compte_lib = 'essai'
+       where ligne_bancaire_id = debit.id and piece_id is null;
+      perform set_config('jd.validation_exercice', '', true);
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       if obs like '38.%' then

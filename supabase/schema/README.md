@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 77 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 82 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -74,8 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 04/10/2026** : 78 fichiers, 78 migrations, empreinte globale
-`f2e1565fa5a71ee2b87a25cd793e063c` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 04/10/2026** : 82 fichiers, 82 migrations, empreinte globale
+`d5e74886e28f32fe894d4b075d8362b2` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -107,12 +107,12 @@ ne s'appliquent pas tout seuls.
 Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
-  le socle au caractère près (73 instructions, empreinte `d54f21f99d32fb98ca5abdc7a5e3435f` le
-  04/10/2026, rejoué après les deux fonctions du forfait kilométrique), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  le socle au caractère près (75 instructions, empreinte `571a89fe386d655de5cb2fba9c42165b` le
+  04/10/2026, rejoué après la validation des exercices et la frontière qu'elle pose), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (895 objets, empreinte `f03fdfc3a9a53f42dd8337a5e55d8edf` le 04/10/2026, après les deux fonctions qui écrivent et retirent le forfait kilométrique). C'est le seul qui voie un
+  (956 objets, empreinte `4753d9f80cf8b3aa98ad6ff31c66c16d` le 04/10/2026, après la validation des exercices et la frontière qu'elle pose). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.

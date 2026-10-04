@@ -5,6 +5,7 @@ import { indemniteKilometriqueCentimes, vehiculeDuDossier } from './baremeKilome
 import type { ModeleComptable } from './engagement'
 import { ecritureDuForfait, forfaitsDuCadre7, forfaitsEnDefaut, nomDuVehicule } from './forfaitKilometrique'
 import type { EcritureBrouillon, VehiculeDossier } from './types'
+import { NON_VALIDEE } from '../test/ecritures'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES FORFAITS KILOMÉTRIQUES (04/10/2026, ligne 26.6, étape b).
 //
@@ -67,7 +68,7 @@ const MODELES = [TRESORERIE, ENGAGEMENT_455, ENGAGEMENT_467]
 // Un forfait écrit tel que la base l'écrit, au 31 décembre, en trésorerie.
 function ecrit(v: VehiculeDossier, montant: number, o: Partial<EcritureBrouillon> = {}, credit = '108000'): EcritureBrouillon[] {
   const base = {
-    dossier_id: 'd', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: v.id,
+    dossier_id: 'd', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: v.id, ...NON_VALIDEE,
     date: `${v.annee}-12-31`, libelle: `Indemnités kilométriques ${v.annee}`, montant, statut: 'proposee' as const,
     created_at: '2026-01-02T09:00:00Z',
   }

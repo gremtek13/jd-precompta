@@ -7,6 +7,7 @@ import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } fro
 import type { AcquisitionDuBien } from './amortissements'
 import type { ModeleComptable } from './engagement'
 import { paiementsDesPieces } from './rattachement'
+import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
 
 const ACHATS = '606100'
 // Le modèle de tous les dossiers d'avant l'engagement : les contrôles de trésorerie s'y lisent tels quels.
@@ -300,7 +301,7 @@ describe('calculerBalance', () => {
   const aNouveau = (o: Partial<ANouveau>): ANouveau => ({
     id: 'an-1', dossier_id: 'd1', date: '2026-01-01', compte: COMPTE_BANQUE, compte_origine: '51210000',
     libelle: 'Banque Populaire', sens: 'debit', montant: 6000, source_nom: 'balance.csv',
-    source_empreinte: 'a'.repeat(64), created_at: '2026-09-26T10:00:00Z', ...o,
+    source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2026-09-26T10:00:00Z', ...o,
   })
 
   it('compte les à-nouveaux avec les écritures, et nomme un compte que seule la balance reprise connaît', () => {

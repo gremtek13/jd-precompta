@@ -40,6 +40,12 @@
 -- d'exécution, et c'est la fonction qui refuse, avec un autre message). Les autres restent verts sous cette
 -- mutation, et c'est attendu : leurs refus viennent du contrôle d'accès de la fonction, qui lit la session
 -- et non le rôle, ou des contraintes, qui valent pour tout le monde.
+--
+-- REJOUÉ LE 04/10/2026 après les migrations de la validation d'un exercice : l'écriture validée dont
+-- l'essai a besoin se pose désormais comme `valider_exercice` la pose, sous le réglage
+-- `jd.validation_exercice` du dossier et avec les champs que lit son FEC — une écriture ne passe plus à
+-- `validee` autrement. 30 contrôles sur 30 en production, le texte transmis identique au fichier sans ses
+-- commentaires.
 create temp table essai_dotation (controle text, observe text, ok boolean) on commit drop;
 
 do $$
@@ -299,9 +305,16 @@ begin
     begin
       insert into immobilisations (dossier_id, nature_id, libelle, valeur, date_acquisition, duree_annees)
       values (dossier_test, nature_info, 'BIEN ESSAI', 1200, '2025-07-01', 3) returning id into bien;
-      insert into ecritures_brouillon (dossier_id, immobilisation_id, date, compte, libelle, montant, sens, statut)
-      values (dossier_test, bien, '2025-12-31', '681100', 'essai', 200, 'debit', 'validee'),
-             (dossier_test, bien, '2025-12-31', '281830', 'essai', 200, 'credit', 'validee');
+      -- Une dotation se valide comme `valider_exercice` la valide : sous le réglage de son dossier, avec les
+      -- champs que son FEC lit (contrainte `ecritures_brouillon_validation_complete`).
+      perform set_config('jd.validation_exercice', dossier_test::text, true);
+      insert into ecritures_brouillon (dossier_id, immobilisation_id, date, compte, libelle, montant, sens, statut,
+                                       valide_le, journal_code, numero_ecriture, piece_ref, piece_date, compte_lib)
+      values (dossier_test, bien, '2025-12-31', '681100', 'essai', 200, 'debit', 'validee',
+              now(), 'OD', 1, 'essai', '2025-12-31', 'essai'),
+             (dossier_test, bien, '2025-12-31', '281830', 'essai', 200, 'credit', 'validee',
+              now(), 'OD', 1, 'essai', '2025-12-31', 'essai');
+      perform set_config('jd.validation_exercice', '', true);
       set local role authenticated;
       perform set_config('request.jwt.claims', json_build_object('sub', chef, 'role','authenticated')::text, true);
       if obs like '19.%' then perform ecrire_dotation_amortissement(bien, 2025, d2025);

@@ -48,6 +48,7 @@ export const RELATIONS: readonly Relation[] = [
   { enfant: 'emails_envoyes', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'met_a_null' },
   { enfant: 'emprunts', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'exercices_clotures', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
+  { enfant: 'exercices_valides', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'facture_lignes', parent: 'factures_emises', colonne: 'facture_id', aLaSuppression: 'cascade' },
   { enfant: 'facture_numerotation', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
   { enfant: 'facture_superpdp_events', parent: 'dossiers', colonne: 'dossier_id', aLaSuppression: 'cascade' },
@@ -106,7 +107,13 @@ export const RELATIONS: readonly Relation[] = [
 // casse bruyamment au lieu de casser une nuit de restauration.
 //
 // Les tables sans aucune dépendance (cabinets, super_admins, taux_change_bce) viennent en tête ;
-// `ecritures_brouillon` ferme la marche, car elle dépend de tout le reste de la chaîne comptable.
+// `ecritures_brouillon` suit tout le reste de la chaîne comptable, dont elle dépend.
+//
+// `exercices_valides` ferme la marche, et ce n'est pas le tri qui l'y met : son seul parent est le dossier.
+// Réinsérée, une validation fige son exercice — la base refuse alors d'y poser un mouvement, une part, un
+// bien, une ligne du cadre 7, une échéance, un à-nouveau ou une écriture, et ne laisse le super-administrateur
+// réinsérer une écriture DÉJÀ validée que dans un dossier qui n'a encore aucun exercice validé. Posée avant,
+// elle ferait échouer la restauration de tout ce qui la suit. `sauvegarde.test.ts` la garde en dernier.
 export const ORDRE_RESTAURATION: readonly string[] = [
   'cabinets',
   'super_admins',
@@ -155,6 +162,7 @@ export const ORDRE_RESTAURATION: readonly string[] = [
   'piece_commentaires',
   'piece_textes_ocr',
   'ecritures_brouillon',
+  'exercices_valides',
 ]
 
 // Une table qui se référence elle-même ne peut PAS être restaurée en un seul passage : la première
@@ -218,7 +226,7 @@ type Contenu = Record<string, Record<string, unknown>[]>
 // `contenu` est la sauvegarde entière : un tableau de lignes par table.
 //
 // La comparaison se fait sur `id`, et c'est justifié mais pas évident : `id` n'est PAS la clé primaire
-// partout — six tables ont une autre clé, et aucune des six n'a même de colonne `id` (voir
+// partout — sept tables ont une autre clé, et aucune des sept n'a même de colonne `id` (voir
 // CLES_PRIMAIRES). Ce qui rend la lecture correcte ici, c'est qu'une clé étrangère d'une seule colonne
 // ne peut viser qu'une clé primaire d'une seule colonne : toutes les tables PARENTES du graphe ont
 // donc `id`. `sauvegardeClesPrimaires.test.ts` le vérifie — en DÉRIVANT les clés primaires du
@@ -260,26 +268,28 @@ export function liensPerdus(contenu: Contenu): LienPerdu[] {
   return perdus
 }
 
-// Les clés primaires qui ne sont pas `id`, lues de pg_constraint le 18/09/2026.
+// Les clés primaires qui ne sont pas `id`, lues de pg_constraint le 18/09/2026 — et celle d'`exercices_valides`
+// (le dossier et l'année) à sa création, le 04/10/2026.
 //
 // Pourquoi les inscrire : deux mécanismes en dépendent, et tous deux échouaient dessus.
 //
 // La pagination d'abord. Lire une table par tranches sans ORDER BY laisse Postgres rendre les lignes
 // dans l'ordre qui l'arrange, et il peut changer d'une tranche à l'autre : on récupère alors des
 // doublons et des trous, sans la moindre erreur. Il faut donc trier sur un ordre TOTAL, c'est-à-dire
-// sur la clé primaire — et trier sur `id` casserait franchement ici, ces six tables n'ayant pas même
+// sur la clé primaire — et trier sur `id` casserait franchement ici, ces sept tables n'ayant pas même
 // de colonne `id`.
 //
 // L'identité d'une ligne ensuite : savoir si une ligne existe déjà dans la base d'arrivée, ce dont
 // dépend la réinsertion des lignes partagées, ne peut se lire que sur sa vraie clé.
 //
-// Trois de ces six sont dans le plan d'export d'un dossier : `facture_numerotation`,
+// Quatre de ces sept sont dans le plan d'export d'un dossier : `exercices_valides`, `facture_numerotation`,
 // `previsionnels_bancaires` et `superpdp_credentials`. Elles sont petites par nature — une ligne par
 // dossier, ou par exercice — donc la pagination ne s'y déclenchera jamais en pratique. Ce n'est pas
 // une raison de les traiter à part : un mécanisme dont la justesse dépend de la petitesse des données
 // est un mécanisme qui tombera le jour où elles grandissent.
 export const CLES_PRIMAIRES: Readonly<Record<string, readonly string[]>> = {
   cabinet_admins: ['user_id'],
+  exercices_valides: ['dossier_id', 'annee'],
   facture_numerotation: ['dossier_id', 'annee', 'type'],
   previsionnels_bancaires: ['dossier_id'],
   super_admins: ['user_id'],
@@ -423,6 +433,7 @@ export const CHEMINS_DOSSIER: Readonly<Record<string, CheminDossier>> = {
   emails_envoyes: { acces: 'direct' },
   emprunts: { acces: 'direct' },
   exercices_clotures: { acces: 'direct' },
+  exercices_valides: { acces: 'direct' },
   facture_numerotation: { acces: 'direct' },
   facture_superpdp_events: { acces: 'direct' },
   factures_emises: { acces: 'direct' },

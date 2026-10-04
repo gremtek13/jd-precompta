@@ -8,6 +8,7 @@ import {
   ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux,
   ventilationsIncoherentes,
 } from './ventilationBanque'
+import { NON_VALIDEE } from '../test/ecritures'
 
 // L'ASSISTANT RECOPIE CE QUE LA CHECKLIST DIT DES MOUVEMENTS VENTILÉS (30/09/2026, ligne 26.6).
 //
@@ -92,7 +93,7 @@ const part = (
 })
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'l', date: '2025-03-31', compte: COMPTE_BANQUE,
-  libelle: 'PRLV OPERATEUR', sens: 'credit', montant: 120, statut: 'proposee', immobilisation_id: null, vehicule_id: null, created_at: '2025-04-01T09:00:00Z', ...o,
+  libelle: 'PRLV OPERATEUR', sens: 'credit', montant: 120, statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-04-01T09:00:00Z', ...o,
 })
 const sansLibelle = (e: { compte: string; sens: string; montant: number }[] | null) =>
   e && e.map(({ compte, sens, montant }) => ({ compte, sens, montant }))
