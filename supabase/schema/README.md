@@ -74,8 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 04/10/2026** : 77 fichiers, 77 migrations, empreinte globale
-`636f16ed07dffc6870d329b09675a74d` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 04/10/2026** : 78 fichiers, 78 migrations, empreinte globale
+`f2e1565fa5a71ee2b87a25cd793e063c` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -108,11 +108,11 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
   le socle au caractère près (73 instructions, empreinte `d54f21f99d32fb98ca5abdc7a5e3435f` le
-  04/10/2026, après le lien d'une écriture à son véhicule), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  04/10/2026, rejoué après les deux fonctions du forfait kilométrique), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (893 objets, empreinte `d36d197c500a90bf03366e370d474bfd` le 04/10/2026, après le barème kilométrique et le lien d'une écriture à son véhicule). C'est le seul qui voie un
+  (895 objets, empreinte `f03fdfc3a9a53f42dd8337a5e55d8edf` le 04/10/2026, après les deux fonctions qui écrivent et retirent le forfait kilométrique). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.
