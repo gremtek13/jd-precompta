@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { genererFec, libelleCompte, nomFichierFec } from './fec'
+import { formaterFec, genererFec, libelleCompte, nomFichierFec, numeroterFec, numerotationValidee, type NumerotationFec } from './fec'
 import { COMPTE_BANQUE } from './comptes'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
@@ -285,10 +285,10 @@ describe('genererFec — en engagement', () => {
     expect(rows().map((r) => [r[0], r[2], r[3], r[4]])).toEqual([
       ['AC', 'AC00001', '20260310', '606100'],
       ['AC', 'AC00001', '20260310', '401000'],
-      ['VE', 'VE00001', '20260315', '706000'],
       ['VE', 'VE00001', '20260315', '411000'],
-      ['BQ', 'BQ00001', '20260320', '411000'],
+      ['VE', 'VE00001', '20260315', '706000'],
       ['BQ', 'BQ00001', '20260320', COMPTE_BANQUE],
+      ['BQ', 'BQ00001', '20260320', '411000'],
       ['BQ', 'BQ00002', '20260405', '401000'],
       ['BQ', 'BQ00002', '20260405', COMPTE_BANQUE],
     ])
@@ -304,10 +304,10 @@ describe('genererFec — en engagement', () => {
     expect(rows().map((r) => [r[4], r[6], r[7]])).toEqual([
       ['606100', '', ''],
       ['401000', 'FTRANSMEDICAL', 'Transmedical'],
+      ['411000', 'CCPAM', 'CPAM'],
       ['706000', '', ''],
-      ['411000', 'CCPAM', 'CPAM'],
-      ['411000', 'CCPAM', 'CPAM'],
       [COMPTE_BANQUE, '', ''],
+      ['411000', 'CCPAM', 'CPAM'],
       ['401000', 'FTRANSMEDICAL', 'Transmedical'],
       [COMPTE_BANQUE, '', ''],
     ])
@@ -322,6 +322,22 @@ describe('genererFec — en engagement', () => {
     )
     const libelles = new Set(colonnes(fec).slice(1).filter((r) => r[6] === 'FTRANSMEDICAL').map((r) => r[7]))
     expect(libelles).toEqual(new Set(['Transmedical']))
+  })
+
+  // Le PREMIER RENCONTRÉ DANS L'ORDRE DU FICHIER, pas dans celui de la numérotation : un règlement écrit sans sa
+  // facture et la facture d'une autre pièce du même fournisseur, le même jour, se numérotent dans l'ordre de leurs
+  // clés mais s'impriment journal des achats d'abord. Le libellé figé à la validation doit être celui qu'on lit.
+  it('prend le libellé d’un compte auxiliaire dans l’ordre du fichier', () => {
+    const reglee = piece('aa', { tiers: 'Transmedical', date_piece: '2026-05-02', montant_ttc: 80 })
+    const facturee = piece('zz', { tiers: 'TRANSMEDICAL SARL', date_piece: '2026-05-02', montant_ttc: 90 })
+    const rows = colonnes(genererFec([
+      ligne('aa', { id: 'r1', compte: '401000', sens: 'debit', montant: 80, date: '2026-05-02', ligne_bancaire_id: 'l-aa' }),
+      ligne('aa', { id: 'r2', compte: COMPTE_BANQUE, sens: 'credit', montant: 80, date: '2026-05-02', ligne_bancaire_id: 'l-aa' }),
+      ligne('zz', { id: 'f1', compte: '606100', montant: 90, date: '2026-05-02' }),
+      ligne('zz', { id: 'f2', compte: '401000', sens: 'credit', montant: 90, date: '2026-05-02' }),
+    ], [reglee, facturee], [], [], 'engagement', [])).slice(1)
+    expect(rows.map((r) => r[0])).toEqual(['AC', 'AC', 'BQ', 'BQ'])
+    expect(rows.filter((r) => r[6] === 'FTRANSMEDICAL').map((r) => r[7])).toEqual(['TRANSMEDICAL SARL', 'TRANSMEDICAL SARL'])
   })
 
   it('garde une pièce en une seule écriture en trésorerie, contrepartie banque comprise', () => {
@@ -396,8 +412,8 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     expect(rows.map((r) => [r[0], r[1], r[2], r[3], r[4], r[8], r[9]])).toEqual([
       ['BQ', 'Banque', 'BQ00001', '20260228', '627000', 'Relevé bancaire', '20260228'],
       ['BQ', 'Banque', 'BQ00001', '20260228', COMPTE_BANQUE, 'Relevé bancaire', '20260228'],
-      ['BQ', 'Banque', 'BQ00002', '20260312', '706000', 'releve-mars-2026.pdf', '20260312'],
       ['BQ', 'Banque', 'BQ00002', '20260312', COMPTE_BANQUE, 'releve-mars-2026.pdf', '20260312'],
+      ['BQ', 'Banque', 'BQ00002', '20260312', '706000', 'releve-mars-2026.pdf', '20260312'],
     ])
     // Aucun compte auxiliaire : l'écriture va de la catégorie à la banque, sans tiers.
     expect(rows.every((r) => r[6] === '' && r[7] === '')).toBe(true)
@@ -461,8 +477,8 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [pret])).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[4], r[5], r[8], r[11], r[12]])).toEqual([
       ['BQ', 'BQ00001', '164000', 'Emprunts auprès des établissements de crédit', 'releve-mars-2026.pdf', '482,97', '0,00'],
-      ['BQ', 'BQ00001', '661100', 'Intérêts des emprunts et dettes', 'releve-mars-2026.pdf', '36,00', '0,00'],
       ['BQ', 'BQ00001', '616800', 'Assurance des emprunts', 'releve-mars-2026.pdf', '21,03', '0,00'],
+      ['BQ', 'BQ00001', '661100', 'Intérêts des emprunts et dettes', 'releve-mars-2026.pdf', '36,00', '0,00'],
       ['BQ', 'BQ00001', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '540,00'],
     ])
     // Le garde symétrique : une fois le rapprochement retiré, la même écriture n'a plus de justificatif.
@@ -483,8 +499,8 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ]
     const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [urssaf])).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[4], r[5], r[8], r[11], r[12]])).toEqual([
-      ['BQ', 'BQ00001', '646000', "Cotisations sociales personnelles de l'exploitant", 'releve-mars-2026.pdf', '451,50', '0,00'],
       ['BQ', 'BQ00001', '108000', "Compte de l'exploitant", 'releve-mars-2026.pdf', '48,50', '0,00'],
+      ['BQ', 'BQ00001', '646000', "Cotisations sociales personnelles de l'exploitant", 'releve-mars-2026.pdf', '451,50', '0,00'],
       ['BQ', 'BQ00001', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '500,00'],
     ])
     // Le garde symétrique : le rapprochement annulé, la même écriture n'a plus de justificatif.
@@ -505,8 +521,8 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
     ]
     const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [telephone])).slice(1)
     expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[8], r[11], r[12]])).toEqual([
-      ['BQ', 'BQ00001', '20260315', '626000', 'releve-mars-2026.pdf', '84,00', '0,00'],
       ['BQ', 'BQ00001', '20260315', '108000', 'releve-mars-2026.pdf', '36,00', '0,00'],
+      ['BQ', 'BQ00001', '20260315', '626000', 'releve-mars-2026.pdf', '84,00', '0,00'],
       ['BQ', 'BQ00001', '20260315', COMPTE_BANQUE, 'releve-mars-2026.pdf', '0,00', '120,00'],
     ])
     // Le garde symétrique : la ventilation annulée, la même écriture n'a plus de justificatif.
@@ -618,5 +634,144 @@ describe('genererFec — les forfaits kilométriques', () => {
   it('n’ont pas de compte auxiliaire, même au compte courant du dirigeant en engagement', () => {
     const rows = colonnes(genererFec(forfait('v1', 23.81, '2026-12-31', '455000'), [], [], [], 'engagement', [])).slice(1)
     expect(rows.map((r) => [r[4], r[6], r[7]])).toEqual([['625110', '', ''], ['455000', '', '']])
+  })
+})
+
+// ═══ La numérotation, partagée avec la validation d'un exercice (ligne 26.6, étape d) ════════════════
+// `valider_exercice` reçoit ce que `numeroterFec` décide et le fige sur les écritures ; le FEC d'un exercice
+// validé se relit ensuite depuis ce qui a été figé. Les deux temps doivent rendre le même fichier.
+describe('numeroterFec — ce que la validation reçoit', () => {
+  const achat = piece('achat', { tiers: 'Transmedical', montant_ttc: 120, nom_fichier: 'facture-mars.pdf' })
+  const vente = piece('vente', { tiers: 'CPAM', type_piece: 'vente', date_piece: '2026-03-15', montant_ttc: 50 })
+  const brouillon = [
+    ligne('achat', { id: 'a1', compte: '606100', sens: 'debit', montant: 120 }),
+    ligne('achat', { id: 'a2', compte: '401000', sens: 'credit', montant: 120 }),
+    ligne('achat', { id: 'a3', compte: '401000', sens: 'debit', montant: 120, date: '2026-04-05', ligne_bancaire_id: 'l-achat' }),
+    ligne('achat', { id: 'a4', compte: COMPTE_BANQUE, sens: 'credit', montant: 120, date: '2026-04-05', ligne_bancaire_id: 'l-achat' }),
+    ligne('vente', { id: 'v1', compte: '706000', sens: 'credit', montant: 50, date: '2026-03-15' }),
+    ligne('vente', { id: 'v2', compte: '411000', sens: 'debit', montant: 50, date: '2026-03-15' }),
+  ]
+
+  it('donne à chaque ligne son journal, son numéro, sa pièce et le libellé de son compte', () => {
+    const n = numeroterFec(brouillon, [achat, vente], [], [], 'engagement', [])
+    expect(n.lignes.map((l) => [l.ecriture.id, l.journal, l.numero, l.pieceRef, l.pieceDate, l.compteLib, l.compAuxNum, l.compAuxLib, l.validDate])).toEqual([
+      ['a1', 'AC', 1, 'facture-mars.pdf', '2026-03-10', '606100', null, null, '2026-03-10'],
+      ['a2', 'AC', 1, 'facture-mars.pdf', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-03-10'],
+      ['v2', 'VE', 1, 'vente.pdf', '2026-03-15', 'Clients', 'CCPAM', 'CPAM', '2026-03-15'],
+      ['v1', 'VE', 1, 'vente.pdf', '2026-03-15', '706000', null, null, '2026-03-15'],
+      ['a3', 'BQ', 1, 'facture-mars.pdf', '2026-03-10', 'Fournisseurs', 'FTRANSMEDICAL', 'Transmedical', '2026-04-05'],
+      ['a4', 'BQ', 1, 'facture-mars.pdf', '2026-03-10', 'Banque', null, null, '2026-04-05'],
+    ])
+    expect(n.horsFec).toEqual([])
+  })
+
+  // La lecture rend les lignes dans l'ordre qu'on lui demande — Écritures lit par date décroissante. Le
+  // fichier, lui, ne doit pas en dépendre : c'est ce qui permet au FEC relu depuis un exercice validé d'être
+  // celui qu'on aurait exporté la veille.
+  it('rend le même fichier quel que soit l’ordre de lecture', () => {
+    const fec = (ecritures: EcritureBrouillon[]) => genererFec(ecritures, [achat, vente], [], [], 'engagement', [])
+    const attendu = fec(brouillon)
+    expect(fec([...brouillon].reverse())).toBe(attendu)
+    expect(fec([brouillon[3], brouillon[0], brouillon[5], brouillon[2], brouillon[4], brouillon[1]])).toBe(attendu)
+  })
+
+  it('met dehors l’écriture que rien ne rattache, au lieu de l’imprimer', () => {
+    const orpheline = ligne('', { id: 'o1', piece_id: null, compte: '606100', montant: 19.99 })
+    const n = numeroterFec([...brouillon, orpheline], [achat, vente], [], [], 'engagement', [])
+    expect(n.horsFec.map((e) => e.id)).toEqual(['o1'])
+    expect(n.lignes.some((l) => l.ecriture.id === 'o1')).toBe(false)
+  })
+
+  it('ne laisse jamais une pièce sans référence', () => {
+    const sansNom = piece('p-sans-nom-de-fichier', { nom_fichier: '  ' })
+    const n = numeroterFec([ligne('p-sans-nom-de-fichier')], [sansNom], [], [], 'tresorerie', [])
+    expect(n.lignes[0].pieceRef).toBe('p-sans-n')
+  })
+
+  // La validation refuse un compte qui porte deux libellés, à-nouveaux compris : le FEC aussi n'en écrit qu'un.
+  it('donne un seul libellé à un compte, à-nouveaux et écritures compris', () => {
+    const ouverture: ANouveau = {
+      id: 'an1', dossier_id: 'd1', date: '2026-01-01', compte: '455100', compte_origine: '4551', libelle: 'Compte courant M. Martin',
+      sens: 'credit', montant: 1000, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
+      created_at: '2026-02-01T00:00:00Z',
+    }
+    const n = numeroterFec([ligne('p1', { compte: '455100' })], [piece('p1')], [], [ouverture], 'tresorerie', [])
+    expect(n.aNouveaux.map((a) => a.compteLib)).toEqual(['Compte courant M. Martin'])
+    expect(n.lignes.map((l) => l.compteLib)).toEqual(['Compte courant M. Martin'])
+  })
+
+  it('garde le libellé de l’application pour un compte qu’elle tient, même repris', () => {
+    const ouverture: ANouveau = {
+      id: 'an1', dossier_id: 'd1', date: '2026-01-01', compte: COMPTE_BANQUE, compte_origine: '51210000', libelle: 'BNP Paribas',
+      sens: 'debit', montant: 1000, source_nom: 'balance.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
+      created_at: '2026-02-01T00:00:00Z',
+    }
+    const n = numeroterFec([], [], [], [ouverture], 'tresorerie', [])
+    expect(n.aNouveaux.map((a) => [a.compteLib, a.ecritureLib])).toEqual([['Banque', 'À-nouveau 51210000 BNP Paribas']])
+  })
+})
+
+describe('numerotationValidee — le FEC d’un exercice validé se relit depuis ce qui a été figé', () => {
+  const achat = piece('achat', { tiers: 'Transmedical', montant_ttc: 120, nom_fichier: 'facture-mars.pdf' })
+  const brouillon = [
+    ligne('achat', { id: 'a1', compte: '606100', sens: 'debit', montant: 120 }),
+    ligne('achat', { id: 'a2', compte: '401000', sens: 'credit', montant: 120 }),
+    ligne('achat', { id: 'a3', compte: '401000', sens: 'debit', montant: 120, date: '2026-04-05', ligne_bancaire_id: 'l-achat' }),
+    ligne('achat', { id: 'a4', compte: COMPTE_BANQUE, sens: 'credit', montant: 120, date: '2026-04-05', ligne_bancaire_id: 'l-achat' }),
+  ]
+  const ouverture: ANouveau = {
+    id: 'an1', dossier_id: 'd1', date: '2026-01-01', compte: COMPTE_BANQUE, compte_origine: '512', libelle: 'Banque',
+    sens: 'debit', montant: 2500, source_nom: 'balance-2025.csv', source_empreinte: 'a'.repeat(64), ...A_NOUVEAU_NON_VALIDE,
+    created_at: '2026-02-01T00:00:00Z',
+  }
+  // Ce que `valider_exercice` écrit sur chaque écriture et chaque à-nouveau : ce que la numérotation a décidé.
+  const VALIDE_LE = '2027-01-14T23:30:00Z' // le 15 janvier à Paris
+  const valider = (n: NumerotationFec): { ecritures: EcritureBrouillon[]; aNouveaux: ANouveau[] } => ({
+    ecritures: n.lignes.map((l) => ({
+      ...l.ecriture, statut: 'validee', valide_le: VALIDE_LE, journal_code: l.journal, numero_ecriture: l.numero,
+      piece_ref: l.pieceRef, piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
+    })),
+    aNouveaux: n.aNouveaux.map((a) => ({ ...a.aNouveau, compte_lib: a.compteLib, ecriture_lib: a.ecritureLib })),
+  })
+
+  it('relit le fichier d’avant la validation, à ValidDate près', () => {
+    const avant = numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', [])
+    const { ecritures, aNouveaux } = valider(avant)
+    const apres = numerotationValidee([...ecritures].reverse(), aNouveaux, VALIDE_LE)
+    expect(apres.horsFec).toEqual([])
+    const sansValidDate = (fec: string) => colonnes(fec).map((r) => r.filter((_, i) => i !== 15))
+    expect(sansValidDate(formaterFec(apres))).toEqual(sansValidDate(formaterFec(avant)))
+    // Et ValidDate devient le jour de la validation, à Paris — le 15 et non le 14, quel que soit le fuseau.
+    expect(colonnes(formaterFec(apres)).slice(1).map((r) => r[15])).toEqual(Array(5).fill('20270115'))
+  })
+
+  it('ne relit plus rien des pièces ni des catégories d’aujourd’hui', () => {
+    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', []))
+    // Ce que la validation a figé, même si l'application nommerait autrement ce compte aujourd'hui.
+    const figees = ecritures.map((e) => (e.compte === '606100' ? { ...e, compte_lib: 'Achats de fournitures (2026)' } : e))
+    const rows = colonnes(formaterFec(numerotationValidee(figees, aNouveaux, VALIDE_LE))).slice(1)
+    expect(rows.find((r) => r[4] === '606100')![5]).toBe('Achats de fournitures (2026)')
+    expect(rows.find((r) => r[0] === 'AN')!.slice(4, 6)).toEqual([COMPTE_BANQUE, 'Banque'])
+  })
+
+  it('lit les libellés figés des à-nouveaux', () => {
+    const fige = { ...ouverture, compte_lib: 'Banque', ecriture_lib: 'À-nouveau 512 Banque Populaire' }
+    const rows = colonnes(formaterFec(numerotationValidee([], [fige], VALIDE_LE))).slice(1)
+    expect(rows.map((r) => [r[0], r[5], r[10], r[15]])).toEqual([['AN', 'Banque', 'À-nouveau 512 Banque Populaire', '20270115']])
+  })
+
+  it('met dehors une écriture qui ne porte pas sa validation, au lieu de l’imprimer à moitié', () => {
+    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', []))
+    const n = numerotationValidee([...ecritures, ligne('achat', { id: 'a5' })], aNouveaux, VALIDE_LE)
+    expect(n.horsFec.map((e) => e.id)).toEqual(['a5'])
+    expect(n.lignes).toHaveLength(4)
+  })
+
+  // DÉFENSIF, et dit comme tel : la base interdit à une écriture proposée de porter les champs d'une validation
+  // (`ecritures_brouillon_validation_complete`). Si elle en portait, le fichier d'un exercice validé ne l'imprime pas.
+  it('n’imprime jamais une écriture proposée, même si elle portait les champs d’une validation', () => {
+    const { ecritures, aNouveaux } = valider(numeroterFec(brouillon, [achat], [], [ouverture], 'engagement', []))
+    const n = numerotationValidee([{ ...ecritures[0], statut: 'proposee' }, ...ecritures.slice(1)], aNouveaux, VALIDE_LE)
+    expect(n.horsFec.map((e) => e.id)).toEqual([ecritures[0].id])
   })
 })

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ajouterJours, ajouterMois, anneeDe, anneeEtMoisEcoules, anneeLocaleDe, aujourdHuiSql, cleFournisseur, comptesParMois, dateLocaleDe, dernierJourDuMois, formatDate, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
+import { ajouterJours, ajouterMois, anneeDe, anneeEtMoisEcoules, anneeLocaleDe, aujourdHuiAParis, aujourdHuiSql, cleFournisseur, dateAParis, comptesParMois, dateLocaleDe, dernierJourDuMois, formatDate, jourDe, moisDe, nomUnique, premierJourDuMoisCourant } from './format'
 
 // Ces primitives existent pour une raison précise : trois calculs de dates de l'application
 // passaient par `new Date(...)` puis `toISOString()`, ce qui rendait la veille du bon jour dès que
@@ -460,5 +460,43 @@ describe('anneeEtMoisEcoules', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date(2027, 0, 15, 12, 0, 0))
     expect(anneeEtMoisEcoules()).toEqual({ annee: 2027, moisEcoules: 0 })
+  })
+})
+
+// LA DATE À PARIS, QUEL QUE SOIT LE FUSEAU DE QUI REGARDE (lib/format.ts, `dateAParis`). La base lit l'année en
+// cours à Paris pour borner la validation d'un exercice, et un FEC validé porte en ValidDate le jour de sa
+// validation à Paris : deux exports doivent rendre le même fichier où que soit le poste. Le test choisit donc
+// lui-même des fuseaux où le jour de Paris n'est PAS celui du poste — sous Europe/Paris, une mise en œuvre qui
+// lirait le fuseau local passerait.
+describe('dateAParis', () => {
+  const fuseauDOrigine = process.env.TZ
+  afterEach(() => {
+    process.env.TZ = fuseauDOrigine
+    vi.useRealTimers()
+  })
+
+  for (const fuseau of ['America/Los_Angeles', 'Pacific/Auckland', 'UTC', 'Europe/Paris']) {
+    it(`date à Paris un instant vu de ${fuseau}`, () => {
+      process.env.TZ = fuseau
+      // 23 h 30 UTC un soir d'hiver : déjà le lendemain à Paris (UTC+1).
+      expect(dateAParis('2027-01-14T23:30:00Z')).toBe('2027-01-15')
+      // 22 h 30 UTC un soir d'été : déjà le lendemain à Paris (UTC+2), la veille encore à Los Angeles.
+      expect(dateAParis('2026-07-03T22:30:00Z')).toBe('2026-07-04')
+      // 21 h 30 UTC le soir d'été : encore le même jour à Paris, déjà le lendemain à Auckland.
+      expect(dateAParis(new Date('2026-07-03T21:30:00Z'))).toBe('2026-07-03')
+      // La nuit du Nouvel An : l'année change à Paris avant de changer en UTC.
+      expect(dateAParis('2026-12-31T23:15:00Z')).toBe('2027-01-01')
+    })
+  }
+
+  // Le paramètre par défaut est un angle mort des tests (CLAUDE.md) : `aujourdHuiAParis` lit l'horloge à
+  // chaque appel, et un poste à Los Angeles voit encore la veille quand Paris a changé de jour.
+  it('lit aujourd’hui à Paris à chaque appel', () => {
+    process.env.TZ = 'America/Los_Angeles'
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-12-31T22:00:00Z'))
+    expect(aujourdHuiAParis()).toBe('2026-12-31')
+    vi.setSystemTime(new Date('2026-12-31T23:30:00Z'))
+    expect(aujourdHuiAParis()).toBe('2027-01-01')
   })
 })
