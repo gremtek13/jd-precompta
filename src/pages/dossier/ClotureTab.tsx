@@ -1,10 +1,10 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { anneeDe, aujourdHuiSql, formatMoney, formatDate } from '../../lib/format'
+import { anneeDe, aujourdHuiAParis, aujourdHuiSql, formatMoney, formatDate } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
 import { montantRetenu } from '../../lib/montantRetenu'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
-import { calculerDeclaration2035, partCsgNonDeductible, type PartCsgNonDeductible } from '../../lib/declaration2035'
+import { calculerDeclaration2035, partCsgNonDeductible, type Declaration2035, type PartCsgNonDeductible } from '../../lib/declaration2035'
 import { dotationDeLExercice } from '../../lib/amortissements'
 import { amortissementsSousLeBareme } from '../../lib/forfaitKilometrique'
 import {
@@ -22,27 +22,53 @@ import { partsDuReleve } from '../../lib/partsDuReleve'
 import { cotisationsComptees } from '../../lib/cotisationRapprochee'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
+import type { ModeleComptable } from '../../lib/engagement'
+import type { DossierTab } from '../../lib/ongletsDossier'
+import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
+import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
+import { prealablesDeValidation, prochainExerciceAValider } from '../../lib/prealablesValidation'
+import {
+  casesDeLInstantane, casesQuiDifferent, demandeDeValidation, instantane2035, lireInstantane2035, type Instantane2035,
+} from '../../lib/validationExercice'
 import type {
-  ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire, ModeComptable, NatureImmobilisation, Piece,
-  ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, EcritureBrouillon, ExerciceValide, Immobilisation, LigneBancaire,
+  NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useAnnee } from '../../context/AnneeContext'
+import { useAuth } from '../../context/AuthContext'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import VoletSocialCard from './VoletSocialCard'
 import ConcordanceCard from './ConcordanceCard'
+import ValidationExerciceCard from './ValidationExerciceCard'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer d'impôt.
 // Chaque pièce rejoint l'exercice de son PAIEMENT quand le rapprochement bancaire le connaît, sa date
 // de facture sinon — et l'écran liste celles qui comptent ainsi faute de paiement (voir
 // lib/rattachement.ts) : c'est la règle BNC des recettes encaissées et des dépenses payées.
-// `modeComptable` : un dossier tenu en ENGAGEMENT (BIC, IS) ne produit pas de 2035 — elle déclare des
+// `modele` : un dossier tenu en ENGAGEMENT (BIC, IS) ne produit pas de 2035 — elle déclare des
 // bénéfices non commerciaux, tenus en trésorerie. L'écran le dit, et n'y garde que la clôture de
-// l'exercice, qui ne dépend pas de la déclaration (purge du texte lu, fin des relances).
-export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: { dossierId: string; assujettiTva: boolean; modeComptable: ModeComptable }) {
+// l'exercice, qui ne dépend pas de la déclaration (purge du texte lu, fin des relances), et sa
+// validation. Le modèle ENTIER, pas seulement son mode : la validation juge l'écriture d'un virement
+// personnel et d'un forfait sur le compte du dirigeant qu'il désigne (lib/prealablesValidation.ts).
+//
+// LA VALIDATION D'UN EXERCICE (ligne 26.6, étape d) vit ici, sous la déclaration qu'elle fige : une carte
+// par exercice dit ce qui l'empêche, valide, puis montre l'exercice validé (ValidationExerciceCard). Un
+// exercice validé en trésorerie montre la 2035 TELLE QU'ELLE A ÉTÉ VALIDÉE — l'instantané gardé par la
+// base —, pas un calcul d'aujourd'hui, et dit les cases où un nouveau calcul ne la retrouverait plus.
+export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate }: {
+  dossierId: string
+  assujettiTva: boolean
+  modele: ModeleComptable
+  onNavigate?: (tab: DossierTab) => void
+}) {
+  const modeComptable = modele.mode
+  // Seul le chef du cabinet valide un exercice (décision du 04/10/2026) — la base le refuse aux autres, et la
+  // carte ne leur propose pas le geste.
+  const { estChef } = useAuth()
   const [categories, setCategories] = useState<Categorie[]>([])
   const [piecesValidees, setPiecesValidees] = useState<Piece[]>([])
   // Non nul quand l'une des QUATRE collections dont dépend la déclaration n'a pas pu être lue en
@@ -57,7 +83,10 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // Cadre 7 du 2035-B : le total des indemnités kilométriques alimente la case BJ, ligne 23.
   const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
   // Les mouvements rapprochés d'une pièce : ce sont eux qui la DATENT (voir lib/rattachement.ts).
-  const [lignesBancaires, setLignesBancaires] = useState<LigneBancaire[]>([])
+  // TOUTES les lignes du relevé : la validation regarde aussi ce qui reste à traiter et les virements
+  // personnels (lib/prealablesValidation.ts). La 2035 ne lit que les rapprochées, comme avant.
+  const [toutesLesLignes, setToutesLesLignes] = useState<LigneBancaire[]>([])
+  const lignesBancaires = toutesLesLignes.filter((l) => l.statut === 'rapprochee')
   // Les parts des mouvements ventilés sur plusieurs comptes (lib/ventilationBanque.ts) : elles vivent
   // dans leur propre table, et la 2035 les compte comme des mouvements affectés.
   const [ventilations, setVentilations] = useState<VentilationBancaire[]>([])
@@ -78,7 +107,17 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // Le brouillon d'écritures et l'ouverture d'un dossier repris, pour la concordance de la 2035 avec les
   // écritures. Leur drapeau suspend la CONCORDANCE, pas le formulaire : la 2035 ne dépend pas des écritures.
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
+  // Les à-nouveaux entiers : la validation numérote ceux de l'exercice qu'ils ouvrent, et fige leurs libellés.
+  const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
   const [ouverture, setOuverture] = useState<string | null>(null)
+  // CE QUE LA VALIDATION LIT EN PLUS DE LA DÉCLARATION : les pièces à valider (un exercice ne se fige pas avec
+  // une pièce en suspens), les exercices déjà validés, et deux contrôles de la Checklist. Ces deux-là sont nuls
+  // quand on n'a pas pu les lire : ils ne se taisent pas, ils deviennent un préalable.
+  const [piecesAValider, setPiecesAValider] = useState<Piece[]>([])
+  const [exercicesValides, setExercicesValides] = useState<ExerciceValide[]>([])
+  const [relevesIncoherents, setRelevesIncoherents] = useState<ControleReleveBancaire[] | null>(null)
+  const [doublonsTexte, setDoublonsTexte] = useState<DoublonDeTexte[] | null>(null)
+  const [validationIncomplete, setValidationIncomplete] = useState<string | null>(null)
   const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -101,7 +140,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // (voir AnneeContext) — pas de sélecteur local ici. Sa valeur par défaut (voir DossierDetail,
   // calculerAnneeParDefaut) est déjà un exercice précis plutôt que "toutes", justement pour éviter
   // que Clôture s'ouvre sur un mélange de plusieurs exercices sans que l'utilisateur l'ait choisi.
-  const { annee: anneeFilter } = useAnnee()
+  const { annee: anneeFilter, setAnnee } = useAnnee()
 
   async function load() {
     setLoading(true)
@@ -115,7 +154,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     const [
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
-      lectureEcritures, lectureOuverture,
+      lectureEcritures, lectureOuverture, lectureAValider, lectureValides,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -143,12 +182,12 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
       // d'un infirmier, qui ne transmet pas ses bordereaux. Tronquée, cette lecture ferait retomber sur
       // leur date de facture des pièces payées une autre année, ou retirerait des recettes : une 2035
       // plausible, fausse et signée, comme pour les quatre autres entrées. Elle rejoint donc le même
-      // drapeau. Tous les rapprochés : une ligne rapprochée d'une échéance de cotisation la DATE (elle
-      // compte l'année de son prélèvement, lib/cotisationRapprochee.ts), et un filtre plus fin serait un
-      // second endroit où oublier les affectés.
+      // drapeau. TOUT le relevé : la 2035 n'en garde que les rapprochées (une ligne rapprochée d'une
+      // échéance de cotisation la DATE, lib/cotisationRapprochee.ts), la validation lit aussi ce qui reste
+      // à traiter et les virements personnels.
       lireTout<LigneBancaire>((debut, fin) =>
         supabase.from('lignes_bancaires').select('*', { count: 'exact' })
-          .eq('dossier_id', dossierId).eq('statut', 'rapprochee')
+          .eq('dossier_id', dossierId)
           .order('id').range(debut, fin),
       ),
       supabase.from('dossiers').select('nom, libelle_naf, siret').eq('id', dossierId).maybeSingle(),
@@ -185,11 +224,32 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
           .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
       ),
       // L'ouverture d'un dossier repris : un exercice qui la précède est dans la balance reprise, rien n'y est comparé.
-      lireTout<Pick<ANouveau, 'id' | 'date'>>((debut, fin) =>
-        supabase.from('a_nouveaux').select('id, date', { count: 'exact' })
+      // Les à-nouveaux entiers : la validation de l'exercice qu'ils ouvrent les numérote.
+      lireTout<ANouveau>((debut, fin) =>
+        supabase.from('a_nouveaux').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
       ),
+      lireTout<Piece>((debut, fin) =>
+        supabase.from('pieces').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'a_valider').order('id').range(debut, fin),
+      ),
+      lireTout<ExerciceValide>((debut, fin) =>
+        supabase.from('exercices_valides').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('annee').order('dossier_id').range(debut, fin),
+      ),
     ])
+    // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
+    // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
+    const [releves, doublons] = await Promise.all([
+      chargerRelevesIncoherents(dossierId).catch((err) => { console.error(err); return null }),
+      chargerDoublonsDeTexte(dossierId).catch((err) => { console.error(err); return null }),
+    ])
+    setRelevesIncoherents(releves)
+    setDoublonsTexte(doublons)
+    setPiecesAValider(lectureAValider.lignes)
+    setExercicesValides(lectureValides.lignes)
+    setValidationIncomplete([lectureAValider, lectureValides].find((l) => !l.complete)?.motif ?? null)
+    setANouveaux(lectureOuverture.lignes)
     setEcritures(lectureEcritures.lignes)
     setOuverture(lectureOuverture.lignes[0]?.date ?? null)
     setEcrituresIncompletes([lectureEcritures, lectureOuverture].find((l) => !l.complete)?.motif ?? null)
@@ -203,7 +263,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     setCloturesInconnues(clotures.erreur)
     setCloturesConnues(new Set(clotures.annees))
     setVehicules(lectureVehicules.lignes)
-    setLignesBancaires(lectureLignes.lignes)
+    setToutesLesLignes(lectureLignes.lignes)
     setCategories(lectureCategories.lignes)
     setPiecesValidees(lecturePieces.lignes)
     // Un seul drapeau pour les quatre : l'écran n'a rien de plus utile à dire selon laquelle a
@@ -271,6 +331,15 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // Les échéances de cotisation à la date et au montant du mouvement qui les paie, sinon à leur échéance :
   // la 2035 et le FEC disent la même année (lib/cotisationRapprochee.ts).
   const comptees = cotisationsComptees(cotisations, lignesBancaires, modeComptable)
+  // L'année en cours À PARIS, comme la base la lit pour la validation.
+  const anneeCourante = Number(aujourdHuiAParis().slice(0, 4))
+  // Le prochain exercice à valider (lib/prealablesValidation.ts) : la liste le propose toujours, et les exercices
+  // validés aussi — sinon une année vide, ou qui ne porte qu'une échéance de cotisation, manquerait à la liste, et la
+  // validation de tous les exercices suivants l'attendrait sans que rien n'y mène.
+  const prochainAValider = prochainExerciceAValider({
+    anneeCourante, modele, anneesValidees: exercicesValides.map((e) => e.annee), aNouveaux, ecritures,
+    lignes: toutesLesLignes, reglements, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations,
+  })
   const anneesDisponibles = [...new Set([
     ...piecesValidees.flatMap((p) => anneesDesRattachements(rattachements(p, paiements.get(p.id) ?? [], modeComptable))),
     // Un exercice qui n'a que des encaissements sans bordereau, ou des intérêts d'emprunt, doit se
@@ -279,6 +348,8 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     ...comptees.map((c) => anneeDe(c.date)),
     ...immobilisations.map((i) => anneeDe(i.date_acquisition)),
     ...vehicules.map((v) => v.annee),
+    ...exercicesValides.map((e) => e.annee),
+    ...(prochainAValider !== null ? [prochainAValider] : []),
   ])].sort((a, b) => b - a)
 
   // Une pièce déjà enregistrée comme immobilisation est représentée par sa dotation annuelle (poste
@@ -381,29 +452,55 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // et quand il emporte sa case, c'est ici que ça se dit (lib/cases2035.ts, `casesNegatives`).
   const negatives = declarations.flatMap((d) => casesNegatives(d).map((c) => ({ annee: d.annee, ...c })))
 
+  // LA VALIDATION DE CHAQUE EXERCICE AFFICHÉ (lib/prealablesValidation.ts) : validé, ce que la base en garde ;
+  // sinon ce qui l'empêche, et ce que `valider_exercice` recevrait — la numérotation même du FEC et, en trésorerie,
+  // la 2035 telle qu'elle est affichée. L'année en cours est lue À PARIS, comme la base la lit. Une lecture
+  // partielle de l'une des collections lues ici suspend la validation, en le disant.
+  const motifValidation = lectureIncomplete ?? ecrituresIncompletes ?? naturesIncompletes ?? empruntsIncomplets ?? validationIncomplete
+  const entete = { nom: dossier?.nom ?? null, activite: dossier?.libelle_naf ?? null, siret: dossier?.siret ?? null }
+  const validationDe = (annee: number, formulaire?: { declaration: Declaration2035; valeurs: Map<string, number> }) => {
+    const valide = exercicesValides.find((e) => e.annee === annee) ?? null
+    if (valide) return { valide, etat: null, demande: null }
+    const etat = prealablesDeValidation({
+      annee, anneeCourante, modele, assujettiTva, anneesValidees: exercicesValides.map((e) => e.annee),
+      lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
+      lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, relevesIncoherents,
+      doublonsTexte,
+      declaration: formulaire?.declaration ?? null,
+      concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
+    })
+    const demande = etat.validable && etat.numerotation
+      ? demandeDeValidation(etat.numerotation, formulaire
+        ? instantane2035(formulaire.declaration, formulaire.valeurs, arrondirPourFormulaire(formulaire.valeurs, annee), entete)
+        : null)
+      : null
+    return { valide: null, etat, demande }
+  }
+
   // Verrou posé avant tout `await` — c'est ce qui le rend effectif contre un double clic, là où un
   // `disabled` piloté par un état React laisse passer le second clic (voir ImportDossierModal).
   const generationEnCours = useRef(false)
 
-  async function telechargerFormulaire(annee: number, valeurs: Map<string, number>) {
+  // `instantane` : la 2035 d'un exercice VALIDÉ, remplie telle qu'elle a été validée — ses cases à l'euro et son
+  // déclarant — plutôt que recalculée.
+  async function telechargerFormulaire(annee: number, valeurs: Map<string, number>, instantane: Instantane2035 | null = null) {
     if (generationEnCours.current || lectureIncomplete) return
     generationEnCours.current = true
     setError(null)
     try {
       // Arrondi à l'euro AVANT le dessin : le formulaire dit « ne pas porter les centimes », et les
       // totaux sont recalculés depuis les cases arrondies pour que la colonne s'additionne.
-      const { pdf, codesSansAncrage } = await remplir2035(arrondirPourFormulaire(valeurs, annee), {
-        nom: dossier?.nom ?? null,
-        activite: dossier?.libelle_naf ?? null,
-        siret: dossier?.siret ?? null,
-      })
+      const { pdf, codesSansAncrage } = await remplir2035(
+        instantane ? casesDeLInstantane(instantane.formulaire) : arrondirPourFormulaire(valeurs, annee),
+        instantane ? instantane.entete : entete,
+      )
       if (codesSansAncrage.length > 0) {
         setError(`Cases non placées sur le formulaire : ${codesSansAncrage.join(', ')} — leur montant manque sur le PDF.`)
       }
       const url = URL.createObjectURL(new Blob([pdf as BlobPart], { type: 'application/pdf' }))
       const lien = document.createElement('a')
       lien.href = url
-      lien.download = `2035-${annee}-${(dossier?.nom ?? 'dossier').replace(/[^\w-]+/g, '-')}.pdf`
+      lien.download = `2035-${annee}-${((instantane ? instantane.entete.nom : null) ?? dossier?.nom ?? 'dossier').replace(/[^\w-]+/g, '-')}.pdf`
       lien.click()
       URL.revokeObjectURL(url)
       setGenere(annee)
@@ -566,10 +663,16 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
           <div className="card"><div className="empty-state">Aucun exercice à clôturer pour l'instant.</div></div>
         ) : (
           exercicesACloturer.map((annee) => (
-            <div key={annee} className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-              <strong>Exercice {annee}</strong>
-              <BoutonCloture cloture={cloturesConnues.has(annee)} onCloturer={() => handleCloturer(annee)} />
-            </div>
+            <Fragment key={annee}>
+              <div className="card" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+                <strong>Exercice {annee}</strong>
+                <BoutonCloture cloture={cloturesConnues.has(annee)} onCloturer={() => handleCloturer(annee)} />
+              </div>
+              <ValidationExerciceCard
+                dossierId={dossierId} annee={annee} {...validationDe(annee)} estChef={estChef} onValide={load} onNavigate={onNavigate}
+                onChoisirExercice={setAnnee}
+              />
+            </Fragment>
           ))
         )}
       </>
@@ -1068,26 +1171,52 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
       ) : formulaires.length === 0 ? (
         <div className="card"><div className="empty-state">Rien à regrouper pour l'instant.</div></div>
       ) : (
-        formulaires.map((f) => (
-          <Fragment key={f.declaration.annee}>
-            <FormulaireAnnuel
-              dossierId={dossierId}
-              annee={f.declaration.annee}
-              valeurs={f.valeurs}
-              genere={genere === f.declaration.annee}
-              onTelecharger={() => telechargerFormulaire(f.declaration.annee, f.valeurs)}
-              blocage={lectureIncomplete}
-              cloture={cloturesConnues.has(f.declaration.annee)}
-              onCloturer={() => handleCloturer(f.declaration.annee)}
-            />
-            <ConcordanceCard
-              concordance={concordances.get(f.declaration.annee)!.concordance}
-              comptesPartages={concordances.get(f.declaration.annee)!.comptesPartages}
-              lectureIncomplete={lectureIncomplete ?? ecrituresIncompletes}
-              ouverture={ouverture}
-            />
-          </Fragment>
-        ))
+        formulaires.map((f) => {
+          const annee = f.declaration.annee
+          const validation = validationDe(annee, f)
+          // La 2035 d'un exercice validé est celle que la base garde, pas un calcul d'aujourd'hui. Illisible, elle ne
+          // s'affiche pas : montrer le calcul d'aujourd'hui à sa place laisserait signer autre chose que ce qui a été
+          // validé.
+          const instantane = validation.valide ? lireInstantane2035(validation.valide.declaration) : null
+          return (
+            <Fragment key={annee}>
+              {validation.valide && !instantane ? (
+                <div className="card" style={{ marginBottom: 20 }}>
+                  <strong>Exercice {annee}</strong>
+                  <p className="error-text" style={{ marginBottom: 0 }}>
+                    La 2035 validée de {annee} n'a pas pu être relue : elle ne s'affiche pas, plutôt que de montrer à
+                    sa place un calcul d'aujourd'hui qui n'est pas celui qui a été validé.
+                  </p>
+                </div>
+              ) : (
+                <FormulaireAnnuel
+                  dossierId={dossierId}
+                  annee={annee}
+                  valeurs={instantane ? casesDeLInstantane(instantane.cases) : f.valeurs}
+                  formulaire={instantane ? casesDeLInstantane(instantane.formulaire) : undefined}
+                  validee={validation.valide && instantane
+                    ? { le: validation.valide.valide_le, casesDifferentes: casesQuiDifferent(instantane, f.valeurs) }
+                    : undefined}
+                  genere={genere === annee}
+                  onTelecharger={() => telechargerFormulaire(annee, f.valeurs, instantane)}
+                  blocage={lectureIncomplete}
+                  cloture={cloturesConnues.has(annee)}
+                  onCloturer={() => handleCloturer(annee)}
+                />
+              )}
+              <ConcordanceCard
+                concordance={concordances.get(annee)!.concordance}
+                comptesPartages={concordances.get(annee)!.comptesPartages}
+                lectureIncomplete={lectureIncomplete ?? ecrituresIncompletes}
+                ouverture={ouverture}
+              />
+              <ValidationExerciceCard
+                dossierId={dossierId} annee={annee} {...validation} estChef={estChef} onValide={load} onNavigate={onNavigate}
+                onChoisirExercice={setAnnee}
+              />
+            </Fragment>
+          )
+        })
       )}
     </>
   )
@@ -1115,10 +1244,14 @@ function BoutonCloture({ cloture, onCloturer }: { cloture: boolean; onCloturer: 
 // Un exercice rendu dans la forme du formulaire : une ligne par case, dans l'ordre imprimé, avec son
 // code et son libellé officiels. C'est ce qui permet à l'expert-comptable de relire case par case
 // plutôt que de retraduire des « postes » maison — et c'est la même structure qui alimentera le PDF.
-function FormulaireAnnuel({ dossierId, annee, valeurs, genere, onTelecharger, blocage, cloture, onCloturer }: {
+function FormulaireAnnuel({ dossierId, annee, valeurs, formulaire, validee, genere, onTelecharger, blocage, cloture, onCloturer }: {
   dossierId: string
   annee: number
   valeurs: Map<string, number>
+  // Les cases à l'euro d'une 2035 VALIDÉE, telles que la base les garde ; sinon calculées depuis `valeurs`.
+  formulaire?: Map<string, number>
+  // Une 2035 validée : quand, et les cases qu'un calcul d'aujourd'hui ne retrouverait plus.
+  validee?: { le: string; casesDifferentes: string[] }
   genere: boolean
   onTelecharger: () => void
   // Non nul quand la lecture des pièces n'a pas pu se dire complète : le bouton est alors grisé et
@@ -1158,6 +1291,20 @@ function FormulaireAnnuel({ dossierId, annee, valeurs, genere, onTelecharger, bl
           </button>
         </div>
       </div>
+      {validee && (
+        <div style={{ padding: '0 16px 12px' }}>
+          <p className="muted" style={{ margin: 0 }}>
+            2035 validée le {formatDate(validee.le)} : elle est relue telle qu'elle a été validée, pas recalculée.
+          </p>
+          {validee.casesDifferentes.length > 0 && (
+            <p className="error-text" style={{ margin: '6px 0 0' }}>
+              Recalculée aujourd'hui, elle diffère sur {validee.casesDifferentes.length > 1 ? 'les cases' : 'la case'}
+              {' '}{validee.casesDifferentes.join(', ')} : une catégorie a changé de poste depuis, ou le calcul de
+              l'application a évolué. C'est la 2035 validée qui fait foi.
+            </p>
+          )}
+        </div>
+      )}
       <div className="table-scroll">
       <table>
         <thead>
@@ -1187,7 +1334,7 @@ function FormulaireAnnuel({ dossierId, annee, valeurs, genere, onTelecharger, bl
         </tbody>
       </table>
       </div>
-      {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && <ReportDeclarationRevenus annee={annee} valeurs={valeurs} />}
+      {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && <ReportDeclarationRevenus annee={annee} valeurs={valeurs} formulaire={formulaire} />}
       {annee >= PREMIER_EXERCICE_REVENU_BRUT_SOCIAL && (
         <VoletSocialCard dossierId={dossierId} annee={annee} valeurs={valeurs} blocage={blocage} />
       )}
@@ -1209,8 +1356,13 @@ function FormulaireAnnuel({ dossierId, annee, valeurs, genere, onTelecharger, bl
 // retrouvera prérempli — et ils peuvent différer d'un euro des montants au centime du tableau
 // (120,60 € d'achats s'impriment 121, 5 000,40 € de recettes 5 000, et le bénéfice 4 279,80 €
 // devient 4 279). Annoncer l'un pour l'autre ferait chercher un écart qui n'existe pas.
-function ReportDeclarationRevenus({ annee, valeurs }: { annee: number; valeurs: Map<string, number> }) {
-  const formulaire = arrondirPourFormulaire(valeurs, annee)
+function ReportDeclarationRevenus({ annee, valeurs, formulaire: fige }: {
+  annee: number
+  valeurs: Map<string, number>
+  // Les cases à l'euro d'une 2035 validée : le report dit ce qui a été validé, pas un nouvel arrondi.
+  formulaire?: Map<string, number>
+}) {
+  const formulaire = fige ?? arrondirPourFormulaire(valeurs, annee)
   const montant = (code: string) => `${formaterMontant(formulaire.get(code) ?? 0)} €`
   const deficit = formulaire.get('CR') ?? 0
   const brutNegatif = formulaire.get('DC') ?? 0

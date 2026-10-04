@@ -266,3 +266,13 @@ export function lireInstantane2035(valeur: unknown): Instantane2035 | null {
 export function casesDeLInstantane(cases: Readonly<Record<string, number>>): Map<string, number> {
   return new Map(Object.entries(cases))
 }
+
+// LES CASES OÙ LA 2035 RECALCULÉE AUJOURD'HUI NE RETROUVE PLUS LA 2035 VALIDÉE, au centime. Les sources de
+// l'exercice sont figées par la base, mais pas tout ce dont le calcul dépend : le poste d'une catégorie reste
+// libre, et le calcul de l'application peut évoluer. C'est la 2035 validée qui fait foi ; l'écran dit l'écart
+// au lieu de le taire, dans l'ordre des codes. Une case absente d'un côté vaut zéro.
+export function casesQuiDifferent(instantane: Instantane2035, valeurs: ReadonlyMap<string, number>): string[] {
+  const codes = new Set([...Object.keys(instantane.cases), ...valeurs.keys()])
+  const centimes = (n: number | undefined) => Math.round((n ?? 0) * 100)
+  return [...codes].filter((code) => centimes(instantane.cases[code]) !== centimes(valeurs.get(code))).sort()
+}

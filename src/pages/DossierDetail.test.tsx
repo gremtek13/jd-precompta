@@ -145,7 +145,32 @@ vi.mock('./dossier/EcrituresTab', () => ({
     </>
   ),
 }))
-vi.mock('./dossier/ClotureTab', () => doubleTva('Clôture'))
+// Clôture valide un exercice : elle reçoit le modèle ENTIER — la validation juge l'écriture d'un virement
+// personnel et d'un forfait sur le compte du dirigeant qu'il désigne — et la navigation, vers l'écran où lever
+// chaque préalable.
+// La double de Clôture choisit aussi un exercice, comme le fait sa carte de validation quand un préalable réclame
+// d'abord un autre exercice — par le vrai contexte d'exercice de la page.
+vi.mock('./dossier/ClotureTab', async () => {
+  const { useAnnee } = await import('../context/AnneeContext')
+  return {
+    default: function DoubleCloture({ assujettiTva, modele, onNavigate }: {
+      assujettiTva: boolean
+      modele: { mode: string; compteNotesDeFrais: string }
+      onNavigate: (tab: 'banque') => void
+    }) {
+      const { setAnnee } = useAnnee()
+      return (
+        <>
+          <p>Clôture — TVA {assujettiTva ? 'assujetti' : 'exonéré'}</p>
+          <p>Clôture — modèle {modele.mode}</p>
+          <p>Clôture — dirigeant {modele.compteNotesDeFrais}</p>
+          <button onClick={() => onNavigate('banque')}>Lever un préalable dans Banque</button>
+          <button onClick={() => setAnnee(2019)}>Choisir l’exercice 2019</button>
+        </>
+      )
+    },
+  }
+})
 vi.mock('./dossier/EstimationTab', () => doubleTva('Estimation'))
 vi.mock('./dossier/FinancementTab', () => doubleTva('Financement'))
 vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
@@ -487,6 +512,29 @@ describe('Page d’un dossier — le modèle comptable', () => {
       expect(screen.getByText(`${libelle} — modèle engagement`)).toBeTruthy()
     },
   )
+
+  it('l’onglet Clôture reçoit le modèle entier, et mène à l’écran où lever un préalable', async () => {
+    await afficher('/dossiers/d1/cloture')
+    expect(screen.getByText('Clôture — dirigeant 455000')).toBeTruthy()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Lever un préalable dans Banque' })) })
+    expect(screen.getByText('Banque — TVA exonéré')).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/cloture')
+    expect(screen.getByText('Clôture — dirigeant 108000')).toBeTruthy()
+  })
+
+  // Clôture mène à l'exercice que la validation réclame d'abord, qui peut ne porter ni pièce, ni mouvement, ni écriture :
+  // l'en-tête le montre choisi, plutôt que de laisser croire qu'on lit un autre exercice que celui affiché.
+  it('l’en-tête montre l’exercice choisi depuis Clôture, même quand rien ne le porte', async () => {
+    await afficher('/dossiers/d1/cloture')
+    expect(within(screen.getByRole('tablist', { name: 'Exercice' })).queryAllByRole('tab', { name: '2019' })).toHaveLength(0)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Choisir l’exercice 2019' })) })
+    const exercice = screen.getByRole('tablist', { name: 'Exercice' })
+    expect(within(exercice).getByRole('tab', { selected: true }).textContent).toBe('2019')
+    // Rangé avec les autres, du plus récent au plus ancien.
+    expect(within(exercice).getAllByRole('tab').map((t) => t.textContent)).toEqual(['Toutes', '2026', '2025', '2019'])
+  })
 
   // La carte Véhicules de l'onglet Informations écrit le forfait kilométrique face au compte du dirigeant que
   // désigne le modèle (lib/forfaitKilometrique.ts).

@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
-import { POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation, type DonneesDeValidation } from './prealablesValidation'
+import {
+  POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation, prochainExerciceAValider, type DonneesDeValidation,
+} from './prealablesValidation'
 import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
 import { paiementsDesPieces } from './rattachement'
@@ -132,6 +134,8 @@ describe('prealablesDeValidation — ce que la base refusera, avec ses mots', ()
   it('refuse un exercice déjà validé, ou pris hors de l’ordre', () => {
     expect(prealable(donnees({ anneesValidees: [2025] }), 'deja-valide')?.message).toBe("L'exercice 2025 est déjà validé, ou un exercice postérieur l'est.")
     expect(prealable(donnees({ anneesValidees: [2023] }), 'ordre')?.message).toBe("L'exercice 2024 n'est pas validé : les exercices se valident dans l'ordre.")
+    // L'écran mène à l'exercice qui se valide d'abord.
+    expect(prealable(donnees({ anneesValidees: [2023] }), 'ordre')?.exercice).toBe(2024)
     expect(ids(donnees({ anneesValidees: [2024] }))).toEqual([])
   })
 
@@ -140,6 +144,9 @@ describe('prealablesDeValidation — ce que la base refusera, avec ses mots', ()
       .toBe("L'exercice 2025 précède l'ouverture du dossier : il est dans les comptes repris.")
     expect(prealable(donnees({ aNouveaux: [aNouveau('2024-01-01')] }), 'ouverture-d-abord')?.message)
       .toBe("L'exercice 2024 porte les à-nouveaux du dossier : il se valide d'abord.")
+    expect(prealable(donnees({ aNouveaux: [aNouveau('2024-01-01')] }), 'ouverture-d-abord')?.exercice).toBe(2024)
+    // Un exercice des comptes repris ne se valide pas : rien à quoi mener.
+    expect(prealable(donnees({ aNouveaux: [aNouveau('2026-01-01')] }), 'avant-ouverture')?.exercice).toBeUndefined()
     expect(ids(donnees({ aNouveaux: [aNouveau('2024-01-01')], anneesValidees: [2024] }))).toEqual([])
   })
 
@@ -147,8 +154,12 @@ describe('prealablesDeValidation — ce que la base refusera, avec ses mots', ()
     const ancienne = ecriture('e0', { piece_id: null, ligne_bancaire_id: null, date: '2024-06-01' })
     expect(prealable(donnees({ ecritures: [E1, E2, ancienne] }), 'ecritures-anterieures')?.message)
       .toBe("L'exercice 2024 porte des écritures qui ne sont pas validées : les exercices se valident dans l'ordre.")
+    expect(prealable(donnees({ ecritures: [E1, E2, ancienne] }), 'ecritures-anterieures')?.exercice).toBe(2024)
     expect(prealable(donnees({ ecritures: [E1, E2, ancienne], aNouveaux: [aNouveau('2025-01-01')] }), 'ecritures-anterieures')?.message)
       .toBe("Des écritures antérieures à l'ouverture du dossier ne sont pas validées : cette période est dans les comptes repris, les retirer ou les redater avant la validation.")
+    // Avant l'ouverture, aucun exercice ne se valide : on retire ou on redate, on ne mène nulle part.
+    expect(prealable(donnees({ ecritures: [E1, E2, ancienne], aNouveaux: [aNouveau('2025-01-01')] }), 'ecritures-anterieures')?.exercice)
+      .toBeUndefined()
   })
 
   it('refuse des mouvements à traiter jusqu’au 31 décembre, pas au-delà', () => {
@@ -186,7 +197,7 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
       { vehicules: [vehicule('v0', 2024, 1200)] },
       { immobilisations: [bien('i0', { date_acquisition: '2024-06-01' })], natures: [MATERIEL] },
     ]
-    for (const o of actifs) expect(prealable(donnees(o), 'exercice-anterieur-d-abord')?.message).toBe(message)
+    for (const o of actifs) expect(prealable(donnees(o), 'exercice-anterieur-d-abord')).toMatchObject({ message, exercice: 2024 })
     // Un mouvement ignoré n'est pas une activité, un véhicule sans kilomètre non plus ; une ouverture ou un exercice
     // validé fige déjà ce qui précède.
     expect(ids(donnees({ lignes: [L1, ligne('l0', { date: '2024-12-20', statut: 'ignoree' })] }))).toEqual([])
@@ -199,6 +210,53 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
     const etat = ids(donnees({ piecesValidees: [P1, piece('p0', { date_piece: '2024-11-02', montant_ttc: 30 })], ecritures: [E1, E2, ancienne] }))
     expect(etat).toContain('ecritures-anterieures')
     expect(etat).not.toContain('exercice-anterieur-d-abord')
+  })
+})
+
+// L'exercice que les préalables d'ordre réclament, que Clôture propose même quand rien d'autre ne l'y ferait paraître.
+describe('prochainExerciceAValider', () => {
+  it('rend l’exercice qui suit le dernier validé, tant qu’il est terminé', () => {
+    expect(prochainExerciceAValider(donnees({ anneesValidees: [2023] }))).toBe(2024)
+    expect(prochainExerciceAValider(donnees({ anneesValidees: [2024, 2023] }))).toBe(2025)
+    expect(prochainExerciceAValider(donnees({ anneesValidees: [2025] }))).toBeNull()
+  })
+
+  it('sans validation, rend l’exercice de l’ouverture d’un dossier repris', () => {
+    expect(prochainExerciceAValider(donnees({ aNouveaux: [aNouveau('2024-01-01')] }))).toBe(2024)
+    expect(prochainExerciceAValider(donnees({ aNouveaux: [aNouveau('2026-01-01')] }))).toBeNull()
+    // L'ouverture l'emporte sur une activité antérieure : cette période est dans les comptes repris.
+    expect(prochainExerciceAValider(donnees({ aNouveaux: [aNouveau('2025-01-01')], cotisations: [echeance('c0', '2023-11-05', 300)] }))).toBe(2025)
+  })
+
+  // Une année qui ne porte qu'une échéance de cotisation, un forfait ou la mise en service d'un bien n'est pas dans la
+  // liste des exercices de l'en-tête : c'est pourquoi Clôture la propose elle-même.
+  it('sans ouverture ni validation, rend le premier exercice qui porte quelque chose', () => {
+    expect(prochainExerciceAValider(donnees())).toBe(2025)
+    expect(prochainExerciceAValider(donnees({ cotisations: [echeance('c0', '2023-11-05', 300)] }))).toBe(2023)
+    expect(prochainExerciceAValider(donnees({ vehicules: [vehicule('v0', 2022, 800)] }))).toBe(2022)
+    expect(prochainExerciceAValider(donnees({
+      immobilisations: [bien('i0', { date_acquisition: '2023-12-20', date_mise_en_service: '2024-01-15' })],
+    }))).toBe(2024)
+    // Un mouvement ignoré n'est pas une activité.
+    expect(prochainExerciceAValider(donnees({ lignes: [L1, ligne('l0', { date: '2023-12-20', statut: 'ignoree' })] }))).toBe(2025)
+  })
+
+  // Une échéance compte au prélèvement qui la paie, comme dans la 2035 et le FEC : prélevée l'exercice suivant, elle ne
+  // fait pas de son échéance un exercice à valider.
+  it('date une échéance de cotisation au prélèvement qui la paie', () => {
+    const prelevee = { cotisations: [echeance('c0', '2024-12-05', 300)], lignes: [L1, ligne('l0', { date: '2025-01-06', montant: -300, cotisation_id: 'c0' })] }
+    expect(prochainExerciceAValider(donnees(prelevee))).toBe(2025)
+    expect(ids(donnees(prelevee))).not.toContain('exercice-anterieur-d-abord')
+    // Le garde symétrique : sans prélèvement, elle compte à son échéance.
+    expect(prochainExerciceAValider(donnees({ cotisations: [echeance('c0', '2024-12-05', 300)] }))).toBe(2024)
+  })
+
+  it('ne rend rien quand rien n’est à valider, ou que tout est dans l’exercice en cours', () => {
+    expect(prochainExerciceAValider(donnees({ piecesValidees: [], ecritures: [], lignes: [] }))).toBeNull()
+    expect(prochainExerciceAValider(donnees({
+      piecesValidees: [piece('p1', { date_piece: '2026-02-01' })], lignes: [ligne('l1', { piece_id: 'p1', date: '2026-02-03' })],
+      ecritures: [ecriture('e1', { date: '2026-02-03' })],
+    }))).toBeNull()
   })
 })
 

@@ -5,6 +5,7 @@ import ClotureTab from './ClotureTab'
 import type { Immobilisation } from '../../lib/types'
 import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import type { Predicat } from '../../test/filtresPostgrest'
+import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
 
 // L'ONGLET QUI PRODUIT LE SEUL DOCUMENT QUE LE CABINET SIGNE — la 2035. Son garde-fou refuse de
 // remplir le formulaire sur une lecture partielle, et c'est la bonne règle : une déclaration bâtie
@@ -16,11 +17,19 @@ import type { Predicat } from '../../test/filtresPostgrest'
 // garde-fou qui ment est pire qu'un garde-fou absent : on cesse d'aller voir.
 const faux = vi.hoisted(() => ({
   parTable: {} as Record<string, unknown[]>,
+  // Le rôle de qui regarde : seul le chef du cabinet valide un exercice.
+  estChef: true,
+  // Les appels de fonctions de la base, et ce que chacune rend.
+  appels: [] as { nom: string; params: Record<string, unknown> }[],
+  reponses: {} as Record<string, { data: unknown; error: { message: string } | null }>,
+  // Ce que la base garde d'une validation acceptée : la ligne de l'exercice, avec la 2035 qu'elle a reçue.
+  apresValidation: null as Record<string, unknown> | null,
   // Le serveur cesse de rendre cette table au-delà de la position donnée, tout en continuant
   // d'annoncer le vrai total. C'est ce qui produit une lecture incomplète (voir lectureComplete.ts).
   muetApresParTable: {} as Record<string, number>,
-  // Ce que `remplir2035` a reçu : les cases telles que le PDF les porterait.
+  // Ce que `remplir2035` a reçu : les cases telles que le PDF les porterait, et le déclarant.
   remplies: [] as Map<string, number>[],
+  entetes: [] as unknown[],
   // Les mises à jour envoyées, table et valeurs : l'enregistrement d'un poste manquant.
   misesAJour: [] as { table: string; valeurs: unknown }[],
 }))
@@ -29,6 +38,14 @@ vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   return {
     supabase: {
+      rpc: (nom: string, params: Record<string, unknown>) => {
+        faux.appels.push({ nom, params })
+        const reponse = faux.reponses[nom] ?? { data: null, error: { message: `fonction ${nom} non programmée` } }
+        if (nom === 'valider_exercice' && reponse.error === null && faux.apresValidation) {
+          faux.parTable.exercices_valides = [...(faux.parTable.exercices_valides ?? []), { ...faux.apresValidation, declaration: params.p_declaration }]
+        }
+        return Promise.resolve(reponse)
+      },
       from: (table: string) => {
         const chaine: Record<string, unknown> = {}
         let debut = 0
@@ -43,8 +60,13 @@ vi.mock('../../lib/supabase', async () => {
           // Le cadrage par dossier n'est appliqué qu'aux natures, les seules lignes du jeu d'essai qui le
           // renseignent : une lecture des seules natures du dossier perdrait celles du cabinet, et avec elles le
           // véhicule du registre — le faux doit pouvoir le voir.
+          // Le statut d'une pièce aussi : la validation lit à part les pièces validées et celles à valider. Et celui
+          // d'un mouvement : la validation lit TOUT le relevé, et une lecture restreinte aux rapprochés lui cacherait
+          // les mouvements à traiter.
           eq: (colonne: string, valeur: unknown) => {
-            if (table === 'natures_immobilisation') predicats.push(predicatEq(colonne, valeur))
+            if (table === 'natures_immobilisation' || (['pieces', 'lignes_bancaires'].includes(table) && colonne === 'statut')) {
+              predicats.push(predicatEq(colonne, valeur))
+            }
             return chaine
           },
           not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
@@ -74,9 +96,15 @@ vi.mock('../../lib/supabase', async () => {
 // qu'une dépendance navigateur doit vivre à part. La doublure est honnête : elle ne dessine rien et
 // RETIENT les cases reçues — c'est ce que l'écran envoie au formulaire qui est en cause, pas le
 // dessin, que `gabarit2035.test.ts` éprouve sur le vrai PDF.
+vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ estChef: faux.estChef }) }))
+
+const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '108000' } as const
+const ENGAGEMENT = { mode: 'engagement', compteNotesDeFrais: '455000' } as const
+
 vi.mock('../../lib/remplir2035', () => ({
-  remplir2035: (valeurs: Map<string, number>) => {
+  remplir2035: (valeurs: Map<string, number>, entete: unknown) => {
     faux.remplies.push(valeurs)
+    faux.entetes.push(entete)
     return Promise.resolve({ pdf: new Uint8Array(), codesSansAncrage: [] })
   },
 }))
@@ -134,7 +162,7 @@ function poser(
 function monter(annee = 2025, assujettiTva = true) {
   return render(
     <AnneeProvider defaut={annee}>
-      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} modeComptable="tresorerie" />
+      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} modele={TRESORERIE} />
     </AnneeProvider>,
   )
 }
@@ -202,7 +230,7 @@ describe("ClotureTab — l'exercice du paiement", () => {
     poserDecembre(true)
     render(
       <AnneeProvider defaut="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="tresorerie" />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
       </AnneeProvider>,
     )
 
@@ -300,7 +328,7 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
     faux.parTable.pieces = []
     render(
       <AnneeProvider defaut="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="tresorerie" />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
       </AnneeProvider>,
     )
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
@@ -746,7 +774,7 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
   function monterEngagement() {
     return render(
       <AnneeProvider defaut={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="engagement" />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
       </AnneeProvider>,
     )
   }
@@ -812,7 +840,7 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
     }]
     render(
       <AnneeProvider defaut="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="engagement" />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
       </AnneeProvider>,
     )
     await screen.findByText('Exercice 2025')
@@ -884,7 +912,7 @@ describe('ClotureTab — les mouvements du relevé affectés sans justificatif',
     faux.parTable.lignes_bancaires = [mouvement({ date: '2026-02-10' })]
     render(
       <AnneeProvider defaut="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="tresorerie" />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
       </AnneeProvider>,
     )
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
@@ -1271,7 +1299,7 @@ describe('ClotureTab — la concordance de la 2035 avec les écritures', () => {
     poserSansCotisation()
     render(
       <AnneeProvider defaut={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="engagement" />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
       </AnneeProvider>,
     )
     await screen.findByText(/La 2035 n’est pas produite pour ce dossier/)
@@ -1315,5 +1343,382 @@ describe('ClotureTab — une case négative', () => {
     monter()
     await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(screen.queryAllByText(/Case négative/)).toHaveLength(0)
+  })
+})
+
+// VALIDER UN EXERCICE (ligne 26.6, étape d). Ce que la carte garde, et qu'aucun test de `src/lib` ne voit : que
+// l'écran LISE ce dont les préalables dépendent, réserve le geste au chef, nomme ce qu'on perd, n'appelle la base
+// qu'une fois, envoie la numérotation et la 2035 qu'il affiche — et qu'un exercice validé montre la 2035 qui a été
+// validée, pas un calcul d'aujourd'hui.
+describe('ClotureTab — valider l’exercice', () => {
+  const PIECE_EUR = { ...PIECE, devise: 'EUR', taux_change: null }
+  const PAIEMENT = {
+    id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-12', libelle: 'PRLV FOURNISSEUR', montant: -120,
+    statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, source_fichier: 'releve.pdf', libelle_brut: null,
+    created_at: '2025-03-13T09:00:00Z',
+  }
+  const ECRITURE = {
+    id: 'e1', dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-12', compte: '606100',
+    libelle: 'FOURNISSEUR', montant: 120, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null,
+    ...NON_VALIDEE, created_at: '2025-03-13T09:00:00Z',
+  }
+  const BANQUE = { ...ECRITURE, id: 'e2', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }
+  const VALIDE = {
+    dossier_id: 'dossier-de-test', annee: 2025, valide_le: '2026-01-15T10:00:00Z', valide_par: 'chef', mode_comptable: 'tresorerie',
+    nb_lignes: 2, nb_ecritures: 1, total_debit: 120, total_credit: 120, empreinte_precedente: null, empreinte: 'a'.repeat(64),
+  }
+  const INSTANTANE = {
+    version: 1, annee: 2025, cases: { BA: 999 }, formulaire: { BA: 999 }, totalRecettes: 0, totalDepenses: 999, resultat: -999,
+    postes: [{ poste: 'Achats', nature: 'depense', montant: 999, nbPieces: 1, nbMouvements: 0 }],
+    entete: { nom: 'Nom validé', activite: 'Activité validée', siret: '98765432109876' },
+  }
+
+  // Un exercice tenu : la pièce payée, son écriture au brouillon, rien en suspens.
+  function poserTenu() {
+    poser({}, [], [])
+    faux.parTable.pieces = [PIECE_EUR]
+    faux.parTable.lignes_bancaires = [PAIEMENT]
+    faux.parTable.ecritures_brouillon = [ECRITURE, BANQUE]
+    faux.parTable.exercices_valides = []
+    faux.estChef = true
+    faux.appels = []
+    faux.reponses = {}
+    faux.remplies = []
+    faux.entetes = []
+    faux.apresValidation = null
+  }
+  const confirmer = (reponse: boolean) => {
+    const messages: string[] = []
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { messages.push(m ?? ''); return reponse })
+    return messages
+  }
+  const monterAvec = (onNavigate = vi.fn()) => {
+    render(
+      <AnneeProvider defaut={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />
+      </AnneeProvider>,
+    )
+    return onNavigate
+  }
+  const carte = async () => within((await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })).closest('.card') as HTMLElement)
+  // Ce que la base fait d'une validation acceptée : elle garde l'exercice, avec la 2035 reçue.
+  const accepter = () => {
+    faux.reponses.valider_exercice = { data: { annee: 2025, lignes: 2, ecritures: 1 }, error: null }
+  }
+
+  it('dit ce qui empêche de valider, et mène à l’écran où le lever', async () => {
+    poserTenu()
+    faux.parTable.ecritures_brouillon = []
+    const onNavigate = monterAvec()
+    const c = await carte()
+    c.getByText('Avant de valider')
+    c.getByText(/pièce\(s\) validée\(s\) de l'exercice sans écriture/)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+    await act(async () => {
+      fireEvent.click(within(c.getByText(/sans écriture : générer/).closest('li') as HTMLElement).getByRole('button', { name: 'Écritures' }))
+    })
+    expect(onNavigate).toHaveBeenCalledWith('ecritures')
+  })
+
+  it('valide un exercice tenu : la numérotation du FEC et la 2035 affichée partent à la base, et l’exercice se relit validé', async () => {
+    poserTenu()
+    accepter()
+    confirmer(true)
+    faux.apresValidation = VALIDE
+    monterAvec()
+    const c = await carte()
+    c.getByText(/Rien n.empêche de valider cet exercice/)
+    c.getByText(/1 écriture\(s\) et 2 ligne\(s\) seront validées \(achats : 1\)/)
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+
+    expect(faux.appels.map((a) => a.nom)).toEqual(['valider_exercice'])
+    const params = faux.appels[0].params as {
+      p_dossier_id: string; p_annee: number; p_lignes: { id: string; journal: string; numero: number; piece_ref: string }[]
+      p_a_nouveaux: unknown[]; p_declaration: { resultat: number; formulaire: Record<string, number>; entete: unknown } | null
+    }
+    expect([params.p_dossier_id, params.p_annee]).toEqual(['dossier-de-test', 2025])
+    expect(params.p_lignes.map((l) => [l.id, l.journal, l.numero, l.piece_ref])).toEqual([['e1', 'AC', 1, 'facture.pdf'], ['e2', 'AC', 1, 'facture.pdf']])
+    expect(params.p_a_nouveaux).toEqual([])
+    expect(params.p_declaration?.resultat).toBe(-120)
+    expect(params.p_declaration?.formulaire.BA).toBe(120)
+    expect(params.p_declaration?.entete).toEqual({ nom: 'Dossier de test', activite: 'Infirmier', siret: '12345678901234' })
+    // Relu, l'exercice est validé, sa 2035 est celle qui a été envoyée — et un calcul d'aujourd'hui la retrouve :
+    // aucun écart n'est dit (le garde symétrique de la 2035 qui diffère, plus bas).
+    await screen.findByText(/^Exercice 2025 validé/)
+    screen.getByText(/2035 validée le 15\/01\/2026 : elle est relue telle qu'elle a été validée/)
+    expect(screen.queryAllByText(/Recalculée aujourd'hui, elle diffère/)).toHaveLength(0)
+    expect(screen.queryAllByRole('button', { name: 'Valider l’exercice 2025' })).toHaveLength(0)
+  })
+
+  it('nomme ce qu’on perd avant de valider, et n’appelle rien sur un refus', async () => {
+    poserTenu()
+    accepter()
+    const messages = confirmer(false)
+    monterAvec()
+    const c = await carte()
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    expect(faux.appels).toEqual([])
+    expect(messages).toHaveLength(1)
+    expect(messages[0]).toMatch(/DÉFINITIVE : elle ne se défait pas/)
+    expect(messages[0]).toMatch(/Ses 1 écriture\(s\) \(2 ligne\(s\)\) deviennent intangibles/)
+    expect(messages[0]).toMatch(/figé avec elles : les pièces/)
+    expect(messages[0]).toMatch(/La 2035 de 2025 est gardée telle qu'elle est aujourd'hui \(résultat de -120,00\s€\)/)
+    expect(messages[0]).toMatch(/se corrigera sur l'exercice suivant/)
+  })
+
+  it('n’appelle la base qu’une fois sur trois clics rapprochés', async () => {
+    poserTenu()
+    accepter()
+    confirmer(true)
+    monterAvec()
+    const c = await carte()
+    const bouton = c.getByRole('button', { name: 'Valider l’exercice 2025' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.appels.filter((a) => a.nom === 'valider_exercice')).toHaveLength(1)
+  })
+
+  it('dit le refus de la base, et laisse réessayer', async () => {
+    poserTenu()
+    faux.reponses.valider_exercice = { data: null, error: { message: "L'exercice 2025 porte des mouvements bancaires à traiter : ils se traitent avant la validation." } }
+    confirmer(true)
+    monterAvec()
+    const c = await carte()
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    c.getByText(/porte des mouvements bancaires à traiter/)
+    accepter()
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    expect(faux.appels.filter((a) => a.nom === 'valider_exercice')).toHaveLength(2)
+  })
+
+  it('ne propose le geste qu’au chef du cabinet', async () => {
+    poserTenu()
+    faux.estChef = false
+    monterAvec()
+    const c = await carte()
+    c.getByText('Seul le chef du cabinet valide un exercice.')
+    expect(c.queryAllByRole('button', { name: 'Valider l’exercice 2025' })).toHaveLength(0)
+  })
+
+  it('suspend la validation sur une lecture partielle, en le disant', async () => {
+    poserTenu()
+    faux.muetApresParTable = { pieces: 0 }
+    monterAvec()
+    const c = await carte()
+    c.getByText(/La lecture du dossier est restée partielle/)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  it('montre la 2035 validée, pas un calcul d’aujourd’hui, et la remplit telle quelle', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [{ ...VALIDE, declaration: INSTANTANE }]
+    monterAvec()
+    await screen.findByText(/2035 validée le 15\/01\/2026 : elle est relue telle qu'elle a été validée/)
+    screen.getByText(/Recalculée aujourd'hui, elle diffère sur les cases .*BA/)
+    const ligne = screen.getByText('BA').closest('tr') as HTMLElement
+    within(ligne).getByText(/^999,00\s€$/)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: /Remplir le formulaire officiel/ })) })
+    expect(faux.remplies.at(-1)?.get('BA')).toBe(999)
+    expect(faux.entetes.at(-1)).toEqual(INSTANTANE.entete)
+    // Et la carte dit l'exercice validé, sans plus proposer de le valider.
+    screen.getByText(/Validé le 15\/01\/2026 — 1 écriture\(s\), 2 ligne\(s\)/)
+    screen.getByText(/premier exercice validé du dossier/)
+    expect(screen.queryAllByRole('button', { name: 'Valider l’exercice 2025' })).toHaveLength(0)
+  })
+
+  it('ne montre pas une 2035 validée illisible à la place de la validée', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [{ ...VALIDE, declaration: { version: 9 } }]
+    monterAvec()
+    await screen.findByText(/La 2035 validée de 2025 n'a pas pu être relue/)
+    expect(screen.queryAllByRole('button', { name: /Remplir le formulaire officiel/ })).toHaveLength(0)
+  })
+
+  it('vérifie l’empreinte d’un exercice validé, et dit une empreinte qui ne correspond plus', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [{ ...VALIDE, declaration: INSTANTANE }]
+    faux.reponses.verifier_exercice_valide = { data: true, error: null }
+    monterAvec()
+    // Cherché HORS de l'`act` : dedans, React retient l'affichage jusqu'à sa sortie.
+    const verifier = await screen.findByRole('button', { name: 'Vérifier l’empreinte' })
+    await act(async () => { fireEvent.click(verifier) })
+    screen.getByText(/Empreinte vérifiée/)
+    expect(faux.appels.at(-1)).toEqual({ nom: 'verifier_exercice_valide', params: { p_dossier_id: 'dossier-de-test', p_annee: 2025 } })
+    faux.reponses.verifier_exercice_valide = { data: false, error: null }
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Vérifier l’empreinte' })) })
+    screen.getByText(/L'empreinte ne correspond plus/)
+    expect(screen.queryAllByText(/Empreinte vérifiée/)).toHaveLength(0)
+  })
+
+  it('en engagement, valide sans 2035 — la base la refuserait', async () => {
+    poserTenu()
+    faux.parTable.ecritures_brouillon = [
+      { ...ECRITURE, id: 'f1', date: '2025-03-10' },
+      { ...ECRITURE, id: 'f2', date: '2025-03-10', compte: '401000', sens: 'credit' },
+      { ...ECRITURE, id: 'r1', compte: '401000', ligne_bancaire_id: 'l1' },
+      { ...ECRITURE, id: 'r2', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' },
+    ]
+    accepter()
+    confirmer(true)
+    render(
+      <AnneeProvider defaut={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={ENGAGEMENT} />
+      </AnneeProvider>,
+    )
+    const c = await carte()
+    c.getByText(/Rien n.empêche de valider cet exercice/)
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    const params = faux.appels[0].params as { p_lignes: { id: string; journal: string }[]; p_declaration: unknown }
+    expect(params.p_declaration).toBeNull()
+    expect(params.p_lignes.map((l) => [l.id, l.journal])).toEqual([['f1', 'AC'], ['f2', 'AC'], ['r1', 'BQ'], ['r2', 'BQ']])
+  })
+
+  // Ce que la base garde est le FORMULAIRE, à l'euro, comme l'administration le reçoit — et les cases au centime à côté.
+  it('envoie la 2035 du formulaire, à l’euro, et ses cases au centime', async () => {
+    poserTenu()
+    faux.parTable.pieces = [{ ...PIECE_EUR, montant_ttc: 120.6 }]
+    faux.parTable.lignes_bancaires = [{ ...PAIEMENT, montant: -120.6 }]
+    faux.parTable.ecritures_brouillon = [{ ...ECRITURE, montant: 120.6 }, { ...BANQUE, montant: 120.6 }]
+    accepter()
+    confirmer(true)
+    monterAvec()
+    const c = await carte()
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    const params = faux.appels[0].params as { p_declaration: { cases: Record<string, number>; formulaire: Record<string, number> } }
+    expect(params.p_declaration.cases.BA).toBe(120.6)
+    expect(params.p_declaration.formulaire.BA).toBe(121)
+  })
+
+  // La concordance au centime est la décision du cabinet : une écriture qui ne retrouve pas la 2035 refuse la
+  // validation — et c'est la 2035 AFFICHÉE qui est comparée.
+  it('refuse un exercice dont les écritures ne retrouvent pas la 2035', async () => {
+    poserTenu()
+    faux.parTable.ecritures_brouillon = [{ ...ECRITURE, montant: 100 }, { ...BANQUE, montant: 100 }]
+    monterAvec()
+    const c = await carte()
+    c.getByText(/écart\(s\) entre la 2035 et les écritures/)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // La 2035 ne lit que les mouvements rapprochés ; la validation lit tout le relevé — un mouvement à traiter de
+  // l'exercice la refuse.
+  it('dit les mouvements à traiter de l’exercice, que la 2035 ne lit pas', async () => {
+    poserTenu()
+    faux.parTable.lignes_bancaires = [PAIEMENT, { ...PAIEMENT, id: 'l2', statut: 'non_rapprochee', piece_id: null, date: '2025-06-01', montant: -40 }]
+    monterAvec()
+    const c = await carte()
+    c.getByText(/L'exercice 2025 porte des mouvements bancaires à traiter/)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // Chacune des lectures dont la validation dépend, et que la 2035 ne lit pas toutes : une seule partielle suspend
+  // la validation.
+  it.each([
+    ['exercices_valides', [{ ...VALIDE, annee: 2023 }]],
+    ['ecritures_brouillon', null],
+    ['natures_immobilisation', [{ id: 'n1', dossier_id: null, libelle: 'Matériel', duree_annees_defaut: 5, ordre: 1, compte_immobilisation: '218300' }]],
+    ['emprunts', [{
+      id: 'emp-x', dossier_id: 'dossier-de-test', nom: 'Prêt', organisme_preteur: 'Banque', capital_initial: 1000, taux_annuel: 1,
+      date_debut: '2025-01-05', duree_mois: 12, created_at: '2025-01-05T10:00:00Z',
+    }]],
+  ])('suspend la validation sur une lecture partielle de %s', async (table, lignes) => {
+    poserTenu()
+    if (lignes) faux.parTable[table] = lignes
+    faux.muetApresParTable = { [table]: 0 }
+    monterAvec()
+    const c = await carte()
+    c.getByText(/La lecture du dossier est restée partielle/)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // Les deux contrôles de la Checklist que la validation lit en plus : illisibles, ils ne se taisent pas.
+  it.each([
+    ['controles_releves_bancaires', "Le contrôle des relevés bancaires n'a pas pu être lu : réessayer avant la validation."],
+    ['piece_textes_ocr', "Les doublons de contenu n'ont pas pu être vérifiés : réessayer avant la validation."],
+  ])('ne tait pas un contrôle qu’elle n’a pas pu lire (%s)', async (table, message) => {
+    poserTenu()
+    faux.parTable[table] = [{ id: 'x1', dossier_id: 'dossier-de-test', coherent: false, piece_id: 'p1', document_id: null, texte_md5: 'a' }]
+    faux.muetApresParTable = { [table]: 0 }
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    monterAvec()
+    const c = await carte()
+    c.getByText(message)
+    expect((c.getByRole('button', { name: 'Valider l’exercice 2025' }) as HTMLButtonElement).disabled).toBe(true)
+  })
+
+  // L'exercice de l'ouverture d'un dossier repris se valide avec ses à-nouveaux : la base fige leurs libellés.
+  it('valide l’exercice de l’ouverture avec ses à-nouveaux', async () => {
+    poserTenu()
+    const an = (id: string, compte: string, libelle: string, sens: 'debit' | 'credit') => ({
+      id, dossier_id: 'dossier-de-test', date: '2025-01-01', compte, compte_origine: compte, libelle, sens, montant: 1000,
+      source_nom: 'balance.csv', source_empreinte: 'b'.repeat(64), ...A_NOUVEAU_NON_VALIDE, created_at: '2025-02-01T00:00:00Z',
+    })
+    faux.parTable.a_nouveaux = [an('an1', '512000', 'Banque', 'debit'), an('an2', '101300', 'Capital', 'credit')]
+    accepter()
+    confirmer(true)
+    monterAvec()
+    const c = await carte()
+    c.getByText(/, avec 2 à-nouveau\(x\)\./)
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Valider l’exercice 2025' })) })
+    const params = faux.appels[0].params as { p_a_nouveaux: { id: string; ecriture_lib: string }[] }
+    // Dans l'ordre du FEC, qui range l'écriture d'ouverture par compte.
+    expect(params.p_a_nouveaux.map((a) => a.id)).toEqual(['an2', 'an1'])
+  })
+
+  // L'exercice que la validation réclame d'abord peut ne rien porter — ici l'année vide qui suit le dernier exercice
+  // validé : l'en-tête ne le propose pas, la carte y mène.
+  const VALIDE_2023 = { ...VALIDE, annee: 2023, declaration: { ...INSTANTANE, annee: 2023 } }
+
+  it('mène à l’exercice qui se valide d’abord, même quand rien ne le porte', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [VALIDE_2023]
+    monterAvec()
+    const c = await carte()
+    const ordre = c.getByText("L'exercice 2024 n'est pas validé : les exercices se valident dans l'ordre.").closest('li') as HTMLElement
+    // Un seul renvoi : vers l'exercice — le préalable se lit ici, il ne mène à aucun autre onglet.
+    expect(within(ordre).getAllByRole('button').map((b) => b.textContent)).toEqual(['Exercice 2024'])
+    await act(async () => { fireEvent.click(within(ordre).getByRole('button', { name: 'Exercice 2024' })) })
+    const c2024 = within((await screen.findByRole('heading', { name: 'Valider l’exercice 2024' })).closest('.card') as HTMLElement)
+    c2024.getByText(/Rien n.empêche de valider cet exercice/)
+    c2024.getByText("Aucune écriture dans cet exercice : la validation le fige tel qu'il est.")
+  })
+
+  it('en engagement aussi, mène à l’exercice qui se valide d’abord', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [{ ...VALIDE_2023, mode_comptable: 'engagement', declaration: null }]
+    render(
+      <AnneeProvider defaut={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={ENGAGEMENT} />
+      </AnneeProvider>,
+    )
+    const c = await carte()
+    await act(async () => { fireEvent.click(c.getByRole('button', { name: 'Exercice 2024' })) })
+    await screen.findByRole('heading', { name: 'Valider l’exercice 2024' })
+  })
+
+  it('sur tous les exercices, montre ceux qui sont validés et le prochain à valider', async () => {
+    poserTenu()
+    faux.parTable.exercices_valides = [VALIDE_2023]
+    render(
+      <AnneeProvider defaut="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} />
+      </AnneeProvider>,
+    )
+    await screen.findByText(/^Exercice 2023 validé/)
+    screen.getByRole('heading', { name: 'Valider l’exercice 2024' })
+    screen.getByRole('heading', { name: 'Valider l’exercice 2025' })
+  })
+
+  // Le garde symétrique : sans exercice validé, le prochain à valider est le premier qui porte quelque chose — aucune
+  // année vide n'est ajoutée.
+  it('sans exercice validé, n’ajoute aucun exercice vide', async () => {
+    poserTenu()
+    render(
+      <AnneeProvider defaut="toutes">
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} />
+      </AnneeProvider>,
+    )
+    await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })
+    expect(screen.queryAllByRole('heading', { name: /^Valider l’exercice (2023|2024)$/ })).toHaveLength(0)
   })
 })
