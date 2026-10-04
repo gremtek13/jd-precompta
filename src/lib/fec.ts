@@ -105,8 +105,10 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
 // UNE DOTATION AUX AMORTISSEMENTS (lib/amortissements.ts) fait une écriture par bien et par exercice au
 // journal des OPÉRATIONS DIVERSES (OD), au 31 décembre : sa pièce est le TABLEAU D'AMORTISSEMENT de
 // l'exercice, qui la justifie (PieceRef). Sans elle, le 681100 de la 2035 n'était nulle part dans le
-// fichier. Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors, et
-// `absenceFec` les chiffre.
+// fichier. LE FORFAIT KILOMÉTRIQUE (lib/forfaitKilometrique.ts) de même, une écriture par ligne du cadre 7,
+// au même journal et à la même date : sa pièce est le BARÈME KILOMÉTRIQUE de l'exercice, appliqué au
+// kilométrage déclaré. Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors,
+// et `absenceFec` les chiffre.
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
   // Sans valeur par défaut : exporté en trésorerie, le brouillon d'un dossier en engagement mettrait
@@ -132,6 +134,8 @@ export function genererFec(
       cle = `releve|${e.ligne_bancaire_id}`
     } else if (e.immobilisation_id) {
       cle = `dotation|${e.immobilisation_id}|${e.date}`
+    } else if (e.vehicule_id) {
+      cle = `forfait|${e.vehicule_id}|${e.date}`
     } else continue
     groupes.set(cle, [...(groupes.get(cle) ?? []), e])
   }
@@ -157,19 +161,25 @@ export function genererFec(
       const pieceId = rows[0].piece_id
       if (!pieceId && rows[0].immobilisation_id && !rows[0].ligne_bancaire_id) {
         return {
-          cle, pieceId: null, rows, reglement: false, dotation: true, date: rows[0].date, ordre: plusAncienne(rows),
+          cle, pieceId: null, rows, reglement: false, operationDiverse: true, date: rows[0].date, ordre: plusAncienne(rows),
           pieceRef: `Tableau d'amortissement ${rows[0].date.slice(0, 4)}`,
+        }
+      }
+      if (!pieceId && rows[0].vehicule_id && !rows[0].ligne_bancaire_id) {
+        return {
+          cle, pieceId: null, rows, reglement: false, operationDiverse: true, date: rows[0].date, ordre: plusAncienne(rows),
+          pieceRef: `Barème kilométrique ${rows[0].date.slice(0, 4)}`,
         }
       }
       if (!pieceId) {
         const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!
         return {
-          cle, pieceId: null, rows, reglement: true, dotation: false, date: mouvement.date, ordre: plusAncienne(rows),
+          cle, pieceId: null, rows, reglement: true, operationDiverse: false, date: mouvement.date, ordre: plusAncienne(rows),
           pieceRef: referenceDuReleve(mouvement),
         }
       }
       return {
-        cle, pieceId, rows, reglement: cle !== pieceId, dotation: false, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows),
+        cle, pieceId, rows, reglement: cle !== pieceId, operationDiverse: false, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows),
         pieceRef: null,
       }
     })
@@ -184,10 +194,10 @@ export function genererFec(
   // de la même façon.
   const libellesAuxiliaires = new Map<string, string>()
 
-  for (const { pieceId, rows, date, reglement, dotation, pieceRef: refReleve } of entrees) {
+  for (const { pieceId, rows, date, reglement, operationDiverse, pieceRef: refReleve } of entrees) {
     const piece = pieceId ? pieceById.get(pieceId) : undefined
-    const journalCode = dotation ? 'OD' : reglement ? 'BQ' : piece?.type_piece === 'vente' ? 'VE' : 'AC'
-    const journalLib = dotation ? 'Opérations diverses' : reglement ? 'Banque' : piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
+    const journalCode = operationDiverse ? 'OD' : reglement ? 'BQ' : piece?.type_piece === 'vente' ? 'VE' : 'AC'
+    const journalLib = operationDiverse ? 'Opérations diverses' : reglement ? 'Banque' : piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
     compteurs[journalCode] = (compteurs[journalCode] ?? 0) + 1
     const ecritureNum = `${journalCode}${String(compteurs[journalCode]).padStart(5, '0')}`
     const pieceRef = refReleve ?? piece?.nom_fichier ?? pieceId!.slice(0, 8)

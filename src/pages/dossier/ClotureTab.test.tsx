@@ -26,7 +26,7 @@ const faux = vi.hoisted(() => ({
 }))
 
 vi.mock('../../lib/supabase', async () => {
-  const { filtrer, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
   return {
     supabase: {
       from: (table: string) => {
@@ -40,7 +40,13 @@ vi.mock('../../lib/supabase', async () => {
         Object.assign(chaine, {
           select: () => chaine,
           update: (valeurs: unknown) => { faux.misesAJour.push({ table, valeurs }); return chaine },
-          eq: () => chaine,
+          // Le cadrage par dossier n'est appliqué qu'aux natures, les seules lignes du jeu d'essai qui le
+          // renseignent : une lecture des seules natures du dossier perdrait celles du cabinet, et avec elles le
+          // véhicule du registre — le faux doit pouvoir le voir.
+          eq: (colonne: string, valeur: unknown) => {
+            if (table === 'natures_immobilisation') predicats.push(predicatEq(colonne, valeur))
+            return chaine
+          },
           not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
           or: (expression: string) => { predicats.push(predicatOr(expression)); return chaine },
           order: () => chaine,
@@ -1067,5 +1073,65 @@ describe('ClotureTab — les échéances d’emprunt', () => {
     expect(await screen.findByText(/Les emprunts n'ont pas pu être lus en entier/)).toBeTruthy()
     const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
     expect(bouton.hasAttribute('disabled')).toBe(false)
+  })
+})
+
+// LE BARÈME COUVRE DÉJÀ L'AMORTISSEMENT DU VÉHICULE (notice de la 2035, tableau des immobilisations ; voir
+// lib/forfaitKilometrique.ts) : un matériel de transport du registre amorti l'année où le barème est retenu est
+// déduit deux fois, par sa dotation en CH et par le forfait en BJ. Clôture le dit, sans rien corriger.
+describe('ClotureTab — l’amortissement d’un véhicule déduit avec le barème', () => {
+  const TITRE = /Amortissement d’un véhicule déduit avec le barème/
+  const TRANSPORT = {
+    id: 'n-transport', dossier_id: null, libelle: 'Matériel de transport', duree_annees_defaut: 5, ordre: 4, compte_immobilisation: '218200',
+  }
+  const VOITURE = immobilisation({ id: 'i-voiture', libelle: 'Voiture de tournée', nature_id: 'n-transport' })
+  const VEHICULE = {
+    id: 'v1', dossier_id: 'dossier-de-test', annee: 2025, modele: 'Clio', type: 'voiture', puissance_fiscale: 4, bareme: 'bnc',
+    motorisation: 'thermique', carburant: 'diesel', km_professionnel: 8000, inscrit_immobilisations: false,
+    amortissements_a_reintegrer: null, created_at: '2025-01-05T10:00:00Z', updated_at: '2025-01-05T10:00:00Z',
+  }
+
+  it('signale la dotation d’un matériel de transport l’année où le barème est retenu', async () => {
+    poser({}, [VOITURE])
+    faux.parTable.natures_immobilisation = [TRANSPORT]
+    faux.parTable.vehicules = [VEHICULE]
+    monter()
+
+    const titre = await screen.findByText(TITRE)
+    const carte = titre.closest('.card')!
+    expect(within(carte as HTMLElement).getByText('Voiture de tournée')).toBeDefined()
+    expect(carte.textContent).toMatch(/2\s400,00\s€/)
+  })
+
+  it('se tait quand le barème n’est pas retenu, ou que le bien n’est pas un véhicule', async () => {
+    // Garde SYMÉTRIQUE : sans lui, « la carte signale le véhicule » serait satisfait par une carte affichée à
+    // chaque dossier qui amortit quelque chose.
+    poser({}, [VOITURE, immobilisation({ id: 'i-ordi', nature_id: 'n-info' })])
+    faux.parTable.natures_immobilisation = [TRANSPORT, { ...TRANSPORT, id: 'n-info', libelle: 'Informatique', compte_immobilisation: '218300' }]
+    faux.parTable.vehicules = [{ ...VEHICULE, km_professionnel: 0 }]
+    monter()
+
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
+  })
+
+  it('lit les natures du cabinet, qui n’appartiennent à aucun dossier', async () => {
+    // Une lecture des seules natures du dossier les perdrait toutes : le véhicule ne serait plus reconnu.
+    poser({}, [VOITURE])
+    faux.parTable.natures_immobilisation = [TRANSPORT, { ...TRANSPORT, id: 'n-autre', dossier_id: 'autre-dossier', compte_immobilisation: '218300' }]
+    faux.parTable.vehicules = [VEHICULE]
+    monter()
+
+    expect(await screen.findByText(TITRE)).toBeDefined()
+  })
+
+  it('dit une lecture partielle des natures', async () => {
+    poser({ natures_immobilisation: 0 }, [VOITURE])
+    faux.parTable.natures_immobilisation = [TRANSPORT]
+    faux.parTable.vehicules = [VEHICULE]
+    monter()
+
+    expect(await screen.findByText(/Les natures d’immobilisation n'ont pas pu être lues en entier/)).toBeDefined()
+    expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 })

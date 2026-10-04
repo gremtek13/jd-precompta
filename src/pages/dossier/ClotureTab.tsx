@@ -6,6 +6,7 @@ import { montantRetenu } from '../../lib/montantRetenu'
 import { categoriesSansPoste as calculerCategoriesSansPoste, piecesValideesSansCategorie } from '../../lib/controles'
 import { calculerDeclaration2035, partCsgNonDeductible, type PartCsgNonDeductible } from '../../lib/declaration2035'
 import { dotationDeLExercice } from '../../lib/amortissements'
+import { amortissementsSousLeBareme } from '../../lib/forfaitKilometrique'
 import {
   CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases,
   valeursDesCases,
@@ -21,7 +22,8 @@ import { cotisationsComptees } from '../../lib/cotisationRapprochee'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
 import type {
-  Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier,
+  VentilationBancaire,
 } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -66,6 +68,11 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // ils taisent seulement une échéance manquante.
   const [emprunts, setEmprunts] = useState<Emprunt[]>([])
   const [empruntsIncomplets, setEmpruntsIncomplets] = useState<string | null>(null)
+  // Les natures d'immobilisation, pour reconnaître un VÉHICULE au registre (compte 2182) amorti l'année où le
+  // barème kilométrique est retenu (lib/forfaitKilometrique.ts). Leur drapeau est à part, comme celui des
+  // emprunts : lues en partie, elles ne faussent aucune case, elles taisent seulement ce signal.
+  const [natures, setNatures] = useState<NatureImmobilisation[]>([])
+  const [naturesIncompletes, setNaturesIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [postesEdit, setPostesEdit] = useState<Record<string, string>>({})
@@ -100,7 +107,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     // ou sautent des lignes, et rien ne le signale.
     const [
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
-      { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements,
+      { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -156,7 +163,15 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         supabase.from('reglements_groupes').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      // Celles du dossier ET celles du cabinet (`dossier_id` nul) : ce sont presque toutes des natures partagées,
+      // et un filtre sur le seul dossier les écarterait toutes.
+      lireTout<NatureImmobilisation>((debut, fin) =>
+        supabase.from('natures_immobilisation').select('*', { count: 'exact' })
+          .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
+      ),
     ])
+    setNatures(lectureNatures.lignes)
+    setNaturesIncompletes(lectureNatures.complete ? null : lectureNatures.motif)
     setVentilations(lectureVentilations.lignes)
     setReglements(lectureReglements.lignes)
     setEmprunts(lectureEmprunts.lignes)
@@ -318,6 +333,11 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     return echeancesNonRapprochees(emprunts, lignesBancaires, `${d.annee}-01-01`, fin).map((e) => ({ annee: d.annee, ...e }))
   })
   const interetsManquants = Math.round(echeancesManquantes.reduce((s, e) => s + e.echeance.interets, 0) * 100) / 100
+
+  // LE VÉHICULE DU REGISTRE AMORTI L'ANNÉE OÙ LE BARÈME EST RETENU (lib/forfaitKilometrique.ts) : le barème couvre
+  // déjà son amortissement, et la case CH le déduit une seconde fois. La notice veut ces amortissements
+  // réintégrés au cadre B du tableau des immobilisations ; le moteur ne le fait pas — il le dit ici.
+  const amortissementsVehicules = declarations.flatMap((d) => amortissementsSousLeBareme(immobilisations, natures, vehicules, d.annee))
 
   // Véhicules dont l'indemnité n'a pas pu être calculée : leur déduction manque sur le formulaire,
   // et rien sur le PDF ne le dirait.
@@ -839,6 +859,43 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
                   </td>
                   <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
                     {formatMoney(doublon.montantIndemnites)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <BandeauLecturePartielle
+        quoi="Les natures d’immobilisation"
+        motif={naturesIncompletes}
+        consequence="Un véhicule du registre amorti l’année où le barème kilométrique est retenu peut donc ne pas être signalé ci-dessous."
+      />
+
+      {amortissementsVehicules.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-danger)' }}>
+          <h3 style={{ marginTop: 0 }}>Amortissement d’un véhicule déduit avec le barème ({amortissementsVehicules.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Le barème kilométrique couvre déjà l’amortissement du véhicule. La notice de la 2035 le dit au tableau des
+            immobilisations : en cas d’option pour le barème, « les amortissements afférents à ces véhicules doivent être
+            réintégrés au cadre B du tableau des immobilisations et des amortissements ». La case CH compte pourtant la
+            dotation de ce matériel de transport : réintégrez-la sur la déclaration, ou retirez le bien du registre s’il
+            n’est pas le véhicule du cadre 7. L’application ne le fait pas à votre place.
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>Exercice</th><th>Bien</th><th style={{ textAlign: 'right' }}>Dotation comptée en CH</th>
+              </tr>
+            </thead>
+            <tbody>
+              {amortissementsVehicules.map(({ annee, immobilisation, dotation }) => (
+                <tr key={`${annee}-${immobilisation.id}`}>
+                  <td>{annee}</td>
+                  <td>{immobilisation.libelle}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>
+                    {formatMoney(dotation)}
                   </td>
                 </tr>
               ))}

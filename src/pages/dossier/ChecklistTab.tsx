@@ -11,6 +11,7 @@ import { virementsPersonnelsAEcrire } from '../../lib/virementPersonnel'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import { cotisationsAEcrire, rapprochementsCotisationRefuses } from '../../lib/cotisationRapprochee'
 import { acquisitionsDesBiens, dotationsDuRegistre, dotationsEnDefaut } from '../../lib/amortissements'
+import { forfaitsDuCadre7, forfaitsEnDefaut } from '../../lib/forfaitKilometrique'
 import type { Emprunt } from '../../lib/emprunts'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { anneeDe, anneeEtMoisEcoules, formatDate, formatMoney } from '../../lib/format'
@@ -19,7 +20,7 @@ import { ouvertureBanque } from '../../lib/aNouveaux'
 import type { OuvertureBanque } from '../../lib/planTresorerie'
 import type {
   ANouveau, ControleReleveBancaire, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, InformationsDossier, LigneBancaire,
-  NatureImmobilisation, Piece, ReglementGroupe, VentilationBancaire,
+  NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from '../../lib/ventilationBanque'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
@@ -96,6 +97,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // partie, une part non lue ferait passer son règlement pour incohérent : ce point-là se tait alors.
   const [reglements, setReglements] = useState<ReglementGroupe[]>([])
   const [reglementsPartiels, setReglementsPartiels] = useState(false)
+  // Les lignes du cadre 7 (lib/forfaitKilometrique.ts) : le forfait de chacune doit être écrit au brouillon, et
+  // ce point de la liste en dépend — donc le même drapeau que les autres collections.
+  const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
   const [info, setInfo] = useState<InformationsDossier | null>(null)
   // Non nul = on ne SAIT PAS ce que le dossier porte comme informations. Sans ce drapeau, l'écran
   // qui prétend dire ce qui MANQUE affirmait « à renseigner » sur une lecture refusée — et passait
@@ -134,6 +138,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       lectureEmprunts,
       lectureVentilations,
       lectureReglements,
+      lectureVehicules,
     ] = await Promise.all([
       // Les quatre grosses collections sont lues par tranches, triées sur un ordre TOTAL : le
       // plafond de PostgREST ne se signale pas (voir lib/lectureComplete.ts), et cet écran est
@@ -194,6 +199,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
         supabase.from('reglements_groupes').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('id').range(debut, fin),
       ),
+      lireTout<VehiculeDossier>((debut, fin) =>
+        supabase.from('vehicules').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('annee').order('id').range(debut, fin),
+      ),
     ])
     // Best-effort, comme dans BanqueTab : l'échec est journalisé, jamais lu comme « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -219,8 +228,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       [
         lectureValidees, lectureAValider, lectureCotisations, lectureLignes, lectureImmobilisations,
         lectureNatures, lectureCategories, lectureEcritures, lectureEmprunts, lectureVentilations, lectureReglements,
+        lectureVehicules,
       ].find((l) => !l.complete)?.motif ?? null,
     )
+    setVehicules(lectureVehicules.lignes)
     setReglements(lectureReglements.lignes)
     setReglementsPartiels(!lectureReglements.complete)
     setEmprunts(lectureEmprunts.lignes)
@@ -418,6 +429,14 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     ? []
     : dotationsEnDefaut(dotationsDuRegistre(immobilisations, natures, ecritures, ouverture?.date ?? null, anneeCourante), anneeCourante)
   const exercicesDesDotations = [...new Set(dotationsManquantes.map((d) => d.annee))].sort((a, b) => a - b)
+  // Les forfaits kilométriques qui manquent au brouillon, sur la même règle (lib/forfaitKilometrique.ts) : celui
+  // d'un exercice FINI qui n'est pas écrit, et celui qui ne suit plus le cadre 7. La 2035 compte le forfait en
+  // case BJ depuis le cadre 7, le FEC depuis le brouillon. Il dépend lui aussi de l'ouverture du dossier, avant
+  // laquelle l'exercice est dans les comptes repris : lue à moitié, le point se tait.
+  const forfaitsManquants = ouvertureIncomplete !== null
+    ? []
+    : forfaitsEnDefaut(forfaitsDuCadre7(vehicules, ecritures, modele, ouverture?.date ?? null, anneeCourante), anneeCourante)
+  const exercicesDesForfaits = [...new Set(forfaitsManquants.map((f) => f.vehicule.annee))].sort((a, b) => a - b)
   // Signal plus grave que « en attente de rapprochement » : un montant qui n'apparaît nulle part dans
   // le relevé importé, à aucune date, révèle soit un relevé incomplet soit un montant faux — voir
   // lib/appariementBanque.ts. Ne porte que sur les pièces jamais rattachées à un mouvement, comme
@@ -530,6 +549,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       id: 'dotations-a-ecrire', label: 'dotation(s) aux amortissements à écrire ou qui ne suivent plus le registre',
       action: 'Écrire les dotations', nb: dotationsManquantes.length, cible: 'immobilisations', severite: 'erreur',
       detail: exercicesDesDotations.length > 0 ? `Exercice${exercicesDesDotations.length > 1 ? 's' : ''} : ${exercicesDesDotations.join(', ')}.` : undefined,
+    },
+    // « Erreur », pour la même raison : la 2035 compte le forfait en case BJ depuis le cadre 7, le FEC ne le porte
+    // que s'il est écrit. Le cadre 7 vit dans l'onglet Informations, avec la carte qui écrit les forfaits.
+    {
+      id: 'forfaits-a-ecrire', label: 'forfait(s) kilométrique(s) à écrire ou qui ne suivent plus le cadre 7',
+      action: 'Écrire les forfaits', nb: forfaitsManquants.length, cible: 'informations', severite: 'erreur',
+      detail: exercicesDesForfaits.length > 0 ? `Exercice${exercicesDesForfaits.length > 1 ? 's' : ''} : ${exercicesDesForfaits.join(', ')}.` : undefined,
     },
     { id: 'ecart-rapprochement', label: 'rapprochement(s) dont le montant ne correspond pas au mouvement', action: 'Vérifier le montant ou le rapprochement', nb: ecartsRapprochement.length, cible: 'banque', severite: 'erreur' },
     { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
@@ -731,8 +757,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
         consequence={
           'La tuile Trésorerie ne peut donc pas partir du solde repris : elle n’affiche aucun montant, ' +
           'plutôt qu’un solde faux — et un rouge faux. Et les points qui en dépendent se taisent : les ' +
-          'dotations aux amortissements, et l’écriture de la facture d’un bien — c’est l’ouverture qui dit ' +
-          's’il est acquis avant elle, donc déjà dans la balance reprise. Recharge la page.'
+          'dotations aux amortissements, les forfaits kilométriques, et l’écriture de la facture d’un bien — ' +
+          'c’est l’ouverture qui dit ce qui est déjà dans la balance reprise. Recharge la page.'
         }
       />
       {reserveCloturesInconnues(clotureInconnue, anneeCourante, { technique: true }) && (

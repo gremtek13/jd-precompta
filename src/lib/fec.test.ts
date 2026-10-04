@@ -576,3 +576,46 @@ describe('genererFec — les dotations aux amortissements', () => {
       .toEqual(new Set(['Amortissements du matériel de bureau et matériel informatique']))
   })
 })
+
+// UN FORFAIT KILOMÉTRIQUE (lib/forfaitKilometrique.ts) : une écriture par ligne du cadre 7, au journal des
+// OPÉRATIONS DIVERSES, au 31 décembre, le barème kilométrique de l'exercice pour pièce. Sans elle, la ligne 23
+// de la 2035 n'était nulle part dans le fichier.
+describe('genererFec — les forfaits kilométriques', () => {
+  const forfait = (vehiculeId: string, montant: number, date = '2026-12-31', compte = '108000'): EcritureBrouillon[] => [
+    ligne('', { id: `${vehiculeId}-${date}-d`, piece_id: null, vehicule_id: vehiculeId, date, compte: '625110', sens: 'debit', montant, libelle: 'Indemnités kilométriques — Zoé' }),
+    ligne('', { id: `${vehiculeId}-${date}-c`, piece_id: null, vehicule_id: vehiculeId, date, compte, sens: 'credit', montant, libelle: 'Indemnités kilométriques — Zoé' }),
+  ]
+
+  it('portent une écriture par véhicule au journal OD, le barème pour pièce', () => {
+    const rows = colonnes(genererFec([...forfait('v1', 10_234), ...forfait('v2', 23.81)], [], [], [], 'tresorerie', [])).slice(1)
+    expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[6], r[8], r[9], r[11], r[12]])).toEqual([
+      ['OD', 'OD00001', '20261231', '625110', 'Indemnités kilométriques (barème)', '', 'Barème kilométrique 2026', '20261231', '10234,00', '0,00'],
+      ['OD', 'OD00001', '20261231', '108000', "Compte de l'exploitant", '', 'Barème kilométrique 2026', '20261231', '0,00', '10234,00'],
+      ['OD', 'OD00002', '20261231', '625110', 'Indemnités kilométriques (barème)', '', 'Barème kilométrique 2026', '20261231', '23,81', '0,00'],
+      ['OD', 'OD00002', '20261231', '108000', "Compte de l'exploitant", '', 'Barème kilométrique 2026', '20261231', '0,00', '23,81'],
+    ])
+  })
+
+  // À date égale, l'ordre est celui de la clé — la dotation avant le forfait —, pour que deux exports du même
+  // brouillon soient identiques.
+  it('se numérotent avec les dotations, et chaque véhicule et chaque exercice à part', () => {
+    const dotation = [
+      ligne('', { id: 'i1-d', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '681100', sens: 'debit', montant: 400 }),
+      ligne('', { id: 'i1-c', piece_id: null, immobilisation_id: 'i1', date: '2026-12-31', compte: '281830', sens: 'credit', montant: 400 }),
+    ]
+    const rows = colonnes(genererFec([...forfait('v1', 50, '2025-12-31'), ...dotation, ...forfait('v1', 60)], [], [], [], 'tresorerie', [])).slice(1)
+    expect(rows.map((r) => [r[2], r[3], r[4], r[8]])).toEqual([
+      ['OD00001', '20251231', '625110', 'Barème kilométrique 2025'],
+      ['OD00001', '20251231', '108000', 'Barème kilométrique 2025'],
+      ['OD00002', '20261231', '681100', "Tableau d'amortissement 2026"],
+      ['OD00002', '20261231', '281830', "Tableau d'amortissement 2026"],
+      ['OD00003', '20261231', '625110', 'Barème kilométrique 2026'],
+      ['OD00003', '20261231', '108000', 'Barème kilométrique 2026'],
+    ])
+  })
+
+  it('n’ont pas de compte auxiliaire, même au compte courant du dirigeant en engagement', () => {
+    const rows = colonnes(genererFec(forfait('v1', 23.81, '2026-12-31', '455000'), [], [], [], 'engagement', [])).slice(1)
+    expect(rows.map((r) => [r[4], r[6], r[7]])).toEqual([['625110', '', ''], ['455000', '', '']])
+  })
+})

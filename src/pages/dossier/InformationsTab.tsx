@@ -7,6 +7,7 @@ import { aujourdHuiSql } from '../../lib/format'
 import { supprimerDossierDefinitivement, messageNettoyage } from '../../lib/suppressionDossier'
 import ConfirmationSuppression from '../../components/ConfirmationSuppression'
 import type { VehiculeType } from '../../lib/types'
+import type { ModeleComptable } from '../../lib/engagement'
 import VehiculesCard from './VehiculesCard'
 import SauvegardeCard from './SauvegardeCard'
 import BalanceCard from './BalanceCard'
@@ -33,10 +34,13 @@ interface Props {
   dossierNom: string
   dossierSiret: string | null
   dossierAdresse: string | null
+  // Le modèle comptable du dossier : le forfait kilométrique s'écrit face au compte du dirigeant qu'il désigne
+  // (voir VehiculesCard).
+  modele: ModeleComptable
   onIdentiteUpdated: (siret: string | null, adresse: string | null) => void
 }
 
-export default function InformationsTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, onIdentiteUpdated }: Props) {
+export default function InformationsTab({ dossierId, dossierNom, dossierSiret, dossierAdresse, modele, onIdentiteUpdated }: Props) {
   const { estChef } = useAuth()
   const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
@@ -306,7 +310,7 @@ export default function InformationsTab({ dossierId, dossierNom, dossierSiret, d
     </div>
 
     {/* Cadre 7 du 2035-B : sans le kilométrage, la case BJ (frais de véhicules) reste vide. */}
-    <VehiculesCard dossierId={dossierId} />
+    <VehiculesCard dossierId={dossierId} modele={modele} />
 
     {/* Juste avant la zone dangereuse, et pas dedans : sauvegarder n'est pas un geste de dernière
         minute avant une suppression, c'est ce qu'on fait régulièrement pour n'avoir jamais à le

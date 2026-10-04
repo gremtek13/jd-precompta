@@ -16,7 +16,7 @@ import {
 } from '../../lib/affectationBanque'
 import type {
   ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Immobilisation, LigneBancaire, ModeComptable, NatureImmobilisation, Piece,
-  ReglementGroupe, VentilationBancaire,
+  ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import { acquisitionsDesBiens } from '../../lib/amortissements'
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsAReecrire, refusVentilation } from '../../lib/ventilationBanque'
@@ -380,6 +380,20 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           'manquants des mouvements qui existent.',
         )
       }
+      // Les lignes du cadre 7, lues sur ce clic comme les mouvements : elles nomment le véhicule et le
+      // kilométrage de chaque forfait kilométrique (lib/forfaitKilometrique.ts), et rien d'autre sur cet
+      // écran n'en a besoin. Lues en partie, un forfait se dirait « véhicule hors du jeu chargé » — l'export
+      // se refuse plutôt.
+      const vehicules = await lireTout<VehiculeDossier>((debut, fin) =>
+        supabase.from('vehicules').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('annee').order('id').range(debut, fin),
+      )
+      if (!vehicules.complete) {
+        throw new Error(
+          `Les véhicules du cadre 7 n'ont pas pu être lus en entier (${vehicules.motif}). ` +
+          "L'export est annulé : un forfait kilométrique y perdrait le véhicule et le kilométrage qui le justifient.",
+        )
+      }
       // L'exercice d'une pièce est celui de son paiement, sa date de facture à défaut — celui où ses
       // écritures sont datées (lib/rattachement.ts) ; sans quoi une facture de décembre réglée en
       // janvier figurerait dans la piste de décembre comme un justificatif que rien ne comptabilise.
@@ -393,7 +407,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       // Les factures d'acquisition se cherchent parmi TOUTES les pièces validées : un bien acheté un autre
       // exercice s'amortit dans celui-ci, et sa facture est la preuve de sa dotation.
       const contenu = genererPisteAuditCsv(pisteAudit(
-        ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice, { immobilisations, factures: piecesValidees },
+        ecrituresFiltrees, piecesExercice, mouvements.lignes, aNouveauxExercice,
+        { immobilisations, factures: piecesValidees, vehicules: vehicules.lignes },
       ))
       telechargerTexte(nomFichierPisteAudit(dossierNom, anneeFilter), contenu)
     } catch (err) {

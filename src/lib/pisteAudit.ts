@@ -1,7 +1,8 @@
 import { libelleEcritureANouveau } from './aNouveaux'
 import { mouvementJustifieParLeReleve } from './affectationBanque'
 import { COMPTE_BANQUE } from './comptes'
-import type { ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, Piece } from './types'
+import { nomDuVehicule } from './forfaitKilometrique'
+import type { ANouveau, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
 
 // Piste d'audit fiable — les ruptures de la chaîne « écriture → justificatif → opération réelle ».
 //
@@ -54,11 +55,13 @@ export interface RuptureAudit {
 // NI LA DOTATION AUX AMORTISSEMENTS (lib/amortissements.ts) : son justificatif est le TABLEAU
 // D'AMORTISSEMENT du bien qu'elle désigne. Sa clé est SANS action à la suppression — un bien amorti ne
 // se supprime qu'avec ses dotations —, donc `immobilisation_id` ne tombe jamais à nul sous elle, et le lire
-// suffit, sans dépendre du registre chargé à côté.
+// suffit, sans dépendre du registre chargé à côté. NI LE FORFAIT KILOMÉTRIQUE (lib/forfaitKilometrique.ts),
+// pour la même raison : son justificatif est le BARÈME appliqué au kilométrage du cadre 7, et sa clé vers le
+// véhicule est sans action elle aussi — un véhicule ne se retire qu'avec son forfait (`retirer_vehicule`).
 export function rupturesPisteAudit(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): RuptureAudit[] {
   const ruptures: RuptureAudit[] = []
   for (const ecriture of ecritures) {
-    if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id) {
+    if (!ecriture.piece_id && !ecritureDuReleve(ecriture, idsJustifies) && !ecriture.immobilisation_id && !ecriture.vehicule_id) {
       ruptures.push({ ecriture, motif: 'sans_justificatif' })
     }
     if (ecriture.compte === COMPTE_BANQUE && !ecriture.ligne_bancaire_id) {
@@ -99,10 +102,10 @@ export interface AbsenceFec {
 // incomplet peut se déclarer est donc l'écran qui l'engendre.
 //
 // Les écritures des mouvements justifiés par le relevé, elles, y sont — au journal de banque, avec le
-// relevé pour pièce (voir `genererFec`) —, comme les dotations aux amortissements, au journal des
-// opérations diverses avec le tableau d'amortissement pour pièce.
+// relevé pour pièce (voir `genererFec`) —, comme les dotations aux amortissements et les forfaits
+// kilométriques, au journal des opérations diverses avec le tableau d'amortissement ou le barème pour pièce.
 export function absenceFec(ecritures: EcritureBrouillon[], idsJustifies: ReadonlySet<string>): AbsenceFec {
-  const horsFec = ecritures.filter((e) => !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id)
+  const horsFec = ecritures.filter((e) => !e.piece_id && !ecritureDuReleve(e, idsJustifies) && !e.immobilisation_id && !e.vehicule_id)
   return {
     nb: horsFec.length,
     debit: horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
@@ -171,12 +174,18 @@ export interface LignePisteAudit {
 // rendue avec lui. Une dotation dont le bien a perdu sa facture le dit : c'est l'amortissement d'une
 // dépense que plus rien ne justifie (voir `immobilisationSansJustificatif`). Obligatoire, sans valeur par
 // défaut : l'oublier ferait nommer chaque dotation « bien hors du jeu chargé ».
+//
+// Le justificatif d'un FORFAIT KILOMÉTRIQUE est le BARÈME de l'exercice appliqué au kilométrage de la ligne
+// du cadre 7 qu'il désigne : `vehicules` permet de les nommer. Rien n'en a d'empreinte, la colonne reste vide.
 export interface RegistreAudit {
   immobilisations: readonly Immobilisation[]
   // Les factures d'acquisition, cherchées parmi TOUTES les pièces validées et non parmi celles de
   // l'exercice : un bien acheté en 2025 s'amortit encore en 2026, et sa facture est la preuve de sa
   // dotation 2026. Cherchées dans `pieces`, elles auraient manqué à chaque exercice après le premier.
   factures: readonly Piece[]
+  // Les lignes du cadre 7. Obligatoires, sans valeur par défaut : les oublier ferait nommer chaque forfait
+  // « véhicule hors du jeu chargé ».
+  vehicules: readonly VehiculeDossier[]
 }
 
 export function pisteAudit(
@@ -190,10 +199,12 @@ export function pisteAudit(
   const ligneParId = new Map(lignesBancaires.map((l) => [l.id, l]))
   const bienParId = new Map(registre.immobilisations.map((i) => [i.id, i]))
   const factureParId = new Map(registre.factures.map((p) => [p.id, p]))
+  const vehiculeParId = new Map(registre.vehicules.map((v) => [v.id, v]))
   const piecesCitees = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
 
   const depuisEcritures = ecritures.map((e): LignePisteAudit => {
     if (!e.piece_id && !e.ligne_bancaire_id && e.immobilisation_id) return ligneDeDotation(e, bienParId, factureParId)
+    if (!e.piece_id && !e.ligne_bancaire_id && e.vehicule_id) return ligneDuForfait(e, vehiculeParId)
     const piece = e.piece_id ? pieceParId.get(e.piece_id) ?? null : null
     const mouvement = e.ligne_bancaire_id ? ligneParId.get(e.ligne_bancaire_id) ?? null : null
     const releve = !e.piece_id && mouvement && mouvementJustifieParLeReleve(mouvement) ? mouvement : null
@@ -325,6 +336,36 @@ function ligneDeDotation(
     mouvementLibelle: null,
     mouvementMontant: null,
     manque,
+  }
+}
+
+// La ligne d'un forfait kilométrique : le barème de l'exercice pour justificatif, appliqué au véhicule et au
+// kilométrage que déclare le cadre 7, au 31 décembre. Rien du relevé : le forfait ne se paie pas, il se doit
+// au dirigeant.
+function ligneDuForfait(e: EcritureBrouillon, vehiculeParId: ReadonlyMap<string, VehiculeDossier>): LignePisteAudit {
+  const vehicule = vehiculeParId.get(e.vehicule_id!) ?? null
+  const bareme = `Barème kilométrique ${e.date.slice(0, 4)}`
+  return {
+    ecritureId: e.id,
+    date: e.date,
+    compte: e.compte,
+    libelle: e.libelle,
+    debit: e.sens === 'debit' ? e.montant : 0,
+    credit: e.sens === 'credit' ? e.montant : 0,
+    pieceId: null,
+    pieceTiers: null,
+    pieceDate: e.date,
+    pieceMontantTtc: null,
+    pieceFichier: vehicule
+      ? `${bareme} : ${nomDuVehicule(vehicule)}, ${vehicule.km_professionnel.toLocaleString('fr-FR')} km professionnels`
+      : bareme,
+    pieceEmpreinte: null,
+    mouvementDate: null,
+    mouvementLibelle: null,
+    mouvementMontant: null,
+    // Même distinction qu'ailleurs : la clé ne tombe jamais à nul sous un forfait, donc un véhicule absent ne
+    // peut venir que d'un jeu de lignes restreint par l'appelant.
+    manque: vehicule ? [] : ['véhicule hors du jeu chargé'],
   }
 }
 
