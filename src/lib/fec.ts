@@ -1,14 +1,23 @@
-import type { ANouveau, Categorie, EcritureBrouillon, ModeComptable, Piece } from './types'
+import type { ANouveau, Categorie, EcritureBrouillon, JournalCode, ModeComptable, Piece } from './types'
 import { idsMouvementsJustifiesParLeReleve, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
 import { libelleEcritureANouveau } from './aNouveaux'
 import { libelleCompteTenu } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
+import { dateAParis } from './format'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
 // A47 A-1 du Livre des procédures fiscales, que tout logiciel de comptabilité sait importer sans
 // ressaisie. Construit uniquement à partir des écritures brouillon déjà proposées/validées dans
 // l'appli : si une pièce n'a pas encore de compte, ou n'est pas encore rapprochée en banque, elle
 // n'apparaît simplement pas (ou apparaît déséquilibrée) — jamais devinée pour compléter le fichier.
+//
+// DEUX TEMPS, UNE SEULE LOGIQUE (ligne 26.6, étape d). La NUMÉROTATION décide de tout ce qu'une ligne
+// porte hors de l'écriture elle-même — son journal, son numéro, sa pièce, le libellé de son compte, son
+// compte auxiliaire —, puis la MISE EN FORME l'écrit. La validation d'un exercice envoie cette numérotation à
+// `valider_exercice`, qui la fige sur les écritures ; le FEC d'un exercice validé se relit ensuite depuis ce
+// qui a été figé (`numerotationValidee`), et non plus depuis les pièces et les catégories d'aujourd'hui. Les
+// deux passent par la même mise en forme : le fichier d'avant la validation et celui d'après ne diffèrent que
+// par ValidDate, qui devient la date de la validation.
 
 // Les dix-huit champs du VII de l'article A47 A-1, ceux d'une comptabilité tenue selon le droit
 // commercial. UN BNC EN COMPTABILITÉ DE TRÉSORERIE (VIII 7) en doit VINGT-DEUX : les mêmes, plus la
@@ -19,6 +28,13 @@ const ENTETES_FEC = [
   'CompAuxNum', 'CompAuxLib', 'PieceRef', 'PieceDate', 'EcritureLib', 'Debit', 'Credit',
   'EcritureLet', 'DateLet', 'ValidDate', 'Montantdevise', 'Idevise',
 ]
+
+export const LIBELLES_JOURNAUX: Readonly<Record<JournalCode, string>> = {
+  AC: 'Achats',
+  VE: 'Ventes',
+  BQ: 'Banque',
+  OD: 'Opérations diverses',
+}
 
 function yyyymmdd(iso: string): string {
   return iso.slice(0, 10).replaceAll('-', '')
@@ -48,7 +64,63 @@ function champFec(valeur: string): string {
 // banque, tiers, dotations et amortissements) d'abord, sinon celui de la catégorie qui porte ce
 // compte_comptable, sinon le numéro de compte lui-même à défaut de mieux.
 export function libelleCompte(compte: string, categories: Categorie[]): string {
-  return libelleCompteTenu(compte) ?? categories.find((c) => c.compte_comptable === compte)?.libelle ?? compte
+  return libelleCompteTenu(compte) ?? (categories.find((c) => c.compte_comptable === compte)?.libelle || compte)
+}
+
+// Une ligne du FEC avant sa mise en forme : l'écriture, et ce que la numérotation décide pour elle. C'est
+// exactement ce que `valider_exercice` reçoit et fige (`demandeDeValidation`, lib/validationExercice.ts).
+export interface LigneFec {
+  ecriture: EcritureBrouillon
+  journal: JournalCode
+  numero: number
+  // La pièce de l'écriture : le justificatif, le relevé, le tableau d'amortissement ou le barème.
+  pieceRef: string
+  // AAAA-MM-JJ, comme les dates de la base.
+  pieceDate: string
+  compteLib: string
+  compAuxNum: string | null
+  compAuxLib: string | null
+  // AAAA-MM-JJ : la date de l'écriture tant qu'elle est au brouillon, celle de sa validation ensuite.
+  validDate: string
+}
+
+export interface ANouveauFec {
+  aNouveau: ANouveau
+  compteLib: string
+  ecritureLib: string
+  validDate: string
+}
+
+export interface NumerotationFec {
+  aNouveaux: ANouveauFec[]
+  // Dans l'ordre du fichier — voir `ordonnerLignes`.
+  lignes: LigneFec[]
+  // Les écritures que rien ne rattache : ni une pièce, ni un mouvement justifié par le relevé, ni un bien, ni
+  // un véhicule — le reste d'une pièce supprimée, que `absenceFec` chiffre. Hors du fichier, et une écriture
+  // qu'on ne peut pas numéroter empêche de valider son exercice.
+  horsFec: EcritureBrouillon[]
+}
+
+// L'ORDRE DU FICHIER, le même avant et après la validation. Les écritures par date de leur plus ancienne
+// ligne, puis date de pièce, journal et numéro ; les lignes d'une écriture par date, débit avant crédit, puis
+// compte et identifiant. L'ordre des lignes ne dépend donc plus de celui de la lecture : deux exports du même
+// brouillon rendent le même fichier, et le FEC relu depuis un exercice validé celui qu'on aurait exporté la
+// veille de la validation.
+function ordonnerLignes(lignes: LigneFec[]): LigneFec[] {
+  const premiere = new Map<string, string>()
+  for (const l of lignes) {
+    const cle = `${l.journal}|${l.numero}`
+    const actuelle = premiere.get(cle)
+    if (actuelle === undefined || l.ecriture.date < actuelle) premiere.set(cle, l.ecriture.date)
+  }
+  return [...lignes].sort((a, b) => {
+    const pa = premiere.get(`${a.journal}|${a.numero}`)!
+    const pb = premiere.get(`${b.journal}|${b.numero}`)!
+    return pa.localeCompare(pb) || a.pieceDate.localeCompare(b.pieceDate) || a.journal.localeCompare(b.journal)
+      || a.numero - b.numero || a.ecriture.date.localeCompare(b.ecriture.date)
+      || (a.ecriture.sens === b.ecriture.sens ? 0 : a.ecriture.sens === 'debit' ? -1 : 1)
+      || a.ecriture.compte.localeCompare(b.ecriture.compte) || a.ecriture.id.localeCompare(b.ecriture.id)
+  })
 }
 
 // LES À-NOUVEAUX OUVRENT LE FICHIER. Un FEC commence par les écritures d'ouverture : sans elles, le
@@ -57,29 +129,17 @@ export function libelleCompte(compte: string, categories: Categorie[]): string {
 // l'exercice exporté — l'appelant filtre, comme pour les écritures. Une seule écriture, journal AN,
 // numérotée à part des autres journaux ; sa pièce est la balance reprise.
 //
-// CompteLib reste celui de l'application pour un compte qu'elle tient (la banque, la TVA) : un même
-// CompteNum ne porte qu'un libellé dans tout le fichier, et les mouvements de la banque l'appellent
-// « Banque ». Le numéro et le libellé de la balance d'origine passent dans EcritureLib.
-function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
-  return [...aNouveaux]
-    .sort((a, b) => a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
-    .map((a) => [
-      'AN',
-      'À-nouveaux',
-      'AN00001',
-      yyyymmdd(a.date),
-      champFec(a.compte),
-      champFec(libelleCompteTenu(a.compte) ?? (a.libelle || a.compte)),
-      '', '',
-      champFec(a.source_nom),
-      yyyymmdd(a.date),
-      champFec(libelleEcritureANouveau(a)),
-      a.sens === 'debit' ? montant(a.montant) : montant(0),
-      a.sens === 'credit' ? montant(a.montant) : montant(0),
-      '', '',
-      yyyymmdd(a.date),
-      '', '',
-    ].join('\t'))
+// CompteLib reste celui de l'application pour un compte qu'elle tient (la banque, la TVA) : UN MÊME
+// CompteNum NE PORTE QU'UN LIBELLÉ DANS TOUT LE FICHIER — à-nouveaux et écritures compris, et la validation
+// le refuse autrement —, et les mouvements de la banque l'appellent « Banque ». Le numéro et le libellé de la
+// balance d'origine passent dans EcritureLib.
+function libellesDesComptes(categories: Categorie[], aNouveaux: readonly ANouveau[]): (compte: string) => string {
+  const repris = new Map<string, string>()
+  for (const a of [...aNouveaux].sort((x, y) => x.compte.localeCompare(y.compte) || x.id.localeCompare(y.id))) {
+    const libelle = champFec(a.libelle)
+    if (libelle && !repris.has(a.compte)) repris.set(a.compte, libelle)
+  }
+  return (compte) => champFec(libelleCompteTenu(compte) ?? repris.get(compte) ?? libelleCompte(compte, categories))
 }
 
 // Regroupe les écritures par pièce (une pièce = une écriture FEC, EcritureNum commun à toutes ses
@@ -109,23 +169,25 @@ function lignesANouveaux(aNouveaux: readonly ANouveau[]): string[] {
 // au même journal et à la même date : sa pièce est le BARÈME KILOMÉTRIQUE de l'exercice, appliqué au
 // kilométrage déclaré. Les autres écritures sans pièce — le reste d'une pièce supprimée — restent dehors,
 // et `absenceFec` les chiffre.
-export function genererFec(
-  ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
-  // Sans valeur par défaut : exporté en trésorerie, le brouillon d'un dossier en engagement mettrait
+export function numeroterFec(
+  ecritures: readonly EcritureBrouillon[], pieces: readonly Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
+  // Sans valeur par défaut : numéroté en trésorerie, le brouillon d'un dossier en engagement mettrait
   // ses règlements au journal des achats, sous le numéro de la facture.
   mode: ModeComptable,
   // Les lignes du relevé qui portent les mouvements affectés et les virements personnels — n'importe
   // quelles lignes, seules celles-là comptent. Sans valeur par défaut : les oublier sortirait du fichier
   // tous les encaissements sans bordereau, c'est-à-dire, pour un infirmier, presque toutes ses recettes.
   mouvements: readonly MouvementBancaire[],
-): string {
+): NumerotationFec {
   const pieceById = new Map(pieces.map((p) => [p.id, p]))
   const idsJustifies = idsMouvementsJustifiesParLeReleve(mouvements)
   const mouvementById = new Map(mouvements.map((m) => [m.id, m]))
+  const libelleDu = libellesDesComptes(categories, aNouveaux)
 
   // La clé d'une écriture FEC : la pièce en trésorerie ; en engagement, la pièce et le mouvement d'un
   // règlement, la facture gardant la pièce seule ; le mouvement, pour un mouvement justifié par le relevé.
   const groupes = new Map<string, EcritureBrouillon[]>()
+  const horsFec: EcritureBrouillon[] = []
   for (const e of ecritures) {
     let cle: string
     if (e.piece_id) {
@@ -136,7 +198,10 @@ export function genererFec(
       cle = `dotation|${e.immobilisation_id}|${e.date}`
     } else if (e.vehicule_id) {
       cle = `forfait|${e.vehicule_id}|${e.date}`
-    } else continue
+    } else {
+      horsFec.push(e)
+      continue
+    }
     groupes.set(cle, [...(groupes.get(cle) ?? []), e])
   }
 
@@ -145,93 +210,184 @@ export function genererFec(
   const plusAncienne = (rows: EcritureBrouillon[]) =>
     rows.reduce((date, e) => (e.date < date ? e.date : date), rows[0].date)
 
-  // Date de la pièce (PieceDate) : celle du justificatif lui-même, avec pour repli la plus ancienne de
-  // ses lignes.
-  function dateDePiece(pieceId: string, rows: EcritureBrouillon[]): string {
-    return pieceById.get(pieceId)?.date_piece ?? plusAncienne(rows)
-  }
-
   // L'ORDRE DES EcritureNum SUIT LA DATE DE L'ÉCRITURE, PAS CELLE DE LA FACTURE. Un EcritureNum non
   // croissant dans un même journal fait rejeter le fichier ; or depuis que l'écriture d'une pièce
   // payée est datée à son PAIEMENT (lib/rattachement.ts), deux factures peuvent se régler dans
   // l'ordre inverse de leurs dates, et trier sur PieceDate numéroterait un paiement de mars avant un
-  // paiement de février.
+  // paiement de février. C'est aussi ce que `valider_exercice` vérifie : dans un journal, la plus
+  // ancienne ligne d'une écriture ne précède jamais celle de l'écriture d'avant.
   const entrees = [...groupes.entries()]
     .map(([cle, rows]) => {
       const pieceId = rows[0].piece_id
+      const ordre = plusAncienne(rows)
       if (!pieceId && rows[0].immobilisation_id && !rows[0].ligne_bancaire_id) {
-        return {
-          cle, pieceId: null, rows, reglement: false, operationDiverse: true, date: rows[0].date, ordre: plusAncienne(rows),
-          pieceRef: `Tableau d'amortissement ${rows[0].date.slice(0, 4)}`,
-        }
+        return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
+          pieceRef: `Tableau d'amortissement ${rows[0].date.slice(0, 4)}` }
       }
       if (!pieceId && rows[0].vehicule_id && !rows[0].ligne_bancaire_id) {
-        return {
-          cle, pieceId: null, rows, reglement: false, operationDiverse: true, date: rows[0].date, ordre: plusAncienne(rows),
-          pieceRef: `Barème kilométrique ${rows[0].date.slice(0, 4)}`,
-        }
+        return { cle, pieceId: null, rows, ordre, journal: 'OD' as const, pieceDate: rows[0].date,
+          pieceRef: `Barème kilométrique ${rows[0].date.slice(0, 4)}` }
       }
       if (!pieceId) {
         const mouvement = mouvementById.get(rows[0].ligne_bancaire_id!)!
-        return {
-          cle, pieceId: null, rows, reglement: true, operationDiverse: false, date: mouvement.date, ordre: plusAncienne(rows),
-          pieceRef: referenceDuReleve(mouvement),
-        }
+        return { cle, pieceId: null, rows, ordre, journal: 'BQ' as const, pieceDate: mouvement.date,
+          pieceRef: referenceDuReleve(mouvement) }
       }
+      const piece = pieceById.get(pieceId)
+      const reglement = cle !== pieceId
+      // Date de la pièce (PieceDate) : celle du justificatif lui-même, avec pour repli la plus ancienne de
+      // ses lignes. Sa référence : le nom du fichier, sinon le début de son identifiant — jamais vide, la
+      // validation refuse une ligne sans pièce.
       return {
-        cle, pieceId, rows, reglement: cle !== pieceId, operationDiverse: false, date: dateDePiece(pieceId, rows), ordre: plusAncienne(rows),
-        pieceRef: null,
+        cle, pieceId, rows, ordre,
+        journal: reglement ? 'BQ' as const : piece?.type_piece === 'vente' ? 'VE' as const : 'AC' as const,
+        pieceDate: piece?.date_piece ?? ordre,
+        pieceRef: champFec(piece?.nom_fichier ?? '') || pieceId.slice(0, 8),
       }
     })
     // À date égale, on départage sur la facture puis sur la clé, pour que deux exports successifs du
     // même brouillon produisent exactement le même fichier.
-    .sort((a, b) => a.ordre.localeCompare(b.ordre) || a.date.localeCompare(b.date) || a.cle.localeCompare(b.cle))
+    .sort((a, b) => a.ordre.localeCompare(b.ordre) || a.pieceDate.localeCompare(b.pieceDate) || a.cle.localeCompare(b.cle))
 
-  const compteurs: Record<string, number> = {}
-  const lignes: string[] = [ENTETES_FEC.join('\t'), ...lignesANouveaux(aNouveaux)]
-  // Le libellé de chaque compte auxiliaire : le premier rencontré dans l'ordre du fichier, pour qu'un
-  // même CompAuxNum ne porte qu'un CompAuxLib — l'OCR n'écrit pas deux fois le nom d'un fournisseur
-  // de la même façon.
-  const libellesAuxiliaires = new Map<string, string>()
-
-  for (const { pieceId, rows, date, reglement, operationDiverse, pieceRef: refReleve } of entrees) {
+  const compteurs: Partial<Record<JournalCode, number>> = {}
+  const lignes: LigneFec[] = []
+  for (const { pieceId, rows, journal, pieceDate, pieceRef } of entrees) {
+    const numero = (compteurs[journal] ?? 0) + 1
+    compteurs[journal] = numero
     const piece = pieceId ? pieceById.get(pieceId) : undefined
-    const journalCode = operationDiverse ? 'OD' : reglement ? 'BQ' : piece?.type_piece === 'vente' ? 'VE' : 'AC'
-    const journalLib = operationDiverse ? 'Opérations diverses' : reglement ? 'Banque' : piece?.type_piece === 'vente' ? 'Ventes' : 'Achats'
-    compteurs[journalCode] = (compteurs[journalCode] ?? 0) + 1
-    const ecritureNum = `${journalCode}${String(compteurs[journalCode]).padStart(5, '0')}`
-    const pieceRef = refReleve ?? piece?.nom_fichier ?? pieceId!.slice(0, 8)
-    const pieceDate = yyyymmdd(date)
-
     for (const e of rows) {
       // Une pièce absente du jeu fourni n'a pas de tiers qu'on puisse lire : son auxiliaire est le
       // compte « divers », plutôt qu'une clé tirée d'un libellé qui peut n'être qu'un nom de fichier.
       // Un mouvement justifié par le relevé n'a pas de compte AUXILIAIRE : son écriture va de la catégorie,
       // ou du compte du dirigeant, à la banque — l'auxiliaire ne sert qu'aux 401 et 411 d'une pièce.
       const auxiliaire = pieceId ? auxiliaireDuTiers(piece ?? { tiers: null }, e.compte) : null
-      if (auxiliaire && !libellesAuxiliaires.has(auxiliaire.num)) libellesAuxiliaires.set(auxiliaire.num, auxiliaire.lib)
-      lignes.push([
-        journalCode,
-        journalLib,
-        ecritureNum,
-        yyyymmdd(e.date),
-        champFec(e.compte),
-        champFec(libelleCompte(e.compte, categories)),
-        auxiliaire ? champFec(auxiliaire.num) : '',
-        auxiliaire ? champFec(libellesAuxiliaires.get(auxiliaire.num)!) : '',
-        champFec(pieceRef),
-        pieceDate,
-        champFec(e.libelle),
-        e.sens === 'debit' ? montant(e.montant) : montant(0),
-        e.sens === 'credit' ? montant(e.montant) : montant(0),
-        '', '',
-        yyyymmdd(e.date),
-        '', '',
-      ].join('\t'))
+      lignes.push({
+        ecriture: e, journal, numero, pieceRef: champFec(pieceRef), pieceDate,
+        compteLib: libelleDu(e.compte),
+        compAuxNum: auxiliaire ? champFec(auxiliaire.num) : null,
+        compAuxLib: auxiliaire ? champFec(auxiliaire.lib) : null,
+        validDate: e.date,
+      })
     }
   }
 
+  // Le libellé de chaque compte auxiliaire : le premier rencontré dans l'ordre du fichier, pour qu'un
+  // même CompAuxNum ne porte qu'un CompAuxLib — l'OCR n'écrit pas deux fois le nom d'un fournisseur
+  // de la même façon. La validation refuse un auxiliaire qui en porte deux.
+  const ordonnees = ordonnerLignes(lignes)
+  const libellesAuxiliaires = new Map<string, string>()
+  for (const l of ordonnees) {
+    if (l.compAuxNum === null) continue
+    const premier = libellesAuxiliaires.get(l.compAuxNum)
+    if (premier === undefined) libellesAuxiliaires.set(l.compAuxNum, l.compAuxLib!)
+    else l.compAuxLib = premier
+  }
+
+  return {
+    aNouveaux: [...aNouveaux]
+      .sort((a, b) => a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
+      .map((a) => ({ aNouveau: a, compteLib: libelleDu(a.compte), ecritureLib: champFec(libelleEcritureANouveau(a)), validDate: a.date })),
+    lignes: ordonnees,
+    horsFec,
+  }
+}
+
+// LE FEC D'UN EXERCICE VALIDÉ SE RELIT DEPUIS CE QUI A ÉTÉ FIGÉ. Chaque écriture validée porte son journal, son
+// numéro, sa pièce, le libellé de son compte et son compte auxiliaire, tels que `numeroterFec` les avait
+// décidés le jour de la validation ; les à-nouveaux de l'exercice portent les libellés de leur compte et de leur
+// écriture. Rien n'est relu des pièces ni des catégories d'aujourd'hui : une catégorie renommée ou un tiers
+// corrigé ne changent plus le fichier. ValidDate est la date de la validation, à Paris — la base la date ainsi,
+// et deux exports doivent rendre le même fichier où que soit le poste.
+//
+// Une écriture qui ne porte pas ce qu'une écriture validée porte n'est pas numérotée : elle part dans
+// `horsFec`, au lieu d'être imprimée avec des champs vides. Elle ne peut pas exister — la base refuse la
+// validation tant qu'une écriture de l'exercice reste proposée —, et c'est pourquoi elle se voit plutôt que
+// de se cacher.
+export function numerotationValidee(
+  ecritures: readonly EcritureBrouillon[], aNouveaux: readonly ANouveau[],
+  // L'instant de la validation de l'exercice (`exercices_valides.valide_le`), ValidDate des à-nouveaux.
+  valideLe: string,
+): NumerotationFec {
+  const lignes: LigneFec[] = []
+  const horsFec: EcritureBrouillon[] = []
+  for (const e of ecritures) {
+    if (e.statut !== 'validee' || !e.valide_le || !e.journal_code || !e.numero_ecriture || !e.piece_ref
+      || !e.piece_date || !e.compte_lib) {
+      horsFec.push(e)
+      continue
+    }
+    lignes.push({
+      ecriture: e, journal: e.journal_code, numero: e.numero_ecriture, pieceRef: e.piece_ref, pieceDate: e.piece_date,
+      compteLib: e.compte_lib, compAuxNum: e.comp_aux_num, compAuxLib: e.comp_aux_lib, validDate: dateAParis(e.valide_le),
+    })
+  }
+  const validDate = dateAParis(valideLe)
+  return {
+    aNouveaux: [...aNouveaux]
+      .sort((a, b) => a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
+      .map((a) => ({
+        aNouveau: a,
+        compteLib: a.compte_lib ?? champFec(libelleCompteTenu(a.compte) ?? (a.libelle || a.compte)),
+        ecritureLib: a.ecriture_lib ?? champFec(libelleEcritureANouveau(a)),
+        validDate,
+      })),
+    lignes: ordonnerLignes(lignes),
+    horsFec,
+  }
+}
+
+// La mise en forme, commune aux deux : en-tête, à-nouveaux, puis les écritures dans l'ordre de la
+// numérotation, en tabulations et fins de ligne CRLF.
+export function formaterFec(numerotation: NumerotationFec): string {
+  const lignes: string[] = [ENTETES_FEC.join('\t')]
+  for (const { aNouveau: a, compteLib, ecritureLib, validDate } of numerotation.aNouveaux) {
+    lignes.push([
+      'AN',
+      'À-nouveaux',
+      'AN00001',
+      yyyymmdd(a.date),
+      champFec(a.compte),
+      champFec(compteLib),
+      '', '',
+      champFec(a.source_nom),
+      yyyymmdd(a.date),
+      champFec(ecritureLib),
+      a.sens === 'debit' ? montant(a.montant) : montant(0),
+      a.sens === 'credit' ? montant(a.montant) : montant(0),
+      '', '',
+      yyyymmdd(validDate),
+      '', '',
+    ].join('\t'))
+  }
+  for (const l of numerotation.lignes) {
+    const e = l.ecriture
+    lignes.push([
+      l.journal,
+      LIBELLES_JOURNAUX[l.journal],
+      `${l.journal}${String(l.numero).padStart(5, '0')}`,
+      yyyymmdd(e.date),
+      champFec(e.compte),
+      champFec(l.compteLib),
+      l.compAuxNum ? champFec(l.compAuxNum) : '',
+      l.compAuxLib ? champFec(l.compAuxLib) : '',
+      champFec(l.pieceRef),
+      yyyymmdd(l.pieceDate),
+      champFec(e.libelle),
+      e.sens === 'debit' ? montant(e.montant) : montant(0),
+      e.sens === 'credit' ? montant(e.montant) : montant(0),
+      '', '',
+      yyyymmdd(l.validDate),
+      '', '',
+    ].join('\t'))
+  }
   return lignes.join('\r\n')
+}
+
+export function genererFec(
+  ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
+  mode: ModeComptable, mouvements: readonly MouvementBancaire[],
+): string {
+  return formaterFec(numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements))
 }
 
 // SirenFECAAAAMMJJ.txt — nom de fichier imposé par le format (AAAAMMJJ = date de clôture de

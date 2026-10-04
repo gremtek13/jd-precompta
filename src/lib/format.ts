@@ -187,6 +187,24 @@ export function dateLocaleDe(horodatage: string): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// Date civile (AAAA-MM-JJ) d'un instant À PARIS, quel que soit le fuseau de qui regarde. Pour ce que la
+// BASE date elle-même à Paris : l'année en cours, qui borne la validation d'un exercice (`valider_exercice`
+// la lit à Paris), et la date de validation qu'un FEC porte en ValidDate — deux exports d'un exercice validé
+// doivent rendre le même fichier, où que soit le poste qui les fait. Ailleurs, la date de l'utilisateur
+// reste la bonne (`dateLocaleDe`).
+export function dateAParis(instant: string | Date): string {
+  const parties = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Paris', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date(instant))
+  const partie = (type: string) => parties.find((p) => p.type === type)?.value ?? ''
+  return `${partie('year')}-${partie('month')}-${partie('day')}`
+}
+
+// Aujourd'hui à Paris — voir `dateAParis`.
+export function aujourdHuiAParis(): string {
+  return dateAParis(new Date())
+}
+
 export function moisDe(date: string): number {
   return Number(date.slice(5, 7))
 }
