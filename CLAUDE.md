@@ -280,6 +280,10 @@ supabase/
                   d'un bien avec ses dotations, par impersonation des trois profils, à rejouer après
                   toute migration qui touche ses deux fonctions, le calcul de la base, les tables
                   immobilisations et natures_immobilisation ou les contraintes d'ecritures_brouillon.
+                  forfaitKilometrique.sql : le forfait kilométrique d'une ligne du cadre 7 et son
+                  écriture, le retrait d'un véhicule avec son forfait, par impersonation des trois
+                  profils, à rejouer après toute migration qui touche ses deux fonctions, le barème de
+                  la base, la table vehicules ou les contraintes d'ecritures_brouillon.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -361,6 +365,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   colonne, `flex-end` calait les champs à droite, à la largeur de leur contenu, et le style en ligne
   l'emportait sur la règle mobile. `debordements.mjs` ne mesure que l'ordinateur : ces deux-là ont été
   vus sur une capture, puis mesurés rangée par rangée.
+  **Un tableau-formulaire (`table-formulaire`) vit dans une enveloppe `.formulaire-adaptable`** : il se
+  replie en fiche empilée quand SON enveloppe rétrécit — une requête de CONTENEUR posée sur l'enveloppe
+  seule, jamais sur le panneau, qui deviendrait la référence des éléments fixes —, donc à 1 024 pixels et
+  volet ouvert comme sur téléphone. Hors d'elle il ne se replie nulle part, téléphone compris, et
+  `tableauxFormulaires.test.ts` le refuse (04/10/2026 : la carte Véhicules, passée à neuf colonnes,
+  écrasait ses champs à 1 024 pixels).
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
@@ -1352,6 +1362,14 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   l'a pas choisie, ni un bien acquis avant l'ouverture d'un dossier repris, que la balance reprise porte
   déjà. Voir « l'acquisition d'un bien s'écrit sur le compte de sa nature » dans « Problèmes connus »
   (`acquisitionsDesBiens`, `lib/ecritures.ts`).
+- **Le forfait kilométrique s'écrit (04/10/2026)**, ligne 26.6, étape (b), quatrième brique : le forfait de
+  chaque ligne du cadre 7 (carte Véhicules, onglet Informations) s'écrit au brouillon au 31 décembre de son
+  exercice, l'indemnité du barème au débit du 625110 et au crédit du compte du dirigeant (le 108000 en
+  trésorerie). Le calcul se fait en centimes entiers, le même dans l'application et en base, et la case BJ
+  de la 2035, le FEC (journal des opérations diverses) et la piste d'audit disent le même montant. La
+  Checklist réclame le forfait d'un exercice fini qui manque, et Clôture signale le véhicule du registre
+  amorti sous le barème. Voir « le forfait kilométrique s'écrit » dans « Problèmes connus »
+  (`lib/forfaitKilometrique.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1386,13 +1404,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   par un depuis sa fiche ou en lot par des règles apprises par libellé, ou se ventile sur plusieurs
   comptes ; un virement personnel s'écrit sur le compte du dirigeant (108 en trésorerie), une
   échéance d'emprunt sur ses trois comptes (164, 661, 616), et une recette d'un dossier assujetti porte
-  le taux de TVA que le cabinet choisit. L'étape (b) a commencé le 01/10/2026 : une échéance de
-  cotisation rapprochée de son prélèvement s'écrit (646, et 108 pour sa CSG-CRDS en trésorerie), les
+  le taux de TVA que le cabinet choisit. L'étape (b) est livrée (du 01/10 au 04/10/2026) : une échéance
+  de cotisation rapprochée de son prélèvement s'écrit (646, et 108 pour sa CSG-CRDS en trésorerie), les
   dotations aux amortissements s'écrivent (681100 face au compte 28 de la nature du bien), prorata
-  temporis depuis la mise en service, et la facture d'un bien s'écrit sur le compte d'immobilisation de
-  sa nature (sa TVA au 445620, sa dette au 404000 en engagement). Restent (b) le forfait kilométrique,
-  (c) tirer la 2035 des écritures ou l'y comparer, (d) valider un exercice, (e) les vingt-deux champs et
-  Test Compta Demat.
+  temporis depuis la mise en service, la facture d'un bien s'écrit sur le compte d'immobilisation de sa
+  nature (sa TVA au 445620, sa dette au 404000 en engagement), et le forfait kilométrique du cadre 7
+  s'écrit (625110 face au compte du dirigeant). Restent (c) tirer la 2035 des écritures ou l'y comparer,
+  (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -4483,9 +4501,9 @@ d'environnement dans la même édition.
     lettrage est la ligne 32.
   - **Ce fichier n'est pas le FEC légal du dossier.** Il ne porte que ce que l'application écrit. Le
     28/09/2026, c'était les justificatifs et leur banque, et les à-nouveaux ; depuis la ligne 26.6 (du 29/09
-    au 01/10/2026), ce sont aussi les mouvements du relevé affectés ou ventilés sans justificatif, les
-    virements personnels, les échéances d'emprunt et de cotisation, les dotations aux amortissements et
-    l'acquisition des biens. Il n'a toujours ni le forfait kilométrique, ni les mouvements que personne
+    au 04/10/2026), ce sont aussi les mouvements du relevé affectés ou ventilés sans justificatif, les
+    virements personnels, les échéances d'emprunt et de cotisation, les dotations aux amortissements,
+    l'acquisition des biens et le forfait kilométrique. Il n'a toujours pas les mouvements que personne
     n'a encore traités. Ses écritures sont des brouillons, sans procédure de validation : ValidDate y vaut
     la date d'écriture, ce que la notice n'admet que d'un logiciel sans mode brouillard. C'est un fichier
     d'IMPORT pour l'expert-comptable ; le FEC remis à l'administration est celui de son logiciel.
@@ -6088,6 +6106,126 @@ d'environnement dans la même édition.
   sur le compte du bien — une pièce par bien ; le badge le montre ; la cession ou la mise au rebut d'un bien
   ne sont pas modélisées ; et la facture d'un bien sans nature ou repris reste, dans la piste d'audit, un
   justificatif que rien ne comptabilise — ce qui est vrai.
+- **LE FORFAIT KILOMÉTRIQUE S'ÉCRIT — LIGNE 26.6, ÉTAPE (B), QUATRIÈME BRIQUE** (04/10/2026,
+  `lib/forfaitKilometrique.ts`, `lib/baremeKilometrique.ts`, `VehiculesCard`). La 2035 comptait le forfait en
+  case BJ depuis le cadre 7 (la table `vehicules`, une ligne par véhicule et par exercice), et rien ne
+  l'écrivait : ni charge ni contrepartie au brouillon, donc rien au FEC — un vérificateur qui additionne le
+  fichier ne retrouvait pas la ligne 23 de la déclaration.
+  **L'ÉCRITURE**, une par ligne du cadre 7, au 31 décembre de son exercice : l'indemnité du barème au débit du
+  625110 et au crédit du compte du DIRIGEANT (`compteDuDirigeant` : le 108000 de l'exploitant en trésorerie,
+  le compte choisi en engagement). C'est lui qui a supporté les frais du véhicule, et le barème les lui rend :
+  ni la banque ni une pièce n'y prennent part. Le 625110 est un sous-compte de 6251 à part du 625100 des frais
+  de déplacement au réel — la notice interdit de cumuler le barème et les frais qu'il couvre, et la balance
+  doit pouvoir montrer l'un sans l'autre.
+  **LE CALCUL EST EN ENTIERS, DES DEUX CÔTÉS** : `indemniteKilometriqueCentimes` multiplie le kilométrage par
+  le coefficient en millièmes d'euro, ajoute le forfait de la tranche et arrondit au centime, le demi-centime
+  vers le haut, en BigInt ; `indemnite_kilometrique_centimes` refait exactement ce calcul en base, sur le
+  barème qu'y porte `bareme_kilometrique()`, pour VÉRIFIER l'écriture. Le calcul en flottants qu'il remplace
+  rendait un centime de moins dans un cas sur soixante — 45 km à 0,529 € font 23,805 €, que `toFixed(2)`
+  arrondissait à 23,80 € —, et la base aurait refusé l'écriture juste. `baremeKilometrique.test.ts` lit la
+  table exportée et confronte les deux tables et les deux calculs sur chaque ligne, autour de chaque borne et
+  sur chaque reste. Un kilométrage est un nombre ENTIER de kilomètres, comme la colonne en base : la carte
+  n'enregistre plus « 12,5 », et le barème ne calcule rien sur un kilométrage fractionnaire — « kilométrage
+  invalide », troisième motif de `nonCalcules`. Une motorisation absente ou hybride se lit thermique : seuls
+  les 100 % électriques ont leur table.
+  **Le forfait et son écriture partent ENSEMBLE**, par `ecrire_forfait_kilometrique` : l'écriture composée par
+  l'application (`ecritureDuForfait`) est comparée en multiensemble à celle du barème — le 625110 et le compte
+  du dirigeant du dossier, au centime —, puis remplace celle d'avant ; une écriture VIDE retire un forfait
+  qui n'a plus lieu d'être (zéro kilomètre, exercice repris). `retirer_vehicule` retire une ligne du cadre 7
+  ET son forfait, et refuse quand ce forfait est validé. Toutes deux sont `SECURITY INVOKER` et vérifient
+  l'accès elles-mêmes ; la première refuse, dans cet ordre, un exercice à venir (l'année lue à Paris), un
+  forfait validé, toute écriture autre que vide avant l'ouverture d'un dossier repris — l'exercice est dans
+  ses à-nouveaux —, un barème absent et une puissance hors barème, et l'écran dit les mêmes refus avant le
+  clic (`refusForfait`). Le compte du dirigeant se lit dans le dossier, jamais dans ce que l'application
+  envoie. Deux contraintes tiennent le reste sans le code : un forfait n'a ni pièce, ni mouvement, ni bien, et
+  il tombe au 31 décembre ; et sa clé vers le véhicule est sans action à la suppression.
+  **En base, trois migrations** : `bareme_kilometrique` (le barème et son calcul), `ecritures_brouillon_vehicule`
+  (le lien et ses deux contraintes) et `forfait_kilometrique_ecrit` (les deux fonctions). **La dernière a été
+  collée par le cabinet dans l'éditeur SQL de Supabase**, avec la ligne d'historique que l'outil aurait posée :
+  `apply_migration` demande une confirmation pour un texte qui contient des suppressions — ici, à l'intérieur
+  des deux fonctions —, elle ne parvenait pas jusqu'au cabinet, et l'appel expirait. Rien n'a été contourné,
+  ni le texte réécrit pour échapper au détecteur, ni `execute_sql` employé (voir les règles en fin de
+  fichier), et la migration est enregistrée à l'identique : l'empreinte du fichier exporté est celle de
+  l'historique, et les corps des deux fonctions en base sont ceux du texte enregistré. L'export porte
+  78 migrations (`f2e1565f…`), le socle 73 instructions, l'inventaire 895 objets (`f03fdfc3…`), et la
+  sauvegarde la nouvelle relation. `supabase/essais/forfaitKilometrique.sql` : 35 contrôles par
+  impersonation des trois profils, dont le contrôle POSITIF du chef, chaque refus jugé à sa raison, les
+  tables du barème, le compte du dirigeant en engagement, l'ouverture d'un dossier repris, ce que les
+  contraintes tiennent seules, des indemnités de référence, et que rien ne reste ; sans le passage au rôle
+  anonyme, ses contrôles 1 et 2 virent au rouge. Ce qu'il ne peut pas jouer sans une instruction de
+  suppression — qu'un véhicule qui porte un forfait ne se supprime pas directement, et que la suppression
+  d'un dossier passe — est lu au catalogue, et annoncé comme tel.
+  **CE QUI LE PORTE, usage par usage** :
+  - la carte Véhicules (onglet Informations) compare chaque ligne du cadre 7 de TOUS les exercices au
+    brouillon (`forfaitsDuCadre7` : à écrire, à réécrire, à retirer, écrit, validé qui diverge, rien), dit
+    l'état de chacune dans une colonne « Forfait » — « Dans les à-nouveaux » avant l'ouverture —, et
+    « Écrire les N » les écrit un à un par la base, un refus n'interrompant pas le lot. Un seul verrou tient
+    le lot, le retrait d'un véhicule et la modification d'une ligne — modifiée pendant le lot, elle verrait
+    son forfait écrit d'après ce que le lot a lu avant —, relâché APRÈS la relecture. Une lecture partielle
+    des véhicules, de leurs forfaits ou de l'ouverture suspend l'écriture. Le forfait de l'exercice en cours
+    s'écrit dès aujourd'hui, sans être réclamé. Retirer un véhicule passe par la base, nomme le forfait qui
+    part avec lui — ou dit, sur une lecture partielle, qu'on ne sait pas s'il en part un — et se refuse avant
+    de demander quand ce forfait est validé ;
+  - la Checklist réclame, en erreur, le forfait d'un exercice FINI qui n'est pas écrit et tout forfait écrit
+    qui ne suit plus le cadre 7 (`forfaitsEnDefaut`), nomme les exercices et mène à Informations ; elle se
+    tait sur une ouverture lue à moitié, qui ferait réclamer un exercice repris ;
+  - le FEC le porte au journal des opérations diverses, « Barème kilométrique <année> » pour pièce, sans
+    compte auxiliaire ; la piste d'audit donne pour justificatif le barème, le véhicule et son kilométrage,
+    sans empreinte — Écritures lit les lignes du cadre 7 sur le clic de l'export, et l'export se refuse quand
+    elles sont lues en partie ; ni rupture, ni absence du FEC ;
+  - la 2035 compte toujours la case BJ depuis le cadre 7, et le total se fait désormais en centimes : la
+    déclaration et le FEC disent le même montant.
+  **LE VÉHICULE DU REGISTRE AMORTI SOUS LE BARÈME SE DIT, IL NE SE CORRIGE PAS** (`amortissementsSousLeBareme`).
+  La notice de la 2035, au tableau des immobilisations : « le barème couvrant déjà l'amortissement — les
+  amortissements afférents à ces véhicules doivent être réintégrés au cadre B ». Or la case CH compte la
+  dotation de tout le registre, et le brouillon l'écrit : un véhicule amorti l'année où le barème est retenu
+  y est déduit deux fois. Clôture liste, en rouge, la dotation de tout bien dont la nature porte le compte du
+  matériel de transport (2182), l'année où une ligne du cadre 7 porte des kilomètres — l'option vaut pour tous
+  les véhicules de l'année. Le cadre B n'est pas modélisé, et c'est le cabinet qui sait lequel de ses biens
+  est le véhicule du cadre 7 : la règle de `doublonFraisVehicules`, pour l'autre moitié de la même note. Les
+  natures lues en partie, le bandeau le dit.
+  **L'assistant, version 40** : `points_a_traiter` lit le cadre 7 et le lien des écritures vers lui, sous le
+  même refus de lecture partielle, et rend le point de la Checklist (bloc `── DÉBUT/FIN FORFAIT` : le barème,
+  son calcul en centimes entiers, l'écriture et l'état de chaque ligne) ; le prompt dit qu'un forfait au
+  625110 face au compte du dirigeant, sans pièce ni mouvement, n'est pas une anomalie. Au passage, le
+  commentaire sur la TVA du brouillon, périmé depuis l'acquisition des biens, est corrigé.
+  `agentComptableForfait.test.ts` compare la copie à `src/lib` — le barème sur chaque ligne et chaque borne,
+  l'écriture dans les trois modèles, les états, les forfaits réclamés — et y plante dix dérives, toutes
+  attrapées. Déployée avec `verify_jwt` relu et repassé à `false`, la v39 comparée au dépôt avant écrasement
+  (identique à `main`, 2 153 lignes), aller-retour après : zéro différence sur 2 351 lignes, et le 401 de la
+  fonction sans session. Aucun appel au modèle.
+  **Les captures ont trouvé deux défauts d'affichage.** « À réécrire » se coupait dans la colonne de l'état.
+  Et la carte Véhicules, passée à neuf colonnes, écrasait ses champs à 1 024 pixels et volet ouvert à 1 280 :
+  la fiche empilée d'un tableau-formulaire ne valait que sur téléphone. Elle suit désormais la largeur de son
+  enveloppe (`.formulaire-adaptable`, voir les conventions), et `tableauxFormulaires.test.ts` exige que tout
+  `table-formulaire` des écrans y vive. Le banc sert le cadre 7 fictif du cabinet infirmier — une Peugeot en
+  2025, avant la reprise, et en 2026, écrite ; un scooter électrique écrit sur 2 400 km quand le cadre 7 en
+  porte 2 600 ; un cyclomoteur de l'exercice en cours, à écrire — et ce même scooter au registre, amorti sous
+  le barème : 0 débordement aux quatre largeurs.
+  **LATENT, et mesuré** (04/10/2026) : un seul véhicule en base, sur le dossier `test`, pour l'exercice 2026
+  en cours, que le barème sait calculer ; aucune écriture de forfait, aucune ligne au 625110, aucune ouverture
+  reprise. Son forfait s'écrit dès aujourd'hui depuis la carte, et la Checklist ne le réclamera qu'une fois
+  2026 fini.
+  **Quatre-vingt-trois mutations, quatre-vingt-deux mordent — la première passe en laissait sept en vie sur
+  soixante-dix-neuf**, et les sept accusaient des tests absents, tous écrits depuis : rien n'éprouvait le
+  forfait dans l'onglet Écritures — ni rupture, porté au FEC au journal des opérations diverses, le véhicule et
+  son kilométrage dans la piste d'audit, l'export de la piste refusé sur une lecture partielle des véhicules ;
+  dans la carte, relâcher le verrou avant la relecture qui suit un lot passait, aucun test ne vérifiant que
+  « Retirer » reste grisé et qu'un changement sur la ligne n'écrit rien pendant cette relecture ; le refus
+  d'un forfait n'était éprouvé que dans le lot, pas sur sa ligne du cadre 7 ; rien ne disait que le point de
+  la Checklist mène à l'onglet Informations, ni que le modèle comptable passe de la page à l'onglet puis à la
+  carte — figé, il ferait composer sur le 108000 l'écriture d'un dossier en engagement, que la base refuse ;
+  et un coefficient que la virgule flottante représente juste sous son millième, cas DÉFENSIF annoncé comme
+  tel : aucun coefficient publié ne le produit. Rejouées avec quatre variantes, dix des onze mordent. **Une
+  survit, et c'est dit** : la garde du gestionnaire de « Retirer » pendant le lot, qu'aucun clic n'atteint, le
+  bouton étant grisé — sa jumelle, le bouton ouvert, mord.
+  **CE QUI RESTE, dit plutôt que promis** : le véhicule du registre amorti sous le barème se dit sans se
+  corriger, et `vehicules` porte depuis sa création `inscrit_immobilisations` et `amortissements_a_reintegrer`,
+  qu'aucun écran ne lit ni n'écrit — relier une ligne du cadre 7 à son bien permettrait de nommer CE véhicule
+  plutôt que tout le matériel de transport de l'exercice ; un forfait validé qui diverge se dit sans se
+  réécrire ; et le barème des revenus 2026, celui de 2025 faute de revalorisation, est à confronter à la
+  publication du printemps 2027, aux trois endroits où il vit désormais (voir « le barème kilométrique est
+  saisi, jamais deviné »).
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -6931,7 +7069,11 @@ d'environnement dans la même édition.
   qu'elle ne vient PAS d'une publication mais d'une absence de revalorisation confirmée par le
   cabinet : le barème des revenus 2026 paraîtra au printemps 2027 et devra alors être confronté à
   cette table. Ajouter un millésime reste un acte explicite même quand les valeurs ne changent pas —
-  la liste `BAREMES` est figée par un test.
+  la liste `BAREMES` est figée par un test. **Et depuis le 04/10/2026 il se fait à TROIS endroits** :
+  `BAREMES`, la fonction `bareme_kilometrique()` en base, par une migration — c'est elle qui vérifie
+  l'écriture d'un forfait, et une table oubliée y ferait refuser chaque forfait de l'année —, et la copie
+  d'`agent-comptable`. `baremeKilometrique.test.ts` confronte les deux premières sur chaque ligne et
+  `agentComptableForfait.test.ts` la troisième : ils refusent qu'elles divergent.
 - **Ce barème n'est pas progressif par tranches cumulées.** La tranche sert à choisir une formule,
   qui s'applique ensuite au kilométrage TOTAL ; le forfait de la tranche intermédiaire n'existe que
   pour rattraper l'écart au point de bascule. Conséquence pour les tests : le barème est **continu à
@@ -7497,7 +7639,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3628 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3731 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -7525,7 +7667,9 @@ encaissée sans facture sur un dossier assujetti (`tvaDuReleve.ts`, contre la fo
 l'écriture d'une échéance de cotisation payée par le relevé et la date à laquelle elle compte
 (`cotisationRapprochee.ts`), la dotation aux amortissements d'un bien, prorata temporis depuis sa mise
 en service et au centime du calcul de la base (`amortissements.ts`), l'écriture d'acquisition d'un bien
-sur le compte de sa nature, ou pourquoi il n'en a pas (`acquisitionsDesBiens`, `ecritures.ts`), et ce que
+sur le compte de sa nature, ou pourquoi il n'en a pas (`acquisitionsDesBiens`, `ecritures.ts`), l'indemnité
+du barème kilométrique en centimes entiers, au centime du calcul de la base (`baremeKilometrique.ts`), le
+forfait de chaque ligne du cadre 7 et son écriture (`forfaitKilometrique.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
@@ -7645,6 +7789,15 @@ n'est pas utilisée ; `supabase/config.toml` est à son format mais ne porte que
   Voir « Problèmes connus ».
 - Tout nouvel appel à `supabase.functions.invoke()` doit gérer l'erreur via
   `extraireErreurFonction()`.
+- **Ce que le cabinet doit coller ou recopier se donne DANS la conversation**, en bloc de code prêt à
+  coller : il suit la session sur iPhone, qui n'ouvre pas les fichiers qu'elle lui envoie (04/10/2026,
+  demandé trois fois avant d'être entendu). Un fichier peut accompagner le texte, jamais le remplacer.
+- **Quand `apply_migration` attend une confirmation qui n'arrive pas** (un texte qui contient une
+  suppression, même dans le corps d'une fonction : l'appel expire), on ne contourne pas le détecteur — ni
+  texte réécrit pour lui échapper, ni `execute_sql`. Le cabinet colle la migration dans l'éditeur SQL de
+  Supabase, dans une transaction, avec la ligne d'historique que l'outil aurait posée
+  (`supabase_migrations.schema_migrations` : version, nom, texte) ; puis la session vérifie que
+  l'historique porte le texte exact (empreinte) et rejoue les trois contrôles de l'export.
 - Tout message d'erreur issu d'un `{ error }` Supabase passe par `messageErreur()` —
   jamais `err instanceof Error ? err.message : repli`, qui jette la raison rendue
   par Postgres (voir « Décisions techniques »). `erreursSupabase.test.ts` le vérifie
