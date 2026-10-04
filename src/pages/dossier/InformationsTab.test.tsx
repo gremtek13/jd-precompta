@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import InformationsTab from './InformationsTab'
+import type { ModeleComptable } from '../../lib/engagement'
 
 // LA SUPPRESSION D'UN DOSSIER EST LE GESTE LE PLUS IRRÉVERSIBLE DE L'APPLICATION, et c'est celui
 // auquel se ramène une demande d'effacement — les données de patients sont dans les FICHIERS, pas
@@ -53,7 +54,13 @@ vi.mock('react-router-dom', () => ({
 vi.mock('../../context/AuthContext', () => ({ useAuth: () => ({ estChef: true }) }))
 
 // Les cartes voisines font leurs propres lectures et n'ont rien à voir avec ce qu'on garde.
-vi.mock('./VehiculesCard', () => ({ default: () => null }))
+// La carte Véhicules écrit le forfait kilométrique face au compte du dirigeant que désigne le modèle du dossier
+// (lib/forfaitKilometrique.ts) : doublée pour montrer le modèle qu'elle REÇOIT.
+vi.mock('./VehiculesCard', () => ({
+  default: ({ modele }: { modele: { mode: string; compteNotesDeFrais: string } }) => (
+    <p>Véhicules — {modele.mode} — {modele.compteNotesDeFrais}</p>
+  ),
+}))
 vi.mock('./SauvegardeCard', () => ({ default: () => null }))
 vi.mock('./BalanceCard', () => ({ default: () => null }))
 vi.mock('../../lib/packGenerator', () => ({
@@ -106,14 +113,14 @@ async function supprimer(nom: string) {
   await act(async () => { confirmer.click() })
 }
 
-function monter() {
+function monter(modele: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }) {
   return render(
     <InformationsTab
       dossierId="d1"
       dossierNom="Cabinet Martin"
       dossierSiret={null}
       dossierAdresse={null}
-      modele={{ mode: 'tresorerie', compteNotesDeFrais: '455000' }}
+      modele={modele}
       onIdentiteUpdated={() => {}}
     />,
   )
@@ -292,5 +299,12 @@ describe('informations du client : on n’écrase jamais ce qu’on n’a pas su
     expect((screen.getByLabelText('Véhicule') as HTMLSelectElement).value).toBe('personnel_ik')
     expect((screen.getByLabelText(/Jours travaillés/) as HTMLInputElement).value).toBe('218')
     expect((screen.getByLabelText(/Autres informations/) as HTMLTextAreaElement).value).toBe('Local partagé')
+  })
+})
+
+describe('la carte Véhicules reçoit le modèle comptable du dossier', () => {
+  it('lui passe celui de l’onglet, dont dépend le compte que son forfait crédite', async () => {
+    monter({ mode: 'engagement', compteNotesDeFrais: '467000' })
+    expect(await screen.findByText('Véhicules — engagement — 467000')).toBeTruthy()
   })
 })

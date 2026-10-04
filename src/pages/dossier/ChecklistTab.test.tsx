@@ -603,6 +603,15 @@ describe('ChecklistTab — les forfaits kilométriques', () => {
     screen.getByText('Exercice : 2025.')
   })
 
+  it('mène à l’onglet Informations, où vit la carte qui écrit les forfaits', async () => {
+    const onNavigate = vi.fn()
+    poser({ vehicules: [vehicule()] })
+    render(<ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />)
+    await screen.findByText(POINT)
+    screen.getByRole('button', { name: 'Écrire les forfaits' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('informations')
+  })
+
   it('réclame un forfait écrit qui ne suit plus le cadre 7, même de l’exercice en cours', async () => {
     poser({ vehicules: [vehicule(), vehicule({ id: 'v2', annee: 2026 })], ecritures: [...forfait(2025, 5945), ...forfait(2026, 100).map((e) => ({ ...e, vehicule_id: 'v2' }))] })
     monter()

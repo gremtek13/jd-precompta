@@ -366,6 +366,21 @@ describe('indemniteKilometriqueCentimes — le calcul en entiers, au centime', (
     const v: Vehicule = { type: 'voiture', puissanceFiscale: 3, kmProfessionnel: 45, electrique: false }
     expect(totalIndemnitesKilometriques([v, v, v], 2025).total).toBe(71.43)
   })
+
+  it('lit un coefficient en millièmes sans le tronquer, même quand la virgule flottante le rend juste en dessous', () => {
+    // Cas DÉFENSIF, annoncé comme tel : aucun coefficient du barème publié ne le produit — tous valent moins
+    // d'un euro par kilomètre, et 0,xyz × 1 000 ne tombe jamais sous son entier. Mais 1,001 × 1 000 vaut
+    // 1 000,999… en virgule flottante : tronqué, ce coefficient deviendrait 1 000 millièmes, et l'indemnité
+    // perdrait un euro sur mille kilomètres sans que rien ne le dise. Le jour où une table en porterait un, la
+    // base, elle, compterait juste — et refuserait l'écriture.
+    expect(1.001 * 1000).toBeLessThan(1001)
+    const bareme: BaremeAnnuel = {
+      annee: 2099, source: 'synthétique',
+      lignes: [{ type: 'voiture', puissanceMin: 0, puissanceMax: 99, electrique: false, tranches: [{ jusqua: null, coefficient: 1.001, forfait: 0 }] }],
+    }
+    const v: Vehicule = { type: 'voiture', puissanceFiscale: 5, kmProfessionnel: 1000, electrique: false }
+    expect(indemniteKilometriqueCentimes(v, 2099, [bareme])).toBe(100_100n)
+  })
 })
 
 describe('le barème est le même en base et ici', () => {
