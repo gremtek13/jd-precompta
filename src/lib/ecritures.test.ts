@@ -1223,9 +1223,35 @@ describe('la frontière de validation — une part figée ne se compare plus et 
       ...lignesOuvertes(attendues(ACHATS), FRONTIERE),
       ...lignesPourPiece('d1', ouverte, cible(ACHATS), true, [], TRESORERIE),
     ])
-    expect(generation.dansUnExerciceValide.map((x) => [x.piece.id, x.partielle])).toEqual([['p1', true], ['p-figee', false]])
+    expect(generation.dansUnExerciceValide.map((x) => [x.piece.id, x.suite])).toEqual([['p1', 'partielle'], ['p-figee', 'a_payer']])
     // Rien ne tombe dans l'exercice validé : la base refuserait le lot entier.
     expect(generation.lignes.every((l) => l.date > FRONTIERE)).toBe(true)
+  })
+
+  // Ce qui attend une pièce entièrement figée n'est pas le même pour toutes, et l'écran le dit (EcrituresTab) : seule
+  // une part qui attend son paiement s'écrira un jour. Une note de frais compte à sa date, une pièce payée dans
+  // l'exercice validé et une facture d'engagement y restent — l'écran ne doit pas promettre qu'elles s'écriront.
+  it('dit ce qui attend chaque pièce figée, selon ce qui la date et selon le modèle', () => {
+    const aPayer = piece({ id: 'p-a-payer', date_piece: '2025-06-10', montant_ttc: 80 })
+    const note = piece({ id: 'p-note', date_piece: '2025-06-12', montant_ttc: 40, type_piece: 'note_frais' })
+    const payee = piece({ id: 'p-payee', date_piece: '2025-06-14', montant_ttc: 60 })
+    // Payée en partie dans l'exercice validé : le reste attend encore son paiement, et c'est lui qui l'emporte.
+    const enPartie = piece({ id: 'p-en-partie', date_piece: '2025-06-16', montant_ttc: 100 })
+    const reglees = paiementsDesPieces([
+      paiement({ id: 'l-payee', date: '2025-06-20', montant: -60, piece_id: 'p-payee' }),
+      paiement({ id: 'l-acompte', date: '2025-06-22', montant: -30, piece_id: 'p-en-partie' }),
+    ], [])
+    const aComptabiliser = [aPayer, note, payee, enPartie].map((p) => ({ piece: p, compte: ACHATS, immobilisation: false }))
+    const suites = (modele: ModeleComptable) => ecrituresAGenerer('d1', aComptabiliser, [], true, reglees, modele, FRONTIERE)
+      .dansUnExerciceValide.map((x) => [x.piece.id, x.suite])
+    expect(suites(TRESORERIE)).toEqual([['p-a-payer', 'a_payer'], ['p-note', 'note_de_frais'], ['p-payee', 'payee'], ['p-en-partie', 'a_payer']])
+    expect(suites(ENGAGEMENT)).toEqual([['p-a-payer', 'facture'], ['p-note', 'note_de_frais'], ['p-payee', 'facture'], ['p-en-partie', 'facture']])
+    // Le garde symétrique : payée APRÈS la frontière, la même pièce s'écrit en partie, et c'est ce qu'on dit.
+    const payeeEnJanvier = paiementsDesPieces([paiement({ id: 'l-jan', date: '2026-01-05', montant: -60, piece_id: 'p-payee' })], [])
+    expect(ecrituresAGenerer('d1', [{ piece: payee, compte: ACHATS, immobilisation: false }], [], true, payeeEnJanvier, TRESORERIE, FRONTIERE).dansUnExerciceValide)
+      .toEqual([])
+    expect(ecrituresAGenerer('d1', [{ piece: payee, compte: ACHATS, immobilisation: false }], [], true, payeeEnJanvier, ENGAGEMENT, FRONTIERE).dansUnExerciceValide)
+      .toEqual([{ piece: payee, suite: 'partielle' }])
   })
 
   it('sans exercice validé, génère tout et ne nomme rien', () => {

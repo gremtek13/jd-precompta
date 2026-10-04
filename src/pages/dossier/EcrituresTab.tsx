@@ -2,11 +2,15 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, formatDate, formatMoney } from '../../lib/format'
 import { COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS } from '../../lib/comptes'
-import { SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresSansObjet, lignesPourPiece, piecesAComptabiliser, soldeCompte } from '../../lib/ecritures'
-import type { EcritureSansObjet, MotifSansObjet } from '../../lib/ecritures'
+import {
+  SUGGESTIONS_COMPTE_PAR_CODE, analyserEcritures, ecrituresAGenerer, ecrituresSansObjet, lignesOuvertes, lignesPourPiece, piecesAComptabiliser,
+  soldeCompte,
+} from '../../lib/ecritures'
+import type { EcritureSansObjet, MotifSansObjet, SuiteDansUnExerciceValide } from '../../lib/ecritures'
 import { COMPTES_NOTES_DE_FRAIS, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
-import { genererFec, nomFichierFec, telechargerTexte } from '../../lib/fec'
+import { formaterFec, genererFec, nomFichierFec, numerotationValidee, telechargerTexte } from '../../lib/fec'
+import { estFigee } from '../../lib/validationExercice'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
 import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
@@ -58,6 +62,16 @@ const ACTION_MOTIF_SANS_OBJET: Record<MotifSansObjet, string> = {
 // Le modèle comptable du dossier (lib/engagement.ts) se règle ICI, là où il sert, et seulement tant que
 // le brouillon est vide : il décide des comptes de toutes les écritures, et la base refuse ensuite de
 // le changer (déclencheur `verrouiller_modele_comptable`).
+// Ce que la génération dit d'une pièce datée d'un exercice validé (lib/ecritures.ts, `ecrituresAGenerer`) : une
+// phrase par cas, pour ne rien promettre que le code ne fera pas — seule une part qui attend son paiement s'écrira.
+const CE_QUI_S_ECRIT: Record<SuiteDansUnExerciceValide, (frontiere: string) => string> = {
+  partielle: (frontiere) => `Seule sa part datée après le ${frontiere}.`,
+  a_payer: (frontiere) => `Rien pour l’instant : ce qui reste à payer s’écrira à la date de son paiement, s’il est rapproché après le ${frontiere}.`,
+  note_de_frais: () => 'Rien : une note de frais compte à sa date, qui tombe dans un exercice validé.',
+  payee: () => 'Rien : elle a été payée dans un exercice validé.',
+  facture: () => 'Rien : sa facture tombe dans un exercice validé.',
+}
+
 export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assujettiTva, modele, onModeleUpdated }: {
   dossierId: string
   dossierNom: string
@@ -95,7 +109,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   const { annee: anneeFilter } = useAnnee()
   // Ce que les exercices validés ont figé (lib/validationExercice.ts) : la base refuse d'y écrire, de le modifier
   // ou de le retirer, donc les contrôles ne le comparent plus et aucun geste ne le propose.
-  const { frontiere } = useExercicesValides()
+  const { frontiere, exercices: exercicesValides } = useExercicesValides()
   const [regenerating, setRegenerating] = useState<string | null>(null)
   const [retrait, setRetrait] = useState<string | null>(null)
   const [exportPiste, setExportPiste] = useState(false)
@@ -266,9 +280,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Les paiements de chaque pièce, parts des virements groupés comprises : ils datent sa charge et portent
   // ses contreparties banque (lib/rattachement.ts).
   const paiements = paiementsDesPieces(lignesBancaires, reglements)
-  const enAttente = aComptabiliser
-    .filter(({ piece }) => !ecritures.some((e) => e.piece_id === piece.id))
-    .map(({ piece }) => piece)
+  // Les pièces sans écriture, et ce que la génération écrirait d'elles. Rien ne s'écrit au plus tard à la frontière
+  // de validation (lib/validationExercice.ts) : la base le refuserait, et tout le lot avec, l'insertion étant d'un
+  // seul tenant. Une pièce dont une part tombe dans un exercice validé est NOMMÉE plus bas, plutôt que de
+  // disparaître du compte sans un mot.
+  const generation = ecrituresAGenerer(dossierId, aComptabiliser, ecritures, assujettiTva, paiements, modele, frontiere)
+  const enAttente = generation.pieces
+  const nbValidees = ecritures.filter((e) => e.statut === 'validee').length
+  const nbProposees = ecritures.length - nbValidees
   // UNE OUVERTURE LUE EN PARTIE NE DIT PAS QUELS BIENS SONT REPRIS : l'acquisition d'un bien acquis avant
   // elle s'écrirait une seconde fois, la balance reprise la portant déjà. La génération attend donc une
   // lecture complète dès qu'un bien est en attente — les autres pièces ne dépendent pas des à-nouveaux.
@@ -286,14 +305,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setGenerating(true)
     setError(null)
     try {
-      const cibles = new Map(aComptabiliser.map(({ piece, compte, immobilisation }) => [piece.id, { compte, immobilisation }]))
       // Selon le modèle du dossier : en trésorerie, la charge datée au paiement quand le rapprochement le
       // connaît, comme la 2035 compte la pièce, et une contrepartie banque par paiement ; en engagement,
       // la facture à sa date et un règlement par paiement (lib/engagement.ts). Dans les deux, une pièce
-      // déjà rapprochée — ou réglée en partie par un virement groupé — reçoit sa banque tout de suite.
-      const rows = enAttente.flatMap((p) =>
-        lignesPourPiece(dossierId, p, cibles.get(p.id)!, assujettiTva, paiements.get(p.id) ?? [], modele))
-      const { error: insertError } = await supabase.from('ecritures_brouillon').insert(rows)
+      // déjà rapprochée — ou réglée en partie par un virement groupé — reçoit sa banque tout de suite. Et
+      // seulement ce qui tombe après la frontière de validation (`ecrituresAGenerer`).
+      const { error: insertError } = await supabase.from('ecritures_brouillon').insert(generation.lignes)
       if (insertError) throw insertError
       // Relu AVANT de relâcher le verrou : relâché plus tôt, `enAttente` porterait encore les pièces
       // qu'on vient de comptabiliser le temps que la relecture revienne, et un clic à ce moment-là
@@ -344,8 +361,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // rupture ni un absent du FEC.
   const idsJustifies = idsMouvementsJustifiesParLeReleve(lignesBancaires)
   const ruptures = rupturesPisteAudit(ecritures, idsJustifies)
-  // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé.
-  const horsFec = absenceFec(ecrituresFiltrees, idsJustifies)
+  // L'EXERCICE AFFICHÉ EST-IL VALIDÉ ? Son FEC se relit alors depuis ce que la validation a figé (lib/fec.ts,
+  // `numerotationValidee`) : journal, numéro, pièce et libellés de chaque écriture, tels que la base les a gardés.
+  // Rien n'est relu des pièces ni des catégories d'aujourd'hui — une catégorie renommée ne change plus le fichier,
+  // et deux exports rendent le même.
+  const exerciceValideAffiche = typeof anneeFilter === 'number' ? exercicesValides.find((e) => e.annee === anneeFilter) ?? null : null
+  const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le) : null
+  // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé. Pour un exercice
+  // validé, ce que sa numérotation figée ne porte pas — qui ne peut pas exister, la base refusant la validation tant
+  // qu'une écriture de l'exercice reste proposée, et qui se voit donc plutôt que de se cacher.
+  const horsFec = fecValide
+    ? {
+      nb: fecValide.horsFec.length,
+      debit: fecValide.horsFec.filter((e) => e.sens === 'debit').reduce((somme, e) => somme + e.montant, 0),
+      credit: fecValide.horsFec.filter((e) => e.sens === 'credit').reduce((somme, e) => somme + e.montant, 0),
+    }
+    : absenceFec(ecrituresFiltrees, idsJustifies)
   // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
   // de la catégorie a changé depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore
   // sa TVA (voir lib/affectationBanque.ts).
@@ -445,13 +476,20 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setRegenerating(piece.id)
     setError(null)
     try {
-      const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
+      // La part d'un exercice validé ne se retire ni ne se réécrit — la base le refuse (lib/validationExercice.ts) :
+      // seule la part datée après la frontière se reprend, et c'est exactement ce que le contrôle compare.
+      const { error: deleteError } = frontiere === null
+        ? await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
+        : await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id).gt('date', frontiere)
       if (deleteError) throw deleteError
-      const { error: insertError } = await supabase.from('ecritures_brouillon')
-        .insert(lignesPourPiece(
-          dossierId, piece, { compte: cible.compte, immobilisation: cible.immobilisation }, assujettiTva, paiements.get(piece.id) ?? [], modele,
-        ))
-      if (insertError) throw insertError
+      const lignes = lignesOuvertes(lignesPourPiece(
+        dossierId, piece, { compte: cible.compte, immobilisation: cible.immobilisation }, assujettiTva, paiements.get(piece.id) ?? [], modele,
+      ), frontiere)
+      // Une pièce dont tout tombe désormais dans un exercice validé n'a plus rien à écrire : la génération la nomme.
+      if (lignes.length > 0) {
+        const { error: insertError } = await supabase.from('ecritures_brouillon').insert(lignes)
+        if (insertError) throw insertError
+      }
       load()
     } catch (err) {
       setError(messageErreur(err))
@@ -576,14 +614,22 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   //   valeur, en classe 2, et ses paiements d'alors sont dans la banque d'ouverture. Rien ne doit s'écrire,
   //   et retirer est le SEUL geste juste.
   //
+  // TOUTES, sauf celles d'un exercice VALIDÉ (lib/validationExercice.ts) : la base refuse de les retirer, et la part
+  // qu'elles forment s'équilibre seule — en trésorerie chaque paiement y porte sa contrepartie, en engagement la
+  // facture porte sa dette. Seule la part d'après la frontière part.
+  //
   // Pas de verrou `useRef` ici, contrairement aux gestes qui DUPLIQUENT : une suppression est
   // idempotente, deux clics retirent les mêmes lignes. `retrait` n'est qu'un état d'affichage.
   async function retirerEcriture({ piece, motif }: EcritureSansObjet) {
+    // Une part datée d'un exercice validé ne se retire plus (lib/validationExercice.ts) : la confirmation le dit, et
+    // seule la part ouverte part.
+    const partFigee = ecritures.some((e) => e.piece_id === piece.id && estFigee(e.date, frontiere))
     if (!window.confirm(
       `Retirer du brouillon l'écriture de « ${piece.tiers ?? piece.nom_fichier} » ? `
       + (modele.mode === 'engagement'
         ? 'Sa ligne de charge, sa TVA, sa dette envers le fournisseur et ses règlements partent ensemble. '
         : 'Sa ligne de charge, sa TVA et sa contrepartie banque partent ensemble. ')
+      + (partFigee && frontiere ? `Sa part datée d’un exercice validé, au plus tard le ${formatDate(frontiere)}, reste : elle ne se retire plus. ` : '')
       + "La pièce, son rapprochement bancaire et l'immobilisation ne bougent pas : la dépense reste "
       + (motif === 'bien_repris'
         ? "comptée par l'amortissement, et la balance reprise porte déjà son acquisition."
@@ -592,7 +638,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
     setRetrait(piece.id)
     setError(null)
     try {
-      const { error: deleteError } = await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
+      const { error: deleteError } = frontiere === null
+        ? await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id)
+        : await supabase.from('ecritures_brouillon').delete().eq('piece_id', piece.id).gt('date', frontiere)
       if (deleteError) throw deleteError
       load()
     } catch (err) {
@@ -845,6 +893,14 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ))}
             </tbody>
           </table>
+          {/* Une pièce que la frontière coupe : sa part validée ne se réécrit plus, et le contrôle ne compare que
+              l'autre (lib/ecritures.ts) — le dire évite de chercher pourquoi l'ancien compte reste dans l'exercice. */}
+          {frontiere && piecesDesynchronisees.some((p) => ecritures.some((e) => e.piece_id === p.id && estFigee(e.date, frontiere))) && (
+            <p className="muted" style={{ marginBottom: 0 }}>
+              Une partie de ces écritures est datée d’un exercice validé, au plus tard le {formatDate(frontiere)} : elle
+              ne se réécrit plus. « Régénérer » ne reprend que la part datée après.
+            </p>
+          )}
         </div>
       )}
 
@@ -1078,7 +1134,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
         <p className="muted" style={{ margin: 0 }}>
-          {ecritures.length} écriture{ecritures.length > 1 ? 's' : ''} proposée{ecritures.length > 1 ? 's' : ''}
+          {/* Une écriture validée n'est plus « proposée » : la validation l'a figée (lib/validationExercice.ts). */}
+          {nbProposees} écriture{nbProposees > 1 ? 's' : ''} proposée{nbProposees > 1 ? 's' : ''}
+          {nbValidees > 0 && ` — ${nbValidees} validée${nbValidees > 1 ? 's' : ''}`}
           {/* Sur une lecture partielle, ce compte n'est plus celui des pièces en attente : il y met
               aussi celles dont on n'a pas pu lire l'écriture. Il se tait plutôt que de l'affirmer. */}
           {enAttente.length > 0 && brouillonIncomplet === null && ` — ${enAttente.length} pièce${enAttente.length > 1 ? 's' : ''} en attente de génération`}
@@ -1113,6 +1171,35 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             : `Générer les écritures manquantes${enAttente.length > 0 && brouillonIncomplet === null ? ` (${enAttente.length})` : ''}`}
         </button>
       </div>
+
+      {/* LES PIÈCES QU'UN EXERCICE VALIDÉ EMPÊCHE D'ÉCRIRE, nommées plutôt que tues : la génération n'écrit rien au plus
+          tard à la frontière, et une pièce déposée après la validation — une facture de l'exercice arrivée en retard —
+          disparaîtrait sinon du compte sans un mot. Sur une lecture partielle, la liste se tait comme le compte. */}
+      {frontiere && generation.dansUnExerciceValide.length > 0 && brouillonIncomplet === null && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0 }}>Pièces datées d’un exercice validé</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Aucune écriture ne se passe plus au {formatDate(frontiere)} ou avant : ces pièces sans écriture n’en reçoivent
+            que la part datée après. Une opération trouvée après la validation se corrige sur l’exercice suivant —
+            l’exercice validé, lui, ne se rouvre pas.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Pièce</th><th>Montant</th><th>Date</th><th>Ce qui s’écrit</th></tr></thead>
+              <tbody>
+                {generation.dansUnExerciceValide.map(({ piece, suite }) => (
+                  <tr key={piece.id}>
+                    <td>{piece.tiers ?? piece.nom_fichier}</td>
+                    <td>{formatMoney(piece.montant_ttc)}</td>
+                    <td>{piece.date_piece ? formatDate(piece.date_piece) : <span className="muted">sans date</span>}</td>
+                    <td>{CE_QUI_S_ECRIT[suite](formatDate(frontiere))}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {brouillonIncomplet && (
         // Dit en clair ce que les trois boutons grisés ne peuvent qu'insinuer : les totaux affichés
@@ -1172,15 +1259,19 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
               ? `Brouillon lu incomplètement (${brouillonIncomplet}) — un FEC amputé ne peut pas le dire, le format n'a pas de place pour ça.`
               : aNouveauxIncomplets
               ? `À-nouveaux lus incomplètement (${aNouveauxIncomplets}) — le FEC s'ouvrirait sur une ouverture amputée.`
-              : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice." : undefined
+              : typeof anneeFilter !== 'number' ? "Sélectionne une année ci-dessus — le FEC est un fichier par exercice."
+              : fecValide ? 'Exercice validé : son FEC se relit tel que la validation l’a figé — journal, numéros et libellés ne changent plus.'
+              : undefined
           }
           onClick={() => {
             if (typeof anneeFilter !== 'number') return
-            const contenu = genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires)
+            const contenu = fecValide
+              ? formaterFec(fecValide)
+              : genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires)
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
         >
-          Exporter FEC {typeof anneeFilter === 'number' ? anneeFilter : ''}
+          Exporter FEC {typeof anneeFilter === 'number' ? anneeFilter : ''}{fecValide ? ' (validé)' : ''}
         </button>
         <button
           className="btn btn-outline btn-sm"
@@ -1231,7 +1322,12 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
             <tbody>
               {ecrituresAffichees.map((e) => (
                 <tr key={e.id}>
-                  <td>{formatDate(e.date)}</td>
+                  <td>
+                    {formatDate(e.date)}
+                    {e.statut === 'validee' && (
+                      <>{' '}<span className="badge badge-ok" title="Exercice validé : cette écriture ne se modifie ni ne se retire plus.">validée</span></>
+                    )}
+                  </td>
                   <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{e.compte}</td>
                   <td>{e.libelle}</td>
                   <td>{formatMoney(e.montant)}</td>

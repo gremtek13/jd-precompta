@@ -58,6 +58,11 @@ const faux = vi.hoisted(() => ({
 
 vi.mock('../../lib/supabase', async () => {
   const { filtrer, predicatEq, predicatNot, predicatOr } = await import('../../test/filtresPostgrest')
+  // Un filtre d'écriture : `!colonne` pour `.neq`, `>colonne` pour `.gt` (des dates AAAA-MM-JJ, comparées en chaînes).
+  const correspond = (ligne: Record<string, unknown>, colonne: string, valeur: unknown) =>
+    colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur
+      : colonne.startsWith('>') ? String(ligne[colonne.slice(1)]) > String(valeur)
+        : ligne[colonne] === valeur
   return {
     supabase: {
       rpc: (nom: string, args: Record<string, unknown>) => {
@@ -109,6 +114,9 @@ vi.mock('../../lib/supabase', async () => {
           },
           eq: (colonne: string, valeur: unknown) => { filtres.push([colonne, valeur]); return chaine },
           neq: (colonne: string, valeur: unknown) => { filtres.push([`!${colonne}`, valeur]); return chaine },
+          // Une régénération ou un retrait ne reprend que la part d'après la frontière de validation : la base refuse
+          // de toucher à celle d'un exercice validé (lib/validationExercice.ts).
+          gt: (colonne: string, valeur: unknown) => { filtres.push([`>${colonne}`, valeur]); return chaine },
           is: () => chaine,
           not: (colonne: string, operateur: string, valeur: unknown) => { predicats.push(predicatNot(colonne, operateur, valeur)); return chaine },
           or: (expression: string) => { predicats.push(predicatOr(expression)); return chaine },
@@ -128,8 +136,7 @@ vi.mock('../../lib/supabase', async () => {
               if (faux.refusMiseAJour) {
                 return Promise.resolve({ data: null, error: { message: faux.refusMiseAJour }, count: 0 }).then(suite)
               }
-              const vise = (ligne: Record<string, unknown>) => filtres.every(([colonne, valeur]) =>
-                colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
+              const vise = (ligne: Record<string, unknown>) => filtres.every(([colonne, valeur]) => correspond(ligne, colonne, valeur))
               faux.parTable[table] = (faux.parTable[table] ?? []).map((l) =>
                 vise(l as Record<string, unknown>) ? { ...(l as Record<string, unknown>), ...miseAJour } : l)
               return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
@@ -139,8 +146,7 @@ vi.mock('../../lib/supabase', async () => {
               if (faux.refusSuppression) {
                 return Promise.resolve({ data: null, error: { message: faux.refusSuppression }, count: 0 }).then(suite)
               }
-              const garde = (ligne: Record<string, unknown>) => !filtres.every(([colonne, valeur]) =>
-                colonne.startsWith('!') ? ligne[colonne.slice(1)] !== valeur : ligne[colonne] === valeur)
+              const garde = (ligne: Record<string, unknown>) => !filtres.every(([colonne, valeur]) => correspond(ligne, colonne, valeur))
               faux.parTable[table] = (faux.parTable[table] ?? []).filter((l) => garde(l as Record<string, unknown>))
               return Promise.resolve({ data: null, error: null, count: 0 }).then(suite)
             }
@@ -152,7 +158,7 @@ vi.mock('../../lib/supabase', async () => {
             // de chaque bien, dont l'acquisition ne s'écrirait plus. Le cadrage ignoré, ce test restait vert
             // avec cette lecture-là.
             const egalites = filtres
-              .filter(([colonne]) => (colonne !== 'dossier_id' || table === 'natures_immobilisation') && !colonne.startsWith('!'))
+              .filter(([colonne]) => (colonne !== 'dossier_id' || table === 'natures_immobilisation') && !/^[!>]/.test(colonne))
               .map(([colonne, valeur]) => predicatEq(colonne, valeur))
             const toutes = filtrer(faux.parTable[table] ?? [], [...predicats, ...egalites])
             const demande = fin - debut + 1
@@ -939,7 +945,9 @@ describe('EcrituresTab — ce qu’un exercice validé a figé ne se compare plu
   it('ne les propose plus quand leur exercice est validé', async () => {
     poser(jeu())
     monter(false, TRESORERIE, 2025, [2025])
-    await screen.findByText(/8 écritures proposées/)
+    // Une écriture validée n'est plus « proposée » : le compte le dit, et chaque ligne le porte.
+    await screen.findByText(/0 écriture proposée — 8 validées/)
+    expect(screen.getAllByText('validée')).toHaveLength(8)
     for (const panneau of PANNEAUX) expect(screen.queryByText(panneau)).toBeNull()
   })
 
@@ -948,6 +956,177 @@ describe('EcrituresTab — ce qu’un exercice validé a figé ne se compare plu
     poser(jeu())
     monter(false, TRESORERIE, 2025, [])
     for (const panneau of PANNEAUX) await screen.findByText(panneau)
+  })
+})
+
+// LIGNE 26.6 (d) : LES GESTES SUR UN EXERCICE VALIDÉ. La base refuse toute écriture au plus tard à la frontière, et
+// refuse de modifier ou de retirer celles qui y sont (lib/validationExercice.ts) : la génération n'écrit que la part
+// d'après, « Régénérer » et « Retirer » ne reprennent qu'elle, et le FEC d'un exercice validé se relit tel que la
+// validation l'a figé. Le calcul est testé à part (lib/ecritures.ts, lib/fec.ts) ; ici, le CÂBLAGE.
+describe('EcrituresTab — les gestes sur un exercice validé', () => {
+  const mouvement = (o: Record<string, unknown>) => ({
+    id: 'l-dec', dossier_id: 'dossier-de-test', date: '2025-12-10', libelle: 'PRLV FOURNISSEUR', montant: -400,
+    statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, source_fichier: 'releve.pdf', libelle_brut: null,
+    created_at: '2025-12-11T09:00:00Z', ...o,
+  })
+  // Une facture de novembre 2025 payée 400 € en décembre — dans l'exercice validé — et 600 € en février.
+  const coupee = piece({ id: 'p1', date_piece: '2025-11-15', montant_ttc: 1000 })
+  const PAIEMENTS = [mouvement({}), mouvement({ id: 'l-fev', date: '2026-02-10', montant: -600, created_at: '2026-02-11T09:00:00Z' })]
+  const PART_VALIDEE = [
+    ecriture({ id: 'v1', date: '2025-12-10', montant: 400, statut: 'validee' }),
+    ecriture({ id: 'v2', date: '2025-12-10', compte: '512000', sens: 'credit', montant: 400, ligne_bancaire_id: 'l-dec', statut: 'validee' }),
+  ]
+  const PART_OUVERTE = [
+    ecriture({ id: 'o1', date: '2026-02-10', montant: 600 }),
+    ecriture({ id: 'o2', date: '2026-02-10', compte: '512000', sens: 'credit', montant: 600, ligne_bancaire_id: 'l-fev' }),
+  ]
+
+  it('n’écrit que la part d’après la frontière, et nomme la pièce', async () => {
+    poser({ pieces: [coupee], lignes_bancaires: PAIEMENTS })
+    monter(false, TRESORERIE, 2026, [2025])
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    expect(screen.getByText('Pièces datées d’un exercice validé')).toBeDefined()
+    expect(screen.getByText('Seule sa part datée après le 31/12/2025.')).toBeDefined()
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => [l.date, l.compte, l.montant])).toEqual([
+      ['2026-02-10', '606100', 600], ['2026-02-10', '512000', 600],
+    ])
+  })
+
+  it('n’écrit rien d’une pièce entièrement figée, et le dit', async () => {
+    const tardive = piece({ id: 'p-tard', date_piece: '2025-06-10', montant_ttc: 80, tiers: 'FACTURE EN RETARD' })
+    poser({ pieces: [tardive, piece({ id: 'p-ouv', date_piece: '2026-03-10', montant_ttc: 50, tiers: 'OUVERTE' })] })
+    monter(false, TRESORERIE, 2026, [2025])
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    expect(screen.getByText(/Rien pour l’instant : ce qui reste à payer s’écrira à la date de son paiement/)).toBeDefined()
+    expect(screen.getByText('FACTURE EN RETARD')).toBeDefined()
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => l.piece_id)).toEqual(['p-ouv'])
+  })
+
+  // Une note de frais compte à sa date, et une pièce payée dans l'exercice validé y reste : ni l'une ni l'autre ne
+  // s'écrira, et l'écran ne le promet pas (lib/ecritures.ts, `ecrituresAGenerer`).
+  it('ne promet pas d’écrire une note de frais ni une pièce payée dans l’exercice validé', async () => {
+    poser({
+      pieces: [
+        piece({ id: 'p-note', date_piece: '2025-06-12', montant_ttc: 40, tiers: 'NOTE DE FRAIS', type_piece: 'note_frais' }),
+        piece({ id: 'p1', date_piece: '2025-11-15', montant_ttc: 400, tiers: 'PAYÉE EN DÉCEMBRE' }),
+      ],
+      lignes_bancaires: [mouvement({})],
+    })
+    monter(false, TRESORERIE, 2026, [2025])
+    await screen.findByText('Pièces datées d’un exercice validé')
+    expect(screen.getByText('Rien : une note de frais compte à sa date, qui tombe dans un exercice validé.')).toBeDefined()
+    expect(screen.getByText('Rien : elle a été payée dans un exercice validé.')).toBeDefined()
+    expect(screen.queryByText(/Rien pour l’instant/)).toBeNull()
+  })
+
+  // En engagement, la facture d'une pièce entièrement figée ne s'écrira jamais : son règlement seul le pourrait.
+  it('dit en engagement que la facture tombe dans un exercice validé', async () => {
+    poser({ pieces: [piece({ id: 'p-tard', date_piece: '2025-06-10', montant_ttc: 80, tiers: 'FACTURE EN RETARD' })] })
+    monter(false, ENGAGEMENT, 2026, [2025])
+    await screen.findByText('Pièces datées d’un exercice validé')
+    expect(screen.getByText('Rien : sa facture tombe dans un exercice validé.')).toBeDefined()
+    expect(screen.queryByText(/Rien pour l’instant/)).toBeNull()
+  })
+
+  // Le garde symétrique : sans exercice validé, la même pièce s'écrit en entier et rien n'est nommé.
+  it('écrit tout, sans rien nommer, quand aucun exercice n’est validé', async () => {
+    poser({ pieces: [coupee], lignes_bancaires: PAIEMENTS })
+    monter(false, TRESORERIE, 2026, [])
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    expect(screen.queryByText('Pièces datées d’un exercice validé')).toBeNull()
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes).toHaveLength(4)
+  })
+
+  it('ne régénère que la part d’après la frontière, et le dit', async () => {
+    // La catégorie est passée au 606300 depuis la validation ; la part ouverte est encore sur l'ancien compte.
+    poser({
+      categories: [{ ...CATEGORIE_ACHATS, compte_comptable: '606300' }], pieces: [coupee], lignes_bancaires: PAIEMENTS,
+      ecritures_brouillon: [...PART_VALIDEE, ...PART_OUVERTE],
+    })
+    monter(false, TRESORERIE, 2026, [2025])
+    await screen.findByText('Écritures à régénérer')
+    expect(screen.getByText(/Une partie de ces écritures est datée d’un exercice validé/)).toBeDefined()
+    await act(async () => { screen.getByRole('button', { name: 'Régénérer' }).click() })
+    expect(faux.suppressions[0].filtres).toEqual([['piece_id', 'p1'], ['>date', '2025-12-31']])
+    expect(faux.insertions[0].lignes.map((l) => [l.date, l.compte, l.montant])).toEqual([
+      ['2026-02-10', '606300', 600], ['2026-02-10', '512000', 600],
+    ])
+    // La part validée est restée, sur l'ancien compte ; la part ouverte suit la catégorie, et rien n'est plus à régénérer.
+    await waitFor(() => expect(screen.queryByText('Écritures à régénérer')).toBeNull())
+    expect((faux.parTable.ecritures_brouillon as { id: string }[]).map((e) => e.id).filter((id) => id.startsWith('v'))).toEqual(['v1', 'v2'])
+  })
+
+  // Une pièce dont la date a été corrigée vers un exercice validé, après la génération : tout ce qu'elle doit écrire
+  // tombe désormais derrière la frontière. « Régénérer » retire son écriture et n'en insère aucune — la génération
+  // la nomme ensuite.
+  it('ne régénère rien d’une pièce que sa date a fait passer dans un exercice validé', async () => {
+    poser({
+      pieces: [piece({ id: 'p1', date_piece: '2025-06-10', montant_ttc: 120, tiers: 'DATE CORRIGÉE' })],
+      ecritures_brouillon: [ecriture({ id: 'o1', date: '2026-03-10' })],
+    })
+    monter(false, TRESORERIE, 2026, [2025])
+    await screen.findByText('Écritures à régénérer')
+    await act(async () => { screen.getByRole('button', { name: 'Régénérer' }).click() })
+    expect(faux.suppressions[0].filtres).toEqual([['piece_id', 'p1'], ['>date', '2025-12-31']])
+    expect(faux.insertions).toEqual([])
+    await screen.findByText('Pièces datées d’un exercice validé')
+    expect(screen.getByText('DATE CORRIGÉE')).toBeDefined()
+  })
+
+  it('ne retire que la part d’après la frontière, et la confirmation le dit', async () => {
+    let message = ''
+    vi.stubGlobal('confirm', (m: string) => { message = m; return true })
+    // Cas défensif : un bien sans nature sur une pièce que la frontière coupe — la base fige le registre d'un exercice
+    // validé, mais l'écran doit rester juste si l'état se présente.
+    poser({
+      pieces: [coupee], lignes_bancaires: PAIEMENTS, ecritures_brouillon: [...PART_VALIDEE, ...PART_OUVERTE],
+      immobilisations: [{ id: 'i1', dossier_id: 'dossier-de-test', piece_id: 'p1', nature_id: null }],
+    })
+    monter(false, TRESORERIE, 2026, [2025])
+    await screen.findByText('Écritures que la pièce ne justifie plus')
+    await act(async () => { screen.getByRole('button', { name: /Retirer l'écriture/ }).click() })
+    expect(message).toMatch(/Sa part datée d’un exercice validé, au plus tard le 31\/12\/2025, reste : elle ne se retire plus\./)
+    expect(faux.suppressions[0].filtres).toEqual([['piece_id', 'p1'], ['>date', '2025-12-31']])
+    expect((faux.parTable.ecritures_brouillon as { id: string }[]).map((e) => e.id)).toEqual(['v1', 'v2'])
+    vi.unstubAllGlobals()
+  })
+
+  // Le FEC d'un exercice validé se relit depuis ce que la validation a figé : son journal et ses numéros, ses libellés —
+  // pas ceux que la numérotation d'aujourd'hui donnerait.
+  it('exporte le FEC d’un exercice validé tel que la validation l’a figé', async () => {
+    const fige = {
+      statut: 'validee', valide_le: '2026-03-01T10:00:00Z', journal_code: 'AC', numero_ecriture: 7, piece_ref: 'FACT-007',
+      piece_date: '2025-03-10', compte_lib: 'Achats figés', comp_aux_num: null, comp_aux_lib: null,
+    }
+    poser({
+      pieces: [piece()],
+      ecritures_brouillon: [
+        ecriture({ id: 'f1', ...fige }),
+        ecriture({ id: 'f2', compte: '512000', sens: 'credit', ...fige, compte_lib: 'Banque figée' }),
+      ],
+    })
+    monter(false, TRESORERIE, 2025, [2025])
+    // Le bouton paraît avant la fin de la lecture, grisé : l'ancre est ce que la lecture apporte.
+    await screen.findByText(/0 écriture proposée — 2 validées/)
+    await act(async () => { screen.getByRole('button', { name: 'Exporter FEC 2025 (validé)' }).click() })
+    const contenu = telecharge.fichiers[0].contenu
+    expect(contenu).toContain('AC00007')
+    expect(contenu).toContain('Achats figés')
+    expect(contenu).toContain('FACT-007')
+    expect(contenu).not.toContain('AC00001')
+  })
+
+  // Le garde symétrique : l'exercice d'après, qui n'est pas validé, se numérote comme avant.
+  it('numérote comme avant l’exercice qui suit la frontière', async () => {
+    poser({ pieces: [piece({ date_piece: '2026-03-10' })], ecritures_brouillon: [ecriture({ date: '2026-03-10' })] })
+    monter(false, TRESORERIE, 2026, [2025])
+    await screen.findByText(/1 écriture proposée/)
+    await act(async () => { screen.getByRole('button', { name: 'Exporter FEC 2026' }).click() })
+    expect(telecharge.fichiers[0].contenu).toContain('AC00001')
   })
 })
 
