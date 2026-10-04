@@ -96,3 +96,14 @@ export const GROUPES_PARCOURS: GroupeParcours[] = [
     ],
   },
 ]
+
+// Le libellé d'un écran du dossier, tel que les deux navigations l'affichent : un bouton qui mène à un écran
+// le nomme comme la barre qu'on retrouvera en y arrivant.
+export function libelleDeLOnglet(tab: DossierTab): string {
+  for (const groupe of GROUPES_PARCOURS) {
+    if (groupe.cible === tab) return groupe.label
+    const enfant = groupe.enfants?.find((e) => e.id === tab)
+    if (enfant) return enfant.label
+  }
+  return tab
+}

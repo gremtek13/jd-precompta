@@ -14,7 +14,7 @@ import {
 import { mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux } from './affectationBanque'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
 import { virementsPersonnelsAEcrire } from './virementPersonnel'
-import { cotisationsAEcrire, rapprochementsCotisationRefuses } from './cotisationRapprochee'
+import { cotisationsAEcrire, cotisationsComptees, rapprochementsCotisationRefuses } from './cotisationRapprochee'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from './echeanceEmprunt'
 import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } from './amortissements'
 import { forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
@@ -65,6 +65,10 @@ export interface PrealableDeValidation {
   // Un préalable bloquant refuse la validation ; un avertissement se lit avant de valider, sans la refuser.
   bloquant: boolean
   detail?: string
+  // L'exercice qui se valide d'abord, quand le préalable tient à l'ordre des exercices : l'écran y mène d'un clic.
+  // Sans cela, il nommerait un exercice que rien n'affiche peut-être — une année qui ne porte qu'une échéance de
+  // cotisation, ou rien du tout, n'est pas dans la liste des exercices de l'en-tête.
+  exercice?: number
 }
 
 export interface DonneesDeValidation {
@@ -124,20 +128,45 @@ function datesDesEcrituresAttendues(piece: Piece, paiements: PaiementsDesPieces,
   return dates.filter((d): d is string => d !== null)
 }
 
+// Ce qui décide de l'ordre des exercices : ce qui est validé, l'ouverture, et ce que chaque année porte.
+export type SuiteDesExercices = Pick<DonneesDeValidation,
+  'anneeCourante' | 'modele' | 'anneesValidees' | 'aNouveaux' | 'ecritures' | 'lignes' | 'reglements' | 'piecesValidees'
+  | 'piecesAValider' | 'cotisations' | 'vehicules' | 'immobilisations'>
+
 // Les années qui portent quelque chose : une écriture, un mouvement qui n'est pas ignoré (un virement personnel
 // l'est, et s'écrit), une pièce validée à la date où elle s'écrit, une pièce à valider, une échéance de
-// cotisation, un forfait kilométrique, la mise en service d'un bien.
-function anneesActives(d: DonneesDeValidation, paiements: PaiementsDesPieces): Set<number> {
+// cotisation là où elle compte — au prélèvement qui la paie, sinon à son échéance (lib/cotisationRapprochee.ts) :
+// une échéance de décembre prélevée en janvier ne fait pas de décembre un exercice à valider —, un forfait
+// kilométrique, la mise en service d'un bien.
+function anneesActives(d: SuiteDesExercices, paiements: PaiementsDesPieces): Set<number> {
   const annees = new Set<number>()
   const noter = (date: string | null) => { if (date) annees.add(anneeDe(date)) }
   for (const e of d.ecritures) noter(e.date)
   for (const l of d.lignes) if (l.statut !== 'ignoree' || l.prelevement_personnel) noter(l.date)
   for (const p of d.piecesValidees) for (const date of datesDesEcrituresAttendues(p, paiements, d.modele)) noter(date)
   for (const p of d.piecesAValider) noter(p.date_piece)
-  for (const c of d.cotisations) noter(c.echeance)
+  for (const c of cotisationsComptees(d.cotisations, d.lignes, d.modele.mode)) noter(c.date)
   for (const v of d.vehicules) if (v.km_professionnel > 0) annees.add(v.annee)
   for (const i of d.immobilisations) noter(i.date_mise_en_service ?? i.date_acquisition)
   return annees
+}
+
+// LE PROCHAIN EXERCICE À VALIDER, celui que les préalables d'ordre réclament : l'exercice qui suit le dernier
+// validé ; sans validation, celui de l'ouverture d'un dossier repris ; sans ouverture, le premier qui porte quelque
+// chose. Nul quand il n'est pas encore terminé, ou que rien n'est à valider. Une ouverture ne se pose plus après une
+// validation (la base le refuse), donc le dernier exercice validé la suit toujours.
+//
+// Clôture le montre même quand rien ne l'y ferait paraître — une année vide entre deux autres, ou qui ne porte
+// qu'une échéance de cotisation : sinon la validation de tous les exercices suivants attendrait un exercice que
+// l'écran ne propose pas.
+export function prochainExerciceAValider(d: SuiteDesExercices): number | null {
+  const ouverture = d.aNouveaux.length === 0 ? null : d.aNouveaux.map((a) => a.date).sort()[0]
+  const prochain = d.anneesValidees.length > 0
+    ? Math.max(...d.anneesValidees) + 1
+    : ouverture !== null
+      ? anneeDe(ouverture)
+      : Math.min(...anneesActives(d, paiementsDesPieces(d.lignes, d.reglements)))
+  return Number.isFinite(prochain) && prochain < d.anneeCourante ? prochain : null
 }
 
 export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation {
@@ -153,7 +182,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   if (d.lectureIncomplete !== null) {
     prealables.push({
       id: 'lecture-partielle', nb: null, cible: 'cloture', bloquant: true,
-      message: `Une des collections du dossier n'a pas pu être lue en entier (${d.lectureIncomplete}) : la validation attend une lecture complète. Recharger la page.`,
+      message: `La lecture du dossier est restée partielle (${d.lectureIncomplete}) : une validation ne se fait que sur tout le dossier. Recharger la page.`,
     })
     return { prealables, numerotation: null, validable: false }
   }
@@ -166,20 +195,29 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   if (derniere !== null && d.annee <= derniere) {
     bloque({ id: 'deja-valide', nb: null, cible: 'cloture', message: `L'exercice ${d.annee} est déjà validé, ou un exercice postérieur l'est.` })
   } else if (derniere !== null && d.annee !== derniere + 1) {
-    bloque({ id: 'ordre', nb: null, cible: 'cloture', message: `L'exercice ${derniere + 1} n'est pas validé : les exercices se valident dans l'ordre.` })
+    bloque({
+      id: 'ordre', nb: null, cible: 'cloture', exercice: derniere + 1,
+      message: `L'exercice ${derniere + 1} n'est pas validé : les exercices se valident dans l'ordre.`,
+    })
   }
   if (anneeOuverture !== null && d.annee < anneeOuverture) {
     bloque({ id: 'avant-ouverture', nb: null, cible: 'cloture', message: `L'exercice ${d.annee} précède l'ouverture du dossier : il est dans les comptes repris.` })
   } else if (anneeOuverture !== null && anneeOuverture < d.annee && !d.anneesValidees.includes(anneeOuverture)) {
-    bloque({ id: 'ouverture-d-abord', nb: null, cible: 'cloture', message: `L'exercice ${anneeOuverture} porte les à-nouveaux du dossier : il se valide d'abord.` })
+    bloque({
+      id: 'ouverture-d-abord', nb: null, cible: 'cloture', exercice: anneeOuverture,
+      message: `L'exercice ${anneeOuverture} porte les à-nouveaux du dossier : il se valide d'abord.`,
+    })
   }
   const anterieures = d.ecritures.filter((e) => e.statut === 'proposee' && e.date < debut)
   const premiereAnterieure = anterieures.length > 0 ? Math.min(...anterieures.map((e) => anneeDe(e.date))) : null
   if (premiereAnterieure !== null) {
     const premiere = premiereAnterieure
+    const avantOuverture = anneeOuverture !== null && premiere < anneeOuverture
     bloque({
       id: 'ecritures-anterieures', nb: null, cible: 'ecritures', detail: pluriel(anterieures.length, 'écriture concernée', 'écritures concernées'),
-      message: anneeOuverture !== null && premiere < anneeOuverture
+      // Avant l'ouverture, aucun exercice ne se valide : les écritures se retirent ou se redatent.
+      ...(avantOuverture ? {} : { exercice: premiere }),
+      message: avantOuverture
         ? "Des écritures antérieures à l'ouverture du dossier ne sont pas validées : cette période est dans les comptes repris, les retirer ou les redater avant la validation."
         : `L'exercice ${premiere} porte des écritures qui ne sont pas validées : les exercices se valident dans l'ordre.`,
     })
@@ -201,7 +239,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     const premiere = Math.min(...[...anneesActives(d, paiements)].filter((a) => a < d.annee))
     if (Number.isFinite(premiere) && premiere !== premiereAnterieure) {
       bloque({
-        id: 'exercice-anterieur-d-abord', nb: null, cible: 'cloture',
+        id: 'exercice-anterieur-d-abord', nb: null, cible: 'cloture', exercice: premiere,
         message: `L'exercice ${premiere} porte déjà des pièces, des mouvements ou des écritures : il se valide d'abord. Valider ${d.annee} le figerait sans qu'il l'ait été.`,
       })
     }

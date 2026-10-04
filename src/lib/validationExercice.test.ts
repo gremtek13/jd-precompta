@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-  biensFiges, casesDeLInstantane, dateFigee, defautsDeNumerotation, demandeDeValidation, exerciceQuiFige,
+  biensFiges, casesDeLInstantane, casesQuiDifferent, dateFigee, defautsDeNumerotation, demandeDeValidation, exerciceQuiFige,
   frontiereDeValidation, instantane2035, lireInstantane2035, piecesFigees,
 } from './validationExercice'
 import { numeroterFec, type NumerotationFec } from './fec'
@@ -229,5 +229,21 @@ describe('l’instantané de la 2035 — la déclaration telle qu’elle a été
     expect(lireInstantane2035({ ...i, postes: [{ poste: 'x', nature: 'autre', montant: 1 }] })).toBeNull()
     expect(lireInstantane2035({ ...i, entete: { nom: 3, activite: null, siret: null } })).toBeNull()
     expect(lireInstantane2035({ ...i, entete: undefined })).toBeNull()
+  })
+
+  // La 2035 validée fait foi ; recalculée aujourd'hui, elle peut ne plus s'y retrouver — un poste de catégorie
+  // changé, un calcul qui a évolué. L'écran nomme les cases qui diffèrent, au centime.
+  it('nomme les cases où la 2035 recalculée ne retrouve plus la validée', () => {
+    const i = instantane2035(declaration, valeurs, formulaire, entete)
+    expect(casesQuiDifferent(i, valeurs)).toEqual([])
+    expect(casesQuiDifferent(i, new Map([['AG', 5000.404], ['BA', 120.6], ['CP', 4879.8]]))).toEqual([])
+    expect(casesQuiDifferent(i, new Map([['AG', 5000.41], ['BA', 120.6], ['CP', 4879.81]]))).toEqual(['AG', 'CP'])
+    // Une case qui n'existe que d'un côté vaut zéro de l'autre.
+    expect(casesQuiDifferent(i, new Map([['AG', 5000.4], ['BA', 120.6], ['CP', 4879.8], ['BH', 12]]))).toEqual(['BH'])
+    expect(casesQuiDifferent(i, new Map([['AG', 5000.4], ['CP', 4879.8]]))).toEqual(['BA'])
+    expect(casesQuiDifferent(i, new Map([['AG', 5000.4], ['BA', 120.6], ['CP', 4879.8], ['BH', 0]]))).toEqual([])
+    // Dans l'ordre des codes, d'où qu'ils viennent : l'écran les énumère, et une liste qui suivrait l'ordre de lecture
+    // changerait d'un affichage à l'autre.
+    expect(casesQuiDifferent(i, new Map([['AG', 5000.41], ['BA', 120.6], ['CP', 4879.8], ['AA', 3]]))).toEqual(['AA', 'AG'])
   })
 })

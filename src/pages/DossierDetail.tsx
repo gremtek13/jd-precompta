@@ -336,7 +336,7 @@ export default function DossierDetail() {
           )}
           {tab === 'immobilisations' && <ImmobilisationsTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} />}
           {tab === 'cotisations' && modele && <CotisationsTab dossierId={id} modeComptable={modele.mode} />}
-          {tab === 'cloture' && modele && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
+          {tab === 'cloture' && modele && <ClotureTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modele={modele} onNavigate={allerA} />}
           {tab === 'estimation' && modele && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
           {tab === 'financement' && modele && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
           {tab === 'supplements' && <SupplementsTab dossierId={id} />}
@@ -363,7 +363,11 @@ export default function DossierDetail() {
 // Sélecteur d'exercice de l'en-tête (voir AnneeContext) — un seul composant plutôt qu'un appel direct
 // à useAnnee() dans DossierDetail : useAnnee() suppose d'être sous un <AnneeProvider>, qui n'englobe
 // que ce bloc (pas tout DossierDetail), lui-même conditionné par le chargement des années disponibles.
+// L'exercice choisi y paraît TOUJOURS, même quand rien ne le porte encore : Clôture mène à l'exercice que la
+// validation réclame d'abord, qui peut n'avoir ni pièce, ni mouvement, ni écriture — et un en-tête sans onglet actif
+// laisserait croire qu'on lit un autre exercice que celui affiché.
 function SelecteurExerciceEntete({ annees }: { annees: number[] }) {
   const { annee, setAnnee } = useAnnee()
-  return <AnneeTabs annees={annees} valeur={annee} onChange={setAnnee} />
+  const liste = typeof annee === 'number' && !annees.includes(annee) ? [...annees, annee].sort((x, y) => y - x) : annees
+  return <AnneeTabs annees={liste} valeur={annee} onChange={setAnnee} />
 }
