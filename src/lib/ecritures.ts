@@ -1,8 +1,7 @@
 import { COMPTE_BANQUE, libelleCompteTenu } from './comptes'
 import { COMPTES_DE_TIERS, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
-import { dateLocaleDe } from './format'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
-import { rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
+import { centimesParDate, rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
 import type { AcquisitionDuBien } from './amortissements'
 import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Piece } from './types'
 
@@ -92,17 +91,18 @@ export function lignesChargeProduitPourPiece(
     return { dossier_id: dossierId, piece_id: piece.id, date, libelle, statut: 'proposee', compte, sens, montant: Math.abs(montant) }
   }
 
-  const fractions = datesDEcriture(piece, paiements)
+  // La répartition au centime est celle que la 2035 compte (`centimesParDate`, lib/rattachement.ts) : un seul
+  // calcul, pour que la déclaration et le FEC disent le même centime d'une pièce payée sur deux exercices.
   const tva = tvaVentilee(piece, assujettiTva)
   const charge = tva ? montantRetenu(piece, assujettiTva)! : piece.montant_ttc!
-  const charges = repartir(charge, fractions.map((f) => f.part))
-  const tvas = tva ? repartir(tva, fractions.map((f) => f.part)) : []
+  const charges = centimesParDate(piece, charge, paiements)
+  const tvas = tva ? centimesParDate(piece, tva, paiements) : []
 
-  return fractions.flatMap((f, i) => {
-    const lignes = [ligne(f.date, cible.compte, charges[i])]
+  return charges.flatMap((f, i) => {
+    const lignes = [ligne(f.date, cible.compte, f.centimes / 100)]
     // Rien à ventiler : la charge est ce qui a été payé, face au mouvement bancaire. Une part de TVA
     // arrondie à zéro sur un paiement partiel ne fait pas de ligne vide.
-    if (tva && tvas[i] !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i]))
+    if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i].centimes / 100))
     return lignes
   })
 }
@@ -147,28 +147,6 @@ export function lignesPourPiece(
     ...lignesChargeProduitPourPiece(dossierId, piece, cible, assujettiTva, paiements),
     ...paiements.flatMap((p) => ligneContrepartieBanque(dossierId, piece, p) ?? []),
   ]
-}
-
-// Les dates d'écriture d'une pièce et la part de chacune : les rattachements de lib/rattachement.ts,
-// la part sans date reportée à la date de DÉPÔT, et deux parts à la même date réunies en une.
-function datesDEcriture(piece: Piece, paiements: readonly Pick<PaiementDePiece, 'date' | 'montant'>[]): { date: string; part: number }[] {
-  const reunies: { date: string; part: number }[] = []
-  for (const r of rattachementsTresorerie(piece, paiements)) {
-    const date = r.date ?? dateLocaleDe(piece.created_at)
-    const meme = reunies.find((x) => x.date === date)
-    if (meme) meme.part += r.part
-    else reunies.push({ date, part: r.part })
-  }
-  return reunies
-}
-
-// Répartit un montant en centimes selon des parts : chaque morceau arrondi au centime, le dernier
-// prenant le reste — la somme des morceaux est exactement le montant, signe compris.
-function repartir(montant: number, parts: number[]): number[] {
-  const total = Math.round(montant * 100)
-  const morceaux = parts.map((part) => Math.round(total * part))
-  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
-  return morceaux.map((m) => m / 100)
 }
 
 // Les dates que les lignes d'une pièce DOIVENT porter, ou null quand l'une d'elles serait le repli sur

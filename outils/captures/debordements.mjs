@@ -50,6 +50,8 @@ const VISITES = [
   },
   { dossier: 'd7', onglet: 'ecritures', nom: 'assujetti/ecritures' },
   { dossier: 'd7', onglet: 'checklist', nom: 'assujetti/checklist' },
+  // Sa Clôture : la concordance de la 2035 avec les écritures, dont le bien sans nature est l'écart.
+  { dossier: 'd7', onglet: 'cloture', nom: 'assujetti/cloture' },
   // Le registre des immobilisations déplié : le tableau d'amortissement d'un bien, le formulaire qui le
   // modifie et celui d'une nature n'apparaissent qu'après un clic. Puis un bien sans nature et plusieurs
   // candidates (dossier assujetti), et une dotation d'un exercice fini qui manque (engagement).

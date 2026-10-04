@@ -341,12 +341,12 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
           )}
         </div>
       ) : (
-        <div className="table-scroll formulaire-adaptable">
+        <div className="table-scroll tableau-adaptable">
           {/* `table-formulaire` : une ligne de ce tableau est un FORMULAIRE, pas une donnée à lire.
               Dans une carte étroite — téléphone, 1 024 pixels, volet ouvert —, elle se replie en fiche
-              empilée libellé/champ plutôt que de se comprimer ; `formulaire-adaptable` est l'enveloppe
-              dont la largeur en décide — voir index.css. */}
-          <table className="table-formulaire">
+              empilée libellé/champ plutôt que de se comprimer (`table-empilable`) ; `tableau-adaptable`
+              est l'enveloppe dont la largeur en décide — voir index.css. */}
+          <table className="table-formulaire table-empilable">
             <thead>
               <tr>
                 <th>Modèle</th>

@@ -37,6 +37,10 @@ export interface PartDuReleve {
   poste: string | null
   // Nulle quand le compte d'une catégorie n'est plus un compte de résultat (voir `MouvementAffecte`).
   nature: NatureCompte | null
+  // Le compte où l'écriture du mouvement porte cette part : celui de la catégorie, ou 661100 et 616800 pour
+  // une échéance d'emprunt. C'est sur lui que la concordance de la 2035 avec les écritures retrouve la part
+  // (lib/concordance2035.ts). Nul pour une catégorie sans compte.
+  compte: string | null
   // Le taux de TVA qui s'applique à la part (voir `MouvementAffecte.taux`) : nul pour une dépense, une
   // échéance d'emprunt, et sur un dossier non assujetti. La CA3 le lit ici (lib/declarationTva.ts).
   taux: number | null
@@ -61,6 +65,7 @@ export function partsDuReleve(
     libelle: m.categorie.libelle,
     poste: m.categorie.poste_2035,
     nature: m.nature,
+    compte: m.categorie.compte_comptable,
     taux: m.taux,
     montantPoste: m.montantPoste,
     montantReleve: m.ligne.montant,
@@ -71,6 +76,7 @@ export function partsDuReleve(
     libelle: p.libelle,
     poste: p.poste,
     nature: 'depense',
+    compte: p.compte,
     taux: null,
     montantPoste: p.montantPoste,
     // Une dépense payée : une sortie du relevé.
@@ -82,6 +88,7 @@ export function partsDuReleve(
     libelle: p.categorie.libelle,
     poste: p.categorie.poste_2035,
     nature: p.nature,
+    compte: p.categorie.compte_comptable,
     taux: p.taux,
     montantPoste: p.montantPoste,
     montantReleve: p.montant,

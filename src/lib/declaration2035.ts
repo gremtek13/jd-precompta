@@ -1,12 +1,16 @@
 import { dotationDeLExercice } from './amortissements'
 import { anneeDe } from './format'
-import { totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
+import { indemniteKilometriqueCentimes, totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
+import {
+  COMPTE_COTISATIONS_EXPLOITANT, COMPTE_DOTATIONS_AMORTISSEMENTS, COMPTE_INDEMNITES_KILOMETRIQUES,
+} from './comptes'
 import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
-import { partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
+import { centimesParDate, partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
-import type { Categorie, Immobilisation, Piece, VehiculeDossier } from './types'
+import type { MouvementBancaire } from './affectationBanque'
+import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
 
 // Moteur de la déclaration 2035 (bénéfices non commerciaux, régime de la déclaration contrôlée).
 //
@@ -31,9 +35,17 @@ export const POSTE_CSG_DEDUCTIBLE = 'CSG déductible'
 // or ce sont précisément les deux montants qui ne doivent pas coexister (voir doublonFraisVehicules).
 export const POSTE_INDEMNITES_KM = 'Indemnités kilométriques'
 
-// Un poste de la déclaration. `montant` est TOUJOURS positif : c'est `nature` qui porte le sens.
-// Mélanger les deux (une charge en négatif) obligerait chaque consommateur — PDF, EDI, écran — à
-// refaire la même convention de signe, et une seule erreur suffirait à inverser une ligne.
+// Un poste de la déclaration. `montant` est positif : c'est `nature` qui porte le sens. Mélanger les deux
+// (une charge en négatif) obligerait chaque consommateur — PDF, EDI, écran — à refaire la même convention
+// de signe, et une seule erreur suffirait à inverser une ligne.
+//
+// SAUF UN POSTE DONT LES AVOIRS ET REMBOURSEMENTS DE L'EXERCICE DÉPASSENT CE QU'IL COMPTE : il reste
+// NÉGATIF, sous sa nature. Le moteur prenait la valeur absolue du total, si bien qu'un remboursement de
+// frais bancaires reçu une année sans frais payés comptait en DÉPENSE — le résultat se trompait du double
+// de son montant, en silence, et la situation intermédiaire, qui ne retourne rien, disait autre chose sur
+// la même année. Trouvé en comparant la 2035 aux écritures (lib/concordance2035.ts), où l'écart ne se
+// serait expliqué par aucune source. Une CASE négative ne se dépose pas : `casesNegatives`
+// (lib/cases2035.ts) la signale, et l'arbitrage reste celui du cabinet.
 export interface LigneDeclaration {
   poste: string
   nature: 'recette' | 'depense'
@@ -74,6 +86,35 @@ export interface PieceSansPaiement {
   montant: number
 }
 
+// D'OÙ VIENT CHAQUE CENTIME DE LA DÉCLARATION. Une pièce, un mouvement du relevé (affecté, ventilé, une
+// échéance d'emprunt), la dotation d'un bien, le forfait d'un véhicule, une échéance de cotisation, et la
+// CSG déductible. La concordance de la 2035 avec les écritures (lib/concordance2035.ts) les retrouve une à
+// une dans le brouillon : un total qui diffère ne dit pas où chercher, une source oui.
+export type SourceDeclaration =
+  | { type: 'piece'; id: string; piece: Piece }
+  | { type: 'mouvement'; id: string; ligne: MouvementBancaire }
+  | { type: 'bien'; id: string; immobilisation: Immobilisation }
+  | { type: 'vehicule'; id: string; vehicule: VehiculeDossier }
+  // Une échéance de cotisation : son écriture désigne le mouvement qui la paie, quand il y en a un ; `refus`
+  // dit pourquoi un rapprochement qu'elle porte ne s'écrit pas (lib/cotisationRapprochee.ts).
+  | { type: 'cotisation'; id: string; cotisation: CotisationDeclaree; ligne: MouvementBancaire | null; refus: string | null }
+  // La part déductible de la CSG-CRDS de l'exercice (case BV) : une seule, calculée sur le total.
+  | { type: 'csg' }
+
+export interface ContributionDeclaration {
+  source: SourceDeclaration
+  poste: string
+  nature: 'recette' | 'depense'
+  // Le compte où l'écriture de la source porte ce montant : celui de la catégorie, ou le compte fixe d'une
+  // dotation (681100), d'un forfait (625110), d'une cotisation (646000), d'une échéance d'emprunt (661100,
+  // 616800). Nul pour une catégorie sans compte, que rien ne peut écrire, et pour la CSG déductible,
+  // qu'aucune écriture ne porte : la CSG-CRDS passe entière au 108000, et seule sa part déductible entre en
+  // BV — la présentation relevée sur la 2035 déposée par le cabinet (voir plus bas).
+  compte: string | null
+  // En centimes, signé comme ce que la source fait à son poste : un avoir ou un remboursement le diminue.
+  centimes: number
+}
+
 export interface Declaration2035 {
   annee: number
   recettes: LigneDeclaration[]
@@ -91,6 +132,8 @@ export interface Declaration2035 {
   // part du poste : `nonCalcules` doit remonter jusqu'à l'écran, sans quoi un véhicule dont le
   // barème manque disparaîtrait de la déclaration sans laisser de trace.
   indemnitesKilometriques: TotalKilometrique | null
+  // Chaque montant des postes, avec sa source : leur somme par poste EST le poste, au centime.
+  contributions: ContributionDeclaration[]
 }
 
 function arrondi(n: number): number {
@@ -235,21 +278,25 @@ export function calculerDeclaration2035(
     sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [],
   }
   const sansPaiementConnu: PieceSansPaiement[] = []
-  // Les mouvements d'un poste se comptent par IDENTIFIANT, pas par part : un mouvement ventilé sur deux
-  // catégories du même poste (lib/ventilationBanque.ts) y apporte deux parts, et reste UN mouvement à
-  // retrouver sur le relevé.
-  const totaux = new Map<string, { nature: 'recette' | 'depense'; montant: number; nbPieces: number; mouvements: Set<string> }>()
+  const contributions: ContributionDeclaration[] = []
+  // EN CENTIMES ENTIERS, comme les écritures : une somme de flottants dérive, et un total qui dérive d'un
+  // centime n'est plus la somme de ses sources. Les mouvements d'un poste se comptent par IDENTIFIANT, pas
+  // par part : un mouvement ventilé sur deux catégories du même poste (lib/ventilationBanque.ts) y apporte
+  // deux parts, et reste UN mouvement à retrouver sur le relevé.
+  const totaux = new Map<string, { nature: 'recette' | 'depense'; centimes: number; nbPieces: number; mouvements: Set<string> }>()
 
-  const ajouter = (poste: string, nature: 'recette' | 'depense', montant: number, nbPieces: number, mouvementId: string | null = null) => {
-    let actuel = totaux.get(poste)
+  const ajouter = (contribution: ContributionDeclaration, nbPieces: number, mouvementId: string | null = null) => {
+    contributions.push(contribution)
+    let actuel = totaux.get(contribution.poste)
     if (!actuel) {
-      actuel = { nature, montant: 0, nbPieces: 0, mouvements: new Set() }
-      totaux.set(poste, actuel)
+      actuel = { nature: contribution.nature, centimes: 0, nbPieces: 0, mouvements: new Set() }
+      totaux.set(contribution.poste, actuel)
     }
-    actuel.montant += montant
+    actuel.centimes += contribution.centimes
     actuel.nbPieces += nbPieces
     if (mouvementId) actuel.mouvements.add(mouvementId)
   }
+  const enCentimes = (montant: number) => Math.round(montant * 100)
 
   for (const piece of pieces) {
     if (piece.statut !== 'validee') continue
@@ -262,7 +309,8 @@ export function calculerDeclaration2035(
     //
     // L'ordre des contrôles porte une intention : une pièce d'un autre exercice n'est pas une
     // anomalie, elle n'a juste rien à faire ici — elle sort avant d'être comptée comme un défaut.
-    const rattachements = rattachementsTresorerie(piece, paiements.get(piece.id) ?? [])
+    const paiementsPiece = paiements.get(piece.id) ?? []
+    const rattachements = rattachementsTresorerie(piece, paiementsPiece)
     if (rattachements.some((r) => r.date === null)) exclusions.sansDate.push(piece)
     const part = partDeLAnnee(rattachements, annee)
     if (part === 0) continue
@@ -279,10 +327,23 @@ export function calculerDeclaration2035(
       continue
     }
 
+    // AU CENTIME DE SON ÉCRITURE : la part de l'exercice telle que la génération la répartit
+    // (`centimesParDate`), la part sans date en moins — l'écriture la porte au dépôt, la 2035 nulle part.
+    // Additionner `montant × part` laissait un centime d'écart avec le FEC sur une pièce payée sur deux
+    // exercices.
+    const centimes = centimesParDate(piece, montant, paiementsPiece)
+      .filter((m) => anneeDe(m.date) === annee)
+      .reduce((s, m) => s + m.centimes - m.centimesSansDate, 0)
+
     // Un montant négatif (avoir, remboursement) ne change pas le poste, il le diminue. Le signe est
-    // porté par `nature` au niveau du poste, donc on additionne le montant tel quel ici et on prend
-    // la valeur absolue une seule fois, à la sortie.
-    ajouter(categorie.poste_2035, piece.type_piece === 'vente' ? 'recette' : 'depense', montant * part, 1)
+    // porté par `nature` au niveau du poste, donc on additionne le montant tel quel ici.
+    ajouter({
+      source: { type: 'piece', id: piece.id, piece },
+      poste: categorie.poste_2035,
+      nature: piece.type_piece === 'vente' ? 'recette' : 'depense',
+      compte: categorie.compte_comptable,
+      centimes,
+    }, 1)
 
     // Ce qui compte ici à la date de facture faute de paiement connu — rendu APRÈS les contrôles, une
     // pièce écartée n'étant pas comptée du tout.
@@ -307,18 +368,27 @@ export function calculerDeclaration2035(
       exclusions.mouvementsSansPoste.push(p)
       continue
     }
-    ajouter(p.poste, p.nature, p.montantPoste, 0, p.ligne.id)
+    ajouter({
+      source: { type: 'mouvement', id: p.ligne.id, ligne: p.ligne },
+      poste: p.poste,
+      nature: p.nature,
+      compte: p.compte,
+      centimes: enCentimes(p.montantPoste),
+    }, 0, p.ligne.id)
   }
 
-  const totalAmortissements = immobilisations.reduce((somme, i) => somme + dotationDeLExercice(i, annee), 0)
-  if (totalAmortissements > 0) ajouter(POSTE_AMORTISSEMENTS, 'depense', totalAmortissements, 0)
-
-  // Le paiement fait foi quand le rapprochement le connaît — sa date et son montant, ceux du FEC ; à
-  // défaut, le versement saisi ou l'appel, à l'échéance (voir `cotisationsComptees`).
-  const totalCotisationsBrut = cotisations.reduce((somme, c) => {
-    if (anneeDe(c.date) !== annee) return somme
-    return somme + c.montant
-  }, 0)
+  // Une dotation par bien : la case CH est leur somme, et chacune s'écrit à part au brouillon.
+  for (const immobilisation of immobilisations) {
+    const dotation = dotationDeLExercice(immobilisation, annee)
+    if (dotation === 0) continue
+    ajouter({
+      source: { type: 'bien', id: immobilisation.id, immobilisation },
+      poste: POSTE_AMORTISSEMENTS,
+      nature: 'depense',
+      compte: COMPTE_DOTATIONS_AMORTISSEMENTS,
+      centimes: enCentimes(dotation),
+    }, 0)
+  }
 
   // LA CSG-CRDS SORT DE LA LIGNE 25 ET SA PART DÉDUCTIBLE REJOINT LA LIGNE 14 (voir plus haut).
   //
@@ -329,34 +399,66 @@ export function calculerDeclaration2035(
   //
   // Une cotisation sans ventilation laisse sa CSG dans la ligne 25 — on ne sait pas l'en extraire,
   // et inventer un taux sur le montant total serait une valeur plausible et fausse.
+  //
+  // Le paiement fait foi quand le rapprochement le connaît — sa date et son montant, ceux du FEC ; à
+  // défaut, le versement saisi ou l'appel, à l'échéance (voir `cotisationsComptees`). Chaque échéance
+  // porte ce qui va au 646000, sa CSG-CRDS en moins : c'est le montant de son écriture.
+  for (const c of cotisations) {
+    if (anneeDe(c.date) !== annee) continue
+    const centimes = enCentimes(c.montant) - enCentimes(c.csgCrds ?? 0)
+    if (centimes === 0) continue
+    ajouter({
+      source: { type: 'cotisation', id: c.cotisation.id, cotisation: c.cotisation, ligne: c.ligne, refus: c.refus },
+      poste: POSTE_COTISATIONS,
+      nature: 'depense',
+      compte: COMPTE_COTISATIONS_EXPLOITANT,
+      centimes,
+    }, 0)
+  }
   const csg = partCsgNonDeductible(cotisations, annee)
-  const totalCotisations = arrondi(totalCotisationsBrut - (csg?.totalCsgCrds ?? 0))
-  if (totalCotisations > 0) ajouter(POSTE_COTISATIONS, 'depense', totalCotisations, 0)
-  if (csg && csg.csgDeductible > 0) ajouter(POSTE_CSG_DEDUCTIBLE, 'depense', csg.csgDeductible, 0)
+  if (csg && csg.csgDeductible !== 0) {
+    ajouter({
+      source: { type: 'csg' }, poste: POSTE_CSG_DEDUCTIBLE, nature: 'depense', compte: null,
+      centimes: enCentimes(csg.csgDeductible),
+    }, 0)
+  }
 
   // Cadre 7 du 2035-B → ligne 23 du 2035-A. Le kilométrage est propre à un exercice (l'option pour
   // le forfait se prend au 1er janvier et vaut l'année entière, notice renvoi 12), d'où le filtre sur
-  // l'année — un véhicule saisi pour 2024 n'a rien à faire dans la déclaration 2025.
+  // l'année — un véhicule saisi pour 2024 n'a rien à faire dans la déclaration 2025. Un forfait par
+  // véhicule, comme au brouillon.
   const vehiculesDeLExercice = vehicules.filter((v) => v.annee === annee)
   const indemnitesKilometriques = vehiculesDeLExercice.length > 0
     ? totalIndemnitesKilometriques(vehiculesDeLExercice.map(vehiculeDuDossier), annee)
     : null
-  if (indemnitesKilometriques && indemnitesKilometriques.total > 0) {
-    ajouter(POSTE_INDEMNITES_KM, 'depense', indemnitesKilometriques.total, 0)
+  for (const vehicule of vehiculesDeLExercice) {
+    const centimes = indemniteKilometriqueCentimes(vehiculeDuDossier(vehicule), annee)
+    if (centimes === null || centimes === 0n) continue
+    ajouter({
+      source: { type: 'vehicule', id: vehicule.id, vehicule },
+      poste: POSTE_INDEMNITES_KM,
+      nature: 'depense',
+      compte: COMPTE_INDEMNITES_KILOMETRIQUES,
+      centimes: Number(centimes),
+    }, 0)
   }
 
-  const lignes = [...totaux.entries()].map(([poste, t]) => ({
-    poste,
-    nature: t.nature,
-    montant: arrondi(Math.abs(t.montant)),
-    nbPieces: t.nbPieces,
-    nbMouvements: t.mouvements.size,
-  }))
+  // Le total SIGNÉ de chaque poste, jamais sa valeur absolue (voir `LigneDeclaration`).
+  const lignes = [...totaux.entries()]
+    .filter(([, t]) => t.centimes !== 0)
+    .map(([poste, t]) => ({
+      poste,
+      nature: t.nature,
+      montant: t.centimes / 100,
+      nbPieces: t.nbPieces,
+      nbMouvements: t.mouvements.size,
+    }))
 
   const recettes = lignes.filter((l) => l.nature === 'recette').sort((a, b) => b.montant - a.montant)
   const depenses = lignes.filter((l) => l.nature === 'depense').sort((a, b) => b.montant - a.montant)
-  const totalRecettes = arrondi(recettes.reduce((s, l) => s + l.montant, 0))
-  const totalDepenses = arrondi(depenses.reduce((s, l) => s + l.montant, 0))
+  const centimesDe = (ls: LigneDeclaration[]) => ls.reduce((s, l) => s + Math.round(l.montant * 100), 0)
+  const totalRecettes = centimesDe(recettes) / 100
+  const totalDepenses = centimesDe(depenses) / 100
 
   return {
     annee,
@@ -364,9 +466,10 @@ export function calculerDeclaration2035(
     depenses,
     totalRecettes,
     totalDepenses,
-    resultat: arrondi(totalRecettes - totalDepenses),
+    resultat: (centimesDe(recettes) - centimesDe(depenses)) / 100,
     exclusions,
     sansPaiementConnu,
     indemnitesKilometriques,
+    contributions,
   }
 }

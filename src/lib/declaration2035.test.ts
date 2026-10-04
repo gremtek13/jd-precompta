@@ -7,6 +7,7 @@ import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piec
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
+import { lignesChargeProduitPourPiece } from './ecritures'
 
 const categories = [
   { id: 'c-achats', poste_2035: 'Achats' },
@@ -771,5 +772,178 @@ describe('partCsgNonDeductible', () => {
     expect(csgDeductible(970)).toBe(680)
     expect(csgDeductible(100)).toBe(70.1)
     expect(csgDeductible(0)).toBe(0)
+  })
+})
+
+// D'OÙ VIENT CHAQUE CENTIME (ligne 26.6, étape c). La concordance de la 2035 avec les écritures
+// (lib/concordance2035.ts) retrouve chaque montant dans le brouillon par sa SOURCE et son COMPTE : la pièce,
+// le mouvement du relevé, le bien, le véhicule, l'échéance de cotisation. Un total ne dit pas où chercher.
+describe('calculerDeclaration2035 — les contributions, source par source', () => {
+  const categoriesComptables = [
+    { id: 'c-achats', compte_comptable: '606100', poste_2035: 'Achats' },
+    { id: 'c-recettes', compte_comptable: '706000', poste_2035: 'Recettes' },
+    { id: 'c-frais', compte_comptable: '627000', poste_2035: 'Frais financiers' },
+    { id: 'c-sans-compte', compte_comptable: null, poste_2035: 'Achats' },
+  ] as Categorie[]
+  const calculComptable = (o: {
+    pieces?: Piece[]; paiements?: LigneBancaire[]; mouvements?: LigneBancaire[]; immos?: Immobilisation[]
+    cotis?: CotisationDeclaree[]; vehicules?: VehiculeDossier[]; annee?: number; assujetti?: boolean
+  }) => calculerDeclaration2035(
+    o.annee ?? 2025, o.pieces ?? [], categoriesComptables, o.immos ?? [],
+    cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], o.assujetti ?? true,
+    paiementsDesPieces(o.paiements ?? [], []),
+    partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true),
+  )
+  const centimesDuPoste = (d: ReturnType<typeof calculComptable>, poste: string) =>
+    d.contributions.filter((c) => c.poste === poste).reduce((s, c) => s + c.centimes, 0)
+
+  it('chaque poste est la somme exacte de ses contributions', () => {
+    const d = calculComptable({
+      pieces: [piece({ id: 'a', montant_ht: 100.1 }), piece({ id: 'b', montant_ht: 0.2 }), piece({ id: 'v', type_piece: 'vente', categorie_id: 'c-recettes', montant_ht: 900 })],
+      mouvements: [paiement({ id: 'frais', piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', montant: -8.5 })],
+      immos: [{ id: 'i', piece_id: null, date_acquisition: '2025-01-01', valeur: 3000, duree_annees: 3 } as Immobilisation],
+      cotis: [cotisation()],
+      vehicules: [vehicule({})],
+    })
+    for (const l of [...d.recettes, ...d.depenses]) expect(centimesDuPoste(d, l.poste) / 100).toBe(l.montant)
+    expect(d.contributions.map((c) => c.source.type).sort()).toEqual(['bien', 'cotisation', 'csg', 'mouvement', 'piece', 'piece', 'piece', 'vehicule'])
+  })
+
+  it('le résultat se tire des centimes, pas de la différence de deux totaux en virgule flottante', () => {
+    // 0,30 − 0,10 vaut 0,19999999999999998 en virgule flottante : le résultat d'une déclaration ne doit pas
+    // dépendre de la représentation binaire de ses totaux.
+    const d = calculComptable({
+      pieces: [
+        piece({ id: 'v', type_piece: 'vente', categorie_id: 'c-recettes', montant_ht: 0.3, montant_ttc: 0.3 }),
+        piece({ id: 'a', montant_ht: 0.1, montant_ttc: 0.1 }),
+      ],
+    })
+    expect([d.totalRecettes, d.totalDepenses]).toEqual([0.3, 0.1])
+    expect(d.resultat).toBe(0.2)
+  })
+
+  it('une pièce désigne sa source et le compte de sa catégorie', () => {
+    const d = calculComptable({ pieces: [piece({ id: 'a' }), piece({ id: 'sc', categorie_id: 'c-sans-compte' })] })
+    expect(d.contributions.map((c) => [c.source.type, c.source.type === 'piece' ? c.source.id : null, c.compte, c.centimes])).toEqual([
+      ['piece', 'a', '606100', 10000],
+      // Une catégorie sans compte compte dans la 2035, mais rien ne peut l'écrire : son compte est nul.
+      ['piece', 'sc', null, 10000],
+    ])
+  })
+
+  it('un mouvement désigne son mouvement et le compte de sa part', () => {
+    const d = calculComptable({
+      mouvements: [
+        paiement({ id: 'frais', piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', montant: -8.5 }),
+        paiement({ id: 'ech', piece_id: null, date: '2025-03-06', montant: -540, emprunt_id: 'e', emprunt_echeance: 2, emprunt_interets: 36, emprunt_assurance: 21.03 }),
+      ],
+    })
+    expect(d.contributions.map((c) => [c.source.type === 'mouvement' ? c.source.id : null, c.compte, c.centimes])).toEqual([
+      ['frais', '627000', 850],
+      ['ech', '661100', 3600],
+      ['ech', '616800', 2103],
+    ])
+  })
+
+  it('une dotation par bien au 681100, un forfait par véhicule au 625110', () => {
+    const d = calculComptable({
+      immos: [
+        { id: 'i1', piece_id: null, date_acquisition: '2025-01-01', valeur: 3000, duree_annees: 3 } as Immobilisation,
+        { id: 'i2', piece_id: null, date_acquisition: '2025-01-01', valeur: 600, duree_annees: 2 } as Immobilisation,
+      ],
+      vehicules: [vehicule({ id: 'v1' }), vehicule({ id: 'v2', km_professionnel: 1000 }), vehicule({ id: 'v-2024', annee: 2024 })],
+    })
+    expect(d.contributions.map((c) => [c.source.type, 'id' in c.source ? c.source.id : null, c.compte, c.centimes])).toEqual([
+      ['bien', 'i1', '681100', 100000],
+      ['bien', 'i2', '681100', 30000],
+      ['vehicule', 'v1', '625110', 266000],
+      ['vehicule', 'v2', '625110', 66500],
+    ])
+  })
+
+  it('une échéance payée désigne le mouvement qui la paie ; sa CSG-CRDS sort du 646000, et la part déductible n’a pas de compte', () => {
+    const payee = cotisation({ id: 'payee', montant_verse: null, montant_appele: 3000, montant_csg_crds: 970 })
+    const sansPaiement = cotisation({ id: 'attente', echeance: '2025-09-05', montant_verse: null, montant_appele: 500, montant_csg_crds: null })
+    const prelevement = paiement({ id: 'prlv', date: '2025-03-07', montant: -3000, piece_id: null, cotisation_id: 'payee' })
+    const d = calculComptable({ cotis: [payee, sansPaiement], paiements: [prelevement] })
+    expect(d.contributions.map((c) => [
+      c.source.type, c.source.type === 'cotisation' ? [c.source.id, c.source.ligne?.id ?? null] : null, c.compte, c.centimes,
+    ])).toEqual([
+      ['cotisation', ['payee', 'prlv'], '646000', 203000],
+      ['cotisation', ['attente', null], '646000', 50000],
+      ['csg', null, null, 68000],
+    ])
+  })
+
+  it('une pièce payée sur deux exercices compte au centime ce que porte son écriture', () => {
+    // 100 € hors taxes, 120 € TTC, payés 50 € en décembre et 70 € en janvier : la part de décembre vaut
+    // 41,666… €. L'écriture la répartit au centime (41,67 + 58,33) ; additionner 100 × 50/120 deux fois
+    // donnait 83,33 € pour deux pièces, quand leurs écritures en portent 83,34.
+    // La TVA lue : sans elle, l'écriture d'un dossier assujetti porte le TTC quand la 2035 compte le hors taxe
+    // — un écart réel, que la concordance dit, mais pas celui que ce test isole.
+    const pieces = [piece({ id: 'p1', date_piece: '2025-12-01', montant_tva: 20 }), piece({ id: 'p2', date_piece: '2025-12-01', montant_tva: 20 })]
+    const paiements = pieces.flatMap((p) => [
+      paiement({ id: `${p.id}-dec`, piece_id: p.id, date: '2025-12-20', montant: -50 }),
+      paiement({ id: `${p.id}-jan`, piece_id: p.id, date: '2026-01-10', montant: -70 }),
+    ])
+    const ecrites = pieces.flatMap((p) => lignesChargeProduitPourPiece(
+      'd1', p, { compte: '606100', immobilisation: false }, true, paiementsDesPieces(paiements, []).get(p.id) ?? [],
+    )).filter((l) => l.compte === '606100')
+    const ecritEn = (annee: number) => Math.round(ecrites.filter((l) => l.date.startsWith(String(annee))).reduce((s, l) => s + l.montant, 0) * 100) / 100
+    expect(calculComptable({ annee: 2025, pieces, paiements }).totalDepenses).toBe(83.34)
+    expect(ecritEn(2025)).toBe(83.34)
+    expect(calculComptable({ annee: 2026, pieces, paiements }).totalDepenses).toBe(116.66)
+    expect(ecritEn(2026)).toBe(116.66)
+  })
+
+  it('la part sans date d’une pièce n’est comptée dans aucun exercice, même le jour de son dépôt', () => {
+    // 120 € TTC sans date, payés 48 € le jour du dépôt : 40 € comptés (la part payée), les 60 € restants
+    // n'appartiennent à aucun exercice — l'écriture les porte au dépôt, faute de mieux.
+    const sansDate = piece({ id: 'sd', date_piece: null, created_at: '2025-05-10T08:00:00Z' })
+    const d = calculComptable({ pieces: [sansDate], paiements: [paiement({ id: 'l-sd', piece_id: 'sd', date: '2025-05-10', montant: -48 })] })
+    expect(d.totalDepenses).toBe(40)
+    expect(d.exclusions.sansDate.map((p) => p.id)).toEqual(['sd'])
+  })
+})
+
+// UN POSTE NET NÉGATIF GARDE SON SIGNE. Le moteur prenait la valeur absolue du total : un remboursement de
+// frais reçu une année sans frais payés comptait en DÉPENSE, et le résultat se trompait du double.
+describe('calculerDeclaration2035 — un poste que ses remboursements font passer sous zéro', () => {
+  const categoriesDuReleve = [
+    { id: 'c-frais', compte_comptable: '627000', poste_2035: 'Frais financiers' },
+    { id: 'c-recettes', compte_comptable: '706000', poste_2035: 'Recettes' },
+  ] as Categorie[]
+  const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
+    paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
+  const calculReleve = (...lignes: LigneBancaire[]) => calculerDeclaration2035(
+    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], []), partsDuReleve(lignes, categoriesDuReleve, [], false),
+  )
+
+  it('un remboursement sans dépense de l’exercice diminue les dépenses au lieu de s’y ajouter', () => {
+    const d = calculReleve(affecte({ id: 'geste', montant: 3 }))
+    expect(d.depenses).toEqual([{ poste: 'Frais financiers', nature: 'depense', montant: -3, nbPieces: 0, nbMouvements: 1 }])
+    expect(d.totalDepenses).toBe(-3)
+    expect(d.resultat).toBe(3)
+  })
+
+  it('un rejet sans recette de l’exercice diminue les recettes', () => {
+    const d = calculReleve(affecte({ id: 'rejet', categorie_id: 'c-recettes', montant: -40 }))
+    expect(d.recettes).toEqual([{ poste: 'Recettes', nature: 'recette', montant: -40, nbPieces: 0, nbMouvements: 1 }])
+    expect(d.resultat).toBe(-40)
+  })
+
+  it('un poste nul ne se déclare pas', () => {
+    const d = calculReleve(affecte({ id: 'frais', montant: -8.5 }), affecte({ id: 'rembourse', montant: 8.5 }))
+    expect(d.depenses).toEqual([])
+    expect(d.contributions).toHaveLength(2)
+  })
+
+  it('des cotisations plus remboursées qu’appelées laissent leur poste négatif', () => {
+    // Le moteur ne déclarait la ligne 25 que positive : un remboursement de l'Urssaf supérieur aux appels de
+    // l'année disparaissait du résultat.
+    const rembt = cotisation({ id: 'r', echeance: '2025-06-05', montant_verse: null, montant_appele: -300, montant_csg_crds: null })
+    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [])
+    expect(d.depenses).toEqual([{ poste: POSTE_COTISATIONS, nature: 'depense', montant: -300, nbPieces: 0, nbMouvements: 0 }])
+    expect(d.resultat).toBe(300)
   })
 })

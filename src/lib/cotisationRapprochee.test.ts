@@ -295,6 +295,16 @@ describe('cotisationsComptees — la date et le montant auxquels une échéance 
     expect(cotisationsComptees([depasse], [rapproche()], 'engagement')[0]).toMatchObject({ date: '2026-01-06', montant: 500 })
   })
 
+  it('dit pourquoi un rapprochement ne s’écrit pas, et seulement alors', () => {
+    // La concordance de la 2035 le reprend : une échéance rapprochée à tort n'est pas une échéance que
+    // personne n'a rapprochée, et le geste n'est pas le même.
+    const [encaissement] = cotisationsComptees([cotisation()], [rapproche({ montant: 500 })], 'tresorerie')
+    expect(encaissement.refus).toMatch(/^Ce mouvement est un encaissement/)
+    const [payee, attente] = cotisationsComptees([cotisation(), cotisation({ id: 'c2' })], [rapproche()], 'tresorerie')
+    expect(payee.refus).toBeNull()
+    expect(attente.refus).toBeNull()
+  })
+
   it('rend une entrée par échéance, dans l’ordre reçu', () => {
     const comptees = cotisationsComptees([cotisation({ id: 'x' }), cotisation({ id: 'c1' }), cotisation({ id: 'y' })], [rapproche()], 'tresorerie')
     expect(comptees.map((c) => [c.cotisation.id, c.date])).toEqual([
