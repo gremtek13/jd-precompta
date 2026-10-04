@@ -1948,3 +1948,65 @@ describe('EcrituresTab — les dotations aux amortissements', () => {
     expect(csv).not.toMatch(/hors du jeu chargé/)
   })
 })
+
+// LIGNE 26.6, ÉTAPE B : le forfait kilométrique s'écrit sans pièce ni mouvement, au 31 décembre, depuis la
+// carte Véhicules (onglet Informations). Ce que ce bloc garde et qu'aucun test de `src/lib` ne peut voir : que
+// l'onglet ne crie pas à la rupture sur lui, qu'il le porte au FEC au journal des opérations diverses, et que
+// l'export de la piste d'audit lise les lignes du cadre 7 — elles seules nomment le véhicule et le kilométrage
+// que le barème justifie — et se refuse quand il ne les a lues qu'en partie.
+describe('EcrituresTab — les forfaits kilométriques', () => {
+  const VEHICULE = {
+    id: 've1', dossier_id: 'dossier-de-test', annee: 2025, modele: 'Peugeot 308', type: 'voiture', puissance_fiscale: 5,
+    motorisation: 'thermique', carburant: 'diesel', km_professionnel: 12000, created_at: '2025-01-05T09:00:00Z',
+  }
+  // 12 000 km × 0,357 + 1 395 € : le barème 2025 d'une voiture de 5 CV.
+  const FORFAIT_2025 = [
+    ecriture({ id: 'k1', piece_id: null, vehicule_id: 've1', date: '2025-12-31', compte: '625110', sens: 'debit', montant: 5679, libelle: 'Indemnités kilométriques 2025 — Peugeot 308' }),
+    ecriture({ id: 'k2', piece_id: null, vehicule_id: 've1', date: '2025-12-31', compte: '108000', sens: 'credit', montant: 5679, libelle: 'Indemnités kilométriques 2025 — Peugeot 308' }),
+  ]
+
+  it('ne crie pas à la rupture, et porte le forfait au FEC, au journal des opérations diverses', async () => {
+    poser({ vehicules: [VEHICULE], ecritures_brouillon: FORFAIT_2025 })
+    monter()
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryByText("Piste d'audit rompue")).toBeNull()
+    expect(screen.queryByText(/pas dans ce FEC/)).toBeNull()
+
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
+    expect(lignes.map((l) => [l[0], l[2], l[4], l[8], l[9]])).toEqual([
+      ['OD', 'OD00001', '625110', 'Barème kilométrique 2025', '20251231'],
+      ['OD', 'OD00001', '108000', 'Barème kilométrique 2025', '20251231'],
+    ])
+  })
+
+  it('le garde symétrique : la même écriture sans son véhicule est une rupture, et sort du FEC', async () => {
+    poser({ vehicules: [VEHICULE], ecritures_brouillon: FORFAIT_2025.map((e) => ({ ...e, vehicule_id: null })) })
+    monter()
+    expect(await screen.findByText("Piste d'audit rompue")).toBeTruthy()
+    expect(screen.getByText(/2 écritures ne seront pas dans ce FEC/)).toBeTruthy()
+  })
+
+  it('nomme le véhicule et son kilométrage dans la piste d’audit', async () => {
+    poser({ vehicules: [VEHICULE], ecritures_brouillon: FORFAIT_2025 })
+    monter()
+    await screen.findByText(/2 écritures proposées/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
+    const csv = telecharge.fichiers.find((f) => f.nom.startsWith('piste-audit'))!.contenu
+    expect(csv).toMatch(/Barème kilométrique 2025 : Peugeot 308, 12\s000 km professionnels/)
+    expect(csv).not.toMatch(/hors du jeu chargé/)
+  })
+
+  it('refuse l’export de la piste sur une lecture partielle des véhicules, et le dit', async () => {
+    poser({ vehicules: [VEHICULE, { ...VEHICULE, id: 've2', modele: 'Clio' }], ecritures_brouillon: FORFAIT_2025 })
+    faux.muetParTable = { vehicules: 1 }
+    monter()
+    await screen.findByText(/2 écritures proposées/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter la piste d'audit/ }).click() })
+    expect(telecharge.fichiers.filter((f) => f.nom.startsWith('piste-audit'))).toHaveLength(0)
+    expect(await screen.findByText(/Les véhicules du cadre 7 n'ont pas pu être lus en entier/)).toBeTruthy()
+    // Le FEC, lui, ne dépend pas des véhicules : il part.
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    expect(telecharge.fichiers.map((f) => f.nom)).toEqual(['123456789FEC20251231.txt'])
+  })
+})

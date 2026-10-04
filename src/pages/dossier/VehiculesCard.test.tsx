@@ -400,8 +400,13 @@ describe('le forfait kilométrique de chaque ligne du cadre 7', () => {
     // La relecture est retenue : le bouton reste grisé, et la ligne ne se modifie pas pendant ce temps.
     expect((screen.getByRole('button', { name: /Écriture…/ }) as HTMLButtonElement).disabled).toBe(true)
     expect((screen.getByDisplayValue('12000') as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByRole('button', { name: 'Retirer' }) as HTMLButtonElement).disabled).toBe(true)
     await act(async () => { screen.getByRole('button', { name: /Écriture…/ }).click() })
     expect(faux.rpcs).toHaveLength(1)
+    // Et la seconde ceinture : un changement qui arriverait quand même sur la ligne n'écrit rien tant que le lot
+    // tient le verrou — modifiée pendant le lot, elle verrait son forfait écrit d'après l'ancien kilométrage.
+    fireEvent.change(screen.getByDisplayValue('12000'), { target: { value: '13000' } })
+    expect(faux.modifiees).toEqual([])
     faux.retenirLectures = false
     await act(async () => { faux.relacher?.() })
     await waitFor(() => expect(screen.queryByRole('button', { name: /Écri/ })).toBeNull())
@@ -447,6 +452,8 @@ describe('le forfait kilométrique de chaque ligne du cadre 7', () => {
     monter(2024)
     const table = await screen.findByRole('table', { name: 'Forfaits à écrire' })
     expect(table.textContent).toContain('Le barème kilométrique 2024 n’est pas renseigné dans l’application.')
+    // Et sur la ligne du cadre 7 elle-même, là où l'on saisit ce qui le débloquerait.
+    expect(colonneForfait('Peugeot 308')).toBe('À écrireLe barème kilométrique 2024 n’est pas renseigné dans l’application.')
     expect(screen.queryByRole('button', { name: /Écrire/ })).toBeNull()
     // Un exercice révolu : la Checklist le réclame, et la carte le dit.
     expect(screen.getByText('1 forfait manque à un exercice fini ou ne suit plus le cadre 7 : la Checklist le réclame.')).toBeDefined()

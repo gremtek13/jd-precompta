@@ -107,9 +107,17 @@ vi.mock('./dossier/PiecesTab', () => ({ default: () => <p>Liste des justificatif
 vi.mock('./dossier/InformationsTab', async () => {
   const { useState } = await import('react')
   return {
-    default: function InformationsDouble({ dossierSiret }: { dossierSiret: string | null }) {
+    default: function InformationsDouble({ dossierSiret, modele }: {
+      dossierSiret: string | null
+      modele: { mode: string; compteNotesDeFrais: string }
+    }) {
       const [siret] = useState(dossierSiret ?? '')
-      return <p>Formulaire d’identité — SIRET {siret || '(vide)'}</p>
+      return (
+        <>
+          <p>Formulaire d’identité — SIRET {siret || '(vide)'}</p>
+          <p>Informations — {modele.mode} — {modele.compteNotesDeFrais}</p>
+        </>
+      )
     },
   }
 })
@@ -479,6 +487,17 @@ describe('Page d’un dossier — le modèle comptable', () => {
       expect(screen.getByText(`${libelle} — modèle engagement`)).toBeTruthy()
     },
   )
+
+  // La carte Véhicules de l'onglet Informations écrit le forfait kilométrique face au compte du dirigeant que
+  // désigne le modèle (lib/forfaitKilometrique.ts).
+  it('l’onglet Informations reçoit le modèle du dossier affiché', async () => {
+    await afficher('/dossiers/d1/informations')
+    expect(screen.getByText('Informations — tresorerie — 455000')).toBeTruthy()
+    cleanup()
+
+    await afficher('/dossiers/d2/informations')
+    expect(screen.getByText('Informations — engagement — 108000')).toBeTruthy()
+  })
 
   it('un modèle changé dans l’onglet Écritures se voit aussitôt dans l’en-tête', async () => {
     await afficher('/dossiers/d1/ecritures')
