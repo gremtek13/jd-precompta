@@ -796,6 +796,76 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   .liste-pieces .hide-tres-etroit { display: none; }
 }
 
+/* ---------- Tableau qui est en réalité un formulaire ---------- */
+/* `table-layout: fixed` plus haut convient à un tableau qu'on LIT : un texte long revient à la
+   ligne dans sa colonne. Il est désastreux sur un tableau qu'on REMPLIT — huit colonnes de champs
+   comprimées dans 360 px donnent des en-têtes à une lettre par ligne et des champs de deux
+   caractères (constaté sur la carte Véhicules).
+   Le défilement latéral ne vaudrait pas mieux : on remplirait un formulaire sans jamais en voir
+   plus de deux champs à la fois. La ligne se replie donc en fiche empilée, chaque champ précédé de
+   son libellé — c'est l'en-tête du tableau qui redescend dans chaque cellule. */
+/* LA FICHE EMPILÉE SUIT LA PLACE DE LA CARTE, PAS LA LARGEUR DE LA FENÊTRE (04/10/2026). Elle ne valait
+   d'abord que sur téléphone ; mais la carte Véhicules, passée à neuf colonnes avec l'état du forfait, écrasait
+   aussi ses champs à 1 024 pixels, et volet de droite ouvert à 1 280 — un kilométrage réduit à un chiffre
+   lisible, vu sur capture. Le conteneur est l'enveloppe du tableau et ELLE SEULE (`.formulaire-adaptable`) :
+   posé plus haut, `container-type` ferait de son porteur la référence des éléments `position: fixed` qu'il
+   contient — le piège nommé pour `.liste-pieces`. Tout `table-formulaire` vit dans cette enveloppe, et
+   tableauxFormulaires.test.ts le vérifie : sans elle, il ne se replierait plus, même sur téléphone. */
+.formulaire-adaptable { container-type: inline-size; container-name: formulaire; }
+@container formulaire (max-width: 860px) {
+  .table-formulaire thead { display: none; }
+  .table-formulaire,
+  .table-formulaire tbody,
+  .table-formulaire tfoot,
+  .table-formulaire tr,
+  .table-formulaire td { display: block; width: 100%; }
+
+  .table-formulaire tr {
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 4px 12px;
+    margin-bottom: 12px;
+    background: var(--color-surface);
+  }
+  .table-formulaire tfoot tr { background: var(--color-surface-2); margin-bottom: 0; }
+
+  .table-formulaire td {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--color-border);
+    /* Les alignements à droite posés en style inline pour la vue tableau n'ont plus de sens une fois
+       la cellule devenue une ligne libellé/valeur. */
+    text-align: left !important;
+  }
+  .table-formulaire tr td:last-child { border-bottom: none; }
+
+  /* Le libellé vient de `data-libelle` sur la cellule : aucun balisage en double à maintenir, et une
+     colonne qui n'en porte pas (le bouton Retirer) n'affiche simplement rien. */
+  .table-formulaire td::before {
+    content: attr(data-libelle);
+    flex: 0 0 auto;
+    font-size: 0.78rem; font-weight: 600; color: var(--color-text-light);
+  }
+  .table-formulaire td:not([data-libelle])::before { content: none; }
+
+  /* Le champ occupe ce qui reste, à droite du libellé. `min-width: 0` sans quoi un `input` refuse de
+     descendre sous sa largeur intrinsèque et repousse le libellé hors de l'écran. */
+  .table-formulaire td input,
+  .table-formulaire td select {
+    flex: 1 1 auto; min-width: 0; max-width: 62%;
+    /* 16px : en dessous, Safari iOS zoome à la mise au point et l'écran part de travers. */
+    font-size: 16px;
+  }
+
+  .table-formulaire td.td-action { padding-top: 10px; }
+  .table-formulaire td.td-action:empty { display: none; }
+  .table-formulaire td.td-action .btn { width: 100%; }
+
+  /* La cellule fusionnée qui ne porte que l'intitulé du total fait doublon une fois empilée : le
+     montant, juste en dessous, annonce déjà le sien. */
+  .table-formulaire tfoot td[colspan] { display: none; }
+}
+
 /* Le bouton « Assistant » de l'en-tête du dossier (voir AssistantDossier) — enfoncé tant que
    l'assistant occupe le panneau. Sur mobile c'est la bulle qui l'ouvre (voir la media query). */
 .bouton-assistant {
@@ -1355,66 +1425,6 @@ a.nav-menu-item { text-decoration: none; }
   /* Colonnes secondaires masquées sur mobile plutôt que forcer un défilement latéral — l'essentiel
      (tiers, montant, statut) reste visible d'un coup ; le détail en ouvrant la ligne. */
   .hide-mobile { display: none; }
-
-  /* ---------- Tableau qui est en réalité un formulaire ---------- */
-  /* `table-layout: fixed` plus haut convient à un tableau qu'on LIT : un texte long revient à la
-     ligne dans sa colonne. Il est désastreux sur un tableau qu'on REMPLIT — huit colonnes de champs
-     comprimées dans 360 px donnent des en-têtes à une lettre par ligne et des champs de deux
-     caractères (constaté sur la carte Véhicules).
-     Le défilement latéral ne vaudrait pas mieux : on remplirait un formulaire sans jamais en voir
-     plus de deux champs à la fois. La ligne se replie donc en fiche empilée, chaque champ précédé de
-     son libellé — c'est l'en-tête du tableau qui redescend dans chaque cellule. */
-  .table-formulaire thead { display: none; }
-  .table-formulaire,
-  .table-formulaire tbody,
-  .table-formulaire tfoot,
-  .table-formulaire tr,
-  .table-formulaire td { display: block; width: 100%; }
-
-  .table-formulaire tr {
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-sm);
-    padding: 4px 12px;
-    margin-bottom: 12px;
-    background: var(--color-surface);
-  }
-  .table-formulaire tfoot tr { background: var(--color-surface-2); margin-bottom: 0; }
-
-  .table-formulaire td {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    padding: 8px 0;
-    border-bottom: 1px solid var(--color-border);
-    /* Les alignements à droite posés en style inline pour la vue tableau n'ont plus de sens une fois
-       la cellule devenue une ligne libellé/valeur. */
-    text-align: left !important;
-  }
-  .table-formulaire tr td:last-child { border-bottom: none; }
-
-  /* Le libellé vient de `data-libelle` sur la cellule : aucun balisage en double à maintenir, et une
-     colonne qui n'en porte pas (le bouton Retirer) n'affiche simplement rien. */
-  .table-formulaire td::before {
-    content: attr(data-libelle);
-    flex: 0 0 auto;
-    font-size: 0.78rem; font-weight: 600; color: var(--color-text-light);
-  }
-  .table-formulaire td:not([data-libelle])::before { content: none; }
-
-  /* Le champ occupe ce qui reste, à droite du libellé. `min-width: 0` sans quoi un `input` refuse de
-     descendre sous sa largeur intrinsèque et repousse le libellé hors de l'écran. */
-  .table-formulaire td input,
-  .table-formulaire td select {
-    flex: 1 1 auto; min-width: 0; max-width: 62%;
-    /* 16px : en dessous, Safari iOS zoome à la mise au point et l'écran part de travers. */
-    font-size: 16px;
-  }
-
-  .table-formulaire td.td-action { padding-top: 10px; }
-  .table-formulaire td.td-action:empty { display: none; }
-  .table-formulaire td.td-action .btn { width: 100%; }
-
-  /* La cellule fusionnée qui ne porte que l'intitulé du total fait doublon une fois empilée : le
-     montant, juste en dessous, annonce déjà le sien. */
-  .table-formulaire tfoot td[colspan] { display: none; }
 
   .stat-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
   .stat-card { padding: 14px 16px; }

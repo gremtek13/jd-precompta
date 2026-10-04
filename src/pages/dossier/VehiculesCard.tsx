@@ -341,10 +341,11 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
           )}
         </div>
       ) : (
-        <div className="table-scroll">
+        <div className="table-scroll formulaire-adaptable">
           {/* `table-formulaire` : une ligne de ce tableau est un FORMULAIRE, pas une donnée à lire.
-              Sur téléphone, elle se replie en fiche empilée libellé/champ plutôt que de se comprimer
-              — voir index.css. */}
+              Dans une carte étroite — téléphone, 1 024 pixels, volet ouvert —, elle se replie en fiche
+              empilée libellé/champ plutôt que de se comprimer ; `formulaire-adaptable` est l'enveloppe
+              dont la largeur en décide — voir index.css. */}
           <table className="table-formulaire">
             <thead>
               <tr>
@@ -426,7 +427,8 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                         : formatMoney(indemnite.total)}
                     </td>
                     <td data-libelle="Forfait">
-                      {etat.texte}
+                      {/* D'un seul tenant : « À réécrire » se coupait en deux lignes dans la colonne étroite. */}
+                      <span style={{ whiteSpace: 'nowrap' }}>{etat.texte}</span>
                       {etat.refus && <div className="muted" style={{ fontSize: '0.85em' }}>{etat.refus}</div>}
                     </td>
                     <td className="td-action">
@@ -512,7 +514,7 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                       {f.centimes === null ? '—' : formatMoney(Number(f.centimes) / 100)}
                     </td>
                     <td>
-                      {LIBELLE_ETAT[f.etat]}
+                      <span style={{ whiteSpace: 'nowrap' }}>{LIBELLE_ETAT[f.etat]}</span>
                       {f.refus && <div className="muted" style={{ fontSize: '0.85em' }}>{f.refus}</div>}
                     </td>
                   </tr>
