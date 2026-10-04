@@ -26,6 +26,7 @@ import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { useAnnee } from '../../context/AnneeContext'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { messageErreur } from '../../lib/messageErreur'
 
 // Ce qui a changé sur la pièce, et ce que le cabinet doit faire — jamais corrigé d'office :
@@ -92,6 +93,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Exercice partagé avec Pièces/Banque/Statistiques/Clôture, sélectionné dans l'en-tête du dossier
   // (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
+  // Ce que les exercices validés ont figé (lib/validationExercice.ts) : la base refuse d'y écrire, de le modifier
+  // ou de le retirer, donc les contrôles ne le comparent plus et aucun geste ne le propose.
+  const { frontiere } = useExercicesValides()
   const [regenerating, setRegenerating] = useState<string | null>(null)
   const [retrait, setRetrait] = useState<string | null>(null)
   const [exportPiste, setExportPiste] = useState(false)
@@ -327,10 +331,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // filtre Année ci-dessus : ce sont des défauts sur l'état actuel du brouillon, pas des totaux à
   // consulter par exercice. Une écriture sans contrepartie banque ou déséquilibrée d'un ancien exercice
   // ne doit pas disparaître de la vue juste parce que l'onglet Année est positionné ailleurs.
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere)
   // Le quatrième contrôle, celui qui part de l'ÉCRITURE : ce que le brouillon continue de compter
   // alors que la pièce ne le justifie plus (voir lib/ecritures.ts).
-  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions)
+  const sansObjet = ecrituresSansObjet(ecritures, piecesValidees, categories, acquisitions, frontiere)
 
   // Piste d'audit fiable — voir lib/pisteAudit.ts. Volontairement calculé sur TOUTES les écritures,
   // hors filtre Année comme les trois contrôles ci-dessus : une écriture qui a perdu son justificatif
@@ -345,11 +349,11 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // Les mouvements affectés dont l'écriture n'est plus celle que leur catégorie produirait — le compte
   // de la catégorie a changé depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore
   // sa TVA (voir lib/affectationBanque.ts).
-  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories, assujettiTva))
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, mouvementsAffectes(lignesBancaires, categories, assujettiTva), frontiere)
   // Les mouvements ventilés dont l'écriture n'est plus celle que leurs parts produiraient — le compte d'une
   // catégorie a changé depuis (voir lib/ventilationBanque.ts). Sur des parts lues EN ENTIER seulement : une
   // part non lue ferait passer une ventilation pour incohérente, donc la tairait ici.
-  const ventilesPerimes = ventilationsIncompletes ? [] : mouvementsVentilesDesynchronises(ecritures, lignesBancaires, ventilations, categories, modele, assujettiTva)
+  const ventilesPerimes = ventilationsIncompletes ? [] : mouvementsVentilesDesynchronises(ecritures, lignesBancaires, ventilations, categories, modele, assujettiTva, frontiere)
   const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
   // Export de la piste d'audit de l'exercice (voir lib/pisteAudit.ts) : depuis chaque écriture, le

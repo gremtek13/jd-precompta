@@ -3,6 +3,7 @@ import { COMPTES_DE_TIERS, compteDeTiers, lignesEngagementPourPiece, type Modele
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
 import { centimesParDate, rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
 import type { AcquisitionDuBien } from './amortissements'
+import { estFigee } from './validationExercice'
 import type { ANouveau, Categorie, CompteNotesDeFrais, EcritureBrouillon, Piece } from './types'
 
 // Suggestions de compte PCG / poste 2035 par catégorie de dépense — un point de départ à
@@ -279,14 +280,21 @@ function motifSansObjet(
 // cas `piece_id` nul a déjà coûtée une fois.
 // C'est la même famille que `rupturesPisteAudit` (voir lib/pisteAudit.ts), appliquée à l'autre bout
 // de la même relation.
+//
+// UNE LIGNE FIGÉE PAR LA VALIDATION N'EST PAS « SANS OBJET », ELLE EST VALIDÉE (ligne 26.6, étape d) : la base
+// refuse de la retirer, donc la signaler laisserait un point en erreur que rien ne lève. Seules les lignes datées
+// après la frontière (lib/validationExercice.ts) sont jugées et comptées — ce que « Retirer l'écriture » retire.
+// Sans valeur par défaut : un appelant qui oublie la frontière offrirait de retirer ce que la base refuse.
 export function ecrituresSansObjet(
   ecritures: EcritureBrouillon[],
   piecesValidees: Piece[],
   categories: Categorie[],
   acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
+  frontiere: string | null,
 ): EcritureSansObjet[] {
   const parPiece = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
+    if (estFigee(e.date, frontiere)) continue
     // `piece_id` nul est le domaine de rupturesPisteAudit, pas d'ici. Et un mouvement bancaire est
     // RÉEL : ni la contrepartie banque (trésorerie) ni l'écriture de règlement (engagement, les deux
     // lignes qui désignent leur mouvement) ne disparaissent parce que la pièce a changé de nature.
@@ -335,6 +343,10 @@ export function analyserEcritures(
   // contenir. Sans valeur par défaut non plus : lu en trésorerie, le brouillon d'un dossier en
   // engagement ferait signaler « à régénérer » chacune de ses écritures justes.
   modele: ModeleComptable,
+  // La frontière de validation (lib/validationExercice.ts) : une pièce qu'elle coupe ne se compare que sur ce
+  // qui reste ouvert (`partieOuverteDesynchronisee`). Sans valeur par défaut : un appelant qui l'oublie ferait
+  // dire « à régénérer » d'une écriture validée que rien ne réécrira plus.
+  frontiere: string | null,
 ): AnalyseEcritures {
   const piecesParGroupe = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
@@ -362,12 +374,83 @@ export function analyserEcritures(
   const piecesDesynchronisees = aComptabiliser.filter(({ piece, ...cible }) => {
     const groupe = piecesParGroupe.get(piece.id) ?? []
     const paiementsPiece = paiements.get(piece.id) ?? []
+    if (frontiere !== null) {
+      const attendues = lignesPourPiece(piece.dossier_id, piece, cible, assujettiTva, paiementsPiece, modele)
+      if ([...groupe, ...attendues].some((l) => estFigee(l.date, frontiere))) {
+        return partieOuverteDesynchronisee(groupe, attendues, frontiere)
+      }
+    }
     return modele.mode === 'engagement'
       ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
       : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece)
   }).map(({ piece }) => piece)
 
   return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
+}
+
+// UNE PIÈCE QUE LA FRONTIÈRE DE VALIDATION COUPE — une écriture validée, ou une écriture qu'elle devrait porter dans
+// un exercice validé — ne se compare que sur ce qui reste OUVERT : ses lignes datées après la frontière, à celles
+// qu'elle produirait aujourd'hui après la frontière, ligne pour ligne (date, compte, sens, montant au centime,
+// mouvement). C'est exactement ce que « Régénérer » réécrit (`lignesOuvertes`), donc une écriture régénérée se
+// déclare juste ; la part figée, elle, ne se réécrit plus. La comparer ferait dire « à régénérer », à jamais, d'une
+// pièce dont la catégorie a changé de compte depuis la validation — sur un geste que la base refuse.
+//
+// Sans aucune ligne, la pièce n'est pas « à régénérer » mais à générer, et c'est la génération qui la prend
+// (`ecrituresAGenerer`) — comme dans les deux modèles.
+function partieOuverteDesynchronisee(
+  groupe: readonly EcritureBrouillon[], attendues: readonly LigneAGenerer[], frontiere: string,
+): boolean {
+  if (groupe.length === 0) return false
+  const cle = (l: Pick<EcritureBrouillon, 'date' | 'compte' | 'sens' | 'montant'> & { ligne_bancaire_id?: string | null }) =>
+    [l.date, l.compte, l.sens, Math.round(l.montant * 100), l.ligne_bancaire_id ?? ''].join('|')
+  const presentes = groupe.filter((e) => !estFigee(e.date, frontiere)).map(cle).sort()
+  const ouvertes = lignesOuvertes(attendues, frontiere).map(cle).sort()
+  return presentes.length !== ouvertes.length || presentes.some((c, i) => c !== ouvertes[i])
+}
+
+// CE QUE LA VALIDATION LAISSE ÉCRIRE : les lignes datées après la frontière. Les autres tomberaient dans un
+// exercice validé, où la base refuse toute écriture (« aucune écriture ne s'y passe plus »).
+export function lignesOuvertes<L extends { date: string }>(lignes: readonly L[], frontiere: string | null): L[] {
+  return lignes.filter((l) => !estFigee(l.date, frontiere))
+}
+
+// LES ÉCRITURES À GÉNÉRER : celles des pièces qui n'en ont encore aucune (le bouton « Générer les écritures
+// manquantes » d'Écritures). Une pièce dont une part au moins tomberait dans un exercice validé ne s'écrit pas
+// entière : seule sa part ouverte s'écrit, et la pièce est NOMMÉE — l'écran dit pourquoi la génération ne l'écrit
+// pas, ou pas entière. Une pièce entièrement figée (une facture d'un exercice validé, arrivée après) n'écrit rien :
+// son écriture s'écrira à la date de son paiement, s'il a lieu après la frontière, une fois rapproché.
+export interface PieceDansUnExerciceValide {
+  piece: Piece
+  // Vrai quand une part de la pièce s'écrit quand même, après la frontière.
+  partielle: boolean
+}
+
+export interface GenerationDesEcritures {
+  // Les pièces qui reçoivent une écriture, et ce qui s'insère.
+  pieces: Piece[]
+  lignes: LigneAGenerer[]
+  dansUnExerciceValide: PieceDansUnExerciceValide[]
+}
+
+export function ecrituresAGenerer(
+  dossierId: string, aComptabiliser: readonly PieceAComptabiliser[], ecritures: readonly EcritureBrouillon[],
+  assujettiTva: boolean, paiements: PaiementsDesPieces, modele: ModeleComptable,
+  // Sans valeur par défaut : un appelant qui l'oublie enverrait à la base des lignes qu'elle refuse — et tout le
+  // lot avec elles, l'insertion étant d'un seul tenant.
+  frontiere: string | null,
+): GenerationDesEcritures {
+  const ecrites = new Set(ecritures.map((e) => e.piece_id).filter((id): id is string => !!id))
+  const generation: GenerationDesEcritures = { pieces: [], lignes: [], dansUnExerciceValide: [] }
+  for (const { piece, compte, immobilisation } of aComptabiliser) {
+    if (ecrites.has(piece.id)) continue
+    const lignes = lignesPourPiece(dossierId, piece, { compte, immobilisation }, assujettiTva, paiements.get(piece.id) ?? [], modele)
+    const ouvertes = lignesOuvertes(lignes, frontiere)
+    if (ouvertes.length < lignes.length) generation.dansUnExerciceValide.push({ piece, partielle: ouvertes.length > 0 })
+    if (ouvertes.length === 0) continue
+    generation.pieces.push(piece)
+    generation.lignes.push(...ouvertes)
+  }
+  return generation
 }
 
 // Les lignes de BANQUE d'une pièce suivent-elles exactement ses paiements ? Une contrepartie par paiement

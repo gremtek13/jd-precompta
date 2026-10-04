@@ -35,6 +35,7 @@ import { lireTout } from '../../lib/lectureComplete'
 import { lireAnneesCloturees } from '../../lib/clotureExercice'
 import { chargerInformationsDossier } from '../../lib/informationsDossier'
 import { exercicesAReclamer, moisManquantsDe, pointsUtiles, reserveCloturesInconnues } from '../../lib/resteAEnvoyer'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
 
 const NB_MOIS_TRESORERIE = 12
 const NB_MOIS_COLONNES = 6
@@ -67,6 +68,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   modele: ModeleComptable
   onNavigate: (tab: DossierTab) => void
 }) {
+  // Ce que les exercices validés ont figé ne se compare plus : la base refuse de le réécrire, et le dire
+  // « à régénérer » laisserait un point en erreur que rien ne lève (lib/validationExercice.ts).
+  const { frontiere } = useExercicesValides()
   // Le nom dit le filtre, et ce n'est pas cosmétique : cet état s'appelait `pieces` alors qu'il ne
   // porte QUE les validées. Un contrôle branché dessus par réflexe devient muet sur tout ce qui est
   // encore à valider — c'est arrivé, sur `moisEnDoubleSurAbonnement`, dont les deux pièces du cas
@@ -327,8 +331,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // date qu'une écriture doit porter et de ses lignes de banque (lib/rattachement.ts). `lignes` porte tout
   // le relevé, et `paiementsDesPieces` n'en retient que les rapprochés.
   const paiements = paiementsDesPieces(lignes, reglements)
-  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele)
-  const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions)
+  const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecritures, aComptabiliser, assujettiTva, paiements, modele, frontiere)
+  const ecrituresSansObjetDuDossier = ecrituresSansObjet(ecritures, piecesJugees, categories, acquisitions, frontiere)
   // Les mouvements du relevé affectés à une catégorie sans justificatif (ligne 26.6) : leur écriture n'a
   // pas de pièce, par construction, et n'est pas une rupture de la piste d'audit.
   const affectes = mouvementsAffectes(lignes, categories, assujettiTva)
@@ -336,7 +340,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // L'écriture d'un mouvement affecté que son affectation ne produirait plus — la catégorie a changé de
   // compte depuis, ou la recette d'un dossier qui a cessé d'être assujetti porte encore sa TVA. Même
   // famille que les pièces « à régénérer », invisible de la même façon.
-  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes)
+  const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes, frontiere)
   // Des encaissements affectés en recette SANS TAUX alors que le dossier est assujetti — affectés avant
   // qu'il le devienne : leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe en recette.
   const recettesSansTva = recettesAffecteesSansTaux(affectes, assujettiTva)
@@ -345,7 +349,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Une ventilation dont les parts ne font plus le mouvement (défensif, la base vérifie la somme), et une
   // écriture de mouvement ventilé qui ne suit plus ses parts — le compte d'une catégorie a changé depuis.
   const ventilationsFausses = ventilationsPartielles ? [] : ventilationsIncoherentes(lignes, ventilations)
-  const ventilesPerimes = mouvementsVentilesDesynchronises(ecritures, lignes, ventilations, categories, modele, assujettiTva)
+  const ventilesPerimes = mouvementsVentilesDesynchronises(ecritures, lignes, ventilations, categories, modele, assujettiTva, frontiere)
   // Les virements personnels sans leur écriture — classés avant que ce classement s'écrive
   // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie.
   const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele)

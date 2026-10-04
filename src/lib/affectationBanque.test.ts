@@ -283,8 +283,8 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
   ]
 
   it('se tait quand l’écriture est celle attendue, dans n’importe quel ordre', () => {
-    expect(mouvementsAffectesDesynchronises(justes, affecte)).toEqual([])
-    expect(mouvementsAffectesDesynchronises([...justes].reverse(), affecte)).toEqual([])
+    expect(mouvementsAffectesDesynchronises(justes, affecte, null)).toEqual([])
+    expect(mouvementsAffectesDesynchronises([...justes].reverse(), affecte, null)).toEqual([])
   })
 
   it('signale une écriture absente, sur un autre compte, dans l’autre sens ou à une autre date', () => {
@@ -297,7 +297,7 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
       [...justes, ecriture({ id: 'e3', compte: '627000' })],
     ]
     for (const ecritures of casPerimes) {
-      expect(mouvementsAffectesDesynchronises(ecritures, affecte)).toHaveLength(1)
+      expect(mouvementsAffectesDesynchronises(ecritures, affecte, null)).toHaveLength(1)
     }
   })
 
@@ -307,17 +307,32 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
       [categorie({ compte_comptable: '627100' })],
       false,
     )
-    expect(mouvementsAffectesDesynchronises(justes, recategorise)).toHaveLength(1)
+    expect(mouvementsAffectesDesynchronises(justes, recategorise, null)).toHaveLength(1)
   })
 
   it('les écritures d’une pièce ne comptent pas pour le mouvement, même quand elles le désignent', () => {
     const contrepartieDUnePiece = ecriture({ id: 'e9', piece_id: 'p1', compte: '512000', sens: 'credit' })
-    expect(mouvementsAffectesDesynchronises([...justes, contrepartieDUnePiece], affecte)).toEqual([])
+    expect(mouvementsAffectesDesynchronises([...justes, contrepartieDUnePiece], affecte, null)).toEqual([])
+  })
+
+  // UN MOUVEMENT D'UN EXERCICE VALIDÉ NE SE JUGE PLUS (lib/validationExercice.ts) : son écriture est validée, la base
+  // refuse de la réécrire, et le dire « à réaffecter » laisserait un point en erreur que rien ne lève.
+  it('ne juge plus un mouvement que la frontière de validation fige, frontière comprise', () => {
+    const recategorise = mouvementsAffectes(
+      [mouvement({ statut: 'rapprochee', categorie_id: 'cat-frais' })],
+      [categorie({ compte_comptable: '627100' })],
+      false,
+    )
+    // Le mouvement du 12 mars 2025 : figé par la validation de 2025, et par une frontière posée le jour même.
+    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-12-31')).toEqual([])
+    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-03-12')).toEqual([])
+    // La veille, il ne l'est pas : il se juge comme avant.
+    expect(mouvementsAffectesDesynchronises(justes, recategorise, '2025-03-11')).toHaveLength(1)
   })
 
   it('une catégorie sans nature rend l’écriture périmée, quelle qu’elle soit', () => {
     const bilan = mouvementsAffectes([mouvement({ statut: 'rapprochee', categorie_id: 'cat-frais' })], [categorie({ compte_comptable: '108000' })], false)
-    expect(mouvementsAffectesDesynchronises(justes, bilan)).toHaveLength(1)
+    expect(mouvementsAffectesDesynchronises(justes, bilan, null)).toHaveLength(1)
   })
 
   describe('une recette taxée', () => {
@@ -333,17 +348,17 @@ describe('mouvementsAffectesDesynchronises — l’écriture que l’affectation
     ]
 
     it('se tait sur les trois lignes attendues', () => {
-      expect(mouvementsAffectesDesynchronises(taxee, mouvementsAffectes([recette], [RECETTES], true))).toEqual([])
+      expect(mouvementsAffectesDesynchronises(taxee, mouvementsAffectes([recette], [RECETTES], true), null)).toEqual([])
     })
 
     it('signale la recette écrite au TTC alors qu’elle porte son taux', () => {
-      expect(mouvementsAffectesDesynchronises(auTtc, mouvementsAffectes([recette], [RECETTES], true))).toHaveLength(1)
+      expect(mouvementsAffectesDesynchronises(auTtc, mouvementsAffectes([recette], [RECETTES], true), null)).toHaveLength(1)
     })
 
     it('un dossier qui a cessé d’être assujetti attend l’écriture sans TVA : « Réaffecter » la réécrit', () => {
       const affectes = mouvementsAffectes([recette], [RECETTES], false)
-      expect(mouvementsAffectesDesynchronises(taxee, affectes)).toHaveLength(1)
-      expect(mouvementsAffectesDesynchronises(auTtc, affectes)).toEqual([])
+      expect(mouvementsAffectesDesynchronises(taxee, affectes, null)).toHaveLength(1)
+      expect(mouvementsAffectesDesynchronises(auTtc, affectes, null)).toEqual([])
     })
   })
 })

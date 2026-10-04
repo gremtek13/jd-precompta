@@ -95,7 +95,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est invisible aux trois contrôles de analyserEcritures', () => {
     const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } =
-      analyserEcritures([orpheline], [], true, new Map(), TRESORERIE)
+      analyserEcritures([orpheline], [], true, new Map(), TRESORERIE, null)
     expect(nbSansContrepartie).toBe(0)
     expect(groupesDesequilibres).toEqual([])
     expect(piecesDesynchronisees).toEqual([])

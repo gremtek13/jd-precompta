@@ -10,6 +10,7 @@ import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import { horsTaxeEtTva, horsTaxeSigne, tauxApplicable, tauxPrisEnCharge, tauxRequis } from './tvaDuReleve'
 import type { Categorie, EcritureBrouillon, VentilationBancaire } from './types'
 import { compteDuDirigeant } from './virementPersonnel'
+import { estFigee } from './validationExercice'
 
 // UN MOUVEMENT SANS JUSTIFICATIF SE VENTILE SUR PLUSIEURS COMPTES (ligne 26.6 de la feuille de route,
 // étape a). Une affectation met tout le mouvement dans UNE catégorie ; or un même paiement mêle souvent ce
@@ -299,6 +300,9 @@ export function ventilationsIncoherentes(
 // compter ici ferait dire deux fois la même chose. Une catégorie absente de la liste fournie écarte le
 // mouvement (on ne juge pas ce qu'on n'a pas lu) ; une catégorie présente mais sortie des comptes de
 // résultat le rend périmé, comme pour une affectation.
+//
+// Un mouvement d'un exercice VALIDÉ ne se juge plus, comme un mouvement affecté : son écriture est validée, la
+// base refuse de la réécrire (lib/validationExercice.ts).
 export function mouvementsVentilesDesynchronises<L extends MouvementBancaire>(
   ecritures: readonly EcritureBrouillon[],
   lignes: readonly L[],
@@ -306,6 +310,7 @@ export function mouvementsVentilesDesynchronises<L extends MouvementBancaire>(
   categories: readonly Categorie[],
   modele: ModeleComptable,
   assujettiTva: boolean,
+  frontiere: string | null,
 ): L[] {
   const ecrituresParLigne = ecrituresSansPieceParMouvement(ecritures)
   const parLigne = partsParMouvement(ventilations)
@@ -313,6 +318,7 @@ export function mouvementsVentilesDesynchronises<L extends MouvementBancaire>(
   const connues = new Set(categories.map((c) => c.id))
   return lignes.filter((ligne) => {
     if (!ligne.ventilee || ligne.statut !== 'rapprochee' || incoherentes.has(ligne.id)) return false
+    if (estFigee(ligne.date, frontiere)) return false
     const parts = parLigne.get(ligne.id) ?? []
     if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false
     const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)

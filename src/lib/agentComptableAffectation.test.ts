@@ -116,10 +116,10 @@ function memeResultat(ecritures: EcritureBrouillon[], lignes: LigneBancaire[], a
   const la = copie.mouvementsAffectes(lignes, CATEGORIES, assujetti)
   expect(resumeAffectes(la), 'mouvementsAffectes a dérivé').toEqual(resumeAffectes(ici))
   expect(ids(copie.mouvementsAffectesDesynchronises(ecritures, la)), 'mouvementsAffectesDesynchronises a dérivé')
-    .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici)))
+    .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, null)))
   expect(ids(copie.recettesAffecteesSansTaux(la, assujetti)), 'recettesAffecteesSansTaux a dérivé')
     .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti)))
-  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici)) }
+  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, null)) }
 }
 
 // Une recette taxée, écrite comme l'affectation l'écrit : le hors taxe au 706, la TVA au 445710, le

@@ -6,6 +6,8 @@ import {
 import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
 import { paiementsDesPieces } from './rattachement'
+import { lignesPourPiece } from './ecritures'
+import type { ModeleComptable } from './engagement'
 import { COMPTE_BANQUE } from './comptes'
 import type { Emprunt } from './emprunts'
 import type {
@@ -203,6 +205,31 @@ describe('prealablesDeValidation — la validation fige tout ce qui précède', 
     expect(ids(donnees({ lignes: [L1, ligne('l0', { date: '2024-12-20', statut: 'ignoree' })] }))).toEqual([])
     expect(ids(donnees({ vehicules: [vehicule('v0', 2024, 0)] }))).toEqual([])
     expect(ids(donnees({ ...actifs[0], aNouveaux: [aNouveau('2025-01-01')] }))).not.toContain('exercice-anterieur-d-abord')
+  })
+
+  // Une pièce que la frontière coupe — sa facture dans l'exercice validé, son règlement dans celui qu'on valide — ne se
+  // juge que sur sa part ouverte (lib/ecritures.ts) : la facture validée, sur l'ancien compte de sa catégorie, ne se
+  // réécrira plus, et la dire « à régénérer » refuserait la validation pour toujours.
+  it('ne juge une pièce coupée par l’exercice validé que sur sa part ouverte', () => {
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+    const facture = piece('p1', { date_piece: '2025-12-20', created_at: '2025-12-21T09:00:00Z' })
+    const janvier = ligne('l-jan', { date: '2026-01-05', piece_id: 'p1' })
+    // Telles que la génération les écrit ; la facture a été validée avec 2025, son règlement est de 2026.
+    const ecrites = lignesPourPiece('d1', facture, { compte: '606100', immobilisation: false }, false,
+      paiementsDesPieces([janvier], []).get('p1') ?? [], engagement)
+      .map((l, i) => ecriture(`e${i}`, { ...l, ligne_bancaire_id: l.ligne_bancaire_id ?? null, statut: l.date <= '2025-12-31' ? 'validee' : 'proposee' }))
+    expect(ecrites.map((e) => [e.date, e.compte, e.statut])).toEqual([
+      ['2025-12-20', '606100', 'validee'], ['2025-12-20', '401000', 'validee'],
+      ['2026-01-05', '401000', 'proposee'], ['2026-01-05', COMPTE_BANQUE, 'proposee'],
+    ])
+    // La catégorie est passée au 606300 depuis la validation : la facture validée reste sur l'ancien compte.
+    const d = donnees({
+      annee: 2026, anneeCourante: 2027, anneesValidees: [2025], modele: engagement, piecesValidees: [facture],
+      categories: [{ ...ACHATS, compte_comptable: '606300' }], lignes: [janvier], ecritures: ecrites,
+    })
+    expect(ids(d)).toEqual([])
+    // Son règlement manque — le mouvement rapproché, l'écriture pas encore là : la part ouverte le dit.
+    expect(ids({ ...d, ecritures: ecrites.filter((e) => e.date <= '2025-12-31') })).toContain('desynchronisees')
   })
 
   it('ne le répète pas quand les écritures antérieures l’ont déjà nommé', () => {
