@@ -37,6 +37,7 @@ import type {
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { useAnnee } from '../../context/AnneeContext'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { useAuth } from '../../context/AuthContext'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
@@ -141,6 +142,13 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // calculerAnneeParDefaut) est déjà un exercice précis plutôt que "toutes", justement pour éviter
   // que Clôture s'ouvre sur un mélange de plusieurs exercices sans que l'utilisateur l'ait choisi.
   const { annee: anneeFilter, setAnnee } = useAnnee()
+  // Une validation déplace la frontière de tout le dossier : Clôture relit son exercice, et la page relit les
+  // exercices validés que chaque onglet consulte pour savoir ce qui est figé (ExercicesValidesContext). Sans la
+  // seconde relecture, Écritures proposerait encore de régénérer ce que la base vient de figer.
+  const { relire: relireExercicesValides } = useExercicesValides()
+  async function apresValidation() {
+    await Promise.all([load(), relireExercicesValides()])
+  }
 
   async function load() {
     setLoading(true)
@@ -669,7 +677,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
                 <BoutonCloture cloture={cloturesConnues.has(annee)} onCloturer={() => handleCloturer(annee)} />
               </div>
               <ValidationExerciceCard
-                dossierId={dossierId} annee={annee} {...validationDe(annee)} estChef={estChef} onValide={load} onNavigate={onNavigate}
+                dossierId={dossierId} annee={annee} {...validationDe(annee)} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
                 onChoisirExercice={setAnnee}
               />
             </Fragment>
@@ -1211,7 +1219,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
                 ouverture={ouverture}
               />
               <ValidationExerciceCard
-                dossierId={dossierId} annee={annee} {...validation} estChef={estChef} onValide={load} onNavigate={onNavigate}
+                dossierId={dossierId} annee={annee} {...validation} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
                 onChoisirExercice={setAnnee}
               />
             </Fragment>
