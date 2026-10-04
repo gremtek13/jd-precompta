@@ -188,17 +188,29 @@ export function carburantApplicable(motorisation: VehiculeDossier['motorisation'
   return !SANS_CARBURANT.includes(motorisation)
 }
 
-// L'indemnité déductible pour un véhicule sur un exercice, ou null quand le calcul ne peut pas être
-// fait de façon sûre — barème absent pour l'année, ou puissance fiscale hors des tranches publiées.
-// Null n'est pas zéro : zéro se déclarerait, null demande une saisie.
-export function indemniteKilometrique(
+// Un montant du barème en millièmes d'euro : les coefficients ont trois décimales (0,529 € par km), les
+// forfaits sont des euros entiers. baremeKilometrique.test.ts vérifie que la table n'a rien de plus fin.
+const enMillimes = (euros: number) => BigInt(Math.round(euros * 1000))
+
+// L'indemnité d'un véhicule sur un exercice, EN CENTIMES, ou null quand le calcul ne peut pas être fait de
+// façon sûre — barème absent pour l'année, puissance fiscale hors des tranches publiées, kilométrage qui
+// n'est pas un nombre entier de kilomètres. Null n'est pas zéro : zéro se déclarerait, null demande une
+// saisie.
+//
+// LE CALCUL SE FAIT EN ENTIERS, COMME EN BASE : le kilométrage × le coefficient en millièmes d'euro, plus
+// le forfait de la tranche, arrondi au centime, le demi-centime vers le haut. `indemnite_kilometrique_
+// centimes` refait exactement ce calcul pour VÉRIFIER l'écriture du forfait (`ecrire_forfait_kilometrique`)
+// et la refuse si elle ne vaut pas son indemnité au centime. Le calcul en flottants qu'il remplace rendait
+// un centime de moins dans un cas sur soixante — 45 km à 0,529 € font 23,805 €, que `toFixed(2)` arrondissait
+// à 23,80 € faute de pouvoir représenter le demi exactement — et la base aurait refusé l'écriture juste.
+export function indemniteKilometriqueCentimes(
   vehicule: Vehicule,
   annee: number,
   baremes: BaremeAnnuel[] = BAREMES,
-): number | null {
+): bigint | null {
   const bareme = baremeDeLAnnee(annee, baremes)
   if (!bareme) return null
-  if (vehicule.kmProfessionnel < 0) return null
+  if (!Number.isInteger(vehicule.kmProfessionnel) || vehicule.kmProfessionnel < 0) return null
 
   const ligne = bareme.lignes.find(
     (l) => l.type === vehicule.type
@@ -214,10 +226,29 @@ export function indemniteKilometrique(
   const tranche = ligne.tranches.find((t) => t.jusqua === null || vehicule.kmProfessionnel <= t.jusqua)
   if (!tranche) return null
 
-  return Number((vehicule.kmProfessionnel * tranche.coefficient + tranche.forfait).toFixed(2))
+  return (BigInt(vehicule.kmProfessionnel) * enMillimes(tranche.coefficient) + enMillimes(tranche.forfait) + 5n) / 10n
 }
 
-export type MotifNonCalcule = 'barème non renseigné pour cet exercice' | 'puissance hors barème'
+// La même indemnité en euros — ce que l'écran affiche et ce que la 2035 totalise.
+export function indemniteKilometrique(
+  vehicule: Vehicule,
+  annee: number,
+  baremes: BaremeAnnuel[] = BAREMES,
+): number | null {
+  const centimes = indemniteKilometriqueCentimes(vehicule, annee, baremes)
+  return centimes === null ? null : Number(centimes) / 100
+}
+
+export type MotifNonCalcule = 'barème non renseigné pour cet exercice' | 'puissance hors barème' | 'kilométrage invalide'
+
+// Pourquoi une indemnité ne se calcule pas — le barème manque, le kilométrage n'en est pas un, ou la
+// puissance sort des tranches publiées. Les trois appellent un geste différent : saisir le barème,
+// corriger le kilométrage, corriger la fiche du véhicule.
+export function motifNonCalcule(vehicule: Vehicule, annee: number, baremes: BaremeAnnuel[] = BAREMES): MotifNonCalcule {
+  if (!baremeDeLAnnee(annee, baremes)) return 'barème non renseigné pour cet exercice'
+  if (!Number.isInteger(vehicule.kmProfessionnel) || vehicule.kmProfessionnel < 0) return 'kilométrage invalide'
+  return 'puissance hors barème'
+}
 
 export interface TotalKilometrique {
   // Somme des indemnités calculées — c'est le « total A » à reporter ligne 23 du 2035-A (case BJ).
@@ -227,28 +258,26 @@ export interface TotalKilometrique {
   nonCalcules: { vehicule: Vehicule; motif: MotifNonCalcule }[]
 }
 
+// La somme se fait en centimes : additionner des euros en flottants dériverait d'un centime sur un
+// cabinet qui déclare plusieurs véhicules, et le total ne serait plus la somme des écritures.
 export function totalIndemnitesKilometriques(
   vehicules: Vehicule[],
   annee: number,
   baremes: BaremeAnnuel[] = BAREMES,
 ): TotalKilometrique {
-  const bareme = baremeDeLAnnee(annee, baremes)
-  let total = 0
+  let total = 0n
   const nonCalcules: TotalKilometrique['nonCalcules'] = []
 
   for (const vehicule of vehicules) {
-    const montant = indemniteKilometrique(vehicule, annee, baremes)
-    if (montant === null) {
-      nonCalcules.push({
-        vehicule,
-        motif: bareme ? 'puissance hors barème' : 'barème non renseigné pour cet exercice',
-      })
+    const centimes = indemniteKilometriqueCentimes(vehicule, annee, baremes)
+    if (centimes === null) {
+      nonCalcules.push({ vehicule, motif: motifNonCalcule(vehicule, annee, baremes) })
       continue
     }
-    total += montant
+    total += centimes
   }
 
-  return { total: Number(total.toFixed(2)), nonCalcules }
+  return { total: Number(total) / 100, nonCalcules }
 }
 
 // Les exercices qu'il est utile de proposer pour la saisie des véhicules : ceux qui portent déjà des

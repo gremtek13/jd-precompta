@@ -46,6 +46,14 @@ export const COMPTE_COTISATIONS_EXPLOITANT = '646000'
 // numéro exactement (`ecrire_dotation_amortissement`).
 export const COMPTE_DOTATIONS_AMORTISSEMENTS = '681100'
 
+// Le compte du FORFAIT KILOMÉTRIQUE (voir lib/forfaitKilometrique.ts) : les indemnités du barème, débitées
+// au 31 décembre face au compte du dirigeant, qui a supporté les frais du véhicule. Un sous-compte de 6251
+// (voyages et déplacements) à part de celui des frais de déplacement au réel, que la catégorie
+// « carburant_deplacements » porte au 625100 : la balance doit pouvoir montrer l'un sans l'autre, la notice
+// interdisant de cumuler le barème et les frais réels qu'il couvre. La base vérifie ce numéro exactement
+// (`ecrire_forfait_kilometrique`).
+export const COMPTE_INDEMNITES_KILOMETRIQUES = '625110'
+
 // Le libellé des comptes que l'application tient elle-même, et qu'aucune catégorie ne porte : sans
 // lui, la balance les afficherait « — » et le FEC les nommerait par leur numéro. UN SEUL endroit : il
 // vivait en deux copies, dans `ecritures.ts` et dans `fec.ts`, et un compte ajouté à l'une seulement
@@ -66,6 +74,7 @@ export const LIBELLES_COMPTES: Readonly<Record<string, string>> = {
   [COMPTE_ASSURANCE_EMPRUNT]: 'Assurance des emprunts',
   [COMPTE_COTISATIONS_EXPLOITANT]: "Cotisations sociales personnelles de l'exploitant",
   [COMPTE_DOTATIONS_AMORTISSEMENTS]: 'Dotations aux amortissements des immobilisations',
+  [COMPTE_INDEMNITES_KILOMETRIQUES]: 'Indemnités kilométriques (barème)',
 }
 
 // LES COMPTES D'AMORTISSEMENT que les dotations créditent : 28 suivi du compte d'immobilisation du bien

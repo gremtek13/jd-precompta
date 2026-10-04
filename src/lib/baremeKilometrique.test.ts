@@ -1,4 +1,6 @@
+import { createHash } from 'node:crypto'
 import { describe, expect, it } from 'vitest'
+import { fichiersDuSchema } from '../test/schema'
 import {
   BAREMES,
   baremeDeLAnnee,
@@ -6,9 +8,11 @@ import {
   completerModificationVehicule,
   exercicesProposables,
   indemniteKilometrique,
+  indemniteKilometriqueCentimes,
+  motifNonCalcule,
   totalIndemnitesKilometriques,
 } from './baremeKilometrique'
-import type { BaremeAnnuel, Vehicule } from './baremeKilometrique'
+import type { BaremeAnnuel, TypeVehicule, Vehicule } from './baremeKilometrique'
 
 // Barème d'essai, volontairement inventé et clairement faux : ces tests vérifient la MÉCANIQUE du
 // calcul, pas les chiffres officiels. Les figer sur de vraies valeurs les rendrait caducs au
@@ -307,5 +311,188 @@ describe('exercicesProposables — ne plus choisir l’exercice à la place du c
     // Sur les vrais barèmes : 2025 et 2026 sont ouverts, 2027 ne l'est pas — la liste ne doit pas
     // inventer d'année « en cours » que le calcul refuserait ensuite.
     expect(exercicesProposables([])).toEqual([2026, 2025])
+  })
+})
+
+// ═══ Le calcul en entiers, et sa parité avec la base ═══════════════════════════════════════════════
+//
+// L'écriture du forfait kilométrique est VÉRIFIÉE en base : `ecrire_forfait_kilometrique` refait le calcul
+// (`indemnite_kilometrique_centimes`) et refuse une écriture qui ne vaut pas son indemnité au centime. Un
+// centime d'écart entre les deux calculs, c'est une écriture juste refusée en production — d'où trois
+// gardes : la table SQL comparée ligne à ligne à celle-ci, deux empreintes relevées en base sur 15 552 cas,
+// et l'arrondi que le calcul en flottants manquait.
+
+describe('indemniteKilometriqueCentimes — le calcul en entiers, au centime', () => {
+  it('arrondit le demi-centime vers le haut, là où le calcul en flottants le perdait', () => {
+    // 45 km à 0,529 € font 23,805 € exactement. En flottants, 45 × 0,529 vaut 23,8049999… et `toFixed(2)`
+    // rend 23,80 ; la base, qui calcule en entiers, rend 23,81 — et aurait refusé l'écriture de 23,80.
+    const v: Vehicule = { type: 'voiture', puissanceFiscale: 3, kmProfessionnel: 45, electrique: false }
+    expect(Number((45 * 0.529).toFixed(2))).toBe(23.8)
+    expect(indemniteKilometriqueCentimes(v, 2025)).toBe(2381n)
+    expect(indemniteKilometrique(v, 2025)).toBe(23.81)
+  })
+
+  it('rend les valeurs relevées en base', () => {
+    // `indemnite_kilometrique_centimes` interrogée le 03/10/2026 sur ces véhicules.
+    const cas: [Vehicule, number, bigint | null][] = [
+      [{ type: 'voiture', puissanceFiscale: 5, kmProfessionnel: 12_000, electrique: false }, 2025, 567_900n],
+      [{ type: 'voiture', puissanceFiscale: 5, kmProfessionnel: 20_000, electrique: true }, 2026, 1_023_400n],
+      [{ type: 'moto', puissanceFiscale: 1, kmProfessionnel: 3001, electrique: false }, 2025, 118_810n],
+      [{ type: 'cyclomoteur', puissanceFiscale: 0, kmProfessionnel: 6001, electrique: true }, 2026, 142_824n],
+      [{ type: 'voiture', puissanceFiscale: 100, kmProfessionnel: 1000, electrique: false }, 2025, null],
+      [{ type: 'moto', puissanceFiscale: 0, kmProfessionnel: 1000, electrique: false }, 2025, null],
+      [{ type: 'voiture', puissanceFiscale: 5, kmProfessionnel: 1000, electrique: false }, 2024, null],
+    ]
+    for (const [v, annee, attendu] of cas) {
+      expect(indemniteKilometriqueCentimes(v, annee), `${v.type} ${v.puissanceFiscale} CV ${v.kmProfessionnel} km ${annee}`).toBe(attendu)
+    }
+  })
+
+  it('ne calcule rien sur un kilométrage qui n’est pas un nombre entier de kilomètres', () => {
+    // La colonne est entière en base ; un champ de formulaire peut un instant porter 12,5. Rendre null —
+    // et le dire — plutôt que de lever au milieu d'un rendu.
+    const v = (km: number): Vehicule => ({ type: 'voiture', puissanceFiscale: 5, kmProfessionnel: km, electrique: false })
+    expect(indemniteKilometriqueCentimes(v(12.5), 2025)).toBeNull()
+    expect(indemniteKilometriqueCentimes(v(Number.NaN), 2025)).toBeNull()
+    expect(motifNonCalcule(v(12.5), 2025)).toBe('kilométrage invalide')
+    expect(motifNonCalcule(v(-1), 2025)).toBe('kilométrage invalide')
+    expect(motifNonCalcule(v(1000), 2024)).toBe('barème non renseigné pour cet exercice')
+    expect(motifNonCalcule({ ...v(1000), puissanceFiscale: 100 }, 2025)).toBe('puissance hors barème')
+  })
+
+  it('additionne les véhicules en centimes', () => {
+    // Trois indemnités à demi-centime : 23,81 € chacune, 71,43 € ensemble. Additionner des flottants
+    // arrondis ferait dériver le total de la somme des écritures.
+    const v: Vehicule = { type: 'voiture', puissanceFiscale: 3, kmProfessionnel: 45, electrique: false }
+    expect(totalIndemnitesKilometriques([v, v, v], 2025).total).toBe(71.43)
+  })
+})
+
+describe('le barème est le même en base et ici', () => {
+  // La table que `bareme_kilometrique()` sert en base, lue dans la DERNIÈRE migration qui la définit : une
+  // migration qui la remplace l'emporte sur les précédentes, comme en base.
+  function baremeEnBase(): Map<number, string[]> {
+    const definitions = fichiersDuSchema()
+      .filter((f) => /create (or replace )?function public\.bareme_kilometrique\(\)/.test(f.texte))
+    expect(definitions.length, 'aucune migration ne définit bareme_kilometrique()').toBeGreaterThan(0)
+    const texte = definitions[definitions.length - 1].texte
+    const debut = texte.indexOf('-- ── DÉBUT BARÈME ──')
+    const fin = texte.indexOf('-- ── FIN BARÈME ──')
+    expect(debut, 'bornes du barème introuvables').toBeGreaterThan(-1)
+    expect(fin).toBeGreaterThan(debut)
+    const parAnnee = new Map<number, string[]>()
+    const ligne = /\(array\[([\d, ]+)\], '(\w+)', (\d+), (\d+), (true|false), (\d+), (\d+), (\d+), (\d+), (\d+), (\d+), (\d+), (\d+)\)/g
+    let lues = 0
+    for (const m of texte.slice(debut, fin).matchAll(ligne)) {
+      lues++
+      const [, annees, ...reste] = m
+      for (const annee of annees.split(',').map((a) => Number(a.trim()))) {
+        parAnnee.set(annee, [...(parAnnee.get(annee) ?? []), reste.join('|')])
+      }
+    }
+    // Chaque ligne du bloc doit être lue : une ligne d'une autre forme, sautée, ferait passer une table
+    // amputée pour la bonne.
+    const lignesDuBloc = texte.slice(debut, fin).split('\n').filter((l) => l.trim().startsWith('(array['))
+    expect(lues).toBe(lignesDuBloc.length)
+    return parAnnee
+  }
+
+  // La même table, mise en forme comme la ligne SQL : type, puissances, électrique, puis les trois tranches
+  // en millièmes d'euro par kilomètre et en euros.
+  function baremeIci(): Map<number, string[]> {
+    return new Map(BAREMES.map((b) => [b.annee, b.lignes.map((l) => {
+      const [t1, t2, t3] = l.tranches
+      return [l.type, l.puissanceMin, l.puissanceMax, l.electrique, t1.jusqua, Math.round(t1.coefficient * 1000), t1.forfait,
+        t2.jusqua, Math.round(t2.coefficient * 1000), t2.forfait, Math.round(t3.coefficient * 1000), t3.forfait].join('|')
+    })]))
+  }
+
+  it('a la forme que la table SQL sait porter', () => {
+    for (const b of BAREMES) {
+      for (const l of b.lignes) {
+        const nom = `${b.annee} ${l.type} ${l.puissanceMin}-${l.puissanceMax}${l.electrique ? ' électrique' : ''}`
+        // Trois tranches, les deux premières bornées, la dernière non.
+        expect(l.tranches.map((t) => t.jusqua === null), nom).toEqual([false, false, true])
+        for (const t of l.tranches) {
+          // Un coefficient au millième près et un forfait en euros entiers : le calcul en entiers n'est
+          // exact qu'à cette condition, ici comme en base.
+          expect(Math.abs(t.coefficient * 1000 - Math.round(t.coefficient * 1000)), nom).toBeLessThan(1e-9)
+          expect(Number.isInteger(t.forfait), nom).toBe(true)
+        }
+      }
+    }
+  })
+
+  it('ne fait jamais correspondre deux lignes au même véhicule', () => {
+    // En base, deux lignes qui se chevauchent rendraient l'une ou l'autre au hasard du plan de la requête.
+    for (const b of BAREMES) {
+      for (const type of ['voiture', 'moto', 'cyclomoteur'] as const) {
+        for (const electrique of [false, true]) {
+          for (let p = 0; p <= 120; p++) {
+            const lignes = b.lignes.filter((l) => l.type === type && l.electrique === electrique && p >= l.puissanceMin && p <= l.puissanceMax)
+            expect(lignes.length, `${b.annee} ${type} ${p} CV`).toBeLessThanOrEqual(1)
+          }
+        }
+      }
+    }
+  })
+
+  it('porte les mêmes années et les mêmes lignes que la base', () => {
+    const base = baremeEnBase()
+    const ici = baremeIci()
+    expect([...base.keys()].sort()).toEqual([...ici.keys()].sort())
+    for (const [annee, lignes] of ici) expect(base.get(annee), `barème ${annee}`).toEqual(lignes)
+  })
+
+  // Le calcul de la base relevé sur deux grilles, et leur empreinte : `indemnite_kilometrique_centimes`
+  // interrogée le 03/10/2026, chaque valeur en centimes ou « null », jointes par des virgules dans l'ordre
+  // des boucles ci-dessous.
+  const empreinte = (valeurs: (bigint | null)[]) =>
+    createHash('md5').update(valeurs.map((v) => (v === null ? 'null' : v.toString())).join(',')).digest('hex')
+  const ANNEES = [2024, 2025, 2026, 2027]
+
+  it('rend le calcul de la base sur toutes les lignes, autour de chaque borne et sur chaque reste', () => {
+    // Une puissance par ligne du barème ; les kilométrages de 0 à 40 (chaque reste d'une division par
+    // dix, donc chaque façon de tomber sur un demi-centime), autour des quatre bornes, et quelques autres.
+    const lignes: [TypeVehicule, number, boolean][] = [
+      ['voiture', 3, false], ['voiture', 4, false], ['voiture', 5, false], ['voiture', 6, false], ['voiture', 7, false],
+      ['voiture', 3, true], ['voiture', 4, true], ['voiture', 5, true], ['voiture', 6, true], ['voiture', 7, true],
+      ['moto', 1, false], ['moto', 3, false], ['moto', 6, false], ['moto', 1, true], ['moto', 3, true], ['moto', 6, true],
+      ['cyclomoteur', 0, false], ['cyclomoteur', 0, true],
+    ]
+    const autour = (borne: number) => Array.from({ length: 21 }, (_, k) => borne - 10 + k)
+    const kms = [...new Set([...Array.from({ length: 41 }, (_, k) => k), ...autour(3000), ...autour(5000), ...autour(6000),
+      ...autour(20_000), 1234, 7777, 12_345, 25_000, 33_333, 99_999])].sort((a, b) => a - b)
+    const valeurs: (bigint | null)[] = []
+    for (const annee of ANNEES) {
+      for (const [type, puissanceFiscale, electrique] of lignes) {
+        for (const kmProfessionnel of kms) {
+          valeurs.push(indemniteKilometriqueCentimes({ type, puissanceFiscale, electrique, kmProfessionnel }, annee))
+        }
+      }
+    }
+    expect(valeurs).toHaveLength(9432)
+    expect(valeurs.filter((v) => v !== null)).toHaveLength(4716)
+    expect(empreinte(valeurs)).toBe('bdea448eb4631716e6bb1282e6c1410d')
+  })
+
+  it('choisit la même ligne que la base pour chaque type, chaque motorisation et chaque puissance', () => {
+    const puissances = [...Array.from({ length: 13 }, (_, k) => k), 99, 100]
+    const kms = [0, 1, 45, 2999, 3000, 3001, 4999, 5000, 5001, 5999, 6000, 6001, 12_345, 19_999, 20_000, 20_001, 35_000]
+    const valeurs: (bigint | null)[] = []
+    for (const annee of ANNEES) {
+      for (const type of ['voiture', 'moto', 'cyclomoteur'] as const) {
+        for (const electrique of [false, true]) {
+          for (const puissanceFiscale of puissances) {
+            for (const kmProfessionnel of kms) {
+              valeurs.push(indemniteKilometriqueCentimes({ type, puissanceFiscale, electrique, kmProfessionnel }, annee))
+            }
+          }
+        }
+      }
+    }
+    expect(valeurs).toHaveLength(6120)
+    expect(valeurs.filter((v) => v !== null)).toHaveLength(1904)
+    expect(empreinte(valeurs)).toBe('68dabf7d77edaf698ad8ba7b5730a51b')
   })
 })

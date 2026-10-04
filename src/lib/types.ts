@@ -329,6 +329,11 @@ export interface EcritureBrouillon {
   // d'amortissement. Nul sur toute autre écriture. Clé sans action à la suppression : un bien dont une
   // dotation est écrite ne se retire que par `retirer_immobilisation`, qui emporte ses dotations.
   immobilisation_id: string | null
+  // La ligne du cadre 7 (un véhicule pour un exercice) dont cette écriture est le FORFAIT KILOMÉTRIQUE
+  // (ligne 26.6, étape b — voir lib/forfaitKilometrique.ts) : au 31 décembre, sans pièce, sans mouvement ni
+  // bien, justifiée par le barème. Nul sur toute autre écriture. Clé sans action à la suppression : un
+  // véhicule dont le forfait est écrit ne se retire que par `retirer_vehicule`, qui emporte son forfait.
+  vehicule_id: string | null
 }
 
 // Solde d'ouverture d'un compte de bilan, repris de la balance d'un dossier venu d'un autre logiciel

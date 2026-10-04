@@ -260,11 +260,15 @@ create table public.immobilisations (
 -- Les deux clés étrangères en ON DELETE SET NULL sont exactement celles qui produisent les ruptures
 -- de piste d'audit décrites dans CLAUDE.md : Postgres efface le lien sans un mot. La troisième,
 -- `immobilisation_id`, est SANS action, et c'est voulu : une dotation ne se détache pas de son bien en
--- silence — un bien amorti se retire par `retirer_immobilisation`, qui emporte ses dotations.
+-- silence — un bien amorti se retire par `retirer_immobilisation`, qui emporte ses dotations. La
+-- quatrième, `vehicule_id`, de même : un véhicule dont le forfait est écrit se retire par
+-- `retirer_vehicule`, qui emporte son forfait.
 --
 -- RÉGÉNÉRÉE LE 01/10/2026 depuis le catalogue, après `dotations_aux_amortissements` (colonne
 -- `immobilisation_id`, sa clé, ses deux contraintes, son index) — ligne 26.6, étape b. Une dotation ne
--- porte ni pièce ni mouvement, et tombe au 31 décembre.
+-- porte ni pièce ni mouvement, et tombe au 31 décembre. PUIS LE 04/10/2026, après
+-- `ecritures_brouillon_vehicule` (colonne `vehicule_id`, sa clé, ses deux contraintes, son index) : un
+-- forfait kilométrique ne porte ni pièce, ni mouvement, ni bien, et tombe lui aussi au 31 décembre.
 create table public.ecritures_brouillon (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -278,13 +282,17 @@ create table public.ecritures_brouillon (
   statut text default 'proposee'::text not null,
   created_at timestamp with time zone default now() not null,
   immobilisation_id uuid,
+  vehicule_id uuid,
   constraint ecritures_brouillon_pkey PRIMARY KEY (id),
   constraint ecritures_brouillon_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_immobilisation_id_fkey FOREIGN KEY (immobilisation_id) REFERENCES immobilisations(id),
   constraint ecritures_brouillon_ligne_bancaire_id_fkey FOREIGN KEY (ligne_bancaire_id) REFERENCES lignes_bancaires(id) ON DELETE SET NULL,
   constraint ecritures_brouillon_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
+  constraint ecritures_brouillon_vehicule_id_fkey FOREIGN KEY (vehicule_id) REFERENCES vehicules(id),
   constraint ecritures_brouillon_dotation_au_31_decembre CHECK (((immobilisation_id IS NULL) OR ((EXTRACT(month FROM date) = (12)::numeric) AND (EXTRACT(day FROM date) = (31)::numeric)))),
   constraint ecritures_brouillon_dotation_sans_piece_ni_mouvement CHECK (((immobilisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL)))),
+  constraint ecritures_brouillon_forfait_au_31_decembre CHECK (((vehicule_id IS NULL) OR ((EXTRACT(month FROM date) = (12)::numeric) AND (EXTRACT(day FROM date) = (31)::numeric)))),
+  constraint ecritures_brouillon_forfait_sans_piece_ni_mouvement CHECK (((vehicule_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL)))),
   constraint ecritures_brouillon_montant_positif CHECK ((montant > (0)::numeric)),
   constraint ecritures_brouillon_sens_check CHECK ((sens = ANY (ARRAY['debit'::text, 'credit'::text]))),
   constraint ecritures_brouillon_statut_check CHECK ((statut = ANY (ARRAY['proposee'::text, 'validee'::text])))
@@ -300,6 +308,7 @@ CREATE INDEX lignes_bancaires_categorie_id_idx ON public.lignes_bancaires USING 
 CREATE INDEX lignes_bancaires_emprunt_id_idx ON public.lignes_bancaires USING btree (emprunt_id);
 CREATE INDEX ecritures_brouillon_ligne_bancaire_id_idx ON public.ecritures_brouillon USING btree (ligne_bancaire_id);
 CREATE INDEX ecritures_brouillon_immobilisation_id_idx ON public.ecritures_brouillon USING btree (immobilisation_id);
+CREATE INDEX ecritures_brouillon_vehicule_id_idx ON public.ecritures_brouillon USING btree (vehicule_id);
 
 -- ─────────────────────────────── 4. RLS
 --

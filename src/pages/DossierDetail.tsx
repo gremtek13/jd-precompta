@@ -340,12 +340,13 @@ export default function DossierDetail() {
           {tab === 'estimation' && modele && <EstimationTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
           {tab === 'financement' && modele && <FinancementTab dossierId={id} assujettiTva={dossier?.assujetti_tva ?? false} modeComptable={modele.mode} />}
           {tab === 'supplements' && <SupplementsTab dossierId={id} />}
-          {tab === 'informations' && (
+          {tab === 'informations' && modele && (
             <InformationsTab
               dossierId={id}
               dossierNom={dossier?.nom ?? ''}
               dossierSiret={dossier?.siret ?? null}
               dossierAdresse={dossier?.adresse ?? null}
+              modele={modele}
               onIdentiteUpdated={(siret, adresse) => modifierDossier(id, { siret, adresse })}
             />
           )}

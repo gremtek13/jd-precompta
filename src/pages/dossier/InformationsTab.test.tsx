@@ -113,6 +113,7 @@ function monter() {
       dossierNom="Cabinet Martin"
       dossierSiret={null}
       dossierAdresse={null}
+      modele={{ mode: 'tresorerie', compteNotesDeFrais: '455000' }}
       onIdentiteUpdated={() => {}}
     />,
   )
