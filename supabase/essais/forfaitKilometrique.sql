@@ -40,6 +40,12 @@
 -- Le contrôle 9 dépend du barème de l'exercice EN COURS : tant que celui-ci n'est pas saisi dans
 -- l'application (celui des revenus 2027 ne paraîtra qu'au printemps 2028), c'est le refus « barème non
 -- renseigné » qu'il attend, et il le dit.
+--
+-- ÉPROUVÉ LE 04/10/2026 : 35 contrôles sur 35, le texte transmis étant ce fichier sans ses commentaires
+-- (vérifié par différence). Et l'essai sait échouer : sans le `set local role anon`, les contrôles 1 et 2
+-- virent au rouge — l'appel passe le droit d'exécution, et c'est la fonction qui refuse, avec un autre
+-- message. Les autres refus viennent du contrôle d'accès de la fonction, qui lit la session et non le rôle,
+-- ou des contraintes, qui valent pour tout le monde.
 do $$
 declare
   inconnu uuid := gen_random_uuid();
