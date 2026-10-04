@@ -193,9 +193,9 @@ describe('agent-comptable / points_a_traiter lit le registre et ses dotations', 
     expect(corps).toMatch(/from\("immobilisations"\)\.select\("id, piece_id, nature_id, libelle, valeur, date_acquisition, date_mise_en_service, duree_annees"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     // Celles du cabinet comprises, comme les catégories : sinon un bien d'une nature partagée paraîtrait sans nature.
     expect(corps).toMatch(/from\("natures_immobilisation"\)\.select\("id, compte_immobilisation"[^)]*\)\.or\(`dossier_id\.eq\.\$\{dossierId\},dossier_id\.is\.null`\)\.order\("id"\)/)
-    expect(corps).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id"/)
+    expect(corps).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id[,"]/)
     expect(corps).toMatch(/from\("a_nouveaux"\)\.select\("id, date"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("date"\)\.order\("id"\)/)
-    expect(corps).toMatch(/rReglements, rCotisations, rNatures, rANouveaux\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rReglements, rCotisations, rNatures, rANouveaux, rVehicules\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('rend le point de la Checklist, l’exercice en cours lu dans le fuseau du cabinet', () => {
@@ -304,7 +304,8 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
   })
 
   it('attrape une conformité qui tolérerait un centime', () => {
-    const derivee = planter(['      && Math.round(e.montant * 100) === Math.round(a.montant * 100))', '      && Math.abs(e.montant - a.montant) < 0.05)'])
+    // Le motif porte la date de la DOTATION : le bloc FORFAIT a la même comparaison au centime, sur la sienne.
+    const derivee = planter(['e.date === dateDeLaDotation(annee)\n      && Math.round(e.montant * 100) === Math.round(a.montant * 100))', 'e.date === dateDeLaDotation(annee)\n      && Math.abs(e.montant - a.montant) < 0.05)'])
     echoue(() => memeRegistre(derivee))
   })
 

@@ -36,7 +36,7 @@
 // src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
 // src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
 // src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/amortissements.ts,
-// src/lib/format.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
+// src/lib/baremeKilometrique.ts, src/lib/forfaitKilometrique.ts, src/lib/format.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `paiementsDesPieces`, `rattachementsTresorerie` et `analyserEcritures`
 // et les exécute contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que
@@ -47,8 +47,10 @@
 // src/lib/agentComptableVentilation.test.ts, le bloc RÈGLEMENT GROUPÉ (virements qui règlent plusieurs
 // pièces, copié de src/lib/reglementGroupe.ts) par src/lib/agentComptableReglementGroupe.test.ts, le bloc
 // COTISATION (échéances de cotisation rapprochées d'un mouvement, copié de src/lib/cotisationRapprochee.ts)
-// par src/lib/agentComptableCotisation.test.ts, et le bloc AMORTISSEMENT (dotations aux amortissements,
-// copié de src/lib/amortissements.ts) par src/lib/agentComptableAmortissement.test.ts.
+// par src/lib/agentComptableCotisation.test.ts, le bloc AMORTISSEMENT (dotations aux amortissements,
+// copié de src/lib/amortissements.ts) par src/lib/agentComptableAmortissement.test.ts, et le bloc FORFAIT
+// (forfait kilométrique du cadre 7, copié de src/lib/baremeKilometrique.ts et src/lib/forfaitKilometrique.ts)
+// par src/lib/agentComptableForfait.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -1233,6 +1235,190 @@ function acquisitionsDesBiens(
 }
 // ── FIN AMORTISSEMENT ────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT FORFAIT ────────────────────────────────────────────────────────────────────────────────
+// LES FORFAITS KILOMÉTRIQUES QUI MANQUENT AU BROUILLON (04/10/2026, ligne 26.6, étape b). La 2035 compte le
+// forfait du cadre 7 en case BJ, le FEC ne le porte que s'il est écrit — au 31 décembre de son exercice,
+// l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant (`compteDuDirigeant`, bloc
+// AFFECTATION). La Checklist réclame celui d'un exercice FINI qui n'est pas écrit, et tout forfait écrit qui ne
+// suit plus le cadre 7. Le barème est celui de l'application et de la base (`bareme_kilometrique`), le calcul en
+// centimes ENTIERS, le demi-centime vers le haut — en flottants, 45 km à 0,529 € rendaient un centime de moins.
+// Copié de src/lib/baremeKilometrique.ts et src/lib/forfaitKilometrique.ts et gardé par
+// src/lib/agentComptableForfait.test.ts, qui extrait ce bloc avec le bloc AFFECTATION et le compare à src/lib.
+interface VehiculeRow {
+  id: string; annee: number; modele: string | null; type: "voiture" | "moto" | "cyclomoteur"
+  puissance_fiscale: number; motorisation: string | null; km_professionnel: number
+}
+interface EcritureForfaitRow {
+  date: string; compte: string; sens: "debit" | "credit"; montant: number; statut: string; vehicule_id: string | null
+}
+
+const COMPTE_INDEMNITES_KILOMETRIQUES = "625110"
+
+// Une ligne du barème : un type de véhicule, une plage de puissance fiscale, 100 % électrique ou non, et trois
+// tranches de distance. La tranche se choisit sur le kilométrage TOTAL, et sa formule — « d × coefficient »,
+// plus le forfait de la tranche intermédiaire — s'applique à ce même total.
+interface LigneBaremeKm {
+  type: VehiculeRow["type"]; puissanceMin: number; puissanceMax: number; electrique: boolean
+  tranches: { jusqua: number | null; coefficient: number; forfait: number }[]
+}
+const voitureKm = (cv: [number, number], electrique: boolean, t: [number, number, number, number]): LigneBaremeKm => ({
+  type: "voiture", puissanceMin: cv[0], puissanceMax: cv[1], electrique,
+  tranches: [
+    { jusqua: 5000, coefficient: t[0], forfait: 0 },
+    { jusqua: 20_000, coefficient: t[1], forfait: t[2] },
+    { jusqua: null, coefficient: t[3], forfait: 0 },
+  ],
+})
+const deuxRouesKm = (
+  type: VehiculeRow["type"], cv: [number, number], electrique: boolean, t: [number, number, number, number],
+): LigneBaremeKm => ({
+  type, puissanceMin: cv[0], puissanceMax: cv[1], electrique,
+  tranches: [
+    { jusqua: 3000, coefficient: t[0], forfait: 0 },
+    { jusqua: 6000, coefficient: t[1], forfait: t[2] },
+    { jusqua: null, coefficient: t[3], forfait: 0 },
+  ],
+})
+
+// Le barème des revenus 2025, et celui des revenus 2026, non revalorisé — LA MÊME table, pas une copie. Une
+// année absente ne se calcule pas : un barème emprunté à une autre année donnerait un forfait faux en silence.
+const LIGNES_BAREME_KM_2025: LigneBaremeKm[] = [
+  // Voitures thermiques, à hydrogène et hybrides.
+  voitureKm([0, 3], false, [0.529, 0.316, 1065, 0.370]),
+  voitureKm([4, 4], false, [0.606, 0.340, 1330, 0.407]),
+  voitureKm([5, 5], false, [0.636, 0.357, 1395, 0.427]),
+  voitureKm([6, 6], false, [0.665, 0.374, 1457, 0.447]),
+  voitureKm([7, 99], false, [0.697, 0.394, 1515, 0.470]),
+  // Voitures 100 % électriques.
+  voitureKm([0, 3], true, [0.635, 0.379, 1278, 0.444]),
+  voitureKm([4, 4], true, [0.727, 0.408, 1596, 0.488]),
+  voitureKm([5, 5], true, [0.763, 0.428, 1674, 0.512]),
+  voitureKm([6, 6], true, [0.798, 0.449, 1748, 0.536]),
+  voitureKm([7, 99], true, [0.836, 0.473, 1818, 0.564]),
+  // Motos et scooters de plus de 50 cm³, thermiques.
+  deuxRouesKm("moto", [1, 2], false, [0.395, 0.099, 891, 0.248]),
+  deuxRouesKm("moto", [3, 5], false, [0.468, 0.082, 1158, 0.275]),
+  deuxRouesKm("moto", [6, 99], false, [0.606, 0.079, 1583, 0.343]),
+  // Motos et scooters de plus de 50 cm³, 100 % électriques.
+  deuxRouesKm("moto", [1, 2], true, [0.474, 0.119, 1069, 0.298]),
+  deuxRouesKm("moto", [3, 5], true, [0.562, 0.098, 1390, 0.330]),
+  deuxRouesKm("moto", [6, 99], true, [0.727, 0.095, 1900, 0.412]),
+  // Cyclomoteurs (50 cm³ et moins) : une seule ligne, sans puissance fiscale.
+  deuxRouesKm("cyclomoteur", [0, 0], false, [0.315, 0.079, 711, 0.198]),
+  deuxRouesKm("cyclomoteur", [0, 0], true, [0.378, 0.095, 853, 0.238]),
+]
+const BAREMES_KM: { annee: number; lignes: LigneBaremeKm[] }[] = [
+  { annee: 2025, lignes: LIGNES_BAREME_KM_2025 },
+  { annee: 2026, lignes: LIGNES_BAREME_KM_2025 },
+]
+
+// Un montant du barème en millièmes d'euro : trois décimales aux coefficients, des euros entiers aux forfaits.
+const enMillimesKm = (euros: number) => BigInt(Math.round(euros * 1000))
+
+// L'indemnité d'une ligne du cadre 7, EN CENTIMES, ou null quand le barème ne la calcule pas — année absente,
+// kilométrage qui n'est pas un nombre entier de kilomètres, puissance hors des tranches publiées. Seuls les
+// 100 % électriques ont leur table : une motorisation non renseignée est thermique.
+function indemniteKilometriqueCentimes(
+  v: Pick<VehiculeRow, "type" | "puissance_fiscale" | "motorisation" | "km_professionnel">, annee: number,
+): bigint | null {
+  const bareme = BAREMES_KM.find((b) => b.annee === annee)
+  if (!bareme) return null
+  if (!Number.isInteger(v.km_professionnel) || v.km_professionnel < 0) return null
+  const electrique = v.motorisation === "electrique"
+  const ligne = bareme.lignes.find((l) => l.type === v.type && l.electrique === electrique
+    && v.puissance_fiscale >= l.puissanceMin && v.puissance_fiscale <= l.puissanceMax)
+  if (!ligne) return null
+  const tranche = ligne.tranches.find((t) => t.jusqua === null || v.km_professionnel <= t.jusqua)
+  if (!tranche) return null
+  return (BigInt(v.km_professionnel) * enMillimesKm(tranche.coefficient) + enMillimesKm(tranche.forfait) + 5n) / 10n
+}
+
+const dateDuForfait = (annee: number) => `${annee}-12-31`
+
+// Avant l'ouverture d'un dossier repris, l'exercice est dans les à-nouveaux, et son forfait avec lui : rien à
+// écrire.
+function forfaitAEcrireCentimes(v: VehiculeRow, ouverture: string | null): bigint | null {
+  if (ouverture && dateDuForfait(v.annee) < ouverture) return 0n
+  return indemniteKilometriqueCentimes(v, v.annee)
+}
+
+// Le nom d'un véhicule : son modèle quand il est saisi, sinon ce que le barème en sait.
+function nomDuVehicule(v: Pick<VehiculeRow, "modele" | "type" | "puissance_fiscale" | "motorisation">): string {
+  const modele = v.modele?.trim()
+  if (modele) return modele
+  const type = v.type === "voiture" ? "Voiture" : v.type === "moto" ? "Moto" : "Cyclomoteur"
+  const puissance = v.type === "cyclomoteur" ? "" : ` ${v.puissance_fiscale} CV`
+  return `${type}${puissance}${v.motorisation === "electrique" ? " électrique" : ""}`
+}
+
+// L'écriture du forfait : le 625110 au débit, le compte du dirigeant au crédit, du même montant. Rien quand le
+// forfait est nul ; null quand le barème ne le calcule pas.
+function ecritureDuForfait(v: VehiculeRow, modele: ModeleComptable, ouverture: string | null) {
+  const centimes = forfaitAEcrireCentimes(v, ouverture)
+  if (centimes === null) return null
+  if (centimes <= 0n) return []
+  const montant = Number(centimes) / 100
+  const libelle = `Indemnités kilométriques ${v.annee} — ${nomDuVehicule(v)}`
+  return [
+    { compte: COMPTE_INDEMNITES_KILOMETRIQUES, sens: "debit" as const, montant, libelle },
+    { compte: compteDuDirigeant(modele), sens: "credit" as const, montant, libelle },
+  ]
+}
+
+// Exactement l'écriture attendue — mêmes lignes, au 31 décembre, au centime, sans tolérance.
+function forfaitConforme(
+  presentes: readonly Pick<EcritureForfaitRow, "compte" | "sens" | "montant" | "date">[],
+  attendues: readonly { compte: string; sens: "debit" | "credit"; montant: number }[],
+  annee: number,
+): boolean {
+  if (presentes.length !== attendues.length) return false
+  const restantes = [...presentes]
+  for (const a of attendues) {
+    const i = restantes.findIndex((e) => e.compte === a.compte && e.sens === a.sens && e.date === dateDuForfait(annee)
+      && Math.round(e.montant * 100) === Math.round(a.montant * 100))
+    if (i < 0) return false
+    restantes.splice(i, 1)
+  }
+  return true
+}
+
+type EtatForfait = "a_ecrire" | "a_reecrire" | "a_retirer" | "ecrit" | "valide" | "rien"
+
+// Chaque ligne du cadre 7 comparée au brouillon : à écrire, à réécrire (le barème ne donne plus ce montant, ou le
+// compte du dirigeant a changé), à retirer (plus rien à écrire), écrit, validé qui diverge, ou rien.
+function forfaitsDuCadre7(
+  vehicules: readonly VehiculeRow[],
+  ecritures: readonly EcritureForfaitRow[],
+  modele: ModeleComptable,
+  ouverture: string | null,
+): { vehicule: VehiculeRow; etat: EtatForfait }[] {
+  const parVehicule = new Map<string, EcritureForfaitRow[]>()
+  for (const e of ecritures) {
+    if (!e.vehicule_id) continue
+    parVehicule.set(e.vehicule_id, [...(parVehicule.get(e.vehicule_id) ?? []), e])
+  }
+  return vehicules.map((vehicule) => {
+    const presentes = parVehicule.get(vehicule.id) ?? []
+    const attendues = ecritureDuForfait(vehicule, modele, ouverture)
+    const nul = attendues !== null && attendues.length === 0
+    let etat: EtatForfait
+    if (presentes.length === 0) etat = nul ? "rien" : "a_ecrire"
+    else if (attendues && forfaitConforme(presentes, attendues, vehicule.annee)) etat = "ecrit"
+    else if (presentes.some((e) => e.statut !== "proposee")) etat = "valide"
+    else etat = nul ? "a_retirer" : "a_reecrire"
+    return { vehicule, etat }
+  })
+}
+
+// Ce que la Checklist réclame : le forfait d'un exercice RÉVOLU qui n'est pas écrit, et tout forfait écrit qui
+// ne suit plus le cadre 7 — celui de l'exercice en cours ne manque pas encore, son kilométrage n'étant complet
+// qu'une fois l'année finie.
+function forfaitsEnDefaut<F extends { vehicule: { annee: number }; etat: EtatForfait }>(forfaits: readonly F[], anneeCourante: number): F[] {
+  return forfaits.filter((f) => f.etat !== "ecrit" && f.etat !== "rien"
+    && (f.etat !== "a_ecrire" || f.vehicule.annee < anneeCourante))
+}
+// ── FIN FORFAIT ──────────────────────────────────────────────────────────────────────────────────
+
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
 function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
   if (!assujettiTva) return []
@@ -1524,7 +1710,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -1682,7 +1868,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
       lireTout<PieceRow>((d, f) =>
         admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
@@ -1691,9 +1877,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       lireTout<CategorieRow>((d, f) =>
         admin.from("categories").select("id, libelle, compte_comptable, poste_2035", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
       // `statut` et `immobilisation_id` : une DOTATION aux amortissements (bloc AMORTISSEMENT) est une écriture
-      // sans pièce ni mouvement, qui désigne son bien ; validée, elle ne se réécrit plus.
-      lireTout<EcritureRow & EcritureDotationRow>((d, f) =>
-        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // sans pièce ni mouvement, qui désigne son bien ; validée, elle ne se réécrit plus. Et `vehicule_id` : le
+      // FORFAIT KILOMÉTRIQUE (bloc FORFAIT) est une écriture sans pièce ni mouvement qui désigne sa ligne du
+      // cadre 7.
+      lireTout<EcritureRow & EcritureDotationRow & EcritureForfaitRow>((d, f) =>
+        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id, vehicule_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Le REGISTRE (bloc AMORTISSEMENT) : chaque bien, de quoi calculer sa dotation de chaque exercice. Et
       // `piece_id` : la facture d'un bien s'écrit sur le compte de sa nature, pas sur sa catégorie.
       lireTout<ImmobilisationRow & { piece_id: string | null }>((d, f) =>
@@ -1738,6 +1926,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // dossier, la base le garantit.
       lireTout<{ date: string }>((d, f) =>
         admin.from("a_nouveaux").select("id, date", { count: "exact" }).eq("dossier_id", dossierId).order("date").order("id").range(d, f)),
+      // Le CADRE 7 (bloc FORFAIT) : chaque véhicule de chaque exercice, de quoi calculer son forfait au barème.
+      lireTout<VehiculeRow>((d, f) =>
+        admin.from("vehicules").select("id, annee, modele, type, puissance_fiscale, motorisation, km_professionnel", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -1746,7 +1937,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -1793,6 +1984,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       dotationsDuRegistre(rImmobilisations.lignes, rNatures.lignes, ecrituresTyped, ouverture, anneeCourante),
       anneeCourante,
     )
+    // Et le forfait kilométrique d'un exercice fini : son kilométrage de l'exercice en cours n'est pas complet.
+    const forfaitsManquants = forfaitsEnDefaut(forfaitsDuCadre7(rVehicules.lignes, ecrituresTyped, modele, ouverture), anneeCourante)
 
     return {
       ecritures_desequilibrees: groupesDesequilibres.length,
@@ -1806,9 +1999,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
         ? { factures_sans_reglement_rapproche: nbSansContrepartie }
         : { ecritures_en_attente_de_rapprochement_bancaire: nbSansContrepartie }),
       // Plus de comparaison des déclarations de TVA au brouillon (retirée le 28/09/2026) : le
-      // brouillon date la TVA à la pièce et ne porte rien pour un bien immobilisé, donc il criait à
-      // l'écart sur des déclarations justes. C'est l'onglet TVA qui compare chaque déclaration déposée
-      // au calcul de sa période ; l'assistant le DIT au lieu de répondre « rien à signaler ».
+      // brouillon ne date pas la TVA selon la règle d'exigibilité de la déclaration — il porte celle de
+      // l'acquisition d'un bien au 445620 depuis le 01/10/2026, mais à la date de son écriture —, donc il
+      // crierait à l'écart sur des déclarations justes. C'est l'onglet TVA qui compare chaque déclaration
+      // déposée au calcul de sa période ; l'assistant le DIT au lieu de répondre « rien à signaler ».
       declarations_tva: "non vérifiées par l'assistant : l'onglet TVA compare chaque déclaration déposée au calcul de sa période",
       pieces_a_faible_confiance_extraction: piecesConfianceBasse.length,
       categories_sans_compte_comptable: catSansCompte.map((c) => c.libelle),
@@ -1840,6 +2034,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Le libellé de la Checklist : la dotation d'un exercice fini qui n'est pas écrite, ou une dotation écrite
       // qui ne suit plus le registre — absente du FEC, ou fausse, pendant que la 2035 la compte en case CH.
       dotations_aux_amortissements_a_ecrire_ou_qui_ne_suivent_plus_le_registre: dotationsManquantes.length,
+      // Le libellé de la Checklist : le forfait d'un exercice fini qui n'est pas écrit, ou un forfait écrit qui ne
+      // suit plus le cadre 7 — absent du FEC, ou faux, pendant que la 2035 le compte en case BJ.
+      forfaits_kilometriques_a_ecrire_ou_qui_ne_suivent_plus_le_cadre_7: forfaitsManquants.length,
     }
   }
 
@@ -2016,6 +2213,7 @@ Règles impératives :
 - Une ÉCHÉANCE D'EMPRUNT rapprochée s'écrit face au 512000, sans pièce, sur trois comptes : le capital remboursé au 164000 (une dette qui diminue — ni charge ni recette), les intérêts au 661100 et l'assurance au 616800, qui comptent dans la 2035 à la date du prélèvement. Le DÉBLOCAGE d'un emprunt crédite le 164000 face au 512000 : ce n'est pas une recette. Rien de cela n'est une anomalie.
 - La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au 445620 : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.
 - Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
+- Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).

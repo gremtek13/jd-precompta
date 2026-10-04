@@ -631,7 +631,7 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
     expect(source).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id[,"]/)
     expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, [^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(source).toMatch(/from\("reglements_groupes"\)\.select\("ligne_bancaire_id, piece_id, montant", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 })
 
