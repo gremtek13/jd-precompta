@@ -416,13 +416,35 @@ export function lignesOuvertes<L extends { date: string }>(lignes: readonly L[],
 
 // LES ÉCRITURES À GÉNÉRER : celles des pièces qui n'en ont encore aucune (le bouton « Générer les écritures
 // manquantes » d'Écritures). Une pièce dont une part au moins tomberait dans un exercice validé ne s'écrit pas
-// entière : seule sa part ouverte s'écrit, et la pièce est NOMMÉE — l'écran dit pourquoi la génération ne l'écrit
-// pas, ou pas entière. Une pièce entièrement figée (une facture d'un exercice validé, arrivée après) n'écrit rien :
-// son écriture s'écrira à la date de son paiement, s'il a lieu après la frontière, une fois rapproché.
+// entière : seule sa part ouverte s'écrit, et la pièce est NOMMÉE avec ce qui l'attend — l'écran dit pourquoi la
+// génération ne l'écrit pas, ou pas entière.
+//
+// CE QUI L'ATTEND N'EST PAS LE MÊME POUR TOUTES, et l'écran ne doit rien promettre que le code ne fera pas :
+// - `partielle` : sa part datée après la frontière s'écrit maintenant ;
+// - `a_payer` : en trésorerie, une part attend son paiement (une facture de l'exercice validé arrivée après) — elle
+//   s'écrira à la date de ce paiement, s'il est rapproché après la frontière ;
+// - `note_de_frais` : une note de frais compte à sa date, qui tombe dans l'exercice validé — rien ne s'écrira ;
+// - `payee` : en trésorerie, payée dans l'exercice validé — rien ne s'écrira ;
+// - `facture` : en engagement, sa facture tombe dans l'exercice validé — rien ne s'écrira.
+// Les trois dernières relèvent de l'exercice suivant (PCG, art. 1031-4), ce que l'application ne modélise pas.
+export type SuiteDansUnExerciceValide = 'partielle' | 'a_payer' | 'note_de_frais' | 'payee' | 'facture'
+
 export interface PieceDansUnExerciceValide {
   piece: Piece
-  // Vrai quand une part de la pièce s'écrit quand même, après la frontière.
-  partielle: boolean
+  suite: SuiteDansUnExerciceValide
+}
+
+function suiteDansUnExerciceValide(
+  piece: Piece, paiements: readonly PaiementDePiece[], modele: ModeleComptable, partielle: boolean,
+): SuiteDansUnExerciceValide {
+  if (partielle) return 'partielle'
+  if (modele.mode === 'engagement') return piece.type_piece === 'note_frais' ? 'note_de_frais' : 'facture'
+  // En trésorerie, d'après ce qui la date (lib/rattachement.ts) : une part sans paiement attend le sien, ce qui
+  // l'emporte — un paiement à venir l'écrira ; une note de frais compte à sa date ; le reste est payé.
+  const sources = new Set(rattachementsTresorerie(piece, paiements).map((r) => r.source))
+  if (sources.has('sans_paiement')) return 'a_payer'
+  if (sources.has('note_de_frais')) return 'note_de_frais'
+  return 'payee'
 }
 
 export interface GenerationDesEcritures {
@@ -443,9 +465,12 @@ export function ecrituresAGenerer(
   const generation: GenerationDesEcritures = { pieces: [], lignes: [], dansUnExerciceValide: [] }
   for (const { piece, compte, immobilisation } of aComptabiliser) {
     if (ecrites.has(piece.id)) continue
-    const lignes = lignesPourPiece(dossierId, piece, { compte, immobilisation }, assujettiTva, paiements.get(piece.id) ?? [], modele)
+    const paiementsDeLaPiece = paiements.get(piece.id) ?? []
+    const lignes = lignesPourPiece(dossierId, piece, { compte, immobilisation }, assujettiTva, paiementsDeLaPiece, modele)
     const ouvertes = lignesOuvertes(lignes, frontiere)
-    if (ouvertes.length < lignes.length) generation.dansUnExerciceValide.push({ piece, partielle: ouvertes.length > 0 })
+    if (ouvertes.length < lignes.length) {
+      generation.dansUnExerciceValide.push({ piece, suite: suiteDansUnExerciceValide(piece, paiementsDeLaPiece, modele, ouvertes.length > 0) })
+    }
     if (ouvertes.length === 0) continue
     generation.pieces.push(piece)
     generation.lignes.push(...ouvertes)
