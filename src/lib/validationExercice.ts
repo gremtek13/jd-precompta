@@ -35,6 +35,14 @@ export function exerciceQuiFige(annee: number, anneesValidees: readonly number[]
   return `L'exercice ${annee} est figé par la validation de l'exercice ${Math.min(...posterieures)}`
 }
 
+// UNE DATE QUE LA VALIDATION A FIGÉE : au plus tard à la frontière. Aucune écriture ne s'y passe plus, et celles qui
+// y sont ne se modifient ni ne se retirent — les refus de la base (`garder_ecritures_validees`). C'est le seul critère
+// des contrôles du brouillon : une part figée ne se compare plus à ce qu'elle devrait être, puisque rien ne la
+// réécrira (lib/ecritures.ts, `analyserEcritures`).
+export function estFigee(date: string, frontiere: string | null): boolean {
+  return frontiere !== null && date <= frontiere
+}
+
 // Une date civile (AAAA-MM-JJ) figée par la validation : la phrase de la base, sinon rien.
 export function dateFigee(date: string, anneesValidees: readonly number[]): string | null {
   return exerciceQuiFige(anneeDe(date), anneesValidees)

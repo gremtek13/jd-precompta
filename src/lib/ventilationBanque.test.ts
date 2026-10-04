@@ -500,8 +500,8 @@ describe('ventilationsIncoherentes — le drapeau et les parts ne disent plus la
 
 describe('mouvementsVentilesDesynchronises — l’écriture que les parts produiraient aujourd’hui', () => {
   it('se tait quand l’écriture est celle attendue, dans n’importe quel ordre', () => {
-    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false)).toEqual([])
-    expect(mouvementsVentilesDesynchronises([...ECRITURE_TELEPHONE].reverse(), [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false)).toEqual([])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false, null)).toEqual([])
+    expect(mouvementsVentilesDesynchronises([...ECRITURE_TELEPHONE].reverse(), [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false, null)).toEqual([])
   })
 
   it('une écriture absente, sur un autre compte, d’un autre montant ou à une autre date', () => {
@@ -514,31 +514,43 @@ describe('mouvementsVentilesDesynchronises — l’écriture que les parts produ
       ECRITURE_TELEPHONE.map((e) => ({ ...e, date: '2025-03-13' })),
     ]
     for (const ecritures of cas) {
-      expect(mouvementsVentilesDesynchronises(ecritures, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false).map((l) => l.id)).toEqual(['l1'])
+      expect(mouvementsVentilesDesynchronises(ecritures, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false, null).map((l) => l.id)).toEqual(['l1'])
     }
   })
 
   it('une catégorie dont le compte a changé depuis — le cas réel', () => {
     const recomptee = [{ ...TELEPHONE, compte_comptable: '626100' }, ...CATEGORIES.slice(1)]
-    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, recomptee, TRESORERIE, false).map((l) => l.id)).toEqual(['l1'])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, recomptee, TRESORERIE, false, null).map((l) => l.id)).toEqual(['l1'])
     // Sortie des comptes de résultat : l'écriture ne peut plus être celle d'une ventilation.
     const bilan = [{ ...TELEPHONE, compte_comptable: '108000' }, ...CATEGORIES.slice(1)]
-    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, bilan, TRESORERIE, false).map((l) => l.id)).toEqual(['l1'])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, bilan, TRESORERIE, false, null).map((l) => l.id)).toEqual(['l1'])
+  })
+
+  // Un mouvement d'un exercice VALIDÉ ne se juge plus, comme un mouvement affecté : son écriture est validée, la base
+  // refuse de la réécrire (lib/validationExercice.ts).
+  it('ne juge plus un mouvement que la frontière de validation fige, frontière comprise', () => {
+    const recomptee = [{ ...TELEPHONE, compte_comptable: '626100' }, ...CATEGORIES.slice(1)]
+    // Le mouvement du 12 mars 2025 : figé par la validation de 2025, et par une frontière posée le jour même.
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, recomptee, TRESORERIE, false, '2025-12-31')).toEqual([])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, recomptee, TRESORERIE, false, '2025-03-12')).toEqual([])
+    // La veille, il ne l'est pas : il se juge comme avant.
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, recomptee, TRESORERIE, false, '2025-03-11')
+      .map((l) => l.id)).toEqual(['l1'])
   })
 
   it('en engagement, la part personnelle attendue est sur le compte du dirigeant choisi', () => {
-    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, CATEGORIES, ENGAGEMENT_SOCIETE, false).map((l) => l.id)).toEqual(['l1'])
+    expect(mouvementsVentilesDesynchronises(ECRITURE_TELEPHONE, [VENTILE], PARTS_TELEPHONE, CATEGORIES, ENGAGEMENT_SOCIETE, false, null).map((l) => l.id)).toEqual(['l1'])
     const au455 = ECRITURE_TELEPHONE.map((e) => e.compte === '108000' ? { ...e, compte: '455000' } : e)
-    expect(mouvementsVentilesDesynchronises(au455, [VENTILE], PARTS_TELEPHONE, CATEGORIES, ENGAGEMENT_SOCIETE, false)).toEqual([])
+    expect(mouvementsVentilesDesynchronises(au455, [VENTILE], PARTS_TELEPHONE, CATEGORIES, ENGAGEMENT_SOCIETE, false, null)).toEqual([])
   })
 
   it('ne juge pas ce qu’il n’a pas lu : une catégorie absente de la liste écarte le mouvement', () => {
-    expect(mouvementsVentilesDesynchronises([], [VENTILE], PARTS_TELEPHONE, CATEGORIES.filter((c) => c.id !== 'cat-tel'), TRESORERIE, false)).toEqual([])
+    expect(mouvementsVentilesDesynchronises([], [VENTILE], PARTS_TELEPHONE, CATEGORIES.filter((c) => c.id !== 'cat-tel'), TRESORERIE, false, null)).toEqual([])
   })
 
   it('ne redit pas une ventilation incohérente, ni un mouvement qui n’est pas ventilé', () => {
-    expect(mouvementsVentilesDesynchronises([], [VENTILE], [PARTS_TELEPHONE[0]], CATEGORIES, TRESORERIE, false)).toEqual([])
-    expect(mouvementsVentilesDesynchronises([], [mouvement({ statut: 'rapprochee', categorie_id: 'cat-tel' })], [], CATEGORIES, TRESORERIE, false)).toEqual([])
+    expect(mouvementsVentilesDesynchronises([], [VENTILE], [PARTS_TELEPHONE[0]], CATEGORIES, TRESORERIE, false, null)).toEqual([])
+    expect(mouvementsVentilesDesynchronises([], [mouvement({ statut: 'rapprochee', categorie_id: 'cat-tel' })], [], CATEGORIES, TRESORERIE, false, null)).toEqual([])
   })
 
   describe('une remise taxée', () => {
@@ -561,22 +573,22 @@ describe('mouvementsVentilesDesynchronises — l’écriture que les parts produ
     ]
 
     it('se tait sur les quatre lignes attendues', () => {
-      expect(mouvementsVentilesDesynchronises(taxee, [remise], parts, CATEGORIES, TRESORERIE, true)).toEqual([])
+      expect(mouvementsVentilesDesynchronises(taxee, [remise], parts, CATEGORIES, TRESORERIE, true, null)).toEqual([])
     })
 
     it('signale la recette écrite au TTC alors que sa part porte son taux', () => {
-      expect(mouvementsVentilesDesynchronises(auTtc, [remise], parts, CATEGORIES, TRESORERIE, true).map((l) => l.id)).toEqual(['remise'])
+      expect(mouvementsVentilesDesynchronises(auTtc, [remise], parts, CATEGORIES, TRESORERIE, true, null).map((l) => l.id)).toEqual(['remise'])
     })
 
     it('un dossier qui a cessé d’être assujetti attend l’écriture sans TVA', () => {
-      expect(mouvementsVentilesDesynchronises(taxee, [remise], parts, CATEGORIES, TRESORERIE, false).map((l) => l.id)).toEqual(['remise'])
-      expect(mouvementsVentilesDesynchronises(auTtc, [remise], parts, CATEGORIES, TRESORERIE, false)).toEqual([])
+      expect(mouvementsVentilesDesynchronises(taxee, [remise], parts, CATEGORIES, TRESORERIE, false, null).map((l) => l.id)).toEqual(['remise'])
+      expect(mouvementsVentilesDesynchronises(auTtc, [remise], parts, CATEGORIES, TRESORERIE, false, null)).toEqual([])
     })
   })
 
   it('les écritures d’une pièce sur le même mouvement ne comptent pas', () => {
     // La contrepartie banque d'une pièce désigne aussi un mouvement : elle appartient à la pièce.
     const avecPiece = [...ECRITURE_TELEPHONE, ecriture({ id: 'p', piece_id: 'p1', compte: '512000', sens: 'credit', montant: 120 })]
-    expect(mouvementsVentilesDesynchronises(avecPiece, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false)).toEqual([])
+    expect(mouvementsVentilesDesynchronises(avecPiece, [VENTILE], PARTS_TELEPHONE, CATEGORIES, TRESORERIE, false, null)).toEqual([])
   })
 })

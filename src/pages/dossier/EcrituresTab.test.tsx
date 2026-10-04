@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { useState } from 'react'
 import { describe, expect, it, vi } from 'vitest'
-import { AnneeProvider } from '../../context/AnneeContext'
+import { ContexteDossier } from '../../test/exercicesValides'
 import type { ValeurAnnee } from '../../components/AnneeTabs'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Predicat } from '../../test/filtresPostgrest'
@@ -231,10 +231,12 @@ const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '4
 
 // Le modèle vit dans la page du dossier, qui le remet à l'onglet après l'enregistrement : ce porteur
 // joue ce rôle, sans quoi un changement de modèle ne se verrait jamais à l'écran.
-function Onglet({ assujettiTva, modeleInitial, annee }: { assujettiTva: boolean; modeleInitial: ModeleComptable; annee: ValeurAnnee }) {
+function Onglet({ assujettiTva, modeleInitial, annee, valides }: {
+  assujettiTva: boolean; modeleInitial: ModeleComptable; annee: ValeurAnnee; valides: readonly number[]
+}) {
   const [modele, setModele] = useState(modeleInitial)
   return (
-    <AnneeProvider defaut={annee}>
+    <ContexteDossier annee={annee} valides={valides}>
       <EcrituresTab
         dossierId="dossier-de-test" dossierNom="Dossier de test" dossierSiret="12345678901234" assujettiTva={assujettiTva}
         modele={modele}
@@ -242,12 +244,13 @@ function Onglet({ assujettiTva, modeleInitial, annee }: { assujettiTva: boolean;
           mode: m.mode_comptable ?? avant.mode, compteNotesDeFrais: m.compte_notes_de_frais ?? avant.compteNotesDeFrais,
         }))}
       />
-    </AnneeProvider>
+    </ContexteDossier>
   )
 }
 
-function monter(assujettiTva = false, modele: ModeleComptable = TRESORERIE, annee: ValeurAnnee = 2025) {
-  return render(<Onglet assujettiTva={assujettiTva} modeleInitial={modele} annee={annee} />)
+// `valides` : les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
+function monter(assujettiTva = false, modele: ModeleComptable = TRESORERIE, annee: ValeurAnnee = 2025, valides: readonly number[] = []) {
+  return render(<Onglet assujettiTva={assujettiTva} modeleInitial={modele} annee={annee} valides={valides} />)
 }
 
 describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
@@ -886,6 +889,65 @@ describe('EcrituresTab — le statut TVA du dossier décide de la ventilation', 
     monter(false)
     await screen.findByText(/1 écriture proposée/)
     expect(screen.queryByText('Écritures à régénérer')).toBeNull()
+  })
+})
+
+// LIGNE 26.6 (d) : CE QU'UN EXERCICE VALIDÉ A FIGÉ NE SE COMPARE PLUS. La page du dossier fournit la frontière
+// (DossierDetail) ; le calcul est testé à part (lib/ecritures.ts, lib/affectationBanque.ts, lib/ventilationBanque.ts),
+// ici c'est le CÂBLAGE — que l'onglet la passe à ses quatre contrôles. Une écriture validée que sa source ne produirait
+// plus n'est proposée ni à régénérer, ni à réaffecter, ni à réécrire, ni à retirer : la base refuse ces quatre gestes.
+describe('EcrituresTab — ce qu’un exercice validé a figé ne se compare plus', () => {
+  // Tout est de 2025, écrit puis validé avec 2025 ; les catégories ont changé de compte depuis.
+  const mouvement = (o: Record<string, unknown>) => ({
+    id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-12', libelle: 'PRLV FOURNISSEUR', montant: -120,
+    statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, source_fichier: 'releve-2025.pdf', libelle_brut: null,
+    created_at: '2025-03-13T09:00:00Z', ...o,
+  })
+  const validee = (o: Record<string, unknown>) => ecriture({ statut: 'validee', ...o })
+  const jeu = () => ({
+    categories: [
+      { ...CATEGORIE_ACHATS, compte_comptable: '606300' },
+      { id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 2, compte_comptable: '627100', poste_2035: 'Frais financiers' },
+      { id: 'cat-tel', dossier_id: null, code: 'telephone', libelle: 'Téléphone', ordre: 3, compte_comptable: '626100', poste_2035: 'Frais postaux' },
+    ],
+    // La seconde pièce n'a plus de catégorie : son écriture validée n'a plus d'objet. Cas défensif — la base fige la
+    // catégorie d'une pièce validée.
+    pieces: [piece(), piece({ id: 'p2', date_piece: '2025-04-10', montant_ttc: 50, categorie_id: null })],
+    lignes_bancaires: [
+      mouvement({}),
+      mouvement({ id: 'l-aff', date: '2025-05-12', montant: -8.5, piece_id: null, categorie_id: 'cat-frais', libelle: 'FRAIS' }),
+      mouvement({ id: 'l-ven', date: '2025-06-12', piece_id: null, ventilee: true, libelle: 'OPERATEUR' }),
+    ],
+    ventilations_bancaires: [
+      { id: 'v1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-ven', categorie_id: 'cat-tel', part_personnelle: false, montant: -84, taux_tva: null, created_at: '2025-06-13T09:00:00Z' },
+      { id: 'v2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-ven', categorie_id: null, part_personnelle: true, montant: -36, taux_tva: null, created_at: '2025-06-13T09:00:00Z' },
+    ],
+    ecritures_brouillon: [
+      validee({ id: 'e1', date: '2025-03-12' }),
+      validee({ id: 'e2', date: '2025-03-12', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }),
+      validee({ id: 'e3', piece_id: 'p2', date: '2025-04-10', montant: 50 }),
+      validee({ id: 'e4', piece_id: null, ligne_bancaire_id: 'l-aff', date: '2025-05-12', compte: '627000', montant: 8.5 }),
+      validee({ id: 'e5', piece_id: null, ligne_bancaire_id: 'l-aff', date: '2025-05-12', compte: '512000', sens: 'credit', montant: 8.5 }),
+      validee({ id: 'e6', piece_id: null, ligne_bancaire_id: 'l-ven', date: '2025-06-12', compte: '626000', montant: 84 }),
+      validee({ id: 'e7', piece_id: null, ligne_bancaire_id: 'l-ven', date: '2025-06-12', compte: '108000', montant: 36 }),
+      validee({ id: 'e8', piece_id: null, ligne_bancaire_id: 'l-ven', date: '2025-06-12', compte: '512000', sens: 'credit', montant: 120 }),
+    ],
+  })
+  const PANNEAUX = ['Écritures à régénérer', 'Mouvements affectés à réaffecter', 'Mouvements ventilés à réécrire', 'Écritures que la pièce ne justifie plus']
+
+  it('ne les propose plus quand leur exercice est validé', async () => {
+    poser(jeu())
+    monter(false, TRESORERIE, 2025, [2025])
+    await screen.findByText(/8 écritures proposées/)
+    for (const panneau of PANNEAUX) expect(screen.queryByText(panneau)).toBeNull()
+  })
+
+  // Le garde symétrique : sans exercice validé, chacun des quatre panneaux paraît — le jeu les déclenche bien tous.
+  it('les propose tous quand aucun exercice n’est validé', async () => {
+    poser(jeu())
+    monter(false, TRESORERIE, 2025, [])
+    for (const panneau of PANNEAUX) await screen.findByText(panneau)
   })
 })
 

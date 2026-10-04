@@ -20,7 +20,7 @@ import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotatio
 import { forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
-import { defautsDeNumerotation } from './validationExercice'
+import { defautsDeNumerotation, frontiereDeValidation } from './validationExercice'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire,
   NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
@@ -317,8 +317,11 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     || datesDesEcrituresAttendues(p, paiements, d.modele).some(dansLExercice)
   const mouvementDeLExercice = (l: { date: string }) => dansLExercice(l.date)
 
+  // Ce que les exercices déjà validés ont figé ne se compare plus (lib/validationExercice.ts) : une pièce payée dans
+  // l'exercice à valider mais facturée dans le précédent n'est jugée que sur sa part encore ouverte.
+  const frontiere = frontiereDeValidation(d.anneesValidees)
   const aComptabiliser = piecesAComptabiliser([...d.piecesValidees], [...d.categories], acquisitions)
-  const { piecesDesynchronisees } = analyserEcritures([...d.ecritures], aComptabiliser, d.assujettiTva, paiements, d.modele)
+  const { piecesDesynchronisees } = analyserEcritures([...d.ecritures], aComptabiliser, d.assujettiTva, paiements, d.modele, frontiere)
   bloque({
     id: 'ecritures-a-generer', cible: 'ecritures',
     nb: aComptabiliser.filter(({ piece }) => !ecrituresParPiece.has(piece.id) && pieceDeLExercice(piece)).length,
@@ -330,7 +333,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'ecritures-sans-objet', cible: 'ecritures',
-    nb: ecrituresSansObjet([...d.ecritures], [...d.piecesValidees], [...d.categories], acquisitions)
+    nb: ecrituresSansObjet([...d.ecritures], [...d.piecesValidees], [...d.categories], acquisitions, frontiere)
       .filter((s) => (ecrituresParPiece.get(s.piece.id) ?? []).some((e) => dansLExercice(e.date))).length,
     message: "écriture(s) que la pièce ne justifie plus : retirer l'écriture ou corriger la pièce.",
   })
@@ -385,7 +388,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
 
   const affectes = mouvementsAffectes(d.lignes, d.categories, d.assujettiTva)
   bloque({
-    id: 'affectes-perimes', nb: mouvementsAffectesDesynchronises(d.ecritures, affectes).filter((a) => mouvementDeLExercice(a.ligne)).length, cible: 'ecritures',
+    id: 'affectes-perimes', nb: mouvementsAffectesDesynchronises(d.ecritures, affectes, frontiere).filter((a) => mouvementDeLExercice(a.ligne)).length, cible: 'ecritures',
     message: "mouvement(s) affecté(s) dont l'écriture ne suit plus la catégorie : les réaffecter.",
   })
   bloque({
@@ -397,7 +400,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'ventiles-perimes', cible: 'ecritures',
-    nb: mouvementsVentilesDesynchronises(d.ecritures, d.lignes, d.ventilations, d.categories, d.modele, d.assujettiTva).filter(mouvementDeLExercice).length,
+    nb: mouvementsVentilesDesynchronises(d.ecritures, d.lignes, d.ventilations, d.categories, d.modele, d.assujettiTva, frontiere).filter(mouvementDeLExercice).length,
     message: "mouvement(s) ventilé(s) dont l'écriture ne suit plus les parts : les réécrire.",
   })
   bloque({

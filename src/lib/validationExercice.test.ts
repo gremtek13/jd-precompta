@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
-  biensFiges, casesDeLInstantane, casesQuiDifferent, dateFigee, defautsDeNumerotation, demandeDeValidation, exerciceQuiFige,
-  frontiereDeValidation, instantane2035, lireInstantane2035, piecesFigees,
+  biensFiges, casesDeLInstantane, casesQuiDifferent, dateFigee, defautsDeNumerotation, demandeDeValidation, estFigee,
+  exerciceQuiFige, frontiereDeValidation, instantane2035, lireInstantane2035, piecesFigees,
 } from './validationExercice'
 import { numeroterFec, type NumerotationFec } from './fec'
 import { COMPTE_BANQUE } from './comptes'
@@ -45,6 +45,15 @@ describe('la frontière et l’exercice qui fige une date — les mots de la bas
   it('juge une date sur son année', () => {
     expect(dateFigee('2025-12-31', [2025])).toBe("L'exercice 2025 est validé")
     expect(dateFigee('2026-01-01', [2025])).toBeNull()
+  })
+
+  // Le critère des contrôles du brouillon : la frontière elle-même est figée — la base refuse une écriture
+  // « au plus tard » à elle —, le lendemain ne l'est pas, et sans exercice validé rien ne l'est.
+  it('dit figée une date au plus tard à la frontière, frontière comprise', () => {
+    expect(estFigee('2025-12-31', '2025-12-31')).toBe(true)
+    expect(estFigee('2024-06-30', '2025-12-31')).toBe(true)
+    expect(estFigee('2026-01-01', '2025-12-31')).toBe(false)
+    expect(estFigee('1999-01-01', null)).toBe(false)
   })
 })
 

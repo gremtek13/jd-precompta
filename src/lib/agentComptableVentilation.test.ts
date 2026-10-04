@@ -234,8 +234,8 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
         ecriture({ id: 'piece', piece_id: 'p1', ligne_bancaire_id: 'juste', compte: '606100', sens: 'debit', montant: 120 }),
       ]
       expect(ids(deployee.mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false)), `${modele.mode} ${modele.compteNotesDeFrais}`)
-        .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false)))
-      expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false)))
+        .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, null)))
+      expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, null)))
         .toEqual(['absente', 'autre-compte', 'autre-montant', 'autre-date', 'hors-resultat'])
     }
     // Et le modèle compte : l'écriture juste en trésorerie est périmée en engagement.
@@ -253,11 +253,11 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
     ]
     for (const assujetti of [true, false]) {
       expect(ids(deployee.mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti)), `assujetti ${assujetti}`)
-        .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti)))
+        .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti, null)))
     }
     // Assujetti, l'écriture au TTC est périmée ; qui ne l'est plus, celle qui porte encore la TVA.
-    expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, true))).toEqual(['au-ttc'])
-    expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, false))).toEqual(['avec-tva'])
+    expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, true, null))).toEqual(['au-ttc'])
+    expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, false, null))).toEqual(['avec-tva'])
   })
 })
 

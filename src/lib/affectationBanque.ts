@@ -3,6 +3,7 @@ import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE } from './comptes'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import { horsTaxeEtTva, horsTaxeSigne, tauxApplicable, tauxPrisEnCharge, tauxRequis } from './tvaDuReleve'
 import type { Categorie, EcritureBrouillon, LigneBancaire } from './types'
+import { estFigee } from './validationExercice'
 
 // UN MOUVEMENT BANCAIRE SANS JUSTIFICATIF S'AFFECTE À UNE CATÉGORIE (ligne 26.6 de la feuille de
 // route, étape a).
@@ -232,12 +233,18 @@ const EPSILON = 0.02
 // pas —, ou d'un dossier qui a cessé d'être assujetti : sa recette porte encore sa TVA, que le taux
 // qui s'applique n'a plus. « Réaffecter » la réécrit. Le libellé n'est pas comparé : il ne change rien
 // à ce qui est compté.
+//
+// Un mouvement d'un exercice VALIDÉ ne se juge plus (lib/validationExercice.ts) : son écriture est validée, la
+// base refuse de la réécrire, et le dire « à réaffecter » laisserait un point en erreur que rien ne lève. Sans
+// valeur par défaut : un appelant qui oublie la frontière le dirait quand même.
 export function mouvementsAffectesDesynchronises(
   ecritures: readonly EcritureBrouillon[],
   affectes: readonly MouvementAffecte[],
+  frontiere: string | null,
 ): MouvementAffecte[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
+    if (estFigee(m.ligne.date, frontiere)) return false
     if (!m.nature || !m.categorie.compte_comptable) return true
     return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux), m.ligne.date)
   })
