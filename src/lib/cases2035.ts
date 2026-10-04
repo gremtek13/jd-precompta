@@ -332,6 +332,17 @@ export function repartirEnCases(declaration: Declaration2035): RepartitionCases 
   return { cases, postesSansCase }
 }
 
+// UNE CASE NÉGATIVE NE SE DÉPOSE PAS. Un poste dont les avoirs et les remboursements de l'exercice
+// dépassent ce qu'il compte reste négatif (voir `LigneDeclaration`) ; dans une case qui reçoit d'autres
+// postes, il la diminue, et c'est juste. Quand la CASE elle-même passe sous zéro, le formulaire ne sait pas
+// la porter : un remboursement reçu une année sans dépense du même poste se rattache le plus souvent à une
+// dépense d'un exercice antérieur, et sa place est à arbitrer avant de signer. Le moteur ne tranche pas —
+// il totalise, il ne déclare pas — mais il ne retourne plus le signe, et il le dit ici, avec les postes
+// qui font la case.
+export function casesNegatives(declaration: Declaration2035): CaseRemplie[] {
+  return repartirEnCases(declaration).cases.filter((r) => r.montant < 0)
+}
+
 // Toutes les cases du formulaire, y compris celles qu'aucun poste n'alimente et celles qui se
 // calculent. Une case sans montant vaut 0 : sur un formulaire, l'absence est un zéro, et le PDF a
 // besoin d'une valeur par case plutôt que d'un trou.

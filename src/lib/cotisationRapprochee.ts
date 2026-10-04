@@ -110,6 +110,9 @@ export interface CotisationComptee {
   csgCrds: number | null
   // Le mouvement qui la paie, quand le rapprochement le connaît et qu'il s'écrit.
   ligne: MouvementBancaire | null
+  // Pourquoi son rapprochement ne s'écrit pas, quand elle en a un qui ne le peut pas : elle reste alors
+  // comptée à son échéance, et la concordance de la 2035 le dit au lieu de la croire sans prélèvement.
+  refus: string | null
 }
 
 // LA DATE ET LE MONTANT AUXQUELS UNE ÉCHÉANCE COMPTE — pour la 2035, la situation intermédiaire et
@@ -141,14 +144,15 @@ export function cotisationsComptees(
   }
   return cotisations.map((cotisation) => {
     const ligne = parCotisation.get(cotisation.id)
-    if (ligne && !refusRapprochementCotisation(ligne, cotisation, mode)) {
+    const refus = ligne ? refusRapprochementCotisation(ligne, cotisation, mode) : null
+    if (ligne && !refus) {
       const montant = -ligne.montant
       const csgCrds = cotisation.montant_csg_crds == null ? null : Math.sign(montant) * Math.abs(cotisation.montant_csg_crds)
-      return { cotisation, date: ligne.date, montant, csgCrds, ligne }
+      return { cotisation, date: ligne.date, montant, csgCrds, ligne, refus: null }
     }
     return {
       cotisation, date: cotisation.echeance, montant: montantDeLEcheance(cotisation),
-      csgCrds: cotisation.montant_csg_crds, ligne: null,
+      csgCrds: cotisation.montant_csg_crds, ligne: null, refus,
     }
   })
 }

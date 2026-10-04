@@ -6,6 +6,7 @@ import {
   CODES_RATTACHABLES,
   CODES_TOTALISES_BR,
   caseDuPoste,
+  casesNegatives,
   doublonFraisVehicules,
   incoherencesDesCases,
   repartirEnCases,
@@ -31,6 +32,7 @@ const declaration = (o: Partial<Declaration2035>): Declaration2035 => ({
   exclusions: { sansPoste: [], sansDate: [], sansMontant: [], mouvementsSansPoste: [], mouvementsHorsResultat: [] },
   sansPaiementConnu: [],
   indemnitesKilometriques: null,
+  contributions: [],
   ...o,
 })
 
@@ -584,5 +586,41 @@ describe('cadre 8 — le revenu brut social des travailleurs indépendants', () 
     expect(arrondies.get('DC')).toBe(0)
     // L'exercice passé à l'arrondi décide lui aussi : avant 2025, rien n'est écrit au cadre 8.
     expect(arrondirPourFormulaire(valeurs, 2024).get('DD')).toBe(0)
+  })
+})
+
+// UNE CASE NÉGATIVE NE SE DÉPOSE PAS : un poste que ses remboursements font passer sous zéro garde son signe
+// (lib/declaration2035.ts), et quand il emporte sa case, l'écran le dit avec les postes qui la font.
+describe('casesNegatives', () => {
+  it('rend une case que ses postes font passer sous zéro, avec ces postes', () => {
+    const d = declaration({ depenses: [ligne({ poste: 'Frais financiers', montant: -3 })] })
+    expect(casesNegatives(d).map((c) => [c.case.code, c.montant, c.postes])).toEqual([['BN', -3, ['Frais financiers']]])
+  })
+
+  it('se tait sur un poste négatif qu’une case positive absorbe', () => {
+    // Des honoraires payés et une prime d'assurance remboursée, tous deux en BH : la case reste juste.
+    const d = declaration({
+      depenses: [
+        ligne({ poste: 'Honoraires ne constituant pas des rétrocessions', montant: 500 }),
+        ligne({ poste: "Primes d'assurance", montant: -30 }),
+      ],
+    })
+    expect(casesNegatives(d)).toEqual([])
+    expect(valeursDesCases(d).valeurs.get('BH')).toBe(470)
+  })
+
+  it('se tait sur une case que ses postes ramènent à zéro : zéro n’est pas négatif', () => {
+    const d = declaration({
+      depenses: [
+        ligne({ poste: 'Honoraires ne constituant pas des rétrocessions', montant: 30 }),
+        ligne({ poste: "Primes d'assurance", montant: -30 }),
+      ],
+    })
+    expect(casesNegatives(d)).toEqual([])
+  })
+
+  it('une recette négative aussi', () => {
+    const d = declaration({ recettes: [ligne({ poste: 'Recettes', nature: 'recette', montant: -40 })] })
+    expect(casesNegatives(d).map((c) => c.case.code)).toEqual(['AA'])
   })
 })

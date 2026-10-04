@@ -281,6 +281,8 @@ export interface PartEcheance {
   ligne: MouvementBancaire
   libelle: string
   poste: string
+  // Le compte où l'écriture de l'échéance porte cette part : 661100 pour les intérêts, 616800 pour l'assurance.
+  compte: string
   montantPoste: number
 }
 
@@ -290,8 +292,12 @@ export function partsDesEcheances(lignes: readonly MouvementBancaire[]): PartEch
     if (ligne.statut !== 'rapprochee' || !ligne.emprunt_id || estDeblocage(ligne)) continue
     const interets = ligne.emprunt_interets ?? 0
     const assurance = ligne.emprunt_assurance ?? 0
-    if (interets > 0) parts.push({ ligne, libelle: LIBELLE_INTERETS_EMPRUNT, poste: POSTE_INTERETS_EMPRUNT, montantPoste: interets })
-    if (assurance > 0) parts.push({ ligne, libelle: LIBELLE_ASSURANCE_EMPRUNT, poste: POSTE_ASSURANCE_EMPRUNT, montantPoste: assurance })
+    if (interets > 0) {
+      parts.push({ ligne, libelle: LIBELLE_INTERETS_EMPRUNT, poste: POSTE_INTERETS_EMPRUNT, compte: COMPTE_INTERETS_EMPRUNT, montantPoste: interets })
+    }
+    if (assurance > 0) {
+      parts.push({ ligne, libelle: LIBELLE_ASSURANCE_EMPRUNT, poste: POSTE_ASSURANCE_EMPRUNT, compte: COMPTE_ASSURANCE_EMPRUNT, montantPoste: assurance })
+    }
   }
   return parts
 }

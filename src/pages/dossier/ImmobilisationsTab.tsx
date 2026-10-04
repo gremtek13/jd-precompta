@@ -489,10 +489,11 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
           {/* Dans un conteneur qui défile, comme les autres tableaux : avec le panneau de droite ouvert,
               la colonne du bouton débordait du panneau central et passait sous le volet. Et
               `table-formulaire` : une ligne se REMPLIT, donc dans une carte étroite — téléphone, volet
-              ouvert — elle se replie en fiche empilée au lieu de se comprimer jusqu'à couper le bouton.
-              `formulaire-adaptable` est l'enveloppe dont la largeur en décide — voir index.css. */}
-          <div className="table-scroll formulaire-adaptable">
-            <table className="table-formulaire">
+              ouvert — elle se replie en fiche empilée (`table-empilable`) au lieu de se comprimer
+              jusqu'à couper le bouton. `tableau-adaptable` est l'enveloppe dont la largeur en décide —
+              voir index.css. */}
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-formulaire table-empilable">
               <thead>
                 <tr>
                   <th>Pièce</th>

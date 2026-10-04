@@ -181,6 +181,19 @@ const VUES = [
   { nom: 'mobile-forfait-clair', chemin: '#/dossiers/d1/informations', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Véhicules et barème kilométrique' },
   { nom: 'pc-forfait-checklist', chemin: '#/dossiers/d1/checklist', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'forfait(s) kilométrique(s)' },
   { nom: 'pc-forfait-cloture', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Amortissement d’un véhicule déduit avec le barème' },
+  // La concordance de la 2035 avec les écritures (lib/concordance2035.ts), sous le formulaire de l'exercice : le
+  // cabinet infirmier, dont le brouillon est en retard — des factures que rien n'écrit, une dotation, deux forfaits,
+  // une échéance prélevée sans écriture et un rapprochement qui ne s'écrit pas — ; le dossier assujetti, dont le
+  // bien sans nature n'a pas de dotation écrite ; et un exercice antérieur à l'ouverture, qui ne compare rien.
+  { nom: 'pc-concordance-clair', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Concordance avec les écritures' },
+  { nom: 'pc-concordance-ecarts', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, deplier: 'Voir les écarts', vers: 'Voir les écarts', enTete: true },
+  { nom: 'pc-concordance-sombre', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, deplier: 'Voir les écarts', vers: 'Voir les écarts', enTete: true },
+  { nom: 'pc-concordance-assistant', chemin: '#/dossiers/d1/cloture', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', deplier: 'Voir les écarts', vers: 'Voir les écarts', enTete: true },
+  { nom: 'pc-concordance-1024', chemin: '#/dossiers/d1/cloture', l: 1024, h: 768, theme: 'light', reduite: false, deplier: 'Voir les écarts', vers: 'Voir les écarts', enTete: true },
+  { nom: 'mobile-concordance-clair', chemin: '#/dossiers/d1/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Concordance avec les écritures' },
+  { nom: 'mobile-concordance-ecarts', chemin: '#/dossiers/d1/cloture', l: 390, h: 844, theme: 'light', reduite: false, deplier: 'Voir les écarts', vers: 'Voir les écarts', enTete: true },
+  { nom: 'pc-concordance-assujetti', chemin: '#/dossiers/d7/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Concordance avec les écritures' },
+  { nom: 'pc-concordance-ouverture', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2021', vers: 'Concordance avec les écritures' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -232,9 +245,17 @@ for (const v of VUES) {
     await page.getByRole('button', { name: new RegExp(v.apres) }).first().click()
     await page.waitForTimeout(600)
   }
+  // Un bloc replié (`<details>`), déplié par le texte de son résumé.
+  if (v.deplier) {
+    await page.getByText(v.deplier).first().click()
+    await page.waitForTimeout(300)
+  }
   // Un texte à amener à l'écran avant la capture, pour montrer le bas d'un long onglet.
+  // `enTete` le pose en HAUT de l'écran plutôt qu'au plus près : ce qui le suit — un tableau déplié — se voit.
   if (v.vers) {
-    await page.getByText(v.vers).first().scrollIntoViewIfNeeded()
+    const cible = page.getByText(v.vers).first()
+    if (v.enTete) await cible.evaluate((e) => e.scrollIntoView({ block: 'start' }))
+    else await cible.scrollIntoViewIfNeeded()
     await page.waitForTimeout(300)
   }
   await page.evaluate(() => document.fonts.ready)

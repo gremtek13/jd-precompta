@@ -365,12 +365,15 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   colonne, `flex-end` calait les champs à droite, à la largeur de leur contenu, et le style en ligne
   l'emportait sur la règle mobile. `debordements.mjs` ne mesure que l'ordinateur : ces deux-là ont été
   vus sur une capture, puis mesurés rangée par rangée.
-  **Un tableau-formulaire (`table-formulaire`) vit dans une enveloppe `.formulaire-adaptable`** : il se
-  replie en fiche empilée quand SON enveloppe rétrécit — une requête de CONTENEUR posée sur l'enveloppe
-  seule, jamais sur le panneau, qui deviendrait la référence des éléments fixes —, donc à 1 024 pixels et
-  volet ouvert comme sur téléphone. Hors d'elle il ne se replie nulle part, téléphone compris, et
-  `tableauxFormulaires.test.ts` le refuse (04/10/2026 : la carte Véhicules, passée à neuf colonnes,
-  écrasait ses champs à 1 024 pixels).
+  **Un tableau qui se replie en fiches (`table-empilable`) vit dans une enveloppe `.tableau-adaptable`** :
+  il se replie en fiche empilée, chaque cellule précédée de son libellé (`data-libelle`), quand SON
+  enveloppe rétrécit — une requête de CONTENEUR posée sur l'enveloppe seule, jamais sur le panneau, qui
+  deviendrait la référence des éléments fixes —, donc à 1 024 pixels et volet ouvert comme sur téléphone.
+  Hors d'elle il ne se replie nulle part, téléphone compris, et `tableauxFormulaires.test.ts` le refuse.
+  Deux sortes de tableaux en ont besoin : ceux qu'on REMPLIT (`table-formulaire table-empilable` : la carte
+  Véhicules, passée à neuf colonnes, écrasait ses champs à 1 024 pixels), et ceux qu'on lit dont une colonne
+  porte une PHRASE (les écarts de la concordance de la 2035, dont cinq colonnes dans 330 pixels coupaient
+  les mots en leur milieu). Un tableau de colonnes courtes garde `table-layout: fixed`, qui lui suffit.
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
@@ -1370,6 +1373,12 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   Checklist réclame le forfait d'un exercice fini qui manque, et Clôture signale le véhicule du registre
   amorti sous le barème. Voir « le forfait kilométrique s'écrit » dans « Problèmes connus »
   (`lib/forfaitKilometrique.ts`).
+- **La 2035 se compare aux écritures (04/10/2026)**, ligne 26.6, étape (c) : sous le formulaire de chaque
+  exercice, Clôture dit si la 2035 se retrouve dans les écritures du brouillon, source par source et compte
+  par compte, au centime, et nomme chaque écart avec sa raison et l'onglet où le corriger. La 2035 reste
+  calculée depuis les sources. Au passage, un poste que ses remboursements font passer sous zéro n'est plus
+  retourné en dépense, et Clôture dit la case négative qui en résulte. Voir « la 2035 se compare aux
+  écritures » dans « Problèmes connus » (`lib/concordance2035.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1409,8 +1418,9 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   dotations aux amortissements s'écrivent (681100 face au compte 28 de la nature du bien), prorata
   temporis depuis la mise en service, la facture d'un bien s'écrit sur le compte d'immobilisation de sa
   nature (sa TVA au 445620, sa dette au 404000 en engagement), et le forfait kilométrique du cadre 7
-  s'écrit (625110 face au compte du dirigeant). Restent (c) tirer la 2035 des écritures ou l'y comparer,
-  (d) valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
+  s'écrit (625110 face au compte du dirigeant). L'étape (c) est livrée (04/10/2026) : la 2035 reste
+  calculée depuis les sources et se compare aux écritures, source par source, dans Clôture. Restent (d)
+  valider un exercice, (e) les vingt-deux champs et Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -6197,8 +6207,8 @@ d'environnement dans la même édition.
   **Les captures ont trouvé deux défauts d'affichage.** « À réécrire » se coupait dans la colonne de l'état.
   Et la carte Véhicules, passée à neuf colonnes, écrasait ses champs à 1 024 pixels et volet ouvert à 1 280 :
   la fiche empilée d'un tableau-formulaire ne valait que sur téléphone. Elle suit désormais la largeur de son
-  enveloppe (`.formulaire-adaptable`, voir les conventions), et `tableauxFormulaires.test.ts` exige que tout
-  `table-formulaire` des écrans y vive. Le banc sert le cadre 7 fictif du cabinet infirmier — une Peugeot en
+  enveloppe (`.tableau-adaptable`, voir les conventions), et `tableauxFormulaires.test.ts` exige que tout
+  tableau qui se replie y vive. Le banc sert le cadre 7 fictif du cabinet infirmier — une Peugeot en
   2025, avant la reprise, et en 2026, écrite ; un scooter électrique écrit sur 2 400 km quand le cadre 7 en
   porte 2 600 ; un cyclomoteur de l'exercice en cours, à écrire — et ce même scooter au registre, amorti sous
   le barème : 0 débordement aux quatre largeurs.
@@ -6226,6 +6236,83 @@ d'environnement dans la même édition.
   réécrire ; et le barème des revenus 2026, celui de 2025 faute de revalorisation, est à confronter à la
   publication du printemps 2027, aux trois endroits où il vit désormais (voir « le barème kilométrique est
   saisi, jamais deviné »).
+- **LA 2035 SE COMPARE AUX ÉCRITURES, SOURCE PAR SOURCE — LIGNE 26.6, ÉTAPE (C)** (04/10/2026,
+  `lib/concordance2035.ts`, `pages/dossier/ConcordanceCard.tsx`). Depuis l'étape (b), chaque source de la 2035
+  s'écrit au brouillon — les pièces, les mouvements du relevé affectés ou ventilés, les échéances d'emprunt et
+  de cotisation, les dotations, les forfaits —, mais par des gestes « Écrire » répartis dans cinq onglets, et
+  un vérificateur qui additionne le FEC doit retrouver la déclaration signée. **LA 2035 RESTE CALCULÉE DEPUIS
+  LES SOURCES, et c'est un choix** : tirée des écritures, elle dépendrait de ces gestes, et un brouillon en
+  retard donnerait une déclaration fausse sans que rien ne le dise. Comparée à elles, elle dit au contraire ce
+  qui manque au FEC pour la porter. C'est le contrôle de concordance d'une liasse avec sa balance, fait SOURCE
+  PAR SOURCE ET COMPTE PAR COMPTE, au centime : un écart de total ne dit pas où chercher, une source oui.
+  **Le moteur dit d'où vient chaque centime** (`Declaration2035.contributions`) : la source (une pièce, un
+  mouvement, un bien, un véhicule, une échéance de cotisation, la CSG déductible), son poste, sa nature, le
+  compte où son écriture porte le montant — celui de la catégorie, ou le compte fixe d'une dotation (681100),
+  d'un forfait (625110), d'une cotisation (646000), des intérêts ou de l'assurance d'un emprunt (661100,
+  616800) — et ses centimes. Chaque poste EST la somme de ses contributions, et les totaux comme le résultat
+  s'en tirent en centimes entiers.
+  **LA COMPARAISON A TROUVÉ DEUX DÉFAUTS DU MOTEUR, corrigés :**
+  - **un poste que ses avoirs ou ses remboursements faisaient passer sous zéro était retourné en DÉPENSE.**
+    Le moteur prenait la valeur absolue du total : un remboursement de frais bancaires reçu une année sans
+    frais payés diminuait le résultat au lieu de l'augmenter — faux du double de son montant, en silence, et
+    la situation intermédiaire, qui ne retourne rien, disait autre chose sur la même année. Le poste reste
+    négatif sous sa nature, un poste nul n'est plus déclaré, et une CASE négative — le formulaire n'en admet
+    pas, et le PDF l'écrirait avec son signe — est dite à Clôture (« Case négative », `casesNegatives`), à
+    arbitrer avant de signer : un remboursement reçu sans dépense du même poste se rattache le plus souvent à
+    une dépense d'un exercice antérieur. Une case que ses postes ramènent à zéro, ou qu'un poste positif
+    absorbe, ne l'est pas ;
+  - **une pièce payée sur deux exercices se répartissait en virgule flottante** (`montant × part`), quand la
+    génération des écritures répartit des CENTIMES, le dernier morceau prenant le reste : un centime d'écart
+    possible entre la 2035 et le FEC. Les deux passent désormais par `centimesParDate` (lib/rattachement.ts),
+    la même répartition, qui rend aussi à part la part sans date — l'écriture la porte au dépôt, la 2035
+    nulle part.
+  **LA COMPARAISON** (`concordance2035`) range chaque contribution et chaque ligne d'écriture de RÉSULTAT —
+  classes 6 et 7 ; un compte de bilan n'entre pas dans le résultat — sous une clé : la pièce, le mouvement
+  (une échéance de cotisation payée y compris), le bien, le véhicule, l'échéance sans paiement, ou l'écriture
+  elle-même quand rien ne la rattache. Les deux côtés se comparent compte par compte, en EFFET SUR LE
+  RÉSULTAT (une recette l'augmente, une dépense le diminue ; une écriture au crédit d'un compte de résultat
+  l'augmente). Un écart porte son MOTIF, sa phrase et l'onglet où agir : sans écriture (à écrire), écrite
+  dans un autre exercice (à régénérer), montant ou compte différent, catégorie sans compte ou sans poste,
+  échéance sans prélèvement rapproché, rapprochement qui ne s'écrit pas — sa raison reprise, au lieu
+  d'envoyer chercher un prélèvement qui est là —, bien sans nature (son compte 28 n'est pas connu), pièce non
+  validée, facture d'un bien du registre passée en charge, pièce sans date ou sans montant, compte sorti des
+  comptes de résultat, comptée dans un autre exercice, et écriture que rien ne justifie. Les plus gros écarts
+  d'abord.
+  **CE QUI N'EST PAS UN ÉCART, PAR CONSTRUCTION** : la CSG déductible (case BV) n'a pas d'écriture — la
+  CSG-CRDS passe entière au 108000, hors résultat, et seule sa part déductible entre en BV (la présentation
+  relevée sur la 2035 déposée par le cabinet) ; la carte la dit à part. Et un exercice antérieur à l'ouverture
+  d'un dossier repris ne se compare pas : sa comptabilité est celle de l'ancien logiciel.
+  **Un compte partagé entre deux cases se dit aussi** (`comptesPartagesEntreCases`) : quand deux postes de
+  cases différentes passent par le même compte, le FEC en justifie la somme, pas la répartition — donner à
+  ces catégories des comptes distincts.
+  **L'ÉCRAN** : une carte sous le formulaire de chaque exercice de Clôture — en trésorerie seulement, un
+  dossier en engagement n'ayant pas de 2035 —, avec les totaux des deux côtés, la CSG, le décompte par motif
+  et le tableau des écarts, replié au-delà de dix. Clôture lit TOUT le brouillon, une écriture d'un autre
+  exercice disant pourquoi elle manque à celui-ci, et l'ouverture, par `lireTout`, tri total. **Une lecture
+  partielle du brouillon, de l'ouverture ou d'une entrée de la déclaration suspend la conclusion de la carte,
+  et d'elle seule** : « concorde » sur une lecture partielle serait une bonne nouvelle fabriquée, « écart » un
+  faux reproche ; mais la 2035 ne dépend pas des écritures, et son formulaire reste ouvert. Le tableau des
+  écarts se replie en fiches dans une carte étroite (`table-empilable`, voir les conventions) : cinq colonnes
+  dans 330 pixels coupaient les mots en leur milieu, vu sur capture.
+  **Ni la Checklist ni l'assistant ne la portent, et c'est dit plutôt que promis** : la concordance se lit là
+  où l'on signe, et `agent-comptable` ne calcule pas la 2035 — aucun redéploiement.
+  **LATENT, et mesuré** (04/10/2026) : le dossier `test` ne porte aucune écriture, donc sa carte nommera
+  « sans écriture » chaque source que sa 2035 compte, ce qui est vrai ; les trois écritures de la base sont
+  dans un bac à sable abandonné. Le banc de capture sert un brouillon en retard — onze écarts sur le cabinet
+  infirmier, dont une échéance prélevée sans écriture, un rapprochement qui ne s'écrit pas et un forfait à
+  réécrire —, le bien sans nature du dossier assujetti et un exercice antérieur à l'ouverture : 0 débordement
+  aux quatre largeurs.
+  **Quarante-huit mutations, toutes mordent — la première passe en laissait deux en vie**, et les deux
+  accusaient des tests absents, écrits depuis : le résultat tiré de la différence de deux totaux en virgule
+  flottante (0,30 − 0,10 y vaut 0,19999999999999998) et une case que ses postes ramènent à zéro, prise pour
+  négative ; une troisième cible était mal recopiée dans le harnais, et mord une fois corrigée. Parmi elles :
+  la valeur absolue du poste remise (le défaut d'origine), la part sans date comptée, la CSG-CRDS gardée au
+  646000, le reste non reporté sur le dernier centime, chaque motif confondu avec son voisin, le sens d'une
+  écriture inversé, les comptes de bilan comparés, l'ouverture ignorée, la CSG comparée comme une source, chaque
+  câblage de Clôture (la lecture partielle des écritures et de l'ouverture, les pièces validées, les factures
+  des biens) et un tableau qui se replie posé hors de son enveloppe.
+  **CE QUI RESTE** : la 2035 n'est pas TIRÉE des écritures, par choix (voir plus haut) ; l'étape (d), valider
+  un exercice, s'appuiera sur cette concordance.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -7639,7 +7726,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3731 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 3805 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -7669,7 +7756,8 @@ l'écriture d'une échéance de cotisation payée par le relevé et la date à l
 en service et au centime du calcul de la base (`amortissements.ts`), l'écriture d'acquisition d'un bien
 sur le compte de sa nature, ou pourquoi il n'en a pas (`acquisitionsDesBiens`, `ecritures.ts`), l'indemnité
 du barème kilométrique en centimes entiers, au centime du calcul de la base (`baremeKilometrique.ts`), le
-forfait de chaque ligne du cadre 7 et son écriture (`forfaitKilometrique.ts`), et ce que
+forfait de chaque ligne du cadre 7 et son écriture (`forfaitKilometrique.ts`), la concordance de la 2035
+avec les écritures, sur des écritures produites par les vrais générateurs (`concordance2035.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et

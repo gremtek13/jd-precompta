@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { anneeDe, aujourdHuiSql, formatMoney, formatDate } from '../../lib/format'
 import { SUGGESTIONS_COMPTE_PAR_CODE } from '../../lib/ecritures'
@@ -8,10 +8,11 @@ import { calculerDeclaration2035, partCsgNonDeductible, type PartCsgNonDeductibl
 import { dotationDeLExercice } from '../../lib/amortissements'
 import { amortissementsSousLeBareme } from '../../lib/forfaitKilometrique'
 import {
-  CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, doublonFraisVehicules, incoherencesDesCases,
+  CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, casesNegatives, doublonFraisVehicules, incoherencesDesCases,
   valeursDesCases,
 } from '../../lib/cases2035'
 import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
+import { comptesPartagesEntreCases, concordance2035 } from '../../lib/concordance2035'
 import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
 import { immobilisationsSansJustificatif } from '../../lib/controles'
@@ -22,8 +23,8 @@ import { cotisationsComptees } from '../../lib/cotisationRapprochee'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
 import type {
-  Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, ModeComptable, NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier,
-  VentilationBancaire,
+  ANouveau, Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire, ModeComptable, NatureImmobilisation, Piece,
+  ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -31,6 +32,7 @@ import { useAnnee } from '../../context/AnneeContext'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
 import VoletSocialCard from './VoletSocialCard'
+import ConcordanceCard from './ConcordanceCard'
 
 // Palier 5, briques 5 et 6 réunies — postes de la 2035 et clôture brouillon. Regroupe et totalise
 // par poste (recettes, achats, charges sociales, amortissements...) sans jamais calculer d'impôt.
@@ -73,6 +75,11 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   // emprunts : lues en partie, elles ne faussent aucune case, elles taisent seulement ce signal.
   const [natures, setNatures] = useState<NatureImmobilisation[]>([])
   const [naturesIncompletes, setNaturesIncompletes] = useState<string | null>(null)
+  // Le brouillon d'écritures et l'ouverture d'un dossier repris, pour la concordance de la 2035 avec les
+  // écritures. Leur drapeau suspend la CONCORDANCE, pas le formulaire : la 2035 ne dépend pas des écritures.
+  const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
+  const [ouverture, setOuverture] = useState<string | null>(null)
+  const [ecrituresIncompletes, setEcrituresIncompletes] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [postesEdit, setPostesEdit] = useState<Record<string, string>>({})
@@ -108,6 +115,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
     const [
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
+      lectureEcritures, lectureOuverture,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -169,7 +177,22 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         supabase.from('natures_immobilisation').select('*', { count: 'exact' })
           .or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order('id').range(debut, fin),
       ),
+      // TOUT le brouillon, toutes années : la concordance cherche dans un autre exercice l'écriture qui manque à
+      // celui-ci (lib/concordance2035.ts). Tronquée, cette lecture ferait dire « sans écriture » à une source bien
+      // écrite — d'où son drapeau à elle.
+      lireTout<EcritureBrouillon>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
+      ),
+      // L'ouverture d'un dossier repris : un exercice qui la précède est dans la balance reprise, rien n'y est comparé.
+      lireTout<Pick<ANouveau, 'id' | 'date'>>((debut, fin) =>
+        supabase.from('a_nouveaux').select('id, date', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
+      ),
     ])
+    setEcritures(lectureEcritures.lignes)
+    setOuverture(lectureOuverture.lignes[0]?.date ?? null)
+    setEcrituresIncompletes([lectureEcritures, lectureOuverture].find((l) => !l.complete)?.motif ?? null)
     setNatures(lectureNatures.lignes)
     setNaturesIncompletes(lectureNatures.complete ? null : lectureNatures.motif)
     setVentilations(lectureVentilations.lignes)
@@ -344,6 +367,19 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
   const vehiculesNonCalcules = declarations.flatMap((d) =>
     (d.indemnitesKilometriques?.nonCalcules ?? []).map((n) => ({ annee: d.annee, ...n })),
   )
+
+  // LA 2035 SE RETROUVE-T-ELLE DANS LES ÉCRITURES ? Source par source et compte par compte, pour chaque exercice
+  // affiché (lib/concordance2035.ts). La 2035 reste calculée depuis les sources ; la concordance dit ce qui
+  // manque au FEC pour la porter.
+  const idsPiecesValidees = new Set(piecesValidees.map((p) => p.id))
+  const concordances = new Map(declarations.map((d) => [d.annee, {
+    concordance: concordance2035(d, ecritures, { piecesValidees: idsPiecesValidees, piecesImmobilisees: pieceIdsImmobilisees }, ouverture),
+    comptesPartages: comptesPartagesEntreCases(d),
+  }]))
+
+  // UNE CASE NÉGATIVE NE SE DÉPOSE PAS : un poste que ses remboursements font passer sous zéro garde son signe,
+  // et quand il emporte sa case, c'est ici que ça se dit (lib/cases2035.ts, `casesNegatives`).
+  const negatives = declarations.flatMap((d) => casesNegatives(d).map((c) => ({ annee: d.annee, ...c })))
 
   // Verrou posé avant tout `await` — c'est ce qui le rend effectif contre un double clic, là où un
   // `disabled` piloté par un état React laisse passer le second clic (voir ImportDossierModal).
@@ -975,6 +1011,36 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         </div>
       )}
 
+      {negatives.length > 0 && (
+        <div className="card" style={{ marginBottom: 20, borderLeft: '3px solid var(--color-danger)' }}>
+          <h3 style={{ marginTop: 0 }}>Case négative ({negatives.length})</h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            Les avoirs et les remboursements de l’exercice y dépassent ce que la case compte. Le formulaire
+            n’admet pas de montant négatif : un remboursement reçu une année sans dépense du même poste se
+            rattache le plus souvent à une dépense d’un exercice antérieur, et sa place est à arbitrer avant de
+            signer. Le calcul ne le retourne plus en dépense — il le laissait compter deux fois à l’envers.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Exercice</th><th>Case</th><th>Postes</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
+              <tbody>
+                {negatives.map((n) => (
+                  <tr key={`${n.annee}-${n.case.code}`}>
+                    <td>{n.annee}</td>
+                    <td>
+                      <span style={{ fontFamily: 'monospace' }}>{n.case.code}</span>
+                      <span className="muted" style={{ marginLeft: 8 }}>{n.case.libelle}</span>
+                    </td>
+                    <td>{n.postes.join(', ')}</td>
+                    <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums', color: 'var(--color-danger)' }}>{formatMoney(n.montant)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {cloturesInconnues && (
         <p className="error-text">
           {cloturesInconnues} On ne sait donc pas quels exercices sont déjà clôturés : le bouton
@@ -1003,17 +1069,24 @@ export default function ClotureTab({ dossierId, assujettiTva, modeComptable }: {
         <div className="card"><div className="empty-state">Rien à regrouper pour l'instant.</div></div>
       ) : (
         formulaires.map((f) => (
-          <FormulaireAnnuel
-            key={f.declaration.annee}
-            dossierId={dossierId}
-            annee={f.declaration.annee}
-            valeurs={f.valeurs}
-            genere={genere === f.declaration.annee}
-            onTelecharger={() => telechargerFormulaire(f.declaration.annee, f.valeurs)}
-            blocage={lectureIncomplete}
-            cloture={cloturesConnues.has(f.declaration.annee)}
-            onCloturer={() => handleCloturer(f.declaration.annee)}
-          />
+          <Fragment key={f.declaration.annee}>
+            <FormulaireAnnuel
+              dossierId={dossierId}
+              annee={f.declaration.annee}
+              valeurs={f.valeurs}
+              genere={genere === f.declaration.annee}
+              onTelecharger={() => telechargerFormulaire(f.declaration.annee, f.valeurs)}
+              blocage={lectureIncomplete}
+              cloture={cloturesConnues.has(f.declaration.annee)}
+              onCloturer={() => handleCloturer(f.declaration.annee)}
+            />
+            <ConcordanceCard
+              concordance={concordances.get(f.declaration.annee)!.concordance}
+              comptesPartages={concordances.get(f.declaration.annee)!.comptesPartages}
+              lectureIncomplete={lectureIncomplete ?? ecrituresIncompletes}
+              ouverture={ouverture}
+            />
+          </Fragment>
         ))
       )}
     </>

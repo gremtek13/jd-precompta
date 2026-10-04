@@ -1135,3 +1135,185 @@ describe('ClotureTab — l’amortissement d’un véhicule déduit avec le bar�
     expect(screen.queryAllByText(TITRE)).toHaveLength(0)
   })
 })
+
+// LA 2035 SE RETROUVE-T-ELLE DANS LES ÉCRITURES ? (ligne 26.6, étape c — lib/concordance2035.ts). Le calcul est
+// éprouvé à part, sur des écritures produites par les vrais générateurs ; ce qui se joue ici est le CÂBLAGE :
+// que l'écran lise TOUT le brouillon et l'ouverture, qu'il ne conclue pas sur une lecture partielle, et que la
+// carte dise, sous chaque formulaire, ce qui manque au FEC et où le corriger.
+describe('ClotureTab — la concordance de la 2035 avec les écritures', () => {
+  const ECRITURE = {
+    id: 'e1', dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-10', compte: '606100',
+    libelle: 'FOURNISSEUR', montant: 120, sens: 'debit', statut: 'proposee', created_at: '2025-03-11T09:00:00Z',
+    immobilisation_id: null, vehicule_id: null,
+  }
+  const CONCORDE = /La 2035 se retrouve dans les écritures de l’exercice/
+  const carte = async () => within((await screen.findByText(/Concordance avec les écritures — 2025/)).closest('.card') as HTMLElement)
+
+  function poserSansCotisation() {
+    poser({}, [], [])
+    faux.parTable.ecritures_brouillon = [ECRITURE]
+    faux.parTable.a_nouveaux = []
+  }
+
+  it('dit que la 2035 se retrouve dans les écritures quand le brouillon la porte', async () => {
+    poserSansCotisation()
+    monter()
+    const c = await carte()
+    c.getByText(CONCORDE)
+    expect(c.queryAllByText(/ne se retrouve/)).toHaveLength(0)
+  })
+
+  it('nomme la source qui manque au brouillon, et l’onglet où l’écrire', async () => {
+    poserSansCotisation()
+    faux.parTable.ecritures_brouillon = []
+    monter()
+    const c = await carte()
+    c.getByText(/1 source de la 2035 ne se retrouve pas dans les écritures de l’exercice/)
+    c.getByText('1 sans écriture')
+    c.getByText('FOURNISSEUR')
+    c.getByText(/aucune écriture ne la porte : à écrire/)
+    c.getByText('Écritures')
+    expect(c.queryAllByText(CONCORDE)).toHaveLength(0)
+  })
+
+  it('lit TOUT le brouillon : une écriture d’un autre exercice dit pourquoi elle manque à celui-ci', async () => {
+    poserSansCotisation()
+    faux.parTable.ecritures_brouillon = [{ ...ECRITURE, date: '2024-12-30' }]
+    monter()
+    const c = await carte()
+    c.getByText(/Son écriture est datée de 2024, la 2035 la compte cet exercice : à régénérer/)
+  })
+
+  it('dit pourquoi la 2035 ne compte pas une écriture : sa pièce n’est pas validée', async () => {
+    // Le câblage du contexte : seules les pièces VALIDÉES que l'écran a lues font foi.
+    poserSansCotisation()
+    faux.parTable.ecritures_brouillon = [ECRITURE, { ...ECRITURE, id: 'e2', piece_id: 'p-attente', libelle: 'EN ATTENTE' }]
+    monter()
+    const c = await carte()
+    c.getByText('1 pièce non validée')
+    c.getByText(/Écriture d’une pièce qui n’est pas validée/)
+    c.getByText('Justificatifs')
+  })
+
+  it('dit pourquoi la 2035 ne compte pas une écriture : c’est la facture d’un bien du registre', async () => {
+    // La 2035 compte le bien par sa dotation ; sa facture passée en charge est la charge de trop.
+    poserSansCotisation()
+    faux.parTable.immobilisations = [immobilisation({ nature_id: 'n1' })]
+    monter()
+    const c = await carte()
+    c.getByText(/1 facture d’un bien du registre/)
+    c.getByText(/Écriture en charge de la facture d’un bien du registre/)
+  })
+
+  it('ne conclut pas sur une lecture partielle des écritures, et laisse remplir le formulaire', async () => {
+    // La 2035 ne dépend pas des écritures : leur lecture partielle suspend la concordance, pas la déclaration.
+    poserSansCotisation()
+    faux.muetApresParTable = { ecritures_brouillon: 0 }
+    monter()
+    const c = await carte()
+    c.getByText(/La concordance ne peut pas conclure/)
+    expect(c.queryAllByText(CONCORDE)).toHaveLength(0)
+    expect(c.queryAllByText(/ne se retrouve/)).toHaveLength(0)
+    const bouton = await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(bouton.hasAttribute('disabled')).toBe(false)
+  })
+
+  it('ne conclut pas sur une lecture partielle de l’ouverture', async () => {
+    poserSansCotisation()
+    faux.parTable.a_nouveaux = [{ id: 'an', date: '2026-01-01' }]
+    faux.muetApresParTable = { a_nouveaux: 0 }
+    monter()
+    const c = await carte()
+    c.getByText(/La concordance ne peut pas conclure/)
+  })
+
+  it('ne conclut pas non plus quand une entrée de la déclaration est lue en partie', async () => {
+    poserSansCotisation()
+    faux.muetApresParTable = { pieces: 0 }
+    monter()
+    const c = await carte()
+    c.getByText(/La concordance ne peut pas conclure/)
+  })
+
+  it('ne compare rien d’un exercice antérieur à l’ouverture d’un dossier repris', async () => {
+    poserSansCotisation()
+    faux.parTable.ecritures_brouillon = []
+    faux.parTable.a_nouveaux = [{ id: 'an', date: '2026-01-01' }]
+    monter()
+    const c = await carte()
+    c.getByText(/Exercice antérieur à l'ouverture du dossier \(01\/01\/2026\)/)
+    expect(c.queryAllByText(/ne se retrouve/)).toHaveLength(0)
+  })
+
+  it('dit la CSG déductible sans en faire un écart', async () => {
+    // 3 000 € prélevés, dont 970 € de CSG-CRDS au 108000 : 2 030 € au 646000, et 680 € déductibles en BV.
+    poser({}, [], [cotisation('c1', { montant_verse: null, montant_appele: 3000, montant_csg_crds: 970 })])
+    faux.parTable.lignes_bancaires = [{
+      id: 'l-c', dossier_id: 'dossier-de-test', date: '2025-03-07', libelle: 'PRLV URSSAF', montant: -3000, statut: 'rapprochee',
+      piece_id: null, cotisation_id: 'c1', categorie_id: null, taux_tva: null, prelevement_personnel: false,
+      source_fichier: null, libelle_brut: null, created_at: '2025-03-08T09:00:00Z',
+    }]
+    const cotis = (o: Record<string, unknown>) => ({ ...ECRITURE, piece_id: null, ligne_bancaire_id: 'l-c', date: '2025-03-07', libelle: 'PRLV URSSAF', ...o })
+    faux.parTable.ecritures_brouillon = [
+      ECRITURE,
+      cotis({ id: 'e2', compte: '646000', montant: 2030 }),
+      cotis({ id: 'e3', compte: '108000', montant: 970 }),
+      cotis({ id: 'e4', compte: '512000', montant: 3000, sens: 'credit' }),
+    ]
+    faux.parTable.a_nouveaux = []
+    monter()
+    const c = await carte()
+    c.getByText(CONCORDE)
+    c.getByText(/La CSG déductible \(680,00\s€, case BV\) n’a pas d’écriture, et ce n’est pas un écart/)
+  })
+
+  it('ne s’affiche pas pour un dossier tenu en engagement, qui ne produit pas de 2035', async () => {
+    poserSansCotisation()
+    render(
+      <AnneeProvider defaut={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modeComptable="engagement" />
+      </AnneeProvider>,
+    )
+    await screen.findByText(/La 2035 n’est pas produite pour ce dossier/)
+    expect(screen.queryAllByText(/Concordance avec les écritures/)).toHaveLength(0)
+  })
+})
+
+// UNE CASE NÉGATIVE NE SE DÉPOSE PAS (lib/cases2035.ts) : un poste que ses remboursements font passer sous zéro
+// garde son signe — le moteur le retournait en dépense —, et quand il emporte sa case, Clôture le dit.
+describe('ClotureTab — une case négative', () => {
+  const FRAIS = {
+    id: 'cat-frais', dossier_id: null, code: 'frais_bancaires', libelle: 'Frais bancaires', ordre: 7,
+    compte_comptable: '627000', poste_2035: 'Frais financiers',
+  }
+  const mouvement = (o: Record<string, unknown>) => ({
+    id: 'l-geste', dossier_id: 'dossier-de-test', date: '2025-06-10', libelle: 'GESTE COMMERCIAL', montant: 3, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: 'cat-frais', taux_tva: null, prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: '2025-06-11T09:00:00Z', ...o,
+  })
+
+  it('la dit, avec ses postes, et ne compte plus le remboursement en dépense', async () => {
+    // 3 € remboursés, aucun frais payé dans l'exercice : la case BN vaut −3 €, et le résultat gagne 3 €.
+    poser({}, [], [])
+    faux.parTable.categories = [CATEGORIE, FRAIS]
+    faux.parTable.lignes_bancaires = [mouvement({})]
+    monter()
+    const titre = await screen.findByText(/Case négative \(1\)/)
+    // La case et son poste portent ici le même nom : la ligne se lit cellule par cellule.
+    const ligne = within(titre.closest('.card') as HTMLElement).getByText('BN').closest('tr') as HTMLElement
+    const cellules = [...ligne.querySelectorAll('td')].map((td) => td.textContent?.replace(/\s/g, ' '))
+    expect(cellules).toEqual(['2025', 'BNFrais financiers', 'Frais financiers', expect.stringMatching(/^[−-]3,00 €$/)])
+    // 120 € d'achat, 3 € de remboursement : un déficit de 117 €, pas de 123 €.
+    const report = await screen.findByText(/Report sur la déclaration des revenus 2025/)
+    within(report.parentElement!).getByText(/Déficit de 117 € : case 5QE/)
+  })
+
+  it('se tait quand la case reste positive — le garde symétrique', async () => {
+    poser({}, [], [])
+    faux.parTable.categories = [CATEGORIE, FRAIS]
+    faux.parTable.lignes_bancaires = [mouvement({ id: 'l-frais', montant: -8.5 }), mouvement({})]
+    monter()
+    await screen.findByRole('button', { name: /Remplir le formulaire officiel/ })
+    expect(screen.queryAllByText(/Case négative/)).toHaveLength(0)
+  })
+})

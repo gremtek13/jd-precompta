@@ -1,4 +1,5 @@
 import { seuilAlignement } from './alignementBanque'
+import { dateLocaleDe } from './format'
 import type { LigneBancaire, ModeComptable, Piece, ReglementGroupe } from './types'
 
 // LA DATE À LAQUELLE UNE PIÈCE COMPTE, DANS UNE COMPTABILITÉ DE TRÉSORERIE (BNC, déclaration 2035).
@@ -207,4 +208,50 @@ export function partDeLAnnee(rattachements: readonly Rattachement[], annee: numb
 // sélecteur d'exercice.
 export function anneesDesRattachements(rattachements: readonly Rattachement[]): number[] {
   return [...new Set(rattachements.flatMap((r) => (r.date ? [Number(r.date.slice(0, 4))] : [])))]
+}
+
+// UNE PIÈCE AU CENTIME, DATE PAR DATE, TELLE QUE SON ÉCRITURE LA PORTE. Les rattachements ci-dessus, réunis
+// par date — la part que rien ne date reportée à la date du DÉPÔT, le repli de l'écriture —, puis le
+// montant réparti au centime selon leurs parts, le dernier morceau prenant l'arrondi pour que la somme
+// reste celle de la pièce, signe compris.
+//
+// UN SEUL CALCUL POUR L'ÉCRITURE ET POUR LA 2035 (lib/ecritures.ts, lib/declaration2035.ts). La 2035
+// additionnait `montant × part` sans arrondir, l'écriture des centimes répartis : sur une pièce payée sur
+// deux exercices, les deux pouvaient différer d'un centime dans chacun, et la concordance de la 2035 avec
+// les écritures (lib/concordance2035.ts) aurait signalé un écart que personne ne peut corriger.
+//
+// `centimesSansDate` : ce que l'écriture porte à la date du dépôt faute de mieux — ni paiement ni date de
+// pièce. La 2035 ne le compte dans aucun exercice (`exclusions.sansDate`). Une part datée qui tombe le jour
+// même du dépôt partage sa fraction avec lui ; la part sans date en est alors tirée au prorata.
+export interface MontantDate {
+  date: string
+  centimes: number
+  centimesSansDate: number
+}
+
+export function centimesParDate(
+  piece: Pick<Piece, 'date_piece' | 'montant_ttc' | 'type_piece' | 'created_at'>,
+  montant: number,
+  paiements: readonly Pick<LigneBancaire, 'date' | 'montant'>[],
+): MontantDate[] {
+  const reunies: { date: string; part: number; partSansDate: number }[] = []
+  for (const r of rattachementsTresorerie(piece, paiements)) {
+    const date = r.date ?? dateLocaleDe(piece.created_at)
+    const partSansDate = r.date === null ? r.part : 0
+    const meme = reunies.find((x) => x.date === date)
+    if (meme) {
+      meme.part += r.part
+      meme.partSansDate += partSansDate
+    } else reunies.push({ date, part: r.part, partSansDate })
+  }
+  const total = Math.round(montant * 100)
+  const morceaux = reunies.map((f) => Math.round(total * f.part))
+  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
+  return reunies.map((f, i) => ({
+    date: f.date,
+    centimes: morceaux[i],
+    centimesSansDate: f.partSansDate === 0 ? 0
+      : f.partSansDate === f.part ? morceaux[i]
+      : Math.round(morceaux[i] * (f.partSansDate / f.part)),
+  }))
 }
