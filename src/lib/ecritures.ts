@@ -109,7 +109,9 @@ export function lignesChargeProduitPourPiece(
     : []
 
   return charges.flatMap((f, i) => {
-    const lignes = [ligne(f.date, cible.compte, f.centimes / 100)]
+    // Une part nulle ne fait pas de ligne, la charge comme sa TVA : la base refuse un montant nul, et l'insertion d'un
+    // seul tenant de la génération emporterait tout le lot avec elle.
+    const lignes = f.centimes !== 0 ? [ligne(f.date, cible.compte, f.centimes / 100)] : []
     // Rien à ventiler : la charge est ce qui a été payé, face au mouvement bancaire. Une part de TVA
     // arrondie à zéro sur un paiement partiel ne fait pas de ligne vide.
     if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i].centimes / 100))
@@ -284,7 +286,11 @@ export function piecesAComptabiliser(
   acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
 ): PieceAComptabiliser[] {
   return piecesValidees.flatMap((piece): PieceAComptabiliser[] => {
-    if (piece.montant_ttc == null) return []
+    // UNE PIÈCE À 0 € N'A RIEN À COMPTABILISER. La base refuse une ligne nulle (`ecritures_brouillon_montant_positif`) :
+    // comptée ici, elle restait « sans écriture » pour toujours — dans Écritures, où l'insertion d'un seul tenant de
+    // « Générer les écritures manquantes » emportait tout le lot avec elle, et à la validation de son exercice, que
+    // cette pièce bloquait sans qu'aucune génération puisse jamais l'écrire.
+    if (piece.montant_ttc == null || piece.montant_ttc === 0) return []
     const acquisition = acquisitions.get(piece.id)
     if (acquisition) return acquisition.compte ? [{ piece, compte: acquisition.compte, immobilisation: true }] : []
     const compte = categories.find((c) => c.id === piece.categorie_id)?.compte_comptable

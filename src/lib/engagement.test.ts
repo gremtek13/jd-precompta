@@ -107,6 +107,16 @@ describe('lignesFactureEngagement — la facture, à sa date, contre le compte d
     expect(lignes.some((l) => l.compte === COMPTE_FOURNISSEURS)).toBe(false)
   })
 
+  // Une ligne nulle ne s'écrit pas : la base la refuse (ecritures_brouillon_montant_positif), et l'insertion d'un seul
+  // tenant de la génération emporterait tout le lot avec elle.
+  it('n’écrit aucune ligne nulle — une facture à 0 € n’écrit rien, un hors taxe lu à zéro laisse sa TVA', () => {
+    expect(lignesFactureEngagement('d1', piece({ montant_ht: 0, montant_tva: 0, montant_ttc: 0 }), cible(ACHATS), true, '455000')).toEqual([])
+    expect(lignesFactureEngagement('d1', piece({ montant_ht: 0, montant_tva: 20, montant_ttc: 20 }), cible(ACHATS), true, '455000')).toEqual([
+      expect.objectContaining({ compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
+      expect.objectContaining({ compte: COMPTE_FOURNISSEURS, sens: 'credit', montant: 20 }),
+    ])
+  })
+
   it('inverse les sens d’un avoir, les montants restant positifs', () => {
     const avoir = piece({ montant_ht: -100, montant_tva: -20, montant_ttc: -120 })
     const lignes = lignesFactureEngagement('d1', avoir, cible(ACHATS), true, '455000')

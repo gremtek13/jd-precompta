@@ -142,7 +142,9 @@ export function lignesFactureEngagement(
   const lignes = [ligne(base, sensPiece, cible.compte, tva ? montantRetenu(piece, assujettiTva)! : ttc)]
   if (tva) lignes.push(ligne(base, sensPiece, compteTvaDe(piece, cible.immobilisation), tva))
   lignes.push(ligne(base, inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation), ttc))
-  return lignes
+  // Une ligne nulle ne s'écrit pas : la base la refuse, et l'insertion d'un seul tenant de la génération emporterait
+  // tout le lot avec elle.
+  return lignes.filter((l) => l.montant !== 0)
 }
 
 // L'écriture d'un RÈGLEMENT, datée du mouvement bancaire et portant son identifiant sur ses deux

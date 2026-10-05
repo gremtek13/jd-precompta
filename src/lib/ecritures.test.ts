@@ -156,6 +156,16 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
     expect(lignes.filter((l) => l.compte === ACHATS).map((l) => [l.date, l.montant])).toEqual([['2025-12-28', 16.67], ['2026-01-05', 16.66]])
   })
 
+  // Une part nulle ne fait pas de ligne : la base refuse un montant nul (ecritures_brouillon_montant_positif), et
+  // l'insertion d'un seul tenant de la génération emporterait tout le lot avec elle.
+  it('n’écrit pas de charge nulle — un hors taxe lu à zéro ne laisse que sa TVA', () => {
+    const p = piece({ montant_ht: 0, montant_tva: 20, montant_ttc: 20 })
+    expect(lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [])).toEqual([
+      expect.objectContaining({ compte: COMPTE_TVA_DEDUCTIBLE, sens: 'debit', montant: 20 }),
+    ])
+    expect(lignesPourPiece('d1', p, cible(ACHATS), true, [], ENGAGEMENT).every((l) => l.montant > 0)).toBe(true)
+  })
+
   it('ne fait pas de ligne de TVA vide quand sa part s’arrondit à zéro', () => {
     const p = piece({ date_piece: '2025-12-20', montant_ht: 1, montant_tva: 0.01, montant_ttc: 1.01 })
     const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -0.5 })])
@@ -363,6 +373,14 @@ describe('piecesAComptabiliser', () => {
       piece({ id: 'sans-montant', montant_ttc: null }),
     ]
     expect(piecesAComptabiliser(ecartees, cats, new Map())).toEqual([])
+  })
+
+  // Une pièce à 0 € : la base refuse une ligne nulle, donc rien ne pourrait jamais l'écrire — comptée ici, elle restait
+  // « sans écriture » pour toujours, et bloquait la validation de son exercice.
+  it('écarte une pièce à 0 €, en charge comme en bien du registre', () => {
+    const zero = piece({ id: 'zero', montant_ht: 0, montant_tva: 0, montant_ttc: 0 })
+    expect(piecesAComptabiliser([zero], cats, new Map())).toEqual([])
+    expect(piecesAComptabiliser([zero], cats, new Map([['zero', acq('218300')]]))).toEqual([])
   })
 
   // L'ÉCRITURE D'ACQUISITION (ligne 26.6, étape b) : la facture d'un bien est un actif, pas une charge.
