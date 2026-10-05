@@ -11,7 +11,7 @@ import {
 //
 // Les montants sont l'EFFET SUR LE RÉSULTAT : une recette positive, une dépense négative. C'est ce qui permet
 // de comparer une pièce, un mouvement et une dotation dans une même colonne sans convention par ligne.
-export default function ConcordanceCard({ concordance: c, comptesPartages, lectureIncomplete, ouverture }: {
+export default function ConcordanceCard({ concordance: c, comptesPartages, lectureIncomplete, ouverture, figePar }: {
   concordance: Concordance2035
   comptesPartages: readonly ComptePartage[]
   // Non nul quand les écritures ou les entrées de la 2035 n'ont pas été lues en entier : la carte ne conclut
@@ -19,6 +19,11 @@ export default function ConcordanceCard({ concordance: c, comptesPartages, lectu
   // reproche — une source bien écrite dont l'écriture n'a pas été lue.
   lectureIncomplete: string | null
   ouverture: string | null
+  // L'exercice validé qui fige celui-ci, dit avec les mots de la base (lib/validationExercice.ts, `exerciceQuiFige`) —
+  // nul quand il est ouvert. Figé, ni ses sources ni ses écritures ne changent plus : un écart recalculé aujourd'hui vient
+  // d'une catégorie qui a changé de compte ou de poste depuis la validation, ou du calcul, et rien ne s'y corrige plus. La
+  // carte le dit, sans la liste des écarts ni leur « Où agir », qui appelleraient un geste que la base refuse.
+  figePar: string | null
 }) {
   const couleur = lectureIncomplete || !c.concorde ? 'var(--color-warning)' : 'var(--color-primary)'
   return (
@@ -40,7 +45,9 @@ export default function ConcordanceCard({ concordance: c, comptesPartages, lectu
           <p style={{ marginTop: -4 }}>
             {c.concorde
               ? 'La 2035 se retrouve dans les écritures de l’exercice, source par source et compte par compte, au centime.'
-              : `${c.ecarts.length} source${c.ecarts.length > 1 ? 's' : ''} de la 2035 ne se ${c.ecarts.length > 1 ? 'retrouvent' : 'retrouve'} pas dans les écritures de l’exercice : le FEC ne porterait pas la déclaration telle qu’elle est calculée.`}
+              : figePar
+                ? `${figePar} : ni ses sources ni ses écritures ne changent plus. Recalculée aujourd’hui, la comparaison trouve ${c.ecarts.length} écart${c.ecarts.length > 1 ? 's' : ''} — une catégorie a changé de compte ou de poste depuis la validation, ou le calcul a évolué. Rien ne s’y corrige plus : la 2035 qui fait foi est celle qui a été validée.`
+                : `${c.ecarts.length} source${c.ecarts.length > 1 ? 's' : ''} de la 2035 ne se ${c.ecarts.length > 1 ? 'retrouvent' : 'retrouve'} pas dans les écritures de l’exercice : le FEC ne porterait pas la déclaration telle qu’elle est calculée.`}
           </p>
           <div className="table-scroll">
             <table>
@@ -75,10 +82,10 @@ export default function ConcordanceCard({ concordance: c, comptesPartages, lectu
               déductible entre dans la 2035. Elle sépare les deux résultats par construction.
             </p>
           )}
-          {c.ecarts.length > 0 && <Ecarts concordance={c} />}
+          {c.ecarts.length > 0 && !figePar && <Ecarts concordance={c} />}
         </>
       )}
-      {!lectureIncomplete && !c.anterieurALOuverture && comptesPartages.length > 0 && (
+      {!lectureIncomplete && !c.anterieurALOuverture && !figePar && comptesPartages.length > 0 && (
         <p className="muted" style={{ marginBottom: 0 }}>
           {comptesPartages.map((p) => (
             <span key={p.compte} style={{ display: 'block' }}>
