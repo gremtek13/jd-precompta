@@ -1,6 +1,7 @@
-import { ajouterJours, aujourdHuiSql, cleFournisseur, dateLocaleDe } from './format'
-import type { Categorie, Immobilisation, LigneBancaire, Piece } from './types'
-import { ecartAvecBanque, type EcartBanque } from './alignementBanque'
+import { ajouterJours, aujourdHuiSql, cleFournisseur, dateLocaleDe, formatMoney } from './format'
+import type { Categorie, Immobilisation, LigneBancaire, ModeComptable, Piece } from './types'
+import { soldeDesPaiements } from './alignementBanque'
+import type { PaiementsDesPieces } from './rattachement'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
 // où ces règles vivent, utilisés à la fois là où ils bloquent une action (Écritures, Clôture) et dans
@@ -427,43 +428,91 @@ export function mouvementsRapprochesSansObjet(lignes: LigneBancaire[]): LigneBan
   return lignes.filter(mouvementRapprocheSansObjet)
 }
 
-// UNE PIÈCE RAPPROCHÉE D'UN MOUVEMENT D'UN AUTRE MONTANT — le reste de la décision « la banque
-// fait foi » (23/09/2026, choix du cabinet). Sous le seuil, `reglementBanque` ALIGNE la pièce et il
-// n'y a plus d'écart à signaler ; au-dessus, on ne touche à rien et c'est ici que ça se dit.
+// UNE PIÈCE PAYÉE EN PARTIE — le reste de la décision « la banque fait foi » (23/09/2026, choix du cabinet).
+// Sous le seuil, `reglementBanque` ALIGNE la pièce sur son paiement et il n'y a plus d'écart à signaler ;
+// au-dessus, on ne touche à rien et c'est ici que ça se dit.
 //
-// CE QUE ÇA COÛTE, ET POURQUOI ALIGNER SERAIT PIRE QUE SE TAIRE : un écart large est presque
-// toujours un paiement PARTIEL ou un règlement GROUPÉ. Écraser la pièce enregistrerait alors une
-// facture de 1 000 € comme une dépense de 500 €, sur une pièce déjà validée, et le montant d'origine
-// serait perdu. On signale, on ne corrige pas — le parti pris de `doublonFraisVehicules`.
+// CE QUE ÇA COÛTE, ET POURQUOI ALIGNER SERAIT PIRE QUE SE TAIRE : un écart large est presque toujours un
+// paiement PARTIEL. Écraser la pièce enregistrerait une facture de 1 000 € comme une dépense de 500 €, sur une
+// pièce déjà validée, et le montant d'origine serait perdu. On signale, on ne corrige pas — le parti pris de
+// `doublonFraisVehicules`.
 //
-// ET L'ÉCART NE SE VOIT NULLE PART AILLEURS TANT QUE LES ÉCRITURES N'ONT PAS ÉTÉ GÉNÉRÉES :
-// `synchroniserContrepartieBanque` écrit la contrepartie sur `Math.abs(ligne.montant)` et la charge
-// sur le TTC de la pièce, donc le groupe cesse d'être équilibré et `groupesDesequilibres` finit par
-// le dire. Mais elle sort AVANT d'écrire quoi que ce soit tant que la pièce n'a pas sa ligne de
-// charge (catégorie sans compte, « Générer les écritures » pas encore lancé) — et le menu
-// « Associer à… » de Banque est un SCORE, pas un filtre : rien n'empêche de relier une pièce de
-// 1 000 € à un mouvement de 500 €.
+// L'ÉCART SE JUGE SUR LE TOTAL PAYÉ DE LA PIÈCE (`soldeDesPaiements`), PAS MOUVEMENT PAR MOUVEMENT. Le contrôle
+// d'avant comparait chaque mouvement rapproché à sa pièce : une facture réglée par un acompte puis par la part
+// d'un virement groupé portait deux « écarts » alors qu'elle était payée, et la validation de son exercice
+// se refusait ; la part d'un virement groupé, elle, n'était jamais regardée. Le trop-payé a son propre contrôle,
+// `piecesPayeesEnTrop` (lib/reglementGroupe.ts).
 //
-// Seules les pièces FOURNIES sont examinées : une pièce hors du jeu chargé n'est pas une anomalie
-// mais un artefact de filtrage, exactement la règle posée pour `rupturesPisteAudit`.
-export interface EcartRapprochement {
-  ligne: LigneBancaire
-  piece: Piece
-  ecart: EcartBanque
+// EN TRÉSORERIE SEULEMENT. Son écriture porte la charge entière face à la banque payée : un reste au-delà du
+// seuil la laisse déséquilibrée — le FEC la refuse, la validation de l'exercice aussi —, et la 2035 compte ce
+// reste à la date de facture, ce qui n'est qu'une supposition (`rattachementsTresorerie`). En ENGAGEMENT, une
+// facture payée en partie est une dette ou une créance qui court encore : chaque écriture s'équilibre seule, et
+// le reste vit au 401 ou au 411 — ce n'est pas une anomalie.
+//
+// ET L'ÉCART NE SE VOIT NULLE PART AILLEURS TANT QUE LES ÉCRITURES N'ONT PAS ÉTÉ GÉNÉRÉES : le déséquilibre
+// n'existe qu'une fois la charge écrite, et le menu « Associer à… » de Banque est un SCORE, pas un filtre —
+// rien n'empêche de relier une pièce de 1 000 € à un mouvement de 500 €.
+//
+// Seules les pièces FOURNIES sont examinées, et sur leurs paiements LUS : sur une lecture partielle du relevé
+// ou des parts, un paiement non lu ferait passer une pièce réglée pour payée en partie — l'appelant se tait
+// alors.
+export interface PiecePayeeEnPartie<P> {
+  piece: P
+  paye: number
+  reste: number
 }
 
-export function rapprochementsEcartImportant(lignes: LigneBancaire[], pieces: Piece[]): EcartRapprochement[] {
-  const parId = new Map(pieces.map((p) => [p.id, p]))
-  const resultats: EcartRapprochement[] = []
-  for (const ligne of lignes) {
-    if (ligne.statut !== 'rapprochee' || !ligne.piece_id) continue
-    const piece = parId.get(ligne.piece_id)
-    if (!piece) continue
-    const ecart = ecartAvecBanque(piece, ligne)
-    if (!ecart || ecart.ecart === 0 || ecart.alignable) continue
-    resultats.push({ ligne, piece, ecart })
+export function piecesPayeesEnPartie<P extends Pick<Piece, 'id' | 'devise' | 'montant_ttc'>>(
+  pieces: readonly P[],
+  paiements: PaiementsDesPieces,
+  mode: ModeComptable,
+): PiecePayeeEnPartie<P>[] {
+  if (mode === 'engagement') return []
+  const resultat: PiecePayeeEnPartie<P>[] = []
+  for (const piece of pieces) {
+    const solde = soldeDesPaiements(piece, paiements.get(piece.id) ?? [])
+    if (solde && solde.reste > solde.seuil) resultat.push({ piece, paye: solde.paye, reste: solde.reste })
   }
-  return resultats
+  return resultat
+}
+
+// Les pièces qu'un mouvement paie : la sienne pour un rapprochement, celles de ses parts pour un virement qui en
+// règle plusieurs — une part dont la pièce a été supprimée ne paie plus rien, ce que `reglementsGroupesIncoherents`
+// dit. Un mouvement qui n'est pas rapproché n'en paie aucune.
+export function piecesPayeesPar(
+  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'reglement_groupe'>,
+  partsDuMouvement: readonly { piece_id: string | null }[],
+): string[] {
+  if (ligne.statut !== 'rapprochee') return []
+  if (ligne.reglement_groupe) return partsDuMouvement.flatMap((r) => (r.piece_id ? [r.piece_id] : []))
+  return ligne.piece_id ? [ligne.piece_id] : []
+}
+
+// CE QUE BANQUE DIT DES PIÈCES QU'UN MOUVEMENT PAIE, dans la liste comme dans la fiche du mouvement : une
+// pastille par sorte d'écart, jamais une par paiement. Sur un virement qui règle plusieurs pièces, elle dit
+// combien sont concernées, et la fiche dit lesquelles. `restes` et `enTrop` : pièce → montant, tirés de
+// `piecesPayeesEnPartie` et de `piecesPayeesEnTrop` — les mêmes que la Checklist, pour que les deux écrans
+// disent la même chose au même moment.
+export function pastillesDePaiement(
+  pieceIds: readonly string[],
+  restes: ReadonlyMap<string, number>,
+  enTrop: ReadonlyMap<string, number>,
+  groupe: boolean,
+): string[] {
+  const avecReste = pieceIds.filter((id) => restes.has(id))
+  const avecTrop = pieceIds.filter((id) => enTrop.has(id))
+  const pastilles: string[] = []
+  if (avecReste.length === 1) {
+    pastilles.push(`Reste ${formatMoney(restes.get(avecReste[0])!)} à payer sur ${groupe ? 'une pièce' : 'la pièce'}`)
+  } else if (avecReste.length > 1) {
+    pastilles.push(`Reste à payer sur ${avecReste.length} pièces`)
+  }
+  if (avecTrop.length === 1) {
+    pastilles.push(`${groupe ? 'Une pièce payée' : 'Pièce payée'} ${formatMoney(enTrop.get(avecTrop[0])!)} de trop`)
+  } else if (avecTrop.length > 1) {
+    pastilles.push(`${avecTrop.length} pièces payées de trop`)
+  }
+  return pastilles
 }
 
 // UNE IMMOBILISATION DONT LE JUSTIFICATIF A ÉTÉ SUPPRIMÉ CONTINUE D'AMORTIR — la TROISIÈME clé en

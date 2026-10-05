@@ -4,12 +4,11 @@ import { IconAttention, IconChevron, IconCoche, IconPrecedent } from '../../comp
 import {
   candidatsCotisations, candidatsPieces, ecartEnJours, libelleExploitable, sensCoherent, tiersConfirmeParBanque,
 } from '../../lib/appariementBanque'
-import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { natureDuCompte, refusAffectation, sensInhabituel } from '../../lib/affectationBanque'
 import {
   justificatifPossible, motifPropose, mouvementsCouverts, normaliserPourRegle, refusMotif, regleApplicable, sensDuMouvement,
 } from '../../lib/reglesAffectation'
-import { mouvementRapprocheSansObjet } from '../../lib/controles'
+import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesPar } from '../../lib/controles'
 import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_EXPLOITANT, COMPTE_INTERETS_EMPRUNT, LIBELLES_COMPTES } from '../../lib/comptes'
 import { ouvrirJustificatif } from '../../lib/depot'
 import {
@@ -173,6 +172,10 @@ interface FicheMouvementProps {
   paiements: PaiementsDesPieces
   onReglerEnGroupe: (parts: PartReglement[]) => void
   onRetirerReglementGroupe: () => void
+  // Pièce → ce qu'il reste à payer sur elle, et pièce → ce qu'elle a été payée de trop : jugés sur le TOTAL de
+  // ses paiements, calculés une fois par l'onglet pour que la liste et la fiche disent la même chose.
+  restesAPayer: ReadonlyMap<string, number>
+  payeesEnTrop: ReadonlyMap<string, number>
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -459,7 +462,7 @@ export default function FicheMouvement({
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
-  reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe,
+  reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
@@ -609,12 +612,8 @@ export default function FicheMouvement({
     ? ecritureDeLaCotisation(ligne, cotisationPayee, modeComptable).filter((l) => l.compte !== COMPTE_BANQUE)
     : []
   // Seconde copie de la pastille de la liste, gardée par son propre test : le panneau est l'écran où
-  // l'on ARBITRE, donc celui où l'écart doit se lire.
-  const ecart = (() => {
-    if (!piecePayee || ligne.statut !== 'rapprochee') return null
-    const e = ecartAvecBanque(piecePayee, ligne)
-    return e && e.ecart > 0 && !e.alignable ? e : null
-  })()
+  // l'on ARBITRE, donc celui où l'écart doit se lire. Jugé sur le total payé de chaque pièce.
+  const pastillesPaiement = pastillesDePaiement(piecesPayeesPar(ligne, reglements), restesAPayer, payeesEnTrop, ligne.reglement_groupe)
 
   const piecesAuChoix = aTraiter
     ? pieces.filter((p) => !piecesRapprochees.has(p.id))
@@ -898,7 +897,7 @@ export default function FicheMouvement({
             </span>
           )}
           {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && <span className="badge badge-ok">Rapproché</span>}
-          {ecart && <span className="badge badge-danger">Écart de {formatMoney(ecart.ecart)} avec la pièce</span>}
+          {pastillesPaiement.map((texte) => <span key={texte} className="badge badge-danger">{texte}</span>)}
           {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
         </div>
@@ -1248,6 +1247,24 @@ export default function FicheMouvement({
             ) : !reglementsIncomplets && (
               <p className="fiche-mouvement-note">Aucune part lue pour ce mouvement.</p>
             )}
+            {/* La pastille dit combien de ses pièces restent payées en partie ou l'ont été de trop ; ici, lesquelles. */}
+            {reglements.flatMap((r) => {
+              if (!r.piece_id) return []
+              const reste = restesAPayer.get(r.piece_id)
+              const enTrop = payeesEnTrop.get(r.piece_id)
+              return [
+                ...(reste != null ? [(
+                  <p key={`${r.id}-reste`} className="fiche-mouvement-alerte">
+                    {libellePieceReglee(r)} : reste {formatMoney(reste)} à payer — rapproche le paiement qui manque, ou vérifie le montant de la pièce.
+                  </p>
+                )] : []),
+                ...(enTrop != null ? [(
+                  <p key={`${r.id}-trop`} className="fiche-mouvement-alerte">
+                    {libellePieceReglee(r)} : payée {formatMoney(enTrop)} de trop — un paiement en double ?
+                  </p>
+                )] : []),
+              ]
+            })}
             {/* Ce qui ne justifie plus rien, dit ici — c'est l'écran où l'on arbitre ce mouvement. */}
             {incoherencesGroupe.map((i) => (
               <p key={i.raison} className="fiche-mouvement-alerte">

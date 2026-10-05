@@ -55,6 +55,42 @@ export function ecartAvecBanque(piece: Piece, ligne: Pick<LigneBancaire, 'montan
   return { montantPiece, montantBanque, ecart, seuil, alignable: ecart > 0 && ecart <= seuil }
 }
 
+// CE QUE LES PAIEMENTS D'UNE PIÈCE LAISSENT À PAYER, ou ont payé de trop. L'écart se juge sur le TOTAL des
+// paiements de la pièce — ses mouvements rapprochés et les parts des virements groupés qui la règlent
+// (`paiementsDesPieces`) —, jamais mouvement par mouvement : une facture de 1 000 € réglée par un acompte de
+// 500 € puis par la part d'un virement n'a aucun écart, alors que chacun de ses deux paiements en a un de
+// 500 €. Comparer chaque mouvement à la pièce criait deux fois sur une pièce réglée, et refusait la validation
+// de son exercice.
+export interface SoldeDesPaiements {
+  montantPiece: number
+  paye: number
+  // Au centime et signé : positif, ce qui reste à payer ; négatif, ce qui a été payé de trop.
+  reste: number
+  seuil: number
+}
+
+// `null` quand la question ne se pose pas : une pièce en devise (son montant en euros n'est qu'un provisoire au
+// cours de la BCE, et l'écart de change ferait passer un règlement complet pour partiel — la règle de
+// `ecartAvecBanque`), un montant non lu, ou aucun paiement : la pièce n'est pas payée en partie, elle n'est pas
+// payée du tout, ce que disent d'autres contrôles.
+export function soldeDesPaiements(
+  piece: Pick<Piece, 'devise' | 'montant_ttc'>,
+  paiements: readonly { montant: number }[],
+): SoldeDesPaiements | null {
+  if (piece.devise && piece.devise !== DEVISE_PIVOT) return null
+  if (piece.montant_ttc == null) return null
+  // En centimes entiers : sommés en flottants, trois paiements de 0,10 € ne feraient pas 0,30 €.
+  const payeCentimes = paiements.reduce((s, p) => s + Math.round(Math.abs(p.montant) * 100), 0)
+  if (payeCentimes === 0) return null
+  const pieceCentimes = Math.round(Math.abs(piece.montant_ttc) * 100)
+  return {
+    montantPiece: pieceCentimes / 100,
+    paye: payeCentimes / 100,
+    reste: (pieceCentimes - payeCentimes) / 100,
+    seuil: seuilAlignement(piece.montant_ttc),
+  }
+}
+
 // Réécrit les trois montants sur le débit réel, en conservant la PROPORTION de TVA que le document
 // annonce — même règle que `reglerSurMontantReel` pour les devises, et pour la même raison : c'est
 // le taux lu sur la facture qui est juste, pas un taux qu'on recalculerait depuis un montant arrondi.

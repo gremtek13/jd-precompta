@@ -547,44 +547,147 @@ describe('BanqueTab — un mouvement rapproché qui ne désigne plus rien', () =
 
 // LA BANQUE FAIT FOI, MAIS SOUS UN SEUIL (décision du cabinet, 23/09/2026). Sous le seuil la pièce
 // est ALIGNÉE au rapprochement, donc il ne reste aucun écart à montrer ; au-dessus on ne touche à
-// rien — un écart large est presque toujours un paiement partiel ou groupé — et c'est cette pastille
-// qui le dit.
+// rien — un écart large est presque toujours un paiement partiel — et c'est cette pastille qui le dit.
 //
-// Aucun test de `src/lib` ne peut le voir : `ecartAvecBanque` est juste, c'est son CÂBLAGE qui
-// décide de ce que l'opérateur lit. Et rien d'autre ne le dirait tant que les écritures ne sont pas
-// générées : `synchroniserContrepartieBanque` sort avant d'écrire quoi que ce soit tant que la pièce
-// n'a pas sa ligne de charge, donc `groupesDesequilibres` reste muet.
-describe('BanqueTab — un rapprochement dont le montant ne correspond pas', () => {
-  it("affiche l'écart, dans la liste ET dans le panneau", async () => {
+// JUGÉ SUR LE TOTAL PAYÉ DE LA PIÈCE, jamais mouvement par mouvement : la pastille d'avant comparait chaque
+// mouvement à sa pièce, et criait deux fois sur une facture réglée en deux fois.
+//
+// Aucun test de `src/lib` ne peut voir son CÂBLAGE, qui décide de ce que l'opérateur lit. Et rien d'autre ne
+// le dirait tant que les écritures ne sont pas générées : le déséquilibre n'existe qu'une fois la charge écrite.
+describe('BanqueTab — une pièce payée en partie, ou de trop', () => {
+  const RESTE = /Reste .*500,00.*à payer sur la pièce/
+
+  it("affiche le reste à payer, dans la liste ET dans le panneau", async () => {
     reinitialiser()
     faux.pieces = [pieceDeTest({ montant_ttc: 1000 })]
     faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1', montant: -500 })]
     rendre()
 
     await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
-    await screen.findByText(/Écart de .*500,00.*avec la pièce/)
+    await screen.findByText(RESTE)
 
     // LE PANNEAU EST UNE SECONDE COPIE, et il faut l'OUVRIR : une assertion restée sur la liste
     // laisserait le panneau mentir tout seul, et la mutation qui ne corrige qu'un des deux sites
     // passerait au vert.
     await act(async () => { screen.getByText('PRLV SEPA FOURNISSEUR').click() })
-    expect(screen.queryAllByText(/Écart de .*500,00.*avec la pièce/)).toHaveLength(2)
+    expect(screen.queryAllByText(RESTE)).toHaveLength(2)
   })
 
-  // GARDE SYMÉTRIQUE — sans elle, « l'écran signale l'écart » serait satisfait par un écran qui
-  // crie sur TOUS les rapprochements, y compris les exacts et ceux que le seuil absorbe.
-  it('se tait sur un rapprochement exact et sur un écart sous le seuil', async () => {
+  // LE CAS QUI A FAIT RÉÉCRIRE CETTE PASTILLE : un acompte rapproché de la pièce, puis le solde réglé par la part
+  // d'un virement groupé. Chacun des deux paiements s'écarte de 500 € de la pièce ; leur total la règle.
+  it('se tait sur une pièce réglée en deux fois', async () => {
     reinitialiser()
-    faux.pieces = [pieceDeTest({ montant_ttc: 100 })]
+    faux.pieces = [pieceDeTest({ montant_ttc: 1000 })]
+    faux.lignes = [
+      ligneDeTest({ id: 'ligne-1', statut: 'rapprochee', piece_id: 'piece-1', montant: -500, libelle: 'ACOMPTE' }),
+      ligneDeTest({ id: 'ligne-2', statut: 'rapprochee', montant: -500, reglement_groupe: true, libelle: 'SOLDE GROUPE' }),
+    ]
+    faux.reglements = [{ id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-2', piece_id: 'piece-1', montant: -500, created_at: '2025-06-02T10:00:00Z' }]
+    rendre()
+
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await screen.findByText('SOLDE GROUPE')
+    expect(screen.queryAllByText(/à payer sur|de trop/)).toHaveLength(0)
+
+    await act(async () => { screen.getByText('ACOMPTE').click() })
+    expect(within(volet()).queryAllByText(/à payer sur|de trop/)).toHaveLength(0)
+  })
+
+  // GARDE SYMÉTRIQUE — sans elle, « l'écran signale le reste » serait satisfait par un écran qui crie sur TOUS
+  // les rapprochements, y compris les exacts et ceux que le seuil absorbe.
+  it('se tait sur un paiement exact et sur un écart sous le seuil', async () => {
+    reinitialiser()
+    faux.pieces = [pieceDeTest({ montant_ttc: 100 }), pieceDeTest({ id: 'piece-2', montant_ttc: 100 })]
     faux.lignes = [
       ligneDeTest({ id: 'ligne-1', statut: 'rapprochee', piece_id: 'piece-1', montant: -100 }),
-      ligneDeTest({ id: 'ligne-2', statut: 'rapprochee', piece_id: 'piece-1', montant: -100.03, libelle: 'PRLV AVEC FRAIS' }),
+      ligneDeTest({ id: 'ligne-2', statut: 'rapprochee', piece_id: 'piece-2', montant: -99.97, libelle: 'PRLV AVEC ESCOMPTE' }),
     ]
     rendre()
 
     await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
-    await screen.findByText('PRLV AVEC FRAIS')
-    expect(screen.queryAllByText(/Écart de/)).toHaveLength(0)
+    await screen.findByText('PRLV AVEC ESCOMPTE')
+    expect(screen.queryAllByText(/à payer sur|de trop/)).toHaveLength(0)
+  })
+
+  // Le trop-payé a son point dans la Checklist (`piecesPayeesEnTrop`) : il a donc sa pastille, dans les deux modèles.
+  it('dit une pièce payée de trop, dans la liste ET dans le panneau, en engagement aussi', async () => {
+    for (const modele of [TRESORERIE, ENGAGEMENT]) {
+      reinitialiser()
+      faux.pieces = [pieceDeTest({ montant_ttc: 100 })]
+      faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1', montant: -150 })]
+      const { unmount } = rendre(modele)
+
+      await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+      await screen.findByText(/Pièce payée .*50,00.*de trop/)
+      await act(async () => { screen.getByText('PRLV SEPA FOURNISSEUR').click() })
+      expect(screen.queryAllByText(/Pièce payée .*50,00.*de trop/)).toHaveLength(2)
+      expect(screen.queryAllByText(/à payer sur/)).toHaveLength(0)
+      unmount()
+    }
+  })
+
+  // En engagement, une facture payée en partie est une dette qui court encore, au 401 : rien à signaler.
+  it('se tait en engagement sur une pièce payée en partie', async () => {
+    reinitialiser()
+    faux.pieces = [pieceDeTest({ montant_ttc: 1000 })]
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1', montant: -500 })]
+    rendre(ENGAGEMENT)
+
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await screen.findByText('PRLV SEPA FOURNISSEUR')
+    expect(screen.queryAllByText(/à payer sur/)).toHaveLength(0)
+  })
+
+  // Sur un virement qui règle plusieurs pièces, la liste dit combien restent payées en partie ou l'ont été de
+  // trop ; la fiche, lesquelles. Ici trois pièces : l'une payée en partie, l'autre exactement, la dernière de trop.
+  it('dit, sur un virement groupé, les pièces payées en partie ou de trop', async () => {
+    reinitialiser()
+    faux.pieces = [
+      pieceDeTest({ montant_ttc: 1000, tiers: 'Grossiste' }),
+      pieceDeTest({ id: 'piece-2', montant_ttc: 100, tiers: 'Papeterie' }),
+      pieceDeTest({ id: 'piece-3', montant_ttc: 50, tiers: 'Imprimeur' }),
+    ]
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', montant: -680, reglement_groupe: true, libelle: 'VIREMENT GROUPE' })]
+    faux.reglements = [
+      { id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-1', piece_id: 'piece-1', montant: -500, created_at: '2025-06-02T10:00:00Z' },
+      { id: 'g2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-1', piece_id: 'piece-2', montant: -100, created_at: '2025-06-02T10:00:00Z' },
+      { id: 'g3', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-1', piece_id: 'piece-3', montant: -80, created_at: '2025-06-02T10:00:00Z' },
+    ]
+    rendre()
+
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await screen.findByText(/Reste .*500,00.*à payer sur une pièce/)
+    expect(screen.getByText(/Une pièce payée .*30,00.*de trop/)).toBeTruthy()
+
+    await act(async () => { screen.getByText('VIREMENT GROUPE').click() })
+    expect(within(volet()).getByText(/Reste .*500,00.*à payer sur une pièce/)).toBeTruthy()
+    const restes = within(volet()).getAllByText(/: reste .*à payer — rapproche le paiement qui manque/)
+    expect(restes).toHaveLength(1)
+    expect(restes[0].textContent).toMatch(/Grossiste/)
+    const trops = within(volet()).getAllByText(/: payée .*30,00.*de trop — un paiement en double \?/)
+    expect(trops).toHaveLength(1)
+    expect(trops[0].textContent).toMatch(/Imprimeur/)
+  })
+
+  // Un paiement non lu ferait paraître une pièce réglée payée en partie : le reste se tait sur le relevé ou les
+  // parts lus en partie — et le bandeau de lecture partielle dit pourquoi.
+  it('se tait sur un relevé ou des parts lus en partie', async () => {
+    for (const table of ['lignes_bancaires', 'reglements_groupes']) {
+      reinitialiser()
+      faux.pieces = [pieceDeTest({ montant_ttc: 1000 })]
+      faux.lignes = [
+        ligneDeTest({ id: 'ligne-1', statut: 'rapprochee', piece_id: 'piece-1', montant: -500, libelle: 'ACOMPTE' }),
+        ligneDeTest({ id: 'ligne-2', statut: 'rapprochee', montant: -500, reglement_groupe: true, libelle: 'SOLDE GROUPE' }),
+      ]
+      faux.reglements = [{ id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ligne-2', piece_id: 'piece-1', montant: -500, created_at: '2025-06-02T10:00:00Z' }]
+      faux.muet = { [table]: table === 'lignes_bancaires' ? 1 : 0 }
+      const { unmount } = rendre()
+
+      await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+      await screen.findAllByText(/n.ont pas pu être lu/)
+      expect(screen.queryAllByText(/à payer sur/)).toHaveLength(0)
+      unmount()
+    }
   })
 })
 
