@@ -132,6 +132,11 @@ interface FicheMouvementProps {
   // trésorerie — elle peut alors empêcher l'écriture (lib/cotisationRapprochee.ts).
   modeComptable: ModeComptable
   piecesRapprochees: ReadonlySet<string>
+  // En trésorerie, les pièces qui portent elles-mêmes une écriture d'un exercice validé — vide en engagement (voir
+  // BanqueTab, `piecesHorsRapprochement`). Elles ne se proposent, ne se choisissent ni ne se règlent plus : leur écriture
+  // s'équilibre sans paiement, et un rapprochement la redaterait. Une telle pièce du même montant est NOMMÉE, avec le
+  // geste qui convient au remboursement d'une note de frais.
+  piecesFigees: ReadonlySet<string>
   cotisationsRapprochees: ReadonlySet<string>
   recurrence: RecurrenceMouvement | null
   navigation: NavigationMouvement
@@ -458,7 +463,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 
 export default function FicheMouvement({
   ligne, figeePar, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
-  piecesRapprochees, cotisationsRapprochees, recurrence, navigation, occupe,
+  piecesRapprochees, piecesFigees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
@@ -585,15 +590,25 @@ export default function FicheMouvement({
     ? regles.find((r) => r.motif === motifNormalise && r.sens === sens) ?? null
     : null
   const regleBloquee = retenirRegle && (!!refusRegle || !!reglesIncompletes || !sens)
+  // Ce qu'un rapprochement ne peut plus toucher : les pièces payées, et celles qu'un exercice validé a figées (voir
+  // `piecesFigees`).
+  const horsRapprochement: ReadonlySet<string> = piecesFigees.size === 0
+    ? piecesRapprochees
+    : new Set([...piecesRapprochees, ...piecesFigees])
   // Un paiement dont la pièce est peut-être au dossier : l'affecter compterait la dépense deux fois
   // (voir `justificatifPossible`). Dit avant le clic, jamais refusé : c'est l'opérateur qui sait.
   const justificatifAttendu = aTraiter
-    ? justificatifPossible(ligne, { pieces, piecesRapprochees, cotisations, cotisationsRapprochees })
+    ? justificatifPossible(ligne, { pieces, piecesRapprochees: horsRapprochement, cotisations, cotisationsRapprochees })
     : null
 
   // Même précédence que le rapprochement automatique : une pièce avant une échéance, une échéance
   // avant une récurrence. Ce n'est pas un arbitrage entre égaux mais une règle de l'écran.
-  const piecesCandidates = aTraiter ? candidatsPieces(ligne, piecesValidees, piecesRapprochees) : []
+  const piecesCandidates = aTraiter ? candidatsPieces(ligne, piecesValidees, horsRapprochement) : []
+  // La pièce figée qu'on aurait proposée : elle ne se rapproche plus, et la fiche le dit au lieu de la taire — un mouvement
+  // du même montant qu'une note de frais d'un exercice validé en est souvent le remboursement.
+  const figeeDeMemeMontant = aTraiter && piecesFigees.size > 0
+    ? candidatsPieces(ligne, piecesValidees.filter((p) => piecesFigees.has(p.id)), piecesRapprochees)[0] ?? null
+    : null
   const echeancesCandidates = aTraiter && piecesCandidates.length === 0
     ? candidatsCotisations(ligne, cotisations, cotisationsRapprochees)
     : []
@@ -616,7 +631,7 @@ export default function FicheMouvement({
   const pastillesPaiement = pastillesDePaiement(piecesPayeesPar(ligne, reglements), restesAPayer, payeesEnTrop, ligne.reglement_groupe)
 
   const piecesAuChoix = aTraiter
-    ? pieces.filter((p) => !piecesRapprochees.has(p.id))
+    ? pieces.filter((p) => !horsRapprochement.has(p.id))
         .sort((a, b) => scoreCorrespondance(a.montant_ttc, a.date_piece, ligne) - scoreCorrespondance(b.montant_ttc, b.date_piece, ligne))
     : []
   const cotisationsAuChoix = aTraiter
@@ -631,6 +646,14 @@ export default function FicheMouvement({
   // vides ne disent pas si le dossier n'a rien à associer, ou si tout est déjà rapproché ailleurs.
   const aucuneReference = pieces.length === 0 && cotisations.length === 0
   const toutDejaRapproche = !aucuneReference && piecesAuChoix.length === 0 && cotisationsAuChoix.length === 0
+  // Une pièce figée n'est pas « déjà rapprochée » : quand il en reste, la phrase le dit.
+  const figeesSansPaiement = pieces.some((p) => piecesFigees.has(p.id) && !piecesRapprochees.has(p.id))
+  // Les pièces qu'un règlement groupé peut offrir : pas une pièce figée, sauf si ce règlement la porte déjà — ses parts
+  // doivent rester lisibles.
+  const dansCeReglement = new Set(reglements.map((r) => r.piece_id))
+  const piecesReglables = piecesFigees.size === 0
+    ? pieces
+    : pieces.filter((p) => !piecesFigees.has(p.id) || dansCeReglement.has(p.id))
   const unePropositionExiste = piecesCandidates.length > 0 || echeancesCandidates.length > 0
 
   // La liste des catégories et son bouton. Le refus que la base opposerait est dit AVANT le clic, et
@@ -996,6 +1019,12 @@ export default function FicheMouvement({
         {aTraiter && !unePropositionExiste && !recurrent && !plausible && (
           <p className="fiche-mouvement-vide">Aucune pièce proposée pour ce mouvement.</p>
         )}
+        {figeeDeMemeMontant && (
+          <p className="fiche-mouvement-note">
+            {`${nomDeLaPiece(figeeDeMemeMontant)} (${formatDate(figeeDeMemeMontant.date_piece)}, ${formatMoney(figeeDeMemeMontant.montant_ttc)}), du même montant, porte une écriture d’un exercice validé : elle ne se rapproche plus d’aucun mouvement.`}
+            {figeeDeMemeMontant.type_piece === 'note_frais' && ' Si ce mouvement rembourse cette note de frais, classe-le en virement personnel.'}
+          </p>
+        )}
 
         {aTraiter && (
           <section className="fiche-mouvement-section">
@@ -1051,8 +1080,11 @@ export default function FicheMouvement({
             )}
             {toutDejaRapproche && (
               <p className="fiche-mouvement-note">
-                Toutes les pièces et échéances de ce dossier sont déjà rapprochées d’un autre mouvement — si
-                aucune ne correspond en réalité, vérifie un éventuel rapprochement fait par erreur ailleurs.
+                {figeesSansPaiement
+                  ? 'Les pièces et échéances de ce dossier sont déjà rapprochées d’un autre mouvement, ou figées par un ' +
+                    'exercice validé — si aucune ne correspond en réalité, vérifie un éventuel rapprochement fait par erreur ailleurs.'
+                  : 'Toutes les pièces et échéances de ce dossier sont déjà rapprochées d’un autre mouvement — si aucune ne ' +
+                    'correspond en réalité, vérifie un éventuel rapprochement fait par erreur ailleurs.'}
               </p>
             )}
           </section>
@@ -1063,7 +1095,7 @@ export default function FicheMouvement({
             <h3>Plusieurs pièces</h3>
             {reglementDeplie ? (
               <FormulaireReglementGroupe
-                ligne={ligne} pieces={pieces} paiements={paiements} partsExistantes={[]} suspension={reglementsIncomplets}
+                ligne={ligne} pieces={piecesReglables} paiements={paiements} partsExistantes={[]} suspension={reglementsIncomplets}
                 occupe={occupe} verbe="Régler ces pièces" onRegler={onReglerEnGroupe}
               />
             ) : (
@@ -1280,7 +1312,7 @@ export default function FicheMouvement({
             </p>
             {!reglementsIncomplets && !fige && (modificationReglementDepliee ? (
               <FormulaireReglementGroupe
-                ligne={ligne} pieces={pieces} paiements={paiements} partsExistantes={reglements} suspension={reglementsIncomplets}
+                ligne={ligne} pieces={piecesReglables} paiements={paiements} partsExistantes={reglements} suspension={reglementsIncomplets}
                 occupe={occupe} verbe="Enregistrer le règlement" onRegler={onReglerEnGroupe}
               />
             ) : (

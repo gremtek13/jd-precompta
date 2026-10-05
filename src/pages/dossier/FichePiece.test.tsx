@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import FichePiece from './FichePiece'
 import { AVERTISSEMENT_PAIEMENT_DEFAIT } from '../../lib/controles'
@@ -421,5 +421,87 @@ describe('FichePiece — proposer une catégorie', () => {
   it('ne s’offre pas sur une pièce en cours de création', () => {
     monter()
     expect(boutonProposer()).toBeNull()
+  })
+})
+
+// UNE PIÈCE QU'UN EXERCICE VALIDÉ A FIGÉE (lib/validationExercice.ts, `piecesFigees`). La base refuse d'en changer la
+// date, le tiers, le type, la catégorie, les montants ou le fichier, et de la supprimer (`garder_piece_validee`) ; ses
+// notes et son sous-dossier restent libres. La fiche le dit, grise le reste, n'offre ni la suppression ni le brouillon,
+// et n'envoie QUE ces deux champs — renvoyer tous les champs tels quels prendrait le risque d'un refus pour rien.
+describe('FichePiece — une pièce figée par un exercice validé', () => {
+  const SOUS_DOSSIERS = [{ id: 'sd-1', dossier_id: 'd1', nom: 'Véhicule', ordre: 1, created_at: '2026-01-01T09:00:00Z' }]
+  function monterFigee(figeePar: string | null = "L'exercice 2025 est validé", o: Partial<Piece> = {}) {
+    faux.updates = []
+    faux.suppressions = []
+    const fermee = vi.fn()
+    const enregistree = vi.fn()
+    render(
+      <FichePiece
+        dossierId="d1"
+        categories={CATEGORIES}
+        sousDossiers={SOUS_DOSSIERS}
+        tiersCategories={[]}
+        tiersCategoriesCabinet={[]}
+        tiersConnus={[]}
+        piece={pieceDeTest({ categorie_id: null, ...o })}
+        commentaires={[]}
+        onClose={fermee}
+        onSaved={enregistree}
+        onCommentaireAjoute={() => {}}
+        onCommentaireSupprime={() => {}}
+        figeePar={figeePar}
+      />,
+    )
+    return { fermee, enregistree }
+  }
+  const champ = (id: string) => document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(`#${id}`)!
+
+  it('le dit, grise ce que la base refuserait, et laisse libres les notes et le sous-dossier', () => {
+    monterFigee()
+    expect(screen.getByText(/L'exercice 2025 est validé : cette pièce justifie une écriture validée\. Sa date, son tiers, son type, sa catégorie, ses montants et son fichier ne changent plus/)).toBeTruthy()
+    for (const id of ['file', 'date', 'type', 'tiers', 'categorie', 'ht', 'tva', 'ttc']) expect(champ(id).disabled, id).toBe(true)
+    for (const id of ['notes', 'sousDossier']) expect(champ(id).disabled, id).toBe(false)
+    expect(screen.queryByRole('button', { name: /Supprimer/ })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Enregistrer brouillon' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Valider' })).toBeNull()
+    expect((screen.getByRole('button', { name: /Extraire automatiquement/ }) as HTMLButtonElement).disabled).toBe(true)
+    // Ni la proposition d'une catégorie : elle ne pourrait pas se poser.
+    expect(boutonProposer()).toBeNull()
+  })
+
+  it('« Enregistrer » n’envoie que les notes et le sous-dossier, puis ferme la fiche', async () => {
+    const { fermee, enregistree } = monterFigee()
+    fireEvent.change(champ('notes'), { target: { value: 'Repas avec un confrère' } })
+    fireEvent.change(champ('sousDossier'), { target: { value: 'sd-1' } })
+    await act(async () => { screen.getByRole('button', { name: 'Enregistrer' }).click() })
+    expect(faux.updates).toEqual([{ notes: 'Repas avec un confrère', sous_dossier_id: 'sd-1' }])
+    expect(enregistree).toHaveBeenCalledTimes(1)
+    expect(fermee).toHaveBeenCalledTimes(1)
+  })
+
+  it('trois envois rapprochés n’enregistrent qu’une fois', async () => {
+    monterFigee()
+    const bouton = screen.getByRole('button', { name: 'Enregistrer' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.updates).toHaveLength(1)
+  })
+
+  it('une pièce en devise figée ne se reconvertit plus — non figée, si', () => {
+    const enDevise: Partial<Piece> = { devise: 'USD', montant_devise: 120, montant_ttc: 100, taux_change: 1.2, conversion_source: 'bce' }
+    monterFigee(undefined, enDevise)
+    expect((screen.getByRole('button', { name: /Convertir au taux du/ }) as HTMLButtonElement).disabled).toBe(true)
+    cleanup()
+    monterFigee(null, enDevise)
+    expect((screen.getByRole('button', { name: /Convertir au taux du/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  // Le garde symétrique : la même pièce, que rien ne fige, garde tous ses gestes.
+  it('non figée, la même pièce se modifie, se valide et se supprime', () => {
+    monterFigee(null)
+    expect(screen.queryByText(/cette pièce justifie une écriture validée/)).toBeNull()
+    for (const id of ['date', 'type', 'tiers', 'categorie', 'ttc']) expect(champ(id).disabled, id).toBe(false)
+    expect(screen.getByRole('button', { name: /Supprimer/ })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Valider' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Enregistrer brouillon' })).toBeTruthy()
   })
 })

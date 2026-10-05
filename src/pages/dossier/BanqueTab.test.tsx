@@ -84,6 +84,10 @@ const faux = vi.hoisted(() => ({
   connexionBancaire: null as null | { connexion: Record<string, unknown>; recuperation: Record<string, unknown> },
   // Les règles « toujours ignorer » du dossier : elles décident du statut ÉCRIT à l'import d'un mouvement.
   reglesIgnorees: [] as RegleBancaireIgnoree[],
+  // Les écritures VALIDÉES et les biens que lit `lirePiecesFigees` : ce qu'un exercice validé a figé. Servies à part
+  // des écritures que la contrepartie banque relit, sur le filtre que la lecture pose (`statut=validee`).
+  ecrituresValidees: [] as { id: string; statut: string; date: string; piece_id: string | null; immobilisation_id: string | null }[],
+  immobilisations: [] as { id: string; piece_id: string | null }[],
 }))
 
 // BanqueTab importe aussi lib/pdfText (import de relevé PDF), qui charge pdf.js — celui-ci touche au
@@ -151,7 +155,8 @@ vi.mock('../../lib/supabase', async () => {
                   : table === 'emprunts' ? faux.emprunts
                     : table === 'ventilations_bancaires' ? faux.ventilations
                       : table === 'reglements_groupes' ? faux.reglements
-                        : table === 'regles_bancaires_ignorees' ? faux.reglesIgnorees : []
+                        : table === 'regles_bancaires_ignorees' ? faux.reglesIgnorees
+                          : table === 'immobilisations' ? faux.immobilisations : []
           const rendu = toutes.slice(debut, Math.min(fin + 1, muet))
           return Promise.resolve({ data: rendu, error: null, count: toutes.length }).then(suite)
         }
@@ -202,6 +207,12 @@ vi.mock('../../lib/supabase', async () => {
         }
         if (table === 'regles_bancaires_ignorees') {
           return Promise.resolve({ data: faux.reglesIgnorees, error: null, count: faux.reglesIgnorees.length }).then(suite)
+        }
+        if (table === 'ecritures_brouillon' && operation === 'select' && filtres.includes('statut=validee')) {
+          return Promise.resolve({ data: faux.ecrituresValidees, error: null, count: faux.ecrituresValidees.length }).then(suite)
+        }
+        if (table === 'immobilisations') {
+          return Promise.resolve({ data: faux.immobilisations, error: null, count: faux.immobilisations.length }).then(suite)
         }
         if (table === 'ecritures_brouillon') {
           if (operation === 'delete') faux.suppressionsEcritures.push([...filtres])
@@ -418,6 +429,8 @@ function reinitialiser() {
   faux.reglements = []
   faux.connexionBancaire = null
   faux.reglesIgnorees = []
+  faux.ecrituresValidees = []
+  faux.immobilisations = []
 }
 
 // L'onglet dans la coque du panneau de droite, comme dans l'application : sans elle,
@@ -3967,5 +3980,216 @@ describe('BanqueTab — un exercice validé', () => {
     expect(within(volet()).getByText(/ne se modifie plus/)).toBeTruthy()
     expect(within(volet()).queryByRole('button', { name: 'Annuler le rapprochement' })).toBeNull()
     expect(within(volet()).queryByText(/« Annuler le rapprochement » retire aussi son écriture/)).toBeNull()
+  })
+})
+
+// UNE PIÈCE QU'UN EXERCICE VALIDÉ A FIGÉE (lib/piecesFigeesLecture.ts). En TRÉSORERIE, une pièce qui porte elle-même une
+// écriture validée s'équilibre sans paiement — une note de frais, face au compte de l'exploitant — : la rapprocher la
+// redaterait au paiement, ce que la base refuse, et la 2035 de l'exercice suivant la compterait une seconde fois. Elle
+// n'est donc plus proposée, ni choisie, ni réglée en groupe, et un paiement du même montant ne s'affecte pas en lot. En
+// ENGAGEMENT, sa facture validée se règle normalement. Dans les deux, aucune pièce figée ne s'aligne plus sur la banque.
+describe('BanqueTab — une pièce figée par un exercice validé', () => {
+  const NOTE = pieceDeTest({ id: 'note-1', type_piece: 'note_frais', tiers: 'Restaurant du Port', nom_fichier: 'note.pdf', date_piece: '2025-12-30', montant_ttc: 1000 })
+  const ECRITURE_DE_LA_NOTE = { id: 'ev-note', statut: 'validee', date: '2025-12-30', piece_id: 'note-1', immobilisation_id: null }
+  const FRAIS = categorieDeTest()
+  function preparer({ figee = true, montant = -1000 }: { figee?: boolean; montant?: number } = {}) {
+    reinitialiser()
+    faux.pieces = [NOTE]
+    faux.lignes = [ligneDeTest({ id: 'l-rembt', libelle: 'VIR REMBOURSEMENT FRAIS', date: '2026-01-02', montant })]
+    faux.ecrituresValidees = figee ? [ECRITURE_DE_LA_NOTE] : []
+  }
+  const texte = () => volet().textContent!.replace(/\s/g, ' ')
+  const ligneDuReleve = (libelle: string) =>
+    screen.getAllByText(libelle).find((e) => e.closest('tr')?.classList.contains('clickable'))!.closest('tr')!
+
+  it('en trésorerie, la note figée n’est plus proposée, ni choisie, ni réglée en groupe — et la fiche le dit', async () => {
+    preparer()
+    rendre(TRESORERIE, false, [2025])
+    await ouvrir('VIR REMBOURSEMENT FRAIS')
+    expect(within(volet()).queryByRole('button', { name: 'Associer cette pièce' })).toBeNull()
+    expect(within(volet()).queryByLabelText('Pièce')).toBeNull()
+    expect(texte()).toMatch(/Restaurant du Port \(30\/12\/2025, 1 000,00 €\), du même montant, porte une écriture d’un exercice validé : elle ne se rapproche plus d’aucun mouvement\. Si ce mouvement rembourse cette note de frais, classe-le en virement personnel\./)
+    // « Déjà rapprochées » serait faux : la note n'est payée par rien.
+    expect(texte()).toMatch(/déjà rapprochées d’un autre mouvement, ou figées par un exercice validé/)
+    await act(async () => { within(volet()).getByRole('button', { name: 'Régler plusieurs pièces…' }).click() })
+    const options = [...(within(volet()).getByLabelText('Pièce 1') as HTMLSelectElement).options].map((o) => o.value)
+    expect(options).not.toContain('note-1')
+    // Ni l'avertissement de l'affectation, qui l'appellerait « une pièce qui attend un rapprochement ».
+    expect(texte()).not.toMatch(/attend un rapprochement/)
+    // Ni la liste, ni les lots : pas de suggestion sur la ligne, rien « à trancher », pas de « Tout rapprocher ».
+    expect(ligneDuReleve('VIR REMBOURSEMENT FRAIS').textContent).not.toMatch(/suggestion/)
+    expect(screen.queryByText(/À trancher par l'opérateur/)).toBeNull()
+    expect(screen.queryByRole('button', { name: /Tout rapprocher automatiquement/ })).toBeNull()
+  })
+
+  // Le garde symétrique : la même note, sans exercice validé, est proposée — le jeu la propose bien.
+  it('sans écriture validée, la même note est proposée, et rien n’est dit de la validation', async () => {
+    preparer({ figee: false })
+    rendre(TRESORERIE, false, [2025])
+    await ouvrir('VIR REMBOURSEMENT FRAIS')
+    expect(within(volet()).getByRole('button', { name: 'Associer cette pièce' })).toBeTruthy()
+    expect(texte()).not.toMatch(/exercice validé/)
+    expect(texte()).toMatch(/Une pièce du même montant attend un rapprochement/)
+    expect(ligneDuReleve('VIR REMBOURSEMENT FRAIS').textContent).toMatch(/suggestion/)
+    expect(screen.getByText(/À trancher par l'opérateur/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })).toBeTruthy()
+  })
+
+  it('une pièce figée qui n’est pas une note de frais ne propose pas le virement personnel', async () => {
+    preparer()
+    faux.pieces = [{ ...NOTE, type_piece: 'achat' }]
+    rendre(TRESORERIE, false, [2025])
+    await ouvrir('VIR REMBOURSEMENT FRAIS')
+    expect(texte()).toMatch(/porte une écriture d’un exercice validé : elle ne se rapproche plus d’aucun mouvement\./)
+    expect(texte()).not.toMatch(/classe-le en virement personnel/)
+  })
+
+  it('en engagement, la facture figée se règle — sans s’aligner sur le montant de la banque', async () => {
+    preparer({ montant: -999.99 })
+    faux.majImmediate = true
+    rendre(ENGAGEMENT, false, [2025])
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    await act(async () => { bouton.click() })
+    await waitFor(() => expect(faux.updatesLignes).toEqual([{ statut: 'rapprochee', piece_id: 'note-1' }]))
+    expect(faux.updatesPieces).toEqual([])
+  })
+
+  // Le garde symétrique de l'alignement : la même pièce, non figée, passe au montant de la banque.
+  it('non figée, la même pièce s’aligne sur le montant de la banque', async () => {
+    preparer({ figee: false, montant: -999.99 })
+    faux.majImmediate = true
+    rendre(ENGAGEMENT, false, [2025])
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    await act(async () => { bouton.click() })
+    await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ montant_ttc: 999.99 })]))
+  })
+
+  it('en engagement, l’associer à la main ou la régler en groupe ne l’aligne pas non plus', async () => {
+    preparer({ montant: -999.99 })
+    faux.majImmediate = true
+    rendre(ENGAGEMENT, false, [2025])
+    await ouvrir('VIR REMBOURSEMENT FRAIS')
+    expect(texte()).not.toMatch(/exercice validé/)
+    await act(async () => { within(volet()).getByRole('button', { name: 'Associer cette pièce' }).click() })
+    await waitFor(() => expect(faux.updatesLignes).toEqual([{ statut: 'rapprochee', piece_id: 'note-1' }]))
+    expect(faux.updatesPieces).toEqual([])
+    cleanup()
+
+    // Réglée en groupe avec une autre pièce, dont la part est son seul paiement : c'est le cas où la part l'alignerait.
+    preparer({ montant: -1499.99 })
+    faux.pieces = [NOTE, pieceDeTest({ id: 'piece-autre', tiers: 'Autre', nom_fichier: 'autre.pdf', date_piece: '2025-12-28', montant_ttc: 500 })]
+    rendre(ENGAGEMENT, false, [2025])
+    await ouvrir('VIR REMBOURSEMENT FRAIS')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Régler plusieurs pièces…' }).click() })
+    fireEvent.change(within(volet()).getByLabelText('Pièce 1'), { target: { value: 'note-1' } })
+    fireEvent.change(within(volet()).getByLabelText('Part de la pièce 1'), { target: { value: '999.99' } })
+    fireEvent.change(within(volet()).getByLabelText('Pièce 2'), { target: { value: 'piece-autre' } })
+    await act(async () => { within(volet()).getByRole('button', { name: 'Régler ces pièces' }).click() })
+    await waitFor(() => expect(faux.rpcs.filter((r) => r.nom === 'regler_pieces_par_mouvement')).toHaveLength(1))
+    expect(faux.updatesPieces).toEqual([])
+  })
+
+  it('en trésorerie, une facture figée par le seul bien qu’elle justifie reste proposée, sans s’aligner', async () => {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.pieces = [pieceDeTest({ id: 'facture-bien', tiers: 'Matériel Médical', date_piece: '2025-12-30', montant_ttc: 1000 })]
+    faux.lignes = [ligneDeTest({ id: 'l-bien', libelle: 'PRLV MATERIEL MEDICAL', date: '2026-01-02', montant: -999.99 })]
+    faux.immobilisations = [{ id: 'bien-1', piece_id: 'facture-bien' }]
+    faux.ecrituresValidees = [{ id: 'ev-dotation', statut: 'validee', date: '2025-12-31', piece_id: null, immobilisation_id: 'bien-1' }]
+    rendre(TRESORERIE, false, [2025])
+    const bouton = await screen.findByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ })
+    await act(async () => { bouton.click() })
+    await waitFor(() => expect(faux.updatesLignes).toEqual([{ statut: 'rapprochee', piece_id: 'facture-bien' }]))
+    expect(faux.updatesPieces).toEqual([])
+  })
+
+  it('une lecture partielle des pièces figées le dit, et suspend le rapprochement automatique en trésorerie', async () => {
+    preparer({ figee: false })
+    faux.immobilisations = [{ id: 'bien-1', piece_id: null }, { id: 'bien-2', piece_id: null }]
+    faux.muet = { immobilisations: 1 }
+    rendre(TRESORERIE, false, [2025])
+    expect(await screen.findByText(/Les écritures validées et les immobilisations du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(screen.getByText(/peut donc être proposée au rapprochement : la base refuserait d’en redater les écritures validées/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ }).hasAttribute('disabled')).toBe(true)
+    cleanup()
+
+    // En engagement, la pièce figée se règle de toute façon : le lot reste ouvert, et le bandeau dit l'autre conséquence.
+    preparer({ figee: false })
+    faux.immobilisations = [{ id: 'bien-1', piece_id: null }, { id: 'bien-2', piece_id: null }]
+    faux.muet = { immobilisations: 1 }
+    rendre(ENGAGEMENT, false, [2025])
+    expect(await screen.findByText(/peut donc paraître encore alignable sur le montant de la banque/)).toBeTruthy()
+    expect(screen.getByRole('button', { name: /Tout rapprocher automatiquement \(1\)/ }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('un paiement du même montant qu’une note figée ne s’affecte pas en lot, et le lot dit pourquoi', async () => {
+    preparer()
+    faux.categories = [FRAIS]
+    faux.reglesAffectation = [regleDeTest({ motif: 'remboursement', sens: 'decaissement', categorie_id: 'cat-frais' })]
+    rendre(TRESORERIE, false, [2025])
+    expect(await screen.findByText('Affectations proposées par vos règles (0)')).toBeTruthy()
+    expect(screen.getByText(/1 mouvement à rapprocher plutôt qu'affecter/)).toBeTruthy()
+    expect(screen.getByText(/Une note de frais du même montant, d’un exercice validé, est peut-être remboursée par ce mouvement : à classer en virement personnel, pas à affecter/)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /^Affecter les / })).toBeNull()
+  })
+
+  it('une pièce figée qui n’est pas une note de frais ne retient pas le paiement du lot', async () => {
+    preparer()
+    faux.pieces = [{ ...NOTE, type_piece: 'achat' }]
+    faux.categories = [FRAIS]
+    faux.reglesAffectation = [regleDeTest({ motif: 'remboursement', sens: 'decaissement', categorie_id: 'cat-frais' })]
+    rendre(TRESORERIE, false, [2025])
+    expect(await screen.findByText('Affectations proposées par vos règles (1)')).toBeTruthy()
+    expect(screen.queryByText(/Une note de frais du même montant, d’un exercice validé/)).toBeNull()
+  })
+
+  // « Déjà rapprochées » quand rien n'est figé : la phrase d'avant, sans parler de validation.
+  it('sans pièce figée, la fiche dit « toutes déjà rapprochées », sans parler de validation', async () => {
+    reinitialiser()
+    faux.pieces = [NOTE]
+    faux.lignes = [
+      ligneDeTest({ id: 'l-paie', libelle: 'CB RESTAURANT DU PORT', date: '2025-12-30', montant: -1000, statut: 'rapprochee', piece_id: 'note-1' }),
+      ligneDeTest({ id: 'l-autre', libelle: 'VIR DIVERS', date: '2026-01-02', montant: -50 }),
+    ]
+    rendre(TRESORERIE)
+    await ouvrir('VIR DIVERS')
+    expect(texte()).toMatch(/Toutes les pièces et échéances de ce dossier sont déjà rapprochées d’un autre mouvement — si aucune/)
+    expect(texte()).not.toMatch(/figées par un exercice validé/)
+  })
+
+  // CAS DÉFENSIF, annoncé comme tel : en trésorerie, une pièce figée déjà portée par le règlement groupé d'un mouvement
+  // non figé ne se produit pas (payée en partie dans l'exercice validé, elle en aurait empêché la validation). Si elle
+  // se produisait, modifier le règlement devrait encore la montrer, au lieu de faire repartir sa part sans pièce.
+  it('une pièce figée déjà portée par ce règlement y reste lisible — cas défensif', async () => {
+    reinitialiser()
+    faux.pieces = [
+      NOTE, pieceDeTest({ id: 'piece-autre', tiers: 'Autre', nom_fichier: 'autre.pdf', date_piece: '2025-12-28', montant_ttc: 500 }),
+      { ...NOTE, id: 'note-2', tiers: 'Taxi Bleu', nom_fichier: 'taxi.pdf' },
+    ]
+    faux.lignes = [ligneDeTest({ id: 'l-groupe', libelle: 'VIR GROUPE', date: '2026-01-02', montant: -1500, statut: 'rapprochee', reglement_groupe: true })]
+    faux.reglements = [
+      { id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-groupe', piece_id: 'note-1', montant: -1000, created_at: '2026-01-02T10:00:00Z' },
+      { id: 'g2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-groupe', piece_id: 'piece-autre', montant: -500, created_at: '2026-01-02T10:00:00Z' },
+    ]
+    faux.ecrituresValidees = [ECRITURE_DE_LA_NOTE, { ...ECRITURE_DE_LA_NOTE, id: 'ev-note-2', piece_id: 'note-2' }]
+    rendre(TRESORERIE, false, [2025])
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+    await ouvrir('VIR GROUPE')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Modifier le règlement…' }).click() })
+    const choix = within(volet()).getByLabelText('Pièce 1') as HTMLSelectElement
+    expect(choix.value).toBe('note-1')
+    // Une autre note figée, que ce règlement ne porte pas, ne s'y ajoute pas.
+    expect([...choix.options].map((o) => o.value)).not.toContain('note-2')
+  })
+
+  // Le garde symétrique : sans note figée, la règle le propose.
+  it('sans pièce du même montant, la règle propose le paiement', async () => {
+    preparer()
+    faux.pieces = []
+    faux.categories = [FRAIS]
+    faux.reglesAffectation = [regleDeTest({ motif: 'remboursement', sens: 'decaissement', categorie_id: 'cat-frais' })]
+    rendre(TRESORERIE, false, [2025])
+    expect(await screen.findByText('Affectations proposées par vos règles (1)')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Affecter ce mouvement' })).toBeTruthy()
   })
 })

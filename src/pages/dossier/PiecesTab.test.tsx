@@ -556,3 +556,120 @@ describe('PiecesTab — une pièce réglée par un virement groupé', () => {
     expect(await screen.findByText(/Les listes de référence du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
   })
 })
+
+// UNE PIÈCE QU'UN EXERCICE VALIDÉ A FIGÉE (lib/piecesFigeesLecture.ts) : celle qui porte une écriture validée, ou qui
+// justifie un bien dont une écriture l'est. La base refuse d'en changer autre chose que les notes et le sous-dossier, et
+// de la supprimer (`garder_piece_validee`). L'onglet le dit avant elle : la fiche n'offre que ce qui reste libre, une
+// sélection l'écarte de la suppression, et les lots de catégorisation la laissent.
+describe('PiecesTab — une pièce figée par un exercice validé', () => {
+  const volet = () => screen.getByRole('complementary', { name: 'Panneau contextuel' })
+  async function ouvrir(tiers: string) {
+    const cellule = await screen.findByText(tiers, { selector: 'td' })
+    await act(async () => { fireEvent.click(cellule) })
+  }
+  const validee = (o: { piece_id?: string; immobilisation_id?: string; date?: string }) => ({
+    id: `ev-${o.piece_id ?? o.immobilisation_id}`, statut: 'validee', date: o.date ?? '2025-12-30',
+    piece_id: o.piece_id ?? null, immobilisation_id: o.immobilisation_id ?? null,
+  })
+  const deux = () => [
+    piece({ id: 'p-figee', tiers: 'ALPHA', statut: 'validee', date_piece: '2025-12-30' }),
+    piece({ id: 'p-libre', tiers: 'BETA', statut: 'validee' }),
+  ]
+
+  it('la fiche d’une pièce qui porte une écriture validée le dit, et n’offre que ce qui reste libre', async () => {
+    poser(deux())
+    faux.parTable.ecritures_brouillon = [validee({ piece_id: 'p-figee' })]
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText(/L'exercice 2025 est validé : cette pièce justifie une écriture validée/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Enregistrer' })).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Supprimer' })).toBeNull()
+
+    // Le garde symétrique : la pièce voisine, que rien ne fige, garde tous ses gestes.
+    await ouvrir('BETA')
+    expect(within(volet()).queryByText(/cette pièce justifie une écriture validée/)).toBeNull()
+    expect(within(volet()).getByRole('button', { name: 'Valider' })).toBeTruthy()
+  })
+
+  it('une pièce figée par le seul bien qu’elle justifie l’est aussi', async () => {
+    poser(deux())
+    faux.parTable.immobilisations = [{ id: 'bien-1', piece_id: 'p-figee' }]
+    faux.parTable.ecritures_brouillon = [validee({ immobilisation_id: 'bien-1', date: '2025-12-31' })]
+    monter('toutes')
+    await ouvrir('ALPHA')
+    expect(within(volet()).getByText(/L'exercice 2025 est validé : cette pièce justifie une écriture validée/)).toBeTruthy()
+  })
+
+  it('une sélection écarte la pièce figée, et la confirmation le dit', async () => {
+    poser(deux())
+    faux.parTable.ecritures_brouillon = [validee({ piece_id: 'p-figee' })]
+    let message = ''
+    vi.spyOn(window, 'confirm').mockImplementation((m?: string) => { message = m ?? ''; return true })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    // Les cases des deux lignes, les dernières de l'écran.
+    await act(async () => { fireEvent.click(cases[cases.length - 2]) })
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(message).toMatch(/^Supprimer définitivement 1 pièce\(s\) \?/)
+    expect(message).toMatch(/Une pièce de la sélection justifie une écriture validée : elle ne se supprime plus, et reste\.$/)
+    expect(faux.suppressions).toEqual(['p-libre'])
+  })
+
+  it('une sélection faite de la seule pièce figée ne demande rien, et dit pourquoi', async () => {
+    poser([deux()[0]])
+    faux.parTable.ecritures_brouillon = [validee({ piece_id: 'p-figee' })]
+    const confirmation = vi.spyOn(window, 'confirm').mockReturnValue(true)
+    let alerte = ''
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alerte = String(m ?? '') })
+    monter('toutes')
+    const cases = await screen.findAllByRole('checkbox')
+    await act(async () => { fireEvent.click(cases[cases.length - 1]) })
+    await act(async () => { (await screen.findByRole('button', { name: /Supprimer la sélection/ })).click() })
+
+    expect(alerte).toBe('Cette pièce justifie une écriture validée : elle ne se supprime plus. Une erreur trouvée après la validation se corrige sur l’exercice suivant.')
+    expect(confirmation).not.toHaveBeenCalled()
+    expect(faux.suppressions).toEqual([])
+  })
+
+  const regle = (tiers: string) => ({
+    id: `r-${tiers}`, dossier_id: 'dossier-de-test', tiers_normalise: tiers, categorie_id: 'cat-x', updated_at: '2026-01-01T09:00:00Z',
+  })
+  function sansCategorie(figee: boolean) {
+    poser([
+      piece({ id: 'p-figee', tiers: 'TRANSMEDICAL', statut: 'validee' }),
+      piece({ id: 'p-libre', tiers: 'BOULANGER', statut: 'validee' }),
+    ])
+    faux.parTable.tiers_categories = [regle('transmedical'), regle('boulanger')]
+    if (figee) faux.parTable.ecritures_brouillon = [validee({ piece_id: 'p-figee' })]
+  }
+
+  it('les lots de catégorisation laissent la pièce figée', async () => {
+    sansCategorie(true)
+    monter('toutes')
+    expect(await screen.findByRole('button', { name: 'Appliquer les suggestions (1)' })).toBeTruthy()
+    // La fenêtre de catégorisation par fournisseur ne la montre pas non plus : elle montre l'autre.
+    const avant = { figee: screen.getAllByText(/TRANSMEDICAL/).length, libre: screen.getAllByText(/BOULANGER/).length }
+    await act(async () => { screen.getByRole('button', { name: 'Catégoriser par fournisseur (1)' }).click() })
+    expect(screen.getAllByText(/TRANSMEDICAL/)).toHaveLength(avant.figee)
+    expect(screen.getAllByText(/BOULANGER/).length).toBeGreaterThan(avant.libre)
+  })
+
+  // Le garde symétrique : sans écriture validée, les deux pièces y sont.
+  it('sans écriture validée, les lots comptent les deux pièces', async () => {
+    sansCategorie(false)
+    monter('toutes')
+    expect(await screen.findByRole('button', { name: 'Appliquer les suggestions (2)' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Catégoriser par fournisseur (2)' })).toBeTruthy()
+  })
+
+  it('une lecture partielle des pièces figées le dit', async () => {
+    poser(deux())
+    faux.parTable.immobilisations = [{ id: 'bien-1', piece_id: null }, { id: 'bien-2', piece_id: null }]
+    faux.muetApres = { immobilisations: 1 }
+    monter('toutes')
+    expect(await screen.findByText(/Les écritures validées et les immobilisations du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(screen.getByText(/Une pièce qu’un exercice validé a figée peut donc paraître modifiable/)).toBeTruthy()
+  })
+})

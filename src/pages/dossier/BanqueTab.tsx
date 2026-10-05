@@ -35,6 +35,7 @@ import {
   envoisDuLot, justificatifPossible, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
 } from '../../lib/reglesAffectation'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
+import { lirePiecesFigees, type LecturePiecesFigees } from '../../lib/piecesFigeesLecture'
 import { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, refusVentilation, type PartSaisie } from '../../lib/ventilationBanque'
 import { libelleTaux } from '../../lib/tvaDuReleve'
 import { ecritureDeLaCotisation, rapprochementsCotisationRefuses, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
@@ -67,6 +68,10 @@ function phraseLignesFigees(nb: number, frontiere: string, toutes: boolean, doub
 function signatureLigne(l: { date: string; libelle: string; montant: number }): string {
   return `${l.date}|${l.libelle}|${l.montant.toFixed(2)}`
 }
+
+const AUCUNE_PIECE_FIGEE: LecturePiecesFigees = { figees: new Map(), avecEcritureValidee: new Set(), motif: null }
+const REMBOURSEMENT_D_UNE_NOTE_FIGEE = 'Une note de frais du même montant, d’un exercice validé, est peut-être remboursée par ce '
+  + 'mouvement : à classer en virement personnel, pas à affecter — la dépense compterait deux fois.'
 
 // `modele` : le modèle comptable du dossier (lib/engagement.ts). En trésorerie, un rapprochement
 // écrit la contrepartie banque de la pièce ; en engagement, le RÈGLEMENT de la facture — le compte de
@@ -116,6 +121,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // nouveau candidate au rapprochement, jusque dans les lots —, et le mouvement sans toutes ses pièces. Le
   // règlement groupé et les lots qui rapprochent des pièces sont alors suspendus.
   const [reglements, setReglements] = useState<ReglementGroupe[]>([])
+  // LES PIÈCES QU'UN EXERCICE VALIDÉ A FIGÉES (lib/piecesFigeesLecture.ts). Aucune ne se règle plus sur le montant de
+  // la banque — la base refuserait d'en changer les montants (`garder_piece_validee`) —, et en trésorerie celles qui
+  // portent elles-mêmes une écriture validée ne se rapprochent plus (voir `piecesHorsRapprochement`). Leur drapeau est à
+  // part : lues en partie, elles laissent une pièce figée paraître à rapprocher.
+  const [piecesFigees, setPiecesFigees] = useState<LecturePiecesFigees>(AUCUNE_PIECE_FIGEE)
   const [reglementsIncomplets, setReglementsIncomplets] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
@@ -234,6 +244,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     )
     setReglementsIncomplets(lectureReglements.complete ? null : lectureReglements.motif)
 
+    const lectureFigees = await lirePiecesFigees(dossierId)
+
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
     const controles = await chargerRelevesIncoherents(dossierId).catch((err) => {
@@ -250,6 +262,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setEmprunts(lectureEmprunts.lignes)
     setVentilations(lectureVentilations.lignes)
     setReglements(lectureReglements.lignes)
+    setPiecesFigees(lectureFigees)
     setRelevesIncoherents(controles)
     setLoading(false)
   }
@@ -268,6 +281,22 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   const paiements = useMemo(() => paiementsDesPieces(lignes, reglements), [lignes, reglements])
   const piecesRapprochees = useMemo(() => piecesPayees(paiements), [paiements])
   const piecesSansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id))
+  // EN TRÉSORERIE, UNE PIÈCE QUI PORTE ELLE-MÊME UNE ÉCRITURE VALIDÉE NE SE RAPPROCHE PLUS. Son écriture s'équilibre déjà
+  // sans paiement — une note de frais, face au compte de l'exploitant —, et la rapprocher la redaterait au paiement, ce
+  // que la base refuse, pendant que la 2035 de l'exercice suivant la compterait une seconde fois. Le remboursement d'une
+  // telle note est un virement personnel. EN ENGAGEMENT, une facture validée se règle normalement : son règlement
+  // s'écrit à la date du mouvement, sans toucher à la facture. Une pièce figée seulement par le bien qu'elle justifie
+  // reste proposée : son paiement, quand il vient après, s'écrit après la frontière.
+  const piecesFigeesHorsRapprochement = useMemo(
+    () => (modele.mode === 'tresorerie' ? piecesFigees.avecEcritureValidee : new Set<string>()),
+    [modele.mode, piecesFigees],
+  )
+  const piecesHorsRapprochement = useMemo(
+    () => (piecesFigeesHorsRapprochement.size === 0
+      ? piecesRapprochees
+      : new Set([...piecesRapprochees, ...piecesFigeesHorsRapprochement])),
+    [piecesRapprochees, piecesFigeesHorsRapprochement],
+  )
   // Sous-ensemble plus grave que la simple absence de rapprochement : un montant qui n'apparaît nulle
   // part dans le relevé, à AUCUNE date, signale soit un relevé incomplet soit un montant faux — voir
   // lib/appariementBanque.ts. Calculé sur TOUTES les lignes importées, pas seulement les non
@@ -308,7 +337,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // pièces triées par score, et propose de voir le justificatif avant de confirmer.
   function suggestion(ligne: LigneBancaire): Piece | null {
     if (ligne.statut !== 'non_rapprochee') return null
-    return candidatsPieces(ligne, piecesValidees, piecesRapprochees)[0] ?? null
+    return candidatsPieces(ligne, piecesValidees, piecesHorsRapprochement)[0] ?? null
   }
 
   function suggestionCotisation(ligne: LigneBancaire): CotisationDeclaree | null {
@@ -385,6 +414,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     return sousVerrou(setActionMouvementEnCours, ecrire)
   }
 
+  // Une pièce figée par un exercice validé ne se règle plus sur le montant de la banque : la base refuserait d'en changer
+  // les montants. Son rapprochement s'écrit quand même, au montant du mouvement. Les quatre chemins de rapprochement y
+  // passent, « Valider et rapprocher » compris, qui ne porte pourtant que des pièces à valider — qu'aucune validation ne
+  // fige : la règle ne doit pas dépendre de ce que chaque lot sélectionne.
+  function reglerSiLibre(piece: Piece, paiement: Pick<LigneBancaire, 'montant'>): Promise<Piece> {
+    return piecesFigees.figees.has(piece.id) ? Promise.resolve(piece) : reglerPieceSurBanque(piece, paiement)
+  }
+
   // Correctif audit sécurité (rapprochements, Importante) : le résultat de la mise à jour de
   // lignes_bancaires était ignoré — en cas d'échec (RLS, réseau...), le code créait quand même la
   // contrepartie banque comme si le rapprochement avait réussi, laissant une écriture de contrepartie
@@ -402,7 +439,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     const pieceAvant = pieces.find((p) => p.id === pieceId)
     // Le règlement AVANT la contrepartie : celle-ci reprend les montants de la pièce, et les
     // écrirait donc avec la valeur provisoire si l'ordre était inversé (voir lib/reglementBanque.ts).
-    const piece = ligne && pieceAvant ? await reglerPieceSurBanque(pieceAvant, ligne) : pieceAvant
+    const piece = ligne && pieceAvant ? await reglerSiLibre(pieceAvant, ligne) : pieceAvant
     // Le rapprochement est enregistré ; seule la contrepartie comptable a pu échouer. On le dit sans
     // annuler ce qui a réussi — la contrepartie se recréera au prochain passage, elle est idempotente.
     if (ligne && piece) {
@@ -639,7 +676,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         // a payé pour elle, et une pièce en devise quitte son cours provisoire. Payée aussi ailleurs, la part
         // n'en est qu'une fraction, et l'aligner dessus fausserait la pièce (voir lib/reglementBanque.ts).
         const autres = (paiements.get(pieceAvant.id) ?? []).filter((paiement) => paiement.id !== ligne.id)
-        const piece = autres.length === 0 ? await reglerPieceSurBanque(pieceAvant, { montant: part.montant }) : pieceAvant
+        const piece = autres.length === 0 ? await reglerSiLibre(pieceAvant, { montant: part.montant }) : pieceAvant
         await synchroniserContrepartieBanque(dossierId, piece, { id: ligne.id, date: ligne.date, montant: part.montant }, modele)
       } catch (err) {
         echecs.push(`${nomDeLaPiece(pieceAvant)} : ${messageErreur(err, 'raison inconnue')}`)
@@ -794,9 +831,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // emportait la pièce : pas un choix, un effet de l'ordre de tri, en masse et sur un seul clic.
   const planAuto = useMemo(
     () => planRapprochementAutomatique(nonRapprochees, piecesValidees, cotisations, {
-      pieces: piecesRapprochees, cotisations: cotisationsRapprochees,
+      pieces: piecesHorsRapprochement, cotisations: cotisationsRapprochees,
     }),
-    [nonRapprochees, piecesValidees, cotisations, piecesRapprochees, cotisationsRapprochees],
+    [nonRapprochees, piecesValidees, cotisations, piecesHorsRapprochement, cotisationsRapprochees],
   )
   const suggestionsAutomatiques = planAuto.retenus
 
@@ -808,8 +845,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // — ou déjà rapprochée — que le lot « Valider et rapprocher » rattacherait à un second mouvement du même
   // montant serait payée deux fois.
   const { certains: appariementsCertains, aArbitrer: appariementsDouteux } = useMemo(
-    () => analyserAppariements(pieces.filter((p) => !piecesRapprochees.has(p.id)), lignes),
-    [pieces, lignes, piecesRapprochees],
+    () => analyserAppariements(pieces.filter((p) => !piecesHorsRapprochement.has(p.id)), lignes),
+    [pieces, lignes, piecesHorsRapprochement],
   )
   const certainsAValider = appariementsCertains.filter((a) => a.piece.statut !== 'validee')
 
@@ -822,7 +859,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // tranche, bandeaux sous les yeux.
   // Les parts des règlements groupés en font partie : une pièce payée par une part non lue paraîtrait seule
   // candidate, et le lot la rapprocherait d'un second mouvement.
+  // En trésorerie, les pièces figées aussi : une pièce figée qu'on n'a pas lue comme telle paraîtrait seule candidate.
   const lotAutomatiqueSuspendu = lignesIncompletes ?? piecesIncompletes ?? referencesIncompletes ?? reglementsIncomplets
+    ?? (modele.mode === 'tresorerie' ? piecesFigees.motif : null)
   const lotCertainSuspendu = lignesIncompletes ?? piecesIncompletes ?? reglementsIncomplets
 
   // LES AFFECTATIONS QUE LES RÈGLES PROPOSENT (lib/reglesAffectation.ts). Un mouvement qui a peut-être
@@ -830,15 +869,23 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // écarté : affecté, il compterait dans la 2035 à côté de sa pièce. De même un mouvement qui ressemble
   // à une échéance d'emprunt (`empruntPlausible`) : affecté à une catégorie de charge, son CAPITAL
   // compterait en charge — une règle au nom de la banque les désigne aussi bien que ses frais.
+  //
+  // Et en trésorerie, un paiement du même montant qu'une NOTE DE FRAIS figée : il en est peut-être le remboursement, un
+  // virement personnel. Affecté à une charge, la dépense compterait deux fois — dans l'exercice validé et dans celui-ci.
+  const notesFigees = useMemo(
+    () => piecesValidees.filter((p) => p.type_piece === 'note_frais' && piecesFigeesHorsRapprochement.has(p.id)),
+    [piecesValidees, piecesFigeesHorsRapprochement],
+  )
   const planRegles = useMemo(() => {
-    const justificatifs = { pieces, piecesRapprochees, cotisations, cotisationsRapprochees }
+    const justificatifs = { pieces, piecesRapprochees: piecesHorsRapprochement, cotisations, cotisationsRapprochees }
     return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva, (l) => {
       const justificatif = justificatifPossible(l, justificatifs)
       if (justificatif) return justificatif
+      if (candidatsPieces(l, notesFigees, piecesRapprochees).length > 0) return REMBOURSEMENT_D_UNE_NOTE_FIGEE
       const emprunt = empruntPlausible(l, emprunts, lignes)
       return emprunt ? raisonEmpruntPlausible(emprunt) : null
     })
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts])
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts])
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
   const idsEmpruntPlausible = useMemo(
     () => new Set(nonRapprochees.filter((l) => empruntPlausible(l, emprunts, lignes)).map((l) => l.id)),
@@ -901,7 +948,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         if (errLigne) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errLigne.message}`); continue }
 
         try {
-          const piece = await reglerPieceSurBanque(a.piece, a.ligne)
+          const piece = await reglerSiLibre(a.piece, a.ligne)
           await synchroniserContrepartieBanque(dossierId, piece, a.ligne, modele)
         } catch (err) {
           // La pièce est validée et le mouvement rapproché ; seule la contrepartie comptable manque.
@@ -979,7 +1026,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             const ligne = lignes.find((l) => l.id === m.ligneId)
             const pieceAvant = pieces.find((p) => p.id === m.pieceId)
             if (!ligne || !pieceAvant) return
-            const piece = await reglerPieceSurBanque(pieceAvant, ligne)
+            const piece = await reglerSiLibre(pieceAvant, ligne)
             await synchroniserContrepartieBanque(dossierId, piece, ligne, modele)
           }),
       )
@@ -1094,6 +1141,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
           'Une pièce déjà payée peut donc paraître sans paiement, et un virement groupé s’afficher sans toutes ses ' +
           'pièces. Régler plusieurs pièces et les rapprochements en lot sont suspendus. Recharge la page.'
         }
+      />
+
+      <BandeauLecturePartielle
+        quoi="Les écritures validées et les immobilisations du dossier"
+        motif={piecesFigees.motif}
+        consequence={modele.mode === 'tresorerie'
+          ? 'Une pièce qu’un exercice validé a figée peut donc être proposée au rapprochement : la base refuserait d’en ' +
+            'redater les écritures validées. Le rapprochement automatique est suspendu. Recharge la page.'
+          : 'Une pièce qu’un exercice validé a figée peut donc paraître encore alignable sur le montant de la banque : la ' +
+            'base refusera d’en changer le montant, et son règlement s’écrira au montant du mouvement. Recharge la page.'}
       />
 
       <BandeauLecturePartielle
@@ -1647,6 +1704,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             compteDirigeant={compteDuDirigeant(modele)}
             modeComptable={modele.mode}
             piecesRapprochees={piecesRapprochees}
+            piecesFigees={piecesFigeesHorsRapprochement}
             cotisationsRapprochees={cotisationsRapprochees}
             recurrence={suggestionRecurrente(ligneOuverte)}
             navigation={navigationMouvement}
