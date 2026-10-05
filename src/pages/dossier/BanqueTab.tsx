@@ -11,7 +11,7 @@ import type {
   ReglementGroupe, StatutLigneBancaire, VentilationBancaire,
 } from '../../lib/types'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
-import { nomDeLaPiece, refusReglementGroupe, type PartReglement } from '../../lib/reglementGroupe'
+import { nomDeLaPiece, piecesPayeesEnTrop, refusReglementGroupe, type PartReglement } from '../../lib/reglementGroupe'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee, estFigee } from '../../lib/validationExercice'
@@ -23,7 +23,7 @@ import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE_RAPPROCHEMENT,
   libelleExploitable, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
-import { mouvementRapprocheSansObjet } from '../../lib/controles'
+import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar } from '../../lib/controles'
 import { ecritureDuMouvement, mouvementsAffectes, recettesAffecteesSansTaux, refusAffectation } from '../../lib/affectationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, refusVirementPersonnel } from '../../lib/virementPersonnel'
 import {
@@ -34,7 +34,6 @@ import type { Emprunt } from '../../lib/emprunts'
 import {
   envoisDuLot, justificatifPossible, normaliserPourRegle, planAffectationParRegles, refusMotif, sensDuMouvement, totauxParCategorie,
 } from '../../lib/reglesAffectation'
-import { ecartAvecBanque } from '../../lib/alignementBanque'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, refusVentilation, type PartSaisie } from '../../lib/ventilationBanque'
 import { libelleTaux } from '../../lib/tvaDuReleve'
@@ -768,6 +767,21 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     for (const r of reglements) m.set(r.ligne_bancaire_id, [...(m.get(r.ligne_bancaire_id) ?? []), r])
     return m
   }, [reglements])
+
+  // CE QUE LES PAIEMENTS D'UNE PIÈCE LAISSENT À PAYER, OU ONT PAYÉ DE TROP — jugé sur le TOTAL de ses paiements
+  // (lib/controles.ts), comme la Checklist : comparés un à un à la pièce, les deux paiements d'une facture réglée
+  // en deux fois s'en écartaient chacun, et l'écran criait deux fois sur une pièce payée. Sur le relevé ou les
+  // parts lus en partie, un paiement non lu ferait paraître une pièce réglée payée en partie : ce reste-là se tait.
+  const restesAPayer = useMemo(
+    () => (lignesIncompletes || reglementsIncomplets
+      ? new Map<string, number>()
+      : new Map(piecesPayeesEnPartie(pieces, paiements, modele.mode).map((x) => [x.piece.id, x.reste]))),
+    [pieces, paiements, modele.mode, lignesIncompletes, reglementsIncomplets],
+  )
+  const payeesEnTrop = useMemo(
+    () => new Map(piecesPayeesEnTrop(pieces, paiements).map((x) => [x.piece.id, x.enTrop])),
+    [pieces, paiements],
+  )
 
   // Mémoïsée parce que `planAuto` en dépend : recréée à chaque rendu, elle relançait le plan — un
   // produit mouvements × pièces — à chaque frappe dans la recherche, et rendait son `useMemo` inopérant.
@@ -1527,8 +1541,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             <tbody>
               {filtered.map((l, rang) => {
                 const piecePayee = l.piece_id ? pieces.find((p) => p.id === l.piece_id) : null
-                const ecartMontant = piecePayee && l.statut === 'rapprochee' ? ecartAvecBanque(piecePayee, l) : null
-                const ecartImportant = ecartMontant && ecartMontant.ecart > 0 && !ecartMontant.alignable ? ecartMontant : null
+                const pastillesPaiement = pastillesDePaiement(piecesPayeesPar(l, reglementsParLigne.get(l.id) ?? []), restesAPayer, payeesEnTrop, l.reglement_groupe)
                 const cotisationPayee = l.cotisation_id ? cotisations.find((c) => c.id === l.cotisation_id) : null
                 const categorieAffectee = l.statut === 'rapprochee' && l.categorie_id
                   ? categories.find((c) => c.id === l.categorie_id) ?? null
@@ -1600,12 +1613,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                       {/* Sous le seuil la pièce a été ALIGNÉE sur la banque, donc il ne reste aucun
                           écart à montrer. Au-dessus, on n'a rien écrasé — et sans cette pastille la
                           seule chose qui le dirait est le déséquilibre des écritures, qui n'existe
-                          pas tant qu'elles n'ont pas été générées. */}
-                      {ecartImportant && (
-                        <span className="badge badge-danger">
-                          Écart de {formatMoney(ecartImportant.ecart)} avec la pièce
-                        </span>
-                      )}
+                          pas tant qu'elles n'ont pas été générées. Jugé sur le total payé de la pièce. */}
+                      {pastillesPaiement.map((texte) => <span key={texte} className="badge badge-danger">{texte}</span>)}
                       {!l.prelevement_personnel && l.statut === 'non_rapprochee' && (
                         <span className="badge badge-warning">Non rapproché{aUneSuggestion ? ' · suggestion' : ''}</span>
                       )}
@@ -1664,6 +1673,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             paiements={paiements}
             onReglerEnGroupe={(parts) => agirSurMouvement(() => reglerEnGroupe(ligneOuverte, parts))}
             onRetirerReglementGroupe={() => agirSurMouvement(() => retirerReglementGroupe(ligneOuverte.id))}
+            restesAPayer={restesAPayer}
+            payeesEnTrop={payeesEnTrop}
           />
         </PanneauDroit>
       )}

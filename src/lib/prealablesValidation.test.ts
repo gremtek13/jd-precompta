@@ -446,7 +446,7 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       piecesValidees: [P1, piece('p2', { date_piece: D(a, '05-02'), montant_ttc: 60 })],
       lignes: [L1, ligne('l2', { piece_id: 'p2', date: D(a, '05-04'), montant: -60 }), ligne('l3', { piece_id: 'p2', date: D(a, '05-06'), montant: -60 })],
     })],
-    ['ecart-rapprochement', (a) => ({
+    ['pieces-payees-en-partie', (a) => ({
       piecesValidees: [P1, piece('p2', { date_piece: D(a, '05-02'), montant_ttc: 500 })],
       lignes: [L1, ligne('l2', { piece_id: 'p2', date: D(a, '05-04'), montant: -50 })],
     })],
@@ -464,6 +464,31 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
       expect(ids(donnees({ ...defaut(2026), anneesValidees: [2024] }))).not.toContain(id)
     })
   }
+
+  // L'écart se juge sur le TOTAL payé de la pièce : réglée par un acompte puis par la part d'un virement groupé, elle
+  // n'a rien à reprendre — le contrôle d'avant comparait chaque mouvement à la pièce, et refusait cette validation.
+  it('« pieces-payees-en-partie » se tait sur une pièce réglée en deux fois', () => {
+    const d = donnees({
+      piecesValidees: [P1, piece('p2', { date_piece: '2025-05-02', montant_ttc: 1000 })],
+      lignes: [
+        L1,
+        ligne('l2', { piece_id: 'p2', date: '2025-05-04', montant: -500 }),
+        ligne('l3', { date: '2025-06-04', montant: -500, reglement_groupe: true }),
+      ],
+      reglements: [partReglee('r1', 'l3', 'p2', -500)],
+    })
+    expect(ids(d)).not.toContain('pieces-payees-en-partie')
+  })
+
+  // En engagement, le reste d'une facture payée en partie est une dette qui court au 401 : rien à refuser.
+  it('« pieces-payees-en-partie » se tait en engagement', () => {
+    const d = donnees({
+      modele: { mode: 'engagement', compteNotesDeFrais: '455000' },
+      piecesValidees: [P1, piece('p2', { date_piece: '2025-05-02', montant_ttc: 500 })],
+      lignes: [L1, ligne('l2', { piece_id: 'p2', date: '2025-05-04', montant: -50 })],
+    })
+    expect(ids(d)).not.toContain('pieces-payees-en-partie')
+  })
 
   it('compte la dotation de l’exercice, pas celle d’un exercice antérieur que le bien porte aussi', () => {
     expect(prealable(donnees({ immobilisations: [bien('i1', { date_acquisition: '2024-01-01' })], natures: [MATERIEL], anneesValidees: [2024] }), 'dotations-a-ecrire')?.nb).toBe(1)

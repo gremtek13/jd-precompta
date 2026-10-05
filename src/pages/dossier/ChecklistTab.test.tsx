@@ -676,13 +676,15 @@ describe('ChecklistTab — les forfaits kilométriques', () => {
 
 // L'AUTRE MOITIÉ DE « LA BANQUE FAIT FOI » (décision du cabinet, 23/09/2026), vue depuis l'écran
 // qui prétend dire ce qui manque. Sous le seuil la pièce est alignée au rapprochement et il n'y a
-// rien à compter ; au-dessus, un écart large est presque toujours un paiement partiel ou groupé, on
-// ne touche à rien, et sans ce point plus rien ne le nommerait tant que les écritures ne sont pas
-// générées.
-describe('ChecklistTab — un rapprochement dont le montant ne correspond pas', () => {
-  const POINT = /le montant ne correspond pas au mouvement/
+// rien à compter ; au-dessus, un écart large est presque toujours un paiement partiel, on ne touche à
+// rien, et sans ce point plus rien ne le nommerait tant que les écritures ne sont pas générées.
+//
+// JUGÉ SUR LE TOTAL PAYÉ DE LA PIÈCE : le point d'avant comparait chaque mouvement à sa pièce, et comptait
+// une facture réglée en deux fois — un acompte, puis la part d'un virement groupé — comme un écart.
+describe('ChecklistTab — une pièce payée en partie', () => {
+  const POINT = /payée\(s\) en partie/
 
-  it('le compte', async () => {
+  it('la compte, en trésorerie', async () => {
     poser({
       validees: [piece({ id: 'p1', statut: 'validee', montant_ttc: 1000, date_piece: '2026-03-10' })],
       lignes: [ligne({ statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -500 })],
@@ -693,15 +695,35 @@ describe('ChecklistTab — un rapprochement dont le montant ne correspond pas', 
     expect(trouve.textContent).toMatch(/^1 /)
   })
 
-  // GARDE SYMÉTRIQUE : sans elle, « la Checklist compte les écarts » serait satisfait par un point
-  // qui compte TOUS les rapprochements — y compris les exacts et ceux que le seuil absorbe, donc un
-  // écran rouge en permanence.
-  it('se tait sur un rapprochement exact et sur un écart sous le seuil', async () => {
+  // LE CAS QUI A FAIT ÉCRIRE CE POINT : un acompte rapproché de la pièce, puis le solde réglé par la part d'un
+  // virement groupé. Chacun des deux paiements s'écarte de 500 € de la pièce ; leur total la règle.
+  it('se tait sur une pièce réglée en deux fois', async () => {
     poser({
-      validees: [piece({ id: 'p1', statut: 'validee', montant_ttc: 100, date_piece: '2026-03-10' })],
+      validees: [piece({ id: 'p1', statut: 'validee', montant_ttc: 1000, date_piece: '2026-03-10' })],
+      lignes: [
+        ligne({ id: 'l1', statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -500 }),
+        ligne({ id: 'l2', statut: 'rapprochee', piece_id: null, cotisation_id: null, montant: -500, reglement_groupe: true }),
+        ligne({ id: 'l3', statut: 'non_rapprochee', piece_id: null, cotisation_id: null }),
+      ],
+      reglements: [{ id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l2', piece_id: 'p1', montant: -500, created_at: '2026-04-02T10:00:00Z' }],
+    })
+    monter()
+
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la Checklist compte les pièces payées en partie » serait satisfait par un
+  // point qui compte TOUTES les pièces payées — y compris les exactes et celles que le seuil absorbe.
+  it('se tait sur un paiement exact et sur un écart sous le seuil', async () => {
+    poser({
+      validees: [
+        piece({ id: 'p1', statut: 'validee', montant_ttc: 100, date_piece: '2026-03-10' }),
+        piece({ id: 'p2', statut: 'validee', montant_ttc: 100, date_piece: '2026-03-11' }),
+      ],
       lignes: [
         ligne({ id: 'l1', statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -100 }),
-        ligne({ id: 'l2', statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -100.03 }),
+        ligne({ id: 'l2', statut: 'rapprochee', piece_id: 'p2', cotisation_id: null, montant: -99.97 }),
         ligne({ id: 'l3', statut: 'non_rapprochee', piece_id: null, cotisation_id: null }),
       ],
     })
@@ -711,6 +733,41 @@ describe('ChecklistTab — un rapprochement dont le montant ne correspond pas', 
     // encore en chargement serait verte pour une raison fausse.
     await screen.findByText(/non rapprochée\(s\)/)
     expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+
+  // En engagement, une facture payée en partie est une dette qui court encore : son reste vit au 401.
+  it('se tait en engagement', async () => {
+    poser({
+      validees: [piece({ id: 'p1', statut: 'validee', montant_ttc: 1000, date_piece: '2026-03-10' })],
+      lignes: [
+        ligne({ id: 'l1', statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -500 }),
+        ligne({ id: 'l3', statut: 'non_rapprochee', piece_id: null, cotisation_id: null }),
+      ],
+    })
+    monter(false, ENGAGEMENT)
+
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+
+  // Un paiement non lu ferait paraître une pièce réglée payée en partie : sur le relevé ou les parts lus en
+  // partie, le point se tait — le bandeau dit pourquoi.
+  it('se tait sur un relevé ou des parts lus en partie', async () => {
+    for (const table of ['lignes_bancaires', 'reglements_groupes']) {
+      poser({
+        validees: [piece({ id: 'p1', statut: 'validee', montant_ttc: 1000, date_piece: '2026-03-10' })],
+        lignes: [
+          ligne({ id: 'l1', statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, montant: -500 }),
+          ligne({ id: 'l3', statut: 'non_rapprochee', piece_id: null, cotisation_id: null }),
+        ],
+        tronquees: [table],
+      })
+      const { unmount } = monter()
+
+      await screen.findByText(/non rapprochée\(s\)/)
+      expect(screen.queryAllByText(POINT)).toHaveLength(0)
+      unmount()
+    }
   })
 })
 

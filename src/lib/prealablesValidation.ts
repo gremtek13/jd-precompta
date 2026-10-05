@@ -9,7 +9,7 @@ import { anneeDe } from './format'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import {
   immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, piecesADateImpossible,
-  piecesDeviseNonConvertie, piecesTvaImpossible, piecesValideesSansCategorie, rapprochementsEcartImportant,
+  piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesTvaImpossible, piecesValideesSansCategorie,
 } from './controles'
 import { mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux } from './affectationBanque'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
@@ -439,10 +439,12 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     nb: piecesPayeesEnTrop([...d.piecesValidees], paiements).filter((p) => pieceDeLExercice(p.piece)).length,
     message: "pièce(s) payée(s) plus que leur montant — un paiement en double ? Annuler le paiement en trop.",
   })
+  // Jugé sur le TOTAL payé de chaque pièce, jamais mouvement par mouvement (lib/controles.ts) : une facture réglée
+  // en deux fois n'a rien à reprendre. En trésorerie seulement — en engagement, le reste court au 401 ou au 411.
   bloque({
-    id: 'ecart-rapprochement', nb: rapprochementsEcartImportant([...d.lignes], [...d.piecesValidees]).filter((x) => mouvementDeLExercice(x.ligne)).length,
-    cible: 'banque',
-    message: "rapprochement(s) dont le montant ne correspond pas au mouvement : vérifier le montant ou le rapprochement.",
+    id: 'pieces-payees-en-partie', cible: 'banque',
+    nb: piecesPayeesEnPartie([...d.piecesValidees], paiements, d.modele.mode).filter((x) => pieceDeLExercice(x.piece)).length,
+    message: "pièce(s) payée(s) en partie — leur écriture reste déséquilibrée : rapprocher le paiement qui manque, ou vérifier le montant de la pièce.",
   })
   // Un bien dont le justificatif a disparu, s'il s'amortit dans l'exercice : sa dotation partirait sans pièce.
   bloque({

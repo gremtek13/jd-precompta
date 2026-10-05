@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from '../../lib/ecritures'
 import type { ModeleComptable } from '../../lib/engagement'
-import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, rapprochementsEcartImportant, piecesADateImpossible, piecesDeviseNonConvertie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -101,6 +101,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // partie, une part non lue ferait passer son règlement pour incohérent : ce point-là se tait alors.
   const [reglements, setReglements] = useState<ReglementGroupe[]>([])
   const [reglementsPartiels, setReglementsPartiels] = useState(false)
+  // Le relevé ou les parts des virements groupés lus en partie : un paiement non lu ferait passer une pièce
+  // réglée pour payée en partie, donc ce point-là se tait.
+  const [paiementsPartiels, setPaiementsPartiels] = useState(false)
   // Les lignes du cadre 7 (lib/forfaitKilometrique.ts) : le forfait de chacune doit être écrit au brouillon, et
   // ce point de la liste en dépend — donc le même drapeau que les autres collections.
   const [vehicules, setVehicules] = useState<VehiculeDossier[]>([])
@@ -238,6 +241,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     setVehicules(lectureVehicules.lignes)
     setReglements(lectureReglements.lignes)
     setReglementsPartiels(!lectureReglements.complete)
+    setPaiementsPartiels(!lectureLignes.complete || !lectureReglements.complete)
     setEmprunts(lectureEmprunts.lignes)
     setVentilations(lectureVentilations.lignes)
     setVentilationsPartielles(!lectureVentilations.complete)
@@ -419,10 +423,10 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   const rapprochesSansObjet = mouvementsRapprochesSansObjet(lignes)
   // L'AUTRE MOITIÉ DE « LA BANQUE FAIT FOI » (décision du cabinet, 23/09/2026) : sous le seuil la
   // pièce est ALIGNÉE au rapprochement et il n'y a rien à dire ; au-dessus, un écart large est
-  // presque toujours un paiement partiel ou groupé, donc on le signale sans rien écraser.
-  // Il ne se voit nulle part ailleurs tant que les écritures ne sont pas générées — voir
-  // `rapprochementsEcartImportant`.
-  const ecartsRapprochement = rapprochementsEcartImportant(lignes, piecesValidees)
+  // presque toujours un paiement partiel, donc on le signale sans rien écraser. Jugé sur le TOTAL
+  // payé de la pièce, pas mouvement par mouvement : une facture réglée en deux fois n'a rien à
+  // reprendre. En trésorerie seulement — voir `piecesPayeesEnPartie`.
+  const payeesEnPartie = paiementsPartiels ? [] : piecesPayeesEnPartie(piecesValidees, paiements, modele.mode)
   // La TROISIÈME clé en `ON DELETE SET NULL` de `pieces` : supprimer une pièce immobilisée détache
   // son immobilisation sans un mot, et la dotation continue de partir en case CH d'une 2035 signée.
   const immosSansJustificatif = immobilisationsSansJustificatif(immobilisations)
@@ -564,7 +568,8 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       action: 'Écrire les forfaits', nb: forfaitsManquants.length, cible: 'informations', severite: 'erreur',
       detail: exercicesDesForfaits.length > 0 ? `Exercice${exercicesDesForfaits.length > 1 ? 's' : ''} : ${exercicesDesForfaits.join(', ')}.` : undefined,
     },
-    { id: 'ecart-rapprochement', label: 'rapprochement(s) dont le montant ne correspond pas au mouvement', action: 'Vérifier le montant ou le rapprochement', nb: ecartsRapprochement.length, cible: 'banque', severite: 'erreur' },
+    // « Erreur » : en trésorerie, l'écriture d'une pièce payée en partie reste déséquilibrée, et le FEC la refuse.
+    { id: 'pieces-payees-en-partie', label: 'pièce(s) payée(s) en partie — un paiement manque ?', action: 'Rapprocher le paiement qui manque', nb: payeesEnPartie.length, cible: 'banque', severite: 'erreur', detail: 'Dans Banque, filtre « Rapprochés » : leurs paiements portent la pastille « Reste … à payer ».' },
     { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
     // La forme groupée du point ci-dessus : une part d'un virement qui règle plusieurs pièces a perdu la
     // sienne, ou les parts ne font plus le mouvement. « Erreur » pour la même raison.

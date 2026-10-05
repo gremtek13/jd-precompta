@@ -6848,8 +6848,9 @@ d'environnement dans la même édition.
   dire — mais elle SORT avant d'écrire quoi que ce soit tant que la pièce n'a pas sa ligne de charge
   (catégorie sans compte, « Générer » pas lancé). Et le menu « Associer à… » de Banque est un SCORE,
   pas un filtre : rien n'empêche de relier une pièce de 1 000 € à un mouvement de 500 €.
-  `rapprochementsEcartImportant` (lib/controles.ts) le signale — pastille dans la liste ET dans le
-  panneau de Banque, point « erreur » en Checklist.
+  `rapprochementsEcartImportant` (lib/controles.ts) le signalait — pastille dans la liste ET dans le
+  panneau de Banque, point « erreur » en Checklist ; depuis le 05/10/2026, `piecesPayeesEnPartie`, sur le
+  total payé de la pièce (voir plus bas).
   **LE MODULE A ÉTÉ RENOMMÉ `reglementBanque.ts`** : `reglementDevise` aurait menti sur ce qu'il
   fait, et c'est le piège que ce fichier nomme sous « un nom qui ment sur son filtre » — le
   compilateur a énuméré les appelants exhaustivement.
@@ -6870,6 +6871,40 @@ d'environnement dans la même édition.
   tomber un test chacune (deux copies, gardées séparément), le point de Checklist un autre, et les
   gardes symétriques des trois côtés — sans lesquels « l'écran signale l'écart » serait satisfait par
   un écran qui crie sur TOUS les rapprochements.
+  **ET L'ÉCART SE JUGEAIT MOUVEMENT PAR MOUVEMENT — UNE PIÈCE RÉGLÉE EN DEUX FOIS PORTAIT DEUX « ÉCARTS »**
+  (05/10/2026). `rapprochementsEcartImportant` comparait chaque mouvement rapproché à SA pièce. Un acompte de
+  500 € puis le solde réglé par la part d'un virement groupé, sur une facture de 1 000 € : la pastille rouge
+  « Écart de 500,00 € avec la pièce » sur l'acompte, le point « erreur » de la Checklist, et — c'est ce qui l'a
+  fait trouver — le préalable `ecart-rapprochement` refusait la validation d'un exercice dont la pièce était
+  payée. Et la part d'un virement groupé, elle, n'était jamais regardée. Le contrôle juge désormais le TOTAL des
+  paiements de la pièce (`soldeDesPaiements`, lib/alignementBanque.ts, en centimes entiers, sur
+  `paiementsDesPieces` : rapprochements ET parts), et il est remplacé partout :
+  - **`piecesPayeesEnPartie`** (lib/controles.ts) : un reste au-delà du seuil, EN TRÉSORERIE SEULEMENT — son
+    écriture porte la charge entière face à la banque payée, donc reste déséquilibrée, et la 2035 date le reste
+    à la facture, par supposition. En ENGAGEMENT, une facture payée en partie est une dette qui court au 401 ou
+    au 411 : ce n'est pas une anomalie, et l'ancien contrôle la criait en erreur. Le trop-payé garde son
+    contrôle, `piecesPayeesEnTrop`, et le contrôle d'avant le criait une seconde fois ;
+  - la Checklist (« pièce(s) payée(s) en partie — un paiement manque ? », en erreur, filtre « Rapprochés ») et
+    le préalable de la validation (`pieces-payees-en-partie`, cadré sur l'exercice par `pieceDeLExercice`) ;
+  - Banque : une pastille par sorte d'écart et non par paiement (`pastillesDePaiement`, sur les pièces que le
+    mouvement paie, `piecesPayeesPar`) — « Reste X à payer sur la pièce » (trésorerie), « Pièce payée X de
+    trop » (les deux modèles, comme le point de la Checklist, qui n'avait jusqu'ici aucune pastille) —, dans la
+    liste et dans la fiche, où un virement groupé nomme la pièce concernée. Calculées une fois par l'onglet et
+    passées à la fiche : la liste et la fiche ne peuvent pas diverger.
+  **Une lecture partielle du relevé ou des parts fait taire le reste** (Checklist et Banque) : un paiement non lu
+  ferait paraître une pièce réglée payée en partie. Le trop-payé, lui, ne peut qu'être manqué sur une lecture
+  partielle, jamais inventé. **Une pièce en devise n'est pas jugée** : son montant en euros n'est qu'un
+  provisoire, et l'écart de change ferait passer un règlement complet pour partiel — la règle de
+  `ecartAvecBanque`, qui reste celle de l'alignement d'UN mouvement (`reglerPieceSurBanque`).
+  **L'assistant ne porte pas ce point**, pas plus qu'il ne portait l'ancien ; il garde `piecesPayeesEnTrop`.
+  **LATENT, et mesuré** (05/10/2026, comptes seuls) : 12 pièces payées en base, dont 10 sur `test`, aucune
+  payée en plusieurs fois, aucune en partie, aucune en trop, et zéro écart mouvement par mouvement — rien
+  d'affiché ne change aujourd'hui.
+  **Trente-huit mutations, toutes mordent** — dont le contrôle d'avant replanté trois fois (la somme du seul
+  premier paiement dans le module, les parts des virements groupés ignorées dans la Checklist et dans le
+  préalable), la devise jugée en euros, les paiements sommés en flottants ou avec leur signe, le reste égal au
+  seuil pris pour un reste, l'engagement compté, chaque lecture partielle oubliée de chaque côté, et chacune des
+  deux copies de la pastille (liste, fiche) et des alertes de la fiche.
 - **LE VOLET A OUVERT UNE COURSE QUE LA FENÊTRE INTERDISAIT : un lot et une action du panneau sur le
   même mouvement** (25/09/2026, en portant le rapprochement dans le panneau de droite). Tant que le
   rapprochement vivait dans une fenêtre qui recouvrait l'écran, on ne pouvait pas lancer « Tout

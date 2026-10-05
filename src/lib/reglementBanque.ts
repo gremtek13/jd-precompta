@@ -8,8 +8,8 @@ import type { LigneBancaire, Piece } from './types'
 // DEUX CAS, ET UN SEUL EST SANS SEUIL. En DEVISE, la valeur posée au dépôt au taux BCE n'est qu'un
 // provisoire : le débit réel est indéniablement meilleur, quel que soit l'écart. En EUROS, la pièce
 // porte déjà un montant lu sur un document, donc on n'aligne que sous le seuil — au-delà c'est
-// presque toujours un paiement partiel ou groupé, et `rapprochementsEcartImportant` le SIGNALE
-// plutôt que de l'écraser (décision du cabinet, 23/09/2026 ; voir alignementBanque.ts).
+// presque toujours un paiement partiel ou groupé, et `piecesPayeesEnPartie` le SIGNALE — sur le total payé
+// de la pièce — plutôt que de l'écraser (décision du cabinet, 23/09/2026 ; voir alignementBanque.ts).
 //
 // Le nom du module a changé avec ce second cas : `reglementDevise` aurait menti sur ce qu'il fait,
 // et c'est le piège que ce dépôt nomme sous « un nom qui ment sur son filtre ».
@@ -66,7 +66,7 @@ function reglerPieceEnDevise(piece: Piece, ligne: Pick<LigneBancaire, 'montant'>
 }
 
 // Le cas ajouté le 23/09/2026 : la banque fait foi SOUS LE SEUIL. Au-delà, on ne touche à rien —
-// c'est `rapprochementsEcartImportant` qui le dit, et le montant d'origine reste intact.
+// c'est `piecesPayeesEnPartie` (ou `piecesPayeesEnTrop`) qui le dit, et le montant d'origine reste intact.
 function reglerPieceEnEuros(piece: Piece, ligne: Pick<LigneBancaire, 'montant'>) {
   const ecart = ecartAvecBanque(piece, ligne)
   if (!ecart || !ecart.alignable) return null

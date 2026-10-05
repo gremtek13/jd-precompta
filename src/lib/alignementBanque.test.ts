@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  alignerMontantsSurBanque, ecartAvecBanque, seuilAlignement,
+  alignerMontantsSurBanque, ecartAvecBanque, seuilAlignement, soldeDesPaiements,
   SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF,
 } from './alignementBanque'
-import { rapprochementsEcartImportant } from './controles'
+import { pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar } from './controles'
+import type { PaiementDePiece } from './rattachement'
 import type { LigneBancaire, Piece } from './types'
 
 // Décision du cabinet (23/09/2026) : la banque fait foi SOUS UN SEUIL, et au-delà on signale.
@@ -107,29 +108,132 @@ describe('alignerMontantsSurBanque', () => {
   })
 })
 
-describe('rapprochementsEcartImportant', () => {
-  it('signale un écart au-dessus du seuil', () => {
-    const r = rapprochementsEcartImportant([ligne({ montant: -500 })], [piece({ montant_ttc: 1000 })])
-    expect(r).toHaveLength(1)
-    expect(r[0].ecart.ecart).toBe(500)
+// Un paiement de la pièce : un mouvement rapproché, ou la part d'un virement groupé.
+function paiement(montant: number, id = `m${montant}`, origine: PaiementDePiece['origine'] = 'rapprochement'): PaiementDePiece {
+  return { id, date: '2026-03-12', montant, origine }
+}
+
+describe('soldeDesPaiements', () => {
+  it('dit ce qui reste à payer, au centime', () => {
+    expect(soldeDesPaiements(piece({ montant_ttc: 1000 }), [paiement(-500)]))
+      .toEqual({ montantPiece: 1000, paye: 500, reste: 500, seuil: 5 })
   })
 
-  // GARDE SYMÉTRIQUE — sans lui, « le contrôle signale » serait satisfait par un contrôle qui
-  // signale TOUT rapprochement, donc par un écran rouge en permanence.
-  it('se tait sur un écart absorbé par le seuil, et sur un rapprochement exact', () => {
-    expect(rapprochementsEcartImportant([ligne({ montant: -100.03 })], [piece({ montant_ttc: 100 })])).toHaveLength(0)
-    expect(rapprochementsEcartImportant([ligne({ montant: -100 })], [piece({ montant_ttc: 100 })])).toHaveLength(0)
+  // LE CAS QUI A FAIT ÉCRIRE CETTE FONCTION : deux paiements dont aucun ne fait la pièce, et qui la règlent ensemble.
+  it('somme tous les paiements de la pièce — rapprochements et parts de virements groupés', () => {
+    const s = soldeDesPaiements(piece({ montant_ttc: 1000 }), [paiement(-500), paiement(-500, 'g1', 'groupe')])
+    expect(s?.reste).toBe(0)
+    expect(s?.paye).toBe(1000)
   })
 
-  it('se tait sur un mouvement non rapproché ou sans pièce', () => {
-    expect(rapprochementsEcartImportant([ligne({ statut: 'non_rapprochee', montant: -500 })], [piece()])).toHaveLength(0)
-    expect(rapprochementsEcartImportant([ligne({ piece_id: null, montant: -500 })], [piece()])).toHaveLength(0)
+  it('dit un trop-payé par un reste négatif', () => {
+    expect(soldeDesPaiements(piece({ montant_ttc: 100 }), [paiement(-100), paiement(-30)])?.reste).toBe(-30)
   })
 
-  // Une pièce hors du jeu chargé est un ARTEFACT DE FILTRAGE, pas une anomalie — la règle déjà
-  // posée pour `rupturesPisteAudit`. La crier ici ferait un contrôle qui dépend de ce que l'écran
-  // a décidé de lire.
-  it('se tait quand la pièce désignée n’est pas dans le jeu fourni', () => {
-    expect(rapprochementsEcartImportant([ligne({ piece_id: 'absente', montant: -500 })], [piece()])).toHaveLength(0)
+  // En centimes entiers : sommés en flottants, 0,10 + 0,20 font 0,30000000000000004, et une pièce de 0,30 € réglée
+  // par ses deux paiements garderait un reste qui n'existe pas.
+  it('compte en centimes, pas en flottants', () => {
+    expect(soldeDesPaiements(piece({ montant_ttc: 0.3 }), [paiement(-0.1), paiement(-0.2)])?.reste).toBe(0)
+  })
+
+  it('compare les valeurs absolues — un avoir est négatif, son remboursement positif', () => {
+    expect(soldeDesPaiements(piece({ montant_ttc: -200 }), [paiement(150)])?.reste).toBe(50)
+  })
+
+  it('se tait sur une pièce sans paiement, en devise, ou dont le montant n’a pas été lu', () => {
+    expect(soldeDesPaiements(piece({ montant_ttc: 1000 }), [])).toBeNull()
+    expect(soldeDesPaiements(piece({ devise: 'USD', montant_devise: 120 }), [paiement(-50)])).toBeNull()
+    expect(soldeDesPaiements(piece({ montant_ttc: null }), [paiement(-50)])).toBeNull()
+  })
+
+  // Le seuil est celui de l'alignement, sur le montant de la pièce — pas sur ce qui a été payé.
+  it('porte le seuil de la pièce', () => {
+    expect(soldeDesPaiements(piece({ montant_ttc: 100 }), [paiement(-10)])?.seuil).toBeCloseTo(2, 10)
+  })
+})
+
+describe('piecesPayeesEnPartie', () => {
+  const paiements = (...p: [string, PaiementDePiece[]][]) => new Map(p)
+
+  it('signale une pièce dont les paiements laissent un reste au-delà du seuil', () => {
+    const r = piecesPayeesEnPartie([piece({ montant_ttc: 1000 })], paiements(['p1', [paiement(-500)]]), 'tresorerie')
+    expect(r).toEqual([{ piece: expect.objectContaining({ id: 'p1' }), paye: 500, reste: 500 }])
+  })
+
+  // L'ANCIEN CONTRÔLE comparait chaque mouvement à la pièce : ici, deux écarts de 500 € sur une pièce réglée.
+  it('se tait sur une pièce réglée en plusieurs paiements', () => {
+    expect(piecesPayeesEnPartie(
+      [piece({ montant_ttc: 1000 })], paiements(['p1', [paiement(-500), paiement(-500, 'g1', 'groupe')]]), 'tresorerie',
+    )).toEqual([])
+  })
+
+  // GARDE SYMÉTRIQUE — sans elle, « le contrôle signale » serait satisfait par un contrôle qui signale TOUTE pièce
+  // payée, donc par un écran rouge en permanence. Et la borne : un reste égal au seuil est un frais, pas un reste.
+  it('se tait sur un reste absorbé par le seuil, et sur un paiement exact', () => {
+    expect(piecesPayeesEnPartie([piece({ montant_ttc: 100 })], paiements(['p1', [paiement(-98)]]), 'tresorerie')).toEqual([])
+    expect(piecesPayeesEnPartie([piece({ montant_ttc: 100 })], paiements(['p1', [paiement(-100)]]), 'tresorerie')).toEqual([])
+    expect(piecesPayeesEnPartie([piece({ montant_ttc: 100 })], paiements(['p1', [paiement(-97.99)]]), 'tresorerie')).toHaveLength(1)
+  })
+
+  // Un trop-payé n'est pas un paiement partiel : il a son propre contrôle, `piecesPayeesEnTrop`.
+  it('se tait sur un trop-payé', () => {
+    expect(piecesPayeesEnPartie([piece({ montant_ttc: 100 })], paiements(['p1', [paiement(-150)]]), 'tresorerie')).toEqual([])
+  })
+
+  it('se tait sur une pièce sans paiement', () => {
+    expect(piecesPayeesEnPartie([piece({ montant_ttc: 1000 })], paiements(), 'tresorerie')).toEqual([])
+  })
+
+  // En engagement, le reste d'une facture payée en partie est une dette qui court encore, au 401 ou au 411.
+  it('se tait en engagement', () => {
+    expect(piecesPayeesEnPartie([piece({ montant_ttc: 1000 })], paiements(['p1', [paiement(-500)]]), 'engagement')).toEqual([])
+  })
+
+  // Une pièce hors du jeu fourni est un ARTEFACT DE FILTRAGE, pas une anomalie — la règle de `rupturesPisteAudit`.
+  it('ne regarde que les pièces fournies', () => {
+    expect(piecesPayeesEnPartie([piece({ id: 'p2' })], paiements(['p1', [paiement(-5)]]), 'tresorerie')).toEqual([])
+  })
+})
+
+describe('piecesPayeesPar', () => {
+  it('rend la pièce d’un rapprochement, et les pièces des parts d’un virement groupé', () => {
+    expect(piecesPayeesPar(ligne(), [])).toEqual(['p1'])
+    expect(piecesPayeesPar(ligne({ piece_id: null, reglement_groupe: true }), [{ piece_id: 'pa' }, { piece_id: null }, { piece_id: 'pb' }]))
+      .toEqual(['pa', 'pb'])
+  })
+
+  // Un virement groupé ne porte pas de pièce lui-même : sans ses parts, il n'en paie aucune.
+  it('ne prend pas la pièce de la ligne pour un virement groupé', () => {
+    expect(piecesPayeesPar(ligne({ reglement_groupe: true }), [{ piece_id: 'pa' }])).toEqual(['pa'])
+  })
+
+  it('ne rend rien d’un mouvement qui n’est pas rapproché', () => {
+    expect(piecesPayeesPar(ligne({ statut: 'non_rapprochee' }), [])).toEqual([])
+    expect(piecesPayeesPar(ligne({ statut: 'non_rapprochee', reglement_groupe: true }), [{ piece_id: 'pa' }])).toEqual([])
+  })
+})
+
+describe('pastillesDePaiement', () => {
+  const restes = new Map([['pa', 500], ['pb', 20]])
+  const enTrop = new Map([['pc', 30], ['pd', 7]])
+  // `formatMoney` sépare le montant de « € » par une espace insécable : les attentes s'écrivent avec une espace.
+  const pastillesDePaiementLisibles = (...a: Parameters<typeof pastillesDePaiement>) =>
+    pastillesDePaiement(...a).map((t) => t.replace(/\s/g, ' '))
+
+  it('nomme le reste et le trop-payé de la pièce d’un rapprochement', () => {
+    expect(pastillesDePaiementLisibles(['pa'], restes, enTrop, false)).toEqual(['Reste 500,00 € à payer sur la pièce'])
+    expect(pastillesDePaiementLisibles(['pc'], restes, enTrop, false)).toEqual(['Pièce payée 30,00 € de trop'])
+  })
+
+  // Sur un virement qui règle plusieurs pièces : une pastille par sorte d'écart, qui dit combien sont concernées.
+  it('compte les pièces d’un virement groupé', () => {
+    expect(pastillesDePaiementLisibles(['pa', 'px'], restes, enTrop, true)).toEqual(['Reste 500,00 € à payer sur une pièce'])
+    expect(pastillesDePaiementLisibles(['pa', 'pb', 'pc'], restes, enTrop, true)).toEqual(['Reste à payer sur 2 pièces', 'Une pièce payée 30,00 € de trop'])
+    expect(pastillesDePaiementLisibles(['pc', 'pd'], restes, enTrop, true)).toEqual(['2 pièces payées de trop'])
+  })
+
+  it('se tait sur des pièces réglées', () => {
+    expect(pastillesDePaiementLisibles(['px', 'py'], restes, enTrop, true)).toEqual([])
+    expect(pastillesDePaiementLisibles([], restes, enTrop, false)).toEqual([])
   })
 })
