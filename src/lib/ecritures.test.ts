@@ -139,6 +139,23 @@ describe('lignesChargeProduitPourPiece — la date du paiement', () => {
     expect(parCompte(COMPTE_TVA_DEDUCTIBLE)).toBe(16.67)
   })
 
+  // UNE PIÈCE PAYÉE EN DEUX FOIS S'ÉQUILIBRE À CHAQUE DATE. La charge et la TVA arrondies chacune de son côté ajoutaient
+  // un centime à une date et l'ôtaient à l'autre : 40 € TTC (33,33 + 6,67) payés 20 + 20, c'était 16,67 + 3,34 face à
+  // 20,00 de banque. Payée sur deux exercices, l'écriture de chacun ne tombait plus juste, et la validation, qui la
+  // veut équilibrée au centime, la refusait sans qu'aucun geste ne puisse la réparer.
+  it('équilibre l’écriture de chaque date face à sa banque, la TVA de la pièce entière', () => {
+    const p = piece({ date_piece: '2025-12-20', montant_ht: 33.33, montant_tva: 6.67, montant_ttc: 40 })
+    const deux = [paiement({ id: 'l1', date: '2025-12-28', montant: -20 }), paiement({ id: 'l2', date: '2026-01-05', montant: -20 })]
+    const lignes = lignesPourPiece('d1', p, cible(ACHATS), true, paiementsDesPieces(deux, []).get('p1')!, TRESORERIE)
+    for (const date of ['2025-12-28', '2026-01-05']) {
+      const solde = lignes.filter((l) => l.date === date).reduce((s, l) => s + (l.sens === 'debit' ? 1 : -1) * Math.round(l.montant * 100), 0)
+      expect(solde, date).toBe(0)
+    }
+    expect(lignes.filter((l) => l.compte === COMPTE_TVA_DEDUCTIBLE).reduce((s, l) => s + Math.round(l.montant * 100), 0)).toBe(667)
+    // La charge, elle, reste celle que la 2035 compte à chaque date (`centimesParDate`).
+    expect(lignes.filter((l) => l.compte === ACHATS).map((l) => [l.date, l.montant])).toEqual([['2025-12-28', 16.67], ['2026-01-05', 16.66]])
+  })
+
   it('ne fait pas de ligne de TVA vide quand sa part s’arrondit à zéro', () => {
     const p = piece({ date_piece: '2025-12-20', montant_ht: 1, montant_tva: 0.01, montant_ttc: 1.01 })
     const lignes = lignesChargeProduitPourPiece('d1', p, cible(ACHATS), true, [paiement({ montant: -0.5 })])
@@ -537,6 +554,45 @@ describe('piecesDesynchronisees — la date, qui déplace l’écriture d’EXER
     expect(analyserEcritures([charge, banque('2026-04-05')], [{ piece: p, compte: ACHATS, immobilisation: false }], true, payee, TRESORERIE, null).piecesDesynchronisees).toEqual([])
     // Le garde symétrique : une contrepartie à une autre date que son paiement ne le suit plus.
     expect(analyserEcritures([charge, banque('2026-03-10')], [{ piece: p, compte: ACHATS, immobilisation: false }], true, payee, TRESORERIE, null).piecesDesynchronisees).toEqual([p])
+  })
+})
+
+// LE SOLDE DE CHAQUE COMPTE À CHAQUE DATE. Une écriture juste au total, aux bonnes dates et sur les bons comptes peut
+// encore être fausse à chaque date : c'est ce que l'ancien arrondi de la TVA produisait sur une pièce payée en deux
+// fois, et ce qui la rendait invalidable sur deux exercices sans que « Régénérer » soit proposé.
+describe('piecesDesynchronisees — le solde de chaque compte à chaque date', () => {
+  const p = piece({ id: 'p1', date_piece: '2025-12-20', montant_ht: 33.33, montant_tva: 6.67, montant_ttc: 40 })
+  const aComptabiliser = [{ piece: p, compte: ACHATS, immobilisation: false }]
+  const deux = paiementsDesPieces([paiement({ id: 'l1', date: '2025-12-28', montant: -20 }), paiement({ id: 'l2', date: '2026-01-05', montant: -20 })], [])
+  const generee = lignesPourPiece('d1', p, cible(ACHATS), true, deux.get('p1')!, TRESORERIE)
+    .map((l, i) => ecriture({ ...l, id: `e${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+  const desynchronisees = (lignes: EcritureBrouillon[]) =>
+    analyserEcritures(lignes, aComptabiliser, true, deux, TRESORERIE, null).piecesDesynchronisees
+
+  it('signale l’écriture de l’ancien arrondi — juste au total, déséquilibrée à chaque date', () => {
+    expect(desynchronisees(generee)).toEqual([])
+    // La TVA de chaque date arrondie de son côté : 3,34 puis 3,33, face à 16,67 puis 16,66 de charge.
+    const ancienArrondi = generee.map((e) => e.compte !== COMPTE_TVA_DEDUCTIBLE ? e : { ...e, montant: e.date === '2025-12-28' ? 3.34 : 3.33 })
+    expect(ancienArrondi.filter((e) => e.compte === COMPTE_TVA_DEDUCTIBLE).reduce((s, e) => s + Math.round(e.montant * 100), 0)).toBe(667)
+    expect(desynchronisees(ancienArrondi)).toEqual([p])
+  })
+
+  it('signale une charge répartie autrement entre les deux dates, chaque date restant équilibrée', () => {
+    // 16,66 puis 16,67 de charge, 3,34 puis 3,33 de TVA : 20,00 face à 20,00 de banque à chaque date, les totaux et
+    // les dates justes — mais la 2035 compte 16,67 au premier exercice, et l'écriture 16,66.
+    const inversee = generee.map((e) => e.compte === ACHATS ? { ...e, montant: e.date === '2025-12-28' ? 16.66 : 16.67 }
+      : e.compte === COMPTE_TVA_DEDUCTIBLE ? { ...e, montant: e.date === '2025-12-28' ? 3.34 : 3.33 } : e)
+    expect(desynchronisees(inversee)).toEqual([p])
+  })
+
+  it('compare le solde de chaque compte, pas son découpage en lignes', () => {
+    // La charge de la première date écrite en deux lignes : même solde, rien à régénérer.
+    const coupee = generee.flatMap((e) => e.compte === ACHATS && e.date === '2025-12-28'
+      ? [{ ...e, id: `${e.id}a`, montant: 10 }, { ...e, id: `${e.id}b`, montant: 6.67 }] : [e])
+    expect(desynchronisees(coupee)).toEqual([])
+    // Et deux lignes qui s'annulent — à une date qui n'en porte pas d'autre — ne déplacent aucun solde.
+    const annulees = [...generee, ecriture({ id: 'x1', date: '2025-12-30', montant: 5 }), ecriture({ id: 'x2', date: '2025-12-30', sens: 'credit', montant: 5 })]
+    expect(desynchronisees(annulees)).toEqual([])
   })
 })
 

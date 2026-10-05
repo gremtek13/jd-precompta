@@ -95,10 +95,18 @@ export function lignesChargeProduitPourPiece(
 
   // La répartition au centime est celle que la 2035 compte (`centimesParDate`, lib/rattachement.ts) : un seul
   // calcul, pour que la déclaration et le FEC disent le même centime d'une pièce payée sur deux exercices.
+  //
+  // ET LA TVA D'UNE DATE COMPLÈTE SA CHARGE : la charge et la TVA se répartissent ENSEMBLE, comme la pièce, puis la
+  // charge s'ôte. Arrondies chacune de son côté, deux parts au demi-centime ajoutaient un centime à une date et
+  // l'ôtaient à l'autre — 40 € TTC payés en deux fois, 16,67 + 3,34 face à 20,00 de banque —, et l'écriture d'une
+  // pièce payée sur deux exercices ne tombait plus juste face à la banque de chacun : la validation, qui la veut
+  // équilibrée au centime, la refusait sans qu'aucun geste ne puisse la réparer. La TVA de la pièce reste entière.
   const tva = tvaVentilee(piece, assujettiTva)
   const charge = tva ? montantRetenu(piece, assujettiTva)! : piece.montant_ttc!
   const charges = centimesParDate(piece, charge, paiements)
-  const tvas = tva ? centimesParDate(piece, tva, paiements) : []
+  const tvas = tva
+    ? centimesParDate(piece, charge + tva, paiements).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
+    : []
 
   return charges.flatMap((f, i) => {
     const lignes = [ligne(f.date, cible.compte, f.centimes / 100)]
@@ -645,11 +653,27 @@ function tresorerieDesynchronisee(
   // facture, compterait dans l'exercice de la facture pendant que la 2035 la compte dans celui du
   // paiement. Les dates présentes doivent être EXACTEMENT celles attendues — une par part de la
   // pièce, et aucune autre.
-  const attendues = datesAttendues(p, paiementsPiece)
-  if (attendues) {
-    const presentes = new Set(lignes.map((e) => e.date))
-    if (presentes.size !== attendues.size || [...attendues].some((d) => !presentes.has(d))) return true
+  //
+  // ET LES MONTANTS DE CHAQUE DATE, que ni le total ni l'ensemble des dates ne voient : à chaque date, ce que la charge
+  // et sa TVA portent sur chaque compte est ce que la génération y écrit, au centime. Générée avant que la TVA d'une
+  // date complète sa charge, l'écriture d'une pièce de 40 € TTC payée 20 + 20 portait 16,67 + 3,34 face à 20,00 de
+  // banque — juste au total, fausse à chaque date, donc déséquilibrée dans chacun des exercices qu'elle traverse, ce
+  // que la validation refuse ; et « Régénérer », qui la répare, ne se proposait pas. On compare le SOLDE de chaque
+  // compte à chaque date, pas le découpage en lignes — deux lignes de 60 € valent une de 120 €, deux qui s'annulent ne
+  // valent rien, comme une part que la génération arrondit à zéro et que la base refuserait —, et la date n'entre dans
+  // la comparaison que si chaque part de la pièce en a une.
+  const dateComparee = datesAttendues(p, paiementsPiece) !== null
+  const soldesParDate = (ls: readonly Pick<EcritureBrouillon, 'date' | 'compte' | 'sens' | 'montant'>[]) => {
+    const soldes = new Map<string, number>()
+    for (const l of ls) {
+      const cle = `${dateComparee ? l.date : ''}|${l.compte}`
+      soldes.set(cle, (soldes.get(cle) ?? 0) + (l.sens === 'debit' ? 1 : -1) * Math.round(l.montant * 100))
+    }
+    return [...soldes].filter(([, centimes]) => centimes !== 0).map(([cle, centimes]) => `${cle}|${centimes}`).sort()
   }
+  const presentes = soldesParDate(lignes)
+  const generees = soldesParDate(lignesChargeProduitPourPiece(p.dossier_id, p, cible, assujettiTva, paiementsPiece))
+  if (presentes.length !== generees.length || presentes.some((c, i) => c !== generees[i])) return true
   const total = lignes.reduce((sum, e) => sum + (e.sens === sensPiece ? e.montant : -e.montant), 0)
   if (Math.abs(total - p.montant_ttc!) > EPSILON_EQUILIBRE) return true
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT. Le rapprochement n'en écrivait qu'une par pièce — celle du
