@@ -27,7 +27,7 @@ function sourceDeployee(): string {
 }
 
 type Bien = Pick<Immobilisation, 'valeur' | 'duree_annees' | 'date_acquisition' | 'date_mise_en_service'>
-type Dotation = { immobilisation: { id: string }; annee: number; montant: number; etat: string }
+type Dotation = { immobilisation: { id: string }; annee: number; montant: number; etat: string; figee: boolean }
 interface Copie {
   rang360: (date: string) => number
   dotationDeLExercice: (bien: Bien, annee: number) => number
@@ -35,19 +35,26 @@ interface Copie {
   dotationAEcrire: (bien: Bien, annee: number, ouverture: string | null) => number
   dotationsDuRegistre: (
     immobilisations: Immobilisation[], natures: NatureImmobilisation[], ecritures: EcritureBrouillon[], ouverture: string | null, anneeCourante: number,
+    frontiere: string | null,
   ) => Dotation[]
   dotationsEnDefaut: (dotations: Dotation[], anneeCourante: number) => Dotation[]
   bienRepris: (bien: Pick<Immobilisation, 'date_acquisition'>, ouverture: string | null) => boolean
   acquisitionsDesBiens: (immobilisations: Immobilisation[], natures: NatureImmobilisation[], ouverture: string | null) => Map<string, AcquisitionDuBien>
 }
 
-// Le bloc AMORTISSEMENT se suffit à lui-même : il ne lit rien d'autre de la fonction.
+// Le bloc AMORTISSEMENT ne lit de la fonction que `estFigee`, du bloc VALIDATION (la frontière des exercices
+// validés), repris de la MÊME source.
 function extraire(source: string): Copie {
   const debut = source.indexOf('// ── DÉBUT AMORTISSEMENT')
   const fin = source.indexOf('// ── FIN AMORTISSEMENT')
   expect(debut, 'bornes du bloc AMORTISSEMENT introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
   expect(fin).toBeGreaterThan(debut)
-  const js = ts.transpileModule(source.slice(debut, fin), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
+  const debutValidation = source.indexOf('// ── DÉBUT VALIDATION')
+  const finValidation = source.indexOf('// ── FIN VALIDATION')
+  expect(debutValidation, 'bornes du bloc VALIDATION introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
+  expect(finValidation).toBeGreaterThan(debutValidation)
+  const bloc = `${source.slice(debutValidation, finValidation)}\n${source.slice(debut, fin)}`
+  const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { rang360, dotationDeLExercice, compteAmortissement, dotationAEcrire, dotationsDuRegistre, dotationsEnDefaut, bienRepris, acquisitionsDesBiens }`)() as Copie
 }
 
@@ -108,7 +115,9 @@ const ECRITURES: EcritureBrouillon[] = [
   ...ecrite('r-ancien', 2023, 300),
 ]
 
-const etats = (d: Dotation[]) => d.map((x) => [x.immobilisation.id, x.annee, x.montant, x.etat])
+const etats = (d: Dotation[]) => d.map((x) => [x.immobilisation.id, x.annee, x.montant, x.etat, x.figee])
+// Les frontières de validation sous lesquelles les deux copies sont comparées : aucune, puis 2024 et 2025 validés.
+const FRONTIERES = [null, '2024-12-31', '2025-12-31'] as const
 
 describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
   it('n’est pas la fonction de src/lib elle-même', () => {
@@ -145,13 +154,19 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
   it('rend les mêmes dotations du registre, dans le même état, et réclame les mêmes', () => {
     for (const ouverture of [null, '2026-01-01']) {
       for (const anneeCourante of [2025, 2026, 2027]) {
-        const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, null)
-        const copie = deployee.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante)
-        expect(etats(copie), `${ouverture} / ${anneeCourante}`).toEqual(etats(attendu))
-        expect(etats(deployee.dotationsEnDefaut(copie, anneeCourante)), `${ouverture} / ${anneeCourante}`)
-          .toEqual(etats(dotationsEnDefaut(attendu, anneeCourante)))
+        for (const f of FRONTIERES) {
+          const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, f)
+          const copie = deployee.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, f)
+          expect(etats(copie), `${ouverture} / ${anneeCourante} / ${f}`).toEqual(etats(attendu))
+          expect(etats(deployee.dotationsEnDefaut(copie, anneeCourante)), `${ouverture} / ${anneeCourante} / ${f}`)
+            .toEqual(etats(dotationsEnDefaut(attendu, anneeCourante)))
+        }
       }
     }
+    // Et la frontière décide : un exercice validé ne réclame plus sa dotation, même validée et divergente.
+    const reclamees = (f: string | null) => etats(dotationsEnDefaut(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, f), 2026))
+    expect(reclamees(null).some(([, annee]) => annee === 2025)).toBe(true)
+    expect(reclamees('2025-12-31').some(([, annee]) => (annee as number) <= 2025)).toBe(false)
     // Et le registre exerce bien chaque état : sans quoi l'égalité ci-dessus ne prouverait rien de lui.
     const tous = new Set(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, null).map((d) => d.etat))
     expect([...tous].sort()).toEqual(['a_ecrire', 'a_reecrire', 'a_retirer', 'ecrite', 'validee'])
@@ -196,13 +211,13 @@ describe('agent-comptable / points_a_traiter lit le registre et ses dotations', 
     expect(corps).toMatch(/from\("natures_immobilisation"\)\.select\("id, compte_immobilisation"[^)]*\)\.or\(`dossier_id\.eq\.\$\{dossierId\},dossier_id\.is\.null`\)\.order\("id"\)/)
     expect(corps).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id[,"]/)
     expect(corps).toMatch(/from\("a_nouveaux"\)\.select\("id, date"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("date"\)\.order\("id"\)/)
-    expect(corps).toMatch(/rReglements, rCotisations, rNatures, rANouveaux, rVehicules\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('rend le point de la Checklist, l’exercice en cours lu dans le fuseau du cabinet', () => {
     expect(corps).toContain('const anneeCourante = Number(aujourdHuiCabinet().slice(0, 4))')
     expect(corps).toContain('const ouverture = rANouveaux.lignes[0]?.date ?? null')
-    expect(corps).toMatch(/dotationsEnDefaut\(\s*dotationsDuRegistre\(rImmobilisations\.lignes, rNatures\.lignes, ecrituresTyped, ouverture, anneeCourante\),\s*anneeCourante,\s*\)/)
+    expect(corps).toMatch(/dotationsEnDefaut\(\s*dotationsDuRegistre\(rImmobilisations\.lignes, rNatures\.lignes, ecrituresTyped, ouverture, anneeCourante, frontiere\),\s*anneeCourante,\s*\)/)
     expect(corps).toMatch(/dotations_aux_amortissements_a_ecrire_ou_qui_ne_suivent_plus_le_registre: dotationsManquantes\.length/)
   })
 
@@ -242,9 +257,9 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
       }
     }
   }
-  const memeRegistre = (copie: Copie, anneeCourante = 2026, ouverture: string | null = null) => {
-    const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, null)
-    const rendu = copie.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante)
+  const memeRegistre = (copie: Copie, anneeCourante = 2026, ouverture: string | null = null, frontiere: string | null = null) => {
+    const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, frontiere)
+    const rendu = copie.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, frontiere)
     expect(etats(rendu)).toEqual(etats(attendu))
     expect(etats(copie.dotationsEnDefaut(rendu, anneeCourante))).toEqual(etats(dotationsEnDefaut(attendu, anneeCourante)))
   }
@@ -308,6 +323,17 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
     // Le motif porte la date de la DOTATION : le bloc FORFAIT a la même comparaison au centime, sur la sienne.
     const derivee = planter(['e.date === dateDeLaDotation(annee)\n      && Math.round(e.montant * 100) === Math.round(a.montant * 100))', 'e.date === dateDeLaDotation(annee)\n      && Math.abs(e.montant - a.montant) < 0.05)'])
     echoue(() => memeRegistre(derivee))
+  })
+
+  // LA FRONTIÈRE DE VALIDATION : un exercice validé ne réclame plus sa dotation.
+  it('attrape une dotation figée réclamée', () => {
+    const derivee = planter(['dotations.filter((d) => !d.figee && d.etat !== "ecrite"', 'dotations.filter((d) => d.etat !== "ecrite"'])
+    echoue(() => memeRegistre(derivee, 2026, null, '2025-12-31'))
+  })
+
+  it('attrape une dotation jamais figée', () => {
+    const derivee = planter(['figee: estFigee(dateDeLaDotation(annee), frontiere) })', 'figee: false })'])
+    echoue(() => memeRegistre(derivee, 2026, null, '2025-12-31'))
   })
 
   it('attrape une dotation écrite hors des exercices du calcul, qu’on ne verrait plus', () => {

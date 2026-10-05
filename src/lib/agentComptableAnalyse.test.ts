@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs'
 import ts from 'typescript'
 import { describe, expect, it } from 'vitest'
 import type { AcquisitionDuBien } from './amortissements'
-import { analyserEcritures, lignesPourPiece, piecesAComptabiliser, type CibleComptable } from './ecritures'
+import { analyserEcritures, lignesPourPiece, piecesAComptabiliser, type CibleComptable, type LigneAGenerer } from './ecritures'
 import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
-import { rattachementsTresorerie, paiementsDesPieces, type PaiementsDesPieces, type PartReglee } from './rattachement'
+import { rattachementsTresorerie, paiementsDesPieces, type PaiementDePiece, type PaiementsDesPieces, type PartReglee } from './rattachement'
 import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, Piece } from './types'
+import { dateAParis } from './format'
+import { estFigee, frontiereDeValidation } from './validationExercice'
 
 // `agent-comptable` EST AUTO-PORTÉE, ET C'ÉTAIT LA DERNIÈRE DUPLICATION SANS GARDE.
 //
@@ -32,6 +34,11 @@ import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, P
 // équilibré seul. Une copie restée à la trésorerie annoncerait « à régénérer » chacune de ces
 // écritures justes, et se tairait sur un mouvement rapproché sans règlement : les deux copies sont
 // donc comparées dans les deux modèles.
+//
+// ET UN EXERCICE VALIDÉ NE SE COMPARE PLUS (04/10/2026, ligne 26.6, étape d). Une pièce que la frontière de
+// validation coupe ne se juge que sur sa part OUVERTE, ligne pour ligne contre ce que le GÉNÉRATEUR produirait
+// aujourd'hui (`partieOuverteDesynchronisee`). La copie porte donc aussi le générateur — trésorerie et engagement —,
+// comparé ici à `lignesPourPiece` de src/lib, et les deux copies sont comparées sous plusieurs frontières.
 //
 // ET UNE PIÈCE SE PAIE AUSSI PAR LA PART D'UN VIREMENT GROUPÉ (30/09/2026, ligne 26). Les paiements d'une
 // pièce sont ses rapprochements ET ses parts (`paiementsDesPieces`), et ses lignes de banque doivent les
@@ -65,6 +72,8 @@ function extraire(source: string) {
     'const COMPTE_FOURNISSEURS =', 'const COMPTE_FOURNISSEURS_IMMOBILISATIONS =', 'const COMPTE_TVA_IMMOBILISATIONS =',
     'function compteTvaDe(', 'function compteDeTiers(', 'function engagementDesynchronise(',
     'function desequilibresEngagement(', 'function paiementsDesPieces(', 'function banqueSuitLesPaiements(',
+    'function frontiereDeValidation(', 'function estFigee(', 'function lignesPourPiece(', 'function partieOuverteDesynchronisee(',
+    'function dateDuDepot(',
   ] as const) {
     expect(bloc, `« ${attendu} » absent du bloc gardé`).toContain(attendu)
   }
@@ -73,11 +82,11 @@ function extraire(source: string) {
   // compilateur du projet plutôt que d'en retirer les types à la main — une traduction écrite à la
   // main mentirait au premier cas tordu.
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces }`)() as {
+  return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot }`)() as {
     piecesAComptabiliser: (p: Piece[], c: Categorie[], biens: ReadonlyMap<string, AcquisitionDuBien>) => ({ piece: Piece } & CibleComptable)[]
     analyserEcritures: (
       e: EcritureBrouillon[], a: ({ piece: Piece } & CibleComptable)[], assujettiTva: boolean, paiements: PaiementsDesPieces,
-      modele: ModeleComptable,
+      modele: ModeleComptable, frontiere: string | null,
     ) => {
       nbSansContrepartie: number
       groupesDesequilibres: { pieceId: string; solde: number }[]
@@ -85,6 +94,12 @@ function extraire(source: string) {
     }
     rattachementsTresorerie: typeof rattachementsTresorerie
     paiementsDesPieces: typeof paiementsDesPieces
+    frontiereDeValidation: typeof frontiereDeValidation
+    estFigee: typeof estFigee
+    lignesPourPiece: (
+      piece: Piece, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], modele: ModeleComptable,
+    ) => Pick<LigneAGenerer, 'date' | 'compte' | 'sens' | 'montant' | 'ligne_bancaire_id'>[]
+    dateDuDepot: (instant: string) => string
   }
 }
 
@@ -125,6 +140,11 @@ const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon =>
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
 
+// Les frontières de validation sous lesquelles `memeResultat` compare les deux copies : aucune ; la veille de la date
+// de pièce de la batterie, et ce jour même ; celles qui coupent ses paiements (20 mars, 2 et 15 avril, 2 mai) ; la fin
+// de l'exercice. La plupart des cas ont ainsi une ligne figée et une ouverte sous l'une d'elles.
+const FRONTIERES: (string | null)[] = [null, '2025-03-09', '2025-03-10', '2025-03-31', '2025-04-10', '2025-12-31']
+
 // Un mouvement rapproché de la pièce : il DATE l'écriture en trésorerie, et appelle un RÈGLEMENT en
 // engagement.
 const paiement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
@@ -163,10 +183,14 @@ const payee = (id: string, date = '2025-03-10') => paiement({ id: `l-${id}`, pie
  *
  * Chaque côté tire les paiements des pièces de SA copie de `paiementsDesPieces` : une dérive de la copie
  * déployée — les parts oubliées, un mouvement non rapproché retenu — mord ici comme sur le calcul.
+ *
+ * ET LES DEUX COPIES SONT COMPARÉES SOUS CHAQUE FRONTIÈRE DE VALIDATION de `FRONTIERES` — aucune, puis des frontières
+ * qui coupent les dates de la batterie —, pas seulement sous celle qu'on demande : chaque cas ci-dessous éprouve
+ * ainsi la branche d'une pièce que la frontière coupe. Le résultat rendu est celui de `frontiere`.
  */
 function memeResultat(
   ecritures: EcritureBrouillon[], pieces: Piece[], biens: [string, AcquisitionDuBien][] = [], copie = deployee, assujettiTva = true,
-  paiements: LigneBancaire[] = [], modele: ModeleComptable = TRESORERIE, parts: PartReglee[] = [],
+  paiements: LigneBancaire[] = [], modele: ModeleComptable = TRESORERIE, parts: PartReglee[] = [], frontiere: string | null = null,
 ) {
   // `biens` : la pièce de chaque bien du registre, et ce que sa facture écrit — le compte de sa nature, ou rien
   // (sans nature, ou acquis avant l'ouverture d'un dossier repris).
@@ -175,15 +199,17 @@ function memeResultat(
   const resume = (a: ({ piece: Piece } & CibleComptable)[]) => a.map((x) => `${x.piece.id}:${x.compte}:${x.immobilisation}`)
   expect(resume(la), 'piecesAComptabiliser a dérivé').toEqual(resume(ici))
 
-  const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, null)
-  const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, copie.paiementsDesPieces(paiements, parts), modele)
-  const forme = (r: typeof r1) => ({
+  const forme = (r: ReturnType<typeof analyserEcritures>) => ({
     nbSansContrepartie: r.nbSansContrepartie,
     groupesDesequilibres: r.groupesDesequilibres.map((g) => `${g.pieceId}:${g.solde.toFixed(2)}`),
     piecesDesynchronisees: r.piecesDesynchronisees.map((p) => p.id),
   })
-  expect(forme(r2), 'analyserEcritures a dérivé').toEqual(forme(r1))
-  return forme(r1)
+  for (const f of new Set([...FRONTIERES, frontiere])) {
+    const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, f)
+    const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, copie.paiementsDesPieces(paiements, parts), modele, f)
+    expect(forme(r2), `analyserEcritures a dérivé (frontière ${f})`).toEqual(forme(r1))
+  }
+  return forme(analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, frontiere))
 }
 
 describe('agent-comptable / analyserEcritures (copie déployée)', () => {
@@ -689,10 +715,216 @@ describe('agent-comptable / la note de frais en trésorerie (copie déployée)',
   })
 })
 
+// LE GÉNÉRATEUR DE LA COPIE (04/10/2026, ligne 26.6, étape d). Une pièce que la frontière de validation coupe se juge
+// sur sa part OUVERTE, ligne pour ligne contre ce que la génération produirait aujourd'hui : la copie porte donc tout
+// le générateur de src/lib — trésorerie, note de frais face au 108000, engagement, biens —, et il doit rendre les
+// MÊMES lignes, au centime, date, compte, sens et mouvement compris. Le libellé, le dossier et le statut ne sont pas
+// comparés : aucun contrôle ne les lit.
+type LigneComparee = Pick<LigneAGenerer, 'date' | 'compte' | 'sens' | 'montant' | 'ligne_bancaire_id'>
+const projeter = (lignes: readonly LigneComparee[]) =>
+  lignes.map((l) => `${l.date}|${l.compte}|${l.sens}|${l.montant}|${l.ligne_bancaire_id ?? ''}`).sort()
+
+// La batterie : des pièces qui exercent chaque branche (hors taxe lu ou non, TVA nulle ou absente, avoirs, ventes,
+// notes de frais, pièces sans date datées par leur dépôt), sur chaque cible, payées de chaque façon (rien, en entier
+// le jour même ou plus tard, à moitié, en trois fois — l'arrondi du dernier morceau —, sous l'écart d'alignement, par
+// la part d'un virement groupé, à zéro euro, au-delà du montant), dans chaque modèle et chaque statut de TVA.
+function batterieDuGenerateur(copie: typeof deployee): string[][] {
+  const pieces: Piece[] = [
+    piece({}),
+    piece({ montant_ht: null }),
+    piece({ montant_ht: 100.01 }),
+    piece({ montant_ht: null, montant_tva: null }),
+    piece({ montant_ht: 120, montant_tva: 0 }),
+    // Une TVA d'un centime : payée en trois fois, ses deux premières parts s'arrondissent à zéro et ne font pas de ligne.
+    piece({ montant_ht: 0.09, montant_tva: 0.01, montant_ttc: 0.1 }),
+    piece({ montant_ht: -50, montant_tva: -10, montant_ttc: -60 }),
+    piece({ type_piece: 'vente', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200 }),
+    piece({ type_piece: 'vente', montant_ht: -100, montant_tva: -20, montant_ttc: -120 }),
+    piece({ type_piece: 'note_frais' }),
+    piece({ type_piece: 'note_frais', montant_ht: null, montant_tva: null, montant_ttc: -30 }),
+    piece({ date_piece: null, created_at: '2025-03-15T09:00:00Z' }),
+    piece({ type_piece: 'note_frais', date_piece: null, created_at: '2025-03-15T09:00:00Z' }),
+  ]
+  const cibles = [cible(COMPTE_ACHATS), bien('218300'), cible('108000'), cible('706000')]
+  const modeles: ModeleComptable[] = [
+    TRESORERIE, ENGAGEMENT, { mode: 'engagement', compteNotesDeFrais: '108000' }, { mode: 'engagement', compteNotesDeFrais: '467000' },
+  ]
+  const sorties: string[][] = []
+  for (const p of pieces) {
+    // Un paiement va dans l'autre sens que la pièce : une sortie pour un achat, une entrée pour une vente.
+    const signe = p.type_piece === 'vente' ? 1 : -1
+    const ttc = p.montant_ttc!
+    const part = (f: number) => Math.round(signe * ttc * f * 100) / 100
+    const reglements: [LigneBancaire[], PartReglee[]][] = [
+      [[], []],
+      [[paiement({ id: 'l1', date: '2025-03-10', montant: part(1) })], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1) })], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(0.5) })], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1 / 3) }), paiement({ id: 'l2', date: '2025-05-02', montant: part(1 / 3) })], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1) - signe * 1 })], []],
+      [[paiement({ id: 'g', piece_id: null, date: '2025-04-15', montant: part(1) - signe * 50, reglement_groupe: true })],
+        [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: part(1) }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: -signe * 50 }]],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: 0 })], []],
+      [[paiement({ id: 'l1', date: '2025-04-02', montant: part(1.1) })], []],
+    ]
+    for (const c of cibles) {
+      for (const [mouvements, parts] of reglements) {
+        const paiementsPiece = paiementsDesPieces(mouvements, parts).get(p.id) ?? []
+        for (const modele of modeles) {
+          for (const assujettiTva of [true, false]) {
+            const ici = projeter(lignesPourPiece('d1', p, c, assujettiTva, paiementsPiece, modele))
+            const la = projeter(copie.lignesPourPiece(p, c, assujettiTva, paiementsPiece, modele))
+            expect(la, `lignesPourPiece a dérivé : ${JSON.stringify({ piece: p, cible: c, paiementsPiece, modele, assujettiTva })}`).toEqual(ici)
+            sorties.push(ici)
+          }
+        }
+      }
+    }
+  }
+  return sorties
+}
+
+describe('agent-comptable / le générateur (copie déployée)', () => {
+  it('produit les mêmes lignes que src/lib, au centime, sur toute la batterie', () => {
+    const sorties = batterieDuGenerateur(deployee)
+    // La batterie exerce bien ce qui décide : chaque compte de tiers et de contrepartie, la TVA d'un bien, une pièce
+    // répartie sur trois dates, et le dépôt qui date une pièce sans date.
+    const comptes = new Set(sorties.flat().map((l) => l.split('|')[1]))
+    for (const compte of ['401000', '404000', '411000', '455000', '467000', '108000', '445620', '445660', '445710', COMPTE_BANQUE]) {
+      expect(comptes, `aucune ligne au ${compte} : la batterie n'exerce plus cette branche`).toContain(compte)
+    }
+    expect(sorties.some((lignes) => new Set(lignes.map((l) => l.split('|')[0])).size >= 3), 'aucune pièce sur trois dates').toBe(true)
+    expect(sorties.some((lignes) => lignes.some((l) => l.startsWith('2025-03-15|'))), 'aucune ligne datée du dépôt').toBe(true)
+  })
+
+  it('date les lignes d’une pièce sans date de son dépôt À PARIS, quel que soit le fuseau qui l’exécute', () => {
+    // Déposée le 31 décembre 2025 à 23 h 30 UTC : le 1er janvier 2026 à Paris. Toutes ses lignes, la charge, la
+    // TVA, la contrepartie d'une note de frais au 108000 et la facture en engagement, portent ce jour-là.
+    const instant = '2025-12-31T23:30:00Z'
+    const cas: [Piece, ModeleComptable][] = [
+      [piece({ date_piece: null, created_at: instant }), TRESORERIE],
+      [piece({ date_piece: null, created_at: instant }), ENGAGEMENT],
+      [piece({ type_piece: 'note_frais', date_piece: null, created_at: instant }), TRESORERIE],
+    ]
+    for (const [p, modele] of cas) {
+      const lignes = deployee.lignesPourPiece(p, cible(COMPTE_ACHATS), true, [], modele)
+      expect(lignes.length, `${p.type_piece} en ${modele.mode}`).toBeGreaterThanOrEqual(2)
+      expect([...new Set(lignes.map((l) => l.date))], `${p.type_piece} en ${modele.mode}`).toEqual(['2026-01-01'])
+    }
+  })
+
+  // Le repli d'une pièce sans date : son dépôt, À PARIS. Une Edge Function tourne en UTC ; le navigateur, lui, lit
+  // le dépôt dans son fuseau (`dateLocaleDe`) — l'écart, entre minuit et deux heures du matin ailleurs qu'à Paris,
+  // est dit dans la copie.
+  it('date un dépôt à Paris, heure d’hiver comme d’été', () => {
+    const table: [string, string][] = [
+      ['2025-12-31T23:30:00Z', '2026-01-01'],
+      ['2025-12-31T22:59:59Z', '2025-12-31'],
+      ['2025-06-30T22:30:00Z', '2025-07-01'],
+      ['2025-06-30T21:59:00Z', '2025-06-30'],
+      ['2025-03-10T09:00:00Z', '2025-03-10'],
+    ]
+    for (const [instant, date] of table) {
+      expect(deployee.dateDuDepot(instant), instant).toBe(date)
+      expect(dateAParis(instant), instant).toBe(date)
+    }
+  })
+})
+
+// LA FRONTIÈRE DE VALIDATION (bloc VALIDATION) : les deux fonctions que tous les contrôles de la copie partagent. Une
+// table écrite ici, extérieure aux deux copies.
+describe('agent-comptable / la frontière de validation (copie déployée)', () => {
+  it('tire la frontière du dernier exercice validé, et fige ce qui la précède, ce jour compris', () => {
+    const frontieres: [number[], string | null][] = [[[], null], [[2024], '2024-12-31'], [[2023, 2025, 2024], '2025-12-31']]
+    for (const [annees, frontiere] of frontieres) {
+      expect(deployee.frontiereDeValidation(annees), String(annees)).toBe(frontiere)
+      expect(frontiereDeValidation(annees), String(annees)).toBe(frontiere)
+    }
+    const figees: [string, string | null, boolean][] = [
+      ['2025-12-31', '2025-12-31', true], ['2026-01-01', '2025-12-31', false], ['2024-06-30', '2025-12-31', true], ['2025-01-01', null, false],
+    ]
+    for (const [date, frontiere, figee] of figees) {
+      expect(deployee.estFigee(date, frontiere), `${date} sous ${frontiere}`).toBe(figee)
+      expect(estFigee(date, frontiere), `${date} sous ${frontiere}`).toBe(figee)
+    }
+  })
+})
+
+// Ce que la génération de src/lib écrit pour une pièce, dans un modèle : « conforme » veut dire ce qu'elle produit.
+function brouillon(
+  p: Piece, c: CibleComptable, mouvements: LigneBancaire[], modele: ModeleComptable, prefixe: string = p.id,
+): EcritureBrouillon[] {
+  const paiementsPiece = paiementsDesPieces(mouvements, []).get(p.id) ?? []
+  return lignesPourPiece('d1', p, c, true, paiementsPiece, modele)
+    .map((l, i) => ecriture({ ...l, id: `${prefixe}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+}
+
+// UNE PIÈCE QUE LA FRONTIÈRE COUPE NE SE JUGE QUE SUR SA PART OUVERTE. La comparer entière ferait dire « à
+// régénérer », à jamais, d'une pièce dont la catégorie a changé de compte depuis la validation — sur un geste que la
+// base refuse —, pendant que la Checklist se tait.
+describe('agent-comptable / analyserEcritures sous une frontière de validation (copie déployée)', () => {
+  const recategorisee = () => piece({ categorie_id: 'cat-autre' })
+  const enDeuxFois = [paiement({ id: 'l1', date: '2025-03-10', montant: -60 }), paiement({ id: 'l2', date: '2025-04-02', montant: -60 })]
+
+  it('se tait sur une pièce figée dont la catégorie a changé de compte depuis la validation', () => {
+    const avant = brouillon(piece({}), cible(COMPTE_ACHATS), [payee('p1')], TRESORERIE)
+    expect(memeResultat(avant, [recategorisee()], [], deployee, true, [payee('p1')], TRESORERIE, [], '2025-12-31').piecesDesynchronisees)
+      .toEqual([])
+    // Sans validation, la même pièce est à régénérer.
+    expect(memeResultat(avant, [recategorisee()], [], deployee, true, [payee('p1')]).piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('accepte une part ouverte régénérée sur le nouveau compte à côté d’une part figée restée sur l’ancien', () => {
+    const avant = brouillon(piece({}), cible(COMPTE_ACHATS), enDeuxFois, TRESORERIE, 'v')
+    const apres = brouillon(recategorisee(), cible('628000'), enDeuxFois, TRESORERIE, 'n')
+    const regeneree = [...avant.filter((e) => e.date <= '2025-03-31'), ...apres.filter((e) => e.date > '2025-03-31')]
+    expect(memeResultat(regeneree, [recategorisee()], [], deployee, true, enDeuxFois, TRESORERIE, [], '2025-03-31'))
+      .toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+    // La part ouverte restée sur l'ancien compte, elle, est à régénérer…
+    expect(memeResultat(avant, [recategorisee()], [], deployee, true, enDeuxFois, TRESORERIE, [], '2025-03-31').piecesDesynchronisees)
+      .toEqual(['p1'])
+    // … et sans validation, c'est la pièce entière qui l'est.
+    expect(memeResultat(regeneree, [recategorisee()], [], deployee, true, enDeuxFois).piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('voit dans la part ouverte une contrepartie qui désigne un autre mouvement, aux mêmes date et montant', () => {
+    const lignes = brouillon(piece({}), cible(COMPTE_ACHATS), enDeuxFois, TRESORERIE)
+      .map((e) => (e.ligne_bancaire_id === 'l2' ? { ...e, ligne_bancaire_id: 'l-autre' } : e))
+    expect(memeResultat(lignes, [piece({})], [], deployee, true, enDeuxFois, TRESORERIE, [], '2025-03-31').piecesDesynchronisees)
+      .toEqual(['p1'])
+  })
+
+  it('coupe une pièce par ce qu’elle devrait porter, pas seulement par ce qu’elle porte', () => {
+    // L'écriture générée quand la pièce était datée du 20 avril, ouverte ; sa date effacée depuis, elle se rattache à
+    // son dépôt du 15 mars, figé. Coupée, elle se juge sur sa part ouverte — l'écriture d'avril, que plus rien ne
+    // justifie. Sans validation, une pièce sans date ne compare pas ses dates.
+    const sansDate = piece({ date_piece: null, created_at: '2025-03-15T09:00:00Z' })
+    const avril = brouillon(piece({ date_piece: '2025-04-20' }), cible(COMPTE_ACHATS), [], TRESORERIE)
+    expect(memeResultat(avril, [sansDate], [], deployee, true, [], TRESORERIE, [], '2025-03-31').piecesDesynchronisees).toEqual(['p1'])
+    expect(memeResultat(avril, [sansDate]).piecesDesynchronisees).toEqual([])
+  })
+
+  it('ne dit pas « à régénérer » une pièce coupée qui n’a encore aucune écriture : elle est à générer', () => {
+    expect(memeResultat([], [piece({})], [], deployee, true, [payee('p1')], TRESORERIE, [], '2025-03-10')).toEqual(RIEN)
+  })
+
+  it('en engagement, une facture figée garde son compte, et le règlement ouvert se compare', () => {
+    const regle = [paiement({ id: 'l2', date: '2025-04-02', montant: -120 })]
+    const avant = brouillon(piece({}), cible(COMPTE_ACHATS), regle, ENGAGEMENT)
+    expect(memeResultat(avant, [recategorisee()], [], deployee, true, regle, ENGAGEMENT, [], '2025-03-31').piecesDesynchronisees)
+      .toEqual([])
+    expect(memeResultat(avant, [recategorisee()], [], deployee, true, regle, ENGAGEMENT).piecesDesynchronisees).toEqual(['p1'])
+    // Le règlement ouvert manque : à régénérer, même sous une facture figée.
+    const sansReglement = avant.filter((e) => !e.ligne_bancaire_id)
+    expect(memeResultat(sansReglement, [recategorisee()], [], deployee, true, regle, ENGAGEMENT, [], '2025-03-31').piecesDesynchronisees)
+      .toEqual(['p1'])
+  })
+})
+
 describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle comptable du dossier', () => {
-  it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements des pièces et le modèle du dossier', () => {
+  it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements des pièces, le modèle du dossier et la frontière de validation', () => {
     expect(sourceDeployee()).toMatch(
-      /const modele = modeleDuDossier\(dossier\)\n\s*const paiements = paiementsDesPieces\(rReleve\.lignes, rReglements\.lignes\)\n\s*const \{ nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, paiements, modele\)/,
+      /const modele = modeleDuDossier\(dossier\)\n\s*const paiements = paiementsDesPieces\(rReleve\.lignes, rReglements\.lignes\)\n(?:\s*\/\/[^\n]*\n)*\s*const frontiere = frontiereDeValidation\(rValides\.lignes\.map\(\(v\) => v\.annee\)\)\n\s*const \{ nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, paiements, modele, frontiere\)/,
     )
   })
 
@@ -717,11 +949,30 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
     // Et sans les PARTS — ni le drapeau `reglement_groupe` du relevé —, une pièce réglée par un virement
     // groupé passerait pour non payée.
     const source = sourceDeployee()
-    expect(source).toMatch(/select\("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece"/)
+    // Et le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière doit encore porter, lit le hors taxe (qui prime
+    // sur le TTC moins la TVA) et le dépôt (qui date ce que rien d'autre ne date).
+    expect(source).toMatch(/select\("id, date_piece, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at"/)
     expect(source).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id[,"]/)
     expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, [^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(source).toMatch(/from\("reglements_groupes"\)\.select\("ligne_bancaire_id, piece_id, montant", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides\]\s*\.filter\(\(r\) => !r\.complete\)/)
+  })
+
+  // LES EXERCICES VALIDÉS, lus par les deux outils qui disent l'état du dossier : `resume_dossier` les nomme, et
+  // `points_a_traiter` en tire la frontière au-delà de laquelle plus rien ne se réclame. Lus en partie, ils
+  // feraient réclamer ce qu'un exercice validé a figé — d'où le même refus que les autres lectures.
+  it('lit les exercices validés dans les deux outils, refuse sur une lecture partielle, et le dit au modèle', () => {
+    const source = sourceDeployee()
+    const lectures = source.match(
+      /admin\.from\("exercices_valides"\)\.select\("annee", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("annee"\)\.order\("dossier_id"\)\.range\(/g,
+    ) ?? []
+    expect(lectures).toHaveLength(2)
+    expect(source).toMatch(/const \[r1, r2, r3, r4, r5, r6\] = await Promise\.all\(/)
+    expect(source).toMatch(/if \(!r6\.complete\) \{\s*return \{ erreur: `Lecture partielle : \$\{r6\.motif\}/)
+    expect(source).toContain('      exercices_valides: r6.lignes.map((v) => v.annee),\n')
+    expect(source).toContain('      exercices_valides: rValides.lignes.map((v) => v.annee),\n')
+    expect(source).toContain('- Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ')
+    expect(source).toContain('Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu\'un exercice validé a figé.')
   })
 })
 
@@ -731,6 +982,14 @@ describe('le garde-fou sait encore échouer', () => {
     expect(source.split(avant).length - 1, `${quoi} introuvable ou ambiguë — la dérive plantée ne mord plus`).toBe(1)
     return source.replace(avant, apres)
   }
+  // Chaque dérive doit échouer sur une ASSERTION — la comparaison des deux copies —, jamais sur une erreur
+  // d'exécution qui passerait pour une prise.
+  function echoue(f: () => unknown) {
+    let erreur: unknown = null
+    try { f() } catch (e) { erreur = e }
+    expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+  }
+  const deriver = (avant: string, apres: string, quoi: string) => extraire(planter(sourceDeployee(), avant, apres, quoi))
 
   // La copie telle qu'elle était avant le correctif : elle attend la TVA de la pièce quel que soit le
   // statut du dossier. Le cas exonéré à une seule ligne doit la séparer de src/lib.
@@ -991,12 +1250,6 @@ describe('le garde-fou sait encore échouer', () => {
   // LA NOTE DE FRAIS EN TRÉSORERIE, FACE AU 108000. Chaque dérive doit échouer sur une ASSERTION — la comparaison
   // des deux copies —, jamais sur une erreur d'exécution qui passerait pour une prise.
   describe('la contrepartie d’une note de frais au compte de l’exploitant', () => {
-    function echoue(f: () => unknown) {
-      let erreur: unknown = null
-      try { f() } catch (e) { erreur = e }
-      expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
-    }
-    const deriver = (avant: string, apres: string, quoi: string) => extraire(planter(sourceDeployee(), avant, apres, quoi))
     const p = noteDeFrais()
 
     it('attrape une copie qui compte la contrepartie parmi les lignes de charge', () => {
@@ -1009,8 +1262,8 @@ describe('le garde-fou sait encore échouer', () => {
 
     it('attrape une copie qui ne compare pas la contrepartie', () => {
       const derivee = deriver(
-        '  return present.length !== attendu.length || present.some((c, i) => c !== attendu[i])\n', '  return false\n',
-        'la comparaison de la contrepartie',
+        '  return dirigeantPresent.length !== dirigeantAttendu.length || dirigeantPresent.some((c, i) => c !== dirigeantAttendu[i])\n',
+        '  return false\n', 'la comparaison de la contrepartie',
       )
       echoue(() => memeResultat(brouillonTresorerie(p, []).filter((e) => e.compte !== COMPTE_EXPLOITANT), [p], [], derivee))
     })
@@ -1050,11 +1303,25 @@ describe('le garde-fou sait encore échouer', () => {
 
     it('attrape une copie qui attend une contrepartie sur une catégorie au 108000', () => {
       const derivee = deriver(
-        '  const attendu = attendue && estContrepartieDirigeant(p, cible, { compte: COMPTE_EXPLOITANT }) ? [cle(attendue)] : []\n',
-        '  const attendu = attendue ? [cle(attendue)] : []\n', 'la contrepartie attendue',
+        '    .filter((l) => estContrepartieDirigeant(p, cible, l)).map(cle).sort()\n',
+        '    .filter((l) => l.compte === COMPTE_EXPLOITANT).map(cle).sort()\n', 'la contrepartie attendue',
       )
       const sur108 = piece({ id: 'p1', type_piece: 'note_frais', categorie_id: 'cat-108' })
       echoue(() => memeResultat(brouillonTresorerie(sur108, [], { compte: COMPTE_EXPLOITANT }), [sur108], [], derivee))
+    })
+
+    // Le GÉNÉRATEUR, lui, ne doit pas l'écrire : la part ouverte d'une pièce que la frontière coupe se compare ligne
+    // pour ligne, sans le filtre de la comparaison ci-dessus. Un acompte versé avant la date de la note, figé ; le
+    // reste, que le dirigeant a payé, ouvert.
+    it('attrape un générateur qui écrit une contrepartie sur une catégorie au 108000', () => {
+      const derivee = deriver(
+        '  return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant) ? [...autres, dirigeant] : autres\n',
+        '  return dirigeant ? [...autres, dirigeant] : autres\n', 'la contrepartie générée',
+      )
+      const sur108 = piece({ id: 'p1', type_piece: 'note_frais', categorie_id: 'cat-108' })
+      const acompte = paiement({ id: 'l1', piece_id: 'p1', date: '2025-03-01', montant: -60 })
+      const ecritures = brouillonTresorerie(sur108, [acompte], { compte: COMPTE_EXPLOITANT })
+      echoue(() => memeResultat(ecritures, [sur108], [], derivee, true, [acompte], TRESORERIE, [], '2025-03-05'))
     })
 
     it('attrape une copie qui compare la date d’une note sans date', () => {
@@ -1062,8 +1329,10 @@ describe('le garde-fou sait encore échouer', () => {
         '    [p.date_piece ? l.date : "", l.sens, Math.round(l.montant * 100)].join("|")\n',
         '    [l.date, l.sens, Math.round(l.montant * 100)].join("|")\n', 'la clé de la contrepartie',
       )
-      const sansDate = noteDeFrais({ date_piece: null })
-      echoue(() => memeResultat(brouillonTresorerie(sansDate, []), [sansDate], [], derivee))
+      // L'écriture générée quand la note portait sa date ; la date effacée depuis, la note se rattache à son dépôt,
+      // cinq jours plus tard. Sans date, la date de la contrepartie ne se compare pas.
+      const sansDate = noteDeFrais({ date_piece: null, created_at: '2025-03-15T09:00:00Z' })
+      echoue(() => memeResultat(brouillonTresorerie(noteDeFrais(), []), [sansDate], [], derivee))
     })
 
     it('attrape une copie qui retourne le sens de la contrepartie', () => {
@@ -1073,22 +1342,25 @@ describe('le garde-fou sait encore échouer', () => {
     })
 
     it('attrape une copie qui oublie la banque, ou la TVA, dans le solde', () => {
-      const sansBanque = deriver('  const solde = Math.round(charge * 100) + Math.round(tva * 100) + banque\n',
-        '  const solde = Math.round(charge * 100) + Math.round(tva * 100)\n', 'le solde')
+      const ancre = '  const solde = autres.reduce((s, l) => s + (l.sens === "debit" ? 1 : -1) * Math.round(l.montant * 100), 0)\n'
+      const sansBanque = deriver(ancre,
+        '  const solde = autres.filter((l) => l.compte !== COMPTE_BANQUE).reduce((s, l) => s + (l.sens === "debit" ? 1 : -1) * Math.round(l.montant * 100), 0)\n',
+        'le solde')
       echoue(() => memeResultat(brouillonTresorerie(p, [rembourse(-60)]), [p], [], sansBanque, true, [rembourse(-60)]))
-      const sansTva = deriver('  const solde = Math.round(charge * 100) + Math.round(tva * 100) + banque\n',
-        '  const solde = Math.round(charge * 100) + banque\n', 'le solde')
+      const sansTva = deriver(ancre,
+        '  const solde = autres.filter((l) => l.compte !== COMPTE_TVA_DEDUCTIBLE).reduce((s, l) => s + (l.sens === "debit" ? 1 : -1) * Math.round(l.montant * 100), 0)\n',
+        'le solde')
       echoue(() => memeResultat(brouillonTresorerie(p, []), [p], [], sansTva))
     })
 
     it('attrape une copie qui ne retient pas la charge comme la génération', () => {
-      const ancre = '  const charge = tva ? p.montant_ht ?? Math.round((p.montant_ttc! - tva) * 100) / 100 : p.montant_ttc!\n'
       // Le hors taxe lu prime sur le TTC moins la TVA…
-      const sansHt = deriver(ancre, '  const charge = tva ? Math.round((p.montant_ttc! - tva) * 100) / 100 : p.montant_ttc!\n', 'la charge')
+      const sansHt = deriver('  if (ht != null) return ht\n', '', 'le hors taxe lu')
       const htLu = noteDeFrais({ montant_ht: 100.01 })
       echoue(() => memeResultat(brouillonTresorerie(htLu, []), [htLu], [], sansHt))
       // … et un dossier exonéré porte le TTC, même quand le hors taxe est lu.
-      const toujoursHt = deriver(ancre, '  const charge = p.montant_ht ?? p.montant_ttc!\n', 'la charge')
+      const toujoursHt = deriver('  const charge = tva ? montantRetenu(piece, assujettiTva)! : piece.montant_ttc!\n',
+        '  const charge = piece.montant_ht ?? piece.montant_ttc!\n', 'la charge')
       echoue(() => memeResultat(brouillonTresorerie(p, [], { assujettiTva: false }), [p], [], toujoursHt, false))
     })
 
@@ -1100,11 +1372,83 @@ describe('le garde-fou sait encore échouer', () => {
     })
   })
 
+  // LE GÉNÉRATEUR et LA FRONTIÈRE : chaque dérive plantée dans la vraie source doit faire échouer une comparaison.
+  describe('le générateur et la frontière de validation', () => {
+    // La dérive se plante HORS de `echoue` : une ancre introuvable doit faire échouer le test, pas passer pour une prise.
+    it('attrape un générateur qui retourne le sens de la banque, ou oublie l’arrondi du dernier morceau', () => {
+      const sensBanque = deriver(
+        '    date: paiement.date, compte: COMPTE_BANQUE, sens: paiement.montant > 0 ? "debit" : "credit",\n',
+        '    date: paiement.date, compte: COMPTE_BANQUE, sens: paiement.montant > 0 ? "credit" : "debit",\n', 'le sens de la banque',
+      )
+      echoue(() => batterieDuGenerateur(sensBanque))
+      const sansArrondi = deriver('  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)\n', '', 'le dernier morceau')
+      echoue(() => batterieDuGenerateur(sansArrondi))
+    })
+
+    it('attrape un générateur qui oublie la contrepartie banque, ou qui retourne le sens d’un règlement', () => {
+      const sansBanque = deriver('    ...paiements.flatMap((p) => ligneContrepartieBanque(p) ?? []),\n', '', 'les contreparties banque')
+      echoue(() => batterieDuGenerateur(sansBanque))
+      const sensReglement = deriver(
+        'sens: inverse(sensBanque), montant, ligne_bancaire_id: mouvement.id },',
+        'sens: sensBanque, montant, ligne_bancaire_id: mouvement.id },', 'le sens d’un règlement',
+      )
+      echoue(() => batterieDuGenerateur(sensReglement))
+    })
+
+    it('attrape une copie qui date le dépôt ailleurs qu’à Paris', () => {
+      const derivee = deriver(
+        '    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",\n',
+        '    timeZone: "UTC", year: "numeric", month: "2-digit", day: "2-digit",\n', 'le fuseau du dépôt',
+      )
+      echoue(() => expect(derivee.dateDuDepot('2025-12-31T23:30:00Z')).toBe('2026-01-01'))
+    })
+
+    it('attrape une frontière tirée du premier exercice validé, ou qui ne fige pas son dernier jour', () => {
+      const premier = deriver('  return anneesValidees.length === 0 ? null : `${Math.max(...anneesValidees)}-12-31`\n',
+        '  return anneesValidees.length === 0 ? null : `${Math.min(...anneesValidees)}-12-31`\n', 'la frontière')
+      echoue(() => expect(premier.frontiereDeValidation([2023, 2025])).toBe('2025-12-31'))
+      const strict = deriver('  return frontiere !== null && date <= frontiere\n', '  return frontiere !== null && date < frontiere\n', 'estFigee')
+      echoue(() => memeResultat(brouillon(piece({}), cible(COMPTE_ACHATS), [payee('p1')], TRESORERIE), [piece({ categorie_id: 'cat-autre' })],
+        [], strict, true, [payee('p1')]))
+    })
+
+    it('attrape une copie qui juge entière une pièce que la frontière coupe', () => {
+      const derivee = deriver(
+        '      if ([...groupe, ...attendues].some((l) => estFigee(l.date, frontiere))) {\n', '      if (false) {\n', 'la coupure',
+      )
+      const avant = brouillon(piece({}), cible(COMPTE_ACHATS), [payee('p1')], TRESORERIE)
+      echoue(() => memeResultat(avant, [piece({ categorie_id: 'cat-autre' })], [], derivee, true, [payee('p1')], TRESORERIE, [], '2025-12-31'))
+    })
+
+    it('attrape une copie qui compare aussi la part figée, ou qui ne regarde pas le mouvement d’une ligne', () => {
+      const enDeuxFois = [paiement({ id: 'l1', date: '2025-03-10', montant: -60 }), paiement({ id: 'l2', date: '2025-04-02', montant: -60 })]
+      const avant = brouillon(piece({}), cible(COMPTE_ACHATS), enDeuxFois, TRESORERIE, 'v')
+      const apres = brouillon(piece({ categorie_id: 'cat-autre' }), cible('628000'), enDeuxFois, TRESORERIE, 'n')
+      const regeneree = [...avant.filter((e) => e.date <= '2025-03-31'), ...apres.filter((e) => e.date > '2025-03-31')]
+      const toutCompare = extraire(planter(planter(sourceDeployee(),
+        '  const presentes = groupe.filter((e) => !estFigee(e.date, frontiere)).map(cle).sort()\n', '  const presentes = groupe.map(cle).sort()\n',
+        'les lignes présentes'),
+      '  const ouvertes = attendues.filter((l) => !estFigee(l.date, frontiere)).map(cle).sort()\n', '  const ouvertes = attendues.map(cle).sort()\n',
+      'les lignes ouvertes'))
+      echoue(() => memeResultat(regeneree, [piece({ categorie_id: 'cat-autre' })], [], toutCompare, true, enDeuxFois, TRESORERIE, [], '2025-03-31'))
+      const sansMouvement = deriver(
+        '    [l.date, l.compte, l.sens, Math.round(l.montant * 100), l.ligne_bancaire_id ?? ""].join("|")\n',
+        '    [l.date, l.compte, l.sens, Math.round(l.montant * 100)].join("|")\n', 'la clé d’une ligne ouverte',
+      )
+      const autreMouvement = brouillon(piece({}), cible(COMPTE_ACHATS), enDeuxFois, TRESORERIE)
+        .map((e) => (e.ligne_bancaire_id === 'l2' ? { ...e, ligne_bancaire_id: 'l-autre' } : e))
+      echoue(() => memeResultat(autreMouvement, [piece({})], [], sansMouvement, true, enDeuxFois, TRESORERIE, [], '2025-03-31'))
+    })
+  })
+
   it('a bien extrait la copie DÉPLOYÉE, et pas la copie locale', () => {
     // La borne la plus bête et la plus nécessaire : si `deployee` cessait d'être ce que la source
     // Deno contient, les douze cas compareraient `src/lib` à lui-même et resteraient verts.
     expect(deployee.analyserEcritures).not.toBe(analyserEcritures)
     expect(deployee.piecesAComptabiliser).not.toBe(piecesAComptabiliser)
+    expect(deployee.lignesPourPiece).not.toBe(lignesPourPiece)
+    expect(deployee.frontiereDeValidation).not.toBe(frontiereDeValidation)
+    expect(deployee.estFigee).not.toBe(estFigee)
   })
 
   it('et il ne crie PAS au loup sur la copie réellement déployée', () => {

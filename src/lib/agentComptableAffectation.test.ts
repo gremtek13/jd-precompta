@@ -34,22 +34,27 @@ interface Copie {
   mouvementsAffectes: (l: LigneBancaire[], c: Categorie[], assujetti: boolean) => {
     ligne: { id: string }; categorie: { id: string }; nature: string | null; taux: number | null; montantPoste: number
   }[]
-  mouvementsAffectesDesynchronises: (e: EcritureBrouillon[], a: ReturnType<Copie['mouvementsAffectes']>) => { ligne: { id: string } }[]
-  recettesAffecteesSansTaux: (a: ReturnType<Copie['mouvementsAffectes']>, assujetti: boolean) => { ligne: { id: string } }[]
+  mouvementsAffectesDesynchronises: (e: EcritureBrouillon[], a: ReturnType<Copie['mouvementsAffectes']>, frontiere: string | null) => { ligne: { id: string } }[]
+  recettesAffecteesSansTaux: (a: ReturnType<Copie['mouvementsAffectes']>, assujetti: boolean, frontiere: string | null) => { ligne: { id: string } }[]
   categoriesSansCompte: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[], immobilisees: ReadonlySet<string>) => Categorie[]
   categoriesSansPoste: (c: Categorie[], p: Piece[], m: Pick<LigneBancaire, 'categorie_id'>[], immobilisees: ReadonlySet<string>) => Categorie[]
   compteDuDirigeant: typeof compteDuDirigeant
-  virementsPersonnelsAEcrire: (e: EcritureBrouillon[], l: LigneBancaire[], m: ModeleComptable) => { id: string }[]
+  virementsPersonnelsAEcrire: (e: EcritureBrouillon[], l: LigneBancaire[], m: ModeleComptable, frontiere: string | null) => { id: string }[]
 }
 
 // Prend la SOURCE en paramètre : c'est ce qui permet de lui donner une source où une dérive a été
 // plantée. Le bloc lit `COMPTE_BANQUE` et `COMPTE_TVA_COLLECTEE`, déclarés plus haut dans la fonction :
-// leur valeur est reprise de la MÊME source, pour qu'une dérive d'un numéro de compte morde ici aussi.
+// leur valeur est reprise de la MÊME source, pour qu'une dérive d'un numéro de compte morde ici aussi. Et
+// `estFigee`, du bloc VALIDATION (la frontière des exercices validés), extrait de la même source.
 function extraire(source: string): Copie {
   const debut = source.indexOf('// ── DÉBUT AFFECTATION')
   const fin = source.indexOf('// ── FIN AFFECTATION')
   expect(debut, 'bornes du bloc AFFECTATION introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
   expect(fin).toBeGreaterThan(debut)
+  const debutValidation = source.indexOf('// ── DÉBUT VALIDATION')
+  const finValidation = source.indexOf('// ── FIN VALIDATION')
+  expect(debutValidation, 'bornes du bloc VALIDATION introuvables — garde-fou à remettre à jour').toBeGreaterThan(-1)
+  expect(finValidation).toBeGreaterThan(debutValidation)
   const banque = /const COMPTE_BANQUE = "(\d+)"/.exec(source)
   expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
   // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
@@ -57,7 +62,8 @@ function extraire(source: string): Copie {
   expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
   const tva = /const COMPTE_TVA_COLLECTEE = "(\d+)"/.exec(source)
   expect(tva, '`COMPTE_TVA_COLLECTEE` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\nconst COMPTE_TVA_COLLECTEE = "${tva![1]}"\n${source.slice(debut, fin)}`
+  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\nconst COMPTE_TVA_COLLECTEE = "${tva![1]}"\n`
+    + `${source.slice(debutValidation, finValidation)}\n${source.slice(debut, fin)}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { natureDuCompte, mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux, categoriesSansCompte, categoriesSansPoste, compteDuDirigeant, virementsPersonnelsAEcrire }`)() as Copie
 }
@@ -113,16 +119,24 @@ const resumeAffectes = (a: { ligne: { id: string }; categorie: { id: string }; n
 const ids = (a: { ligne: { id: string } }[]) => a.map((m) => m.ligne.id)
 const libelles = (c: Categorie[]) => c.map((x) => x.libelle)
 
-/** Les deux copies doivent rendre EXACTEMENT la même chose sur les mêmes entrées. */
-function memeResultat(ecritures: EcritureBrouillon[], lignes: LigneBancaire[], assujetti: boolean, copie: Copie = deployee) {
+// LES FRONTIÈRES DE VALIDATION sous lesquelles les deux copies sont comparées : aucune, puis la veille du mouvement le
+// plus courant de la batterie, son jour même — qui le fige —, et la fin de son exercice.
+const FRONTIERES = [null, '2025-03-09', '2025-03-10', '2025-12-31'] as const
+
+/** Les deux copies doivent rendre EXACTEMENT la même chose sur les mêmes entrées, sous chaque frontière. */
+function memeResultat(
+  ecritures: EcritureBrouillon[], lignes: LigneBancaire[], assujetti: boolean, copie: Copie = deployee, frontiere: string | null = null,
+) {
   const ici = mouvementsAffectes(lignes, CATEGORIES, assujetti)
   const la = copie.mouvementsAffectes(lignes, CATEGORIES, assujetti)
   expect(resumeAffectes(la), 'mouvementsAffectes a dérivé').toEqual(resumeAffectes(ici))
-  expect(ids(copie.mouvementsAffectesDesynchronises(ecritures, la)), 'mouvementsAffectesDesynchronises a dérivé')
-    .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, null)))
-  expect(ids(copie.recettesAffecteesSansTaux(la, assujetti)), 'recettesAffecteesSansTaux a dérivé')
-    .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti, null)))
-  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, null)) }
+  for (const f of FRONTIERES) {
+    expect(ids(copie.mouvementsAffectesDesynchronises(ecritures, la, f)), `mouvementsAffectesDesynchronises a dérivé (frontière ${f})`)
+      .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, f)))
+    expect(ids(copie.recettesAffecteesSansTaux(la, assujetti, f)), `recettesAffecteesSansTaux a dérivé (frontière ${f})`)
+      .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti, f)))
+  }
+  return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, frontiere)) }
 }
 
 // Une recette taxée, écrite comme l'affectation l'écrit : le hors taxe au 706, la TVA au 445710, le
@@ -234,6 +248,17 @@ describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
     expect(memeResultat(ecritures, lignes, false).aReaffecter).toEqual(['encaissement', 'frais', 'bilan'])
   })
 
+  // UN EXERCICE VALIDÉ NE RÉCLAME PLUS RIEN (ligne 26.6, étape d) : son écriture est validée, la base refuse de la
+  // réécrire, et un point que rien ne lève resterait en erreur pour toujours.
+  it('ne réclame rien d’un mouvement figé par la validation, ni écriture à reprendre ni taux à choisir', () => {
+    const lignes = [ligne({ id: 'a' }), ligne({ id: 'apres', date: '2026-02-01' })]
+    expect(memeResultat([], lignes, true, deployee, '2025-12-31').aReaffecter).toEqual(['apres'])
+    expect(memeResultat([], lignes, true, deployee, null).aReaffecter).toEqual(['a', 'apres'])
+    const sansTaux = (f: string | null) => ids(recettesAffecteesSansTaux(mouvementsAffectes(lignes, CATEGORIES, true), true, f))
+    expect(sansTaux('2025-12-31')).toEqual(['apres'])
+    expect(sansTaux('2025-03-09')).toEqual(['a', 'apres'])
+  })
+
   it('rend les recettes affectées SANS TAUX d’un dossier assujetti, et rien sinon', () => {
     const lignes = [...LIGNES, ligne({ id: 'taxee', montant: 120, taux_tva: 20 }), ligne({ id: 'exoneree', montant: 50, taux_tva: 0 })]
     memeResultat([], lignes, true)
@@ -303,15 +328,20 @@ describe('agent-comptable / bloc AFFECTATION — les virements personnels', () =
     }
   })
 
-  it('rend les mêmes virements à écrire, dans les deux modèles', () => {
+  it('rend les mêmes virements à écrire, dans les deux modèles et sous chaque frontière', () => {
     for (const modele of [TRESORERIE, ENGAGEMENT]) {
-      expect(ids2(deployee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele)), `modèle ${modele.mode}`)
-        .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele, null)))
+      for (const f of FRONTIERES) {
+        expect(ids2(deployee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele, f)), `modèle ${modele.mode}, frontière ${f}`)
+          .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele, f)))
+      }
     }
     // La batterie exerce bien ce qui décide : l'écriture absente, le compte qui suit le modèle, et les
     // mouvements qu'on ne peut pas écrire (zéro euro, rapproché, affecté, pas un virement personnel).
     expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))).toEqual(['sans-ecriture', 'ecrit-467'])
     expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))).toEqual(['sans-ecriture', 'ecrit-108', 'apport'])
+    // Et la frontière décide : un exercice validé ne réclame plus son virement, la base n'y écrivant plus.
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10'))).toEqual([])
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-09'))).toEqual(['sans-ecriture', 'ecrit-467'])
   })
 })
 
@@ -323,7 +353,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
   it('lit les mouvements rapprochés portant une catégorie, avec leur taux, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, categorie_id, taux_tva"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)\.not\("categorie_id", "is", null\)/)
-    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('passe les mouvements aux catégories sans compte ou sans poste, et rend les deux points de la Checklist', () => {
@@ -337,8 +367,8 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
     expect(corps).toContain('const pieceIdsImmobilisees = new Set(acquisitions.keys())')
     expect(corps).toContain('piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions)')
     expect(corps).toContain('mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)')
-    expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes)')
-    expect(corps).toContain('recettesAffecteesSansTaux(affectes, dossier.assujetti_tva)')
+    expect(corps).toContain('mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere)')
+    expect(corps).toContain('recettesAffecteesSansTaux(affectes, dossier.assujetti_tva, frontiere)')
     expect(corps).toMatch(/mouvements_affectes_a_reaffecter: affectesAReaffecter\.length/)
     expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sans_taux_de_tva_sur_dossier_assujetti: recettesAffecteesSansTva\.length \+ recettesVentileesSansTva\.length/)
   })
@@ -353,7 +383,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
   it('lit les virements personnels sous le même refus de lecture partielle, et rend le point de la Checklist', () => {
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("prelevement_personnel", true\)/)
-    expect(corps).toContain('virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele)')
+    expect(corps).toContain('virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere)')
     expect(corps).toMatch(/virements_personnels_sans_ecriture: virementsAEcrire\.length/)
   })
 
@@ -435,7 +465,7 @@ describe('le garde-fou sait encore échouer', () => {
   })
 
   it('attrape une copie qui compte toute recette d’un dossier assujetti, même avec son taux', () => {
-    const derivee = planter('affectes.filter((m) => m.nature === "recette" && m.taux === null)', 'affectes.filter((m) => m.nature === "recette")')
+    const derivee = planter('affectes.filter((m) => m.nature === "recette" && m.taux === null && ', 'affectes.filter((m) => m.nature === "recette" && ')
     echoue(() => memeResultat([], TAXEE, true, derivee))
   })
 
@@ -447,20 +477,44 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie qui écrit toujours sur le compte de l’exploitant', () => {
     const derivee = planter('return modele.mode === "engagement" ? modele.compteNotesDeFrais : COMPTE_EXPLOITANT', 'return COMPTE_EXPLOITANT')
-    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT)))
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null)))
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))))
   })
 
   it('attrape une copie qui propose d’écrire un virement de zéro euro', () => {
     const derivee = planter(' && l.montant !== 0', '')
-    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE)))
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
   })
 
   it('attrape une copie qui prend tout mouvement pour un virement personnel', () => {
     const derivee = planter('    l.prelevement_personnel\n    && !l.piece_id', '    !l.piece_id')
-    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE)))
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+  })
+
+  // LA FRONTIÈRE DE VALIDATION : chaque contrôle du bloc qui la lit.
+  const FIGE = [ligne({ id: 'a' }), ligne({ id: 'apres', date: '2026-02-01' })]
+
+  it('attrape une copie qui réclame l’écriture d’un mouvement figé', () => {
+    const derivee = planter('    if (estFigee(m.ligne.date, frontiere)) return false\n', '')
+    echoue(() => memeResultat([], FIGE, false, derivee))
+  })
+
+  it('attrape une copie qui réclame le taux d’une recette figée', () => {
+    const derivee = planter(' && !estFigee(m.ligne.date, frontiere))', ')')
+    echoue(() => memeResultat([], FIGE, true, derivee))
+  })
+
+  it('attrape une copie qui réclame l’écriture d’un virement figé', () => {
+    const derivee = planter('    && !estFigee(l.date, frontiere)\n', '')
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10')))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10'))))
+  })
+
+  it('attrape une copie dont la frontière ne fige pas son propre jour', () => {
+    const derivee = planter('  return frontiere !== null && date <= frontiere\n', '  return frontiere !== null && date < frontiere\n')
+    echoue(() => memeResultat([], FIGE, false, derivee))
   })
 
   it('attrape une copie dont la contrepartie n’est plus la banque', () => {

@@ -36,7 +36,8 @@
 // src/lib/engagement.ts, src/lib/montantRetenu.ts, src/lib/rattachement.ts, src/lib/affectationBanque.ts,
 // src/lib/virementPersonnel.ts, src/lib/echeanceEmprunt.ts, src/lib/emprunts.ts, src/lib/ventilationBanque.ts,
 // src/lib/tvaDuReleve.ts, src/lib/reglementGroupe.ts, src/lib/cotisationRapprochee.ts, src/lib/amortissements.ts,
-// src/lib/baremeKilometrique.ts, src/lib/forfaitKilometrique.ts, src/lib/format.ts et src/lib/controles.ts plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
+// src/lib/baremeKilometrique.ts, src/lib/forfaitKilometrique.ts, src/lib/validationExercice.ts, src/lib/format.ts et src/lib/controles.ts
+// plutôt qu'importées, ces fichiers n'étant pas empaquetés avec la fonction.
 // Cette duplication est GARDÉE par src/lib/agentComptableAnalyse.test.ts, qui lit cette source, en
 // extrait `piecesAComptabiliser`, `paiementsDesPieces`, `rattachementsTresorerie` et `analyserEcritures`
 // et les exécute contre celles de src/lib, dans les deux modèles comptables : elle avait dérivé sans que
@@ -50,7 +51,10 @@
 // par src/lib/agentComptableCotisation.test.ts, le bloc AMORTISSEMENT (dotations aux amortissements,
 // copié de src/lib/amortissements.ts) par src/lib/agentComptableAmortissement.test.ts, et le bloc FORFAIT
 // (forfait kilométrique du cadre 7, copié de src/lib/baremeKilometrique.ts et src/lib/forfaitKilometrique.ts)
-// par src/lib/agentComptableForfait.test.ts.
+// par src/lib/agentComptableForfait.test.ts. Le bloc VALIDATION (la frontière des exercices validés, copiée de
+// src/lib/validationExercice.ts) l'est par chacun de ces tests, qui l'extraient avec leur bloc, et le GÉNÉRATEUR
+// d'écritures — ce qu'une pièce doit produire, ligne pour ligne, copié de src/lib/ecritures.ts et
+// src/lib/engagement.ts — par src/lib/agentComptableAnalyse.test.ts.
 
 import Anthropic from "npm:@anthropic-ai/sdk@0.124.0" // types (Tool, MessageParam...) + classe d'erreur uniquement
 import AnthropicBedrock from "npm:@anthropic-ai/bedrock-sdk@0.33.4"
@@ -110,6 +114,9 @@ interface PieceRow {
   id: string; date_piece: string | null; tiers: string | null; nom_fichier: string
   montant_ht: number | null; montant_tva: number | null; montant_ttc: number | null
   categorie_id: string | null; type_piece: string; statut: string; confiance: string | null
+  // Le DÉPÔT : la date d'une écriture que rien d'autre ne date — ni paiement, ni date de pièce (voir
+  // `dateDuDepot`).
+  created_at: string
 }
 interface CategorieRow { id: string; libelle: string; compte_comptable: string | null; poste_2035: string | null }
 
@@ -120,9 +127,27 @@ const COMPTE_TVA_COLLECTEE = "445710"
 const COMPTE_TVA_IMMOBILISATIONS = "445620"
 const COMPTE_BANQUE = "512000"
 // Le compte de l'exploitant : en trésorerie, celui du dirigeant — ses virements personnels (bloc AFFECTATION)
-// et la part d'une note de frais qu'il a payée de sa poche (`contrepartieDirigeantAttendue`).
+// et la part d'une note de frais qu'il a payée de sa poche (`ligneContrepartieDirigeant`).
 const COMPTE_EXPLOITANT = "108000"
 const EPSILON_EQUILIBRE = 0.02
+
+// ── DÉBUT VALIDATION ─────────────────────────────────────────────────────────────────────────────
+// LA FRONTIÈRE DE VALIDATION — copiée de src/lib/validationExercice.ts (ligne 26.6 de la feuille de route,
+// étape d). Valider un exercice fige tout ce qui précède le 31 décembre du dernier exercice validé : la base
+// n'y écrit, n'y réécrit ni n'y retire plus rien. La Checklist ne réclame donc plus rien de figé — un point
+// que rien ne peut lever resterait en erreur pour toujours —, et l'assistant doit se taire de même : sans la
+// frontière, il dirait « à régénérer » ou « à écrire » ce que la base refuse, sur l'outil qui répond « quelles
+// sont les anomalies ? ». Une erreur trouvée après la validation se corrige sur l'exercice suivant.
+//
+// Gardé par les tests de chaque bloc qui s'en sert : ils extraient ce bloc avec le leur.
+function frontiereDeValidation(anneesValidees: readonly number[]): string | null {
+  return anneesValidees.length === 0 ? null : `${Math.max(...anneesValidees)}-12-31`
+}
+
+function estFigee(date: string, frontiere: string | null): boolean {
+  return frontiere !== null && date <= frontiere
+}
+// ── FIN VALIDATION ───────────────────────────────────────────────────────────────────────────────
 
 // Où une pièce s'écrit : le compte de sa catégorie, ou — pour la facture d'un bien IMMOBILISÉ — le compte
 // d'immobilisation de sa nature (l'écriture d'ACQUISITION). L'immobilisation décide aussi du compte de TVA
@@ -296,6 +321,179 @@ function compteDeTiers(piece: Pick<PieceRow, "type_piece">, compteNotesDeFrais: 
   return immobilisation ? COMPTE_FOURNISSEURS_IMMOBILISATIONS : COMPTE_FOURNISSEURS
 }
 
+// ---- Dupliqué depuis src/lib/ecritures.ts, src/lib/engagement.ts et src/lib/rattachement.ts : le GÉNÉRATEUR -----
+// CE QU'UNE PIÈCE DOIT PRODUIRE AU BROUILLON, LIGNE POUR LIGNE — ce que « Générer » et « Régénérer » écrivent. Le
+// contrôle s'en passait tant qu'il ne comparait que des comptes, des montants et des dates. La VALIDATION d'un
+// exercice l'impose (ligne 26.6, étape d) : une pièce que la frontière coupe — une écriture validée, ou une écriture
+// qui tomberait dans un exercice validé — ne se compare plus que sur ce qui reste OUVERT, ligne pour ligne
+// (`partieOuverteDesynchronisee`). Sans lui, l'assistant dirait « à régénérer », pour toujours, une pièce validée
+// dont la catégorie a changé de compte depuis, sur un geste que la base refuse — pendant que la Checklist se tait.
+//
+// Le libellé n'est pas produit : aucun contrôle ne le compare.
+interface LigneAttendue {
+  date: string; compte: string; sens: "debit" | "credit"; montant: number
+  // Le mouvement d'une ligne de BANQUE (contrepartie d'un paiement, les deux lignes d'un règlement).
+  ligne_bancaire_id?: string
+}
+
+type Sens = "debit" | "credit"
+const inverse = (sens: Sens): Sens => (sens === "debit" ? "credit" : "debit")
+
+// LA DATE D'UN DÉPÔT, À PARIS — le repli de l'écriture d'une pièce que rien d'autre ne date. Le navigateur la lit
+// dans son propre fuseau (`dateLocaleDe`, src/lib/format.ts) ; une Edge Function tourne en UTC et ne sait pas où se
+// trouve celui qui a généré l'écriture : le fuseau du cabinet est écrit, comme pour la date du jour
+// (`aujourdHuiCabinet`). Un dépôt fait entre minuit et deux heures du matin, ailleurs qu'à Paris, peut donc tomber un
+// jour plus tôt ici que dans l'écriture — sur une pièce sans date ni paiement, et seulement là où la frontière coupe :
+// partout ailleurs, la date d'une pièce sans date ne se compare pas.
+function dateDuDepot(instant: string): string {
+  const parties = new Intl.DateTimeFormat("fr-FR", {
+    timeZone: "Europe/Paris", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date(instant))
+  const valeur = (type: string) => parties.find((p) => p.type === type)?.value ?? ""
+  return `${valeur("year")}-${valeur("month")}-${valeur("day")}`
+}
+
+// Le montant qui entre en charge ou en produit : le TTC pour un dossier exonéré ; pour un assujetti, le hors taxe lu,
+// sinon le TTC moins la TVA — src/lib/montantRetenu.ts.
+function montantRetenu(piece: Pick<PieceRow, "montant_ht" | "montant_tva" | "montant_ttc">, assujettiTva: boolean): number | null {
+  const { montant_ht: ht, montant_tva: tva, montant_ttc: ttc } = piece
+  if (!assujettiTva) {
+    if (ttc != null) return ttc
+    return ht != null && tva != null ? Math.round((ht + tva) * 100) / 100 : null
+  }
+  if (ht != null) return ht
+  return ttc != null ? Math.round((ttc - (tva ?? 0)) * 100) / 100 : null
+}
+
+// Une pièce au centime, date par date, telle que son écriture la porte : ses rattachements réunis par date — la part
+// que rien ne date reportée au dépôt —, le montant réparti selon leurs parts, le dernier morceau prenant l'arrondi.
+function centimesParDate(
+  piece: Pick<PieceRow, "date_piece" | "montant_ttc" | "type_piece" | "created_at">,
+  montant: number,
+  paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
+): { date: string; centimes: number }[] {
+  const reunies: { date: string; part: number }[] = []
+  for (const r of rattachementsTresorerie(piece, paiements)) {
+    const date = r.date ?? dateDuDepot(piece.created_at)
+    const meme = reunies.find((x) => x.date === date)
+    if (meme) meme.part += r.part
+    else reunies.push({ date, part: r.part })
+  }
+  const total = Math.round(montant * 100)
+  const morceaux = reunies.map((f) => Math.round(total * f.part))
+  morceaux[morceaux.length - 1] = total - morceaux.slice(0, -1).reduce((s, m) => s + m, 0)
+  return reunies.map((f, i) => ({ date: f.date, centimes: morceaux[i] }))
+}
+
+// La charge ou le produit, et sa TVA pour un dossier assujetti, une ligne par date de la pièce. Un montant négatif
+// (un avoir) inverse le sens : `montant` reste positif.
+function lignesChargeProduitPourPiece(
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
+): LigneAttendue[] {
+  const sensPiece: Sens = piece.type_piece === "vente" ? "credit" : "debit"
+  const ligne = (date: string, compte: string, montant: number): LigneAttendue =>
+    ({ date, compte, sens: montant >= 0 ? sensPiece : inverse(sensPiece), montant: Math.abs(montant) })
+  const tva = tvaVentilee(piece, assujettiTva)
+  const charge = tva ? montantRetenu(piece, assujettiTva)! : piece.montant_ttc!
+  const charges = centimesParDate(piece, charge, paiements)
+  const tvas = tva ? centimesParDate(piece, tva, paiements) : []
+  return charges.flatMap((f, i) => {
+    const lignes = [ligne(f.date, cible.compte, f.centimes / 100)]
+    if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i].centimes / 100))
+    return lignes
+  })
+}
+
+// La contrepartie BANQUE d'un paiement, en trésorerie : au montant et à la date de CE paiement, dans le sens de son
+// signe. Un paiement de zéro euro n'en écrit aucune.
+function ligneContrepartieBanque(paiement: Pick<PaiementDePiece, "id" | "date" | "montant">): LigneAttendue | null {
+  if (!paiement.montant) return null
+  return {
+    date: paiement.date, compte: COMPTE_BANQUE, sens: paiement.montant > 0 ? "debit" : "credit",
+    montant: Math.abs(paiement.montant), ligne_bancaire_id: paiement.id,
+  }
+}
+
+// LA NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT (108000) : la part que le dirigeant a payée
+// de sa poche, qu'aucun mouvement du compte professionnel ne lui rembourse. La ligne SOLDE les autres — la charge, sa
+// TVA et la banque de chaque paiement — au centime, et se date comme la part qu'elle paie : la date de la pièce, sinon
+// celle du dépôt. Remboursée par la banque, la note n'a plus de part à elle, et cette ligne n'existe pas.
+function ligneContrepartieDirigeant(
+  piece: PieceRow, autres: readonly Pick<LigneAttendue, "sens" | "montant">[], paiements: readonly Pick<PaiementDePiece, "date" | "montant">[],
+): LigneAttendue | null {
+  const part = rattachementsTresorerie(piece, paiements).find((r) => r.source === "note_de_frais")
+  if (!part) return null
+  const solde = autres.reduce((s, l) => s + (l.sens === "debit" ? 1 : -1) * Math.round(l.montant * 100), 0)
+  if (solde === 0) return null
+  return { date: part.date ?? dateDuDepot(piece.created_at), compte: COMPTE_EXPLOITANT, sens: solde > 0 ? "credit" : "debit", montant: Math.abs(solde) / 100 }
+}
+
+// En TRÉSORERIE : la charge ou le produit datés comme la 2035 compte la pièce, une contrepartie banque par paiement,
+// et la part d'une note de frais que le dirigeant a payée face au compte de l'exploitant.
+function lignesTresoreriePourPiece(
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[],
+): LigneAttendue[] {
+  const autres = [
+    ...lignesChargeProduitPourPiece(piece, cible, assujettiTva, paiements),
+    ...paiements.flatMap((p) => ligneContrepartieBanque(p) ?? []),
+  ]
+  const dirigeant = ligneContrepartieDirigeant(piece, autres, paiements)
+  return dirigeant && estContrepartieDirigeant(piece, cible, dirigeant) ? [...autres, dirigeant] : autres
+}
+
+// En ENGAGEMENT, l'écriture de la FACTURE, à sa date (le dépôt à défaut) : la charge ou le produit, sa TVA, et le
+// compte de tiers qui porte le TTC.
+function lignesFactureEngagement(
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: string,
+): LigneAttendue[] {
+  const sensPiece: Sens = piece.type_piece === "vente" ? "credit" : "debit"
+  const date = piece.date_piece ?? dateDuDepot(piece.created_at)
+  const ligne = (sensNormal: Sens, compte: string, montant: number): LigneAttendue =>
+    ({ date, compte, sens: montant >= 0 ? sensNormal : inverse(sensNormal), montant: Math.abs(montant) })
+  const ttc = piece.montant_ttc!
+  const tva = tvaVentilee(piece, assujettiTva)
+  const lignes = [ligne(sensPiece, cible.compte, tva ? montantRetenu(piece, assujettiTva)! : ttc)]
+  if (tva) lignes.push(ligne(sensPiece, compteTvaDe(piece, cible.immobilisation), tva))
+  lignes.push(ligne(inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation), ttc))
+  return lignes
+}
+
+// Un RÈGLEMENT par paiement, daté du mouvement et portant son identifiant : le compte de tiers face à la banque, au
+// montant du paiement, la banque dans le sens de son signe.
+function lignesReglementEngagement(
+  piece: Pick<PieceRow, "type_piece">, mouvement: Pick<PaiementDePiece, "id" | "date" | "montant">,
+  compteNotesDeFrais: string, immobilisation: boolean,
+): LigneAttendue[] {
+  if (!mouvement.montant) return []
+  const sensBanque: Sens = mouvement.montant > 0 ? "debit" : "credit"
+  const montant = Math.abs(mouvement.montant)
+  return [
+    { date: mouvement.date, compte: compteDeTiers(piece, compteNotesDeFrais, immobilisation), sens: inverse(sensBanque), montant, ligne_bancaire_id: mouvement.id },
+    { date: mouvement.date, compte: COMPTE_BANQUE, sens: sensBanque, montant, ligne_bancaire_id: mouvement.id },
+  ]
+}
+
+function lignesEngagementPourPiece(
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, compteNotesDeFrais: string,
+  mouvements: readonly Pick<PaiementDePiece, "id" | "date" | "montant">[],
+): LigneAttendue[] {
+  return [
+    ...lignesFactureEngagement(piece, cible, assujettiTva, compteNotesDeFrais),
+    ...[...mouvements]
+      .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+      .flatMap((m) => lignesReglementEngagement(piece, m, compteNotesDeFrais, cible.immobilisation)),
+  ]
+}
+
+// Ce qu'une pièce produit selon le MODÈLE COMPTABLE du dossier.
+function lignesPourPiece(
+  piece: PieceRow, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], modele: ModeleComptable,
+): LigneAttendue[] {
+  return modele.mode === "engagement"
+    ? lignesEngagementPourPiece(piece, cible, assujettiTva, modele.compteNotesDeFrais, paiements)
+    : lignesTresoreriePourPiece(piece, cible, assujettiTva, paiements)
+}
+
 // ---- Dupliqué depuis src/lib/ecritures.ts --------------------------------------------------------
 function datesAttendues(piece: PieceRow, paiements: readonly PaiementDePiece[]): Set<string> | null {
   const rattachements = rattachementsTresorerie(piece, paiements)
@@ -328,33 +526,15 @@ function banqueSuitLesPaiements(lignesBanque: readonly EcritureRow[], paiements:
 }
 
 // LA NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT (108000) — `ligneContrepartieDirigeant`
-// de src/lib/ecritures.ts : la part que le dirigeant a payée de sa poche, qu'aucun mouvement du compte
-// professionnel ne lui rembourse. Sans elle, l'assistant dirait « à régénérer » pour toujours l'écriture juste
-// d'une note de frais, et « en attente de rapprochement » une pièce qu'aucun paiement ne rapprochera.
-//
-// La ligne SOLDE les autres au centime : la charge et sa TVA telles que la génération les porte — le TTC sur une
-// seule ligne quand rien ne se ventile ; sinon le hors taxe lu, à défaut le TTC moins la TVA (`montantRetenu`
-// d'un dossier assujetti), et la TVA —, et la banque de chaque paiement, dans le sens de son signe. Datée comme
-// la part qu'elle paie : la date de la pièce — sans date, celle du dépôt, que le contrôle ne compare pas.
+// ci-dessus : la part que le dirigeant a payée de sa poche, qu'aucun mouvement du compte professionnel ne lui
+// rembourse. Sans elle, l'assistant dirait « à régénérer » pour toujours l'écriture juste d'une note de frais, et
+// « en attente de rapprochement » une pièce qu'aucun paiement ne rapprochera. La ligne qui porte cette contrepartie :
+// le compte de l'exploitant, sur une note de frais dont la catégorie n'est pas ce compte-là — une note rangée dans
+// une catégorie au 108000 y porte déjà sa charge, et suit la règle de toute pièce.
 function estContrepartieDirigeant(
   p: Pick<PieceRow, "type_piece">, cible: Pick<CibleComptable, "compte">, e: Pick<EcritureRow, "compte">,
 ): boolean {
   return p.type_piece === "note_frais" && e.compte === COMPTE_EXPLOITANT && cible.compte !== COMPTE_EXPLOITANT
-}
-
-function contrepartieDirigeantAttendue(
-  p: PieceRow, assujettiTva: boolean, paiements: readonly PaiementDePiece[],
-): { date: string | null; sens: "debit" | "credit"; montant: number } | null {
-  // Seule une note de frais a une part de ce nom (`rattachementsTresorerie`).
-  const part = rattachementsTresorerie(p, paiements).find((r) => r.source === "note_de_frais")
-  if (!part) return null
-  const tva = tvaVentilee(p, assujettiTva)
-  const charge = tva ? p.montant_ht ?? Math.round((p.montant_ttc! - tva) * 100) / 100 : p.montant_ttc!
-  // Une note de frais s'écrit au débit : sa charge et sa TVA comptent pour leur signe, la banque pour le sien.
-  const banque = paiements.reduce((s, m) => s + Math.sign(m.montant) * Math.round(Math.abs(m.montant) * 100), 0)
-  const solde = Math.round(charge * 100) + Math.round(tva * 100) + banque
-  if (solde === 0) return null
-  return { date: part.date, sens: solde > 0 ? "credit" : "debit", montant: Math.abs(solde) / 100 }
 }
 
 // QUATRE COMPARAISONS, PAS UNE. Cette copie n'en portait qu'une — le TOTAL — pendant que
@@ -403,13 +583,14 @@ function tresorerieDesynchronisee(
   // réécrit désormais depuis les paiements.
   if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)) return true
   // ET LA CONTREPARTIE D'UNE NOTE DE FRAIS AU COMPTE DE L'EXPLOITANT, celle que la génération écrit — ni une de plus
-  // ni une de moins. La date ne se compare que sur une pièce datée.
-  const cle = (l: { date: string | null; sens: string; montant: number }) =>
+  // ni une de moins. La date ne se compare que sur une pièce datée : sans date, c'est celle du dépôt, un instant lu
+  // dans le fuseau de qui génère.
+  const cle = (l: { date: string; sens: string; montant: number }) =>
     [p.date_piece ? l.date : "", l.sens, Math.round(l.montant * 100)].join("|")
-  const present = groupe.filter((e) => estContrepartieDirigeant(p, cible, e)).map(cle).sort()
-  const attendue = contrepartieDirigeantAttendue(p, assujettiTva, paiementsPiece)
-  const attendu = attendue && estContrepartieDirigeant(p, cible, { compte: COMPTE_EXPLOITANT }) ? [cle(attendue)] : []
-  return present.length !== attendu.length || present.some((c, i) => c !== attendu[i])
+  const dirigeantPresent = groupe.filter((e) => estContrepartieDirigeant(p, cible, e)).map(cle).sort()
+  const dirigeantAttendu = lignesTresoreriePourPiece(p, cible, assujettiTva, paiementsPiece)
+    .filter((l) => estContrepartieDirigeant(p, cible, l)).map(cle).sort()
+  return dirigeantPresent.length !== dirigeantAttendu.length || dirigeantPresent.some((c, i) => c !== dirigeantAttendu[i])
 }
 
 // En ENGAGEMENT, l'écriture de la FACTURE — charge ou produit, TVA, et le compte de tiers qui porte le
@@ -468,10 +649,27 @@ function desequilibresEngagement(groupes: ReadonlyMap<string, readonly EcritureR
   return desequilibres
 }
 
-// `paiements` : ceux de chaque pièce, parts des virements groupés comprises (`paiementsDesPieces`).
+// UNE PIÈCE QUE LA FRONTIÈRE DE VALIDATION COUPE — une écriture validée, ou une écriture qu'elle devrait porter dans
+// un exercice validé — ne se compare que sur ce qui reste OUVERT : ses lignes datées après la frontière, à celles
+// qu'elle produirait aujourd'hui après la frontière, ligne pour ligne (date, compte, sens, montant au centime,
+// mouvement). C'est exactement ce que « Régénérer » réécrit ; la part figée, elle, ne se réécrit plus. Sans aucune
+// ligne, la pièce n'est pas « à régénérer » mais à générer.
+function partieOuverteDesynchronisee(
+  groupe: readonly EcritureRow[], attendues: readonly LigneAttendue[], frontiere: string,
+): boolean {
+  if (groupe.length === 0) return false
+  const cle = (l: { date: string; compte: string; sens: string; montant: number; ligne_bancaire_id?: string | null }) =>
+    [l.date, l.compte, l.sens, Math.round(l.montant * 100), l.ligne_bancaire_id ?? ""].join("|")
+  const presentes = groupe.filter((e) => !estFigee(e.date, frontiere)).map(cle).sort()
+  const ouvertes = attendues.filter((l) => !estFigee(l.date, frontiere)).map(cle).sort()
+  return presentes.length !== ouvertes.length || presentes.some((c, i) => c !== ouvertes[i])
+}
+
+// `paiements` : ceux de chaque pièce, parts des virements groupés comprises (`paiementsDesPieces`). `frontiere` : celle
+// de la validation (bloc VALIDATION), qui fait juger une pièce qu'elle coupe sur sa seule part ouverte.
 function analyserEcritures(
   ecritures: EcritureRow[], aComptabiliser: PieceAComptabiliser[], assujettiTva: boolean,
-  paiements: ReadonlyMap<string, readonly PaiementDePiece[]>, modele: ModeleComptable,
+  paiements: ReadonlyMap<string, readonly PaiementDePiece[]>, modele: ModeleComptable, frontiere: string | null,
 ) {
   const piecesParGroupe = new Map<string, EcritureRow[]>()
   for (const e of ecritures) {
@@ -504,6 +702,12 @@ function analyserEcritures(
   const piecesDesynchronisees = aComptabiliser.filter(({ piece, ...cible }) => {
     const groupe = piecesParGroupe.get(piece.id) ?? []
     const paiementsPiece = paiements.get(piece.id) ?? []
+    if (frontiere !== null) {
+      const attendues = lignesPourPiece(piece, cible, assujettiTva, paiementsPiece, modele)
+      if ([...groupe, ...attendues].some((l) => estFigee(l.date, frontiere))) {
+        return partieOuverteDesynchronisee(groupe, attendues, frontiere)
+      }
+    }
     return modele.mode === "engagement"
       ? engagementDesynchronise(piece, cible, groupe, assujettiTva, paiementsPiece, modele.compteNotesDeFrais)
       : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece)
@@ -693,10 +897,14 @@ function ecritureConforme(
 // Un mouvement affecté dont l'écriture n'est plus celle que son affectation produirait : absente, sur
 // un autre compte, d'un autre montant, dans un autre sens ou à une autre date — le cas d'une catégorie
 // dont le compte a changé depuis, ou d'une recette taxée d'un dossier qui a cessé d'être assujetti.
-// « Réaffecter » (onglet Écritures) la réécrit.
-function mouvementsAffectesDesynchronises(ecritures: readonly EcritureRow[], affectes: readonly MouvementAffecte[]): MouvementAffecte[] {
+// « Réaffecter » (onglet Écritures) la réécrit. Pas un mouvement d'un exercice VALIDÉ (bloc VALIDATION) : son
+// écriture est validée, la base refuse de la réécrire.
+function mouvementsAffectesDesynchronises(
+  ecritures: readonly EcritureRow[], affectes: readonly MouvementAffecte[], frontiere: string | null,
+): MouvementAffecte[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return affectes.filter((m) => {
+    if (estFigee(m.ligne.date, frontiere)) return false
     if (!m.nature || !m.categorie.compte_comptable) return true
     return !ecritureConforme(parLigne.get(m.ligne.id) ?? [], ecritureDuMouvement(m.ligne, m.categorie.compte_comptable, m.taux), m.ligne.date)
   })
@@ -714,21 +922,25 @@ function compteDuDirigeant(modele: ModeleComptable): string {
 }
 
 // Les virements personnels dont l'écriture manque ou n'est plus celle attendue — ceux qu'on PEUT écrire :
-// ni rapprochés ni affectés, et pas de zéro euro.
+// ni rapprochés ni affectés, pas de zéro euro, et pas d'un exercice validé, où la base n'écrit plus.
 function virementsPersonnelsAEcrire(
-  ecritures: readonly EcritureRow[], lignes: readonly VirementPersonnelRow[], modele: ModeleComptable,
+  ecritures: readonly EcritureRow[], lignes: readonly VirementPersonnelRow[], modele: ModeleComptable, frontiere: string | null,
 ): VirementPersonnelRow[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((l) =>
     l.prelevement_personnel
     && !l.piece_id && !l.cotisation_id && !l.categorie_id && l.montant !== 0
+    && !estFigee(l.date, frontiere)
     && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuMouvement(l, compteDuDirigeant(modele), null), l.date))
 }
 
 // Les recettes affectées SANS TAUX d'un dossier assujetti — affectées avant qu'il le devienne : écrites au
-// TTC en 706, leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe en recette.
-function recettesAffecteesSansTaux(affectes: readonly MouvementAffecte[], assujettiTva: boolean): MouvementAffecte[] {
-  return assujettiTva ? affectes.filter((m) => m.nature === "recette" && m.taux === null) : []
+// TTC en 706, leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe en recette. Sauf un mouvement d'un
+// exercice validé : la base refuse de le réaffecter.
+function recettesAffecteesSansTaux(
+  affectes: readonly MouvementAffecte[], assujettiTva: boolean, frontiere: string | null,
+): MouvementAffecte[] {
+  return assujettiTva ? affectes.filter((m) => m.nature === "recette" && m.taux === null && !estFigee(m.ligne.date, frontiere)) : []
 }
 
 // Une catégorie compte dès qu'une pièce validée OU un mouvement affecté l'utilise — jamais la facture d'un
@@ -835,8 +1047,13 @@ function echeancesNonRapprochees(
   return manquantes.sort((a, b) => a.echeance.date.localeCompare(b.echeance.date) || a.emprunt.nom.localeCompare(b.emprunt.nom))
 }
 
-// Ce que le relevé importé couvre : du premier au dernier mouvement, moins la marge laissée au prélèvement.
-function couvertureDuReleve(lignes: readonly Pick<MouvementEmpruntRow, "date">[]): { debut: string; fin: string } | null {
+// Ce que le relevé importé couvre : du premier au dernier mouvement, moins la marge laissée au prélèvement. Et rien
+// au plus tard à la frontière de validation (bloc VALIDATION) : les mouvements d'un exercice validé ne se rapprochent
+// plus, donc une échéance qu'aucun ne paie ne le sera jamais. Quand rien ne reste à couvrir après elle, la fenêtre
+// est vide — son début après sa fin —, et rien n'est réclamé.
+function couvertureDuReleve(
+  lignes: readonly Pick<MouvementEmpruntRow, "date">[], frontiere: string | null,
+): { debut: string; fin: string } | null {
   if (lignes.length === 0) return null
   let debut = lignes[0].date
   let fin = lignes[0].date
@@ -844,6 +1061,7 @@ function couvertureDuReleve(lignes: readonly Pick<MouvementEmpruntRow, "date">[]
     if (l.date < debut) debut = l.date
     if (l.date > fin) fin = l.date
   }
+  if (frontiere !== null && debut <= frontiere) debut = ajouterJours(frontiere, 1)
   return { debut, fin: ajouterJours(fin, -MARGE_PRELEVEMENT_JOURS) }
 }
 
@@ -966,11 +1184,15 @@ function partsDesVentilations(
 
 // Les mouvements ventilés avec une part de recette SANS TAUX sur un dossier assujetti — ventilés avant qu'il
 // le devienne : leur TVA collectée n'est dans aucune CA3. Un mouvement par entrée, même s'il porte deux
-// parts de recette sans taux.
-function recettesVentileesSansTaux(parts: readonly PartVentilee[], assujettiTva: boolean): MouvementVentileRow[] {
+// parts de recette sans taux. Sauf un mouvement d'un exercice validé : ses parts ne se modifient plus.
+function recettesVentileesSansTaux(
+  parts: readonly PartVentilee[], assujettiTva: boolean, frontiere: string | null,
+): MouvementVentileRow[] {
   if (!assujettiTva) return []
   const parLigne = new Map<string, MouvementVentileRow>()
-  for (const p of parts) if (p.nature === "recette" && p.taux === null) parLigne.set(p.ligne.id, p.ligne)
+  for (const p of parts) {
+    if (p.nature === "recette" && p.taux === null && !estFigee(p.ligne.date, frontiere)) parLigne.set(p.ligne.id, p.ligne)
+  }
   return [...parLigne.values()]
 }
 
@@ -998,7 +1220,8 @@ function ventilationsIncoherentes(
 // Un mouvement ventilé dont l'écriture n'est plus celle que ses parts produiraient. Seules les ventilations
 // COHÉRENTES sont jugées (les autres sont dites par `ventilationsIncoherentes`), et une catégorie absente de
 // la liste écarte le mouvement ; une catégorie sortie des comptes de résultat le rend périmé, comme une part
-// taxée d'un dossier qui a cessé d'être assujetti.
+// taxée d'un dossier qui a cessé d'être assujetti. Pas un mouvement d'un exercice validé : son écriture est
+// validée, la base refuse de la réécrire.
 function mouvementsVentilesDesynchronises(
   ecritures: readonly EcritureRow[],
   lignes: readonly MouvementVentileRow[],
@@ -1006,6 +1229,7 @@ function mouvementsVentilesDesynchronises(
   categories: readonly CategorieRow[],
   modele: ModeleComptable,
   assujettiTva: boolean,
+  frontiere: string | null,
 ): MouvementVentileRow[] {
   const ecrituresParLigne = ecrituresSansPieceParMouvement(ecritures)
   const parLigne = partsParMouvement(ventilations)
@@ -1013,6 +1237,7 @@ function mouvementsVentilesDesynchronises(
   const connues = new Set(categories.map((c) => c.id))
   return lignes.filter((ligne) => {
     if (!ligne.ventilee || ligne.statut !== "rapprochee" || incoherentes.has(ligne.id)) return false
+    if (estFigee(ligne.date, frontiere)) return false
     const parts = parLigne.get(ligne.id) ?? []
     if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false
     const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)
@@ -1102,21 +1327,26 @@ function rapprochementsDeCotisation(
 
 // Les échéances payées dont l'écriture n'est pas celle que le rapprochement produirait aujourd'hui —
 // absente, le cas réel, ou périmée par une CSG-CRDS saisie depuis. Un rapprochement qui ne peut pas
-// s'écrire n'y est pas : il est compté à part.
+// s'écrire n'y est pas : il est compté à part. Ni un paiement d'un exercice validé : la base n'y écrit plus — une
+// échéance compte à la date du mouvement qui la paie, et c'est elle qui dit l'exercice.
 function cotisationsAEcrire(
   ecritures: readonly EcritureRow[], lignes: readonly MouvementCotisationRow[], cotisations: readonly CotisationRow[], mode: ModeComptable,
+  frontiere: string | null,
 ): { ligne: MouvementCotisationRow; cotisation: CotisationRow }[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return rapprochementsDeCotisation(lignes, cotisations).filter(({ ligne, cotisation }) =>
-    !refusRapprochementCotisation(ligne, cotisation, mode)
+    !estFigee(ligne.date, frontiere)
+    && !refusRapprochementCotisation(ligne, cotisation, mode)
     && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode), ligne.date))
 }
 
-// Les rapprochements qui ne peuvent pas s'écrire, avec leur raison.
+// Les rapprochements qui ne peuvent pas s'écrire, avec leur raison. Rien d'un exercice validé : ni le mouvement ni
+// l'échéance qu'il paie n'y changent plus.
 function rapprochementsCotisationRefuses(
-  lignes: readonly MouvementCotisationRow[], cotisations: readonly CotisationRow[], mode: ModeComptable,
+  lignes: readonly MouvementCotisationRow[], cotisations: readonly CotisationRow[], mode: ModeComptable, frontiere: string | null,
 ): { ligne: MouvementCotisationRow; cotisation: CotisationRow; raison: string }[] {
   return rapprochementsDeCotisation(lignes, cotisations).flatMap(({ ligne, cotisation }) => {
+    if (estFigee(ligne.date, frontiere)) return []
     const raison = refusRapprochementCotisation(ligne, cotisation, mode)
     return raison ? [{ ligne, cotisation, raison }] : []
   })
@@ -1210,21 +1440,23 @@ function dotationConforme(
 type EtatDotation = "a_ecrire" | "a_reecrire" | "a_retirer" | "ecrite" | "validee"
 
 // Chaque exercice du registre — de la mise en service à l'exercice en cours, plus ceux où une dotation est
-// écrite — comparé au brouillon. Un exercice sans dotation ni écriture n'est pas rendu.
+// écrite — comparé au brouillon. Un exercice sans dotation ni écriture n'est pas rendu. Un exercice figé par la
+// validation (bloc VALIDATION) est rendu marqué `figee` : sa dotation, écrite ou non, ne bouge plus.
 function dotationsDuRegistre(
   immobilisations: readonly ImmobilisationRow[],
   natures: readonly NatureRow[],
   ecritures: readonly EcritureDotationRow[],
   ouverture: string | null,
   anneeCourante: number,
-): { immobilisation: ImmobilisationRow; annee: number; montant: number; etat: EtatDotation }[] {
+  frontiere: string | null,
+): { immobilisation: ImmobilisationRow; annee: number; montant: number; etat: EtatDotation; figee: boolean }[] {
   const natureParId = new Map(natures.map((n) => [n.id, n]))
   const ecrituresParBien = new Map<string, EcritureDotationRow[]>()
   for (const e of ecritures) {
     if (!e.immobilisation_id) continue
     ecrituresParBien.set(e.immobilisation_id, [...(ecrituresParBien.get(e.immobilisation_id) ?? []), e])
   }
-  const resultat: { immobilisation: ImmobilisationRow; annee: number; montant: number; etat: EtatDotation }[] = []
+  const resultat: { immobilisation: ImmobilisationRow; annee: number; montant: number; etat: EtatDotation; figee: boolean }[] = []
   for (const bien of immobilisations) {
     const nature = bien.nature_id ? natureParId.get(bien.nature_id) : undefined
     const sesEcritures = ecrituresParBien.get(bien.id) ?? []
@@ -1241,16 +1473,17 @@ function dotationsDuRegistre(
       else if (attendues && dotationConforme(presentes, attendues, annee)) etat = "ecrite"
       else if (presentes.some((e) => e.statut !== "proposee")) etat = "validee"
       else etat = montant <= 0 ? "a_retirer" : "a_reecrire"
-      resultat.push({ immobilisation: bien, annee, montant, etat })
+      resultat.push({ immobilisation: bien, annee, montant, etat, figee: estFigee(dateDeLaDotation(annee), frontiere) })
     }
   }
   return resultat
 }
 
 // Ce que la Checklist réclame : la dotation d'un exercice RÉVOLU qui n'est pas écrite, et toute dotation
-// écrite qui ne suit plus le registre — celle de l'exercice en cours ne manque pas encore.
-function dotationsEnDefaut<D extends { annee: number; etat: EtatDotation }>(dotations: readonly D[], anneeCourante: number): D[] {
-  return dotations.filter((d) => d.etat !== "ecrite" && (d.etat !== "a_ecrire" || d.annee < anneeCourante))
+// écrite qui ne suit plus le registre — celle de l'exercice en cours ne manque pas encore. Rien d'un exercice figé
+// par la validation, qu'elle y manque ou qu'elle diverge : la base n'y écrit plus.
+function dotationsEnDefaut<D extends { annee: number; etat: EtatDotation; figee: boolean }>(dotations: readonly D[], anneeCourante: number): D[] {
+  return dotations.filter((d) => !d.figee && d.etat !== "ecrite" && (d.etat !== "a_ecrire" || d.annee < anneeCourante))
 }
 
 // L'ÉCRITURE D'ACQUISITION : la facture d'un bien s'écrit sur le compte d'immobilisation de sa nature — ou
@@ -1436,13 +1669,15 @@ function forfaitConforme(
 type EtatForfait = "a_ecrire" | "a_reecrire" | "a_retirer" | "ecrit" | "valide" | "rien"
 
 // Chaque ligne du cadre 7 comparée au brouillon : à écrire, à réécrire (le barème ne donne plus ce montant, ou le
-// compte du dirigeant a changé), à retirer (plus rien à écrire), écrit, validé qui diverge, ou rien.
+// compte du dirigeant a changé), à retirer (plus rien à écrire), écrit, validé qui diverge, ou rien. Un exercice figé
+// par la validation (bloc VALIDATION) est rendu marqué `fige` : son forfait, écrit ou non, ne bouge plus.
 function forfaitsDuCadre7(
   vehicules: readonly VehiculeRow[],
   ecritures: readonly EcritureForfaitRow[],
   modele: ModeleComptable,
   ouverture: string | null,
-): { vehicule: VehiculeRow; etat: EtatForfait }[] {
+  frontiere: string | null,
+): { vehicule: VehiculeRow; etat: EtatForfait; fige: boolean }[] {
   const parVehicule = new Map<string, EcritureForfaitRow[]>()
   for (const e of ecritures) {
     if (!e.vehicule_id) continue
@@ -1457,15 +1692,15 @@ function forfaitsDuCadre7(
     else if (attendues && forfaitConforme(presentes, attendues, vehicule.annee)) etat = "ecrit"
     else if (presentes.some((e) => e.statut !== "proposee")) etat = "valide"
     else etat = nul ? "a_retirer" : "a_reecrire"
-    return { vehicule, etat }
+    return { vehicule, etat, fige: estFigee(dateDuForfait(vehicule.annee), frontiere) }
   })
 }
 
 // Ce que la Checklist réclame : le forfait d'un exercice RÉVOLU qui n'est pas écrit, et tout forfait écrit qui
 // ne suit plus le cadre 7 — celui de l'exercice en cours ne manque pas encore, son kilométrage n'étant complet
-// qu'une fois l'année finie.
-function forfaitsEnDefaut<F extends { vehicule: { annee: number }; etat: EtatForfait }>(forfaits: readonly F[], anneeCourante: number): F[] {
-  return forfaits.filter((f) => f.etat !== "ecrit" && f.etat !== "rien"
+// qu'une fois l'année finie. Rien d'un exercice figé par la validation, qu'il y manque ou qu'il diverge.
+function forfaitsEnDefaut<F extends { vehicule: { annee: number }; etat: EtatForfait; fige: boolean }>(forfaits: readonly F[], anneeCourante: number): F[] {
+  return forfaits.filter((f) => !f.fige && f.etat !== "ecrit" && f.etat !== "rien"
     && (f.etat !== "a_ecrire" || f.vehicule.annee < anneeCourante))
 }
 // ── FIN FORFAIT ──────────────────────────────────────────────────────────────────────────────────
@@ -1720,7 +1955,7 @@ interface OutilContexte {
 const TOOLS: Anthropic.Tool[] = [
   {
     name: "resume_dossier",
-    description: "Vue d'ensemble du dossier : nom, régime TVA, modèle comptable (tresorerie ou engagement), compteurs (pièces à valider, pièces validées, écritures, années couvertes) et a_nouveaux — la date d'ouverture d'un dossier repris d'un autre logiciel, null sinon. À appeler en premier si le contexte n'est pas clair.",
+    description: "Vue d'ensemble du dossier : nom, régime TVA, modèle comptable (tresorerie ou engagement), compteurs (pièces à valider, pièces validées, écritures, années couvertes), a_nouveaux — la date d'ouverture d'un dossier repris d'un autre logiciel, null sinon — et exercices_valides, les exercices dont la comptabilité est validée, donc figée. À appeler en premier si le contexte n'est pas clair.",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -1761,7 +1996,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7. À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -1815,7 +2050,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   const { admin, dossierId, dossier } = ctx
 
   if (nom === "resume_dossier") {
-    const [r1, r2, r3, r4, r5] = await Promise.all([
+    const [r1, r2, r3, r4, r5, r6] = await Promise.all([
       admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "a_valider"),
       admin.from("pieces").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId).eq("statut", "validee"),
       admin.from("ecritures_brouillon").select("id", { count: "exact", head: true }).eq("dossier_id", dossierId),
@@ -1823,6 +2058,8 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
         admin.from("ecritures_brouillon").select("date", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(debut, fin)),
       lireTout<{ date: string }>((debut, fin) =>
         admin.from("a_nouveaux").select("date", { count: "exact" }).eq("dossier_id", dossierId).order("compte").order("id").range(debut, fin)),
+      lireTout<{ annee: number }>((debut, fin) =>
+        admin.from("exercices_valides").select("annee", { count: "exact" }).eq("dossier_id", dossierId).order("annee").order("dossier_id").range(debut, fin)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : une lecture échouée ne doit jamais
     // retomber silencieusement sur 0 (count/data valent alors null) — l'agent répondrait avec
@@ -1844,6 +2081,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     if (!r5.complete) {
       return { erreur: `Lecture partielle : ${r5.motif} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
     }
+    // Les exercices validés : lus en partie, le modèle proposerait de reprendre ce qu'un exercice validé a figé. Même
+    // refus.
+    if (!r6.complete) {
+      return { erreur: `Lecture partielle : ${r6.motif} — ne tire aucune conclusion chiffrée de ce résultat, dis à l'utilisateur que ces données sont indisponibles pour l'instant.` }
+    }
     const annees = [...new Set(r4.lignes.map((r) => r.date.slice(0, 4)))].sort()
     return {
       nom: dossier.nom,
@@ -1854,6 +2096,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       ecritures_brouillon: r3.count ?? 0,
       annees_avec_ecritures: annees,
       a_nouveaux: r5.lignes.length > 0 ? { date: r5.lignes[0].date, nombre_de_lignes: r5.lignes.length } : null,
+      exercices_valides: r6.lignes.map((v) => v.annee),
     }
   }
 
@@ -1919,10 +2162,13 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules] = await Promise.all([
-      // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter.
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides] = await Promise.all([
+      // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter. Et tout ce qu'en
+      // tire le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière de validation doit encore porter, ligne
+      // pour ligne : le hors taxe lu, qui prime sur le TTC moins la TVA pour un dossier assujetti — et pour la
+      // contrepartie d'une note de frais au 108000 —, et le DÉPÔT, qui date ce que rien d'autre ne date.
       lireTout<PieceRow>((d, f) =>
-        admin.from("pieces").select("id, date_piece, montant_ttc, montant_tva, categorie_id, type_piece", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
+        admin.from("pieces").select("id, date_piece, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
       lireTout<{ confiance: string | null }>((d, f) =>
         admin.from("pieces").select("confiance", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "a_valider").order("id").range(d, f)),
       lireTout<CategorieRow>((d, f) =>
@@ -1980,6 +2226,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Le CADRE 7 (bloc FORFAIT) : chaque véhicule de chaque exercice, de quoi calculer son forfait au barème.
       lireTout<VehiculeRow>((d, f) =>
         admin.from("vehicules").select("id, annee, modele, type, puissance_fiscale, motorisation, km_professionnel", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // Les EXERCICES VALIDÉS (bloc VALIDATION) : la frontière au-delà de laquelle plus rien ne se réclame. Lue en
+      // partie, elle se tromperait d'exercice — et le refus général ci-dessous la couvre.
+      lireTout<{ annee: number }>((d, f) =>
+        admin.from("exercices_valides").select("annee", { count: "exact" }).eq("dossier_id", dossierId).order("annee").order("dossier_id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -1988,7 +2238,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -2006,39 +2256,44 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const aComptabiliser = piecesAComptabiliser(piecesTyped, categoriesTyped, acquisitions)
     const modele = modeleDuDossier(dossier)
     const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes)
-    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele)
+    // La frontière de validation : rien de ce qu'elle fige ne se réclame plus, comme dans la Checklist.
+    const frontiere = frontiereDeValidation(rValides.lignes.map((v) => v.annee))
+    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele, frontiere)
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
     // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
     const catSansPoste = categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
     const sansTva = piecesSansTva(piecesTyped, dossier.assujetti_tva)
     const affectes = mouvementsAffectes(rAffectes.lignes, categoriesTyped, dossier.assujetti_tva)
-    const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes)
-    const recettesAffecteesSansTva = recettesAffecteesSansTaux(affectes, dossier.assujetti_tva)
-    const virementsAEcrire = virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele)
-    const couverture = couvertureDuReleve(rReleve.lignes)
+    const affectesAReaffecter = mouvementsAffectesDesynchronises(ecrituresTyped, affectes, frontiere)
+    const recettesAffecteesSansTva = recettesAffecteesSansTaux(affectes, dossier.assujetti_tva, frontiere)
+    const virementsAEcrire = virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere)
+    const couverture = couvertureDuReleve(rReleve.lignes, frontiere)
     const echeancesManquantes = couverture ? echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin) : []
     const echeancesPerimees = echeancesDesynchronisees(ecrituresTyped, rReleve.lignes)
     const recettesVentileesSansTva = recettesVentileesSansTaux(
-      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva)
+      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva, frontiere)
     const ventilationsFausses = ventilationsIncoherentes(rReleve.lignes, rParts.lignes)
-    const ventilesPerimes = mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva)
+    const ventilesPerimes = mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva, frontiere)
     // Comptés par MOUVEMENT, comme la Checklist : une part sans pièce et une somme qui ne tombe plus juste
     // sont deux raisons pour un seul virement à reprendre.
     const reglementsFaux = new Set(reglementsGroupesIncoherents(rReleve.lignes, rReglements.lignes).map((r) => r.ligne.id))
     const payeesEnTrop = piecesPayeesEnTrop(piecesTyped, paiements)
-    const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode)
-    const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode)
+    const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)
+    const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)
     // L'exercice en cours, dans le fuseau du cabinet : sa dotation ne manque pas encore.
     const anneeCourante = Number(aujourdHuiCabinet().slice(0, 4))
     const dotationsManquantes = dotationsEnDefaut(
-      dotationsDuRegistre(rImmobilisations.lignes, rNatures.lignes, ecrituresTyped, ouverture, anneeCourante),
+      dotationsDuRegistre(rImmobilisations.lignes, rNatures.lignes, ecrituresTyped, ouverture, anneeCourante, frontiere),
       anneeCourante,
     )
     // Et le forfait kilométrique d'un exercice fini : son kilométrage de l'exercice en cours n'est pas complet.
-    const forfaitsManquants = forfaitsEnDefaut(forfaitsDuCadre7(rVehicules.lignes, ecrituresTyped, modele, ouverture), anneeCourante)
+    const forfaitsManquants = forfaitsEnDefaut(forfaitsDuCadre7(rVehicules.lignes, ecrituresTyped, modele, ouverture, frontiere), anneeCourante)
 
     return {
+      // Les exercices VALIDÉS : rien de ce qu'ils figent n'est réclamé ci-dessous, comme dans la Checklist — la base
+      // n'y écrit plus, et une erreur trouvée après la validation se corrige sur l'exercice suivant.
+      exercices_valides: rValides.lignes.map((v) => v.annee),
       ecritures_desequilibrees: groupesDesequilibres.length,
       ecritures_a_regenerer_pieces_modifiees: piecesDesynchronisees.length,
       // Le libellé de la Checklist : l'écriture d'un mouvement affecté ne suit plus sa catégorie.
@@ -2266,6 +2521,7 @@ Règles impératives :
 - Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
 - Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
+- Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).
 - Réponds en français, de façon concise, avec des montants exacts et la période concernée. Utilise des puces si ça aide.`
