@@ -1470,7 +1470,7 @@ export default function FicheMouvement({
             {refusEcheancePayee && (
               <p className="fiche-mouvement-alerte">
                 Ce rapprochement ne peut pas s’écrire : {refusEcheancePayee} L’échéance reste comptée à sa date, et
-                le mouvement manque au FEC. Annule-le pour le refaire.
+                le mouvement manque au FEC.{!fige && ' Annule-le pour le refaire.'}
               </p>
             )}
           </section>

@@ -225,9 +225,9 @@ describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
         ecriture({ id: 'piece', piece_id: 'p1', ligne_bancaire_id: 'l-absente', compte: '606100', sens: 'debit', montant: 500 }),
       ]
       expect(paires(deployee.cotisationsAEcrire(ecritures, lignes, cotisations, mode)), mode)
-        .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, mode)))
+        .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, mode, null)))
       expect(paires(deployee.rapprochementsCotisationRefuses(lignes, cotisations, mode)), mode)
-        .toEqual(paires(rapprochementsCotisationRefuses(lignes, cotisations, mode)))
+        .toEqual(paires(rapprochementsCotisationRefuses(lignes, cotisations, mode, null)))
     }
     // La batterie exerce bien ce qui décide : en trésorerie, la CSG-CRDS saisie depuis rend l'écriture
     // périmée ; en engagement, elle n'y change rien.
@@ -238,10 +238,10 @@ describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
       ...conforme(lignes[4], cotisations[4], 'tresorerie').map((e) => (e.compte === COMPTE_BANQUE ? e : { ...e, montant: 450 })),
       ...conforme(lignes[8], cotisations[7], 'tresorerie'),
     ]
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie')))
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', null)))
       .toEqual(['l-absente→absente', 'l-perimee→perimee', 'l-autre-date→autre-date', 'l-autre-montant→autre-montant'])
-    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'engagement'))).not.toContain('l-perimee→perimee')
-    expect(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie'))).toEqual(['l-refusee→refusee'])
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'engagement', null))).not.toContain('l-perimee→perimee')
+    expect(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', null))).toEqual(['l-refusee→refusee'])
   })
 })
 
@@ -339,7 +339,7 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
     const lignes = [ligne({ id: 'l-refusee', cotisation_id: 'refusee', montant: 500 })]
     const cotisations = [cotisation({ id: 'refusee' })]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie')))
-      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie'))))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null))))
   })
 
   it('attrape une écriture jugée à la date de l’échéance plutôt qu’à celle du mouvement', () => {
@@ -349,7 +349,7 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
     const cotisations = [cotisation({})]
     const ecritures = conforme(lignes[0], cotisations[0], 'tresorerie')
     echoue(() => expect(paires(derivee.cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie')))
-      .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie'))))
+      .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null))))
   })
 
   it('attrape un mouvement non rapproché qui paierait encore', () => {
@@ -357,6 +357,6 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
     const lignes = [ligne({ id: 'l-non-rapprochee', statut: 'non_rapprochee' })]
     const cotisations = [cotisation({})]
     echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie')))
-      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie'))))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null))))
   })
 })

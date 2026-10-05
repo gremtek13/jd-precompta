@@ -1,6 +1,7 @@
 import { act, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import BalanceCard from './BalanceCard'
+import { AvecExercicesValides } from '../../test/exercicesValides'
 
 // Ce que ces tests gardent est le CÂBLAGE, pas la lecture ni le calcul : `balanceImport.ts` et
 // `aNouveaux.ts` sont couverts à part. Ce qui ne peut se voir qu'ici :
@@ -115,8 +116,9 @@ const AVANT_CLOTURE = [
 
 const ANNEE = new Date().getFullYear()
 
-async function monter() {
-  render(<BalanceCard dossierId="dossier-de-test" />)
+// Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
+async function monter(valides: readonly number[] = []) {
+  render(<AvecExercicesValides annees={valides}><BalanceCard dossierId="dossier-de-test" /></AvecExercicesValides>)
   // L'ouverture existante est lue au montage : l'enregistrement l'attend.
   await screen.findByText(/Aucun à-nouveau enregistré|Ouverture enregistrée|Les à-nouveaux du dossier n'ont pas pu/)
 }
@@ -341,5 +343,41 @@ describe('BalanceCard — retirer l’ouverture', () => {
     await act(async () => { screen.getByRole('button', { name: 'Retirer les à-nouveaux' }).click() })
     expect(screen.getByText('permission denied for table a_nouveaux')).toBeTruthy()
     expect(screen.getByText(/Ouverture enregistrée/)).toBeTruthy()
+  })
+})
+
+// UN EXERCICE VALIDÉ FIGE L'OUVERTURE (ligne 26.6, étape d) : dès qu'un exercice du dossier l'est, les à-nouveaux ne
+// s'enregistrent, ne se remplacent ni ne se retirent plus (`garder_a_nouveaux_valides`). La carte le dit à la place des
+// deux boutons ; la balance se lit et se contrôle toujours — c'est une question sur un fichier, pas une écriture.
+describe('BalanceCard — une ouverture figée par un exercice validé', () => {
+  const PHRASE = 'Un exercice de ce dossier est validé : son ouverture ne change plus.'
+
+  it('ne se retire plus, et le dit', async () => {
+    ouvertureExistante()
+    await monter([2025])
+
+    expect(screen.queryByRole('button', { name: 'Retirer les à-nouveaux' })).toBeNull()
+    expect(screen.getByText(PHRASE)).toBeTruthy()
+    expect(screen.getByText(/Ouverture enregistrée/)).toBeTruthy()
+  })
+
+  it('ne se remplace plus : la balance se contrôle, la préparation se lit, rien ne part', async () => {
+    ouvertureExistante()
+    await monter([2025])
+    await deposer(fichier(octetsUtf8(AVANT_CLOTURE)))
+
+    expect(screen.getByText('équilibrée')).toBeTruthy()
+    expect(screen.getByText(new RegExp(`^6 à-nouveaux au 01/01/${ANNEE}`))).toBeTruthy()
+    expect(screen.queryByRole('button', { name: /à-nouveaux/ })).toBeNull()
+    expect(screen.getAllByText(PHRASE)).toHaveLength(2)
+    expect(faux.appelsRpc).toHaveLength(0)
+  })
+
+  it('ne s’enregistre plus sur un dossier sans ouverture dont un exercice est validé', async () => {
+    await monter([2025])
+    await deposer(fichier(octetsUtf8(AVANT_CLOTURE)))
+
+    expect(screen.queryByRole('button', { name: 'Enregistrer les à-nouveaux' })).toBeNull()
+    expect(screen.getByText(PHRASE)).toBeTruthy()
   })
 })

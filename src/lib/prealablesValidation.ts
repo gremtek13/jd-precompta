@@ -416,13 +416,13 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     message: "échéance(s) d'emprunt dont l'écriture ne suit plus le découpage : les rapprocher de nouveau.",
   })
   bloque({
-    id: 'cotisations-sans-ecriture', nb: cotisationsAEcrire(d.ecritures, d.lignes, d.cotisations, d.modele.mode).filter((c) => mouvementDeLExercice(c.ligne)).length,
+    id: 'cotisations-sans-ecriture', nb: cotisationsAEcrire(d.ecritures, d.lignes, d.cotisations, d.modele.mode, frontiere).filter((c) => mouvementDeLExercice(c.ligne)).length,
     cible: 'cotisations',
     message: "échéance(s) de cotisation payée(s) dont l'écriture manque ou n'est plus à jour : les écrire.",
   })
   bloque({
     id: 'cotisations-rapprochement-refuse', cible: 'banque',
-    nb: rapprochementsCotisationRefuses(d.lignes, d.cotisations, d.modele.mode).filter((c) => mouvementDeLExercice(c.ligne)).length,
+    nb: rapprochementsCotisationRefuses(d.lignes, d.cotisations, d.modele.mode, frontiere).filter((c) => mouvementDeLExercice(c.ligne)).length,
     message: "rapprochement(s) d'une échéance de cotisation qui ne peuvent pas s'écrire : les annuler.",
   })
   bloque({
@@ -455,13 +455,13 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'dotations-a-ecrire', cible: 'immobilisations',
-    nb: dotationsEnDefaut(dotationsDuRegistre(d.immobilisations, d.natures, d.ecritures, ouvertureDate, d.anneeCourante), d.anneeCourante)
+    nb: dotationsEnDefaut(dotationsDuRegistre(d.immobilisations, d.natures, d.ecritures, ouvertureDate, d.anneeCourante, frontiere), d.anneeCourante)
       .filter((x) => x.annee === d.annee).length,
     message: "dotation(s) aux amortissements de l'exercice à écrire, ou qui ne suivent plus le registre : les écrire.",
   })
   bloque({
     id: 'forfaits-a-ecrire', cible: 'informations',
-    nb: forfaitsEnDefaut(forfaitsDuCadre7(d.vehicules, d.ecritures, d.modele, ouvertureDate, d.anneeCourante), d.anneeCourante)
+    nb: forfaitsEnDefaut(forfaitsDuCadre7(d.vehicules, d.ecritures, d.modele, ouvertureDate, d.anneeCourante, frontiere), d.anneeCourante)
       .filter((f) => f.vehicule.annee === d.annee).length,
     message: "forfait(s) kilométrique(s) de l'exercice à écrire, ou qui ne suivent plus le cadre 7 : les écrire.",
   })

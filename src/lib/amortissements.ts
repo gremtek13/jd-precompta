@@ -2,6 +2,7 @@ import { COMPTE_DOTATIONS_AMORTISSEMENTS } from './comptes'
 import { anneeDe, jourDe, moisDe } from './format'
 import { montantRetenu } from './montantRetenu'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from './types'
+import { estFigee } from './validationExercice'
 
 // LES DOTATIONS AUX AMORTISSEMENTS (ligne 26.6 de la feuille de route, étape b).
 //
@@ -240,8 +241,9 @@ export function dotationConforme(
 //   - `a_retirer`   : une est écrite, et le calcul n'en donne plus (mise en service repoussée, exercice
 //                     repris dans les à-nouveaux) ;
 //   - `ecrite`      : celle du calcul est écrite ;
-//   - `validee`     : une écrite VALIDÉE qui n'est plus celle du calcul — la base refuse de la remplacer, et
-//                     c'est à l'expert-comptable de trancher.
+//   - `validee`     : une écrite VALIDÉE qui n'est plus celle du calcul — la base refuse de la remplacer. Elle
+//                     est dans un exercice validé (`figee`), donc ne se réclame plus : une erreur trouvée après la
+//                     validation se corrige sur l'exercice suivant.
 export type EtatDotation = 'a_ecrire' | 'a_reecrire' | 'a_retirer' | 'ecrite' | 'validee'
 
 export interface DotationDuRegistre {
@@ -255,6 +257,10 @@ export interface DotationDuRegistre {
   etat: EtatDotation
   /** Pourquoi la base refuserait de l'écrire, dit avant le clic. */
   refus: string | null
+  /** L'exercice est figé par la validation (lib/validationExercice.ts) : la base n'y écrit, n'y réécrit ni n'y retire
+   *  plus rien. `etat` dit encore ce qu'il en est, pour que l'écran le montre ; aucun geste ne la propose, et la
+   *  Checklist ne la réclame pas. */
+  figee: boolean
 }
 
 // LES DOTATIONS DU REGISTRE, exercice par exercice, comparées au brouillon. Pour chaque bien, les exercices
@@ -265,12 +271,17 @@ export interface DotationDuRegistre {
 // L'exercice EN COURS est rendu comme les autres : sa dotation peut s'écrire dès aujourd'hui, au 31
 // décembre. C'est à l'appelant de décider s'il la réclame — la Checklist ne réclame que les exercices
 // révolus (`dotationsEnDefaut`), une dotation de l'année ne manquant qu'une fois l'année finie.
+//
+// UN EXERCICE FIGÉ PAR LA VALIDATION est rendu aussi, marqué `figee` : sa dotation, écrite ou non, ne bouge plus —
+// la base refuse toute écriture au plus tard à la frontière. Sans valeur par défaut : un appelant qui oublie la
+// frontière proposerait d'écrire une dotation que la base refuse, ou la réclamerait pour toujours.
 export function dotationsDuRegistre(
   immobilisations: readonly Immobilisation[],
   natures: readonly NatureImmobilisation[],
   ecritures: readonly EcritureBrouillon[],
   ouverture: string | null,
   anneeCourante: number,
+  frontiere: string | null,
 ): DotationDuRegistre[] {
   const natureParId = new Map(natures.map((n) => [n.id, n]))
   const ecrituresParBien = new Map<string, EcritureBrouillon[]>()
@@ -298,7 +309,7 @@ export function dotationsDuRegistre(
       else if (attendues && dotationConforme(presentes, attendues, annee)) etat = 'ecrite'
       else if (presentes.some((e) => e.statut !== 'proposee')) etat = 'validee'
       else etat = montant <= 0 ? 'a_retirer' : 'a_reecrire'
-      resultat.push({ immobilisation: bien, annee, montant, attendues, presentes, etat, refus })
+      resultat.push({ immobilisation: bien, annee, montant, attendues, presentes, etat, refus, figee: estFigee(dateDeLaDotation(annee), frontiere) })
     }
   }
   return resultat
@@ -306,9 +317,14 @@ export function dotationsDuRegistre(
 
 // Ce que la Checklist réclame : une dotation d'un exercice RÉVOLU qui n'est pas écrite, et toute dotation
 // écrite qui ne suit plus le registre — quel que soit l'exercice, une écriture fausse l'est dès
-// aujourd'hui. Une dotation validée qui diverge est rendue aussi : elle ne se réécrit pas, mais elle se dit.
+// aujourd'hui.
+//
+// RIEN D'UN EXERCICE FIGÉ PAR LA VALIDATION, qu'elle y manque ou qu'elle diverge : la base n'y écrit plus, et un point
+// que rien ne peut lever resterait en erreur pour toujours (lib/validationExercice.ts — « ce qu'un exercice validé a
+// figé ne se compare plus »). Une écriture validée ne vivant que dans un exercice validé, l'état `validee` ne se
+// réclame donc plus : une erreur trouvée après la validation se corrige sur l'exercice suivant.
 export function dotationsEnDefaut(dotations: readonly DotationDuRegistre[], anneeCourante: number): DotationDuRegistre[] {
-  return dotations.filter((d) => d.etat !== 'ecrite' && (d.etat !== 'a_ecrire' || d.annee < anneeCourante))
+  return dotations.filter((d) => !d.figee && d.etat !== 'ecrite' && (d.etat !== 'a_ecrire' || d.annee < anneeCourante))
 }
 
 // La valeur d'un bien telle que le formulaire la donne, en texte : la virgule française vaut le point, et

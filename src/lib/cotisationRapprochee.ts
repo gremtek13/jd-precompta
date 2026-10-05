@@ -4,6 +4,7 @@ import { COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT } from 
 import { formatDate, formatMoney } from './format'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { CotisationDeclaree, EcritureBrouillon, ModeComptable } from './types'
+import { estFigee } from './validationExercice'
 
 // UNE ÉCHÉANCE DE COTISATION RAPPROCHÉE D'UN MOUVEMENT S'ÉCRIT (ligne 26.6 de la feuille de route,
 // étape b).
@@ -187,15 +188,22 @@ function rapprochementsDeCotisation<L extends MouvementBancaire>(
 //
 // Un rapprochement qui ne PEUT pas s'écrire n'est pas rendu : « Écrire » échouerait. Il est rendu à part,
 // avec sa raison (`rapprochementsCotisationRefuses`).
+//
+// NI UN PAIEMENT D'UN EXERCICE FIGÉ PAR LA VALIDATION : la base n'y écrit plus (« aucune écriture ne s'y passe
+// plus »), et le compter dans « Écrire les N » proposerait un geste voué à l'échec — dans la Checklist, un point que
+// rien ne lève. Une échéance compte à la date du mouvement qui la paie : c'est elle qui dit l'exercice. Sans valeur
+// par défaut : passer `null` revient à tout comparer, ce que fait l'écran qui MONTRE l'état de chaque échéance.
 export function cotisationsAEcrire<L extends MouvementBancaire>(
   ecritures: readonly EcritureBrouillon[],
   lignes: readonly L[],
   cotisations: readonly CotisationDeclaree[],
   mode: ModeComptable,
+  frontiere: string | null,
 ): RapprochementCotisation<L>[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return rapprochementsDeCotisation(lignes, cotisations).filter(({ ligne, cotisation }) =>
-    !refusRapprochementCotisation(ligne, cotisation, mode)
+    !estFigee(ligne.date, frontiere)
+    && !refusRapprochementCotisation(ligne, cotisation, mode)
     && !ecritureConforme(parLigne.get(ligne.id) ?? [], ecritureDeLaCotisation(ligne, cotisation, mode), ligne.date))
 }
 
@@ -208,12 +216,17 @@ export interface RapprochementCotisationRefuse<L extends MouvementBancaire = Mou
 // 01/10/2026 : deux, dans un bac à sable), un mouvement de zéro euro, ou une CSG-CRDS saisie depuis, qui
 // dépasse le mouvement. Ils ne datent rien (`cotisationsComptees`) et n'ont pas d'écriture : le geste est
 // d'annuler le rapprochement, ou de corriger l'échéance.
+//
+// Rien d'un exercice figé par la validation : le mouvement ne change plus, ni l'échéance qu'il paie — aucun des deux
+// gestes n'y est plus possible, et le dire serait réclamer ce que la base refuse.
 export function rapprochementsCotisationRefuses<L extends MouvementBancaire>(
   lignes: readonly L[],
   cotisations: readonly CotisationDeclaree[],
   mode: ModeComptable,
+  frontiere: string | null,
 ): RapprochementCotisationRefuse<L>[] {
   return rapprochementsDeCotisation(lignes, cotisations).flatMap(({ ligne, cotisation }) => {
+    if (estFigee(ligne.date, frontiere)) return []
     const raison = refusRapprochementCotisation(ligne, cotisation, mode)
     return raison ? [{ ligne, cotisation, raison }] : []
   })

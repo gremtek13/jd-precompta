@@ -15,6 +15,8 @@ import { compteDuDirigeant } from '../../lib/virementPersonnel'
 import { messageErreur } from '../../lib/messageErreur'
 import type { ANouveau, EcritureBrouillon, VehiculeDossier } from '../../lib/types'
 import { useAnnee } from '../../context/AnneeContext'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
+import { exerciceQuiFige } from '../../lib/validationExercice'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 
 // Cadre 7 du 2035-B, « Barèmes kilométriques ». Sans ces lignes, la case BJ du 2035-A (ligne 23,
@@ -34,6 +36,10 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 // cadre 7 est comparée au brouillon, et « Écrire les N » écrit son forfait par la fonction de la base, qui
 // refait le calcul du barème et refuse une écriture qui ne vaut pas son indemnité au centime. Le retrait d'un
 // véhicule passe par la base aussi, qui emporte son forfait.
+//
+// UN EXERCICE VALIDÉ FIGE SON CADRE 7 (ligne 26.6, étape d) : ses lignes ne changent plus, ne se retirent plus et ne
+// s'ajoutent plus, et son forfait ne s'écrit plus — les refus de la base (`garder_vehicule_valide`, et aucune écriture
+// au plus tard à la frontière). La carte le montre en lecture seule et le dit, au lieu de champs que la base refuserait.
 
 const TYPES: { valeur: TypeVehicule; libelle: string }[] = [
   { valeur: 'voiture', libelle: 'Voiture (tourisme)' },
@@ -93,6 +99,7 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
   // APRÈS la relecture (voir CLAUDE.md, « un verrou d'exécution »).
   const ecritureEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
+  const { frontiere, anneesValidees } = useExercicesValides()
 
   // Null quand l'en-tête est sur « toutes années » : un kilométrage se rattache forcément à un
   // exercice précis, et la carte n'en choisit PAS un à la place de l'utilisateur. Elle retombait
@@ -145,18 +152,27 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
 
   // LES FORFAITS DU CADRE 7, sur TOUS les exercices — jamais sur celui que l'en-tête laisse voir : un forfait à
   // écrire ne disparaît pas parce qu'on regarde une autre année.
-  const forfaits = forfaitsDuCadre7(vehicules, ecrituresForfaits, modele, ouverture, anneeCourante)
+  //
+  // Ceux d'un exercice figé par la validation ne sont ni à écrire ni à réclamer : la base n'y écrit plus. La colonne
+  // « Forfait » de leur ligne dit ce qu'il en est (`etatDuForfait`).
+  const forfaits = forfaitsDuCadre7(vehicules, ecrituresForfaits, modele, ouverture, anneeCourante, frontiere)
   const forfaitDe = (id: string) => forfaits.find((f) => f.vehicule.id === id)
-  const aTraiter = forfaits.filter((f) => f.etat !== 'ecrit' && f.etat !== 'rien')
+  const aTraiter = forfaits.filter((f) => !f.fige && f.etat !== 'ecrit' && f.etat !== 'rien')
   const aEcrire = aTraiter.filter((f) => f.etat !== 'valide' && !f.refus)
   const enDefaut = forfaitsEnDefaut(forfaits, anneeCourante)
   const ecritureSuspendue = forfaitsIncomplets !== null
+
+  // L'exercice choisi, s'il est figé par la validation : la phrase de la base (`exercice_fige`), sinon rien.
+  const exerciceFige = exercice === null ? null : exerciceQuiFige(exercice, anneesValidees)
+  const phraseFige = (annee: number) => `${exerciceQuiFige(annee, anneesValidees)} : son cadre 7 ne change plus.`
 
   // Verrou posé avant tout `await` : un double clic créerait deux véhicules vides.
   const ajoutEnCours = useRef(false)
 
   async function ajouter() {
     if (exercice === null || ajoutEnCours.current) return
+    // Seconde ceinture : le bouton d'un exercice figé n'est pas rendu.
+    if (exerciceFige) { setErreur(phraseFige(exercice)); return }
     ajoutEnCours.current = true
     try {
       const { error } = await supabase.from('vehicules').insert({ dossier_id: dossierId, annee: exercice })
@@ -173,6 +189,9 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
   // ligne : son forfait, s'il est écrit, paraît alors « à réécrire », et c'est « Écrire les N » qui le remplace.
   async function modifier(id: string, demande: Partial<VehiculeDossier>) {
     if (ecritureEnCours.current) return
+    // Seconde ceinture : les champs d'un exercice figé sont grisés.
+    const ligne = vehicules.find((x) => x.id === id)
+    if (ligne && exerciceQuiFige(ligne.annee, anneesValidees)) { setErreur(phraseFige(ligne.annee)); return }
     // Passe systématiquement par la règle de cohérence : un champ devenu sans objet est remis à zéro
     // dans la MÊME écriture (voir completerModificationVehicule). Le faire ici plutôt qu'au cas par cas
     // dans chaque `onChange` garantit qu'aucun champ ajouté plus tard n'y échappera par oubli.
@@ -187,6 +206,8 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
   // validé.
   async function retirer(v: VehiculeDossier) {
     if (ecritureEnCours.current) return
+    // Seconde ceinture : le bouton d'un exercice figé n'est pas rendu.
+    if (exerciceQuiFige(v.annee, anneesValidees)) { setErreur(phraseFige(v.annee)); return }
     const sonForfait = ecrituresForfaits.filter((e) => e.vehicule_id === v.id)
     if (sonForfait.some((e) => e.statut !== 'proposee')) {
       setErreur('Le forfait de ce véhicule est validé : il ne se retire plus.')
@@ -250,10 +271,17 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
     }
   }
 
-  // Ce que dit la colonne « Forfait » d'une ligne : l'état de son écriture, ou pourquoi il n'y en a pas.
+  // Ce que dit la colonne « Forfait » d'une ligne : l'état de son écriture, ou pourquoi il n'y en a pas. Un exercice figé
+  // par la validation dit ce qui y est — son forfait validé, ou son absence —, sans mot qui appelle un geste : la base n'y
+  // écrit plus.
   function etatDuForfait(f: ForfaitDuVehicule | undefined): { texte: string; refus: string | null } {
     if (!f) return { texte: '—', refus: null }
     if (f.etat === 'rien' && ouverture && dateDuForfait(f.vehicule.annee) < ouverture) return { texte: 'Dans les à-nouveaux', refus: null }
+    if (f.fige) {
+      if (f.etat === 'rien') return { texte: LIBELLE_ETAT.rien, refus: null }
+      if (f.presentes.length === 0) return { texte: 'Non écrit', refus: null }
+      return { texte: f.etat === 'ecrit' ? 'Validé' : LIBELLE_ETAT[f.etat], refus: null }
+    }
     return { texte: LIBELLE_ETAT[f.etat], refus: f.etat === 'ecrit' || f.etat === 'rien' ? null : f.refus }
   }
 
@@ -370,12 +398,12 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                       <input
                         value={v.modele ?? ''}
                         placeholder="ex. Peugeot 308"
-                        disabled={enCours}
+                        disabled={enCours || !!exerciceFige}
                         onChange={(e) => modifier(v.id, { modele: e.target.value || null })}
                       />
                     </td>
                     <td data-libelle="Type">
-                      <select value={v.type} disabled={enCours} onChange={(e) => modifier(v.id, { type: e.target.value as TypeVehicule })}>
+                      <select value={v.type} disabled={enCours || !!exerciceFige} onChange={(e) => modifier(v.id, { type: e.target.value as TypeVehicule })}>
                         {TYPES.map((t) => <option key={t.valeur} value={t.valeur}>{t.libelle}</option>)}
                       </select>
                     </td>
@@ -384,14 +412,14 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                         type="number" min={0} max={99}
                         value={v.puissance_fiscale}
                         // Le cyclomoteur n'a pas de puissance fiscale au sens du barème.
-                        disabled={enCours || v.type === 'cyclomoteur'}
+                        disabled={enCours || !!exerciceFige || v.type === 'cyclomoteur'}
                         onChange={(e) => modifier(v.id, { puissance_fiscale: Number(e.target.value) || 0 })}
                       />
                     </td>
                     <td data-libelle="Motorisation">
                       <select
                         value={v.motorisation ?? ''}
-                        disabled={enCours}
+                        disabled={enCours || !!exerciceFige}
                         onChange={(e) => modifier(v.id, { motorisation: (e.target.value || null) as VehiculeDossier['motorisation'] })}
                       >
                         <option value="">—</option>
@@ -404,7 +432,7 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                         // Un véhicule électrique ou à hydrogène ne consomme aucun des carburants du
                         // formulaire : le champ est grisé plutôt que masqué, parce que la colonne
                         // existe sur le 2035-B et qu'une colonne absente passerait pour un oubli.
-                        disabled={enCours || !carburantApplicable(v.motorisation)}
+                        disabled={enCours || !!exerciceFige || !carburantApplicable(v.motorisation)}
                         title={carburantApplicable(v.motorisation) ? undefined : 'Sans objet pour cette motorisation'}
                         onChange={(e) => modifier(v.id, { carburant: (e.target.value || null) as VehiculeDossier['carburant'] })}
                       >
@@ -416,7 +444,7 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                       <input
                         type="number" min={0} step={1}
                         value={v.km_professionnel}
-                        disabled={enCours}
+                        disabled={enCours || !!exerciceFige}
                         // Un nombre ENTIER de kilomètres : la colonne l'est en base, et « 12,5 » y serait refusé.
                         onChange={(e) => modifier(v.id, { km_professionnel: kilometrageSaisi(e.target.value) })}
                       />
@@ -432,7 +460,9 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
                       {etat.refus && <div className="muted" style={{ fontSize: '0.85em' }}>{etat.refus}</div>}
                     </td>
                     <td className="td-action">
-                      <button className="btn btn-outline btn-sm" disabled={enCours} onClick={() => retirer(v)}>Retirer</button>
+                      {exerciceFige
+                        ? <span className="muted" title={phraseFige(v.annee)}>Figé</span>
+                        : <button className="btn btn-outline btn-sm" disabled={enCours} onClick={() => retirer(v)}>Retirer</button>}
                     </td>
                   </tr>
                 )
@@ -468,11 +498,14 @@ export default function VehiculesCard({ dossierId, modele }: { dossierId: string
       {/* Rien à ajouter tant qu'aucun exercice n'est choisi : le véhicule serait rattaché à une année
           devinée. Le bouton disparaît plutôt que d'être grisé — grisé, il laisserait chercher ce qui
           le débloque, alors que la réponse est juste au-dessus. */}
-      {exercice !== null && (
+      {/* Un exercice figé par la validation ne reçoit plus de ligne : la carte le dit à la place du bouton. */}
+      {exercice !== null && (exerciceFige ? (
+        <p className="muted" style={{ marginTop: 12, marginBottom: 0 }}>{phraseFige(exercice)}</p>
+      ) : (
         <button className="btn btn-outline btn-sm" style={{ marginTop: 12 }} onClick={ajouter}>
           + Ajouter un véhicule sur {exercice}
         </button>
-      )}
+      ))}
 
       {/* Les forfaits de TOUS les exercices, et pas seulement celui de l'en-tête : la carte les écrit d'un coup,
           et un forfait à écrire ne se cache pas derrière une autre année. */}

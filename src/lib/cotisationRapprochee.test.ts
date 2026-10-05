@@ -316,62 +316,80 @@ describe('cotisationsComptees — la date et le montant auxquels une échéance 
 
 describe('cotisationsAEcrire — les échéances payées dont l’écriture manque ou a changé', () => {
   it('un rapprochement sans écriture : celui d’avant le 01/10/2026', () => {
-    const aEcrire = cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie')
+    const aEcrire = cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', null)
     expect(aEcrire.map((r) => [r.ligne.id, r.cotisation.id])).toEqual([['l1', 'c1']])
   })
 
   it('se tait sur une écriture conforme, dans n’importe quel ordre', () => {
-    expect(cotisationsAEcrire([...ECRITE].reverse(), [rapproche()], [cotisation()], 'tresorerie')).toEqual([])
+    expect(cotisationsAEcrire([...ECRITE].reverse(), [rapproche()], [cotisation()], 'tresorerie', null)).toEqual([])
   })
 
   it('une CSG-CRDS saisie après le rapprochement : l’écriture n’est plus celle qu’il produirait', () => {
     const ancienne = [ecriture({ id: 'e1' }), ecriture({ id: 'e2', compte: COMPTE_COTISATIONS_EXPLOITANT, sens: 'debit', montant: 500 })]
-    expect(cotisationsAEcrire(ancienne, [rapproche()], [cotisation()], 'tresorerie')).toHaveLength(1)
+    expect(cotisationsAEcrire(ancienne, [rapproche()], [cotisation()], 'tresorerie', null)).toHaveLength(1)
     // La même écriture est juste en engagement, où la CSG-CRDS reste au 646000.
-    expect(cotisationsAEcrire(ancienne, [rapproche()], [cotisation()], 'engagement')).toEqual([])
+    expect(cotisationsAEcrire(ancienne, [rapproche()], [cotisation()], 'engagement', null)).toEqual([])
   })
 
   it('une ligne datée autrement que le mouvement', () => {
     const autreDate = ECRITE.map((e) => (e.id === 'e3' ? { ...e, date: '2025-12-05' } : e))
-    expect(cotisationsAEcrire(autreDate, [rapproche()], [cotisation()], 'tresorerie')).toHaveLength(1)
+    expect(cotisationsAEcrire(autreDate, [rapproche()], [cotisation()], 'tresorerie', null)).toHaveLength(1)
   })
 
   // L'écriture ENTIÈRE à la date de l'échéance, cohérente avec elle-même : seule la comparaison à la date
   // du MOUVEMENT la voit. Une comparaison qui prendrait la date de la première ligne présente se tairait.
   it('toute l’écriture datée à l’échéance plutôt qu’au prélèvement', () => {
     const aLEcheance = ECRITE.map((e) => ({ ...e, date: '2025-12-05' }))
-    expect(cotisationsAEcrire(aLEcheance, [rapproche()], [cotisation()], 'tresorerie')).toHaveLength(1)
+    expect(cotisationsAEcrire(aLEcheance, [rapproche()], [cotisation()], 'tresorerie', null)).toHaveLength(1)
   })
 
   it('ignore les écritures d’une pièce sur le même mouvement : elles appartiennent à la pièce', () => {
     const avecPiece = [...ECRITE, ecriture({ id: 'p', piece_id: 'p1', compte: '606100', sens: 'debit', montant: 12 })]
-    expect(cotisationsAEcrire(avecPiece, [rapproche()], [cotisation()], 'tresorerie')).toEqual([])
+    expect(cotisationsAEcrire(avecPiece, [rapproche()], [cotisation()], 'tresorerie', null)).toEqual([])
   })
 
   it('ne rend ni un rapprochement qui ne peut pas s’écrire, ni une échéance qu’on n’a pas lue', () => {
-    expect(cotisationsAEcrire([], [rapproche({ montant: 500 })], [cotisation()], 'tresorerie')).toEqual([])
-    expect(cotisationsAEcrire([], [rapproche()], [], 'tresorerie')).toEqual([])
-    expect(cotisationsAEcrire([], [rapproche({ statut: 'ignoree' })], [cotisation()], 'tresorerie')).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche({ montant: 500 })], [cotisation()], 'tresorerie', null)).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche()], [], 'tresorerie', null)).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche({ statut: 'ignoree' })], [cotisation()], 'tresorerie', null)).toEqual([])
+  })
+
+  // NI UN PAIEMENT D'UN EXERCICE FIGÉ PAR LA VALIDATION : la base n'y écrit plus. L'exercice est celui du MOUVEMENT — une
+  // échéance de décembre prélevée en janvier s'écrit dans l'exercice suivant —, frontière comprise.
+  it('ne rend pas un paiement d’un exercice validé, jugé à la date du mouvement, frontière comprise', () => {
+    // L'échéance du 05/12/2025, prélevée le 06/01/2026 : 2025 validé n'y change rien.
+    expect(cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', '2025-12-31')).toHaveLength(1)
+    expect(cotisationsAEcrire([], [rapproche()], [cotisation()], 'tresorerie', '2026-12-31')).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche({ date: '2025-12-31' })], [cotisation()], 'tresorerie', '2025-12-31')).toEqual([])
+    expect(cotisationsAEcrire([], [rapproche({ date: '2026-01-01' })], [cotisation()], 'tresorerie', '2025-12-31')).toHaveLength(1)
   })
 })
 
 describe('rapprochementsCotisationRefuses — ce qui ne s’écrira pas, avec sa raison', () => {
   it('un encaissement rapproché d’un appel', () => {
     const refuses = rapprochementsCotisationRefuses([rapproche({ montant: 500 }), rapproche({ id: 'l2', cotisation_id: 'c2' })],
-      [cotisation(), cotisation({ id: 'c2' })], 'tresorerie')
+      [cotisation(), cotisation({ id: 'c2' })], 'tresorerie', null)
     expect(refuses.map((r) => [r.ligne.id, r.raison])).toEqual([
       ['l1', 'Ce mouvement est un encaissement : il ne paie pas un appel de cotisation. Un remboursement se rapproche d’une échéance négative.'],
     ])
   })
 
   it('se tait sur une échéance qu’on n’a pas lue : on ne juge pas ce qu’on n’a pas vu', () => {
-    expect(rapprochementsCotisationRefuses([rapproche({ montant: 500 })], [], 'tresorerie')).toEqual([])
+    expect(rapprochementsCotisationRefuses([rapproche({ montant: 500 })], [], 'tresorerie', null)).toEqual([])
   })
 
   it('suit le mode : une CSG-CRDS qui dépasse le mouvement ne gêne qu’en trésorerie', () => {
     const depasse = [cotisation({ montant_csg_crds: 900 })]
-    expect(rapprochementsCotisationRefuses([rapproche()], depasse, 'tresorerie')).toHaveLength(1)
-    expect(rapprochementsCotisationRefuses([rapproche()], depasse, 'engagement')).toEqual([])
+    expect(rapprochementsCotisationRefuses([rapproche()], depasse, 'tresorerie', null)).toHaveLength(1)
+    expect(rapprochementsCotisationRefuses([rapproche()], depasse, 'engagement', null)).toEqual([])
+  })
+
+  // Rien d'un exercice figé par la validation : ni le mouvement ni l'échéance n'y changent plus, et le dire réclamerait un
+  // geste que la base refuse. Le reste se dit comme avant — le garde symétrique.
+  it('se tait sur un mouvement d’un exercice validé, frontière comprise', () => {
+    expect(rapprochementsCotisationRefuses([rapproche({ montant: 500 })], [cotisation()], 'tresorerie', '2026-12-31')).toEqual([])
+    expect(rapprochementsCotisationRefuses([rapproche({ montant: 500, date: '2025-12-31' })], [cotisation()], 'tresorerie', '2025-12-31')).toEqual([])
+    expect(rapprochementsCotisationRefuses([rapproche({ montant: 500 })], [cotisation()], 'tresorerie', '2025-12-31')).toHaveLength(1)
   })
 })
 

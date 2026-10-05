@@ -19,6 +19,8 @@ import {
 } from '../../lib/cotisationRapprochee'
 import { ouvrirApercu } from '../../lib/apercu'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
+import { dateFigee } from '../../lib/validationExercice'
 
 // Palier 5, brique 4 — suivi des cotisations sociales. Saisie manuelle des appels et versements
 // URSSAF (montants connus tardivement, jamais déductibles d'un relevé bancaire seul) et calcul
@@ -29,6 +31,11 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 // La colonne « Paiement » dit quel mouvement la paie et si son écriture est au brouillon ; « Écrire les
 // N » écrit celles qu'un rapprochement d'avant le 01/10/2026 a laissées sans écriture. Le mode comptable
 // décide de la CSG-CRDS : au 108000 en trésorerie, au 646000 avec le reste en engagement.
+//
+// UN EXERCICE VALIDÉ FIGE SES ÉCHÉANCES (ligne 26.6, étape d) : une échéance compte à la date du mouvement qui la paie,
+// sinon à son échéance, et c'est cette date qui dit si elle appartient à un exercice validé. Figée, elle ne change plus,
+// ne se supprime plus et ne s'écrit plus ; et une échéance ne s'ajoute plus dans un exercice validé — les refus de la
+// base (`garder_cotisation_valide`). L'écran le dit avant le clic, avec ses mots.
 export default function CotisationsTab({ dossierId, modeComptable }: { dossierId: string; modeComptable: ModeComptable }) {
   const [cotisations, setCotisations] = useState<CotisationDeclaree[]>([])
   // Les mouvements rapprochés d'une échéance, et les écritures sans pièce du dossier : ce qui dit quelle
@@ -65,6 +72,7 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
   const creationEnCours = useRef(false)
   const [anneeFilter, setAnneeFilter] = useState<ValeurAnnee>('toutes')
   const [recherche, setRecherche] = useState('')
+  const { frontiere, anneesValidees } = useExercicesValides()
 
   async function load() {
     setLoading(true)
@@ -113,6 +121,8 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
+    // Seconde ceinture : le bouton est grisé sur une échéance d'un exercice figé, et la raison déjà dite au-dessus.
+    if (refusAjout) return
     setSaving(true)
     setError(null)
     try {
@@ -146,6 +156,12 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
   // retrait qui échoue sans un mot laisserait recliquer pour le même silence.
   async function supprimer(c: CotisationDeclaree) {
     if (ecritureEnCours.current) return
+    // Seconde ceinture : le bouton d'une échéance figée n'est pas rendu.
+    const figee = figeeDe(c)
+    if (figee) {
+      setError(`${figee} : cette échéance ne se supprime plus.`)
+      return
+    }
     const message = avertissementRetraitEcheance(paiementDe.get(c.id) ?? null, paiementsIncomplets === null)
     if (!window.confirm(`Retirer cette échéance ?\n\n${message}`)) return
     ecritureEnCours.current = true
@@ -266,20 +282,26 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
   // Et le verrou est un `useRef` : `creantEcheances`, un état, laissait passer deux clics du même
   // rendu, qui créaient chacun tout l'échéancier.
   async function creerEcheancesProposees() {
-    if (echeancesProposees.length === 0 || cotisationsIncompletes !== null || creationEnCours.current) return
+    if (proposeesOuvertes.length === 0 || cotisationsIncompletes !== null || creationEnCours.current) return
     creationEnCours.current = true
     setCreantEcheances(true)
     setError(null)
     try {
-      const aInserer = echeancesProposees
+      // Seules les échéances d'un exercice ouvert : une seule date figée ferait refuser toute l'insertion, qui est d'un
+      // seul tenant — et une prévisionnelle figée ne se corrige plus.
+      const aInserer = proposeesOuvertes
         .filter((e) => !cotisations.some((c) => c.echeance === e.date))
         .map((e) => ({ dossier_id: dossierId, echeance: e.date, montant_appele: e.montant, previsionnel: e.previsionnel }))
 
-      const aMettreAJour = echeancesProposees
+      // Une prévisionnelle que le document confirme prend son montant — sauf figée : payée dans un exercice validé, elle se
+      // juge à la date de son paiement, et la base refuserait. Comptée alors avec les figées, pas « déjà à jour » : son
+      // montant reste celui de la prévision.
+      const aConfirmer = proposeesOuvertes
         .map((e) => ({ e, existante: cotisations.find((c) => c.echeance === e.date) }))
         .filter((x): x is { e: { date: string; montant: number; previsionnel: boolean }; existante: CotisationDeclaree } =>
           !!x.existante?.previsionnel && !x.e.previsionnel,
         )
+      const aMettreAJour = aConfirmer.filter((x) => !figeeDe(x.existante))
 
       if (aInserer.length > 0) {
         const { error: insertError } = await supabase.from('cotisations_declarees').insert(aInserer)
@@ -293,11 +315,17 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
         if (updateError) throw updateError
       }
 
-      const ignorees = echeancesProposees.length - aInserer.length - aMettreAJour.length
+      const figees = echeancesProposees.length - proposeesOuvertes.length + aConfirmer.length - aMettreAJour.length
+      const ignorees = proposeesOuvertes.length - aInserer.length - aConfirmer.length
       setEcheancesProposees([])
       load()
-      if (ignorees > 0) {
-        window.alert(`${aInserer.length + aMettreAJour.length} échéance(s) prise(s) en compte, ${ignorees} déjà à jour (ignorée(s)).`)
+      if (ignorees > 0 || figees > 0) {
+        window.alert(
+          `${aInserer.length + aMettreAJour.length} échéance(s) prise(s) en compte`
+          + (ignorees > 0 ? `, ${ignorees} déjà à jour (ignorée(s))` : '')
+          + (figees > 0 ? `, ${figees} d’un exercice validé (ignorée(s)) : une échéance ne s’y ajoute plus` : '')
+          + '.',
+        )
       }
     } catch (err) {
       setError(messageErreur(err))
@@ -322,12 +350,25 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
 
   // Le mouvement qui paie chaque échéance — un au plus (contrainte `lignes_bancaires_cotisation_unique`).
   const paiementDe = new Map(paiements.flatMap((l) => (l.cotisation_id ? [[l.cotisation_id, l] as const] : [])))
-  const aEcrire = cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable)
-  const idsAEcrire = new Set(aEcrire.map((r) => r.cotisation.id))
+  // L'exercice validé qui fige une échéance, dit avec les mots de la base : sa date est celle du mouvement qui la paie,
+  // sinon son échéance (`garder_cotisation_valide`). Sur un relevé lu en partie, un paiement non lu fait juger
+  // l'échéance à sa date à elle : la base reste juge, et son refus se dit.
+  const figeeDe = (c: CotisationDeclaree) => dateFigee(paiementDe.get(c.id)?.date ?? c.echeance, anneesValidees)
+  // Ceux qu'on peut écrire : pas d'un exercice validé, où la base refuse d'écrire. La colonne « Paiement » dit pourtant
+  // ce qu'il en est de CHAQUE échéance, figée comprise (`idsSansEcritureJuste`) : une échéance figée sans écriture
+  // manque au FEC de son exercice, et le dire vaut mieux que de le taire — sans la compter dans un geste refusé.
+  const aEcrire = cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, frontiere)
+  const idsSansEcritureJuste = new Set(cotisationsAEcrire(ecritures, paiements, cotisations, modeComptable, null).map((r) => r.cotisation.id))
   const lignesEcrites = new Set(ecritures.map((e) => e.ligne_bancaire_id))
   // Un rapprochement qui ne PEUT pas s'écrire — un encaissement rapproché d'un appel : sa raison, montrée
-  // sur la ligne. Le geste est d'annuler ce rapprochement dans l'onglet Banque.
-  const refuses = new Map(rapprochementsCotisationRefuses(paiements, cotisations, modeComptable).map((r) => [r.cotisation.id, r.raison]))
+  // sur la ligne. Le geste est d'annuler ce rapprochement dans l'onglet Banque. Lu sans la frontière : c'est un fait,
+  // qui décide aussi du versé, et il se montre même figé — sans le conseil d'un geste que la base refuserait.
+  const refuses = new Map(rapprochementsCotisationRefuses(paiements, cotisations, modeComptable, null).map((r) => [r.cotisation.id, r.raison]))
+  // Une échéance saisie dans un exercice figé ne s'ajoute plus ; une proposée par un document non plus.
+  const refusAjout = echeance && dateFigee(echeance, anneesValidees)
+    ? `${dateFigee(echeance, anneesValidees)} : une échéance ne s’y ajoute plus.`
+    : null
+  const proposeesOuvertes = echeancesProposees.filter((e) => !dateFigee(e.date, anneesValidees))
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE (voir CLAUDE.md) : une échéance dont le paiement ou
   // l'écriture n'a pas été lu paraîtrait à écrire, ou écrite ; et un échéancier lu à moitié en cacherait.
   const ecritureSuspendue = cotisationsIncompletes ?? paiementsIncomplets ?? ecrituresIncompletes
@@ -413,9 +454,10 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
               Prévisionnel (estimation, pas encore un appel définitif)
             </label>
           </div>
+          {refusAjout && <p className="error-text">{refusAjout}</p>}
           {error && <p className="error-text">{error}</p>}
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="btn btn-primary btn-sm" type="submit" disabled={saving}>
+            <button className="btn btn-primary btn-sm" type="submit" disabled={saving || refusAjout !== null}>
               {saving ? 'Enregistrement…' : 'Ajouter'}
             </button>
             <label className="btn btn-outline btn-sm" style={{ cursor: 'pointer' }}>
@@ -458,9 +500,11 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
                   <td>{formatDate(e.date)}</td>
                   <td>{formatMoney(e.montant)}</td>
                   <td>
-                    {e.previsionnel
-                      ? <span className="badge badge-warning">Prévisionnel</span>
-                      : <span className="badge badge-ok">Définitif</span>}
+                    {dateFigee(e.date, anneesValidees)
+                      ? <span className="muted" title={`${dateFigee(e.date, anneesValidees)} : une échéance ne s’y ajoute plus.`}>Exercice validé</span>
+                      : e.previsionnel
+                        ? <span className="badge badge-warning">Prévisionnel</span>
+                        : <span className="badge badge-ok">Définitif</span>}
                   </td>
                 </tr>
               ))}
@@ -469,13 +513,20 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
           <div style={{ display: 'flex', gap: 10, marginTop: 10 }}>
             <button
               className="btn btn-primary btn-sm"
-              disabled={creantEcheances || cotisationsIncompletes !== null}
+              disabled={creantEcheances || cotisationsIncompletes !== null || proposeesOuvertes.length === 0}
               onClick={creerEcheancesProposees}
             >
-              {creantEcheances ? 'Création…' : `Créer ces ${echeancesProposees.length} échéance(s)`}
+              {creantEcheances ? 'Création…' : `Créer ces ${proposeesOuvertes.length} échéance(s)`}
             </button>
             <button className="btn btn-outline btn-sm" onClick={() => setEcheancesProposees([])}>Ignorer</button>
           </div>
+          {proposeesOuvertes.length < echeancesProposees.length && (
+            <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
+              {echeancesProposees.length - proposeesOuvertes.length === 1
+                ? '1 échéance est datée d’un exercice validé : elle ne s’y ajoute plus, et ne sera pas créée.'
+                : `${echeancesProposees.length - proposeesOuvertes.length} échéances sont datées d’un exercice validé : elles ne s’y ajoutent plus, et ne seront pas créées.`}
+            </p>
+          )}
           {cotisationsIncompletes && (
             <p className="error-text" style={{ marginTop: 8, marginBottom: 0 }}>
               Création suspendue : les échéances déjà enregistrées n'ont pas pu être lues en entier
@@ -596,6 +647,7 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
                 const paiement = paiementDe.get(c.id)
                 const refus = refuses.get(c.id)
                 const verse = verseDe(c)
+                const figee = figeeDe(c)
                 return (
                   <tr key={c.id}>
                     <td>
@@ -621,14 +673,27 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
                         : (
                           <span style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
                             <span>{paiement.montant > 0 ? 'Remboursée' : 'Prélevée'} le {formatDate(paiement.date)}</span>
-                            {refus
-                              ? <span className="badge badge-danger" title={refus}>Ne s’écrit pas</span>
-                              : ecrituresIncompletes
-                                ? null
-                                : idsAEcrire.has(c.id)
-                                  ? <span className="badge badge-warning">{lignesEcrites.has(paiement.id) ? 'À réécrire' : 'Sans écriture'}</span>
-                                  : <span className="badge badge-ok">Écrite</span>}
-                            {refus && <span className="muted" style={{ flexBasis: '100%', fontSize: '0.85rem' }}>{refus} Annule ce rapprochement dans l’onglet Banque.</span>}
+                            {figee
+                              // Figée : la base n'y écrit plus. Dit en clair, sans badge qui appellerait un geste.
+                              ? refus
+                                ? <span className="muted" title={refus}>Ne s’écrit pas</span>
+                                : ecrituresIncompletes
+                                  ? null
+                                  : idsSansEcritureJuste.has(c.id)
+                                    ? (
+                                      <span className="muted" title={`${figee} : aucune écriture ne s’y passe plus.`}>
+                                        {lignesEcrites.has(paiement.id) ? 'Écriture différente' : 'Sans écriture'}
+                                      </span>
+                                    )
+                                    : <span className="badge badge-ok">Écrite</span>
+                              : refus
+                                ? <span className="badge badge-danger" title={refus}>Ne s’écrit pas</span>
+                                : ecrituresIncompletes
+                                  ? null
+                                  : idsSansEcritureJuste.has(c.id)
+                                    ? <span className="badge badge-warning">{lignesEcrites.has(paiement.id) ? 'À réécrire' : 'Sans écriture'}</span>
+                                    : <span className="badge badge-ok">Écrite</span>}
+                            {refus && !figee && <span className="muted" style={{ flexBasis: '100%', fontSize: '0.85rem' }}>{refus} Annule ce rapprochement dans l’onglet Banque.</span>}
                           </span>
                         )}
                     </td>
@@ -654,7 +719,9 @@ export default function CotisationsTab({ dossierId, modeComptable }: { dossierId
                       )}
                     </td>
                     <td onClick={(e) => e.stopPropagation()}>
-                      <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => supprimer(c)}>Retirer</button>
+                      {figee
+                        ? <span className="muted" title={`${figee} : cette échéance ne se supprime plus.`}>Figée</span>
+                        : <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => supprimer(c)}>Retirer</button>}
                     </td>
                   </tr>
                 )
