@@ -12,6 +12,13 @@
 // Un élément compte s'il dépasse le bord droit du panneau central SANS être dans un conteneur qui
 // défile (un tableau dans .table-scroll a le droit d'être plus large que l'écran : il défile). Seul le
 // plus haut élément en faute est cité, ses descendants débordant forcément avec lui.
+//
+// LE BORD DU PANNEAU NE SUFFISAIT PAS (05/10/2026). Deux défauts de la Vue d'ensemble, volet ouvert à
+// 1 280 pixels, restaient DANS le panneau et lui échappaient donc : une tuile chiffrée plus large que sa
+// case de la grille, qui passait sous sa voisine, et le bouton d'une ligne de check sorti de sa carte,
+// le libellé réduit à un mot par ligne. Deux règles de plus : un élément ne sort pas de sa carte
+// (`.card`, `.kpi`, `.widget`, `.cockpit`) ni de sa case de grille (`.bento > *`) ; et un texte ne sort
+// pas de sa boîte — un mot plus large que sa colonne déborde sans que la boîte bouge.
 import { chromium } from 'playwright-core'
 import { existsSync, readdirSync } from 'node:fs'
 
@@ -165,14 +172,33 @@ for (const { dossier, onglet, nom, apres } of VISITES) {
       }
       return false
     }
+    const extrait = (e) => (e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60)
     const trouvees = []
     for (const e of document.querySelectorAll('.main-contenu *')) {
       const r = e.getBoundingClientRect()
-      if (r.width === 0 || r.height === 0 || r.right <= main.right - 1 || defile(e)) continue
+      if (r.width === 0 || r.height === 0 || defile(e)) continue
+      // La carte ou la case de grille qui le porte : le premier ancêtre qui en est une.
+      const carte = e.parentElement?.closest('.card, .kpi, .widget, .cockpit, .bento > *')
+      const bord = carte ? carte.getBoundingClientRect().right : null
+      const horsPanneau = r.right > main.right - 1
+      const horsCarte = bord !== null && r.right > bord + 1
+      if (!horsPanneau && !horsCarte) continue
       if (trouvees.some((t) => t.el.contains(e))) continue
-      trouvees.push({ el: e, texte: `${Math.round(r.right - main.right)} px — <${e.tagName.toLowerCase()}> ${(e.innerText || '').trim().replace(/\s+/g, ' ').slice(0, 60)}` })
+      const ecart = Math.round(horsPanneau ? r.right - main.right : r.right - bord)
+      trouvees.push({ el: e, texte: `${ecart} px ${horsPanneau ? 'hors du panneau' : 'hors de sa carte'} — <${e.tagName.toLowerCase()}> ${extrait(e)}` })
     }
-    return trouvees.map((t) => t.texte)
+    // Un texte plus large que sa boîte : la boîte tient dans sa carte, le mot trop long en sort. Seul l'élément qui
+    // porte le texte compte — ses ancêtres débordent avec lui.
+    const textes = []
+    for (const e of document.querySelectorAll('.main-contenu *')) {
+      if (e.clientWidth === 0 || defile(e)) continue
+      const style = getComputedStyle(e)
+      if (style.overflowX !== 'visible' || style.display === 'inline' || e.scrollWidth <= e.clientWidth + 1) continue
+      if (![...e.childNodes].some((n) => n.nodeType === Node.TEXT_NODE && n.textContent.trim())) continue
+      if (trouvees.some((t) => t.el.contains(e))) continue
+      textes.push(`${e.scrollWidth - e.clientWidth} px de texte hors de sa boîte — <${e.tagName.toLowerCase()}> ${extrait(e)}`)
+    }
+    return [...trouvees.map((t) => t.texte), ...textes]
   })
   total += fautes.length
   console.log(`${nom} : ${fautes.length ? '\n   ' + fautes.join('\n   ') : 'rien ne déborde'}`)

@@ -1054,7 +1054,7 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    texte en couleur de texte, la couleur portée par une pastille ou une marque à côté ; marques fines ;
    gris de retrait pour l'historique, accent pour la période courante.
    ============================================================================ */
-.bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; }
+.bento { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; margin-bottom: 20px; container: bento / inline-size; }
 .bento > * { min-width: 0; }
 .span-3 { grid-column: span 3; }
 .span-4 { grid-column: span 4; }
@@ -1063,6 +1063,17 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 .span-7 { grid-column: span 7; }
 .span-8 { grid-column: span 8; }
 .span-12 { grid-column: span 12; }
+/* LA GRILLE SUIT LA PLACE QU'ELLE A, PAS LA LARGEUR DE LA FENÊTRE (05/10/2026). Volet de droite ouvert ou barre
+   élargie, le panneau central d'un écran d'ordinateur n'a plus que la largeur d'une tablette : quatre tuiles y
+   tenaient chacune 130 pixels, et un solde de trésorerie (« 22 926,69 € », insécable) passait sous la tuile voisine —
+   vu sur capture à 1 280 pixels, l'assistant ouvert. La grille se range alors comme sur téléphone : deux tuiles par
+   rangée, le reste sur toute la largeur. Le conteneur est la grille ELLE SEULE, qui ne porte aucune fenêtre
+   superposée : `container-type` fait de son porteur la référence des éléments `position: fixed` qu'il contient, le
+   piège nommé pour `.liste-pieces`. Une fenêtre ouverte depuis une tuile ou une carte vit donc hors de la grille. */
+@container bento (max-width: 760px) {
+  .bento > * { grid-column: span 12; }
+  .bento > .kpi, .bento > .span-3 { grid-column: span 6; }
+}
 
 /* En-tête de page des tableaux de bord : titre + sous-titre (date, contexte) à gauche, action à droite. */
 .page-entete { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 22px; flex-wrap: wrap; }
@@ -1075,6 +1086,8 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
   display: flex; flex-direction: column; min-width: 0;
   background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
+  /* Son propre conteneur, pour ses lignes de check (plus bas). Elle ne porte aucune fenêtre superposée — voir `.bento`. */
+  container: carte / inline-size;
 }
 .widget-entete { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 18px 20px 0; }
 .widget-titre { margin: 0; font-size: 0.95rem; font-weight: 700; letter-spacing: -0.01em; }
@@ -1086,7 +1099,13 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 .widget-vide { margin: 0; padding: 18px 0 4px; color: var(--color-text-light); font-size: 0.875rem; text-align: center; }
 
 /* ---------- Tuile chiffrée (KpiTile) ---------- */
+/* UNE TUILE CLIQUABLE EST UN <button>, ET UN BOUTON PREND LA LARGEUR DE SON CONTENU (05/10/2026) : la tuile ne
+   remplissait pas sa case — quatre tuiles de largeurs inégales à 1 440 pixels —, et quand son contenu était plus large
+   que la case, elle en sortait et passait sous sa voisine. Elle prend la largeur de sa case, et sa valeur suit la
+   largeur de la tuile, qui est son propre conteneur (`cqi`) : 2rem dès qu'elle a la place, 1,45rem au plus étroit
+   d'une rangée de quatre. Un montant qui ne tiendrait toujours pas passe à la ligne plutôt que de déborder. */
 .kpi {
+  width: 100%; container: tuile / inline-size;
   position: relative; display: flex; flex-direction: column; gap: 6px; min-width: 0; text-align: left;
   background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg);
   padding: 18px 20px 16px; box-shadow: var(--shadow-sm); color: var(--color-text);
@@ -1101,7 +1120,7 @@ button.kpi:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--ring-prima
 .kpi-danger .kpi-dot { background: var(--color-danger); }
 .kpi-ok .kpi-dot { background: var(--color-primary); }
 /* Chiffres proportionnels (pas tabulaires) pour la grosse valeur : c'est un titre, pas une colonne. */
-.kpi-valeur { font-size: 2rem; font-weight: 800; letter-spacing: -0.035em; line-height: 1.05; font-variant-numeric: proportional-nums; }
+.kpi-valeur { font-size: clamp(1.45rem, 15cqi, 2rem); font-weight: 800; letter-spacing: -0.035em; line-height: 1.05; font-variant-numeric: proportional-nums; overflow-wrap: anywhere; }
 .kpi-valeur small { font-size: 0.55em; font-weight: 700; color: var(--color-text-light); margin-left: 3px; letter-spacing: 0; }
 /* Tuiles d'une même rangée à la même hauteur (l'enfant de grille s'étire, la tuile le remplit) ; le
    pied (delta, détail) au bas, la tendance sous le texte plutôt qu'à côté — côte à côte, le texte
@@ -1317,6 +1336,13 @@ a.nav-menu-item { text-decoration: none; }
 .check-ligne-corps { flex: 1; min-width: 0; }
 .check-ligne-libelle { font-weight: 600; font-size: 0.9rem; }
 .check-ligne-detail { font-size: 0.8rem; color: var(--color-text-light); margin-top: 1px; }
+/* Dans une carte étroite, le bouton d'une ligne de check passe sous son libellé, comme sur téléphone : à côté, il ne
+   laissait au libellé qu'une colonne de soixante pixels, un mot par ligne, et sortait de la carte (« Documents
+   attendus » de la Vue d'ensemble, volet de droite ouvert, 05/10/2026). */
+@container carte (max-width: 440px) {
+  .check-ligne { flex-wrap: wrap; }
+  .check-ligne .btn { flex-basis: calc(100% - 22px); margin-left: 22px; }
+}
 .check-dot { width: 10px; height: 10px; border-radius: 50%; border: none; flex-shrink: 0; padding: 0; background: var(--color-primary); }
 .check-dot.check-manque { background: var(--color-danger); }
 .check-dot.check-attention { background: var(--color-warning); }

@@ -227,6 +227,15 @@ const VUES = [
   { nom: 'pc-volets-barre-large-sombre', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'dark', reduite: false, largeurs: { barre: 420 }, clic: 'Assistant' },
   { nom: 'pc-volets-1200', chemin: '#/dossiers/d1/pieces', l: 1200, h: 800, theme: 'light', reduite: false, largeurs: { panneau: 600 }, cellule: 'Pharma Distrib Sud' },
   { nom: 'pc-volets-survol', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Assistant', survol: 'Largeur du panneau de droite' },
+  // À 1 280 pixels, le volet élargi jusqu'à sa borne (le panneau central à 560), et la barre au plus large.
+  { nom: 'pc-volets-1280-fiche', chemin: '#/dossiers/d1/pieces', l: 1280, h: 800, theme: 'light', reduite: false, largeurs: { panneau: 760 }, cellule: 'Pharma Distrib Sud' },
+  { nom: 'pc-volets-1280-barre', chemin: '#/dossiers/d1/banque', l: 1280, h: 800, theme: 'light', reduite: false, largeurs: { barre: 420 }, clic: 'Assistant' },
+  // LA GRILLE DES TABLEAUX DE BORD SUIT SA PLACE : quatre tuiles qui remplissent leur case, puis deux par rangée quand
+  // le volet de droite est ouvert — une tuile y passait sous sa voisine — et au plus étroit du panneau central.
+  { nom: 'pc-vue-1440', chemin: '#/dossiers/d1/checklist', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-vue-1280-assistant', chemin: '#/dossiers/d1/checklist', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant' },
+  { nom: 'pc-vue-1280-etroit', chemin: '#/dossiers/d1/checklist', l: 1280, h: 800, theme: 'dark', reduite: false, largeurs: { panneau: 760 }, clic: 'Assistant' },
+  { nom: 'pc-tableau-barre-large', chemin: '#/dossiers', l: 1280, h: 800, theme: 'light', reduite: false, largeurs: { barre: 420 } },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
