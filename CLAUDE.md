@@ -6442,8 +6442,10 @@ d'environnement dans la même édition.
   la retient (le TTC quand rien ne se ventile, sinon le hors taxe lu, à défaut le TTC moins la TVA), de sa TVA et de
   la banque. Le compte de l'exploitant passe dans le bloc copié de src/lib/ecritures.ts, et les cinq gardes qui
   extraient le bloc AFFECTATION le reçoivent comme le compte banque. Douze dérives plantées dans la vraie source sont
-  attrapées, chacune par une ASSERTION — jamais par une erreur d'exécution, qui passerait pour une prise. **Pas
-  encore déployée** : elle part avec la frontière de validation (4e), en un seul redéploiement.
+  attrapées, chacune par une ASSERTION — jamais par une erreur d'exécution, qui passerait pour une prise.
+  **Déployée en version 41** (05/10/2026), avec la frontière de validation (4e) : `verify_jwt` relu et repassé à
+  `false`, la v40 comparée à `main` avant écrasement (identique, 2 351 lignes), aller-retour après : zéro différence
+  sur 2 678 lignes, et le 401 de la fonction sans session. Aucun appel au modèle.
   **LATENT, et mesuré** : aucune note de frais en base, aucune catégorie au 108000 (05/10/2026).
   **Trente-six mutations, trente-quatre mordaient à la première passe.** Les deux survivantes : une garde sur le
   type de la pièce, redondante — seule une note de frais a une part « note de frais » —, retirée des deux côtés ; et la
