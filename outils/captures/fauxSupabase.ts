@@ -6,6 +6,27 @@
 // colonne existe dans la ligne, `range` pagine et `count` annonce le total — sans quoi `lireTout`
 // déclarerait chaque lecture incomplète et les écrans afficheraient leur bandeau au lieu de leurs
 // données. Les écritures ne font rien. Une table absente d'ici est lue vide.
+//
+// Les dossiers de la VALIDATION (d9, d10) tirent leurs écritures, leur numérotation et la 2035 gardée du
+// code même de l'application (voir `dossierDeValidation`) : écrits à la main, ils montreraient un écart
+// de concordance ou une 2035 « qui ne se retrouve plus » qui ne viendraient que du banc. Ces modules
+// n'importent pas le client Supabase, donc ne bouclent pas sur ce fichier.
+import { acquisitionsDesBiens, ecritureDeLaDotation } from '../../src/lib/amortissements'
+import { ecritureDuMouvement, type MouvementBancaire } from '../../src/lib/affectationBanque'
+import { arrondirPourFormulaire, valeursDesCases } from '../../src/lib/cases2035'
+import { cotisationsComptees, ecritureDeLaCotisation } from '../../src/lib/cotisationRapprochee'
+import { calculerDeclaration2035 } from '../../src/lib/declaration2035'
+import { lignesPourPiece, piecesAComptabiliser } from '../../src/lib/ecritures'
+import { numeroterFec } from '../../src/lib/fec'
+import { ecritureDuForfait } from '../../src/lib/forfaitKilometrique'
+import { partsDuReleve } from '../../src/lib/partsDuReleve'
+import { paiementsDesPieces } from '../../src/lib/rattachement'
+import { instantane2035 } from '../../src/lib/validationExercice'
+import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
+import type {
+  Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece, VehiculeDossier,
+} from '../../src/lib/types'
+
 type Ligne = Record<string, unknown>
 
 const MAINTENANT = '2026-09-25T08:00:00Z'
@@ -29,6 +50,11 @@ const dossiers: Ligne[] = [
   // Le seul dossier tenu en ENGAGEMENT (BIC, IS) du banc : une société de design, assujettie, dont les
   // factures passent en 401/411 et que ses règlements soldent (voir ENGAGEMENT_D8 plus bas).
   ['d8', 'SAS Lumen Studio', '11122233300014', '74.10Z', 'Activités spécialisées de design'],
+  // Les deux dossiers de la VALIDATION d'un exercice (voir `dossierDeValidation`) : une kinésithérapeute dont
+  // l'exercice 2025 est validé — tout ce qu'il a produit est figé — et 2026 en cours ; un ostéopathe dont
+  // l'exercice 2025, complet et concordant, attend sa validation.
+  ['d9', 'Hélène Marchand', '22233344400017', '86.90E', "Activités des professionnels de la rééducation, de l'appareillage et des pédicures-podologues"],
+  ['d10', 'Paul Bertin', '33344455500018', '86.90F', 'Activités de santé humaine non classées ailleurs'],
 ].map(([id, nom, siret, code_naf, libelle_naf]) => ({
   id, nom, siret, code_naf, libelle_naf, cabinet_id: 'cab1', contact_nom: null, contact_email: null,
   notes: null, archive: false, created_at: '2026-01-05T09:00:00Z', code_email: id,
@@ -37,18 +63,21 @@ const dossiers: Ligne[] = [
   mode_comptable: id === 'd8' ? 'engagement' : 'tresorerie', compte_notes_de_frais: '455000',
 }))
 
+// Les postes sont ceux que le formulaire connaît (lib/cases2035.ts), comme un cabinet les saisit — sauf
+// l'électricité, laissée sur un poste qu'aucune case ne reçoit : c'est elle qui fait paraître « Postes sans
+// case du formulaire » dans la Clôture du cabinet infirmier, et le préalable qui en refuse la validation.
 const categories: Ligne[] = [
-  ['c1', 'Télécommunications', '626000', 'frais_postaux'],
-  ['c2', 'Petit matériel médical', '606300', 'achats'],
+  ['c1', 'Télécommunications', '626000', 'Fournitures de bureau, frais de documentation, de correspondance et de téléphone'],
+  ['c2', 'Petit matériel médical', '606300', 'Achats'],
   ['c3', 'Électricité', '606100', 'eau_gaz_electricite'],
-  ['c4', 'Assurances', '616000', 'assurances'],
-  ['c5', 'Entretien du véhicule', '615500', 'entretien'],
-  ['c6', 'Loyer', '613200', 'loyer'],
-  ['c7', 'Fournitures de bureau', '606400', 'fournitures'],
-  ['c8', 'Logiciels et abonnements', '651000', 'frais_divers'],
+  ['c4', 'Assurances', '616000', "Primes d'assurance"],
+  ['c5', 'Entretien du véhicule', '615500', 'Entretien et réparations'],
+  ['c6', 'Loyer', '613200', 'Loyers et charges locatives'],
+  ['c7', 'Fournitures de bureau', '606400', 'Fournitures de bureau'],
+  ['c8', 'Logiciels et abonnements', '651000', 'Autres frais divers de gestion'],
   // La seule catégorie de RECETTE du banc : les ventes du dossier en engagement, et les virements de
   // l'Assurance maladie que le cabinet infirmier affecte sans justificatif (voir l8).
-  ['c9', 'Prestations de services', '706000', 'recettes'],
+  ['c9', 'Prestations de services', '706000', 'Recettes'],
   // Des frais que la banque prélève sans facture : l'autre mouvement affecté du banc (l9).
   ['c10', 'Frais bancaires', '627000', 'Frais financiers'],
 ].map(([id, libelle, compte_comptable, poste_2035], i) => ({
@@ -326,6 +355,176 @@ function aNouveau(id: string, compte: string, compteOrigine: string, libelle: st
   }
 }
 
+// Les natures : une partagée par le cabinet, une propre au cabinet infirmier, chacune avec son compte.
+const natures: Ligne[] = [
+  { id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300' },
+  { id: 'n2', dossier_id: 'd1', libelle: 'Matériel médical', duree_annees_defaut: 10, ordre: 2, compte_immobilisation: '215400' },
+  { id: 'n3', dossier_id: null, libelle: 'Matériel de transport', duree_annees_defaut: 5, ordre: 3, compte_immobilisation: '218200' },
+]
+
+// ── LES DEUX DOSSIERS DE LA VALIDATION (d9, d10) ──────────────────────────────────────────────────────────
+//
+// Leurs écritures sont celles que l'application ÉCRIRAIT — composées par ses propres fonctions, pas recopiées
+// ici —, l'exercice 2025 de d9 est validé avec la numérotation même de son FEC, et sa 2035 gardée est celle
+// que la Clôture calcule. Écrites à la main, une écriture d'un centime à côté ou une 2035 arrondie
+// autrement ferait dire au banc « la 2035 ne se retrouve plus » ou « écart de concordance » : ce que les
+// captures montreraient viendrait du banc, pas de l'application. Si la base refusait une de ces écritures, la
+// Clôture le dirait aussi — c'est la même règle des deux côtés.
+
+const TRESORERIE = { mode: 'tresorerie', compteNotesDeFrais: '455000' } as const
+
+function pieceDe(dossier: string, id: string, date: string, tiers: string, ttc: number, categorie: string): Ligne {
+  return { ...piece(id, date, tiers, ttc, 0, categorie, 'validee'), dossier_id: dossier, storage_path: `${dossier}/${id}.pdf` }
+}
+
+function mouvementDe(dossier: string, id: string, date: string, libelle: string, montant: number, statut: string, lien: Ligne = {}): Ligne {
+  return { ...ligne(id, date, libelle, montant, statut, null), dossier_id: dossier, source_fichier: `releve-${date.slice(0, 4)}.csv`, ...lien }
+}
+
+interface SourcesDeValidation {
+  dossier: string
+  // Préfixe des identifiants d'écriture, propre au dossier.
+  prefixe: string
+  pieces: Ligne[]
+  lignes: Ligne[]
+  cotisations: Ligne[]
+  immobilisations: Ligne[]
+  vehicules: Ligne[]
+  // Les exercices dont la dotation de chaque bien est écrite.
+  dotations: number[]
+}
+
+function ecrituresDe(s: SourcesDeValidation): Ligne[] {
+  const lignes = s.lignes as unknown as MouvementBancaire[]
+  const rapprochees = lignes.filter((l) => l.statut === 'rapprochee')
+  const paiements = paiementsDesPieces(rapprochees, [])
+  const acquisitions = acquisitionsDesBiens(s.immobilisations as unknown as Immobilisation[], natures as unknown as NatureImmobilisation[], null)
+  let n = 0
+  const ecriture = (l: { compte: string; sens: 'debit' | 'credit'; montant: number; libelle: string; date: string }, liens: Ligne): Ligne => ({
+    id: `${s.prefixe}${++n}`, dossier_id: s.dossier, piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null,
+    date: l.date, compte: l.compte, libelle: l.libelle, sens: l.sens, montant: l.montant, statut: 'proposee', created_at: MAINTENANT,
+    valide_le: null, journal_code: null, numero_ecriture: null, piece_ref: null, piece_date: null, compte_lib: null, comp_aux_num: null,
+    comp_aux_lib: null, ...liens,
+  })
+  const parPiece = piecesAComptabiliser(s.pieces as unknown as Piece[], categories as unknown as Categorie[], acquisitions)
+    .flatMap(({ piece: p, compte, immobilisation }) =>
+      lignesPourPiece(s.dossier, p, { compte, immobilisation }, false, paiements.get(p.id) ?? [], TRESORERIE)
+        .map((l) => ecriture(l, { piece_id: l.piece_id, ligne_bancaire_id: l.ligne_bancaire_id ?? null })))
+  const parMouvement = rapprochees.flatMap((m) => {
+    const categorie = categories.find((c) => c.id === m.categorie_id)
+    const cotisation = s.cotisations.find((c) => c.id === m.cotisation_id) as unknown as CotisationDeclaree | undefined
+    const lignesDuMouvement = categorie ? ecritureDuMouvement(m, String(categorie.compte_comptable), null)
+      : cotisation ? ecritureDeLaCotisation(m, cotisation, TRESORERIE.mode)
+        : []
+    return lignesDuMouvement.map((l) => ecriture({ ...l, date: m.date }, { ligne_bancaire_id: m.id }))
+  })
+  const virements = lignes.filter((m) => m.prelevement_personnel)
+    .flatMap((m) => ecritureDuVirementPersonnel(m, TRESORERIE).map((l) => ecriture({ ...l, date: m.date }, { ligne_bancaire_id: m.id })))
+  const dotations = s.immobilisations.flatMap((b) => {
+    const bien = b as unknown as Immobilisation
+    const compte = String(natures.find((x) => x.id === bien.nature_id)?.compte_immobilisation)
+    return s.dotations.flatMap((annee) => ecritureDeLaDotation(bien, compte, annee, null)
+      .map((l) => ecriture({ ...l, date: `${annee}-12-31` }, { immobilisation_id: bien.id })))
+  })
+  const forfaits = s.vehicules.flatMap((v) => {
+    const vehicule = v as unknown as VehiculeDossier
+    return (ecritureDuForfait(vehicule, TRESORERIE, null) ?? [])
+      .map((l) => ecriture({ ...l, date: `${vehicule.annee}-12-31` }, { vehicule_id: vehicule.id }))
+  })
+  return [...parPiece, ...parMouvement, ...virements, ...dotations, ...forfaits]
+}
+
+// VALIDE un exercice comme `valider_exercice` le laisse : chaque écriture de l'exercice porte son journal, son
+// numéro et les champs du FEC que la numérotation lui donne, et l'exercice validé garde ses totaux et sa 2035
+// — calculée exactement comme la Clôture la calcule. L'empreinte est fictive : le banc répond « intacte » à
+// `verifier_exercice_valide`.
+function valider(s: SourcesDeValidation, ecritures: Ligne[], annee: number, valideLe: string, empreinte: string): Ligne {
+  const dansLExercice = ecritures.filter((e) => String(e.date) <= `${annee}-12-31` && String(e.date) >= `${annee}-01-01`)
+  const numerotation = numeroterFec(
+    dansLExercice as unknown as EcritureBrouillon[], s.pieces as unknown as Piece[], categories as unknown as Categorie[], [],
+    TRESORERIE.mode, s.lignes as unknown as MouvementBancaire[],
+  )
+  if (numerotation.horsFec.length > 0) console.error('[banc] écritures hors du FEC dans le dossier validé', numerotation.horsFec)
+  for (const l of numerotation.lignes) {
+    Object.assign(ecritures.find((e) => e.id === l.ecriture.id)!, {
+      statut: 'validee', valide_le: valideLe, journal_code: l.journal, numero_ecriture: l.numero, piece_ref: l.pieceRef,
+      piece_date: l.pieceDate, compte_lib: l.compteLib, comp_aux_num: l.compAuxNum, comp_aux_lib: l.compAuxLib,
+    })
+  }
+  const centimes = (sens: 'debit' | 'credit') =>
+    dansLExercice.filter((e) => e.sens === sens).reduce((t, e) => t + Math.round(Number(e.montant) * 100), 0) / 100
+
+  const lignes = (s.lignes as unknown as MouvementBancaire[]).filter((l) => l.statut === 'rapprochee')
+  const declaration = calculerDeclaration2035(
+    annee, s.pieces as unknown as Piece[], categories as unknown as Categorie[], s.immobilisations as unknown as Immobilisation[],
+    cotisationsComptees(s.cotisations as unknown as CotisationDeclaree[], lignes, TRESORERIE.mode),
+    s.vehicules as unknown as VehiculeDossier[], false, paiementsDesPieces(lignes, []), partsDuReleve(lignes, categories as unknown as Categorie[], [], false),
+  )
+  const { valeurs } = valeursDesCases(declaration)
+  const dossier = dossiers.find((d) => d.id === s.dossier)!
+  const entete = { nom: dossier.nom as string | null, activite: dossier.libelle_naf as string | null, siret: dossier.siret as string | null }
+  return {
+    dossier_id: s.dossier, annee, valide_le: valideLe, valide_par: 'u1', mode_comptable: TRESORERIE.mode,
+    nb_lignes: dansLExercice.length,
+    nb_ecritures: new Set(numerotation.lignes.map((l) => `${l.journal}|${l.numero}`)).size,
+    total_debit: centimes('debit'), total_credit: centimes('credit'),
+    empreinte_precedente: null, empreinte,
+    declaration: instantane2035(declaration, valeurs, arrondirPourFormulaire(valeurs, annee), entete),
+  }
+}
+
+// Hélène Marchand, kinésithérapeute, tient sa comptabilité de trésorerie : 2025 est VALIDÉ — ses pièces, ses
+// mouvements, son bien, sa ligne du cadre 7 et son échéance de cotisation sont figés avec ses écritures — et
+// 2026, en cours, porte un loyer réglé et un virement de l'Assurance maladie à traiter.
+const SOURCES_D9: SourcesDeValidation = {
+  dossier: 'd9',
+  prefixe: 'k-e',
+  pieces: [
+    pieceDe('d9', 'k1', '2025-01-05', 'SCI Les Platanes', 700, 'c6'),
+    pieceDe('d9', 'k2', '2025-04-02', 'Assurance Pro Santé', 380, 'c4'),
+    pieceDe('d9', 'k3', '2025-10-01', 'Informatique Pro', 1500, 'c7'),
+    pieceDe('d9', 'k4', '2026-01-05', 'SCI Les Platanes', 700, 'c6'),
+  ],
+  lignes: [
+    mouvementDe('d9', 'm1', '2025-01-08', 'PRLV SCI LES PLATANES LOYER JANVIER', -700, 'rapprochee', { piece_id: 'k1' }),
+    mouvementDe('d9', 'm2', '2025-04-10', 'PRLV ASSURANCE PRO SANTE', -380, 'rapprochee', { piece_id: 'k2' }),
+    mouvementDe('d9', 'm3', '2025-10-03', 'CB INFORMATIQUE PRO', -1500, 'rapprochee', { piece_id: 'k3' }),
+    mouvementDe('d9', 'm4', '2025-06-20', 'VIR CPAM REMBOURSEMENTS JUIN', 6200, 'rapprochee', { categorie_id: 'c9' }),
+    mouvementDe('d9', 'm5', '2025-11-20', 'VIR CPAM REMBOURSEMENTS NOVEMBRE', 5400, 'rapprochee', { categorie_id: 'c9' }),
+    mouvementDe('d9', 'm6', '2025-12-31', 'FRAIS TENUE DE COMPTE', -24, 'rapprochee', { categorie_id: 'c10' }),
+    mouvementDe('d9', 'm7', '2025-09-05', 'PRLV URSSAF COTISATIONS', -950, 'rapprochee', { cotisation_id: 'ck1' }),
+    mouvementDe('d9', 'm10', '2025-12-15', 'VIR COMPTE PERSO DECEMBRE', -2000, 'ignoree', { prelevement_personnel: true }),
+    mouvementDe('d9', 'm8', '2026-01-08', 'PRLV SCI LES PLATANES LOYER JANVIER', -700, 'rapprochee', { piece_id: 'k4' }),
+    mouvementDe('d9', 'm9', '2026-02-20', 'VIR CPAM REMBOURSEMENTS FEVRIER', 3100, 'non_rapprochee'),
+  ],
+  cotisations: [{ ...echeanceCotisation('ck1', '2025-09-05', 950, 90), dossier_id: 'd9' }],
+  immobilisations: [{
+    id: 'i-d9', dossier_id: 'd9', piece_id: 'k3', nature_id: 'n1', libelle: 'Ordinateur portable', valeur: 1500,
+    date_acquisition: '2025-10-01', date_mise_en_service: null, duree_annees: 3, created_at: MAINTENANT,
+  }],
+  vehicules: [{ ...vehicule('ve-d9', 2025, 'Renault Clio', 'voiture', 4, 'thermique', 'super_sans_plomb', 6000), dossier_id: 'd9' }],
+  dotations: [2025],
+}
+const ECRITURES_D9 = ecrituresDe(SOURCES_D9)
+const VALIDE_D9 = valider(SOURCES_D9, ECRITURES_D9, 2025, '2026-03-02T09:30:00Z', '9f2c4e81b07d36a5c8e1f4290b6d73e5a1c9f08b2e4d6a7c3b5f1e9d0a2c4b68')
+
+// Paul Bertin, ostéopathe : 2025 est complet — sa pièce est payée, son encaissement affecté, ses écritures
+// écrites et concordantes — et attend sa validation.
+const SOURCES_D10: SourcesDeValidation = {
+  dossier: 'd10',
+  prefixe: 'q-e',
+  pieces: [pieceDe('d10', 'o1', '2025-03-01', 'Cabinet Partagé Saint-Roch', 450, 'c6')],
+  lignes: [
+    mouvementDe('d10', 'q1', '2025-03-03', 'PRLV CABINET PARTAGE SAINT ROCH', -450, 'rapprochee', { piece_id: 'o1' }),
+    mouvementDe('d10', 'q2', '2025-05-15', 'VIR PATIENTS MAI', 2300, 'rapprochee', { categorie_id: 'c9' }),
+  ],
+  cotisations: [],
+  immobilisations: [],
+  vehicules: [],
+  dotations: [],
+}
+const ECRITURES_D10 = ecrituresDe(SOURCES_D10)
+
 const TABLES: Record<string, Ligne[]> = {
   a_nouveaux: [
     aNouveau('an1', '512000', '51210000', 'Banque Populaire', 'debit', 8400),
@@ -344,7 +543,7 @@ const TABLES: Record<string, Ligne[]> = {
   cabinets: [{ id: 'cab1', nom: 'JD Consult', couleur_primaire: null, police_google_font: null, logo_storage_path: LOGO_DU_BANC ? 'cab1/logo.png' : null }],
   dossiers,
   categories,
-  pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces],
+  pieces: [...pieces, ...TVA_D7.pieces, ...ENGAGEMENT_D8.pieces, ...SOURCES_D9.pieces, ...SOURCES_D10.pieces],
   ecritures_brouillon: [
     // L'ACQUISITION de l'ordinateur du cabinet, telle que la génération l'écrit (lib/ecritures.ts) : sa facture sur
     // le compte de sa nature, au TTC — le dossier est exonéré —, à sa date, son paiement n'étant pas rapproché. Le
@@ -365,6 +564,8 @@ const TABLES: Record<string, Ligne[]> = {
     ...ENGAGEMENT_D8.ecritures,
     ...RELEVE_D7.ecritures,
     ...COTISATIONS_D1.ecritures,
+    ...ECRITURES_D9,
+    ...ECRITURES_D10,
     ecritureReleve('r1', 'l8', '2026-08-20', '706000', 'VIR CPAM REMBOURSEMENTS AOUT', 'credit', 1850.4),
     ecritureReleve('r2', 'l8', '2026-08-20', '512000', 'VIR CPAM REMBOURSEMENTS AOUT', 'debit', 1850.4),
     ecritureReleve('r3', 'l9', '2026-08-31', '627000', 'FRAIS TENUE DE COMPTE', 'debit', 8.5),
@@ -447,13 +648,9 @@ const TABLES: Record<string, Ligne[]> = {
       id: 'i-d8', dossier_id: 'd8', piece_id: 'e4', nature_id: 'n1', libelle: 'Écran de studio', valeur: 2400,
       date_acquisition: '2025-09-01', date_mise_en_service: null, duree_annees: 3, created_at: MAINTENANT,
     },
+    ...SOURCES_D9.immobilisations,
   ],
-  // Les natures : une partagée par le cabinet, une propre au cabinet infirmier, chacune avec son compte.
-  natures_immobilisation: [
-    { id: 'n1', dossier_id: null, libelle: 'Matériel informatique', duree_annees_defaut: 3, ordre: 1, compte_immobilisation: '218300' },
-    { id: 'n2', dossier_id: 'd1', libelle: 'Matériel médical', duree_annees_defaut: 10, ordre: 2, compte_immobilisation: '215400' },
-    { id: 'n3', dossier_id: null, libelle: 'Matériel de transport', duree_annees_defaut: 5, ordre: 3, compte_immobilisation: '218200' },
-  ],
+  natures_immobilisation: natures,
   // Le CADRE 7 du cabinet infirmier : la Peugeot en 2025 — avant la reprise du dossier, son forfait est dans les
   // comptes repris — et en 2026, écrit ; le scooter de tournée, à réécrire ; un cyclomoteur, à écrire.
   vehicules: [
@@ -461,6 +658,7 @@ const TABLES: Record<string, Ligne[]> = {
     vehicule('ve2', 2026, 'Peugeot 208', 'voiture', 5, 'thermique', 'diesel', 8400),
     vehicule('ve3', 2026, 'Scooter de tournée', 'moto', 3, 'electrique', null, 2600, true),
     vehicule('ve4', 2026, null, 'cyclomoteur', 0, 'thermique', 'super_sans_plomb', 1200),
+    ...SOURCES_D9.vehicules,
   ],
   // La déclaration du premier trimestre, déposée : l'historique de l'onglet TVA la compare au calcul.
   declarations_tva: [{
@@ -531,8 +729,12 @@ const TABLES: Record<string, Ligne[]> = {
     ...TVA_D7.lignes,
     ...RELEVE_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
+    ...SOURCES_D9.lignes,
+    ...SOURCES_D10.lignes,
   ],
-  cotisations_declarees: COTISATIONS_D1.echeances,
+  cotisations_declarees: [...COTISATIONS_D1.echeances, ...SOURCES_D9.cotisations],
+  // L'exercice 2025 de la kinésithérapeute, validé : ce qu'il garde, et sa 2035 telle qu'elle a été validée.
+  exercices_valides: [VALIDE_D9],
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte
@@ -635,7 +837,8 @@ export const supabase = {
     onAuthStateChange: () => ({ data: { subscription: { unsubscribe() {} } } }),
     signOut: () => Promise.resolve({ error: null }),
   },
-  rpc: () => Promise.resolve({ data: false, error: null }),
+  // « Vérifier l'empreinte » d'un exercice validé répond « intacte » ; tout autre appel, faux.
+  rpc: (nom: string) => Promise.resolve({ data: nom === 'verifier_exercice_valide', error: null }),
   from: (table: string) => requete(table),
   storage: {
     from: () => ({

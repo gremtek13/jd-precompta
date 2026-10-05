@@ -763,7 +763,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                     <td style={{ whiteSpace: 'nowrap' }}>{i.duree_annees} an{i.duree_annees > 1 ? 's' : ''}</td>
                     <td style={{ fontVariantNumeric: 'tabular-nums' }}>{formatMoney(dotationDeLExercice(i, exerciceAffiche))}</td>
                     <td>
-                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center' }}>
                         <button className="btn btn-outline btn-sm" aria-expanded={plansOuverts.has(i.id)} onClick={() => basculerPlan(i.id)}>
                           Tableau
                         </button>
