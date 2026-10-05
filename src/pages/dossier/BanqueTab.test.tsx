@@ -3557,7 +3557,7 @@ describe('BanqueTab — un virement qui règle plusieurs pièces', () => {
     expect(saisie(2)).toBe('200.00')
   })
 
-  it('une pièce en devise que sa part règle seule passe au débit réel ; payée aussi ailleurs, elle ne bouge pas', async () => {
+  it('une pièce en devise passe au débit réel — au total de ses paiements quand elle est payée aussi ailleurs', async () => {
     const USD = pieceDeTest({
       id: 'piece-usd', tiers: 'Delta', nom_fichier: 'delta.pdf', date_piece: '2025-05-27',
       devise: 'USD', montant_devise: 108, montant_ttc: 100, taux_change: 1.08, conversion_source: 'bce',
@@ -3574,7 +3574,8 @@ describe('BanqueTab — un virement qui règle plusieurs pièces', () => {
     await act(async () => { bouton().click() })
     await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ montant_ttc: 103, conversion_source: 'banque' })]))
 
-    // Un acompte l'a déjà payée en partie : sa part n'en est qu'une fraction, et rien ne la réaligne dessus.
+    // Un acompte l'a déjà payée en partie : elle passe au TOTAL que la banque a payé pour elle — l'acompte et sa part,
+    // 101 € —, jamais à sa part seule, qui n'en est qu'une fraction (lib/reglementBanque.ts).
     cleanup()
     preparer({ montant: -351 })
     faux.pieces = [ALPHA, USD]
@@ -3587,7 +3588,37 @@ describe('BanqueTab — un virement qui règle plusieurs pièces', () => {
     await act(async () => { bouton().click() })
     await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
     await waitFor(() => expect(within(volet()).getByText('Règle 2 pièces')).toBeTruthy())
-    expect(faux.updatesPieces).toEqual([])
+    expect(faux.updatesPieces).toEqual([expect.objectContaining({ montant_ttc: 101, conversion_source: 'banque' })])
+  })
+
+  // PAYÉE EN DEUX FOIS, UNE PIÈCE EN EUROS SE RÈGLE SUR LE TOTAL DE SES PAIEMENTS : 300 € payés 150 + 149,99 passent à
+  // 299,99 — sous le seuil, la banque fait foi. Réglée sur sa part seule, elle gardait un centime que rien n'écrit, qui
+  // déséquilibrait son écriture et faisait refuser la validation de son exercice.
+  it('une pièce en euros payée en deux fois s’aligne sur le total de ses paiements, sous le seuil', async () => {
+    preparer({ montant: -349.99 })
+    faux.lignes = [...faux.lignes, ligneDeTest({ id: 'acompte', libelle: 'ACOMPTE ALPHA', montant: -150, statut: 'rapprochee', piece_id: 'piece-a' })]
+    rendre()
+    await ouvrir('VIR FOURNISSEURS')
+    await deplier()
+    choisir(1, 'piece-a', '149.99')
+    choisir(2, 'piece-b', '200')
+    await act(async () => { bouton().click() })
+    await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
+    await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ montant_ttc: 299.99 })]))
+
+    // Réglée de nouveau, son ancienne part du MÊME mouvement ne compte pas : seule la nouvelle s'ajoute à l'acompte.
+    cleanup()
+    preparer({ ...REGLE, montant: -349.99 }, [part('groupe-1', 'piece-a', -249.99), part('groupe-2', 'piece-b', -100)])
+    faux.lignes = [...faux.lignes, ligneDeTest({ id: 'acompte', libelle: 'ACOMPTE ALPHA', montant: -150, statut: 'rapprochee', piece_id: 'piece-a' })]
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR FOURNISSEURS')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Modifier le règlement…' }).click() })
+    choisir(1, 'piece-a', '149.99')
+    choisir(2, 'piece-b', '200')
+    await act(async () => { bouton('Enregistrer le règlement').click() })
+    await waitFor(() => expect(reglementsRpc()).toHaveLength(1))
+    await waitFor(() => expect(faux.updatesPieces).toEqual([expect.objectContaining({ montant_ttc: 299.99 })]))
   })
 
   it('ne dit pas le nombre de pièces sur des parts lues en partie, même quand il en a lu plusieurs', async () => {
