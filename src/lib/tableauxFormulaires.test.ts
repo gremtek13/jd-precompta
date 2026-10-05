@@ -60,9 +60,9 @@ describe('les tableaux qui se replient en fiches', () => {
     const fautes = tous.flatMap(({ chemin, texte }) => tableauxHorsEnveloppe(texte).map((ligne) => `${chemin}:${ligne}`))
     expect(fautes).toEqual([])
     // Le plancher : sans lui, un balayage devenu aveugle passerait la règle à vide. Deux tableaux-formulaires
-    // (Véhicules, candidates à l'immobilisation) et les écarts de la concordance de la 2035.
+    // (Véhicules, candidates à l'immobilisation), et les totaux et les écarts de la concordance de la 2035.
     const nombre = tous.reduce((n, { texte }) => n + [...texte.matchAll(/className="[^"]*\btable-empilable\b/g)].length, 0)
-    expect(nombre).toBeGreaterThanOrEqual(3)
+    expect(nombre).toBeGreaterThanOrEqual(4)
   })
 
   it('comptent tous les tableaux-formulaires', () => {

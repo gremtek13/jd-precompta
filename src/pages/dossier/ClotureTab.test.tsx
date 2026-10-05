@@ -1301,6 +1301,20 @@ describe('ClotureTab — la concordance de la 2035 avec les écritures', () => {
     expect(c.queryAllByText(/ne se retrouve/)).toHaveLength(0)
   })
 
+  // SUR TÉLÉPHONE, LE TABLEAU DES TOTAUX SE REPLIE EN FICHES, comme celui des écarts : quatre colonnes dans 330 pixels
+  // renvoyaient le signe € à la ligne sous chaque montant (vu sur capture, 390 pixels). Replié, chaque montant garde
+  // le libellé de sa colonne — c'est `data-libelle` qui le porte, et l'enveloppe qui décide du repli.
+  it('le tableau des totaux se replie en fiches, chaque montant portant le libellé de sa colonne', async () => {
+    poserSansCotisation()
+    monter()
+    const c = await carte()
+    const tableau = c.getByText('Écritures de l’exercice').closest('table')!
+    expect(tableau.className).toContain('table-empilable')
+    expect(tableau.parentElement!.className.split(/\s+/)).toContain('tableau-adaptable')
+    expect([...tableau.querySelectorAll('tbody td')].map((td) => td.getAttribute('data-libelle')))
+      .toEqual([null, 'Recettes', 'Dépenses', 'Résultat', null, 'Recettes', 'Dépenses', 'Résultat'])
+  })
+
   it('nomme la source qui manque au brouillon, et l’onglet où l’écrire', async () => {
     poserSansCotisation()
     faux.parTable.ecritures_brouillon = []

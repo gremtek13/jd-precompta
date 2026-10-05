@@ -49,8 +49,11 @@ export default function ConcordanceCard({ concordance: c, comptesPartages, lectu
                 ? `${figePar} : ni ses sources ni ses écritures ne changent plus. Recalculée aujourd’hui, la comparaison trouve ${c.ecarts.length} écart${c.ecarts.length > 1 ? 's' : ''} — une catégorie a changé de compte ou de poste depuis la validation, ou le calcul a évolué. Rien ne s’y corrige plus : la 2035 qui fait foi est celle qui a été validée.`
                 : `${c.ecarts.length} source${c.ecarts.length > 1 ? 's' : ''} de la 2035 ne se ${c.ecarts.length > 1 ? 'retrouvent' : 'retrouve'} pas dans les écritures de l’exercice : le FEC ne porterait pas la déclaration telle qu’elle est calculée.`}
           </p>
-          <div className="table-scroll">
-            <table>
+          {/* Replié en fiches dans une carte étroite, comme le tableau des écarts : sur téléphone, quatre colonnes dans
+              330 pixels renvoyaient le signe € à la ligne sous chaque montant (vu sur capture, 390 pixels). Replié,
+              chaque montant garde le libellé de sa colonne, que porte `data-libelle`. */}
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable">
               <thead>
                 <tr>
                   <th></th>
@@ -61,16 +64,16 @@ export default function ConcordanceCard({ concordance: c, comptesPartages, lectu
               </thead>
               <tbody>
                 <tr>
-                  <td>2035</td>
-                  <td style={nombre}>{formatMoney(c.declaration.recettes)}</td>
-                  <td style={nombre}>{formatMoney(c.declaration.depenses)}</td>
-                  <td style={nombre}>{formatMoney(c.declaration.resultat)}</td>
+                  <td style={{ fontWeight: 600 }}>2035</td>
+                  <td data-libelle="Recettes" style={nombre}>{formatMoney(c.declaration.recettes)}</td>
+                  <td data-libelle="Dépenses" style={nombre}>{formatMoney(c.declaration.depenses)}</td>
+                  <td data-libelle="Résultat" style={nombre}>{formatMoney(c.declaration.resultat)}</td>
                 </tr>
                 <tr>
-                  <td>Écritures de l’exercice</td>
-                  <td style={nombre}>{formatMoney(c.ecritures.recettes)}</td>
-                  <td style={nombre}>{formatMoney(c.ecritures.depenses)}</td>
-                  <td style={nombre}>{formatMoney(c.ecritures.resultat)}</td>
+                  <td style={{ fontWeight: 600 }}>Écritures de l’exercice</td>
+                  <td data-libelle="Recettes" style={nombre}>{formatMoney(c.ecritures.recettes)}</td>
+                  <td data-libelle="Dépenses" style={nombre}>{formatMoney(c.ecritures.depenses)}</td>
+                  <td data-libelle="Résultat" style={nombre}>{formatMoney(c.ecritures.resultat)}</td>
                 </tr>
               </tbody>
             </table>
