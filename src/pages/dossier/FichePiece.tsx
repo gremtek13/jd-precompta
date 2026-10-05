@@ -68,9 +68,15 @@ interface Props {
   // rien à citer, donc ne s'affiche pas. Dans le doute (liste des textes illisible), il reste : la
   // fonction refuse alors sans appeler le modèle, donc sans rien facturer.
   sansTexteLu?: boolean
+  // CE QU'UN EXERCICE VALIDÉ A FIGÉ (lib/validationExercice.ts, `piecesFigees`) : la phrase qui le dit — « L'exercice
+  // 2025 est validé » —, ou rien. Une pièce qui justifie une écriture validée ne change plus que dans ses notes et son
+  // sous-dossier, et ne se supprime plus (`garder_piece_validee`) : la fiche le dit et n'offre que ces deux champs,
+  // au lieu de laisser la base refuser un enregistrement que tout l'écran proposait.
+  figeePar?: string | null
 }
 
-export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false }: Props) {
+export default function FichePiece({ dossierId, categories, sousDossiers, tiersCategories, tiersCategoriesCabinet, tiersConnus, piece, commentaires: commentairesInitiaux, onClose, onSaved, onCommentaireAjoute, onCommentaireSupprime, navigation, rapprochee = false, onValidee, onModifiee, sansTexteLu = false, figeePar = null }: Props) {
+  const fige = piece !== null && figeePar !== null
   // Cabinet de l'utilisateur connecté : la règle tiers → catégorie partagée entre dossiers lui
   // appartient (contrainte unique (cabinet_id, tiers_normalise), RLS admin_du_cabinet). L'omettre
   // était l'une des deux raisons pour lesquelles elle ne s'écrivait jamais.
@@ -455,9 +461,34 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
     }
   }
 
+  // Une pièce FIGÉE n'enregistre que ce qui reste libre — ses notes et son sous-dossier —, rien d'autre : la base
+  // refuserait le reste (`garder_piece_validee`), et renvoyer tous les champs tels quels ne ferait que prendre ce
+  // risque pour rien. Même verrou que l'enregistrement ordinaire, posé avant le `try` pour la même raison.
+  async function enregistrerCeQuiResteLibre() {
+    if (!piece || enregistrementEnCours.current) return
+    enregistrementEnCours.current = true
+    setSaving(true)
+    setError(null)
+    try {
+      const { error } = await supabase.from('pieces')
+        .update({ notes: notes || null, sous_dossier_id: sousDossierId || null })
+        .eq('id', piece.id)
+      if (error) throw error
+      onModifiee?.(false)
+      onSaved()
+      onClose()
+    } catch (err) {
+      setError(messageErreur(err))
+    } finally {
+      enregistrementEnCours.current = false
+      setSaving(false)
+    }
+  }
+
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
-    save('validee')
+    if (fige) enregistrerCeQuiResteLibre()
+    else save('validee')
   }
 
   async function handleDelete() {
@@ -558,6 +589,14 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           restaient sinon hors champ tant qu'on n'avait pas fait défiler tout le formulaire. */}
       <form onSubmit={handleSubmit} className="fiche-piece-formulaire">
         <div className="fiche-piece-corps">
+          {fige && (
+            <p className="fiche-piece-figee">
+              {figeePar} : cette pièce justifie une écriture validée. Sa date, son tiers, son type, sa catégorie, ses
+              montants et son fichier ne changent plus, et elle ne se supprime plus ; ses notes internes et son
+              sous-dossier restent modifiables, et une précision du client s’ajoute toujours. Une erreur trouvée après la
+              validation se corrige sur l’exercice suivant.
+            </p>
+          )}
           {(previewUrl || previewError) && (
             <div className="field fiche-piece-apercu">
               {previewError ? (
@@ -576,7 +615,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
 
           <div className="field">
             <label htmlFor="file">{piece ? 'Remplacer le fichier' : 'Fichier'}</label>
-            <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
+            <input id="file" type="file" accept=".pdf,.jpg,.jpeg,.png" disabled={fige} onChange={(e) => { setFile(e.target.files?.[0] ?? null); setConfiance(null); setExtractionError(null) }} />
             {piece && !file && <span className="muted">Actuel : {piece.nom_fichier}</span>}
           </div>
 
@@ -584,7 +623,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             <button
               type="button"
               className="btn btn-outline btn-sm"
-              disabled={extracting || (!file && !piece?.storage_path)}
+              disabled={fige || extracting || (!file && !piece?.storage_path)}
               onClick={handleExtract}
             >
               {extracting ? 'Extraction…' : '✨ Extraire automatiquement'}
@@ -610,11 +649,11 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           <div className="field-row">
             <div className="field">
               <label htmlFor="date">Date de la pièce</label>
-              <input id="date" type="date" value={datePiece} onChange={(e) => setDatePiece(e.target.value)} />
+              <input id="date" type="date" value={datePiece} disabled={fige} onChange={(e) => setDatePiece(e.target.value)} />
             </div>
             <div className="field">
               <label htmlFor="type">Type</label>
-              <select id="type" value={typePiece} onChange={(e) => setTypePiece(e.target.value as TypePiece)}>
+              <select id="type" value={typePiece} disabled={fige} onChange={(e) => setTypePiece(e.target.value as TypePiece)}>
                 <option value="achat">Achat</option>
                 <option value="vente">Vente</option>
                 <option value="note_frais">Note de frais</option>
@@ -629,6 +668,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
               id="tiers"
               list="tiers-connus"
               value={tiers}
+              disabled={fige}
               onChange={(e) => setTiers(e.target.value)}
               onBlur={(e) => suggestCategorieFromTiers(e.target.value)}
             />
@@ -640,7 +680,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           <div className="field-row">
             <div className="field">
               <label htmlFor="categorie">Catégorie</label>
-              <select id="categorie" value={categorieId} onChange={(e) => setCategorieId(e.target.value)}>
+              <select id="categorie" value={categorieId} disabled={fige} onChange={(e) => setCategorieId(e.target.value)}>
                 <option value="">— Choisir —</option>
                 {categories.map((c) => <option key={c.id} value={c.id}>{c.libelle}</option>)}
               </select>
@@ -654,7 +694,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
             </div>
           </div>
 
-          {piece && !categorieId && (categorieRegle ? (
+          {piece && !fige && !categorieId && (categorieRegle ? (
             <div className="proposition-categorie">
               <p>Une règle apprise range ce fournisseur en <strong>{categorieRegle.libelle}</strong>.</p>
               <button type="button" className="btn btn-outline btn-sm" onClick={() => setCategorieId(categorieRegle.id)}>
@@ -694,15 +734,15 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
           <div className="field-row fiche-piece-montants">
             <div className="field">
               <label htmlFor="ht">Montant HT</label>
-              <input id="ht" type="number" step="0.01" value={montantHt} onChange={(e) => { setMontantHt(e.target.value); recalcFromHtTva(e.target.value, montantTva) }} />
+              <input id="ht" type="number" step="0.01" value={montantHt} disabled={fige} onChange={(e) => { setMontantHt(e.target.value); recalcFromHtTva(e.target.value, montantTva) }} />
             </div>
             <div className="field">
               <label htmlFor="tva">TVA</label>
-              <input id="tva" type="number" step="0.01" value={montantTva} onChange={(e) => { setMontantTva(e.target.value); recalcFromHtTva(montantHt, e.target.value) }} />
+              <input id="tva" type="number" step="0.01" value={montantTva} disabled={fige} onChange={(e) => { setMontantTva(e.target.value); recalcFromHtTva(montantHt, e.target.value) }} />
             </div>
             <div className="field">
               <label htmlFor="ttc">Montant TTC</label>
-              <input id="ttc" type="number" step="0.01" value={montantTtc} onChange={(e) => setMontantTtc(e.target.value)} />
+              <input id="ttc" type="number" step="0.01" value={montantTtc} disabled={fige} onChange={(e) => setMontantTtc(e.target.value)} />
             </div>
           </div>
 
@@ -727,7 +767,7 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
                   </span>
                 )}
               </div>
-              <button type="button" className="btn btn-outline btn-sm" disabled={conversionEnCours || montantDevise == null} onClick={reconvertir}>
+              <button type="button" className="btn btn-outline btn-sm" disabled={fige || conversionEnCours || montantDevise == null} onClick={reconvertir}>
                 {conversionEnCours ? 'Conversion…' : `Convertir au taux du ${datePiece || '…'}`}
               </button>
               {conversionErreur && <p className="alerte-tva" style={{ margin: 0 }}>{conversionErreur}</p>}
@@ -780,17 +820,19 @@ export default function FichePiece({ dossierId, categories, sousDossiers, tiersC
         </div>
 
         <div className="fiche-piece-pied">
-          {piece ? (
+          {piece && !fige ? (
             <button type="button" className="btn btn-danger btn-sm" disabled={occupee} onClick={handleDelete}>
               {deleting ? 'Suppression…' : 'Supprimer'}
             </button>
           ) : <span />}
           <div className="fiche-piece-actions">
-            <button type="button" className="btn btn-outline btn-sm" disabled={occupee} onClick={() => save('a_valider')}>
-              Enregistrer brouillon
-            </button>
+            {!fige && (
+              <button type="button" className="btn btn-outline btn-sm" disabled={occupee} onClick={() => save('a_valider')}>
+                Enregistrer brouillon
+              </button>
+            )}
             <button type="submit" className="btn btn-primary btn-sm" disabled={occupee}>
-              {saving ? 'Enregistrement…' : 'Valider'}
+              {saving ? 'Enregistrement…' : fige ? 'Enregistrer' : 'Valider'}
             </button>
           </div>
         </div>

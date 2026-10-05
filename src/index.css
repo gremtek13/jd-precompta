@@ -679,6 +679,11 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
 }
 .fiche-piece-apercu a { display: inline-block; margin-top: 6px; }
 .fiche-piece-rapprochee { margin: 0 0 12px; font-size: 0.85rem; color: var(--color-text-light); }
+/* Une pièce qu'un exercice validé a figée : dit en tête de la fiche, avant les champs qui ne changent plus. */
+.fiche-piece-figee {
+  margin: 0 0 12px; padding: 8px 12px; font-size: 0.85rem; line-height: 1.45; color: var(--color-text-light);
+  border-left: 3px solid var(--color-border); background: var(--color-bg); border-radius: var(--radius-xs);
+}
 /* Les trois montants côte à côte, dans l'ordre du document (HT, TVA, TTC) : empilés, ils prenaient
    trois lignes du volet pour trois nombres. `min-width: 0`, sinon la largeur propre d'un champ
    numérique les renvoie chacun à la ligne. */

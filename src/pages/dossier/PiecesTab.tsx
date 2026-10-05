@@ -26,6 +26,7 @@ import CategoriserTiersModal from './CategoriserTiersModal'
 import { useAnnee } from '../../context/AnneeContext'
 import { useAuth } from '../../context/AuthContext'
 import { retirerFichiers } from '../../lib/stockage'
+import { lirePiecesFigees } from '../../lib/piecesFigeesLecture'
 
 export default function PiecesTab({ dossierId }: { dossierId: string }) {
   const [pieces, setPieces] = useState<Piece[]>([])
@@ -105,6 +106,12 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // Le texte de la pièce dépliée, chargé à la demande. Une seule à la fois : c'est une consultation
   // ponctuelle pour lever un doute, pas une colonne du tableau.
   const [ocrOuvert, setOcrOuvert] = useState<{ pieceId: string; texte: string | null } | null>(null)
+  // CE QU'UN EXERCICE VALIDÉ A FIGÉ (lib/validationExercice.ts) : pièce → exercice de sa première écriture validée.
+  // Une telle pièce ne change plus que dans ses notes et son sous-dossier, et ne se supprime plus — la base le refuse
+  // (`garder_piece_validee`). Lue ici pour que la fiche, la suppression et les lots le disent AVANT. Son drapeau est
+  // à part : lue en partie, la liste ne cache aucune pièce, mais une pièce figée peut paraître modifiable.
+  const [figees, setFigees] = useState<Map<string, number>>(new Map())
+  const [figeesIncompletes, setFigeesIncompletes] = useState<string | null>(null)
 
   async function load() {
     setLoading(true)
@@ -184,6 +191,9 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
       console.error(err)
       return [] as DoublonDeTexte[]
     }))
+    const lectureFigees = await lirePiecesFigees(dossierId)
+    setFigees(lectureFigees.figees)
+    setFigeesIncompletes(lectureFigees.motif)
 
     setPieces(piecesData ?? [])
     setCategories(lectureCategories.lignes)
@@ -348,11 +358,14 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
     if (p.categorie_id || !p.tiers) return null
     return suggererCategorie(p.tiers, tiersCategories, tiersCategoriesCabinet)
   }
-  const piecesAvecSuggestion = pieces.filter((p) => suggestionPour(p) !== null)
+  // Une pièce figée garde sa catégorie, même absente — celle d'un bien dont l'acquisition est validée : les lots ne
+  // la proposent pas, la base refuserait de l'écrire.
+  const piecesCategorisables = pieces.filter((p) => !figees.has(p.id))
+  const piecesAvecSuggestion = piecesCategorisables.filter((p) => suggestionPour(p) !== null)
 
   // Fournisseurs distincts encore à arbitrer — c'est le vrai volume de travail restant, bien plus
   // parlant que le nombre de pièces : sur un import réel, 58 pièces ne portaient que 28 tiers.
-  const groupesACategoriser = grouperParTiers(pieces, categories, tiersCategories, tiersCategoriesCabinet)
+  const groupesACategoriser = grouperParTiers(piecesCategorisables, categories, tiersCategories, tiersCategoriesCabinet)
 
   // Un seul clic pour reprendre, sur toutes les pièces sans catégorie, la correspondance déjà connue
   // pour leur tiers — sans passer par chaque fiche une par une. Ne fait rien sur les pièces sans
@@ -404,14 +417,29 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
   // bancaire défait en silence — n'était nommée nulle part.
   //
   // Le compte reste (un refus RLS, une coupure), mais il RAPPORTE sa raison au lieu de l'inventer.
+  //
+  // UNE PIÈCE FIGÉE NE SE SUPPRIME PLUS (`garder_piece_validee`) : elle est écartée de la sélection, et la
+  // confirmation le dit, plutôt que d'envoyer une suppression que la base refuserait une à une.
   async function deleteSelection() {
     if (selected.size === 0) return
+    const aSupprimer = [...selected].filter((id) => !figees.has(id))
+    const nbFigees = selected.size - aSupprimer.length
+    const avertissementFigees = nbFigees === 0 ? ''
+      : nbFigees === 1 ? '\n\nUne pièce de la sélection justifie une écriture validée : elle ne se supprime plus, et reste.'
+        : `\n\n${nbFigees} pièces de la sélection justifient une écriture validée : elles ne se suppriment plus, et restent.`
+    if (aSupprimer.length === 0) {
+      window.alert((nbFigees === 1
+        ? 'Cette pièce justifie une écriture validée : elle ne se supprime plus.'
+        : 'Ces pièces justifient une écriture validée : elles ne se suppriment plus.')
+        + ' Une erreur trouvée après la validation se corrige sur l’exercice suivant.')
+      return
+    }
     if (!window.confirm(
-      `Supprimer définitivement ${selected.size} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}`,
+      `Supprimer définitivement ${aSupprimer.length} pièce(s) ? Cette action est irréversible.\n\n${AVERTISSEMENT_PAIEMENT_DEFAIT}${avertissementFigees}`,
     )) return
     let supprimees = 0
     const echecs: string[] = []
-    for (const id of selected) {
+    for (const id of aSupprimer) {
       const piece = pieces.find((p) => p.id === id)
       const { error } = await supabase.from('pieces').delete().eq('id', id)
       if (error) {
@@ -525,6 +553,14 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         }
       />
 
+      <BandeauLecturePartielle
+        quoi="Les écritures validées et les immobilisations du dossier"
+        motif={figeesIncompletes}
+        consequence={
+          'Une pièce qu’un exercice validé a figée peut donc paraître modifiable : la base refusera alors de ' +
+          'l’enregistrer ou de la supprimer, et dira pourquoi.'
+        }
+      />
       <BandeauLecturePartielle
         quoi="Les listes de référence du dossier"
         motif={referencesIncompletes}
@@ -839,6 +875,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
             onValidee={apresValidation}
             onModifiee={noterModification}
             sansTexteLu={!presenceTexteIncertaine && !avecTexteOcr.has(editing.id)}
+            figeePar={figees.has(editing.id) ? `L'exercice ${figees.get(editing.id)} est validé` : null}
             onCommentaireAjoute={(c) => setCommentaires((prev) => [...prev, c])}
             onCommentaireSupprime={(id) => setCommentaires((prev) => prev.filter((c) => c.id !== id))}
           />
@@ -871,7 +908,7 @@ export default function PiecesTab({ dossierId }: { dossierId: string }) {
         <CategoriserTiersModal
           dossierId={dossierId}
           cabinetId={monCabinetId}
-          pieces={pieces}
+          pieces={piecesCategorisables}
           categories={categories}
           reglesDossier={tiersCategories}
           reglesCabinet={tiersCategoriesCabinet}
