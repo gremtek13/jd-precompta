@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 82 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 83 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -74,8 +74,8 @@ select array_to_string(statements, E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 04/10/2026** : 82 fichiers, 82 migrations, empreinte globale
-`d5e74886e28f32fe894d4b075d8362b2` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 05/10/2026** : 83 fichiers, 83 migrations, empreinte globale
+`cd4decdb14dd8d2014c5c8aeade731d7` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -108,11 +108,11 @@ Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
   le socle au caractère près (75 instructions, empreinte `571a89fe386d655de5cb2fba9c42165b` le
-  04/10/2026, rejoué après la validation des exercices et la frontière qu'elle pose), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  05/10/2026, rejoué après la règle d'une écriture à une seule date), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (956 objets, empreinte `4753d9f80cf8b3aa98ad6ff31c66c16d` le 04/10/2026, après la validation des exercices et la frontière qu'elle pose). C'est le seul qui voie un
+  (956 objets, empreinte `4753d9f80cf8b3aa98ad6ff31c66c16d` le 05/10/2026, rejoué après la règle d'une écriture à une seule date). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.

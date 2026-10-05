@@ -288,7 +288,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'numerotation', nb: defauts.length - desequilibres.length, cible: 'ecritures',
-    message: "défaut(s) de numérotation que la base refuserait : un compte qui porte deux libellés, ou des numéros qui ne se suivent pas. Signaler ce cas : il ne devrait pas se produire.",
+    message: "défaut(s) de numérotation que la base refuserait : un compte qui porte deux libellés, des numéros qui ne se suivent pas, ou une écriture à deux pièces ou à deux dates. Signaler ce cas : il ne devrait pas se produire.",
   })
 
   // ── La 2035 et les écritures (trésorerie). ──────────────────────────────────────────────────────────────

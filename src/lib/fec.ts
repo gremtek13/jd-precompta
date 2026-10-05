@@ -186,12 +186,24 @@ export function numeroterFec(
 
   // La clé d'une écriture FEC : la pièce en trésorerie ; en engagement, la pièce et le mouvement d'un
   // règlement, la facture gardant la pièce seule ; le mouvement, pour un mouvement justifié par le relevé.
+  //
+  // ET, POUR UNE PIÈCE, SA DATE : UNE ÉCRITURE NE PORTE QU'UNE DATE (05/10/2026). EcritureDate est « la date de
+  // comptabilisation de l'écriture comptable », une seule, et l'outil de la DGFiP le contrôle : une écriture dont les
+  // lignes n'ont pas toutes la même date ressort parmi ses anomalies, « Différentes dates comptables » (Test Compta
+  // Demat, SQL/ECRITURE.sql et SQL/VUES.sql — l'écran qu'il reproduit est celui des vérificateurs). En trésorerie, une
+  // pièce payée en plusieurs fois porte une part par paiement, chacune à sa date (lib/rattachement.ts) : sous un seul
+  // numéro, elle faisait une écriture à plusieurs dates. Elle en fait désormais une par date, équilibrée quand la pièce
+  // est payée — la charge d'une date face à la banque de ce paiement, sa TVA complétant sa charge
+  // (`lignesChargeProduitPourPiece`) ; une note de frais remboursée en partie, la part du virement à sa date et le
+  // reste face au 108000 à la date de la note. En engagement, chaque écriture n'a déjà qu'une date ; la clé la porte
+  // quand même, pour que l'invariant tienne par construction. `valider_exercice` refuse une écriture à deux dates.
   const groupes = new Map<string, EcritureBrouillon[]>()
   const horsFec: EcritureBrouillon[] = []
   for (const e of ecritures) {
     let cle: string
     if (e.piece_id) {
-      cle = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
+      const source = mode === 'engagement' && e.ligne_bancaire_id ? `${e.piece_id}|${e.ligne_bancaire_id}` : e.piece_id
+      cle = `${source}|${e.date}`
     } else if (e.ligne_bancaire_id && idsJustifies.has(e.ligne_bancaire_id)) {
       cle = `releve|${e.ligne_bancaire_id}`
     } else if (e.immobilisation_id) {
@@ -234,7 +246,8 @@ export function numeroterFec(
           pieceRef: referenceDuReleve(mouvement) }
       }
       const piece = pieceById.get(pieceId)
-      const reglement = cle !== pieceId
+      // Un règlement d'engagement : ses lignes désignent leur mouvement, celles de la facture aucun — la clé les sépare.
+      const reglement = mode === 'engagement' && Boolean(rows[0].ligne_bancaire_id)
       // Date de la pièce (PieceDate) : celle du justificatif lui-même, avec pour repli la plus ancienne de
       // ses lignes. Sa référence : le nom du fichier, sinon le début de son identifiant — jamais vide, la
       // validation refuse une ligne sans pièce.

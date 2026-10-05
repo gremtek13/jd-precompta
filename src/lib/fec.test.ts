@@ -23,6 +23,34 @@ const colonnes = (fec: string) => fec.split('\r\n').map((l) => l.split('\t'))
 // Relit un montant tel que la norme l'écrit, virgule décimale comprise — `Number('6000,00')` rend NaN.
 const lireMontant = (champ: string) => Number(champ.replace(',', '.'))
 
+// L'OUTIL DE LA DGFiP, ÉCRITURE PAR ÉCRITURE (Test Compta Demat, SQL/ECRITURE.sql et SQL/VUES.sql, l'écran des
+// vérificateurs) : les lignes d'un même EcritureNum portent un seul journal, une seule date, une seule pièce, une seule
+// date de pièce et un seul lettrage — un lettrage vide n'en est pas un, `min(code_lettrage) = max(code_lettrage)`
+// ignorant les vides. Relus sur le fichier IMPRIMÉ, comme l'outil les lit.
+function anomaliesDgfip(fec: string): string[] {
+  const parEcriture = new Map<string, string[][]>()
+  for (const r of colonnes(fec).slice(1)) parEcriture.set(r[2], [...(parEcriture.get(r[2]) ?? []), r])
+  const anomalies: string[] = []
+  for (const [num, rows] of parEcriture) {
+    const distincts = (i: number) => new Set(rows.map((r) => r[i])).size
+    if (distincts(0) !== 1) anomalies.push(`${num} : différents codes journaux`)
+    if (distincts(3) !== 1) anomalies.push(`${num} : différentes dates comptables`)
+    if (distincts(8) !== 1) anomalies.push(`${num} : différents numéros de pièce`)
+    if (distincts(9) !== 1) anomalies.push(`${num} : différentes dates pièce`)
+    if (new Set(rows.map((r) => r[13]).filter((v) => v !== '')).size > 1) anomalies.push(`${num} : différents lettrages`)
+  }
+  return anomalies
+}
+
+// Le sixième contrôle de l'outil, « Écriture non équilibrée » : en centimes, écriture par écriture.
+function desequilibresDgfip(fec: string): string[] {
+  const soldes = new Map<string, number>()
+  for (const r of colonnes(fec).slice(1)) {
+    soldes.set(r[2], (soldes.get(r[2]) ?? 0) + Math.round(lireMontant(r[11]) * 100) - Math.round(lireMontant(r[12]) * 100))
+  }
+  return [...soldes].filter(([, s]) => s !== 0).map(([num]) => num)
+}
+
 describe('genererFec — intégrité du fichier', () => {
   it("neutralise les sauts de ligne d'un libellé venu de l'OCR", () => {
     // Cas réel relevé en base : un en-tête de facture sur trois lignes ressort tel quel de
@@ -186,8 +214,9 @@ describe('genererFec — numérotation et dates', () => {
     ]
     const rows = colonnes(genererFec(lignes, [piece('p1', { date_piece: '2026-03-10' })], [], [], 'tresorerie', [])).slice(1)
     expect(rows.every((r) => r[9] === '20260310')).toBe(true)
-    // EcritureDate reste propre à chaque ligne : la banque garde sa date de paiement.
-    expect(rows.map((r) => r[3]).sort()).toEqual(['20260310', '20260420'])
+    // Une écriture ne porte qu'une date : la charge à la date de la facture et la banque à celle du paiement — un
+    // brouillon d'avant la datation au paiement, que le contrôle des écritures déclare à régénérer — font deux écritures.
+    expect(rows.map((r) => [r[2], r[3]])).toEqual([['AC00001', '20260310'], ['AC00002', '20260420']])
   })
 
   it('produit deux fois le même fichier pour les mêmes données', () => {
@@ -199,6 +228,127 @@ describe('genererFec — numérotation et dates', () => {
   it('ignore les écritures sans pièce rattachée', () => {
     const orpheline = { ...ligne('p1'), piece_id: null } as EcritureBrouillon
     expect(colonnes(genererFec([orpheline], [piece('p1')], [], [], 'tresorerie', []))).toHaveLength(1) // en-tête seul
+  })
+})
+
+// UNE ÉCRITURE NE PORTE QU'UNE DATE (05/10/2026). En trésorerie, une pièce payée en plusieurs fois a une part par
+// paiement, chacune à sa date : sous un seul numéro, elle faisait une écriture à plusieurs dates, que l'outil de la DGFiP
+// range parmi ses anomalies. Les brouillons ci-dessous sont ceux que la génération écrit (`lignesPourPiece`).
+describe('genererFec — une écriture ne porte qu’une date (l’outil de la DGFiP)', () => {
+  const TRESORERIE = { mode: 'tresorerie' as const, compteNotesDeFrais: '455000' as const }
+  const ENGAGEMENT = { mode: 'engagement' as const, compteNotesDeFrais: '455000' as const }
+  const paiement = (id: string, date: string, montant: number) => ({ id, date, montant, origine: 'rapprochement' as const })
+  const enBase = (prefixe: string) => (l: LigneAGenerer, i: number): EcritureBrouillon =>
+    ligne(l.piece_id!, { ...l, id: `${prefixe}${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null })
+  const debitMoinsCredit = (r: string[]) => Math.round((lireMontant(r[11]) - lireMontant(r[12])) * 100) / 100
+
+  it('fait d’une pièce payée en deux fois deux écritures, une par paiement, chacune équilibrée', () => {
+    const p = piece('p1', { montant_ttc: 100, date_piece: '2026-02-20', nom_fichier: 'facture.pdf' })
+    const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
+      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], TRESORERIE).map(enBase('a'))
+    const fec = genererFec(brouillon, [p], [], [], 'tresorerie', [])
+    const rows = colonnes(fec).slice(1)
+    expect(rows.map((r) => [r[2], r[3], r[4], debitMoinsCredit(r)])).toEqual([
+      ['AC00001', '20260305', '606100', 60], ['AC00001', '20260305', COMPTE_BANQUE, -60],
+      ['AC00002', '20260405', '606100', 40], ['AC00002', '20260405', COMPTE_BANQUE, -40],
+    ])
+    // La pièce reste la même : sa référence et sa date, sur les deux écritures.
+    expect(new Set(rows.map((r) => `${r[8]}|${r[9]}`))).toEqual(new Set(['facture.pdf|20260220']))
+    expect(anomaliesDgfip(fec)).toEqual([])
+    expect(desequilibresDgfip(fec)).toEqual([])
+    expect(defautsDeNumerotation(numeroterFec(brouillon, [p], [], [], 'tresorerie', []))).toEqual([])
+  })
+
+  it('garde la TVA d’une date avec sa charge : chaque écriture s’équilibre face à son paiement', () => {
+    const p = piece('p2', { montant_ttc: 120, montant_ht: 100, montant_tva: 20, date_piece: '2026-02-20' })
+    const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, true,
+      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -60)], TRESORERIE).map(enBase('t'))
+    const fec = genererFec(brouillon, [p], [], [], 'tresorerie', [])
+    expect(colonnes(fec).slice(1).map((r) => [r[2], r[4], debitMoinsCredit(r)])).toEqual([
+      ['AC00001', '445660', 10], ['AC00001', '606100', 50], ['AC00001', COMPTE_BANQUE, -60],
+      ['AC00002', '445660', 10], ['AC00002', '606100', 50], ['AC00002', COMPTE_BANQUE, -60],
+    ])
+    expect(anomaliesDgfip(fec)).toEqual([])
+    expect(desequilibresDgfip(fec)).toEqual([])
+  })
+
+  it('sépare la note de frais remboursée en partie : le reste face au 108000 à sa date, le virement à la sienne', () => {
+    const note = piece('note', { type_piece: 'note_frais', montant_ttc: 42.5, date_piece: '2026-03-10', nom_fichier: 'ticket.jpg' })
+    const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false,
+      [paiement('l1', '2026-03-20', -20)], TRESORERIE).map(enBase('n'))
+    const fec = genererFec(brouillon, [note], [], [], 'tresorerie', [])
+    expect(colonnes(fec).slice(1).map((r) => [r[2], r[3], r[4], debitMoinsCredit(r)])).toEqual([
+      ['AC00001', '20260310', '625700', 22.5], ['AC00001', '20260310', '108000', -22.5],
+      ['AC00002', '20260320', '625700', 20], ['AC00002', '20260320', COMPTE_BANQUE, -20],
+    ])
+    expect(anomaliesDgfip(fec)).toEqual([])
+    expect(desequilibresDgfip(fec)).toEqual([])
+  })
+
+  it('garde ensemble deux paiements du même jour', () => {
+    const p = piece('p3', { montant_ttc: 100, date_piece: '2026-02-20' })
+    const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
+      [paiement('l1', '2026-03-05', -70), paiement('l2', '2026-03-05', -30)], TRESORERIE).map(enBase('m'))
+    const rows = colonnes(genererFec(brouillon, [p], [], [], 'tresorerie', [])).slice(1)
+    expect(new Set(rows.map((r) => r[2]))).toEqual(new Set(['AC00001']))
+  })
+
+  // En engagement, la facture à sa date et chaque règlement à la sienne : rien ne change, et le règlement reste au
+  // journal de banque — la clé porte la date, le journal se lit toujours au règlement.
+  it('laisse l’engagement tel qu’il était : la facture au journal des achats, chaque règlement au journal de banque', () => {
+    const p = piece('p4', { montant_ttc: 100, date_piece: '2026-02-20', tiers: 'Transmedical' })
+    const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false,
+      [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)], ENGAGEMENT).map(enBase('g'))
+    const fec = genererFec(brouillon, [p], [], [], 'engagement', [])
+    expect(colonnes(fec).slice(1).map((r) => [r[2], r[3], r[4]])).toEqual([
+      ['AC00001', '20260220', '606100'], ['AC00001', '20260220', '401000'],
+      ['BQ00001', '20260305', '401000'], ['BQ00001', '20260305', COMPTE_BANQUE],
+      ['BQ00002', '20260405', '401000'], ['BQ00002', '20260405', COMPTE_BANQUE],
+    ])
+    expect(anomaliesDgfip(fec)).toEqual([])
+    expect(desequilibresDgfip(fec)).toEqual([])
+  })
+
+  // L'ORDRE DE RETOUR DE LA REQUÊTE NE DÉCIDE DE RIEN. En trésorerie, une écriture de pièce mêle sa charge et la
+  // banque de son paiement ; si la ligne de banque remonte la première, elle ne fait pas pour autant de la pièce un
+  // règlement au journal de banque — seul un règlement d'ENGAGEMENT y va, et toutes ses lignes désignent leur mouvement.
+  it('rend le même fichier quel que soit l’ordre des lignes, la banque remontée la première comprise', () => {
+    const p = piece('p6', { montant_ttc: 100, date_piece: '2026-02-20', tiers: 'Transmedical' })
+    const paiements = [paiement('l1', '2026-03-05', -60), paiement('l2', '2026-04-05', -40)]
+    for (const modele of [TRESORERIE, ENGAGEMENT]) {
+      const brouillon = lignesPourPiece('d1', p, { compte: '606100', immobilisation: false }, false, paiements, modele)
+        .map(enBase('o'))
+      const fec = genererFec(brouillon, [p], [], [], modele.mode, [])
+      expect(genererFec([...brouillon].reverse(), [p], [], [], modele.mode, [])).toBe(fec)
+      if (modele.mode === 'tresorerie') expect(new Set(colonnes(fec).slice(1).map((r) => r[0]))).toEqual(new Set(['AC']))
+    }
+  })
+
+  // DÉFENSIF, annoncé comme tel : aucune génération n'écrit une facture d'engagement sur deux dates. Mais la clé porte
+  // la date dans les deux modèles, pour qu'aucune écriture du fichier n'en porte deux quel que soit le brouillon — un
+  // brouillon défectueux fait deux écritures déséquilibrées, que la validation refuse, jamais une écriture à deux dates.
+  it('ne fait jamais d’écriture à deux dates, même d’un brouillon d’engagement défectueux', () => {
+    const p = piece('p7', { montant_ttc: 100, date_piece: '2026-02-20', tiers: 'Transmedical' })
+    const brouillon = [
+      ligne('p7', { id: 'f1', compte: '606100', sens: 'debit', montant: 100, date: '2026-02-20' }),
+      ligne('p7', { id: 'f2', compte: '401000', sens: 'credit', montant: 100, date: '2026-02-21' }),
+    ]
+    const fec = genererFec(brouillon, [p], [], [], 'engagement', [])
+    expect(anomaliesDgfip(fec)).toEqual([])
+    expect(desequilibresDgfip(fec)).toEqual(['AC00001', 'AC00002'])
+    expect(defautsDeNumerotation(numeroterFec(brouillon, [p], [], [], 'engagement', [])).map((d) => d.type))
+      .toEqual(['desequilibre', 'desequilibre'])
+  })
+
+  // Le garde de l'outil lui-même : sans lui, « aucune anomalie » serait aussi ce que rendrait un contrôle aveugle.
+  it('voit l’écriture à deux dates qu’un seul numéro ferait', () => {
+    const fec = genererFec([ligne('p1', { date: '2026-03-05' }), ligne('p1', { id: 'b', compte: COMPTE_BANQUE, sens: 'credit', date: '2026-03-05' })],
+      [piece('p1')], [], [], 'tresorerie', [])
+    expect(anomaliesDgfip(fec)).toEqual([])
+    const aDeuxDates = colonnes(fec).map((r) => (r[4] === COMPTE_BANQUE ? [...r.slice(0, 3), '20260306', ...r.slice(4)] : r))
+      .map((r) => r.join('\t')).join('\r\n')
+    expect(aDeuxDates).not.toBe(fec)
+    expect(anomaliesDgfip(aDeuxDates)).toEqual(['AC00001 : différentes dates comptables'])
   })
 })
 
