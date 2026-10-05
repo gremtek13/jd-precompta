@@ -118,7 +118,7 @@ function memeResultat(ecritures: EcritureBrouillon[], lignes: LigneBancaire[], a
   expect(ids(copie.mouvementsAffectesDesynchronises(ecritures, la)), 'mouvementsAffectesDesynchronises a dérivé')
     .toEqual(ids(mouvementsAffectesDesynchronises(ecritures, ici, null)))
   expect(ids(copie.recettesAffecteesSansTaux(la, assujetti)), 'recettesAffecteesSansTaux a dérivé')
-    .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti)))
+    .toEqual(ids(recettesAffecteesSansTaux(ici, assujetti, null)))
   return { affectes: resumeAffectes(ici), aReaffecter: ids(mouvementsAffectesDesynchronises(ecritures, ici, null)) }
 }
 
@@ -236,8 +236,8 @@ describe('agent-comptable / bloc AFFECTATION (copie déployée)', () => {
     memeResultat([], lignes, true)
     memeResultat([], lignes, false)
     // Celle qui porte un taux — exonération comprise — n'en est pas.
-    expect(ids(recettesAffecteesSansTaux(mouvementsAffectes(lignes, CATEGORIES, true), true))).toEqual(['encaissement', 'reprise'])
-    expect(ids(recettesAffecteesSansTaux(mouvementsAffectes(lignes, CATEGORIES, false), false))).toEqual([])
+    expect(ids(recettesAffecteesSansTaux(mouvementsAffectes(lignes, CATEGORIES, true), true, null))).toEqual(['encaissement', 'reprise'])
+    expect(ids(recettesAffecteesSansTaux(mouvementsAffectes(lignes, CATEGORIES, false), false, null))).toEqual([])
   })
 
   it('compte une catégorie utilisée par une pièce OU par un mouvement affecté', () => {
@@ -303,12 +303,12 @@ describe('agent-comptable / bloc AFFECTATION — les virements personnels', () =
   it('rend les mêmes virements à écrire, dans les deux modèles', () => {
     for (const modele of [TRESORERIE, ENGAGEMENT]) {
       expect(ids2(deployee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele)), `modèle ${modele.mode}`)
-        .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele)))
+        .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, modele, null)))
     }
     // La batterie exerce bien ce qui décide : l'écriture absente, le compte qui suit le modèle, et les
     // mouvements qu'on ne peut pas écrire (zéro euro, rapproché, affecté, pas un virement personnel).
-    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE))).toEqual(['sans-ecriture', 'ecrit-467'])
-    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT))).toEqual(['sans-ecriture', 'ecrit-108', 'apport'])
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))).toEqual(['sans-ecriture', 'ecrit-467'])
+    expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))).toEqual(['sans-ecriture', 'ecrit-108', 'apport'])
   })
 })
 
@@ -445,19 +445,19 @@ describe('le garde-fou sait encore échouer', () => {
   it('attrape une copie qui écrit toujours sur le compte de l’exploitant', () => {
     const derivee = planter('return modele.mode === "engagement" ? modele.compteNotesDeFrais : COMPTE_EXPLOITANT', 'return COMPTE_EXPLOITANT')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT)))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))))
   })
 
   it('attrape une copie qui propose d’écrire un virement de zéro euro', () => {
     const derivee = planter(' && l.montant !== 0', '')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE)))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
   })
 
   it('attrape une copie qui prend tout mouvement pour un virement personnel', () => {
     const derivee = planter('    l.prelevement_personnel\n    && !l.piece_id', '    !l.piece_id')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE)))
-      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE))))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
   })
 
   it('attrape une copie dont la contrepartie n’est plus la banque', () => {

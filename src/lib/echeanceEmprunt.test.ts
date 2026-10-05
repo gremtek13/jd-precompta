@@ -394,12 +394,30 @@ describe('echeancesNonRapprochees — ce que l’échéancier prévoit et qu’a
 describe('couvertureDuReleve — ce que le relevé importé couvre', () => {
   it('du premier au dernier mouvement, moins la marge laissée au prélèvement', () => {
     expect(MARGE_PRELEVEMENT_JOURS).toBe(10)
-    expect(couvertureDuReleve([mouvement({ date: '2025-03-31' }), mouvement({ date: '2025-01-02' }), mouvement({ date: '2025-02-14' })]))
+    expect(couvertureDuReleve([mouvement({ date: '2025-03-31' }), mouvement({ date: '2025-01-02' }), mouvement({ date: '2025-02-14' })], null))
       .toEqual({ debut: '2025-01-02', fin: '2025-03-21' })
   })
 
   it('rien sans mouvement', () => {
-    expect(couvertureDuReleve([])).toBeNull()
+    expect(couvertureDuReleve([], null)).toBeNull()
+  })
+
+  // Les mouvements d'un exercice validé ne se rapprochent plus : une échéance qu'aucun ne paie ne le sera jamais, et
+  // la réclamer laisserait un point que rien ne lève. La fenêtre commence le lendemain de la frontière.
+  it('ne couvre rien d’un exercice validé', () => {
+    const releve = [mouvement({ date: '2025-01-02' }), mouvement({ date: '2026-03-31' })]
+    expect(couvertureDuReleve(releve, '2025-12-31')).toEqual({ debut: '2026-01-01', fin: '2026-03-21' })
+    // Une frontière avant le relevé ne change rien.
+    expect(couvertureDuReleve(releve, '2024-12-31')).toEqual({ debut: '2025-01-02', fin: '2026-03-21' })
+    // Un relevé qui commence le jour même de la frontière : ce jour-là est figé aussi.
+    expect(couvertureDuReleve([mouvement({ date: '2025-12-31' }), mouvement({ date: '2026-03-31' })], '2025-12-31'))
+      .toEqual({ debut: '2026-01-01', fin: '2026-03-21' })
+    // Rien après la frontière, ou seulement la marge : la fenêtre est vide, et rien n'est réclamé.
+    for (const lignes of [[mouvement({ date: '2025-01-02' }), mouvement({ date: '2026-01-05' })], [mouvement({ date: '2025-06-30' })]]) {
+      const c = couvertureDuReleve(lignes, '2025-12-31')!
+      expect(c.debut > c.fin).toBe(true)
+      expect(echeancesNonRapprochees([EMPRUNT], lignes, c.debut, c.fin)).toEqual([])
+    }
   })
 })
 

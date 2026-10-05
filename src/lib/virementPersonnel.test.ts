@@ -96,12 +96,12 @@ describe('virementsPersonnelsAEcrire — ceux dont l’écriture manque ou n’e
   ]
 
   it('un virement classé avant que le bouton n’écrive : sans écriture, il est à écrire', () => {
-    expect(virementsPersonnelsAEcrire([], [mouvement()], TRESORERIE).map((l) => l.id)).toEqual(['l1'])
+    expect(virementsPersonnelsAEcrire([], [mouvement()], TRESORERIE, null).map((l) => l.id)).toEqual(['l1'])
   })
 
   it('se tait quand l’écriture est celle attendue, dans n’importe quel ordre', () => {
-    expect(virementsPersonnelsAEcrire(justes, [mouvement()], TRESORERIE)).toEqual([])
-    expect(virementsPersonnelsAEcrire([...justes].reverse(), [mouvement()], TRESORERIE)).toEqual([])
+    expect(virementsPersonnelsAEcrire(justes, [mouvement()], TRESORERIE, null)).toEqual([])
+    expect(virementsPersonnelsAEcrire([...justes].reverse(), [mouvement()], TRESORERIE, null)).toEqual([])
   })
 
   it('signale une écriture sur un autre compte, dans l’autre sens, d’un autre montant ou à une autre date', () => {
@@ -113,14 +113,14 @@ describe('virementsPersonnelsAEcrire — ceux dont l’écriture manque ou n’e
       [...justes, ecriture({ id: 'e3', compte: '108000' })],
     ]
     for (const ecritures of casPerimes) {
-      expect(virementsPersonnelsAEcrire(ecritures, [mouvement()], TRESORERIE)).toHaveLength(1)
+      expect(virementsPersonnelsAEcrire(ecritures, [mouvement()], TRESORERIE, null)).toHaveLength(1)
     }
   })
 
   it('le compte attendu suit le modèle : en engagement, l’écriture sur 108 d’une société est à reprendre', () => {
-    expect(virementsPersonnelsAEcrire(justes, [mouvement()], ENGAGEMENT_SOCIETE)).toHaveLength(1)
+    expect(virementsPersonnelsAEcrire(justes, [mouvement()], ENGAGEMENT_SOCIETE, null)).toHaveLength(1)
     const surLe455 = [ecriture({ id: 'e1', compte: '455000' }), justes[1]]
-    expect(virementsPersonnelsAEcrire(surLe455, [mouvement()], ENGAGEMENT_SOCIETE)).toEqual([])
+    expect(virementsPersonnelsAEcrire(surLe455, [mouvement()], ENGAGEMENT_SOCIETE, null)).toEqual([])
   })
 
   it('les écritures d’une pièce ne comptent pas pour le mouvement, même quand elles le désignent', () => {
@@ -128,7 +128,7 @@ describe('virementsPersonnelsAEcrire — ceux dont l’écriture manque ou n’e
       ecriture({ id: 'e8', piece_id: 'p1', compte: '108000', sens: 'debit' }),
       ecriture({ id: 'e9', piece_id: 'p1', compte: '512000', sens: 'credit' }),
     ]
-    expect(virementsPersonnelsAEcrire(contrepartieDUnePiece, [mouvement()], TRESORERIE)).toHaveLength(1)
+    expect(virementsPersonnelsAEcrire(contrepartieDUnePiece, [mouvement()], TRESORERIE, null)).toHaveLength(1)
   })
 
   it('ne rend que des virements personnels qu’on PEUT écrire', () => {
@@ -140,6 +140,18 @@ describe('virementsPersonnelsAEcrire — ceux dont l’écriture manque ou n’e
       mouvement({ id: 'rapproche', statut: 'rapprochee', piece_id: 'p1' }),
       mouvement({ id: 'a-ecrire' }),
     ]
-    expect(virementsPersonnelsAEcrire([], lignes, TRESORERIE).map((l) => l.id)).toEqual(['a-ecrire'])
+    expect(virementsPersonnelsAEcrire([], lignes, TRESORERIE, null).map((l) => l.id)).toEqual(['a-ecrire'])
+  })
+
+  // La base refuse d'écrire dans un exercice validé : réclamer l'écriture d'un virement qui y tombe laisserait un
+  // point que rien ne lève. La frontière elle-même est figée ; le lendemain ne l'est pas.
+  it('ne réclame rien d’un exercice validé, la frontière comprise', () => {
+    const lignes = [
+      mouvement({ id: 'fige', date: '2024-12-31' }),
+      mouvement({ id: 'ouvert', date: '2025-01-01' }),
+    ]
+    expect(virementsPersonnelsAEcrire([], lignes, TRESORERIE, '2024-12-31').map((l) => l.id)).toEqual(['ouvert'])
+    // Le garde symétrique : sans exercice validé, les deux se réclament.
+    expect(virementsPersonnelsAEcrire([], lignes, TRESORERIE, null).map((l) => l.id)).toEqual(['fige', 'ouvert'])
   })
 })

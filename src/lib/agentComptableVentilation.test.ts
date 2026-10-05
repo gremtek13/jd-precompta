@@ -186,7 +186,7 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
 
   it('rend les mêmes parts de recettes SANS TAUX sur un dossier assujetti — et rien sur un dossier exonéré', () => {
     for (const assujetti of [true, false]) {
-      const src = recettesVentileesSansTaux(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti), assujetti)
+      const src = recettesVentileesSansTaux(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti), assujetti, null)
       const dep = deployee.recettesVentileesSansTaux(deployee.partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti), assujetti)
       expect(ids(dep), `assujetti ${assujetti}`).toEqual(ids(src))
       // Les parts elles-mêmes, avec le taux qui s'applique : celui gardé sur un dossier assujetti, aucun ailleurs.
@@ -194,7 +194,7 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
         .toEqual(resumeParts(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti)))
     }
     // Un mouvement par entrée ; pas celui qui n'est pas rapproché, pas une dépense, pas la remise taxée.
-    expect(ids(recettesVentileesSansTaux(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, true), true))).toEqual(['remise', 'deux-recettes'])
+    expect(ids(recettesVentileesSansTaux(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, true), true, null))).toEqual(['remise', 'deux-recettes'])
     expect(resumeParts(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, true))).toContain('remise-taxee:recette:20')
     expect(resumeParts(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, false))).toContain('remise-taxee:recette:null')
   })

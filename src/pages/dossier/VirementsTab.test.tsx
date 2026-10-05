@@ -1,9 +1,10 @@
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import VirementsTab from './VirementsTab'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { EcritureBrouillon, LigneBancaire } from '../../lib/types'
 import { NON_VALIDEE } from '../../test/ecritures'
+import { AvecExercicesValides } from '../../test/exercicesValides'
 
 // LE « TOTAL PRÉLEVÉ » SOMMAIT DES VALEURS ABSOLUES.
 //
@@ -132,7 +133,10 @@ const ecritureJuste = (id: string, montant = 1000, date = '2025-06-02') => [
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
 
-const monter = (modele: ModeleComptable = TRESORERIE) => render(<VirementsTab dossierId="dossier-de-test" modele={modele} />)
+// `valides` : les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
+const monter = (modele: ModeleComptable = TRESORERIE, valides: readonly number[] = []) => render(
+  <AvecExercicesValides annees={valides}><VirementsTab dossierId="dossier-de-test" modele={modele} /></AvecExercicesValides>,
+)
 // `\s` : `formatMoney` sépare les milliers par une espace fine insécable (U+202F).
 const MONTANT = (texte: string) => new RegExp(`^${texte.replace(/ /g, '\\s')}$`)
 
@@ -375,5 +379,41 @@ describe('VirementsTab — retirer un virement', () => {
 
     await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/elle ne se retire plus/)))
     expect(screen.getByText('VIREMENT COMPTE PERSO')).toBeTruthy()
+  })
+
+  // LIGNE 26.6 (d) : un virement daté d'un exercice validé ne se retire plus — la base le refuse. Sa ligne le dit, au
+  // lieu d'un bouton qui n'aboutirait qu'à un refus ; celle d'après la frontière garde le sien.
+  it('un virement d’un exercice validé ne se retire plus, et sa ligne le dit', async () => {
+    faux.lignes = [ligne({ id: 'fige', date: '2025-12-31' }), ligne({ id: 'ouvert', date: '2026-01-02', libelle: 'VIREMENT OUVERT' })]
+    faux.ecritures = [...ecritureJuste('fige', 1000, '2025-12-31'), ...ecritureJuste('ouvert', 1000, '2026-01-02')]
+    monter(TRESORERIE, [2025])
+
+    const fige = (await screen.findByText('VIREMENT COMPTE PERSO')).closest('tr')!
+    expect(within(fige).queryByRole('button', { name: 'Retirer' })).toBeNull()
+    expect(within(fige).getByText('Figé').getAttribute('title')).toBe('L\'exercice 2025 est validé : ce virement ne se retire plus.')
+    const ouvert = screen.getByText('VIREMENT OUVERT').closest('tr')!
+    expect(within(ouvert).getByRole('button', { name: 'Retirer' })).toBeTruthy()
+  })
+
+  // Un virement figé SANS son écriture — classé avant que le classement s'écrive, avant l'ouverture d'un dossier
+  // repris : la base n'y écrit plus. Le lot ne le compte pas — il échouerait sur lui —, et sa ligne dit pourtant
+  // qu'il n'a pas d'écriture, sans badge qui appellerait un geste.
+  it('un virement d’un exercice validé sans écriture ne se réclame pas, et sa ligne le dit', async () => {
+    faux.lignes = [
+      ligne({ id: 'fige', date: '2025-12-31' }),
+      ligne({ id: 'ouvert', date: '2026-01-02', libelle: 'VIREMENT OUVERT' }),
+    ]
+    monter(TRESORERIE, [2025])
+
+    await screen.findByText('1 virement personnel sans son écriture')
+    const fige = screen.getByText('VIREMENT COMPTE PERSO').closest('tr')!
+    const etat = within(fige).getByText('Sans écriture')
+    expect(etat.className).toBe('muted')
+    expect(etat.getAttribute('title')).toBe('L\'exercice 2025 est validé : ce virement ne s’écrit plus.')
+    const ouvert = screen.getByText('VIREMENT OUVERT').closest('tr')!
+    expect(within(ouvert).getByText('Sans écriture').className).toMatch(/badge-warning/)
+
+    await act(async () => { screen.getByRole('button', { name: 'Écrire ce virement' }).click() })
+    expect(faux.rpcs.map((r) => r.args.p_ligne_bancaire_id)).toEqual(['ouvert'])
   })
 })

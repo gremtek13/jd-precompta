@@ -343,16 +343,18 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   const affectesPerimes = mouvementsAffectesDesynchronises(ecritures, affectes, frontiere)
   // Des encaissements affectés en recette SANS TAUX alors que le dossier est assujetti — affectés avant
   // qu'il le devienne : leur TVA collectée n'est dans aucune CA3, et la 2035 compte la taxe en recette.
-  const recettesSansTva = recettesAffecteesSansTaux(affectes, assujettiTva)
+  // Pas d'un exercice validé : la base refuse de les réaffecter (lib/validationExercice.ts).
+  const recettesSansTva = recettesAffecteesSansTaux(affectes, assujettiTva, frontiere)
   // Les mêmes, par une part d'un mouvement ventilé : un seul point, les deux se réparent pareil.
-  const recettesVentileesSansTva = recettesVentileesSansTaux(partsDesVentilations(lignes, ventilations, categories, assujettiTva), assujettiTva)
+  const recettesVentileesSansTva = recettesVentileesSansTaux(partsDesVentilations(lignes, ventilations, categories, assujettiTva), assujettiTva, frontiere)
   // Une ventilation dont les parts ne font plus le mouvement (défensif, la base vérifie la somme), et une
   // écriture de mouvement ventilé qui ne suit plus ses parts — le compte d'une catégorie a changé depuis.
   const ventilationsFausses = ventilationsPartielles ? [] : ventilationsIncoherentes(lignes, ventilations)
   const ventilesPerimes = mouvementsVentilesDesynchronises(ecritures, lignes, ventilations, categories, modele, assujettiTva, frontiere)
   // Les virements personnels sans leur écriture — classés avant que ce classement s'écrive
-  // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie.
-  const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele)
+  // (lib/virementPersonnel.ts). Ils ont l'air traités, et manquent au FEC comme à la trésorerie. Pas d'un
+  // exercice validé : la base refuse d'y écrire.
+  const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele, frontiere)
   // Les échéances de cotisation payées par un mouvement rapproché dont l'écriture manque ou n'est plus
   // celle du rapprochement — rapprochées avant qu'il s'écrive, ou une CSG-CRDS saisie depuis
   // (lib/cotisationRapprochee.ts). Elles ont l'air payées, et manquent au FEC comme à la trésorerie.
@@ -363,8 +365,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // Les échéances d'emprunt que le relevé COUVRE — du premier mouvement au dernier, moins la marge laissée
   // au prélèvement — et qu'aucun mouvement ne paie : leurs intérêts manquent aux comptes, et le
   // prélèvement attend quelque part dans le relevé. Hors de cette fenêtre, on ne réclame rien : avant le
-  // premier relevé rien n'a été importé, après le dernier le prélèvement n'est peut-être pas passé.
-  const couverture = couvertureDuReleve(lignes)
+  // premier relevé rien n'a été importé, après le dernier le prélèvement n'est peut-être pas passé. Ni rien
+  // d'un exercice validé : ses mouvements ne se rapprochent plus.
+  const couverture = couvertureDuReleve(lignes, frontiere)
   const echeancesManquantes = couverture ? echeancesNonRapprochees(emprunts, lignes, couverture.debut, couverture.fin) : []
   // L'écriture d'une échéance rapprochée qui n'est plus celle de son découpage : défensif, la base les
   // écrivant ensemble — mais une écriture retirée par un autre chemin sortirait du FEC en silence.

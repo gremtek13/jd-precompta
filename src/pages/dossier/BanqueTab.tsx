@@ -13,6 +13,8 @@ import type {
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
 import { nomDeLaPiece, refusReglementGroupe, type PartReglement } from '../../lib/reglementGroupe'
 import { useAnnee } from '../../context/AnneeContext'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
+import { dateFigee, estFigee } from '../../lib/validationExercice'
 import BarreRecherche from '../../components/BarreRecherche'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { controlerSolde, lignesDeSolde } from '../../lib/soldeReleve'
@@ -52,6 +54,17 @@ const NOMS_MOIS = ['Janvier', 'Février', 'Mars', 'Avril', 'Mai', 'Juin', 'Juill
 // (le même relevé déposé deux fois, CSV ou PDF) avant l'insertion. Le montant est arrondi à 2
 // décimales pour éviter qu'un écart d'arrondi flottant sans intérêt (12.1 vs 12.10) fasse manquer un
 // vrai doublon.
+// Ce qu'un import dit des lignes qu'un exercice validé a écartées : un relevé qui en porte, c'est un exercice validé
+// auquel il manque des mouvements — rien ne peut plus les y ajouter, et une opération oubliée se corrige sur
+// l'exercice suivant. `toutes` : aucune autre ligne n'était à importer ; `doublons` : celles déjà au relevé.
+function phraseLignesFigees(nb: number, frontiere: string, toutes: boolean, doublons = 0): string {
+  const sujet = nb > 1 ? `${nb} lignes datées` : toutes ? 'une ligne datée' : 'Une ligne datée'
+  const autres = !toutes || doublons === 0 ? '' : doublons === 1 ? ' L’autre est déjà au relevé.' : ` Les ${doublons} autres sont déjà au relevé.`
+  return `${toutes ? 'Rien à importer : ' : ''}${sujet} d’un exercice validé, au plus tard le ${formatDate(frontiere)}, `
+    + `${nb > 1 ? 'ne s’importent' : 'ne s’importe'} pas — un exercice validé ne reçoit plus de mouvement. Le relevé de cet `
+    + `exercice ne ${nb > 1 ? 'les' : 'la'} porte pas : une opération oubliée se corrige sur l’exercice suivant.${autres}`
+}
+
 function signatureLigne(l: { date: string; libelle: string; montant: number }): string {
   return `${l.date}|${l.libelle}|${l.montant.toFixed(2)}`
 }
@@ -110,6 +123,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // Exercice partagé avec Pièces/Écritures/Statistiques/Clôture, sélectionné dans l'en-tête du
   // dossier (voir AnneeContext) — pas de sélecteur local ici.
   const { annee: anneeFilter } = useAnnee()
+  // CE QU'UN EXERCICE VALIDÉ A FIGÉ (lib/validationExercice.ts) : un mouvement daté au plus tard à la frontière ne
+  // s'importe, ne se rapproche, ne se classe et ne se modifie plus — la base le refuse (`garder_mouvement_valide`).
+  // Les imports l'écartent et le comptent, la fiche ne propose plus rien, et les points qui réclameraient un geste
+  // impossible se taisent.
+  const { frontiere, anneesValidees } = useExercicesValides()
   // 'tous' ou un mois 0-11 — remis à 'tous' à chaque changement d'année pour ne jamais rester bloqué
   // sur un mois qui n'existe plus dans la nouvelle année sélectionnée.
   const [moisFilter, setMoisFilter] = useState<'tous' | number>('tous')
@@ -730,10 +748,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   const idsRecettesSansTaux = useMemo(() => {
     if (!assujettiTva) return new Set<string>()
     return new Set([
-      ...recettesAffecteesSansTaux(mouvementsAffectes(lignes, categories, true), true).map((m) => m.ligne.id),
-      ...recettesVentileesSansTaux(partsDesVentilations(lignes, ventilations, categories, true), true).map((l) => l.id),
+      ...recettesAffecteesSansTaux(mouvementsAffectes(lignes, categories, true), true, frontiere).map((m) => m.ligne.id),
+      ...recettesVentileesSansTaux(partsDesVentilations(lignes, ventilations, categories, true), true, frontiere).map((l) => l.id),
     ])
-  }, [assujettiTva, lignes, categories, ventilations])
+  }, [assujettiTva, lignes, categories, ventilations, frontiere])
 
   // Les mouvements rapprochés d'une échéance de cotisation qui ne PEUVENT pas s'écrire — un encaissement
   // rapproché d'un appel, posé quand l'écran ne regardait pas le sens (lib/cotisationRapprochee.ts). La
@@ -1078,6 +1096,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         lignes={lignes}
         regles={regles}
         suspension={lignesIncompletes ?? referencesIncompletes}
+        frontiere={frontiere}
         onImported={load}
       />
 
@@ -1087,6 +1106,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         regles={regles}
         lignesExistantes={lignes}
         lectureIncomplete={lignesIncompletes ?? referencesIncompletes}
+        frontiere={frontiere}
       />
 
       {relevesIncoherents.length > 0 && (
@@ -1606,6 +1626,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
           <FicheMouvement
             key={ligneOuverte.id}
             ligne={ligneOuverte}
+            figeePar={dateFigee(ligneOuverte.date, anneesValidees)}
             pieces={pieces}
             piecesValidees={piecesValidees}
             cotisations={cotisations}
@@ -1655,9 +1676,13 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
 // mouvement déjà importé le serait une seconde fois — et aucun écran ne permet de retirer un
 // mouvement bancaire. L'import se refuse donc, comme `chargerHashsExistants` lève plutôt que de
 // laisser passer un fichier « pas encore importé » sur une liste d'empreintes incomplète.
-function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureIncomplete }: {
+//
+// `frontiere` : un mouvement daté d'un exercice validé ne s'importe plus — la base refuserait le lot entier. Il est
+// écarté et compté, comme un doublon, et l'alerte de fin d'import le dit : un relevé qui en porte, c'est un exercice
+// validé auquel il manque des mouvements, et rien ne peut plus les y ajouter.
+function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureIncomplete, frontiere }: {
   dossierId: string; onImported: () => void; regles: RegleBancaireIgnoree[]; lignesExistantes: LigneBancaire[]
-  lectureIncomplete: string | null
+  lectureIncomplete: string | null; frontiere: string | null
 }) {
   const [source, setSource] = useState<'csv' | 'pdf'>('csv')
   const [rows, setRows] = useState<string[][] | null>(null)
@@ -1818,13 +1843,19 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const signaturesVues = new Set(lignesExistantes.map(signatureLigne))
       const aInserer: typeof pdfRows = []
       let doublons = 0
+      let figees = 0
       for (const r of operations) {
         const sig = signatureLigne(r)
         if (signaturesVues.has(sig)) { doublons++; continue }
         signaturesVues.add(sig)
+        if (estFigee(r.date, frontiere)) { figees++; continue }
         aInserer.push(r)
       }
-      if (aInserer.length === 0) throw new Error("Ce relevé semble déjà importé (mêmes date, libellé et montant).")
+      if (aInserer.length === 0) {
+        throw new Error(figees > 0 && frontiere
+          ? phraseLignesFigees(figees, frontiere, true, doublons)
+          : "Ce relevé semble déjà importé (mêmes date, libellé et montant).")
+      }
 
       const { error } = await supabase.from('lignes_bancaires').insert(
         aInserer.map((r) => ({
@@ -1852,8 +1883,9 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       setPdfLignes(null)
       setSourceFileName(null)
       onImported()
-      if (doublons > 0 || alertePdf) {
-        window.alert(`${aInserer.length} ligne(s) importée(s)${doublons > 0 ? `, ${doublons} déjà présente(s) ignorée(s)` : ''}${soldesDesignes.length > 0 ? `, ${soldesDesignes.length} ligne(s) de solde écartée(s)` : ''}.${alertePdf}`)
+      if (doublons > 0 || figees > 0 || alertePdf) {
+        window.alert(`${aInserer.length} ligne(s) importée(s)${doublons > 0 ? `, ${doublons} déjà présente(s) ignorée(s)` : ''}${soldesDesignes.length > 0 ? `, ${soldesDesignes.length} ligne(s) de solde écartée(s)` : ''}.`
+          + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '') + alertePdf)
       }
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))
@@ -1920,13 +1952,19 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const signaturesVues = new Set(lignesExistantes.map(signatureLigne))
       const aInserer: typeof toInsert = []
       let doublons = 0
+      let figees = 0
       for (const ligne of toInsert) {
         const sig = signatureLigne(ligne)
         if (signaturesVues.has(sig)) { doublons++; continue }
         signaturesVues.add(sig)
+        if (estFigee(ligne.date, frontiere)) { figees++; continue }
         aInserer.push(ligne)
       }
-      if (aInserer.length === 0) throw new Error(doublons > 0 ? "Ce relevé semble déjà importé (mêmes date, libellé et montant)." : "Aucune ligne exploitable — vérifie le mapping des colonnes.")
+      if (aInserer.length === 0) {
+        throw new Error(figees > 0 && frontiere
+          ? phraseLignesFigees(figees, frontiere, true, doublons)
+          : doublons > 0 ? "Ce relevé semble déjà importé (mêmes date, libellé et montant)." : "Aucune ligne exploitable — vérifie le mapping des colonnes.")
+      }
 
       const { error } = await supabase.from('lignes_bancaires').insert(aInserer)
       if (error) throw error
@@ -1936,6 +1974,7 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       onImported()
       const messages = [`${aInserer.length} ligne(s) importée(s)`]
       if (doublons > 0) messages.push(`${doublons} déjà présente(s), ignorée(s)`)
+      if (figees > 0 && frontiere) messages.push(`${figees} datée(s) d’un exercice validé, non importée(s)`)
       if (ignorees > 0) messages.push(`${ignorees} ignorée(s) (date/montant illisible)`)
       if (soldes.length > 0) messages.push(`${soldes.length} ligne(s) de solde écartée(s)`)
 
@@ -1952,8 +1991,8 @@ function ImportCsv({ dossierId, onImported, regles, lignesExistantes, lectureInc
       const alerte = controle && !controle.coherent
         ? `\n\n⚠ Ce relevé ne boucle pas.\nSolde d'ouverture ${controle.soldeInitial.toFixed(2)} € + mouvements ${controle.sommeMouvements.toFixed(2)} € = ${controle.attendu.toFixed(2)} €, alors que le solde de clôture indique ${controle.soldeFinal.toFixed(2)} €.\nÉcart de ${Math.abs(controle.ecart).toFixed(2)} € : il manque probablement des opérations dans le fichier.`
         : ''
-      if (doublons > 0 || ignorees > 0 || soldes.length > 0 || alerte) {
-        window.alert(messages.join(', ') + '.' + alerte)
+      if (doublons > 0 || ignorees > 0 || soldes.length > 0 || figees > 0 || alerte) {
+        window.alert(messages.join(', ') + '.' + (figees > 0 && frontiere ? `\n\n${phraseLignesFigees(figees, frontiere, false)}` : '') + alerte)
       }
     } catch (err) {
       setError(messageErreur(err, "L'import a échoué."))

@@ -351,7 +351,16 @@ export const MARGE_PRELEVEMENT_JOURS = 10
 // Ce que le relevé importé COUVRE : du premier au dernier mouvement, moins la marge. Une échéance hors
 // de cette fenêtre n'est pas réclamée — avant le premier relevé, elle n'a pas été importée ; après le
 // dernier, son prélèvement n'est peut-être pas encore passé. Nul sans aucun mouvement.
-export function couvertureDuReleve(lignes: readonly Pick<MouvementBancaire, 'date'>[]): { debut: string; fin: string } | null {
+//
+// ET RIEN AU PLUS TARD À LA FRONTIÈRE DE VALIDATION (lib/validationExercice.ts) : les mouvements d'un exercice
+// validé ne se rapprochent plus, donc une échéance qu'aucun ne paie ne le sera jamais — la réclamer laisserait un
+// point que rien ne lève. Elle relève de l'exercice suivant. Quand rien ne reste à couvrir après la frontière, la
+// fenêtre est VIDE (son début après sa fin), et `echeancesNonRapprochees` ne réclame rien — comme pour un relevé
+// plus court que la marge. Sans valeur par défaut : un appelant qui l'oublie réclamerait les échéances d'un
+// exercice validé.
+export function couvertureDuReleve(
+  lignes: readonly Pick<MouvementBancaire, 'date'>[], frontiere: string | null,
+): { debut: string; fin: string } | null {
   if (lignes.length === 0) return null
   let debut = lignes[0].date
   let fin = lignes[0].date
@@ -359,6 +368,7 @@ export function couvertureDuReleve(lignes: readonly Pick<MouvementBancaire, 'dat
     if (l.date < debut) debut = l.date
     if (l.date > fin) fin = l.date
   }
+  if (frontiere !== null && debut <= frontiere) debut = ajouterJours(frontiere, 1)
   return { debut, fin: ajouterJours(fin, -MARGE_PRELEVEMENT_JOURS) }
 }
 

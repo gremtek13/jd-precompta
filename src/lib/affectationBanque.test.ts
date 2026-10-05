@@ -381,10 +381,22 @@ describe('recettesAffecteesSansTaux — un dossier devenu assujetti après coup'
   ]
 
   it('montre les recettes affectées sans taux — ni les dépenses, ni une recette dont le taux est choisi, exonérée comprise', () => {
-    expect(recettesAffecteesSansTaux(mouvementsAffectes(lignes, categories, true), true).map((m) => m.ligne.id)).toEqual(['cpam'])
+    expect(recettesAffecteesSansTaux(mouvementsAffectes(lignes, categories, true), true, null).map((m) => m.ligne.id)).toEqual(['cpam'])
   })
 
   it('se tait sur un dossier exonéré', () => {
-    expect(recettesAffecteesSansTaux(mouvementsAffectes(lignes, categories, false), false)).toEqual([])
+    expect(recettesAffecteesSansTaux(mouvementsAffectes(lignes, categories, false), false, null)).toEqual([])
+  })
+
+  // Un dossier devenu assujetti APRÈS une validation : la recette d'un exercice validé ne se réaffecte plus — la base
+  // le refuse —, donc la réclamer laisserait un point que rien ne lève. Celle d'après, si.
+  it('ne réclame pas la recette d’un exercice validé, la frontière comprise — celle d’après, si', () => {
+    const datees = [
+      mouvement({ id: 'figee', date: '2025-12-31', statut: 'rapprochee', categorie_id: 'cat-recettes', montant: 250 }),
+      mouvement({ id: 'ouverte', date: '2026-01-01', statut: 'rapprochee', categorie_id: 'cat-recettes', montant: 250 }),
+    ]
+    const affectes = mouvementsAffectes(datees, categories, true)
+    expect(recettesAffecteesSansTaux(affectes, true, '2025-12-31').map((m) => m.ligne.id)).toEqual(['ouverte'])
+    expect(recettesAffecteesSansTaux(affectes, true, null).map((m) => m.ligne.id)).toEqual(['figee', 'ouverte'])
   })
 })

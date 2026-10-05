@@ -11,6 +11,8 @@ import { LIBELLES_COMPTES } from '../../lib/comptes'
 import type { ModeleComptable } from '../../lib/engagement'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, virementsPersonnelsAEcrire } from '../../lib/virementPersonnel'
 import { messageErreur } from '../../lib/messageErreur'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
+import { dateFigee } from '../../lib/validationExercice'
 
 // Les virements entre le compte pro et le compte personnel de l'exploitant, marqués depuis l'onglet
 // Banque (bouton « Virement personnel » sur un mouvement non rapproché) : ses prélèvements, et ses
@@ -39,6 +41,9 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
   // passer deux clics du même rendu (voir CLAUDE.md, « un verrou d'exécution »).
   const ecritureEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
+  // Un virement daté d'un exercice validé ne se retire plus : la base refuse de le remettre à traiter comme de
+  // retirer son écriture (lib/validationExercice.ts). Sa ligne le dit, au lieu d'un bouton que la base refuserait.
+  const { frontiere, anneesValidees } = useExercicesValides()
 
   async function load() {
     setLoading(true)
@@ -70,8 +75,11 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
 
   const compte = compteDuDirigeant(modele)
   const libelleCompte = LIBELLES_COMPTES[compte] ?? compte
-  const aEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele)
-  const idsAEcrire = new Set(aEcrire.map((l) => l.id))
+  // Ceux qu'on peut écrire : pas d'un exercice validé, où la base refuse d'écrire. La colonne dit pourtant ce
+  // qu'il en est de CHAQUE virement, figé compris : un virement figé sans écriture manque au FEC de son exercice,
+  // et le dire vaut mieux que de le taire — sans le compter dans un geste que la base refuserait.
+  const aEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele, frontiere)
+  const idsSansEcritureJuste = new Set(virementsPersonnelsAEcrire(ecritures, lignes, modele, null).map((l) => l.id))
   const idsAvecEcriture = new Set(ecritures.map((e) => e.ligne_bancaire_id))
   // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE (voir CLAUDE.md) : un virement dont l'écriture n'a
   // pas été lue paraîtrait sans écriture, et la liste de ceux à écrire serait fausse dans un sens ou
@@ -259,16 +267,27 @@ export default function VirementsTab({ dossierId, modele }: { dossierId: string;
                         que d'annoncer « sans écriture » un virement dont l'écriture n'a pas été lue. */}
                     {lectureEcritures
                       ? <span className="muted">—</span>
-                      : idsAEcrire.has(l.id)
-                        ? <span className="badge badge-warning">{idsAvecEcriture.has(l.id) ? 'À réécrire' : 'Sans écriture'}</span>
+                      : idsSansEcritureJuste.has(l.id)
+                        ? dateFigee(l.date, anneesValidees)
+                          // Figé : la base n'y écrit plus. Dit en clair, sans badge qui appellerait un geste.
+                          ? (
+                            <span className="muted" title={`${dateFigee(l.date, anneesValidees)} : ce virement ne s’écrit plus.`}>
+                              {idsAvecEcriture.has(l.id) ? 'Écriture différente' : 'Sans écriture'}
+                            </span>
+                          )
+                          : <span className="badge badge-warning">{idsAvecEcriture.has(l.id) ? 'À réécrire' : 'Sans écriture'}</span>
                         : l.montant === 0
                           ? <span className="muted">Rien à écrire</span>
                           : <span className="badge badge-ok">Compte {compte}</span>}
                   </td>
                   <td>
-                    <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => retirer(l.id)}>
-                      Retirer
-                    </button>
+                    {dateFigee(l.date, anneesValidees)
+                      ? <span className="muted" title={`${dateFigee(l.date, anneesValidees)} : ce virement ne se retire plus.`}>Figé</span>
+                      : (
+                        <button type="button" className="btn btn-outline btn-sm" disabled={enCours} onClick={() => retirer(l.id)}>
+                          Retirer
+                        </button>
+                      )}
                   </td>
                 </tr>
               ))}

@@ -135,10 +135,10 @@ describe('agent-comptable / bloc EMPRUNT (copie déployée)', () => {
   })
 
   it('rend la même couverture du relevé, marge comprise', () => {
-    expect(deployee.couvertureDuReleve([])).toEqual(couvertureDuReleve([]))
-    expect(deployee.couvertureDuReleve(RELEVE)).toEqual(couvertureDuReleve(RELEVE))
-    expect(deployee.couvertureDuReleve([RELEVE[0]])).toEqual(couvertureDuReleve([RELEVE[0]]))
-    expect(couvertureDuReleve(RELEVE)).toEqual({ debut: '2025-01-02', fin: ajouterJours('2025-06-30', -MARGE_PRELEVEMENT_JOURS) })
+    expect(deployee.couvertureDuReleve([], null)).toEqual(couvertureDuReleve([], null))
+    expect(deployee.couvertureDuReleve(RELEVE, null)).toEqual(couvertureDuReleve(RELEVE, null))
+    expect(deployee.couvertureDuReleve([RELEVE[0]], null)).toEqual(couvertureDuReleve([RELEVE[0]], null))
+    expect(couvertureDuReleve(RELEVE, null)).toEqual({ debut: '2025-01-02', fin: ajouterJours('2025-06-30', -MARGE_PRELEVEMENT_JOURS) })
   })
 
   it('compose la même écriture, ligne à ligne, que le mouvement soit une échéance ou un déblocage', () => {
@@ -234,12 +234,12 @@ describe('le garde-fou du bloc EMPRUNT sait encore échouer', () => {
 
   it('attrape une couverture sans marge', () => {
     const derivee = planter(['  return { debut, fin: ajouterJours(fin, -MARGE_PRELEVEMENT_JOURS) }\n}\n\nconst centimesEmprunt', '  return { debut, fin }\n}\n\nconst centimesEmprunt'])
-    echoue(() => expect(derivee.couvertureDuReleve(RELEVE)).toEqual(couvertureDuReleve(RELEVE)))
+    echoue(() => expect(derivee.couvertureDuReleve(RELEVE, null)).toEqual(couvertureDuReleve(RELEVE, null)))
   })
 
   it('attrape une marge qui a changé', () => {
     const derivee = planter(['const MARGE_PRELEVEMENT_JOURS = 10\n', 'const MARGE_PRELEVEMENT_JOURS = 5\n'])
-    echoue(() => expect(derivee.couvertureDuReleve(RELEVE)).toEqual(couvertureDuReleve(RELEVE)))
+    echoue(() => expect(derivee.couvertureDuReleve(RELEVE, null)).toEqual(couvertureDuReleve(RELEVE, null)))
   })
 
   it('attrape une échéance payée pour un autre emprunt qui paierait celui-ci', () => {
