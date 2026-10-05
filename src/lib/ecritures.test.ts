@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  analyserEcritures, calculerBalance, ecrituresAGenerer, ecrituresSansObjet, ligneContrepartieBanque, lignesChargeProduitPourPiece, lignesOuvertes,
-  lignesPourPiece, piecesAComptabiliser, soldeCompte,
+  analyserEcritures, calculerBalance, ecrituresAGenerer, ecrituresSansObjet, ligneContrepartieBanque, ligneContrepartieDirigeant,
+  lignesChargeProduitPourPiece, lignesOuvertes, lignesPourPiece, piecesAComptabiliser, soldeCompte,
 } from './ecritures'
 import type { CibleComptable, LigneAGenerer } from './ecritures'
-import { COMPTE_BANQUE, COMPTE_FOURNISSEURS, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
+import { COMPTE_BANQUE, COMPTE_EXPLOITANT, COMPTE_FOURNISSEURS, COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE } from './comptes'
 import { lignesEngagementPourPiece, lignesFactureEngagement, lignesReglementEngagement } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import type { AcquisitionDuBien } from './amortissements'
@@ -1261,5 +1261,214 @@ describe('la frontière de validation — une part figée ne se compare plus et 
     expect(generation.pieces.map((p) => p.id)).toEqual(['p1', 'p-figee'])
     expect(generation.lignes).toEqual([...attendues(ACHATS), ...lignesPourPiece('d1', figee, cible(ACHATS), true, [], TRESORERIE)])
     expect(generation.dansUnExerciceValide).toEqual([])
+  })
+})
+
+// LA NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT : sans cette contrepartie, sa charge restait
+// seule au brouillon, l'écriture de la pièce déséquilibrée, et la validation refusait son exercice en conseillant de
+// « rapprocher son paiement » — qui n'existe pas, le dirigeant l'ayant payée de sa poche.
+describe('la note de frais en trésorerie — face au compte de l’exploitant', () => {
+  const FRAIS = '625100'
+  const note = (o: Partial<Piece> = {}) => piece({ id: 'p-note', type_piece: 'note_frais', date_piece: '2026-03-10', montant_ttc: 40, tiers: 'Repas', ...o })
+  const solde = (lignes: readonly Pick<LigneAGenerer, 'sens' | 'montant'>[]) =>
+    lignes.reduce((s, l) => s + (l.sens === 'debit' ? 1 : -1) * Math.round(l.montant * 100), 0)
+  const ligne = (l: LigneAGenerer) => [l.compte, l.sens, l.montant, l.date]
+
+  it('écrit la charge et sa contrepartie au 108000, à la date de la pièce, et l’écriture s’équilibre', () => {
+    const lignes = lignesPourPiece('d1', note(), cible(FRAIS), false, [], TRESORERIE)
+    expect(lignes.map(ligne)).toEqual([[FRAIS, 'debit', 40, '2026-03-10'], [COMPTE_EXPLOITANT, 'credit', 40, '2026-03-10']])
+    expect(lignes[1]).toMatchObject({ piece_id: 'p-note', libelle: 'Repas', statut: 'proposee' })
+    expect(lignes[1].ligne_bancaire_id).toBeUndefined()
+    expect(solde(lignes)).toBe(0)
+  })
+
+  it('sur un dossier assujetti, solde la charge ET sa TVA', () => {
+    const lignes = lignesPourPiece('d1', note({ montant_ttc: 120, montant_tva: 20 }), cible(FRAIS), true, [], TRESORERIE)
+    expect(lignes.map(ligne)).toEqual([
+      [FRAIS, 'debit', 100, '2026-03-10'], [COMPTE_TVA_DEDUCTIBLE, 'debit', 20, '2026-03-10'], [COMPTE_EXPLOITANT, 'credit', 120, '2026-03-10'],
+    ])
+  })
+
+  it('remboursée en entier par un virement rapproché, la banque la paie : pas de 108000', () => {
+    const lignes = lignesPourPiece('d1', note(), cible(FRAIS), false, payes(paiement({ piece_id: 'p-note', montant: -40, date: '2026-04-02' })), TRESORERIE)
+    expect(lignes.map((l) => l.compte)).toEqual([FRAIS, COMPTE_BANQUE])
+    expect(solde(lignes)).toBe(0)
+  })
+
+  // Deux remboursements qui la couvrent à l'écart d'alignement près — 50 et 49 pour 100 — : la banque la paie
+  // toute, la note n'a plus de part à elle, et rien ne passe au 108000. L'euro d'écart reste à aligner (#183).
+  it('remboursée en deux fois à l’écart d’alignement près : pas de 108000', () => {
+    const lignes = lignesPourPiece('d1', note({ montant_ttc: 100 }), cible(FRAIS), false, payes(
+      paiement({ id: 'l1', piece_id: 'p-note', montant: -50, date: '2026-04-02' }),
+      paiement({ id: 'l2', piece_id: 'p-note', montant: -49, date: '2026-04-09' }),
+    ), TRESORERIE)
+    expect(lignes.map((l) => l.compte)).not.toContain(COMPTE_EXPLOITANT)
+    expect(lignes.filter((l) => l.compte === COMPTE_BANQUE).map((l) => l.montant)).toEqual([50, 49])
+  })
+
+  it('remboursée en partie, la banque paie sa part et le 108000 le reste, chacun à sa date', () => {
+    const lignes = lignesPourPiece('d1', note({ montant_ttc: 100 }), cible(FRAIS), false,
+      payes(paiement({ piece_id: 'p-note', montant: -60, date: '2026-04-02' })), TRESORERIE)
+    expect(lignes.map(ligne)).toEqual([
+      [FRAIS, 'debit', 40, '2026-03-10'], [FRAIS, 'debit', 60, '2026-04-02'],
+      [COMPTE_BANQUE, 'credit', 60, '2026-04-02'], [COMPTE_EXPLOITANT, 'credit', 40, '2026-03-10'],
+    ])
+    expect(solde(lignes)).toBe(0)
+  })
+
+  // Un acompte versé AVANT la date de la note : la contrepartie paie la part du dirigeant, datée de la note — pas du
+  // premier paiement venu.
+  it('un acompte versé avant la date de la note : la contrepartie reste à la date de la note', () => {
+    const lignes = lignesPourPiece('d1', note({ montant_ttc: 100 }), cible(FRAIS), false,
+      payes(paiement({ piece_id: 'p-note', montant: -60, date: '2026-03-01' })), TRESORERIE)
+    expect(lignes.map(ligne)).toEqual([
+      [FRAIS, 'debit', 60, '2026-03-01'], [FRAIS, 'debit', 40, '2026-03-10'],
+      [COMPTE_BANQUE, 'credit', 60, '2026-03-01'], [COMPTE_EXPLOITANT, 'credit', 40, '2026-03-10'],
+    ])
+  })
+
+  // Une note incohérente — un hors taxe lu qui ne fait pas le TTC — dont la charge vaut déjà ce que la banque paie :
+  // rien à solder, et aucune ligne à zéro euro.
+  it('n’écrit pas de contrepartie à zéro quand la charge vaut déjà ce qui est payé', () => {
+    const lignes = lignesPourPiece('d1', note({ montant_ttc: 120, montant_ht: 50, montant_tva: 10 }), cible(FRAIS), true,
+      payes(paiement({ piece_id: 'p-note', montant: -60, date: '2026-04-02' })), TRESORERIE)
+    expect(solde(lignes)).toBe(0)
+    expect(lignes.filter((l) => l.compte === COMPTE_EXPLOITANT)).toEqual([])
+  })
+
+  it('sans date, prend celle du dépôt, comme la charge', () => {
+    const lignes = lignesPourPiece('d1', note({ date_piece: null, created_at: '2026-05-02T09:00:00Z' }), cible(FRAIS), false, [], TRESORERIE)
+    expect(lignes.map((l) => l.date)).toEqual(['2026-05-02', '2026-05-02'])
+  })
+
+  it('une note de frais négative — un trop-perçu rendu — passe dans l’autre sens', () => {
+    const lignes = lignesPourPiece('d1', note({ montant_ttc: -30 }), cible(FRAIS), false, [], TRESORERIE)
+    expect(lignes.map(ligne)).toEqual([[FRAIS, 'credit', 30, '2026-03-10'], [COMPTE_EXPLOITANT, 'debit', 30, '2026-03-10']])
+  })
+
+  it('le solde se calcule au centime, quelle que soit la répartition des centimes', () => {
+    // 10,01 + 1,99 réglés pour 6,00 : la charge et la TVA s'arrondissent chacune de leur côté.
+    const lignes = lignesPourPiece('d1', note({ montant_ttc: 12, montant_tva: 1.99 }), cible(FRAIS), true,
+      payes(paiement({ piece_id: 'p-note', montant: -6, date: '2026-04-02' })), TRESORERIE)
+    expect(solde(lignes)).toBe(0)
+  })
+
+  it('rien pour une pièce qui n’est pas une note de frais, ni en engagement', () => {
+    expect(lignesPourPiece('d1', note({ type_piece: 'achat' }), cible(FRAIS), false, [], TRESORERIE).map((l) => l.compte)).toEqual([FRAIS])
+    expect(ligneContrepartieDirigeant('d1', note({ type_piece: 'achat' }), [{ sens: 'debit', montant: 40 }], [])).toBeNull()
+    // En engagement, la dette au dirigeant passe déjà par le compte choisi pour le dossier (lib/engagement.ts).
+    expect(lignesPourPiece('d1', note(), cible(FRAIS), false, [], ENGAGEMENT).map((l) => l.compte)).toEqual([FRAIS, '455000'])
+  })
+
+  describe('le contrôle des écritures', () => {
+    const aComptabiliser = (p: Piece) => [{ piece: p, compte: FRAIS, immobilisation: false }]
+    const analyse = (ecritures: EcritureBrouillon[], p: Piece, paiements = paiementsDesPieces([], [])) =>
+      analyserEcritures(ecritures, aComptabiliser(p), false, paiements, TRESORERIE, null)
+
+    it('ce que la génération écrit, il l’accepte — sans paiement, remboursée en partie ou en entier', () => {
+      for (const montant of [null, -60, -100]) {
+        const p = note({ montant_ttc: 100 })
+        const mouvements = montant === null ? [] : [paiement({ piece_id: 'p-note', montant, date: '2026-04-02' })]
+        const paiements = paiementsDesPieces(mouvements, [])
+        const ecritures = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, paiements.get('p-note') ?? [], TRESORERIE))
+        expect(analyse(ecritures, p, paiements), `remboursement ${montant}`).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+      }
+    })
+
+    // L'écriture générée AVANT : la charge seule. Elle n'attend aucun rapprochement — elle est à régénérer.
+    it('l’écriture d’avant, sans sa contrepartie, est à régénérer, pas « en attente de rapprochement »', () => {
+      const p = note()
+      const charge = enBase(lignesChargeProduitPourPiece('d1', p, cible(FRAIS), false, []))
+      expect(analyse(charge, p)).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [p] })
+    })
+
+    it('une contrepartie d’un autre montant est à régénérer, et l’écriture est déséquilibrée', () => {
+      const p = note()
+      const ecritures = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, [], TRESORERIE)).map((e) =>
+        e.compte === COMPTE_EXPLOITANT ? { ...e, montant: 35 } : e)
+      const resultat = analyse(ecritures, p)
+      expect(resultat.piecesDesynchronisees).toEqual([p])
+      expect(resultat.groupesDesequilibres).toEqual([{ pieceId: 'p-note', solde: 5 }])
+    })
+
+    it('une contrepartie restée après un remboursement rapproché est à régénérer', () => {
+      const p = note()
+      const paiements = paiementsDesPieces([paiement({ piece_id: 'p-note', montant: -40, date: '2026-04-02' })], [])
+      const avant = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, [], TRESORERIE))
+      const banque = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, paiements.get('p-note')!, TRESORERIE))
+        .filter((e) => e.compte === COMPTE_BANQUE).map((e) => ({ ...e, id: 'b1' }))
+      const redatees = avant.map((e) => ({ ...e, date: '2026-04-02' }))
+      expect(analyse([...redatees, ...banque], p, paiements).piecesDesynchronisees).toEqual([p])
+      // Le garde symétrique : la contrepartie retirée, comme le fait le rapprochement, l'écriture est juste.
+      expect(analyse([...redatees.filter((e) => e.compte !== COMPTE_EXPLOITANT), ...banque], p, paiements).piecesDesynchronisees).toEqual([])
+    })
+
+    it('une contrepartie à une autre date est à régénérer — sauf sur une pièce sans date', () => {
+      const p = note()
+      const ecritures = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, [], TRESORERIE)).map((e) =>
+        e.compte === COMPTE_EXPLOITANT ? { ...e, date: '2026-03-11' } : e)
+      expect(analyse(ecritures, p).piecesDesynchronisees).toEqual([p])
+      // Sans date de pièce, la date est celle du dépôt — un instant, lu dans le fuseau de qui génère.
+      const sansDate = note({ date_piece: null, created_at: '2026-05-02T09:00:00Z' })
+      const decalees = enBase(lignesPourPiece('d1', sansDate, cible(FRAIS), false, [], TRESORERIE)).map((e) =>
+        e.compte === COMPTE_EXPLOITANT ? { ...e, date: '2026-05-01' } : e)
+      expect(analyse(decalees, sansDate).piecesDesynchronisees).toEqual([])
+    })
+
+    // Le garde symétrique du modèle : en engagement, la dette au dirigeant passe déjà par le compte choisi, et une
+    // note de frais sans règlement reste une facture qui attend le sien.
+    it('en engagement, une note de frais sans règlement attend toujours le sien', () => {
+      const p = note()
+      const ecritures = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, [], ENGAGEMENT))
+      expect(analyserEcritures(ecritures, aComptabiliser(p), false, paiementsDesPieces([], []), ENGAGEMENT, null))
+        .toEqual({ nbSansContrepartie: 1, groupesDesequilibres: [], piecesDesynchronisees: [] })
+    })
+
+    // Hors du jeu fourni, le type de la pièce n'est pas connu : une ligne au 108000 peut y être une CHARGE (un achat
+    // rangé dans une catégorie au compte de l'exploitant). La banque seule fait foi, comme avant.
+    it('hors du jeu fourni, une ligne au 108000 ne passe pas pour une contrepartie', () => {
+      const p = note()
+      const ecritures = enBase(lignesPourPiece('d1', p, cible(FRAIS), false, [], TRESORERIE)).map((e) =>
+        e.compte === COMPTE_EXPLOITANT ? { ...e, montant: 30 } : e)
+      const resultat = analyserEcritures(ecritures, [], false, paiementsDesPieces([], []), TRESORERIE, null)
+      expect(resultat.nbSansContrepartie).toBe(1)
+      expect(resultat.groupesDesequilibres).toEqual([])
+    })
+
+    // Le garde symétrique : un achat sans paiement reste « en attente de rapprochement ».
+    it('un achat sans paiement attend toujours son rapprochement', () => {
+      const p = note({ type_piece: 'achat' })
+      expect(analyse(enBase(lignesPourPiece('d1', p, cible(FRAIS), false, [], TRESORERIE)), p).nbSansContrepartie).toBe(1)
+    })
+
+    // UNE CATÉGORIE DONT LE COMPTE EST LE 108000 — un achat classé en prélèvement personnel, ou une note de frais
+    // rangée là : la charge EST au compte du dirigeant. La note n'y reçoit pas de contrepartie à part, qui
+    // annulerait sa charge ; les deux suivent la règle de toute pièce, la banque de leur paiement.
+    describe('rangée dans une catégorie au compte de l’exploitant', () => {
+      const surLe108 = (p: Piece) => [{ piece: p, compte: COMPTE_EXPLOITANT, immobilisation: false }]
+      const analyse108 = (ecritures: EcritureBrouillon[], p: Piece, paiements = paiementsDesPieces([], [])) =>
+        analyserEcritures(ecritures, surLe108(p), false, paiements, TRESORERIE, null)
+
+      it('la génération n’écrit pas de contrepartie qui annulerait la charge', () => {
+        expect(lignesPourPiece('d1', note(), cible(COMPTE_EXPLOITANT), false, [], TRESORERIE).map(ligne))
+          .toEqual([[COMPTE_EXPLOITANT, 'debit', 40, '2026-03-10']])
+      })
+
+      it('sans paiement, elle attend son rapprochement comme toute pièce — ni « déséquilibrée » ni « à régénérer »', () => {
+        for (const type_piece of ['note_frais', 'achat'] as const) {
+          const p = note({ type_piece })
+          expect(analyse108(enBase(lignesPourPiece('d1', p, cible(COMPTE_EXPLOITANT), false, [], TRESORERIE)), p), type_piece)
+            .toEqual({ nbSansContrepartie: 1, groupesDesequilibres: [], piecesDesynchronisees: [] })
+        }
+      })
+
+      it('payée, son écriture face à la banque est juste', () => {
+        const p = note()
+        const paiements = paiementsDesPieces([paiement({ piece_id: 'p-note', montant: -40, date: '2026-04-02' })], [])
+        const ecritures = enBase(lignesPourPiece('d1', p, cible(COMPTE_EXPLOITANT), false, paiements.get('p-note')!, TRESORERIE))
+        expect(ecritures.map((e) => e.compte)).toEqual([COMPTE_EXPLOITANT, COMPTE_BANQUE])
+        expect(analyse108(ecritures, p, paiements)).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] })
+      })
+    })
   })
 })

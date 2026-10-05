@@ -3,6 +3,8 @@ import { formaterFec, genererFec, libelleCompte, nomFichierFec, numeroterFec, nu
 import { COMPTE_BANQUE } from './comptes'
 import type { ANouveau, Categorie, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
+import { lignesPourPiece, type LigneAGenerer } from './ecritures'
+import { defautsDeNumerotation } from './validationExercice'
 
 const piece = (id: string, o: Partial<Piece> = {}): Piece => ({
   id, dossier_id: 'd1', nom_fichier: `${id}.pdf`, chemin_stockage: '', statut: 'validee',
@@ -708,6 +710,23 @@ describe('numeroterFec — ce que la validation reçoit', () => {
     }
     const n = numeroterFec([], [], [], [ouverture], 'tresorerie', [])
     expect(n.aNouveaux.map((a) => [a.compteLib, a.ecritureLib])).toEqual([['Banque', 'À-nouveau 51210000 BNP Paribas']])
+  })
+})
+
+// La note de frais en trésorerie s'écrit face au compte de l'exploitant (lib/ecritures.ts) : son écriture part au
+// journal des achats, équilibrée, et la validation n'y trouve plus rien à redire — elle refusait son exercice.
+describe('numeroterFec — la note de frais en trésorerie', () => {
+  it('fait une écriture équilibrée au journal des achats, le 108000 nommé, sans compte auxiliaire', () => {
+    const note = piece('note', { type_piece: 'note_frais', tiers: 'Restaurant', montant_ttc: 42.5, nom_fichier: 'ticket.jpg' })
+    const enBase = (l: LigneAGenerer, i: number): EcritureBrouillon => ligne('note', { ...l, id: `n${i}`, ligne_bancaire_id: null })
+    const brouillon = lignesPourPiece('d1', note, { compte: '625700', immobilisation: false }, false, [], { mode: 'tresorerie', compteNotesDeFrais: '455000' })
+      .map(enBase)
+    const n = numeroterFec(brouillon, [note], [], [], 'tresorerie', [])
+    expect(n.lignes.map((l) => [l.journal, l.numero, l.ecriture.compte, l.ecriture.sens, l.ecriture.montant, l.compteLib, l.compAuxNum])).toEqual([
+      ['AC', 1, '625700', 'debit', 42.5, '625700', null],
+      ['AC', 1, '108000', 'credit', 42.5, "Compte de l'exploitant", null],
+    ])
+    expect(defautsDeNumerotation(n)).toEqual([])
   })
 })
 

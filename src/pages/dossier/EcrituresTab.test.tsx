@@ -306,6 +306,32 @@ describe('EcrituresTab — écritures que la pièce ne justifie plus', () => {
   })
 })
 
+// LA NOTE DE FRAIS EN TRÉSORERIE s'écrit face au compte de l'exploitant (lib/ecritures.ts) : sans cette contrepartie,
+// son écriture restait déséquilibrée et la validation de son exercice impossible. Ce que ces tests gardent : que la
+// génération et « Régénérer » l'écrivent, et que l'écriture d'avant se dise à régénérer, pas « en attente de
+// rapprochement » — le dirigeant l'a payée de sa poche, aucun mouvement ne viendra.
+describe('EcrituresTab — la note de frais en trésorerie', () => {
+  const note = (o: Record<string, unknown> = {}) => piece({ id: 'p-note', type_piece: 'note_frais', montant_ttc: 40, tiers: 'RESTAURANT', ...o })
+
+  it('génère la charge et sa contrepartie au 108000', async () => {
+    poser({ pieces: [note()] })
+    monter()
+    const bouton = await screen.findByRole('button', { name: /Générer les écritures manquantes \(1\)/ })
+    await act(async () => { bouton.click() })
+    expect(faux.insertions[0].lignes.map((l) => [l.compte, l.sens, l.montant])).toEqual([['606100', 'debit', 40], ['108000', 'credit', 40]])
+  })
+
+  it('dit l’écriture d’avant à régénérer, pas en attente de rapprochement, et la régénère avec sa contrepartie', async () => {
+    poser({ pieces: [note()], ecritures_brouillon: [ecriture({ piece_id: 'p-note', montant: 40, libelle: 'RESTAURANT' })] })
+    monter()
+    await screen.findByText('1 à régénérer')
+    expect(screen.queryByText(/en attente de rapprochement bancaire/)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Régénérer' }).click() })
+    await waitFor(() => expect(faux.insertions).toHaveLength(1))
+    expect(faux.insertions[0].lignes.map((l) => [l.compte, l.sens, l.montant])).toEqual([['606100', 'debit', 40], ['108000', 'credit', 40]])
+  })
+})
+
 // L'ÉCRITURE D'ACQUISITION (ligne 26.6, étape b) : la facture d'un bien s'écrit sur le compte d'immobilisation
 // de sa NATURE — lue avec celles du cabinet —, sa TVA au 445620. Ce que ces tests gardent et qu'aucun test de
 // lib ne voit : l'écran LIT les natures, les passe à la génération, à la régénération et aux contrôles, et
@@ -1281,8 +1307,10 @@ describe('EcrituresTab — le modèle comptable', () => {
 
     const engagement = await screen.findByRole('button', { name: 'Engagement (BIC, IS)' })
     expect(screen.getByRole('button', { name: 'Trésorerie (BNC, 2035)' }).getAttribute('aria-pressed')).toBe('true')
-    // En trésorerie, rien sur les notes de frais : elles passent face à la banque comme toute pièce.
+    // En trésorerie, rien à choisir pour les notes de frais : ce que l'exploitant a payé de sa poche passe toujours à
+    // son compte, et l'explication du modèle le dit (lib/ecritures.ts, `ligneContrepartieDirigeant`).
     expect(screen.queryByText(/Note de frais payée personnellement/)).toBeNull()
+    expect(screen.getByText(/Une note de frais que l’exploitant a payée de sa poche s’écrit au 108 – Compte de l’exploitant/)).toBeTruthy()
 
     await act(async () => { engagement.click() })
     expect(faux.misesAJour).toEqual([{ table: 'dossiers', valeurs: { mode_comptable: 'engagement' } }])
@@ -1312,6 +1340,17 @@ describe('EcrituresTab — le modèle comptable', () => {
 
     await screen.findByText(/Il ne se change plus : le brouillon porte 1 écriture/)
     expect(screen.queryByRole('button', { name: 'Engagement (BIC, IS)' })).toBeNull()
+  })
+
+  // Le compte du dirigeant, dit dans les deux modèles : en trésorerie, le 108 de l'exploitant quel que soit le compte
+  // des notes de frais enregistré sur le dossier — celui-là ne vaut qu'en engagement (lib/virementPersonnel.ts).
+  it('rappelle le compte du dirigeant : le 108 en trésorerie, le compte choisi en engagement', async () => {
+    poser({ pieces: [piece()], ecritures_brouillon: [ecriture()] })
+    const { unmount } = monter()
+    await screen.findByText(/notes de frais et virements personnels du dirigeant en 108 – Compte de l’exploitant\./)
+    unmount()
+    monter(false, ENGAGEMENT)
+    await screen.findByText(/notes de frais et virements personnels du dirigeant en 455 – Compte courant d’associé\./)
   })
 
   it('ne l’offre pas sur une lecture partielle du brouillon — il pourrait porter des écritures qu’on ne voit pas', async () => {

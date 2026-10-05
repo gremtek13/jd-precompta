@@ -6408,6 +6408,50 @@ d'environnement dans la même édition.
   du PCG, au premier jour de la période non encore clôturée, avec mention de sa date de survenance :
   l'application ne le modélise pas, la base la refuse et le dit.
   **LATENT** : aucun exercice validé et aucune écriture validée en base (04/10/2026).
+- **UNE NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT (108000)** (05/10/2026, trouvé en préparant
+  les écrans de la validation, `ligneContrepartieDirigeant` dans `lib/ecritures.ts`). Ce que le dirigeant paie de sa
+  poche ne passe pas par le compte professionnel : en trésorerie, une note de frais n'avait AUCUNE contrepartie. Sa
+  charge restait seule au brouillon, l'écriture de la pièce partait déséquilibrée dans le FEC — et la validation, qui
+  refuse un exercice dont une écriture ne s'équilibre pas, conseillait de « rapprocher son paiement », qui n'existe
+  pas. Un dossier en trésorerie qui portait UNE note de frais ne pouvait donc pas être validé.
+  **La part que le dirigeant a payée s'écrit face au 108000**, son compte en trésorerie (`compteDuDirigeant`, celui
+  de ses virements personnels) : ce qu'il paie pour le cabinet est un apport, ni charge ni recette, et la 2035 compte
+  la dépense comme avant. La ligne SOLDE les autres au centime — la charge, sa TVA et la banque de chaque paiement —
+  et prend la date de la part qu'elle paie (la date de la pièce, sinon celle du dépôt). Remboursée par un virement
+  du compte professionnel rapproché d'elle, la note n'a plus de part « note de frais » : la banque la paie, pas de
+  108000 ; remboursée en partie, la banque paie sa part et le 108000 le reste. En engagement rien ne change : la
+  dette au dirigeant passait déjà par le compte choisi pour le dossier.
+  **Ce qui suit** : la génération et « Régénérer » l'écrivent ; le rapprochement d'un remboursement complet retire la
+  contrepartie AVANT de redater l'écriture — redatée, elle resterait à côté de la banque et compterait deux fois ce
+  que la banque paie ; le contrôle des écritures compare la contrepartie présente à celle attendue (absente d'une
+  écriture générée avant, d'un autre montant, restée après un remboursement, à une autre date sur une pièce datée)
+  et ne dit plus une note de frais « en attente de rapprochement » : sans contrepartie, elle est « à régénérer ».
+  L'équilibre se juge sur une écriture qui porte la banque OU cette contrepartie ; `ecrituresSansObjet` l'écarte
+  comme la ligne de tiers d'une facture d'engagement ; le FEC la porte dans l'écriture de la pièce, sans auxiliaire.
+  L'onglet Écritures dit le compte du dirigeant dans les deux modèles.
+  **UNE CATÉGORIE DONT LE COMPTE EST LE 108000** — un achat classé en prélèvement personnel — porte sa CHARGE au
+  compte du dirigeant : une note de frais rangée là ne reçoit pas de contrepartie à part, qui annulerait sa charge, et
+  suit la règle de toute pièce (la banque de son paiement). Un seul prédicat (`estContrepartieDirigeant`) répond pour
+  la génération et pour le contrôle, sans quoi l'un écrirait ce que l'autre dit « à régénérer » ; hors du jeu fourni,
+  où le type d'une pièce n'est pas connu, la banque seule fait foi ; et le rapprochement ne retire la contrepartie que
+  si la charge est ailleurs. Trouvé en écrivant la copie de l'assistant : la première version prenait toute ligne au
+  108000 d'une pièce pour une contrepartie, et aurait dit « déséquilibrée » un achat classé en prélèvement personnel
+  qui attend son paiement.
+  **L'assistant** suit la même règle (bloc dupliqué d'`agent-comptable`, gardé par `agentComptableAnalyse.test.ts`) :
+  sa copie ne refait pas la génération, la contrepartie attendue y est le solde de la charge telle que la génération
+  la retient (le TTC quand rien ne se ventile, sinon le hors taxe lu, à défaut le TTC moins la TVA), de sa TVA et de
+  la banque. Le compte de l'exploitant passe dans le bloc copié de src/lib/ecritures.ts, et les cinq gardes qui
+  extraient le bloc AFFECTATION le reçoivent comme le compte banque. Douze dérives plantées dans la vraie source sont
+  attrapées, chacune par une ASSERTION — jamais par une erreur d'exécution, qui passerait pour une prise. **Pas
+  encore déployée** : elle part avec la frontière de validation (4e), en un seul redéploiement.
+  **LATENT, et mesuré** : aucune note de frais en base, aucune catégorie au 108000 (05/10/2026).
+  **Trente-six mutations, trente-quatre mordaient à la première passe.** Les deux survivantes : une garde sur le
+  type de la pièce, redondante — seule une note de frais a une part « note de frais » —, retirée des deux côtés ; et la
+  garde de la part absente, qu'aucun test n'exerçait : deux remboursements qui couvrent la note à l'écart d'alignement
+  près (50 et 49 pour 100) la font jouer, et elle mord depuis. Ce cas a montré un second trou de centimes, inscrit avec
+  le premier : des paiements multiples dont la somme est sous le seuil sans égaler la pièce, que rien n'aligne. Et le
+  premier jeu d'essai de la parité payait une note NÉGATIVE par un décaissement : faux, un trop-perçu que le
+  dirigeant rend se solde par un encaissement — l'essai avait tort, pas le code.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et

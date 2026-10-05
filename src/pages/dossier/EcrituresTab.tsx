@@ -25,6 +25,7 @@ import type {
 import { acquisitionsDesBiens } from '../../lib/amortissements'
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsAReecrire, refusVentilation } from '../../lib/ventilationBanque'
 import { libelleTaux } from '../../lib/tvaDuReleve'
+import { compteDuDirigeant } from '../../lib/virementPersonnel'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -592,7 +593,9 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       setChangementModele(false)
     }
   }
-  const compteNotesDeFrais = COMPTES_NOTES_DE_FRAIS.find((c) => c.compte === modele.compteNotesDeFrais)!
+  // Le compte du dirigeant, dit dans les deux modèles : en trésorerie aussi, ce qu'il a payé de sa poche et ses
+  // virements personnels passent par un compte qui n'est ni une charge ni une recette (lib/virementPersonnel.ts).
+  const compteDirigeant = COMPTES_NOTES_DE_FRAIS.find((c) => c.compte === compteDuDirigeant(modele))!
 
   // Retire du brouillon TOUTES les lignes d'une pièce, contrepartie banque comprise — et c'est la
   // seule forme correcte. N'ôter que la charge laisserait la ligne banque SEULE dans son groupe,
@@ -720,7 +723,7 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
         ) : (
           <p className="muted" style={{ margin: 0 }}>
             <strong>{LIBELLES_MODE[modele.mode]}</strong>
-            {modele.mode === 'engagement' && ` — notes de frais et virements personnels du dirigeant en ${compteNotesDeFrais.libelle.replace(/ \(.*\)$/, '')}`}.
+            {` — notes de frais et virements personnels du dirigeant en ${compteDirigeant.libelle.replace(/ \(.*\)$/, '')}`}.
             {' '}{raisonVerrouModele}
           </p>
         )}

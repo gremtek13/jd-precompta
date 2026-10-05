@@ -52,9 +52,12 @@ function extraire(source: string): Copie {
   }
   const banque = /const COMPTE_BANQUE = "(\d+)"/.exec(source)
   expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
+  // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
+  const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
+  expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
   const tva = /const COMPTE_TVA_COLLECTEE = "(\d+)"/.exec(source)
   expect(tva, '`COMPTE_TVA_COLLECTEE` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_TVA_COLLECTEE = "${tva![1]}"\n${bornes('AFFECTATION')}\n${bornes('VENTILATION')}`
+  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\nconst COMPTE_TVA_COLLECTEE = "${tva![1]}"\n${bornes('AFFECTATION')}\n${bornes('VENTILATION')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes, mouvementsVentilesDesynchronises }`)() as Copie
 }
