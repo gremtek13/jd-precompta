@@ -642,6 +642,30 @@ function brouillonTresorerie(
 }
 
 const noteDeFrais = (o: Partial<Piece> = {}) => piece({ id: 'p1', type_piece: 'note_frais', ...o })
+
+// #183 : la TVA d'une date complète sa charge, et les soldes de chaque date se comparent à la génération. Une écriture
+// générée avec l'ancien arrondi est juste au total et fausse à chaque date : les deux copies la disent à régénérer.
+describe('agent-comptable / le solde de chaque compte à chaque date (copie déployée)', () => {
+  const p = piece({ id: 'p1', date_piece: '2025-03-01', montant_ht: 33.33, montant_tva: 6.67, montant_ttc: 40 })
+  const deux = [paiement({ id: 'l1', date: '2025-03-10', montant: -20 }), paiement({ id: 'l2', date: '2025-04-02', montant: -20 })]
+
+  it('se tait sur l’écriture que la génération écrit, et dit à régénérer celle de l’ancien arrondi', () => {
+    const juste = brouillonTresorerie(p, deux)
+    expect(memeResultat(juste, [p], [], deployee, true, deux).piecesDesynchronisees).toEqual([])
+    const ancienArrondi = juste.map((e) => e.compte !== COMPTE_TVA_DEDUCTIBLE ? e : { ...e, montant: e.date === '2025-03-10' ? 3.34 : 3.33 })
+    expect(memeResultat(ancienArrondi, [p], [], deployee, true, deux).piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('compare le solde de chaque compte, pas son découpage en lignes', () => {
+    const coupee = brouillonTresorerie(p, deux).flatMap((e) => e.compte === COMPTE_ACHATS && e.date === '2025-03-10'
+      ? [{ ...e, id: `${e.id}a`, montant: 10 }, { ...e, id: `${e.id}b`, montant: 6.67 }] : [e])
+    expect(memeResultat(coupee, [p], [], deployee, true, deux).piecesDesynchronisees).toEqual([])
+    // Deux lignes qui s'annulent, à une date qui n'en porte pas d'autre : aucun solde ne bouge.
+    const annulees = [...brouillonTresorerie(p, deux), ecriture({ id: 'x1', piece_id: 'p1', date: '2025-03-20', montant: 5 }),
+      ecriture({ id: 'x2', piece_id: 'p1', date: '2025-03-20', sens: 'credit', montant: 5 })]
+    expect(memeResultat(annulees, [p], [], deployee, true, deux).piecesDesynchronisees).toEqual([])
+  })
+})
 const rembourse = (montant: number) => paiement({ id: 'l1', piece_id: 'p1', date: '2025-04-02', montant })
 const COMPTE_EXPLOITANT = '108000'
 const RIEN = { nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] }
@@ -737,6 +761,9 @@ function batterieDuGenerateur(copie: typeof deployee): string[][] {
     piece({ montant_ht: 100.01 }),
     piece({ montant_ht: null, montant_tva: null }),
     piece({ montant_ht: 120, montant_tva: 0 }),
+    // 40 € TTC dont 6,67 de TVA : payée à moitié, la charge et la TVA arrondies chacune de son côté ajoutaient un centime
+    // à une date. La TVA d'une date complète sa charge.
+    piece({ montant_ht: 33.33, montant_tva: 6.67, montant_ttc: 40 }),
     // Une TVA d'un centime : payée en trois fois, ses deux premières parts s'arrondissent à zéro et ne font pas de ligne.
     piece({ montant_ht: 0.09, montant_tva: 0.01, montant_ttc: 0.1 }),
     piece({ montant_ht: -50, montant_tva: -10, montant_ttc: -60 }),
@@ -1044,7 +1071,12 @@ describe('le garde-fou sait encore échouer', () => {
       .toBeGreaterThan(-1)
     const fin = source.indexOf('  if (surUnAutreCompte) return true\n', debut)
     expect(fin, 'fin de la comparaison de compte introuvable').toBeGreaterThan(debut)
-    return source.slice(0, debut) + source.slice(fin + '  if (surUnAutreCompte) return true\n'.length)
+    // La comparaison de compte vit à DEUX endroits depuis que les soldes de chaque date se comparent à la génération
+    // (#183) : `surUnAutreCompte`, et le compte dans la clé des soldes. La dérive retire les deux — le code d'avant ne
+    // comparait que le montant ; retirer l'un seul ne change plus rien, l'autre le rattrapant.
+    const sansSurUnAutreCompte = source.slice(0, debut) + source.slice(fin + '  if (surUnAutreCompte) return true\n'.length)
+    return planter(sansSurUnAutreCompte, '      const cle = `${dateComparee ? l.date : ""}|${l.compte}`\n',
+      '      const cle = `${dateComparee ? l.date : ""}`\n', 'la clé des soldes par date')
   }
 
   it('attrape une copie déployée à qui il manque la comparaison de compte', () => {
@@ -1062,8 +1094,13 @@ describe('le garde-fou sait encore échouer', () => {
     return source.replace(avant, '    if (false) return acquisition.compte')
   }
 
+  // Le code d'avant ce chantier attendait `date_piece` partout. La date attendue vient désormais de la génération à
+  // laquelle les soldes de chaque date se comparent (#183) : c'est là que la dérive oublie les paiements.
   function sansPaiements(): string {
-    return planter(sourceDeployee(), '  const attendues = datesAttendues(p, paiementsPiece)\n', '  const attendues = datesAttendues(p, [])\n', 'la date attendue')
+    const source = planter(sourceDeployee(), '  const dateComparee = datesAttendues(p, paiementsPiece) !== null\n',
+      '  const dateComparee = datesAttendues(p, []) !== null\n', 'la date attendue')
+    return planter(source, '  const generees = soldesParDate(lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece))\n',
+      '  const generees = soldesParDate(lignesChargeProduitPourPiece(p, cible, assujettiTva, []))\n', 'les soldes attendus')
   }
 
   it('attrape une copie déployée qui attend la date de facture malgré le paiement', () => {

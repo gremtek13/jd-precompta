@@ -393,10 +393,14 @@ function lignesChargeProduitPourPiece(
   const sensPiece: Sens = piece.type_piece === "vente" ? "credit" : "debit"
   const ligne = (date: string, compte: string, montant: number): LigneAttendue =>
     ({ date, compte, sens: montant >= 0 ? sensPiece : inverse(sensPiece), montant: Math.abs(montant) })
+  // La TVA d'une date complète sa charge : réparties ensemble, comme la pièce, puis la charge ôtée — l'écriture de chaque
+  // date tombe juste face à sa banque, et la TVA de la pièce reste entière.
   const tva = tvaVentilee(piece, assujettiTva)
   const charge = tva ? montantRetenu(piece, assujettiTva)! : piece.montant_ttc!
   const charges = centimesParDate(piece, charge, paiements)
-  const tvas = tva ? centimesParDate(piece, tva, paiements) : []
+  const tvas = tva
+    ? centimesParDate(piece, charge + tva, paiements).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
+    : []
   return charges.flatMap((f, i) => {
     const lignes = [ligne(f.date, cible.compte, f.centimes / 100)]
     if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i].centimes / 100))
@@ -571,11 +575,23 @@ function tresorerieDesynchronisee(
   // prétend à aucun exercice, donc il n'y a rien à contredire. Et la date attendue est celle du
   // PAIEMENT quand le rapprochement la connaît : les dates présentes doivent être exactement
   // celles attendues.
-  const attendues = datesAttendues(p, paiementsPiece)
-  if (attendues) {
-    const presentes = new Set(lignes.map((e) => e.date))
-    if (presentes.size !== attendues.size || [...attendues].some((d) => !presentes.has(d))) return true
+  // ET LES MONTANTS DE CHAQUE DATE, que ni le total ni l'ensemble des dates ne voient : à chaque date, ce que la charge et
+  // sa TVA portent sur chaque compte est ce que la génération y écrit, au centime — une écriture générée avant que la
+  // TVA d'une date complète sa charge était juste au total et déséquilibrée dans chacun des exercices qu'elle traverse.
+  // Le SOLDE de chaque compte à chaque date, pas le découpage en lignes — un solde nul ne compte pas ; la date seulement
+  // si chaque part en a une.
+  const dateComparee = datesAttendues(p, paiementsPiece) !== null
+  const soldesParDate = (ls: readonly { date: string; compte: string; sens: string; montant: number }[]) => {
+    const soldes = new Map<string, number>()
+    for (const l of ls) {
+      const cle = `${dateComparee ? l.date : ""}|${l.compte}`
+      soldes.set(cle, (soldes.get(cle) ?? 0) + (l.sens === "debit" ? 1 : -1) * Math.round(l.montant * 100))
+    }
+    return [...soldes].filter(([, centimes]) => centimes !== 0).map(([cle, centimes]) => `${cle}|${centimes}`).sort()
   }
+  const presentes = soldesParDate(lignes)
+  const generees = soldesParDate(lignesChargeProduitPourPiece(p, cible, assujettiTva, paiementsPiece))
+  if (presentes.length !== generees.length || presentes.some((c, i) => c !== generees[i])) return true
   const total = lignes.reduce((s, e) => s + (e.sens === sensPiece ? e.montant : -e.montant), 0)
   if (Math.abs(total - (p.montant_ttc ?? 0)) > EPSILON_EQUILIBRE) return true
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT : une pièce payée en deux fois, ou réglée en partie par un
