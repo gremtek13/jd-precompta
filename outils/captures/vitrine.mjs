@@ -194,6 +194,32 @@ const VUES = [
   { nom: 'mobile-concordance-ecarts', chemin: '#/dossiers/d1/cloture', l: 390, h: 844, theme: 'light', reduite: false, deplier: 'Voir les écarts', vers: 'Voir les écarts', enTete: true },
   { nom: 'pc-concordance-assujetti', chemin: '#/dossiers/d7/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Concordance avec les écritures' },
   { nom: 'pc-concordance-ouverture', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2021', vers: 'Concordance avec les écritures' },
+  // La validation d'un exercice (lib/prealablesValidation.ts, lib/validationExercice.ts) : la kinésithérapeute, dont 2025
+  // est validé — la carte de l'exercice validé, son empreinte vérifiée, puis ce que la validation fige dans chaque écran —
+  // et 2026 en cours ; l'ostéopathe, dont 2025 est validable ; la société en engagement, que sa dotation 2025 manquante
+  // empêche de valider.
+  { nom: 'pc-valide-clair', chemin: '#/dossiers/d9/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Exercice 2025 validé' },
+  { nom: 'pc-valide-sombre', chemin: '#/dossiers/d9/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, exercice: '2025', vers: 'Exercice 2025 validé' },
+  { nom: 'pc-valide-formulaire', chemin: '#/dossiers/d9/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: '2035 validée le' },
+  { nom: 'pc-valide-empreinte', chemin: '#/dossiers/d9/cloture', l: 1280, h: 800, theme: 'light', reduite: false, exercice: '2025', apres: 'Vérifier l’empreinte', vers: 'Empreinte vérifiée' },
+  { nom: 'pc-valide-assistant', chemin: '#/dossiers/d9/cloture', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', exercice: '2025', vers: 'Exercice 2025 validé' },
+  { nom: 'pc-valide-1024', chemin: '#/dossiers/d9/cloture', l: 1024, h: 768, theme: 'light', reduite: false, exercice: '2025', vers: 'Exercice 2025 validé' },
+  { nom: 'mobile-valide-clair', chemin: '#/dossiers/d9/cloture', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', vers: 'Exercice 2025 validé' },
+  { nom: 'pc-valide-en-cours', chemin: '#/dossiers/d9/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Valider l’exercice 2026' },
+  { nom: 'pc-validable-clair', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Valider l’exercice 2025' },
+  { nom: 'pc-validable-sombre', chemin: '#/dossiers/d10/cloture', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Valider l’exercice 2025' },
+  { nom: 'mobile-validable-clair', chemin: '#/dossiers/d10/cloture', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Valider l’exercice 2025' },
+  { nom: 'pc-validation-bloquee', chemin: '#/dossiers/d8/cloture', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Valider l’exercice 2025' },
+  { nom: 'pc-validation-checklist', chemin: '#/dossiers/d1/cloture', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Valider l’exercice 2026' },
+  { nom: 'pc-fige-ecritures', chemin: '#/dossiers/d9/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025' },
+  { nom: 'pc-fige-ecritures-sombre', chemin: '#/dossiers/d9/ecritures', l: 1280, h: 800, theme: 'dark', reduite: false, exercice: '2025' },
+  { nom: 'pc-fige-banque', chemin: '#/dossiers/d9/banque', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', clic: 'Tous', cellule: 'VIR CPAM REMBOURSEMENTS JUIN' },
+  { nom: 'pc-fige-piece', chemin: '#/dossiers/d9/pieces', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', cellule: 'Assurance Pro Santé' },
+  { nom: 'mobile-fige-piece', chemin: '#/dossiers/d9/pieces', l: 390, h: 844, theme: 'light', reduite: false, exercice: '2025', cellule: 'Assurance Pro Santé' },
+  { nom: 'pc-fige-immobilisations', chemin: '#/dossiers/d9/immobilisations', l: 1440, h: 900, theme: 'light', reduite: false, apres: '^Tableau$', vers: 'Amortissement cumulé' },
+  { nom: 'pc-fige-vehicules', chemin: '#/dossiers/d9/informations', l: 1440, h: 900, theme: 'light', reduite: false, apres: '^2025 ·', vers: 'Véhicules et barème kilométrique' },
+  { nom: 'pc-fige-cotisations', chemin: '#/dossiers/d9/cotisations', l: 1440, h: 900, theme: 'light', reduite: false },
+  { nom: 'pc-fige-virements', chemin: '#/dossiers/d9/virements', l: 1440, h: 900, theme: 'light', reduite: false },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

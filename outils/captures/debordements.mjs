@@ -69,7 +69,60 @@ const VISITES = [
   },
   { dossier: 'd7', onglet: 'immobilisations', nom: 'assujetti/immobilisations' },
   { dossier: 'd8', onglet: 'immobilisations', nom: 'engagement/immobilisations' },
+  // La VALIDATION d'un exercice : la kinésithérapeute, dont 2025 est validé — la carte de l'exercice validé et son
+  // empreinte vérifiée, puis ce que la validation fige dans chaque écran — et 2026 en cours ; l'ostéopathe, dont 2025
+  // est validable ; la société en engagement, que sa dotation 2025 manquante bloque. L'exercice 2025 se choisit dans
+  // l'en-tête du dossier.
+  { dossier: 'd9', onglet: 'cloture', nom: 'validation/en-cours' },
+  { dossier: 'd9', onglet: 'cloture', nom: 'validation/validé', apres: exercice('2025') },
+  {
+    dossier: 'd9', onglet: 'cloture', nom: 'validation/empreinte',
+    apres: async (page) => {
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Vérifier l’empreinte', exact: true }).click()
+    },
+  },
+  { dossier: 'd10', onglet: 'cloture', nom: 'validation/validable' },
+  { dossier: 'd8', onglet: 'cloture', nom: 'validation/bloquée', apres: exercice('2025') },
+  { dossier: 'd9', onglet: 'ecritures', nom: 'figé/ecritures', apres: exercice('2025') },
+  {
+    dossier: 'd9', onglet: 'banque', nom: 'figé/banque',
+    apres: async (page) => {
+      await exercice('2025')(page)
+      await page.getByRole('button', { name: 'Tous', exact: true }).click()
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'pieces', nom: 'figé/fiche',
+    apres: async (page) => {
+      await exercice('2025')(page)
+      await page.getByRole('cell', { name: 'Assurance Pro Santé' }).first().click()
+    },
+  },
+  {
+    dossier: 'd9', onglet: 'immobilisations', nom: 'figé/immobilisations',
+    apres: (page) => page.getByRole('button', { name: 'Tableau', exact: true }).first().click(),
+  },
+  // La carte Véhicules suit l'exercice du dossier, que les visites précédentes ont déjà mis sur 2025 (la page ne se
+  // recharge pas d'une visite à l'autre) ; sinon, elle propose elle-même « 2025 · 1 ».
+  {
+    dossier: 'd9', onglet: 'informations', nom: 'figé/véhicules',
+    apres: async (page) => {
+      const bouton = page.getByRole('button', { name: /^2025 ·/ })
+      if (await bouton.count()) await bouton.first().click()
+    },
+  },
+  { dossier: 'd9', onglet: 'cotisations', nom: 'figé/cotisations' },
+  { dossier: 'd9', onglet: 'virements', nom: 'figé/virements' },
 ]
+
+// Choisit un exercice dans le sélecteur de l'en-tête du dossier, dont les boutons sont des onglets.
+function exercice(annee) {
+  return async (page) => {
+    await page.getByRole('tab', { name: annee, exact: true }).first().click()
+    await page.waitForTimeout(400)
+  }
+}
 const largeur = Number(process.argv[2] ?? 1440)
 const avecPanneau = process.argv[3] !== 'sans'
 

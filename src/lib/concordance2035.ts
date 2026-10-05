@@ -212,7 +212,11 @@ export function concordance2035(
     const cle = cleDeReference(reference)
     const exercice = anneeDe(e.date)
     if (exercice !== annee) {
-      exercicesParCle.set(cle, (exercicesParCle.get(cle) ?? new Set()).add(exercice))
+      // LES ÉCRITURES D'UN BIEN DANS LES AUTRES EXERCICES SONT SES AUTRES DOTATIONS, pas celle-ci écrite ailleurs :
+      // une dotation tombe au 31 décembre de son exercice, la base l'impose. Les compter ici faisait dire de la
+      // dotation de l'exercice qu'elle était « datée » de l'exercice d'avant, « à régénérer » — dès la deuxième année
+      // d'un bien, tant que sa dotation n'est pas écrite —, au lieu de l'envoyer l'écrire.
+      if (reference.type !== 'bien') exercicesParCle.set(cle, (exercicesParCle.get(cle) ?? new Set()).add(exercice))
       continue
     }
     const effet = effetDeLEcriture(e)

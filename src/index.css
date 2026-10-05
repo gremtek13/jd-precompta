@@ -177,6 +177,16 @@ h3 { font-size: 1.02rem; }
   box-shadow: 0 0 0 3px var(--ring-primary);
 }
 .field input::placeholder, .field textarea::placeholder { color: color-mix(in srgb, var(--color-text-light) 70%, transparent); }
+/* Un champ qu'on ne peut pas modifier le MONTRE : les couleurs posées ci-dessus effaçaient celles du navigateur, et
+   la fiche d'une pièce d'un exercice validé gardait l'air d'un formulaire qu'on remplit — on cliquait, rien ne
+   se passait. Le bandeau dit pourquoi ; le champ dit qu'il est fermé. */
+.field input:disabled, .field select:disabled, .field textarea:disabled {
+  background: var(--color-surface-2);
+  color: var(--color-text-light);
+  box-shadow: none;
+  cursor: not-allowed;
+}
+.field input:disabled:hover, .field select:disabled:hover, .field textarea:disabled:hover { border-color: var(--color-border-strong); }
 /* `wrap` : les champs passent à la ligne au lieu de déborder quand la largeur manque — le panneau de
    droite ouvert rétrécit le panneau central, et quatre champs date/montant côte à côte n'y tiennent plus.
    Une rangée qui tient déjà ne change pas : on ne passe à la ligne qu'à la largeur minimale des champs. */
@@ -539,6 +549,9 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    défilement latéral que rien n'annonce. Mesuré, pas supposé. */
 .table-formulaire td input,
 .table-formulaire td select { width: 100%; box-sizing: border-box; }
+/* Fermé, un champ le montre — la ligne du cadre 7 d'un exercice validé, comme la fiche d'une pièce (voir `.field`). */
+.table-formulaire td input:disabled,
+.table-formulaire td select:disabled { background: var(--color-surface-2); color: var(--color-text-light); cursor: not-allowed; }
 .table-scroll::-webkit-scrollbar { height: 8px; width: 8px; }
 .table-scroll::-webkit-scrollbar-thumb { background: var(--color-border-strong); border-radius: 999px; }
 

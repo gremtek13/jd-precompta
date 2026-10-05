@@ -261,6 +261,19 @@ describe('concordance2035 — ce que la 2035 compte et que le brouillon ne porte
     expect(motifs(concordance(d).ecarts)).toEqual([['bien:i', 'sans_ecriture']])
   })
 
+  it('la dotation de l’exercice qui manque, quand celle d’avant est écrite : à écrire, pas « datée d’un autre exercice »', () => {
+    // Une dotation tombe au 31 décembre de son exercice : celle de 2025 est l'AUTRE dotation du bien, pas celle de
+    // 2026 écrite ailleurs. Le dire « à régénérer » enverrait chercher une écriture qui n'existe pas.
+    const d = dossier()
+    const c = concordance(d, { annee: 2026, vehicules: [] })
+    const ecart = c.ecarts.find((e) => e.cle === 'bien:i')!
+    expect(ecart.motif).toBe('sans_ecriture')
+    expect(ecart.autresExercices).toEqual([])
+    expect(ecart.declaration).toBe(-1000)
+    expect(phraseDeLEcart(ecart)).not.toMatch(/datée/)
+    expect(ouAgir(ecart)).toBe('Immobilisations')
+  })
+
   it('la dotation d’un bien sans nature : rien ne peut l’écrire tant que sa nature manque', () => {
     // La 2035 la compte — sa valeur et sa durée suffisent au calcul —, mais son compte 28 vient de sa nature.
     const d = dossier()
