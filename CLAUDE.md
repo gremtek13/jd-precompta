@@ -104,8 +104,13 @@ Conséquences pratiques :
   d'origine, et la largeur choisie est retenue par navigateur (`localStorage`, comme la barre réduite).
   Un simple clic ne retient rien : une préférence que personne n'a exprimée figerait la largeur du jour.
   **Une contrainte décide de toutes les bornes** (`lib/largeurVolets.ts`) : le panneau central garde au
-  moins 640 pixels, sa largeur sur un écran de 1 280 aux largeurs d'origine — la plus étroite où les
-  écrans ont été vérifiés sans débordement. La barre s'arrête donc là où le volet, à sa plus petite
+  moins 560 pixels, la plus étroite où les écrans ont été vérifiés sans débordement. Elle était d'abord de
+  640, sa largeur sur un écran de 1 280 aux largeurs d'origine — et à cette largeur, celle d'un portable
+  de 1 920 pixels affiché à 150 %, le volet de droite n'avait que 2 pixels à gagner et la barre 20 : les
+  poignées n'y servaient presque à rien (trouvé en vérifiant un « ne marche pas » du cabinet, que la mise
+  en ligne expliquait par ailleurs). Les écrans ont été revérifiés à 560, une fois la grille des tableaux de
+  bord adaptée à sa place (voir les conventions) ; à 480, la liste des pièces ne montrait plus le statut.
+  À 1 280, le volet va désormais de 340 à 440 et la barre jusqu'à 364. La barre s'arrête donc là où le volet, à sa plus petite
   largeur, laisserait moins ; le volet en ligne, là où le panneau central l'atteindrait ; superposé
   (sous 1 280), il laisse voir 320 pixels du panneau central, sans jamais interdire sa largeur d'origine.
   Tout se calcule dans le module, sur la largeur de la fenêtre : rétrécir la fenêtre rétrécit les volets,
@@ -115,7 +120,9 @@ Conséquences pratiques :
   — un enfant de plus ferait mentir `:empty` —, et n'existe que tant que l'emplacement a un contenu
   (un `MutationObserver` le regarde), sans quoi il resterait seul au bord de l'écran après la fermeture
   d'un dossier. `debordements.mjs` accepte des largeurs choisies (`barre=… panneau=…`) : 0 débordement
-  aux quatre combinaisons extrêmes (1 280 et 1 440 volet ouvert, 1 024 fermé), mesuré le 05/10/2026.
+  aux combinaisons extrêmes — à 1 280 volet ouvert, le volet puis la barre au plus large ; à 1 440 les
+  deux ; à 1 280 volet fermé, la barre au plus large —, toutes à 560 pixels de panneau central ou presque,
+  mesuré le 05/10/2026 avec les règles de la carte et du texte (voir les conventions).
   **ET UNE GARDE DE SORTIE, parce que le volet laisse le reste de l'écran cliquable** — c'est tout son
   intérêt, et c'est ce que la fenêtre modale qu'il remplace interdisait. Une fiche en cours de saisie
   peut donc être chassée par une autre ligne, « suivante », « Assistant » ou la croix. Le contenu
@@ -358,7 +365,16 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   `.check-dot`) ; couleurs de statut réservées, jamais réutilisées comme série. Police par défaut
   Manrope (Inter en repli). En-tête de dossier en "cockpit" (`.cockpit`, avatar + badges + sélecteur
   d'exercice à droite). Chargements en squelettes (`.skeleton*`), jamais un simple "Chargement…" sur
-  un tableau de bord. Vérification visuelle : `outils/captures/` (la vraie application servie avec un
+  un tableau de bord. **La grille suit SA largeur, pas celle de la fenêtre** (05/10/2026) : `.bento` est
+  son propre conteneur (`container: bento`), et sous 760 pixels — volet de droite ouvert, barre élargie —
+  elle se range comme sur téléphone, deux tuiles par rangée et le reste en pleine largeur. Une tuile
+  remplit sa case (`width: 100%` : une tuile cliquable est un `<button>`, qui prenait la largeur de son
+  contenu — quatre tuiles inégales à 1 440, et volet ouvert un solde insécable qui passait sous la tuile
+  voisine) ; sa valeur suit la largeur de la tuile (`cqi`, la tuile étant son conteneur). Une carte
+  (`.widget`, `container: carte`) range sous son libellé le bouton d'une ligne de check quand elle est
+  étroite. **Aucune fenêtre superposée ne vit dans la grille ni dans une carte** : `container-type` en
+  ferait la référence de ses éléments `position: fixed`, le piège nommé pour `.liste-pieces`.
+  Vérification visuelle : `outils/captures/` (la vraie application servie avec un
   faux Supabase à données fictives, photographiée par Playwright — PC 1440/1280, mobile 390, clair et
   sombre, barre réduite) — à rejouer après toute modification de `index.css` ou de la coque. L'ancien
   banc vivait dans un dossier temporaire de session et avait disparu : celui-ci est versionné pour ne
@@ -380,6 +396,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   candidates à l'immobilisation ; remesuré le 28/09/2026 avec l'onglet TVA, mesuré sur le seul
   dossier assujetti du banc). Sa mutation mord : une rangée remise sans `wrap` le fait sortir en
   erreur.
+  **LE BORD DU PANNEAU NE SUFFISAIT PAS** (05/10/2026) : deux défauts de la Vue d'ensemble, volet ouvert
+  à 1 280, restaient DANS le panneau et lui échappaient — une tuile chiffrée plus large que sa case, qui
+  passait sous sa voisine, et le bouton d'une ligne de check sorti de sa carte, le libellé réduit à un
+  mot par ligne. L'outil compte désormais aussi ce qui sort de sa carte (`.card`, `.kpi`, `.widget`,
+  `.cockpit`) ou de sa case de grille (`.bento > *`), et un texte plus large que sa boîte. Remesuré le
+  05/10/2026 avec ces règles : 0 débordement aux quatre largeurs de référence et aux combinaisons
+  extrêmes des volets.
   **Sur téléphone la rangée devient une colonne, et y garder `wrap` la rendait MULTI-LIGNE** : la
   ligne prend alors la largeur du champ le plus large, et une liste à l'option longue sortait de sa
   carte (mesuré le 30/09/2026 : 35 px sur le régime de TVA, 32 px sur le véhicule d'Informations, zéro
@@ -8022,7 +8045,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4258 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4265 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
