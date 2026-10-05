@@ -1728,3 +1728,113 @@ describe('ClotureTab — valider l’exercice', () => {
     expect(screen.queryAllByRole('heading', { name: /^Valider l’exercice (2023|2024)$/ })).toHaveLength(0)
   })
 })
+
+// CE QU'UN EXERCICE VALIDÉ A FIGÉ NE SE RÉCLAME PLUS (ligne 26.6, étape d). Sa 2035 est celle que la base garde, et ni ses
+// sources ni ses écritures ne changent plus : une carte d'avertissement qui y appellerait un geste — rapprocher,
+// catégoriser, saisir une CSG-CRDS, retirer un bien, arbitrer une case — resterait affichée pour toujours, sans geste pour
+// la lever. Un seul jeu d'essai allume les douze cartes en 2025 : ouvert, elles se disent toutes — sans quoi leur
+// absence sur l'exercice validé ne prouverait rien ; validé, aucune.
+describe('ClotureTab — un exercice validé ne réclame plus rien', () => {
+  const TITRES = [
+    /^Pièces validées absentes du récapitulatif/,
+    /^Mouvements affectés absents du récapitulatif/,
+    /^Échéances d’emprunt non rapprochées/,
+    /^Pièces comptées à leur date de facture/,
+    /^Cotisations comptées à leur échéance/,
+    /^Postes sans case du formulaire/,
+    /^Cotisations dont la CSG-CRDS n’est pas saisie/,
+    /^Amortissement\(s\) sans justificatif/,
+    /^Frais de véhicule comptés deux fois/,
+    /^Amortissement d’un véhicule déduit avec le barème/,
+    /^Véhicules absents de la case BJ/,
+    /^Case négative/,
+  ]
+  const categorie = (id: string, libelle: string, compte: string, poste: string | null) => ({
+    id, dossier_id: null, code: id, libelle, ordre: 5, compte_comptable: compte, poste_2035: poste,
+  })
+  const mouvement = (id: string, montant: number, categorieId: string) => ({
+    id, dossier_id: 'dossier-de-test', date: '2025-06-10', libelle: id.toUpperCase(), montant, statut: 'rapprochee',
+    piece_id: null, cotisation_id: null, categorie_id: categorieId, taux_tva: null, prelevement_personnel: false,
+    source_fichier: null, libelle_brut: null, created_at: '2025-06-11T09:00:00Z',
+  })
+  const vehicule = (id: string, km: number) => ({
+    id, dossier_id: 'dossier-de-test', annee: 2025, modele: 'Clio', type: 'voiture', puissance_fiscale: 4, bareme: 'bnc',
+    motorisation: 'thermique', carburant: 'diesel', km_professionnel: km, inscrit_immobilisations: false,
+    amortissements_a_reintegrer: null, created_at: '2025-01-05T10:00:00Z', updated_at: '2025-01-05T10:00:00Z',
+  })
+  const EMPRUNT: Emprunt = {
+    id: 'emp-1', dossier_id: 'dossier-de-test', nom: 'Prêt matériel', organisme_preteur: 'Banque du Midi',
+    capital_initial: 12000, taux_annuel: 3.6, date_debut: '2025-01-05', duree_mois: 24, created_at: '2025-01-05T10:00:00Z',
+  }
+  const VALIDE_2025 = {
+    dossier_id: 'dossier-de-test', annee: 2025, valide_le: '2026-01-15T10:00:00Z', valide_par: 'chef', mode_comptable: 'tresorerie',
+    nb_lignes: 2, nb_ecritures: 1, total_debit: 120, total_credit: 120, empreinte_precedente: null, empreinte: 'a'.repeat(64),
+    declaration: {
+      version: 1, annee: 2025, cases: { BA: 999 }, formulaire: { BA: 999 }, totalRecettes: 0, totalDepenses: 999, resultat: -999,
+      postes: [{ poste: 'Achats', nature: 'depense', montant: 999, nbPieces: 1, nbMouvements: 0 }],
+      entete: { nom: 'Nom validé', activite: 'Activité validée', siret: '98765432109876' },
+    },
+  }
+
+  function poserTout(valides: unknown[]) {
+    // Les deux cotisations par défaut, ni payées ni ventilées : comptées à leur échéance, CSG-CRDS non saisie.
+    poser({}, [
+      // Détachée de sa pièce : sa dotation part en case CH sans justificatif.
+      immobilisation({ id: 'i-detache', piece_id: null }),
+      // Un matériel de transport amorti l'année où le barème est retenu.
+      immobilisation({ id: 'i-voiture', libelle: 'Voiture de tournée', nature_id: 'n-transport', piece_id: 'p-voiture' }),
+    ])
+    faux.parTable.categories = [
+      CATEGORIE,
+      categorie('cat-sans-poste', 'Autre', '628000', null),
+      categorie('cat-inconnu', 'Divers', '618000', 'Poste imaginaire'),
+      categorie('cat-carburant', 'Carburant', '606140', 'Carburant'),
+      // Au compte des achats : un compte qui porte deux cases, que le FEC ne sépare pas.
+      categorie('cat-frais', 'Frais bancaires', '606100', 'Frais financiers'),
+    ]
+    faux.parTable.pieces = [
+      // Sans paiement : comptée à sa date de facture.
+      PIECE,
+      // Sans poste : écartée de la déclaration.
+      { ...PIECE, id: 'p2', tiers: 'SANS POSTE', categorie_id: 'cat-sans-poste' },
+      // Un poste que le formulaire ne connaît pas.
+      { ...PIECE, id: 'p3', tiers: 'DIVERS', categorie_id: 'cat-inconnu' },
+      // Du carburant au réel, à côté du forfait.
+      { ...PIECE, id: 'p4', tiers: 'STATION', categorie_id: 'cat-carburant', montant_ttc: 60 },
+    ]
+    faux.parTable.lignes_bancaires = [
+      // Affecté à une catégorie sans poste.
+      mouvement('l-aff', -50, 'cat-sans-poste'),
+      // Un remboursement de frais, sans frais payés : la case BN passe sous zéro.
+      mouvement('l-geste', 3, 'cat-frais'),
+    ]
+    faux.parTable.natures_immobilisation = [{
+      id: 'n-transport', dossier_id: null, libelle: 'Matériel de transport', duree_annees_defaut: 5, ordre: 4, compte_immobilisation: '218200',
+    }]
+    // Le second, au kilométrage invalide, n'a pas d'indemnité.
+    faux.parTable.vehicules = [vehicule('v1', 8000), vehicule('v2', 12.5)]
+    // Aucune échéance rapprochée : onze tombent en 2025.
+    faux.parTable.emprunts = [EMPRUNT]
+    faux.parTable.exercices_valides = valides
+  }
+
+  it('sur un exercice ouvert, les douze cartes se disent', async () => {
+    poserTout([])
+    monter()
+    for (const titre of TITRES) await screen.findByRole('heading', { name: titre })
+    // Et la concordance détaille ses écarts, avec l'onglet où agir, et le compte qui porte deux cases.
+    screen.getByText(/^Voir les écarts/)
+    screen.getByText(/Le compte 606100 porte des postes de 2 cases différentes/)
+  })
+
+  it('sur un exercice validé, aucune — et la concordance le dit sans rien proposer', async () => {
+    poserTout([VALIDE_2025])
+    monter()
+    await screen.findByText(/2035 validée le 15\/01\/2026/)
+    for (const titre of TITRES) expect(screen.queryAllByRole('heading', { name: titre })).toHaveLength(0)
+    screen.getByText(/^L'exercice 2025 est validé : ni ses sources ni ses écritures ne changent plus\. Recalculée aujourd’hui, la comparaison trouve \d+ écarts/)
+    expect(screen.queryAllByText(/^Voir les écarts/)).toHaveLength(0)
+    expect(screen.queryAllByText('Où agir')).toHaveLength(0)
+    expect(screen.queryAllByText(/porte des postes de 2 cases différentes/)).toHaveLength(0)
+  })
+})

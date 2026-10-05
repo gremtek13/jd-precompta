@@ -28,7 +28,7 @@ import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { chargerDoublonsDeTexte, type DoublonDeTexte } from '../../lib/doublonsTexte'
 import { prealablesDeValidation, prochainExerciceAValider } from '../../lib/prealablesValidation'
 import {
-  casesDeLInstantane, casesQuiDifferent, demandeDeValidation, instantane2035, lireInstantane2035, type Instantane2035,
+  casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, instantane2035, lireInstantane2035, type Instantane2035,
 } from '../../lib/validationExercice'
 import type {
   ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, EcritureBrouillon, ExerciceValide, Immobilisation, LigneBancaire,
@@ -344,8 +344,9 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // Le prochain exercice à valider (lib/prealablesValidation.ts) : la liste le propose toujours, et les exercices
   // validés aussi — sinon une année vide, ou qui ne porte qu'une échéance de cotisation, manquerait à la liste, et la
   // validation de tous les exercices suivants l'attendrait sans que rien n'y mène.
+  const anneesValidees = exercicesValides.map((e) => e.annee)
   const prochainAValider = prochainExerciceAValider({
-    anneeCourante, modele, anneesValidees: exercicesValides.map((e) => e.annee), aNouveaux, ecritures,
+    anneeCourante, modele, anneesValidees, aNouveaux, ecritures,
     lignes: toutesLesLignes, reglements, piecesValidees, piecesAValider, cotisations, vehicules, immobilisations,
   })
   const anneesDisponibles = [...new Set([
@@ -378,11 +379,21 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // formulaire), on affiche un tableau par exercice.
   const formulaires = declarations.map((d) => ({ declaration: d, ...valeursDesCases(d) }))
 
+  // CE QU'UN EXERCICE VALIDÉ A FIGÉ NE SE RÉCLAME PLUS (lib/validationExercice.ts). Sa 2035 est celle que la base garde,
+  // et ni ses sources ni ses écritures ne changent plus : les cartes qui suivent appellent un geste — rapprocher,
+  // catégoriser, saisir une CSG-CRDS, retirer un bien, corriger un véhicule, arbitrer une case — que la base refuserait
+  // sur cet exercice, et elles y resteraient pour toujours, sans geste pour les lever. Elles ne portent donc que sur les
+  // exercices OUVERTS ; un exercice que la validation d'un exercice postérieur fige ne l'est pas davantage. La
+  // concordance d'un exercice figé se dit encore, sans rien proposer (ConcordanceCard).
+  const ouvert = (annee: number) => exerciceQuiFige(annee, anneesValidees) === null
+  const declarationsOuvertes = declarations.filter((d) => ouvert(d.annee))
+  const formulairesOuverts = formulaires.filter((f) => ouvert(f.declaration.annee))
+
   // Postes que le rattachement ne sait pas placer, tous exercices affichés confondus. Même principe
   // que les pièces exclues : un poste qui n'atterrit dans aucune case est un montant absent de la
   // déclaration, et il doit se voir.
   const sansCase = new Map<string, PosteNonRattache>()
-  for (const f of formulaires) {
+  for (const f of formulairesOuverts) {
     for (const p of f.postesSansCase) sansCase.set(p.ligne.poste, p)
   }
   const postesSansCase = [...sansCase.values()]
@@ -391,11 +402,11 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // Le moteur ne remplit jamais ces cases (toutes marquées `saisieCabinet`), donc rien ne peut le
   // déclencher tant que l'écran de saisie manuelle n'existe pas — il sera en place le jour où elle
   // arrivera, plutôt qu'à écrire après coup en ayant oublié la règle.
-  const incoherences: IncoherenceCase[] = formulaires.flatMap((f) => incoherencesDesCases(f.valeurs))
+  const incoherences: IncoherenceCase[] = formulairesOuverts.flatMap((f) => incoherencesDesCases(f.valeurs))
 
   // Forfait kilométrique ET frais de véhicule au réel dans la même déclaration : la dépense est
   // comptée deux fois en case BJ, et la case ne montre qu'un total qui ne dit pas de quoi il est fait.
-  const doublonsVehicules: { annee: number; doublon: DoublonFraisVehicule }[] = declarations
+  const doublonsVehicules: { annee: number; doublon: DoublonFraisVehicule }[] = declarationsOuvertes
     .map((d) => ({ annee: d.annee, doublon: doublonFraisVehicules(d) }))
     .filter((x): x is { annee: number; doublon: DoublonFraisVehicule } => x.doublon !== null)
 
@@ -408,7 +419,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // rien à dire, et le redire serait une mise en garde permanente, qui cesse d'être lue puis emporte
   // ses voisines. Ce qui reste vrai, et que rien ne peut calculer : une cotisation dont la CSG-CRDS
   // n'est pas saisie garde sa part non déductible dans la ligne 25.
-  const csgSansVentilation: { annee: number; part: PartCsgNonDeductible }[] = declarations
+  const csgSansVentilation: { annee: number; part: PartCsgNonDeductible }[] = declarationsOuvertes
     .map((d) => ({ annee: d.annee, part: partCsgNonDeductible(comptees, d.annee) }))
     .filter((x): x is { annee: number; part: PartCsgNonDeductible } =>
       x.part !== null && x.part.nbSansVentilation > 0)
@@ -419,7 +430,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // chaque déclaration affichée — le contrôle, lui, est année-libre (voir `immobilisationsSans-
   // Justificatif`) : ce qui compte ici est la dotation qui part RÉELLEMENT en case CH cette
   // année-là, pas un bien amorti depuis longtemps.
-  const amortissementsSansJustificatif = declarations.flatMap((d) =>
+  const amortissementsSansJustificatif = declarationsOuvertes.flatMap((d) =>
     immobilisationsSansJustificatif(immobilisations)
       .filter((i) => dotationDeLExercice(i, d.annee) > 0)
       .map((i) => ({ annee: d.annee, immo: i, dotation: dotationDeLExercice(i, d.annee) })),
@@ -430,7 +441,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // paie n'y est pas, et son prélèvement attend quelque part dans le relevé. Jusqu'à aujourd'hui pour
   // l'exercice en cours : une échéance à venir n'est pas en retard.
   const aujourdHui = aujourdHuiSql()
-  const echeancesManquantes = declarations.flatMap((d) => {
+  const echeancesManquantes = declarationsOuvertes.flatMap((d) => {
     const fin = `${d.annee}-12-31` < aujourdHui ? `${d.annee}-12-31` : aujourdHui
     return echeancesNonRapprochees(emprunts, lignesBancaires, `${d.annee}-01-01`, fin).map((e) => ({ annee: d.annee, ...e }))
   })
@@ -439,11 +450,11 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // LE VÉHICULE DU REGISTRE AMORTI L'ANNÉE OÙ LE BARÈME EST RETENU (lib/forfaitKilometrique.ts) : le barème couvre
   // déjà son amortissement, et la case CH le déduit une seconde fois. La notice veut ces amortissements
   // réintégrés au cadre B du tableau des immobilisations ; le moteur ne le fait pas — il le dit ici.
-  const amortissementsVehicules = declarations.flatMap((d) => amortissementsSousLeBareme(immobilisations, natures, vehicules, d.annee))
+  const amortissementsVehicules = declarationsOuvertes.flatMap((d) => amortissementsSousLeBareme(immobilisations, natures, vehicules, d.annee))
 
   // Véhicules dont l'indemnité n'a pas pu être calculée : leur déduction manque sur le formulaire,
   // et rien sur le PDF ne le dirait.
-  const vehiculesNonCalcules = declarations.flatMap((d) =>
+  const vehiculesNonCalcules = declarationsOuvertes.flatMap((d) =>
     (d.indemnitesKilometriques?.nonCalcules ?? []).map((n) => ({ annee: d.annee, ...n })),
   )
 
@@ -458,7 +469,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
 
   // UNE CASE NÉGATIVE NE SE DÉPOSE PAS : un poste que ses remboursements font passer sous zéro garde son signe,
   // et quand il emporte sa case, c'est ici que ça se dit (lib/cases2035.ts, `casesNegatives`).
-  const negatives = declarations.flatMap((d) => casesNegatives(d).map((c) => ({ annee: d.annee, ...c })))
+  const negatives = declarationsOuvertes.flatMap((d) => casesNegatives(d).map((c) => ({ annee: d.annee, ...c })))
 
   // LA VALIDATION DE CHAQUE EXERCICE AFFICHÉ (lib/prealablesValidation.ts) : validé, ce que la base en garde ;
   // sinon ce qui l'empêche, et ce que `valider_exercice` recevrait — la numérotation même du FEC et, en trésorerie,
@@ -470,7 +481,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
     const valide = exercicesValides.find((e) => e.annee === annee) ?? null
     if (valide) return { valide, etat: null, demande: null }
     const etat = prealablesDeValidation({
-      annee, anneeCourante, modele, assujettiTva, anneesValidees: exercicesValides.map((e) => e.annee),
+      annee, anneeCourante, modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
       lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, relevesIncoherents,
       doublonsTexte,
@@ -570,7 +581,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // manquant que personne ne voit. Dédoublonné par id, une même pièce pouvant sortir d'un exercice
   // à l'autre pour la même raison.
   const exclues = new Map<string, { piece: Piece; raison: string }>()
-  for (const d of declarations) {
+  for (const d of declarationsOuvertes) {
     for (const p of d.exclusions.sansPoste) exclues.set(p.id, { piece: p, raison: 'catégorie sans poste 2035' })
     for (const p of d.exclusions.sansDate) exclues.set(p.id, { piece: p, raison: 'aucune date' })
     for (const p of d.exclusions.sansMontant) exclues.set(p.id, { piece: p, raison: 'aucun montant lisible' })
@@ -578,7 +589,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   const piecesExclues = [...exclues.values()]
   // Même chose côté relevé : un mouvement affecté que la déclaration n'a pas pu compter. Un mouvement ne
   // compte que dans l'exercice de sa date, donc il ne peut sortir que d'une seule déclaration.
-  const mouvementsExclus = declarations.flatMap((d) => [
+  const mouvementsExclus = declarationsOuvertes.flatMap((d) => [
     ...d.exclusions.mouvementsSansPoste.map((m) => ({ mouvement: m, raison: 'catégorie sans poste 2035' })),
     ...d.exclusions.mouvementsHorsResultat.map((m) => ({ mouvement: m, raison: 'compte de la catégorie hors charges et produits' })),
   ])
@@ -587,12 +598,12 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // supposition, pas une lecture — la pièce a peut-être été payée une autre année. Dite ici, sur
   // l'écran qui remplit la 2035, parce que c'est la seule chose qui distingue « payée en décembre » de
   // « facturée en décembre et payée on ne sait quand ».
-  const sansPaiement = declarations.flatMap((d) => d.sansPaiementConnu.map((s) => ({ annee: d.annee, ...s })))
+  const sansPaiement = declarationsOuvertes.flatMap((d) => d.sansPaiementConnu.map((s) => ({ annee: d.annee, ...s })))
   // Les échéances de cotisation qu'aucun prélèvement rapproché ne date : elles comptent à leur échéance,
   // pour le versement saisi ou l'appel — une SUPPOSITION, dite comme celle des pièces ci-dessus
   // (lib/cotisationRapprochee.ts). Seulement celles des exercices affichés.
   const echeancesSansPaiement = comptees
-    .filter((c) => c.ligne === null && exercices.includes(anneeDe(c.date)))
+    .filter((c) => c.ligne === null && exercices.includes(anneeDe(c.date)) && ouvert(anneeDe(c.date)))
     .sort((x, y) => x.date.localeCompare(y.date))
 
   // LA CARTE DES POSTES MANQUANTS VIT DANS LES DEUX MODÈLES. En engagement la 2035 n'est pas produite,
@@ -1217,6 +1228,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
                 comptesPartages={concordances.get(annee)!.comptesPartages}
                 lectureIncomplete={lectureIncomplete ?? ecrituresIncompletes}
                 ouverture={ouverture}
+                figePar={exerciceQuiFige(annee, anneesValidees)}
               />
               <ValidationExerciceCard
                 dossierId={dossierId} annee={annee} {...validation} estChef={estChef} onValide={apresValidation} onNavigate={onNavigate}
