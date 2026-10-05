@@ -476,6 +476,25 @@ export function piecesPayeesEnPartie<P extends Pick<Piece, 'id' | 'devise' | 'mo
   return resultat
 }
 
+// CE QU'IL RESTE À RÉGLER DES PIÈCES PAYÉES EN PARTIE, DANS LES DEUX MODÈLES : ce qu'un autre paiement peut encore
+// régler. `piecesPayeesEnPartie` le SIGNALE, en trésorerie seulement ; ceci l'OFFRE — la fiche d'un mouvement propose
+// la pièce au choix pour son reste (ligne 26) —, et en engagement aussi, où le solde d'une facture règle la dette qui
+// court au 401. Mêmes paiements, même seuil (`soldeDesPaiements`) : une pièce réglée au seuil près n'attend plus rien,
+// et une pièce en devise, dont le montant en euros n'est qu'un provisoire, ne se juge pas. Sur un relevé ou des parts
+// lus en partie, un paiement non lu ferait paraître une pièce réglée payée en partie : l'appelant passe alors une
+// carte vide.
+export function restesAReglerDesPieces<P extends Pick<Piece, 'id' | 'devise' | 'montant_ttc'>>(
+  pieces: readonly P[],
+  paiements: PaiementsDesPieces,
+): Map<string, number> {
+  const restes = new Map<string, number>()
+  for (const piece of pieces) {
+    const solde = soldeDesPaiements(piece, paiements.get(piece.id) ?? [])
+    if (solde && solde.reste > solde.seuil) restes.set(piece.id, solde.reste)
+  }
+  return restes
+}
+
 // Les pièces qu'un mouvement paie : la sienne pour un rapprochement, celles de ses parts pour un virement qui en
 // règle plusieurs — une part dont la pièce a été supprimée ne paie plus rien, ce que `reglementsGroupesIncoherents`
 // dit. Un mouvement qui n'est pas rapproché n'en paie aucune.

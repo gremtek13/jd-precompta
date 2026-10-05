@@ -7,7 +7,7 @@ import { formatMoney } from './format'
 import { paiementsDesPieces, type PartReglee } from './rattachement'
 import {
   REFUS_REGLE_EN_GROUPE, nomDeLaPiece, partSaisieDe, partSigneeDe, piecesPayeesEnTrop, refusReglementGroupe,
-  reglementsGroupesIncoherents, resteARegler, resteARepartir, signeReglant, type PartReglement,
+  refusSecondPaiement, reglementsGroupesIncoherents, resteARegler, resteARepartir, signeReglant, type PartReglement,
 } from './reglementGroupe'
 import type { Categorie, LigneBancaire, Piece } from './types'
 import { refusVentilation } from './ventilationBanque'
@@ -168,6 +168,42 @@ describe('refusReglementGroupe — ce que la base refuserait, dans le même ordr
     // Sous l'écart (5 € sur cette facture), c'est un frais : accepté.
     expect(refus({ montant: -604 }, [{ piece_id: 'fa', montant: -704 }, { piece_id: 'av', montant: 100 }], acompte)).toBeNull()
     expect(refus({ montant: -606 }, [{ piece_id: 'fa', montant: -706 }, { piece_id: 'av', montant: 100 }], acompte)).toMatch(/dépasse/)
+  })
+})
+
+// LE SECOND PAIEMENT D'UNE PIÈCE PAYÉE EN PARTIE (ligne 26) : un acompte de 300 € sur la facture de 1 000 €, puis le
+// solde par un autre virement qui ne paie qu'elle. Ce qui refuse une part de règlement groupé le refuse ici aussi.
+describe('refusSecondPaiement', () => {
+  const ACOMPTE = paiementsDesPieces([mouvement({ id: 'acompte', montant: -300, statut: 'rapprochee', piece_id: 'fa' })], [])
+  const deFacture = ACOMPTE.get('fa') ?? []
+
+  it('accepte le solde, et un solde que le seuil absorbe', () => {
+    expect(refusSecondPaiement(mouvement({ montant: -700 }), FACTURE, deFacture)).toBeNull()
+    expect(refusSecondPaiement(mouvement({ montant: -705 }), FACTURE, deFacture)).toBeNull()
+    expect(refusSecondPaiement(mouvement({ montant: -400 }), FACTURE, deFacture)).toBeNull()
+  })
+
+  it('refuse plus que ce qu’il reste à régler, au-delà du seuil', () => {
+    expect(refusSecondPaiement(mouvement({ montant: -705.01 }), FACTURE, deFacture))
+      .toBe(`Ce mouvement dépasse ce qu’il reste à régler de la pièce « Grossiste » (${formatMoney(700)}) : une pièce ne se paie pas deux fois. Un virement qui en règle aussi d’autres se répartit par « Régler plusieurs pièces ».`)
+  })
+
+  it('refuse le mauvais sens : une dépense se règle par une sortie', () => {
+    expect(refusSecondPaiement(mouvement({ montant: 700 }), FACTURE, deFacture)).toMatch(/mauvais sens pour la pièce « Grossiste »/)
+    // Une recette, elle, se règle par une entrée.
+    const vente = piece({ id: 'vente', type_piece: 'vente', montant_ttc: 600 })
+    const acompteClient = paiementsDesPieces([mouvement({ id: 'ac', montant: 200, statut: 'rapprochee', piece_id: 'vente' })], []).get('vente') ?? []
+    expect(refusSecondPaiement(mouvement({ montant: 400 }), vente, acompteClient)).toBeNull()
+    expect(refusSecondPaiement(mouvement({ montant: -400 }), vente, acompteClient)).toMatch(/mauvais sens/)
+  })
+
+  // Le même mouvement déjà compté parmi les paiements — un rapprochement refait — ne se compte pas deux fois.
+  it('ne compte pas le mouvement lui-même parmi les paiements', () => {
+    const avecLui = paiementsDesPieces([
+      mouvement({ id: 'acompte', montant: -300, statut: 'rapprochee', piece_id: 'fa' }),
+      mouvement({ id: 'solde', montant: -700, statut: 'rapprochee', piece_id: 'fa' }),
+    ], []).get('fa') ?? []
+    expect(refusSecondPaiement(mouvement({ id: 'solde', montant: -700 }), FACTURE, avecLui)).toBeNull()
   })
 })
 

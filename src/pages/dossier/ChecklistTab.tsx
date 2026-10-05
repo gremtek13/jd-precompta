@@ -571,7 +571,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       detail: exercicesDesForfaits.length > 0 ? `Exercice${exercicesDesForfaits.length > 1 ? 's' : ''} : ${exercicesDesForfaits.join(', ')}.` : undefined,
     },
     // « Erreur » : en trésorerie, l'écriture d'une pièce payée en partie reste déséquilibrée, et le FEC la refuse.
-    { id: 'pieces-payees-en-partie', label: 'pièce(s) payée(s) en partie — un paiement manque ?', action: 'Rapprocher le paiement qui manque', nb: payeesEnPartie.length, cible: 'banque', severite: 'erreur', detail: 'Dans Banque, filtre « Rapprochés » : leurs paiements portent la pastille « Reste … à payer ».' },
+    { id: 'pieces-payees-en-partie', label: 'pièce(s) payée(s) en partie — un paiement manque ?', action: 'Rapprocher le paiement qui manque', nb: payeesEnPartie.length, cible: 'banque', severite: 'erreur', detail: 'Le mouvement qui paie le reste se rapproche depuis sa fiche, dans Banque : la pièce y est offerte pour son reste. Sous « Rapprochés », ses paiements portent la pastille « Reste … à payer ».' },
     { id: 'rapproches-sans-objet', label: 'mouvement(s) bancaire(s) rapproché(s) sans justificatif', action: 'Annuler ou refaire ce rapprochement', nb: rapprochesSansObjet.length, cible: 'banque', severite: 'erreur' },
     // La forme groupée du point ci-dessus : une part d'un virement qui règle plusieurs pièces a perdu la
     // sienne, ou les parts ne font plus le mouvement. « Erreur » pour la même raison.

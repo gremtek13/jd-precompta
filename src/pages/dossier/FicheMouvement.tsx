@@ -20,7 +20,7 @@ import { genererEcheancier, type Emprunt } from '../../lib/emprunts'
 import { formatDate, formatMoney } from '../../lib/format'
 import type { PaiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux, TAUX_TVA_RELEVE, tauxApplicable, tauxRequis } from '../../lib/tvaDuReleve'
-import { nomDeLaPiece, reglementsGroupesIncoherents, type PartReglement } from '../../lib/reglementGroupe'
+import { nomDeLaPiece, refusSecondPaiement, reglementsGroupesIncoherents, type PartReglement } from '../../lib/reglementGroupe'
 import type {
   Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, RegleAffectationBancaire, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
@@ -181,6 +181,9 @@ interface FicheMouvementProps {
   // ses paiements, calculés une fois par l'onglet pour que la liste et la fiche disent la même chose.
   restesAPayer: ReadonlyMap<string, number>
   payeesEnTrop: ReadonlyMap<string, number>
+  // Pièce → ce qu'il reste à régler d'une pièce payée en partie, DANS LES DEUX MODÈLES (`restesAReglerDesPieces`) :
+  // ce qu'un second paiement peut encore régler. Vide sur une lecture partielle du relevé ou des parts.
+  restesARegler: ReadonlyMap<string, number>
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -468,6 +471,7 @@ export default function FicheMouvement({
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
+  restesARegler,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
@@ -598,7 +602,7 @@ export default function FicheMouvement({
   // Un paiement dont la pièce est peut-être au dossier : l'affecter compterait la dépense deux fois
   // (voir `justificatifPossible`). Dit avant le clic, jamais refusé : c'est l'opérateur qui sait.
   const justificatifAttendu = aTraiter
-    ? justificatifPossible(ligne, { pieces, piecesRapprochees: horsRapprochement, cotisations, cotisationsRapprochees })
+    ? justificatifPossible(ligne, { pieces, piecesRapprochees: horsRapprochement, restesARegler, cotisations, cotisationsRapprochees })
     : null
 
   // Même précédence que le rapprochement automatique : une pièce avant une échéance, une échéance
@@ -630,10 +634,26 @@ export default function FicheMouvement({
   // l'on ARBITRE, donc celui où l'écart doit se lire. Jugé sur le total payé de chaque pièce.
   const pastillesPaiement = pastillesDePaiement(piecesPayeesPar(ligne, reglements), restesAPayer, payeesEnTrop, ligne.reglement_groupe)
 
+  // UNE PIÈCE PAYÉE EN PARTIE S'OFFRE ENCORE AU CHOIX, POUR SON RESTE : un acompte, puis le solde par un autre virement
+  // qui ne paie qu'elle. Tenue pour rapprochée dès son premier paiement, elle ne s'offrait plus au second — et le
+  // règlement groupé exige deux pièces —, si bien que son reste ne se rapprochait de rien et qu'elle restait « payée en
+  // partie », ce que la validation de son exercice refuse. Elle n'est jamais PROPOSÉE : le rapprochement certain compare
+  // le montant de la pièce, et un solde peut arriver des semaines après la facture. C'est l'opérateur qui la choisit, et
+  // ce qui dépasserait son reste est refusé avant le clic (`refusSecondPaiement`).
+  const horsChoix: ReadonlySet<string> = restesARegler.size === 0
+    ? horsRapprochement
+    : new Set([...horsRapprochement].filter((id) => !restesARegler.has(id) || piecesFigees.has(id)))
+  const montantAttendu = (p: Piece) => restesARegler.get(p.id) ?? p.montant_ttc
   const piecesAuChoix = aTraiter
-    ? pieces.filter((p) => !horsRapprochement.has(p.id))
-        .sort((a, b) => scoreCorrespondance(a.montant_ttc, a.date_piece, ligne) - scoreCorrespondance(b.montant_ttc, b.date_piece, ligne))
+    ? pieces.filter((p) => !horsChoix.has(p.id))
+        .sort((a, b) => scoreCorrespondance(montantAttendu(a), a.date_piece, ligne) - scoreCorrespondance(montantAttendu(b), b.date_piece, ligne))
     : []
+  const pieceChoisieDejaPayee = pieceChoisie && restesARegler.has(pieceChoisie)
+    ? piecesAuChoix.find((p) => p.id === pieceChoisie) ?? null
+    : null
+  const refusPieceChoisie = pieceChoisieDejaPayee
+    ? refusSecondPaiement(ligne, pieceChoisieDejaPayee, paiements.get(pieceChoisieDejaPayee.id) ?? [])
+    : null
   const cotisationsAuChoix = aTraiter
     ? cotisations.filter((c) => !cotisationsRapprochees.has(c.id))
         .sort((a, b) =>
@@ -1035,16 +1055,32 @@ export default function FicheMouvement({
                 <div className="fiche-mouvement-choix">
                   <select id="associer-piece" value={pieceChoisie} onChange={(e) => setPieceChoisie(e.target.value)}>
                     <option value="">— Choisir —</option>
-                    {piecesAuChoix.map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {formatDate(p.date_piece)} — {p.tiers ?? '—'} — {formatMoney(p.montant_ttc)}
-                      </option>
-                    ))}
+                    {piecesAuChoix.map((p) => {
+                      const reste = restesARegler.get(p.id)
+                      return (
+                        <option key={p.id} value={p.id}>
+                          {formatDate(p.date_piece)} — {p.tiers ?? '—'} — {reste != null
+                            ? `reste ${formatMoney(reste)} sur ${formatMoney(p.montant_ttc)}`
+                            : formatMoney(p.montant_ttc)}
+                        </option>
+                      )
+                    })}
                   </select>
-                  <button type="button" className="btn btn-outline" disabled={!pieceChoisie || occupe} onClick={() => onRapprocher(pieceChoisie)}>
+                  <button
+                    type="button"
+                    className="btn btn-outline"
+                    disabled={!pieceChoisie || occupe || !!refusPieceChoisie}
+                    onClick={() => onRapprocher(pieceChoisie)}
+                  >
                     Associer
                   </button>
                 </div>
+                {refusPieceChoisie && <p className="fiche-mouvement-alerte">{refusPieceChoisie}</p>}
+                {pieceChoisieDejaPayee && !refusPieceChoisie && (
+                  <p className="fiche-mouvement-note">
+                    Cette pièce est déjà payée en partie : ce mouvement en règle le reste.
+                  </p>
+                )}
               </div>
             )}
             {cotisationsAuChoix.length > 0 && (

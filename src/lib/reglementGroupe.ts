@@ -141,6 +141,29 @@ export function refusReglementGroupe(
   return null
 }
 
+// LE SECOND PAIEMENT D'UNE PIÈCE PAYÉE EN PARTIE — un acompte, puis le solde par un autre virement qui ne paie qu'elle.
+// La fiche d'un mouvement l'offre au choix pour son reste (`restesAReglerDesPieces`, lib/controles.ts) ; ce qui
+// refuserait une part de règlement groupé le refuse ici aussi, dit avant le clic : un mouvement qui va dans le mauvais
+// sens, ou qui dépasse ce qu'il reste à régler au-delà de l'écart d'alignement — une pièce ne se paie pas deux fois, et
+// l'argent versé en trop ne compterait nulle part. Un virement qui règle aussi d'autres pièces se répartit par le
+// règlement groupé.
+export function refusSecondPaiement(
+  ligne: Pick<LigneBancaire, 'id' | 'montant'>,
+  piece: Pick<Piece, 'type_piece' | 'montant_ttc' | 'tiers' | 'nom_fichier'>,
+  paiementsDeLaPiece: readonly Pick<PaiementDePiece, 'id' | 'montant'>[],
+): string | null {
+  if (Math.sign(ligne.montant) !== signeReglant(piece)) {
+    return `Ce mouvement va dans le mauvais sens pour la pièce « ${nomDeLaPiece(piece)} » : `
+      + 'une dépense se règle par une sortie, une recette par une entrée, un avoir à l’inverse.'
+  }
+  const reste = resteARegler(piece, paiementsDeLaPiece, ligne.id)
+  if (centimes(Math.abs(ligne.montant)) > centimes(reste + seuilAlignement(piece.montant_ttc ?? 0))) {
+    return `Ce mouvement dépasse ce qu’il reste à régler de la pièce « ${nomDeLaPiece(piece)} » (${formatMoney(reste)}) : `
+      + 'une pièce ne se paie pas deux fois. Un virement qui en règle aussi d’autres se répartit par « Régler plusieurs pièces ».'
+  }
+  return null
+}
+
 // Une pièce en devise dont on connaît le montant d'origine : le paiement qui la règle seul remplace son
 // provisoire en euros par le débit réel (`reglerPieceSurBanque`). Sans montant d'origine, rien ne la
 // réaligne, et elle reste jugée sur ses euros.

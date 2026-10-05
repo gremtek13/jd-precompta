@@ -704,6 +704,120 @@ describe('BanqueTab — une pièce payée en partie, ou de trop', () => {
   })
 })
 
+// LE SECOND PAIEMENT D'UNE PIÈCE PAYÉE EN PARTIE (ligne 26) : un acompte de 300 € rapproché de la facture de 1 000 €,
+// puis le solde par un autre virement qui ne paie qu'elle. Tenue pour rapprochée dès son acompte, la pièce ne s'offrait
+// plus au solde — et le règlement groupé exige deux pièces — : elle restait « payée en partie », ce que la validation de
+// son exercice refuse, sans geste pour la régler.
+describe('BanqueTab — le second paiement d’une pièce payée en partie', () => {
+  function poserAcompte(montantSolde = -700) {
+    reinitialiser()
+    faux.majImmediate = true
+    faux.pieces = [pieceDeTest({ montant_ttc: 1000 })]
+    faux.lignes = [
+      ligneDeTest({ id: 'acompte', libelle: 'ACOMPTE FOURNISSEUR', montant: -300, statut: 'rapprochee', piece_id: 'piece-1' }),
+      ligneDeTest({ id: 'solde', libelle: 'SOLDE FOURNISSEUR', montant: montantSolde }),
+    ]
+  }
+  const optionsDePiece = () => [...(within(volet()).getByLabelText('Pièce') as HTMLSelectElement).options].map((o) => o.textContent ?? '')
+  const choisir = async (id: string) => {
+    await act(async () => { fireEvent.change(within(volet()).getByLabelText('Pièce'), { target: { value: id } }) })
+  }
+
+  it('la fiche du solde offre la pièce pour son reste, et l’associe au clic — en trésorerie comme en engagement', async () => {
+    for (const modele of [TRESORERIE, ENGAGEMENT]) {
+      poserAcompte()
+      const { unmount } = rendre(modele)
+      await ouvrir('SOLDE FOURNISSEUR')
+      expect(optionsDePiece().filter((t) => /reste 700,00\s€ sur 1\s000,00\s€/.test(t))).toHaveLength(1)
+      // Et l'affectation à une catégorie, plus bas, le dit avant le clic : ce solde compterait la dépense deux fois.
+      within(volet()).getByText(/Une pièce payée en partie attend son solde : ce mouvement le règle peut-être\. Avant d’affecter/)
+      await choisir('piece-1')
+      within(volet()).getByText('Cette pièce est déjà payée en partie : ce mouvement en règle le reste.')
+      await act(async () => { within(volet()).getByRole('button', { name: 'Associer' }).click() })
+      await waitFor(() => expect(faux.updatesLignes).toEqual([expect.objectContaining({ statut: 'rapprochee', piece_id: 'piece-1' })]))
+      unmount()
+    }
+  })
+
+  it('refuse avant le clic un mouvement qui dépasse le reste, ou qui va dans le mauvais sens', async () => {
+    for (const [montant, refus] of [[-900, /dépasse ce qu’il reste à régler de la pièce « Fournisseur »/], [700, /mauvais sens pour la pièce « Fournisseur »/]] as const) {
+      poserAcompte(montant)
+      const { unmount } = rendre()
+      await ouvrir('SOLDE FOURNISSEUR')
+      await choisir('piece-1')
+      within(volet()).getByText(refus)
+      expect((within(volet()).getByRole('button', { name: 'Associer' }) as HTMLButtonElement).disabled).toBe(true)
+      expect(within(volet()).queryByText(/en règle le reste/)).toBeNull()
+      expect(faux.updatesLignes).toHaveLength(0)
+      unmount()
+    }
+  })
+
+  // GARDES SYMÉTRIQUES : une pièce réglée — au seuil près — ne s'offre plus, et sur des parts lues en partie, un
+  // paiement non lu ferait paraître une pièce réglée payée en partie : rien n'est offert.
+  it('n’offre ni une pièce réglée, ni une pièce payée en partie sur une lecture partielle', async () => {
+    poserAcompte()
+    // 996 € payés sur 1 000 : le reste de 4 € tient sous le seuil (5 € au plus) — la pièce est réglée.
+    faux.lignes = faux.lignes.map((l) => (l.id === 'acompte' ? { ...l, montant: -996 } : l))
+    const { unmount } = rendre()
+    await ouvrir('SOLDE FOURNISSEUR')
+    expect(within(volet()).queryByLabelText('Pièce')).toBeNull()
+    unmount()
+
+    // Le relevé lu en partie : un troisième mouvement, trié après les deux autres, n'est pas servi.
+    poserAcompte()
+    faux.lignes = [...faux.lignes, ligneDeTest({ id: 'zz-autre', libelle: 'AUTRE MOUVEMENT', montant: -12 })]
+    faux.muet = { lignes_bancaires: 2 }
+    const { unmount: demonter } = rendre()
+    await ouvrir('SOLDE FOURNISSEUR')
+    expect(within(volet()).queryByLabelText('Pièce')).toBeNull()
+    demonter()
+
+    // Les parts des virements groupés lues en partie : une part non lue paie peut-être cette pièce.
+    poserAcompte()
+    faux.reglements = [{ id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'ailleurs', piece_id: 'piece-autre', montant: -10, created_at: '2025-06-02T10:00:00Z' }]
+    faux.muet = { reglements_groupes: 0 }
+    rendre()
+    await ouvrir('SOLDE FOURNISSEUR')
+    expect(within(volet()).queryByLabelText('Pièce')).toBeNull()
+  })
+
+  // UNE PIÈCE FIGÉE PAR UN EXERCICE VALIDÉ. En ENGAGEMENT, sa facture validée se règle : le solde de la dette, payé
+  // l'année suivante, s'offre pour son reste. En TRÉSORERIE elle ne se rapproche plus d'aucun mouvement — la rapprocher
+  // la redaterait, ce que la base refuse —, et son reste ne s'offre pas non plus. CAS DÉFENSIF, annoncé comme tel, de
+  // ce côté-là : la validation refuse en trésorerie un exercice qui porte une pièce payée en partie.
+  it('une pièce figée payée en partie s’offre en engagement, pas en trésorerie — cas défensif', async () => {
+    for (const [modele, offerte] of [[ENGAGEMENT, true], [TRESORERIE, false]] as const) {
+      poserAcompte()
+      faux.pieces = [pieceDeTest({ montant_ttc: 1000, date_piece: '2025-12-10' })]
+      faux.lignes = faux.lignes.map((l) => ({ ...l, date: l.id === 'acompte' ? '2025-12-15' : '2026-01-20' }))
+      faux.ecrituresValidees = [{ id: 'ev-facture', statut: 'validee', date: '2025-12-10', piece_id: 'piece-1', immobilisation_id: null }]
+      const { unmount } = rendre(modele, false, [2025])
+      await ouvrir('SOLDE FOURNISSEUR')
+      if (offerte) {
+        expect(optionsDePiece().filter((t) => /reste 700,00\s€ sur 1\s000,00\s€/.test(t))).toHaveLength(1)
+      } else {
+        expect(within(volet()).queryByLabelText('Pièce')).toBeNull()
+      }
+      unmount()
+    }
+  })
+
+  // Une pièce SANS paiement s'offre comme avant, à son montant : c'est le premier paiement. Et la pièce dont le RESTE
+  // vaut le mouvement vient en tête, comme une pièce de son montant — même quand l'autre est plus proche en date.
+  it('offre toujours une pièce sans paiement, à son montant, après celle dont le reste vaut le mouvement', async () => {
+    poserAcompte()
+    faux.pieces = [...faux.pieces, pieceDeTest({ id: 'piece-2', tiers: 'Papeterie', montant_ttc: 250, date_piece: '2025-06-02' })]
+    rendre()
+    await ouvrir('SOLDE FOURNISSEUR')
+    expect(optionsDePiece().filter((t) => /Papeterie — 250,00\s€$/.test(t))).toHaveLength(1)
+    expect(optionsDePiece()[1]).toMatch(/reste 700,00\s€ sur 1\s000,00\s€/)
+    await choisir('piece-2')
+    expect(within(volet()).queryByText(/en règle le reste/)).toBeNull()
+    expect((within(volet()).getByRole('button', { name: 'Associer' }) as HTMLButtonElement).disabled).toBe(false)
+  })
+})
+
 // LES RELEVÉS DÉJÀ CLASSÉS, LUS EN PARTIE, LE DISENT DANS L'IMPORT. Leur lecture s'écrivait
 // `lireTout(…).then((lecture) => …)` — une forme que le scanner ne voyait pas — et jetait son
 // drapeau : tronquée, la liste cache un relevé déjà classé, qu'on croit alors devoir redemander.
@@ -1690,6 +1804,19 @@ describe('BanqueTab — les règles d’affectation et le lot', () => {
     await act(async () => { screen.getByRole('button', { name: 'Affecter les 2' }).click() })
     const envoyes = (envoisDuLot()[0].args.p_affectations as { ligne_bancaire_id: string }[]).map((a) => a.ligne_bancaire_id)
     expect(envoyes).toEqual(['l-cpam-2', 'l-frais'])
+  })
+
+  // LE SOLDE D'UNE PIÈCE PAYÉE EN PARTIE (ligne 26) : rapprochée de son acompte, la pièce échappait au contrôle du
+  // justificatif, et une règle au nom du fournisseur aurait affecté le solde — la dépense comptée une seconde fois.
+  it('écarte du lot le solde d’une pièce payée en partie, et le dit', async () => {
+    preparer()
+    faux.reglesAffectation = [...faux.reglesAffectation, regleDeTest({ id: 'regle-3', motif: 'swisslife', sens: 'decaissement', categorie_id: 'cat-assurance' })]
+    faux.pieces = [pieceDeTest({ id: 'p-swiss', tiers: 'Swisslife', montant_ttc: 120, date_piece: '2025-06-01' })]
+    faux.lignes = faux.lignes.map((l) => (l.id === 'l-swiss-1' ? { ...l, statut: 'rapprochee' as const, piece_id: 'p-swiss' } : l))
+    rendre()
+    expect(await screen.findByText('Affectations proposées par vos règles (3)')).toBeTruthy()
+    expect(screen.getByText(/1 mouvement à rapprocher plutôt qu'affecter/)).toBeTruthy()
+    expect(screen.getByText(/Une pièce payée en partie attend son solde/)).toBeTruthy()
   })
 
   it('suspend le lot sur une lecture partielle des règles, et le dit', async () => {

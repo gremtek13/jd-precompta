@@ -719,6 +719,9 @@ describe('ChecklistTab — une pièce payée en partie', () => {
 
     const trouve = await screen.findByText(POINT)
     expect(trouve.textContent).toMatch(/^1 /)
+    // Le paiement qui manque se rapproche depuis la fiche de son mouvement, où la pièce est offerte pour son
+    // reste : le dire, sans quoi le point enverrait chercher sous « Rapprochés » un mouvement qui n'y est pas.
+    expect(screen.getByText(/se rapproche depuis sa fiche, dans Banque : la pièce y est offerte pour son reste/)).toBeTruthy()
   })
 
   // LE CAS QUI A FAIT ÉCRIRE CE POINT : un acompte rapproché de la pièce, puis le solde réglé par la part d'un
