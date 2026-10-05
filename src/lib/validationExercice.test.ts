@@ -129,12 +129,23 @@ describe('defautsDeNumerotation — ce que la base refusera, nommé', () => {
     expect(avec((n) => { for (const l of n.lignes) l.numero = 2 })).toContain('numeros')
     expect(avec((n) => { n.lignes[1].pieceRef = 'autre.pdf' })).toContain('pieces')
     expect(avec((n) => { n.lignes[1].pieceDate = '2025-03-11' })).toContain('pieces')
+    expect(avec((n) => { n.lignes[1].ecriture = { ...n.lignes[1].ecriture, date: '2025-03-11' } })).toContain('dates')
     expect(avec((n) => { n.lignes.push({ ...n.lignes[0], ecriture: { ...n.lignes[0].ecriture, id: 'x' }, compteLib: 'Autre' }) }))
       .toContain('compte')
     expect(avec((n) => {
       n.lignes[0].compAuxNum = 'FX'; n.lignes[0].compAuxLib = 'X'
       n.lignes[1].compAuxNum = 'FX'; n.lignes[1].compAuxLib = 'Y'
     })).toContain('auxiliaire')
+  })
+
+  // UNE ÉCRITURE NE PORTE QU'UNE DATE (lib/fec.ts) : deux lignes d'un même numéro à deux dates, c'est le défaut que
+  // l'outil de la DGFiP nomme « Différentes dates comptables », et la base le refuse. Le garde symétrique : la même
+  // numérotation sur une seule date n'a rien à redire.
+  it('voit une écriture dont les lignes portent deux dates, et seulement elle', () => {
+    const n = juste()
+    expect(defautsDeNumerotation(n).map((d) => d.type)).not.toContain('dates')
+    n.lignes[1].ecriture = { ...n.lignes[1].ecriture, date: '2025-04-02' }
+    expect(defautsDeNumerotation(n)).toEqual([{ type: 'dates', journal: 'AC', numero: 1 }])
   })
 
   it('voit des numéros qui ne suivent pas l’ordre des dates', () => {

@@ -15,7 +15,8 @@
 --   - CE QUI SE REFUSE, avec sa RAISON : un exercice invalide, en cours, déjà validé, sauté, antérieur à
 --     l'ouverture ou postérieur à celui des à-nouveaux ; des écritures antérieures non validées — et, avant
 --     l'ouverture, le conseil de les retirer ou de les redater, que l'essai suit ; un mouvement à traiter ; une
---     2035 absente en trésorerie, présente en engagement ; et chaque défaut d'une numérotation proposée ;
+--     2035 absente en trésorerie, présente en engagement ; et chaque défaut d'une numérotation proposée — une
+--     écriture à deux pièces ou à deux DATES comprise (24b, depuis le 05/10/2026) ;
 --   - CE QUE LA VALIDATION ÉCRIT : les écritures validées, numérotées, avec leur pièce et le libellé de leur
 --     compte ; l'exercice, ses totaux, sa 2035 et son auteur ; les libellés des à-nouveaux ; et rien de
 --     l'exercice suivant ;
@@ -55,6 +56,13 @@
 -- 145, et 4/1/1/77/998/3/2/1/43/0/0/0 lignes avant comme après (dossiers, cabinets, chefs et membres, pièces,
 -- mouvements, écritures, biens, véhicules, échéances, à-nouveaux, exercices validés, assignations). Le texte
 -- transmis, sans ses lignes de commentaire, a été comparé au fichier : identique sur 418 lignes.
+--
+-- REJOUÉ EN PRODUCTION LE 05/10/2026, juste après la migration `une_ecriture_une_date` : 146 contrôles sur 146 —
+-- le 24b compris, refusé par « Les lignes d'une même écriture ne portent pas la même date. » —, et
+-- 4/1/1/77/998/3/2/1/43/0/0/0 lignes avant comme après. Le texte transmis, sans ses lignes de commentaire, est
+-- identique au fichier sur 419 lignes. Sur la réplique, la fonction d'AVANT ne fait tomber que le 24b (accepté), et
+-- quatre mutations de la règle — le compte des jours pris sur la date de pièce, la pièce nommée à la place de la
+-- date, deux jours admis, la règle retirée — ne font tomber que lui ; rétablie, la fonction repasse les 146.
 --
 -- MIS AU POINT SUR UNE RÉPLIQUE LOCALE, ET MUTÉ AVANT D'ÊTRE CRU. Trente-quatre mutations, chacune jouée dans
 -- la transaction de l'essai puis annulée, toutes mordent :
@@ -271,6 +279,10 @@ begin
     array['controle', '22. des numéros à rebours des dates', 'chef', $q$select valider_exercice('{A}', 2024, jsonb_set(jsonb_set(jsonb_set(jsonb_set(current_setting('essai.juste')::jsonb, '{0,numero}', '2'), '{1,numero}', '2'), '{2,numero}', '1'), '{3,numero}', '1'), '[]'::jsonb, '{}'::jsonb)$q$, '22023', 'Les numéros d''un journal ne suivent pas l''ordre des dates.'],
     array['controle', '23. une écriture déséquilibrée', 'chef', $q$select valider_exercice('{A}', 2024, jsonb_set(jsonb_set(jsonb_set(current_setting('essai.juste')::jsonb, '{1,numero}', '2'), '{2,numero}', '3'), '{3,numero}', '3'), '[]'::jsonb, '{}'::jsonb)$q$, '22023', 'Une écriture n''est pas équilibrée au centime.'],
     array['controle', '24. deux pièces dans une écriture', 'chef', $q$select valider_exercice('{A}', 2024, jsonb_set(current_setting('essai.juste')::jsonb, '{1,piece_ref}', '"autre"'), '[]'::jsonb, '{}'::jsonb)$q$, '22023', 'Les lignes d''une même écriture ne portent pas la même pièce.'],
+    -- La pièce P3 rangée sous le numéro de P1, avec sa référence et sa date de pièce : équilibrée, une seule pièce,
+    -- mais ses lignes du 10 mai sous l'écriture du 5 mars. C'est la forme qu'avait une pièce payée en deux fois avant
+    -- le 05/10/2026, et l'outil de la DGFiP la range parmi ses anomalies (« Différentes dates comptables »).
+    array['controle', '24b. deux dates dans une écriture', 'chef', $q$select valider_exercice('{A}', 2024, jsonb_set(jsonb_set(current_setting('essai.juste')::jsonb, '{2}', (current_setting('essai.juste')::jsonb -> 2) || '{"numero":1,"piece_ref":"essai-p1.pdf","piece_date":"2024-03-01"}'), '{3}', (current_setting('essai.juste')::jsonb -> 3) || '{"numero":1,"piece_ref":"essai-p1.pdf","piece_date":"2024-03-01"}'), '[]'::jsonb, '{}'::jsonb)$q$, '22023', 'Les lignes d''une même écriture ne portent pas la même date.'],
     array['controle', '25. deux libellés pour un compte', 'chef', $q$select valider_exercice('{A}', 2024, jsonb_set(current_setting('essai.juste')::jsonb, '{7,compte_lib}', '"Compte bancaire"'), '[]'::jsonb, '{}'::jsonb)$q$, '22023', 'Un même compte porte deux libellés.'],
     array['controle', '26. un compte auxiliaire sans libellé', 'chef', $q$select valider_exercice('{A}', 2024, jsonb_set(current_setting('essai.juste')::jsonb, '{0,comp_aux_num}', '"FESSAI"'), '[]'::jsonb, '{}'::jsonb)$q$, '22023', 'Une ligne de la numérotation proposée est incomplète.'],
     array['controle', '27. deux libellés pour un compte auxiliaire', 'chef', $q$select valider_exercice('{A}', 2024, jsonb_set(jsonb_set(current_setting('essai.juste')::jsonb, '{0}', (current_setting('essai.juste')::jsonb -> 0) || '{"comp_aux_num":"FESSAI","comp_aux_lib":"Essai"}'), '{2}', (current_setting('essai.juste')::jsonb -> 2) || '{"comp_aux_num":"FESSAI","comp_aux_lib":"Autre"}'), '[]'::jsonb, '{}'::jsonb)$q$, '22023', 'Un même compte auxiliaire porte deux libellés.'],

@@ -111,13 +111,18 @@ export type DefautDeNumerotation =
   | { type: 'ordre'; journal: JournalCode; numero: number }
   | { type: 'desequilibre'; journal: JournalCode; numero: number; pieceRef: string; ecartCentimes: number }
   | { type: 'pieces'; journal: JournalCode; numero: number }
+  // Une écriture dont les lignes n'ont pas toutes la même date (lib/fec.ts, « une écriture ne porte qu'une date »).
+  | { type: 'dates'; journal: JournalCode; numero: number }
   | { type: 'compte'; compte: string }
   | { type: 'auxiliaire'; compAuxNum: string }
 
 export function defautsDeNumerotation(n: NumerotationFec): DefautDeNumerotation[] {
   const defauts: DefautDeNumerotation[] = []
   const vide = (v: string | null) => (v ?? '').trim() === ''
-  interface Groupe { journal: JournalCode; numero: number; premiere: string; centimes: number; refs: Set<string>; dates: Set<string> }
+  interface Groupe {
+    journal: JournalCode; numero: number; premiere: string; centimes: number; refs: Set<string>; dates: Set<string>
+    datesEcriture: Set<string>
+  }
   const groupes = new Map<string, Groupe>()
   for (const l of n.lignes) {
     if (vide(l.pieceRef) || vide(l.pieceDate) || vide(l.compteLib) || (l.compAuxNum === null) !== (l.compAuxLib === null)
@@ -125,13 +130,17 @@ export function defautsDeNumerotation(n: NumerotationFec): DefautDeNumerotation[
       defauts.push({ type: 'incomplete', journal: l.journal, numero: l.numero })
     }
     const cle = `${l.journal}|${l.numero}`
-    const g = groupes.get(cle) ?? { journal: l.journal, numero: l.numero, premiere: l.ecriture.date, centimes: 0, refs: new Set(), dates: new Set() }
+    const g = groupes.get(cle) ?? {
+      journal: l.journal, numero: l.numero, premiere: l.ecriture.date, centimes: 0, refs: new Set(), dates: new Set(),
+      datesEcriture: new Set(),
+    }
     if (l.ecriture.date < g.premiere) g.premiere = l.ecriture.date
     // EN CENTIMES ENTIERS, comme la base compare des numeric : une somme de flottants laisserait un écart de
     // 1e-13 que la base ne voit pas, ou en masquerait un.
     g.centimes += (l.ecriture.sens === 'debit' ? 1 : -1) * Math.round(l.ecriture.montant * 100)
     g.refs.add(l.pieceRef)
     g.dates.add(l.pieceDate)
+    g.datesEcriture.add(l.ecriture.date)
     groupes.set(cle, g)
   }
   const parJournal = new Map<JournalCode, Groupe[]>()
@@ -148,6 +157,7 @@ export function defautsDeNumerotation(n: NumerotationFec): DefautDeNumerotation[
       defauts.push({ type: 'desequilibre', journal: g.journal, numero: g.numero, pieceRef: [...g.refs][0], ecartCentimes: g.centimes })
     }
     if (g.refs.size !== 1 || g.dates.size !== 1) defauts.push({ type: 'pieces', journal: g.journal, numero: g.numero })
+    if (g.datesEcriture.size !== 1) defauts.push({ type: 'dates', journal: g.journal, numero: g.numero })
   }
   const libellesParCompte = new Map<string, Set<string>>()
   const noter = (compte: string, libelle: string) =>

@@ -1465,7 +1465,8 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   2050) et les exercices qui ne suivent pas l'année civile. L'écriture d'acquisition d'une immobilisation
   est faite (01/10/2026, sa dette au 404000).
 - FEC conforme à l'article A47 A-1 du LPF, la norme de sortie des écritures : la virgule décimale est
-  corrigée, et le compte d'une catégorie doit commencer par trois chiffres (28/09/2026). Restent les
+  corrigée, et le compte d'une catégorie doit commencer par trois chiffres (28/09/2026) ; une écriture ne porte
+  qu'une date, et la base refuse de valider celle qui en porterait deux (05/10/2026). Restent les
   vingt-deux champs d'un BNC en comptabilité de trésorerie (que l'outil de la DGFiP n'exige pas) et les
   montants en devise, qui attendent la réponse de l'expert-comptable du cabinet — voir « le FEC suit
   l'article A47 A-1 » dans « Problèmes connus ».
@@ -4561,6 +4562,26 @@ d'environnement dans la même édition.
     valeur par défaut (`SQL/FECBNCT.sql`) : DateRglt, ModeRglt, NatOp et IdClient ne le sont pas, et
     les contrôles de la date et du mode de règlement ont été retirés en 2015. **Un fichier à dix-huit
     colonnes passe donc ce contrôle.**
+  **ET L'OUTIL CONTRÔLE AUSSI CHAQUE ÉCRITURE — UNE PIÈCE PAYÉE EN PLUSIEURS FOIS Y FAISAIT UNE ANOMALIE**
+  (05/10/2026, trouvé en relisant ses requêtes, `SQL/ECRITURE.sql` et `SQL/VUES.sql`). Pour chaque EcritureNum, il
+  exige un seul journal, l'équilibre, une seule EcritureDate (« Différentes dates comptables » sinon), une seule
+  pièce, une seule date de pièce et un seul lettrage. Depuis la datation au paiement (28/09/2026), une pièce payée
+  en plusieurs fois porte en trésorerie une part par paiement, chacune à sa date, et `numeroterFec` la rangeait
+  sous UN numéro : une écriture à plusieurs dates. Elle fait désormais UNE ÉCRITURE PAR DATE — la clé d'une
+  écriture est la pièce et la date, le règlement d'engagement gardant son mouvement en plus —, chacune équilibrée
+  quand la pièce est payée (la charge d'une date face à la banque de ce paiement, sa TVA complétant sa charge ; une
+  note de frais remboursée en partie, le virement à sa date et le reste face au 108000 à celle de la note), toutes
+  sous la même pièce (PieceRef, PieceDate). Un règlement d'engagement se reconnaît à ses lignes, qui désignent
+  toutes leur mouvement, et non plus à la forme de sa clé : l'ordre de retour de la requête n'en décide rien, et un
+  test rend le même fichier dans les deux ordres. **La base le refuse aussi** : `valider_exercice` rejette une
+  écriture dont les lignes portent deux dates (migration `une_ecriture_une_date`), posée avant qu'aucun exercice ne
+  soit validé — la validation fige le journal et le numéro, donc une écriture à deux dates l'aurait été pour
+  toujours. `defautsDeNumerotation` le dit avant le clic (`dates`), et l'essai de la validation porte le contrôle
+  24b : la fonction d'avant l'acceptait, quatre mutations de la règle ne font tomber que lui. Les six contrôles de
+  l'outil sont refaits par un test sur le fichier lui-même (`anomaliesDgfip`, `desequilibresDgfip`), lui-même
+  éprouvé sur un fichier à deux dates. LATENT, et mesuré : aucune pièce payée en plusieurs fois en base, aucune
+  écriture validée. Neuf mutations côté application, huit mordent ; la neuvième — le préalable qui ne compterait
+  pas les dates — est équivalente, `numeroterFec` ne pouvant plus produire d'écriture à deux dates.
   **CE QUI RESTE HORS DE LA NORME, dit plutôt que promis** :
   - **Un BNC en comptabilité de trésorerie doit VINGT-DEUX champs** selon le texte (VIII 7) : les
     dix-huit, plus DateRglt, ModeRglt, NatOp et IdClient. Le fichier n'en écrit que dix-huit, pour
@@ -6396,8 +6417,9 @@ d'environnement dans la même édition.
     validée (avant l'ouverture, elle dit de la retirer ou de la redater) ; un mouvement encore à traiter jusqu'au
     31 décembre ; une 2035 absente en trésorerie, présente en engagement ; et une NUMÉROTATION, composée par
     l'application, qui ne couvre pas exactement les écritures de l'exercice, dont les numéros d'un journal ne se
-    suivent pas depuis 1 dans l'ordre des dates, dont une écriture n'est pas équilibrée au centime ou porte deux
-    pièces, ou où un compte porte deux libellés. La CONCORDANCE avec la 2035, elle, est vérifiée par l'application
+    suivent pas depuis 1 dans l'ordre des dates, dont une écriture n'est pas équilibrée au centime, porte deux
+    pièces ou deux dates (depuis le 05/10/2026, voir « le FEC suit l'article A47 A-1 »), ou où un compte porte deux
+    libellés. La CONCORDANCE avec la 2035, elle, est vérifiée par l'application
     juste avant l'appel : la base ne sait pas calculer une 2035.
   - Une écriture validée porte son journal, son numéro, sa date de validation et ce que le FEC lisait ailleurs —
     la référence et la date de sa pièce, le libellé de son compte, son compte auxiliaire
@@ -6441,7 +6463,8 @@ d'environnement dans la même édition.
     quittait. La nouvelle ligne est maintenant jugée comme une insertion, sur la frontière de SON dossier.
   **ÉPROUVÉ EN PRODUCTION** (`supabase/essais/validationExercice.sql`) : 145 contrôles sur 145, joués dans des
   dossiers jetables d'un bloc qui s'annule entièrement — les comptes de douze tables identiques avant et après —,
-  et le texte transmis comparé au fichier (identique sur 418 lignes). Il ne porte aucune instruction de
+  et le texte transmis comparé au fichier (identique sur 418 lignes) ; rejoué le 05/10/2026 après
+  `une_ecriture_une_date`, 146 sur 146, identique sur 419 lignes. Il ne porte aucune instruction de
   suppression, que l'outil d'exécution soumet à une confirmation qui n'arrive pas ici : ce que fait une
   suppression (refusée sur ce qui est figé, permise par la cascade d'un dossier) est éprouvé sur une réplique
   locale du schéma et seulement LU au catalogue en production — plus faible, et dit comme tel. Trente-quatre
@@ -8045,7 +8068,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4265 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4274 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
