@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AnneeProvider } from '../../context/AnneeContext'
+import { ContexteDossier } from '../../test/exercicesValides'
 import BanqueTab from './BanqueTab'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from '../../components/PanneauDroit'
 import type {
@@ -426,12 +426,13 @@ function reinitialiser() {
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '455000' }
 const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
 
-function rendre(modele: ModeleComptable = TRESORERIE, assujettiTva = false) {
+// `valides` : les exercices validés que la page du dossier fournit à ses onglets (DossierDetail).
+function rendre(modele: ModeleComptable = TRESORERIE, assujettiTva = false, valides: readonly number[] = []) {
   return render(
     <FournisseurPanneauDroit>
-      <AnneeProvider defaut="toutes">
+      <ContexteDossier annee="toutes" valides={valides}>
         <BanqueTab dossierId="dossier-de-test" modele={modele} assujettiTva={assujettiTva} />
-      </AnneeProvider>
+      </ContexteDossier>
       <EmplacementPanneauDroit />
     </FournisseurPanneauDroit>,
   )
@@ -3575,5 +3576,293 @@ describe('BanqueTab — la connexion bancaire', () => {
     await recuperer()
     expect(screen.queryByText(/Import suspendu/)).toBeNull()
     expect((screen.getByRole('button', { name: /^Importer les/ }) as HTMLButtonElement).disabled).toBe(false)
+  })
+  // LIGNE 26.6 (d) : la frontière de validation vient de l'onglet — la carte, montée seule, reçoit la sienne écrite à
+  // la main. Le mouvement de juin 2025 déjà importé d'un fichier reste « déjà dans un relevé » ; l'autre tombe dans
+  // l'exercice validé, ne s'importe pas, et la carte le dit.
+  it('la carte reçoit la frontière de validation de l’onglet', async () => {
+    reinitialiser()
+    faux.connexionBancaire = { connexion, recuperation }
+    rendre(TRESORERIE, false, [2025])
+    await recuperer()
+    expect(screen.getByText('0 à importer').parentElement!.textContent).toContain('1 déjà dans un relevé importé en fichier')
+    expect(screen.getByText(/Un mouvement daté d’un exercice validé, au plus tard le 31\/12\/2025, ne s’importe pas/)).toBeTruthy()
+  })
+})
+
+// LIGNE 26.6 (d) : CE QU'UN EXERCICE VALIDÉ A FIGÉ. Un mouvement daté au plus tard à la frontière ne s'importe, ne se
+// rapproche, ne se classe et ne se modifie plus — la base le refuse (`garder_mouvement_valide`). Ce qu'aucun test de
+// `src/lib` ne voit : que l'écran lise les exercices validés que la page du dossier lui fournit, écarte ces lignes des
+// deux imports en le disant, ne propose plus aucun geste sur un mouvement figé — en le disant aussi —, et ne réclame
+// plus le taux de TVA qu'il ne pourrait plus recevoir.
+describe('BanqueTab — un exercice validé', () => {
+  const alertes: string[] = []
+  beforeEach(() => {
+    alertes.length = 0
+    vi.spyOn(window, 'alert').mockImplementation((m?: unknown) => { alertes.push(String(m)) })
+  })
+  const RECETTES = categorieDeTest({
+    id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Ventes / prestations', ordre: 10,
+    compte_comptable: '706000', poste_2035: 'Recettes',
+  })
+  const EMPRUNT: Emprunt = {
+    id: 'emp-1', dossier_id: 'dossier-de-test', nom: 'Prêt matériel', organisme_preteur: 'Banque du Midi',
+    capital_initial: 12000, taux_annuel: 3.6, date_debut: '2025-01-05', duree_mois: 24, created_at: '2025-01-05T10:00:00Z',
+  }
+  async function voirLesRapproches() {
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+  }
+  async function deposerCsv(csv: string, lignes = 2) {
+    const fichier = new File([csv], 'releve.csv', { type: 'text/csv' })
+    const champ = document.querySelector('input[type=file][accept=".csv,text/csv"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
+    return screen.findByRole('button', { name: new RegExp(`Importer ${lignes} ligne\\(s\\)`) })
+  }
+  const lot = () => faux.insertions.filter((i) => i.table === 'lignes_bancaires')
+
+  it('l’import d’un fichier écarte la ligne d’un exercice validé, importe les autres, et le dit', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre(TRESORERIE, false, [2025])
+    const bouton = await deposerCsv('Date;Libellé;Montant\n05/06/2025;VIR CLIENT DUPONT;250,00\n10/01/2026;VIR CLIENT MARTIN;300,00\n')
+    await act(async () => { bouton.click() })
+    expect(lot()).toHaveLength(1)
+    expect(lot()[0].valeur).toEqual([expect.objectContaining({ libelle: 'VIR CLIENT MARTIN', montant: 300 })])
+    expect(alertes).toEqual([expect.stringMatching(
+      /1 ligne\(s\) importée\(s\), 1 datée\(s\) d’un exercice validé, non importée\(s\)\.[\s\S]*Une ligne datée d’un exercice validé, au plus tard le 31\/12\/2025, ne s’importe pas/,
+    )])
+  })
+
+  it('plusieurs lignes d’un exercice validé se disent au pluriel', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre(TRESORERIE, false, [2025])
+    const bouton = await deposerCsv(
+      'Date;Libellé;Montant\n05/06/2025;VIR CLIENT DUPONT;250,00\n06/06/2025;VIR CLIENT DURAND;120,00\n10/01/2026;VIR CLIENT MARTIN;300,00\n', 3)
+    await act(async () => { bouton.click() })
+    expect(lot()[0].valeur).toEqual([expect.objectContaining({ libelle: 'VIR CLIENT MARTIN' })])
+    expect(alertes).toEqual([expect.stringMatching(
+      /2 datée\(s\) d’un exercice validé[\s\S]*2 lignes datées d’un exercice validé, au plus tard le 31\/12\/2025, ne s’importent pas — un exercice validé ne reçoit plus de mouvement\. Le relevé de cet exercice ne les porte pas/,
+    )])
+  })
+
+  it('un relevé dont rien n’est à importer le dit, sans rien envoyer', async () => {
+    // Le 02/06/2025 est déjà au relevé ; le 05/06/2025 tombe dans l'exercice validé.
+    reinitialiser()
+    rendre(TRESORERIE, false, [2025])
+    const bouton = await deposerCsv('Date;Libellé;Montant\n02/06/2025;PRLV SEPA FOURNISSEUR;-100,00\n05/06/2025;VIR CLIENT DUPONT;250,00\n')
+    await act(async () => { bouton.click() })
+    expect(lot()).toHaveLength(0)
+    expect(screen.getByText(/Rien à importer : une ligne datée d’un exercice validé, au plus tard le 31\/12\/2025, ne s’importe pas.*L’autre est déjà au relevé\./)).toBeTruthy()
+  })
+
+  // Le garde symétrique : sans exercice validé, la même ligne s'importe, et rien n'est dit.
+  it('sans exercice validé, la ligne de 2025 s’importe', async () => {
+    reinitialiser()
+    faux.lignes = []
+    rendre()
+    const bouton = await deposerCsv('Date;Libellé;Montant\n05/06/2025;VIR CLIENT DUPONT;250,00\n10/01/2026;VIR CLIENT MARTIN;300,00\n')
+    await act(async () => { bouton.click() })
+    expect(lot()[0].valeur).toHaveLength(2)
+    expect(alertes).toEqual([])
+  })
+
+  it('le chemin PDF écarte aussi la ligne d’un exercice validé, et le dit', async () => {
+    reinitialiser()
+    faux.lignes = []
+    faux.lignesPdf = [
+      { texte: '05/06/2025 VIR CLIENT DUPONT 250,00', xFin: 0 },
+      { texte: '10/01/2026 VIR CLIENT MARTIN 300,00', xFin: 0 },
+    ]
+    rendre(TRESORERIE, false, [2025])
+    await act(async () => { (await screen.findByRole('button', { name: 'PDF' })).click() })
+    const fichier = new File(['%PDF'], 'releve.pdf', { type: 'application/pdf' })
+    const champ = document.querySelector('input[type=file][accept=".pdf,application/pdf"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
+    const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+    await act(async () => { bouton.click() })
+    expect(lot()).toHaveLength(1)
+    expect(lot()[0].valeur).toEqual([expect.objectContaining({ libelle: 'VIR CLIENT MARTIN', montant: 300 })])
+    expect(alertes).toEqual([expect.stringMatching(/Une ligne datée d’un exercice validé, au plus tard le 31\/12\/2025, ne s’importe pas/)])
+  })
+
+  it('le chemin PDF dont rien n’est à importer le dit aussi, sans rien envoyer', async () => {
+    reinitialiser()
+    faux.lignes = []
+    faux.lignesPdf = [
+      { texte: '05/06/2025 VIR CLIENT DUPONT 250,00', xFin: 0 },
+      { texte: '06/06/2025 VIR CLIENT DURAND 120,00', xFin: 0 },
+    ]
+    rendre(TRESORERIE, false, [2025])
+    await act(async () => { (await screen.findByRole('button', { name: 'PDF' })).click() })
+    const fichier = new File(['%PDF'], 'releve.pdf', { type: 'application/pdf' })
+    const champ = document.querySelector('input[type=file][accept=".pdf,application/pdf"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [fichier] } }) })
+    const bouton = await screen.findByRole('button', { name: /Importer 2 ligne\(s\)/ })
+    await act(async () => { bouton.click() })
+    expect(lot()).toHaveLength(0)
+    expect(screen.getByText(/Rien à importer : 2 lignes datées d’un exercice validé, au plus tard le 31\/12\/2025, ne s’importent pas/)).toBeTruthy()
+  })
+
+  it('la fiche d’un mouvement figé ne propose plus rien, et dit l’exercice qui le fige', async () => {
+    reinitialiser()
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1' })]
+    rendre(TRESORERIE, false, [2025])
+    await voirLesRapproches()
+    await ouvrir()
+    expect(within(volet()).getByText(/L'exercice 2025 est validé : ce mouvement ne se rapproche, ne se classe et ne se modifie plus/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Annuler le rapprochement' })).toBeNull()
+    cleanup()
+
+    // Figé par la validation d'un exercice POSTÉRIEUR : la phrase de la base, pas « validé ».
+    reinitialiser()
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1' })]
+    rendre(TRESORERIE, false, [2026])
+    await voirLesRapproches()
+    await ouvrir()
+    expect(within(volet()).getByText(/L'exercice 2025 est figé par la validation de l'exercice 2026 : ce mouvement ne se rapproche/)).toBeTruthy()
+    cleanup()
+
+    // Le garde symétrique : le lendemain de la frontière, le geste est là, et rien n'est dit.
+    reinitialiser()
+    faux.lignes = [ligneDeTest({ statut: 'rapprochee', piece_id: 'piece-1' })]
+    rendre(TRESORERIE, false, [2024])
+    await voirLesRapproches()
+    await ouvrir()
+    expect(within(volet()).getByRole('button', { name: 'Annuler le rapprochement' })).toBeTruthy()
+    expect(within(volet()).queryByText(/ne se modifie plus/)).toBeNull()
+  })
+
+  it('un mouvement affecté figé ne se réaffecte plus, et son taux n’est plus réclamé', async () => {
+    const ligne = () => screen.getAllByText('VIR CPAM').find((e) => e.closest('tr')?.classList.contains('clickable'))!.closest('tr')!
+    reinitialiser()
+    faux.pieces = []
+    faux.categories = [RECETTES]
+    faux.lignes = [ligneDeTest({ libelle: 'VIR CPAM', montant: 120, statut: 'rapprochee', categorie_id: 'cat-recettes' })]
+    rendre(TRESORERIE, true, [2025])
+    await voirLesRapproches()
+    await waitFor(() => expect(ligne().textContent).toMatch(/Affecté/))
+    expect(ligne().textContent).not.toMatch(/TVA à choisir/)
+    await ouvrir('VIR CPAM')
+    expect(within(volet()).getByText(/ne se modifie plus/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Annuler l’affectation' })).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Réaffecter' })).toBeNull()
+    expect(within(volet()).queryByLabelText('Catégorie')).toBeNull()
+    expect(within(volet()).queryByText(/cette recette n’a pas de taux/)).toBeNull()
+  })
+
+  it('un mouvement ventilé, réglé en groupe ou d’emprunt figé ne se modifie plus', async () => {
+    reinitialiser()
+    faux.categories = [RECETTES]
+    faux.emprunts = [EMPRUNT]
+    faux.lignes = [
+      ligneDeTest({ id: 'l-vent', libelle: 'REMISE CB', montant: 95, statut: 'rapprochee', ventilee: true }),
+      ligneDeTest({ id: 'l-groupe', libelle: 'VIR FOURNISSEURS', montant: -100, statut: 'rapprochee', reglement_groupe: true }),
+      ligneDeTest({
+        id: 'l-emprunt', libelle: 'PRLV ECHEANCE PRET', montant: -540, date: '2025-02-06', statut: 'rapprochee',
+        emprunt_id: 'emp-1', emprunt_echeance: 1, emprunt_interets: 36, emprunt_assurance: 21.03,
+      }),
+    ]
+    faux.ventilations = [
+      { id: 'v1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-vent', categorie_id: 'cat-recettes', part_personnelle: false, montant: 100, taux_tva: null, created_at: '2025-06-02T10:00:00Z' },
+      { id: 'v2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-vent', categorie_id: null, part_personnelle: true, montant: -5, taux_tva: null, created_at: '2025-06-02T10:00:00Z' },
+    ]
+    faux.reglements = [{ id: 'g1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-groupe', piece_id: 'piece-1', montant: -100, created_at: '2025-06-02T10:00:00Z' }]
+    rendre(TRESORERIE, false, [2025])
+    await voirLesRapproches()
+
+    await ouvrir('REMISE CB')
+    expect(within(volet()).getByText(/ne se modifie plus/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Modifier la ventilation…' })).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Annuler la ventilation' })).toBeNull()
+
+    await ouvrir('VIR FOURNISSEURS')
+    expect(within(volet()).getByText(/ne se modifie plus/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Modifier le règlement…' })).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Annuler le règlement groupé' })).toBeNull()
+
+    await ouvrir('PRLV ECHEANCE PRET')
+    expect(within(volet()).getByText(/ne se modifie plus/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Corriger le découpage…' })).toBeNull()
+    expect(within(volet()).queryByRole('button', { name: 'Annuler le rapprochement' })).toBeNull()
+  })
+
+  // Les catégories restent libres après une validation : leur compte ou leur poste peut changer. Les alertes qui en
+  // découlent demandent de réaffecter ou de modifier la ventilation — un geste que la base refuse sur un mouvement
+  // figé. Elles se taisent ; la fiche dit pourquoi rien ne se modifie.
+  it('les alertes d’un mouvement affecté ou ventilé figé, qui demanderaient un geste impossible, se taisent', async () => {
+    const HORS_RESULTAT = categorieDeTest({ id: 'cat-hors', libelle: 'Ancienne recette', code: 'autre', compte_comptable: '467000', poste_2035: 'Recettes' })
+    const SANS_POSTE = categorieDeTest({ id: 'cat-sans-poste', libelle: 'Honoraires reçus', code: 'autre', compte_comptable: '706100', poste_2035: null })
+    const ALERTES = [
+      /n’est plus un compte de charge ou de produit/, /ne sont plus des comptes de charge ou de produit/,
+      /pas de taux/, /pas de poste 2035/,
+    ]
+    const jeu = () => {
+      reinitialiser()
+      faux.pieces = []
+      faux.categories = [RECETTES, HORS_RESULTAT, SANS_POSTE]
+      faux.lignes = [
+        ligneDeTest({ id: 'l-hors', libelle: 'VIR ANCIEN', montant: 80, statut: 'rapprochee', categorie_id: 'cat-hors' }),
+        ligneDeTest({ id: 'l-poste', libelle: 'VIR HONORAIRES', montant: 60, statut: 'rapprochee', categorie_id: 'cat-sans-poste', taux_tva: 0 }),
+        ligneDeTest({ id: 'l-vent', libelle: 'REMISE CB', montant: 300, statut: 'rapprochee', ventilee: true }),
+      ]
+      faux.ventilations = [
+        { id: 'v1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-vent', categorie_id: 'cat-recettes', part_personnelle: false, montant: 100, taux_tva: null, created_at: '2025-06-02T10:00:00Z' },
+        { id: 'v2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-vent', categorie_id: 'cat-hors', part_personnelle: false, montant: 120, taux_tva: null, created_at: '2025-06-02T10:00:00Z' },
+        { id: 'v3', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-vent', categorie_id: 'cat-sans-poste', part_personnelle: false, montant: 80, taux_tva: 0, created_at: '2025-06-02T10:00:00Z' },
+      ]
+    }
+    const ligneDu = (libelle: string) => screen.getAllByText(libelle).find((e) => e.closest('tr')?.classList.contains('clickable'))!.closest('tr')!
+    const parcourir = async (attendu: 'tues' | 'dits') => {
+      await voirLesRapproches()
+      // La pastille de la liste comme l'alerte de la fiche : la part de recette sans taux d'un mouvement ventilé figé
+      // ne se réclame plus.
+      await waitFor(() => expect(ligneDu('REMISE CB').textContent).toMatch(/Ventilé/))
+      if (attendu === 'tues') expect(ligneDu('REMISE CB').textContent).not.toMatch(/TVA à choisir/)
+      else expect(ligneDu('REMISE CB').textContent).toMatch(/TVA à choisir/)
+      for (const libelle of ['VIR ANCIEN', 'VIR HONORAIRES', 'REMISE CB']) {
+        await ouvrir(libelle)
+        const texte = volet().textContent!
+        const dites = ALERTES.filter((a) => a.test(texte))
+        if (attendu === 'tues') expect(dites, libelle).toEqual([])
+        else expect(dites.length, libelle).toBeGreaterThan(0)
+      }
+    }
+    jeu()
+    rendre(TRESORERIE, true, [2025])
+    await parcourir('tues')
+    cleanup()
+    // Le garde symétrique : sans exercice validé, chacun des trois mouvements porte son alerte — le jeu les
+    // déclenche bien toutes.
+    jeu()
+    rendre(TRESORERIE, true)
+    await parcourir('dits')
+  })
+
+  it('un virement personnel ou une échéance de cotisation figés ne se remettent plus à traiter, et la fiche ne le promet pas', async () => {
+    reinitialiser()
+    faux.pieces = []
+    faux.cotisations = [{
+      id: 'cot-1', dossier_id: 'dossier-de-test', echeance: '2025-06-05', montant_appele: 100, montant_verse: null,
+      montant_csg_crds: 9.7, previsionnel: false, created_at: '2025-01-10T09:00:00Z',
+    }]
+    faux.lignes = [
+      ligneDeTest({ id: 'l-perso', libelle: 'VIR COMPTE PERSO', montant: -500, statut: 'ignoree', prelevement_personnel: true }),
+      ligneDeTest({ id: 'l-urssaf', libelle: 'PRLV URSSAF', montant: -100, date: '2025-06-06', statut: 'rapprochee', cotisation_id: 'cot-1' }),
+    ]
+    rendre(TRESORERIE, false, [2025])
+    await act(async () => { (await screen.findByRole('button', { name: 'Tous' })).click() })
+
+    await ouvrir('VIR COMPTE PERSO')
+    expect(within(volet()).getByText(/Ni charge ni recette : il s’écrit sur le compte/)).toBeTruthy()
+    expect(within(volet()).getByText(/ne se modifie plus/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Remettre à traiter' })).toBeNull()
+    expect(within(volet()).queryByText(/« Remettre à traiter » retire aussi son écriture/)).toBeNull()
+
+    await ouvrir('PRLV URSSAF')
+    expect(within(volet()).getByText(/S’écrit face à la banque/)).toBeTruthy()
+    expect(within(volet()).getByText(/ne se modifie plus/)).toBeTruthy()
+    expect(within(volet()).queryByRole('button', { name: 'Annuler le rapprochement' })).toBeNull()
+    expect(within(volet()).queryByText(/« Annuler le rapprochement » retire aussi son écriture/)).toBeNull()
   })
 })

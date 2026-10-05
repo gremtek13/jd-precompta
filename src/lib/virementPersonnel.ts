@@ -5,6 +5,7 @@ import { COMPTE_EXPLOITANT } from './comptes'
 import type { ModeleComptable } from './engagement'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { EcritureBrouillon } from './types'
+import { estFigee } from './validationExercice'
 
 // UN VIREMENT PERSONNEL S'ÉCRIT SUR LE COMPTE DU DIRIGEANT (ligne 26.6 de la feuille de route, étape a).
 //
@@ -60,14 +61,20 @@ export function ecritureDuVirementPersonnel(ligne: MouvementBancaire, modele: Mo
 //
 // Un mouvement qui ne PEUT pas s'écrire n'est pas rendu : de zéro euro, il n'a rien à écrire ; rapproché
 // ou affecté, il n'est pas un virement personnel qu'on puisse écrire. « Écrire » ne réussirait sur aucun.
+// Ni un virement d'un exercice VALIDÉ (lib/validationExercice.ts) : la base refuse d'y écrire. Il ne peut en
+// manquer un que d'avant l'ouverture d'un dossier repris, classé avant le 29/09/2026 — la validation refuse un
+// exercice dont un virement n'est pas écrit —, et la réclamer laisserait un point que rien ne lève. Sans valeur
+// par défaut : un appelant qui oublie la frontière réclamerait une écriture que la base refuse.
 export function virementsPersonnelsAEcrire<L extends MouvementBancaire>(
   ecritures: readonly EcritureBrouillon[],
   lignes: readonly L[],
   modele: ModeleComptable,
+  frontiere: string | null,
 ): L[] {
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((l) =>
     l.prelevement_personnel
     && !refusVirementPersonnel(l)
+    && !estFigee(l.date, frontiere)
     && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuVirementPersonnel(l, modele), l.date))
 }

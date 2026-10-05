@@ -245,14 +245,18 @@ export function partsDesVentilations(
 // LES MOUVEMENTS VENTILÉS AVEC UNE PART DE RECETTE SANS TAUX SUR UN DOSSIER ASSUJETTI : le pendant de
 // `recettesAffecteesSansTaux`. La base n'en ventile plus un sans le taux de chaque part de recette, mais
 // un dossier peut devenir assujetti après coup, et ses recettes restent écrites au TTC : leur TVA
-// collectée n'est dans aucune CA3. Un mouvement par entrée, même s'il porte deux parts sans taux.
+// collectée n'est dans aucune CA3. Un mouvement par entrée, même s'il porte deux parts sans taux. Sauf un
+// mouvement d'un exercice VALIDÉ, comme pour `recettesAffecteesSansTaux` : ses parts ne se modifient plus.
 export function recettesVentileesSansTaux(
   parts: readonly PartVentilee[],
   assujettiTva: boolean,
+  frontiere: string | null,
 ): MouvementBancaire[] {
   if (!assujettiTva) return []
   const parLigne = new Map<string, MouvementBancaire>()
-  for (const p of parts) if (p.nature === 'recette' && p.taux === null) parLigne.set(p.ligne.id, p.ligne)
+  for (const p of parts) {
+    if (p.nature === 'recette' && p.taux === null && !estFigee(p.ligne.date, frontiere)) parLigne.set(p.ligne.id, p.ligne)
+  }
   return [...parLigne.values()]
 }
 

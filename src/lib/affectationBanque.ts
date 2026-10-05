@@ -215,11 +215,18 @@ export function referenceDuReleve(ligne: Pick<LigneBancaire, 'source_fichier'>):
 // collectée n'est dans aucune CA3, et la 2035 compte la taxe comme du chiffre d'affaires. Rien ne les
 // réécrit sans qu'on choisisse leur taux : on les montre, et le geste est de les réaffecter en le
 // choisissant — ou de rapprocher leur facture à la place.
+//
+// Sauf un mouvement d'un exercice VALIDÉ (lib/validationExercice.ts) : la base refuse de le réaffecter, et sa TVA
+// relève d'un exercice que rien ne rouvre. Un dossier qui devient assujetti APRÈS une validation laisserait sinon
+// un point en erreur que rien ne lève. Sans valeur par défaut, comme les autres contrôles du relevé.
 export function recettesAffecteesSansTaux(
   affectes: readonly MouvementAffecte[],
   assujettiTva: boolean,
+  frontiere: string | null,
 ): MouvementAffecte[] {
-  return assujettiTva ? affectes.filter((m) => m.nature === 'recette' && m.taux === null) : []
+  return assujettiTva
+    ? affectes.filter((m) => m.nature === 'recette' && m.taux === null && !estFigee(m.ligne.date, frontiere))
+    : []
 }
 
 // Tolérance de deux centimes, celle du contrôle des écritures d'une pièce (voir ecritures.ts).

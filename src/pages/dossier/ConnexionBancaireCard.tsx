@@ -71,7 +71,7 @@ const lireStatut = (dossierId: string) =>
 const lectureDe = (r: Reponse<StatutConnexion>): Lecture =>
   r.erreur !== null ? { etat: 'erreur', message: r.erreur } : { etat: 'lue', statut: r.donnees }
 
-export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspension, onImported }: {
+export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspension, frontiere, onImported }: {
   dossierId: string
   // Le relevé du dossier : la période proposée en part, et ce qui y est déjà ne se réimporte pas.
   lignes: LigneBancaire[]
@@ -81,6 +81,9 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
   // d'un fichier — un mouvement déjà dans un relevé importé ne se reconnaîtrait plus, et une règle non
   // lue laisserait « à traiter » ce qu'elle couvre.
   suspension: string | null
+  // La frontière de validation (lib/validationExercice.ts) : un mouvement daté au plus tard ce jour-là ne s'importe
+  // plus — la base refuserait le lot entier. `planImport` l'écarte, et l'aperçu le dit.
+  frontiere: string | null
   onImported: () => void
 }) {
   const [lecture, setLecture] = useState<Lecture>({ etat: 'chargement' })
@@ -160,7 +163,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
   // seul — deux « Renouveler l'accord » dans la même carte feraient se demander lequel.
   const alerteAccord = expire || (jours !== null && jours <= JOURS_ALERTE_ACCORD)
   const compteChoisi = connexion?.comptes.find((c) => c.empreinte === connexion.compte_empreinte) ?? null
-  const plan = recuperation ? planImport(recuperation.mouvements, lignes) : null
+  const plan = recuperation ? planImport(recuperation.mouvements, lignes, frontiere) : null
   const banqueChoisie = banques?.liste.find((b) => cleBanque(b) === choix.banque) ?? null
 
   const chargerBanques = () => sousVerrou(async () => {
@@ -200,7 +203,7 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
 
   const importer = () => sousVerrou(async () => {
     if (!recuperation || !recuperation.complete || suspension !== null) return
-    const aImporter = planImport(recuperation.mouvements, lignes).aImporter
+    const aImporter = planImport(recuperation.mouvements, lignes, frontiere).aImporter
     if (aImporter.length === 0) return
     if (recuperation.environnement === 'SANDBOX' && !window.confirm(
       'Ces mouvements viennent du BAC À SABLE : la banque et ses mouvements sont fictifs. Les importer quand même ' +
@@ -496,6 +499,18 @@ export default function ConnexionBancaireCard({ dossierId, lignes, regles, suspe
                 )}.
               </p>
               {phraseEcartes(recuperation.ecartes) && <p className="muted" style={{ marginTop: 0 }}>{phraseEcartes(recuperation.ecartes)}</p>}
+              {/* Un mouvement que la banque connaît et que le relevé d'un exercice validé n'a pas : l'exercice validé est
+                  incomplet, et rien ne peut plus l'y ajouter. Dit, jamais tu. */}
+              {plan.dansUnExerciceValide.length > 0 && frontiere && (
+                <p className="error-text">
+                  {plan.dansUnExerciceValide.length > 1
+                    ? `${plan.dansUnExerciceValide.length} mouvements datés d’un exercice validé, au plus tard le ${formatDate(frontiere)}, ne s’importent pas`
+                    : `Un mouvement daté d’un exercice validé, au plus tard le ${formatDate(frontiere)}, ne s’importe pas`}
+                  {' '}— un exercice validé ne reçoit plus de mouvement. Le relevé de cet exercice ne{' '}
+                  {plan.dansUnExerciceValide.length > 1 ? 'les' : 'le'} porte pas : une opération oubliée se corrige sur
+                  l’exercice suivant.
+                </p>
+              )}
               {recuperation.avertissement && <p className="muted">{recuperation.avertissement}</p>}
               {!recuperation.complete && (
                 <p className="error-text">

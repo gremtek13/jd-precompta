@@ -1,5 +1,6 @@
 import { ajouterJours } from './format'
 import type { LigneBancaire } from './types'
+import { estFigee } from './validationExercice'
 
 // LA CONNEXION BANCAIRE, CÔTÉ APPLICATION (ligne 24 de la feuille de route, preuve de concept sur le bac
 // à sable d'Enable Banking). La fonction serveur `banque-connexion` parle au prestataire et RENVOIE les
@@ -126,11 +127,22 @@ const cleDateMontant = (date: string, montant: number) => `${date}|${montant.toF
  *     importer. Importer quand même compterait l'opération deux fois dans tout ce qui suit.
  * Une date décalée d'un jour entre le fichier et la banque échappe au second filtre : c'est pourquoi la
  * période proposée commence après le dernier mouvement du relevé.
+ *
+ * Et un troisième, après les deux autres : DATÉ D'UN EXERCICE VALIDÉ (lib/validationExercice.ts). La base refuse
+ * d'y importer un mouvement (`garder_mouvement_valide`) — et tout le lot avec lui, l'insertion étant d'un seul
+ * tenant. Il est écarté et COMPTÉ, jamais tu : un mouvement que la banque connaît et que le relevé d'un exercice
+ * validé n'a pas, c'est un exercice validé incomplet, et rien ne peut plus l'y ajouter. Après les deux autres,
+ * parce qu'un mouvement déjà au relevé, lui, n'y manque pas. Sans valeur par défaut : un appelant qui oublie la
+ * frontière enverrait un lot que la base refuse en entier.
  */
 export function planImport(
   mouvements: readonly MouvementRecupere[],
   lignes: readonly Pick<LigneBancaire, 'date' | 'montant' | 'id_externe'>[],
-): { aImporter: MouvementRecupere[]; dejaImportes: MouvementRecupere[]; dansUnReleve: MouvementRecupere[] } {
+  frontiere: string | null,
+): {
+  aImporter: MouvementRecupere[]; dejaImportes: MouvementRecupere[]; dansUnReleve: MouvementRecupere[]
+  dansUnExerciceValide: MouvementRecupere[]
+} {
   const identifiants = new Set(lignes.flatMap((l) => (l.id_externe === null ? [] : [l.id_externe])))
   const duFichier = new Map<string, number>()
   for (const l of lignes) {
@@ -141,6 +153,7 @@ export function planImport(
   const aImporter: MouvementRecupere[] = []
   const dejaImportes: MouvementRecupere[] = []
   const dansUnReleve: MouvementRecupere[] = []
+  const dansUnExerciceValide: MouvementRecupere[] = []
   for (const m of mouvements) {
     if (identifiants.has(m.id_externe)) { dejaImportes.push(m); continue }
     const cle = cleDateMontant(m.date, m.montant)
@@ -150,9 +163,10 @@ export function planImport(
       dansUnReleve.push(m)
       continue
     }
+    if (estFigee(m.date, frontiere)) { dansUnExerciceValide.push(m); continue }
     aImporter.push(m)
   }
-  return { aImporter, dejaImportes, dansUnReleve }
+  return { aImporter, dejaImportes, dansUnReleve, dansUnExerciceValide }
 }
 
 /** Les jours entiers avant la fin de l'accord — négatif quand elle est passée, null quand on ne la connaît pas. */

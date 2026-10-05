@@ -393,8 +393,8 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
   bloque({
     id: 'recettes-affectees-assujetti', cible: 'banque',
-    nb: recettesAffecteesSansTaux(affectes, d.assujettiTva).filter((a) => mouvementDeLExercice(a.ligne)).length
-      + recettesVentileesSansTaux(partsDesVentilations(d.lignes, d.ventilations, d.categories, d.assujettiTva), d.assujettiTva)
+    nb: recettesAffecteesSansTaux(affectes, d.assujettiTva, frontiere).filter((a) => mouvementDeLExercice(a.ligne)).length
+      + recettesVentileesSansTaux(partsDesVentilations(d.lignes, d.ventilations, d.categories, d.assujettiTva), d.assujettiTva, frontiere)
         .filter(mouvementDeLExercice).length,
     message: "encaissement(s) affecté(s) ou ventilé(s) en recette sans taux de TVA, sur un dossier assujetti : choisir leur taux.",
   })
@@ -408,7 +408,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     message: "mouvement(s) ventilé(s) dont les parts ne font plus le mouvement : modifier ou annuler ces ventilations.",
   })
   bloque({
-    id: 'virements-sans-ecriture', nb: virementsPersonnelsAEcrire(d.ecritures, d.lignes, d.modele).filter(mouvementDeLExercice).length, cible: 'virements',
+    id: 'virements-sans-ecriture', nb: virementsPersonnelsAEcrire(d.ecritures, d.lignes, d.modele, frontiere).filter(mouvementDeLExercice).length, cible: 'virements',
     message: "virement(s) personnel(s) sans écriture — absents du FEC : les écrire.",
   })
   bloque({
@@ -465,7 +465,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
 
   // ── Les avertissements : à lire avant de valider, sans refuser. ────────────────────────────────────────
-  const couverture = couvertureDuReleve(d.lignes)
+  const couverture = couvertureDuReleve(d.lignes, frontiere)
   const echeancesManquantes = couverture
     ? echeancesNonRapprochees(d.emprunts, d.lignes, couverture.debut, couverture.fin).filter((x) => dansLExercice(x.echeance.date))
     : []

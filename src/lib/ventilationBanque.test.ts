@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { MouvementBancaire } from './affectationBanque'
 import type { ModeleComptable } from './engagement'
-import { formatMoney } from './format'
+import { ajouterJours, formatMoney } from './format'
 import { partsDuReleve } from './partsDuReleve'
 import type { Categorie, EcritureBrouillon, VentilationBancaire } from './types'
 import {
@@ -447,7 +447,14 @@ describe('recettesVentileesSansTaux — la TVA qu’aucune CA3 ne voit', () => {
   ], CATEGORIES, assujetti)
 
   it('un mouvement par entrée, s’il porte une part de recette sans taux', () => {
-    expect(recettesVentileesSansTaux(parts(true), true).map((l) => l.id)).toEqual(['remise'])
+    expect(recettesVentileesSansTaux(parts(true), true, null).map((l) => l.id)).toEqual(['remise'])
+  })
+
+  // Ses parts ne se modifient plus : un mouvement d'un exercice validé ne se réclame pas — la frontière comprise.
+  it('ne réclame pas un mouvement d’un exercice validé', () => {
+    const date = remise.date
+    expect(recettesVentileesSansTaux(parts(true), true, date)).toEqual([])
+    expect(recettesVentileesSansTaux(parts(true), true, ajouterJours(date, -1)).map((l) => l.id)).toEqual(['remise'])
   })
 
   it('se tait quand chaque part de recette porte son taux, exonération comprise', () => {
@@ -456,7 +463,7 @@ describe('recettesVentileesSansTaux — la TVA qu’aucune CA3 ne voit', () => {
         part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 100, taux_tva: taux }),
         part({ id: 'r2', ligne_bancaire_id: 'remise', categorie_id: 'cat-frais', montant: -5 }),
       ], CATEGORIES, true)
-      expect(recettesVentileesSansTaux(avecTaux, true)).toEqual([])
+      expect(recettesVentileesSansTaux(avecTaux, true, null)).toEqual([])
     }
   })
 
@@ -465,11 +472,11 @@ describe('recettesVentileesSansTaux — la TVA qu’aucune CA3 ne voit', () => {
       part({ id: 'r1', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes', montant: 60 }),
       part({ id: 'r3', ligne_bancaire_id: 'remise', categorie_id: 'cat-recettes-2', montant: 35 }),
     ], [...CATEGORIES, categorie({ id: 'cat-recettes-2', libelle: 'Autres produits', compte_comptable: '758000' })], true)
-    expect(recettesVentileesSansTaux(deux, true).map((l) => l.id)).toEqual(['remise'])
+    expect(recettesVentileesSansTaux(deux, true, null).map((l) => l.id)).toEqual(['remise'])
   })
 
   it('rien sur un dossier exonéré', () => {
-    expect(recettesVentileesSansTaux(parts(false), false)).toEqual([])
+    expect(recettesVentileesSansTaux(parts(false), false, null)).toEqual([])
   })
 })
 

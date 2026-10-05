@@ -136,7 +136,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-function monter(o: { lignes?: LigneBancaire[]; regles?: RegleBancaireIgnoree[]; suspension?: string | null } = {}) {
+function monter(o: { lignes?: LigneBancaire[]; regles?: RegleBancaireIgnoree[]; suspension?: string | null; frontiere?: string | null } = {}) {
   const onImported = vi.fn()
   render(
     <ConnexionBancaireCard
@@ -144,6 +144,7 @@ function monter(o: { lignes?: LigneBancaire[]; regles?: RegleBancaireIgnoree[]; 
       lignes={o.lignes ?? []}
       regles={o.regles ?? []}
       suspension={o.suspension ?? null}
+      frontiere={o.frontiere ?? null}
       onImported={onImported}
     />,
   )
@@ -522,6 +523,51 @@ describe('récupérer, puis importer', () => {
     expect(screen.getByText(/2 mouvement\(s\) importé\(s\) dans le relevé.* dont 1 ignoré\(s\) par une règle/)).toBeTruthy()
     // L'aperçu s'en va : il décrivait un relevé qui n'est plus le même.
     expect(screen.queryByRole('button', { name: /^Importer les/ })).toBeNull()
+  })
+
+  // LIGNE 26.6 (d) : un mouvement daté d'un exercice validé ne s'importe plus — la base refuserait le lot entier
+  // (`garder_mouvement_valide`). Il n'est pas envoyé, et l'aperçu le dit : la banque le connaît, le relevé de
+  // l'exercice validé non.
+  it('n’envoie pas un mouvement daté d’un exercice validé, et le dit', async () => {
+    etat.connexion = connexion()
+    const { onImported } = monter({ frontiere: '2026-09-10' })
+    await recupererAvec(recuperation({
+      mouvements: [
+        mouvement({ id_externe: 'eb:r:fige', date: '2026-09-10', montant: -15, libelle: 'PRLV FIGE FICTIF' }),
+        mouvement({ id_externe: 'eb:r:ouvert', date: '2026-09-11', montant: -42.5, libelle: 'PRLV OUVERT FICTIF' }),
+      ],
+    }))
+    expect(screen.getByText('1 à importer')).toBeTruthy()
+    expect(screen.getByText(/Un mouvement daté d’un exercice validé, au plus tard le 10\/09\/2026, ne s’importe pas/)).toBeTruthy()
+    expect(screen.queryByText('PRLV FIGE FICTIF')).toBeNull()
+    await act(async () => { bouton('Importer les 1 mouvement(s)').click() })
+    expect(faux.upserts).toHaveLength(1)
+    expect(faux.upserts[0].lot.map((l) => l.id_externe)).toEqual(['eb:r:ouvert'])
+    expect(onImported).toHaveBeenCalledTimes(1)
+  })
+
+  it('plusieurs mouvements d’un exercice validé se disent au pluriel', async () => {
+    etat.connexion = connexion()
+    monter({ frontiere: '2026-09-10' })
+    await recupererAvec(recuperation({
+      mouvements: [
+        mouvement({ id_externe: 'eb:r:fige1', date: '2026-09-09', montant: -15 }),
+        mouvement({ id_externe: 'eb:r:fige2', date: '2026-09-10', montant: -16 }),
+      ],
+    }))
+    expect(screen.getByText('0 à importer')).toBeTruthy()
+    expect(screen.getByText(/2 mouvements datés d’un exercice validé, au plus tard le 10\/09\/2026, ne s’importent pas — un exercice validé ne reçoit plus de mouvement\. Le relevé de cet exercice ne les porte pas/)).toBeTruthy()
+  })
+
+  // Le garde symétrique : sans exercice validé, le même mouvement s'importe, et rien n'est dit.
+  it('sans exercice validé, importe tout et ne dit rien', async () => {
+    etat.connexion = connexion()
+    monter()
+    await recupererAvec(recuperation({
+      mouvements: [mouvement({ id_externe: 'eb:r:fige', date: '2026-09-10', montant: -15 }), mouvement({ id_externe: 'eb:r:ouvert', date: '2026-09-11' })],
+    }))
+    expect(screen.getByText('2 à importer')).toBeTruthy()
+    expect(screen.queryByText(/exercice validé/)).toBeNull()
   })
 
   it('un mouvement déjà importé entre-temps n’est pas annoncé comme importé', async () => {

@@ -59,14 +59,14 @@ describe('la période proposée à la récupération', () => {
 describe('ce qui s’importe vraiment', () => {
   it('un identifiant déjà dans le relevé n’est pas réimporté', () => {
     const plan = planImport([mouvement('eb:r:a', '2026-09-02', -10), mouvement('eb:r:b', '2026-09-03', -20)],
-      [ligne('2026-09-02', -10, 'eb:r:a')])
+      [ligne('2026-09-02', -10, 'eb:r:a')], null)
     expect(plan.dejaImportes.map((m) => m.id_externe)).toEqual(['eb:r:a'])
     expect(plan.aImporter.map((m) => m.id_externe)).toEqual(['eb:r:b'])
     expect(plan.dansUnReleve).toEqual([])
   })
 
   it('une opération déjà importée d’un FICHIER se reconnaît à sa date et son montant', () => {
-    const plan = planImport([mouvement('eb:r:a', '2026-09-02', -12.3)], [ligne('2026-09-02', -12.30)])
+    const plan = planImport([mouvement('eb:r:a', '2026-09-02', -12.3)], [ligne('2026-09-02', -12.30)], null)
     expect(plan.dansUnReleve.map((m) => m.id_externe)).toEqual(['eb:r:a'])
     expect(plan.aImporter).toEqual([])
   })
@@ -74,7 +74,7 @@ describe('ce qui s’importe vraiment', () => {
   it('un à un : deux cafés du même prix le même jour, dont un seul dans le fichier, en laissent un', () => {
     const plan = planImport(
       [mouvement('eb:e:1', '2026-09-02', -2.5), mouvement('eb:e:2', '2026-09-02', -2.5)],
-      [ligne('2026-09-02', -2.5)])
+      [ligne('2026-09-02', -2.5)], null)
     expect(plan.dansUnReleve).toHaveLength(1)
     expect(plan.aImporter).toHaveLength(1)
   })
@@ -83,15 +83,32 @@ describe('ce qui s’importe vraiment', () => {
     // La ligne déjà récupérée (identifiant) ne doit pas « absorber » un autre mouvement au même montant.
     const plan = planImport(
       [mouvement('eb:r:a', '2026-09-02', -2.5), mouvement('eb:r:b', '2026-09-02', -2.5)],
-      [ligne('2026-09-02', -2.5, 'eb:r:a')])
+      [ligne('2026-09-02', -2.5, 'eb:r:a')], null)
     expect(plan.dejaImportes).toHaveLength(1)
     expect(plan.aImporter.map((m) => m.id_externe)).toEqual(['eb:r:b'])
+  })
+
+  // Un mouvement daté d'un exercice validé ne s'importe plus — la base refuserait le lot entier. Écarté et compté,
+  // APRÈS les deux autres filtres : un mouvement déjà au relevé n'y manque pas.
+  it('écarte et compte ce qu’un exercice validé a figé, la frontière comprise', () => {
+    const plan = planImport(
+      [
+        mouvement('eb:r:fige', '2025-12-31', -10), mouvement('eb:r:ouvert', '2026-01-01', -10),
+        mouvement('eb:r:connu', '2025-12-30', -5), mouvement('eb:r:fichier', '2025-12-29', -7),
+      ],
+      [ligne('2025-12-30', -5, 'eb:r:connu'), ligne('2025-12-29', -7)], '2025-12-31')
+    expect(plan.dansUnExerciceValide.map((m) => m.id_externe)).toEqual(['eb:r:fige'])
+    expect(plan.aImporter.map((m) => m.id_externe)).toEqual(['eb:r:ouvert'])
+    expect(plan.dejaImportes.map((m) => m.id_externe)).toEqual(['eb:r:connu'])
+    expect(plan.dansUnReleve.map((m) => m.id_externe)).toEqual(['eb:r:fichier'])
+    // Le garde symétrique : sans exercice validé, rien n'est écarté.
+    expect(planImport([mouvement('eb:r:fige', '2025-12-31', -10)], [], null).aImporter).toHaveLength(1)
   })
 
   it('ni une autre date ni un autre montant ni l’autre sens ne passent pour la même opération', () => {
     const plan = planImport(
       [mouvement('eb:r:a', '2026-09-03', -10), mouvement('eb:r:b', '2026-09-02', -10.01), mouvement('eb:r:c', '2026-09-02', 10)],
-      [ligne('2026-09-02', -10)])
+      [ligne('2026-09-02', -10)], null)
     expect(plan.aImporter).toHaveLength(3)
   })
 })

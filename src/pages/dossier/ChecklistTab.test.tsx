@@ -1137,6 +1137,30 @@ describe('ChecklistTab — les mouvements affectés sans justificatif', () => {
     expect(screen.queryAllByText(/sur un dossier assujetti/)).toHaveLength(0)
   })
 
+  // Un dossier devenu assujetti APRÈS une validation : la recette d'un exercice validé ne se réaffecte plus — la base
+  // le refuse —, donc la réclamer laisserait un point que rien ne lève.
+  it('ne réclame pas le taux d’une recette d’un exercice validé, affectée ou ventilée', async () => {
+    const ancre = ligne({ id: 'a-traiter', date: '2026-02-01', statut: 'non_rapprochee', piece_id: null })
+    const ventile = ligne({ id: 'l-ven', libelle: 'REMISE CB', date: '2025-07-02', montant: 95, piece_id: null, ventilee: true })
+    const jeu = {
+      lignes: [cpam({ date: '2025-06-10' }), ventile, ancre], categories: [RECETTES], ecritures: [],
+      ventilations: [
+        { id: 'v1', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-ven', categorie_id: 'cat-recettes', part_personnelle: false, montant: 100, taux_tva: null, created_at: '2025-07-03T09:00:00Z' },
+        { id: 'v2', dossier_id: 'dossier-de-test', ligne_bancaire_id: 'l-ven', categorie_id: null, part_personnelle: true, montant: -5, taux_tva: null, created_at: '2025-07-03T09:00:00Z' },
+      ],
+    }
+    poser(jeu)
+    const { unmount } = monter(true, TRESORERIE, [2025])
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/sur un dossier assujetti/)).toHaveLength(0)
+    unmount()
+    // Le garde symétrique : les mêmes recettes, sans exercice validé, se réclament — l'affectée et la ventilée.
+    poser(jeu)
+    monter(true)
+    const point = await screen.findByText(/en recette sans taux de TVA, sur un dossier assujetti/)
+    expect(point.textContent).toMatch(/^2 /)
+  })
+
   it('se tait sur une recette affectée AVEC son taux — et attend alors son écriture au hors taxe, TVA à côté', async () => {
     // L'écriture en place est au TTC : avec un taux, l'affectation écrirait le hors taxe et la TVA collectée,
     // donc le mouvement est « à réaffecter » — c'est l'ancre qui prouve que l'écran a fini de lire.
@@ -1201,6 +1225,20 @@ describe('ChecklistTab — les virements personnels', () => {
 
     const point = await screen.findByText(/personnel\(s\) sans écriture/)
     expect(point.textContent).toMatch(/^1 /)
+  })
+  // Un virement d'un exercice validé ne s'écrit plus — la base le refuse : le réclamer laisserait un point que rien
+  // ne lève.
+  it('ne réclame pas l’écriture d’un virement d’un exercice validé', async () => {
+    const ancre = ligne({ id: 'a-traiter', date: '2026-02-01', statut: 'non_rapprochee', piece_id: null })
+    poser({ lignes: [perso(), ancre].map((l) => l.id === 'l-perso' ? { ...l, date: '2025-03-10' } : l) })
+    const { unmount } = monter(false, TRESORERIE, [2025])
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/personnel\(s\) sans écriture/)).toHaveLength(0)
+    unmount()
+    // Le garde symétrique : le même virement, sans exercice validé, se réclame.
+    poser({ lignes: [perso(), ancre].map((l) => l.id === 'l-perso' ? { ...l, date: '2025-03-10' } : l) })
+    monter()
+    expect((await screen.findByText(/personnel\(s\) sans écriture/)).textContent).toMatch(/^1 /)
   })
 })
 
@@ -1348,6 +1386,20 @@ describe('ChecklistTab — les échéances d’emprunt', () => {
     expect(point.textContent).toMatch(/^2 /)
     screen.getByRole('button', { name: 'Rapprocher ces prélèvements' }).click()
     expect(onNavigate).toHaveBeenCalledWith('banque')
+  })
+
+  // Les mouvements d'un exercice validé ne se rapprochent plus : une échéance qu'aucun ne paie ne le sera jamais.
+  it('ne réclame pas l’échéance d’un exercice validé — celles d’après, si', async () => {
+    // Le relevé court du 1er février 2025 au 30 avril 2026 ; 2025 est validé. Sans frontière, quatorze échéances
+    // manqueraient (de février 2025 à avril 2026, moins celle de mars payée) ; avec, celles de janvier à avril 2026.
+    poser({ lignes: [...bornes('2026-04-30'), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2 })
+    const { unmount } = monter(false, TRESORERIE, [2025])
+    const point = await screen.findByText(/couverte\(s\) par le relevé sans mouvement rapproché/)
+    expect(point.textContent).toMatch(/^4 /)
+    unmount()
+    poser({ lignes: [...bornes('2026-04-30'), echeance2()], emprunts: [EMPRUNT], ecritures: ecritureDeLEcheance2 })
+    monter()
+    expect((await screen.findByText(/couverte\(s\) par le relevé sans mouvement rapproché/)).textContent).toMatch(/^14 /)
   })
 
   it('ne réclame pas l’échéance que le relevé ne couvre pas encore — le garde symétrique', async () => {

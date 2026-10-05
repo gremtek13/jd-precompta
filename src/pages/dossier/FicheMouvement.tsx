@@ -103,6 +103,10 @@ export interface RecurrenceMouvement {
 
 interface FicheMouvementProps {
   ligne: LigneBancaire
+  // L'exercice validé qui fige ce mouvement, dit avec les mots de la base (lib/validationExercice.ts, `dateFigee`) —
+  // nul quand rien ne le fige. Figé, il ne se rapproche, ne se classe et ne se modifie plus (`garder_mouvement_valide`) :
+  // la fiche le dit, ne propose plus aucun geste, et tait ce qui réclamerait un geste impossible.
+  figeePar: string | null
   // Toutes les pièces chargées, à valider comprises : le choix à la main les offre toutes.
   pieces: Piece[]
   // Les seules qu'on PROPOSE : une proposition ne porte que sur une pièce relue par le cabinet —
@@ -450,7 +454,7 @@ function FormulaireEmprunt({ ligne, emprunts, lignes, plausible, occupe, verbe, 
 }
 
 export default function FicheMouvement({
-  ligne, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
+  ligne, figeePar, pieces, piecesValidees, cotisations, categories, regles, reglesIncompletes, lignes, assujettiTva, compteDirigeant, modeComptable,
   piecesRapprochees, cotisationsRapprochees, recurrence, navigation, occupe,
   onFermer, onRapprocher, onRapprocherCotisation, onVirementPersonnel, onIgnorer, onToujoursIgnorer, onRemettreATraiter,
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
@@ -458,6 +462,7 @@ export default function FicheMouvement({
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
+  const fige = figeePar !== null
   // Le choix à la main ne s'applique qu'au clic sur « Associer », jamais au changement de la liste :
   // sur une liste déroulante qui a le focus, les flèches du clavier changent la valeur — et
   // rapprochaient donc, dans la fenêtre d'avant, la première pièce venue sans qu'on l'ait choisie.
@@ -752,7 +757,9 @@ export default function FicheMouvement({
   }
 
   let principal: ReactNode = null
-  if (piecesCandidates.length === 1) {
+  if (fige) {
+    // Rien à proposer : annuler, reclasser ou rapprocher, la base refuse tout (voir `figeePar`).
+  } else if (piecesCandidates.length === 1) {
     principal = (
       <button type="button" className="btn btn-primary" disabled={occupe} onClick={() => onRapprocher(piecesCandidates[0].id)}>
         Associer cette pièce
@@ -895,6 +902,13 @@ export default function FicheMouvement({
           {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
         </div>
+
+        {figeePar && (
+          <p className="fiche-mouvement-note">
+            {figeePar} : ce mouvement ne se rapproche, ne se classe et ne se modifie plus. Une erreur trouvée après la
+            validation se corrige sur l’exercice suivant.
+          </p>
+        )}
 
         {piecesCandidates.length === 1 && (
           <section className="fiche-mouvement-section">
@@ -1195,7 +1209,7 @@ export default function FicheMouvement({
                 ? 'Écrit au brouillon : la banque au débit, l’emprunt au crédit — ni recette, ni charge.'
                 : 'Écrit au brouillon face à la banque. Les intérêts comptent en frais financiers dans la 2035, l’assurance en primes d’assurance ; le capital n’y compte pas.'}
             </p>
-            {empruntLie && !deblocage && (correctionDepliee ? (
+            {empruntLie && !deblocage && !fige && (correctionDepliee ? (
               <FormulaireEmprunt
                 ligne={ligne} emprunts={emprunts} lignes={lignes} plausible={null} occupe={occupe}
                 verbe="Enregistrer le découpage"
@@ -1247,7 +1261,7 @@ export default function FicheMouvement({
               pour sa part à la date du mouvement, dans la 2035 comme dans la déclaration de TVA, et son écriture reçoit
               une contrepartie banque de ce montant.
             </p>
-            {!reglementsIncomplets && (modificationReglementDepliee ? (
+            {!reglementsIncomplets && !fige && (modificationReglementDepliee ? (
               <FormulaireReglementGroupe
                 ligne={ligne} pieces={pieces} paiements={paiements} partsExistantes={reglements} suspension={reglementsIncomplets}
                 occupe={occupe} verbe="Enregistrer le règlement" onRegler={onReglerEnGroupe}
@@ -1292,21 +1306,21 @@ export default function FicheMouvement({
                 l’écriture autre chose. Modifie la ventilation, ou annule-la.
               </p>
             )}
-            {partsHorsResultat.length > 0 && (
+            {!fige && partsHorsResultat.length > 0 && (
               <p className="fiche-mouvement-alerte">
                 {partsHorsResultat.length > 1
                   ? `Les comptes de ${partsHorsResultat.map((c) => `« ${c.libelle} »`).join(', ')} ne sont plus des comptes de charge ou de produit : leurs parts ne comptent dans aucun total, et l’écriture n’est plus juste. Modifie la ventilation.`
                   : `Le compte de « ${partsHorsResultat[0].libelle} » n’est plus un compte de charge ou de produit : sa part ne compte dans aucun total, et l’écriture n’est plus juste. Modifie la ventilation.`}
               </p>
             )}
-            {partsRecetteSansTaux.length > 0 && (
+            {!fige && partsRecetteSansTaux.length > 0 && (
               <p className="fiche-mouvement-alerte">
                 {partsRecetteSansTaux.length > 1
                   ? `Le dossier est assujetti à la TVA et ${partsRecetteSansTaux.length} parts de recette n’ont pas de taux : leur TVA n’est dans aucune déclaration, et la 2035 la compte en recette. Modifie la ventilation pour choisir leur taux.`
                   : `Le dossier est assujetti à la TVA et la part « ${libellePart(partsRecetteSansTaux[0])} » n’a pas de taux : sa TVA n’est dans aucune déclaration, et la 2035 la compte en recette. Modifie la ventilation pour choisir son taux.`}
               </p>
             )}
-            {partsSansPoste.length > 0 && (
+            {!fige && partsSansPoste.length > 0 && (
               <p className="fiche-mouvement-alerte">
                 {partsSansPoste.length > 1
                   ? `${partsSansPoste.map((c) => `« ${c.libelle} »`).join(', ')} n’ont pas de poste 2035 : leurs parts n’entrent dans aucun total de la 2035 tant qu’il n’est pas renseigné (Clôture).`
@@ -1317,7 +1331,7 @@ export default function FicheMouvement({
               Écrit au brouillon face à la banque, une ligne par part. Chaque part compte dans la 2035 dans le poste
               de sa catégorie, à la date du mouvement ; la part personnelle n’y compte pas.
             </p>
-            {!ventilationsIncompletes && (modificationDepliee ? (
+            {!ventilationsIncompletes && !fige && (modificationDepliee ? (
               <FormulaireVentilation
                 ligne={ligne} categories={categories} partsExistantes={ventilations} assujettiTva={assujettiTva}
                 compteDirigeant={compteDirigeant} occupe={occupe} verbe="Enregistrer la ventilation" onVentiler={onVentiler}
@@ -1337,8 +1351,7 @@ export default function FicheMouvement({
             <h3>Virement personnel</h3>
             <p className="fiche-mouvement-note">
               Ni charge ni recette : il s’écrit sur le compte {compteDirigeant} ({libelleCompteDirigeant}), face
-              à la banque. « Remettre à traiter » retire aussi son écriture ; l’onglet Virements dit si elle
-              manque, et l’écrit.
+              à la banque.{!fige && ' « Remettre à traiter » retire aussi son écriture ; l’onglet Virements dit si elle manque, et l’écrit.'}
             </p>
           </section>
         )}
@@ -1365,7 +1378,7 @@ export default function FicheMouvement({
               <p className="fiche-mouvement-note">La catégorie affectée ne figure pas parmi les catégories lues.</p>
             )}
             {/* Ce que la 2035 ne comptera pas, dit ici — c'est l'écran où l'on arbitre ce mouvement. */}
-            {categorieAffectee && !natureAffectee && (
+            {!fige && categorieAffectee && !natureAffectee && (
               <p className="fiche-mouvement-alerte">
                 Le compte de cette catégorie n’est plus un compte de charge ou de produit : ce mouvement
                 ne compte dans aucun total, et son écriture n’est plus juste. Réaffecte-le.
@@ -1373,19 +1386,19 @@ export default function FicheMouvement({
             )}
             {/* Une recette affectée avant que le dossier devienne assujetti : sa TVA n'est dans aucune CA3 tant
                 qu'on ne choisit pas son taux — le point que la Checklist compte. */}
-            {tauxRequis(assujettiTva, natureAffectee) && ligne.taux_tva == null && (
+            {!fige && tauxRequis(assujettiTva, natureAffectee) && ligne.taux_tva == null && (
               <p className="fiche-mouvement-alerte">
                 Le dossier est assujetti à la TVA et cette recette n’a pas de taux : sa TVA n’est dans aucune
                 déclaration, et la 2035 la compte en recette. Choisis son taux ci-dessous et réaffecte-la.
               </p>
             )}
-            {categorieAffectee && natureAffectee && !categorieAffectee.poste_2035 && (
+            {!fige && categorieAffectee && natureAffectee && !categorieAffectee.poste_2035 && (
               <p className="fiche-mouvement-alerte">
                 Cette catégorie n’a pas de poste 2035 : ce mouvement n’entre dans aucun total de la 2035
                 tant qu’il n’est pas renseigné (Clôture).
               </p>
             )}
-            {choixDeCategorie('Réaffecter')}
+            {!fige && choixDeCategorie('Réaffecter')}
           </section>
         )}
 
@@ -1398,7 +1411,7 @@ export default function FicheMouvement({
               <p className="fiche-mouvement-note">
                 S’écrit face à la banque :{' '}
                 {ecritureEcheancePayee.map((l) => `${formatMoney(l.montant)} au ${l.compte} — ${LIBELLES_COMPTES[l.compte] ?? l.compte}${l.compte === COMPTE_EXPLOITANT ? ' (sa CSG-CRDS)' : ''}`).join(' ; ')}.
-                {' '}« Annuler le rapprochement » retire aussi son écriture ; l’onglet Cotisations dit si elle manque, et l’écrit.
+                {!fige && ' « Annuler le rapprochement » retire aussi son écriture ; l’onglet Cotisations dit si elle manque, et l’écrit.'}
               </p>
             )}
             {/* Le lien existe mais la ligne n'a pas été lue — une lecture partielle, que le bandeau en
