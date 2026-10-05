@@ -220,15 +220,26 @@ const VUES = [
   { nom: 'pc-fige-vehicules', chemin: '#/dossiers/d9/informations', l: 1440, h: 900, theme: 'light', reduite: false, apres: '^2025 ·', vers: 'Véhicules et barème kilométrique' },
   { nom: 'pc-fige-cotisations', chemin: '#/dossiers/d9/cotisations', l: 1440, h: 900, theme: 'light', reduite: false },
   { nom: 'pc-fige-virements', chemin: '#/dossiers/d9/virements', l: 1440, h: 900, theme: 'light', reduite: false },
+  // LES VOLETS À LA LARGEUR CHOISIE (lib/largeurVolets.ts) : une barre étroite et une fiche de pièce élargie, une barre
+  // large qui borne le volet, le volet superposé élargi à 1 200 pixels, et le bord qu'on survole pour le saisir.
+  { nom: 'pc-volets-fiche-large', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, largeurs: { barre: 200, panneau: 760 }, cellule: 'Pharma Distrib Sud' },
+  { nom: 'pc-volets-barre-large', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'light', reduite: false, largeurs: { barre: 420 }, clic: 'Assistant' },
+  { nom: 'pc-volets-barre-large-sombre', chemin: '#/dossiers/d1/banque', l: 1440, h: 900, theme: 'dark', reduite: false, largeurs: { barre: 420 }, clic: 'Assistant' },
+  { nom: 'pc-volets-1200', chemin: '#/dossiers/d1/pieces', l: 1200, h: 800, theme: 'light', reduite: false, largeurs: { panneau: 600 }, cellule: 'Pharma Distrib Sud' },
+  { nom: 'pc-volets-survol', chemin: '#/dossiers/d1/pieces', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Assistant', survol: 'Largeur du panneau de droite' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
 for (const v of VUES) {
   const contexte = await navigateur.newContext({ viewport: { width: v.l, height: v.h }, userAgent: CHROME })
-  await contexte.addInitScript(({ theme, reduite }) => {
+  // Les largeurs choisies des deux volets (lib/largeurVolets.ts), quand la vue les montre : retenues comme le
+  // navigateur les retient.
+  await contexte.addInitScript(({ theme, reduite, largeurs }) => {
     localStorage.setItem('jd-precompta-theme', theme)
     localStorage.setItem('jd-precompta-barre-reduite', reduite ? '1' : '0')
-  }, { theme: v.theme, reduite: v.reduite })
+    if (largeurs?.barre) localStorage.setItem('jd-precompta-largeur-barre', String(largeurs.barre))
+    if (largeurs?.panneau) localStorage.setItem('jd-precompta-largeur-panneau', String(largeurs.panneau))
+  }, { theme: v.theme, reduite: v.reduite, largeurs: v.largeurs ?? null })
   const externes = []
   await contexte.route(/^https?:\/\//, (route) => {
     const url = route.request().url()
@@ -282,6 +293,11 @@ for (const v of VUES) {
     const cible = page.getByText(v.vers).first()
     if (v.enTete) await cible.evaluate((e) => e.scrollIntoView({ block: 'start' }))
     else await cible.scrollIntoViewIfNeeded()
+    await page.waitForTimeout(300)
+  }
+  // Un élément survolé au moment de la capture, désigné par son nom accessible : le bord d'un volet qu'on va saisir.
+  if (v.survol) {
+    await page.getByRole('separator', { name: v.survol }).hover()
     await page.waitForTimeout(300)
   }
   await page.evaluate(() => document.fonts.ready)

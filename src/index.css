@@ -248,7 +248,8 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    panneau contextuel à droite. Sur mobile rien ne change (voir la media query). */
 .app-shell { display: flex; min-height: 100vh; background: var(--color-shell); }
 .sidebar {
-  width: 264px; flex-shrink: 0; box-sizing: border-box;
+  /* La largeur choisie par l'opérateur (lib/largeurVolets.ts), que la coque pose en variable ; 264 pixels sinon. */
+  width: var(--largeur-barre, 264px); flex-shrink: 0; box-sizing: border-box;
   /* Transparente : c'est le fond de la coque qui la porte. Et surtout pas de transform/filter ici —
      elle est l'ancêtre de la nav fixée en bas sur mobile (voir la media query). */
   background: transparent;
@@ -625,7 +626,8 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
    `:empty` qui le retire, pas un état React, donc un contenu qui quitte l'écran l'emporte avec lui. */
 .panneau-droit {
   position: sticky; top: 8px; align-self: flex-start;
-  width: clamp(340px, 28vw, 440px); flex-shrink: 0; box-sizing: border-box;
+  /* La largeur choisie par l'opérateur, bornée par la coque (lib/largeurVolets.ts) ; la largeur d'origine sinon. */
+  width: var(--largeur-panneau, clamp(340px, 28vw, 440px)); flex-shrink: 0; box-sizing: border-box;
   height: calc(100vh - 16px);
   height: calc(100dvh - 16px);
   margin: 8px 8px 8px 0;
@@ -645,9 +647,48 @@ tr.ligne-ouverte, tr.ligne-ouverte:hover { background: var(--tint-primary-strong
     /* `align-self: auto` et pas flex-start : sur une boîte positionnée, flex-start la ramène à la
        hauteur de son contenu au lieu de l'étirer entre top et bottom (alignement CSS, appliqué par
        les navigateurs récents) — le volet s'arrêtait à mi-hauteur. */
-    height: auto; align-self: auto; margin: 0; width: min(420px, calc(100vw - 96px));
+    height: auto; align-self: auto; margin: 0; width: var(--largeur-panneau, min(420px, calc(100vw - 96px)));
     box-shadow: var(--shadow-lg);
   }
+}
+
+/* LE BORD D'UN VOLET, qu'on glisse pour le redimensionner (PoigneeRedimensionnement, lib/largeurVolets.ts) : une bande
+   de 8 pixels sur la jointure, invisible tant qu'on ne la survole pas ; un filet de la couleur du cabinet dit qu'on la
+   tient. Ordinateur seulement — le téléphone n'a ni barre latérale ni volet à côté du travail. */
+.poignee-volet {
+  position: absolute; top: 0; bottom: 0; z-index: 6; width: 8px; box-sizing: border-box;
+  cursor: col-resize; touch-action: none; outline: none;
+}
+.poignee-volet::after {
+  content: ''; position: absolute; top: 14px; bottom: 14px; left: 3px; width: 2px; border-radius: 1px;
+  background: transparent; transition: background-color var(--duree) var(--ease);
+}
+.poignee-volet:hover::after, .poignee-volet.glisse::after { background: var(--color-primary); }
+.poignee-volet:focus-visible::after { background: var(--color-primary); box-shadow: 0 0 0 3px var(--ring-primary); }
+/* La barre latérale : sur son bord droit, à cheval sur la jointure avec le panneau central. */
+.poignee-barre { right: -4px; }
+/* Le volet de droite, en ligne : la poignée occupe la marge de 8 pixels qui le sépare du panneau central, et reste à
+   l'écran comme lui quand la page défile. */
+.poignee-panneau {
+  position: sticky; top: 8px; bottom: auto; align-self: flex-start; flex: 0 0 8px;
+  height: calc(100vh - 16px);
+  height: calc(100dvh - 16px);
+  margin: 8px 0 8px -8px;
+}
+/* Superposé, le volet est fixé au bord de l'écran : sa poignée le suit, sur son bord gauche. */
+@media (min-width: 721px) and (max-width: 1279px) {
+  .poignee-panneau {
+    position: fixed; top: 8px; bottom: 8px; right: calc(4px + var(--largeur-panneau, 420px)); z-index: 31;
+    height: auto; margin: 0;
+  }
+}
+/* Pendant qu'on glisse : la largeur suit le pointeur sans animation, le texte ne se sélectionne pas, et l'aperçu d'un
+   justificatif (une iframe) ne garde pas les mouvements du pointeur pour lui. */
+.app-shell.redimensionnement, .app-shell.redimensionnement * { cursor: col-resize; user-select: none; }
+.app-shell.redimensionnement .sidebar { transition: none; }
+.app-shell.redimensionnement iframe { pointer-events: none; }
+@media (max-width: 720px) {
+  .poignee-volet { display: none; }
 }
 
 .panneau-entete {

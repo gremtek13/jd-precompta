@@ -5,6 +5,9 @@
 //
 //   npx vite --config outils/captures/vite.config.ts        # sert l'application (voir vitrine.mjs)
 //   node outils/captures/debordements.mjs [largeur] [sans]  # « sans » : panneau de droite fermé
+//   node outils/captures/debordements.mjs 1440 ouvert barre=200 panneau=760
+//                                                           # les volets à une largeur choisie (lib/largeurVolets.ts) :
+//                                                           # retenue comme le navigateur la retient, puis bornée par la coque
 //
 // Un élément compte s'il dépasse le bord droit du panneau central SANS être dans un conteneur qui
 // défile (un tableau dans .table-scroll a le droit d'être plus large que l'écran : il défile). Seul le
@@ -125,6 +128,7 @@ function exercice(annee) {
 }
 const largeur = Number(process.argv[2] ?? 1440)
 const avecPanneau = process.argv[3] !== 'sans'
+const choisies = Object.fromEntries(process.argv.slice(4).map((a) => a.split('=')).filter(([, v]) => /^\d+$/.test(v ?? '')))
 
 const RACINE_NAVIGATEURS = '/opt/pw-browsers'
 const revision = existsSync(RACINE_NAVIGATEURS)
@@ -135,6 +139,10 @@ const executable = process.env.CHROMIUM ?? (revision ? `${RACINE_NAVIGATEURS}/${
 const BASE = 'http://127.0.0.1:5199/'
 const navigateur = await chromium.launch({ executablePath: executable })
 const contexte = await navigateur.newContext({ viewport: { width: largeur, height: 900 } })
+await contexte.addInitScript(({ barre, panneau }) => {
+  if (barre) localStorage.setItem('jd-precompta-largeur-barre', barre)
+  if (panneau) localStorage.setItem('jd-precompta-largeur-panneau', panneau)
+}, { barre: choisies.barre ?? null, panneau: choisies.panneau ?? null })
 // Aucune requête hors du serveur local (voir le piège du mandataire dans vitrine.mjs).
 await contexte.route(/^https?:\/\//, (r) => (r.request().url().startsWith(BASE) ? r.continue() : r.abort()))
 const page = await contexte.newPage()
@@ -170,5 +178,6 @@ for (const { dossier, onglet, nom, apres } of VISITES) {
   console.log(`${nom} : ${fautes.length ? '\n   ' + fautes.join('\n   ') : 'rien ne déborde'}`)
 }
 await navigateur.close()
-console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${avecPanneau ? 'ouvert' : 'fermé'}.`)
+const volets = Object.entries(choisies).map(([k, v]) => `${k} ${v}`).join(', ')
+console.log(`\n${total} débordement(s) à ${largeur} px, panneau de droite ${avecPanneau ? 'ouvert' : 'fermé'}${volets ? ` (largeurs choisies : ${volets})` : ''}.`)
 process.exitCode = total > 0 ? 1 : 0

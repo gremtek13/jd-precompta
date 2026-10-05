@@ -2,7 +2,9 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import Layout from './Layout'
+import PanneauDroit from './PanneauDroit'
 import { signalerMajDossiers } from '../lib/listeDossiers'
+import { usePanneauDroit } from '../lib/panneauDroit'
 
 // La barre latérale d'ordinateur (Layout + BarreDossiers) : ce qu'elle promet, c'est de montrer les
 // écrans du dossier ouvert et TOUS les dossiers du cabinet, à un clic chacun. Ce qui la ferait mentir
@@ -76,6 +78,17 @@ const charte = vi.hoisted(() => ({
 vi.mock('../lib/branding', () => ({ useCabinetBranding: () => charte.valeur }))
 vi.mock('../lib/theme', () => ({ useTheme: () => ({ theme: 'light', toggleTheme: () => {} }) }))
 
+// Un écran qui ouvre et ferme un contenu du volet de droite, comme l'assistant d'un dossier.
+function EcranAvecVolet() {
+  const { ouvert, ouvrir, fermer } = usePanneauDroit('essai')
+  return (
+    <>
+      <button type="button" onClick={() => (ouvert ? fermer() : ouvrir())}>{ouvert ? 'Fermer le volet' : 'Ouvrir le volet'}</button>
+      <PanneauDroit nom="essai"><p>Contenu du volet</p></PanneauDroit>
+    </>
+  )
+}
+
 async function afficher(chemin: string) {
   await act(async () => {
     render(
@@ -87,6 +100,7 @@ async function afficher(chemin: string) {
             {/* Sans elle, choisir « Apparence » démonterait toute la coque — et un menu qui ne se
                 refermerait pas disparaîtrait quand même, pour une raison qui n'est pas la bonne. */}
             <Route path="/apparence" element={<p>Écran de l'apparence</p>} />
+            <Route path="/essai-volet" element={<EcranAvecVolet />} />
           </Route>
         </Routes>
       </MemoryRouter>,
@@ -304,5 +318,113 @@ describe('Barre latérale — installer l’application', () => {
     charte.valeur = { nom: 'Cabinet Exemple', couleurPrimaire: null, policeGoogleFont: null, logoUrl: 'https://stockage.exemple.test/logo.png' }
     await afficher('/dossiers')
     expect(consigne()).toContain('« Cabinet Exemple »')
+  })
+})
+
+// LA LARGEUR DES VOLETS, choisie en glissant leur bord (lib/largeurVolets.ts, PoigneeRedimensionnement). Ce que la
+// coque promet : la largeur choisie s'applique et se retrouve au prochain affichage, une valeur qu'elle ne reconnaît
+// pas laisse la largeur d'origine, la fenêtre d'aujourd'hui borne ce qu'on a choisi sans l'oublier — et le bord du
+// volet de droite n'existe que tant que le volet a un contenu.
+describe('Coque — la largeur des volets', () => {
+  const fenetreDOrigine = window.innerWidth
+  function fenetre(largeur: number) {
+    Object.defineProperty(window, 'innerWidth', { value: largeur, configurable: true })
+  }
+  afterEach(() => fenetre(fenetreDOrigine))
+  const variable = (nom: string) => (document.querySelector('.app-shell') as HTMLElement).style.getPropertyValue(nom)
+  const poignee = (nom: string) => screen.queryByRole('separator', { name: nom })
+
+  it('sans choix, les deux volets gardent leur largeur d’origine', async () => {
+    fenetre(1440)
+    await afficher('/dossiers')
+    expect(variable('--largeur-barre')).toBe('264px')
+    expect(variable('--largeur-panneau')).toBe('403px')
+  })
+
+  it('la largeur glissée de la barre s’applique, se retient, et se retrouve au prochain affichage', async () => {
+    fenetre(1440)
+    await afficher('/dossiers')
+    const bord = poignee('Largeur de la barre latérale')!
+    fireEvent.pointerDown(bord, { clientX: 264, pointerId: 1, button: 0 })
+    fireEvent.pointerMove(bord, { clientX: 330, pointerId: 1 })
+    expect(variable('--largeur-barre')).toBe('330px')
+    expect(document.querySelector('.app-shell')?.classList.contains('redimensionnement')).toBe(true)
+    fireEvent.pointerUp(bord, { clientX: 330, pointerId: 1 })
+    expect(document.querySelector('.app-shell')?.classList.contains('redimensionnement')).toBe(false)
+    expect(localStorage.getItem('jd-precompta-largeur-barre')).toBe('330')
+
+    cleanup()
+    await afficher('/dossiers')
+    expect(variable('--largeur-barre')).toBe('330px')
+  })
+
+  it('une valeur retenue qu’elle ne reconnaît pas laisse la largeur d’origine', async () => {
+    fenetre(1440)
+    localStorage.setItem('jd-precompta-largeur-barre', '12')
+    localStorage.setItem('jd-precompta-largeur-panneau', 'large')
+    await afficher('/dossiers')
+    expect(variable('--largeur-barre')).toBe('264px')
+    expect(variable('--largeur-panneau')).toBe('403px')
+  })
+
+  it('le double-clic rend la largeur d’origine et oublie le choix', async () => {
+    fenetre(1440)
+    localStorage.setItem('jd-precompta-largeur-barre', '360')
+    await afficher('/dossiers')
+    expect(variable('--largeur-barre')).toBe('360px')
+    fireEvent.doubleClick(poignee('Largeur de la barre latérale')!)
+    expect(variable('--largeur-barre')).toBe('264px')
+    expect(localStorage.getItem('jd-precompta-largeur-barre')).toBeNull()
+  })
+
+  it('réduite à ses icônes, la barre n’a pas de largeur à choisir', async () => {
+    fenetre(1440)
+    await afficher('/dossiers')
+    expect(poignee('Largeur de la barre latérale')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Réduire la barre latérale' }))
+    expect(poignee('Largeur de la barre latérale')).toBeNull()
+  })
+
+  it('le bord du volet de droite n’existe que tant que le volet a un contenu', async () => {
+    fenetre(1440)
+    await afficher('/essai-volet')
+    expect(poignee('Largeur du panneau de droite')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Ouvrir le volet' }))
+    expect(await screen.findByRole('separator', { name: 'Largeur du panneau de droite' })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'Fermer le volet' }))
+    await vi.waitFor(() => expect(poignee('Largeur du panneau de droite')).toBeNull())
+  })
+
+  it('le volet s’élargit vers la gauche, sans rogner le panneau central sous sa largeur minimale', async () => {
+    fenetre(1440)
+    await afficher('/essai-volet')
+    fireEvent.click(screen.getByRole('button', { name: 'Ouvrir le volet' }))
+    const bord = await screen.findByRole('separator', { name: 'Largeur du panneau de droite' })
+    fireEvent.pointerDown(bord, { clientX: 1000, pointerId: 1, button: 0 })
+    fireEvent.pointerMove(bord, { clientX: 700, pointerId: 1 })
+    fireEvent.pointerUp(bord, { clientX: 700, pointerId: 1 })
+    // 1 440 − 264 − 16 − 640 : la place que laisse le panneau central.
+    expect(variable('--largeur-panneau')).toBe('520px')
+    expect(localStorage.getItem('jd-precompta-largeur-panneau')).toBe('520')
+
+    // Élargir la barre rétrécit le volet ; la réduire le lui rend.
+    fireEvent.keyDown(poignee('Largeur de la barre latérale')!, { key: 'ArrowRight', shiftKey: true })
+    expect(variable('--largeur-barre')).toBe('328px')
+    expect(variable('--largeur-panneau')).toBe('456px')
+    fireEvent.click(screen.getByRole('button', { name: 'Réduire la barre latérale' }))
+    expect(variable('--largeur-panneau')).toBe('520px')
+  })
+
+  it('la fenêtre d’aujourd’hui borne la largeur choisie sans la faire oublier', async () => {
+    fenetre(1440)
+    localStorage.setItem('jd-precompta-largeur-panneau', '700')
+    await afficher('/dossiers')
+    expect(variable('--largeur-panneau')).toBe('520px')
+    await act(async () => {
+      fenetre(1920)
+      window.dispatchEvent(new Event('resize'))
+    })
+    expect(variable('--largeur-panneau')).toBe('700px')
+    expect(localStorage.getItem('jd-precompta-largeur-panneau')).toBe('700')
   })
 })
