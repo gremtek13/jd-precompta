@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react'
 import { supabase } from '../../lib/supabase'
-import { anneeDe, formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, aujourdHuiAParis, formatDate, formatMoney } from '../../lib/format'
 import { correspondALaRecherche } from '../../lib/recherche'
 import { calculerBalance } from '../../lib/ecritures'
 import { calculerEvolutionMensuelle } from '../../lib/tableauPilotage'
-import type { ANouveau, Categorie, EcritureBrouillon, Piece } from '../../lib/types'
+import type { ANouveau, Categorie, EcritureBrouillon, ModeComptable, Piece } from '../../lib/types'
+import { comptesDeTiers, COMPTES_LETTRABLES } from '../../lib/lettrage'
 import { useAnnee } from '../../context/AnneeContext'
 import type { DossierTab } from '../../components/DossierParcours'
 import MonthlyBars from '../../components/widgets/MonthlyBars'
@@ -12,6 +13,7 @@ import ProgressRing from '../../components/widgets/ProgressRing'
 import BarreRecherche from '../../components/BarreRecherche'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import { lireTout } from '../../lib/lectureComplete'
+import ComptesDeTiersCard from './ComptesDeTiersCard'
 
 const NB_MOIS_EVOLUTION = 6
 
@@ -23,16 +25,26 @@ const NB_MOIS_EVOLUTION = 6
 // calculée depuis le même brouillon que EcrituresTab, jamais une comptabilité tenue à part (voir
 // BrouillonBanner ailleurs dans l'onglet Écritures — même statut ici, juste pas répété pour ne pas
 // surcharger un onglet de lecture).
-export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: string; onNavigate: (tab: DossierTab) => void }) {
+export default function StatistiquesTab({ dossierId, onNavigate, modeComptable }: {
+  dossierId: string
+  onNavigate: (tab: DossierTab) => void
+  // En engagement, l'écran porte en plus les comptes de tiers à une date (lib/lettrage.ts). Sans valeur par défaut :
+  // oublié, un dossier en engagement perdrait sa balance âgée sans que rien le dise.
+  modeComptable: ModeComptable
+}) {
   const [ecritures, setEcritures] = useState<EcritureBrouillon[]>([])
   const [categories, setCategories] = useState<Categorie[]>([])
   const [pieces, setPieces] = useState<Piece[]>([])
   // L'ouverture d'un dossier repris d'un autre logiciel (voir lib/aNouveaux.ts).
   const [aNouveaux, setANouveaux] = useState<ANouveau[]>([])
   const [loading, setLoading] = useState(true)
-  // Non nul quand le brouillon ou les pièces n'ont pas pu être lus en entier — les totaux affichés
-  // portent alors sur une partie du dossier (voir lib/lectureComplete.ts).
+  // Non nul quand le brouillon n'a pas pu être lu en entier — les totaux affichés portent alors sur une partie du
+  // dossier (voir lib/lectureComplete.ts).
   const [lectureIncomplete, setLectureIncomplete] = useState<string | null>(null)
+  // À part, parce que la conséquence n'est pas la même : les pièces ne servent qu'à l'avancement de l'année et, en
+  // engagement, au nom des tiers. Elles étaient fondues dans le drapeau du brouillon, dont le bandeau disait alors que
+  // les ÉCRITURES n'avaient pas pu être lues quand c'étaient les pièces.
+  const [lecturePiecesIncomplete, setLecturePiecesIncomplete] = useState<string | null>(null)
   // À part, parce que la conséquence n'est pas la même : les catégories ne donnent que les LIBELLÉS
   // des comptes, aucun montant n'en dépend.
   const [lectureCategoriesIncomplete, setLectureCategoriesIncomplete] = useState<string | null>(null)
@@ -72,7 +84,8 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
       setCategories(lectureCategories.lignes)
       setPieces(lecturePieces.lignes)
       setANouveaux(lectureANouveaux.lignes)
-      setLectureIncomplete(brouillon.motif ?? lecturePieces.motif)
+      setLectureIncomplete(brouillon.motif)
+      setLecturePiecesIncomplete(lecturePieces.motif)
       setLectureANouveauxIncomplete(lectureANouveaux.motif)
       setLectureCategoriesIncomplete(lectureCategories.motif)
       setLoading(false)
@@ -109,6 +122,25 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
     [ecrituresFiltrees, categories, aNouveauxFiltres],
   )
 
+  // LES COMPTES DE TIERS (lib/lettrage.ts), en engagement seulement : arrêtés au 31 décembre de l'exercice choisi
+  // quand il est fini, sinon à aujourd'hui — un exercice en cours, ou toutes années confondues, se lit au jour où on le
+  // regarde. Sur TOUT le brouillon et toute l'ouverture, pas sur l'exercice : une facture d'un exercice précédent encore
+  // ouverte reste due, et `comptesDeTiers` ne garde d'elle-même que ce qui est daté jusqu'à l'arrêté.
+  const aujourdHui = aujourdHuiAParis()
+  const finExercice = typeof anneeFilter === 'number' ? `${anneeFilter}-12-31` : null
+  const dateArrete = finExercice !== null && finExercice < aujourdHui ? finExercice : aujourdHui
+  const soldesDeTiers = useMemo(
+    () => comptesDeTiers(ecritures, pieces, aNouveaux, modeComptable, dateArrete),
+    [ecritures, pieces, aNouveaux, modeComptable, dateArrete],
+  )
+  // Ce qu'il faut pour que la carte distingue « tout est soldé » de « rien n'est écrit », et dise les lignes d'un compte
+  // de tiers antérieures à l'ouverture d'un dossier repris — que la vue compte une seconde fois quand l'arrêté la suit.
+  const lignesDeTiers = ecritures.filter((e) => COMPTES_LETTRABLES.has(e.compte) && e.date <= dateArrete).length
+    + aNouveaux.filter((a) => COMPTES_LETTRABLES.has(a.compte) && a.date <= dateArrete).length
+  const tiersAvantOuverture = ouverture && ouverture <= dateArrete
+    ? ecritures.filter((e) => COMPTES_LETTRABLES.has(e.compte) && e.date < ouverture).length
+    : 0
+
   const lignesAffichees = balance.filter((l) =>
     correspondALaRecherche([l.compte, l.libelle, l.totalDebit, l.totalCredit, l.solde], recherche),
   )
@@ -131,6 +163,16 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
         consequence={
           'Les totaux débit/crédit et le badge d’équilibre ci-dessous portent donc sur une partie ' +
           'des écritures : un écart affiché ici ne prouverait rien.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les pièces du dossier"
+        motif={lecturePiecesIncomplete}
+        consequence={
+          'L’avancement de l’année porte donc sur une partie des pièces.'
+            + (modeComptable === 'engagement'
+              ? ' Dans les comptes de tiers, un fournisseur ou un client peut s’afficher sous « divers », faute du nom lu sur sa pièce ; les montants, eux, viennent des écritures.'
+              : '')
         }
       />
       <BandeauLecturePartielle
@@ -272,6 +314,19 @@ export default function StatistiquesTab({ dossierId, onNavigate }: { dossierId: 
           </table>
         )}
       </div>
+
+      {modeComptable === 'engagement' && (
+        <ComptesDeTiersCard
+          soldes={soldesDeTiers}
+          dateArrete={dateArrete}
+          finExercice={dateArrete === finExercice}
+          lectureIncomplete={lectureIncomplete ?? lectureANouveauxIncomplete}
+          lignesDeTiers={lignesDeTiers}
+          anterieuresALOuverture={tiersAvantOuverture}
+          ouverture={ouverture}
+          loading={loading}
+        />
+      )}
     </>
   )
 }

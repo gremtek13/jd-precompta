@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen } from '@testing-library/react'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import StatistiquesTab from './StatistiquesTab'
+import type { ANouveau, EcritureBrouillon, ModeComptable, Piece } from '../../lib/types'
+import { A_NOUVEAU_NON_VALIDE, NON_VALIDEE } from '../../test/ecritures'
 
 // « Une recherche filtre l'affichage, jamais un total » — la règle que cet écran a violée : ses
 // totaux débit/crédit portaient sur les lignes TROUVÉES, si bien que taper « 606 » affichait le
@@ -86,7 +88,7 @@ describe('StatistiquesTab — Balance des comptes', () => {
 
     render(
       <AnneeProvider defaut="toutes">
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </AnneeProvider>,
     )
 
@@ -107,7 +109,7 @@ describe('StatistiquesTab — Balance des comptes', () => {
 
     render(
       <AnneeProvider defaut="toutes">
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </AnneeProvider>,
     )
 
@@ -148,7 +150,7 @@ describe('StatistiquesTab — les catégories du cabinet', () => {
 
     render(
       <AnneeProvider defaut="toutes">
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </AnneeProvider>,
     )
 
@@ -185,7 +187,7 @@ describe('StatistiquesTab — les à-nouveaux', () => {
     faux.parTable.a_nouveaux = OUVERTURE
     render(
       <AnneeProvider defaut={annee}>
-        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} />
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable="tresorerie" />
       </AnneeProvider>,
     )
   }
@@ -273,3 +275,223 @@ describe('StatistiquesTab — les à-nouveaux', () => {
   })
 })
 
+
+// LES COMPTES DE TIERS EN ENGAGEMENT (ligne 32, lib/lettrage.ts). Le calcul est testé dans `lettrage.test.ts` ; ce qui
+// se joue ici est ce que l'écran en fait — l'arrêté qu'il choisit, ce qu'il dit d'une liste vide, d'une lecture
+// partielle et d'une écriture antérieure à l'ouverture, et qu'il ne montre rien en trésorerie.
+describe('StatistiquesTab — les comptes de tiers, en engagement', () => {
+  // Typées SANS `as` : le compilateur vérifie chaque colonne contre la table.
+  const ligne = (o: Partial<EcritureBrouillon> & Pick<EcritureBrouillon, 'id' | 'compte' | 'sens' | 'montant' | 'date'>): EcritureBrouillon => ({
+    dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, libelle: 'Écriture de test',
+    statut: 'proposee', created_at: '2026-03-01T09:00:00Z', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, ...o,
+  })
+  const piece = (o: Partial<Piece> & Pick<Piece, 'id' | 'tiers'>): Piece => ({
+    dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload', storage_path: `${o.id}.pdf`, nom_fichier: `${o.id}.pdf`,
+    storage_hash: null, date_piece: '2026-02-01', montant_ht: null, montant_tva: null, montant_ttc: 100, devise: 'EUR',
+    montant_devise: null, taux_change: null, conversion_source: null, categorie_id: null, sous_dossier_id: null,
+    type_piece: 'achat', statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    created_at: '2026-02-01T09:00:00Z', updated_at: '2026-02-01T09:00:00Z', ...o,
+  })
+
+  const PIECES = [
+    piece({ id: 'p-trans', tiers: 'Transmedical', date_piece: '2025-12-10', montant_ttc: 120 }),
+    piece({ id: 'p-bureau', tiers: 'Bureau Vallée', date_piece: '2026-02-01', montant_ttc: 200 }),
+    piece({ id: 'p-clinique', tiers: 'Clinique du Parc', date_piece: '2026-03-01', montant_ttc: 500, type_piece: 'vente' }),
+  ]
+  // Transmedical : facturée le 10 décembre, réglée le 8 janvier. Bureau Vallée : réglée en partie le 20 février.
+  // Clinique du Parc : une vente que rien n'encaisse.
+  const BROUILLON = [
+    ligne({ id: 't1', piece_id: 'p-trans', date: '2025-12-10', compte: '606100', sens: 'debit', montant: 120 }),
+    ligne({ id: 't2', piece_id: 'p-trans', date: '2025-12-10', compte: '401000', sens: 'credit', montant: 120 }),
+    ligne({ id: 't3', piece_id: 'p-trans', ligne_bancaire_id: 'm1', date: '2026-01-08', compte: '401000', sens: 'debit', montant: 120 }),
+    ligne({ id: 't4', piece_id: 'p-trans', ligne_bancaire_id: 'm1', date: '2026-01-08', compte: '512000', sens: 'credit', montant: 120 }),
+    ligne({ id: 'b1', piece_id: 'p-bureau', date: '2026-02-01', compte: '606400', sens: 'debit', montant: 200 }),
+    ligne({ id: 'b2', piece_id: 'p-bureau', date: '2026-02-01', compte: '401000', sens: 'credit', montant: 200 }),
+    ligne({ id: 'b3', piece_id: 'p-bureau', ligne_bancaire_id: 'm2', date: '2026-02-20', compte: '401000', sens: 'debit', montant: 150 }),
+    ligne({ id: 'b4', piece_id: 'p-bureau', ligne_bancaire_id: 'm2', date: '2026-02-20', compte: '512000', sens: 'credit', montant: 150 }),
+    ligne({ id: 'c1', piece_id: 'p-clinique', date: '2026-03-01', compte: '411000', sens: 'debit', montant: 500 }),
+    ligne({ id: 'c2', piece_id: 'p-clinique', date: '2026-03-01', compte: '706000', sens: 'credit', montant: 500 }),
+  ]
+  const OUVERTURE: ANouveau[] = [
+    {
+      id: 'an-401', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '401000', compte_origine: '401', libelle: 'Fournisseurs',
+      sens: 'credit', montant: 80, source_nom: 'balance-2025.csv', source_empreinte: 'a'.repeat(64), created_at: '2026-01-02T09:00:00Z',
+      ...A_NOUVEAU_NON_VALIDE,
+    },
+    {
+      id: 'an-512', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '512000', compte_origine: '512', libelle: 'Banque',
+      sens: 'debit', montant: 80, source_nom: 'balance-2025.csv', source_empreinte: 'a'.repeat(64), created_at: '2026-01-02T09:00:00Z',
+      ...A_NOUVEAU_NON_VALIDE,
+    },
+  ]
+
+  beforeEach(() => {
+    // « Aujourd'hui », à Paris, est le 15 avril 2026 : l'arrêté d'un exercice en cours. Seul `Date` est feint — les
+    // minuteurs dont `findByText` dépend restent réels.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-04-15T10:00:00Z'))
+    faux.plafond = null
+    faux.parTable.categories = []
+    faux.parTable.pieces = PIECES
+    faux.parTable.ecritures_brouillon = BROUILLON
+  })
+  afterEach(() => { vi.useRealTimers() })
+
+  function monter(annee: number | 'toutes', mode: ModeComptable = 'engagement') {
+    render(
+      <AnneeProvider defaut={annee}>
+        <StatistiquesTab dossierId="dossier-de-test" onNavigate={() => {}} modeComptable={mode} />
+      </AnneeProvider>,
+    )
+  }
+
+  // Les cellules de la ligne d'un tiers, par son nom.
+  function ligneDuTiers(nom: string): string[] {
+    const cellule = screen.getAllByText(nom).find((n) => n.closest('tbody') && n.closest('table')!.querySelector('th')?.textContent === 'Tiers')!
+    return [...cellule.closest('tr')!.children].map((c) => (c.textContent ?? '').replace(/\s/g, ' '))
+  }
+
+  it('arrête aujourd’hui un dossier vu toutes années confondues, et dit ce qui reste ouvert et depuis quand', async () => {
+    monter('toutes')
+
+    expect(await screen.findByText('Comptes de tiers au 15/04/2026')).toBeTruthy()
+    expect(screen.getByText(/arrêté à aujourd’hui/)).toBeTruthy()
+    // Bureau Vallée : 50 € de reste sur une facture du 1er février, 73 jours — la tranche de 61 à 90 jours.
+    expect(ligneDuTiers('Bureau Vallée')).toEqual(['Bureau ValléeFBUREAU', '50,00 €', '—', '—', '50,00 €', '—'])
+    // La vente : 500 € à encaisser depuis 45 jours.
+    expect(ligneDuTiers('Clinique du Parc')).toEqual(['Clinique du ParcCCLINIQUE', '500,00 €', '—', '500,00 €', '—', '—'])
+    // Transmedical, réglée le 8 janvier, est lettrée : elle n'y est plus.
+    expect(screen.queryAllByText('Transmedical')).toHaveLength(0)
+    expect(screen.getByText('Réglée en partie')).toBeTruthy()
+    expect(screen.getByText('Sans règlement')).toBeTruthy()
+    // Un seul tiers au 401 : un total le répéterait.
+    const section = screen.getByText((_, n) => n?.tagName === 'H4' && (n.textContent ?? '').startsWith('401000'))
+    expect(section.parentElement!.querySelector('tfoot')).toBeNull()
+  })
+
+  it('arrête au 31 décembre un exercice fini : une facture réglée l’année suivante y est ouverte', async () => {
+    monter(2025)
+
+    expect(await screen.findByText('Comptes de tiers au 31/12/2025')).toBeTruthy()
+    expect(screen.getByText(/arrêté au 31 décembre de l’exercice choisi/)).toBeTruthy()
+    expect(ligneDuTiers('Transmedical')).toEqual(['TransmedicalFTRANSMEDICAL', '120,00 €', '120,00 €', '—', '—', '—'])
+    // Ni la facture de février, ni la vente de mars n'existent encore au 31 décembre.
+    expect(screen.queryAllByText('Bureau Vallée')).toHaveLength(0)
+    expect(screen.queryAllByText('Clinique du Parc')).toHaveLength(0)
+  })
+
+  // Un exercice EN COURS se lit au jour où on le regarde, pas au 31 décembre à venir : les âges compteraient sinon
+  // des jours qui n'ont pas eu lieu.
+  it('arrête aujourd’hui l’exercice en cours', async () => {
+    monter(2026)
+
+    expect(await screen.findByText('Comptes de tiers au 15/04/2026')).toBeTruthy()
+    expect(ligneDuTiers('Bureau Vallée')[4]).toBe('50,00 €')
+    // Sur TOUT le brouillon, pas sur l'exercice : lue sur les seules écritures de 2026, la facture de décembre
+    // disparaîtrait et son règlement de janvier ressortirait comme un règlement sans facture.
+    expect(screen.queryAllByText('Transmedical')).toHaveLength(0)
+  })
+
+  // GARDE SYMÉTRIQUE : sans elle, « la carte se montre en engagement » serait satisfait par un écran qui la montre
+  // toujours — en trésorerie, la charge est face à la banque et il n'y a pas de compte de tiers à suivre.
+  it('ne montre rien en trésorerie', async () => {
+    monter('toutes', 'tresorerie')
+
+    await screen.findByText('401000')
+    expect(screen.queryAllByText(/Comptes de tiers au/)).toHaveLength(0)
+  })
+
+  it('dit que tout est soldé quand chaque facture l’est', async () => {
+    faux.parTable.ecritures_brouillon = BROUILLON.filter((e) => e.piece_id === 'p-trans')
+    monter('toutes')
+
+    expect(await screen.findByText('Tous les comptes de tiers sont soldés au 15/04/2026 : chaque facture écrite l’est par ses règlements.')).toBeTruthy()
+    expect(screen.queryAllByText(/Aucune facture ni aucun règlement/)).toHaveLength(0)
+  })
+
+  // « Tout est soldé » sur un brouillon où rien n'est écrit serait une bonne nouvelle fabriquée.
+  it('ne dit pas « soldé » quand rien n’est écrit sur un compte de tiers', async () => {
+    faux.parTable.ecritures_brouillon = BROUILLON.filter((e) => e.compte === '606100' || e.compte === '512000')
+    monter('toutes')
+
+    expect(await screen.findByText(/Aucune facture ni aucun règlement n’est écrit sur un compte de tiers au 15\/04\/2026/)).toBeTruthy()
+    expect(screen.queryAllByText(/Tous les comptes de tiers sont soldés/)).toHaveLength(0)
+  })
+
+  it('ne conclut pas sur un brouillon lu en partie', async () => {
+    faux.erreurs = { ecritures_brouillon: 'refus simulé' }
+    monter('toutes')
+
+    expect(await screen.findByText(/Les comptes de tiers ne peuvent pas être dits/)).toBeTruthy()
+    expect(screen.queryAllByText(/Aucune facture ni aucun règlement|Tous les comptes de tiers sont soldés/)).toHaveLength(0)
+  })
+
+  it('ne conclut pas sur des à-nouveaux lus en partie', async () => {
+    faux.erreurs = { a_nouveaux: 'refus simulé' }
+    monter('toutes')
+
+    expect(await screen.findByText(/Les comptes de tiers ne peuvent pas être dits/)).toBeTruthy()
+    expect(screen.queryAllByText('Bureau Vallée')).toHaveLength(0)
+  })
+
+  // Les pièces ne donnent que les NOMS : lues en partie, la carte garde ses montants, et le bandeau le dit — à part de
+  // celui du brouillon, qui disait jusqu'ici que les écritures n'avaient pas pu être lues.
+  it('dit, à part du brouillon, que des pièces lues en partie privent un tiers de son nom', async () => {
+    faux.erreurs = { pieces: 'refus simulé' }
+    monter('toutes')
+
+    expect(await screen.findByText(/Les pièces du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(screen.getByText(/peut s’afficher sous « divers »/)).toBeTruthy()
+    expect(screen.queryAllByText(/Les écritures du brouillon n'ont pas pu être lues/)).toHaveLength(0)
+    expect(ligneDuTiers('Fournisseurs divers')).toEqual(['Fournisseurs diversFDIVERS', '50,00 €', '—', '—', '50,00 €', '—'])
+  })
+
+  it('ne parle pas des comptes de tiers dans le bandeau des pièces, en trésorerie', async () => {
+    faux.erreurs = { pieces: 'refus simulé' }
+    monter('toutes', 'tresorerie')
+
+    expect(await screen.findByText(/Les pièces du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
+    expect(screen.queryAllByText(/« divers »/)).toHaveLength(0)
+  })
+
+  it('montre l’ouverture d’un dossier repris à part, et prévient d’une écriture de tiers qui la précède', async () => {
+    faux.parTable.a_nouveaux = OUVERTURE
+    monter(2026)
+
+    expect(await screen.findByText('Repris à l’ouverture, sans détail par tiers')).toBeTruthy()
+    expect(screen.getByText(/1 écriture sur un compte de tiers précède l’ouverture du 01\/01\/2026/)).toBeTruthy()
+    // L'ouverture n'a pas d'ancienneté : la ligne le dit au lieu d'aligner des tranches vides.
+    const ouverture = screen.getByText('Repris à l’ouverture, sans détail par tiers').closest('tr')!
+    expect([...ouverture.children].map((c) => (c.textContent ?? '').replace(/\s/g, ' '))).toEqual([
+      'Repris à l’ouverture, sans détail par tiers', '80,00 €',
+      'Ancienneté inconnue : la balance reprise ne détaille pas ce solde par tiers.',
+    ])
+    // Le total du compte comprend l'ouverture ; l'ancienneté, elle, ne porte que sur les pièces.
+    const section = screen.getByText((_, n) => n?.tagName === 'H4' && (n.textContent ?? '').startsWith('401000'))
+    expect(section.textContent!.replace(/\s/g, ' ')).toBe('401000 — Fournisseurs · reste à payer 130,00 €')
+    const pied = section.parentElement!.querySelector('tfoot tr')!
+    expect([...pied.children].map((c) => (c.textContent ?? '').replace(/\s/g, ' '))).toEqual(['Total', '130,00 €', '—', '—', '50,00 €', '—'])
+  })
+
+  // L'ouverture est le point de départ des comptes, pas une écriture de son seul exercice : l'année d'après, elle
+  // compte encore — c'est ce qui distingue la vue à une date de la balance d'un exercice.
+  it('garde l’ouverture d’un dossier repris dans la vue de l’exercice suivant', async () => {
+    vi.setSystemTime(new Date('2027-02-15T10:00:00Z'))
+    faux.parTable.a_nouveaux = OUVERTURE
+    monter(2027)
+
+    expect(await screen.findByText('Comptes de tiers au 15/02/2027')).toBeTruthy()
+    expect(screen.getByText('Repris à l’ouverture, sans détail par tiers')).toBeTruthy()
+  })
+
+  // Un arrêté AVANT l'ouverture ne compte pas les à-nouveaux : il n'y a rien à compter deux fois, et le dire crierait au
+  // loup.
+  it('ne prévient de rien quand l’arrêté précède l’ouverture', async () => {
+    faux.parTable.a_nouveaux = OUVERTURE
+    monter(2025)
+
+    expect(await screen.findByText('Comptes de tiers au 31/12/2025')).toBeTruthy()
+    expect(screen.queryAllByText(/précèden?t? l’ouverture du 01\/01\/2026/)).toHaveLength(0)
+    expect(screen.queryAllByText('Repris à l’ouverture, sans détail par tiers')).toHaveLength(0)
+  })
+})

@@ -28,8 +28,8 @@ const ONGLETS = [
 ]
 // Les onglets qu'un dossier tenu en ENGAGEMENT (d8) rend autrement : le réglage du modèle et le
 // brouillon en 401/411, la Clôture sans 2035, les factures sans règlement de la Checklist et de Banque,
-// le chiffre d'affaires facturé de l'Estimation.
-const ONGLETS_ENGAGEMENT = ['ecritures', 'cloture', 'checklist', 'banque', 'estimation']
+// le chiffre d'affaires facturé de l'Estimation, et les comptes de tiers de la Balance des comptes.
+const ONGLETS_ENGAGEMENT = ['ecritures', 'cloture', 'checklist', 'banque', 'estimation', 'statistiques']
 const VISITES = [
   // L'onglet TVA sur le seul dossier assujetti tenu en trésorerie : sur le cabinet infirmier, exonéré,
   // il ne montrerait qu'un message, et la vérification ne verrait jamais la déclaration elle-même.

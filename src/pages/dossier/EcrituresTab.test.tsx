@@ -125,7 +125,11 @@ vi.mock('../../lib/supabase', async () => {
           then: (suite: (r: { data: unknown[] | null; error: unknown; count: number }) => unknown) => {
             if (insertion) {
               faux.insertions.push({ table, lignes: insertion })
-              faux.parTable[table] = [...(faux.parTable[table] ?? []), ...insertion.map((l, i) => ({ id: `ins-${faux.insertions.length}-${i}`, ...l }))]
+              // La base pose l'identifiant et la date de création de chaque ligne (`default now()`) : le faux aussi, sans
+              // quoi une ligne relue après une génération n'aurait pas de date de création, ce qu'aucune ligne n'a jamais.
+              faux.parTable[table] = [...(faux.parTable[table] ?? []), ...insertion.map((l, i) => ({
+                id: `ins-${faux.insertions.length}-${i}`, created_at: '2025-06-01T09:00:00Z', ...l,
+              }))]
               if (faux.retenirApresInsertion) {
                 faux.retenue = new Promise<void>((r) => { faux.relacher = r })
               }
@@ -1146,6 +1150,29 @@ describe('EcrituresTab — les gestes sur un exercice validé', () => {
     expect(contenu).not.toContain('AC00001')
   })
 
+  // LE LETTRAGE NE SE FIGE PAS (lib/lettrage.ts) : la facture d'un exercice validé que l'exercice suivant règle se
+  // lettre ce jour-là, et le FEC validé, relu depuis ce que la validation a figé, porte ce lettrage.
+  it('porte dans le FEC d’un exercice validé le lettrage d’une facture réglée l’exercice suivant', async () => {
+    const fige = {
+      statut: 'validee', valide_le: '2026-03-01T10:00:00Z', journal_code: 'AC', numero_ecriture: 1, piece_ref: 'FACT-001',
+      piece_date: '2025-12-20', compte_lib: 'Achats', comp_aux_num: null, comp_aux_lib: null, date: '2025-12-20',
+    }
+    poser({
+      pieces: [piece({ date_piece: '2025-12-20' })],
+      ecritures_brouillon: [
+        ecriture({ id: 'f1', ...fige }),
+        ecriture({ id: 'f2', compte: '401000', sens: 'credit', ...fige, compte_lib: 'Fournisseurs', comp_aux_num: 'FFOURNISSEUR', comp_aux_lib: 'FOURNISSEUR MARSEILLE' }),
+        ecriture({ id: 'r1', date: '2026-01-08', compte: '401000', sens: 'debit', ligne_bancaire_id: 'l1', created_at: '2026-01-09T09:00:00Z' }),
+        ecriture({ id: 'r2', date: '2026-01-08', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1', created_at: '2026-01-09T09:00:00Z' }),
+      ],
+    })
+    monter(false, ENGAGEMENT, 2025, [2025])
+    await screen.findByText(/2 validées/)
+    await act(async () => { screen.getByRole('button', { name: 'Exporter FEC 2025 (validé)' }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t'))
+    expect(lignes.filter((r) => r[4] === '401000').map((r) => [r[2], r[13], r[14]])).toEqual([['AC00001', 'A', '20260109']])
+  })
+
   // Le garde symétrique : l'exercice d'après, qui n'est pas validé, se numérote comme avant.
   it('numérote comme avant l’exercice qui suit la frontière', async () => {
     poser({ pieces: [piece({ date_piece: '2026-03-10' })], ecritures_brouillon: [ecriture({ date: '2026-03-10' })] })
@@ -1489,6 +1516,48 @@ describe('EcrituresTab — en engagement', () => {
     const fec = telecharge.fichiers.find((f) => f.nom.includes('FEC'))!.contenu
     expect(fec).toMatch(/^BQ\tBanque\tBQ00001\t20250402\t401000\tFournisseurs\tFFOURNISSEUR\tFOURNISSEUR MARSEILLE\t/m)
     expect(fec).toMatch(/^AC\tAchats\tAC00001\t20250310\t606100\t/m)
+  })
+
+  // LE LETTRAGE se calcule sur TOUT le brouillon (lib/lettrage.ts) : le FEC de 2024 porte le code de la facture de
+  // décembre que le règlement de janvier 2025 solde. Calculé sur l'exercice affiché, il n'y verrait qu'une facture ouverte.
+  it('lettre dans le FEC de l’exercice la facture que l’exercice suivant solde', async () => {
+    poser({
+      pieces: [piece({ id: 'p1', date_piece: '2024-12-20' })],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', date: '2024-12-20', created_at: '2024-12-21T09:00:00Z' }),
+        ecriture({ id: 'e2', date: '2024-12-20', compte: '401000', sens: 'credit', created_at: '2024-12-21T09:00:00Z' }),
+        ecriture({ id: 'e3', date: '2025-01-06', compte: '401000', sens: 'debit', ligne_bancaire_id: 'l1', created_at: '2025-01-07T09:00:00Z' }),
+        ecriture({ id: 'e4', date: '2025-01-06', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1', created_at: '2025-01-07T09:00:00Z' }),
+      ],
+      lignes_bancaires: [REGLEE_EN_JANVIER],
+    })
+    monter(false, ENGAGEMENT, 2024)
+
+    await screen.findByText(/4 écritures proposées/)
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const fec = telecharge.fichiers.find((f) => f.nom.includes('FEC'))!.contenu
+    const tiers = fec.split('\r\n').map((l) => l.split('\t')).filter((r) => r[4] === '401000')
+    expect(tiers.map((r) => [r[2], r[13], r[14]])).toEqual([['AC00001', 'A', '20250107']])
+  })
+
+  // Le journal montre le code que porte le FEC : sans lui, le lettrage ne se verrait que dans un fichier exporté.
+  it('montre dans le journal le lettrage des lignes de tiers soldées, et d’elles seules', async () => {
+    poser({
+      pieces: [piece({ id: 'p1', date_piece: '2024-12-20' })],
+      ecritures_brouillon: [
+        ecriture({ id: 'e1', date: '2024-12-20', created_at: '2024-12-21T09:00:00Z' }),
+        ecriture({ id: 'e2', date: '2024-12-20', compte: '401000', sens: 'credit', created_at: '2024-12-21T09:00:00Z' }),
+        ecriture({ id: 'e3', date: '2025-01-06', compte: '401000', sens: 'debit', ligne_bancaire_id: 'l1', created_at: '2025-01-07T09:00:00Z' }),
+        ecriture({ id: 'e4', date: '2025-01-06', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1', created_at: '2025-01-07T09:00:00Z' }),
+      ],
+      lignes_bancaires: [REGLEE_EN_JANVIER],
+    })
+    monter(false, ENGAGEMENT, 'toutes')
+
+    await screen.findByText(/4 écritures proposées/)
+    const badges = screen.getAllByText('lettrage A')
+    expect(badges.map((b) => b.closest('tr')!.children[1].textContent)).toEqual(['401000 lettrage A', '401000 lettrage A'])
+    expect(badges[0].getAttribute('title')).toBe('Lettrée le 07/01/2025 : la facture et ses règlements se soldent sur ce compte.')
   })
 
   it('nomme la dette et les règlements dans la confirmation de retrait d’une facture immobilisée', async () => {
