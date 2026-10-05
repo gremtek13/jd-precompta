@@ -11,7 +11,7 @@ import type {
   ReglementGroupe, StatutLigneBancaire, VentilationBancaire,
 } from '../../lib/types'
 import { paiementsDesPieces, piecesPayees } from '../../lib/rattachement'
-import { nomDeLaPiece, piecesPayeesEnTrop, refusReglementGroupe, type PartReglement } from '../../lib/reglementGroupe'
+import { nomDeLaPiece, piecesPayeesEnTrop, refusReglementGroupe, refusSecondPaiement, type PartReglement } from '../../lib/reglementGroupe'
 import { useAnnee } from '../../context/AnneeContext'
 import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { dateFigee, estFigee } from '../../lib/validationExercice'
@@ -23,7 +23,7 @@ import {
   analyserAppariements, candidatsCotisations, candidatsPieces, JOURS_TOLERANCE_RAPPROCHEMENT,
   libelleExploitable, piecesMontantIntrouvableEnBanque, planRapprochementAutomatique,
 } from '../../lib/appariementBanque'
-import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar } from '../../lib/controles'
+import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar, restesAReglerDesPieces } from '../../lib/controles'
 import { ecritureDuMouvement, mouvementsAffectes, recettesAffecteesSansTaux, refusAffectation } from '../../lib/affectationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, refusVirementPersonnel } from '../../lib/virementPersonnel'
 import {
@@ -439,10 +439,18 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // onglet l'a rapprochée entre-temps, la contrainte `lignes_bancaires_un_seul_rapprochement` refuse
   // cette mise à jour, au lieu d'en défaire le lien en silence et de laisser son écriture derrière.
   async function rapprocher(ligneId: string, pieceId: string): Promise<boolean> {
-    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId }).eq('id', ligneId)
-    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return false }
     const ligne = lignes.find((l) => l.id === ligneId)
     const pieceAvant = pieces.find((p) => p.id === pieceId)
+    // Le second paiement d'une pièce déjà payée en partie : ce que la fiche refuse avant le clic se refuse ici aussi —
+    // le mauvais sens, ou plus que ce qu'il reste à régler (`refusSecondPaiement`). Une seconde ceinture : aucun clic ne
+    // l'atteint aujourd'hui, la fiche grisant « Associer » sur ce refus et rien d'autre n'offrant une pièce déjà payée.
+    const dejaPayee = paiements.get(pieceId) ?? []
+    if (ligne && pieceAvant && dejaPayee.length > 0) {
+      const refus = refusSecondPaiement(ligne, pieceAvant, dejaPayee)
+      if (refus) { window.alert(refus); return false }
+    }
+    const { error } = await supabase.from('lignes_bancaires').update({ statut: 'rapprochee', piece_id: pieceId }).eq('id', ligneId)
+    if (error) { window.alert(`Le rapprochement n'a pas pu être enregistré : ${error.message}`); return false }
     // Le règlement AVANT la contrepartie : celle-ci reprend les montants de la pièce, et les
     // écrirait donc avec la valeur provisoire si l'ordre était inversé (voir lib/reglementBanque.ts).
     const piece = ligne && pieceAvant ? await reglerSiLibre(pieceAvant, ligne.id, ligne.montant) : pieceAvant
@@ -825,6 +833,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     () => new Map(piecesPayeesEnTrop(pieces, paiements).map((x) => [x.piece.id, x.enTrop])),
     [pieces, paiements],
   )
+  // CE QU'UN SECOND PAIEMENT PEUT ENCORE RÉGLER, DANS LES DEUX MODÈLES (lib/controles.ts) : la fiche d'un mouvement
+  // propose au choix une pièce payée en partie pour son reste, et une règle d'affectation n'affecte pas en lot le
+  // mouvement qui en est peut-être le solde. Même silence que le reste à payer sur une lecture partielle : rien n'est
+  // alors offert.
+  const restesARegler = useMemo(
+    () => (lignesIncompletes || reglementsIncomplets ? new Map<string, number>() : restesAReglerDesPieces(pieces, paiements)),
+    [pieces, paiements, lignesIncompletes, reglementsIncomplets],
+  )
 
   // Mémoïsée parce que `planAuto` en dépend : recréée à chaque rendu, elle relançait le plan — un
   // produit mouvements × pièces — à chaque frappe dans la recherche, et rendait son `useMemo` inopérant.
@@ -883,7 +899,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     [piecesValidees, piecesFigeesHorsRapprochement],
   )
   const planRegles = useMemo(() => {
-    const justificatifs = { pieces, piecesRapprochees: piecesHorsRapprochement, cotisations, cotisationsRapprochees }
+    const justificatifs = { pieces, piecesRapprochees: piecesHorsRapprochement, restesARegler, cotisations, cotisationsRapprochees }
     return planAffectationParRegles(lignes, reglesAffectation, categories, assujettiTva, (l) => {
       const justificatif = justificatifPossible(l, justificatifs)
       if (justificatif) return justificatif
@@ -891,7 +907,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       const emprunt = empruntPlausible(l, emprunts, lignes)
       return emprunt ? raisonEmpruntPlausible(emprunt) : null
     })
-  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts])
+  }, [lignes, reglesAffectation, categories, assujettiTva, pieces, piecesHorsRapprochement, restesARegler, notesFigees, piecesRapprochees, cotisations, cotisationsRapprochees, emprunts])
   const idsProposesParRegle = useMemo(() => new Set(planRegles.propositions.map((p) => p.ligne.id)), [planRegles])
   const idsEmpruntPlausible = useMemo(
     () => new Set(nonRapprochees.filter((l) => empruntPlausible(l, emprunts, lignes)).map((l) => l.id)),
@@ -1739,6 +1755,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             onRetirerReglementGroupe={() => agirSurMouvement(() => retirerReglementGroupe(ligneOuverte.id))}
             restesAPayer={restesAPayer}
             payeesEnTrop={payeesEnTrop}
+            restesARegler={restesARegler}
           />
         </PanneauDroit>
       )}

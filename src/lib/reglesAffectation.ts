@@ -178,6 +178,9 @@ export interface JustificatifsDuDossier {
   // justificatif d'un paiement.
   pieces: Piece[]
   piecesRapprochees: ReadonlySet<string>
+  // Ce qu'il reste à régler des pièces payées en partie (`restesAReglerDesPieces`, lib/controles.ts) : un mouvement
+  // en est peut-être le solde. Vide sur une lecture partielle du relevé ou des parts.
+  restesARegler: ReadonlyMap<string, number>
   cotisations: CotisationRapprochable[]
   cotisationsRapprochees: ReadonlySet<string>
 }
@@ -204,6 +207,16 @@ export function justificatifPossible(ligne: LigneBancaire, justificatifs: Justif
   if (justificatifs.pieces.some((p) =>
     !justificatifs.piecesRapprochees.has(p.id) && sensCoherent(p, ligne) && tiersConfirmeParBanque(p.tiers, libelle))) {
     return 'Un justificatif de ce tiers n’est rapproché d’aucun mouvement.'
+  }
+  // UNE PIÈCE PAYÉE EN PARTIE ATTEND SON SOLDE : rapprochée de son acompte, elle échappait aux deux questions
+  // précédentes, et le solde affecté en lot aurait compté la dépense une seconde fois — la 2035 compte déjà la pièce
+  // entière, son reste à la date de la facture. Le même tiers, ou le montant du reste, suffit à la soupçonner.
+  if (justificatifs.pieces.some((p) => {
+    const reste = justificatifs.restesARegler.get(p.id)
+    return reste != null && sensCoherent(p, ligne)
+      && (tiersConfirmeParBanque(p.tiers, libelle) || Math.round(Math.abs(ligne.montant) * 100) === Math.round(reste * 100))
+  })) {
+    return 'Une pièce payée en partie attend son solde : ce mouvement le règle peut-être.'
   }
   return null
 }

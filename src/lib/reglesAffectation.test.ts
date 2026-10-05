@@ -295,7 +295,10 @@ describe('planAffectationParRegles — ce que « Affecter les N » écrirait', (
 })
 
 describe('justificatifPossible — un paiement qui a peut-être sa pièce ne s’affecte pas en lot', () => {
-  const aucun = { pieces: [], piecesRapprochees: new Set<string>(), cotisations: [], cotisationsRapprochees: new Set<string>() }
+  const aucun = {
+    pieces: [], piecesRapprochees: new Set<string>(), restesARegler: new Map<string, number>(), cotisations: [],
+    cotisationsRapprochees: new Set<string>(),
+  }
 
   it('une pièce du même montant dans la fenêtre du rapprochement — à valider comprise', () => {
     const justificatifs = { ...aucun, pieces: [piece({ tiers: null, statut: 'a_valider', date_piece: '2025-03-10' })] }
@@ -318,6 +321,21 @@ describe('justificatifPossible — un paiement qui a peut-être sa pièce ne s�
     expect(justificatifPossible(ligne(), { ...aucun, pieces: [piece({ tiers: 'Swisslife', montant_ttc: 90, montant_ht: 90 })] })).toBeNull()
     expect(justificatifPossible(ligne(), { ...aucun, pieces: [piece({ type_piece: 'vente', montant_ttc: 90, montant_ht: 90 })] })).toBeNull()
     expect(justificatifPossible(ligne(), aucun)).toBeNull()
+  })
+
+  // UNE PIÈCE PAYÉE EN PARTIE ATTEND SON SOLDE : rapprochée de son acompte, elle échappait aux questions précédentes, et le
+  // solde affecté en lot aurait compté la dépense une seconde fois.
+  it('une pièce payée en partie de ce tiers, ou dont le reste vaut le mouvement', () => {
+    const acomptee = piece({ id: 'p1', montant_ttc: 100, montant_ht: 100, date_piece: '2025-01-15' })
+    const avecReste = (p: Piece, reste: number) => ({ ...aucun, pieces: [p], piecesRapprochees: new Set([p.id]), restesARegler: new Map([[p.id, reste]]) })
+    expect(justificatifPossible(ligne(), avecReste(acomptee, 61.6))).toMatch(/payée en partie attend son solde/)
+    // Un autre tiers, mais dont le reste vaut le mouvement.
+    const autre = piece({ id: 'p2', tiers: 'Swisslife', montant_ttc: 100, montant_ht: 100 })
+    expect(justificatifPossible(ligne(), avecReste(autre, 38.4))).toMatch(/payée en partie attend son solde/)
+    // Gardes symétriques : un autre tiers et un autre reste, l'autre sens, ou une pièce réglée — sans reste à régler.
+    expect(justificatifPossible(ligne(), avecReste(autre, 50))).toBeNull()
+    expect(justificatifPossible(ligne(), avecReste({ ...acomptee, type_piece: 'vente' }, 61.6))).toBeNull()
+    expect(justificatifPossible(ligne(), { ...aucun, pieces: [acomptee], piecesRapprochees: new Set(['p1']) })).toBeNull()
   })
 
   it('le plan met ces mouvements à rapprocher, jamais dans le lot', () => {

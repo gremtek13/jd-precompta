@@ -3,7 +3,7 @@ import {
   alignerMontantsSurBanque, ecartAvecBanque, seuilAlignement, soldeDesPaiements,
   SEUIL_ALIGNEMENT_PLAFOND_EUR, SEUIL_ALIGNEMENT_RELATIF,
 } from './alignementBanque'
-import { pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar } from './controles'
+import { pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar, restesAReglerDesPieces } from './controles'
 import type { PaiementDePiece } from './rattachement'
 import type { LigneBancaire, Piece } from './types'
 
@@ -192,6 +192,38 @@ describe('piecesPayeesEnPartie', () => {
   // Une pièce hors du jeu fourni est un ARTEFACT DE FILTRAGE, pas une anomalie — la règle de `rupturesPisteAudit`.
   it('ne regarde que les pièces fournies', () => {
     expect(piecesPayeesEnPartie([piece({ id: 'p2' })], paiements(['p1', [paiement(-5)]]), 'tresorerie')).toEqual([])
+  })
+})
+
+// CE QU'UN SECOND PAIEMENT PEUT ENCORE RÉGLER (ligne 26) : la fiche d'un mouvement offre la pièce au choix pour son reste.
+// Les mêmes paiements et le même seuil que `piecesPayeesEnPartie`, dans les DEUX modèles : en engagement aussi, le
+// solde d'une facture règle la dette qui court au 401.
+describe('restesAReglerDesPieces', () => {
+  const paiements = (...p: [string, PaiementDePiece[]][]) => new Map(p)
+
+  it('rend le reste d’une pièce payée en partie, au centime', () => {
+    expect(restesAReglerDesPieces([piece({ montant_ttc: 1000 })], paiements(['p1', [paiement(-300)]]))).toEqual(new Map([['p1', 700]]))
+    // Trois paiements de 0,10 € : en flottants, 0,1 + 0,1 + 0,1 ne fait pas 0,3.
+    const centimes = paiements(['p1', [paiement(-0.1, 'a'), paiement(-0.1, 'b'), paiement(-0.1, 'c')]])
+    expect(restesAReglerDesPieces([piece({ montant_ttc: 10 })], centimes)).toEqual(new Map([['p1', 9.7]]))
+  })
+
+  it('réunit les paiements d’une pièce, rapprochements et parts de virements groupés', () => {
+    expect(restesAReglerDesPieces([piece({ montant_ttc: 1000 })], paiements(['p1', [paiement(-300), paiement(-200, 'g1', 'groupe')]])))
+      .toEqual(new Map([['p1', 500]]))
+  })
+
+  // GARDES SYMÉTRIQUES : rien n'est offert d'une pièce qui n'attend plus de second paiement — sans paiement (elle s'offre
+  // comme toute pièce), réglée au seuil près, payée de trop, en devise (son montant en euros n'est qu'un provisoire) ou
+  // sans montant lu.
+  it('ne rend rien d’une pièce qui n’attend pas de second paiement', () => {
+    expect(restesAReglerDesPieces([piece({ montant_ttc: 1000 })], paiements())).toEqual(new Map())
+    expect(restesAReglerDesPieces([piece({ montant_ttc: 100 })], paiements(['p1', [paiement(-98)]]))).toEqual(new Map())
+    expect(restesAReglerDesPieces([piece({ montant_ttc: 100 })], paiements(['p1', [paiement(-150)]]))).toEqual(new Map())
+    expect(restesAReglerDesPieces([piece({ montant_ttc: 100, devise: 'USD' })], paiements(['p1', [paiement(-30)]]))).toEqual(new Map())
+    expect(restesAReglerDesPieces([piece({ montant_ttc: null })], paiements(['p1', [paiement(-30)]]))).toEqual(new Map())
+    // Un reste qui dépasse le seuil d'un centime, lui, s'offre.
+    expect(restesAReglerDesPieces([piece({ montant_ttc: 100 })], paiements(['p1', [paiement(-97.99)]]))).toEqual(new Map([['p1', 2.01]]))
   })
 })
 
