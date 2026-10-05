@@ -35,13 +35,13 @@ interface Copie {
   csgDeLEcriture: typeof csgDeLEcriture
   refusRapprochementCotisation: (l: LigneBancaire, c: CotisationDeclaree, mode: ModeComptable) => string | null
   ecritureDeLaCotisation: (l: { montant: number }, c: CotisationDeclaree, mode: ModeComptable) => Ecriture[]
-  cotisationsAEcrire: (e: EcritureBrouillon[], l: LigneBancaire[], c: CotisationDeclaree[], mode: ModeComptable) => Rapprochement[]
-  rapprochementsCotisationRefuses: (l: LigneBancaire[], c: CotisationDeclaree[], mode: ModeComptable) => (Rapprochement & { raison: string })[]
+  cotisationsAEcrire: (e: EcritureBrouillon[], l: LigneBancaire[], c: CotisationDeclaree[], mode: ModeComptable, frontiere: string | null) => Rapprochement[]
+  rapprochementsCotisationRefuses: (l: LigneBancaire[], c: CotisationDeclaree[], mode: ModeComptable, frontiere: string | null) => (Rapprochement & { raison: string })[]
 }
 
 // Le bloc COTISATION lit `ecrituresSansPieceParMouvement`, `ecritureConforme` et `COMPTE_EXPLOITANT` du bloc
-// AFFECTATION, et `COMPTE_BANQUE` déclaré plus haut : tous repris de la MÊME source, pour qu'une dérive de
-// l'un d'eux morde ici aussi.
+// AFFECTATION, `estFigee` du bloc VALIDATION, et `COMPTE_BANQUE` déclaré plus haut : tous repris de la MÊME
+// source, pour qu'une dérive de l'un d'eux morde ici aussi.
 function extraire(source: string): Copie {
   const bornes = (nom: string) => {
     const debut = source.indexOf(`// ── DÉBUT ${nom}`)
@@ -55,7 +55,7 @@ function extraire(source: string): Copie {
   // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
   const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
   expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
+  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { montantDeLEcheance, csgDeLEcriture, refusRapprochementCotisation, ecritureDeLaCotisation, cotisationsAEcrire, rapprochementsCotisationRefuses }`)() as Copie
 }
@@ -63,6 +63,7 @@ function extraire(source: string): Copie {
 const deployee = extraire(sourceDeployee())
 
 const MODES: ModeComptable[] = ['tresorerie', 'engagement']
+const FRONTIERES = [null, '2026-03-04', '2026-03-05', '2026-12-31'] as const
 
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2026-03-05', libelle: 'PRLV URSSAF', montant: -500, statut: 'rapprochee',
@@ -224,10 +225,14 @@ describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
         // Les écritures d'une PIÈCE qui désignent le même mouvement n'en sont pas.
         ecriture({ id: 'piece', piece_id: 'p1', ligne_bancaire_id: 'l-absente', compte: '606100', sens: 'debit', montant: 500 }),
       ]
-      expect(paires(deployee.cotisationsAEcrire(ecritures, lignes, cotisations, mode)), mode)
-        .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, mode, null)))
-      expect(paires(deployee.rapprochementsCotisationRefuses(lignes, cotisations, mode)), mode)
-        .toEqual(paires(rapprochementsCotisationRefuses(lignes, cotisations, mode, null)))
+      // Sous chaque frontière de validation : aucune, la veille des prélèvements, leur jour même — qui les fige —,
+      // et la fin de leur exercice.
+      for (const f of FRONTIERES) {
+        expect(paires(deployee.cotisationsAEcrire(ecritures, lignes, cotisations, mode, f)), `${mode}, frontière ${f}`)
+          .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, mode, f)))
+        expect(paires(deployee.rapprochementsCotisationRefuses(lignes, cotisations, mode, f)), `${mode}, frontière ${f}`)
+          .toEqual(paires(rapprochementsCotisationRefuses(lignes, cotisations, mode, f)))
+      }
     }
     // La batterie exerce bien ce qui décide : en trésorerie, la CSG-CRDS saisie depuis rend l'écriture
     // périmée ; en engagement, elle n'y change rien.
@@ -242,6 +247,12 @@ describe('agent-comptable / bloc COTISATION (copie déployée)', () => {
       .toEqual(['l-absente→absente', 'l-perimee→perimee', 'l-autre-date→autre-date', 'l-autre-montant→autre-montant'])
     expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'engagement', null))).not.toContain('l-perimee→perimee')
     expect(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', null))).toEqual(['l-refusee→refusee'])
+    // Et la frontière décide : un paiement d'un exercice validé ne se réclame plus, ni son écriture ni son refus — le
+    // prélèvement du 9 mars reste ouvert sous une frontière au 5.
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-05'))).toEqual([])
+    expect(paires(cotisationsAEcrire(ecrituresTresorerie, lignes, cotisations, 'tresorerie', '2026-03-04')))
+      .toEqual(['l-absente→absente', 'l-perimee→perimee', 'l-autre-date→autre-date', 'l-autre-montant→autre-montant'])
+    expect(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', '2026-03-05'))).toEqual([])
   })
 })
 
@@ -257,8 +268,8 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
   })
 
   it('rend les deux points de la Checklist, selon le modèle du dossier', () => {
-    expect(corps).toContain('const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode)')
-    expect(corps).toContain('const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode)')
+    expect(corps).toContain('const cotisationsSansEcriture = cotisationsAEcrire(ecrituresTyped, rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)')
+    expect(corps).toContain('const cotisationsRefusees = rapprochementsCotisationRefuses(rReleve.lignes, rCotisations.lignes, modele.mode, frontiere)')
     expect(corps).toMatch(/echeances_de_cotisation_payees_dont_l_ecriture_manque_ou_n_est_plus_a_jour: cotisationsSansEcriture\.length/)
     expect(corps).toMatch(/rapprochements_d_une_echeance_de_cotisation_qui_ne_peuvent_pas_s_ecrire: cotisationsRefusees\.length/)
   })
@@ -335,10 +346,10 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
   })
 
   it('attrape un rapprochement refusé compté parmi les échéances à écrire', () => {
-    const derivee = planter(['    !refusRapprochementCotisation(ligne, cotisation, mode)\n    && !ecritureConforme(', '    !ecritureConforme('])
+    const derivee = planter(['    && !refusRapprochementCotisation(ligne, cotisation, mode)\n    && !ecritureConforme(', '    && !ecritureConforme('])
     const lignes = [ligne({ id: 'l-refusee', cotisation_id: 'refusee', montant: 500 })]
     const cotisations = [cotisation({ id: 'refusee' })]
-    echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie')))
+    echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null)))
       .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null))))
   })
 
@@ -348,15 +359,32 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
     const lignes = [ligne({ id: 'l-tard', date: '2026-03-09' })]
     const cotisations = [cotisation({})]
     const ecritures = conforme(lignes[0], cotisations[0], 'tresorerie')
-    echoue(() => expect(paires(derivee.cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie')))
+    echoue(() => expect(paires(derivee.cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null)))
       .toEqual(paires(cotisationsAEcrire(ecritures, lignes, cotisations, 'tresorerie', null))))
+  })
+
+  // LA FRONTIÈRE DE VALIDATION : un paiement d'un exercice validé ne se réclame plus, ni son écriture ni son refus.
+  it('attrape une copie qui réclame l’écriture d’un paiement figé', () => {
+    const derivee = planter(['    !estFigee(ligne.date, frontiere)\n    && !refusRapprochementCotisation(', '    !refusRapprochementCotisation('])
+    const lignes = [ligne({ id: 'l-figee' })]
+    const cotisations = [cotisation({})]
+    echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', '2026-03-05')))
+      .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', '2026-03-05'))))
+  })
+
+  it('attrape une copie qui dit le refus d’un rapprochement figé', () => {
+    const derivee = planter(['    if (estFigee(ligne.date, frontiere)) return []\n', ''])
+    const lignes = [ligne({ id: 'l-refusee', montant: 500 })]
+    const cotisations = [cotisation({})]
+    echoue(() => expect(paires(derivee.rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', '2026-03-05')))
+      .toEqual(paires(rapprochementsCotisationRefuses(lignes, cotisations, 'tresorerie', '2026-03-05'))))
   })
 
   it('attrape un mouvement non rapproché qui paierait encore', () => {
     const derivee = planter(['    if (ligne.statut !== "rapprochee" || !ligne.cotisation_id) continue\n    const cotisation = parId.get', '    if (!ligne.cotisation_id) continue\n    const cotisation = parId.get'])
     const lignes = [ligne({ id: 'l-non-rapprochee', statut: 'non_rapprochee' })]
     const cotisations = [cotisation({})]
-    echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie')))
+    echoue(() => expect(paires(derivee.cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null)))
       .toEqual(paires(cotisationsAEcrire([], lignes, cotisations, 'tresorerie', null))))
   })
 })

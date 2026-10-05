@@ -55,7 +55,7 @@ function extraire(source: string): Copie {
   // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
   const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
   expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('AFFECTATION')}\n${bornes('EMPRUNT')}`
+  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('EMPRUNT')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { ajouterMois, ajouterJours, genererEcheancier, echeancesNonRapprochees, couvertureDuReleve, ecritureDeLEcheance, echeancesDesynchronisees }`)() as Copie
 }
@@ -137,11 +137,17 @@ describe('agent-comptable / bloc EMPRUNT (copie déployée)', () => {
     expect(manquantes.some((m) => m.startsWith('b#'))).toBe(true)
   })
 
-  it('rend la même couverture du relevé, marge comprise', () => {
-    expect(deployee.couvertureDuReleve([], null)).toEqual(couvertureDuReleve([], null))
-    expect(deployee.couvertureDuReleve(RELEVE, null)).toEqual(couvertureDuReleve(RELEVE, null))
-    expect(deployee.couvertureDuReleve([RELEVE[0]], null)).toEqual(couvertureDuReleve([RELEVE[0]], null))
+  it('rend la même couverture du relevé, marge comprise, sous chaque frontière de validation', () => {
+    // Aucune, la veille du premier mouvement, son jour même, une frontière au milieu du relevé, et une après lui.
+    for (const f of [null, '2025-01-01', '2025-01-02', '2025-03-31', '2025-12-31']) {
+      expect(deployee.couvertureDuReleve([], f), `frontière ${f}`).toEqual(couvertureDuReleve([], f))
+      expect(deployee.couvertureDuReleve(RELEVE, f), `frontière ${f}`).toEqual(couvertureDuReleve(RELEVE, f))
+      expect(deployee.couvertureDuReleve([RELEVE[0]], f), `frontière ${f}`).toEqual(couvertureDuReleve([RELEVE[0]], f))
+    }
     expect(couvertureDuReleve(RELEVE, null)).toEqual({ debut: '2025-01-02', fin: ajouterJours('2025-06-30', -MARGE_PRELEVEMENT_JOURS) })
+    // La frontière décide : rien au plus tard à elle — et la fenêtre vide quand rien ne reste à couvrir après.
+    expect(couvertureDuReleve(RELEVE, '2025-03-31')).toEqual({ debut: '2025-04-01', fin: ajouterJours('2025-06-30', -MARGE_PRELEVEMENT_JOURS) })
+    expect(couvertureDuReleve(RELEVE, '2025-12-31')).toEqual({ debut: '2026-01-01', fin: ajouterJours('2025-06-30', -MARGE_PRELEVEMENT_JOURS) })
   })
 
   it('compose la même écriture, ligne à ligne, que le mouvement soit une échéance ou un déblocage', () => {
@@ -194,7 +200,7 @@ describe('agent-comptable / points_a_traiter lit les emprunts et le relevé', ()
   })
 
   it('borne la réclamation à la couverture du relevé, et rend les deux points de la Checklist', () => {
-    expect(corps).toContain('const couverture = couvertureDuReleve(rReleve.lignes)')
+    expect(corps).toContain('const couverture = couvertureDuReleve(rReleve.lignes, frontiere)')
     expect(corps).toContain('echeancesNonRapprochees(rEmprunts.lignes, rReleve.lignes, couverture.debut, couverture.fin)')
     expect(corps).toContain('echeancesDesynchronisees(ecrituresTyped, rReleve.lignes)')
     expect(corps).toMatch(/echeances_emprunt_couvertes_par_le_releve_sans_mouvement_rapproche: echeancesManquantes\.length/)
@@ -238,6 +244,18 @@ describe('le garde-fou du bloc EMPRUNT sait encore échouer', () => {
   it('attrape une couverture sans marge', () => {
     const derivee = planter(['  return { debut, fin: ajouterJours(fin, -MARGE_PRELEVEMENT_JOURS) }\n}\n\nconst centimesEmprunt', '  return { debut, fin }\n}\n\nconst centimesEmprunt'])
     echoue(() => expect(derivee.couvertureDuReleve(RELEVE, null)).toEqual(couvertureDuReleve(RELEVE, null)))
+  })
+
+  // LA FRONTIÈRE DE VALIDATION : les mouvements d'un exercice validé ne se rapprochent plus, donc leurs échéances ne
+  // se réclament plus.
+  it('attrape une couverture qui ne s’arrête pas à la frontière de validation', () => {
+    const derivee = planter(['  if (frontiere !== null && debut <= frontiere) debut = ajouterJours(frontiere, 1)\n', ''])
+    echoue(() => expect(derivee.couvertureDuReleve(RELEVE, '2025-03-31')).toEqual(couvertureDuReleve(RELEVE, '2025-03-31')))
+  })
+
+  it('attrape une couverture dont la frontière ne fige pas son propre jour', () => {
+    const derivee = planter(['  if (frontiere !== null && debut <= frontiere) debut = ajouterJours(frontiere, 1)\n', '  if (frontiere !== null && debut < frontiere) debut = ajouterJours(frontiere, 1)\n'])
+    echoue(() => expect(derivee.couvertureDuReleve(RELEVE, '2025-01-02')).toEqual(couvertureDuReleve(RELEVE, '2025-01-02')))
   })
 
   it('attrape une marge qui a changé', () => {

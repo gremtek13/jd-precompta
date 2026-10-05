@@ -33,9 +33,9 @@ type Ecriture = { compte: string; sens: string; montant: number }
 interface Copie {
   ecritureDeLaVentilation: (l: { montant: number }, p: VentilationBancaire[], c: Categorie[], m: ModeleComptable, assujetti: boolean) => Ecriture[] | null
   partsDesVentilations: (l: LigneBancaire[], p: VentilationBancaire[], c: Categorie[], assujetti: boolean) => { ligne: { id: string }; nature: string | null; taux: number | null }[]
-  recettesVentileesSansTaux: (p: ReturnType<Copie['partsDesVentilations']>, assujetti: boolean) => { id: string }[]
+  recettesVentileesSansTaux: (p: ReturnType<Copie['partsDesVentilations']>, assujetti: boolean, frontiere: string | null) => { id: string }[]
   ventilationsIncoherentes: (l: LigneBancaire[], p: VentilationBancaire[]) => { ligne: { id: string }; raison: string }[]
-  mouvementsVentilesDesynchronises: (e: EcritureBrouillon[], l: LigneBancaire[], p: VentilationBancaire[], c: Categorie[], m: ModeleComptable, assujetti: boolean) => { id: string }[]
+  mouvementsVentilesDesynchronises: (e: EcritureBrouillon[], l: LigneBancaire[], p: VentilationBancaire[], c: Categorie[], m: ModeleComptable, assujetti: boolean, frontiere: string | null) => { id: string }[]
 }
 
 // Le bloc VENTILATION lit `natureDuCompte`, `compteDuDirigeant`, `ecrituresSansPieceParMouvement`,
@@ -57,7 +57,7 @@ function extraire(source: string): Copie {
   expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
   const tva = /const COMPTE_TVA_COLLECTEE = "(\d+)"/.exec(source)
   expect(tva, '`COMPTE_TVA_COLLECTEE` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\nconst COMPTE_TVA_COLLECTEE = "${tva![1]}"\n${bornes('AFFECTATION')}\n${bornes('VENTILATION')}`
+  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\nconst COMPTE_TVA_COLLECTEE = "${tva![1]}"\n${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('VENTILATION')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes, mouvementsVentilesDesynchronises }`)() as Copie
 }
@@ -81,6 +81,10 @@ const CATEGORIES: Categorie[] = [
   // Une catégorie sortie des comptes de résultat : sa part ne peut plus s'écrire.
   categorie({ id: 'bilan', libelle: 'Compte de bilan', compte_comptable: '108000', poste_2035: null }),
 ]
+
+// LES FRONTIÈRES DE VALIDATION sous lesquelles les deux copies sont comparées : aucune, la veille du mouvement le
+// plus courant de la batterie, son jour même — qui le fige —, et la fin de son exercice.
+const FRONTIERES = [null, '2025-03-30', '2025-03-31', '2025-12-31'] as const
 
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2025-03-31', libelle: 'PRLV OPERATEUR', montant: -120, statut: 'rapprochee',
@@ -189,15 +193,19 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
 
   it('rend les mêmes parts de recettes SANS TAUX sur un dossier assujetti — et rien sur un dossier exonéré', () => {
     for (const assujetti of [true, false]) {
-      const src = recettesVentileesSansTaux(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti), assujetti, null)
-      const dep = deployee.recettesVentileesSansTaux(deployee.partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti), assujetti)
-      expect(ids(dep), `assujetti ${assujetti}`).toEqual(ids(src))
+      for (const f of FRONTIERES) {
+        const src = recettesVentileesSansTaux(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti), assujetti, f)
+        const dep = deployee.recettesVentileesSansTaux(deployee.partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti), assujetti, f)
+        expect(ids(dep), `assujetti ${assujetti}, frontière ${f}`).toEqual(ids(src))
+      }
       // Les parts elles-mêmes, avec le taux qui s'applique : celui gardé sur un dossier assujetti, aucun ailleurs.
       expect(resumeParts(deployee.partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti)), `parts, assujetti ${assujetti}`)
         .toEqual(resumeParts(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, assujetti)))
     }
     // Un mouvement par entrée ; pas celui qui n'est pas rapproché, pas une dépense, pas la remise taxée.
     expect(ids(recettesVentileesSansTaux(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, true), true, null))).toEqual(['remise', 'deux-recettes'])
+    // Et la frontière décide : un mouvement d'un exercice validé ne réclame plus son taux.
+    expect(ids(recettesVentileesSansTaux(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, true), true, '2025-03-31'))).toEqual([])
     expect(resumeParts(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, true))).toContain('remise-taxee:recette:20')
     expect(resumeParts(partsDesVentilations(RELEVE_TAXE, PARTS, CATEGORIES, false))).toContain('remise-taxee:recette:null')
   })
@@ -236,14 +244,18 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
         // Les écritures d'une PIÈCE qui désignent le même mouvement n'en sont pas.
         ecriture({ id: 'piece', piece_id: 'p1', ligne_bancaire_id: 'juste', compte: '606100', sens: 'debit', montant: 120 }),
       ]
-      expect(ids(deployee.mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false)), `${modele.mode} ${modele.compteNotesDeFrais}`)
-        .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, null)))
+      for (const f of FRONTIERES) {
+        expect(ids(deployee.mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, f)), `${modele.mode} ${modele.compteNotesDeFrais}, frontière ${f}`)
+          .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, f)))
+      }
       expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, null)))
         .toEqual(['absente', 'autre-compte', 'autre-montant', 'autre-date', 'hors-resultat'])
+      // Et la frontière décide : un mouvement d'un exercice validé ne se juge plus.
+      expect(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, modele, false, '2025-03-31'))).toEqual([])
     }
     // Et le modèle compte : l'écriture juste en trésorerie est périmée en engagement.
     const ecrituresTresorerie = conforme(lignes[0], partsDe('juste'), TRESORERIE)
-    expect(ids(deployee.mouvementsVentilesDesynchronises(ecrituresTresorerie, [lignes[0]], partsDe('juste'), CATEGORIES, ENGAGEMENT_455, false))).toEqual(['juste'])
+    expect(ids(deployee.mouvementsVentilesDesynchronises(ecrituresTresorerie, [lignes[0]], partsDe('juste'), CATEGORIES, ENGAGEMENT_455, false, null))).toEqual(['juste'])
   })
 
   it('l’écriture attendue d’une part de recette taxée suit le statut ACTUEL du dossier', () => {
@@ -255,7 +267,7 @@ describe('agent-comptable / bloc VENTILATION (copie déployée)', () => {
       ...conforme(lignes[1], partsDe('au-ttc'), TRESORERIE, lignes[1].date, false),
     ]
     for (const assujetti of [true, false]) {
-      expect(ids(deployee.mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti)), `assujetti ${assujetti}`)
+      expect(ids(deployee.mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti, null)), `assujetti ${assujetti}`)
         .toEqual(ids(mouvementsVentilesDesynchronises(ecritures, lignes, parts, CATEGORIES, TRESORERIE, assujetti, null)))
     }
     // Assujetti, l'écriture au TTC est périmée ; qui ne l'est plus, celle qui porte encore la TVA.
@@ -277,9 +289,9 @@ describe('agent-comptable / points_a_traiter lit les parts des mouvements ventil
   it('passe les parts aux catégories sans compte ou sans poste, et rend les trois points de la Checklist', () => {
     expect(corps).toContain('categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
     expect(corps).toContain('categoriesSansPoste(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)')
-    expect(corps).toContain('recettesVentileesSansTaux(\n      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva)')
+    expect(corps).toContain('recettesVentileesSansTaux(\n      partsDesVentilations(rReleve.lignes, rParts.lignes, categoriesTyped, dossier.assujetti_tva), dossier.assujetti_tva, frontiere)')
     expect(corps).toContain('ventilationsIncoherentes(rReleve.lignes, rParts.lignes)')
-    expect(corps).toContain('mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva)')
+    expect(corps).toContain('mouvementsVentilesDesynchronises(ecrituresTyped, rReleve.lignes, rParts.lignes, categoriesTyped, modele, dossier.assujetti_tva, frontiere)')
     expect(corps).toMatch(/mouvements_ventiles_dont_l_ecriture_ne_suit_plus_les_parts: ventilesPerimes\.length/)
     expect(corps).toMatch(/mouvements_ventiles_dont_les_parts_ne_font_plus_le_mouvement: ventilationsFausses\.length/)
     expect(corps).toMatch(/encaissements_affectes_ou_ventiles_en_recette_sans_taux_de_tva_sur_dossier_assujetti: recettesAffecteesSansTva\.length \+ recettesVentileesSansTva\.length/)
@@ -364,26 +376,42 @@ describe('le garde-fou du bloc VENTILATION sait encore échouer', () => {
     const derivee = planter(['    if (!ligne.ventilee || ligne.statut !== "rapprochee" || incoherentes.has(ligne.id)) return false', '    if (!ligne.ventilee || ligne.statut !== "rapprochee") return false'])
     const lignes = [ligne({ id: 'l' })]
     const parts = [part('l', 'tel', -120)]
-    echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false))).toEqual([]))
+    echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false, null))).toEqual([]))
   })
 
   it('attrape un contrôle d’écriture qui juge une catégorie qu’il n’a pas lue', () => {
     const derivee = planter(['    if (parts.some((p) => p.categorie_id && !connues.has(p.categorie_id))) return false\n    const attendue = ecritureDeLaVentilation', '    const attendue = ecritureDeLaVentilation'])
     const lignes = [ligne({ id: 'l' })]
     const parts = [part('l', 'inconnue', -84), part('l', null, -36)]
-    echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false))).toEqual([]))
+    echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false, null))).toEqual([]))
   })
 
   it('attrape des parts de recettes comptées sur un mouvement qui n’est pas rapproché', () => {
     const derivee = planter(['    if (ligne.statut !== "rapprochee" || !ligne.ventilee) continue\n    for (const part of parLigne.get(ligne.id) ?? []) {', '    if (!ligne.ventilee) continue\n    for (const part of parLigne.get(ligne.id) ?? []) {'])
     const lignes = [ligne({ id: 'l', statut: 'non_rapprochee', montant: 4950 })]
-    echoue(() => expect(ids(derivee.recettesVentileesSansTaux(derivee.partsDesVentilations(lignes, REMISE, CATEGORIES, true), true))).toEqual([]))
+    echoue(() => expect(ids(derivee.recettesVentileesSansTaux(derivee.partsDesVentilations(lignes, REMISE, CATEGORIES, true), true, null))).toEqual([]))
   })
 
   it('attrape une dépense comptée parmi les recettes sans taux d’un dossier assujetti', () => {
-    const derivee = planter(['  for (const p of parts) if (p.nature === "recette" && p.taux === null) parLigne.set(p.ligne.id, p.ligne)', '  for (const p of parts) if (p.taux === null) parLigne.set(p.ligne.id, p.ligne)'])
+    const derivee = planter(['    if (p.nature === "recette" && p.taux === null && !estFigee(', '    if (p.taux === null && !estFigee('])
     const lignes = [ligne({ id: 'l' })]
-    echoue(() => expect(ids(derivee.recettesVentileesSansTaux(derivee.partsDesVentilations(lignes, PAIEMENT, CATEGORIES, true), true))).toEqual([]))
+    echoue(() => expect(ids(derivee.recettesVentileesSansTaux(derivee.partsDesVentilations(lignes, PAIEMENT, CATEGORIES, true), true, null))).toEqual([]))
+  })
+
+  // LA FRONTIÈRE DE VALIDATION : un mouvement d'un exercice validé ne réclame plus rien.
+  it('attrape une copie qui juge l’écriture d’un mouvement figé', () => {
+    const derivee = planter(['    if (estFigee(ligne.date, frontiere)) return false\n    const parts = parLigne.get(ligne.id) ?? []', '    const parts = parLigne.get(ligne.id) ?? []'])
+    const lignes = [ligne({ id: 'l' })]
+    const parts = [part('l', 'tel', -84), part('l', null, -36)]
+    echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false, '2025-03-31')))
+      .toEqual(ids(mouvementsVentilesDesynchronises([], lignes, parts, CATEGORIES, TRESORERIE, false, '2025-03-31'))))
+  })
+
+  it('attrape une copie qui réclame le taux d’une recette figée', () => {
+    const derivee = planter([' && !estFigee(p.ligne.date, frontiere)) parLigne.set(', ') parLigne.set('])
+    const lignes = [ligne({ id: 'l', montant: 4950 })]
+    echoue(() => expect(ids(derivee.recettesVentileesSansTaux(derivee.partsDesVentilations(lignes, REMISE, CATEGORIES, true), true, '2025-03-31')))
+      .toEqual(ids(recettesVentileesSansTaux(partsDesVentilations(lignes, REMISE, CATEGORIES, true), true, '2025-03-31'))))
   })
 
   // LE TAUX DE TVA D'UNE PART DE RECETTE (01/10/2026) : chaque morceau de la copie qui le porte.
@@ -409,15 +437,15 @@ describe('le garde-fou du bloc VENTILATION sait encore échouer', () => {
   })
 
   it('attrape une copie qui compte une part de recette taxée parmi les recettes sans taux', () => {
-    const derivee = planter(['  for (const p of parts) if (p.nature === "recette" && p.taux === null) parLigne.set(p.ligne.id, p.ligne)', '  for (const p of parts) if (p.nature === "recette") parLigne.set(p.ligne.id, p.ligne)'])
+    const derivee = planter(['    if (p.nature === "recette" && p.taux === null && !estFigee(', '    if (p.nature === "recette" && !estFigee('])
     const lignes = [ligne({ id: 'l', montant: 4950 })]
-    echoue(() => expect(ids(derivee.recettesVentileesSansTaux(derivee.partsDesVentilations(lignes, REMISE_TAXEE, CATEGORIES, true), true))).toEqual([]))
+    echoue(() => expect(ids(derivee.recettesVentileesSansTaux(derivee.partsDesVentilations(lignes, REMISE_TAXEE, CATEGORIES, true), true, null))).toEqual([]))
   })
 
   it('attrape une copie dont l’écriture attendue ignore le statut du dossier', () => {
     const derivee = planter(['    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, assujettiTva)', '    const attendue = ecritureDeLaVentilation(ligne, parts, categories, modele, false)'])
     const lignes = [ligne({ id: 'l', montant: 4950 })]
     const ecritures = conforme(lignes[0], REMISE_TAXEE, TRESORERIE, lignes[0].date, true)
-    echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises(ecritures, lignes, REMISE_TAXEE, CATEGORIES, TRESORERIE, true))).toEqual([]))
+    echoue(() => expect(ids(derivee.mouvementsVentilesDesynchronises(ecritures, lignes, REMISE_TAXEE, CATEGORIES, TRESORERIE, true, null))).toEqual([]))
   })
 })

@@ -26,12 +26,12 @@ function sourceDeployee(): string {
 
 type Vehicule = Pick<VehiculeDossier, 'type' | 'puissance_fiscale' | 'motorisation' | 'km_professionnel'>
 type Ligne = { compte: string; sens: 'debit' | 'credit'; montant: number; libelle: string }
-type Forfait = { vehicule: { id: string; annee: number }; etat: string }
+type Forfait = { vehicule: { id: string; annee: number }; etat: string; fige: boolean }
 interface Copie {
   indemniteKilometriqueCentimes: (v: Vehicule, annee: number) => bigint | null
   nomDuVehicule: (v: Pick<VehiculeDossier, 'modele' | 'type' | 'puissance_fiscale' | 'motorisation'>) => string
   ecritureDuForfait: (v: VehiculeDossier, modele: ModeleComptable, ouverture: string | null) => Ligne[] | null
-  forfaitsDuCadre7: (vehicules: VehiculeDossier[], ecritures: EcritureBrouillon[], modele: ModeleComptable, ouverture: string | null) => Forfait[]
+  forfaitsDuCadre7: (vehicules: VehiculeDossier[], ecritures: EcritureBrouillon[], modele: ModeleComptable, ouverture: string | null, frontiere: string | null) => Forfait[]
   forfaitsEnDefaut: (forfaits: Forfait[], anneeCourante: number) => Forfait[]
 }
 
@@ -50,7 +50,7 @@ function extraire(source: string): Copie {
   // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
   const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
   expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('AFFECTATION')}\n${bornes('FORFAIT')}`
+  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('VALIDATION')}\n${bornes('AFFECTATION')}\n${bornes('FORFAIT')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { indemniteKilometriqueCentimes, nomDuVehicule, ecritureDuForfait, forfaitsDuCadre7, forfaitsEnDefaut }`)() as Copie
 }
@@ -106,7 +106,9 @@ const ECRITURES: EcritureBrouillon[] = [
   ...ecrit(CADRE7[10], 4501),
 ]
 
-const etats = (f: Forfait[]) => f.map((x) => [x.vehicule.id, x.vehicule.annee, x.etat])
+const etats = (f: Forfait[]) => f.map((x) => [x.vehicule.id, x.vehicule.annee, x.etat, x.fige])
+// Les frontières de validation sous lesquelles les deux copies sont comparées : aucune, puis 2024 et 2025 validés.
+const FRONTIERES = [null, '2024-12-31', '2025-12-31'] as const
 
 describe('agent-comptable / bloc FORFAIT (copie déployée)', () => {
   it('n’est pas la fonction de src/lib elle-même', () => {
@@ -149,15 +151,21 @@ describe('agent-comptable / bloc FORFAIT (copie déployée)', () => {
   it('rend le même état de chaque ligne du cadre 7, et réclame les mêmes forfaits', () => {
     for (const modele of MODELES) {
       for (const ouverture of [null, '2025-01-01']) {
-        const attendu = forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, 2026, null)
-        const copie = deployee.forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture)
-        expect(etats(copie), `${modele.mode} ${modele.compteNotesDeFrais} ${ouverture}`).toEqual(etats(attendu))
-        for (const anneeCourante of [2025, 2026, 2027]) {
-          expect(etats(deployee.forfaitsEnDefaut(copie, anneeCourante)), `${modele.mode} ${ouverture} ${anneeCourante}`)
-            .toEqual(etats(forfaitsEnDefaut(attendu, anneeCourante)))
+        for (const f of FRONTIERES) {
+          const attendu = forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, 2026, f)
+          const copie = deployee.forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, f)
+          expect(etats(copie), `${modele.mode} ${modele.compteNotesDeFrais} ${ouverture} ${f}`).toEqual(etats(attendu))
+          for (const anneeCourante of [2025, 2026, 2027]) {
+            expect(etats(deployee.forfaitsEnDefaut(copie, anneeCourante)), `${modele.mode} ${ouverture} ${anneeCourante} ${f}`)
+              .toEqual(etats(forfaitsEnDefaut(attendu, anneeCourante)))
+          }
         }
       }
     }
+    // Et la frontière décide : un exercice validé ne réclame plus son forfait, même validé et divergent.
+    const reclames = (f: string | null) => etats(forfaitsEnDefaut(forfaitsDuCadre7(CADRE7, ECRITURES, TRESORERIE, null, 2026, f), 2026))
+    expect(reclames(null).some(([, annee]) => annee === 2025)).toBe(true)
+    expect(reclames('2025-12-31').some(([, annee]) => (annee as number) <= 2025)).toBe(false)
     // Et le cadre 7 exerce bien chaque état : sans quoi l'égalité ci-dessus ne prouverait rien de lui.
     const tous = new Set(forfaitsDuCadre7(CADRE7, ECRITURES, TRESORERIE, '2025-01-01', 2026, null).map((f) => f.etat))
     expect([...tous].sort()).toEqual(['a_ecrire', 'a_reecrire', 'a_retirer', 'ecrit', 'rien', 'valide'])
@@ -171,11 +179,11 @@ describe('agent-comptable / points_a_traiter lit le cadre 7 et ses forfaits', ()
   it('lit le cadre 7 et le lien des écritures vers lui, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("vehicules"\)\.select\("id, annee, modele, type, puissance_fiscale, motorisation, km_professionnel"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/from\("ecritures_brouillon"\)\.select\("[^"]*immobilisation_id, vehicule_id"/)
-    expect(corps).toMatch(/rNatures, rANouveaux, rVehicules\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rNatures, rANouveaux, rVehicules, rValides\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('rend le point de la Checklist, dans le modèle du dossier et sur son ouverture', () => {
-    expect(corps).toContain('const forfaitsManquants = forfaitsEnDefaut(forfaitsDuCadre7(rVehicules.lignes, ecrituresTyped, modele, ouverture), anneeCourante)')
+    expect(corps).toContain('const forfaitsManquants = forfaitsEnDefaut(forfaitsDuCadre7(rVehicules.lignes, ecrituresTyped, modele, ouverture, frontiere), anneeCourante)')
     expect(corps).toMatch(/forfaits_kilometriques_a_ecrire_ou_qui_ne_suivent_plus_le_cadre_7: forfaitsManquants\.length/)
   })
 
@@ -214,9 +222,9 @@ describe('le garde-fou du bloc FORFAIT sait encore échouer', () => {
       }
     }
   }
-  const memeCadre7 = (copie: Copie, modele = TRESORERIE, ouverture: string | null = null, anneeCourante = 2026) => {
-    const attendu = forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, anneeCourante, null)
-    const rendu = copie.forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture)
+  const memeCadre7 = (copie: Copie, modele = TRESORERIE, ouverture: string | null = null, anneeCourante = 2026, frontiere: string | null = null) => {
+    const attendu = forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, anneeCourante, frontiere)
+    const rendu = copie.forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, frontiere)
     expect(etats(rendu)).toEqual(etats(attendu))
     expect(etats(copie.forfaitsEnDefaut(rendu, anneeCourante))).toEqual(etats(forfaitsEnDefaut(attendu, anneeCourante)))
   }
@@ -259,6 +267,17 @@ describe('le garde-fou du bloc FORFAIT sait encore échouer', () => {
   it('attrape le forfait de l’exercice en cours réclamé', () => {
     const derivee = planter(['(f.etat !== "a_ecrire" || f.vehicule.annee < anneeCourante)', '(f.etat !== "a_ecrire" || f.vehicule.annee <= anneeCourante)'])
     echoue(() => memeCadre7(derivee))
+  })
+
+  // LA FRONTIÈRE DE VALIDATION : un exercice validé ne réclame plus son forfait.
+  it('attrape un forfait figé réclamé', () => {
+    const derivee = planter(['forfaits.filter((f) => !f.fige && f.etat !== "ecrit"', 'forfaits.filter((f) => f.etat !== "ecrit"'])
+    echoue(() => memeCadre7(derivee, TRESORERIE, null, 2026, '2025-12-31'))
+  })
+
+  it('attrape un forfait jamais figé', () => {
+    const derivee = planter(['fige: estFigee(dateDuForfait(vehicule.annee), frontiere) }', 'fige: false }'])
+    echoue(() => memeCadre7(derivee, TRESORERIE, null, 2026, '2025-12-31'))
   })
 
   it('attrape un forfait validé qu’on proposerait de réécrire', () => {
