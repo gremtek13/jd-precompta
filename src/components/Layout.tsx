@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
 import { Link, NavLink, Outlet, useLocation, useMatch } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
@@ -14,6 +14,12 @@ import Avatar from './widgets/Avatar'
 import BarreDossiers from './BarreDossiers'
 import BoutonInstallation from './BoutonInstallation'
 import { EmplacementPanneauDroit, FournisseurPanneauDroit } from './PanneauDroit'
+import PoigneeRedimensionnement from './PoigneeRedimensionnement'
+import { usePanneauDroitContexte } from '../lib/panneauDroit'
+import {
+  CLE_LARGEUR_BARRE, CLE_LARGEUR_PANNEAU, LARGEUR_BARRE, LARGEUR_BARRE_REDUITE, LARGEUR_PANNEAU, bornesBarre, bornesPanneau,
+  largeurBarre, largeurPanneau, lireLargeur, retenirLargeur,
+} from '../lib/largeurVolets'
 
 // Barre latérale déployée ou réduite à ses icônes — préférence d'affichage de ce navigateur, pas un
 // champ en base : même statut que le thème (voir lib/theme.ts).
@@ -34,6 +40,28 @@ function retenirBarreReduite(reduite: boolean) {
   } catch {
     // Préférence non retenue : elle vaut pour cette visite, rien de plus.
   }
+}
+
+// La largeur de la fenêtre, relue quand elle change : les bornes des volets en dépendent (lib/largeurVolets.ts).
+function abonnerFenetre(avertir: () => void) {
+  window.addEventListener('resize', avertir)
+  return () => window.removeEventListener('resize', avertir)
+}
+function useLargeurFenetre(): number {
+  return useSyncExternalStore(abonnerFenetre, () => window.innerWidth, () => 1440)
+}
+
+// Le volet de droite a-t-il un contenu ? C'est `:empty` qui l'affiche ou le retire (index.css), pas un état React :
+// sa poignée doit le suivre, sans quoi elle resterait seule au bord de l'écran — un dossier qu'on referme emporte
+// l'assistant, et l'occupant, lui, reste retenu. On regarde donc ce que l'emplacement contient.
+function useContenuPresent(element: HTMLElement | null): boolean {
+  const abonner = useCallback((avertir: () => void) => {
+    if (!element) return () => {}
+    const observateur = new MutationObserver(avertir)
+    observateur.observe(element, { childList: true })
+    return () => observateur.disconnect()
+  }, [element])
+  return useSyncExternalStore(abonner, () => element?.hasChildNodes() ?? false, () => false)
 }
 
 // Coque de l'application, sur ordinateur en trois volets à la manière des applications récentes :
@@ -107,6 +135,20 @@ function Coque() {
 
   const [reduite, setReduite] = useState(lireBarreReduite)
   const [recherche, setRecherche] = useState('')
+
+  // LA LARGEUR DES VOLETS (lib/largeurVolets.ts) : celle que l'opérateur a choisie — nulle tant qu'il n'a rien
+  // choisi —, ramenée aux bornes de la fenêtre d'aujourd'hui. Elle passe à la coque par deux variables CSS, que la
+  // barre et le volet lisent sur ordinateur ; le téléphone garde sa propre mise en page et ne les lit pas.
+  const fenetre = useLargeurFenetre()
+  const [barreVoulue, setBarreVoulue] = useState(() => lireLargeur(CLE_LARGEUR_BARRE, LARGEUR_BARRE))
+  const [panneauVoulu, setPanneauVoulu] = useState(() => lireLargeur(CLE_LARGEUR_PANNEAU, LARGEUR_PANNEAU))
+  const [glisse, setGlisse] = useState(false)
+  const barre = largeurBarre(barreVoulue, fenetre)
+  const barreAffichee = reduite ? LARGEUR_BARRE_REDUITE : barre
+  const panneau = largeurPanneau(panneauVoulu, fenetre, barreAffichee)
+  const { cible: emplacementPanneau } = usePanneauDroitContexte()
+  const panneauRempli = useContenuPresent(emplacementPanneau)
+  const styleCoque = { '--largeur-barre': `${barre}px`, '--largeur-panneau': `${panneau}px` } as CSSProperties
   const rechercheRef = useRef<HTMLInputElement>(null)
 
   // Quand relire la liste des dossiers (voir lib/listeDossiers.ts) — décidé PENDANT le rendu, en
@@ -163,8 +205,8 @@ function Coque() {
   const email = session?.user.email ?? null
 
   return (
-    <div className={`app-shell${reduite ? ' barre-reduite' : ''}`}>
-      <aside className="sidebar">
+    <div className={`app-shell${reduite ? ' barre-reduite' : ''}${glisse ? ' redimensionnement' : ''}`} style={styleCoque}>
+      <aside className="sidebar" id="barre-laterale">
         <div className="logo">
           {branding?.logoUrl ? (
             <img src={branding.logoUrl} alt={branding.nom} className="brand-logo" />
@@ -323,6 +365,23 @@ function Coque() {
             </div>
           )}
         </div>
+
+        {/* Le bord droit de la barre déployée, qu'on glisse pour l'élargir ou la rétrécir (ordinateur seulement :
+            index.css la masque sur téléphone). Réduite à ses icônes, la barre n'a pas de largeur à choisir. */}
+        {!reduite && (
+          <PoigneeRedimensionnement
+            libelle="Largeur de la barre latérale"
+            controle="barre-laterale"
+            sens={1}
+            largeur={barre}
+            bornes={bornesBarre(fenetre)}
+            onLargeur={setBarreVoulue}
+            onRetenir={(l) => retenirLargeur(CLE_LARGEUR_BARRE, l)}
+            onOrigine={() => { setBarreVoulue(null); retenirLargeur(CLE_LARGEUR_BARRE, null) }}
+            onGlisse={setGlisse}
+            className="poignee-barre"
+          />
+        )}
       </aside>
       <main className="main">
         <div className="main-contenu">
@@ -351,6 +410,22 @@ function Coque() {
           <Outlet key={role === 'client' ? dossierActifId ?? '' : undefined} />
         </div>
       </main>
+      {/* Le bord gauche du volet de droite, tant qu'il a un contenu. AVANT l'emplacement et non dedans : un enfant
+          de plus ferait mentir `:empty`, et le volet ne disparaîtrait plus jamais. */}
+      {panneauRempli && (
+        <PoigneeRedimensionnement
+          libelle="Largeur du panneau de droite"
+          controle="panneau-droit"
+          sens={-1}
+          largeur={panneau}
+          bornes={bornesPanneau(fenetre, barreAffichee)}
+          onLargeur={setPanneauVoulu}
+          onRetenir={(l) => retenirLargeur(CLE_LARGEUR_PANNEAU, l)}
+          onOrigine={() => { setPanneauVoulu(null); retenirLargeur(CLE_LARGEUR_PANNEAU, null) }}
+          onGlisse={setGlisse}
+          className="poignee-panneau"
+        />
+      )}
       <EmplacementPanneauDroit />
     </div>
   )

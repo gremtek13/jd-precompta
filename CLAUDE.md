@@ -98,6 +98,24 @@ Conséquences pratiques :
   (l'emplacement porte le nom de son occupant,
   `data-occupant`, pour que le style le sache). Hors de la coque, `usePanneauDroit` LÈVE plutôt que
   d'offrir un bouton qui ne fait rien.
+  **Les deux volets se redimensionnent** (05/10/2026, demande du cabinet) : on glisse le bord de la
+  barre déployée ou celui du volet de droite (`components/PoigneeRedimensionnement.tsx`, un séparateur
+  qu'on atteint aussi au clavier : flèches, Début, Fin, Entrée), le double-clic rend la largeur
+  d'origine, et la largeur choisie est retenue par navigateur (`localStorage`, comme la barre réduite).
+  Un simple clic ne retient rien : une préférence que personne n'a exprimée figerait la largeur du jour.
+  **Une contrainte décide de toutes les bornes** (`lib/largeurVolets.ts`) : le panneau central garde au
+  moins 640 pixels, sa largeur sur un écran de 1 280 aux largeurs d'origine — la plus étroite où les
+  écrans ont été vérifiés sans débordement. La barre s'arrête donc là où le volet, à sa plus petite
+  largeur, laisserait moins ; le volet en ligne, là où le panneau central l'atteindrait ; superposé
+  (sous 1 280), il laisse voir 320 pixels du panneau central, sans jamais interdire sa largeur d'origine.
+  Tout se calcule dans le module, sur la largeur de la fenêtre : rétrécir la fenêtre rétrécit les volets,
+  l'agrandir leur rend la largeur choisie. La coque pose le résultat en deux variables CSS
+  (`--largeur-barre`, `--largeur-panneau`) qu'index.css lit sur ordinateur avec la largeur d'origine en
+  repli ; le téléphone ne les lit pas. Le bord du volet de droite vit AVANT l'emplacement et non dedans
+  — un enfant de plus ferait mentir `:empty` —, et n'existe que tant que l'emplacement a un contenu
+  (un `MutationObserver` le regarde), sans quoi il resterait seul au bord de l'écran après la fermeture
+  d'un dossier. `debordements.mjs` accepte des largeurs choisies (`barre=… panneau=…`) : 0 débordement
+  aux quatre combinaisons extrêmes (1 280 et 1 440 volet ouvert, 1 024 fermé), mesuré le 05/10/2026.
   **ET UNE GARDE DE SORTIE, parce que le volet laisse le reste de l'écran cliquable** — c'est tout son
   intérêt, et c'est ce que la fenêtre modale qu'il remplace interdisait. Une fiche en cours de saisie
   peut donc être chassée par une autre ligne, « suivante », « Assistant » ou la croix. Le contenu
