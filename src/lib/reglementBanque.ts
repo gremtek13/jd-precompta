@@ -26,12 +26,17 @@ import type { LigneBancaire, Piece } from './types'
 // n'a pas de conversion à régler, et une pièce dont le montant d'origine n'a pas été lu n'a rien à
 // partir de quoi déduire un taux.
 //
-// `ligne` : ce que la banque a payé pour CETTE pièce — le mouvement entier d'un rapprochement simple, la
-// part qui la règle dans un virement groupé (lib/reglementGroupe.ts). Seul son montant compte.
-export async function reglerPieceSurBanque(piece: Piece, ligne: Pick<LigneBancaire, 'montant'>): Promise<Piece> {
+// `paiements` : TOUT ce que la banque a payé pour CETTE pièce, le paiement qu'on vient de poser compris — chaque
+// mouvement rapproché d'elle, la part qui la règle dans un virement groupé (lib/reglementGroupe.ts). Seuls leurs
+// montants comptent, et c'est leur TOTAL qui la règle. Réglée sur un paiement seul, une pièce payée en plusieurs fois
+// ne valait qu'une fraction de ce qu'elle coûte — une pièce en devise passait au montant de son DERNIER paiement — ;
+// et en euros, une pièce de 40 € payée 20 + 19,99 gardait un centime que rien n'écrit, qui déséquilibrait son
+// écriture et faisait refuser la validation de son exercice, sans qu'aucun geste puisse le réparer.
+export async function reglerPieceSurBanque(piece: Piece, paiements: readonly Pick<LigneBancaire, 'montant'>[]): Promise<Piece> {
+  const total = { montant: Math.round(paiements.reduce((somme, p) => somme + p.montant, 0) * 100) / 100 }
   const regle = piece.devise && piece.devise !== DEVISE_PIVOT
-    ? reglerPieceEnDevise(piece, ligne)
-    : reglerPieceEnEuros(piece, ligne)
+    ? reglerPieceEnDevise(piece, total)
+    : reglerPieceEnEuros(piece, total)
   if (!regle) return piece
 
   const { error } = await supabase

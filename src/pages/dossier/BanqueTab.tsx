@@ -418,8 +418,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // les montants. Son rapprochement s'écrit quand même, au montant du mouvement. Les quatre chemins de rapprochement y
   // passent, « Valider et rapprocher » compris, qui ne porte pourtant que des pièces à valider — qu'aucune validation ne
   // fige : la règle ne doit pas dépendre de ce que chaque lot sélectionne.
-  function reglerSiLibre(piece: Piece, paiement: Pick<LigneBancaire, 'montant'>): Promise<Piece> {
-    return piecesFigees.figees.has(piece.id) ? Promise.resolve(piece) : reglerPieceSurBanque(piece, paiement)
+  //
+  // Et elle se règle sur le TOTAL que la banque aura payé pour elle une fois ce paiement posé : ses autres paiements — un
+  // mouvement déjà rapproché d'elle, la part d'un virement groupé — et celui-ci (lib/reglementBanque.ts). Un paiement
+  // seul n'en est qu'une fraction.
+  function reglerSiLibre(piece: Piece, ligneId: string, montant: number): Promise<Piece> {
+    if (piecesFigees.figees.has(piece.id)) return Promise.resolve(piece)
+    const autres = (paiements.get(piece.id) ?? []).filter((paiement) => paiement.id !== ligneId)
+    return reglerPieceSurBanque(piece, [...autres, { montant }])
   }
 
   // Correctif audit sécurité (rapprochements, Importante) : le résultat de la mise à jour de
@@ -439,7 +445,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     const pieceAvant = pieces.find((p) => p.id === pieceId)
     // Le règlement AVANT la contrepartie : celle-ci reprend les montants de la pièce, et les
     // écrirait donc avec la valeur provisoire si l'ordre était inversé (voir lib/reglementBanque.ts).
-    const piece = ligne && pieceAvant ? await reglerSiLibre(pieceAvant, ligne) : pieceAvant
+    const piece = ligne && pieceAvant ? await reglerSiLibre(pieceAvant, ligne.id, ligne.montant) : pieceAvant
     // Le rapprochement est enregistré ; seule la contrepartie comptable a pu échouer. On le dit sans
     // annuler ce qui a réussi — la contrepartie se recréera au prochain passage, elle est idempotente.
     if (ligne && piece) {
@@ -672,11 +678,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
       const pieceAvant = pieces.find((p) => p.id === part.piece_id)
       if (!pieceAvant) continue
       try {
-        // Réglée sur la banque seulement quand cette part est son SEUL paiement : c'est alors ce que la banque
-        // a payé pour elle, et une pièce en devise quitte son cours provisoire. Payée aussi ailleurs, la part
-        // n'en est qu'une fraction, et l'aligner dessus fausserait la pièce (voir lib/reglementBanque.ts).
-        const autres = (paiements.get(pieceAvant.id) ?? []).filter((paiement) => paiement.id !== ligne.id)
-        const piece = autres.length === 0 ? await reglerSiLibre(pieceAvant, { montant: part.montant }) : pieceAvant
+        // Réglée sur le TOTAL que la banque a payé pour elle — cette part, et ses autres paiements : payée aussi
+        // ailleurs, la part n'en est qu'une fraction, et l'aligner sur elle seule fausserait la pièce (voir
+        // lib/reglementBanque.ts). Une pièce en devise quitte ainsi son cours provisoire.
+        const piece = await reglerSiLibre(pieceAvant, ligne.id, part.montant)
         await synchroniserContrepartieBanque(dossierId, piece, { id: ligne.id, date: ligne.date, montant: part.montant }, modele)
       } catch (err) {
         echecs.push(`${nomDeLaPiece(pieceAvant)} : ${messageErreur(err, 'raison inconnue')}`)
@@ -949,7 +954,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
         if (errLigne) { echecs.push(`${a.piece.tiers ?? a.piece.nom_fichier} : ${errLigne.message}`); continue }
 
         try {
-          const piece = await reglerSiLibre(a.piece, a.ligne)
+          const piece = await reglerSiLibre(a.piece, a.ligne.id, a.ligne.montant)
           await synchroniserContrepartieBanque(dossierId, piece, a.ligne, modele)
         } catch (err) {
           // La pièce est validée et le mouvement rapproché ; seule la contrepartie comptable manque.
@@ -1027,7 +1032,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             const ligne = lignes.find((l) => l.id === m.ligneId)
             const pieceAvant = pieces.find((p) => p.id === m.pieceId)
             if (!ligne || !pieceAvant) return
-            const piece = await reglerSiLibre(pieceAvant, ligne)
+            const piece = await reglerSiLibre(pieceAvant, ligne.id, ligne.montant)
             await synchroniserContrepartieBanque(dossierId, piece, ligne, modele)
           }),
       )
