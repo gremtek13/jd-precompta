@@ -403,23 +403,23 @@ describe('Coque — la largeur des volets', () => {
     fireEvent.pointerDown(bord, { clientX: 1000, pointerId: 1, button: 0 })
     fireEvent.pointerMove(bord, { clientX: 700, pointerId: 1 })
     fireEvent.pointerUp(bord, { clientX: 700, pointerId: 1 })
-    // 1 440 − 264 − 16 − 640 : la place que laisse le panneau central.
-    expect(variable('--largeur-panneau')).toBe('520px')
-    expect(localStorage.getItem('jd-precompta-largeur-panneau')).toBe('520')
+    // 1 440 − 264 − 16 − 560 : la place que laisse le panneau central.
+    expect(variable('--largeur-panneau')).toBe('600px')
+    expect(localStorage.getItem('jd-precompta-largeur-panneau')).toBe('600')
 
     // Élargir la barre rétrécit le volet ; la réduire le lui rend.
     fireEvent.keyDown(poignee('Largeur de la barre latérale')!, { key: 'ArrowRight', shiftKey: true })
     expect(variable('--largeur-barre')).toBe('328px')
-    expect(variable('--largeur-panneau')).toBe('456px')
+    expect(variable('--largeur-panneau')).toBe('536px')
     fireEvent.click(screen.getByRole('button', { name: 'Réduire la barre latérale' }))
-    expect(variable('--largeur-panneau')).toBe('520px')
+    expect(variable('--largeur-panneau')).toBe('600px')
   })
 
   it('la fenêtre d’aujourd’hui borne la largeur choisie sans la faire oublier', async () => {
     fenetre(1440)
     localStorage.setItem('jd-precompta-largeur-panneau', '700')
     await afficher('/dossiers')
-    expect(variable('--largeur-panneau')).toBe('520px')
+    expect(variable('--largeur-panneau')).toBe('600px')
     await act(async () => {
       fenetre(1920)
       window.dispatchEvent(new Event('resize'))

@@ -73,10 +73,19 @@ describe('Ce que l’opérateur choisit, borné', () => {
   })
 
   it('élargir la barre rétrécit le volet en ligne, et le lui rend quand on la rétrécit', () => {
-    expect(largeurPanneau(560, 1440, 264)).toBe(520)
-    expect(largeurPanneau(560, 1440, 324)).toBe(460)
-    expect(largeurPanneau(560, 1440, 200)).toBe(560)
-    expect(largeurPanneau(560, 1440, LARGEUR_BARRE_REDUITE)).toBe(560)
+    expect(largeurPanneau(700, 1440, 264)).toBe(600)
+    expect(largeurPanneau(700, 1440, 324)).toBe(540)
+    expect(largeurPanneau(700, 1440, 200)).toBe(664)
+    expect(largeurPanneau(700, 1440, LARGEUR_BARRE_REDUITE)).toBe(700)
+  })
+
+  // Ce que le cabinet a demandé : pouvoir changer la largeur des deux volets. À 1 280 pixels — un portable de 1 920
+  // affiché à 150 % —, la première borne laissait au volet de droite 2 pixels à gagner et à la barre 20 : les poignées
+  // ne servaient presque à rien sur l'écran où l'on en a le plus besoin.
+  it('à 1 280 pixels, les deux poignées ont de la marge', () => {
+    expect(LARGEUR_MIN_CENTRE).toBe(560)
+    expect(bornesPanneau(1280, LARGEUR_BARRE.defaut).max - largeurPanneauParDefaut(1280)).toBeGreaterThanOrEqual(80)
+    expect(bornesBarre(1280).max - LARGEUR_BARRE.defaut).toBeGreaterThanOrEqual(100)
   })
 
   it('les bornes absolues tiennent, et un choix se ramène au pixel', () => {
@@ -86,10 +95,12 @@ describe('Ce que l’opérateur choisit, borné', () => {
     expect(largeurPanneau(100, 1920, 264)).toBe(LARGEUR_PANNEAU.min)
     expect(largeurPanneau(2000, 2560, 264)).toBe(LARGEUR_PANNEAU.max)
     expect(bornesBarre(1440)).toEqual({ min: 200, max: 420 })
-    expect(bornesBarre(1280)).toEqual({ min: 200, max: 284 })
-    expect(bornesBarre(1024)).toEqual({ min: 200, max: 376 })
+    expect(bornesBarre(1280)).toEqual({ min: 200, max: 364 })
+    expect(bornesBarre(1024)).toEqual({ min: 200, max: 420 })
+    expect(bornesBarre(900)).toEqual({ min: 200, max: 332 })
     expect(bornesBarre(800)).toEqual({ min: 200, max: 264 })
-    expect(bornesPanneau(1440, 264)).toEqual({ min: 340, max: 520 })
+    expect(bornesPanneau(1440, 264)).toEqual({ min: 340, max: 600 })
+    expect(bornesPanneau(1280, 264)).toEqual({ min: 340, max: 440 })
     expect(bornesPanneau(1200, 264)).toEqual({ min: 340, max: 608 })
     expect(bornesPanneau(900, 264)).toEqual({ min: 340, max: 420 })
   })

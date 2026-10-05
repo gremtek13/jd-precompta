@@ -2,11 +2,11 @@
 // latérale et le panneau de droite se redimensionnent en glissant leur bord (voir PoigneeRedimensionnement). Une
 // préférence d'affichage de ce navigateur, pas un champ en base — même statut que le thème et la barre réduite.
 //
-// UNE CONTRAINTE DÉCIDE DE TOUTES LES BORNES : le panneau central garde au moins la largeur qu'il a sur un écran de
-// 1 280 pixels, barre et volet à leur largeur d'origine. C'est la plus étroite que les écrans aient été vérifiés à
-// tenir sans rien faire déborder (`outils/captures/debordements.mjs`) ; élargir un volet au-delà rognerait le travail
-// en dessous de ce qui a été éprouvé. Elle vaut tant que le volet de droite est À CÔTÉ du panneau central, c'est-à-dire
-// à 1 280 pixels et plus ; en dessous il se pose PAR-DESSUS (voir index.css), et ne retire rien au panneau central.
+// UNE CONTRAINTE DÉCIDE DE TOUTES LES BORNES : le panneau central garde au moins `LARGEUR_MIN_CENTRE`, la plus étroite
+// que les écrans aient été vérifiés à tenir sans rien faire déborder (`outils/captures/debordements.mjs`) ; élargir un
+// volet au-delà rognerait le travail en dessous de ce qui a été éprouvé. Elle vaut tant que le volet de droite est À
+// CÔTÉ du panneau central, c'est-à-dire à 1 280 pixels et plus ; en dessous il se pose PAR-DESSUS (voir index.css), et
+// ne retire rien au panneau central.
 //
 // Tout se calcule ici, dans les deux sens : la largeur affichée est celle que l'opérateur a choisie, ramenée aux bornes
 // de la fenêtre d'AUJOURD'HUI. Rétrécir la fenêtre rétrécit les volets ; l'agrandir leur rend la largeur choisie, qui
@@ -20,8 +20,14 @@ export const LARGEUR_BARRE_REDUITE = 68
 // les contenus qui l'occupent — l'assistant, la fiche d'une pièce, le rapprochement d'un mouvement — n'ont pas été
 // vérifiés plus étroits.
 export const LARGEUR_PANNEAU = { min: 340, max: 760 } as const
-// La boîte du panneau central sur un écran de 1 280 pixels aux largeurs d'origine : 1 280 − 264 − 8 − 358 − 8 = 642.
-export const LARGEUR_MIN_CENTRE = 640
+// 560 PIXELS, ET NON PLUS 640 (05/10/2026). La borne était la largeur du panneau central sur un écran de 1 280 pixels aux
+// largeurs d'origine (1 280 − 264 − 8 − 358 − 8 = 642) : elle y laissait au volet de droite 2 pixels à gagner et à la
+// barre 20, si bien qu'à cette largeur — un portable de 1 920 pixels affiché à 150 % — les poignées ne servaient
+// presque à rien. Les écrans ont été revérifiés à 560 (débordements, cartes et texte compris) : une fois la grille des
+// tableaux de bord adaptée à sa place, rien n'y déborde. À 480, la liste des pièces ne montrait plus le statut, la
+// colonne qui compte quand on valide à la chaîne. À 1 280 pixels, le volet va désormais jusqu'à 440 et la barre
+// jusqu'à 364.
+export const LARGEUR_MIN_CENTRE = 560
 // Les marges de la coque : 8 pixels à droite du panneau central, 8 à droite du volet.
 const MARGES_EN_LIGNE = 16
 // Au-dessous de ce seuil, la coque est celle du téléphone ; à partir du second, le volet de droite est en ligne.
