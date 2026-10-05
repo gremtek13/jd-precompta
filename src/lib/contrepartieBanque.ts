@@ -1,10 +1,18 @@
 import { supabase } from './supabase'
-import { COMPTE_BANQUE, COMPTE_FOURNISSEURS_IMMOBILISATIONS } from './comptes'
+import {
+  COMPTE_BANQUE, COMPTE_EXPLOITANT, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS,
+} from './comptes'
 import { ligneContrepartieBanque } from './ecritures'
 import { lignesReglementEngagement, type ModeleComptable } from './engagement'
 import { dateLocaleDe } from './format'
 import { partsDesPaiements, type PaiementDePiece } from './rattachement'
 import type { Piece } from './types'
+
+// Les comptes qu'une note de frais porte sans que ce soit sa CHARGE : la banque d'un paiement, sa TVA, et la
+// contrepartie au compte de l'exploitant.
+const COMPTES_HORS_CHARGE: ReadonlySet<string> = new Set([
+  COMPTE_BANQUE, COMPTE_EXPLOITANT, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS,
+])
 
 // Les deux seules opérations d'écritures qui parlent à Supabase, tenues à l'écart de `ecritures.ts`
 // pour que celui-ci reste purement calculatoire. Ce n'est pas qu'une question de rangement : un
@@ -88,6 +96,18 @@ export async function synchroniserContrepartieBanque(
   // bien que la contrepartie n'a pas été créée.
   const autrePaiement = existantes.some((e) => e.compte === COMPTE_BANQUE)
   if (!autrePaiement && partsDesPaiements(piece, [paiement]).reste === 0) {
+    // Une NOTE DE FRAIS que ce virement rembourse en entier n'est plus due au dirigeant : sa contrepartie au compte
+    // de l'exploitant (`ligneContrepartieDirigeant`) part AVANT la redate — redatée, elle resterait à côté de la
+    // banque, et l'écriture compterait deux fois ce que la banque paie déjà. Un remboursement partiel la laisse en
+    // place, comme la charge : le contrôle des écritures demande alors « Régénérer », qui la recalcule. Seulement
+    // quand la charge est AILLEURS : rangée dans une catégorie au 108000, la note y porte sa charge et n'a pas de
+    // contrepartie à part (`estContrepartieDirigeant`) — la retirer effacerait la dépense.
+    const chargeAilleurs = existantes.some((e) => !COMPTES_HORS_CHARGE.has(e.compte))
+    if (piece.type_piece === 'note_frais' && chargeAilleurs && existantes.some((e) => e.compte === COMPTE_EXPLOITANT)) {
+      const { error: dirigeantError } = await supabase.from('ecritures_brouillon')
+        .delete().eq('piece_id', piece.id).eq('compte', COMPTE_EXPLOITANT)
+      if (dirigeantError) throw dirigeantError
+    }
     const { error: dateError } = await supabase.from('ecritures_brouillon')
       .update({ date: paiement.date }).eq('piece_id', piece.id).neq('compte', COMPTE_BANQUE)
     if (dateError) throw dateError

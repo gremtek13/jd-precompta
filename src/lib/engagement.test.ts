@@ -252,6 +252,8 @@ describe('le modèle du dossier', () => {
   it('se présente sous les noms choisis par le cabinet', () => {
     expect(LIBELLES_MODE).toEqual({ tresorerie: 'Trésorerie (BNC, 2035)', engagement: 'Engagement (BIC, IS)' })
     expect(EXPLICATIONS_MODE.engagement).toMatch(/2035 n’est pas produite/)
+    // En trésorerie, rien à choisir : ce que l'exploitant a payé de sa poche passe à son compte.
+    expect(EXPLICATIONS_MODE.tresorerie).toMatch(/note de frais que l’exploitant a payée de sa poche s’écrit au 108 – Compte de l’exploitant/)
   })
 })
 

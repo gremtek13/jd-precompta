@@ -105,6 +105,8 @@ const categories = [
   { id: 'cat-achats', compte_comptable: COMPTE_ACHATS, poste_2035: 'Achats' },
   { id: 'cat-autre', compte_comptable: '628000', poste_2035: 'Divers' },
   { id: 'cat-sans-compte', compte_comptable: null, poste_2035: 'Achats' },
+  // Une catégorie dont le compte EST celui de l'exploitant — un achat classé en prélèvement personnel.
+  { id: 'cat-108', compte_comptable: '108000', poste_2035: null },
 ] as Categorie[]
 
 const piece = (o: Partial<Piece>): Piece =>
@@ -599,6 +601,94 @@ describe('agent-comptable / analyserEcritures en engagement (copie déployée)',
 // lui passe le statut TVA et le MODÈLE COMPTABLE DU DOSSIER. Un `true` ou une trésorerie écrits en dur
 // feraient signaler « à régénérer » toute écriture juste d'un dossier exonéré, ou d'un dossier en
 // engagement — sur l'outil qui répond « quelles sont les anomalies ? ».
+// LA NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT (108000) — `ligneContrepartieDirigeant`,
+// src/lib/ecritures.ts. Sans cette règle, la copie dirait « à régénérer » pour toujours l'écriture juste d'une note de
+// frais, et « en attente de rapprochement » une pièce qu'aucun paiement ne rapprochera. Les écritures viennent de
+// la génération de src/lib : « conforme » veut dire ce qu'elle produit réellement.
+function brouillonTresorerie(
+  p: Piece, mouvements: LigneBancaire[], o: { assujettiTva?: boolean; compte?: string } = {},
+): EcritureBrouillon[] {
+  const paiementsPiece = paiementsDesPieces(mouvements, []).get(p.id) ?? []
+  return lignesPourPiece('d1', p, cible(o.compte ?? COMPTE_ACHATS), o.assujettiTva ?? true, paiementsPiece, TRESORERIE)
+    .map((l, i) => ecriture({ ...l, id: `${p.id}-${i}`, ligne_bancaire_id: l.ligne_bancaire_id ?? null }))
+}
+
+const noteDeFrais = (o: Partial<Piece> = {}) => piece({ id: 'p1', type_piece: 'note_frais', ...o })
+const rembourse = (montant: number) => paiement({ id: 'l1', piece_id: 'p1', date: '2025-04-02', montant })
+const COMPTE_EXPLOITANT = '108000'
+const RIEN = { nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [] }
+
+describe('agent-comptable / la note de frais en trésorerie (copie déployée)', () => {
+  it('accepte ce que la génération écrit : exonérée ou assujettie, remboursée ou non, en tout ou en partie', () => {
+    const notes: [string, Piece, boolean][] = [
+      ['exonérée', noteDeFrais({ montant_ht: null, montant_tva: null, montant_ttc: 40 }), false],
+      ['assujettie, hors taxe lu', noteDeFrais(), true],
+      ['assujettie, sans hors taxe', noteDeFrais({ montant_ht: null }), true],
+      // Le hors taxe lu PRIME sur le TTC moins la TVA : un centime d'écart, que le total tolère, que la
+      // contrepartie suit.
+      ['assujettie, hors taxe à un centime du TTC moins la TVA', noteDeFrais({ montant_ht: 100.01 }), true],
+      ['négative — un trop-perçu rendu', noteDeFrais({ montant_ht: null, montant_tva: null, montant_ttc: -30 }), false],
+    ]
+    for (const [nom, p, assujettiTva] of notes) {
+      // Le remboursement va dans l'autre sens que la note : un décaissement pour une note positive, un encaissement
+      // pour un trop-perçu que le dirigeant rend.
+      const ttc = p.montant_ttc!
+      for (const [quoi, mouvements] of [['sans paiement', []], ['à moitié', [rembourse(-ttc / 2)]], ['en entier', [rembourse(-ttc)]]] as const) {
+        expect(memeResultat(brouillonTresorerie(p, [...mouvements], { assujettiTva }), [p], [], deployee, assujettiTva, [...mouvements]), `${nom}, remboursée ${quoi}`)
+          .toEqual(RIEN)
+      }
+    }
+  })
+
+  it('l’écriture d’avant, sans sa contrepartie, est à régénérer — pas « en attente de rapprochement »', () => {
+    const p = noteDeFrais()
+    const charge = brouillonTresorerie(p, []).filter((e) => e.compte !== COMPTE_EXPLOITANT)
+    expect(memeResultat(charge, [p])).toEqual({ ...RIEN, piecesDesynchronisees: ['p1'] })
+  })
+
+  it('une contrepartie d’un autre montant est à régénérer, et l’écriture déséquilibrée', () => {
+    const p = noteDeFrais()
+    const ecritures = brouillonTresorerie(p, []).map((e) => e.compte === COMPTE_EXPLOITANT ? { ...e, montant: 115 } : e)
+    expect(memeResultat(ecritures, [p])).toEqual({ nbSansContrepartie: 0, groupesDesequilibres: ['p1:5.00'], piecesDesynchronisees: ['p1'] })
+  })
+
+  it('une contrepartie restée après un remboursement rapproché est à régénérer', () => {
+    const p = noteDeFrais()
+    const avant = brouillonTresorerie(p, []).find((e) => e.compte === COMPTE_EXPLOITANT)!
+    const ecritures = [...brouillonTresorerie(p, [rembourse(-120)]), { ...avant, id: 'reste' }]
+    expect(memeResultat(ecritures, [p], [], deployee, true, [rembourse(-120)]).piecesDesynchronisees).toEqual(['p1'])
+  })
+
+  it('une contrepartie à une autre date est à régénérer — sauf sur une pièce sans date', () => {
+    const decalee = (p: Piece) => brouillonTresorerie(p, []).map((e) => e.compte === COMPTE_EXPLOITANT ? { ...e, date: '2025-03-11' } : e)
+    expect(memeResultat(decalee(noteDeFrais()), [noteDeFrais()]).piecesDesynchronisees).toEqual(['p1'])
+    const sansDate = noteDeFrais({ date_piece: null })
+    expect(memeResultat(decalee(sansDate), [sansDate]).piecesDesynchronisees).toEqual([])
+  })
+
+  it('hors du jeu fourni, une ligne au 108000 ne passe pas pour une contrepartie', () => {
+    const r = memeResultat(brouillonTresorerie(noteDeFrais(), []), [])
+    expect(r).toEqual({ ...RIEN, nbSansContrepartie: 1 })
+  })
+
+  it('rangée dans une catégorie au compte de l’exploitant, elle suit la règle de toute pièce, comme un achat', () => {
+    for (const type_piece of ['note_frais', 'achat'] as const) {
+      const p = piece({ id: 'p1', type_piece, categorie_id: 'cat-108' })
+      expect(memeResultat(brouillonTresorerie(p, [], { compte: COMPTE_EXPLOITANT }), [p]), type_piece)
+        .toEqual({ ...RIEN, nbSansContrepartie: 1 })
+      expect(memeResultat(brouillonTresorerie(p, [rembourse(-120)], { compte: COMPTE_EXPLOITANT }), [p], [], deployee, true, [rembourse(-120)]), `${type_piece} payée`)
+        .toEqual(RIEN)
+    }
+  })
+
+  // Le garde symétrique : en engagement, la dette au dirigeant passe déjà par le compte choisi pour le dossier, et
+  // une note de frais sans règlement y reste une facture qui attend le sien.
+  it('en engagement, rien ne change : une note de frais sans règlement attend le sien', () => {
+    const p = noteDeFrais()
+    expect(memeResultat(brouillonEngagement(p, []), [p], [], deployee, true, [], ENGAGEMENT)).toEqual({ ...RIEN, nbSansContrepartie: 1 })
+  })
+})
+
 describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle comptable du dossier', () => {
   it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements des pièces et le modèle du dossier', () => {
     expect(sourceDeployee()).toMatch(
@@ -807,8 +897,8 @@ describe('le garde-fou sait encore échouer', () => {
   it('attrape une copie qui ne compare pas les contreparties aux paiements', () => {
     const derivee = extraire(planter(
       sourceDeployee(),
-      '  return !banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)\n',
-      '  return false\n',
+      '  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)) return true\n',
+      '',
       'la comparaison de la banque en trésorerie',
     ))
     const p = piece({ id: 'p1' })
@@ -835,7 +925,7 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie qui compte « en attente de rapprochement » une pièce payée', () => {
     const derivee = extraire(planter(
-      sourceDeployee(), ' && !paiements.has(pieceId)).length\n', ').length\n', 'le compte des pièces sans contrepartie',
+      sourceDeployee(), ' && !paiements.has(pieceId))\n    .length\n', ')\n    .length\n', 'le compte des pièces sans contrepartie',
     ))
     const p = piece({ id: 'p1' })
     expect(() => memeResultat(groupeConforme('p1', { banque: false }), [p], [], derivee, true, [payee('p1')])).toThrow()
@@ -896,6 +986,118 @@ describe('le garde-fou sait encore échouer', () => {
     ))
     const ndf = piece({ id: 'p1', type_piece: 'note_frais' })
     expect(() => memeResultat(brouillonEngagement(ndf, []), [ndf], [], derivee, true, [], ENGAGEMENT)).toThrow()
+  })
+
+  // LA NOTE DE FRAIS EN TRÉSORERIE, FACE AU 108000. Chaque dérive doit échouer sur une ASSERTION — la comparaison
+  // des deux copies —, jamais sur une erreur d'exécution qui passerait pour une prise.
+  describe('la contrepartie d’une note de frais au compte de l’exploitant', () => {
+    function echoue(f: () => unknown) {
+      let erreur: unknown = null
+      try { f() } catch (e) { erreur = e }
+      expect((erreur as Error | null)?.name, `la dérive n'a pas fait échouer une assertion : ${String(erreur)}`).toBe('AssertionError')
+    }
+    const deriver = (avant: string, apres: string, quoi: string) => extraire(planter(sourceDeployee(), avant, apres, quoi))
+    const p = noteDeFrais()
+
+    it('attrape une copie qui compte la contrepartie parmi les lignes de charge', () => {
+      const derivee = deriver(
+        '  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE && !estContrepartieDirigeant(p, cible, e))\n',
+        '  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE)\n', 'les lignes de charge',
+      )
+      echoue(() => memeResultat(brouillonTresorerie(p, []), [p], [], derivee))
+    })
+
+    it('attrape une copie qui ne compare pas la contrepartie', () => {
+      const derivee = deriver(
+        '  return present.length !== attendu.length || present.some((c, i) => c !== attendu[i])\n', '  return false\n',
+        'la comparaison de la contrepartie',
+      )
+      echoue(() => memeResultat(brouillonTresorerie(p, []).filter((e) => e.compte !== COMPTE_EXPLOITANT), [p], [], derivee))
+    })
+
+    it('attrape une copie qui compte une note de frais « en attente de rapprochement »', () => {
+      const derivee = deriver('!notesDeFrais.has(pieceId) && !rows.some(', '!rows.some(', 'l’exclusion des notes de frais')
+      echoue(() => memeResultat(brouillonTresorerie(p, []).filter((e) => e.compte !== COMPTE_EXPLOITANT), [p], [], derivee))
+    })
+
+    it('attrape une copie qui ne prend pas le 108000 pour une contrepartie', () => {
+      const derivee = deriver(
+        '    r.compte === COMPTE_BANQUE || (notesDeFrais.has(pieceId) && r.compte === COMPTE_EXPLOITANT)\n',
+        '    r.compte === COMPTE_BANQUE\n', 'la contrepartie au 108000',
+      )
+      const ecritures = brouillonTresorerie(p, []).map((e) => e.compte === COMPTE_EXPLOITANT ? { ...e, montant: 115 } : e)
+      echoue(() => memeResultat(ecritures, [p], [], derivee))
+    })
+
+    it('attrape une copie qui juge l’équilibre sur la seule banque', () => {
+      const derivee = deriver(
+        '      .filter(([pieceId, rows]) => rows.some((r) => contrepartie(pieceId, r)))\n',
+        '      .filter(([, rows]) => rows.some((r) => r.compte === COMPTE_BANQUE))\n', 'le filtre des groupes jugés',
+      )
+      const ecritures = brouillonTresorerie(p, []).map((e) => e.compte === COMPTE_EXPLOITANT ? { ...e, montant: 115 } : e)
+      echoue(() => memeResultat(ecritures, [p], [], derivee))
+    })
+
+    it('attrape une copie qui tient pour note de frais toute pièce de ce type, quels que soient sa catégorie et le modèle', () => {
+      const derivee = deriver(
+        '    .filter(({ piece, ...cible }) => tresorerie && estContrepartieDirigeant(piece, cible, { compte: COMPTE_EXPLOITANT }))\n',
+        '    .filter(({ piece }) => piece.type_piece === "note_frais")\n', 'les notes de frais tenues face au 108000',
+      )
+      const sur108 = piece({ id: 'p1', type_piece: 'note_frais', categorie_id: 'cat-108' })
+      echoue(() => memeResultat(brouillonTresorerie(sur108, [], { compte: COMPTE_EXPLOITANT }), [sur108], [], derivee))
+      echoue(() => memeResultat(brouillonEngagement(p, []), [p], [], derivee, true, [], ENGAGEMENT))
+    })
+
+    it('attrape une copie qui attend une contrepartie sur une catégorie au 108000', () => {
+      const derivee = deriver(
+        '  const attendu = attendue && estContrepartieDirigeant(p, cible, { compte: COMPTE_EXPLOITANT }) ? [cle(attendue)] : []\n',
+        '  const attendu = attendue ? [cle(attendue)] : []\n', 'la contrepartie attendue',
+      )
+      const sur108 = piece({ id: 'p1', type_piece: 'note_frais', categorie_id: 'cat-108' })
+      echoue(() => memeResultat(brouillonTresorerie(sur108, [], { compte: COMPTE_EXPLOITANT }), [sur108], [], derivee))
+    })
+
+    it('attrape une copie qui compare la date d’une note sans date', () => {
+      const derivee = deriver(
+        '    [p.date_piece ? l.date : "", l.sens, Math.round(l.montant * 100)].join("|")\n',
+        '    [l.date, l.sens, Math.round(l.montant * 100)].join("|")\n', 'la clé de la contrepartie',
+      )
+      const sansDate = noteDeFrais({ date_piece: null })
+      echoue(() => memeResultat(brouillonTresorerie(sansDate, []), [sansDate], [], derivee))
+    })
+
+    it('attrape une copie qui retourne le sens de la contrepartie', () => {
+      const derivee = deriver('sens: solde > 0 ? "credit" : "debit", montant: Math.abs(solde) / 100 }',
+        'sens: solde > 0 ? "debit" : "credit", montant: Math.abs(solde) / 100 }', 'le sens de la contrepartie')
+      echoue(() => memeResultat(brouillonTresorerie(p, []), [p], [], derivee))
+    })
+
+    it('attrape une copie qui oublie la banque, ou la TVA, dans le solde', () => {
+      const sansBanque = deriver('  const solde = Math.round(charge * 100) + Math.round(tva * 100) + banque\n',
+        '  const solde = Math.round(charge * 100) + Math.round(tva * 100)\n', 'le solde')
+      echoue(() => memeResultat(brouillonTresorerie(p, [rembourse(-60)]), [p], [], sansBanque, true, [rembourse(-60)]))
+      const sansTva = deriver('  const solde = Math.round(charge * 100) + Math.round(tva * 100) + banque\n',
+        '  const solde = Math.round(charge * 100) + banque\n', 'le solde')
+      echoue(() => memeResultat(brouillonTresorerie(p, []), [p], [], sansTva))
+    })
+
+    it('attrape une copie qui ne retient pas la charge comme la génération', () => {
+      const ancre = '  const charge = tva ? p.montant_ht ?? Math.round((p.montant_ttc! - tva) * 100) / 100 : p.montant_ttc!\n'
+      // Le hors taxe lu prime sur le TTC moins la TVA…
+      const sansHt = deriver(ancre, '  const charge = tva ? Math.round((p.montant_ttc! - tva) * 100) / 100 : p.montant_ttc!\n', 'la charge')
+      const htLu = noteDeFrais({ montant_ht: 100.01 })
+      echoue(() => memeResultat(brouillonTresorerie(htLu, []), [htLu], [], sansHt))
+      // … et un dossier exonéré porte le TTC, même quand le hors taxe est lu.
+      const toujoursHt = deriver(ancre, '  const charge = p.montant_ht ?? p.montant_ttc!\n', 'la charge')
+      echoue(() => memeResultat(brouillonTresorerie(p, [], { assujettiTva: false }), [p], [], toujoursHt, false))
+    })
+
+    it('attrape une copie qui date la contrepartie d’un autre paiement que la part du dirigeant', () => {
+      const derivee = deriver('.find((r) => r.source === "note_de_frais")', '.find((r) => r.source !== "sans_paiement")', 'la part du dirigeant')
+      // Un acompte versé AVANT la date de la note : la première part est le paiement.
+      const acompte = paiement({ id: 'l1', piece_id: 'p1', date: '2025-03-01', montant: -60 })
+      echoue(() => memeResultat(brouillonTresorerie(p, [acompte]), [p], [], derivee, true, [acompte]))
+    })
   })
 
   it('a bien extrait la copie DÉPLOYÉE, et pas la copie locale', () => {

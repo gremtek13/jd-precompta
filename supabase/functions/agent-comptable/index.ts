@@ -119,6 +119,9 @@ const COMPTE_TVA_COLLECTEE = "445710"
 // La TVA déductible de la facture d'un BIEN immobilisé (ligne 19 de la CA3) — src/lib/comptes.ts.
 const COMPTE_TVA_IMMOBILISATIONS = "445620"
 const COMPTE_BANQUE = "512000"
+// Le compte de l'exploitant : en trésorerie, celui du dirigeant — ses virements personnels (bloc AFFECTATION)
+// et la part d'une note de frais qu'il a payée de sa poche (`contrepartieDirigeantAttendue`).
+const COMPTE_EXPLOITANT = "108000"
 const EPSILON_EQUILIBRE = 0.02
 
 // Où une pièce s'écrit : le compte de sa catégorie, ou — pour la facture d'un bien IMMOBILISÉ — le compte
@@ -270,8 +273,8 @@ const COMPTE_CLIENTS = "411000"
 type ModeComptable = "tresorerie" | "engagement"
 interface ModeleComptable {
   mode: ModeComptable
-  // Le compte d'une note de frais payée par le dirigeant (455000, 108000 ou 467000) — sans objet en
-  // trésorerie, où elle passe face à la banque comme toute pièce.
+  // Le compte d'une note de frais payée par le dirigeant (455000, 108000 ou 467000), en engagement. En
+  // trésorerie il n'y a rien à choisir : ce qu'il a payé de sa poche passe au 108000 de l'exploitant.
   compteNotesDeFrais: string
 }
 
@@ -324,6 +327,36 @@ function banqueSuitLesPaiements(lignesBanque: readonly EcritureRow[], paiements:
   return true
 }
 
+// LA NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT (108000) — `ligneContrepartieDirigeant`
+// de src/lib/ecritures.ts : la part que le dirigeant a payée de sa poche, qu'aucun mouvement du compte
+// professionnel ne lui rembourse. Sans elle, l'assistant dirait « à régénérer » pour toujours l'écriture juste
+// d'une note de frais, et « en attente de rapprochement » une pièce qu'aucun paiement ne rapprochera.
+//
+// La ligne SOLDE les autres au centime : la charge et sa TVA telles que la génération les porte — le TTC sur une
+// seule ligne quand rien ne se ventile ; sinon le hors taxe lu, à défaut le TTC moins la TVA (`montantRetenu`
+// d'un dossier assujetti), et la TVA —, et la banque de chaque paiement, dans le sens de son signe. Datée comme
+// la part qu'elle paie : la date de la pièce — sans date, celle du dépôt, que le contrôle ne compare pas.
+function estContrepartieDirigeant(
+  p: Pick<PieceRow, "type_piece">, cible: Pick<CibleComptable, "compte">, e: Pick<EcritureRow, "compte">,
+): boolean {
+  return p.type_piece === "note_frais" && e.compte === COMPTE_EXPLOITANT && cible.compte !== COMPTE_EXPLOITANT
+}
+
+function contrepartieDirigeantAttendue(
+  p: PieceRow, assujettiTva: boolean, paiements: readonly PaiementDePiece[],
+): { date: string | null; sens: "debit" | "credit"; montant: number } | null {
+  // Seule une note de frais a une part de ce nom (`rattachementsTresorerie`).
+  const part = rattachementsTresorerie(p, paiements).find((r) => r.source === "note_de_frais")
+  if (!part) return null
+  const tva = tvaVentilee(p, assujettiTva)
+  const charge = tva ? p.montant_ht ?? Math.round((p.montant_ttc! - tva) * 100) / 100 : p.montant_ttc!
+  // Une note de frais s'écrit au débit : sa charge et sa TVA comptent pour leur signe, la banque pour le sien.
+  const banque = paiements.reduce((s, m) => s + Math.sign(m.montant) * Math.round(Math.abs(m.montant) * 100), 0)
+  const solde = Math.round(charge * 100) + Math.round(tva * 100) + banque
+  if (solde === 0) return null
+  return { date: part.date, sens: solde > 0 ? "credit" : "debit", montant: Math.abs(solde) / 100 }
+}
+
 // QUATRE COMPARAISONS, PAS UNE. Cette copie n'en portait qu'une — le TOTAL — pendant que
 // src/lib/ecritures.ts en avait gagné trois de plus. L'assistant répondait donc « aucune écriture à
 // régénérer » là où la Checklist du même dossier en comptait, sur l'outil dont toute la raison d'être
@@ -332,7 +365,9 @@ function tresorerieDesynchronisee(
   p: PieceRow, cible: CibleComptable, groupe: readonly EcritureRow[], assujettiTva: boolean,
   paiementsPiece: readonly PaiementDePiece[],
 ): boolean {
-  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE)
+  // La contrepartie d'une note de frais au compte de l'exploitant est une contrepartie, comme la banque : elle se
+  // compare à part, à la fin.
+  const lignes = groupe.filter((e) => e.compte !== COMPTE_BANQUE && !estContrepartieDirigeant(p, cible, e))
   // Pas encore générée — pas une désynchronisation. Des contreparties SANS leur charge en sont une.
   if (lignes.length === 0) return groupe.length > 0
   const sensPiece: "debit" | "credit" = p.type_piece === "vente" ? "credit" : "debit"
@@ -366,7 +401,15 @@ function tresorerieDesynchronisee(
   // ET UNE CONTREPARTIE BANQUE PAR PAIEMENT : une pièce payée en deux fois, ou réglée en partie par un
   // virement groupé, n'en recevait qu'une au rapprochement — une écriture déséquilibrée que « Régénérer »
   // réécrit désormais depuis les paiements.
-  return !banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)
+  if (!banqueSuitLesPaiements(groupe.filter((e) => e.compte === COMPTE_BANQUE), paiementsPiece)) return true
+  // ET LA CONTREPARTIE D'UNE NOTE DE FRAIS AU COMPTE DE L'EXPLOITANT, celle que la génération écrit — ni une de plus
+  // ni une de moins. La date ne se compare que sur une pièce datée.
+  const cle = (l: { date: string | null; sens: string; montant: number }) =>
+    [p.date_piece ? l.date : "", l.sens, Math.round(l.montant * 100)].join("|")
+  const present = groupe.filter((e) => estContrepartieDirigeant(p, cible, e)).map(cle).sort()
+  const attendue = contrepartieDirigeantAttendue(p, assujettiTva, paiementsPiece)
+  const attendu = attendue && estContrepartieDirigeant(p, cible, { compte: COMPTE_EXPLOITANT }) ? [cle(attendue)] : []
+  return present.length !== attendu.length || present.some((c, i) => c !== attendu[i])
 }
 
 // En ENGAGEMENT, l'écriture de la FACTURE — charge ou produit, TVA, et le compte de tiers qui porte le
@@ -437,14 +480,24 @@ function analyserEcritures(
   }
   // Une pièce dont aucune ligne ne touche la banque ET qu'aucun paiement ne règle : en trésorerie, la
   // charge sans sa contrepartie ; en engagement, la facture sans règlement. Une pièce PAYÉE sans ligne de
-  // banque est « à régénérer », et c'est `piecesDesynchronisees` qui la dit.
+  // banque est « à régénérer », et c'est `piecesDesynchronisees` qui la dit. En trésorerie, une NOTE DE FRAIS
+  // rangée hors du 108000 n'attend aucun rapprochement — la part que le dirigeant a payée s'écrit face à ce compte —,
+  // et sa ligne au 108000 vaut contrepartie. Hors du jeu fourni, le type d'une pièce n'est pas connu : la banque
+  // seule fait foi.
+  const tresorerie = modele.mode === "tresorerie"
+  const notesDeFrais = new Set(aComptabiliser
+    .filter(({ piece, ...cible }) => tresorerie && estContrepartieDirigeant(piece, cible, { compte: COMPTE_EXPLOITANT }))
+    .map(({ piece }) => piece.id))
+  const contrepartie = (pieceId: string, r: EcritureRow) =>
+    r.compte === COMPTE_BANQUE || (notesDeFrais.has(pieceId) && r.compte === COMPTE_EXPLOITANT)
   const nbSansContrepartie = [...piecesParGroupe.entries()]
-    .filter(([pieceId, rows]) => !rows.some((r) => r.compte === COMPTE_BANQUE) && !paiements.has(pieceId)).length
+    .filter(([pieceId, rows]) => !notesDeFrais.has(pieceId) && !rows.some((r) => contrepartie(pieceId, r)) && !paiements.has(pieceId))
+    .length
 
   const groupesDesequilibres = modele.mode === "engagement"
     ? desequilibresEngagement(piecesParGroupe)
     : [...piecesParGroupe.entries()]
-      .filter(([, rows]) => rows.some((r) => r.compte === COMPTE_BANQUE))
+      .filter(([pieceId, rows]) => rows.some((r) => contrepartie(pieceId, r)))
       .map(([pieceId, rows]) => ({ pieceId, solde: rows.reduce((s, r) => s + (r.sens === "debit" ? r.montant : -r.montant), 0) }))
       .filter((g) => Math.abs(g.solde) > EPSILON_EQUILIBRE)
 
@@ -653,8 +706,6 @@ interface VirementPersonnelRow {
   id: string; date: string; montant: number; prelevement_personnel: boolean
   piece_id: string | null; cotisation_id: string | null; categorie_id: string | null
 }
-
-const COMPTE_EXPLOITANT = "108000"
 
 // Le compte du dirigeant, lu dans le modèle du dossier : celui de l'exploitant en trésorerie ; en
 // engagement, celui que le cabinet a choisi pour ses notes de frais — la même personne.
@@ -2196,7 +2247,7 @@ Deno.serve(async (req: Request) => {
   // réglée.
   const repereModele = dossierRow.mode_comptable === "engagement"
     ? `engagement (BIC, IS) — une facture crée une dette en 401000 Fournisseurs (404000 Fournisseurs d'immobilisations pour celle d'un bien) ou une créance en 411000 Clients à sa date, et son paiement la solde à sa propre date ; une note de frais payée par le dirigeant passe par le compte ${dossierRow.compte_notes_de_frais}. La 2035 n'est pas produite pour ce dossier.`
-    : "trésorerie (BNC, 2035) — une pièce compte à la date de son paiement, sa date de facture à défaut."
+    : "trésorerie (BNC, 2035) — une pièce compte à la date de son paiement, sa date de facture à défaut ; une note de frais que l'exploitant a payée de sa poche s'écrit face au 108000 Compte de l'exploitant, sans mouvement bancaire, sauf la part qu'un virement du compte professionnel lui rembourse."
   const systemPrompt = `Tu es l'assistant comptable interne du cabinet JD Consult, pour le dossier "${dossierRow.nom}" (précomptabilité — un brouillon à vérifier, jamais une comptabilité tenue).
 
 Règles impératives :

@@ -52,7 +52,10 @@ function extraire(source: string): Copie {
   }
   const banque = /const COMPTE_BANQUE = "(\d+)"/.exec(source)
   expect(banque, '`COMPTE_BANQUE` introuvable dans la source').not.toBeNull()
-  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
+  // Le compte de l'exploitant vit avec les comptes de la copie de src/lib/ecritures.ts, qui l'emploie la première.
+  const exploitant = /const COMPTE_EXPLOITANT = "(\d+)"/.exec(source)
+  expect(exploitant, '`COMPTE_EXPLOITANT` introuvable dans la source').not.toBeNull()
+  const bloc = `const COMPTE_BANQUE = "${banque![1]}"\nconst COMPTE_EXPLOITANT = "${exploitant![1]}"\n${bornes('AFFECTATION')}\n${bornes('COTISATION')}`
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
   return new Function(`${js}\nreturn { montantDeLEcheance, csgDeLEcriture, refusRapprochementCotisation, ecritureDeLaCotisation, cotisationsAEcrire, rapprochementsCotisationRefuses }`)() as Copie
 }

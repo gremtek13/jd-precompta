@@ -31,6 +31,8 @@ let filtresSuppression: string[] = []
 // Les mises à jour de date, avec leurs filtres : c'est ce qui dit QUELLES lignes changent de date —
 // la contrepartie banque, elle, garde toujours la date de son mouvement.
 let misesAJour: { valeurs: Record<string, unknown>; filtres: string[] }[] = []
+// L'ordre des écritures en base : ce qui dit qu'une ligne part AVANT que les autres soient redatées.
+let ordre: string[] = []
 
 vi.mock('./supabase', () => {
   const resolvable = (op: 'select' | 'compte' | 'insert' | 'delete' | 'update', filtres: string[] = []) => {
@@ -52,11 +54,12 @@ vi.mock('./supabase', () => {
           filtresComptes.push(filtres)
           return resolvable('compte', filtres)
         },
-        insert: (payload: Record<string, unknown>) => { insere = payload; return resolvable('insert') },
-        delete: () => { supprime = true; filtresSuppression = []; return resolvable('delete', filtresSuppression) },
+        insert: (payload: Record<string, unknown>) => { insere = payload; ordre.push('insert'); return resolvable('insert') },
+        delete: () => { supprime = true; filtresSuppression = []; ordre.push('delete'); return resolvable('delete', filtresSuppression) },
         update: (valeurs: Record<string, unknown>) => {
           const filtres: string[] = []
           misesAJour.push({ valeurs, filtres })
+          ordre.push('update')
           return resolvable('update', filtres)
         },
       }),
@@ -86,9 +89,58 @@ beforeEach(() => {
   supprime = false
   filtresSuppression = []
   misesAJour = []
+  ordre = []
 })
 
 describe('synchroniserContrepartieBanque', () => {
+  // UNE NOTE DE FRAIS QUE CE VIREMENT REMBOURSE EN ENTIER n'est plus due au dirigeant : sa contrepartie au compte de
+  // l'exploitant part, AVANT la redate — redatée, elle resterait à côté de la banque et l'écriture compterait deux
+  // fois ce que la banque paie déjà.
+  it('retire la contrepartie au compte de l’exploitant d’une note de frais remboursée en entier, avant de redater', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '625100' }, { id: 'e2', compte: '108000' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ type_piece: 'note_frais', montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(ordre).toEqual(['delete', 'update', 'insert'])
+    expect(filtresSuppression).toEqual(['piece_id=p1', 'compte=108000'])
+    expect(insere).toMatchObject({ compte: COMPTE_BANQUE, sens: 'credit', montant: 120 })
+  })
+
+  it('laisse la contrepartie d’une note de frais remboursée en partie, comme sa charge', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '625100' }, { id: 'e2', compte: '108000' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ type_piece: 'note_frais', montant_ttc: 120 }), ligne(-50), TRESORERIE)
+    expect(ordre).toEqual(['insert'])
+  })
+
+  it('ne retire rien d’une pièce qui n’est pas une note de frais, ni d’une note de frais sans cette contrepartie', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '625100' }, { id: 'e2', compte: '108000' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ type_piece: 'achat', montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(ordre).toEqual(['update', 'insert'])
+    ordre = []
+    reponses.select = { data: [{ id: 'e1', compte: '625100' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ type_piece: 'note_frais', montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(ordre).toEqual(['update', 'insert'])
+  })
+
+  // Rangée dans une catégorie au 108000, la note y porte sa CHARGE et n'a pas de contrepartie à part
+  // (`estContrepartieDirigeant`) : retirer ses lignes au 108000 effacerait la dépense. Sa TVA n'est pas une charge.
+  it('laisse la charge d’une note de frais rangée au compte de l’exploitant', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '108000' }, { id: 'e2', compte: '445660' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ type_piece: 'note_frais', montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(ordre).toEqual(['update', 'insert'])
+    // Le garde symétrique : la même note, sa charge ailleurs, perd bien sa contrepartie.
+    ordre = []
+    reponses.select = { data: [{ id: 'e1', compte: '625100' }, { id: 'e2', compte: '445660' }, { id: 'e3', compte: '108000' }], error: null }
+    await synchroniserContrepartieBanque('d1', piece({ type_piece: 'note_frais', montant_ttc: 120 }), ligne(-120), TRESORERIE)
+    expect(ordre).toEqual(['delete', 'update', 'insert'])
+  })
+
+  it('un refus de retirer la contrepartie se dit, et rien n’est redaté ni écrit', async () => {
+    reponses.select = { data: [{ id: 'e1', compte: '625100' }, { id: 'e2', compte: '108000' }], error: null }
+    reponses.delete = { error: { message: 'permission denied' } }
+    await expect(synchroniserContrepartieBanque('d1', piece({ type_piece: 'note_frais', montant_ttc: 120 }), ligne(-120), TRESORERIE))
+      .rejects.toMatchObject({ message: 'permission denied' })
+    expect(ordre).toEqual(['delete'])
+  })
+
   it('déduit le sens du signe du mouvement, pas du type de la pièce', () => {
     // Le compte banque est un compte d'actif : une sortie d'argent le crédite, une entrée le débite.
     // Un remboursement reçu sur une pièce d'achat va dans l'autre sens que le type ne le laisse

@@ -32,8 +32,9 @@ import type { CompteNotesDeFrais, Dossier, LigneBancaire, ModeComptable, Piece }
 
 export interface ModeleComptable {
   mode: ModeComptable
-  // Le compte d'une note de frais payée par le dirigeant — sans objet en trésorerie, où elle passe
-  // face à la banque comme toute pièce.
+  // Le compte d'une note de frais payée par le dirigeant, en engagement. En trésorerie il n'y a rien à
+  // choisir : ce qu'il a payé de sa poche passe au 108000 de l'exploitant (`compteDuDirigeant`,
+  // lib/virementPersonnel.ts ; `ligneContrepartieDirigeant`, lib/ecritures.ts).
   compteNotesDeFrais: CompteNotesDeFrais
 }
 
@@ -49,7 +50,8 @@ export const LIBELLES_MODE: Readonly<Record<ModeComptable, string>> = {
 export const EXPLICATIONS_MODE: Readonly<Record<ModeComptable, string>> = {
   tresorerie:
     'Une pièce compte à la date de son paiement, sa date de facture à défaut : la règle des bénéfices non '
-    + 'commerciaux et de la déclaration 2035.',
+    + 'commerciaux et de la déclaration 2035. Une note de frais que l’exploitant a payée de sa poche s’écrit au '
+    + '108 – Compte de l’exploitant, comme ses virements personnels.',
   engagement:
     'La facture crée une dette ou une créance à sa date, en 401 Fournisseurs ou en 411 Clients ; le paiement '
     + 'la solde, à sa propre date. La 2035 n’est pas produite pour ce dossier.',
@@ -84,11 +86,14 @@ export const COMPTES_NOTES_DE_FRAIS: readonly { compte: CompteNotesDeFrais; libe
   },
 ]
 
-// Les comptes de tiers de l'engagement. Aucune écriture d'une PIÈCE d'un dossier en trésorerie ne les
-// mouvemente : ce n'est pas une hypothèse dont dépendrait un contrôle, c'est ce que la génération
-// produit. L'écriture d'un virement personnel, elle, porte le 108 d'un dossier en trésorerie — mais elle
-// n'a pas de pièce, et aucun contrôle qui lit cette liste ne regarde une écriture sans pièce
-// (lib/virementPersonnel.ts).
+// Les comptes de tiers de l'engagement, et les comptes du dirigeant. En trésorerie, deux écritures portent le
+// 108 de l'exploitant : celle d'un virement personnel, qui n'a pas de pièce — aucun contrôle qui lit cette
+// liste ne regarde une écriture sans pièce (lib/virementPersonnel.ts) —, et la contrepartie d'une NOTE DE
+// FRAIS que le dirigeant a payée de sa poche (`ligneContrepartieDirigeant`, lib/ecritures.ts). Celle-là solde
+// la charge de sa pièce exactement comme la ligne de tiers d'une facture d'engagement, et `ecrituresSansObjet`
+// l'écarte pour la même raison. Seule une catégorie dont le compte serait l'un d'eux — un achat classé en
+// prélèvement personnel au 108 — y porterait la CHARGE d'une pièce, que `ecrituresSansObjet` écarterait aussi :
+// aucune n'existe en base (mesuré le 05/10/2026).
 export const COMPTES_DE_TIERS: ReadonlySet<string> = new Set([
   COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_EXPLOITANT,
   COMPTE_AUTRES_DEBITEURS_CREDITEURS,
