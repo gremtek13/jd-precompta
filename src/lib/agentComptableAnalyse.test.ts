@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import type { AcquisitionDuBien } from './amortissements'
 import { analyserEcritures, lignesPourPiece, piecesAComptabiliser, type CibleComptable, type LigneAGenerer } from './ecritures'
 import { lignesEngagementPourPiece, type ModeleComptable } from './engagement'
+import { montantRetenu } from './montantRetenu'
 import { rattachementsTresorerie, paiementsDesPieces, type PaiementDePiece, type PaiementsDesPieces, type PartReglee } from './rattachement'
 import type { Categorie, CompteNotesDeFrais, EcritureBrouillon, LigneBancaire, Piece } from './types'
 import { dateAParis } from './format'
@@ -82,7 +83,7 @@ function extraire(source: string) {
   // compilateur du projet plutôt que d'en retirer les types à la main — une traduction écrite à la
   // main mentirait au premier cas tordu.
   const js = ts.transpileModule(bloc, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
-  return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot }`)() as {
+  return new Function(`${js}\nreturn { piecesAComptabiliser, analyserEcritures, rattachementsTresorerie, paiementsDesPieces, frontiereDeValidation, estFigee, lignesPourPiece, dateDuDepot, montantRetenu }`)() as {
     piecesAComptabiliser: (p: Piece[], c: Categorie[], biens: ReadonlyMap<string, AcquisitionDuBien>) => ({ piece: Piece } & CibleComptable)[]
     analyserEcritures: (
       e: EcritureBrouillon[], a: ({ piece: Piece } & CibleComptable)[], assujettiTva: boolean, paiements: PaiementsDesPieces,
@@ -100,6 +101,7 @@ function extraire(source: string) {
       piece: Piece, cible: CibleComptable, assujettiTva: boolean, paiements: readonly PaiementDePiece[], modele: ModeleComptable,
     ) => Pick<LigneAGenerer, 'date' | 'compte' | 'sens' | 'montant' | 'ligne_bancaire_id'>[]
     dateDuDepot: (instant: string) => string
+    montantRetenu: typeof montantRetenu
   }
 }
 
@@ -744,6 +746,8 @@ function batterieDuGenerateur(copie: typeof deployee): string[][] {
     piece({ type_piece: 'note_frais', montant_ht: null, montant_tva: null, montant_ttc: -30 }),
     piece({ date_piece: null, created_at: '2025-03-15T09:00:00Z' }),
     piece({ type_piece: 'note_frais', date_piece: null, created_at: '2025-03-15T09:00:00Z' }),
+    // Une note de frais à zéro euro — cas défensif : rien ne la solde, donc aucune contrepartie au 108000.
+    piece({ type_piece: 'note_frais', montant_ht: null, montant_tva: null, montant_ttc: 0 }),
   ]
   const cibles = [cible(COMPTE_ACHATS), bien('218300'), cible('108000'), cible('706000')]
   const modeles: ModeleComptable[] = [
@@ -795,6 +799,30 @@ describe('agent-comptable / le générateur (copie déployée)', () => {
     }
     expect(sorties.some((lignes) => new Set(lignes.map((l) => l.split('|')[0])).size >= 3), 'aucune pièce sur trois dates').toBe(true)
     expect(sorties.some((lignes) => lignes.some((l) => l.startsWith('2025-03-15|'))), 'aucune ligne datée du dépôt').toBe(true)
+  })
+
+  // `montantRetenu` n'est appelé, dans la copie, que sur une pièce dont la TVA se ventile — d'un dossier assujetti :
+  // sa branche exonérée n'y sert pas aujourd'hui, et la batterie ne peut pas la voir. Elle est gardée à l'unité : la
+  // copie doit rester celle de src/lib pour le jour où un appelant s'en servira.
+  it('retient le même montant que src/lib, dossier assujetti ou exonéré', () => {
+    const montants: Pick<Piece, 'montant_ht' | 'montant_tva' | 'montant_ttc'>[] = [
+      { montant_ht: 100, montant_tva: 20, montant_ttc: 120 },
+      { montant_ht: null, montant_tva: 20, montant_ttc: 120 },
+      { montant_ht: 100.01, montant_tva: 20, montant_ttc: 120 },
+      { montant_ht: 100, montant_tva: 20, montant_ttc: null },
+      { montant_ht: 100, montant_tva: null, montant_ttc: null },
+      { montant_ht: null, montant_tva: null, montant_ttc: 120 },
+      { montant_ht: null, montant_tva: null, montant_ttc: null },
+      { montant_ht: 0.07, montant_tva: 0.14, montant_ttc: null },
+      { montant_ht: null, montant_tva: 0.14, montant_ttc: 0.35 },
+    ]
+    for (const m of montants) {
+      for (const assujettiTva of [true, false]) {
+        expect(deployee.montantRetenu(m, assujettiTva), JSON.stringify({ m, assujettiTva })).toBe(montantRetenu(m, assujettiTva))
+      }
+    }
+    // La batterie exerce bien les deux branches : le hors taxe lu, et l'arrondi du hors taxe plus la TVA.
+    expect(montantRetenu({ montant_ht: 0.07, montant_tva: 0.14, montant_ttc: null }, false)).toBe(0.21)
   })
 
   it('date les lignes d’une pièce sans date de son dépôt À PARIS, quel que soit le fuseau qui l’exécute', () => {
@@ -906,6 +934,9 @@ describe('agent-comptable / analyserEcritures sous une frontière de validation 
 
   it('ne dit pas « à régénérer » une pièce coupée qui n’a encore aucune écriture : elle est à générer', () => {
     expect(memeResultat([], [piece({})], [], deployee, true, [payee('p1')], TRESORERIE, [], '2025-03-10')).toEqual(RIEN)
+    // Coupée en partie — payée de part et d'autre de la frontière —, elle attend une part ouverte qu'aucune ligne ne
+    // porte encore : c'est la génération qui la prend, pas « Régénérer ».
+    expect(memeResultat([], [piece({})], [], deployee, true, enDeuxFois, TRESORERIE, [], '2025-03-31')).toEqual(RIEN)
   })
 
   it('en engagement, une facture figée garde son compte, et le règlement ouvert se compare', () => {
