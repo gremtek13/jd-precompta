@@ -236,6 +236,15 @@ const VUES = [
   { nom: 'pc-vue-1280-assistant', chemin: '#/dossiers/d1/checklist', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant' },
   { nom: 'pc-vue-1280-etroit', chemin: '#/dossiers/d1/checklist', l: 1280, h: 800, theme: 'dark', reduite: false, largeurs: { panneau: 760 }, clic: 'Assistant' },
   { nom: 'pc-tableau-barre-large', chemin: '#/dossiers', l: 1280, h: 800, theme: 'light', reduite: false, largeurs: { barre: 420 } },
+  // LES COMPTES DE TIERS (lib/lettrage.ts), sous la Balance des comptes de la société en engagement : l'achat qui attend
+  // son règlement, la vente encaissée en partie, l'écran de studio dû au fournisseur d'immobilisations — arrêtés à
+  // aujourd'hui, puis au 31 décembre 2025. Et le code de lettrage dans le journal d'Écritures.
+  { nom: 'pc-tiers-clair', chemin: '#/dossiers/d8/statistiques', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Comptes de tiers au', enTete: true },
+  { nom: 'pc-tiers-sombre', chemin: '#/dossiers/d8/statistiques', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Comptes de tiers au', enTete: true },
+  { nom: 'pc-tiers-assistant', chemin: '#/dossiers/d8/statistiques', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'Comptes de tiers au', enTete: true },
+  { nom: 'pc-tiers-2025', chemin: '#/dossiers/d8/statistiques', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Comptes de tiers au', enTete: true },
+  { nom: 'mobile-tiers-clair', chemin: '#/dossiers/d8/statistiques', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Comptes de tiers au', enTete: true },
+  { nom: 'pc-journal-lettrage', chemin: '#/dossiers/d8/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: 'Toutes', vers: 'lettrage A' },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })

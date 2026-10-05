@@ -209,6 +209,9 @@ vi.mock('./dossier/ImmobilisationsTab', () => doubleTva('Immobilisations'))
 // CSG-CRDS au 108000 en trésorerie, au 646000 avec le reste en engagement. Doublé pour montrer le modèle
 // qu'il REÇOIT — il ne lit pas le statut TVA, que le double affiche sans conséquence.
 vi.mock('./dossier/CotisationsTab', () => doubleTva('Cotisations'))
+// La Balance des comptes porte, en engagement, les comptes de tiers à une date (lib/lettrage.ts) : doublée pour
+// montrer le modèle qu'elle REÇOIT — elle ne lit pas le statut TVA, que le double affiche sans conséquence.
+vi.mock('./dossier/StatistiquesTab', () => doubleTva('Balance des comptes'))
 // Banque refuse, avant le clic, d'affecter une recette sans facture à un dossier assujetti (sa TVA ne
 // se lit pas sur un relevé) : un statut qui ne lui parviendrait pas laisserait passer l'affectation, que
 // seule la base refuserait alors.
@@ -536,7 +539,10 @@ describe('Page d’un dossier — le modèle comptable', () => {
     expect(screen.getByText('Écritures — engagement — 108000')).toBeTruthy()
   })
 
-  it.each([['cloture', 'Clôture'], ['estimation', 'Estimation'], ['financement', 'Financement'], ['cotisations', 'Cotisations']])(
+  it.each([
+    ['cloture', 'Clôture'], ['estimation', 'Estimation'], ['financement', 'Financement'], ['cotisations', 'Cotisations'],
+    ['statistiques', 'Balance des comptes'],
+  ])(
     'l’onglet %s reçoit le modèle du dossier affiché',
     async (onglet, libelle) => {
       await afficher(`/dossiers/d1/${onglet}`)

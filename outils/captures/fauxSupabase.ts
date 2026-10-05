@@ -276,10 +276,14 @@ const ENGAGEMENT_D8 = {
     // Un écran de studio acheté en septembre 2025 et immobilisé, dont la dotation 2025 n'est pas écrite : la
     // Checklist la réclame.
     pieceEngagement('e4', '2025-09-01', 'Studio Lumière', 2400, 480, 'achat', 'c7'),
+    // Une vente encaissée EN PARTIE : elle reste ouverte au 411, avec son reste, dans les comptes de tiers de la
+    // Balance des comptes (lib/lettrage.ts) — à côté de l'achat qui attend son règlement et de l'écran de studio.
+    pieceEngagement('e5', '2026-08-28', 'Atelier Corsaire', 1500, 300, 'vente', 'c9'),
   ],
   lignes: [
     { ...paiementTva('b1', '2026-07-25', 'VIR MAISON ARLAN', 3600, 'e1'), dossier_id: 'd8' },
     { ...paiementTva('b2', '2026-08-20', 'PRLV IMPRIMERIE DUVAL', -540, 'e2'), dossier_id: 'd8' },
+    { ...paiementTva('b3', '2026-09-15', 'VIR ATELIER CORSAIRE ACOMPTE', 1000, 'e5'), dossier_id: 'd8' },
   ],
   ecritures: [
     ecriture('w1', 'e1', '2026-07-10', '706000', 'Maison Arlan', 'credit', 3000),
@@ -300,6 +304,11 @@ const ENGAGEMENT_D8 = {
     ecriture('w14', 'e4', '2025-09-01', '218300', 'Studio Lumière', 'debit', 2400),
     ecriture('w15', 'e4', '2025-09-01', '445620', 'Studio Lumière', 'debit', 480),
     ecriture('w16', 'e4', '2025-09-01', '404000', 'Studio Lumière', 'credit', 2880),
+    ecriture('w17', 'e5', '2026-08-28', '706000', 'Atelier Corsaire', 'credit', 1500),
+    ecriture('w18', 'e5', '2026-08-28', '445710', 'Atelier Corsaire', 'credit', 300),
+    ecriture('w19', 'e5', '2026-08-28', '411000', 'Atelier Corsaire', 'debit', 1800),
+    ecriture('w20', 'e5', '2026-09-15', '411000', 'Atelier Corsaire', 'credit', 1000, 'b3'),
+    ecriture('w21', 'e5', '2026-09-15', '512000', 'Atelier Corsaire', 'debit', 1000, 'b3'),
   ],
 }
 

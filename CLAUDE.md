@@ -1440,6 +1440,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   (onglet Banque), une pièce dont un acompte est rapproché s'offre au choix pour son reste, et ce qui
   dépasserait ce reste est refusé avant le clic. Voir « un exercice se valide depuis Clôture » dans « Problèmes
   connus » (`restesAReglerDesPieces`, `refusSecondPaiement`).
+- **Le lettrage des comptes de tiers (05/10/2026)**, ligne 32 : en engagement, une facture et les règlements qui la
+  soldent portent le même code dans le FEC (EcritureLet, DateLet) et dans le journal d'Écritures — déduit du
+  rapprochement, rien à saisir —, et la Balance des comptes porte les comptes de tiers à une date : ce qui reste
+  ouvert, fournisseur par fournisseur et client par client, et depuis quand. Voir « le lettrage se déduit du
+  rapprochement » dans « Problèmes connus » (`lib/lettrage.ts`, `ComptesDeTiersCard`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1458,8 +1463,9 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   (une API JSON dont les clés sont les codes EDI des cases, un serveur d'essai, la CA3, la CA12 et la
   2035), qui demande à voir l'application fonctionner avant d'ouvrir son API. ASPOne.fr reste
   l'autre voie, à prix publiés. Rien de l'étape 2 n'est écrit.
-- Comptabilité d'engagement (ligne 31) : l'étape 1 est livrée (28/09/2026). Restent, et CLAUDE.md
-  les nomme : le lettrage, les écarts de change et les frais bancaires (le rapprochement règle encore
+- Comptabilité d'engagement (ligne 31) : l'étape 1 est livrée (28/09/2026), et le lettrage des comptes de tiers
+  qui se déduit du rapprochement aussi (05/10/2026, ligne 32). Restent, et CLAUDE.md les nomme : la compensation
+  d'une facture par un avoir sans mouvement bancaire, les écarts de change et les frais bancaires (le rapprochement règle encore
   la pièce sur la banque, donc réécrit la facture — à trancher avec le cabinet), les auxiliaires des
   à-nouveaux, le report d'un exercice sur l'autre, la TVA des livraisons de biens, la liasse (2033 ou
   2050) et les exercices qui ne suivent pas l'année civile. L'écriture d'acquisition d'une immobilisation
@@ -4592,8 +4598,9 @@ d'environnement dans la même édition.
     et de son expert-comptable.
   - **Montantdevise et Idevise restent vides**, alors que la notice demande le montant en devise
     d'une pièce payée en devise et que l'application le connaît.
-  - **EcritureLet et DateLet restent vides**, ce que la norme admet (« à blanc si non utilisé »). Le
-    lettrage est la ligne 32.
+  - **EcritureLet et DateLet** ne sont remplis, depuis le 05/10/2026, que sur les lignes de tiers d'un dossier en
+    engagement dont la facture est soldée par ses règlements (voir « le lettrage se déduit du rapprochement ») ;
+    ailleurs ils restent vides, ce que la norme admet (« à blanc si non utilisé »).
   - **Ce fichier n'est pas le FEC légal du dossier.** Il ne porte que ce que l'application écrit. Le
     28/09/2026, c'était les justificatifs et leur banque, et les à-nouveaux ; depuis la ligne 26.6 (du 29/09
     au 04/10/2026), ce sont aussi les mouvements du relevé affectés ou ventilés sans justificatif, les
@@ -5246,7 +5253,8 @@ d'environnement dans la même édition.
     une devise, sous le seuil d'écart pour l'euro). En engagement il réécrit donc le montant de la
     FACTURE : une perte ou un gain de change (666, 766) et un frais bancaire (627) y sont absorbés au
     lieu d'être passés à part. À trancher avec le cabinet avant l'étape 2 ;
-  - le LETTRAGE (EcritureLet, DateLet) n'est pas produit ;
+  - le LETTRAGE se déduit du rapprochement depuis le 05/10/2026 (voir « le lettrage se déduit du rapprochement ») ;
+    une facture que compense un avoir, sans mouvement bancaire, reste ouverte ;
   - les à-nouveaux d'un 401 ou d'un 411 gardent leur numéro d'origine et n'ont pas d'auxiliaire, et
     aucun solde n'est reporté d'un exercice sur l'autre ;
   - la CA3 traite toute vente comme une prestation de services : la TVA d'une livraison de biens,
@@ -6424,7 +6432,8 @@ d'environnement dans la même édition.
   - Une écriture validée porte son journal, son numéro, sa date de validation et ce que le FEC lisait ailleurs —
     la référence et la date de sa pièce, le libellé de son compte, son compte auxiliaire
     (`ecritures_brouillon_validation_complete`) —, pour que le FEC d'un exercice validé se relise depuis elle
-    seule : une catégorie renommée, un tiers corrigé ou une évolution de l'application ne le changent plus. Les
+    seule : une catégorie renommée, un tiers corrigé ou une évolution de l'application ne le changent plus — son
+    lettrage excepté, qui suit les règlements écrits depuis (voir « le lettrage se déduit du rapprochement »). Les
     à-nouveaux de l'exercice reçoivent de même le libellé de leur compte et celui de leur écriture.
   - `exercices_valides` garde qui a validé et quand, les totaux, la 2035 telle qu'elle a été validée — une
     évolution du calcul ne la change plus — et une EMPREINTE SHA-256 CHAÎNÉE à celle de l'exercice validé
@@ -6486,7 +6495,8 @@ d'environnement dans la même édition.
   **LE FEC SE COMPOSE EN DEUX TEMPS** (`lib/fec.ts`) : `numeroterFec` décide, pour chaque écriture, son journal, son
   numéro, sa pièce et les libellés de ses comptes — exactement ce que `valider_exercice` reçoit et fige —, puis
   `formaterFec` l'imprime. Le FEC d'un exercice validé se relit depuis ce qui a été figé (`numerotationValidee`), sans
-  rien relire des pièces ni des catégories d'aujourd'hui, ValidDate étant le jour de la validation, à Paris. L'ordre
+  rien relire des pièces ni des catégories d'aujourd'hui, ValidDate étant le jour de la validation, à Paris — seul le
+  lettrage y est d'aujourd'hui (voir « le lettrage se déduit du rapprochement »). L'ordre
   des lignes d'une écriture ne dépend plus de la lecture : débit avant crédit, puis compte et identifiant.
   **CE QUI EMPÊCHE DE VALIDER SE DIT AVANT LE CLIC** (`lib/prealablesValidation.ts`), chaque préalable menant à
   l'onglet où le lever : les refus de la base avec ses mots (l'ordre des exercices, un mouvement encore à traiter, une
@@ -6620,6 +6630,63 @@ d'environnement dans la même édition.
   fermé depuis, une pièce se réglant sur le total de ses paiements (voir « un exercice se valide depuis Clôture »). Et le
   premier jeu d'essai de la parité payait une note NÉGATIVE par un décaissement : faux, un trop-perçu que le
   dirigeant rend se solde par un encaissement — l'essai avait tort, pas le code.
+- **LE LETTRAGE SE DÉDUIT DU RAPPROCHEMENT — LIGNE 32, PREMIÈRE BRIQUE** (05/10/2026, `lib/lettrage.ts`). Le FEC
+  écrivait EcritureLet et DateLet à blanc : la norme l'admet, mais l'expert-comptable qui importe le fichier doit alors
+  relettrer à la main chaque compte de tiers d'un dossier en engagement. « Le lettrage de l'écriture fait référence au
+  repère utilisé dans le système comptable pour apparier deux écritures (règlement-facture). La date de lettrage de
+  l'écriture correspond à la date à laquelle l'opération de lettrage a été validée dans le système comptable »
+  (BOI-CF-IOR-60-40-20, § 240).
+  **IL NE SE SAISIT PAS, IL SE DÉDUIT** : le geste qui apparie une facture et un paiement est déjà celui du cabinet — le
+  rapprochement. En engagement, une pièce écrit sa facture sur son compte de tiers (401, 404, 411, ou le compte du
+  dirigeant d'une note de frais quand c'est un compte de tiers, 455 ou 467) et un règlement par paiement rapproché
+  (lib/engagement.ts) ; quand ces lignes se soldent au centime, elles reçoivent le même code. Rien n'est stocké : un
+  rapprochement annulé défait le lettrage de lui-même, et aucune migration n'a été nécessaire.
+  **Les règles** :
+  - le code est fait de lettres (A à Z, puis AA…), unique par compte GÉNÉRAL, tous tiers confondus — un logiciel qui
+    lettre par auxiliaire y trouve des codes distincts comme celui qui lettre par collectif —, et donné dans l'ordre où
+    les lettrages sont nés ;
+  - la date est le jour où l'application a écrit la plus récente des lignes, à Paris, et jamais avant la date comptable
+    de la plus récente : un lettrage ne précède pas ce qu'il apparie ;
+  - ne sont PAS lettrés : une pièce payée en partie (le format ne définit aucun lettrage partiel, et un code posé sur ce
+    qui ne se solde pas passerait, une fois importé, pour un lettrage total), une pièce payée en trop, les lignes sans
+    pièce (un virement du dirigeant au 455, les à-nouveaux), le 108 de l'exploitant, les comptes de TVA, et rien en
+    trésorerie ;
+  - UNE PIÈCE N'A QU'UN LETTRAGE : l'outil de la DGFiP relève une écriture qui porte deux codes (« Différents
+    lettrages », `SQL/ECRITURE.sql`), et chaque écriture du FEC ne porte qu'une ligne lettrable — `anomaliesDgfip` le
+    refait sur le fichier. Une pièce dont deux comptes lettrables se solderaient (il y faudrait une pièce
+    désynchronisée) n'est pas lettrée du tout ;
+  - calculé sur TOUT le brouillon et non sur l'exercice exporté : une facture de décembre réglée en janvier porte le
+    même code dans les FEC des deux exercices.
+  **LE LETTRAGE NE SE FIGE PAS AVEC L'EXERCICE**, et c'est la seule chose du FEC validé qui soit d'aujourd'hui : une
+  facture d'un exercice validé que l'exercice suivant règle se lettre ce jour-là. Le lettrage ne modifie rien de
+  l'écriture — ni son compte, ni son montant, ni sa date —, donc rien de ce que la validation garantit ; le figer
+  laisserait à blanc, pour toujours, la facture de décembre réglée en janvier. Le journal d'Écritures montre le code à
+  côté du compte, sa date en infobulle.
+  **LES COMPTES DE TIERS À UNE DATE** (`comptesDeTiers`, `ComptesDeTiersCard`, sous la Balance des comptes, en
+  engagement seulement) : ce qui reste ouvert, fournisseur par fournisseur et client par client — par compte
+  auxiliaire —, et depuis quand, en quatre tranches (30 jours au plus, 31 à 60, 61 à 90, plus de 90), avec le détail
+  des pièces ouvertes et leur état (sans règlement, réglée en partie, réglée en trop, règlement sans facture à cette
+  date). Arrêtés au 31 décembre de l'exercice choisi quand il est fini, sinon à aujourd'hui. Sur tout le brouillon et
+  toute l'ouverture : une facture d'un exercice précédent encore ouverte reste due. LE TOTAL D'UN COMPTE EST SON SOLDE
+  DANS LA BALANCE GÉNÉRALE à la même date — les lignes sans pièce et les à-nouveaux y figurent chacun sur une ligne à
+  part, sans ancienneté —, et un test le recoupe compte par compte. La balance d'un exercice, au-dessus, ne compte que
+  ses propres écritures, faute de report d'un exercice sur l'autre : un compte de tiers peut y porter un autre solde, et
+  la carte le dit. Elle ne conclut pas sur un brouillon ou des à-nouveaux lus en partie, distingue « tout est soldé »
+  de « rien n'est écrit », et prévient d'une écriture de tiers antérieure à l'ouverture d'un dossier repris, qu'elle
+  compte une seconde fois. Des pièces lues en partie n'ôtent que des noms (« Fournisseurs divers ») : leur bandeau est
+  désormais à part de celui du brouillon, qui disait jusque-là que les ÉCRITURES n'avaient pas pu être lues.
+  **LATENT, et mesuré** (05/10/2026, des comptes seulement) : aucun dossier en engagement en base, aucune ligne ni aucun
+  à-nouveau sur un compte de tiers. Le banc sert la société en engagement (d8) — un achat sans règlement, une vente
+  encaissée en partie, l'écran de studio dû au fournisseur d'immobilisations — : 0 débordement aux quatre largeurs et
+  aux combinaisons extrêmes des volets.
+  **Cinquante-huit mutations, toutes mordent** : 24 sur le module, 7 sur le câblage du FEC (dont le FEC validé passé
+  sans lettrage, et le lettrage calculé sur l'exercice affiché), 27 sur la carte, l'onglet, la page et le journal. Une
+  a d'abord survécu en accusant le test : la ligne de l'ouverture affichée en tranches vides, qu'aucun test ne lisait.
+  **Piège payé en chemin** : le faux client d'Écritures insérait des lignes SANS `created_at`, que la base pose
+  (`default now()`), et la date du lettrage levait au rendu (« Invalid time value ») — l'onglet entier tombait. Le faux
+  client le pose désormais, et le calcul ignore un instant illisible plutôt que d'emporter l'écran.
+  **CE QUI RESTE** (ligne 32, seconde brique) : la compensation d'une facture par un avoir ou par une autre pièce, sans
+  mouvement bancaire — il y faut une table, le lettrage n'étant plus alors déduit d'un rapprochement.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8068,7 +8135,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4274 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4330 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -8101,7 +8168,8 @@ du barème kilométrique en centimes entiers, au centime du calcul de la base (`
 forfait de chaque ligne du cadre 7 et son écriture (`forfaitKilometrique.ts`), la concordance de la 2035
 avec les écritures, sur des écritures produites par les vrais générateurs (`concordance2035.ts`), la
 validation d'un exercice — la numérotation que le FEC et la base partagent (`fec.ts`), ce qui la refuse avant
-le clic (`prealablesValidation.ts`) et ce qu'elle fige (`validationExercice.ts`) —, et ce que
+le clic (`prealablesValidation.ts`) et ce qu'elle fige (`validationExercice.ts`) —, le lettrage des comptes de
+tiers et ce qui reste ouvert à une date (`lettrage.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et

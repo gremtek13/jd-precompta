@@ -4,6 +4,7 @@ import { libelleEcritureANouveau } from './aNouveaux'
 import { libelleCompteTenu } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
 import { dateAParis } from './format'
+import type { LettrageDeLigne } from './lettrage'
 
 // Génération du FEC (Fichier des Écritures Comptables) — format officiel imposé par l'article
 // A47 A-1 du Livre des procédures fiscales, que tout logiciel de comptabilité sait importer sans
@@ -17,7 +18,10 @@ import { dateAParis } from './format'
 // `valider_exercice`, qui la fige sur les écritures ; le FEC d'un exercice validé se relit ensuite depuis ce
 // qui a été figé (`numerotationValidee`), et non plus depuis les pièces et les catégories d'aujourd'hui. Les
 // deux passent par la même mise en forme : le fichier d'avant la validation et celui d'après ne diffèrent que
-// par ValidDate, qui devient la date de la validation.
+// par ValidDate, qui devient la date de la validation — et par le LETTRAGE (EcritureLet, DateLet), qui ne se fige
+// pas : il dit l'état des comptes de tiers au jour de l'export (lib/lettrage.ts). Une facture d'un exercice validé
+// réglée l'exercice suivant se lettre ce jour-là, et le lettrage ne modifie rien de l'écriture : ni son compte, ni
+// son montant, ni sa date.
 
 // Les dix-huit champs du VII de l'article A47 A-1, ceux d'une comptabilité tenue selon le droit
 // commercial. UN BNC EN COMPTABILITÉ DE TRÉSORERIE (VIII 7) en doit VINGT-DEUX : les mêmes, plus la
@@ -351,7 +355,16 @@ export function numerotationValidee(
 
 // La mise en forme, commune aux deux : en-tête, à-nouveaux, puis les écritures dans l'ordre de la
 // numérotation, en tabulations et fins de ligne CRLF.
-export function formaterFec(numerotation: NumerotationFec): string {
+//
+// LE LETTRAGE (EcritureLet, DateLet) vient de `lettrages` (lib/lettrage.ts), calculé sur TOUT le brouillon du dossier
+// et non sur l'exercice exporté : une facture de décembre réglée en janvier porte le même code dans les deux fichiers.
+// Une ligne que rien ne lettre laisse les deux champs à blanc, ce que la norme prévoit (« à blanc si non utilisé »).
+export function formaterFec(
+  numerotation: NumerotationFec,
+  // Sans valeur par défaut : oublié, le FEC d'un dossier en engagement sortirait sans aucun lettrage, et rien ne le
+  // dirait. Un dossier en trésorerie passe une table vide — rien ne s'y lettre.
+  lettrage: ReadonlyMap<string, LettrageDeLigne>,
+): string {
   const lignes: string[] = [ENTETES_FEC.join('\t')]
   for (const { aNouveau: a, compteLib, ecritureLib, validDate } of numerotation.aNouveaux) {
     lignes.push([
@@ -388,7 +401,8 @@ export function formaterFec(numerotation: NumerotationFec): string {
       champFec(e.libelle),
       e.sens === 'debit' ? montant(e.montant) : montant(0),
       e.sens === 'credit' ? montant(e.montant) : montant(0),
-      '', '',
+      lettrage.get(e.id)?.code ?? '',
+      lettrage.has(e.id) ? yyyymmdd(lettrage.get(e.id)!.date) : '',
       yyyymmdd(l.validDate),
       '', '',
     ].join('\t'))
@@ -398,9 +412,9 @@ export function formaterFec(numerotation: NumerotationFec): string {
 
 export function genererFec(
   ecritures: EcritureBrouillon[], pieces: Piece[], categories: Categorie[], aNouveaux: readonly ANouveau[],
-  mode: ModeComptable, mouvements: readonly MouvementBancaire[],
+  mode: ModeComptable, mouvements: readonly MouvementBancaire[], lettrage: ReadonlyMap<string, LettrageDeLigne>,
 ): string {
-  return formaterFec(numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements))
+  return formaterFec(numeroterFec(ecritures, pieces, categories, aNouveaux, mode, mouvements), lettrage)
 }
 
 // SirenFECAAAAMMJJ.txt — nom de fichier imposé par le format (AAAAMMJJ = date de clôture de

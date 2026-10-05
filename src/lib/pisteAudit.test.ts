@@ -8,11 +8,15 @@ import {
   type RegistreAudit,
 } from './pisteAudit'
 import { genererFec } from './fec'
+import type { LettrageDeLigne } from './lettrage'
 import { COMPTE_BANQUE } from './comptes'
 import { analyserEcritures } from './ecritures'
 import type { ModeleComptable } from './engagement'
 import type { ANouveau, Categorie, EcritureBrouillon, Immobilisation, LigneBancaire, Piece, VehiculeDossier } from './types'
 import { A_NOUVEAU_NON_VALIDE } from '../test/ecritures'
+
+// Le lettrage d'un fichier (lib/lettrage.ts) : vide, sauf dans les tests qui le calculent comme l'écran.
+const SANS_LETTRAGE: ReadonlyMap<string, LettrageDeLigne> = new Map()
 
 // Sans registre : la plupart de ces cas n'ont pas de dotation, donc rien à y chercher.
 const SANS_REGISTRE: RegistreAudit = { immobilisations: [], factures: [], vehicules: [] }
@@ -103,7 +107,7 @@ describe("l'angle mort que ce module ferme", () => {
 
   it('est absente du FEC', () => {
     const categories: Categorie[] = []
-    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie', []).split('\r\n').filter(Boolean)
+    const lignes = genererFec([orpheline, saine], [piece('p1')], categories, [], 'tresorerie', [], SANS_LETTRAGE).split('\r\n').filter(Boolean)
     // En-tête + la seule écriture justifiée : l'orpheline n'y est pas.
     expect(lignes).toHaveLength(2)
     expect(lignes.join('\n')).not.toContain('199,99')

@@ -360,7 +360,7 @@ export default function DossierDetail() {
                 onModeleUpdated={(modification) => modifierDossier(id, modification)}
               />
             )}
-            {tab === 'statistiques' && <StatistiquesTab dossierId={id} onNavigate={allerA} />}
+            {tab === 'statistiques' && modele && <StatistiquesTab dossierId={id} onNavigate={allerA} modeComptable={modele.mode} />}
             {tab === 'tva' && dossier && (
               <TvaTab
                 dossierId={id}

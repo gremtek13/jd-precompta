@@ -10,6 +10,7 @@ import type { EcritureSansObjet, MotifSansObjet, SuiteDansUnExerciceValide } fro
 import { COMPTES_NOTES_DE_FRAIS, EXPLICATIONS_MODE, LIBELLES_MODE, type ModeleComptable } from '../../lib/engagement'
 import { LIBELLE_MOTIF_TVA, categoriesSansCompte as calculerCategoriesSansCompte, piecesSansTva as calculerPiecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
 import { formaterFec, genererFec, nomFichierFec, numerotationValidee, telechargerTexte } from '../../lib/fec'
+import { lettrages } from '../../lib/lettrage'
 import { estFigee } from '../../lib/validationExercice'
 import { lireTout } from '../../lib/lectureComplete'
 import { absenceFec, genererPisteAuditCsv, nomFichierPisteAudit, pisteAudit, rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -365,9 +366,13 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // L'EXERCICE AFFICHÉ EST-IL VALIDÉ ? Son FEC se relit alors depuis ce que la validation a figé (lib/fec.ts,
   // `numerotationValidee`) : journal, numéro, pièce et libellés de chaque écriture, tels que la base les a gardés.
   // Rien n'est relu des pièces ni des catégories d'aujourd'hui — une catégorie renommée ne change plus le fichier,
-  // et deux exports rendent le même.
+  // et deux exports rendent le même, au lettrage près : il suit les règlements écrits depuis (lib/lettrage.ts).
   const exerciceValideAffiche = typeof anneeFilter === 'number' ? exercicesValides.find((e) => e.annee === anneeFilter) ?? null : null
   const fecValide = exerciceValideAffiche ? numerotationValidee(ecrituresFiltrees, aNouveauxExercice, exerciceValideAffiche.valide_le) : null
+  // LE LETTRAGE des comptes de tiers (lib/lettrage.ts), calculé sur TOUT le brouillon et non sur l'exercice affiché :
+  // une facture de décembre réglée en janvier porte le même code dans les deux FEC. Il ne se fige pas avec l'exercice —
+  // il dit l'état des comptes de tiers au jour de l'export, le FEC validé compris.
+  const lettrage = lettrages(ecritures, modele.mode)
   // Celui-ci, en revanche, porte sur l'exercice EXPORTÉ : c'est ce fichier-là qui partira amputé. Pour un exercice
   // validé, ce que sa numérotation figée ne porte pas — qui ne peut pas exister, la base refusant la validation tant
   // qu'une écriture de l'exercice reste proposée, et qui se voit donc plutôt que de se cacher.
@@ -1269,8 +1274,8 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
           onClick={() => {
             if (typeof anneeFilter !== 'number') return
             const contenu = fecValide
-              ? formaterFec(fecValide)
-              : genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires)
+              ? formaterFec(fecValide, lettrage)
+              : genererFec(ecrituresFiltrees, piecesValidees, categories, aNouveauxExercice, modele.mode, lignesBancaires, lettrage)
             telechargerTexte(nomFichierFec(dossierSiret, anneeFilter), contenu)
           }}
         >
@@ -1331,7 +1336,16 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                       <>{' '}<span className="badge badge-ok" title="Exercice validé : cette écriture ne se modifie ni ne se retire plus.">validée</span></>
                     )}
                   </td>
-                  <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>{e.compte}</td>
+                  <td style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}>
+                    {e.compte}
+                    {/* Le lettrage de la ligne (lib/lettrage.ts) : la facture et les règlements qui la soldent portent le
+                        même code, celui du FEC (EcritureLet). */}
+                    {lettrage.has(e.id) && (
+                      <>{' '}<span className="badge badge-neutral" title={`Lettrée le ${formatDate(lettrage.get(e.id)!.date)} : la facture et ses règlements se soldent sur ce compte.`}>
+                        lettrage {lettrage.get(e.id)!.code}
+                      </span></>
+                    )}
+                  </td>
                   <td>{e.libelle}</td>
                   <td>{formatMoney(e.montant)}</td>
                   <td>
