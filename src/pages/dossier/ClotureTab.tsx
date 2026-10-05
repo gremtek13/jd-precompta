@@ -1025,32 +1025,36 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
             taux ne s’applique pas au montant total d’un appel. Saisissez-la dans Cotisations
             (« dont CSG-CRDS »).
           </p>
-          <table>
-            <thead>
-              <tr>
-                <th>Exercice</th>
-                <th style={{ textAlign: 'right' }}>CSG-CRDS saisie</th>
-                <th style={{ textAlign: 'right' }}>dont déductible, portée en BV</th>
-                <th style={{ textAlign: 'right' }}>sortie du résultat</th>
-                <th>Cotisations sans CSG-CRDS saisie</th>
-              </tr>
-            </thead>
-            <tbody>
-              {csgSansVentilation.map(({ annee, part }) => (
-                <tr key={annee}>
-                  <td>{annee}</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(part.totalCsgCrds)}</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(part.csgDeductible)}</td>
-                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
-                    {formatMoney(part.csgNonDeductible)}
-                  </td>
-                  <td style={{ color: 'var(--color-danger)' }}>
-                    {`${part.nbSansVentilation} — part non déductible non chiffrable, à saisir dans Cotisations (« dont CSG-CRDS »)`}
-                  </td>
+          {/* Une colonne porte une phrase : dans une carte étroite — volet de droite ouvert —, le tableau se replie en
+              fiches plutôt que de sortir de la carte (voir `.tableau-adaptable` dans index.css). */}
+          <div className="table-scroll tableau-adaptable">
+            <table className="table-empilable">
+              <thead>
+                <tr>
+                  <th>Exercice</th>
+                  <th style={{ textAlign: 'right' }}>CSG-CRDS saisie</th>
+                  <th style={{ textAlign: 'right' }}>dont déductible, portée en BV</th>
+                  <th style={{ textAlign: 'right' }}>sortie du résultat</th>
+                  <th>Cotisations sans CSG-CRDS saisie</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {csgSansVentilation.map(({ annee, part }) => (
+                  <tr key={annee}>
+                    <td data-libelle="Exercice">{annee}</td>
+                    <td data-libelle="CSG-CRDS saisie" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(part.totalCsgCrds)}</td>
+                    <td data-libelle="dont déductible, portée en BV" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(part.csgDeductible)}</td>
+                    <td data-libelle="sortie du résultat" style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                      {formatMoney(part.csgNonDeductible)}
+                    </td>
+                    <td data-libelle="Cotisations sans CSG-CRDS saisie" style={{ color: 'var(--color-danger)' }}>
+                      {`${part.nbSansVentilation} — part non déductible non chiffrable, à saisir dans Cotisations (« dont CSG-CRDS »)`}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
 
