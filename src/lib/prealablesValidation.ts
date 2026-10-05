@@ -1,7 +1,8 @@
 import type { ModeleComptable } from './engagement'
 import type { DossierTab } from './ongletsDossier'
 import type { Concordance2035 } from './concordance2035'
-import type { Declaration2035 } from './declaration2035'
+import { partCsgNonDeductible, type Declaration2035 } from './declaration2035'
+import { casesNegatives, doublonFraisVehicules, valeursDesCases } from './cases2035'
 import type { DoublonDeTexte } from './doublonsTexte'
 import type { Emprunt } from './emprunts'
 import { numeroterFec, type NumerotationFec } from './fec'
@@ -17,7 +18,7 @@ import { virementsPersonnelsAEcrire } from './virementPersonnel'
 import { cotisationsAEcrire, cotisationsComptees, rapprochementsCotisationRefuses } from './cotisationRapprochee'
 import { couvertureDuReleve, echeancesDesynchronisees, echeancesNonRapprochees } from './echeanceEmprunt'
 import { acquisitionsDesBiens, dotationDeLExercice, dotationsDuRegistre, dotationsEnDefaut } from './amortissements'
-import { forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
+import { amortissementsSousLeBareme, forfaitsDuCadre7, forfaitsEnDefaut } from './forfaitKilometrique'
 import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGroupe'
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import { defautsDeNumerotation, frontiereDeValidation } from './validationExercice'
@@ -291,16 +292,39 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   })
 
   // ── La 2035 et les écritures (trésorerie). ──────────────────────────────────────────────────────────────
+  // UNE 2035 VALIDÉE EST CELLE QUE LA BASE GARDE (lib/validationExercice.ts), et les cartes de Clôture qui disent ce
+  // qu'elle a de faux se taisent une fois l'exercice validé — ce qu'elles demandent, la base le refuserait. Ce qu'elles
+  // signalent se refuse donc ICI, avant, ou se lit : chaque carte de Clôture est reprise ou écartée avec sa raison
+  // (`CARTES_DE_CLOTURE`, en fin de fichier). Les cartes sont au-dessus de celle de la validation, sur le même écran.
   if (d.declaration) {
     const e = d.declaration.exclusions
     bloque({
       id: 'concordance', nb: d.concordance ? d.concordance.ecarts.length : 0, cible: 'cloture',
-      message: "écart(s) entre la 2035 et les écritures : la validation attend une concordance au centime. Le détail est dans la carte « Concordance » ci-dessous.",
+      message: "écart(s) entre la 2035 et les écritures : la validation attend une concordance au centime. Le détail est dans la carte « Concordance avec les écritures » ci-dessus.",
     })
     bloque({
       id: 'exclusions-2035', nb: e.sansPoste.length + e.sansMontant.length + e.mouvementsSansPoste.length + e.mouvementsHorsResultat.length,
       cible: 'cloture',
       message: "pièce(s) ou mouvement(s) que la 2035 ne compte pas (sans poste, sans montant, ou un compte sorti des comptes de résultat) : les compléter avant la validation.",
+    })
+    // Un poste qu'aucune case ne porte : son montant est compté, et n'apparaît nulle part sur le formulaire — la 2035
+    // validée serait fausse de ce montant, et ses totaux aussi. Une recette sous un libellé de dépense (ou l'inverse) en
+    // est : la case de ce libellé la refuse, et la ligne se corrige par le poste de sa catégorie, ou en changeant de
+    // catégorie la pièce rangée à contresens.
+    bloque({
+      id: 'postes-sans-case', nb: valeursDesCases(d.declaration).postesSansCase.length, cible: 'cloture',
+      message: "poste(s) de la 2035 qu'aucune case du formulaire ne porte — leur montant n'y paraîtrait pas : donner à leur catégorie un poste du formulaire, ou changer de catégorie une pièce rangée à contresens (carte « Postes sans case du formulaire » ci-dessus).",
+    })
+    // Le formulaire n'admet pas de montant négatif : une case que des avoirs ou des remboursements font passer sous zéro
+    // ne se dépose pas telle quelle.
+    bloque({
+      id: 'cases-negatives', nb: casesNegatives(d.declaration).length, cible: 'cloture',
+      message: "case(s) négative(s) de la 2035 — des avoirs ou des remboursements y dépassent ce que la case compte, et le formulaire n'admet pas de montant négatif : arbitrer leur place avant la validation (carte « Case négative » ci-dessus).",
+    })
+    // Le barème kilométrique et les frais au réel du véhicule dans la même case BJ : la même dépense deux fois.
+    bloque({
+      id: 'frais-vehicule-en-double', nb: doublonFraisVehicules(d.declaration)?.postes.length ?? 0, cible: 'cloture',
+      message: "poste(s) de frais de véhicule au réel à côté du barème kilométrique : la même dépense compterait deux fois en case BJ. Retirer l'un ou l'autre avant la validation (carte « Frais de véhicule comptés deux fois » ci-dessus).",
     })
   }
 
@@ -459,11 +483,14 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       .filter((x) => x.annee === d.annee).length,
     message: "dotation(s) aux amortissements de l'exercice à écrire, ou qui ne suivent plus le registre : les écrire.",
   })
+  // Un forfait que le barème ne sait pas calculer (puissance hors barème, kilométrage invalide) en est : la 2035 n'en
+  // compte rien non plus (la carte « Véhicules absents de la case BJ » de Clôture), et c'est la ligne du cadre 7 qui se
+  // corrige.
   bloque({
     id: 'forfaits-a-ecrire', cible: 'informations',
     nb: forfaitsEnDefaut(forfaitsDuCadre7(d.vehicules, d.ecritures, d.modele, ouvertureDate, d.anneeCourante, frontiere), d.anneeCourante)
       .filter((f) => f.vehicule.annee === d.annee).length,
-    message: "forfait(s) kilométrique(s) de l'exercice à écrire, ou qui ne suivent plus le cadre 7 : les écrire.",
+    message: "forfait(s) kilométrique(s) de l'exercice à écrire, qui ne suivent plus le cadre 7, ou que le barème ne sait pas calculer — la ligne du cadre 7 est alors à corriger : les écrire.",
   })
 
   // ── Les avertissements : à lire avant de valider, sans refuser. ────────────────────────────────────────
@@ -477,6 +504,29 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       message: "échéance(s) d'emprunt de l'exercice qu'aucun mouvement ne paie — leurs intérêts ne sont pas comptés. Une fois l'exercice validé, ils ne le seront plus.",
     })
   }
+  if (d.declaration) {
+    // UNE CSG-CRDS NON SAISIE : la part non déductible de ces cotisations part en déduction (ligne 25), et aucun calcul
+    // ne peut la retrouver. Un avertissement et non un refus : une échéance de retraite n'en porte pas, et les refuser
+    // ferait saisir un zéro sur chacune. Mais validé, l'exercice fige ses échéances : elle ne se saisira plus.
+    const csg = partCsgNonDeductible(cotisationsComptees(d.cotisations, d.lignes, d.modele.mode), d.annee)
+    if (csg && csg.nbSansVentilation > 0) {
+      prealables.push({
+        id: 'csg-non-saisie', nb: csg.nbSansVentilation, cible: 'cotisations', bloquant: false,
+        message: "cotisation(s) de l'exercice dont la CSG-CRDS n'est pas saisie : leur part non déductible part en déduction, en ligne 25. Une fois l'exercice validé, elle ne se saisira plus.",
+      })
+    }
+    // UN VÉHICULE DU REGISTRE AMORTI L'ANNÉE OÙ LE BARÈME EST RETENU : le barème couvre déjà son amortissement, et la
+    // notice veut la dotation réintégrée — ce que l'application ne fait pas. Un avertissement et non un refus : le
+    // véhicule peut légitimement figurer au registre, et rien dans l'application ne sait le réintégrer ; refuser
+    // rendrait l'exercice invalidable. Il se dit donc avant, puisque la carte se tait après.
+    const amortis = amortissementsSousLeBareme(d.immobilisations, d.natures, d.vehicules, d.annee)
+    if (amortis.length > 0) {
+      prealables.push({
+        id: 'vehicule-amorti-sous-bareme', nb: amortis.length, cible: 'cloture', bloquant: false,
+        message: "bien(s) du matériel de transport amorti(s) l'année où le barème kilométrique est retenu : la 2035 validée comptera leur dotation en case CH. La réintégrer sur la déclaration déposée (cadre B du tableau des immobilisations), ou retirer le bien du registre s'il n'est pas le véhicule du cadre 7.",
+      })
+    }
+  }
 
   return { prealables, numerotation, validable: !prealables.some((p) => p.bloquant) }
 }
@@ -489,4 +539,34 @@ export const POINTS_DE_LA_CHECKLIST_ECARTES: Readonly<Record<string, string>> = 
   'montant-suspect': "en trésorerie l'écriture d'une pièce non payée est déséquilibrée, donc refusée par la numérotation ; en engagement une facture impayée à la clôture est une dette, pas une anomalie",
   'piste-rompue': "ce sont les écritures que rien ne rattache, refusées sous « ecritures-orphelines »",
   desequilibrees: "jugé écriture par écriture sur la numérotation de l'exercice, sous « ecritures-desequilibrees »",
+}
+
+// LES CARTES DE CLÔTURE QUI DISENT CE QUE LA 2035 OU SES SOURCES ONT DE FAUX, et ce que la validation en fait. Une fois
+// l'exercice validé elles se taisent — ce qu'elles demandent, la base le refuserait (ClotureTab, `ouvert`) — : ce
+// qu'elles signalent doit donc être refusé ou lu AVANT. Chacune est reprise (l'identifiant d'un préalable) ou écartée
+// avec sa raison ; `prealablesValidation.test.ts` lit les titres des cartes de Clôture et refuse une carte qui ne
+// figure pas ici. Une carte ajoutée demain doit se poser la question.
+export const CARTES_DE_CLOTURE: Readonly<Record<string, { prealable: string } | { ecartee: string }>> = {
+  'Pièces validées sans catégorie': { prealable: 'sans-categorie' },
+  'Postes manquants': { prealable: 'exclusions-2035' },
+  'Pièces validées absentes du récapitulatif': { prealable: 'exclusions-2035' },
+  'Mouvements affectés absents du récapitulatif': { prealable: 'exclusions-2035' },
+  'Échéances d’emprunt non rapprochées': { prealable: 'echeances-emprunt-non-rapprochees' },
+  'Pièces comptées à leur date de facture': {
+    ecartee: "une pièce dont aucun paiement n'est rapproché a une écriture sans banque, déséquilibrée, refusée sous « ecritures-desequilibrees » (ou sans écriture, sous « ecritures-a-generer ») ; une note de frais compte à sa date, qui est celle de son paiement",
+  },
+  'Cotisations comptées à leur échéance': {
+    ecartee: "une échéance qu'aucun prélèvement ne paie n'a pas d'écriture : la concordance la dit en écart, refusée sous « concordance »",
+  },
+  'Postes sans case du formulaire': { prealable: 'postes-sans-case' },
+  'Cotisations dont la CSG-CRDS n’est pas saisie': { prealable: 'csg-non-saisie' },
+  'Amortissement(s) sans justificatif': { prealable: 'immos-sans-justificatif' },
+  'Frais de véhicule comptés deux fois': { prealable: 'frais-vehicule-en-double' },
+  'Amortissement d’un véhicule déduit avec le barème': { prealable: 'vehicule-amorti-sous-bareme' },
+  'Véhicules absents de la case BJ': { prealable: 'forfaits-a-ecrire' },
+  'Cases « dont » incohérentes': {
+    ecartee: "le moteur ne remplit aucune case « dont » (toutes saisies par le cabinet) et aucun écran ne les saisit : cette carte ne peut pas paraître",
+  },
+  'Case négative': { prealable: 'cases-negatives' },
+  'La 2035 n’est pas produite pour ce dossier': { ecartee: "carte d'un dossier tenu en engagement, qui n'a pas de 2035" },
 }

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 import {
-  POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation, prochainExerciceAValider, type DonneesDeValidation,
+  CARTES_DE_CLOTURE, POINTS_DE_LA_CHECKLIST_ECARTES, prealablesDeValidation, prochainExerciceAValider, type DonneesDeValidation,
 } from './prealablesValidation'
 import { calculerDeclaration2035 } from './declaration2035'
 import { concordance2035 } from './concordance2035'
@@ -502,9 +502,130 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
   it('a un cas pour chaque contrôle repris de la Checklist', () => {
     const module = readFileSync(new URL('./prealablesValidation.ts', import.meta.url), 'utf8')
     const repris = [...module.split("// ── Les anomalies du brouillon")[1].matchAll(/id: '([a-z0-9-]+)'/g)].map((m) => m[1])
-      .filter((id) => !['doublons-inconnus', 'releves-inconnus', 'releve-incoherent', 'echeances-emprunt-non-rapprochees', 'ecritures-a-generer'].includes(id))
+      .filter((id) => ![
+        'doublons-inconnus', 'releves-inconnus', 'releve-incoherent', 'echeances-emprunt-non-rapprochees', 'ecritures-a-generer',
+        // Deux avertissements de la 2035, qui ne refusent rien : leurs cas sont plus bas.
+        'csg-non-saisie', 'vehicule-amorti-sous-bareme',
+      ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])
+  })
+})
+
+// LA 2035 QUE LA VALIDATION FIGERAIT : une case que le formulaire ne porte pas, une case négative, la même dépense deux
+// fois en case BJ. Les cartes de Clôture qui le disent se taisent une fois l'exercice validé : la validation le refuse
+// donc avant. Ce qu'on ne peut pas refuser sans rendre l'exercice invalidable se lit avant de valider.
+describe('prealablesDeValidation — la 2035 que la validation figerait', () => {
+  it('refuse un poste qu’aucune case du formulaire ne porte', () => {
+    const p = prealable(donnees({ categories: [{ ...ACHATS, poste_2035: 'eau_gaz_electricite' }] }), 'postes-sans-case')
+    expect(p?.bloquant).toBe(true)
+    expect(p?.nb).toBe(1)
+    // Le garde symétrique : un poste du formulaire se valide.
+    expect(ids(donnees())).not.toContain('postes-sans-case')
+  })
+
+  // Une vente rangée dans la catégorie des achats : le moteur la fondait dans la dépense « Achats » — l'achat venant
+  // d'abord —, la recette se déduisait en case BA, et aucun préalable ne le voyait. Séparée, sa ligne est du mauvais
+  // sens, et la validation la refuse.
+  it('refuse une vente rangée dans une catégorie de dépense', () => {
+    const p = prealable(donnees({ piecesValidees: [P1, piece('p2', { type_piece: 'vente', montant_ttc: 500 })] }), 'postes-sans-case')
+    expect(p?.bloquant).toBe(true)
+    expect(p?.nb).toBe(1)
+  })
+
+  it('refuse une case négative', () => {
+    // Un avoir reçu sans achat dans l'exercice : la case BA passe sous zéro.
+    const d = donnees({ piecesValidees: [piece('p1', { montant_ttc: -120 })], lignes: [ligne('l1', { piece_id: 'p1', montant: 120 })] })
+    expect(prealable(d, 'cases-negatives')?.bloquant).toBe(true)
+    expect(ids(donnees())).not.toContain('cases-negatives')
+  })
+
+  it('refuse des frais de véhicule au réel à côté du barème kilométrique', () => {
+    const auReel = { ...ACHATS, poste_2035: 'Frais de véhicules' }
+    const p = prealable(donnees({ categories: [auReel], vehicules: [vehicule('v1', 2025, 5000)] }), 'frais-vehicule-en-double')
+    expect(p?.bloquant).toBe(true)
+    expect(p?.nb).toBe(1)
+    // Le réel seul, ou le barème seul, se valident.
+    expect(ids(donnees({ categories: [auReel] }))).not.toContain('frais-vehicule-en-double')
+    expect(ids(donnees({ vehicules: [vehicule('v1', 2025, 5000)] }))).not.toContain('frais-vehicule-en-double')
+  })
+
+  it('avertit d’une CSG-CRDS non saisie, sans refuser — et seulement sur l’exercice où l’échéance compte', () => {
+    const p = prealable(donnees({ cotisations: [echeance('ck', '2025-03-05', 900)] }), 'csg-non-saisie')
+    expect(p?.bloquant).toBe(false)
+    expect(p?.nb).toBe(1)
+    expect(p?.cible).toBe('cotisations')
+    expect(ids(donnees({ cotisations: [{ ...echeance('ck', '2025-03-05', 900), montant_csg_crds: 90 }] }))).not.toContain('csg-non-saisie')
+    expect(ids(donnees({ cotisations: [echeance('ck', '2026-03-05', 900)] }))).not.toContain('csg-non-saisie')
+    // Un dossier tenu en engagement n'a pas de 2035, ni de ligne 25 où la CSG-CRDS serait déduite à tort.
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+    expect(ids(donnees({ modele: engagement, cotisations: [echeance('ck', '2025-03-05', 900)] }))).not.toContain('csg-non-saisie')
+  })
+
+  it('avertit d’un véhicule du registre amorti l’année où le barème est retenu, sans refuser', () => {
+    const transport: NatureImmobilisation = { ...MATERIEL, id: 'n-transport', compte_immobilisation: '218200' }
+    const registre = { immobilisations: [bien('i1', { nature_id: 'n-transport' })], natures: [transport] }
+    const p = prealable(donnees({ ...registre, vehicules: [vehicule('v1', 2025, 5000)] }), 'vehicule-amorti-sous-bareme')
+    expect(p?.bloquant).toBe(false)
+    expect(p?.nb).toBe(1)
+    // Sans barème cette année-là, la dotation se déduit : rien à dire.
+    expect(ids(donnees(registre))).not.toContain('vehicule-amorti-sous-bareme')
+    // Ni en engagement, où il n'y a pas de 2035 à figer.
+    const engagement: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
+    expect(ids(donnees({ ...registre, modele: engagement, vehicules: [vehicule('v1', 2025, 5000)] }))).not.toContain('vehicule-amorti-sous-bareme')
+  })
+
+  it('ne juge rien de la 2035 en engagement, qui n’en produit pas', () => {
+    const presents = ids(donnees({
+      modele: { mode: 'engagement', compteNotesDeFrais: '455000' },
+      categories: [{ ...ACHATS, poste_2035: 'Frais de véhicules' }], vehicules: [vehicule('v1', 2025, 5000)],
+      cotisations: [echeance('ck', '2025-03-05', 900)],
+    }))
+    for (const id of ['postes-sans-case', 'cases-negatives', 'frais-vehicule-en-double', 'csg-non-saisie', 'vehicule-amorti-sous-bareme']) {
+      expect(presents).not.toContain(id)
+    }
+  })
+})
+
+// CHAQUE CARTE DE CLÔTURE EST REPRISE OU ÉCARTÉE AVEC SA RAISON. Une fois l'exercice validé, elles se taisent ; ce
+// qu'elles signalent se refuse ou se lit donc avant. Une carte ajoutée demain à Clôture doit se poser la question.
+describe('prealablesDeValidation — la couverture des cartes de Clôture', () => {
+  const cloture = readFileSync(new URL('../pages/dossier/ClotureTab.tsx', import.meta.url), 'utf8')
+  const module = readFileSync(new URL('./prealablesValidation.ts', import.meta.url), 'utf8')
+  // Le titre d'une carte, lu dans son <h3> jusqu'à la balise fermante — sur plusieurs lignes s'il le faut —, sans ses
+  // expressions (`{…}`), ses balises internes (un badge) ni les parenthèses que le compte retiré laisse vides.
+  function titres(source: string): string[] {
+    return [...source.matchAll(/<h3\b[^>]*>([\s\S]*?)<\/h3>/g)].map((m) => m[1]
+      .replace(/<(\w+)\b[^>]*>[\s\S]*?<\/\1>/g, ' ')
+      .replace(/\{[^{}]*\}/g, '')
+      .replace(/\(\s*\)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim())
+  }
+  const prealables = module.split('export const CARTES_DE_CLOTURE')[0]
+
+  it('lit bien les titres des cartes — le plancher qui distingue « rien à redire » d’« aveugle »', () => {
+    expect(titres(cloture).length).toBeGreaterThanOrEqual(15)
+  })
+
+  it('reprend chaque carte, ou l’écarte avec sa raison', () => {
+    expect(titres(cloture).filter((t) => !(t in CARTES_DE_CLOTURE))).toEqual([])
+  })
+
+  it('ne nomme que des cartes qui existent, et des préalables qui existent', () => {
+    const lus = new Set(titres(cloture))
+    for (const [titre, sort] of Object.entries(CARTES_DE_CLOTURE)) {
+      expect(lus.has(titre), `« ${titre} » n'est pas une carte de Clôture`).toBe(true)
+      if ('prealable' in sort) expect(new RegExp(`id: '${sort.prealable}'`).test(prealables), sort.prealable).toBe(true)
+    }
+  })
+
+  it('lit un titre écrit sur plusieurs lignes, avec un badge et un compte', () => {
+    const source = `<h3 style={{ marginTop: 0, display: 'flex' }}>
+      Pièces en défaut <span className="badge">à traiter</span>
+    </h3>
+    <h3 style={{ marginTop: 0 }}>Amortissement(s) sans justificatif ({liste.length})</h3>`
+    expect(titres(source)).toEqual(['Pièces en défaut', 'Amortissement(s) sans justificatif'])
   })
 })
 

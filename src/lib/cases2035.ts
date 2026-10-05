@@ -251,6 +251,15 @@ const CASE_PAR_CLE_DE_POSTE = new Map(RATTACHEMENTS.map(([poste, code]) => [cle(
 // cadre 8 : un montant qui y atterrirait sortirait du résultat sans que rien ne le dise.
 export const CODES_RATTACHABLES = new Set(RATTACHEMENTS.map(([, code]) => code))
 
+// LES POSTES QU'ON PROPOSE À UNE CATÉGORIE dont le poste n'atteint aucune case (Clôture, « Postes sans case ») : les
+// libellés que le rattachement connaît, sauf ceux que le moteur calcule lui-même — la dotation aux amortissements vient du
+// registre, la CSG déductible des échéances, les indemnités kilométriques du cadre 7. Une catégorie qui y porterait des
+// pièces les ajouterait à ce calcul, et la même charge compterait deux fois.
+const CASES_CALCULEES_PAR_LE_MOTEUR = new Set(['CH', 'BV'])
+export const POSTES_PROPOSABLES: readonly string[] = [...new Set(RATTACHEMENTS
+  .filter(([poste, code]) => !CASES_CALCULEES_PAR_LE_MOTEUR.has(code) && poste !== POSTE_INDEMNITES_KM)
+  .map(([poste]) => poste))]
+
 // La case pré-remplie pour un poste, ou null si le rattachement ne le connaît pas.
 export function caseDuPoste(poste: string): Case2035 | null {
   const code = CASE_PAR_CLE_DE_POSTE.get(cle(poste))

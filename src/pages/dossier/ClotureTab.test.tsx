@@ -448,6 +448,116 @@ describe('ClotureTab — la dotation aux amortissements de la case CH', () => {
 // LA FACTURE D'UN BIEN NE DÉPEND PLUS DE SA CATÉGORIE (ligne 26.6, étape b) : la 2035 l'écarte, le bien y
 // compte par sa dotation, et son acquisition s'écrit sur le compte de sa nature. « Pièces validées sans
 // catégorie » dirait d'elle qu'elle ne compte nulle part, ce qui serait faux deux fois.
+// UN POSTE QU'AUCUNE CASE NE PORTE SE CORRIGE DEPUIS SA CARTE. Aucun autre écran ne modifie un poste déjà renseigné, et
+// la validation refuse l'exercice tant qu'il en reste un : sans ce formulaire, le refus serait sans issue — et la carte
+// envoyait corriger le poste dans « Postes manquants », qui ne montre que les catégories qui n'en ont pas.
+describe('ClotureTab — un poste qu’aucune case ne porte', () => {
+  function poserPosteSansCase() {
+    poser()
+    faux.parTable.categories = [{ ...CATEGORIE, poste_2035: 'eau_gaz_electricite' }]
+  }
+
+  it('se corrige depuis la carte, avec un libellé du formulaire', async () => {
+    poserPosteSansCase()
+    monter()
+    const champ = await screen.findByLabelText('Nouveau poste de la catégorie Achats')
+    const carte = champ.closest('.card') as HTMLElement
+    expect(within(carte).queryByText(/Postes manquants/)).toBeNull()
+    const bouton = within(carte).getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement
+    expect(bouton.disabled).toBe(true)
+    fireEvent.change(champ, { target: { value: '  Achats ' } })
+    await act(async () => { bouton.click() })
+    expect(faux.misesAJour).toContainEqual({ table: 'categories', valeurs: { poste_2035: 'Achats' } })
+  })
+
+  // La catégorie a une suggestion (« Achats ») : enregistrer sans rien taper l'écrirait à la place d'un choix.
+  it('n’enregistre ni le poste actuel ni une suggestion tant que rien n’est tapé', async () => {
+    poserPosteSansCase()
+    monter()
+    const champ = await screen.findByLabelText('Nouveau poste de la catégorie Achats')
+    await act(async () => { (within(champ.closest('.card') as HTMLElement).getByRole('button', { name: 'Enregistrer' }) as HTMLButtonElement).click() })
+    expect(faux.misesAJour).toEqual([])
+  })
+
+  it('propose les libellés du formulaire, sans ceux que le moteur calcule', async () => {
+    poserPosteSansCase()
+    monter()
+    await screen.findByLabelText('Nouveau poste de la catégorie Achats')
+    const options = [...document.querySelectorAll('#postes-du-formulaire option')].map((o) => o.getAttribute('value'))
+    expect(options).toContain('Loyers et charges locatives')
+    expect(options).not.toContain('Dotation aux amortissements')
+  })
+
+  it('la validation de l’exercice le refuse, en renvoyant à la carte', async () => {
+    poserPosteSansCase()
+    monter()
+    expect(await screen.findByText(/qu'aucune case du formulaire ne porte/)).toBeTruthy()
+  })
+
+  // « Honoraires » n'a pas de case, à dessein : recette ligne 1 chez le praticien, dépense ligne 21 chez qui les paie. Les
+  // deux lignes de la déclaration se disent, et chaque catégorie se corrige à part.
+  it('dit le même libellé porté par une recette et par une dépense, et offre de corriger chaque catégorie', async () => {
+    poser()
+    faux.parTable.categories = [
+      { ...CATEGORIE, poste_2035: 'Honoraires' },
+      { ...CATEGORIE, id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Honoraires encaissés', compte_comptable: '706000', poste_2035: 'Honoraires' },
+    ]
+    faux.parTable.pieces = [PIECE, { ...PIECE, id: 'p2', type_piece: 'vente', categorie_id: 'cat-recettes', montant_ttc: 500 }]
+    monter()
+    expect(await screen.findByRole('heading', { name: 'Postes sans case du formulaire (2)' })).toBeTruthy()
+    expect(screen.getByLabelText('Nouveau poste de la catégorie Achats')).toBeTruthy()
+    expect(screen.getByLabelText('Nouveau poste de la catégorie Honoraires encaissés')).toBeTruthy()
+  })
+
+  // Une vente rangée dans la catégorie des achats : sa ligne est du mauvais sens sous un poste JUSTE. Renommer « Achats »
+  // ferait perdre leur case à toutes ses dépenses : c'est la pièce qui change de catégorie, et la carte la nomme.
+  it('une vente rangée dans une catégorie de dépense se nomme, sans proposer de renommer la catégorie', async () => {
+    poser()
+    faux.parTable.pieces = [PIECE, { ...PIECE, id: 'p2', type_piece: 'vente', tiers: 'CLIENT EXEMPLE', montant_ttc: 500 }]
+    const onNavigate = vi.fn()
+    render(
+      <ContexteDossier annee={2025}>
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} onNavigate={onNavigate} />
+      </ContexteDossier>,
+    )
+    const titre = await screen.findByRole('heading', { name: 'Postes sans case du formulaire (1)' })
+    const carte = within(titre.closest('.card') as HTMLElement)
+    expect(carte.queryByLabelText('Nouveau poste de la catégorie Achats')).toBeNull()
+    carte.getByText(/Une pièce est rangée dans/)
+    const ligne = within(carte.getByText('CLIENT EXEMPLE').closest('tr') as HTMLElement)
+    ligne.getByText('Vente')
+    ligne.getByText('Achats')
+    await act(async () => { fireEvent.click(carte.getByRole('button', { name: 'Ouvrir les justificatifs' })) })
+    expect(onNavigate).toHaveBeenCalledWith('pieces')
+  })
+
+  // Le cas inverse : une catégorie de RECETTE au libellé d'une dépense. C'est son poste qui est en cause — elle seule se
+  // corrige, et aucune pièce n'est dite rangée à contresens.
+  it('une catégorie de recette au libellé d’une dépense : c’est son poste qui se corrige', async () => {
+    poser()
+    faux.parTable.categories = [
+      CATEGORIE,
+      { ...CATEGORIE, id: 'cat-recettes', code: 'ventes_prestations', libelle: 'Honoraires encaissés', compte_comptable: '706000', poste_2035: 'Achats' },
+    ]
+    faux.parTable.pieces = [PIECE, { ...PIECE, id: 'p2', type_piece: 'vente', categorie_id: 'cat-recettes', tiers: 'CLIENT EXEMPLE', montant_ttc: 500 }]
+    monter()
+    const titre = await screen.findByRole('heading', { name: 'Postes sans case du formulaire (1)' })
+    const carte = within(titre.closest('.card') as HTMLElement)
+    carte.getByLabelText('Nouveau poste de la catégorie Honoraires encaissés')
+    expect(carte.queryByLabelText('Nouveau poste de la catégorie Achats')).toBeNull()
+    expect(carte.queryByText(/rangées? dans/)).toBeNull()
+  })
+
+  // Le garde symétrique : un poste du formulaire n'ouvre ni la carte ni le refus.
+  it('se tait sur un poste du formulaire', async () => {
+    poser()
+    monter()
+    await screen.findByText(/Exercice 2025/)
+    expect(screen.queryByLabelText('Nouveau poste de la catégorie Achats')).toBeNull()
+    expect(screen.queryByText(/qu'aucune case du formulaire ne porte/)).toBeNull()
+  })
+})
+
 describe('ClotureTab — la facture d’un bien n’est pas une pièce sans catégorie', () => {
   it('ne la range pas parmi les pièces validées sans catégorie', async () => {
     poser({}, [immobilisation()])

@@ -236,6 +236,39 @@ describe('calculerDeclaration2035 — totaux et résultat', () => {
     })
     expect(d.depenses.map((l) => l.poste)).toEqual(['Loyers et charges locatives', 'Achats'])
   })
+
+  // UNE LIGNE PAR POSTE ET PAR NATURE. Une vente rangée dans une catégorie de dépense — ou deux catégories qui
+  // se donnent le même libellé — fusionnait avec la dépense du même poste, dans la nature de la PREMIÈRE source
+  // rencontrée : la recette comptait en dépense, et le résultat se trompait du double de son montant. Les deux
+  // ordres, parce que c'est l'ordre qui décidait de la nature de la ligne fusionnée.
+  it('une recette et une dépense rangées sous le même poste restent deux lignes, dans les deux ordres', () => {
+    const achat = piece({ id: 'a', montant_ht: 100 })
+    const vente = piece({ id: 'v', type_piece: 'vente', montant_ht: 500 })
+    for (const pieces of [[achat, vente], [vente, achat]]) {
+      const d = calcul({ pieces })
+      expect(d.recettes.map((l) => [l.poste, l.montant, l.nbPieces])).toEqual([['Achats', 500, 1]])
+      expect(d.depenses.map((l) => [l.poste, l.montant, l.nbPieces])).toEqual([['Achats', 100, 1]])
+      expect(d.totalRecettes).toBe(500)
+      expect(d.totalDepenses).toBe(100)
+      expect(d.resultat).toBe(400)
+    }
+  })
+
+  it('un encaissement du relevé affecté en recette ne se fond pas dans la dépense du même libellé', () => {
+    // Deux catégories qui se donnent le même libellé, l'une de recette, l'autre de dépense : chacune sa ligne.
+    const honoraires = [
+      { id: 'c-honoraires-payes', poste_2035: 'Honoraires', compte_comptable: '622600' },
+      { id: 'c-honoraires-recus', poste_2035: 'Honoraires', compte_comptable: '706000' },
+    ] as Categorie[]
+    const encaissement = paiement({ id: 'm', piece_id: null, categorie_id: 'c-honoraires-recus', date: '2025-04-02', montant: 300 })
+    const d = calculerDeclaration2035(
+      2025, [piece({ id: 'a', categorie_id: 'c-honoraires-payes', montant_ht: 80 })], honoraires, [], [], [], true,
+      paiementsDesPieces([], []), partsDuReleve([encaissement], honoraires, [], true),
+    )
+    expect(d.recettes.map((l) => [l.poste, l.montant, l.nbMouvements])).toEqual([['Honoraires', 300, 1]])
+    expect(d.depenses.map((l) => [l.poste, l.montant, l.nbPieces])).toEqual([['Honoraires', 80, 1]])
+    expect(d.resultat).toBe(220)
+  })
 })
 
 describe('calculerDeclaration2035 — les mouvements du relevé affectés sans justificatif', () => {
@@ -794,19 +827,25 @@ describe('calculerDeclaration2035 — les contributions, source par source', () 
     paiementsDesPieces(o.paiements ?? [], []),
     partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true),
   )
-  const centimesDuPoste = (d: ReturnType<typeof calculComptable>, poste: string) =>
-    d.contributions.filter((c) => c.poste === poste).reduce((s, c) => s + c.centimes, 0)
+  // Par poste ET par nature : une vente rangée dans la catégorie des achats est une contribution « recette » au
+  // poste Achats, et la ligne des dépenses Achats ne la porte pas.
+  const centimesDuPoste = (d: ReturnType<typeof calculComptable>, l: { poste: string; nature: string }) =>
+    d.contributions.filter((c) => c.poste === l.poste && c.nature === l.nature).reduce((s, c) => s + c.centimes, 0)
 
   it('chaque poste est la somme exacte de ses contributions', () => {
     const d = calculComptable({
-      pieces: [piece({ id: 'a', montant_ht: 100.1 }), piece({ id: 'b', montant_ht: 0.2 }), piece({ id: 'v', type_piece: 'vente', categorie_id: 'c-recettes', montant_ht: 900 })],
+      pieces: [
+        piece({ id: 'a', montant_ht: 100.1 }), piece({ id: 'b', montant_ht: 0.2 }), piece({ id: 'v', type_piece: 'vente', categorie_id: 'c-recettes', montant_ht: 900 }),
+        piece({ id: 'v2', type_piece: 'vente', montant_ht: 40 }),
+      ],
       mouvements: [paiement({ id: 'frais', piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', montant: -8.5 })],
       immos: [{ id: 'i', piece_id: null, date_acquisition: '2025-01-01', valeur: 3000, duree_annees: 3 } as Immobilisation],
       cotis: [cotisation()],
       vehicules: [vehicule({})],
     })
-    for (const l of [...d.recettes, ...d.depenses]) expect(centimesDuPoste(d, l.poste) / 100).toBe(l.montant)
-    expect(d.contributions.map((c) => c.source.type).sort()).toEqual(['bien', 'cotisation', 'csg', 'mouvement', 'piece', 'piece', 'piece', 'vehicule'])
+    for (const l of [...d.recettes, ...d.depenses]) expect(centimesDuPoste(d, l) / 100, `${l.nature} ${l.poste}`).toBe(l.montant)
+    expect(d.recettes.map((l) => l.poste).sort()).toEqual(['Achats', 'Recettes'])
+    expect(d.contributions.map((c) => c.source.type).sort()).toEqual(['bien', 'cotisation', 'csg', 'mouvement', 'piece', 'piece', 'piece', 'piece', 'vehicule'])
   })
 
   it('le résultat se tire des centimes, pas de la différence de deux totaux en virgule flottante', () => {

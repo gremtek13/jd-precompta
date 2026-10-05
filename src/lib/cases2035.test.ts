@@ -5,6 +5,7 @@ import {
   CASE_PAR_CODE,
   CODES_RATTACHABLES,
   CODES_TOTALISES_BR,
+  POSTES_PROPOSABLES,
   caseDuPoste,
   casesNegatives,
   doublonFraisVehicules,
@@ -70,6 +71,26 @@ describe('table des cases — fidélité au formulaire', () => {
     // les ferait entrer une seconde fois par la ligne 45.
     expect(CASE_PAR_CODE.get('CH')?.formulaire).toBe('2035-B')
     expect(CODES_TOTALISES_BR).not.toContain('CH')
+  })
+})
+
+// LES POSTES PROPOSÉS À UNE CATÉGORIE dont le poste n'atteint aucune case (Clôture, « Postes sans case ») : chacun doit
+// atteindre une case — sinon la proposition reconduirait le défaut qu'elle corrige —, et aucun ne doit atteindre une case
+// que le moteur calcule lui-même, où la même charge compterait deux fois.
+describe('postes proposés pour corriger une catégorie', () => {
+  it('atteignent tous une case, et jamais une case calculée par le moteur', () => {
+    expect(POSTES_PROPOSABLES.length).toBeGreaterThanOrEqual(40)
+    for (const poste of POSTES_PROPOSABLES) {
+      const code = caseDuPoste(poste)?.code
+      expect(code, poste).toBeTruthy()
+      expect(['CH', 'BV'], poste).not.toContain(code)
+    }
+    expect(POSTES_PROPOSABLES).toContain('Achats')
+    expect(POSTES_PROPOSABLES).toContain('Recettes')
+    expect(POSTES_PROPOSABLES).not.toContain(POSTE_INDEMNITES_KM)
+    expect(POSTES_PROPOSABLES).not.toContain(POSTE_AMORTISSEMENTS)
+    expect(POSTES_PROPOSABLES).not.toContain(POSTE_CSG_DEDUCTIBLE)
+    expect(new Set(POSTES_PROPOSABLES).size).toBe(POSTES_PROPOSABLES.length)
   })
 })
 
@@ -335,17 +356,17 @@ describe('arrondi à l’euro — le formulaire doit s’additionner', () => {
 })
 
 describe('bout en bout depuis les pièces', () => {
+  const categories = [
+    { id: 'c-hono', poste_2035: 'Honoraires ne constituant pas des rétrocessions' },
+    { id: 'c-assur', poste_2035: "Primes d'assurance" },
+    { id: 'c-vente', poste_2035: 'Recettes' },
+  ] as Categorie[]
+  const piece = (o: Partial<Piece>): Piece =>
+    ({ statut: 'validee', type_piece: 'achat', date_piece: '2025-06-15', montant_ht: 100, montant_ttc: 120, ...o }) as Piece
+
   it('conduit des pièces validées jusqu’aux cases du formulaire', () => {
     // Le vrai chemin : pièce → catégorie → poste → case. Le tester d'un bout à l'autre attrape les
     // ruptures de contrat entre le moteur et ce rattachement, qu'aucun des deux ne verrait seul.
-    const categories = [
-      { id: 'c-hono', poste_2035: 'Honoraires ne constituant pas des rétrocessions' },
-      { id: 'c-assur', poste_2035: "Primes d'assurance" },
-      { id: 'c-vente', poste_2035: 'Recettes' },
-    ] as Categorie[]
-    const piece = (o: Partial<Piece>): Piece =>
-      ({ statut: 'validee', type_piece: 'achat', date_piece: '2025-06-15', montant_ht: 100, montant_ttc: 120, ...o }) as Piece
-
     const d = calculerDeclaration2035(2025, [
       piece({ id: 'a', categorie_id: 'c-hono', montant_ht: 800 }),
       piece({ id: 'b', categorie_id: 'c-assur', montant_ht: 200 }),
@@ -358,6 +379,22 @@ describe('bout en bout depuis les pièces', () => {
     expect(valeurs.get('BH')).toBe(1000)
     expect(valeurs.get('BR')).toBe(1000)
     expect(valeurs.get('CP')).toBe(4000)
+  })
+
+  it('une vente rangée dans une catégorie de dépense n’entre pas dans sa case : elle est dite du mauvais sens', () => {
+    // Le moteur tenait ses lignes par libellé : la vente fusionnait avec la dépense du même poste, et
+    // `cadreCompatible` ne voyait plus qu'une ligne — de dépense si l'achat venait d'abord, et les 300 € de
+    // recette entraient alors en BH, déduits au lieu d'être imposés. Dans les deux ordres, puisque c'était
+    // le premier venu qui donnait sa nature à la ligne.
+    const achat = piece({ id: 'a', categorie_id: 'c-hono', montant_ht: 800 })
+    const vente = piece({ id: 'v', categorie_id: 'c-hono', type_piece: 'vente', montant_ht: 300 })
+    for (const pieces of [[achat, vente], [vente, achat]]) {
+      const { valeurs, postesSansCase } = valeursDesCases(calculerDeclaration2035(2025, pieces, categories, [], [], [], true, new Map(), []))
+      expect(valeurs.get('BH')).toBe(800)
+      expect(valeurs.get('AA')).toBe(0)
+      expect(postesSansCase.map((p) => [p.ligne.nature, p.ligne.montant, p.raison, p.codeRefuse]))
+        .toEqual([['recette', 300, 'case du mauvais sens', 'BH']])
+    }
   })
 })
 
