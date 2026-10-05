@@ -160,7 +160,7 @@ describe('forfaitConforme — exactement l’écriture attendue, au centime', ()
 
 describe('forfaitsDuCadre7 — l’état de chaque ligne du cadre 7', () => {
   const etats = (vehicules: VehiculeDossier[], ecritures: EcritureBrouillon[], modele = TRESORERIE, ouverture: string | null = null) =>
-    forfaitsDuCadre7(vehicules, ecritures, modele, ouverture, 2026).map((f) => f.etat)
+    forfaitsDuCadre7(vehicules, ecritures, modele, ouverture, 2026, null).map((f) => f.etat)
 
   it('dit « à écrire » un forfait que rien n’a écrit, et « écrit » celui du barème', () => {
     expect(etats([vehicule()], [])).toEqual(['a_ecrire'])
@@ -190,11 +190,11 @@ describe('forfaitsDuCadre7 — l’état de chaque ligne du cadre 7', () => {
   })
 
   it('rend le refus d’un forfait incalculable, à écrire ou à réécrire', () => {
-    const [aEcrire] = forfaitsDuCadre7([vehicule({ annee: 2024 })], [], TRESORERIE, null, 2026)
+    const [aEcrire] = forfaitsDuCadre7([vehicule({ annee: 2024 })], [], TRESORERIE, null, 2026, null)
     expect(aEcrire.etat).toBe('a_ecrire')
     expect(aEcrire.attendues).toBeNull()
     expect(aEcrire.refus).toBe('Le barème kilométrique 2024 n’est pas renseigné dans l’application.')
-    const [aReecrire] = forfaitsDuCadre7([vehicule({ type: 'moto', puissance_fiscale: 0 })], forfaitEcrit(23.81), TRESORERIE, null, 2026)
+    const [aReecrire] = forfaitsDuCadre7([vehicule({ type: 'moto', puissance_fiscale: 0 })], forfaitEcrit(23.81), TRESORERIE, null, 2026, null)
     expect(aReecrire.etat).toBe('a_reecrire')
     expect(aReecrire.refus).toBe('La puissance fiscale de ce véhicule est hors du barème kilométrique 2025.')
   })
@@ -206,7 +206,7 @@ describe('forfaitsDuCadre7 — l’état de chaque ligne du cadre 7', () => {
       ecriture({ id: 'dot', vehicule_id: null, immobilisation_id: 'i1', compte: '681100' }),
       ecriture({ id: 'piece', vehicule_id: null, piece_id: 'p1', compte: '606100' }),
     ]
-    const [v1, v2] = forfaitsDuCadre7([vehicule(), vehicule({ id: 'v2' })], autres, TRESORERIE, null, 2026)
+    const [v1, v2] = forfaitsDuCadre7([vehicule(), vehicule({ id: 'v2' })], autres, TRESORERIE, null, 2026, null)
     expect(v1.presentes).toEqual([])
     expect(v1.etat).toBe('a_ecrire')
     expect(v2.presentes.map((e) => e.id)).toEqual(['e-d', 'e-c'])
@@ -214,16 +214,27 @@ describe('forfaitsDuCadre7 — l’état de chaque ligne du cadre 7', () => {
   })
 
   it('rend le montant et l’écriture attendue', () => {
-    const [f] = forfaitsDuCadre7([vehicule()], [], TRESORERIE, null, 2026)
+    const [f] = forfaitsDuCadre7([vehicule()], [], TRESORERIE, null, 2026, null)
     expect(f.centimes).toBe(2381n)
     expect(f.attendues).toEqual(ecritureDuForfait(vehicule(), TRESORERIE, null))
     expect(f.refus).toBeNull()
+  })
+
+  // UN EXERCICE FIGÉ PAR LA VALIDATION (lib/validationExercice.ts) : la ligne est rendue — l'écran dit ce qu'il en est —,
+  // marquée `fige`, frontière comprise ; son état reste celui de la comparaison.
+  it('marque figé le forfait d’un exercice validé, frontière comprise, et garde son état', () => {
+    const fige = (frontiere: string | null) =>
+      forfaitsDuCadre7([vehicule(), vehicule({ id: 'v2', annee: 2026 })], forfaitEcrit(23.81), TRESORERIE, null, 2026, frontiere)
+        .map((f) => [f.vehicule.id, f.etat, f.fige])
+    expect(fige('2025-12-31')).toEqual([['v1', 'ecrit', true], ['v2', 'a_ecrire', false]])
+    expect(fige('2025-12-30')).toEqual([['v1', 'ecrit', false], ['v2', 'a_ecrire', false]])
+    expect(fige(null)).toEqual([['v1', 'ecrit', false], ['v2', 'a_ecrire', false]])
   })
 })
 
 describe('forfaitsEnDefaut — ce que la Checklist réclame', () => {
   const enDefaut = (vehicules: VehiculeDossier[], ecritures: EcritureBrouillon[] = []) =>
-    forfaitsEnDefaut(forfaitsDuCadre7(vehicules, ecritures, TRESORERIE, null, 2026), 2026).map((f) => f.vehicule.id)
+    forfaitsEnDefaut(forfaitsDuCadre7(vehicules, ecritures, TRESORERIE, null, 2026, null), 2026).map((f) => f.vehicule.id)
 
   it('réclame le forfait d’un exercice révolu, pas celui de l’exercice en cours', () => {
     expect(enDefaut([vehicule({ id: 'a', annee: 2025 }), vehicule({ id: 'b', annee: 2026 })])).toEqual(['a'])
@@ -242,6 +253,14 @@ describe('forfaitsEnDefaut — ce que la Checklist réclame', () => {
   it('se tait sur un forfait écrit et sur une ligne sans rien à écrire', () => {
     expect(enDefaut([vehicule()], forfaitEcrit(23.81))).toEqual([])
     expect(enDefaut([vehicule({ km_professionnel: 0 })])).toEqual([])
+  })
+
+  // RIEN D'UN EXERCICE VALIDÉ, qu'il y manque ou qu'il diverge : la base n'y écrit plus. Le reste se réclame comme avant.
+  it('ne réclame rien d’un exercice figé par la validation, et le reste comme avant', () => {
+    const avecFrontiere = (vehicules: VehiculeDossier[], ecritures: EcritureBrouillon[] = []) =>
+      forfaitsEnDefaut(forfaitsDuCadre7(vehicules, ecritures, TRESORERIE, null, 2027, '2025-12-31'), 2027).map((f) => f.vehicule.id)
+    expect(avecFrontiere([vehicule({ id: 'a', annee: 2025 }), vehicule({ id: 'b', annee: 2026 })])).toEqual(['b'])
+    expect(avecFrontiere([vehicule({ km_professionnel: 46 })], forfaitEcrit(23.81, { statut: 'validee' }))).toEqual([])
   })
 })
 

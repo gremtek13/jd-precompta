@@ -3,6 +3,7 @@ import { indemniteKilometriqueCentimes, motifNonCalcule, vehiculeDuDossier } fro
 import { COMPTE_INDEMNITES_KILOMETRIQUES } from './comptes'
 import type { ModeleComptable } from './engagement'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, VehiculeDossier } from './types'
+import { estFigee } from './validationExercice'
 import { compteDuDirigeant } from './virementPersonnel'
 
 // LE FORFAIT KILOMÉTRIQUE S'ÉCRIT (ligne 26.6 de la feuille de route, étape b).
@@ -125,8 +126,9 @@ export function forfaitConforme(
 //                    motorisation ou compte du dirigeant changés depuis) ;
 //   - `a_retirer`  : un forfait est écrit, et il n'y en a plus (zéro kilomètre, exercice repris) ;
 //   - `ecrit`      : celui du barème est écrit ;
-//   - `valide`     : un forfait VALIDÉ qui n'est plus celui du barème — la base refuse de le remplacer, et
-//                    c'est à l'expert-comptable de trancher ;
+//   - `valide`     : un forfait VALIDÉ qui n'est plus celui du barème — la base refuse de le remplacer. Il est
+//                    dans un exercice validé (`fige`), donc ne se réclame plus : une erreur trouvée après la
+//                    validation se corrige sur l'exercice suivant ;
 //   - `rien`       : rien à écrire, rien d'écrit.
 export type EtatForfait = 'a_ecrire' | 'a_reecrire' | 'a_retirer' | 'ecrit' | 'valide' | 'rien'
 
@@ -140,6 +142,10 @@ export interface ForfaitDuVehicule {
   etat: EtatForfait
   /** Pourquoi la base refuserait de l'écrire, dit avant le clic. */
   refus: string | null
+  /** L'exercice est figé par la validation (lib/validationExercice.ts) : la ligne du cadre 7 ne change plus, et la base
+   *  n'y écrit, n'y réécrit ni n'y retire plus de forfait. `etat` dit encore ce qu'il en est, pour que l'écran le
+   *  montre ; aucun geste ne le propose, et la Checklist ne le réclame pas. */
+  fige: boolean
 }
 
 // LES FORFAITS DU CADRE 7, ligne par ligne, comparés au brouillon. Toutes les lignes sont rendues — l'écran
@@ -149,12 +155,17 @@ export interface ForfaitDuVehicule {
 // décembre, sur le kilométrage saisi à ce jour. C'est à l'appelant de décider s'il le réclame — la
 // Checklist ne réclame que les exercices révolus (`forfaitsEnDefaut`), un kilométrage de l'année n'étant
 // complet qu'une fois l'année finie.
+//
+// UN EXERCICE FIGÉ PAR LA VALIDATION est rendu aussi, marqué `fige` : son forfait, écrit ou non, ne bouge plus. Sans
+// valeur par défaut : un appelant qui oublie la frontière proposerait d'écrire un forfait que la base refuse, ou le
+// réclamerait pour toujours.
 export function forfaitsDuCadre7(
   vehicules: readonly VehiculeDossier[],
   ecritures: readonly EcritureBrouillon[],
   modele: ModeleComptable,
   ouverture: string | null,
   anneeCourante: number,
+  frontiere: string | null,
 ): ForfaitDuVehicule[] {
   const parVehicule = new Map<string, EcritureBrouillon[]>()
   for (const e of ecritures) {
@@ -172,18 +183,21 @@ export function forfaitsDuCadre7(
     else if (attendues && forfaitConforme(presentes, attendues, vehicule.annee)) etat = 'ecrit'
     else if (presentes.some((e) => e.statut !== 'proposee')) etat = 'valide'
     else etat = nul ? 'a_retirer' : 'a_reecrire'
-    return { vehicule, centimes, attendues, presentes, etat, refus }
+    return { vehicule, centimes, attendues, presentes, etat, refus, fige: estFigee(dateDuForfait(vehicule.annee), frontiere) }
   })
 }
 
 // Ce que la Checklist réclame : le forfait d'un exercice RÉVOLU qui n'est pas écrit, et tout forfait écrit
-// qui ne suit plus le cadre 7 — quel que soit l'exercice, une écriture fausse l'est dès aujourd'hui. Un
-// forfait validé qui diverge est rendu aussi : il ne se réécrit pas, mais il se dit.
+// qui ne suit plus le cadre 7 — quel que soit l'exercice, une écriture fausse l'est dès aujourd'hui.
 //
 // Le forfait d'un exercice révolu que le barème ne sait pas calculer est rendu aussi, avec son refus : la
 // 2035 de cet exercice n'en compte rien non plus (`nonCalcules`), et la Checklist doit dire ce qui manque.
+//
+// RIEN D'UN EXERCICE FIGÉ PAR LA VALIDATION, qu'il y manque ou qu'il diverge : la base n'y écrit plus, et un point que
+// rien ne peut lever resterait en erreur pour toujours (lib/validationExercice.ts). Un forfait validé ne vivant que
+// dans un exercice validé, l'état `valide` ne se réclame donc plus.
 export function forfaitsEnDefaut(forfaits: readonly ForfaitDuVehicule[], anneeCourante: number): ForfaitDuVehicule[] {
-  return forfaits.filter((f) => f.etat !== 'ecrit' && f.etat !== 'rien'
+  return forfaits.filter((f) => !f.fige && f.etat !== 'ecrit' && f.etat !== 'rien'
     && (f.etat !== 'a_ecrire' || f.vehicule.annee < anneeCourante))
 }
 

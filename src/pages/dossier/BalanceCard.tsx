@@ -9,6 +9,7 @@ import { messageErreur } from '../../lib/messageErreur'
 import { supabase } from '../../lib/supabase'
 import type { ANouveau } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
 
 // La reprise d'un dossier venu d'un autre logiciel. Deux temps, et c'est ce qui la rend sûre :
 //
@@ -22,6 +23,13 @@ import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 //
 // L'empreinte du fichier voyage avec les à-nouveaux : elle est leur justificatif dans la piste
 // d'audit, comme celle d'une pièce.
+//
+// UN EXERCICE VALIDÉ FIGE L'OUVERTURE (ligne 26.6, étape d) : dès qu'un exercice du dossier l'est, les à-nouveaux ne
+// s'enregistrent, ne se remplacent ni ne se retirent plus — le refus de la base (`garder_a_nouveaux_valides`). La
+// balance se lit et se contrôle toujours : c'est une question sur un fichier, pas une écriture.
+
+// Ce que la base dit d'une ouverture figée, mot pour mot.
+export const OUVERTURE_FIGEE = 'Un exercice de ce dossier est validé : son ouverture ne change plus.'
 
 // Un export comptable français sort souvent en CP1252, pas en UTF-8 : les libellés sont les NOMS DE
 // COMPTES, donc l'essentiel de ce qu'un humain lit sur cet écran. Décoder de travers rendrait
@@ -64,6 +72,8 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
   const [retrait, setRetrait] = useState(false)
   const [erreurEnregistrement, setErreurEnregistrement] = useState<string | null>(null)
   const [confirmation, setConfirmation] = useState<string | null>(null)
+  const { anneesValidees } = useExercicesValides()
+  const ouvertureFigee = anneesValidees.length > 0
 
   useEffect(() => {
     let annule = false
@@ -115,6 +125,11 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
 
   async function enregistrer() {
     if (!preparation || preparation.refus || !empreinte || !nomFichier) return
+    // Seconde ceinture : le bouton n'est pas rendu sur une ouverture figée.
+    if (ouvertureFigee) {
+      setErreurEnregistrement(OUVERTURE_FIGEE)
+      return
+    }
     // Une lecture partielle ne commande pas d'écriture : ici l'enregistrement REMPLACE une ouverture
     // qu'on n'a pas pu lire, donc qu'on ne peut pas nommer dans la confirmation.
     if (ouvertureIllisible !== null || !ouvertureChargee) return
@@ -152,6 +167,11 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
 
   async function retirer() {
     if (ouverture.length === 0) return
+    // Seconde ceinture : le bouton n'est pas rendu sur une ouverture figée.
+    if (ouvertureFigee) {
+      setErreurEnregistrement(OUVERTURE_FIGEE)
+      return
+    }
     // La confirmation NOMME ce qu'on perd : « Êtes-vous sûr ? » se ferme d'un clic aussi distrait que
     // le premier.
     if (!window.confirm(
@@ -223,9 +243,13 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
               </table>
             </div>
           </details>
-          <button type="button" className="btn btn-danger btn-sm" style={{ marginTop: 8 }} onClick={retirer} disabled={retrait}>
-            {retrait ? 'Retrait…' : 'Retirer les à-nouveaux'}
-          </button>
+          {ouvertureFigee ? (
+            <p className="muted" style={{ margin: '8px 0 0' }}>{OUVERTURE_FIGEE}</p>
+          ) : (
+            <button type="button" className="btn btn-danger btn-sm" style={{ marginTop: 8 }} onClick={retirer} disabled={retrait}>
+              {retrait ? 'Retrait…' : 'Retirer les à-nouveaux'}
+            </button>
+          )}
         </div>
       ) : (
         <p className="muted" style={{ fontSize: '0.85rem', margin: '0 0 12px' }}>Aucun à-nouveau enregistré pour ce dossier.</p>
@@ -369,16 +393,22 @@ export default function BalanceCard({ dossierId }: { dossierId: string }) {
                       </table>
                     </div>
                   </details>
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={enregistrer}
-                    disabled={enregistrement || !empreinte || !ouvertureChargee || ouvertureIllisible !== null}
-                  >
-                    {enregistrement
-                      ? 'Enregistrement…'
-                      : ouverture.length > 0 ? 'Remplacer les à-nouveaux' : 'Enregistrer les à-nouveaux'}
-                  </button>
+                  {/* Une ouverture figée par un exercice validé ne se remplace plus : la carte le dit à la place du bouton. La
+                      préparation reste lisible — ce qui aurait été écrit, et que la base refuserait. */}
+                  {ouvertureFigee ? (
+                    <p className="error-text" style={{ margin: 0 }}>{OUVERTURE_FIGEE}</p>
+                  ) : (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      onClick={enregistrer}
+                      disabled={enregistrement || !empreinte || !ouvertureChargee || ouvertureIllisible !== null}
+                    >
+                      {enregistrement
+                        ? 'Enregistrement…'
+                        : ouverture.length > 0 ? 'Remplacer les à-nouveaux' : 'Enregistrer les à-nouveaux'}
+                    </button>
+                  )}
                 </>
               )}
             </div>

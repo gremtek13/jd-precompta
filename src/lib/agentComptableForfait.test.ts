@@ -149,7 +149,7 @@ describe('agent-comptable / bloc FORFAIT (copie déployée)', () => {
   it('rend le même état de chaque ligne du cadre 7, et réclame les mêmes forfaits', () => {
     for (const modele of MODELES) {
       for (const ouverture of [null, '2025-01-01']) {
-        const attendu = forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, 2026)
+        const attendu = forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, 2026, null)
         const copie = deployee.forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture)
         expect(etats(copie), `${modele.mode} ${modele.compteNotesDeFrais} ${ouverture}`).toEqual(etats(attendu))
         for (const anneeCourante of [2025, 2026, 2027]) {
@@ -159,7 +159,7 @@ describe('agent-comptable / bloc FORFAIT (copie déployée)', () => {
       }
     }
     // Et le cadre 7 exerce bien chaque état : sans quoi l'égalité ci-dessus ne prouverait rien de lui.
-    const tous = new Set(forfaitsDuCadre7(CADRE7, ECRITURES, TRESORERIE, '2025-01-01', 2026).map((f) => f.etat))
+    const tous = new Set(forfaitsDuCadre7(CADRE7, ECRITURES, TRESORERIE, '2025-01-01', 2026, null).map((f) => f.etat))
     expect([...tous].sort()).toEqual(['a_ecrire', 'a_reecrire', 'a_retirer', 'ecrit', 'rien', 'valide'])
   })
 })
@@ -215,7 +215,7 @@ describe('le garde-fou du bloc FORFAIT sait encore échouer', () => {
     }
   }
   const memeCadre7 = (copie: Copie, modele = TRESORERIE, ouverture: string | null = null, anneeCourante = 2026) => {
-    const attendu = forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, anneeCourante)
+    const attendu = forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture, anneeCourante, null)
     const rendu = copie.forfaitsDuCadre7(CADRE7, ECRITURES, modele, ouverture)
     expect(etats(rendu)).toEqual(etats(attendu))
     expect(etats(copie.forfaitsEnDefaut(rendu, anneeCourante))).toEqual(etats(forfaitsEnDefaut(attendu, anneeCourante)))

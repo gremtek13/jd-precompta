@@ -2208,8 +2208,23 @@ describe('BanqueTab — une échéance de cotisation rapprochée s’écrit', ()
     expect(await screen.findByText('Ne s’écrit pas')).toBeTruthy()
     await ouvrir('PRLV URSSAF')
     expect(within(volet()).getByText(/Ce rapprochement ne peut pas s’écrire : Ce mouvement est un encaissement/)).toBeTruthy()
+    expect(within(volet()).getByText(/Annule-le pour le refaire\./)).toBeTruthy()
     // Et la fiche ne prétend pas dire comment il s'écrit.
     expect(within(volet()).queryByText(/S’écrit face à la banque/)).toBeNull()
+  })
+
+  // LIGNE 26.6 (d) : d'un exercice validé, ni le mouvement ni l'échéance ne changent plus. La pastille appellerait un
+  // geste que la base refuse, et la fiche ne conseille plus d'annuler ; ce qu'elle dit reste vrai — il manque au FEC.
+  it('d’un exercice validé, ni pastille ni conseil d’annuler : le rapprochement ne change plus', async () => {
+    preparer({ montant: 100, statut: 'rapprochee', cotisation_id: 'cot-1' })
+    rendre(TRESORERIE, false, [2025])
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+
+    expect(await screen.findByText(/Rapproché — Cotisation du 05\/06\/2025/)).toBeTruthy()
+    expect(screen.queryByText('Ne s’écrit pas')).toBeNull()
+    await ouvrir('PRLV URSSAF')
+    expect(within(volet()).getByText(/Ce rapprochement ne peut pas s’écrire : Ce mouvement est un encaissement/)).toBeTruthy()
+    expect(within(volet()).queryByText(/Annule-le pour le refaire/)).toBeNull()
   })
 
   it('la fiche dit comment l’échéance payée s’écrit — sans le 108000 en engagement', async () => {

@@ -145,7 +145,7 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
   it('rend les mêmes dotations du registre, dans le même état, et réclame les mêmes', () => {
     for (const ouverture of [null, '2026-01-01']) {
       for (const anneeCourante of [2025, 2026, 2027]) {
-        const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante)
+        const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, null)
         const copie = deployee.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante)
         expect(etats(copie), `${ouverture} / ${anneeCourante}`).toEqual(etats(attendu))
         expect(etats(deployee.dotationsEnDefaut(copie, anneeCourante)), `${ouverture} / ${anneeCourante}`)
@@ -153,7 +153,7 @@ describe('agent-comptable / bloc AMORTISSEMENT (copie déployée)', () => {
       }
     }
     // Et le registre exerce bien chaque état : sans quoi l'égalité ci-dessus ne prouverait rien de lui.
-    const tous = new Set(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026).map((d) => d.etat))
+    const tous = new Set(dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, null, 2026, null).map((d) => d.etat))
     expect([...tous].sort()).toEqual(['a_ecrire', 'a_reecrire', 'a_retirer', 'ecrite', 'validee'])
   })
 
@@ -243,7 +243,7 @@ describe('le garde-fou du bloc AMORTISSEMENT sait encore échouer', () => {
     }
   }
   const memeRegistre = (copie: Copie, anneeCourante = 2026, ouverture: string | null = null) => {
-    const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante)
+    const attendu = dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante, null)
     const rendu = copie.dotationsDuRegistre(REGISTRE, NATURES, ECRITURES, ouverture, anneeCourante)
     expect(etats(rendu)).toEqual(etats(attendu))
     expect(etats(copie.dotationsEnDefaut(rendu, anneeCourante))).toEqual(etats(dotationsEnDefaut(attendu, anneeCourante)))

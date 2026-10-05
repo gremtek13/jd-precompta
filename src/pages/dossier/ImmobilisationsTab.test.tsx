@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import ImmobilisationsTab from './ImmobilisationsTab'
 import type { EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece } from '../../lib/types'
 import { NON_VALIDEE } from '../../test/ecritures'
+import { AvecExercicesValides } from '../../test/exercicesValides'
 
 // LE REGISTRE DES IMMOBILISATIONS, ET LES DOTATIONS QUI S'EN ÉCRIVENT (ligne 26.6, étape b).
 //
@@ -22,6 +23,9 @@ const faux = vi.hoisted(() => ({
   // Lecture partielle d'une table : le serveur cesse de rendre des lignes au-delà de ce rang, en annonçant le
   // vrai total (voir lib/lectureComplete.ts).
   muetApres: {} as Record<string, number>,
+  // La même chose pour la seule lecture des écritures VALIDÉES (`.eq('statut', 'validee')`) : celle des dotations
+  // porte sur la même table, et la couper aussi cacherait ce que le test regarde.
+  muetValidees: undefined as number | undefined,
   // L'erreur que rend la base à une insertion — telle que supabase-js la rend : un objet NU, jamais une
   // instance d'`Error` (voir lib/messageErreur.ts).
   refusInsertion: null as Record<string, unknown> | null,
@@ -78,11 +82,13 @@ vi.mock('../../lib/supabase', async () => {
         // sauf le cadrage par dossier, que le jeu d'essai ne renseigne pas partout. Accepté sans effet, le
         // filtre `.not('immobilisation_id', 'is', null)` retiré laisserait ce test vert.
         const predicats: Predicat[] = []
+        let statutDemande: unknown = undefined
         Object.assign(c, {
           select: () => c,
           insert: (v: Record<string, unknown>) => { operation = 'insert'; valeur = v; faux.inserees.push({ table, valeur: v }); return c },
           update: (v: Record<string, unknown>) => { operation = 'update'; valeur = v; faux.modifiees.push({ table, valeur: v }); return c },
           eq: (colonne: string, v: unknown) => {
+            if (colonne === 'statut') statutDemande = v
             if (colonne !== 'dossier_id') predicats.push(predicatEq(colonne, v))
             return c
           },
@@ -114,7 +120,10 @@ vi.mock('../../lib/supabase', async () => {
                       : table === 'a_nouveaux' ? faux.aNouveaux
                         : []
             const toutes = filtrer(source, predicats)
-            const rendu = toutes.slice(debut, Math.min(fin + 1, toutes.length, faux.muetApres[table] ?? Infinity))
+            const plafond = table === 'ecritures_brouillon' && statutDemande === 'validee' && faux.muetValidees !== undefined
+              ? faux.muetValidees
+              : faux.muetApres[table] ?? Infinity
+            const rendu = toutes.slice(debut, Math.min(fin + 1, toutes.length, plafond))
             return (faux.retenue ?? Promise.resolve())
               .then(() => ({ data: rendu, error: null, count: toutes.length }))
               .then(suite)
@@ -166,6 +175,7 @@ function poser(immos: Immobilisation[], o: { pieces?: Piece[]; ecritures?: Ecrit
   faux.ecritures = o.ecritures ?? []
   faux.aNouveaux = o.ouverture ? [{ id: 'an-1', dossier_id: 'dossier-de-test', date: o.ouverture }] : []
   faux.muetApres = {}
+  faux.muetValidees = undefined
   faux.refusInsertion = null
   faux.refusModification = null
   faux.inserees = []
@@ -177,7 +187,10 @@ function poser(immos: Immobilisation[], o: { pieces?: Piece[]; ecritures?: Ecrit
   faux.retenue = null
 }
 
-const monter = (assujettiTva = false) => render(<ImmobilisationsTab dossierId="dossier-de-test" assujettiTva={assujettiTva} />)
+// Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
+const monter = (assujettiTva = false, valides: readonly number[] = []) => render(
+  <AvecExercicesValides annees={valides}><ImmobilisationsTab dossierId="dossier-de-test" assujettiTva={assujettiTva} /></AvecExercicesValides>,
+)
 
 // L'HORLOGE EST FIXÉE au 1er octobre 2026 : l'exercice en cours décide de ce qui s'écrit, et de ce que la
 // carte réclame. Seule `Date` est feinte — `vi.useFakeTimers()` gèlerait aussi les minuteurs dont `findBy…`
@@ -558,18 +571,6 @@ describe('ImmobilisationsTab — retirer un bien', () => {
     expect(message).not.toMatch(/\(2025\)/)
   })
 
-  it('refuse avant de demander quand une dotation est validée', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true)
-    poser([immobilisation()], { ecritures: dotation(2025, 1200, { statut: 'validee' }) })
-    monter()
-    await screen.findByRole('table', { name: 'Registre des immobilisations' })
-
-    cliquerRetirer('Ordinateur')
-    await screen.findByText('Une dotation de ce bien est validée : il ne se retire plus.')
-    expect(confirm).not.toHaveBeenCalled()
-    expect(faux.rpcs).toHaveLength(0)
-  })
-
   // Trois clics rapprochés ne retirent qu'une fois : le deuxième retrait ne trouverait plus le bien, et
   // dirait un échec sur un retrait réussi. Le verrou est le même que celui de l'écriture des dotations.
   it('trois clics rapprochés ne retirent qu’une fois', async () => {
@@ -802,5 +803,164 @@ describe('ImmobilisationsTab — enregistrer une candidate', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Enregistrer comme immobilisation' }))
     await screen.findByText(/row-level security/)
     expect(screen.queryByText('Cette pièce a déjà été enregistrée comme immobilisation.')).toBeNull()
+  })
+})
+
+// CE QU'UN EXERCICE VALIDÉ A FIGÉ (ligne 26.6, étape d). Les refus de la base (`garder_bien_valide`, et aucune écriture au
+// plus tard à la frontière) : un bien qui porte une écriture validée — une dotation, ou l'acquisition de sa pièce — ne se
+// modifie ni ne se retire plus ; la date d'acquisition d'un autre ne se porte plus dans un exercice validé ; une pièce qui
+// porte une écriture validée ne devient plus une immobilisation, ni une pièce datée d'un exercice validé ; et une dotation
+// d'un exercice validé ne s'écrit plus. L'écran le dit AVANT le clic, avec les mots de la base, au lieu d'un geste que la
+// base refuserait.
+describe('ImmobilisationsTab — ce qu’un exercice validé a figé', () => {
+  const PHRASE_BIEN_FIGE = 'Ce bien porte une écriture validée de l’exercice 2025 : sa valeur, ses dates et sa durée ne changent plus, et il ne se retire plus du registre.'
+  const ligneDuBien = () => within(registre().getByText('Ordinateur').closest('tr')!)
+
+  // L'écriture d'acquisition d'un bien, validée : elle désigne sa PIÈCE, pas le bien — la lecture des dotations
+  // (`immobilisation_id` non nul) ne la voit pas.
+  const acquisitionValidee = (pieceId = 'piece-1', date = '2025-07-01'): EcritureBrouillon => ({
+    id: `acq-${pieceId}`, dossier_id: 'dossier-de-test', piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null,
+    vehicule_id: null, date, compte: '218300', libelle: 'Acquisition', montant: 12000, sens: 'debit', statut: 'validee',
+    ...NON_VALIDEE, valide_le: '2026-03-01T10:00:00Z', created_at: '2025-07-02T09:00:00Z',
+  })
+
+  const candidate = (o: Partial<Piece> = {}): Piece => ({
+    id: 'piece-2', dossier_id: 'dossier-de-test', uploaded_by: null, source: 'upload',
+    storage_path: 'dossier-de-test/facture.pdf', nom_fichier: 'facture.pdf', storage_hash: null,
+    date_piece: '2025-04-02', tiers: 'MATÉRIEL MÉDICAL', montant_ht: 1500, montant_tva: 300,
+    montant_ttc: 1800, devise: 'EUR', montant_devise: null, taux_change: null,
+    conversion_source: null, categorie_id: null, sous_dossier_id: null, type_piece: 'achat',
+    statut: 'validee', notes: null, confiance: null, superpdp_invoice_id: null,
+    created_at: '2025-04-02T09:00:00Z', updated_at: '2025-04-02T09:00:00Z', ...o,
+  })
+
+  it('un bien dont une dotation est validée ne se modifie ni ne se retire plus, et sa ligne le dit', async () => {
+    poser([immobilisation()], { ecritures: dotation(2025, 1200, { statut: 'validee' }) })
+    monter(false, [2025])
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+
+    expect(ligneDuBien().queryByRole('button', { name: 'Modifier' })).toBeNull()
+    expect(ligneDuBien().queryByRole('button', { name: 'Retirer' })).toBeNull()
+    expect(ligneDuBien().getByTitle(PHRASE_BIEN_FIGE).textContent).toBe('Figé')
+  })
+
+  it('un bien dont l’acquisition est validée l’est aussi — la lecture des écritures validées le voit', async () => {
+    poser([immobilisation()], { ecritures: [acquisitionValidee()] })
+    monter(false, [2025])
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+
+    expect(ligneDuBien().queryByRole('button', { name: 'Retirer' })).toBeNull()
+    ligneDuBien().getByTitle(PHRASE_BIEN_FIGE)
+  })
+
+  // Le garde symétrique : un exercice validé ne fige pas tout le registre, seulement les biens qui portent une
+  // écriture validée — sans lui, « le bien figé n'offre plus de bouton » serait satisfait par un registre muet.
+  it('un bien sans écriture validée se modifie et se retire encore', async () => {
+    poser([immobilisation({ date_acquisition: '2026-02-01' })])
+    monter(false, [2025])
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+
+    ligneDuBien().getByRole('button', { name: 'Modifier' })
+    ligneDuBien().getByRole('button', { name: 'Retirer' })
+    expect(ligneDuBien().queryByText('Figé')).toBeNull()
+  })
+
+  it('la date d’acquisition d’un bien ne se porte plus dans un exercice validé', async () => {
+    poser([immobilisation({ date_acquisition: '2026-02-01' })])
+    monter(false, [2025])
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    fireEvent.click(registre().getByRole('button', { name: 'Modifier' }))
+    const formulaire = within(screen.getByRole('form', { name: 'Modifier Ordinateur' }))
+
+    fireEvent.change(formulaire.getByLabelText('Acquisition'), { target: { value: '2025-11-01' } })
+    fireEvent.click(formulaire.getByRole('button', { name: 'Enregistrer' }))
+    await screen.findByText('L\'exercice 2025 est validé : la date d’acquisition d’un bien ne s’y porte plus.')
+    expect(faux.modifiees).toHaveLength(0)
+  })
+
+  // « Une modification n'est jugée que sur ce qu'elle change » (`garder_bien_valide`) : un bien acquis dans un exercice
+  // validé, sans écriture validée, garde sa date — et le reste se modifie.
+  it('un bien ancien garde sa date, et le reste se modifie', async () => {
+    poser([immobilisation()])
+    monter(false, [2025])
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    fireEvent.click(registre().getByRole('button', { name: 'Modifier' }))
+    const formulaire = within(screen.getByRole('form', { name: 'Modifier Ordinateur' }))
+
+    fireEvent.change(formulaire.getByLabelText('Durée (années)'), { target: { value: '4' } })
+    fireEvent.click(formulaire.getByRole('button', { name: 'Enregistrer' }))
+    await waitFor(() => expect(faux.modifiees).toHaveLength(1))
+    expect(faux.modifiees[0].valeur.date_acquisition).toBe('2025-07-01')
+  })
+
+  it('une dotation d’un exercice validé ne s’écrit plus et ne se réclame plus', async () => {
+    // La dotation 2025 manque, et 2025 est validé : seule celle de l'exercice en cours s'écrit, sans être réclamée.
+    poser([immobilisation()])
+    monter(false, [2025])
+
+    await screen.findByText('Dotations aux amortissements à écrire (1)')
+    expect(carte().queryByText('2025')).toBeNull()
+    expect(screen.queryByText(/la Checklist la réclame/)).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Écrire cette dotation' }))
+    await waitFor(() => expect(faux.rpcs).toHaveLength(1))
+    expect(faux.rpcs[0].args.p_annee).toBe(2026)
+  })
+
+  it('le tableau d’amortissement dit ce qu’un exercice validé a figé, sans mot qui appelle un geste', async () => {
+    poser([immobilisation({ date_acquisition: '2024-07-01' })], { ecritures: dotation(2025, 2400, { statut: 'validee' }) })
+    monter(false, [2024, 2025])
+    await screen.findByRole('table', { name: 'Registre des immobilisations' })
+    fireEvent.click(registre().getByRole('button', { name: 'Tableau' }))
+    const plan = within(screen.getByRole('table', { name: 'Tableau d’amortissement de Ordinateur' }))
+    const etat = (annee: string) => plan.getByText(annee).closest('tr')!.lastElementChild!
+
+    expect(etat('2024').textContent).toBe('Non écrite')
+    expect(etat('2024').getAttribute('title')).toBe('L\'exercice 2024 est validé : aucune écriture ne s’y passe plus.')
+    expect(etat('2025').textContent).toBe('Validée')
+    expect(etat('2025').getAttribute('title')).toBe('L\'exercice 2025 est validé : aucune écriture ne s’y passe plus.')
+    expect(etat('2026').textContent).toBe('À écrire')
+    expect(etat('2026').getAttribute('title')).toBeNull()
+  })
+
+  it('une pièce qui porte une écriture validée n’est plus candidate', async () => {
+    poser([], { pieces: [candidate()], ecritures: [acquisitionValidee('piece-2', '2025-04-02')] })
+    monter(false, [2025])
+    await screen.findByText("Aucune immobilisation enregistrée pour l'instant.")
+    expect(screen.queryAllByText('MATÉRIEL MÉDICAL')).toHaveLength(0)
+  })
+
+  it('une candidate datée d’un exercice validé dit pourquoi elle ne s’inscrit plus, sans bouton', async () => {
+    poser([], { pieces: [candidate()] })
+    monter(false, [2025])
+    const ligne = within((await screen.findByText('MATÉRIEL MÉDICAL')).closest('tr')!)
+
+    ligne.getByText('L\'exercice 2025 est validé : un bien acquis dans cet exercice ne s’inscrit plus au registre.')
+    expect(ligne.queryByRole('button', { name: 'Enregistrer comme immobilisation' })).toBeNull()
+    expect((ligne.getByLabelText('Nature de MATÉRIEL MÉDICAL') as HTMLSelectElement).disabled).toBe(true)
+    expect(faux.inserees).toHaveLength(0)
+  })
+
+  it('dit l’exercice qui fige une candidate antérieure au premier exercice validé', async () => {
+    poser([], { pieces: [candidate({ date_piece: '2024-04-02' })] })
+    monter(false, [2025])
+    await screen.findByText('L\'exercice 2024 est figé par la validation de l\'exercice 2025 : un bien acquis dans cet exercice ne s’inscrit plus au registre.')
+  })
+
+  // Le garde symétrique : une candidate d'un exercice ouvert s'enregistre comme avant.
+  it('une candidate d’un exercice ouvert s’enregistre', async () => {
+    poser([], { pieces: [candidate({ date_piece: '2026-02-01' })] })
+    monter(false, [2025])
+    fireEvent.change(await screen.findByLabelText('Nature de MATÉRIEL MÉDICAL'), { target: { value: 'n-propre' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Enregistrer comme immobilisation' }))
+    await waitFor(() => expect(faux.inserees).toHaveLength(1))
+    expect(faux.inserees[0].valeur.date_acquisition).toBe('2026-02-01')
+  })
+
+  it('une lecture partielle des écritures validées le dit : un bien figé peut paraître modifiable', async () => {
+    poser([immobilisation()], { ecritures: [acquisitionValidee()] })
+    faux.muetValidees = 0
+    monter(false, [2025])
+    await screen.findByText(/Les écritures validées du dossier n'ont pas pu être lues en entier/)
+    screen.getByText(/la base refusera de les modifier, et le dira\./)
   })
 })

@@ -791,10 +791,11 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
 
   // Les mouvements rapprochés d'une échéance de cotisation qui ne PEUVENT pas s'écrire — un encaissement
   // rapproché d'un appel, posé quand l'écran ne regardait pas le sens (lib/cotisationRapprochee.ts). La
-  // Checklist les compte et envoie ici ; la pastille « Ne s’écrit pas » les montre, la fiche dit pourquoi.
+  // Checklist les compte et envoie ici ; la pastille « Ne s’écrit pas » les montre, la fiche dit pourquoi. Pas d'un
+  // exercice validé : ni le mouvement ni l'échéance n'y changent plus, et la pastille appellerait un geste refusé.
   const idsCotisationsRefusees = useMemo(
-    () => new Set(rapprochementsCotisationRefuses(lignes, cotisations, modele.mode).map((r) => r.ligne.id)),
-    [lignes, cotisations, modele.mode],
+    () => new Set(rapprochementsCotisationRefuses(lignes, cotisations, modele.mode, frontiere).map((r) => r.ligne.id)),
+    [lignes, cotisations, modele.mode, frontiere],
   )
 
   // Les parts de chaque virement qui règle plusieurs pièces : la pastille de la liste en dit le nombre, la

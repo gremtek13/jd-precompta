@@ -62,9 +62,14 @@ function sourcesDeProduction(): { chemin: string; texte: string }[] {
  * portent de longs commentaires, et une virgule dedans décale l'appariement entrée ↔ nom. Mon
  * premier détecteur s'y est fait prendre et a rendu « ?position 7 » sur du code parfaitement
  * apparié.
+ *
+ * Découpé en UNITÉS UTF-16 (`split('')`), comme `src[i]` les compte — jamais en points de code. Découpé par `[...src]`,
+ * chaque emoji placé avant un commentaire décalait le blanc d'un cran : le début du commentaire survivait, et le blanc
+ * mordait d'autant sur la ligne suivante — trois emoji, et un `lireTout` en début de ligne sortait du recensement. Six
+ * écrans portent des emoji ; aucun n'en avait assez avant un commentaire pour que ça se voie (05/10/2026).
  */
 export function sansCommentaires(src: string): string {
-  const out = [...src]
+  const out = src.split('')
   let i = 0
   let chaine: string | null = null
   while (i < src.length) {
@@ -86,6 +91,34 @@ export function sansCommentaires(src: string): string {
       i = j; continue
     }
     i++
+  }
+  return out.join('')
+}
+
+/**
+ * Les arguments de type de chaque appel `lireTout<…>(`, remplacés par des espaces de MÊME longueur — les index restent
+ * valides.
+ *
+ * Une virgule dans un argument de type — `lireTout<Pick<ANouveau, 'id' | 'date'>>` — est au premier niveau pour
+ * `entreesPositionnees`, qui ne compte que parenthèses, crochets et accolades : elle coupait l'entrée en deux, et chaque
+ * entrée suivante du même `Promise.all` prenait le nom de la suivante. Trouvé le 05/10/2026, quand une sixième lecture
+ * est arrivée APRÈS celle-là dans ImmobilisationsTab : tant qu'elle était la dernière, le glissement ne touchait rien. Et
+ * il pouvait se taire — une lecture qui jette son drapeau, liée au nom d'une voisine qui le lit, passait pour couverte.
+ * Seuls ceux de `lireTout`, comme dans `finAppel` : ailleurs un `<` peut être une comparaison, et l'apparier serait
+ * deviner. Une flèche `=>` n'en ferme aucun.
+ */
+export function sansArgumentsDeType(src: string): string {
+  const out = src.split('')
+  for (const m of src.matchAll(/\blireTout\s*</g)) {
+    const debut = m.index! + m[0].length - 1
+    let prof = 0
+    for (let j = debut; j < src.length; j++) {
+      if (src[j] === '<') prof++
+      else if (src[j] === '>' && src[j - 1] !== '=') {
+        prof--
+        if (prof === 0) { for (let k = debut; k <= j; k++) out[k] = ' '; break }
+      }
+    }
   }
   return out.join('')
 }
@@ -269,7 +302,7 @@ function couvertsDansLaPortee(src: string, lesBlocs: [number, number][], p: numb
 /** Toutes les liaisons d'un résultat de `lireTout`, dans leurs cinq formes d'écriture — et, en
  *  faute, tout appel qu'aucune d'elles ne lie. */
 export function liaisonsLireTout(source: string): Liaison[] {
-  const src = sansCommentaires(source)
+  const src = sansArgumentsDeType(sansCommentaires(source))
   const lesBlocs = blocs(src)
   const liaisons: Liaison[] = []
   const lies = new Set<number>()
@@ -410,6 +443,38 @@ const [
 setIncomplet(lectureA.motif)
 `
 
+// Une virgule DANS un argument de type : sans `sansArgumentsDeType`, l'entrée se coupe en deux et les suivantes
+// glissent d'un nom — `lectureB`, qui jette son drapeau, prenait le nom de `lectureC`, qui le lit. Les emoji d'abord :
+// le blanc se compte en unités UTF-16, comme pour les commentaires.
+const ARGUMENT_DE_TYPE = `
+const titre = '📷📷📷'
+const [lectureA, lectureB, lectureC] = await Promise.all([
+  lireTout<Pick<Piece, 'id' | 'date'>>((d, f) => supabase.from('pieces').select('id, date').range(d, f)),
+  lireTout<Categorie>((d, f) => supabase.from('categories').select('*').range(d, f)),
+  lireTout<Map<string, number>>((d, f) => supabase.from('vehicules').select('*').range(d, f)),
+])
+setIncomplet([lectureA, lectureC].find((l) => !l.complete)?.motif ?? null)
+`
+
+// Une flèche dans un argument de type ne le ferme pas : arrêté sur le `>` de `=>`, le blanc laissait un `>` derrière lui,
+// et l'appel sortait du recensement sans un mot.
+const FLECHE_DANS_LE_TYPE = `
+lireTout<Lecteur<(l: Ligne) => string>>((d, f) => supabase.from('pieces').select('*').range(d, f))
+  .then((lecture) => { setPieces(lecture.lignes); setMotif(lecture.motif) })
+`
+
+// Trois emoji AVANT un commentaire, et un appel en début de ligne juste après lui : découpé par points de code, le blanc
+// du commentaire glissait de trois unités et mangeait `lir` — la lecture des pièces sortait du recensement.
+const EMOJI_AVANT_COMMENTAIRE = `
+const titre = '📷📷📷'
+const [lectureA, lectureB] = await Promise.all([
+// un commentaire, avec une virgule
+lireTout((d, f) => supabase.from('pieces').select('*').range(d, f)),
+lireTout((d, f) => supabase.from('categories').select('*').range(d, f)),
+])
+setIncomplet(lectureA.motif ?? lectureB.motif)
+`
+
 const PAR_MOTIF = `
 const lectureA = await lireTout((d, f) => supabase.from('pieces').select('*').range(d, f))
 const lectureB = await lireTout((d, f) => supabase.from('categories').select('*').range(d, f))
@@ -513,6 +578,20 @@ describe('le scanner, éprouvé sur des sources synthétiques', () => {
   it('apparie les entrées d’un `Promise.all` malgré la virgule de queue du motif', () => {
     expect(liaisonsLireTout(AVEC_COMMENTAIRE).map((l) => l.nom)).toEqual(['lectureA', 'lectureB'])
     expect(liaisonsLireTout(AVEC_COMMENTAIRE).map((l) => l.table)).toEqual(['pieces', 'categories'])
+  })
+
+  it('apparie les entrées d’un `Promise.all` malgré une virgule dans un argument de type', () => {
+    expect(liaisonsLireTout(ARGUMENT_DE_TYPE).map((l) => l.nom)).toEqual(['lectureA', 'lectureB', 'lectureC'])
+    expect(liaisonsLireTout(ARGUMENT_DE_TYPE).map((l) => l.table)).toEqual(['pieces', 'categories', 'vehicules'])
+    // Et la lecture qui jette son drapeau est reprochée sous SON nom, pas couverte par celui d'une voisine.
+    expect(lecturesNonSignalees('faux.tsx', ARGUMENT_DE_TYPE)).toEqual(['faux.tsx — lectureB [categories]'])
+    // Vue, liée et couverte : sans la règle de la flèche, l'appel sortait du recensement — « aucune faute » et « aveugle »
+    // se ressemblaient, et c'est ce que le compte départage.
+    expect(liaisonsLireTout(FLECHE_DANS_LE_TYPE)).toEqual([{ nom: 'lecture', couverte: true, table: 'pieces' }])
+  })
+
+  it('retire les commentaires au bon endroit après un emoji', () => {
+    expect(liaisonsLireTout(EMOJI_AVANT_COMMENTAIRE).map((l) => l.nom)).toEqual(['lectureA', 'lectureB'])
   })
 
   it('voit la forme `lireTout(…).then((lecture) => …)` et y attrape le drapeau jeté', () => {

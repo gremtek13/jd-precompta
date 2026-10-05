@@ -5,6 +5,7 @@ import type { ModeleComptable } from '../../lib/engagement'
 import type { EcritureBrouillon, VehiculeDossier } from '../../lib/types'
 import VehiculesCard from './VehiculesCard'
 import { NON_VALIDEE } from '../../test/ecritures'
+import { AvecExercicesValides } from '../../test/exercicesValides'
 
 // Premier test d'ÉCRAN du dépôt. Il existe parce que les défauts qu'il vise ne sont visibles dans
 // aucun test de src/lib : la logique appelée derrière était juste dans les deux cas.
@@ -142,11 +143,14 @@ function forfait(montant: number, o: Partial<EcritureBrouillon> = {}, compte = '
 const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '467000' }
 const ENGAGEMENT: ModeleComptable = { mode: 'engagement', compteNotesDeFrais: '455000' }
 
-function monter(annee: number | 'toutes', modele = TRESORERIE) {
+// Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
+function monter(annee: number | 'toutes', modele = TRESORERIE, valides: readonly number[] = []) {
   return render(
-    <AnneeProvider defaut={annee}>
-      <VehiculesCard dossierId="dossier-de-test" modele={modele} />
-    </AnneeProvider>,
+    <AvecExercicesValides annees={valides}>
+      <AnneeProvider defaut={annee}>
+        <VehiculesCard dossierId="dossier-de-test" modele={modele} />
+      </AnneeProvider>
+    </AvecExercicesValides>,
   )
 }
 
@@ -465,5 +469,69 @@ describe('le forfait kilométrique de chaque ligne du cadre 7', () => {
     monter(2026)
     await screen.findByRole('button', { name: 'Écrire ce forfait' })
     expect(screen.queryByText(/la Checklist le réclame/)).toBeNull()
+  })
+})
+
+// UN EXERCICE VALIDÉ FIGE SON CADRE 7 (ligne 26.6, étape d) : ses lignes ne changent plus, ne se retirent plus et ne
+// s'ajoutent plus (`garder_vehicule_valide`), et son forfait ne s'écrit plus — aucune écriture au plus tard à la
+// frontière. La carte le montre en lecture seule et le dit avec les mots de la base, au lieu de champs refusés.
+describe('un exercice validé fige son cadre 7', () => {
+  const PHRASE_2025 = 'L\'exercice 2025 est validé : son cadre 7 ne change plus.'
+  const colonneForfait = (modele: string) =>
+    screen.getByDisplayValue(modele).closest('tr')!.querySelector('[data-libelle="Forfait"]')!.textContent
+
+  it('se montre en lecture seule, sans bouton, et le dit', async () => {
+    faux.vehicules = [vehicule()]
+    faux.ecritures = forfait(5945, { statut: 'validee' })
+    monter(2025, TRESORERIE, [2025])
+    const km = await screen.findByDisplayValue('12000')
+
+    expect((km as HTMLInputElement).disabled).toBe(true)
+    expect((screen.getByDisplayValue('Peugeot 308') as HTMLInputElement).disabled).toBe(true)
+    expect(screen.queryByRole('button', { name: /^Retirer$/ })).toBeNull()
+    expect(screen.getByTitle(PHRASE_2025).textContent).toBe('Figé')
+    expect(screen.queryByRole('button', { name: /Ajouter un véhicule/ })).toBeNull()
+    screen.getByText(PHRASE_2025)
+    expect(colonneForfait('Peugeot 308')).toBe('Validé')
+  })
+
+  it('un exercice validé sans véhicule n’en reçoit plus', async () => {
+    monter(2025, TRESORERIE, [2025])
+    await screen.findByText(/Aucun véhicule déclaré sur l'exercice 2025/)
+    expect(screen.queryByRole('button', { name: /Ajouter un véhicule/ })).toBeNull()
+    screen.getByText(PHRASE_2025)
+  })
+
+  it('dit l’exercice validé qui fige un exercice antérieur', async () => {
+    faux.vehicules = [vehicule({ annee: 2024 })]
+    monter(2024, TRESORERIE, [2025])
+    await screen.findByText('L\'exercice 2024 est figé par la validation de l\'exercice 2025 : son cadre 7 ne change plus.')
+  })
+
+  it('le forfait d’un exercice validé ne s’écrit plus et ne se réclame plus, et sa ligne dit qu’il manque', async () => {
+    faux.vehicules = [vehicule(), vehicule({ id: 'v2', annee: 2026, modele: 'Clio', km_professionnel: 3000 })]
+    monter(2025, TRESORERIE, [2025])
+    const table = await screen.findByRole('table', { name: 'Forfaits à écrire' })
+
+    expect(screen.getByText('Forfaits kilométriques à écrire (1)')).toBeDefined()
+    expect(table.textContent).not.toContain('Peugeot 308')
+    expect(screen.queryByText(/la Checklist le réclame/)).toBeNull()
+    expect(colonneForfait('Peugeot 308')).toBe('Non écrit')
+    await act(async () => { screen.getByRole('button', { name: 'Écrire ce forfait' }).click() })
+    expect(faux.rpcs.map((r) => r.args.p_vehicule_id)).toEqual(['v2'])
+  })
+
+  // Le garde symétrique : un exercice ouvert se saisit comme avant, même quand un exercice antérieur est validé.
+  it('un exercice ouvert se saisit, se retire et s’ajoute encore', async () => {
+    faux.vehicules = [vehicule({ annee: 2026 })]
+    monter(2026, TRESORERIE, [2025])
+    const km = await screen.findByDisplayValue('12000')
+
+    expect((km as HTMLInputElement).disabled).toBe(false)
+    screen.getByRole('button', { name: /^Retirer$/ })
+    screen.getByRole('button', { name: /Ajouter un véhicule sur 2026/ })
+    expect(screen.queryByText(/son cadre 7 ne change plus/)).toBeNull()
+    await act(async () => { fireEvent.change(km, { target: { value: '12500' } }) })
+    expect(faux.modifiees.at(-1)).toEqual({ km_professionnel: 12500 })
   })
 })

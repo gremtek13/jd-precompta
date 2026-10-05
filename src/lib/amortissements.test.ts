@@ -253,67 +253,82 @@ describe('dotationsDuRegistre — chaque exercice du registre comparé au brouil
   const etats = (r: ReturnType<typeof dotationsDuRegistre>) => r.map((d) => [d.annee, d.etat, d.montant])
 
   it('rend chaque exercice de la mise en service à l’exercice en cours, à écrire tant que rien n’est écrit', () => {
-    expect(etats(dotationsDuRegistre([bien()], [INFORMATIQUE], [], null, 2026))).toEqual([
+    expect(etats(dotationsDuRegistre([bien()], [INFORMATIQUE], [], null, 2026, null))).toEqual([
       [2025, 'a_ecrire', 200], [2026, 'a_ecrire', 400],
     ])
   })
 
   it('reconnaît une dotation écrite', () => {
-    const r = dotationsDuRegistre([bien()], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2026)
+    const r = dotationsDuRegistre([bien()], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2026, null)
     expect(etats(r)).toEqual([[2025, 'ecrite', 200], [2026, 'a_ecrire', 400]])
     expect(r[0].presentes).toHaveLength(2)
   })
 
   it('dit à réécrire une dotation que le registre a changée depuis — la valeur, la mise en service', () => {
-    expect(etats(dotationsDuRegistre([bien({ valeur: 1500 })], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2025)))
+    expect(etats(dotationsDuRegistre([bien({ valeur: 1500 })], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2025, null)))
       .toEqual([[2025, 'a_reecrire', 250]])
-    expect(etats(dotationsDuRegistre([bien({ date_mise_en_service: '2025-10-01' })], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2025)))
+    expect(etats(dotationsDuRegistre([bien({ date_mise_en_service: '2025-10-01' })], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2025, null)))
       .toEqual([[2025, 'a_reecrire', 100]])
   })
 
   it('dit à réécrire une dotation sur le compte d’une autre nature', () => {
     const mobilier: NatureImmobilisation = { ...INFORMATIQUE, id: 'n-mob', compte_immobilisation: '218400' }
-    expect(etats(dotationsDuRegistre([bien({ nature_id: 'n-mob' })], [INFORMATIQUE, mobilier], dotationEcrite(2025, 200), null, 2025)))
+    expect(etats(dotationsDuRegistre([bien({ nature_id: 'n-mob' })], [INFORMATIQUE, mobilier], dotationEcrite(2025, 200), null, 2025, null)))
       .toEqual([[2025, 'a_reecrire', 200]])
   })
 
   it('dit à retirer une dotation que le calcul ne donne plus, même hors de la plage du registre', () => {
     // La mise en service repoussée en 2026 : la dotation 2025 n'a plus lieu d'être.
-    const r = dotationsDuRegistre([bien({ date_mise_en_service: '2026-01-01' })], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2026)
+    const r = dotationsDuRegistre([bien({ date_mise_en_service: '2026-01-01' })], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2026, null)
     expect(etats(r)).toEqual([[2025, 'a_retirer', 0], [2026, 'a_ecrire', 400]])
     expect(r[0].attendues).toEqual([])
   })
 
   it('dit à retirer une dotation écrite pour un exercice que l’ouverture du dossier a repris', () => {
-    expect(etats(dotationsDuRegistre([bien()], [INFORMATIQUE], dotationEcrite(2025, 200), '2026-01-01', 2026)))
+    expect(etats(dotationsDuRegistre([bien()], [INFORMATIQUE], dotationEcrite(2025, 200), '2026-01-01', 2026, null)))
       .toEqual([[2025, 'a_retirer', 0], [2026, 'a_ecrire', 400]])
   })
 
   it('ne rend rien avant l’ouverture quand rien n’y est écrit', () => {
-    expect(etats(dotationsDuRegistre([bien()], [INFORMATIQUE], [], '2026-01-01', 2026))).toEqual([[2026, 'a_ecrire', 400]])
+    expect(etats(dotationsDuRegistre([bien()], [INFORMATIQUE], [], '2026-01-01', 2026, null))).toEqual([[2026, 'a_ecrire', 400]])
   })
 
   it('distingue une dotation VALIDÉE qui ne suit plus le registre', () => {
-    const r = dotationsDuRegistre([bien({ valeur: 1500 })], [INFORMATIQUE], dotationEcrite(2025, 200, { statut: 'validee' }), null, 2025)
+    const r = dotationsDuRegistre([bien({ valeur: 1500 })], [INFORMATIQUE], dotationEcrite(2025, 200, { statut: 'validee' }), null, 2025, null)
     expect(etats(r)).toEqual([[2025, 'validee', 250]])
     expect(r[0].refus).toBe('La dotation 2025 de ce bien est validée : elle ne se remplace plus.')
   })
 
   it('ne compose pas l’écriture d’un bien sans nature, et dit pourquoi', () => {
-    const r = dotationsDuRegistre([bien({ nature_id: null })], [INFORMATIQUE], [], null, 2025)
+    const r = dotationsDuRegistre([bien({ nature_id: null })], [INFORMATIQUE], [], null, 2025, null)
     expect(etats(r)).toEqual([[2025, 'a_ecrire', 200]])
     expect(r[0].attendues).toBeNull()
     expect(r[0].refus).toBe(REFUS_DOTATION_SANS_NATURE)
   })
 
   it('ne rend rien d’un bien mis en service après l’exercice en cours', () => {
-    expect(dotationsDuRegistre([bien({ date_acquisition: '2027-02-01' })], [INFORMATIQUE], [], null, 2026)).toEqual([])
+    expect(dotationsDuRegistre([bien({ date_acquisition: '2027-02-01' })], [INFORMATIQUE], [], null, 2026, null)).toEqual([])
   })
 
   it('ne mêle pas les dotations de deux biens', () => {
     const autre = bien({ id: 'i2', libelle: 'Bureau', date_acquisition: '2025-01-01' })
-    const r = dotationsDuRegistre([bien(), autre], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2025)
+    const r = dotationsDuRegistre([bien(), autre], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2025, null)
     expect(r.map((d) => [d.immobilisation.id, d.etat])).toEqual([['i1', 'ecrite'], ['i2', 'a_ecrire']])
+  })
+
+  // UN EXERCICE FIGÉ PAR LA VALIDATION (lib/validationExercice.ts) : sa dotation, écrite ou non, ne bouge plus. Elle est
+  // rendue — l'écran dit ce qu'il en est —, marquée `figee`, frontière comprise : le 31 décembre du dernier exercice
+  // validé l'est, le lendemain non.
+  it('marque figée la dotation d’un exercice validé, frontière comprise', () => {
+    const r = dotationsDuRegistre([bien()], [INFORMATIQUE], [], null, 2026, '2025-12-31')
+    expect(r.map((d) => [d.annee, d.etat, d.figee])).toEqual([[2025, 'a_ecrire', true], [2026, 'a_ecrire', false]])
+    expect(dotationsDuRegistre([bien()], [INFORMATIQUE], [], null, 2026, '2025-12-30').map((d) => d.figee)).toEqual([false, false])
+    expect(dotationsDuRegistre([bien()], [INFORMATIQUE], [], null, 2026, null).map((d) => d.figee)).toEqual([false, false])
+  })
+
+  it('garde l’état d’une dotation figée, pour que l’écran le dise', () => {
+    const r = dotationsDuRegistre([bien()], [INFORMATIQUE], dotationEcrite(2025, 200, { statut: 'validee' }), null, 2026, '2025-12-31')
+    expect(r.map((d) => [d.annee, d.etat, d.figee])).toEqual([[2025, 'ecrite', true], [2026, 'a_ecrire', false]])
   })
 })
 
@@ -321,7 +336,7 @@ describe('dotationsEnDefaut — ce que la Checklist réclame', () => {
   it('ne réclame la dotation à écrire que d’un exercice révolu, et toute dotation fausse', () => {
     const r = dotationsDuRegistre(
       [bien(), bien({ id: 'i2', valeur: 1500, date_acquisition: '2026-01-01' })], [INFORMATIQUE],
-      dotationEcrite(2026, 999, { immobilisation_id: 'i2' }), null, 2026,
+      dotationEcrite(2026, 999, { immobilisation_id: 'i2' }), null, 2026, null,
     )
     expect(dotationsEnDefaut(r, 2026).map((d) => [d.immobilisation.id, d.annee, d.etat])).toEqual([
       ['i1', 2025, 'a_ecrire'],
@@ -332,9 +347,21 @@ describe('dotationsEnDefaut — ce que la Checklist réclame', () => {
   // Une dotation écrite qui suit le registre ne se réclame pas, même d'un exercice révolu : c'est l'état
   // qu'on attend de toutes.
   it('ne réclame pas une dotation écrite qui suit le registre', () => {
-    const r = dotationsDuRegistre([bien()], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2026)
+    const r = dotationsDuRegistre([bien()], [INFORMATIQUE], dotationEcrite(2025, 200), null, 2026, null)
     expect(r.map((d) => [d.annee, d.etat])).toEqual([[2025, 'ecrite'], [2026, 'a_ecrire']])
     expect(dotationsEnDefaut(r, 2026)).toEqual([])
+  })
+
+  // RIEN D'UN EXERCICE VALIDÉ, qu'elle y manque ou qu'elle diverge : la base n'y écrit plus, et un point que rien ne lève
+  // resterait en erreur pour toujours. Le reste se réclame comme avant — le garde symétrique.
+  it('ne réclame rien d’un exercice figé par la validation, et le reste comme avant', () => {
+    const manquante = dotationsDuRegistre([bien()], [INFORMATIQUE], [], null, 2027, '2025-12-31')
+    expect(dotationsEnDefaut(manquante, 2027).map((d) => d.annee)).toEqual([2026])
+    const divergente = dotationsDuRegistre(
+      [bien({ valeur: 1500 })], [INFORMATIQUE], dotationEcrite(2025, 200, { statut: 'validee' }), null, 2026, '2025-12-31',
+    )
+    expect(divergente.map((d) => [d.annee, d.etat])).toEqual([[2025, 'validee'], [2026, 'a_ecrire']])
+    expect(dotationsEnDefaut(divergente, 2026)).toEqual([])
   })
 })
 

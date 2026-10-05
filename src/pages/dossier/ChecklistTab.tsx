@@ -361,11 +361,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   const virementsAEcrire = virementsPersonnelsAEcrire(ecritures, lignes, modele, frontiere)
   // Les échéances de cotisation payées par un mouvement rapproché dont l'écriture manque ou n'est plus
   // celle du rapprochement — rapprochées avant qu'il s'écrive, ou une CSG-CRDS saisie depuis
-  // (lib/cotisationRapprochee.ts). Elles ont l'air payées, et manquent au FEC comme à la trésorerie.
-  const cotisationsSansEcriture = cotisationsAEcrire(ecritures, lignes, cotisations, modele.mode)
+  // (lib/cotisationRapprochee.ts). Elles ont l'air payées, et manquent au FEC comme à la trésorerie. Pas d'un
+  // exercice validé : la base refuse d'y écrire.
+  const cotisationsSansEcriture = cotisationsAEcrire(ecritures, lignes, cotisations, modele.mode, frontiere)
   // Un rapprochement d'échéance qui ne PEUT pas s'écrire — un encaissement rapproché d'un appel, posé
-  // quand l'écran ne regardait pas le sens : il ne date rien et n'a pas d'écriture.
-  const cotisationsRefusees = rapprochementsCotisationRefuses(lignes, cotisations, modele.mode)
+  // quand l'écran ne regardait pas le sens : il ne date rien et n'a pas d'écriture. Pas d'un exercice validé : ni le
+  // mouvement ni l'échéance n'y changent plus.
+  const cotisationsRefusees = rapprochementsCotisationRefuses(lignes, cotisations, modele.mode, frontiere)
   // Les échéances d'emprunt que le relevé COUVRE — du premier mouvement au dernier, moins la marge laissée
   // au prélèvement — et qu'aucun mouvement ne paie : leurs intérêts manquent aux comptes, et le
   // prélèvement attend quelque part dans le relevé. Hors de cette fenêtre, on ne réclame rien : avant le
@@ -438,7 +440,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // à-nouveaux : lue à moitié, le point se tait plutôt que de réclamer un exercice repris.
   const dotationsManquantes = ouvertureIncomplete !== null
     ? []
-    : dotationsEnDefaut(dotationsDuRegistre(immobilisations, natures, ecritures, ouverture?.date ?? null, anneeCourante), anneeCourante)
+    : dotationsEnDefaut(dotationsDuRegistre(immobilisations, natures, ecritures, ouverture?.date ?? null, anneeCourante, frontiere), anneeCourante)
   const exercicesDesDotations = [...new Set(dotationsManquantes.map((d) => d.annee))].sort((a, b) => a - b)
   // Les forfaits kilométriques qui manquent au brouillon, sur la même règle (lib/forfaitKilometrique.ts) : celui
   // d'un exercice FINI qui n'est pas écrit, et celui qui ne suit plus le cadre 7. La 2035 compte le forfait en
@@ -446,7 +448,7 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // laquelle l'exercice est dans les comptes repris : lue à moitié, le point se tait.
   const forfaitsManquants = ouvertureIncomplete !== null
     ? []
-    : forfaitsEnDefaut(forfaitsDuCadre7(vehicules, ecritures, modele, ouverture?.date ?? null, anneeCourante), anneeCourante)
+    : forfaitsEnDefaut(forfaitsDuCadre7(vehicules, ecritures, modele, ouverture?.date ?? null, anneeCourante, frontiere), anneeCourante)
   const exercicesDesForfaits = [...new Set(forfaitsManquants.map((f) => f.vehicule.annee))].sort((a, b) => a - b)
   // Signal plus grave que « en attente de rapprochement » : un montant qui n'apparaît nulle part dans
   // le relevé importé, à aucune date, révèle soit un relevé incomplet soit un montant faux — voir

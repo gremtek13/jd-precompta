@@ -16,6 +16,8 @@ import { correspondALaRecherche } from '../../lib/recherche'
 import { messageErreur } from '../../lib/messageErreur'
 import { montantRetenu } from '../../lib/montantRetenu'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
+import { biensFiges, dateFigee } from '../../lib/validationExercice'
 
 // Seuil au-delà duquel une dépense est candidate à l'immobilisation plutôt qu'à la charge courante.
 // Valeur usuelle citée dans le document d'architecture — pas encore configurable par dossier, cette
@@ -31,6 +33,16 @@ const LIBELLE_ETAT: Record<EtatDotation, string> = {
   ecrite: 'Écrite',
   validee: 'Validée, ne suit plus le registre',
 }
+
+// Une écriture validée, le temps qu'on la relise : ce qui fige un bien ou une pièce (lib/validationExercice.ts).
+type EcritureValidee = Pick<EcritureBrouillon, 'id' | 'statut' | 'date' | 'piece_id' | 'immobilisation_id'>
+
+// La date d'acquisition d'une candidate : celle de sa facture, sinon celle de son dépôt — ce que l'enregistrement écrit.
+const dateDAcquisition = (p: Piece) => p.date_piece ?? dateLocaleDe(p.created_at)
+
+// Ce que la base dit d'un bien figé (`garder_bien_valide`), ses deux refus en une phrase : il ne change plus du tout.
+const phraseBienFige = (annee: number) =>
+  `Ce bien porte une écriture validée de l’exercice ${annee} : sa valeur, ses dates et sa durée ne changent plus, et il ne se retire plus du registre.`
 
 // Ce que la Checklist réclame, dit dans la carte — accordé, la phrase se lisant d'un coup d'œil.
 function phraseEnDefaut(n: number): string {
@@ -71,6 +83,12 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   // suspend — un bandeau ne suffit pas quand un bouton à côté écrit (CLAUDE.md, « une lecture partielle ne
   // commande pas d'écriture »).
   const [dotationsIncompletes, setDotationsIncompletes] = useState<string | null>(null)
+  // LES ÉCRITURES VALIDÉES : un bien dont une écriture validée désigne le bien (une dotation) ou sa pièce (son
+  // acquisition) ne se modifie ni ne se retire plus, et une pièce qui porte une écriture validée ne devient plus une
+  // immobilisation — les refus de la base (`garder_bien_valide`). Lues à part : en partie, un bien figé paraîtrait
+  // modifiable, et la base refuserait — un refus, jamais une écriture fausse, d'où un bandeau et non une suspension.
+  const [ecrituresValidees, setEcrituresValidees] = useState<EcritureValidee[]>([])
+  const [figesIncomplets, setFigesIncomplets] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [naturesChoisies, setNaturesChoisies] = useState<Record<string, string>>({})
@@ -91,12 +109,15 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   const ecritureEnCours = useRef(false)
   const [enCours, setEnCours] = useState(false)
   const natureEnCours = useRef(false)
+  // CE QU'UN EXERCICE VALIDÉ A FIGÉ (lib/validationExercice.ts) : la frontière décide des dotations qui ne s'écrivent
+  // plus et des dates d'acquisition qui ne s'inscrivent plus au registre ; les exercices validés, de la phrase qui le dit.
+  const { frontiere, anneesValidees } = useExercicesValides()
 
   // `loading` ne repasse pas à vrai au rechargement : après une écriture, l'écran garde ce qu'il montrait —
   // bouton grisé sous le verrou — jusqu'à ce que la relecture revienne, au lieu de vider la carte qu'on
   // vient d'utiliser. Un autre dossier remonte l'onglet (`AnneeProvider key`), donc repart à vrai.
   async function load() {
-    const [lecturePieces, lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture] = await Promise.all([
+    const [lecturePieces, lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture, lectureValidees] = await Promise.all([
       // Lue par tranches (voir lib/lectureComplete.ts) : c'est parmi ces pièces qu'on choisit celle
       // à immobiliser, et une liste tronquée ne paraît pas tronquée.
       // `piecesValidees` et non `pieces` : la lecture ne rend QUE les validées, et le filtre est
@@ -125,6 +146,11 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
         supabase.from('a_nouveaux').select('id, date', { count: 'exact' })
           .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
       ),
+      // Les écritures VALIDÉES : celles qui figent un bien ou une pièce.
+      lireTout<EcritureValidee>((debut, fin) =>
+        supabase.from('ecritures_brouillon').select('id, statut, date, piece_id, immobilisation_id', { count: 'exact' })
+          .eq('dossier_id', dossierId).eq('statut', 'validee').order('date').order('id').range(debut, fin),
+      ),
     ])
     setPiecesValidees(lecturePieces.lignes)
     setImmobilisations(lectureImmobilisations.lignes)
@@ -135,6 +161,8 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
     setDotationsIncompletes(
       [lectureImmobilisations, lectureNatures, lectureDotations, lectureOuverture].find((l) => !l.complete)?.motif ?? null,
     )
+    setEcrituresValidees(lectureValidees.lignes)
+    setFigesIncomplets(lectureValidees.complete ? null : lectureValidees.motif)
     setLoading(false)
   }
 
@@ -146,14 +174,29 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   const natureParId = new Map(natures.map((n) => [n.id, n]))
 
   const dejaEnregistrees = new Set(immobilisations.map((i) => i.piece_id).filter(Boolean))
+  // Les biens qu'un exercice validé a figés, et l'exercice de leur première écriture validée (`biensFiges`) ; les pièces
+  // qui portent elles-mêmes une écriture validée — la base refuse d'en faire une immobilisation.
+  const figes = biensFiges(ecrituresValidees, immobilisations)
+  const piecesAvecEcritureValidee = new Set(ecrituresValidees.flatMap((e) => (e.piece_id ? [e.piece_id] : [])))
   // La valeur d'un bien est celle qui s'amortit : hors taxes pour un dossier assujetti, qui récupère la
   // TVA, TVA comprise pour un dossier exonéré, pour qui elle fait partie du prix de revient (voir
   // lib/montantRetenu.ts). Le seuil se juge sur la même valeur que celle qu'on affiche et qu'on
   // enregistre : l'enregistrer au TTC faisait amortir chez un assujetti une TVA qu'il récupère déjà.
+  //
+  // UNE PIÈCE QUI PORTE UNE ÉCRITURE VALIDÉE N'EST PLUS CANDIDATE : elle a été comptée — en charge — dans un exercice
+  // validé, et la base refuse d'en faire une immobilisation. La proposer encore la laisserait dans cette liste de
+  // tâches pour toujours, sur un geste refusé : une erreur trouvée après la validation se corrige sur l'exercice suivant.
   const candidates = piecesValidees.filter((p) => {
     const valeur = montantRetenu(p, assujettiTva)
-    return valeur != null && valeur >= SEUIL_IMMOBILISATION && !dejaEnregistrees.has(p.id)
+    return valeur != null && valeur >= SEUIL_IMMOBILISATION && !dejaEnregistrees.has(p.id) && !piecesAvecEcritureValidee.has(p.id)
   })
+  // UNE CANDIDATE DATÉE D'UN EXERCICE FIGÉ reste montrée, et dit pourquoi elle ne s'inscrit plus : sa charge s'écrit
+  // encore dans un exercice ouvert (une facture de décembre payée en janvier), donc la décision paraît encore à prendre —
+  // mais la base refuse d'inscrire au registre un bien acquis dans un exercice validé. Les mots de la base.
+  const refusCandidate = (p: Piece): string | null => {
+    const fige = dateFigee(dateDAcquisition(p), anneesValidees)
+    return fige ? `${fige} : un bien acquis dans cet exercice ne s’inscrit plus au registre.` : null
+  }
   const natureLabel = (id: string | null) => (id ? natureParId.get(id)?.libelle : undefined) ?? '—'
 
   // L'EXERCICE choisi est celui dont la colonne « Dotation » montre la dotation, et le registre en montre les
@@ -185,8 +228,11 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   // LES DOTATIONS DU REGISTRE, sur le registre ENTIER — jamais sur ce qu'une recherche ou un exercice
   // laisse voir : une dotation à écrire ne disparaît pas d'un mot tapé (la règle « une recherche filtre
   // l'affichage, jamais un total », prise par son côté le plus coûteux).
-  const dotations = dotationsDuRegistre(immobilisations, natures, ecrituresDotations, ouverture, anneeCourante)
-  const aTraiter = dotations.filter((d) => d.etat !== 'ecrite')
+  //
+  // Celles d'un exercice figé par la validation ne sont ni à écrire ni à réclamer : la base n'y écrit plus. Le tableau
+  // d'amortissement de chaque bien dit ce qu'il en est (`etatDeLExercice`).
+  const dotations = dotationsDuRegistre(immobilisations, natures, ecrituresDotations, ouverture, anneeCourante, frontiere)
+  const aTraiter = dotations.filter((d) => !d.figee && d.etat !== 'ecrite')
   const aEcrire = aTraiter.filter((d) => d.etat !== 'validee' && !d.refus)
   // Ce que la Checklist réclame : un exercice révolu sans sa dotation, ou une dotation qui ne suit plus le
   // registre. La dotation de l'exercice EN COURS peut s'écrire dès aujourd'hui sans manquer encore : la
@@ -251,6 +297,12 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
       setError('Durée invalide.')
       return
     }
+    // Seconde ceinture : le bouton d'une candidate figée n'est pas rendu.
+    const refus = refusCandidate(piece)
+    if (refus) {
+      setError(refus)
+      return
+    }
     // La nature d'abord : c'est elle qui donne le compte d'amortissement, sans lequel la dotation du bien ne
     // pourrait pas s'écrire. La demander ici coûte un clic ; l'oublier laissait le bien sans compte.
     if (!naturesChoisies[piece.id]) {
@@ -266,7 +318,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
         nature_id: naturesChoisies[piece.id],
         libelle: piece.tiers ?? piece.nom_fichier,
         valeur: montantRetenu(piece, assujettiTva),
-        date_acquisition: piece.date_piece ?? dateLocaleDe(piece.created_at),
+        date_acquisition: dateDAcquisition(piece),
         duree_annees: duree,
       })
       if (insertError) throw insertError
@@ -297,11 +349,12 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
   // sans un mot. La confirmation NOMME ce qui part avec lui.
   async function retirer(i: Immobilisation) {
     if (ecritureEnCours.current) return
-    const sesDotations = ecrituresDotations.filter((e) => e.immobilisation_id === i.id)
-    if (sesDotations.some((e) => e.statut !== 'proposee')) {
-      setError('Une dotation de ce bien est validée : il ne se retire plus.')
+    // Seconde ceinture : le bouton d'un bien figé n'est pas rendu.
+    if (figes.has(i.id)) {
+      setError(phraseBienFige(figes.get(i.id)!))
       return
     }
+    const sesDotations = ecrituresDotations.filter((e) => e.immobilisation_id === i.id)
     // La phrase « la pièce redevient une charge » suppose qu'il RESTE une pièce. Sur une
     // immobilisation dont le justificatif a été supprimé — l'état que signale
     // `immobilisationSansJustificatif`, et dont l'action recommandée EST ce bouton — elle est
@@ -332,6 +385,18 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
     }
   }
 
+  // Ce que la base refuserait d'une modification, au-delà de `refusBien` : un bien figé ne change plus du tout, et la
+  // date d'acquisition d'un autre ne se porte plus dans un exercice figé — « une modification n'est jugée que sur ce
+  // qu'elle change » (`garder_bien_valide`) : un bien ancien garde sa date, et le reste se modifie.
+  function refusEdition(id: string, dateAcquisition: string): string | null {
+    const annee = figes.get(id)
+    if (annee !== undefined) return phraseBienFige(annee)
+    const origine = immobilisations.find((x) => x.id === id)
+    if (!origine || dateAcquisition === origine.date_acquisition) return null
+    const fige = dateFigee(dateAcquisition, anneesValidees)
+    return fige ? `${fige} : la date d’acquisition d’un bien ne s’y porte plus.` : null
+  }
+
   function ouvrirEdition(i: Immobilisation) {
     setError(null)
     setEdition({
@@ -350,6 +415,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
     if (!edition || ecritureEnCours.current) return
     const b = edition.bien
     const refus = refusBien({ libelle: b.libelle, valeur: b.valeur, dateAcquisition: b.dateAcquisition, dateMiseEnService: b.dateMiseEnService, duree: b.duree })
+      ?? refusEdition(edition.id, b.dateAcquisition)
     if (refus) {
       setError(refus)
       return
@@ -416,13 +482,20 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
     })
   }
 
-  // Ce que dit le tableau d'un exercice de son plan : l'état de son écriture, ou pourquoi il n'en a pas.
-  function etatDeLExercice(i: Immobilisation, annee: number): string {
+  // Ce que dit le tableau d'un exercice de son plan : l'état de son écriture, ou pourquoi il n'en a pas. Un exercice
+  // figé par la validation dit ce qui y est — sa dotation validée, ou son absence —, sans mot qui appelle un geste :
+  // la base n'y écrit plus (la phrase de la base en infobulle).
+  function etatDeLExercice(i: Immobilisation, annee: number): { texte: string; titre?: string } {
     const d = dotationsDuBien(i.id).find((x) => x.annee === annee)
-    if (d) return LIBELLE_ETAT[d.etat]
-    if (annee > anneeCourante) return 'À venir'
-    if (ouverture && dateDeLaDotation(annee) < ouverture) return 'Dans les à-nouveaux'
-    return '—'
+    if (d?.figee) {
+      const titre = `${dateFigee(dateDeLaDotation(annee), anneesValidees)} : aucune écriture ne s’y passe plus.`
+      if (d.presentes.length === 0) return { texte: 'Non écrite', titre }
+      return { texte: d.etat === 'ecrite' ? 'Validée' : LIBELLE_ETAT[d.etat], titre }
+    }
+    if (d) return { texte: LIBELLE_ETAT[d.etat] }
+    if (annee > anneeCourante) return { texte: 'À venir' }
+    if (ouverture && dateDeLaDotation(annee) < ouverture) return { texte: 'Dans les à-nouveaux' }
+    return { texte: '—' }
   }
 
   const compteDe = (n: NatureImmobilisation) => `${n.compte_immobilisation} → ${compteAmortissement(n.compte_immobilisation)}`
@@ -458,6 +531,14 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
         consequence={
           'Le tableau d’amortissement et le total des dotations ci-dessous portent donc sur une partie ' +
           'du dossier, et une pièce déjà immobilisée peut réapparaître dans les candidates.'
+        }
+      />
+      <BandeauLecturePartielle
+        quoi="Les écritures validées du dossier"
+        motif={figesIncomplets}
+        consequence={
+          'Un bien ou une pièce qu’un exercice validé a figés peuvent donc paraître encore modifiables : la base refusera '
+          + 'de les modifier, et le dira.'
         }
       />
       <BandeauLecturePartielle
@@ -513,6 +594,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                         aria-label={`Nature de ${p.tiers ?? p.nom_fichier}`}
                         style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px' }}
                         value={naturesChoisies[p.id] ?? ''}
+                        disabled={refusCandidate(p) !== null}
                         onChange={(e) => choisirNature(p.id, e.target.value)}
                       >
                         <option value="">— Choisir —</option>
@@ -527,13 +609,18 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                         style={{ border: '1px solid var(--color-border)', borderRadius: 8, padding: '5px 8px' }}
                         placeholder={String(DUREE_DEFAUT_ANNEES)}
                         value={durees[p.id] ?? ''}
+                        disabled={refusCandidate(p) !== null}
                         onChange={(e) => setDurees((prev) => ({ ...prev, [p.id]: e.target.value }))}
                       />
                     </td>
                     <td className="td-action">
-                      <button className="btn btn-outline btn-sm" disabled={saving === p.id} onClick={() => enregistrer(p)}>
-                        {saving === p.id ? 'Enregistrement…' : 'Enregistrer comme immobilisation'}
-                      </button>
+                      {refusCandidate(p) ? (
+                        <span className="muted" style={{ fontSize: '0.85em' }}>{refusCandidate(p)}</span>
+                      ) : (
+                        <button className="btn btn-outline btn-sm" disabled={saving === p.id} onClick={() => enregistrer(p)}>
+                          {saving === p.id ? 'Enregistrement…' : 'Enregistrer comme immobilisation'}
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -680,8 +767,16 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                         <button className="btn btn-outline btn-sm" aria-expanded={plansOuverts.has(i.id)} onClick={() => basculerPlan(i.id)}>
                           Tableau
                         </button>
-                        <button className="btn btn-outline btn-sm" disabled={enCours} onClick={() => ouvrirEdition(i)}>Modifier</button>
-                        <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => retirer(i)}>Retirer</button>
+                        {/* Un bien figé par un exercice validé ne se modifie ni ne se retire plus : sa ligne le dit, au lieu de
+                            deux boutons que la base refuserait. */}
+                        {figes.has(i.id) ? (
+                          <span className="muted" title={phraseBienFige(figes.get(i.id)!)}>Figé</span>
+                        ) : (
+                          <>
+                            <button className="btn btn-outline btn-sm" disabled={enCours} onClick={() => ouvrirEdition(i)}>Modifier</button>
+                            <button className="btn btn-danger btn-sm" disabled={enCours} onClick={() => retirer(i)}>Retirer</button>
+                          </>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -723,8 +818,6 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                           <p className="muted">
                             L’amortissement part de la mise en service — de l’acquisition quand elle est vide. Les dotations déjà
                             écrites ne changent pas d’elles-mêmes : elles paraîtront « à réécrire » ci-dessus.
-                            {ecrituresDotations.some((x) => x.immobilisation_id === i.id && x.statut !== 'proposee')
-                              && ' Une dotation de ce bien est validée : elle ne se réécrira pas, et le brouillon validé divergera du registre.'}
                           </p>
                           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                             <button type="submit" className="btn btn-primary btn-sm" disabled={enCours}>{enCours ? 'Enregistrement…' : 'Enregistrer'}</button>
@@ -754,7 +847,7 @@ export default function ImmobilisationsTab({ dossierId, assujettiTva }: { dossie
                                 <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.dotation)}</td>
                                 <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.cumul)}</td>
                                 <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{formatMoney(a.valeurNette)}</td>
-                                <td>{etatDeLExercice(i, a.annee)}</td>
+                                <td title={etatDeLExercice(i, a.annee).titre}>{etatDeLExercice(i, a.annee).texte}</td>
                               </tr>
                             ))}
                           </tbody>

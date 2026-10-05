@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import CotisationsTab from './CotisationsTab'
 import type { CotisationDeclaree, EcritureBrouillon, LigneBancaire, ModeComptable } from '../../lib/types'
 import { NON_VALIDEE } from '../../test/ecritures'
+import { AvecExercicesValides } from '../../test/exercicesValides'
 
 // RETIRER UNE ÉCHÉANCE, ET ÉCRIRE CELLES QUE LE RELEVÉ PAIE (ligne 26.6, étape b).
 //
@@ -19,6 +20,8 @@ const faux = vi.hoisted(() => ({
   // annonçant le vrai total (voir lib/lectureComplete.ts).
   muetApres: {} as Record<string, number>,
   insertions: [] as { table: string; valeur: unknown }[],
+  // Les mises à jour directes : celle d'une prévisionnelle que le document d'un avis confirme.
+  misesAJour: [] as { table: string; valeur: unknown }[],
   rpcs: [] as { nom: string; args: Record<string, unknown> }[],
   erreurRpc: null as string | null,
   // Retient la RÉPONSE de chaque lecture après le premier `rpc` : de quoi tenir le verrou pendant la
@@ -85,7 +88,7 @@ vi.mock('../../lib/supabase', async () => {
         Object.assign(c, {
           select: () => c,
           insert: (valeur: unknown) => { operation = 'insert'; faux.insertions.push({ table, valeur }); return c },
-          update: () => { operation = 'update'; return c },
+          update: (valeur: unknown) => { operation = 'update'; faux.misesAJour.push({ table, valeur }); return c },
           delete: () => { operation = 'delete'; return c },
           eq: (colonne: string, valeur: unknown) => {
             if (colonne !== 'dossier_id') predicats.push(predicatEq(colonne, valeur))
@@ -153,7 +156,10 @@ const ecritureJuste = (id = 'l-1', montant = 420, date = '2026-03-06') => [
   ecriture({ id: `${id}-b`, ligne_bancaire_id: id, compte: '512000', sens: 'credit', montant, date }),
 ]
 
-const monter = (mode: ModeComptable = 'tresorerie') => render(<CotisationsTab dossierId="dossier-de-test" modeComptable={mode} />)
+// Les exercices validés que la page du dossier fournit (DossierDetail) : aucun par défaut.
+const monter = (mode: ModeComptable = 'tresorerie', valides: readonly number[] = []) => render(
+  <AvecExercicesValides annees={valides}><CotisationsTab dossierId="dossier-de-test" modeComptable={mode} /></AvecExercicesValides>,
+)
 
 beforeEach(() => {
   faux.cotisations = []
@@ -161,6 +167,7 @@ beforeEach(() => {
   faux.ecritures = []
   faux.muetApres = {}
   faux.insertions = []
+  faux.misesAJour = []
   faux.rpcs = []
   faux.erreurRpc = null
   faux.retenirLectures = false
@@ -568,5 +575,162 @@ describe('CotisationsTab — créer l’échéancier lu sur un avis d’appel', 
     await act(async () => { bouton.click(); bouton.click(); bouton.click() })
 
     expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toHaveLength(1)
+  })
+})
+
+// UN EXERCICE VALIDÉ FIGE SES ÉCHÉANCES (ligne 26.6, étape d). Une échéance compte à la date du mouvement qui la paie,
+// sinon à son échéance, et c'est cette date qui dit si elle appartient à un exercice validé (`garder_cotisation_valide`).
+// Figée, elle ne se supprime plus et ne s'écrit plus ; et une échéance ne s'ajoute plus dans un exercice validé. L'écran le
+// dit avant le clic, avec les mots de la base.
+describe('CotisationsTab — ce qu’un exercice validé a figé', () => {
+  const validee = (e: EcritureBrouillon): EcritureBrouillon => ({ ...e, statut: 'validee', valide_le: '2026-03-01T10:00:00Z' })
+  const ligneDe = (texte: string) => screen.getByText(texte).closest('tr')!
+
+  it('une échéance payée dans un exercice validé ne se retire plus, et sa ligne le dit', async () => {
+    faux.cotisations = [cotisation({ echeance: '2025-12-05' })]
+    faux.lignes = [ligne({ date: '2025-12-06' })]
+    faux.ecritures = ecritureJuste('l-1', 420, '2025-12-06').map(validee)
+    monter('tresorerie', [2025])
+
+    await screen.findByText('Prélevée le 06/12/2025')
+    expect(screen.queryByRole('button', { name: 'Retirer' })).toBeNull()
+    expect(screen.getByTitle('L\'exercice 2025 est validé : cette échéance ne se supprime plus.').textContent).toBe('Figée')
+    expect(screen.getByText('Écrite')).toBeTruthy()
+  })
+
+  // Une échéance de décembre prélevée en janvier compte au prélèvement : son exercice est le suivant, ouvert. Juger sur
+  // la date de l'échéance la figerait à tort ; une échéance que rien ne paie, elle, se juge à son échéance.
+  it('se juge à la date du prélèvement qui la paie, sinon à son échéance', async () => {
+    faux.cotisations = [cotisation({ id: 'cot-1', echeance: '2025-12-28' }), cotisation({ id: 'cot-2', echeance: '2025-12-20' })]
+    faux.lignes = [ligne({ id: 'l-1', cotisation_id: 'cot-1', date: '2026-01-05' })]
+    faux.ecritures = ecritureJuste('l-1', 420, '2026-01-05')
+    monter('tresorerie', [2025])
+
+    await screen.findByText('Prélevée le 05/01/2026')
+    expect(ligneDe('28/12/2025').querySelector('button')?.textContent).toBe('Retirer')
+    expect(ligneDe('20/12/2025').querySelector('button')).toBeNull()
+    expect(ligneDe('20/12/2025').textContent).toContain('Figée')
+  })
+
+  it('une échéance payée d’un exercice validé sans écriture se dit, sans être proposée à l’écriture', async () => {
+    faux.cotisations = [cotisation({ id: 'cot-1', echeance: '2025-11-05' }), cotisation({ id: 'cot-2', echeance: '2026-04-05' })]
+    faux.lignes = [ligne({ id: 'l-1', cotisation_id: 'cot-1', date: '2025-11-06' }), ligne({ id: 'l-2', cotisation_id: 'cot-2', date: '2026-04-06' })]
+    monter('tresorerie', [2025])
+
+    await screen.findByText('1 échéance payée dont l’écriture manque ou n’est plus à jour')
+    const figee = screen.getByTitle('L\'exercice 2025 est validé : aucune écriture ne s’y passe plus.')
+    expect(figee.textContent).toBe('Sans écriture')
+    expect(figee.className).not.toContain('badge')
+    await act(async () => { screen.getByRole('button', { name: 'Écrire cette échéance' }).click() })
+    expect(faux.rpcs.map((r) => r.args.p_ligne_bancaire_id)).toEqual(['l-2'])
+  })
+
+  // Le refus est un fait, et il se montre même figé — sans le conseil d'un geste que la base refuserait, et jamais en
+  // « Écrite » : lu avec la frontière, le refus disparaîtrait, et l'échéance sans écriture passerait pour écrite.
+  it('un rapprochement refusé d’un exercice validé se dit, sans conseiller de l’annuler', async () => {
+    faux.cotisations = [cotisation({ echeance: '2025-12-05' })]
+    faux.lignes = [ligne({ date: '2025-12-06', montant: 420 })]
+    monter('tresorerie', [2025])
+
+    await screen.findByText('Remboursée le 06/12/2025')
+    const refus = screen.getByText('Ne s’écrit pas')
+    expect(refus.className).not.toContain('badge')
+    expect(refus.getAttribute('title')).toMatch(/encaissement/)
+    expect(screen.queryByText(/Annule ce rapprochement/)).toBeNull()
+    expect(screen.queryByText('Écrite')).toBeNull()
+  })
+
+  // Une prévisionnelle d'un exercice ouvert, prélevée dans un exercice validé, se juge à son prélèvement : figée, le
+  // document qui la confirme ne change plus son montant — et l'alerte ne la dit pas « déjà à jour ».
+  it('une prévisionnelle figée par son prélèvement ne prend pas le montant du document, et l’alerte le dit', async () => {
+    faux.cotisations = [cotisation({ echeance: '2026-01-05', previsionnel: true })]
+    faux.lignes = [ligne({ date: '2025-12-30' })]
+    faux.echeancesLues = [{ date: '2026-01-05', montant: 450, previsionnel: false }]
+    monter('tresorerie', [2025])
+    await screen.findByText('Prélevée le 30/12/2025')
+    const champ = document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'avis.pdf', { type: 'application/pdf' })] } }) })
+
+    const bouton = await screen.findByRole('button', { name: 'Créer ces 1 échéance(s)' })
+    let alerte = ''
+    vi.spyOn(window, 'alert').mockImplementation((m?: string) => { alerte = m ?? '' })
+    await act(async () => { bouton.click() })
+
+    expect(faux.misesAJour.filter((m) => m.table === 'cotisations_declarees')).toEqual([])
+    expect(alerte).toBe('0 échéance(s) prise(s) en compte, 1 d’un exercice validé (ignorée(s)) : une échéance ne s’y ajoute plus.')
+  })
+
+  // Le garde symétrique : la même prévisionnelle, prélevée dans un exercice ouvert, prend le montant du document.
+  it('une prévisionnelle d’un exercice ouvert prend le montant du document', async () => {
+    faux.cotisations = [cotisation({ echeance: '2026-01-05', previsionnel: true })]
+    faux.lignes = [ligne({ date: '2026-01-06' })]
+    faux.echeancesLues = [{ date: '2026-01-05', montant: 450, previsionnel: false }]
+    monter('tresorerie', [2025])
+    await screen.findByText('Prélevée le 06/01/2026')
+    const champ = document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'avis.pdf', { type: 'application/pdf' })] } }) })
+
+    const bouton = await screen.findByRole('button', { name: 'Créer ces 1 échéance(s)' })
+    await act(async () => { bouton.click() })
+    expect(faux.misesAJour.filter((m) => m.table === 'cotisations_declarees')).toEqual([
+      expect.objectContaining({ valeur: { montant_appele: 450, previsionnel: false } }),
+    ])
+  })
+
+  it('une échéance ne s’ajoute plus dans un exercice validé, et le formulaire le dit avant l’envoi', async () => {
+    monter('tresorerie', [2025])
+    await screen.findByText(/Ajouter une échéance/)
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText('Échéance'), { target: { value: '2025-06-05' } })
+      fireEvent.change(screen.getByLabelText('Montant appelé'), { target: { value: '420' } })
+    })
+
+    screen.getByText('L\'exercice 2025 est validé : une échéance ne s’y ajoute plus.')
+    const ajouter = screen.getByRole('button', { name: 'Ajouter' })
+    expect(ajouter.hasAttribute('disabled')).toBe(true)
+    await act(async () => { fireEvent.submit(ajouter.closest('form')!) })
+    expect(faux.insertions).toHaveLength(0)
+
+    // Le garde symétrique : une date d'un exercice ouvert s'ajoute.
+    await act(async () => { fireEvent.change(screen.getByLabelText('Échéance'), { target: { value: '2026-06-05' } }) })
+    expect(screen.queryByText(/une échéance ne s’y ajoute plus/)).toBeNull()
+    await act(async () => { screen.getByRole('button', { name: 'Ajouter' }).click() })
+    expect(faux.insertions.map((i) => i.table)).toEqual(['cotisations_declarees'])
+  })
+
+  it('un échéancier lu sur un avis ne crée que les échéances d’un exercice ouvert, et le dit', async () => {
+    faux.echeancesLues = [
+      { date: '2025-12-05', montant: 420, previsionnel: false },
+      { date: '2026-01-05', montant: 420, previsionnel: false },
+    ]
+    monter('tresorerie', [2025])
+    await screen.findByText(/Ajouter une échéance/)
+    const champ = document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'avis.pdf', { type: 'application/pdf' })] } }) })
+
+    const bouton = await screen.findByRole('button', { name: 'Créer ces 1 échéance(s)' })
+    screen.getByText('1 échéance est datée d’un exercice validé : elle ne s’y ajoute plus, et ne sera pas créée.')
+    expect(screen.getByTitle('L\'exercice 2025 est validé : une échéance ne s’y ajoute plus.').textContent).toBe('Exercice validé')
+    let alerte = ''
+    vi.spyOn(window, 'alert').mockImplementation((m?: string) => { alerte = m ?? '' })
+    await act(async () => { bouton.click() })
+
+    const creees = faux.insertions.filter((i) => i.table === 'cotisations_declarees')
+    expect(creees).toHaveLength(1)
+    expect(creees[0].valeur).toEqual([expect.objectContaining({ echeance: '2026-01-05' })])
+    expect(alerte).toBe('1 échéance(s) prise(s) en compte, 1 d’un exercice validé (ignorée(s)) : une échéance ne s’y ajoute plus.')
+  })
+
+  it('ne crée rien quand toutes les échéances lues sont d’un exercice validé', async () => {
+    faux.echeancesLues = [{ date: '2025-12-05', montant: 420, previsionnel: false }]
+    monter('tresorerie', [2025])
+    await screen.findByText(/Ajouter une échéance/)
+    const champ = document.querySelector('input[type=file][accept=".pdf,.jpg,.jpeg,.png"]') as HTMLInputElement
+    await act(async () => { fireEvent.change(champ, { target: { files: [new File(['%PDF'], 'avis.pdf', { type: 'application/pdf' })] } }) })
+
+    const bouton = await screen.findByRole('button', { name: 'Créer ces 0 échéance(s)' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.insertions.filter((i) => i.table === 'cotisations_declarees')).toHaveLength(0)
   })
 })

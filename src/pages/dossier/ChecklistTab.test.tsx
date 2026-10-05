@@ -570,6 +570,18 @@ describe('ChecklistTab — les dotations aux amortissements', () => {
     await screen.findByText(/non rapprochée\(s\)/)
     expect(screen.queryAllByText(POINT)).toHaveLength(0)
   })
+
+  // LIGNE 26.6 (d) : la dotation d'un exercice validé ne se réclame plus — la base refuse d'y écrire, et le point
+  // resterait en erreur pour toujours, sans geste pour le lever. Le garde symétrique est dans le même test : celle de
+  // l'exercice d'après, qui ne suit plus le registre, se réclame toujours.
+  it('ne réclame plus la dotation d’un exercice validé, et réclame toujours celle d’après', async () => {
+    poser({ immos: [BIEN], natures: [NATURE], ecritures: dotation(2026, 2000) })
+    monter(false, TRESORERIE, [2025])
+
+    const trouve = await screen.findByText(POINT)
+    expect(trouve.textContent).toMatch(/^1 /)
+    screen.getByText('Exercice : 2026.')
+  })
 })
 
 // LE FORFAIT KILOMÉTRIQUE (lib/forfaitKilometrique.ts) : la 2035 le compte en case BJ depuis le cadre 7, le FEC
@@ -671,6 +683,20 @@ describe('ChecklistTab — les forfaits kilométriques', () => {
 
     await screen.findByText(/non rapprochée\(s\)/)
     expect(screen.getAllByText(/n’ont pas pu être lues en entier|n'ont pas pu être lues en entier/).length).toBeGreaterThan(0)
+  })
+
+  // LIGNE 26.6 (d) : le cadre 7 d'un exercice validé ne change plus, et son forfait ne s'écrit plus — le réclamer
+  // laisserait le point en erreur pour toujours. Celui de l'exercice d'après se réclame toujours.
+  it('ne réclame plus le forfait d’un exercice validé, et réclame toujours celui d’après', async () => {
+    poser({
+      vehicules: [vehicule(), vehicule({ id: 'v2', annee: 2026 })],
+      ecritures: forfait(2026, 100).map((e) => ({ ...e, vehicule_id: 'v2' })),
+    })
+    monter(false, TRESORERIE, [2025])
+
+    const trouve = await screen.findByText(POINT)
+    expect(trouve.textContent).toMatch(/^1 /)
+    screen.getByText('Exercice : 2026.')
   })
 })
 
@@ -1399,6 +1425,37 @@ describe('ChecklistTab — les échéances de cotisation payées', () => {
     monter(false, ENGAGEMENT)
     await screen.findByText(/de cotisation payée\(s\) dont l’écriture manque/)
     expect(screen.queryAllByText(/qui ne peuvent pas s’écrire/)).toHaveLength(0)
+  })
+
+  // LIGNE 26.6 (d) : une échéance payée dans un exercice validé ne se réclame plus — la base refuse d'y écrire. Elle se
+  // juge à la date du MOUVEMENT qui la paie, celle de son écriture : l'échéance de décembre prélevée en janvier est de
+  // l'exercice d'après, et se réclame toujours.
+  it('ne réclame plus l’écriture d’une échéance payée dans un exercice validé', async () => {
+    poser({
+      lignes: [
+        prelevement({ id: 'l-mars', date: '2025-03-10', cotisation_id: 'cot-mars' }),
+        prelevement({ id: 'l-dec', date: '2026-01-05', cotisation_id: 'cot-dec' }),
+      ],
+      cotisations: [echeance({ id: 'cot-mars', echeance: '2025-03-05' }), echeance({ id: 'cot-dec', echeance: '2025-12-05' })],
+    })
+    monter(false, TRESORERIE, [2025])
+
+    const point = await screen.findByText(/échéance\(s\) de cotisation payée\(s\) dont l’écriture manque/)
+    expect(point.textContent).toMatch(/^1 /)
+  })
+
+  it('ne compte plus le rapprochement refusé d’un exercice validé : ni le mouvement ni l’échéance n’y changent plus', async () => {
+    poser({
+      lignes: [
+        prelevement({ id: 'l-2025', date: '2025-03-10', montant: 100, cotisation_id: 'cot-2025' }),
+        prelevement({ montant: 100 }),
+      ],
+      cotisations: [echeance({ id: 'cot-2025', echeance: '2025-03-05' }), echeance()],
+    })
+    monter(false, TRESORERIE, [2025])
+
+    const point = await screen.findByText(/rapprochement\(s\) d’une échéance de cotisation qui ne peuvent pas s’écrire/)
+    expect(point.textContent).toMatch(/^1 /)
   })
 })
 
