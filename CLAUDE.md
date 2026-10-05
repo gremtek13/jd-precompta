@@ -397,7 +397,10 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   Deux sortes de tableaux en ont besoin : ceux qu'on REMPLIT (`table-formulaire table-empilable` : la carte
   Véhicules, passée à neuf colonnes, écrasait ses champs à 1 024 pixels), et ceux qu'on lit dont une colonne
   porte une PHRASE (les écarts de la concordance de la 2035, dont cinq colonnes dans 330 pixels coupaient
-  les mots en leur milieu). Un tableau de colonnes courtes garde `table-layout: fixed`, qui lui suffit.
+  les mots en leur milieu). Un tableau de colonnes courtes garde `table-layout: fixed`, qui lui suffit — tant
+  que ses montants y tiennent : les totaux de la même carte, trois colonnes de montants et leur libellé dans
+  330 pixels, renvoyaient le signe € à la ligne sous chaque montant (vu sur capture, 05/10/2026), et se
+  replient désormais aussi.
 - **Exercice partagé entre onglets** (`src/context/AnneeContext.tsx`, `useAnnee()`) : Pièces, Banque,
   Écritures, Statistiques et Clôture lisent le même exercice sélectionné, choisi une fois dans le
   sélecteur de l'en-tête du dossier (voir `DossierDetail.tsx`, `SelecteurExerciceEntete`) plutôt que
@@ -1403,6 +1406,17 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   calculée depuis les sources. Au passage, un poste que ses remboursements font passer sous zéro n'est plus
   retourné en dépense, et Clôture dit la case négative qui en résulte. Voir « la 2035 se compare aux
   écritures » dans « Problèmes connus » (`lib/concordance2035.ts`).
+- **Valider un exercice (04-05/10/2026)**, ligne 26.6, étape (d) : sous la 2035 de chaque exercice, Clôture porte
+  la carte « Valider l'exercice » — ce qui empêche de valider se dit avant le clic, la concordance au centime
+  comprise —, et seul le chef du cabinet valide. Un exercice validé se fige en base : ses écritures, numérotées
+  comme le FEC qui les porte, et ce qui les a produites ne se modifient plus, et sa 2035 est gardée telle qu'elle
+  a été validée, avec une empreinte chaînée. Chaque écran sait ce qui est figé et ne le propose plus. Voir « un
+  exercice validé se fige en base » et « un exercice se valide depuis Clôture » dans « Problèmes connus »
+  (`lib/prealablesValidation.ts`, `lib/validationExercice.ts`).
+- **Le second paiement d'une pièce payée en partie (05/10/2026)**, ligne 26 : dans la fiche d'un mouvement
+  (onglet Banque), une pièce dont un acompte est rapproché s'offre au choix pour son reste, et ce qui
+  dépasserait ce reste est refusé avant le clic. Voir « un exercice se valide depuis Clôture » dans « Problèmes
+  connus » (`restesAReglerDesPieces`, `refusSecondPaiement`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1443,13 +1457,11 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   temporis depuis la mise en service, la facture d'un bien s'écrit sur le compte d'immobilisation de sa
   nature (sa TVA au 445620, sa dette au 404000 en engagement), et le forfait kilométrique du cadre 7
   s'écrit (625110 face au compte du dirigeant). L'étape (c) est livrée (04/10/2026) : la 2035 reste
-  calculée depuis les sources et se compare aux écritures, source par source, dans Clôture. L'étape (d),
-  valider un exercice, est EN COURS : sa base est en production (04/10/2026) — la validation, ses
-  refus, l'intangibilité, l'empreinte chaînée et les sources figées, éprouvés en base (voir « un
-  exercice validé se fige en base ») —, mais aucun écran ne la propose encore : restent la
-  numérotation du FEC partagée avec la base, les préalables vérifiés par l'application (la
-  concordance au centime), la carte « Valider l'exercice » de Clôture et les écrans qui disent ce
-  qu'un exercice validé fige. Reste ensuite (e), les vingt-deux champs et Test Compta Demat.
+  calculée depuis les sources et se compare aux écritures, source par source, dans Clôture. L'étape (d)
+  est livrée (04-05/10/2026) : un exercice se valide depuis Clôture, ses écritures et ce qui les a produites
+  se figent en base, et chaque écran le sait (voir « un exercice validé se fige en base » et « un exercice se
+  valide depuis Clôture »). Aucun exercice n'est encore validé en base. Reste (e), les vingt-deux champs et
+  Test Compta Demat.
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -6418,14 +6430,103 @@ d'environnement dans la même édition.
   garde (`sauvegarde.test.ts`). Les jeux d'essai étalent `NON_VALIDEE` et `A_NOUVEAU_NON_VALIDE`
   (`src/test/ecritures.ts`) plutôt que de recopier huit champs nuls : une colonne de validation ajoutée demain ne
   se reprend qu'à un endroit.
-  **CE QUI RESTE, dit plutôt que promis** : aucun écran ne valide encore. L'application doit composer la
-  numérotation avec la logique même de son FEC, vérifier la concordance avant l'appel, et dire ce qu'un exercice
-  validé fige au lieu de laisser la base refuser un geste qu'un écran propose. Une cotisation payée depuis le
-  compte PERSONNEL n'a pas de mouvement, donc pas d'écriture : la concordance la dirait en écart, et il faudra la
-  traiter avant de valider son exercice. Une opération découverte après coup se rattache, selon l'article 1031-4
-  du PCG, au premier jour de la période non encore clôturée, avec mention de sa date de survenance :
-  l'application ne le modélise pas, la base la refuse et le dit.
+  **CE QUI RESTAIT** — composer la numérotation avec la logique même du FEC, vérifier la concordance avant l'appel,
+  dire ce qu'un exercice validé fige au lieu de laisser la base refuser un geste qu'un écran propose — est fait
+  depuis le 05/10/2026 : voir l'entrée suivante, qui porte aussi ce qui reste.
   **LATENT** : aucun exercice validé et aucune écriture validée en base (04/10/2026).
+- **UN EXERCICE SE VALIDE DEPUIS CLÔTURE — LIGNE 26.6, ÉTAPE (D), SUITE ET FIN** (05/10/2026). La base de l'entrée
+  précédente ne servait à rien tant qu'aucun écran ne la proposait, et chaque écran qui écrit proposait encore des
+  gestes qu'elle refuse.
+  **LE FEC SE COMPOSE EN DEUX TEMPS** (`lib/fec.ts`) : `numeroterFec` décide, pour chaque écriture, son journal, son
+  numéro, sa pièce et les libellés de ses comptes — exactement ce que `valider_exercice` reçoit et fige —, puis
+  `formaterFec` l'imprime. Le FEC d'un exercice validé se relit depuis ce qui a été figé (`numerotationValidee`), sans
+  rien relire des pièces ni des catégories d'aujourd'hui, ValidDate étant le jour de la validation, à Paris. L'ordre
+  des lignes d'une écriture ne dépend plus de la lecture : débit avant crédit, puis compte et identifiant.
+  **CE QUI EMPÊCHE DE VALIDER SE DIT AVANT LE CLIC** (`lib/prealablesValidation.ts`), chaque préalable menant à
+  l'onglet où le lever : les refus de la base avec ses mots (l'ordre des exercices, un mouvement encore à traiter, une
+  écriture déséquilibrée) ; la concordance au centime avec la 2035 ; les pièces à valider, sans date ou à date
+  impossible ; chaque point en erreur de la Checklist, ramené à l'exercice — un test lit la Checklist et refuse un
+  point qui ne serait ni repris ni écarté avec sa raison (`POINTS_DE_LA_CHECKLIST_ECARTES`) ; et ce que la 2035
+  figerait de faux : un poste qu'aucune case ne porte, une case négative, le barème kilométrique et les frais au réel
+  du véhicule dans la même case BJ, un forfait que le barème ne sait pas calculer. Deux AVERTISSEMENTS, qui ne
+  refusent rien : une CSG-CRDS non saisie (sa part non déductible part en ligne 25, et l'échéance figée ne se saisira
+  plus) et un véhicule du registre amorti l'année où le barème est retenu (refuser rendrait l'exercice invalidable,
+  rien dans l'application ne sachant réintégrer cette dotation). Les deux se taisent en engagement, sans 2035.
+  **LES CARTES DE CLÔTURE SE TAISENT SUR UN EXERCICE VALIDÉ** — ce qu'elles demandent, la base le refuserait, et elles y
+  resteraient pour toujours. Ce qu'elles signalent doit donc être refusé ou lu AVANT : `CARTES_DE_CLOTURE` reprend
+  chaque carte (l'identifiant d'un préalable) ou l'écarte avec sa raison, et un test lit les titres des cartes de
+  Clôture — sur plusieurs lignes s'il le faut — et refuse une carte qui n'y figure pas. La règle des points de la
+  Checklist, appliquée aux cartes, et pour la même raison : un contrôle ajouté demain doit se poser la question. La
+  concordance d'un exercice figé se dit encore, sans rien proposer.
+  **LA CARTE « VALIDER L'EXERCICE »** (`ValidationExerciceCard`, sous la 2035 de chaque exercice) : les préalables,
+  puis la validation, réservée au chef du cabinet, qui envoie la numérotation même du FEC et, en trésorerie, la 2035
+  telle qu'elle est affichée. La confirmation nomme ce qu'on perd ; le verrou est un `useRef` posé avant le `try` et
+  relâché après la relecture. Un exercice validé montre sa 2035 telle que la base la garde, remplie telle quelle, les
+  cases qu'un calcul d'aujourd'hui ne retrouverait plus, et vérifie son empreinte. Un préalable d'ordre mène d'un clic
+  à l'exercice qui se valide d'abord, et la vue « Toutes » liste les exercices validés et le prochain à valider.
+  **CHAQUE ÉCRAN SAIT CE QUI EST FIGÉ** : la page du dossier lit les exercices validés avec son identité
+  (`ExercicesValidesContext`) — lus en partie, elle le dit et n'affiche pas ses écrans —, et Clôture la fait relire
+  après une validation. Écritures (la génération, « Régénérer » et « Retirer » ne touchent que ce qui tombe après la
+  frontière, et une pièce qu'elle coupe se juge sur sa part ouverte), Banque et Virements (un mouvement figé ne
+  s'importe, ne se rapproche, ne se classe ni ne se retire plus ; un import le compte et le dit), Pièces (une pièce qui
+  porte une écriture validée ne garde que ses notes et son sous-dossier), Immobilisations, Véhicules, Cotisations,
+  Informations (l'ouverture ne se remplace plus dès qu'un exercice est validé), la Checklist et l'assistant (version
+  41) ne réclament plus rien de figé.
+  **TROIS DÉFAUTS TROUVÉS EN CHEMIN RENDAIENT UN EXERCICE INVALIDABLE, sans geste pour le réparer** :
+  - une pièce payée en plusieurs fois se déséquilibrait d'un centime à chaque date : sa charge et sa TVA se
+    répartissaient chacune de son côté. La TVA d'une date complète désormais sa charge, et le contrôle des écritures
+    compare chaque compte à chaque date ;
+  - une pièce se réglait sur le DERNIER paiement posé, pas sur leur total : 40 € payés 20 + 19,99 restaient à 40 € (le
+    centime au-delà du seuil de chaque paiement pris seul), et une facture en dollars payée en deux fois ne valait plus
+    que la moitié de son coût. Elle se règle désormais sur le total payé, au centime ;
+  - une pièce à 0 € arrêtait toute la génération : la base refuse une ligne nulle, et l'insertion est d'un seul tenant.
+    Elle n'a plus rien à comptabiliser.
+  **ET LE MOTEUR DE LA 2035 FUSIONNAIT UNE RECETTE ET UNE DÉPENSE DU MÊME POSTE** — trouvé en écrivant le refus d'un
+  poste sans case. Il tenait ses totaux par libellé : une vente rangée dans une catégorie de dépense, ou deux
+  catégories qui se donnent le même libellé, faisaient UNE ligne, de la nature de la première source rencontrée. La
+  recette comptait alors en dépense, et le résultat se trompait du double de son montant, en silence : la concordance
+  juge source par source, et `cadreCompatible` (lib/cases2035.ts), écrit pour refuser une recette dans une case de
+  dépenses, ne voyait plus que la ligne fusionnée — une mise en garde écrite au-dessus d'un code qui ne la tenait pas,
+  à un fichier de distance. Une ligne par poste ET par nature : celle du mauvais sens tombe dans les postes sans case,
+  que la validation refuse. **LATENT, et mesuré** : aucune pièce validée rangée dans une catégorie de l'autre sens,
+  aucune paire de catégories au même poste et aux comptes de sens opposés (05/10/2026).
+  **LA CARTE « POSTES SANS CASE » SE CORRIGE SUR PLACE**, puisque la validation la refuse et qu'aucun autre écran ne
+  modifie un poste déjà renseigné : le nouveau poste se choisit parmi les libellés du formulaire (`POSTES_PROPOSABLES`,
+  sans ceux que le moteur calcule — amortissements, CSG déductible, indemnités kilométriques —, qu'une catégorie
+  ferait compter deux fois), et rien ne s'enregistre tant que rien n'est tapé. Elle ne propose de renommer qu'une
+  catégorie dont le POSTE est en cause — un libellé qu'aucune case ne connaît, ou celui de l'autre sens sur une
+  catégorie du sens de la ligne. Une vente rangée dans la catégorie des achats y est nommée à part : renommer
+  « Achats » ferait perdre leur case à toutes ses dépenses, c'est la pièce qui change de catégorie.
+  **LE SECOND PAIEMENT D'UNE PIÈCE PAYÉE EN PARTIE SE RAPPROCHE DEPUIS LA FICHE DE SON MOUVEMENT** — trouvé en écrivant
+  le préalable des pièces payées en partie. Un acompte, puis le solde par un autre virement qui ne paie qu'elle : tenue
+  pour rapprochée dès son premier paiement, la pièce ne s'offrait plus au second, et le règlement groupé exige deux
+  pièces. Son reste ne se rapprochait de rien, elle restait « payée en partie », et la validation de son exercice le
+  refuse en trésorerie — sans geste pour le lever. La fiche d'un mouvement l'offre désormais au choix pour son reste
+  (« reste 700,00 € sur 1 000,00 € »), dans les deux modèles — en engagement, le solde règle la dette qui court au 401
+  —, triée comme une pièce de ce montant (`restesAReglerDesPieces`, lib/controles.ts : les mêmes paiements et le même
+  seuil que le contrôle). Ce qui refuserait une part de règlement groupé la refuse ici aussi, dit avant le clic et refait
+  au clic (`refusSecondPaiement`) : le mauvais sens, ou plus que le reste au-delà de l'écart d'alignement. Le
+  rapprochement suit ensuite le chemin d'un premier paiement : la pièce se règle sur le total payé, et sa contrepartie
+  banque s'écrit pour ce mouvement. Elle n'est jamais PROPOSÉE — le rapprochement certain compare le montant de la
+  pièce —, ni offerte quand une écriture validée la fige en trésorerie, ni sur une lecture partielle du relevé ou des
+  parts, où un paiement non lu ferait paraître payée en partie une pièce réglée. Et le solde ne s'affecte plus en lot
+  par une règle au nom du fournisseur : `justificatifPossible` le soupçonne (le même tiers, ou le montant du reste), la
+  carte des règles le met « à rapprocher plutôt qu'affecter », et la fiche le dit avant une affectation à l'unité —
+  affecté, il aurait compté la dépense une seconde fois. La Checklist dit où rapprocher le paiement qui manque.
+  **LATENT, et mesuré** : aucune pièce payée en plusieurs fois en base (05/10/2026).
+  **Mesures** : 504 mutations sur les écrans et les correctifs de cette entrée, 486 mordent. Les 18 survivantes
+  sont des secondes ceintures derrière un bouton grisé ou non rendu (dix), des mutations équivalentes (six : les
+  préalables ne jugent qu'un exercice postérieur à la frontière, et « Valider et rapprocher » ne porte que des
+  pièces à valider), une garde redondante retirée depuis, et la carte des cases « dont » incohérentes, que le
+  moteur ne peut pas allumer. La copie de l'assistant porte le générateur de `src/lib`, comparé à
+  `lignesPourPiece` sur 3 744 cas ; trois de ses dérives plantées survivaient d'abord, chacune accusant un test
+  absent, écrit depuis.
+  **CE QUI RESTE, dit plutôt que promis** : une cotisation payée depuis le compte PERSONNEL n'a ni mouvement ni
+  écriture, et la concordance la dit en écart : son exercice ne se valide pas tant qu'elle n'est pas traitée. Une
+  opération découverte après coup se rattache, selon l'article 1031-4 du PCG, au premier jour de la période non encore
+  clôturée : l'application ne le modélise pas, la base la refuse et le dit. Une pièce en DEVISE payée en partie ne
+  s'offre pas à un second paiement — son montant en euros n'est qu'un provisoire —, et les lots de rapprochement ne
+  proposent jamais un second paiement : il se choisit dans la fiche. Et aucun exercice n'est encore validé en base.
 - **UNE NOTE DE FRAIS EN TRÉSORERIE S'ÉCRIT FACE AU COMPTE DE L'EXPLOITANT (108000)** (05/10/2026, trouvé en préparant
   les écrans de la validation, `ligneContrepartieDirigeant` dans `lib/ecritures.ts`). Ce que le dirigeant paie de sa
   poche ne passe pas par le compte professionnel : en trésorerie, une note de frais n'avait AUCUNE contrepartie. Sa
@@ -6469,7 +6570,8 @@ d'environnement dans la même édition.
   type de la pièce, redondante — seule une note de frais a une part « note de frais » —, retirée des deux côtés ; et la
   garde de la part absente, qu'aucun test n'exerçait : deux remboursements qui couvrent la note à l'écart d'alignement
   près (50 et 49 pour 100) la font jouer, et elle mord depuis. Ce cas a montré un second trou de centimes, inscrit avec
-  le premier : des paiements multiples dont la somme est sous le seuil sans égaler la pièce, que rien n'aligne. Et le
+  le premier : des paiements multiples dont la somme est sous le seuil sans égaler la pièce, que rien n'alignait —
+  fermé depuis, une pièce se réglant sur le total de ses paiements (voir « un exercice se valide depuis Clôture »). Et le
   premier jeu d'essai de la parité payait une note NÉGATIVE par un décaissement : faux, un trop-perçu que le
   dirigeant rend se solde par un encaissement — l'essai avait tort, pas le code.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
@@ -7920,7 +8022,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 3806 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4258 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -7951,7 +8053,9 @@ en service et au centime du calcul de la base (`amortissements.ts`), l'écriture
 sur le compte de sa nature, ou pourquoi il n'en a pas (`acquisitionsDesBiens`, `ecritures.ts`), l'indemnité
 du barème kilométrique en centimes entiers, au centime du calcul de la base (`baremeKilometrique.ts`), le
 forfait de chaque ligne du cadre 7 et son écriture (`forfaitKilometrique.ts`), la concordance de la 2035
-avec les écritures, sur des écritures produites par les vrais générateurs (`concordance2035.ts`), et ce que
+avec les écritures, sur des écritures produites par les vrais générateurs (`concordance2035.ts`), la
+validation d'un exercice — la numérotation que le FEC et la base partagent (`fec.ts`), ce qui la refuse avant
+le clic (`prealablesValidation.ts`) et ce qu'elle fige (`validationExercice.ts`) —, et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
