@@ -215,6 +215,14 @@ function memeResultat(
 }
 
 describe('agent-comptable / analyserEcritures (copie déployée)', () => {
+  // Une pièce à 0 € n'a rien à comptabiliser : la base refuse une ligne nulle, et la compter la laissait « sans écriture »
+  // pour toujours. `memeResultat` compare aussi ce que les deux copies mettent à comptabiliser.
+  it('n’a rien à comptabiliser pour une pièce à 0 €, comme src/lib', () => {
+    expect(memeResultat([], [piece({ id: 'p1', montant_ht: 0, montant_tva: 0, montant_ttc: 0 })])).toEqual({
+      nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [],
+    })
+  })
+
   it('se tait sur une pièce parfaitement synchronisée', () => {
     expect(memeResultat(groupeConforme('p1'), [piece({ id: 'p1' })], [], deployee, true, [payee('p1')])).toEqual({
       nbSansContrepartie: 0, groupesDesequilibres: [], piecesDesynchronisees: [],
@@ -773,8 +781,11 @@ function batterieDuGenerateur(copie: typeof deployee): string[][] {
     piece({ type_piece: 'note_frais', montant_ht: null, montant_tva: null, montant_ttc: -30 }),
     piece({ date_piece: null, created_at: '2025-03-15T09:00:00Z' }),
     piece({ type_piece: 'note_frais', date_piece: null, created_at: '2025-03-15T09:00:00Z' }),
-    // Une note de frais à zéro euro — cas défensif : rien ne la solde, donc aucune contrepartie au 108000.
+    // Une note de frais à zéro euro — cas défensif : rien ne la solde, donc aucune contrepartie au 108000, et aucune
+    // ligne nulle, que la base refuserait.
     piece({ type_piece: 'note_frais', montant_ht: null, montant_tva: null, montant_ttc: 0 }),
+    // Un hors taxe lu à zéro : la charge nulle ne s'écrit pas, la TVA si.
+    piece({ montant_ht: 0, montant_tva: 20, montant_ttc: 20 }),
   ]
   const cibles = [cible(COMPTE_ACHATS), bien('218300'), cible('108000'), cible('706000')]
   const modeles: ModeleComptable[] = [

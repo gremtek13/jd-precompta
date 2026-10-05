@@ -173,7 +173,9 @@ function piecesAComptabiliser(
   acquisitions: ReadonlyMap<string, AcquisitionDuBien>,
 ): PieceAComptabiliser[] {
   return piecesValidees.flatMap((piece): PieceAComptabiliser[] => {
-    if (piece.montant_ttc == null) return []
+    // Une pièce à 0 € n'a rien à comptabiliser : la base refuse une ligne nulle, et la compter la laissait « sans
+    // écriture » pour toujours.
+    if (piece.montant_ttc == null || piece.montant_ttc === 0) return []
     const acquisition = acquisitions.get(piece.id)
     if (acquisition) return acquisition.compte ? [{ piece, compte: acquisition.compte, immobilisation: true }] : []
     const compte = categories.find((c) => c.id === piece.categorie_id)?.compte_comptable
@@ -402,7 +404,8 @@ function lignesChargeProduitPourPiece(
     ? centimesParDate(piece, charge + tva, paiements).map((t, i) => ({ date: t.date, centimes: t.centimes - charges[i].centimes }))
     : []
   return charges.flatMap((f, i) => {
-    const lignes = [ligne(f.date, cible.compte, f.centimes / 100)]
+    // Une part nulle ne fait pas de ligne : la base refuse un montant nul.
+    const lignes = f.centimes !== 0 ? [ligne(f.date, cible.compte, f.centimes / 100)] : []
     if (tva && tvas[i].centimes !== 0) lignes.push(ligne(f.date, compteTvaDe(piece, cible.immobilisation), tvas[i].centimes / 100))
     return lignes
   })
@@ -459,7 +462,8 @@ function lignesFactureEngagement(
   const lignes = [ligne(sensPiece, cible.compte, tva ? montantRetenu(piece, assujettiTva)! : ttc)]
   if (tva) lignes.push(ligne(sensPiece, compteTvaDe(piece, cible.immobilisation), tva))
   lignes.push(ligne(inverse(sensPiece), compteDeTiers(piece, compteNotesDeFrais, cible.immobilisation), ttc))
-  return lignes
+  // Une ligne nulle ne s'écrit pas : la base la refuse.
+  return lignes.filter((l) => l.montant !== 0)
 }
 
 // Un RÈGLEMENT par paiement, daté du mouvement et portant son identifiant : le compte de tiers face à la banque, au
