@@ -11,7 +11,7 @@ import {
   CASES_2035, PREMIER_EXERCICE_REVENU_BRUT_SOCIAL, arrondirPourFormulaire, casesNegatives, doublonFraisVehicules, incoherencesDesCases,
   valeursDesCases,
 } from '../../lib/cases2035'
-import type { DoublonFraisVehicule, IncoherenceCase, PosteNonRattache } from '../../lib/cases2035'
+import { POSTES_PROPOSABLES, type DoublonFraisVehicule, type IncoherenceCase, type PosteNonRattache } from '../../lib/cases2035'
 import { comptesPartagesEntreCases, concordance2035 } from '../../lib/concordance2035'
 import { formaterMontant } from '../../lib/gabarit2035'
 import { remplir2035 } from '../../lib/remplir2035'
@@ -19,6 +19,7 @@ import { immobilisationsSansJustificatif } from '../../lib/controles'
 import { cloturerExercice, lireAnneesCloturees } from '../../lib/clotureExercice'
 import { anneesDesRattachements, paiementsDesPieces, rattachements } from '../../lib/rattachement'
 import { partsDuReleve } from '../../lib/partsDuReleve'
+import { natureDuCompte } from '../../lib/affectationBanque'
 import { cotisationsComptees } from '../../lib/cotisationRapprochee'
 import { echeancesNonRapprochees } from '../../lib/echeanceEmprunt'
 import type { Emprunt } from '../../lib/emprunts'
@@ -316,9 +317,12 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
     return postesEdit[c.id] ?? SUGGESTIONS_COMPTE_PAR_CODE[c.code]?.poste2035 ?? ''
   }
 
-  async function savePoste(categorieId: string) {
+  // `suggestion` : enregistrer la suggestion affichée quand rien n'a été tapé (« Postes manquants ») ; sans elle, seul ce
+  // qui a été tapé s'enregistre (« Postes sans case », où le poste actuel est justement celui qu'on remplace).
+  async function savePoste(categorieId: string, suggestion = true) {
     const categorie = categories.find((c) => c.id === categorieId)
-    const valeur = (postesEdit[categorieId] ?? (categorie ? SUGGESTIONS_COMPTE_PAR_CODE[categorie.code]?.poste2035 : undefined) ?? '').trim()
+    const repli = suggestion && categorie ? SUGGESTIONS_COMPTE_PAR_CODE[categorie.code]?.poste2035 : undefined
+    const valeur = (postesEdit[categorieId] ?? repli ?? '').trim()
     if (!valeur) return
     const { error: saveError } = await supabase.from('categories').update({ poste_2035: valeur }).eq('id', categorieId)
     if (saveError) {
@@ -391,12 +395,38 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
 
   // Postes que le rattachement ne sait pas placer, tous exercices affichés confondus. Même principe
   // que les pièces exclues : un poste qui n'atterrit dans aucune case est un montant absent de la
-  // déclaration, et il doit se voir.
+  // déclaration, et il doit se voir. Un même libellé peut porter des recettes ET des dépenses (« Honoraires ») : ce
+  // sont deux lignes de la déclaration, gardées toutes les deux.
   const sansCase = new Map<string, PosteNonRattache>()
   for (const f of formulairesOuverts) {
-    for (const p of f.postesSansCase) sansCase.set(p.ligne.poste, p)
+    for (const p of f.postesSansCase) sansCase.set(`${p.ligne.nature}:${p.ligne.poste}`, p)
   }
   const postesSansCase = [...sansCase.values()]
+  // Les catégories qui les portent : c'est leur poste qui se corrige, et aucun autre écran ne modifie un poste déjà
+  // renseigné — sans ce formulaire, la carte enverrait corriger ce qu'on ne peut pas corriger, et la validation de
+  // l'exercice, qui refuse un poste sans case, resterait refusée pour toujours.
+  //
+  // SAUF UNE LIGNE « DU MAUVAIS SENS » QUE LE POSTE DE SA CATÉGORIE N'EXPLIQUE PAS. La nature d'une pièce est son type,
+  // celle d'une catégorie son compte : une vente rangée dans une catégorie de DÉPENSE — ou un achat dans une catégorie
+  // de recette — fait une ligne du mauvais sens sous un poste juste. Renommer la catégorie ferait alors perdre leur case
+  // à toutes ses dépenses ; c'est la PIÈCE qui change de catégorie. Le formulaire ne propose donc que les catégories
+  // dont le poste est en cause — un libellé qu'aucune case ne connaît, ou celui de l'autre sens sur une catégorie du
+  // sens de la ligne (une catégorie de recette au libellé d'une dépense) —, et les pièces rangées à contresens sont
+  // nommées à part. Une catégorie sans compte n'a pas de sens connu : elle reste proposée, le cabinet tranche.
+  const sensOppose = (n: 'recette' | 'depense') => (n === 'recette' ? 'depense' : 'recette')
+  const categoriesSansCase = categories.filter((c) => c.poste_2035 !== null && postesSansCase.some((p) =>
+    p.ligne.poste === c.poste_2035
+    && (p.raison === 'aucune case connue' || natureDuCompte(c.compte_comptable) !== sensOppose(p.ligne.nature))))
+  const piecesAContresens = new Map<string, Piece>()
+  for (const f of formulairesOuverts) {
+    for (const p of f.postesSansCase) {
+      if (p.raison !== 'case du mauvais sens') continue
+      for (const c of f.declaration.contributions) {
+        if (c.source.type !== 'piece' || c.poste !== p.ligne.poste || c.nature !== p.ligne.nature) continue
+        if (natureDuCompte(c.compte) === sensOppose(c.nature)) piecesAContresens.set(c.source.id, c.source.piece)
+      }
+    }
+  }
 
   // Garde armé à l'avance : une case « dont » qui dépasse sa porteuse est une saisie contradictoire.
   // Le moteur ne remplit jamais ces cases (toutes marquées `saisieCabinet`), donc rien ne peut le
@@ -890,14 +920,15 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
           <h3 style={{ marginTop: 0 }}>Postes sans case du formulaire ({postesSansCase.length})</h3>
           <p className="muted" style={{ marginTop: -8 }}>
             Ces postes ont bien un total, mais le rattachement ne sait pas dans quelle case du
-            formulaire les porter — leur montant n'apparaîtra nulle part sur la 2035. Renomme le poste
-            de la catégorie avec un libellé du formulaire (onglet Clôture, « Postes manquants »).
+            formulaire les porter — leur montant n'apparaîtra nulle part sur la 2035, et l'exercice ne se
+            valide pas tant que c'est le cas. Donnez à leur catégorie un poste du formulaire : la liste
+            propose ses libellés.
           </p>
           <table>
             <thead><tr><th>Poste</th><th>Motif</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
             <tbody>
               {postesSansCase.map((p) => (
-                <tr key={p.ligne.poste}>
+                <tr key={`${p.ligne.nature}:${p.ligne.poste}`}>
                   <td>{p.ligne.poste}</td>
                   <td className="muted">
                     {p.raison === 'case du mauvais sens'
@@ -911,6 +942,74 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
               ))}
             </tbody>
           </table>
+          {categoriesSansCase.length > 0 && (
+            <div className="table-scroll tableau-adaptable" style={{ marginTop: 14 }}>
+              <table className="table-formulaire table-empilable">
+                <thead><tr><th>Catégorie</th><th>Poste actuel</th><th>Nouveau poste</th><th></th></tr></thead>
+                <tbody>
+                  {categoriesSansCase.map((c) => (
+                    <tr key={c.id}>
+                      <td data-libelle="Catégorie">{c.libelle}</td>
+                      <td data-libelle="Poste actuel">{c.poste_2035}</td>
+                      <td data-libelle="Nouveau poste">
+                        <input
+                          list="postes-du-formulaire"
+                          aria-label={`Nouveau poste de la catégorie ${c.libelle}`}
+                          placeholder="ex. Achats, Loyers et charges locatives…"
+                          value={postesEdit[c.id] ?? ''}
+                          onChange={(e) => setPostesEdit((prev) => ({ ...prev, [c.id]: e.target.value }))}
+                        />
+                      </td>
+                      <td>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          disabled={!(postesEdit[c.id] ?? '').trim()}
+                          onClick={() => savePoste(c.id, false)}
+                        >
+                          Enregistrer
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <datalist id="postes-du-formulaire">
+                {POSTES_PROPOSABLES.map((poste) => <option key={poste} value={poste} />)}
+              </datalist>
+            </div>
+          )}
+          {piecesAContresens.size > 0 && (
+            <>
+              <p className="muted" style={{ marginTop: 14 }}>
+                {piecesAContresens.size === 1 ? 'Une pièce est rangée' : `${piecesAContresens.size} pièces sont rangées`} dans
+                une catégorie de l'autre sens — une vente dans une catégorie de dépense, ou un achat dans une catégorie de
+                recette : c'est la pièce qui change de catégorie, dans les justificatifs. Renommer la catégorie ferait
+                perdre leur case à ses autres pièces.
+              </p>
+              <div className="table-scroll">
+                <table>
+                  <thead><tr><th>Pièce</th><th>Type</th><th>Catégorie</th><th style={{ textAlign: 'right' }}>Montant</th></tr></thead>
+                  <tbody>
+                    {[...piecesAContresens.values()].map((p) => (
+                      <tr key={p.id}>
+                        <td>{p.tiers ?? p.nom_fichier}</td>
+                        <td className="muted">{p.type_piece === 'vente' ? 'Vente' : 'Achat'}</td>
+                        <td>{categories.find((c) => c.id === p.categorie_id)?.libelle ?? '—'}</td>
+                        <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>
+                          {formatMoney(montantRetenu(p, assujettiTva))}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {onNavigate && (
+                <button className="btn btn-outline btn-sm" style={{ marginTop: 10 }} onClick={() => onNavigate('pieces')}>
+                  Ouvrir les justificatifs
+                </button>
+              )}
+            </>
+          )}
         </div>
       )}
 

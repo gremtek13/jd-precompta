@@ -283,14 +283,24 @@ export function calculerDeclaration2035(
   // centime n'est plus la somme de ses sources. Les mouvements d'un poste se comptent par IDENTIFIANT, pas
   // par part : un mouvement ventilé sur deux catégories du même poste (lib/ventilationBanque.ts) y apporte
   // deux parts, et reste UN mouvement à retrouver sur le relevé.
-  const totaux = new Map<string, { nature: 'recette' | 'depense'; centimes: number; nbPieces: number; mouvements: Set<string> }>()
+  //
+  // UNE LIGNE PAR POSTE ET PAR NATURE, jamais par poste seul. Le total était tenu par libellé : une recette
+  // et une dépense rangées sous le même poste — une vente classée dans une catégorie de dépense, ou deux
+  // catégories qui se donnent le même libellé — fusionnaient en UNE ligne, de la nature de la première
+  // source rencontrée. La recette comptait alors en dépense, et le résultat se trompait du double de son
+  // montant, en silence : la concordance avec les écritures, qui juge source par source, n'y voyait rien,
+  // et `cadreCompatible` (lib/cases2035.ts), qui refuse une recette dans une case de dépenses, ne voyait
+  // plus que la ligne fusionnée. Séparées, la ligne du mauvais sens tombe dans les postes sans case, que
+  // Clôture montre et que la validation d'un exercice refuse.
+  const totaux = new Map<string, { poste: string; nature: 'recette' | 'depense'; centimes: number; nbPieces: number; mouvements: Set<string> }>()
 
   const ajouter = (contribution: ContributionDeclaration, nbPieces: number, mouvementId: string | null = null) => {
     contributions.push(contribution)
-    let actuel = totaux.get(contribution.poste)
+    const cle = `${contribution.nature}:${contribution.poste}`
+    let actuel = totaux.get(cle)
     if (!actuel) {
-      actuel = { nature: contribution.nature, centimes: 0, nbPieces: 0, mouvements: new Set() }
-      totaux.set(contribution.poste, actuel)
+      actuel = { poste: contribution.poste, nature: contribution.nature, centimes: 0, nbPieces: 0, mouvements: new Set() }
+      totaux.set(cle, actuel)
     }
     actuel.centimes += contribution.centimes
     actuel.nbPieces += nbPieces
@@ -444,10 +454,10 @@ export function calculerDeclaration2035(
   }
 
   // Le total SIGNÉ de chaque poste, jamais sa valeur absolue (voir `LigneDeclaration`).
-  const lignes = [...totaux.entries()]
-    .filter(([, t]) => t.centimes !== 0)
-    .map(([poste, t]) => ({
-      poste,
+  const lignes = [...totaux.values()]
+    .filter((t) => t.centimes !== 0)
+    .map((t) => ({
+      poste: t.poste,
       nature: t.nature,
       montant: t.centimes / 100,
       nbPieces: t.nbPieces,
