@@ -4471,6 +4471,18 @@ describe('BanqueTab — une pièce lettrée à la main n’attend pas de mouveme
     expect(await screen.findByText('2 montants ne correspondent à aucun mouvement bancaire')).toBeTruthy()
   })
 
+  // Le lettrage se revérifie sur TOUTES les pièces que l'onglet lit, comme la carte des comptes de tiers : un avoir
+  // repassé « à valider » garde son écriture, et le lettrage tient encore. Revérifié sur les seules validées, il ne
+  // tiendrait plus — « une de ses pièces n'a pas pu être lue » —, et la facture redeviendrait un montant introuvable.
+  it('un avoir repassé « à valider » ne défait pas le lettrage qui le compte', async () => {
+    preparer()
+    faux.pieces = [FACTURE, { ...AVOIR, statut: 'a_valider' }]
+    rendre(ENGAGEMENT)
+    await screen.findByText('Écarts à vérifier')
+    expect(screen.queryByText(/ne correspond(ent)? à aucun mouvement bancaire/)).toBeNull()
+    expect(ecarts()).toMatch(/· 0 pièce\(s\) validée\(s\) sans mouvement bancaire correspondant/)
+  })
+
   it('des lettrages lus en partie le disent, en engagement', async () => {
     preparer()
     faux.muet = { lettrages_manuels: 1 }

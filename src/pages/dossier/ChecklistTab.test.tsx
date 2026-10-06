@@ -1265,6 +1265,28 @@ describe('ChecklistTab — en engagement', () => {
     const point = await screen.findByText(MONTANT_INTROUVABLE)
     expect(point.textContent).toMatch(/^2 /)
   })
+
+  // Les lettrages se revérifient sur TOUTES les pièces lues, comme la carte des comptes de tiers où on les défait. Un
+  // avoir repassé « à valider » garde son écriture, et le lettrage qui le compte y tient encore : revérifié sur les seules
+  // validées, il paraîtrait ne plus tenir — « une de ses pièces n'a pas pu être lue » —, et la facture redeviendrait sans
+  // règlement ici, et ici seulement.
+  it('revérifie un lettrage sur toutes les pièces, à valider comprises, comme la carte des comptes de tiers', async () => {
+    const [factureSoldee, avoirSoldant] = soldees.validees
+    poser({ ...soldees, validees: [factureSoldee], aValider: [{ ...avoirSoldant, statut: 'a_valider' }], lettrages: lettrage })
+    monter(false, ENGAGEMENT)
+    await screen.findAllByText(/^Relevés bancaires \d{4}$/)
+    expect(screen.queryAllByText(/lettrage\(s\) fait\(s\) à la main/)).toHaveLength(0)
+    expect(screen.queryAllByText(/facture\(s\) sans règlement rapproché/)).toHaveLength(0)
+    expect(screen.queryAllByText(MONTANT_INTROUVABLE)).toHaveLength(0)
+  })
+
+  // Des lettrages lus en partie font paraître ouvertes des pièces soldées, et un lettrage amputé d'une pièce « ne plus
+  // tenir » : le silence comme les points de la liste ne prouvent plus rien, et l'écran le dit.
+  it('dit que les données sont lues en partie quand les lettrages faits à la main le sont', async () => {
+    poser({ ...soldees, lettrages: lettrage, tronquees: ['lettrages_manuels'] })
+    monter(false, ENGAGEMENT)
+    expect(await screen.findByText(/Les données du dossier n'ont pas pu être lues en entier/)).toBeTruthy()
+  })
 })
 
 // LIGNE 26.6 : un mouvement du relevé AFFECTÉ à une catégorie est rapproché sans pièce ni échéance,
