@@ -485,7 +485,12 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // `piecesValidees` et non `pieces` : ce contrôle ne vise que les pièces VALIDÉES, et son libellé le
   // dit. L'état s'appelait `pieces` quand ce point a été écrit, alors qu'il ne portait déjà que les
   // validées — c'est exactement le nom trompeur que le renommage a supprimé.
-  const montantSuspect = piecesMontantIntrouvableEnBanque(piecesValidees.filter((p) => !piecesRapprocheesIds.has(p.id)), lignes)
+  // Ni une pièce qu'un lettrage fait à la main qui tient solde : une facture lettrée avec son avoir n'attend aucun
+  // mouvement, et son montant ne sera jamais dans le relevé. Le même critère que l'onglet Banque, où mène ce point.
+  const montantSuspect = piecesMontantIntrouvableEnBanque(
+    piecesValidees.filter((p) => !piecesRapprocheesIds.has(p.id) && !lettreesALaMain.has(p.id)),
+    lignes,
+  )
 
   // "action" : le libellé du bouton, propre à chaque point plutôt qu'un "Aller à l'onglet" générique
   // répété sur toute la liste — dit ce que l'onglet cible va permettre de faire, pas juste où il est.

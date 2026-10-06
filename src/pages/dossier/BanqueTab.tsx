@@ -36,6 +36,8 @@ import {
 } from '../../lib/reglesAffectation'
 import { reglerPieceSurBanque } from '../../lib/reglementBanque'
 import { lirePiecesFigees, type LecturePiecesFigees } from '../../lib/piecesFigeesLecture'
+import { AUCUN_LETTRAGE_MANUEL, lireLettragesManuels, type LectureLettragesManuels } from '../../lib/lettragesLecture'
+import { etatsDesLettragesManuels, piecesLettreesALaMain } from '../../lib/lettrage'
 import { ecritureDeLaVentilation, partsDesVentilations, recettesVentileesSansTaux, refusVentilation, type PartSaisie } from '../../lib/ventilationBanque'
 import { libelleTaux } from '../../lib/tvaDuReleve'
 import { ecritureDeLaCotisation, rapprochementsCotisationRefuses, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
@@ -126,6 +128,10 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // portent elles-mêmes une écriture validée ne se rapprochent plus (voir `piecesHorsRapprochement`). Leur drapeau est à
   // part : lues en partie, elles laissent une pièce figée paraître à rapprocher.
   const [piecesFigees, setPiecesFigees] = useState<LecturePiecesFigees>(AUCUNE_PIECE_FIGEE)
+  // LES LETTRAGES FAITS À LA MAIN (lib/lettragesLecture.ts), et les lignes des comptes de tiers qui les revérifient : en
+  // engagement, une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de mouvement bancaire. Leur
+  // drapeau est à part : lus en partie, ils laissent une pièce lettrée paraître sans mouvement.
+  const [lettragesManuels, setLettragesManuels] = useState<LectureLettragesManuels>(AUCUN_LETTRAGE_MANUEL)
   const [reglementsIncomplets, setReglementsIncomplets] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState<'toutes' | StatutLigneBancaire>('non_rapprochee')
@@ -245,6 +251,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setReglementsIncomplets(lectureReglements.complete ? null : lectureReglements.motif)
 
     const lectureFigees = await lirePiecesFigees(dossierId)
+    const lectureLettrages = await lireLettragesManuels(dossierId)
 
     // Best-effort : un contrôle illisible ne doit pas empêcher l'écran de s'afficher, mais l'échec
     // est journalisé plutôt qu'avalé — une liste vide se lirait sinon « aucun écart ».
@@ -263,6 +270,7 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     setVentilations(lectureVentilations.lignes)
     setReglements(lectureReglements.lignes)
     setPiecesFigees(lectureFigees)
+    setLettragesManuels(lectureLettrages)
     setRelevesIncoherents(controles)
     setLoading(false)
   }
@@ -280,7 +288,16 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   // une pièce réglée par la part d'un virement groupé se laisserait sinon rapprocher d'un second mouvement.
   const paiements = useMemo(() => paiementsDesPieces(lignes, reglements), [lignes, reglements])
   const piecesRapprochees = useMemo(() => piecesPayees(paiements), [paiements])
-  const piecesSansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id))
+  // UNE PIÈCE QU'UN LETTRAGE FAIT À LA MAIN SOLDE N'ATTEND PLUS DE MOUVEMENT BANCAIRE : en engagement, une facture lettrée
+  // avec son avoir est réglée sans paiement. Comptée « sans mouvement », et surtout parmi les montants introuvables en
+  // banque, elle porterait une alerte en erreur qu'aucun paiement ne viendrait éteindre. Seul un lettrage qui TIENT compte
+  // — revérifié sur les écritures, sur les mêmes pièces que la Checklist (validées et à valider) : un lettrage qui ne se
+  // solde plus laisse sa facture attendre son paiement. Rien en trésorerie, où rien ne se lettre.
+  const lettreesALaMain = useMemo(
+    () => piecesLettreesALaMain(etatsDesLettragesManuels(lettragesManuels.ecritures, pieces, lettragesManuels.lettrages, modele.mode)),
+    [lettragesManuels, pieces, modele.mode],
+  )
+  const piecesSansMouvement = piecesValidees.filter((p) => !piecesRapprochees.has(p.id) && !lettreesALaMain.has(p.id))
   // EN TRÉSORERIE, UNE PIÈCE QUI PORTE ELLE-MÊME UNE ÉCRITURE VALIDÉE NE SE RAPPROCHE PLUS. Son écriture s'équilibre déjà
   // sans paiement — une note de frais, face au compte de l'exploitant —, et la rapprocher la redaterait au paiement, ce
   // que la base refuse, pendant que la 2035 de l'exercice suivant la compterait une seconde fois. Le remboursement d'une
@@ -1175,6 +1192,15 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             'base refusera d’en changer le montant, et son règlement s’écrira au montant du mouvement. Recharge la page.'}
       />
 
+      <BandeauLecturePartielle
+        quoi="Les lettrages faits à la main"
+        accord="lus"
+        motif={modele.mode === 'engagement' ? lettragesManuels.motif : null}
+        consequence={
+          'Une facture qu’un lettrage solde avec son avoir peut donc paraître sans mouvement bancaire, et son montant ' +
+          'introuvable dans le relevé. Recharge la page.'
+        }
+      />
       <BandeauLecturePartielle
         quoi="Les règles d’affectation"
         motif={reglesAffectationIncompletes}
