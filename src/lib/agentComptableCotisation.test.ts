@@ -93,6 +93,7 @@ const paires = (a: Rapprochement[]) => a.map((r) => `${r.ligne.id}→${r.cotisat
 // l'ORDRE des refus vérifiable, et non seulement leur existence.
 const PHRASE_DU_CODE: Record<string, string | RegExp> = {
   regle_en_groupe: REFUS_REGLE_EN_GROUPE,
+  ecrit_sur_un_compte_de_bilan: /^Ce mouvement est écrit sur le compte \d{6,10}( \(.+\))? : annule d’abord ce classement\.$/,
   deja_classe: REFUS_COTISATION_CLASSEE,
   mouvement_a_zero: 'Un mouvement de zéro euro n’a rien à écrire.',
   echeance_a_zero: 'Une échéance de zéro euro ne se rapproche pas.',
@@ -109,6 +110,11 @@ const MOUVEMENTS: LigneBancaire[] = [
   ligne({ id: 'zero', montant: 0 }),
   ligne({ id: 'petit', montant: -20 }),
   ligne({ id: 'groupe', reglement_groupe: true, piece_id: 'p1' }),
+  // Un mouvement écrit sur un compte de bilan (ligne 26.7) — seul, après un règlement groupé, et avant une pièce : la
+  // base rend ces mélanges impossibles, l'ORDRE des refus reste celui de src/lib.
+  ligne({ id: 'bilan', compte_bilan: '580000' }),
+  ligne({ id: 'groupe-bilan', reglement_groupe: true, compte_bilan: '275000' }),
+  ligne({ id: 'bilan-piece', compte_bilan: '274100', piece_id: 'p1' }),
   ligne({ id: 'piece', piece_id: 'p1' }),
   ligne({ id: 'affecte', categorie_id: 'cat' }),
   ligne({ id: 'emprunt', emprunt_id: 'e1' }),
@@ -263,7 +269,7 @@ describe('agent-comptable / points_a_traiter lit les échéances de cotisation',
   it('lit les échéances et ce qui les paie, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("cotisations_declarees"\)\.select\("id, echeance, montant_appele, montant_verse, montant_csg_crds"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     // Le relevé entier porte ce qui décide d'un refus : le lien, et tout autre classement du mouvement.
-    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, prelevement_personnel, emprunt_id, [^"]*ventilee"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, [^"]*ventilee"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/rReleve, rParts, rReglements, rCotisations[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
@@ -321,6 +327,24 @@ describe('le garde-fou du bloc COTISATION sait encore échouer', () => {
   it('attrape un encaissement qui paierait un appel', () => {
     const derivee = planter(['  if (montant > 0 && ligne.montant > 0) return "encaissement_sur_un_appel"\n', ''])
     echoue(() => memesRefus(derivee))
+  })
+
+  it('attrape un mouvement écrit sur un compte de bilan qui s’écrirait quand même', () => {
+    const derivee = planter(['  if (ligne.compte_bilan) return "ecrit_sur_un_compte_de_bilan"\n', ''])
+    echoue(() => memesRefus(derivee))
+  })
+
+  it('attrape un compte de bilan refusé après les autres classements', () => {
+    const derivee = planter(
+      ['  if (ligne.compte_bilan) return "ecrit_sur_un_compte_de_bilan"\n', ''],
+      ['ligne.ventilee || ligne.prelevement_personnel) return "deja_classe"\n', 'ligne.ventilee || ligne.prelevement_personnel) return "deja_classe"\n  if (ligne.compte_bilan) return "ecrit_sur_un_compte_de_bilan"\n'],
+    )
+    // L'ordre se lit au CODE rendu, pas à la seule présence d'un refus.
+    echoue(() => {
+      const l = MOUVEMENTS.find((m) => m.id === 'bilan-piece')!
+      const code = derivee.refusRapprochementCotisation(l, cotisation({}), 'tresorerie')
+      expect(refusRapprochementCotisation(l, cotisation({}), 'tresorerie')).toMatch(PHRASE_DU_CODE[code!])
+    })
   })
 
   it('attrape un mouvement déjà classé ailleurs qui s’écrirait quand même', () => {

@@ -313,6 +313,12 @@ const VIREMENTS: LigneBancaire[] = [
   perso({ id: 'zero', montant: 0 }),
   perso({ id: 'rapproche', statut: 'rapprochee', piece_id: 'p1' }),
   perso({ id: 'affecte', statut: 'rapprochee', categorie_id: 'frais' }),
+  // Les autres classements que `refusVirementPersonnel` regarde avant d'écrire : la base rend ces mélanges impossibles
+  // avec un virement personnel, et la copie doit quand même dire d'eux ce que src/lib en dit.
+  perso({ id: 'groupe', statut: 'rapprochee', reglement_groupe: true }),
+  perso({ id: 'bilan', statut: 'rapprochee', compte_bilan: '580000' }),
+  perso({ id: 'emprunt', statut: 'rapprochee', emprunt_id: 'e1' }),
+  perso({ id: 'ventile', statut: 'rapprochee', ventilee: true }),
   ligne({ id: 'pas-perso', statut: 'ignoree', categorie_id: null, montant: -500 }),
 ]
 const ECRITURES_VIREMENTS: EcritureBrouillon[] = [
@@ -336,7 +342,8 @@ describe('agent-comptable / bloc AFFECTATION — les virements personnels', () =
       }
     }
     // La batterie exerce bien ce qui décide : l'écriture absente, le compte qui suit le modèle, et les
-    // mouvements qu'on ne peut pas écrire (zéro euro, rapproché, affecté, pas un virement personnel).
+    // mouvements qu'on ne peut pas écrire (zéro euro, rapproché, affecté, réglé en groupe, écrit sur un compte de
+    // bilan, rapproché d'un emprunt, ventilé, pas un virement personnel).
     expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))).toEqual(['sans-ecriture', 'ecrit-467'])
     expect(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, ENGAGEMENT, null))).toEqual(['sans-ecriture', 'ecrit-108', 'apport'])
     // Et la frontière décide : un exercice validé ne réclame plus son virement, la base n'y écrivant plus.
@@ -382,7 +389,8 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
   })
 
   it('lit les virements personnels sous le même refus de lecture partielle, et rend le point de la Checklist', () => {
-    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("prelevement_personnel", true\)/)
+    // Et tout autre classement du mouvement, que `refusVirementPersonnel` regarde avant d'écrire.
+    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("prelevement_personnel", true\)/)
     expect(corps).toContain('virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere)')
     expect(corps).toMatch(/virements_personnels_sans_ecriture: virementsAEcrire\.length/)
   })
@@ -487,8 +495,26 @@ describe('le garde-fou sait encore échouer', () => {
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
   })
 
+  it('attrape une copie qui écrirait un virement personnel posé sur un compte de bilan', () => {
+    const derivee = planter(' && !l.compte_bilan\n', '\n')
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+  })
+
+  it('attrape une copie qui écrirait un virement personnel réglé en groupe, rapproché d’un emprunt ou ventilé', () => {
+    for (const [avant, apres] of [
+      ['    && !l.reglement_groupe && !l.compte_bilan\n', '    && !l.compte_bilan\n'],
+      [' && !l.emprunt_id && !l.ventilee\n', ' && !l.ventilee\n'],
+      [' && !l.emprunt_id && !l.ventilee\n', ' && !l.emprunt_id\n'],
+    ] as const) {
+      const derivee = planter(avant, apres)
+      echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
+        .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+    }
+  })
+
   it('attrape une copie qui prend tout mouvement pour un virement personnel', () => {
-    const derivee = planter('    l.prelevement_personnel\n    && !l.piece_id', '    !l.piece_id')
+    const derivee = planter('    l.prelevement_personnel\n    && !l.reglement_groupe', '    !l.reglement_groupe')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
   })
@@ -507,7 +533,7 @@ describe('le garde-fou sait encore échouer', () => {
   })
 
   it('attrape une copie qui réclame l’écriture d’un virement figé', () => {
-    const derivee = planter('    && !estFigee(l.date, frontiere)\n', '')
+    const derivee = planter('    && l.montant !== 0\n    && !estFigee(l.date, frontiere)\n', '    && l.montant !== 0\n')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10')))
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, '2025-03-10'))))
   })
