@@ -2399,6 +2399,34 @@ describe('EcrituresTab — les mouvements écrits sur un compte de bilan', () =>
     expect(faux.rpcs).toHaveLength(1)
   })
 
+  // Le verrou tient jusqu'à la RELECTURE : réécrire un second mouvement rend son bouton au premier (l'état n'en retient
+  // qu'un), et le premier, encore porté par la liste le temps que la relecture revienne, se réécrirait une seconde fois.
+  it('ne réécrit pas deux fois un mouvement dont la relecture n’est pas revenue', async () => {
+    const second = mouvement({ id: 'l-b2', date: '2025-04-15', libelle: 'DEPOT DE GARANTIE', compte_bilan: '275000' })
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement(), second], ecritures_brouillon: ecrituresDu(900) })
+    monter()
+    const [premier, autre] = await screen.findAllByRole('button', { name: 'Réécrire' })
+    faux.retenirApresRpc = true
+    await act(async () => { premier.click() })
+    await act(async () => { autre.click() })
+    await waitFor(() => expect(premier.hasAttribute('disabled')).toBe(false))
+    await act(async () => { premier.click() })
+    expect(faux.rpcs.map((r) => r.args.p_ligne_bancaire_id)).toEqual(['l-b', 'l-b2'])
+
+    await act(async () => { faux.relacher?.() })
+    await waitFor(() => expect(screen.queryByText('Mouvements écrits sur un compte de bilan à réécrire')).toBeNull())
+  })
+
+  // Un compte que la base refuserait aujourd'hui — ici le compte du dirigeant d'un dossier passé en engagement, que
+  // « Virement personnel » tient — ne se réécrit pas d'un clic : le bouton le dit et renvoie à la fiche du mouvement.
+  it('ne propose pas de réécrire sur un compte que la base refuserait, et dit où aller', async () => {
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement({ compte_bilan: '455000' })], ecritures_brouillon: [] })
+    monter(false, ENGAGEMENT)
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    expect(bouton.hasAttribute('disabled')).toBe(true)
+    expect(bouton.getAttribute('title')).toMatch(/« Virement personnel ».*Depuis la fiche du mouvement, dans Banque/)
+  })
+
   it('dit une réécriture que la base refuse, et garde le mouvement à réécrire', async () => {
     poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement()], ecritures_brouillon: ecrituresDu(900) })
     faux.erreurRpc = 'refus simulé'

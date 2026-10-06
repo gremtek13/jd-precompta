@@ -1932,6 +1932,8 @@ describe('ChecklistTab — les mouvements ignorés et les comptes de bilan', () 
 
     const point = await screen.findByText(POINT)
     expect(point.textContent).toMatch(/^2 /)
+    // « Attention », pas « erreur » : un doublon reste ignoré à juste titre.
+    expect(point.closest('.check-ligne')!.querySelector('.check-dot')!.className).toContain('check-attention')
     expect(screen.getByText(/Dans Banque, filtre « Ignorés » : 300,00\s€ encaissés et 120,00\s€ payés\. Un doublon reste ignoré/)).toBeTruthy()
     screen.getByRole('button', { name: 'Voir les mouvements ignorés' }).click()
     expect(onNavigate).toHaveBeenCalledWith('banque')
@@ -1974,8 +1976,24 @@ describe('ChecklistTab — les mouvements ignorés et les comptes de bilan', () 
 
     const point = await screen.findByText(/écrit\(s\) sur un compte de bilan dont l’écriture ne suit plus le compte/)
     expect(point.textContent).toMatch(/^1 /)
+    expect(point.closest('.check-ligne')!.querySelector('.check-dot')!.className).toContain('check-manque')
     screen.getByRole('button', { name: 'Réécrire ces mouvements' }).click()
     expect(onNavigate).toHaveBeenCalledWith('ecritures')
+  })
+
+  // Un exercice validé ne se réécrit plus : la base refuserait, donc la Checklist ne le réclame pas.
+  it('ne réclame pas la réécriture d’un mouvement d’un exercice validé', async () => {
+    const bilan2025 = { ...surBilan(), date: '2025-03-10' }
+    const POINT_BILAN = /sur un compte de bilan dont l’écriture/
+    poser({ lignes: [ANCRE, bilan2025] })
+    const { unmount } = monter(false, TRESORERIE, [2025])
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT_BILAN)).toHaveLength(0)
+    unmount()
+    // Le garde symétrique : l'exercice ouvert, le même mouvement se réclame.
+    poser({ lignes: [ANCRE, bilan2025] })
+    monter()
+    expect((await screen.findByText(POINT_BILAN)).textContent).toMatch(/^1 /)
   })
 
   // Garde SYMÉTRIQUE : écrit, il n'est ni un point à traiter, ni une rupture de la piste d'audit, ni un mouvement

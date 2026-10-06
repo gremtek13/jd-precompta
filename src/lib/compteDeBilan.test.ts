@@ -323,6 +323,11 @@ describe('mouvementsSurUnCompteDeBilanDesynchronises — défensif : l’écritu
 
   it('ne regarde que les mouvements écrits sur un compte de bilan, hors d’un exercice validé', () => {
     expect(mouvementsSurUnCompteDeBilanDesynchronises([], [mouvement()], null)).toEqual([])
+    // Rapprochés d'autre chose — une catégorie, une pièce —, ils ont leur propre contrôle : sans compte de bilan, il n'y
+    // a pas d'écriture attendue ici, et les juger les dirait tous « à réécrire ».
+    const affecte = mouvement({ id: 'l2', statut: 'rapprochee', categorie_id: 'cat' })
+    const dUnePieceRapprochee = mouvement({ id: 'l3', statut: 'rapprochee', piece_id: 'p1' })
+    expect(mouvementsSurUnCompteDeBilanDesynchronises([], [affecte, dUnePieceRapprochee], null)).toEqual([])
     expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-12-31')).toEqual([])
     expect(mouvementsSurUnCompteDeBilanDesynchronises([], [ecrit], '2026-03-11')).toEqual([ecrit])
     // L'écriture d'une pièce qui désigne le même mouvement n'est pas la sienne.

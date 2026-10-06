@@ -4651,9 +4651,11 @@ d'environnement dans la même édition.
     28/09/2026, c'était les justificatifs et leur banque, et les à-nouveaux ; depuis la ligne 26.6 (du 29/09
     au 04/10/2026), ce sont aussi les mouvements du relevé affectés ou ventilés sans justificatif, les
     virements personnels, les échéances d'emprunt et de cotisation, les dotations aux amortissements,
-    l'acquisition des biens et le forfait kilométrique. Il n'a toujours pas les mouvements que personne
-    n'a encore traités. Ses écritures sont des brouillons, sans procédure de validation : ValidDate y vaut
-    la date d'écriture, ce que la notice n'admet que d'un logiciel sans mode brouillard. C'est un fichier
+    l'acquisition des biens et le forfait kilométrique ; depuis le 06/10/2026 (ligne 26.7), les mouvements
+    écrits sur un compte de bilan. Il n'a toujours pas les mouvements que personne n'a encore traités, ni
+    ceux qu'on a ignorés — la Checklist les compte. Ses écritures restent des brouillons tant que leur
+    exercice n'est pas validé : ValidDate y vaut alors la date d'écriture, ce que la notice n'admet que d'un
+    logiciel sans mode brouillard ; validé, il porte le jour de la validation. C'est un fichier
     d'IMPORT pour l'expert-comptable ; le FEC remis à l'administration est celui de son logiciel.
   - **Il n'est jamais passé au validateur de la DGFiP**, faute de pouvoir l'exécuter ici : ses règles
     ont été lues (ci-dessus), pas éprouvées. Le vrai test est un import dans le logiciel de
@@ -5343,7 +5345,8 @@ d'environnement dans la même édition.
   trois profils : vingt-cinq contrôles, dont le contrôle POSITIF du chef de cabinet, chaque refus jugé à
   sa RAISON, et ce que les contraintes tiennent seules.
   **La nature se lit au COMPTE, le sens au SIGNE** : classe 7 une recette, classe 6 une dépense ; un
-  compte de bilan est refusé tant qu'aucune étape ne le prend en charge. L'écriture prend le sens du
+  compte de bilan est refusé — il a son propre chemin depuis le 06/10/2026 (voir « un mouvement du relevé
+  s'écrit sur un compte de bilan »). L'écriture prend le sens du
   mouvement, jamais celui de la nature : un remboursement reçu crédite la charge et la diminue, sans
   cas à part. L'erreur la plus facile est nommée avant le clic (`sensInhabituel`) : « Honoraires »
   (622600) est une CHARGE, les honoraires qu'on encaisse vont en 706, et un encaissement rangé là
@@ -6801,6 +6804,106 @@ d'environnement dans la même édition.
   **CE QUI RESTE** : un lettrage fait à la main n'est pas proposé pour plus de deux pièces quand le tiers entier ne se
   solde pas, et les écarts de change et les frais bancaires d'un rapprochement restent absorbés par la facture (voir la
   comptabilité d'engagement, étape 1).
+- **UN MOUVEMENT DU RELEVÉ S'ÉCRIT SUR UN COMPTE DE BILAN — LIGNE 26.7** (06/10/2026, `lib/compteDeBilan.ts`,
+  migration `compte_de_bilan_du_releve`). L'affectation refuse un compte de bilan, et seuls quelques-uns avaient un
+  chemin à eux : le compte du dirigeant par le virement personnel, le 164 par l'emprunt, la cotisation, l'acquisition
+  d'un bien. Un virement vers un livret d'épargne ou un second compte, un dépôt de garantie versé ou rendu, ne pouvait
+  donc qu'être IGNORÉ — et un mouvement ignoré n'est écrit nulle part : absent du FEC, il laissait le 512 du brouillon
+  s'écarter du relevé de son montant, sans que rien ne le dise.
+  **Décisions du cabinet (06/10/2026)** : le virement entre comptes au 580000 (virements internes), le dépôt de garantie
+  au 275000 (dépôts et cautionnements versés), et un compte de bilan au choix, des classes 1 à 5, sous les contrôles de
+  l'application. Le remboursement d'un crédit de TVA (44583) relève de la ligne 26.8, avec la liquidation de la TVA.
+  **LE COMPTE SE GARDE SUR LE MOUVEMENT ET S'ÉCRIT AVEC LUI** : `lignes_bancaires.compte_bilan`, et trois contraintes qui
+  le tiennent sans le code — six à dix chiffres des classes 1 à 5, jamais un 512 (`lignes_bancaires_compte_bilan_format`) ;
+  un mouvement qui le porte est rapproché, jamais personnel (`lignes_bancaires_compte_bilan_rapproche`) ; et la contrainte
+  d'un seul rapprochement élargie à ce septième lien. `ecrire_mouvement_compte_bilan` pose le compte et son écriture
+  ensemble — le compte face à la banque, au montant, à la date et dans le sens du mouvement —, après avoir VÉRIFIÉ
+  l'écriture composée par l'application (`ecritureDuCompteDeBilan`) et refait ses refus, et remplace l'écriture d'avant ;
+  `retirer_mouvement_compte_bilan` défait les deux. Toutes deux sont `SECURITY INVOKER`, vérifient `admin_du_dossier` et
+  refusent une écriture validée ; le déclencheur qui fige un mouvement d'un exercice validé (`garder_mouvement_valide`)
+  compare la ligne ENTIÈRE, donc la nouvelle colonne y est figée sans rien lui ajouter.
+  **CE QUI SE REFUSE, ET POURQUOI** — `refus_compte_de_bilan` en base, `refusCompteDeBilan` dans l'application, dans le
+  même ordre et avec les mêmes phrases : les comptes de résultat (une catégorie), ce qui n'est pas de classe 1 à 5, le 512
+  et les autres comptes de trésorerie (ils se relient par le 580000), le compte du dirigeant et le 108 (« Virement
+  personnel »), le 164 (« Rapprocher d'un emprunt »), les comptes de fournisseurs et de clients (leur facture), la TVA (sa
+  déclaration, ligne 26.8), les immobilisations (le registre), les amortissements et dépréciations, les stocks, les
+  réserves, le report à nouveau et le résultat, les provisions, les comptes d'attente — un mouvement qu'on ne sait pas
+  classer reste à traiter, sans quoi il échapperait à la validation —, les comptes de régularisation, et ce qu'aucune
+  écriture de l'application ne solderait : en trésorerie un salaire, une cotisation ou un impôt sont des charges, en
+  engagement la paie et les impôts autres que sur les bénéfices (444) passent par une écriture qu'elle ne fait pas. Le
+  test EXÉCUTE la fonction SQL exportée par un petit interprète, sur tous les comptes de trois chiffres et leurs
+  sous-comptes, dans les deux modèles et pour chaque compte du dirigeant : même phrase ou rien, chaque branche atteinte,
+  et l'interprète lui-même éprouvé sur une branche retirée. Les refus du MOUVEMENT (déjà classé, réglé en groupe, de
+  zéro euro) viennent avant ceux du compte, comme en base.
+  **La saisie d'un compte au choix** (`lireCompteSaisi`) retire espaces et points, refuse les lettres, moins de trois
+  chiffres et plus de dix, et ramène le numéro à la forme des comptes de l'application : les zéros de fin ne font pas
+  un autre compte, « 580 000 » et « 5800000 » sont le 580000. L'écran dit le libellé du compte tapé avant le clic.
+  **Un compte que rien d'autre ne nomme prend le libellé du plan comptable** (`libelleDuPlanComptable`, lib/comptes.ts :
+  le préfixe le plus long, de trois chiffres à un, classes 1 à 5), en dernier recours, dans la balance et le FEC,
+  à-nouveaux compris — un CompteNum ne porte qu'un CompteLib.
+  **Les autres classements le refusent avant le clic** (`refusEcritSurUnCompteDeBilan`, dans les six modules :
+  affectation, virement personnel, ventilation, règlement groupé, emprunt, cotisation) : la base ne le refuserait que
+  par sa contrainte, dont le message ne dit rien à l'opérateur.
+  **Ce qui le porte** : le sixième cas de `mouvementJustifieParLeReleve` — le FEC au journal de banque avec le relevé
+  pour pièce, la piste d'audit avec le relevé pour justificatif —, et il n'est pas « rapproché sans justificatif ». La
+  2035 et la concordance ne le voient pas, un compte de bilan n'entrant pas dans le résultat. Financement l'écarte de la
+  moyenne du plan de trésorerie et des ratios, et le dit — un virement rapatrié de l'épargne flatterait le taux
+  d'endettement, sur le document qu'on montre à une banque —, et le solde le compte.
+  **Les écrans** : dans la fiche d'un mouvement à traiter, « Sur un compte de bilan » propose les deux comptes et
+  « Autre compte de bilan… », la saisie, son libellé et son refus, sous le verrou partagé des écritures de
+  rapprochement. Écrit, le mouvement montre son compte et son sens (au débit pour un paiement, au crédit pour un
+  encaissement), se change de compte — jamais sur un exercice figé — ou se remet à traiter par la base, et la liste
+  porte « Écrit au N — libellé » à la place de « Rapproché ». Écritures porte le panneau « Mouvements écrits sur un
+  compte de bilan à réécrire » — DÉFENSIF, la base écrivant le compte et l'écriture ensemble —, et « Réécrire » rejoue
+  la fonction sous le verrou des réaffectations, relâché après la relecture.
+  **LE MOUVEMENT IGNORÉ SE DIT ENFIN** (`mouvementsIgnoresHorsFec`) : la Checklist compte, en « attention », les
+  mouvements ignorés — virements personnels exceptés, ils ont leur écriture — depuis l'ouverture d'un dossier repris et
+  hors des exercices validés, avec ce qu'ils emportent dans chaque sens, et mène à Banque, filtre « Ignorés » ; elle se
+  tait sur des à-nouveaux lus en partie, qui feraient compter un mouvement antérieur à la reprise. La validation d'un
+  exercice en fait un AVERTISSEMENT et non un refus : un doublon reste ignoré à juste titre, et un mouvement antérieur
+  aux à-nouveaux aussi. Et la fiche d'un mouvement ignoré dit qu'il n'est écrit nulle part. Le mouvement écrit sur un
+  compte de bilan dont l'écriture ne suit plus son compte est, lui, une ERREUR de la Checklist et un refus de la
+  validation.
+  **L'assistant, version 43** : le bloc `── DÉBUT/FIN COMPTE DE BILAN` (l'écriture, le contrôle défensif, les mouvements
+  ignorés et leurs montants), les deux points de la Checklist dans `points_a_traiter`, et le prompt qui dit qu'un
+  mouvement écrit au 580000 ou au 275000 face au 512000, sans pièce, n'est pas une anomalie. Au passage, sa copie des
+  virements personnels écarte comme `refusVirementPersonnel` un mouvement réglé en groupe, écrit sur un compte de bilan,
+  rapproché d'un emprunt ou ventilé, et celle des cotisations refuse un mouvement écrit sur un compte de bilan.
+  `agentComptableCompteDeBilan.test.ts` (19 tests) compare la copie à src/lib et y plante onze dérives, toutes
+  attrapées. Déployée avec `verify_jwt` relu et repassé à `false`, la v42 comparée au dépôt avant écrasement
+  (identique), aller-retour après : zéro différence sur 2 920 lignes, et le 401 de la fonction sans session. Aucun appel
+  au modèle.
+  **LA MIGRATION A ÉTÉ COLLÉE PAR LE CABINET** dans l'éditeur SQL, `apply_migration` attendant une confirmation qui ne
+  lui parvenait pas, avec la ligne d'historique : celle-ci porte le texte exécuté en fins de ligne `\r\n`. Les recettes de
+  dérive ramènent désormais ces fins de ligne à `\n` côté base (85 migrations, `3940ae3c…` des deux côtés) ; le socle
+  porte la colonne et ses contraintes (75 instructions), l'inventaire 977 objets. `supabase/essais/compteBilan.sql` :
+  62 contrôles sur 62 en production, dont le contrôle POSITIF du chef, chaque famille refusée dans les deux modèles, un
+  exercice validé et ce que les contraintes tiennent seules ; sans les `set local role anon`, ses contrôles 1 à 3 virent
+  au rouge. Les six essais voisins, qui éprouvent les contraintes de `lignes_bancaires`, rejoués sans leurs sections de
+  suppression : tous passent.
+  **Le banc** sert un virement vers le livret, un dépôt de garantie et un encaissement ignoré. Les captures ont trouvé
+  le bouton « Écrire sur ce compte » poussé hors du volet par le champ du compte saisi : le champ rétrécit désormais
+  comme une liste. 0 débordement aux quatre largeurs de référence et aux combinaisons extrêmes des volets.
+  **LATENT, et mesuré** (06/10/2026, des comptes seulement) : aucun mouvement sur un compte de bilan en base, aucune
+  écriture au 580000 ni au 275000 ; trois mouvements ignorés hors virements personnels, tous des encaissements — deux sur
+  le dossier `test`, que la Checklist nomme désormais.
+  **Cent deux mutations, quatre-vingt-seize mordent — la première passe en laissait onze en vie sur cent une**, et
+  cinq accusaient des tests absents, écrits depuis : un mouvement rapproché d'autre chose qu'un compte de bilan, que le
+  contrôle défensif jugeait dès qu'on retirait sa première garde (le compilateur le voyait aussi) ; la note « Ignoré :
+  ce mouvement n'est écrit nulle part » affichée sur un virement personnel, qui s'écrit pourtant ; le verrou de
+  « Réécrire » relâché avant la relecture, qui laissait réécrire deux fois ; la gravité du point des ignorés, que
+  personne ne lisait (« attention », pas « erreur ») ; et un exercice validé dont la Checklist réclamait encore la
+  réécriture. Une mutation de plus — le bouton « Réécrire » ouvert malgré un refus — mord sur le test écrit pour elle.
+  **Six survivent, et c'est dit** : trois sont équivalentes — la contrainte `lignes_bancaires_compte_bilan_rapproche`
+  rend impossible un compte de bilan sur un mouvement non rapproché, ce qui rend muettes les gardes de statut du
+  contrôle et de la moyenne de Financement, et la table des libellés du plan ne porte que les classes 1 à 5 ; deux sont
+  des secondes ceintures derrière un bouton déjà grisé (le refus refait au clic, dans Banque et dans Écritures) ; et le
+  détour de « Remettre à traiter » par `retirer_mouvement_compte_bilan`, que la fiche n'offre jamais sur un mouvement
+  écrit sur un compte de bilan — défensif, comme celui du règlement groupé.
+  **CE QUI RESTE** : la TVA payée ou remboursée par le relevé (ligne 26.8) ; aucune règle ne propose un compte de bilan
+  — une règle d'affectation range dans une catégorie — ; et l'autre compte d'un virement interne n'est pas tenu dans
+  l'application, qui ne tient qu'un relevé par dossier : le 580000 garde le solde de ce qui y a été versé, que le relevé
+  de cet autre compte justifie, et l'aide du bouton le dit.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8249,7 +8352,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4437 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4534 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
