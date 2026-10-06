@@ -39,6 +39,11 @@
 -- ses commentaires (562 lignes). Et l'essai sait échouer : sans les `set local role anon`, les contrôles
 -- 1 à 3 virent au rouge — l'appel passe alors le droit d'exécution, et c'est la fonction qui refuse, avec
 -- un autre message (ou, pour `refus_compte_de_bilan`, qui répond).
+-- REJOUÉ LE 06/10/2026 après `liquidation_de_la_tva`, qui élargit de nouveau cette contrainte (un huitième lien,
+-- la déclaration de TVA dont un mouvement est le paiement ou le remboursement) : 62 contrôles sur 62 en
+-- production, le texte transmis identique au fichier sans ses commentaires. Le contrôle 23 attend encore le
+-- refus d'un compte de TVA qui dit « ce chemin n'existe pas encore » : il change quand l'écran du paiement
+-- d'une déclaration existe.
 create temp table essai_bilan (controle text, observe text, ok boolean) on commit drop;
 
 do $$

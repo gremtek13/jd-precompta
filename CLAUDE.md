@@ -319,6 +319,12 @@ supabase/
                   lettre, ce qui se refuse et pourquoi, ce que la policy tient —, par impersonation des trois
                   profils dans un dossier jetable, à rejouer après toute migration qui touche la table ou sa
                   fonction.
+                  liquidationTva.sql : l'enregistrement d'une déclaration de TVA et sa liquidation, son
+                  paiement et son remboursement — qui peut, ce qui se refuse et pourquoi, ce que les contraintes
+                  et les déclencheurs tiennent seuls, une déclaration figée par la validation —, par
+                  impersonation des trois profils dans un dossier jetable, à rejouer après toute migration qui
+                  touche declarations_tva, ses fonctions ou les contraintes de lignes_bancaires et
+                  d'ecritures_brouillon. Il se joue en UNE transaction (`psql -1` hors de l'outil d'exécution).
                   compteBilan.sql : le mouvement écrit sur un compte de bilan (compte_bilan,
                   ecrire_mouvement_compte_bilan, retirer_mouvement_compte_bilan, refus_compte_de_bilan) — qui
                   écrit, chaque famille de comptes refusée et pourquoi, dans les deux modèles, ce que les

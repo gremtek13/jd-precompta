@@ -49,6 +49,10 @@
 -- contrôles 48 à 50 retirés pour la même raison qu'au 04/10 — à la requête finale près, qui ne rendait le
 -- message observé que d'un contrôle en échec : ceux des contrôles 20 et 22 citent le fournisseur d'une
 -- pièce du dossier.
+-- REJOUÉ LE 06/10/2026 après `liquidation_de_la_tva`, qui élargit de nouveau cette contrainte (un huitième lien,
+-- la déclaration de TVA dont un mouvement est le paiement ou le remboursement) : 48 contrôles sur 48 en
+-- production, le texte transmis identique au fichier, ses commentaires et les contrôles 48 à 50 retirés pour la
+-- même raison qu'au 04/10, et la requête finale masquant le message observé des contrôles 20 et 22.
 create temp table essai_reglement_groupe (controle text, observe text, ok boolean) on commit drop;
 
 do $$

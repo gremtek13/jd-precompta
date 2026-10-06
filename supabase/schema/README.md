@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 85 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 86 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -45,7 +45,8 @@ ligne » de l'autre : les deux se comparent sur le contenu, pas sur un espace de
 cabinet colle dans l'éditeur SQL de Supabase (quand `apply_migration` attend une confirmation qui
 n'arrive pas) peut y arriver avec des fins de ligne `\r\n` : c'est ce qui s'est passé le 06/10/2026
 pour `compte_de_bilan_du_releve`, dont le texte enregistré ne diffère du fichier que par là — vérifié
-ligne à ligne, 235 lignes. L'historique garde ce qui s'est réellement exécuté, et le fichier du dépôt
+ligne à ligne, 235 lignes —, puis pour `liquidation_de_la_tva` (621 lignes, même empreinte une fois les
+fins de ligne ramenées à `\n`). L'historique garde ce qui s'est réellement exécuté, et le fichier du dépôt
 reste en `\n` : un retour chariot dans un fichier du dépôt ne survivrait pas au premier éditeur (la
 même règle que pour le corps de `generate_code_email` dans le socle). Les 84 migrations d'avant n'en
 contiennent aucun : la conversion ne change pas leur empreinte (`168bbdce…` avec et sans elle).
@@ -83,8 +84,8 @@ select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 06/10/2026** : 85 fichiers, 85 migrations, empreinte globale
-`3940ae3ce3e322ae0243ff85412410fc` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 06/10/2026** : 86 fichiers, 86 migrations, empreinte globale
+`8e03863c7058432ca5b8b3d4fc7ca431` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -116,12 +117,12 @@ ne s'appliquent pas tout seuls.
 Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
-  le socle au caractère près (75 instructions, empreinte `3ebd4e4f46e8ef0bf9e1450576b8820e` le
-  06/10/2026, rejoué après la migration des comptes de bilan), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  le socle au caractère près (77 instructions, empreinte `5114d8a30b093fe29bb20e075d6cb1dd` le
+  06/10/2026, rejoué après la migration de la liquidation de la TVA), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (977 objets, empreinte `cf75a02433a1ccbdef77f821b3cc812b` le 06/10/2026, rejoué après la migration des comptes de bilan). C'est le seul qui voie un
+  (1 003 objets, empreinte `3354d8a69f667ca4adcdf16c5e7e57c2` le 06/10/2026, rejoué après la migration de la liquidation de la TVA). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.

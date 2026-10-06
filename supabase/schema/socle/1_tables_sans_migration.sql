@@ -150,13 +150,14 @@ create table public.tiers_categories (
 );
 
 -- `lignes_bancaires_un_seul_rapprochement` porte une règle métier qu'aucun code ne peut remplacer :
--- une ligne se rapproche d'UNE pièce, d'UNE cotisation, d'UNE catégorie ou d'UN emprunt, ou bien se
--- ventile, ou bien règle plusieurs pièces par ses parts, ou bien s'écrit sur UN compte de bilan —
--- jamais deux de ces liens à la fois.
+-- une ligne se rapproche d'UNE pièce, d'UNE cotisation, d'UNE catégorie, d'UN emprunt ou d'UNE
+-- déclaration de TVA, ou bien se ventile, ou bien règle plusieurs pièces par ses parts, ou bien s'écrit
+-- sur UN compte de bilan — jamais deux de ces liens à la fois.
 -- `lignes_bancaires_affectation_rapprochee`, `lignes_bancaires_emprunt_rapproche`,
--- `lignes_bancaires_ventilation_rapprochee`, `lignes_bancaires_reglement_groupe_rapproche` et
--- `lignes_bancaires_compte_bilan_rapproche` : un mouvement affecté, rapproché d'un emprunt, ventilé,
--- qui règle plusieurs pièces ou écrit sur un compte de bilan est rapproché, et n'est pas un virement
+-- `lignes_bancaires_ventilation_rapprochee`, `lignes_bancaires_reglement_groupe_rapproche`,
+-- `lignes_bancaires_compte_bilan_rapproche` et `lignes_bancaires_declaration_tva_rapprochee` : un
+-- mouvement affecté, rapproché d'un emprunt, ventilé, qui règle plusieurs pièces, écrit sur un compte
+-- de bilan ou qui paie (ou rembourse) une déclaration de TVA est rapproché, et n'est pas un virement
 -- personnel. `lignes_bancaires_compte_bilan_format` : ce compte de bilan a six à dix chiffres, est de
 -- classe 1 à 5, et n'est jamais le 512 du relevé lui-même. `lignes_bancaires_decoupage_emprunt` : le découpage d'une échéance (intérêts, assurance,
 -- le reste en capital) tient dans le montant payé, et un déblocage n'en a pas.
@@ -175,7 +176,9 @@ create table public.tiers_categories (
 -- `reglement_groupe`, sa contrainte, la contrainte d'un seul rapprochement élargie) — ligne 26 ; et LE
 -- 01/10/2026 après `recettes_assujetties_du_releve` (colonne `taux_tva`, sa contrainte) — ligne 26.6 ; et
 -- LE 06/10/2026 après `compte_de_bilan_du_releve` (colonne `compte_bilan`, ses deux contraintes, la
--- contrainte d'un seul rapprochement élargie) — ligne 26.7.
+-- contrainte d'un seul rapprochement élargie) — ligne 26.7 —, puis `liquidation_de_la_tva` (colonne
+-- `declaration_tva_id`, sa clé sans action, sa contrainte, son index, la contrainte d'un seul
+-- rapprochement élargie) — ligne 26.8.
 -- Les onze autres tables sont celles du 22/09/2026, à trois près : `natures_immobilisation`,
 -- `immobilisations` et `ecritures_brouillon`, régénérées le 01/10/2026 — voir leur en-tête.
 create table public.lignes_bancaires (
@@ -201,12 +204,14 @@ create table public.lignes_bancaires (
   reglement_groupe boolean default false not null,
   taux_tva numeric(4,2),
   compte_bilan text,
+  declaration_tva_id uuid,
   constraint lignes_bancaires_cotisation_unique UNIQUE (cotisation_id),
   constraint lignes_bancaires_echeance_emprunt_unique UNIQUE (emprunt_id, emprunt_echeance),
   constraint lignes_bancaires_id_externe_unique UNIQUE (dossier_id, id_externe),
   constraint lignes_bancaires_pkey PRIMARY KEY (id),
   constraint lignes_bancaires_categorie_id_fkey FOREIGN KEY (categorie_id) REFERENCES categories(id),
   constraint lignes_bancaires_cotisation_id_fkey FOREIGN KEY (cotisation_id) REFERENCES cotisations_declarees(id) ON DELETE SET NULL,
+  constraint lignes_bancaires_declaration_tva_id_fkey FOREIGN KEY (declaration_tva_id) REFERENCES declarations_tva(id),
   constraint lignes_bancaires_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint lignes_bancaires_emprunt_id_fkey FOREIGN KEY (emprunt_id) REFERENCES emprunts(id),
   constraint lignes_bancaires_piece_id_fkey FOREIGN KEY (piece_id) REFERENCES pieces(id) ON DELETE SET NULL,
@@ -214,12 +219,13 @@ create table public.lignes_bancaires (
   constraint lignes_bancaires_compte_bilan_format CHECK (((compte_bilan IS NULL) OR ((compte_bilan ~ '^[1-5][0-9]{5,9}$'::text) AND (compte_bilan !~ '^512'::text)))),
   constraint lignes_bancaires_compte_bilan_rapproche CHECK (((compte_bilan IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_cotisation_rapprochee CHECK (((cotisation_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
+  constraint lignes_bancaires_declaration_tva_rapprochee CHECK (((declaration_tva_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_decoupage_emprunt CHECK ((((emprunt_id IS NULL) AND (emprunt_echeance IS NULL) AND (emprunt_interets IS NULL) AND (emprunt_assurance IS NULL)) OR ((emprunt_id IS NOT NULL) AND (emprunt_interets IS NOT NULL) AND (emprunt_assurance IS NOT NULL) AND (emprunt_interets >= (0)::numeric) AND (emprunt_assurance >= (0)::numeric) AND (((montant < (0)::numeric) AND (emprunt_echeance IS NOT NULL) AND (emprunt_echeance >= 1) AND ((emprunt_interets + emprunt_assurance) <= (- montant))) OR ((montant > (0)::numeric) AND (emprunt_echeance IS NULL) AND (emprunt_interets = (0)::numeric) AND (emprunt_assurance = (0)::numeric)))))),
   constraint lignes_bancaires_emprunt_rapproche CHECK (((emprunt_id IS NULL) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_reglement_groupe_rapproche CHECK (((NOT reglement_groupe) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel)))),
   constraint lignes_bancaires_statut_check CHECK ((statut = ANY (ARRAY['non_rapprochee'::text, 'rapprochee'::text, 'ignoree'::text]))),
   constraint lignes_bancaires_taux_tva CHECK (((taux_tva IS NULL) OR ((categorie_id IS NOT NULL) AND (taux_tva = ANY (ARRAY[(0)::numeric, 5.5, 8.5, (10)::numeric, (20)::numeric]))))),
-  constraint lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, NULLIF(ventilee, false), NULLIF(reglement_groupe, false)) <= 1)),
+  constraint lignes_bancaires_un_seul_rapprochement CHECK ((num_nonnulls(piece_id, cotisation_id, categorie_id, emprunt_id, compte_bilan, declaration_tva_id, NULLIF(ventilee, false), NULLIF(reglement_groupe, false)) <= 1)),
   constraint lignes_bancaires_ventilation_rapprochee CHECK (((NOT ventilee) OR ((statut = 'rapprochee'::text) AND (NOT prelevement_personnel))))
 );
 
@@ -270,7 +276,9 @@ create table public.immobilisations (
 -- `immobilisation_id`, est SANS action, et c'est voulu : une dotation ne se détache pas de son bien en
 -- silence — un bien amorti se retire par `retirer_immobilisation`, qui emporte ses dotations. La
 -- quatrième, `vehicule_id`, de même : un véhicule dont le forfait est écrit se retire par
--- `retirer_vehicule`, qui emporte son forfait.
+-- `retirer_vehicule`, qui emporte son forfait. La cinquième, `declaration_tva_id`, de même : une
+-- déclaration de TVA dont la liquidation est écrite se retire par `retirer_declaration_tva`, qui emporte
+-- sa liquidation et remet à traiter les mouvements qui la paient.
 --
 -- RÉGÉNÉRÉE LE 01/10/2026 depuis le catalogue, après `dotations_aux_amortissements` (colonne
 -- `immobilisation_id`, sa clé, ses deux contraintes, son index) — ligne 26.6, étape b. Une dotation ne
@@ -280,7 +288,9 @@ create table public.immobilisations (
 -- ENCORE LE 04/10/2026, après `validation_des_exercices` (huit colonnes, une contrainte, deux index) : une
 -- écriture validée porte son numéro dans son journal, sa date de validation et ce que son FEC lit, et une
 -- écriture proposée n'en porte rien. Le déclencheur qui la rend intangible, `ecritures_brouillon_intangibles`,
--- vit dans cette migration-là : ce socle ne porte pas les déclencheurs d'une table.
+-- vit dans cette migration-là : ce socle ne porte pas les déclencheurs d'une table. PUIS LE 06/10/2026, après
+-- `liquidation_de_la_tva` (colonne `declaration_tva_id`, sa clé, sa contrainte, son index) — ligne 26.8 : la
+-- liquidation d'une déclaration de TVA ne porte ni pièce, ni mouvement, ni bien, ni véhicule.
 create table public.ecritures_brouillon (
   id uuid default gen_random_uuid() not null,
   dossier_id uuid not null,
@@ -303,7 +313,9 @@ create table public.ecritures_brouillon (
   compte_lib text,
   comp_aux_num text,
   comp_aux_lib text,
+  declaration_tva_id uuid,
   constraint ecritures_brouillon_pkey PRIMARY KEY (id),
+  constraint ecritures_brouillon_declaration_tva_id_fkey FOREIGN KEY (declaration_tva_id) REFERENCES declarations_tva(id),
   constraint ecritures_brouillon_dossier_id_fkey FOREIGN KEY (dossier_id) REFERENCES dossiers(id) ON DELETE CASCADE,
   constraint ecritures_brouillon_immobilisation_id_fkey FOREIGN KEY (immobilisation_id) REFERENCES immobilisations(id),
   constraint ecritures_brouillon_ligne_bancaire_id_fkey FOREIGN KEY (ligne_bancaire_id) REFERENCES lignes_bancaires(id) ON DELETE SET NULL,
@@ -313,6 +325,7 @@ create table public.ecritures_brouillon (
   constraint ecritures_brouillon_dotation_sans_piece_ni_mouvement CHECK (((immobilisation_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL)))),
   constraint ecritures_brouillon_forfait_au_31_decembre CHECK (((vehicule_id IS NULL) OR ((EXTRACT(month FROM date) = (12)::numeric) AND (EXTRACT(day FROM date) = (31)::numeric)))),
   constraint ecritures_brouillon_forfait_sans_piece_ni_mouvement CHECK (((vehicule_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL)))),
+  constraint ecritures_brouillon_liquidation_sans_autre_source CHECK (((declaration_tva_id IS NULL) OR ((piece_id IS NULL) AND (ligne_bancaire_id IS NULL) AND (immobilisation_id IS NULL) AND (vehicule_id IS NULL)))),
   constraint ecritures_brouillon_montant_positif CHECK ((montant > (0)::numeric)),
   constraint ecritures_brouillon_sens_check CHECK ((sens = ANY (ARRAY['debit'::text, 'credit'::text]))),
   constraint ecritures_brouillon_statut_check CHECK ((statut = ANY (ARRAY['proposee'::text, 'validee'::text]))),
@@ -327,9 +340,11 @@ CREATE INDEX lignes_bancaires_dossier_id_idx ON public.lignes_bancaires USING bt
 CREATE INDEX lignes_bancaires_statut_idx ON public.lignes_bancaires USING btree (statut);
 CREATE INDEX lignes_bancaires_categorie_id_idx ON public.lignes_bancaires USING btree (categorie_id);
 CREATE INDEX lignes_bancaires_emprunt_id_idx ON public.lignes_bancaires USING btree (emprunt_id);
+CREATE INDEX lignes_bancaires_declaration_tva_id_idx ON public.lignes_bancaires USING btree (declaration_tva_id);
 CREATE INDEX ecritures_brouillon_ligne_bancaire_id_idx ON public.ecritures_brouillon USING btree (ligne_bancaire_id);
 CREATE INDEX ecritures_brouillon_immobilisation_id_idx ON public.ecritures_brouillon USING btree (immobilisation_id);
 CREATE INDEX ecritures_brouillon_vehicule_id_idx ON public.ecritures_brouillon USING btree (vehicule_id);
+CREATE INDEX ecritures_brouillon_declaration_tva_id_idx ON public.ecritures_brouillon USING btree (declaration_tva_id);
 CREATE INDEX ecritures_brouillon_dossier_date_idx ON public.ecritures_brouillon USING btree (dossier_id, date);
 CREATE INDEX ecritures_brouillon_piece_validee_idx ON public.ecritures_brouillon USING btree (piece_id) WHERE (statut = 'validee'::text);
 

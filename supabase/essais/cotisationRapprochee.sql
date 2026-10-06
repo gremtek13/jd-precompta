@@ -53,6 +53,10 @@
 -- REJOUÉ LE 06/10/2026 après `compte_de_bilan_du_releve`, qui réécrit la contrainte d'un seul rapprochement :
 -- 49 contrôles sur 49 en production, le texte transmis identique au fichier, ses commentaires et les
 -- contrôles 49 et 50 retirés pour la même raison qu'au 04/10.
+-- REJOUÉ LE 06/10/2026 après `liquidation_de_la_tva`, qui élargit de nouveau cette contrainte (un huitième lien,
+-- la déclaration de TVA dont un mouvement est le paiement ou le remboursement) : 49 contrôles sur 49 en
+-- production, le texte transmis identique au fichier, ses commentaires et les contrôles 49 et 50 retirés pour la
+-- même raison qu'au 04/10.
 create temp table essai_cotisation (controle text, observe text, ok boolean) on commit drop;
 
 do $$
