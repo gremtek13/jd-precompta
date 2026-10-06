@@ -85,7 +85,7 @@ const CATEGORIES: Categorie[] = [
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2025-03-10', libelle: 'VIR CPAM', montant: 100, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: 'recettes', taux_tva: null, prelevement_personnel: false,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   source_fichier: null, libelle_brut: null, created_at: '2025-03-10T09:00:00Z', ...o,
 })
 const LIGNES: LigneBancaire[] = [
@@ -102,7 +102,7 @@ const LIGNES: LigneBancaire[] = [
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'encaissement', date: '2025-03-10',
-  compte: '706000', libelle: 'VIR CPAM', sens: 'credit', montant: 100, statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-03-10T09:00:00Z', ...o,
+  compte: '706000', libelle: 'VIR CPAM', sens: 'credit', montant: 100, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-03-10T09:00:00Z', ...o,
 })
 const conforme = (id: string, compte: string, montant: number, date = '2025-03-10'): EcritureBrouillon[] => {
   const entree = montant >= 0

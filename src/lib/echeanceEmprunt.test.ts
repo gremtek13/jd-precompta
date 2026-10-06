@@ -25,7 +25,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
     id: 'l1', date: '2025-02-06', libelle: 'PRLV ECHEANCE PRET', libelle_brut: null, montant: -540,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: 'releve-fevrier.csv', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
-    emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, ...o,
+    emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, ...o,
   }
 }
 
@@ -37,7 +37,7 @@ function rapproche(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2025-02-06', compte: '512000',
-    libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-02-06T10:00:00Z',
+    libelle: 'PRLV ECHEANCE PRET', montant: 540, sens: 'credit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-02-06T10:00:00Z',
     ...o,
   }
 }

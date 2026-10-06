@@ -28,7 +28,7 @@ function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV FOURNISSEUR', montant: -1000,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: '2026-01-06T09:00:00Z', ...o,
   }
 }
@@ -227,7 +227,7 @@ describe('paiementsDesPieces', () => {
     ]
     const lignes = [
       mouvement({ id: 'defait', piece_id: null, reglement_groupe: true, statut: 'non_rapprochee' }),
-      mouvement({ id: 'simple', piece_id: null, reglement_groupe: false, compte_bilan: null }),
+      mouvement({ id: 'simple', piece_id: null, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null }),
     ]
     expect(paiementsDesPieces(lignes, parts).size).toBe(0)
   })

@@ -3,7 +3,7 @@ import {
   type LigneEcritureMouvement, type MouvementBancaire,
 } from './affectationBanque'
 import { ecartEnJours, libelleExploitable } from './appariementBanque'
-import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
+import { refusEcritSurUnCompteDeBilan, refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import { COMPTE_ASSURANCE_EMPRUNT, COMPTE_BANQUE, COMPTE_EMPRUNT, COMPTE_INTERETS_EMPRUNT } from './comptes'
 import { genererEcheancier, type Emprunt, type LigneEcheancier } from './emprunts'
 import { ajouterJours, formatDate } from './format'
@@ -64,6 +64,8 @@ export function refusEcheanceEmprunt(ligne: MouvementBancaire): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
   const surUnCompteDeBilan = refusEcritSurUnCompteDeBilan(ligne)
   if (surUnCompteDeBilan) return surUnCompteDeBilan
+  const paieUneDeclaration = refusPaieUneDeclarationTva(ligne)
+  if (paieUneDeclaration) return paieUneDeclaration
   if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.ventilee || ligne.prelevement_personnel) {
     return 'Ce mouvement est rapproché d’une pièce ou d’une cotisation, affecté à une catégorie, ventilé sur plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.'
   }

@@ -211,7 +211,7 @@ vi.mock('../../lib/supabase', async () => {
             libelle: String(l.libelle), montant: Number(l.montant), statut: l.statut as LigneBancaire['statut'],
             piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
             source_fichier: String(l.source_fichier), libelle_brut: null, emprunt_id: null, emprunt_echeance: null,
-            emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: String(l.id_externe),
+            emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: String(l.id_externe),
             created_at: '2025-06-20T09:00:00Z',
           }))]
           return Promise.resolve({ data: ecrites.map((l) => ({ id_externe: l.id_externe })), error: null }).then(suite)
@@ -357,13 +357,13 @@ vi.mock('../../lib/supabase', async () => {
       if (nom === 'ventiler_mouvement_bancaire') return { ...l, statut: 'rapprochee', ventilee: true, id_externe: null }
       if (nom === 'retirer_ventilation_mouvement_bancaire') return { ...l, statut: 'non_rapprochee', ventilee: false, id_externe: null }
       if (nom === 'regler_pieces_par_mouvement') return { ...l, statut: 'rapprochee', reglement_groupe: true }
-      if (nom === 'retirer_reglement_groupe') return { ...l, statut: 'non_rapprochee', reglement_groupe: false, compte_bilan: null }
+      if (nom === 'retirer_reglement_groupe') return { ...l, statut: 'non_rapprochee', reglement_groupe: false, compte_bilan: null, declaration_tva_id: null }
       // L'échéance de cotisation (lib/cotisationRapprochee.ts) : rapprochée avec son écriture, ou retirée.
       if (nom === 'rapprocher_cotisation') return { ...l, statut: 'rapprochee', cotisation_id: String(args.p_cotisation_id) }
       if (nom === 'retirer_rapprochement_cotisation') return { ...l, statut: 'non_rapprochee', cotisation_id: null }
       // Le compte de bilan (lib/compteDeBilan.ts) : écrit avec son écriture, ou remis à traiter et retiré.
       if (nom === 'ecrire_mouvement_compte_bilan') return { ...l, statut: 'rapprochee', compte_bilan: String(args.p_compte) }
-      if (nom === 'retirer_mouvement_compte_bilan') return { ...l, statut: 'non_rapprochee', compte_bilan: null }
+      if (nom === 'retirer_mouvement_compte_bilan') return { ...l, statut: 'non_rapprochee', compte_bilan: null, declaration_tva_id: null }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), taux_tva: (args.p_taux_tva as number | null | undefined) ?? null, statut: 'rapprochee' }
         : { ...l, categorie_id: null, taux_tva: null, statut: 'non_rapprochee' }
@@ -399,7 +399,7 @@ function ligneDeTest(o: Partial<LigneBancaire> = {}): LigneBancaire {
     id: 'ligne-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -100,
     libelle: 'PRLV SEPA FOURNISSEUR', libelle_brut: null, statut: 'non_rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     created_at: '2025-06-02T09:00:00Z', ...o,
   }
 }
@@ -4670,7 +4670,7 @@ describe('BanqueTab — une pièce lettrée à la main n’attend pas de mouveme
 
   function ligneDuBrouillon(id: string, pieceId: string, compte: string, sens: 'debit' | 'credit', montant: number): EcritureBrouillon {
     return {
-      id, dossier_id: 'dossier-de-test', piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null,
+      id, dossier_id: 'dossier-de-test', piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
       date: '2025-06-01', compte, libelle: 'Imprimerie Duval', sens, montant, statut: 'proposee', created_at: '2025-06-02T09:00:00Z',
       ...NON_VALIDEE,
     }

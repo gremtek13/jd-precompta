@@ -1,5 +1,6 @@
 import { libelleExploitable } from './appariementBanque'
 import { caseDuPoste } from './cases2035'
+import { libellePeriode } from './declarationTva'
 import type { ContributionDeclaration, Declaration2035, SourceDeclaration } from './declaration2035'
 import { nomDuVehicule } from './forfaitKilometrique'
 import { anneeDe, formatDate, formatMoney } from './format'
@@ -28,9 +29,12 @@ import type { EcritureBrouillon } from './types'
 // dans le résultat, ni d'un côté ni de l'autre.
 
 // Ce que la concordance ne sait pas rapprocher d'une source de la 2035 : une écriture sans pièce, sans
-// mouvement, sans bien ni véhicule — le lien a été rompu (sa pièce supprimée, la clé mise à nul).
-// Une échéance de cotisation sans paiement n'a pas d'écriture : sa référence est l'échéance elle-même.
-export type ReferenceEcriture = { type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'ecriture'; id: string }
+// mouvement, sans bien, ni véhicule, ni déclaration de TVA — le lien a été rompu (sa pièce supprimée, la clé mise à
+// nul). Une échéance de cotisation sans paiement n'a pas d'écriture : sa référence est l'échéance elle-même.
+export type ReferenceEcriture = {
+  type: 'piece' | 'mouvement' | 'bien' | 'vehicule' | 'cotisation' | 'declaration' | 'ecriture'
+  id: string
+}
 
 export type MotifEcart =
   // La 2035 compte la source ; aucune écriture de l'exercice ne la porte.
@@ -110,6 +114,8 @@ function cleDeSource(s: SourceDeclaration): string {
     // L'écriture d'une échéance désigne le MOUVEMENT qui la paie, pas l'échéance.
     case 'cotisation': return s.ligne ? `mouvement:${s.ligne.id}` : `cotisation:${s.id}`
     case 'csg': return 'csg'
+    // L'arrondi d'une liquidation de TVA : son écriture désigne la déclaration.
+    case 'declaration': return `declaration:${s.id}`
   }
 }
 
@@ -117,6 +123,7 @@ function referenceDeLEcriture(e: EcritureBrouillon): ReferenceEcriture {
   if (e.piece_id) return { type: 'piece', id: e.piece_id }
   if (e.immobilisation_id) return { type: 'bien', id: e.immobilisation_id }
   if (e.vehicule_id) return { type: 'vehicule', id: e.vehicule_id }
+  if (e.declaration_tva_id) return { type: 'declaration', id: e.declaration_tva_id }
   if (e.ligne_bancaire_id) return { type: 'mouvement', id: e.ligne_bancaire_id }
   return { type: 'ecriture', id: e.id }
 }
@@ -143,6 +150,10 @@ function libelleDeSource(s: SourceDeclaration): { libelle: string; date: string 
       date: null,
     }
     case 'csg': return { libelle: 'CSG déductible', date: null }
+    case 'declaration': return {
+      libelle: `Arrondi de la CA3 ${libellePeriode(s.declaration.periode_debut, s.declaration.periode_fin)}`,
+      date: s.declaration.periode_fin,
+    }
   }
 }
 
@@ -386,8 +397,8 @@ export function phraseDeLEcart(e: EcartDeSource): string {
 
 // OÙ AGIR, par l'onglet qui porte le geste : générer ou régénérer une pièce (Écritures), écrire une dotation
 // (Immobilisations), un forfait (la carte Véhicules d'Informations du dossier) ou une échéance (Cotisations),
-// rapprocher un prélèvement ou réaffecter un mouvement (Banque), compléter un poste (Clôture). Un mouvement
-// affecté ou ventilé se réaffecte ou se réécrit dans Écritures.
+// rapprocher un prélèvement ou réaffecter un mouvement (Banque), compléter un poste (Clôture), retrouver la
+// liquidation d'une déclaration (TVA). Un mouvement affecté ou ventilé se réaffecte ou se réécrit dans Écritures.
 export function ouAgir(e: EcartDeSource): string {
   if (e.motif === 'sans_poste') return 'Clôture — Postes manquants'
   if (e.motif === 'sans_compte') return 'Écritures — Comptes manquants'
@@ -402,6 +413,8 @@ export function ouAgir(e: EcartDeSource): string {
       return e.motif === 'echeance_sans_paiement' || e.motif === 'rapprochement_refuse' ? 'Banque' : 'Cotisations'
     case 'mouvement':
       return e.motif === 'hors_resultat' ? 'Banque' : 'Écritures'
+    case 'declaration':
+      return 'TVA'
     default:
       return 'Écritures'
   }

@@ -78,13 +78,13 @@ const EMPRUNTS: Emprunt[] = [
 const ligne = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd', date: '2025-02-06', libelle: 'PRLV ECHEANCE PRET', montant: -540, statut: 'rapprochee',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-  emprunt_id: 'a', emprunt_echeance: 1, emprunt_interets: 36, emprunt_assurance: 21.03, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+  emprunt_id: 'a', emprunt_echeance: 1, emprunt_interets: 36, emprunt_assurance: 21.03, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   source_fichier: null, libelle_brut: null, created_at: '2025-02-06T09:00:00Z', ...o,
 })
 
 const ecriture = (o: Partial<EcritureBrouillon>): EcritureBrouillon => ({
   id: 'e', dossier_id: 'd', piece_id: null, ligne_bancaire_id: 'l', date: '2025-02-06', compte: COMPTE_BANQUE,
-  libelle: 'PRLV ECHEANCE PRET', sens: 'credit', montant: 540, statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-02-06T09:00:00Z', ...o,
+  libelle: 'PRLV ECHEANCE PRET', sens: 'credit', montant: 540, statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-02-06T09:00:00Z', ...o,
 })
 // L'écriture juste d'un mouvement, telle que src/lib la compose.
 const conforme = (l: LigneBancaire, date = l.date): EcritureBrouillon[] =>

@@ -71,7 +71,7 @@ const MODELES = [TRESORERIE, ENGAGEMENT_455, ENGAGEMENT_467]
 // Un forfait écrit tel que la base l'écrit, au 31 décembre, en trésorerie.
 function ecrit(v: VehiculeDossier, montant: number, o: Partial<EcritureBrouillon> = {}, credit = '108000'): EcritureBrouillon[] {
   const base = {
-    dossier_id: 'd', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: v.id, ...NON_VALIDEE,
+    dossier_id: 'd', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: v.id, declaration_tva_id: null, ...NON_VALIDEE,
     date: `${v.annee}-12-31`, libelle: `Indemnités kilométriques ${v.annee}`, montant, statut: 'proposee' as const,
     created_at: '2026-01-02T09:00:00Z',
   }

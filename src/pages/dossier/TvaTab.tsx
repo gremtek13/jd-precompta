@@ -231,7 +231,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
   const creditTexte = saisieCredit[periode.debut] ?? String(creditPropose)
   const creditLu = Number(creditTexte.replace(',', '.'))
   const creditValide = creditTexte.trim() !== '' && Number.isFinite(creditLu) && creditLu >= 0
-  const ca3 = calculerCa3(donnees, periode, surDebits, creditValide ? creditLu : 0)
+  const ca3 = calculerCa3(donnees, periode, surDebits, creditValide ? creditLu : 0, 0)
   const montantTexte = saisieMontant[periode.debut] ?? String(ca3.netPeriode)
   const montantLu = Number(montantTexte.replace(',', '.'))
   const montantValide = montantTexte.trim() !== '' && Number.isFinite(montantLu)

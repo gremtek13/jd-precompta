@@ -11,7 +11,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
     id: 'l1', date: '2025-03-12', libelle: 'FRAIS TENUE DE COMPTE', libelle_brut: null, montant: -8.5,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
+    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
     ...o,
   }
 }
@@ -28,7 +28,7 @@ const RECETTES = categorie({ id: 'cat-recettes', code: 'ventes_prestations', lib
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2025-03-12', compte: '627000',
-    libelle: 'FRAIS TENUE DE COMPTE', montant: 8.5, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
+    libelle: 'FRAIS TENUE DE COMPTE', montant: 8.5, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
     ...o,
   }
 }

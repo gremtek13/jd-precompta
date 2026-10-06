@@ -10,6 +10,9 @@ import {
   periodesDeLAnnee,
   type DonneesTva,
 } from './declarationTva'
+import { COMPTE_TVA_COLLECTEE, COMPTE_TVA_DEDUCTIBLE, COMPTE_TVA_IMMOBILISATIONS } from './comptes'
+import { lignesPourPiece } from './ecritures'
+import type { ModeleComptable } from './engagement'
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces, type PartReglee } from './rattachement'
 import type { Categorie, DeclarationTva, LigneBancaire, Piece, VentilationBancaire } from './types'
@@ -31,7 +34,7 @@ function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'd1', date: '2027-02-20', libelle: 'VIR CLIENT', montant: 1200,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: null, libelle_brut: null, created_at: '2027-02-21T09:00:00Z', ...o,
   }
 }
@@ -39,8 +42,9 @@ function mouvement(o: Partial<LigneBancaire> = {}): LigneBancaire {
 function declaration(o: Partial<DeclarationTva> = {}): DeclarationTva {
   return {
     id: 'decl1', dossier_id: 'd1', periode_debut: '2027-01-01', periode_fin: '2027-03-31',
-    tva_declaree: 200, credit_anterieur: 0, date_declaration: '2027-04-20', notes: null,
-    created_at: '2027-04-20T10:00:00Z', ...o,
+    tva_declaree: 200, credit_anterieur: 0, remboursement_demande: 0, date_declaration: '2027-04-20', notes: null,
+    created_at: '2027-04-20T10:00:00Z', cases: null, tva_collectee: null, tva_deductible: null,
+    tva_deductible_immobilisations: null, ...o,
   }
 }
 
@@ -131,14 +135,14 @@ describe('calculerCa3 — la date qui décide de la période', () => {
   it('déclare une recette au trimestre de son ENCAISSEMENT, pas de sa facture', () => {
     const facture = piece({ date_piece: '2027-03-20' })
     const d = donnees([facture], [mouvement({ date: '2027-04-05' })])
-    expect(calculerCa3(d, T1, false, 0).cases.taxe08).toBe(0)
-    expect(calculerCa3(d, T2, false, 0).cases).toMatchObject({ A1: 1000, base08: 1000, taxe08: 200 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases.taxe08).toBe(0)
+    expect(calculerCa3(d, T2, false, 0, 0).cases).toMatchObject({ A1: 1000, base08: 1000, taxe08: 200 })
   })
 
   it('sur option pour les débits, la déclare au trimestre de sa facture', () => {
     const d = donnees([piece({ date_piece: '2027-03-20' })], [mouvement({ date: '2027-04-05' })])
-    expect(calculerCa3(d, T1, true, 0).cases.taxe08).toBe(200)
-    expect(calculerCa3(d, T2, true, 0).cases.taxe08).toBe(0)
+    expect(calculerCa3(d, T1, true, 0, 0).cases.taxe08).toBe(200)
+    expect(calculerCa3(d, T2, true, 0, 0).cases.taxe08).toBe(0)
   })
 
   it('déduit la TVA d\'un achat au PAIEMENT, même sur option pour les débits', () => {
@@ -146,25 +150,25 @@ describe('calculerCa3 — la date qui décide de la période', () => {
     const achat = piece({ type_piece: 'achat', date_piece: '2027-03-20', montant_ht: 100, montant_tva: 20, montant_ttc: 120 })
     const d = donnees([achat], [mouvement({ date: '2027-04-02', montant: -120 })])
     for (const surDebits of [false, true]) {
-      expect(calculerCa3(d, T1, surDebits, 0).cases.l20).toBe(0)
-      expect(calculerCa3(d, T2, surDebits, 0).cases.l20).toBe(20)
+      expect(calculerCa3(d, T1, surDebits, 0, 0).cases.l20).toBe(0)
+      expect(calculerCa3(d, T2, surDebits, 0, 0).cases.l20).toBe(20)
     }
   })
 
   it('compte une note de frais à sa date, faute de mouvement : elle se paie hors du compte', () => {
     const note = piece({ type_piece: 'note_frais', date_piece: '2027-02-14', montant_ht: 50, montant_tva: 10, montant_ttc: 60 })
-    expect(calculerCa3(donnees([note]), T1, false, 0).cases.l20).toBe(10)
+    expect(calculerCa3(donnees([note]), T1, false, 0, 0).cases.l20).toBe(10)
     // Rattachée à un mouvement, c'est lui qui la date.
     const d = donnees([note], [mouvement({ date: '2027-04-10', montant: -60 })])
-    expect(calculerCa3(d, T1, false, 0).cases.l20).toBe(0)
-    expect(calculerCa3(d, T2, false, 0).cases.l20).toBe(10)
+    expect(calculerCa3(d, T1, false, 0, 0).cases.l20).toBe(0)
+    expect(calculerCa3(d, T2, false, 0, 0).cases.l20).toBe(10)
   })
 
   it('rend à part la pièce qu\'aucun paiement ne date, au lieu de se taire sur elle', () => {
     const impayee = piece({ id: 'imp', date_piece: '2027-02-10' })
     const achat = piece({ id: 'ach', type_piece: 'achat', date_piece: '2027-01-15', montant_tva: 20, montant_ttc: 120, montant_ht: 100 })
     const apres = piece({ id: 'apres', date_piece: '2027-04-10' })
-    const ca3 = calculerCa3(donnees([impayee, achat, apres]), T1, false, 0)
+    const ca3 = calculerCa3(donnees([impayee, achat, apres]), T1, false, 0, 0)
     expect(ca3.cases.taxe08).toBe(0)
     expect(ca3.cases.l20).toBe(0)
     // Celle datée après la période ne la concerne pas.
@@ -172,14 +176,14 @@ describe('calculerCa3 — la date qui décide de la période', () => {
   })
 
   it('sur les débits, une recette sans date ne rejoint aucune période', () => {
-    const ca3 = calculerCa3(donnees([piece({ date_piece: null })]), T1, true, 0)
+    const ca3 = calculerCa3(donnees([piece({ date_piece: null })]), T1, true, 0, 0)
     expect(ca3.nonPlacees.map((n) => n.motif)).toEqual(['sans_date'])
     expect(ca3.cases.taxe08).toBe(0)
   })
 
   it('ne rend jamais un achat sans TVA parmi les pièces à rattacher', () => {
     const sansTva = piece({ type_piece: 'achat', montant_ht: 30, montant_tva: 0, montant_ttc: 30 })
-    expect(calculerCa3(donnees([sansTva]), T1, false, 0).nonPlacees).toEqual([])
+    expect(calculerCa3(donnees([sansTva]), T1, false, 0, 0).nonPlacees).toEqual([])
   })
 
   it('ne rend exigible que la part payée d\'une recette réglée en deux fois', () => {
@@ -187,8 +191,8 @@ describe('calculerCa3 — la date qui décide de la période', () => {
       mouvement({ id: 'm1', date: '2027-03-15', montant: 600 }),
       mouvement({ id: 'm2', date: '2027-04-15', montant: 600 }),
     ])
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ A1: 500, base08: 500, taxe08: 100 })
-    expect(calculerCa3(d, T2, false, 0).cases).toMatchObject({ A1: 500, base08: 500, taxe08: 100 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ A1: 500, base08: 500, taxe08: 100 })
+    expect(calculerCa3(d, T2, false, 0, 0).cases).toMatchObject({ A1: 500, base08: 500, taxe08: 100 })
   })
 
   // Ligne 26 : un virement qui règle plusieurs factures. Chacune devient exigible à la date du virement,
@@ -200,8 +204,8 @@ describe('calculerCa3 — la date qui décide de la période', () => {
       [],
       [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: 1200 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: 600 }],
     )
-    expect(calculerCa3(d, T1, false, 0).cases.taxe08).toBe(0)
-    expect(calculerCa3(d, T2, false, 0).cases).toMatchObject({ A1: 1500, base08: 1500, taxe08: 300 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases.taxe08).toBe(0)
+    expect(calculerCa3(d, T2, false, 0, 0).cases).toMatchObject({ A1: 1500, base08: 1500, taxe08: 300 })
   })
 
   it('ne rend exigible d\'une facture réglée en partie par un virement groupé que ce que sa part paie', () => {
@@ -211,19 +215,19 @@ describe('calculerCa3 — la date qui décide de la période', () => {
       [],
       [{ ligne_bancaire_id: 'g', piece_id: 'p1', montant: 300 }, { ligne_bancaire_id: 'g', piece_id: 'p2', montant: 600 }],
     )
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ base08: 750, taxe08: 150 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ base08: 750, taxe08: 150 })
   })
 
   it('un acompte seul ne rend exigible que ce qu\'il paie', () => {
     const d = donnees([piece()], [mouvement({ date: '2027-03-15', montant: 300 })])
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ base08: 250, taxe08: 50 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ base08: 250, taxe08: 50 })
   })
 
   it('une recette réglée à l\'écart d\'alignement près compte en entier', () => {
     // 1 200 € facturés, 1 197 € encaissés : 3 € de frais, sous le seuil de lib/alignementBanque.ts.
     // La part est celle de la 2035 (lib/rattachement.ts) : la pièce est réglée, pas payée à 99,75 %.
     const d = donnees([piece()], [mouvement({ date: '2027-03-15', montant: 1197 })])
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ base08: 1000, taxe08: 200 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ base08: 1000, taxe08: 200 })
   })
 
   it('des frais bancaires ne font pas compter la pièce plus d\'une fois', () => {
@@ -231,12 +235,12 @@ describe('calculerCa3 — la date qui décide de la période', () => {
       mouvement({ id: 'm1', date: '2027-03-15', montant: 700 }),
       mouvement({ id: 'm2', date: '2027-03-20', montant: 700 }),
     ])
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ base08: 1000, taxe08: 200 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ base08: 1000, taxe08: 200 })
   })
 
   it('ne compte pas une pièce encore à valider, mais la rend pour qu\'on la valide avant de déposer', () => {
     const d = donnees([piece({ statut: 'a_valider' })], [mouvement({ date: '2027-02-20' })])
-    const ca3 = calculerCa3(d, T1, false, 0)
+    const ca3 = calculerCa3(d, T1, false, 0, 0)
     expect(ca3.cases.taxe08).toBe(0)
     expect(ca3.aValider.map((p) => p.id)).toEqual(['p1'])
   })
@@ -255,7 +259,7 @@ describe('calculerCa3 — les cases', () => {
       ],
       [paye('a', 1200), paye('b', 440), paye('c', 211), paye('e', 108.5)],
     )
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({
       A1: 1700, base08: 1000, taxe08: 200, base9B: 400, taxe9B: 40, base09: 200, taxe09: 11,
       base10: 100, taxe10: 9, l16: 260,
     })
@@ -270,7 +274,7 @@ describe('calculerCa3 — les cases', () => {
       [paye('ordi', -1800), paye('papier', -60)],
       ['ordi'],
     )
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ l19: 300, l20: 10, l23: 310 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ l19: 300, l20: 10, l23: 310 })
   })
 
   it('porte un avoir consenti en B5 et en ligne 21, jamais en négatif sur la ligne de taux', () => {
@@ -281,7 +285,7 @@ describe('calculerCa3 — les cases', () => {
       ],
       [paye('fac', 1200), paye('avoir', -120)],
     )
-    const { cases } = calculerCa3(d, T1, false, 0)
+    const { cases } = calculerCa3(d, T1, false, 0, 0)
     expect(cases).toMatchObject({ A1: 1000, base08: 1000, taxe08: 200, B5: 100, l21: 20, l16: 200, l23: 20, lTD: 180 })
   })
 
@@ -293,7 +297,7 @@ describe('calculerCa3 — les cases', () => {
       ],
       [paye('fac', -600), paye('avoir', 60)],
     )
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ l15: 10, l16: 10, l20: 100, l25: 90 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ l15: 10, l16: 10, l20: 100, l25: 90 })
   })
 
   it('porte une recette sans TVA en E2, et son avoir en F8', () => {
@@ -305,7 +309,7 @@ describe('calculerCa3 — les cases', () => {
       ],
       [paye('exo', 300), paye('exo2', 200), paye('rembourse', -50)],
     )
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ E2: 500, F8: 50, A1: 0 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ E2: 500, F8: 50, A1: 0 })
   })
 
   it('écarte la recette dont la TVA n\'a pas été lue plutôt que de la croire exonérée', () => {
@@ -316,7 +320,7 @@ describe('calculerCa3 — les cases', () => {
       ],
       [paye('difference', 120), paye('ttc-seul', 120)],
     )
-    const ca3 = calculerCa3(d, T1, false, 0)
+    const ca3 = calculerCa3(d, T1, false, 0, 0)
     expect(ca3.cases.E2).toBe(0)
     expect(ca3.ecartees.map((e) => [e.piece.id, e.motif])).toEqual([['difference', 'tva_non_lue'], ['ttc-seul', 'tva_non_lue']])
   })
@@ -329,7 +333,7 @@ describe('calculerCa3 — les cases', () => {
       ],
       [paye('presse', 510.5), paye('mixte', 1150)],
     )
-    const ca3 = calculerCa3(d, T1, false, 0)
+    const ca3 = calculerCa3(d, T1, false, 0, 0)
     expect(ca3.cases.l16).toBe(0)
     expect(ca3.cases.A1).toBe(0)
     expect(ca3.ecartees.map((e) => [e.piece.id, e.motif, e.part])).toEqual([['presse', 'taux_a_placer', 0.5], ['mixte', 'taux_non_reconnu', 1]])
@@ -343,7 +347,7 @@ describe('calculerCa3 — les cases', () => {
       ],
       [paye('faux', -24), paye('usd', -24)],
     )
-    const ca3 = calculerCa3(d, T1, false, 0)
+    const ca3 = calculerCa3(d, T1, false, 0, 0)
     expect(ca3.cases.l20).toBe(0)
     expect(ca3.ecartees.map((e) => [e.piece.id, e.motif])).toEqual([['faux', 'tva_impossible'], ['usd', 'devise_non_convertie']])
     expect(ca3.ecartees[0].detail).toBe('TVA impossible : HT + TVA ne fait pas le TTC')
@@ -357,14 +361,14 @@ describe('calculerCa3 — les cases', () => {
       ],
       [paye('openai', -21.82), paye('assurance', -90)],
     )
-    const ca3 = calculerCa3(d, T1, false, 0)
+    const ca3 = calculerCa3(d, T1, false, 0, 0)
     expect(ca3.achatsEnDeviseSansTva.map((p) => p.id)).toEqual(['openai'])
     expect(ca3.cases.l20).toBe(0)
   })
 
   it('écarte l\'achat dont la TVA n\'a pas été lue', () => {
     const d = donnees([piece({ id: 'a', type_piece: 'achat', montant_ht: 100, montant_tva: null, montant_ttc: 120 })], [paye('a', -120)])
-    expect(calculerCa3(d, T1, false, 0).ecartees.map((e) => e.motif)).toEqual(['tva_non_lue'])
+    expect(calculerCa3(d, T1, false, 0, 0).ecartees.map((e) => e.motif)).toEqual(['tva_non_lue'])
   })
 
   it('dit d\'où vient chaque case', () => {
@@ -372,7 +376,7 @@ describe('calculerCa3 — les cases', () => {
       [piece({ id: 'v' }), piece({ id: 'a', type_piece: 'achat', montant_ht: 50, montant_tva: 10, montant_ttc: 60 })],
       [paye('v', 1200), paye('a', -60)],
     )
-    expect(calculerCa3(d, T1, false, 0).retenues.map((r) => [r.piece.id, r.ligne, r.part])).toEqual([['v', '08', 1], ['a', '20', 1]])
+    expect(calculerCa3(d, T1, false, 0, 0).retenues.map((r) => [r.piece.id, r.ligne, r.part])).toEqual([['v', '08', 1], ['a', '20', 1]])
   })
 })
 
@@ -382,7 +386,7 @@ describe('calculerCa3 — les arrondis', () => {
   it('arrondit le TOTAL de chaque ligne, jamais pièce par pièce', () => {
     // Trois recettes de 0,40 € HT : 1,20 €, soit 1 €. Arrondies une à une, elles feraient zéro.
     const pieces = ['a', 'b', 'c'].map((id) => piece({ id, montant_ht: 0.4, montant_tva: 0.08, montant_ttc: 0.48 }))
-    const ca3 = calculerCa3(donnees(pieces, pieces.map((p) => paye(p.id, 0.48))), T1, false, 0)
+    const ca3 = calculerCa3(donnees(pieces, pieces.map((p) => paye(p.id, 0.48))), T1, false, 0, 0)
     expect(ca3.cases.base08).toBe(1)
     expect(ca3.cases.A1).toBe(1)
   })
@@ -392,12 +396,12 @@ describe('calculerCa3 — les arrondis', () => {
       [piece({ id: 'a', montant_ht: 10.5, montant_tva: 2.1, montant_ttc: 12.6 })],
       [paye('a', 12.6)],
     )
-    expect(calculerCa3(d, T1, false, 0).cases).toMatchObject({ base08: 11, taxe08: 2 })
+    expect(calculerCa3(d, T1, false, 0, 0).cases).toMatchObject({ base08: 11, taxe08: 2 })
     const d2 = donnees(
       [piece({ id: 'b', montant_ht: 10.49, montant_tva: 2.1, montant_ttc: 12.59 })],
       [paye('b', 12.59)],
     )
-    expect(calculerCa3(d2, T1, false, 0).cases.base08).toBe(10)
+    expect(calculerCa3(d2, T1, false, 0, 0).cases.base08).toBe(10)
   })
 })
 
@@ -407,27 +411,27 @@ describe('calculerCa3 — ce qui reste à payer', () => {
   const achat = (tva: number) => piece({ id: 'a', type_piece: 'achat', montant_ht: tva * 5, montant_tva: tva, montant_ttc: tva * 6 })
 
   it('rend la TVA due quand la brute dépasse la déductible', () => {
-    const ca3 = calculerCa3(donnees([vente, achat(50)], [paye('v', 1200), paye('a', -300)]), T1, false, 0)
+    const ca3 = calculerCa3(donnees([vente, achat(50)], [paye('v', 1200), paye('a', -300)]), T1, false, 0, 0)
     expect(ca3.cases).toMatchObject({ l16: 200, l23: 50, lTD: 150, l25: 0, l27: 0, l28: 150, l32: 150 })
     expect(ca3.netPeriode).toBe(150)
   })
 
   it('rend un crédit, et le reporte, quand la déductible dépasse la brute', () => {
-    const ca3 = calculerCa3(donnees([vente, achat(300)], [paye('v', 1200), paye('a', -1800)]), T1, false, 0)
+    const ca3 = calculerCa3(donnees([vente, achat(300)], [paye('v', 1200), paye('a', -1800)]), T1, false, 0, 0)
     expect(ca3.cases).toMatchObject({ l16: 200, l23: 300, l25: 100, l27: 100, lTD: 0, l28: 0, l32: 0 })
     expect(ca3.netPeriode).toBe(-100)
   })
 
   it('impute le crédit de la déclaration précédente, sans le mêler à la TVA de la période', () => {
-    const ca3 = calculerCa3(donnees([vente, achat(50)], [paye('v', 1200), paye('a', -300)]), T1, false, 80)
+    const ca3 = calculerCa3(donnees([vente, achat(50)], [paye('v', 1200), paye('a', -300)]), T1, false, 80, 0)
     expect(ca3.cases).toMatchObject({ l22: 80, l23: 130, lTD: 70, l28: 70 })
     // La TVA nette DE LA PÉRIODE ne dépend pas du crédit reçu : c'est ce qui la rend comparable.
     expect(ca3.netPeriode).toBe(150)
   })
 
   it('dépose « néant » quand aucune case n\'est remplie, et pas quand un crédit est reporté', () => {
-    expect(calculerCa3(donnees([]), T1, false, 0).neant).toBe(true)
-    const avecCredit = calculerCa3(donnees([]), T1, false, 40)
+    expect(calculerCa3(donnees([]), T1, false, 0, 0).neant).toBe(true)
+    const avecCredit = calculerCa3(donnees([]), T1, false, 40, 0)
     expect(avecCredit.neant).toBe(false)
     expect(avecCredit.cases).toMatchObject({ l22: 40, l23: 40, l25: 40, l27: 40 })
   })
@@ -435,9 +439,9 @@ describe('calculerCa3 — ce qui reste à payer', () => {
 
 describe('creditReporte et declarationPrecedente', () => {
   it('le crédit reporté est le crédit reçu moins la TVA nette de la période, jamais négatif', () => {
-    expect(creditReporte({ tva_declaree: -200, credit_anterieur: 0 })).toBe(200)
-    expect(creditReporte({ tva_declaree: 50, credit_anterieur: 80 })).toBe(30)
-    expect(creditReporte({ tva_declaree: 150, credit_anterieur: 80 })).toBe(0)
+    expect(creditReporte({ tva_declaree: -200, credit_anterieur: 0, remboursement_demande: 0 })).toBe(200)
+    expect(creditReporte({ tva_declaree: 50, credit_anterieur: 80, remboursement_demande: 0 })).toBe(30)
+    expect(creditReporte({ tva_declaree: 150, credit_anterieur: 80, remboursement_demande: 0 })).toBe(0)
   })
 
   it('retrouve la déclaration qui finit la veille, la plus récente s\'il y en a deux', () => {
@@ -493,7 +497,7 @@ describe('calculerCa3 — les recettes du relevé', () => {
     mouvement({ id: 'enc', piece_id: null, categorie_id: 'c-recettes', taux_tva: 20, date: '2027-02-15', montant: 120, ...o })
   const releve = (lignes: LigneBancaire[], ventilations: VentilationBancaire[] = []) => partsDuReleve(lignes, categories, ventilations, true)
   const ca3 = (lignes: LigneBancaire[], surDebits = false, ventilations: VentilationBancaire[] = []) =>
-    calculerCa3(donnees([], [], [], [], releve(lignes, ventilations)), T1, surDebits, 0)
+    calculerCa3(donnees([], [], [], [], releve(lignes, ventilations)), T1, surDebits, 0, 0)
 
   it('une recette taxée : le hors taxe sur la ligne de son taux, la TVA à côté', () => {
     const d = ca3([encaissement()])
@@ -568,7 +572,7 @@ describe('calculerCa3 — les recettes du relevé', () => {
     // Défensif : la base n'écrit que 20, 10, 5,5, 8,5 ou zéro. Une part venue d'ailleurs ne doit pas
     // passer pour une recette non imposable.
     const [part] = releve([encaissement()])
-    const d = calculerCa3(donnees([], [], [], [], [{ ...part, taux: 2.1 }]), T1, false, 0)
+    const d = calculerCa3(donnees([], [], [], [], [{ ...part, taux: 2.1 }]), T1, false, 0, 0)
     expect(d.cases.E2).toBe(0)
     expect(d.releveEcartees.map((e) => e.motif)).toEqual(['sans_taux'])
   })
@@ -590,5 +594,176 @@ describe('calculerCa3 — les recettes du relevé', () => {
   it('le recalcul d’une déclaration déposée compte aussi les recettes du relevé', () => {
     const d = donnees([], [], [], [], releve([encaissement()]))
     expect(comparerDeclarations([declaration({ tva_declaree: 20 })], d, false)[0]).toMatchObject({ recalcul: 20, enEcart: false })
+  })
+})
+
+describe('calculerCa3 — le remboursement d\'un crédit (ligne 26)', () => {
+  const paye = (id: string, montant: number) => mouvement({ id: `m-${id}`, piece_id: id, montant })
+  const vente = piece({ id: 'v' })
+  const achat = piece({ id: 'a', type_piece: 'achat', montant_ht: 1500, montant_tva: 300, montant_ttc: 1800 })
+  // 200 € de TVA brute, 300 € de déductible : un crédit de 100 € sur la période (ligne 25).
+  const d = donnees([vente, achat], [paye('v', 1200), paye('a', -1800)])
+
+  it('porte le remboursement demandé, et ne reporte que le reste', () => {
+    expect(calculerCa3(d, T1, false, 0, 60).cases).toMatchObject({ l25: 100, l26: 60, l27: 40, l28: 0 })
+  })
+
+  it('ne demande jamais plus que le crédit de la période, ni moins que rien, et en euros entiers', () => {
+    expect(calculerCa3(d, T1, false, 0, 250).cases).toMatchObject({ l25: 100, l26: 100, l27: 0 })
+    expect(calculerCa3(d, T1, false, 0, -5).cases).toMatchObject({ l26: 0, l27: 100 })
+    expect(calculerCa3(d, T1, false, 0, 59.5).cases).toMatchObject({ l26: 60, l27: 40 })
+  })
+
+  it('n\'a rien à rembourser sur une période où la TVA est due', () => {
+    const due = donnees([vente, piece({ id: 'a', type_piece: 'achat', montant_ht: 250, montant_tva: 50, montant_ttc: 300 })],
+      [paye('v', 1200), paye('a', -300)])
+    expect(calculerCa3(due, T1, false, 0, 80).cases).toMatchObject({ l25: 0, l26: 0, l27: 0, l28: 150 })
+  })
+
+  it('ne change pas la TVA nette de la période', () => {
+    expect(calculerCa3(d, T1, false, 0, 60).netPeriode).toBe(calculerCa3(d, T1, false, 0, 0).netPeriode)
+  })
+
+  it('un crédit remboursé ne se reporte pas sur la déclaration suivante', () => {
+    expect(creditReporte({ tva_declaree: -100, credit_anterieur: 0, remboursement_demande: 60 })).toBe(40)
+    expect(creditReporte({ tva_declaree: -100, credit_anterieur: 0, remboursement_demande: 100 })).toBe(0)
+    // La ligne 27 d'une déclaration enregistrée : crédit reçu 30, TVA nette -70, crédit de la période 100, remboursé 25.
+    expect(creditReporte({ tva_declaree: -70, credit_anterieur: 30, remboursement_demande: 25 })).toBe(75)
+  })
+})
+
+// LA TVA DES COMPTES — ce que la liquidation retire de 445710, 445660 et 445620 — doit être, au centime, ce que les
+// écritures des pièces y portent aux dates que la période compte : sinon un centime reste sur ces comptes à chaque
+// période, que rien ne solde. Le contrôle passe par le VRAI générateur des écritures, jamais par une seconde
+// formule : deux formules qui s'accordent ne prouvent rien sur celle qui écrit.
+describe('calculerCa3 — la TVA des comptes, au centime de l\'écriture', () => {
+  const TRESORERIE: ModeleComptable = { mode: 'tresorerie', compteNotesDeFrais: '108000' }
+  const paye = (id: string, pieceId: string, montant: number, date: string) =>
+    mouvement({ id, piece_id: pieceId, montant, date })
+
+  // La TVA que les écritures des pièces validées portent dans la période, en centimes, signée comme la liquidation la
+  // lit : la collectée au crédit, la déductible au débit.
+  function tvaDuBrouillon(d: DonneesTva, periode: { debut: string; fin: string }) {
+    const c = { collectee: 0, deductible: 0, immobilisations: 0 }
+    for (const p of d.pieces.filter((x) => x.statut === 'validee')) {
+      const cible = { compte: p.type_piece === 'vente' ? '706000' : '606100', immobilisation: d.pieceIdsImmobilisees.has(p.id) }
+      for (const l of lignesPourPiece('d1', p, cible, true, d.paiements.get(p.id) ?? [], TRESORERIE)) {
+        if (l.date < periode.debut || l.date > periode.fin) continue
+        const auDebit = Math.round(l.montant * 100) * (l.sens === 'debit' ? 1 : -1)
+        if (l.compte === COMPTE_TVA_COLLECTEE) c.collectee -= auDebit
+        if (l.compte === COMPTE_TVA_DEDUCTIBLE) c.deductible += auDebit
+        if (l.compte === COMPTE_TVA_IMMOBILISATIONS) c.immobilisations += auDebit
+      }
+    }
+    return { collectee: c.collectee / 100, deductible: c.deductible / 100, immobilisations: c.immobilisations / 100 }
+  }
+
+  it('rend la TVA de chaque compte, avoirs en moins', () => {
+    const d = donnees([
+      piece({ id: 'v', date_piece: '2027-01-10' }),
+      piece({ id: 'av', type_piece: 'vente', montant_ht: -100, montant_tva: -20, montant_ttc: -120, date_piece: '2027-01-12' }),
+      piece({ id: 'a', type_piece: 'achat', montant_ht: 250, montant_tva: 50, montant_ttc: 300, date_piece: '2027-01-15' }),
+      piece({ id: 'ar', type_piece: 'achat', montant_ht: -25, montant_tva: -5, montant_ttc: -30, date_piece: '2027-01-16' }),
+      piece({ id: 'b', type_piece: 'achat', montant_ht: 2000, montant_tva: 400, montant_ttc: 2400, date_piece: '2027-01-20' }),
+    ], [
+      paye('m-v', 'v', 1200, '2027-02-01'), paye('m-av', 'av', -120, '2027-02-02'), paye('m-a', 'a', -300, '2027-02-03'),
+      paye('m-ar', 'ar', 30, '2027-02-04'), paye('m-b', 'b', -2400, '2027-02-05'),
+    ], ['b'])
+    const ca3 = calculerCa3(d, T1, false, 0, 0)
+    expect(ca3.tvaDesComptes).toEqual({ collectee: 180, deductible: 45, immobilisations: 400 })
+    expect(ca3.tvaDesComptes).toEqual(tvaDuBrouillon(d, T1))
+    expect(ca3.cases).toMatchObject({ taxe08: 200, l21: 20, l15: 5, l20: 50, l19: 400 })
+  })
+
+  it('suit la répartition au centime d\'une pièce payée sur deux périodes', () => {
+    // 100,03 € HT, 20,01 € de TVA, payés en deux fois 60,02 € : l'écriture répartit la charge et la TVA ENSEMBLE,
+    // date par date, et chaque période liquide exactement la TVA de sa date.
+    const achat = piece({ id: 'a', type_piece: 'achat', montant_ht: 100.03, montant_tva: 20.01, montant_ttc: 120.04, date_piece: '2027-03-01' })
+    const d = donnees([achat], [paye('m1', 'a', -60.02, '2027-03-10'), paye('m2', 'a', -60.02, '2027-04-10')])
+    const t1 = calculerCa3(d, T1, false, 0, 0).tvaDesComptes
+    const t2 = calculerCa3(d, T2, false, 0, 0).tvaDesComptes
+    expect(t1).toEqual(tvaDuBrouillon(d, T1))
+    expect(t2).toEqual(tvaDuBrouillon(d, T2))
+    expect(Math.round((t1.deductible + t2.deductible) * 100)).toBe(2001)
+  })
+
+  it('suit la répartition sur trois paiements dont les centimes ne tombent pas juste', () => {
+    const vente = piece({ id: 'v', montant_ht: 0.07, montant_tva: 0.01, montant_ttc: 0.08, date_piece: '2027-03-01' })
+    const achat = piece({ id: 'a', type_piece: 'achat', montant_ht: 33.34, montant_tva: 6.67, montant_ttc: 40.01, date_piece: '2027-01-02' })
+    const d = donnees([vente, achat], [
+      paye('v1', 'v', 0.03, '2027-03-02'), paye('v2', 'v', 0.03, '2027-04-02'), paye('v3', 'v', 0.02, '2027-05-02'),
+      paye('a1', 'a', -13.34, '2027-01-05'), paye('a2', 'a', -13.34, '2027-02-05'), paye('a3', 'a', -13.33, '2027-04-05'),
+    ])
+    for (const periode of [T1, T2]) expect(calculerCa3(d, periode, false, 0, 0).tvaDesComptes).toEqual(tvaDuBrouillon(d, periode))
+  })
+
+  it('compte la note de frais à sa date, et la part qu\'un remboursement partiel laisse au dirigeant', () => {
+    const note = piece({ id: 'n', type_piece: 'note_frais', montant_ht: 50, montant_tva: 10, montant_ttc: 60, date_piece: '2027-02-15' })
+    const seule = donnees([note])
+    expect(calculerCa3(seule, T1, false, 0, 0).tvaDesComptes.deductible).toBe(10)
+    expect(calculerCa3(seule, T1, false, 0, 0).tvaDesComptes).toEqual(tvaDuBrouillon(seule, T1))
+    // Remboursée 30 € en avril : la moitié compte au remboursement, l'autre reste au dirigeant, à la date de la note.
+    const remboursee = donnees([note], [paye('m', 'n', -30, '2027-04-03')])
+    const t1 = calculerCa3(remboursee, T1, false, 0, 0)
+    const t2 = calculerCa3(remboursee, T2, false, 0, 0)
+    expect(t1.tvaDesComptes.deductible).toBe(5)
+    expect(t2.tvaDesComptes.deductible).toBe(5)
+    expect(t1.tvaDesComptes).toEqual(tvaDuBrouillon(remboursee, T1))
+    expect(t2.tvaDesComptes).toEqual(tvaDuBrouillon(remboursee, T2))
+    expect(t1.retenues.map((r) => [r.piece.id, r.part])).toEqual([['n', 0.5]])
+  })
+
+  it('ne liquide pas le reste d\'un paiement partiel, que l\'écriture porte à la date de facture', () => {
+    // 1 200 € TTC payés 600 € le 20 février : l'écriture porte la moitié de la TVA au paiement, l'autre moitié à la
+    // date de facture (le 10 février). La période liquide la première seulement.
+    const achat = piece({ id: 'a', type_piece: 'achat', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200, date_piece: '2027-02-10' })
+    const d = donnees([achat], [paye('m', 'a', -600, '2027-02-20')])
+    const ca3 = calculerCa3(d, T1, false, 0, 0)
+    expect(ca3.tvaDesComptes.deductible).toBe(100)
+    expect(tvaDuBrouillon(d, T1).deductible).toBe(200)
+    expect(ca3.cases.l20).toBe(100)
+  })
+
+  it('prend la part payée d\'une date que partagent le paiement et le reste', () => {
+    // Payée 400 € le jour même de sa facture : l'écriture n'a qu'une date, la période en liquide le tiers.
+    const achat = piece({ id: 'a', type_piece: 'achat', montant_ht: 1000, montant_tva: 200, montant_ttc: 1200, date_piece: '2027-02-10' })
+    const d = donnees([achat], [paye('m', 'a', -400, '2027-02-10')])
+    expect(calculerCa3(d, T1, false, 0, 0).tvaDesComptes.deductible).toBe(66.67)
+  })
+
+  it('sur option pour les débits, compte une recette en entier à la date de sa facture', () => {
+    const vente = piece({ id: 'v', montant_ht: 100.01, montant_tva: 20.01, montant_ttc: 120.02, date_piece: '2027-03-30' })
+    const d = donnees([vente], [paye('m', 'v', 120.02, '2027-04-15')])
+    expect(calculerCa3(d, T1, true, 0, 0).tvaDesComptes.collectee).toBe(20.01)
+    expect(calculerCa3(d, T2, true, 0, 0).tvaDesComptes.collectee).toBe(0)
+  })
+
+  it('laisse sur les comptes la TVA d\'une pièce écartée', () => {
+    // 2,1 % : la CA3 ne la place pas d'office, et la liquidation ne la retire pas.
+    const vente = piece({ id: 'v', montant_ht: 1000, montant_tva: 21, montant_ttc: 1021, date_piece: '2027-02-01' })
+    const ca3 = calculerCa3(donnees([vente], [paye('m', 'v', 1021, '2027-02-02')]), T1, false, 0, 0)
+    expect(ca3.ecartees).toHaveLength(1)
+    expect(ca3.tvaDesComptes.collectee).toBe(0)
+  })
+
+  it('compte la TVA des recettes du relevé, un remboursement en moins', () => {
+    const categories: Categorie[] = [{
+      id: 'c-recettes', dossier_id: null, code: 'recettes', libelle: 'Recettes', ordre: 1, compte_comptable: '706000', poste_2035: 'Recettes',
+    }]
+    const lignes = [
+      mouvement({ id: 'enc', piece_id: null, categorie_id: 'c-recettes', taux_tva: 20, montant: 600, date: '2027-02-12' }),
+      mouvement({ id: 'rb', piece_id: null, categorie_id: 'c-recettes', taux_tva: 20, montant: -60, date: '2027-02-13' }),
+    ]
+    const ca3 = calculerCa3(donnees([], [], [], [], partsDuReleve(lignes, categories, [], true)), T1, false, 0, 0)
+    expect(ca3.tvaDesComptes.collectee).toBe(90)
+    expect(ca3.cases).toMatchObject({ taxe08: 100, l21: 10 })
+  })
+
+  it('ne s\'écarte des lignes de la CA3 que de leurs arrondis à l\'euro', () => {
+    const pieces = ['a', 'b', 'c'].map((id) => piece({ id, montant_ht: 0.4, montant_tva: 0.08, montant_ttc: 0.48 }))
+    const ca3 = calculerCa3(donnees(pieces, pieces.map((p) => paye(`m-${p.id}`, p.id, 0.48, '2027-02-20'))), T1, false, 0, 0)
+    // 0,24 € de TVA aux comptes, 0 € déclaré : l'arrondi en est la différence.
+    expect(ca3.tvaDesComptes.collectee).toBe(0.24)
+    expect(ca3.netPeriode).toBe(0)
   })
 })

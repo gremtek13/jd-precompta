@@ -161,8 +161,8 @@ export interface LigneBancaire {
   // prélèvement URSSAF/CARPIMKO n'a pas de facture, juste un montant appelé sur un échéancier.
   //
   // MUTUELLEMENT EXCLUSIF AVEC TOUT AUTRE LIEN DU MOUVEMENT — pièce, catégorie, emprunt, ventilation,
-  // règlement groupé, compte de bilan —, ET C'EST LA BASE QUI LE TIENT :
-  // `lignes_bancaires_un_seul_rapprochement` (au plus un lien non nul parmi sept). Ce commentaire a
+  // règlement groupé, compte de bilan, déclaration de TVA —, ET C'EST LA BASE QUI LE TIENT :
+  // `lignes_bancaires_un_seul_rapprochement` (au plus un lien non nul parmi huit). Ce commentaire a
   // affirmé du 23/09 au 29/09/2026 qu'aucune contrainte CHECK n'existait : c'était faux, `pg_constraint`
   // la rend depuis le 22/09 au moins (le socle l'exporte déjà), et rien n'avait recoupé l'affirmation
   // avec l'export qui portait la réponse.
@@ -226,6 +226,14 @@ export interface LigneBancaire {
   // (`lignes_bancaires_compte_bilan_rapproche`), et l'exclusivité avec tout autre lien
   // (`lignes_bancaires_un_seul_rapprochement`). Ni charge ni recette : la 2035 ne le voit pas.
   compte_bilan: string | null
+  // La DÉCLARATION DE TVA que ce mouvement paie — une sortie, écrite au 445510 (TVA à décaisser) — ou dont il
+  // est le remboursement du crédit — une entrée, écrite au 445830 (ligne 26.8, lib/liquidationTva.ts). Posé
+  // AVEC son écriture par la fonction SQL `rapprocher_declaration_tva`, retiré avec elle par
+  // `retirer_rapprochement_declaration_tva` ou par `retirer_declaration_tva`, qui remet à traiter tous les
+  // mouvements d'une déclaration qu'on retire. La base tient le reste : un mouvement rapproché et jamais
+  // personnel (`lignes_bancaires_declaration_tva_rapprochee`), et l'exclusivité avec tout autre lien
+  // (`lignes_bancaires_un_seul_rapprochement`). Ni charge ni recette : la 2035 ne le voit pas.
+  declaration_tva_id: string | null
   // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
   // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.
   // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien
@@ -359,6 +367,11 @@ export interface EcritureBrouillon {
   // bien, justifiée par le barème. Nul sur toute autre écriture. Clé sans action à la suppression : un
   // véhicule dont le forfait est écrit ne se retire que par `retirer_vehicule`, qui emporte son forfait.
   vehicule_id: string | null
+  // La déclaration de TVA dont cette écriture est la LIQUIDATION (ligne 26.8 — voir lib/liquidationTva.ts) : au
+  // dernier jour de la période, sans pièce, ni mouvement, ni bien, ni véhicule, justifiée par la CA3. Nul sur toute
+  // autre écriture. Clé sans action à la suppression : une déclaration ne se retire que par
+  // `retirer_declaration_tva`, qui emporte sa liquidation.
+  declaration_tva_id: string | null
   // Ce que porte une écriture VALIDÉE (ligne 26.6, étape d — voir supabase/essais/validationExercice.sql) :
   // sa date de validation, son journal et son numéro définitif, et les champs du FEC qui se lisaient ailleurs
   // — la référence et la date de sa pièce, le libellé de son compte, son compte auxiliaire —, pour que le FEC
@@ -530,10 +543,7 @@ export interface ReferenceAnnuelle {
   created_at: string
 }
 
-// Montant de TVA réellement déclaré à l'administration (CA3) sur une période — jamais calculé par
-// l'appli, saisi une fois le dépôt réel fait, pour comparer ensuite au total du brouillon sur la même
-// période (voir EcrituresTab). Même logique que ReferenceAnnuelle : une vérité externe transcrite, pas
-// une donnée dérivée.
+// La périodicité de la CA3 d'un dossier assujetti (voir lib/declarationTva.ts).
 export type PeriodiciteTva = 'mensuelle' | 'trimestrielle'
 
 export type ModeComptable = 'tresorerie' | 'engagement'
@@ -553,9 +563,22 @@ export interface DeclarationTva {
   // Le crédit reporté de la déclaration précédente et porté sur celle-ci (ligne 22). C'est de lui
   // qu'on déduit le crédit que cette déclaration reporte à son tour (ligne 27).
   credit_anterieur: number
+  // Le remboursement de crédit demandé (ligne 26, formulaire 3519), en euros : la liquidation le porte au
+  // 445830, que le virement du Trésor solde, et il ne se reporte pas sur la déclaration suivante.
+  remboursement_demande: number
   date_declaration: string | null
   notes: string | null
   created_at: string
+  // CE QUE LA LIQUIDATION SOLDE (ligne 26.8, lib/liquidationTva.ts) : la CA3 telle qu'elle a été enregistrée,
+  // case par case et en euros entiers (les clés de `CasesCa3`, lib/declarationTva.ts), et les montants EXACTS de
+  // TVA, au centime, que la liquidation retire des comptes 445710, 445660 et 445620 — ceux que le brouillon porte
+  // pour les pièces et les recettes du relevé que la CA3 compte. Tous nuls pour une déclaration SAISIE À LA MAIN,
+  // qui n'existe que pour une période antérieure à l'ouverture d'un dossier repris : sa TVA est dans les
+  // à-nouveaux. La base tient les deux formes (`declarations_tva_liquidation_complete`).
+  cases: Readonly<Record<string, number>> | null
+  tva_collectee: number | null
+  tva_deductible: number | null
+  tva_deductible_immobilisations: number | null
 }
 
 export type CategorieDocument = 'releve_bancaire' | 'cotisation' | 'attestation' | 'autre'

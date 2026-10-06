@@ -18,7 +18,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
     id: 'l1', date: '2025-03-12', libelle: 'PRLV SEPA OPERATEUR MOBILE', libelle_brut: null, montant: -120,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
+    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
     ...o,
   }
 }
@@ -63,7 +63,7 @@ function part(o: Partial<VentilationBancaire> = {}): VentilationBancaire {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2025-03-12', compte: '626000',
-    libelle: 'PRLV SEPA OPERATEUR MOBILE', montant: 84, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
+    libelle: 'PRLV SEPA OPERATEUR MOBILE', montant: 84, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2025-03-12T10:00:00Z',
     ...o,
   }
 }
@@ -388,7 +388,7 @@ describe('partsDesVentilations — ce que la ventilation met dans les postes de 
 
   it('ne compte que les mouvements rapprochés ET ventilés', () => {
     for (const ligne of [
-      mouvement({ statut: 'rapprochee', ventilee: false, reglement_groupe: false, compte_bilan: null }),
+      mouvement({ statut: 'rapprochee', ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null }),
       mouvement({ statut: 'non_rapprochee', ventilee: true }),
     ]) {
       expect(partsDesVentilations([ligne], PARTS_TELEPHONE, CATEGORIES, false)).toEqual([])

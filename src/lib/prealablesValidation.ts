@@ -6,6 +6,7 @@ import { casesNegatives, doublonFraisVehicules, valeursDesCases } from './cases2
 import type { DoublonDeTexte } from './doublonsTexte'
 import type { Emprunt } from './emprunts'
 import { numeroterFec, type NumerotationFec } from './fec'
+import { liquidationsDesynchronisees, paiementsTvaDesynchronises, periodesNonDeclarees } from './liquidationTva'
 import { anneeDe } from './format'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import {
@@ -25,8 +26,8 @@ import { piecesPayeesEnTrop, reglementsGroupesIncoherents } from './reglementGro
 import { paiementsDesPieces, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import { defautsDeNumerotation, frontiereDeValidation } from './validationExercice'
 import type {
-  ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, EcritureBrouillon, Immobilisation, LigneBancaire,
-  NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, Immobilisation,
+  LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from './types'
 
 // CE QUI EMPÊCHE DE VALIDER UN EXERCICE, DIT AVANT LE CLIC (ligne 26.6, étape d). Une validation ne se défait
@@ -100,6 +101,10 @@ export interface DonneesDeValidation {
   vehicules: readonly VehiculeDossier[]
   emprunts: readonly Emprunt[]
   aNouveaux: readonly ANouveau[]
+  // Les déclarations de TVA enregistrées, et la périodicité du dossier : une liquidation ou un paiement qui ne suit plus
+  // sa déclaration se refuse, une période sans déclaration se dit (ligne 26.8).
+  declarationsTva: readonly DeclarationTva[]
+  periodiciteTva: PeriodiciteTva
   // Nuls quand on n'a pas pu les lire : ils ne se taisent pas, ils deviennent un préalable.
   relevesIncoherents: readonly ControleReleveBancaire[] | null
   doublonsTexte: readonly DoublonDeTexte[] | null
@@ -276,7 +281,7 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   )
   bloque({
     id: 'ecritures-orphelines', nb: numerotation.horsFec.length, cible: 'ecritures',
-    message: "écriture(s) que rien ne rattache — ni pièce, ni mouvement, ni bien, ni véhicule (le reste d'une pièce supprimée) : les retirer avant la validation.",
+    message: "écriture(s) que rien ne rattache — ni pièce, ni mouvement, ni bien, ni véhicule, ni déclaration de TVA (le reste d'une pièce supprimée) : les retirer avant la validation.",
   })
   const defauts = defautsDeNumerotation(numerotation)
   const desequilibres = defauts.filter((x) => x.type === 'desequilibre')
@@ -438,6 +443,20 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     cible: 'ecritures',
     message: "mouvement(s) écrit(s) sur un compte de bilan dont l'écriture ne suit plus le compte : les réécrire.",
   })
+  // LA TVA LIQUIDÉE (lib/liquidationTva.ts) : la liquidation d'une déclaration s'écrit avec elle, son paiement et son
+  // remboursement avec leur rapprochement — la base les écrit ensemble. Une écriture qui ne suit plus (défensif) se refuse
+  // comme toute écriture en anomalie : validée, elle le resterait. La liquidation compte dans l'exercice où finit sa
+  // période, le paiement dans celui de son mouvement.
+  bloque({
+    id: 'liquidations-tva-perimees', cible: 'tva',
+    nb: liquidationsDesynchronisees(d.ecritures, d.declarationsTva.filter((x) => dansLExercice(x.periode_fin)), frontiere).length,
+    message: "déclaration(s) de TVA de l'exercice dont l'écriture de liquidation manque ou ne suit plus la déclaration : la retirer puis l'enregistrer de nouveau.",
+  })
+  bloque({
+    id: 'paiements-tva-perimes', cible: 'banque',
+    nb: paiementsTvaDesynchronises(d.ecritures, d.lignes, frontiere).filter(mouvementDeLExercice).length,
+    message: "paiement(s) ou remboursement(s) de TVA dont l'écriture ne suit plus le mouvement : les rapprocher de nouveau de leur déclaration.",
+  })
   bloque({
     id: 'virements-sans-ecriture', nb: virementsPersonnelsAEcrire(d.ecritures, d.lignes, d.modele, frontiere).filter(mouvementDeLExercice).length, cible: 'virements',
     message: "virement(s) personnel(s) sans écriture — absents du FEC : les écrire.",
@@ -522,6 +541,20 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
       message: "mouvement(s) ignoré(s) de l'exercice, absent(s) du FEC : un doublon le reste, un mouvement réel se remet à traiter et se classe. Une fois l'exercice validé, il ne le pourra plus.",
       detail: `${montants ? `${montants}. ` : ''}Dans Banque, filtre « Ignorés ».`,
     })
+  }
+  // LES PÉRIODES DE TVA DE L'EXERCICE QU'AUCUNE DÉCLARATION NE COUVRE (lib/liquidationTva.ts) : leur TVA reste aux comptes
+  // 4457 et 4456, que rien ne soldera — une déclaration ne s'enregistre plus dans un exercice validé, et son paiement ne
+  // trouvera rien à quoi se rapprocher. Un avertissement et non un refus : jusqu'aux exercices de 2026, un dossier au
+  // régime simplifié dépose une CA12 que l'application ne prépare pas, et un cabinet peut déclarer ailleurs.
+  if (d.assujettiTva) {
+    const nonDeclarees = periodesNonDeclarees(d.declarationsTva, d.annee, d.periodiciteTva, `${d.anneeCourante}-01-01`, ouvertureDate)
+    if (nonDeclarees.length > 0) {
+      prealables.push({
+        id: 'periodes-tva-non-declarees', nb: nonDeclarees.length, cible: 'tva', bloquant: false,
+        message: "période(s) de TVA de l'exercice sans déclaration enregistrée : leur TVA reste aux comptes 4457 et 4456, que rien ne soldera. Une fois l'exercice validé, une déclaration ne s'y enregistrera plus.",
+        detail: nonDeclarees.map((p) => p.libelle).join(', '),
+      })
+    }
   }
   if (d.declaration) {
     // UNE CSG-CRDS NON SAISIE : la part non déductible de ces cotisations part en déduction (ligne 25), et aucun calcul

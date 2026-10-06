@@ -16,7 +16,7 @@ const vehicule = (o: Partial<VehiculeDossier> = {}): VehiculeDossier => ({
 })
 
 const ecriture = (o: Partial<EcritureBrouillon> = {}): EcritureBrouillon => ({
-  id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: 'v1', ...NON_VALIDEE,
+  id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: null, immobilisation_id: null, vehicule_id: 'v1', declaration_tva_id: null, ...NON_VALIDEE,
   date: '2025-12-31', compte: COMPTE_INDEMNITES_KILOMETRIQUES, libelle: 'Indemnités kilométriques 2025 — Clio',
   montant: 23.81, sens: 'debit', statut: 'proposee', created_at: '2026-01-05T10:00:00Z', ...o,
 })
@@ -201,10 +201,10 @@ describe('forfaitsDuCadre7 — l’état de chaque ligne du cadre 7', () => {
 
   it('ne prend que les écritures de CE véhicule', () => {
     const autres = [
-      ...forfaitEcrit(23.81, { vehicule_id: 'v2' }),
+      ...forfaitEcrit(23.81, { vehicule_id: 'v2', declaration_tva_id: null }),
       // Une dotation et l'écriture d'une pièce n'ont pas de véhicule.
-      ecriture({ id: 'dot', vehicule_id: null, immobilisation_id: 'i1', compte: '681100' }),
-      ecriture({ id: 'piece', vehicule_id: null, piece_id: 'p1', compte: '606100' }),
+      ecriture({ id: 'dot', vehicule_id: null, declaration_tva_id: null, immobilisation_id: 'i1', compte: '681100' }),
+      ecriture({ id: 'piece', vehicule_id: null, declaration_tva_id: null, piece_id: 'p1', compte: '606100' }),
     ]
     const [v1, v2] = forfaitsDuCadre7([vehicule(), vehicule({ id: 'v2' })], autres, TRESORERIE, null, 2026, null)
     expect(v1.presentes).toEqual([])

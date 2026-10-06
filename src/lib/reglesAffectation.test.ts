@@ -11,7 +11,7 @@ function ligne(o: Partial<LigneBancaire> = {}): LigneBancaire {
   return {
     id: 'l1', dossier_id: 'd1', date: '2025-03-12', libelle: 'PRLV SEPA TRANSMEDICAL ECH/150325', montant: -38.4,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
     source_fichier: 'releve-2025.csv', libelle_brut: null, created_at: '2025-04-01T10:00:00Z', ...o,
   }
 }

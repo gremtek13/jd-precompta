@@ -406,11 +406,17 @@ export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonn
 //
 // UN MOUVEMENT ÉCRIT SUR UN COMPTE DE BILAN (ligne 26.7, lib/compteDeBilan.ts) non plus : sa preuve est le
 // relevé, son écriture celle de son compte, et ce lien-là est un NUMÉRO, que rien ne supprime.
+//
+// NI LE PAIEMENT OU LE REMBOURSEMENT D'UNE DÉCLARATION DE TVA (ligne 26.8, lib/liquidationTva.ts) : sa preuve est
+// le relevé, son écriture le 445510 ou le 445830 face à la banque, et sa clé est sans action — une déclaration ne
+// se retire que par la base, qui remet ses mouvements à traiter.
 export function mouvementRapprocheSansObjet(
-  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'ventilee' | 'reglement_groupe' | 'compte_bilan'>,
+  ligne: Pick<LigneBancaire,
+    'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'ventilee' | 'reglement_groupe' | 'compte_bilan'
+    | 'declaration_tva_id'>,
 ): boolean {
   return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id && !ligne.categorie_id && !ligne.emprunt_id
-    && !ligne.ventilee && !ligne.reglement_groupe && !ligne.compte_bilan
+    && !ligne.ventilee && !ligne.reglement_groupe && !ligne.compte_bilan && !ligne.declaration_tva_id
 }
 
 // Ce que TOUTE suppression d'une pièce fait au rapprochement qui la désignait, dit à l'opérateur AVANT

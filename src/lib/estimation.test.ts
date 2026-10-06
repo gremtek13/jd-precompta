@@ -20,7 +20,7 @@ const aEcheance = (cs: CotisationDeclaree[]) => cotisationsComptees(cs, [], 'tre
 const paiement = (pieceId: string, date: string, montant: number): LigneBancaire => ({
   id: `l-${pieceId}`, dossier_id: 'd1', date, libelle: 'VIR', montant, statut: 'rapprochee', piece_id: pieceId,
   cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   created_at: `${date}T09:00:00Z`,
 })
 

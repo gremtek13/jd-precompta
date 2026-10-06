@@ -2,15 +2,17 @@ import { dotationDeLExercice } from './amortissements'
 import { anneeDe } from './format'
 import { indemniteKilometriqueCentimes, totalIndemnitesKilometriques, vehiculeDuDossier } from './baremeKilometrique'
 import {
-  COMPTE_COTISATIONS_EXPLOITANT, COMPTE_DOTATIONS_AMORTISSEMENTS, COMPTE_INDEMNITES_KILOMETRIQUES,
+  COMPTE_ARRONDIS_CHARGE, COMPTE_ARRONDIS_PRODUIT, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_DOTATIONS_AMORTISSEMENTS,
+  COMPTE_INDEMNITES_KILOMETRIQUES,
 } from './comptes'
+import { arrondiDeLaLiquidation } from './liquidationTva'
 import { montantRetenu } from './montantRetenu'
 import type { PartDuReleve } from './partsDuReleve'
 import { centimesParDate, partDeLAnnee, rattachementsTresorerie, type PaiementsDesPieces } from './rattachement'
 import type { TotalKilometrique } from './baremeKilometrique'
 import type { CotisationComptee } from './cotisationRapprochee'
 import type { MouvementBancaire } from './affectationBanque'
-import type { Categorie, CotisationDeclaree, Immobilisation, Piece, VehiculeDossier } from './types'
+import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, Piece, VehiculeDossier } from './types'
 
 // Moteur de la déclaration 2035 (bénéfices non commerciaux, régime de la déclaration contrôlée).
 //
@@ -34,6 +36,13 @@ export const POSTE_CSG_DEDUCTIBLE = 'CSG déductible'
 // case BJ mais n'ont pas la même origine, et les confondre rendrait la case impossible à justifier —
 // or ce sont précisément les deux montants qui ne doivent pas coexister (voir doublonFraisVehicules).
 export const POSTE_INDEMNITES_KM = 'Indemnités kilométriques'
+// L'ARRONDI DE LA LIQUIDATION DE LA TVA (ligne 26.8, lib/liquidationTva.ts) : chaque ligne de la CA3 s'arrondit à
+// l'euro, et ce qui sépare la TVA déclarée de celle que les comptes portent au centime va au 658000 ou au 758000.
+// C'est un vrai produit ou une vraie charge — l'euro payé en plus ou en moins au Trésor —, de quelques euros au plus :
+// la 2035 le compte dans les « Gains divers » (AF) ou les « Frais divers de gestion » (BM), l'année de la fin de la
+// période, celle de l'écriture. Deux postes ordinaires, qu'une catégorie peut aussi porter.
+export const POSTE_ARRONDIS_TVA_PRODUIT = 'Gains divers'
+export const POSTE_ARRONDIS_TVA_CHARGE = 'Autres frais divers de gestion'
 
 // Un poste de la déclaration. `montant` est positif : c'est `nature` qui porte le sens. Mélanger les deux
 // (une charge en négatif) obligerait chaque consommateur — PDF, EDI, écran — à refaire la même convention
@@ -100,6 +109,8 @@ export type SourceDeclaration =
   | { type: 'cotisation'; id: string; cotisation: CotisationDeclaree; ligne: MouvementBancaire | null; refus: string | null }
   // La part déductible de la CSG-CRDS de l'exercice (case BV) : une seule, calculée sur le total.
   | { type: 'csg' }
+  // L'arrondi de la liquidation d'une déclaration de TVA (lib/liquidationTva.ts).
+  | { type: 'declaration'; id: string; declaration: DeclarationTva }
 
 export interface ContributionDeclaration {
   source: SourceDeclaration
@@ -267,6 +278,10 @@ export function calculerDeclaration2035(
   // l'encaissement ou du paiement — la règle de la 2035 sans supposition. Sans valeur par défaut : un
   // appelant qui les oublie rendrait la 2035 d'un infirmier presque sans recettes.
   partsDuReleve: readonly PartDuReleve[],
+  // Les déclarations de TVA enregistrées : l'arrondi de leur liquidation est un produit ou une charge de l'exercice où
+  // finit leur période. Sans valeur par défaut, comme le reste : les oublier laisserait au FEC un 658000 ou un 758000
+  // que la 2035 ne compte pas, et la concordance le dirait sans que rien ne l'explique.
+  declarationsTva: readonly DeclarationTva[],
 ): Declaration2035 {
   const categorieById = (id: string | null) => categories.find((c) => c.id === id) ?? null
 
@@ -430,6 +445,21 @@ export function calculerDeclaration2035(
     ajouter({
       source: { type: 'csg' }, poste: POSTE_CSG_DEDUCTIBLE, nature: 'depense', compte: null,
       centimes: enCentimes(csg.csgDeductible),
+    }, 0)
+  }
+
+  // L'ARRONDI DE CHAQUE LIQUIDATION DE TVA, l'année de la fin de sa période : une charge quand la CA3 fait payer plus
+  // que les comptes ne portent, un produit sinon. Rien pour une déclaration saisie à la main, qui ne liquide rien.
+  for (const declaration of declarationsTva) {
+    if (anneeDe(declaration.periode_fin) !== annee) continue
+    const centimes = enCentimes(arrondiDeLaLiquidation(declaration))
+    if (centimes === 0) continue
+    ajouter({
+      source: { type: 'declaration', id: declaration.id, declaration },
+      poste: centimes > 0 ? POSTE_ARRONDIS_TVA_CHARGE : POSTE_ARRONDIS_TVA_PRODUIT,
+      nature: centimes > 0 ? 'depense' : 'recette',
+      compte: centimes > 0 ? COMPTE_ARRONDIS_CHARGE : COMPTE_ARRONDIS_PRODUIT,
+      centimes: Math.abs(centimes),
     }, 0)
   }
 

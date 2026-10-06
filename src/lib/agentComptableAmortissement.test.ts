@@ -88,7 +88,7 @@ const NATURES: NatureImmobilisation[] = [
 function ecrite(id: string, annee: number, montant: number, o: Partial<EcritureBrouillon> = {}): EcritureBrouillon[] {
   const base = {
     dossier_id: 'd', piece_id: null, ligne_bancaire_id: null, date: `${annee}-12-31`, libelle: `Dotation ${annee}`, montant,
-    statut: 'proposee' as const, immobilisation_id: id, vehicule_id: null, ...NON_VALIDEE, created_at: '2026-01-02T09:00:00Z',
+    statut: 'proposee' as const, immobilisation_id: id, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-01-02T09:00:00Z',
   }
   return [
     { ...base, id: `${id}-${annee}-d`, compte: '681100', sens: 'debit', ...o },

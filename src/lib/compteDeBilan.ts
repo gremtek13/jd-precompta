@@ -4,6 +4,7 @@ import {
 import {
   COMPTE_DEPOTS_ET_CAUTIONNEMENTS_VERSES, COMPTE_VIREMENTS_INTERNES, libelleCompteTenu, libelleDuPlanComptable,
 } from './comptes'
+import { refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import type { ModeleComptable } from './engagement'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import type { EcritureBrouillon, LigneBancaire, ModeComptable } from './types'
@@ -156,13 +157,17 @@ export function refusCompteDeBilan(compte: string | null, mode: ModeComptable, d
 
 // Le classement que la fonction d'écriture refuse AVANT de regarder le compte, dans son ordre : un règlement groupé,
 // tout autre lien du mouvement, un mouvement de zéro euro. Un mouvement déjà écrit sur un compte de bilan, lui, se
-// réécrit — la fonction remplace le compte et l'écriture.
+// réécrit — la fonction remplace le compte et l'écriture. Un mouvement qui paie une déclaration de TVA, la fonction
+// ne le refuse pas nommément : c'est la contrainte d'un seul rapprochement qui l'arrête, sous son nom. L'écran le dit
+// donc ici, avec les refus du mouvement (lib/classementsDuMouvement.ts).
 export const REFUS_COMPTE_DE_BILAN_CLASSE =
   'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, affecté à une catégorie, ventilé sur '
   + 'plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.'
 
 export function refusMouvementCompteDeBilan(ligne: MouvementBancaire): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
+  const paieUneDeclaration = refusPaieUneDeclarationTva(ligne)
+  if (paieUneDeclaration) return paieUneDeclaration
   if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) {
     return REFUS_COMPTE_DE_BILAN_CLASSE
   }

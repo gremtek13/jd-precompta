@@ -28,7 +28,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
     id: 'l1', date: '2026-03-12', libelle: 'VIR EPARGNE', libelle_brut: null, montant: -2000,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null,
-    ventilee: false, reglement_groupe: false, compte_bilan: null,
+    ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null,
     ...o,
   }
 }
@@ -36,7 +36,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
 function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
   return {
     id: 'e', dossier_id: 'd1', piece_id: null, ligne_bancaire_id: 'l1', date: '2026-03-12', compte: COMPTE_VIREMENTS_INTERNES,
-    libelle: 'VIR EPARGNE', montant: 2000, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null,
+    libelle: 'VIR EPARGNE', montant: 2000, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
     ...NON_VALIDEE, created_at: '2026-03-12T10:00:00Z',
     ...o,
   }
@@ -377,9 +377,9 @@ describe('un mouvement écrit sur un compte de bilan est justifié par le relev�
     expect(mouvementJustifieParLeReleve(ecrit)).toBe(true)
     expect(mouvementRapprocheSansObjet(ecrit)).toBe(false)
     // Le garde symétrique : remis à traiter, il ne l'est plus.
-    const remis = { ...ecrit, statut: 'non_rapprochee' as const, compte_bilan: null }
+    const remis = { ...ecrit, statut: 'non_rapprochee' as const, compte_bilan: null, declaration_tva_id: null }
     expect(mouvementJustifieParLeReleve(remis)).toBe(false)
-    expect(mouvementRapprocheSansObjet({ ...ecrit, compte_bilan: null })).toBe(true)
+    expect(mouvementRapprocheSansObjet({ ...ecrit, compte_bilan: null, declaration_tva_id: null })).toBe(true)
   })
 })
 

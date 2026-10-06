@@ -60,7 +60,7 @@ vi.mock('../../lib/supabase', async () => {
         .map((e, i): EcritureBrouillon => ({
           id: `rpc-${faux.rpcs.length}-${i}`, dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null,
           date: `${annee}-12-31`, compte: e.compte, libelle: e.libelle, montant: e.montant, sens: e.sens,
-          statut: 'proposee', immobilisation_id: id, vehicule_id: null, ...NON_VALIDEE, created_at: '2026-10-01T10:00:00Z',
+          statut: 'proposee', immobilisation_id: id, vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE, created_at: '2026-10-01T10:00:00Z',
         })))
     } else if (nom === 'retirer_immobilisation') {
       faux.ecritures = faux.ecritures.filter((e) => e.immobilisation_id !== id)
@@ -159,7 +159,7 @@ const NATURE_PROPRE: NatureImmobilisation = {
 function dotation(annee: number, montant: number, o: Partial<EcritureBrouillon> = {}): EcritureBrouillon[] {
   const base = {
     dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: null, date: `${annee}-12-31`,
-    libelle: `Dotation ${annee} — Ordinateur`, montant, statut: 'proposee' as const, immobilisation_id: 'i-1', vehicule_id: null, ...NON_VALIDEE,
+    libelle: `Dotation ${annee} — Ordinateur`, montant, statut: 'proposee' as const, immobilisation_id: 'i-1', vehicule_id: null, declaration_tva_id: null, ...NON_VALIDEE,
     created_at: '2026-01-02T09:00:00Z',
   }
   return [
@@ -820,7 +820,7 @@ describe('ImmobilisationsTab — ce qu’un exercice validé a figé', () => {
   // (`immobilisation_id` non nul) ne la voit pas.
   const acquisitionValidee = (pieceId = 'piece-1', date = '2025-07-01'): EcritureBrouillon => ({
     id: `acq-${pieceId}`, dossier_id: 'dossier-de-test', piece_id: pieceId, ligne_bancaire_id: null, immobilisation_id: null,
-    vehicule_id: null, date, compte: '218300', libelle: 'Acquisition', montant: 12000, sens: 'debit', statut: 'validee',
+    vehicule_id: null, declaration_tva_id: null, date, compte: '218300', libelle: 'Acquisition', montant: 12000, sens: 'debit', statut: 'validee',
     ...NON_VALIDEE, valide_le: '2026-03-01T10:00:00Z', created_at: '2025-07-02T09:00:00Z',
   })
 

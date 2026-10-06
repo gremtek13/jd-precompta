@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculerDeclaration2035, csgDeductible, partCsgNonDeductible,
-  POSTE_AMORTISSEMENTS, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE, POSTE_INDEMNITES_KM,
+  POSTE_AMORTISSEMENTS, POSTE_ARRONDIS_TVA_CHARGE, POSTE_ARRONDIS_TVA_PRODUIT, POSTE_COTISATIONS, POSTE_CSG_DEDUCTIBLE,
+  POSTE_INDEMNITES_KM,
 } from './declaration2035'
-import type { Categorie, CotisationDeclaree, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
+import type { Categorie, CotisationDeclaree, DeclarationTva, Immobilisation, LigneBancaire, Piece, VehiculeDossier, VentilationBancaire } from './types'
 import { partsDuReleve, type PartDuReleve } from './partsDuReleve'
 import { paiementsDesPieces } from './rattachement'
 import { cotisationsComptees } from './cotisationRapprochee'
@@ -24,12 +25,12 @@ const piece = (o: Partial<Piece>): Piece =>
 
 const calcul = (o: {
   pieces?: Piece[]; immos?: Immobilisation[]; cotis?: CotisationDeclaree[]; annee?: number
-  vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]; mouvements?: PartDuReleve[]
+  vehicules?: VehiculeDossier[]; paiements?: LigneBancaire[]; mouvements?: PartDuReleve[]; declarationsTva?: DeclarationTva[]
 }) => calculerDeclaration2035(
   o.annee ?? 2025, o.pieces ?? [], categories, o.immos ?? [],
   // Les échéances comptées comme à l'écran : au mouvement qui les paie quand `paiements` en porte un.
   cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], true,
-  paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [],
+  paiementsDesPieces(o.paiements ?? [], []), o.mouvements ?? [], o.declarationsTva ?? [],
 )
 
 const vehicule = (o: Partial<VehiculeDossier>): VehiculeDossier =>
@@ -63,7 +64,7 @@ describe('calculerDeclaration2035 — périmètre', () => {
   // 1 022,40 € payés, soit 170,40 € de dépenses absentes d'une 2035 signée.
   it('retient le TTC pour un dossier exonéré, TVA comprise', () => {
     const pieces = [piece({ montant_ht: 100, montant_tva: 20, montant_ttc: 120 })]
-    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [])
+    const exonere = calculerDeclaration2035(2025, pieces, categories, [], [], [], false, new Map(), [], [])
     expect(exonere.totalDepenses).toBe(120)
     // Le garde symétrique : l'assujetti garde le hors taxes.
     expect(calcul({ pieces }).totalDepenses).toBe(100)
@@ -113,7 +114,7 @@ describe('calculerDeclaration2035 — ce qui est écarté est dit', () => {
 const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
 
@@ -263,7 +264,7 @@ describe('calculerDeclaration2035 — totaux et résultat', () => {
     const encaissement = paiement({ id: 'm', piece_id: null, categorie_id: 'c-honoraires-recus', date: '2025-04-02', montant: 300 })
     const d = calculerDeclaration2035(
       2025, [piece({ id: 'a', categorie_id: 'c-honoraires-payes', montant_ht: 80 })], honoraires, [], [], [], true,
-      paiementsDesPieces([], []), partsDuReleve([encaissement], honoraires, [], true),
+      paiementsDesPieces([], []), partsDuReleve([encaissement], honoraires, [], true), [],
     )
     expect(d.recettes.map((l) => [l.poste, l.montant, l.nbMouvements])).toEqual([['Honoraires', 300, 1]])
     expect(d.depenses.map((l) => [l.poste, l.montant, l.nbPieces])).toEqual([['Honoraires', 80, 1]])
@@ -451,7 +452,7 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
     const parts = [part({ id: 'a', categorie_id: 'c-achats', montant: -84 }), part({ id: 'b', categorie_id: 'c-tel', montant: -36 })]
     expect(calcul({ annee: 2025, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(0)
     expect(calcul({ annee: 2026, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(120)
-    expect(calcul({ mouvements: releve([ventile({ ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
+    expect(calcul({ mouvements: releve([ventile({ ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, id_externe: null, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
   })
 })
 
@@ -726,6 +727,49 @@ const cotisation = (o: Partial<CotisationDeclaree> = {}): CotisationDeclaree => 
 // Des échéances qu'aucun mouvement ne paie : elles comptent à leur échéance, pour le versement saisi.
 const aEcheance = (cs: CotisationDeclaree[]) => cotisationsComptees(cs, [], 'tresorerie')
 
+// L'ARRONDI DE LA LIQUIDATION DE LA TVA (lib/liquidationTva.ts) : la TVA déclarée moins celle que les comptes portent au
+// centime — un produit en gains divers, une charge en frais divers, l'année de la fin de la période.
+describe('calculerDeclaration2035 — l’arrondi de la liquidation de la TVA', () => {
+  const declaration = (o: Partial<DeclarationTva> = {}): DeclarationTva => ({
+    id: 'q1', dossier_id: 'd1', periode_debut: '2025-01-01', periode_fin: '2025-03-31', tva_declaree: 79, credit_anterieur: 0,
+    remboursement_demande: 0, date_declaration: '2025-04-15', notes: null, created_at: '2025-04-15T09:00:00Z',
+    cases: { l16: 100, l19: 0, l20: 21, l21: 0, l22: 0, l23: 21, l25: 0, l26: 0, l27: 0, l28: 79, l32: 79 },
+    tva_collectee: 100.40, tva_deductible: 20.60, tva_deductible_immobilisations: 0, ...o,
+  })
+
+  it('un arrondi en faveur du dossier est un gain divers, au 758000', () => {
+    const d = calcul({ declarationsTva: [declaration()] })
+    expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 0.8, nbPieces: 0, nbMouvements: 0 }])
+    expect(d.resultat).toBe(0.8)
+    expect(d.contributions).toEqual([{
+      source: { type: 'declaration', id: 'q1', declaration: declaration() }, poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette',
+      compte: '758000', centimes: 80,
+    }])
+  })
+
+  it('un arrondi qui fait payer plus est une charge, au 658000', () => {
+    const d = calcul({ declarationsTva: [declaration({ tva_collectee: 99.20 })] })
+    expect(d.depenses).toEqual([{ poste: POSTE_ARRONDIS_TVA_CHARGE, nature: 'depense', montant: 0.4, nbPieces: 0, nbMouvements: 0 }])
+    expect(d.contributions.map((c) => [c.compte, c.centimes])).toEqual([['658000', 40]])
+  })
+
+  it('l’année de la fin de la période, et rien pour un arrondi nul ou une déclaration saisie à la main', () => {
+    expect(calcul({ annee: 2026, declarationsTva: [declaration()] }).contributions).toEqual([])
+    expect(calcul({ declarationsTva: [declaration({ tva_collectee: 99.60 })] }).contributions).toEqual([])
+    expect(calcul({ declarationsTva: [declaration({ cases: null, tva_collectee: null, tva_deductible: null, tva_deductible_immobilisations: null })] })
+      .contributions).toEqual([])
+  })
+
+  it('s’ajoute à une catégorie rangée dans les gains divers', () => {
+    const gains = [...categories, { id: 'c-gains', poste_2035: POSTE_ARRONDIS_TVA_PRODUIT } as Categorie]
+    const d = calculerDeclaration2035(
+      2025, [piece({ id: 'g', type_piece: 'vente', categorie_id: 'c-gains', montant_ht: 10, montant_ttc: 10 })], gains, [], [], [], true,
+      paiementsDesPieces([], []), [], [declaration()],
+    )
+    expect(d.recettes).toEqual([{ poste: POSTE_ARRONDIS_TVA_PRODUIT, nature: 'recette', montant: 10.8, nbPieces: 1, nbMouvements: 0 }])
+  })
+})
+
 describe('partCsgNonDeductible', () => {
   it('se tait quand l’exercice ne porte aucune cotisation', () => {
     // Rien à dire, donc rien à afficher : une mise en garde permanente cesse d'être lue.
@@ -825,7 +869,7 @@ describe('calculerDeclaration2035 — les contributions, source par source', () 
     o.annee ?? 2025, o.pieces ?? [], categoriesComptables, o.immos ?? [],
     cotisationsComptees(o.cotis ?? [], o.paiements ?? [], 'tresorerie'), o.vehicules ?? [], o.assujetti ?? true,
     paiementsDesPieces(o.paiements ?? [], []),
-    partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true),
+    partsDuReleve(o.mouvements ?? [], categoriesComptables, [], o.assujetti ?? true), [],
   )
   // Par poste ET par nature : une vente rangée dans la catégorie des achats est une contribution « recette » au
   // poste Achats, et la ligne des dépenses Achats ne la porte pas.
@@ -955,7 +999,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
   const affecte = (o: Partial<LigneBancaire>): LigneBancaire =>
     paiement({ piece_id: null, categorie_id: 'c-frais', date: '2025-03-12', ...o })
   const calculReleve = (...lignes: LigneBancaire[]) => calculerDeclaration2035(
-    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], []), partsDuReleve(lignes, categoriesDuReleve, [], false),
+    2025, [], categoriesDuReleve, [], [], [], false, paiementsDesPieces([], []), partsDuReleve(lignes, categoriesDuReleve, [], false), [],
   )
 
   it('un remboursement sans dépense de l’exercice diminue les dépenses au lieu de s’y ajouter', () => {
@@ -981,7 +1025,7 @@ describe('calculerDeclaration2035 — un poste que ses remboursements font passe
     // Le moteur ne déclarait la ligne 25 que positive : un remboursement de l'Urssaf supérieur aux appels de
     // l'année disparaissait du résultat.
     const rembt = cotisation({ id: 'r', echeance: '2025-06-05', montant_verse: null, montant_appele: -300, montant_csg_crds: null })
-    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [])
+    const d = calculerDeclaration2035(2025, [], categoriesDuReleve, [], aEcheance([rembt]), [], false, paiementsDesPieces([], []), [], [])
     expect(d.depenses).toEqual([{ poste: POSTE_COTISATIONS, nature: 'depense', montant: -300, nbPieces: 0, nbMouvements: 0 }])
     expect(d.resultat).toBe(300)
   })

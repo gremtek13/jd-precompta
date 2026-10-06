@@ -162,7 +162,7 @@ function poser(
 function monter(annee = 2025, assujettiTva = true) {
   return render(
     <ContexteDossier annee={annee}>
-      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} modele={TRESORERIE} />
+      <ClotureTab dossierId="dossier-de-test" assujettiTva={assujettiTva} periodiciteTva="trimestrielle" modele={TRESORERIE} />
     </ContexteDossier>,
   )
 }
@@ -230,7 +230,7 @@ describe("ClotureTab — l'exercice du paiement", () => {
     poserDecembre(true)
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
       </ContexteDossier>,
     )
 
@@ -258,7 +258,7 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
   const PRELEVEE_EN_JANVIER = {
     id: 'l-urssaf', dossier_id: 'dossier-de-test', date: '2026-01-06', libelle: 'PRLV URSSAF', montant: -300,
     statut: 'rapprochee', piece_id: null, cotisation_id: 'c1', categorie_id: null, emprunt_id: null, ventilee: false,
-    reglement_groupe: false, compte_bilan: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+    reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
     created_at: '2026-01-07T09:00:00Z',
   }
   const TITRE = /Cotisations comptées à leur échéance/
@@ -328,7 +328,7 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
     faux.parTable.pieces = []
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
@@ -517,7 +517,7 @@ describe('ClotureTab — un poste qu’aucune case ne porte', () => {
     const onNavigate = vi.fn()
     render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} onNavigate={onNavigate} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} onNavigate={onNavigate} />
       </ContexteDossier>,
     )
     const titre = await screen.findByRole('heading', { name: 'Postes sans case du formulaire (1)' })
@@ -884,7 +884,7 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
   function monterEngagement() {
     return render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
   }
@@ -950,7 +950,7 @@ describe('ClotureTab — un dossier tenu en engagement', () => {
     }]
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
     await screen.findByText('Exercice 2025')
@@ -1022,7 +1022,7 @@ describe('ClotureTab — les mouvements du relevé affectés sans justificatif',
     faux.parTable.lignes_bancaires = [mouvement({ date: '2026-02-10' })]
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByText(/Report sur la déclaration des revenus 2026/)
@@ -1282,7 +1282,7 @@ describe('ClotureTab — la concordance de la 2035 avec les écritures', () => {
   const ECRITURE = {
     id: 'e1', dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-10', compte: '606100',
     libelle: 'FOURNISSEUR', montant: 120, sens: 'debit', statut: 'proposee', created_at: '2025-03-11T09:00:00Z',
-    immobilisation_id: null, vehicule_id: null,
+    immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
   }
   const CONCORDE = /La 2035 se retrouve dans les écritures de l’exercice/
   const carte = async () => within((await screen.findByText(/Concordance avec les écritures — 2025/)).closest('.card') as HTMLElement)
@@ -1423,7 +1423,7 @@ describe('ClotureTab — la concordance de la 2035 avec les écritures', () => {
     poserSansCotisation()
     render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={true} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
     await screen.findByText(/La 2035 n’est pas produite pour ce dossier/)
@@ -1479,12 +1479,12 @@ describe('ClotureTab — valider l’exercice', () => {
   const PAIEMENT = {
     id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-12', libelle: 'PRLV FOURNISSEUR', montant: -120,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, source_fichier: 'releve.pdf', libelle_brut: null,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, declaration_tva_id: null, source_fichier: 'releve.pdf', libelle_brut: null,
     created_at: '2025-03-13T09:00:00Z',
   }
   const ECRITURE = {
     id: 'e1', dossier_id: 'dossier-de-test', piece_id: 'p1', ligne_bancaire_id: null, date: '2025-03-12', compte: '606100',
-    libelle: 'FOURNISSEUR', montant: 120, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null,
+    libelle: 'FOURNISSEUR', montant: 120, sens: 'debit', statut: 'proposee', immobilisation_id: null, vehicule_id: null, declaration_tva_id: null,
     ...NON_VALIDEE, created_at: '2025-03-13T09:00:00Z',
   }
   const BANQUE = { ...ECRITURE, id: 'e2', compte: '512000', sens: 'credit', ligne_bancaire_id: 'l1' }
@@ -1524,7 +1524,7 @@ describe('ClotureTab — valider l’exercice', () => {
   const monterAvec = (onNavigate = vi.fn()) => {
     render(
       <ContexteDossier annee={2025} relire={relirePage}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} onNavigate={onNavigate} />
       </ContexteDossier>,
     )
     return onNavigate
@@ -1692,7 +1692,7 @@ describe('ClotureTab — valider l’exercice', () => {
     confirmer(true)
     render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
     const c = await carte()
@@ -1818,7 +1818,7 @@ describe('ClotureTab — valider l’exercice', () => {
     faux.parTable.exercices_valides = [{ ...VALIDE_2023, mode_comptable: 'engagement', declaration: null }]
     render(
       <ContexteDossier annee={2025}>
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={ENGAGEMENT} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={ENGAGEMENT} />
       </ContexteDossier>,
     )
     const c = await carte()
@@ -1831,7 +1831,7 @@ describe('ClotureTab — valider l’exercice', () => {
     faux.parTable.exercices_valides = [VALIDE_2023]
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByText(/^Exercice 2023 validé/)
@@ -1845,7 +1845,7 @@ describe('ClotureTab — valider l’exercice', () => {
     poserTenu()
     render(
       <ContexteDossier annee="toutes">
-        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} />
+        <ClotureTab dossierId="dossier-de-test" assujettiTva={false} periodiciteTva="trimestrielle" modele={TRESORERIE} />
       </ContexteDossier>,
     )
     await screen.findByRole('heading', { name: 'Valider l’exercice 2025' })

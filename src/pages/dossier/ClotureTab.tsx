@@ -32,8 +32,8 @@ import {
   casesDeLInstantane, casesQuiDifferent, demandeDeValidation, exerciceQuiFige, instantane2035, lireInstantane2035, type Instantane2035,
 } from '../../lib/validationExercice'
 import type {
-  ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, EcritureBrouillon, ExerciceValide, Immobilisation, LigneBancaire,
-  NatureImmobilisation, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
+  ANouveau, Categorie, ControleReleveBancaire, CotisationDeclaree, DeclarationTva, EcritureBrouillon, ExerciceValide, Immobilisation,
+  LigneBancaire, NatureImmobilisation, PeriodiciteTva, Piece, ReglementGroupe, VehiculeDossier, VentilationBancaire,
 } from '../../lib/types'
 import BrouillonBanner from '../../components/BrouillonBanner'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
@@ -61,9 +61,11 @@ import ValidationExerciceCard from './ValidationExerciceCard'
 // par exercice dit ce qui l'empêche, valide, puis montre l'exercice validé (ValidationExerciceCard). Un
 // exercice validé en trésorerie montre la 2035 TELLE QU'ELLE A ÉTÉ VALIDÉE — l'instantané gardé par la
 // base —, pas un calcul d'aujourd'hui, et dit les cases où un nouveau calcul ne la retrouverait plus.
-export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate }: {
+export default function ClotureTab({ dossierId, assujettiTva, periodiciteTva, modele, onNavigate }: {
   dossierId: string
   assujettiTva: boolean
+  // La périodicité des déclarations de TVA : la validation d'un exercice dit les périodes qu'aucune ne couvre.
+  periodiciteTva: PeriodiciteTva
   modele: ModeleComptable
   onNavigate?: (tab: DossierTab) => void
 }) {
@@ -95,6 +97,9 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // Les parts des virements qui règlent PLUSIEURS pièces (lib/reglementGroupe.ts) : chacune date sa pièce
   // comme un rapprochement simple.
   const [reglements, setReglements] = useState<ReglementGroupe[]>([])
+  // Les déclarations de TVA enregistrées : l'arrondi de leur liquidation est un produit ou une charge de la 2035
+  // (lib/liquidationTva.ts).
+  const [declarationsTva, setDeclarationsTva] = useState<DeclarationTva[]>([])
   // Les emprunts, pour dire les échéances que l'échéancier prévoit dans l'exercice et qu'aucun
   // mouvement ne paie (lib/echeanceEmprunt.ts). Leur drapeau est à part : la 2035 lit le découpage
   // gardé sur les mouvements rapprochés, pas les emprunts — lus en partie, ils ne faussent aucune case,
@@ -163,7 +168,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
     const [
       lectureCategories, lecturePieces, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes,
       { data: dossierData, error: dossierError }, clotures, lectureEmprunts, lectureVentilations, lectureReglements, lectureNatures,
-      lectureEcritures, lectureOuverture, lectureAValider, lectureValides,
+      lectureEcritures, lectureOuverture, lectureAValider, lectureValides, lectureDeclarationsTva,
     ] = await Promise.all([
       lireTout<Categorie>((debut, fin) =>
         supabase.from('categories').select('*', { count: 'exact' })
@@ -246,6 +251,12 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
         supabase.from('exercices_valides').select('*', { count: 'exact' })
           .eq('dossier_id', dossierId).order('annee').order('dossier_id').range(debut, fin),
       ),
+      // Les déclarations de TVA : l'arrondi de chaque liquidation entre dans la 2035. Tronquée, cette lecture en
+      // retirerait un — le drapeau de la déclaration.
+      lireTout<DeclarationTva>((debut, fin) =>
+        supabase.from('declarations_tva').select('*', { count: 'exact' })
+          .eq('dossier_id', dossierId).order('periode_debut').order('id').range(debut, fin),
+      ),
     ])
     // Le relevé qui ne boucle pas et les doublons de contenu, comme la Checklist les lit — mais une lecture ratée
     // n'y vaut jamais « rien à signaler » : elle devient un préalable de la validation.
@@ -266,6 +277,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
     setNaturesIncompletes(lectureNatures.complete ? null : lectureNatures.motif)
     setVentilations(lectureVentilations.lignes)
     setReglements(lectureReglements.lignes)
+    setDeclarationsTva(lectureDeclarationsTva.lignes)
     setEmprunts(lectureEmprunts.lignes)
     setEmpruntsIncomplets(lectureEmprunts.complete ? null : lectureEmprunts.motif)
     setDossier(dossierData ?? null)
@@ -286,7 +298,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
     setLectureIncomplete(
       [
         lecturePieces, lectureCategories, lectureImmobilisations, lectureCotisations, lectureVehicules, lectureLignes, lectureVentilations,
-        lectureReglements,
+        lectureReglements, lectureDeclarationsTva,
       ].find((l) => !l.complete)?.motif
       ?? (dossierError ? messageErreur(dossierError, "l'identité du dossier n'a pas pu être lue") : null),
     )
@@ -374,7 +386,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
   // consultation (l'avertissement ci-dessous le dit).
   const exercices = typeof anneeFilter === 'number' ? [anneeFilter] : anneesDisponibles
   const declarations = exercices.map((a) =>
-    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts),
+    calculerDeclaration2035(a, piecesValidees, categories, immobilisations, comptees, vehicules, assujettiTva, paiements, parts, declarationsTva),
   )
 
   // Chaque exercice est rendu dans la forme du formulaire officiel — une case par encadré, dans
@@ -513,8 +525,8 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
     const etat = prealablesDeValidation({
       annee, anneeCourante, modele, assujettiTva, anneesValidees,
       lectureIncomplete: motifValidation, piecesValidees, piecesAValider, categories, immobilisations, natures, ecritures,
-      lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, relevesIncoherents,
-      doublonsTexte,
+      lignes: toutesLesLignes, ventilations, reglements, cotisations, vehicules, emprunts, aNouveaux, declarationsTva,
+      periodiciteTva, relevesIncoherents, doublonsTexte,
       declaration: formulaire?.declaration ?? null,
       concordance: formulaire ? concordances.get(annee)?.concordance ?? null : null,
     })
@@ -1278,7 +1290,7 @@ export default function ClotureTab({ dossierId, assujettiTva, modele, onNavigate
         <p className="error-text">
           Une des entrées dont dépend la déclaration n'a pas pu être lue en entier
           ({lectureIncomplete}) — pièces, catégories, immobilisations, cotisations, véhicules,
-          mouvements du relevé et leurs ventilations, ou l'identité du dossier. Les
+          mouvements du relevé et leurs ventilations, déclarations de TVA, ou l'identité du dossier. Les
           montants ci-dessous portent donc sur une partie du dossier, et le remplissage du
           formulaire est bloqué : une 2035 calculée sur une lecture partielle est plausible, fausse,
           et signée.
