@@ -4159,6 +4159,16 @@ describe('BanqueTab — un mouvement vers un compte de bilan s’écrit', () => 
     await act(async () => { (await screen.findByRole('button', { name: 'Ignorés' })).click() })
     await ouvrir('VIR VERS LIVRET A')
     expect(within(volet()).getByText(/Ignoré : ce mouvement n’est écrit nulle part/)).toBeTruthy()
+    cleanup()
+
+    // Le garde symétrique : un virement personnel est classé « ignoré » lui aussi, mais il s'écrit sur le compte du
+    // dirigeant — lui dire qu'il n'est écrit nulle part serait faux.
+    preparer({ statut: 'ignoree', prelevement_personnel: true })
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Ignorés' })).click() })
+    await ouvrir('VIR VERS LIVRET A')
+    expect(within(volet()).getByRole('heading', { name: 'Virement personnel' })).toBeTruthy()
+    expect(within(volet()).queryAllByText(/Ignoré : ce mouvement n’est écrit nulle part/)).toHaveLength(0)
   })
 })
 
