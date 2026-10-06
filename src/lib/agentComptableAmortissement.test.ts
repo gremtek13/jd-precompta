@@ -211,7 +211,7 @@ describe('agent-comptable / points_a_traiter lit le registre et ses dotations', 
     expect(corps).toMatch(/from\("natures_immobilisation"\)\.select\("id, compte_immobilisation"[^)]*\)\.or\(`dossier_id\.eq\.\$\{dossierId\},dossier_id\.is\.null`\)\.order\("id"\)/)
     expect(corps).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id[,"]/)
     expect(corps).toMatch(/from\("a_nouveaux"\)\.select\("id, date"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("date"\)\.order\("id"\)/)
-    expect(corps).toMatch(/rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('rend le point de la Checklist, l’exercice en cours lu dans le fuseau du cabinet', () => {

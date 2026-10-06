@@ -939,6 +939,7 @@ interface VirementPersonnelRow {
   id: string; date: string; montant: number; prelevement_personnel: boolean
   piece_id: string | null; cotisation_id: string | null; categorie_id: string | null
   emprunt_id: string | null; ventilee: boolean; reglement_groupe: boolean; compte_bilan: string | null
+  declaration_tva_id: string | null
 }
 
 // Le compte du dirigeant, lu dans le modèle du dossier : celui de l'exploitant en trésorerie ; en
@@ -949,8 +950,8 @@ function compteDuDirigeant(modele: ModeleComptable): string {
 
 // Les virements personnels dont l'écriture manque ou n'est plus celle attendue — ceux qu'on PEUT écrire, les refus de
 // `refusVirementPersonnel` (src/lib/virementPersonnel.ts) dans le même ordre : ni réglés en groupe, ni écrits sur un
-// compte de bilan, ni rapprochés, affectés ou ventilés, pas de zéro euro — et pas d'un exercice validé, où la base
-// n'écrit plus. Les contraintes de `lignes_bancaires` rendent ces mélanges impossibles avec un virement personnel ; la
+// compte de bilan, ni rapprochés d'une déclaration de TVA, ni rapprochés, affectés ou ventilés, pas de zéro euro — et
+// pas d'un exercice validé, où la base n'écrit plus. Les contraintes de `lignes_bancaires` rendent ces mélanges impossibles avec un virement personnel ; la
 // copie les écarte quand même, pour dire de tout mouvement ce que src/lib en dit.
 function virementsPersonnelsAEcrire(
   ecritures: readonly EcritureRow[], lignes: readonly VirementPersonnelRow[], modele: ModeleComptable, frontiere: string | null,
@@ -958,7 +959,7 @@ function virementsPersonnelsAEcrire(
   const parLigne = ecrituresSansPieceParMouvement(ecritures)
   return lignes.filter((l) =>
     l.prelevement_personnel
-    && !l.reglement_groupe && !l.compte_bilan
+    && !l.reglement_groupe && !l.compte_bilan && !l.declaration_tva_id
     && !l.piece_id && !l.cotisation_id && !l.categorie_id && !l.emprunt_id && !l.ventilee
     && l.montant !== 0
     && !estFigee(l.date, frontiere)
@@ -1351,6 +1352,7 @@ interface MouvementCotisationRow {
   id: string; date: string; montant: number; statut: string; cotisation_id: string | null
   piece_id: string | null; categorie_id: string | null; emprunt_id: string | null
   ventilee: boolean; prelevement_personnel: boolean; reglement_groupe: boolean; compte_bilan: string | null
+  declaration_tva_id: string | null
 }
 
 const COMPTE_COTISATIONS_EXPLOITANT = "646000"
@@ -1375,6 +1377,7 @@ function csgDeLEcriture(c: Pick<CotisationRow, "montant_csg_crds">, mode: ModeCo
 function refusRapprochementCotisation(ligne: MouvementCotisationRow, cotisation: CotisationRow, mode: ModeComptable): string | null {
   if (ligne.reglement_groupe) return "regle_en_groupe"
   if (ligne.compte_bilan) return "ecrit_sur_un_compte_de_bilan"
+  if (ligne.declaration_tva_id) return "paie_une_declaration_de_tva"
   if (ligne.piece_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) return "deja_classe"
   if (ligne.montant === 0) return "mouvement_a_zero"
   const montant = montantDeLEcheance(cotisation)
@@ -1936,6 +1939,174 @@ function piecesLettreesALaMain(etats: readonly EtatLettrageManuel[]): Set<string
 }
 // ── FIN LETTRAGE MANUEL ──────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT LIQUIDATION TVA ────────────────────────────────────────────────────────────────────────
+// LA TVA LIQUIDÉE, PAYÉE ET REMBOURSÉE — copiées de src/lib/liquidationTva.ts et src/lib/declarationTva.ts (ligne 26.8
+// de la feuille de route, 06/10/2026). Une déclaration de TVA enregistrée par l'application s'écrit au dernier jour de
+// sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire des comptes 445710,
+// 445660 et 445620 la TVA exacte de la période, porte la TVA à payer au 445510, le crédit reporté au 445670, le
+// remboursement demandé au 445830, et l'arrondi à l'euro de la CA3 au 658000 ou au 758000. Son prélèvement, rapproché
+// d'elle, solde le 445510 face à la banque ; le remboursement d'un crédit par le Trésor solde le 445830. La Checklist
+// en tire trois points que l'assistant doit dire comme elle : la liquidation qui manque ou ne suit plus sa
+// déclaration, le paiement dont l'écriture ne suit plus le mouvement — défensifs tous deux, la base les écrit
+// ensemble —, et les périodes dont la déclaration n'est pas enregistrée une fois son échéance passée : leur TVA reste
+// aux comptes 4457 et 4456, que rien ne solde.
+// Gardé par `agentComptableLiquidationTva.test.ts`, qui extrait ce bloc et le compare à src/lib.
+interface DeclarationTvaRow {
+  id: string; periode_debut: string; periode_fin: string
+  // La CA3 telle qu'enregistrée, en euros entiers, et la TVA EXACTE que sa liquidation retire des comptes. Toutes
+  // nulles pour une déclaration saisie à la main, qui n'existe que pour une période antérieure à l'ouverture d'un
+  // dossier repris : sa TVA est dans les à-nouveaux, et elle n'écrit pas de liquidation.
+  cases: Record<string, number> | null
+  tva_collectee: number | null; tva_deductible: number | null; tva_deductible_immobilisations: number | null
+}
+interface MouvementTvaRow { id: string; date: string; montant: number; statut: string; declaration_tva_id: string | null }
+// La déclaration qu'une écriture de LIQUIDATION désigne : elle n'a ni pièce ni mouvement.
+interface EcritureLiquidationRow { declaration_tva_id: string | null }
+type PeriodiciteTva = "mensuelle" | "trimestrielle"
+interface PeriodeTva { debut: string; fin: string; libelle: string }
+
+const COMPTE_TVA_A_DECAISSER = "445510"
+const COMPTE_CREDIT_TVA_A_REPORTER = "445670"
+const COMPTE_REMBOURSEMENT_TVA_DEMANDE = "445830"
+const COMPTE_ARRONDIS_CHARGE = "658000"
+const COMPTE_ARRONDIS_PRODUIT = "758000"
+
+const centimesTva = (euros: number) => Math.round(euros * 100)
+
+// Le solde que la liquidation porte à chaque compte, en centimes, positif au débit — la composition de
+// `liquidation_attendue`, l'arrondi faisant le reste. Null pour une déclaration saisie à la main.
+function soldesDeLaLiquidation(d: Omit<DeclarationTvaRow, "id">): [string, number][] | null {
+  if (!d.cases || d.tva_collectee == null || d.tva_deductible == null || d.tva_deductible_immobilisations == null) return null
+  const ligne = (cle: string) => centimesTva(Number(d.cases?.[cle] ?? 0))
+  const soldes: [string, number][] = [
+    [COMPTE_TVA_COLLECTEE, centimesTva(d.tva_collectee)],
+    [COMPTE_TVA_DEDUCTIBLE, -centimesTva(d.tva_deductible)],
+    [COMPTE_TVA_IMMOBILISATIONS, -centimesTva(d.tva_deductible_immobilisations)],
+    [COMPTE_CREDIT_TVA_A_REPORTER, ligne("l27") - ligne("l22")],
+    [COMPTE_TVA_A_DECAISSER, -ligne("l28")],
+    [COMPTE_REMBOURSEMENT_TVA_DEMANDE, ligne("l26")],
+  ]
+  // `0 - …` et non `-…` : un arrondi nul reste un zéro positif.
+  const arrondi = 0 - soldes.reduce((s, [, solde]) => s + solde, 0)
+  return [...soldes, [arrondi > 0 ? COMPTE_ARRONDIS_CHARGE : COMPTE_ARRONDIS_PRODUIT, arrondi]]
+}
+
+// L'écriture de liquidation, sans son libellé (le contrôle ne le compare pas) : chaque compte reçoit son solde, rien
+// pour un solde nul ni pour une déclaration saisie à la main.
+function ecritureDeLaLiquidation(d: Omit<DeclarationTvaRow, "id">): { compte: string; sens: string; montant: number }[] {
+  const soldes = soldesDeLaLiquidation(d)
+  if (!soldes) return []
+  return soldes
+    .filter(([, solde]) => solde !== 0)
+    .map(([compte, solde]) => ({ compte, sens: solde > 0 ? "debit" : "credit", montant: Math.abs(solde) / 100 }))
+}
+
+// L'écriture d'un mouvement rapproché d'une déclaration, sans son libellé : un prélèvement débite la TVA à décaisser
+// face à la banque, un remboursement reçu crédite le remboursement demandé — au montant et dans le sens du mouvement.
+function ecritureDuPaiementTva(ligne: Pick<MouvementTvaRow, "montant">): { compte: string; sens: string; montant: number }[] {
+  const entree = ligne.montant > 0
+  const montant = Math.abs(ligne.montant)
+  return [
+    { compte: COMPTE_BANQUE, sens: entree ? "debit" : "credit", montant },
+    { compte: entree ? COMPTE_REMBOURSEMENT_TVA_DEMANDE : COMPTE_TVA_A_DECAISSER, sens: entree ? "credit" : "debit", montant },
+  ]
+}
+
+// Les déclarations dont la liquidation manque, ne suit plus ce que la déclaration a enregistré, ou — sur une
+// déclaration saisie à la main — existe alors qu'elle ne le devrait pas. Pas une déclaration d'un exercice validé : la
+// base refuse de réécrire sa liquidation.
+function liquidationsDesynchronisees(
+  ecritures: readonly (EcritureRow & EcritureLiquidationRow)[], declarations: readonly DeclarationTvaRow[], frontiere: string | null,
+): DeclarationTvaRow[] {
+  const parDeclaration = new Map<string, EcritureRow[]>()
+  for (const e of ecritures) {
+    if (!e.declaration_tva_id) continue
+    parDeclaration.set(e.declaration_tva_id, [...(parDeclaration.get(e.declaration_tva_id) ?? []), e])
+  }
+  return declarations.filter((d) =>
+    !estFigee(d.periode_fin, frontiere)
+    && !ecritureConforme(parDeclaration.get(d.id) ?? [], ecritureDeLaLiquidation(d), d.periode_fin))
+}
+
+// Les mouvements rapprochés d'une déclaration dont l'écriture n'est plus celle que leur montant commande. Pas un
+// mouvement d'un exercice validé.
+function paiementsTvaDesynchronises(
+  ecritures: readonly EcritureRow[], lignes: readonly MouvementTvaRow[], frontiere: string | null,
+): MouvementTvaRow[] {
+  const parLigne = ecrituresSansPieceParMouvement(ecritures)
+  return lignes.filter((l) =>
+    !!l.declaration_tva_id
+    && l.statut === "rapprochee"
+    && !estFigee(l.date, frontiere)
+    && !ecritureConforme(parLigne.get(l.id) ?? [], ecritureDuPaiementTva(l), l.date))
+}
+
+const MOIS_TVA = ["janvier", "février", "mars", "avril", "mai", "juin", "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+// Le dernier jour d'un mois, sur le calendrier civil : le jour 0 du mois suivant, en UTC de bout en bout.
+function finDuMoisTva(annee: number, mois: number): string {
+  const jour = new Date(Date.UTC(annee, mois, 0)).getUTCDate()
+  return `${annee}-${String(mois).padStart(2, "0")}-${String(jour).padStart(2, "0")}`
+}
+
+// Les périodes d'une année, avec leur nom : douze mois, ou quatre trimestres.
+function periodesDeLAnnee(annee: number, periodicite: PeriodiciteTva): PeriodeTva[] {
+  if (periodicite === "mensuelle") {
+    return MOIS_TVA.map((nom, i) => ({
+      debut: `${annee}-${String(i + 1).padStart(2, "0")}-01`, fin: finDuMoisTva(annee, i + 1), libelle: `${nom} ${annee}`,
+    }))
+  }
+  return [1, 2, 3, 4].map((trimestre) => ({
+    debut: `${annee}-${String(trimestre * 3 - 2).padStart(2, "0")}-01`,
+    fin: finDuMoisTva(annee, trimestre * 3),
+    libelle: `${trimestre === 1 ? "1er" : `${trimestre}e`} trimestre ${annee}`,
+  }))
+}
+
+function moisSuivantTva(mois: string): string {
+  const [annee, m] = mois.split("-").map(Number)
+  return m === 12 ? `${annee + 1}-01` : `${annee}-${String(m + 1).padStart(2, "0")}`
+}
+
+function moisDeLaPeriode(p: PeriodeTva): string[] {
+  const mois: string[] = []
+  for (let m = p.debut.slice(0, 7); m <= p.fin.slice(0, 7); m = moisSuivantTva(m)) mois.push(m)
+  return mois
+}
+
+// Les périodes d'une année qu'aucune déclaration ne couvre : terminées avant `aujourdhui`, après l'ouverture d'un
+// dossier repris, et dont un mois au moins n'est dans aucune déclaration enregistrée.
+function periodesNonDeclarees(
+  declarations: readonly Pick<DeclarationTvaRow, "periode_debut" | "periode_fin">[],
+  annee: number, periodicite: PeriodiciteTva, aujourdhui: string, ouverture: string | null,
+): PeriodeTva[] {
+  const moisDeclares = new Set<string>()
+  for (const d of declarations) {
+    for (let mois = d.periode_debut.slice(0, 7); mois <= d.periode_fin.slice(0, 7); mois = moisSuivantTva(mois)) moisDeclares.add(mois)
+  }
+  return periodesDeLAnnee(annee, periodicite).filter((p) =>
+    p.fin < aujourdhui
+    && (ouverture === null || p.debut >= ouverture)
+    && moisDeLaPeriode(p).some((m) => !moisDeclares.has(m)))
+}
+
+// Les périodes EN RETARD du dossier entier, comme la Checklist : sur les exercices où il a une activité (un mouvement
+// du relevé, une pièce validée datée), celles dont la CA3 aurait dû être déposée — finies avant le premier jour du mois
+// précédent : une CA3 se dépose dans le mois qui suit sa période, au plus tard le 24 —, après l'ouverture d'un dossier
+// repris, et hors des exercices validés.
+function periodesEnRetard(
+  declarations: readonly Pick<DeclarationTvaRow, "periode_debut" | "periode_fin">[],
+  periodicite: PeriodiciteTva, anneesActives: readonly number[], premierJourDuMois: string, ouverture: string | null,
+  frontiere: string | null,
+): PeriodeTva[] {
+  const [annee, mois] = premierJourDuMois.split("-").map(Number)
+  const limite = mois === 1 ? `${annee - 1}-12-01` : `${annee}-${String(mois - 1).padStart(2, "0")}-01`
+  return [...new Set(anneesActives)].sort((a, b) => a - b)
+    .flatMap((a) => periodesNonDeclarees(declarations, a, periodicite, limite, ouverture))
+    .filter((p) => !estFigee(p.fin, frontiere))
+}
+// ── FIN LIQUIDATION TVA ──────────────────────────────────────────────────────────────────────────
+
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
 function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
   if (!assujettiTva) return []
@@ -2180,7 +2351,11 @@ async function verifierPlafondCabinet(admin: ReturnType<typeof createClient>, ca
 interface OutilContexte {
   admin: ReturnType<typeof createClient>
   dossierId: string
-  dossier: { nom: string; assujetti_tva: boolean; mode_comptable: ModeComptable; compte_notes_de_frais: string }
+  dossier: {
+    nom: string; assujetti_tva: boolean; mode_comptable: ModeComptable; compte_notes_de_frais: string
+    // La périodicité des déclarations de TVA (bloc LIQUIDATION TVA) : elle découpe l'année en périodes à déclarer.
+    tva_periodicite: PeriodiciteTva
+  }
 }
 
 const TOOLS: Anthropic.Tool[] = [
@@ -2227,7 +2402,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, mouvements écrits sur un compte de bilan dont l'écriture ne suit plus le compte, mouvements ignorés absents du FEC (un doublon, ou un mouvement à classer) avec ce qu'ils emportent encaissé et payé, déclarations de TVA dont l'écriture de liquidation manque ou ne suit plus la déclaration, paiements ou remboursements de TVA dont l'écriture ne suit plus le mouvement, périodes de TVA dont la déclaration n'est pas enregistrée (dossier assujetti), et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -2393,7 +2568,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter. Et tout ce qu'en
       // tire le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière de validation doit encore porter, ligne
       // pour ligne : le hors taxe lu, qui prime sur le TTC moins la TVA pour un dossier assujetti — et pour la
@@ -2409,9 +2584,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // `statut` et `immobilisation_id` : une DOTATION aux amortissements (bloc AMORTISSEMENT) est une écriture
       // sans pièce ni mouvement, qui désigne son bien ; validée, elle ne se réécrit plus. Et `vehicule_id` : le
       // FORFAIT KILOMÉTRIQUE (bloc FORFAIT) est une écriture sans pièce ni mouvement qui désigne sa ligne du
-      // cadre 7.
-      lireTout<EcritureRow & EcritureDotationRow & EcritureForfaitRow>((d, f) =>
-        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id, vehicule_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // cadre 7. Et `declaration_tva_id` : la LIQUIDATION d'une déclaration de TVA (bloc LIQUIDATION TVA) est une
+      // écriture sans pièce ni mouvement qui désigne sa déclaration.
+      lireTout<EcritureRow & EcritureDotationRow & EcritureForfaitRow & EcritureLiquidationRow>((d, f) =>
+        admin.from("ecritures_brouillon").select("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id, statut, immobilisation_id, vehicule_id, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Le REGISTRE (bloc AMORTISSEMENT) : chaque bien, de quoi calculer sa dotation de chaque exercice. Et
       // `piece_id` : la facture d'un bien s'écrit sur le compte de sa nature, pas sur sa catégorie.
       lireTout<ImmobilisationRow & { piece_id: string | null }>((d, f) =>
@@ -2423,7 +2599,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Les VIREMENTS PERSONNELS (bloc AFFECTATION) : ceux classés sans leur écriture manquent au FEC. Et tout autre
       // classement du mouvement, que `refusVirementPersonnel` regarde avant d'écrire.
       lireTout<VirementPersonnelRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
+        admin.from("lignes_bancaires").select("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).eq("prelevement_personnel", true).order("id").range(d, f)),
       // Les EMPRUNTS et le RELEVÉ ENTIER (bloc EMPRUNT) : le relevé dit ce qu'il couvre, et ses mouvements
       // rapprochés d'un emprunt, les échéances payées et leur découpage. Et lesquels sont VENTILÉS (bloc
       // VENTILATION) : le relevé entier, pour voir aussi des parts posées sur un mouvement qui ne l'est pas.
@@ -2432,11 +2608,12 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // qui ne règle plus en groupe (bloc RÈGLEMENT GROUPÉ). Les paiements DATENT les écritures en
       // trésorerie et décident de leurs lignes de banque dans les deux modèles. Et ce qui paie une ÉCHÉANCE
       // DE COTISATION (bloc COTISATION), avec ce qui empêcherait son écriture. Et les mouvements écrits sur un
-      // COMPTE DE BILAN ou IGNORÉS (bloc COMPTE DE BILAN) : le compte, le statut, le virement personnel.
+      // COMPTE DE BILAN ou IGNORÉS (bloc COMPTE DE BILAN) : le compte, le statut, le virement personnel. Et ceux qui
+      // paient ou remboursent une DÉCLARATION DE TVA (bloc LIQUIDATION TVA), dont l'écriture doit suivre le montant.
       lireTout<EmpruntRow>((d, f) =>
         admin.from("emprunts").select("id, nom, capital_initial, taux_annuel, date_debut, duree_mois", { count: "exact" }).eq("dossier_id", dossierId).order("date_debut").order("id").range(d, f)),
-      lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow & MouvementCotisationRow & MouvementCompteBilanRow>((d, f) =>
-        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      lireTout<MouvementEmpruntRow & MouvementVentileRow & LignePayanteRow & MouvementCotisationRow & MouvementCompteBilanRow & MouvementTvaRow>((d, f) =>
+        admin.from("lignes_bancaires").select("id, date, montant, statut, piece_id, reglement_groupe, cotisation_id, categorie_id, compte_bilan, prelevement_personnel, emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee, declaration_tva_id", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
       // Les PARTS des mouvements ventilés (bloc VENTILATION) : leurs catégories comptent comme celles des
       // pièces, et l'écriture du mouvement doit les suivre.
       lireTout<PartVentilationRow>((d, f) =>
@@ -2469,6 +2646,11 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // n'attend aucun règlement. Lus en partie, ils la feraient compter sans règlement — d'où le même refus.
       lireTout<LettrageManuelRow>((d, f) =>
         admin.from("lettrages_manuels").select("id, groupe, piece_id, compte", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
+      // Les DÉCLARATIONS DE TVA (bloc LIQUIDATION TVA) : ce que chacune a enregistré, d'où sa liquidation se déduit, et
+      // les périodes qu'elles couvrent. Lues en partie, une liquidation manquerait au contrôle et une période déclarée
+      // paraîtrait en retard — d'où le même refus.
+      lireTout<DeclarationTvaRow>((d, f) =>
+        admin.from("declarations_tva").select("id, periode_debut, periode_fin, cases, tva_collectee, tva_deductible, tva_deductible_immobilisations", { count: "exact" }).eq("dossier_id", dossierId).order("periode_debut").order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -2477,7 +2659,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -2538,6 +2720,19 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // absents du FEC (bloc COMPTE DE BILAN) — sauf avant l'ouverture d'un dossier repris, comme dans la Checklist.
     const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecrituresTyped, rReleve.lignes, frontiere)
     const ignoresHorsFec = mouvementsIgnoresHorsFec(rReleve.lignes, ouverture, frontiere)
+    // La TVA liquidée et payée (bloc LIQUIDATION TVA), comme la Checklist : une liquidation qui ne suit plus sa
+    // déclaration, un paiement dont l'écriture ne suit plus son mouvement, et — sur un dossier assujetti — les périodes
+    // dont la déclaration manque une fois son échéance passée, sur les exercices où le dossier a une activité : un
+    // mouvement du relevé, une pièce validée datée. Le premier jour du mois, dans le fuseau du cabinet.
+    const liquidationsPerimees = liquidationsDesynchronisees(ecrituresTyped, rDeclarations.lignes, frontiere)
+    const paiementsTvaPerimes = paiementsTvaDesynchronises(ecrituresTyped, rReleve.lignes, frontiere)
+    const anneesActives = [
+      ...rReleve.lignes.map((l) => Number(l.date.slice(0, 4))),
+      ...piecesTyped.flatMap((p) => (p.date_piece ? [Number(p.date_piece.slice(0, 4))] : [])),
+    ]
+    const periodesTvaEnRetard = dossier.assujetti_tva
+      ? periodesEnRetard(rDeclarations.lignes, dossier.tva_periodicite, anneesActives, `${aujourdHuiCabinet().slice(0, 7)}-01`, ouverture, frontiere)
+      : []
 
     return {
       // Les exercices VALIDÉS : rien de ce qu'ils figent n'est réclamé ci-dessous, comme dans la Checklist — la base
@@ -2563,8 +2758,9 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // brouillon ne date pas la TVA selon la règle d'exigibilité de la déclaration — il porte celle de
       // l'acquisition d'un bien au 445620 depuis le 01/10/2026, mais à la date de son écriture —, donc il
       // crierait à l'écart sur des déclarations justes. C'est l'onglet TVA qui compare chaque déclaration
-      // déposée au calcul de sa période ; l'assistant le DIT au lieu de répondre « rien à signaler ».
-      declarations_tva: "non vérifiées par l'assistant : l'onglet TVA compare chaque déclaration déposée au calcul de sa période",
+      // déposée au calcul de sa période ; l'assistant le DIT au lieu de répondre « rien à signaler ». Leur
+      // liquidation, leurs paiements et les périodes non déclarées, eux, sont comptés plus bas.
+      declarations_tva: "montants non vérifiés par l'assistant : l'onglet TVA compare chaque déclaration déposée au calcul de sa période",
       pieces_a_faible_confiance_extraction: piecesConfianceBasse.length,
       categories_sans_compte_comptable: catSansCompte.map((c) => c.libelle),
       categories_sans_poste_2035: catSansPoste.map((c) => c.libelle),
@@ -2604,6 +2800,13 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // Le libellé de la Checklist : les mouvements ignorés, absents du FEC — un doublon le reste, un mouvement réel se
       // remet à traiter et se classe (Banque, filtre « Ignorés ») —, et ce qu'ils emportent dans chaque sens, en euros.
       mouvements_ignores_absents_du_fec: { nombre: ignoresHorsFec.length, ...montantsDesMouvementsIgnores(ignoresHorsFec) },
+      // Les libellés de la Checklist : la liquidation d'une déclaration de TVA qui manque ou ne suit plus la déclaration,
+      // le paiement ou le remboursement dont l'écriture ne suit plus le mouvement — « Réécrire », dans l'onglet
+      // Écritures, les reprend —, et les périodes dont la déclaration n'est pas enregistrée : leur TVA reste aux comptes
+      // 4457 et 4456, que rien ne solde. L'onglet TVA prépare leur CA3.
+      declarations_de_tva_dont_l_ecriture_de_liquidation_manque_ou_ne_suit_plus_la_declaration: liquidationsPerimees.length,
+      paiements_ou_remboursements_de_tva_dont_l_ecriture_ne_suit_plus_le_mouvement: paiementsTvaPerimes.length,
+      periodes_de_tva_dont_la_declaration_n_est_pas_enregistree: periodesTvaEnRetard.map((p) => p.libelle),
     }
   }
 
@@ -2731,7 +2934,7 @@ Deno.serve(async (req: Request) => {
 
   const { data: dossierRow, error: dossierError } = await admin
     .from("dossiers")
-    .select("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais")
+    .select("nom, assujetti_tva, cabinet_id, mode_comptable, compte_notes_de_frais, tva_periodicite")
     .eq("id", dossierId)
     .single()
   if (dossierError || !dossierRow) {
@@ -2782,6 +2985,7 @@ Règles impératives :
 - La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au 445620 : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.
 - Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
 - Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
+- Une DÉCLARATION DE TVA enregistrée s'écrit au dernier jour de sa période, sans pièce ni mouvement, au journal des opérations diverses : sa LIQUIDATION retire la TVA collectée (445710) et déductible (445660, 445620) de la période, porte la TVA à payer au 445510 TVA à décaisser — un crédit reporté au 445670, un remboursement demandé au 445830 — et l'arrondi à l'euro de la CA3 au 658000 ou au 758000. Son PRÉLÈVEMENT, rapproché de la déclaration, débite le 445510 face au 512000 ; le REMBOURSEMENT d'un crédit par le Trésor crédite le 445830 : ni charge ni recette, et rien de cela n'est une anomalie. Une période terminée dont la déclaration n'est pas enregistrée garde sa TVA aux comptes 4457 et 4456 : c'est un point à traiter.
 - Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
 - Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.
 - Modèle comptable du dossier : ${repereModele}
@@ -2801,6 +3005,7 @@ Règles impératives :
       assujetti_tva: dossierRow.assujetti_tva,
       mode_comptable: dossierRow.mode_comptable,
       compte_notes_de_frais: dossierRow.compte_notes_de_frais,
+      tva_periodicite: dossierRow.tva_periodicite,
     },
   }
   const outilsUtilises: string[] = []

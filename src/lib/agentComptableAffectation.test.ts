@@ -317,6 +317,8 @@ const VIREMENTS: LigneBancaire[] = [
   // avec un virement personnel, et la copie doit quand même dire d'eux ce que src/lib en dit.
   perso({ id: 'groupe', statut: 'rapprochee', reglement_groupe: true }),
   perso({ id: 'bilan', statut: 'rapprochee', compte_bilan: '580000' }),
+  // Un mouvement qui paie une déclaration de TVA (ligne 26.8) : `refusVirementPersonnel` le refuse aussi.
+  perso({ id: 'tva', statut: 'rapprochee', declaration_tva_id: 'dt1' }),
   perso({ id: 'emprunt', statut: 'rapprochee', emprunt_id: 'e1' }),
   perso({ id: 'ventile', statut: 'rapprochee', ventilee: true }),
   ligne({ id: 'pas-perso', statut: 'ignoree', categorie_id: null, montant: -500 }),
@@ -360,7 +362,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
   it('lit les mouvements rapprochés portant une catégorie, avec leur taux, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, categorie_id, taux_tva"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "rapprochee"\)\.not\("categorie_id", "is", null\)/)
-    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('passe les mouvements aux catégories sans compte ou sans poste, et rend les deux points de la Checklist', () => {
@@ -390,7 +392,7 @@ describe('agent-comptable / points_a_traiter lit les mouvements affectés', () =
 
   it('lit les virements personnels sous le même refus de lecture partielle, et rend le point de la Checklist', () => {
     // Et tout autre classement du mouvement, que `refusVirementPersonnel` regarde avant d'écrire.
-    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("prelevement_personnel", true\)/)
+    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, prelevement_personnel, piece_id, cotisation_id, categorie_id, emprunt_id, ventilee, reglement_groupe, compte_bilan, declaration_tva_id"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("prelevement_personnel", true\)/)
     expect(corps).toContain('virementsPersonnelsAEcrire(ecrituresTyped, rVirements.lignes, modele, frontiere)')
     expect(corps).toMatch(/virements_personnels_sans_ecriture: virementsAEcrire\.length/)
   })
@@ -496,14 +498,20 @@ describe('le garde-fou sait encore échouer', () => {
   })
 
   it('attrape une copie qui écrirait un virement personnel posé sur un compte de bilan', () => {
-    const derivee = planter(' && !l.compte_bilan\n', '\n')
+    const derivee = planter(' && !l.compte_bilan && !l.declaration_tva_id\n', ' && !l.declaration_tva_id\n')
+    echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
+      .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
+  })
+
+  it('attrape une copie qui écrirait un virement personnel rapproché d’une déclaration de TVA', () => {
+    const derivee = planter(' && !l.compte_bilan && !l.declaration_tva_id\n', ' && !l.compte_bilan\n')
     echoue(() => expect(ids2(derivee.virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null)))
       .toEqual(ids2(virementsPersonnelsAEcrire(ECRITURES_VIREMENTS, VIREMENTS, TRESORERIE, null))))
   })
 
   it('attrape une copie qui écrirait un virement personnel réglé en groupe, rapproché d’un emprunt ou ventilé', () => {
     for (const [avant, apres] of [
-      ['    && !l.reglement_groupe && !l.compte_bilan\n', '    && !l.compte_bilan\n'],
+      ['    && !l.reglement_groupe && !l.compte_bilan && !l.declaration_tva_id\n', '    && !l.compte_bilan && !l.declaration_tva_id\n'],
       [' && !l.emprunt_id && !l.ventilee\n', ' && !l.ventilee\n'],
       [' && !l.emprunt_id && !l.ventilee\n', ' && !l.emprunt_id\n'],
     ] as const) {

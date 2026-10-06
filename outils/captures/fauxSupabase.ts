@@ -16,15 +16,18 @@ import { ecritureDuMouvement, type MouvementBancaire } from '../../src/lib/affec
 import { arrondirPourFormulaire, valeursDesCases } from '../../src/lib/cases2035'
 import { cotisationsComptees, ecritureDeLaCotisation } from '../../src/lib/cotisationRapprochee'
 import { calculerDeclaration2035 } from '../../src/lib/declaration2035'
+import { calculerCa3, type DonneesTva } from '../../src/lib/declarationTva'
 import { lignesPourPiece, piecesAComptabiliser } from '../../src/lib/ecritures'
 import { numeroterFec } from '../../src/lib/fec'
 import { ecritureDuForfait } from '../../src/lib/forfaitKilometrique'
+import { aPayerDe, declarationDeLaCa3, ecritureDeLaLiquidation, ecritureDuPaiementTva } from '../../src/lib/liquidationTva'
 import { partsDuReleve } from '../../src/lib/partsDuReleve'
 import { paiementsDesPieces } from '../../src/lib/rattachement'
 import { instantane2035 } from '../../src/lib/validationExercice'
 import { ecritureDuVirementPersonnel } from '../../src/lib/virementPersonnel'
 import type {
   Categorie, CotisationDeclaree, EcritureBrouillon, Immobilisation, NatureImmobilisation, Piece, VehiculeDossier,
+  VentilationBancaire,
 } from '../../src/lib/types'
 
 type Ligne = Record<string, unknown>
@@ -249,6 +252,63 @@ const RELEVE_D7 = {
     ecritureD7('r25', 't8', '2026-09-24', '445710', 'REMISE CB SEPTEMBRE CONSEIL', 'credit', 40),
     ecritureD7('r26', 't8', '2026-09-24', '627000', 'REMISE CB SEPTEMBRE CONSEIL', 'debit', 2.4),
     ecritureD7('r27', 't8', '2026-09-24', '512000', 'REMISE CB SEPTEMBRE CONSEIL', 'debit', 237.6),
+  ],
+}
+
+// LES DÉCLARATIONS DE TVA du dossier assujetti (lib/liquidationTva.ts) : le premier trimestre, déposé à néant — aucune
+// pièce n'y tombe —, et le deuxième, liquidé puis payé. Leurs cases, la TVA exacte des comptes et l'écriture de
+// liquidation sont celles que l'onglet TVA calcule et que la base écrit à l'enregistrement : tirées ici du même code,
+// elles ne peuvent pas montrer un écart qui ne viendrait que du banc. Le prélèvement du Trésor, rapproché de la
+// seconde, s'écrit face au 445510 — mais n'en a payé qu'une partie : le complément, prélevé plus tard et encore à
+// traiter, en paie exactement le reste, et sa fiche propose la déclaration. Le troisième trimestre reste à
+// déclarer : c'est lui que l'onglet propose.
+function declarationD7(id: string, debut: string, fin: string, depot: string) {
+  const lignes = [...TVA_D7.lignes, ...RELEVE_D7.lignes] as unknown as MouvementBancaire[]
+  const donnees: DonneesTva = {
+    pieces: TVA_D7.pieces as unknown as Piece[],
+    paiements: paiementsDesPieces(lignes, []),
+    // L'ordinateur du dossier, immobilisé (`i-d7`) : sa TVA va en ligne 19.
+    pieceIdsImmobilisees: new Set(['a2']),
+    releve: partsDuReleve(lignes, categories as unknown as Categorie[], RELEVE_D7.ventilations as unknown as VentilationBancaire[], true),
+  }
+  const ca3 = calculerCa3(donnees, { debut, fin }, false, 0, 0)
+  const liquidee = declarationDeLaCa3(ca3, { debut, fin })
+  const creeLe = `${depot}T09:00:00Z`
+  return {
+    declaration: {
+      id, dossier_id: 'd7', ...liquidee, tva_declaree: ca3.netPeriode, credit_anterieur: ca3.cases.l22,
+      remboursement_demande: ca3.cases.l26, date_declaration: depot, notes: null, created_at: creeLe,
+    },
+    ecritures: ecritureDeLaLiquidation(liquidee).map((ligne, i): Ligne => ({
+      id: `${id}-${i + 1}`, dossier_id: 'd7', piece_id: null, ligne_bancaire_id: null, declaration_tva_id: id, date: fin,
+      ...ligne, statut: 'proposee', created_at: creeLe,
+    })),
+  }
+}
+
+const DECLARATIONS_D7 = [
+  declarationD7('dt1', '2026-01-01', '2026-03-31', '2026-04-18'),
+  declarationD7('dt2', '2026-04-01', '2026-06-30', '2026-07-17'),
+]
+
+const COMPLEMENT_TVA_D7 = 20
+const PRELEVEMENT_TVA_D7: Ligne = {
+  ...paiementTva('t9', '2026-07-24', 'PRLV SEPA DGFIP TVA 2T2026', COMPLEMENT_TVA_D7 - aPayerDe(DECLARATIONS_D7[1].declaration), null),
+  declaration_tva_id: 'dt2',
+}
+
+const TVA_LIQUIDEE_D7 = {
+  declarations: DECLARATIONS_D7.map((d) => d.declaration),
+  lignes: [
+    PRELEVEMENT_TVA_D7,
+    { ...paiementTva('t10', '2026-08-07', 'PRLV SEPA DGFIP COMPLEMENT TVA', -COMPLEMENT_TVA_D7, null), statut: 'non_rapprochee' },
+  ],
+  ecritures: [
+    ...DECLARATIONS_D7.flatMap((d) => d.ecritures),
+    ...ecritureDuPaiementTva(PRELEVEMENT_TVA_D7 as unknown as MouvementBancaire).map((ligne, i): Ligne => ({
+      id: `pt-${i + 1}`, dossier_id: 'd7', piece_id: null, ligne_bancaire_id: 't9', date: PRELEVEMENT_TVA_D7.date,
+      ...ligne, statut: 'proposee', created_at: MAINTENANT,
+    })),
   ],
 }
 
@@ -498,6 +558,8 @@ function valider(s: SourcesDeValidation, ecritures: Ligne[], annee: number, vali
     annee, s.pieces as unknown as Piece[], categories as unknown as Categorie[], s.immobilisations as unknown as Immobilisation[],
     cotisationsComptees(s.cotisations as unknown as CotisationDeclaree[], lignes, TRESORERIE.mode),
     s.vehicules as unknown as VehiculeDossier[], false, paiementsDesPieces(lignes, []), partsDuReleve(lignes, categories as unknown as Categorie[], [], false),
+    // Ni l'un ni l'autre dossier n'est assujetti : aucune déclaration de TVA, donc aucun arrondi de liquidation.
+    [],
   )
   const { valeurs } = valeursDesCases(declaration)
   const dossier = dossiers.find((d) => d.id === s.dossier)!
@@ -602,6 +664,7 @@ const TABLES: Record<string, Ligne[]> = {
     { ...ecritureReleve('am2', '', '2026-12-31', '281830', 'Dotation 2026 — Ordinateur du cabinet', 'credit', 351.11), ligne_bancaire_id: null, immobilisation_id: 'i-d1b' },
     ...ENGAGEMENT_D8.ecritures,
     ...RELEVE_D7.ecritures,
+    ...TVA_LIQUIDEE_D7.ecritures,
     ...COTISATIONS_D1.ecritures,
     ...ECRITURES_D9,
     ...ECRITURES_D10,
@@ -704,11 +767,9 @@ const TABLES: Record<string, Ligne[]> = {
     vehicule('ve4', 2026, null, 'cyclomoteur', 0, 'thermique', 'super_sans_plomb', 1200),
     ...SOURCES_D9.vehicules,
   ],
-  // La déclaration du premier trimestre, déposée : l'historique de l'onglet TVA la compare au calcul.
-  declarations_tva: [{
-    id: 'dt1', dossier_id: 'd7', periode_debut: '2026-01-01', periode_fin: '2026-03-31', tva_declaree: 0,
-    credit_anterieur: 0, date_declaration: '2026-04-18', notes: null, created_at: '2026-04-18T09:00:00Z',
-  }],
+  // Les déclarations du premier et du deuxième trimestre, déposées (voir `DECLARATIONS_D7`) : l'historique de
+  // l'onglet TVA les compare au calcul et dit la seconde payée.
+  declarations_tva: TVA_LIQUIDEE_D7.declarations,
   // Le texte « lu » de la seule pièce sans catégorie : c'est ce qui fait offrir « Proposer une
   // catégorie » dans sa fiche. Écrit ici, fictif comme le reste.
   piece_textes_ocr: [{
@@ -779,6 +840,7 @@ const TABLES: Record<string, Ligne[]> = {
     ...COTISATIONS_D1.lignes,
     ...TVA_D7.lignes,
     ...RELEVE_D7.lignes,
+    ...TVA_LIQUIDEE_D7.lignes,
     ...ENGAGEMENT_D8.lignes,
     ...SOURCES_D9.lignes,
     ...SOURCES_D10.lignes,
