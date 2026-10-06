@@ -319,6 +319,12 @@ supabase/
                   lettre, ce qui se refuse et pourquoi, ce que la policy tient —, par impersonation des trois
                   profils dans un dossier jetable, à rejouer après toute migration qui touche la table ou sa
                   fonction.
+                  compteBilan.sql : le mouvement écrit sur un compte de bilan (compte_bilan,
+                  ecrire_mouvement_compte_bilan, retirer_mouvement_compte_bilan, refus_compte_de_bilan) — qui
+                  écrit, chaque famille de comptes refusée et pourquoi, dans les deux modèles, ce que les
+                  contraintes tiennent seules —, par impersonation des trois profils, à rejouer après toute
+                  migration qui touche ses trois fonctions, le modèle comptable d'un dossier ou les contraintes
+                  de lignes_bancaires.
   types/          les prothèses de type des Edge Functions (globales Deno, modules tiers bornés).
                   HORS de functions/, dont plusieurs scanners énumèrent les dossiers comme des
                   FONCTIONS — un dossier de plus y serait pris pour une fonction sans index.ts.
@@ -1456,6 +1462,14 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   « sans règlement » ni « montant introuvable en banque ». Revérifié à chaque lecture, il se défait. Voir « une
   compensation sans mouvement bancaire se lettre à la main » dans « Problèmes connus » (`lettrages_manuels`,
   `lettrer_pieces`).
+- **Un mouvement vers un compte de bilan (06/10/2026)**, ligne 26.7 : dans la fiche d'un mouvement (onglet Banque), un
+  virement vers un autre compte du professionnel s'écrit au 580000 (virements internes), un dépôt de garantie versé ou
+  rendu au 275000, et un autre compte des classes 1 à 5 se saisit à la main — refusé avant le clic quand un autre chemin
+  le tient (le compte du dirigeant par « Virement personnel », le 164 par l'emprunt, un compte de tiers par sa facture, la
+  TVA par sa déclaration…). Ni charge ni recette : la 2035 ne le voit pas, le FEC le porte au journal de banque avec le
+  relevé pour pièce. Et un mouvement ignoré, qui n'est écrit nulle part, se dit dans la Checklist et à la validation de
+  son exercice. Voir « un mouvement du relevé s'écrit sur un compte de bilan » dans « Problèmes connus »
+  (`lib/compteDeBilan.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1502,7 +1516,9 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   est livrée (04-05/10/2026) : un exercice se valide depuis Clôture, ses écritures et ce qui les a produites
   se figent en base, et chaque écran le sait (voir « un exercice validé se fige en base » et « un exercice se
   valide depuis Clôture »). Aucun exercice n'est encore validé en base. Reste (e), les vingt-deux champs et
-  Test Compta Demat.
+  Test Compta Demat. Un mouvement vers un compte de bilan s'écrit depuis le 06/10/2026 (ligne 26.7) ; restent la
+  liquidation et le paiement de la TVA, le remboursement d'un crédit compris (ligne 26.8), puis le report des soldes
+  d'un exercice sur l'autre (ligne 34).
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -8268,7 +8284,9 @@ avec les écritures, sur des écritures produites par les vrais générateurs (`
 validation d'un exercice — la numérotation que le FEC et la base partagent (`fec.ts`), ce qui la refuse avant
 le clic (`prealablesValidation.ts`) et ce qu'elle fige (`validationExercice.ts`) —, le lettrage des comptes de
 tiers, déduit ou fait à la main et revérifié à chaque lecture, et ce qui reste ouvert à une date (`lettrage.ts`,
-`lettragesLecture.ts`), et ce que
+`lettragesLecture.ts`), l'écriture d'un mouvement sur un compte de bilan et ses refus, confrontés à la fonction de la
+base qu'un petit interprète exécute (`compteDeBilan.ts`), les refus qu'un classement oppose aux autres
+(`classementsDuMouvement.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
