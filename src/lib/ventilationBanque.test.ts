@@ -18,7 +18,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
   return {
     id: 'l1', date: '2025-03-12', libelle: 'PRLV SEPA OPERATEUR MOBILE', libelle_brut: null, montant: -120,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
+    source_fichier: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
     ...o,
   }
 }
@@ -388,7 +388,7 @@ describe('partsDesVentilations — ce que la ventilation met dans les postes de 
 
   it('ne compte que les mouvements rapprochés ET ventilés', () => {
     for (const ligne of [
-      mouvement({ statut: 'rapprochee', ventilee: false, reglement_groupe: false }),
+      mouvement({ statut: 'rapprochee', ventilee: false, reglement_groupe: false, compte_bilan: null }),
       mouvement({ statut: 'non_rapprochee', ventilee: true }),
     ]) {
       expect(partsDesVentilations([ligne], PARTS_TELEPHONE, CATEGORIES, false)).toEqual([])

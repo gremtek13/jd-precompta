@@ -391,6 +391,30 @@ describe('genererFec — les à-nouveaux ouvrent le fichier', () => {
       .toEqual(['Compte de l’exploitant', 'À-nouveau Compte de l’exploitant', '0,00', '6000,00'])
   })
 
+  it('nomme comme ses écritures, par le plan comptable, un compte que la balance reprise ne nomme pas', () => {
+    // Un prêt repris sans libellé, puis remboursé par un mouvement écrit sur le même compte (ligne 26.7) : un même
+    // CompteNum ne porte qu'un CompteLib dans tout le fichier, et la validation refuserait un compte à deux noms.
+    const pret = aNouveau({ id: 'an-3', compte: '274100', compte_origine: '2741', libelle: '', montant: 2000 })
+    const rembourse: LigneBancaire = {
+      id: 'l-rb', dossier_id: 'd1', date: '2026-02-10', libelle: 'VIR REMBOURSEMENT PRET', montant: 500, statut: 'rapprochee',
+      piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
+      reglement_groupe: false, compte_bilan: '274100', id_externe: null, source_fichier: null, libelle_brut: null,
+      created_at: '2026-02-11T00:00:00Z',
+    }
+    const ecritures = [
+      ligne('', { id: 'r1', piece_id: null, ligne_bancaire_id: 'l-rb', compte: '274100', sens: 'credit', montant: 500, date: '2026-02-10' }),
+      ligne('', { id: 'r2', piece_id: null, ligne_bancaire_id: 'l-rb', compte: COMPTE_BANQUE, sens: 'debit', montant: 500, date: '2026-02-10' }),
+    ]
+    const rows = colonnes(genererFec(ecritures, [], [], [...ouverture, pret], 'tresorerie', [rembourse], SANS_LETTRAGE)).slice(1)
+    expect(rows.filter((r) => r[4] === '274100').map((r) => [r[0], r[5]])).toEqual([['AN', 'Prêts'], ['BQ', 'Prêts']])
+    // Et une fois l'exercice validé, la relecture dit la même chose : le nom figé est celui de la numérotation.
+    const n = numeroterFec(ecritures, [], [], [...ouverture, pret], 'tresorerie', [rembourse])
+    expect(n.aNouveaux.find((a) => a.aNouveau.id === 'an-3')!.compteLib).toBe('Prêts')
+    const relu = numerotationValidee([], [{ ...pret }], '2027-01-15T10:00:00Z')
+    expect(relu.aNouveaux[0].compteLib).toBe('Prêts')
+  })
+
   it('s’exporte même sans aucune écriture : l’ouverture d’un exercice qui commence', () => {
     const rows = colonnes(genererFec([], [], [], ouverture, 'tresorerie', [], SANS_LETTRAGE))
     expect(rows).toHaveLength(3)
@@ -649,7 +673,7 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
   const mouvement = (id: string, o: Partial<LigneBancaire> = {}): LigneBancaire => ({
     id, dossier_id: 'd1', date: '2026-03-12', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c-recettes', taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
     source_fichier: 'releve-mars-2026.pdf', libelle_brut: null, created_at: '2026-03-13T00:00:00Z', ...o,
   })
   const cpam = mouvement('l-cpam')
@@ -780,8 +804,35 @@ describe('genererFec — les mouvements du relevé affectés sans justificatif',
       ['BQ', 'BQ00001', '20260315', COMPTE_BANQUE, 'releve-mars-2026.pdf', '0,00', '120,00'],
     ])
     // Le garde symétrique : la ventilation annulée, la même écriture n'a plus de justificatif.
-    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, reglement_groupe: false, id_externe: null }
+    const annule = { ...telephone, statut: 'non_rapprochee' as const, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null }
     expect(colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [annule], SANS_LETTRAGE)).slice(1)).toEqual([])
+  })
+
+  it('porte de même un mouvement écrit sur un compte de bilan, nommé par l’application ou par le plan comptable', () => {
+    // Ligne 26.7 (lib/compteDeBilan.ts) : un dépôt de garantie versé au 275000, un prêt consenti au 274100 que le
+    // cabinet a choisi. Une écriture par mouvement, le relevé pour pièce ; le 274100, qu'aucune catégorie ni aucune
+    // balance reprise ne nomme, prend le nom du compte du plan qui le contient — sans quoi le FEC le nommerait par son
+    // seul numéro.
+    const depot = mouvement('l-depot', {
+      date: '2026-03-02', montant: -1500, libelle: 'VIR DEPOT GARANTIE', categorie_id: null, compte_bilan: '275000',
+    })
+    const pret = mouvement('l-pretc', { date: '2026-03-09', montant: -800, libelle: 'VIR PRET', categorie_id: null, compte_bilan: '274100' })
+    const ecritures = [
+      ligne('', { id: 'b1', piece_id: null, ligne_bancaire_id: 'l-depot', compte: '275000', sens: 'debit', montant: 1500, date: '2026-03-02', libelle: 'VIR DEPOT GARANTIE' }),
+      ligne('', { id: 'b2', piece_id: null, ligne_bancaire_id: 'l-depot', compte: COMPTE_BANQUE, sens: 'credit', montant: 1500, date: '2026-03-02', libelle: 'VIR DEPOT GARANTIE' }),
+      ligne('', { id: 'b3', piece_id: null, ligne_bancaire_id: 'l-pretc', compte: '274100', sens: 'debit', montant: 800, date: '2026-03-09', libelle: 'VIR PRET' }),
+      ligne('', { id: 'b4', piece_id: null, ligne_bancaire_id: 'l-pretc', compte: COMPTE_BANQUE, sens: 'credit', montant: 800, date: '2026-03-09', libelle: 'VIR PRET' }),
+    ]
+    const rows = colonnes(genererFec(ecritures, [], [], [], 'tresorerie', [depot, pret], SANS_LETTRAGE)).slice(1)
+    expect(rows.map((r) => [r[0], r[2], r[3], r[4], r[5], r[8], r[11], r[12]])).toEqual([
+      ['BQ', 'BQ00001', '20260302', '275000', 'Dépôts et cautionnements versés', 'releve-mars-2026.pdf', '1500,00', '0,00'],
+      ['BQ', 'BQ00001', '20260302', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '1500,00'],
+      ['BQ', 'BQ00002', '20260309', '274100', 'Prêts', 'releve-mars-2026.pdf', '800,00', '0,00'],
+      ['BQ', 'BQ00002', '20260309', COMPTE_BANQUE, 'Banque', 'releve-mars-2026.pdf', '0,00', '800,00'],
+    ])
+    // Le garde symétrique : remis à traiter, le même mouvement n'a plus de justificatif.
+    const remis = { ...depot, statut: 'non_rapprochee' as const, compte_bilan: null }
+    expect(colonnes(genererFec(ecritures.slice(0, 2), [], [], [], 'tresorerie', [remis], SANS_LETTRAGE)).slice(1)).toEqual([])
   })
 
   it('les équilibre, une écriture après l’autre', () => {

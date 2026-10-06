@@ -1,4 +1,5 @@
 import { libelleExploitable } from './appariementBanque'
+import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE } from './comptes'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
 import { horsTaxeEtTva, horsTaxeSigne, tauxApplicable, tauxPrisEnCharge, tauxRequis } from './tvaDuReleve'
@@ -27,7 +28,8 @@ export type NatureCompte = 'recette' | 'depense'
 
 // LA NATURE SE LIT AU COMPTE, et c'est un invariant du plan comptable, pas un libellé : classe 7, un
 // produit ; classe 6, une charge. Un compte de bilan (108, 164, 445…) n'a pas de nature ici — il ne
-// passe pas par le résultat, et l'affectation le refuse tant qu'aucune étape ne le prend en charge.
+// passe pas par le résultat, et l'affectation le refuse : il a ses propres chemins, dont l'écriture d'un
+// mouvement sur un compte de bilan choisi (ligne 26.7, lib/compteDeBilan.ts).
 export function natureDuCompte(compte: string | null | undefined): NatureCompte | null {
   if (!compte) return null
   if (/^7\d{2}/.test(compte)) return 'recette'
@@ -40,7 +42,7 @@ export type MouvementBancaire = Pick<
   LigneBancaire,
   'id' | 'date' | 'libelle' | 'libelle_brut' | 'montant' | 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id'
   | 'taux_tva' | 'prelevement_personnel' | 'source_fichier' | 'emprunt_id' | 'emprunt_echeance' | 'emprunt_interets' | 'emprunt_assurance'
-  | 'ventilee' | 'reglement_groupe'
+  | 'ventilee' | 'reglement_groupe' | 'compte_bilan'
 >
 
 // Pourquoi ce mouvement ne peut pas être affecté à cette catégorie, à ce taux, dit AVANT d'écrire. La
@@ -57,6 +59,8 @@ export function refusAffectation(
   taux: number | null,
 ): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
+  const surUnCompteDeBilan = refusEcritSurUnCompteDeBilan(ligne)
+  if (surUnCompteDeBilan) return surUnCompteDeBilan
   if (ligne.piece_id || ligne.cotisation_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) {
     return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, ventilé sur plusieurs comptes ou classé en virement personnel : annule d’abord ce classement.'
   }
@@ -173,17 +177,18 @@ export function mouvementsAffectes(
 }
 
 // UN MOUVEMENT JUSTIFIÉ PAR LE RELEVÉ : son écriture n'a pas de pièce, et c'est légitime — le relevé
-// qui le porte en est le justificatif. Cinq cas : affecté à une catégorie (rapproché, portant une
+// qui le porte en est le justificatif. Six cas : affecté à une catégorie (rapproché, portant une
 // catégorie), rapproché d'un emprunt dont il est une échéance ou le déblocage (lib/echeanceEmprunt.ts),
 // rapproché d'une échéance de cotisation (lib/cotisationRapprochee.ts), ventilé sur plusieurs comptes
-// (lib/ventilationBanque.ts), ou classé en virement personnel (lib/virementPersonnel.ts), écrit sur le
-// compte du dirigeant. Ce qui dit, pour une écriture sans pièce, si elle est l'écriture d'un mouvement ou
-// le reste d'une pièce supprimée (une rupture). Voir lib/pisteAudit.ts et lib/fec.ts.
+// (lib/ventilationBanque.ts), écrit sur un compte de bilan (lib/compteDeBilan.ts), ou classé en virement
+// personnel (lib/virementPersonnel.ts), écrit sur le compte du dirigeant. Ce qui dit, pour une écriture
+// sans pièce, si elle est l'écriture d'un mouvement ou le reste d'une pièce supprimée (une rupture). Voir
+// lib/pisteAudit.ts et lib/fec.ts.
 //
-// UN SEUL PRÉDICAT pour le FEC, la piste d'audit, Écritures et la Checklist : l'emprunt, la ventilation
-// puis la cotisation se sont ajoutés ICI et nulle part ailleurs — une copie oubliée aurait fait sortir
-// leurs écritures du FEC ou crier « sans justificatif » sur une écriture juste, sur l'un des cinq
-// seulement, donc sans que les autres le disent.
+// UN SEUL PRÉDICAT pour le FEC, la piste d'audit, Écritures et la Checklist : l'emprunt, la ventilation,
+// la cotisation puis le compte de bilan se sont ajoutés ICI et nulle part ailleurs — une copie oubliée
+// aurait fait sortir leurs écritures du FEC ou crier « sans justificatif » sur une écriture juste, sur l'un
+// des six seulement, donc sans que les autres le disent.
 //
 // LU SUR LA LIGNE, SANS LA CATÉGORIE NI LES PARTS, et c'est voulu : la légitimité de l'écriture tient à
 // ce que son mouvement est affecté ou ventilé, pas à ce qu'on a pu lire de sa catégorie ou de ses parts.
@@ -191,14 +196,15 @@ export function mouvementsAffectes(
 // écriture juste — l'artefact de filtrage que `rupturesPisteAudit` refuse déjà de prendre pour une
 // rupture.
 export function mouvementJustifieParLeReleve(
-  ligne: Pick<LigneBancaire, 'statut' | 'categorie_id' | 'emprunt_id' | 'cotisation_id' | 'ventilee' | 'prelevement_personnel'>,
+  ligne: Pick<LigneBancaire, 'statut' | 'categorie_id' | 'emprunt_id' | 'cotisation_id' | 'ventilee' | 'compte_bilan' | 'prelevement_personnel'>,
 ): boolean {
-  return (ligne.statut === 'rapprochee' && (!!ligne.categorie_id || !!ligne.emprunt_id || !!ligne.cotisation_id || ligne.ventilee))
+  return (ligne.statut === 'rapprochee'
+    && (!!ligne.categorie_id || !!ligne.emprunt_id || !!ligne.cotisation_id || ligne.ventilee || !!ligne.compte_bilan))
     || ligne.prelevement_personnel
 }
 
 export function idsMouvementsJustifiesParLeReleve(
-  lignes: readonly Pick<LigneBancaire, 'id' | 'statut' | 'categorie_id' | 'emprunt_id' | 'cotisation_id' | 'ventilee' | 'prelevement_personnel'>[],
+  lignes: readonly Pick<LigneBancaire, 'id' | 'statut' | 'categorie_id' | 'emprunt_id' | 'cotisation_id' | 'ventilee' | 'compte_bilan' | 'prelevement_personnel'>[],
 ): ReadonlySet<string> {
   return new Set(lignes.filter(mouvementJustifieParLeReleve).map((l) => l.id))
 }
@@ -257,7 +263,8 @@ export function mouvementsAffectesDesynchronises(
   })
 }
 
-// Les écritures SANS PIÈCE, rangées par mouvement : celles d'un mouvement affecté ou d'un virement
+// Les écritures SANS PIÈCE, rangées par mouvement : celles d'un mouvement que le relevé justifie (affecté,
+// ventilé, écrit sur un compte de bilan, rapproché d'un emprunt ou d'une cotisation) ou d'un virement
 // personnel. Les lignes d'une pièce qui désignent le même mouvement (sa contrepartie banque) n'en sont
 // pas — elles appartiennent à la pièce.
 export function ecrituresSansPieceParMouvement(ecritures: readonly EcritureBrouillon[]): Map<string, EcritureBrouillon[]> {

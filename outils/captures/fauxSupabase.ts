@@ -123,7 +123,7 @@ function ligne(id: string, date: string, libelle: string, montant: number, statu
   return {
     id, dossier_id: 'd1', date, libelle, montant, statut, piece_id: pieceId, cotisation_id: null, categorie_id: categorie,
     taux_tva: null, prelevement_personnel: false, source_fichier: 'releve-septembre.csv', libelle_brut: null, created_at: MAINTENANT,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
     id_externe: null,
   }
 }
@@ -197,7 +197,7 @@ function paiementTva(id: string, date: string, libelle: string, montant: number,
   return {
     id, dossier_id: 'd7', date, libelle, montant, statut: 'rapprochee', piece_id: pieceId, cotisation_id: null, categorie_id: null,
     taux_tva: null, prelevement_personnel: false, source_fichier: 'releve-2026.csv', libelle_brut: null, created_at: MAINTENANT,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null,
     id_externe: null,
   }
 }

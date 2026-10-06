@@ -1,6 +1,7 @@
 import {
   ecritureConforme, ecritureDuMouvement, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire,
 } from './affectationBanque'
+import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
 import { COMPTE_EXPLOITANT } from './comptes'
 import type { ModeleComptable } from './engagement'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
@@ -40,6 +41,8 @@ export function compteDuDirigeant(modele: ModeleComptable): string {
 // chemin ne les contourne.
 export function refusVirementPersonnel(ligne: MouvementBancaire): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
+  const surUnCompteDeBilan = refusEcritSurUnCompteDeBilan(ligne)
+  if (surUnCompteDeBilan) return surUnCompteDeBilan
   if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee) {
     return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, affecté à une catégorie ou ventilé sur plusieurs comptes : annule d’abord ce classement.'
   }

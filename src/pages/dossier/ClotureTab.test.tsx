@@ -258,7 +258,7 @@ describe('ClotureTab — une échéance de cotisation compte à son prélèvemen
   const PRELEVEE_EN_JANVIER = {
     id: 'l-urssaf', dossier_id: 'dossier-de-test', date: '2026-01-06', libelle: 'PRLV URSSAF', montant: -300,
     statut: 'rapprochee', piece_id: null, cotisation_id: 'c1', categorie_id: null, emprunt_id: null, ventilee: false,
-    reglement_groupe: false, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
+    reglement_groupe: false, compte_bilan: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
     created_at: '2026-01-07T09:00:00Z',
   }
   const TITRE = /Cotisations comptées à leur échéance/
@@ -1479,7 +1479,7 @@ describe('ClotureTab — valider l’exercice', () => {
   const PAIEMENT = {
     id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-12', libelle: 'PRLV FOURNISSEUR', montant: -120,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, ventilee: false, reglement_groupe: false, source_fichier: 'releve.pdf', libelle_brut: null,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, source_fichier: 'releve.pdf', libelle_brut: null,
     created_at: '2025-03-13T09:00:00Z',
   }
   const ECRITURE = {

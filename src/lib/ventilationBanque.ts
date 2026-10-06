@@ -3,6 +3,7 @@ import {
   type LigneEcritureMouvement, type MouvementBancaire, type NatureCompte,
 } from './affectationBanque'
 import { libelleExploitable } from './appariementBanque'
+import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
 import { COMPTE_BANQUE, COMPTE_TVA_COLLECTEE } from './comptes'
 import type { ModeleComptable } from './engagement'
 import { formatMoney } from './format'
@@ -70,6 +71,8 @@ export function refusVentilation(
   assujettiTva: boolean,
 ): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
+  const surUnCompteDeBilan = refusEcritSurUnCompteDeBilan(ligne)
+  if (surUnCompteDeBilan) return surUnCompteDeBilan
   if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.emprunt_id || ligne.prelevement_personnel) {
     return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, affecté à une catégorie ou classé en virement personnel : annule d’abord ce classement.'
   }

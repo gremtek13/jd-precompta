@@ -2,6 +2,7 @@ import { ajouterJours, aujourdHuiSql, cleFournisseur, dateLocaleDe, formatMoney 
 import type { Categorie, Immobilisation, LigneBancaire, ModeComptable, Piece } from './types'
 import { soldeDesPaiements } from './alignementBanque'
 import type { PaiementsDesPieces } from './rattachement'
+import { estFigee } from './validationExercice'
 
 // Contrôles transverses partagés entre plusieurs onglets — extraits pour n'avoir qu'un seul endroit
 // où ces règles vivent, utilisés à la fois là où ils bloquent une action (Écritures, Clôture) et dans
@@ -402,11 +403,14 @@ export function moisEnDoubleSurAbonnement(pieces: Piece[]): MoisEnDoubleSurAbonn
 // UN MOUVEMENT QUI RÈGLE PLUSIEURS PIÈCES (lib/reglementGroupe.ts) non plus : ses pièces sont dans ses
 // PARTS, pas sur la ligne. La pièce supprimée d'une part, elle, laisse cette part sans pièce — la forme
 // groupée de ce contrôle, dite par `reglementsGroupesIncoherents`.
+//
+// UN MOUVEMENT ÉCRIT SUR UN COMPTE DE BILAN (ligne 26.7, lib/compteDeBilan.ts) non plus : sa preuve est le
+// relevé, son écriture celle de son compte, et ce lien-là est un NUMÉRO, que rien ne supprime.
 export function mouvementRapprocheSansObjet(
-  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'ventilee' | 'reglement_groupe'>,
+  ligne: Pick<LigneBancaire, 'statut' | 'piece_id' | 'cotisation_id' | 'categorie_id' | 'emprunt_id' | 'ventilee' | 'reglement_groupe' | 'compte_bilan'>,
 ): boolean {
   return ligne.statut === 'rapprochee' && !ligne.piece_id && !ligne.cotisation_id && !ligne.categorie_id && !ligne.emprunt_id
-    && !ligne.ventilee && !ligne.reglement_groupe
+    && !ligne.ventilee && !ligne.reglement_groupe && !ligne.compte_bilan
 }
 
 // Ce que TOUTE suppression d'une pièce fait au rapprochement qui la désignait, dit à l'opérateur AVANT
@@ -426,6 +430,27 @@ export const AVERTISSEMENT_PAIEMENT_DEFAIT =
 
 export function mouvementsRapprochesSansObjet(lignes: LigneBancaire[]): LigneBancaire[] {
   return lignes.filter(mouvementRapprocheSansObjet)
+}
+
+// LES MOUVEMENTS IGNORÉS NE SONT PAS AU FEC. « Ignorer » n'écrit rien, et c'est juste pour un DOUBLON — le même
+// mouvement importé deux fois — ou pour un mouvement antérieur à l'ouverture d'un dossier repris, que les à-nouveaux
+// portent déjà. Un mouvement RÉEL ignoré manque au FEC, et le 512 du brouillon s'écarte du relevé de son montant.
+// Jusqu'au 06/10/2026, c'était la seule issue d'un virement entre comptes ou d'un dépôt de garantie ; depuis (ligne
+// 26.7, lib/compteDeBilan.ts), tout mouvement du relevé a un chemin — une pièce, une catégorie, une ventilation, un
+// compte de bilan, un emprunt, une cotisation, un virement personnel —, et un mouvement ignoré se DIT, avec son
+// montant, pour que le cabinet tranche : un doublon le reste, un mouvement réel s'écrit.
+//
+// Ni un virement personnel, classé `'ignoree'` lui aussi mais écrit sur le compte du dirigeant ; ni un mouvement
+// antérieur à l'ouverture (`ouverture`, la date des à-nouveaux, nulle sans reprise) ; ni un mouvement d'un exercice
+// VALIDÉ (`frontiere`, lib/validationExercice.ts), que plus rien ne réécrit. Sans valeur par défaut : un appelant qui
+// oublierait l'ouverture ferait réclamer chaque mouvement d'avant la reprise, que l'écran demande pourtant d'ignorer.
+export function mouvementsIgnoresHorsFec<L extends Pick<LigneBancaire, 'statut' | 'prelevement_personnel' | 'date'>>(
+  lignes: readonly L[],
+  ouverture: string | null,
+  frontiere: string | null,
+): L[] {
+  return lignes.filter((l) => l.statut === 'ignoree' && !l.prelevement_personnel
+    && (ouverture == null || l.date >= ouverture) && !estFigee(l.date, frontiere))
 }
 
 // UNE PIÈCE PAYÉE EN PARTIE — le reste de la décision « la banque fait foi » (23/09/2026, choix du cabinet).

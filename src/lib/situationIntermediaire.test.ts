@@ -64,7 +64,7 @@ describe('calculerSituationIntermediaire', () => {
     const paiement = (pieceId: string, date: string, montant: number): LigneBancaire => ({
       id: `l-${pieceId}`, dossier_id: 'd1', date, libelle: 'PRLV', montant, statut: 'rapprochee',
       piece_id: pieceId, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
-      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
       libelle_brut: null, created_at: `${date}T09:00:00Z`,
     })
     const pieces = [
@@ -85,7 +85,7 @@ describe('calculerSituationIntermediaire', () => {
     const acompte: LigneBancaire = {
       id: 'l-acompte', dossier_id: 'd1', date: '2026-01-10', libelle: 'PRLV', montant: -80, statut: 'rapprochee',
       piece_id: 'partielle', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
-      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
       libelle_brut: null, created_at: '2026-01-10T09:00:00Z',
     }
     const partielle = piece({ id: 'partielle', date_piece: '2025-12-15', montant_ttc: 200 })
@@ -127,7 +127,7 @@ describe('calculerSituationIntermediaire', () => {
       id: 'l-urssaf', dossier_id: 'd1', date: '2026-07-02', libelle: 'PRLV URSSAF', montant: -290, statut: 'rapprochee',
       piece_id: null, cotisation_id: 'c', categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null,
       libelle_brut: null, emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false,
-      reglement_groupe: false, id_externe: null, created_at: '2026-07-03T09:00:00Z',
+      reglement_groupe: false, compte_bilan: null, id_externe: null, created_at: '2026-07-03T09:00:00Z',
     }
     const poste = (fin: string, lignes: LigneBancaire[]) =>
       calculerSituationIntermediaire([], [], [], cotisationsComptees(cotisations, lignes, 'tresorerie'), '2026-01-01', fin, true, new Map(), 'tresorerie', [])
@@ -268,7 +268,7 @@ describe('calculerSituationIntermediaire — en engagement', () => {
     const paiement = {
       id: 'l1', dossier_id: 'd1', date: '2026-01-10', libelle: 'PRLV', montant: -300, statut: 'rapprochee',
       piece_id: 'dec', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
       created_at: '2026-01-11T00:00:00Z',
     } satisfies LigneBancaire
     const janvier = (mode: 'tresorerie' | 'engagement') =>
@@ -289,7 +289,7 @@ describe('calculerSituationIntermediaire — les mouvements affectés du relevé
   const mouvement = (o: Partial<LigneBancaire>): LigneBancaire => ({
     id: 'm', dossier_id: 'd1', date: '2026-01-20', libelle: 'VIR CPAM', montant: 250, statut: 'rapprochee',
     piece_id: null, cotisation_id: null, categorie_id: 'c2', taux_tva: null, prelevement_personnel: false, source_fichier: null,
-    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
     libelle_brut: null, created_at: '2026-01-21T00:00:00Z', ...o,
   })
   const situation = (lignes: LigneBancaire[], fin = '2026-01-31') =>

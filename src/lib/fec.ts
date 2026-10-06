@@ -1,7 +1,7 @@
 import type { ANouveau, Categorie, EcritureBrouillon, JournalCode, ModeComptable, Piece } from './types'
 import { idsMouvementsJustifiesParLeReleve, referenceDuReleve, type MouvementBancaire } from './affectationBanque'
 import { libelleEcritureANouveau } from './aNouveaux'
-import { libelleCompteTenu } from './comptes'
+import { libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { auxiliaireDuTiers } from './engagement'
 import { dateAParis } from './format'
 import type { LettrageDeLigne } from './lettrage'
@@ -66,9 +66,11 @@ function champFec(valeur: string): string {
 
 // Libellé du compte pour la colonne CompteLib — les comptes que l'application tient elle-même (TVA,
 // banque, tiers, dotations et amortissements) d'abord, sinon celui de la catégorie qui porte ce
-// compte_comptable, sinon le numéro de compte lui-même à défaut de mieux.
+// compte_comptable, sinon celui du plan comptable pour un compte de bilan choisi par le cabinet (ligne 26.7,
+// `libelleDuPlanComptable`), sinon le numéro de compte lui-même à défaut de mieux.
 export function libelleCompte(compte: string, categories: Categorie[]): string {
-  return libelleCompteTenu(compte) ?? (categories.find((c) => c.compte_comptable === compte)?.libelle || compte)
+  return libelleCompteTenu(compte)
+    ?? (categories.find((c) => c.compte_comptable === compte)?.libelle || libelleDuPlanComptable(compte) || compte)
 }
 
 // Une ligne du FEC avant sa mise en forme : l'écriture, et ce que la numérotation décide pour elle. C'est
@@ -159,8 +161,8 @@ function libellesDesComptes(categories: Categorie[], aNouveaux: readonly ANouvea
 // AUXILIAIRE du tiers (CompAuxNum, CompAuxLib), un seul libellé par numéro dans tout le fichier.
 //
 // UN MOUVEMENT JUSTIFIÉ PAR LE RELEVÉ (ligne 26.6, `mouvementJustifieParLeReleve`) — affecté à une
-// catégorie, rapproché d'un emprunt ou d'une échéance de cotisation, ventilé sur plusieurs comptes ou
-// classé en virement personnel — fait
+// catégorie, rapproché d'un emprunt ou d'une échéance de cotisation, ventilé sur plusieurs comptes, écrit
+// sur un compte de bilan (ligne 26.7) ou classé en virement personnel — fait
 // une écriture au journal de BANQUE, dans les deux modèles : sa pièce est le RELEVÉ qui le porte
 // (PieceRef), à la date du mouvement (PieceDate). C'est ce qui manquait pour que le FEC porte chaque euro
 // du relevé : un encaissement de l'Assurance maladie ou un prélèvement de l'exploitant n'y était nulle
@@ -344,7 +346,7 @@ export function numerotationValidee(
       .sort((a, b) => a.compte.localeCompare(b.compte) || a.id.localeCompare(b.id))
       .map((a) => ({
         aNouveau: a,
-        compteLib: a.compte_lib ?? champFec(libelleCompteTenu(a.compte) ?? (a.libelle || a.compte)),
+        compteLib: a.compte_lib ?? champFec(libelleCompteTenu(a.compte) ?? (a.libelle || libelleDuPlanComptable(a.compte) || a.compte)),
         ecritureLib: a.ecriture_lib ?? champFec(libelleEcritureANouveau(a)),
         validDate,
       })),

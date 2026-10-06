@@ -165,8 +165,8 @@ export interface LignePisteAudit {
 // la chaîne est complète.
 //
 // Le justificatif d'un mouvement JUSTIFIÉ PAR LE RELEVÉ (ligne 26.6, `mouvementJustifieParLeReleve` :
-// affecté, rapproché d'un emprunt ou d'une échéance de cotisation, ventilé ou classé en virement personnel)
-// est le relevé qui le porte : son écriture n'a pas de pièce, et ce n'est pas une rupture.
+// affecté, rapproché d'un emprunt ou d'une échéance de cotisation, ventilé, écrit sur un compte de bilan ou
+// classé en virement personnel) est le relevé qui le porte : son écriture n'a pas de pièce, et ce n'est pas une rupture.
 // `lignesBancaires` suffit à le savoir — l'export relit le relevé en entier.
 //
 // Le justificatif d'une DOTATION AUX AMORTISSEMENTS est le TABLEAU D'AMORTISSEMENT du bien, que le
