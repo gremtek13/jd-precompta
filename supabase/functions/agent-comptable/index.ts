@@ -708,9 +708,12 @@ function analyserEcritures(
     .map(({ piece }) => piece.id))
   const contrepartie = (pieceId: string, r: EcritureRow) =>
     r.compte === COMPTE_BANQUE || (notesDeFrais.has(pieceId) && r.compte === COMPTE_EXPLOITANT)
-  const nbSansContrepartie = [...piecesParGroupe.entries()]
+  // Par identifiant : en engagement, une facture qu'un lettrage fait à la main solde avec son avoir n'attend plus de
+  // règlement, et `points_a_traiter` la retire comme la Checklist (bloc LETTRAGE MANUEL).
+  const piecesSansContrepartie = [...piecesParGroupe.entries()]
     .filter(([pieceId, rows]) => !notesDeFrais.has(pieceId) && !rows.some((r) => contrepartie(pieceId, r)) && !paiements.has(pieceId))
-    .length
+    .map(([pieceId]) => pieceId)
+  const nbSansContrepartie = piecesSansContrepartie.length
 
   const groupesDesequilibres = modele.mode === "engagement"
     ? desequilibresEngagement(piecesParGroupe)
@@ -733,7 +736,7 @@ function analyserEcritures(
       : tresorerieDesynchronisee(piece, cible, groupe, assujettiTva, paiementsPiece)
   }).map(({ piece }) => piece)
 
-  return { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
+  return { nbSansContrepartie, piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees }
 }
 
 // ── DÉBUT RÈGLEMENT GROUPÉ ───────────────────────────────────────────────────────────────────────
@@ -1725,6 +1728,147 @@ function forfaitsEnDefaut<F extends { vehicule: { annee: number }; etat: EtatFor
 }
 // ── FIN FORFAIT ──────────────────────────────────────────────────────────────────────────────────
 
+// ── DÉBUT LETTRAGE MANUEL ────────────────────────────────────────────────────────────────────────
+// Dupliqué depuis src/lib/format.ts (`cleFournisseur`), src/lib/engagement.ts (`auxiliaireDuTiers`) et
+// src/lib/lettrage.ts (`etatsDesLettragesManuels`, `piecesLettreesALaMain`). LE LETTRAGE FAIT À LA MAIN (ligne 32,
+// seconde brique, 06/10/2026) : des pièces d'un même tiers qui se soldent entre elles sans mouvement bancaire — une
+// facture et son avoir. La base ne garde que l'appariement, et chaque lettrage se revérifie à la lecture : seul celui
+// qui tient encore compte. La Checklist en tire deux choses, que l'assistant doit dire comme elle : les pièces d'un
+// lettrage qui tient n'attendent aucun règlement — compter « sans règlement rapproché » une facture que son avoir
+// solde enverrait chercher à la banque un paiement qui n'existera jamais —, et un lettrage qui ne se solde plus est un
+// point à traiter. Réduit à ce qu'il faut pour cela : le motif de chaque lettrage, pas son libellé ni son reste.
+// Garde : src/lib/agentComptableLettrage.test.ts.
+
+const COMPTE_COURANT_ASSOCIE = "455000"
+const COMPTE_AUTRES_DEBITEURS_CREDITEURS = "467000"
+
+// Les mots qui ne désignent jamais une partie — une forme juridique, un lieu, un produit, une liaison : retenu comme
+// clé, l'un d'eux confondrait deux tiers sans rapport.
+const MOTS_SANS_IDENTITE = new Set([
+  "sarl", "sasu", "eurl", "selarl", "societe", "entreprise", "cabinet", "groupe", "siege",
+  "institut",
+  "monsieur", "madame", "france", "paris",
+  "national", "nationale",
+  "restaurant", "villa",
+  "carte", "bancaire", "client", "compte", "service", "services", "facture",
+  "responsabilite", "civile", "professionnelle", "professionnel", "protection", "juridique",
+  "propriete", "industrielle", "industriel",
+  "pour", "avec", "dont", "les", "des", "sur",
+])
+
+// Un sigle pointé se recolle avant que la ponctuation ne soit aplatie : « C.P.A.M. » devient « cpam », et non trois
+// lettres isolées qui feraient retenir le mot suivant — une ville.
+const SIGLE_POINTE = /(?:[a-z]\.){2,}[a-z]?/g
+
+function recollerSiglesPointes(texte: string): string {
+  return texte.replace(SIGLE_POINTE, (sigle) => sigle.replace(/\./g, ""))
+}
+
+// La clé d'identité d'un tiers : le premier mot de son nom qui puisse le désigner, de quatre caractères au moins.
+// Nulle quand rien ne l'identifie.
+function cleFournisseur(tiers: string | null): string | null {
+  if (!tiers) return null
+  const mots = recollerSiglesPointes(tiers.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase())
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim()
+    .split(" ")
+    .filter(Boolean)
+  return mots.find((m) => m.length >= 4 && !MOTS_SANS_IDENTITE.has(m)) ?? null
+}
+
+// Le compte auxiliaire d'une pièce (CompAuxNum) sur un 401, un 404 ou un 411 ; nul sur un compte qui n'en a pas (455,
+// 467). Une pièce dont le tiers n'a pas de clé va au compte « divers ».
+const PREFIXES_AUXILIAIRES: Readonly<Record<string, string>> = {
+  [COMPTE_FOURNISSEURS]: "F", [COMPTE_FOURNISSEURS_IMMOBILISATIONS]: "FI", [COMPTE_CLIENTS]: "C",
+}
+
+function auxiliaireDuTiers(piece: { tiers: string | null }, compte: string): string | null {
+  const prefixe = PREFIXES_AUXILIAIRES[compte]
+  if (!prefixe) return null
+  const cle = cleFournisseur(piece.tiers)
+  return cle ? `${prefixe}${cle.toUpperCase()}` : `${prefixe}DIVERS`
+}
+
+// Le compte « divers » mêle des tiers différents : rien n'y prouve que deux pièces soient du même tiers. Comparé au
+// numéro exact — un fournisseur dont le nom finit par « divers » a son propre compte auxiliaire.
+function estDivers(compte: string, auxiliaire: string): boolean {
+  return auxiliaire === auxiliaireDuTiers({ tiers: null }, compte)
+}
+
+// Les comptes que le lettrage apparie : 401, 404, 411, et le compte du dirigeant quand c'est un compte de tiers (455,
+// 467). Jamais le 108, ni les comptes de TVA.
+const COMPTES_LETTRABLES: ReadonlySet<string> = new Set([
+  COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE,
+  COMPTE_AUTRES_DEBITEURS_CREDITEURS,
+])
+
+interface LettrageManuelRow { id: string; groupe: string; piece_id: string | null; compte: string }
+
+type MotifLettrageManuel =
+  | "piece_supprimee" | "une_seule_piece" | "comptes_differents" | "piece_non_lue" | "tiers_non_identifie"
+  | "tiers_differents" | "sans_ecriture" | "piece_soldee_seule" | "piece_lettree_ailleurs" | "ne_se_solde_plus"
+
+interface EtatLettrageManuel { groupe: string; pieceIds: string[]; motif: MotifLettrageManuel | null }
+
+// En centimes, chaque ligne arrondie : la somme d'un lettrage se juge au centime, comme dans la base.
+const centimesLettrage = (e: { sens: string; montant: number }) => (e.sens === "debit" ? 1 : -1) * Math.round(e.montant * 100)
+const sommeLettrage = (lignes: readonly { sens: string; montant: number }[]) =>
+  lignes.reduce((total, e) => total + centimesLettrage(e), 0)
+
+// Ce que `lettrer_pieces` a vérifié au clic, refait à chaque lecture et dans le même ordre que src/lib, plus ce que la
+// base ne sait pas vérifier : que les pièces soient du même tiers, identifié. `pieces` : TOUTES les pièces du dossier,
+// pour leur tiers. En trésorerie rien ne se lettre.
+function etatsDesLettragesManuels(
+  ecritures: readonly EcritureRow[], pieces: readonly { id: string; tiers: string | null }[],
+  lettragesManuels: readonly LettrageManuelRow[], mode: ModeComptable,
+): EtatLettrageManuel[] {
+  if (mode !== "engagement") return []
+  const pieceById = new Map(pieces.map((p) => [p.id, p]))
+  // Les lignes de chaque pièce sur chaque compte lettrable : la facture et ses règlements.
+  const parPieceEtCompte = new Map<string, EcritureRow[]>()
+  for (const e of ecritures) {
+    if (!e.piece_id || !COMPTES_LETTRABLES.has(e.compte)) continue
+    const cle = `${e.piece_id}|${e.compte}`
+    parPieceEtCompte.set(cle, [...(parPieceEtCompte.get(cle) ?? []), e])
+  }
+  // Les pièces qui se soldent seules sur l'un de ces comptes : celles que le lettrage déduit du rapprochement apparie.
+  const soldeesSeules = new Set<string>()
+  for (const lignes of parPieceEtCompte.values()) {
+    if (sommeLettrage(lignes) === 0) soldeesSeules.add(lignes[0].piece_id!)
+  }
+  const sommeDe = (pieceId: string, compte: string) => sommeLettrage(parPieceEtCompte.get(`${pieceId}|${compte}`) ?? [])
+
+  const groupes = new Map<string, LettrageManuelRow[]>()
+  for (const l of lettragesManuels) groupes.set(l.groupe, [...(groupes.get(l.groupe) ?? []), l])
+
+  return [...groupes.entries()].map(([groupe, lignesDuGroupe]): EtatLettrageManuel => {
+    const lignes = [...lignesDuGroupe].sort((a, b) => a.id.localeCompare(b.id))
+    const compte = lignes[0].compte
+    const pieceIds = lignes.flatMap((l) => (l.piece_id ? [l.piece_id] : [])).sort()
+    const reste = lignes.reduce((total, l) => total + (l.piece_id ? sommeDe(l.piece_id, l.compte) : 0), 0)
+    const auxiliaires = pieceIds.map((id) => (pieceById.has(id) ? auxiliaireDuTiers(pieceById.get(id)!, compte) : null))
+
+    let motif: MotifLettrageManuel | null = null
+    if (lignes.some((l) => !l.piece_id)) motif = "piece_supprimee"
+    else if (lignes.length < 2) motif = "une_seule_piece"
+    else if (lignes.some((l) => l.compte !== compte) || !COMPTES_LETTRABLES.has(compte)) motif = "comptes_differents"
+    else if (pieceIds.some((id) => !pieceById.has(id))) motif = "piece_non_lue"
+    else if (auxiliaires.some((a) => a !== null && estDivers(compte, a))) motif = "tiers_non_identifie"
+    else if (new Set(auxiliaires.map((a) => a ?? "")).size > 1) motif = "tiers_differents"
+    else if (pieceIds.some((id) => !parPieceEtCompte.has(`${id}|${compte}`))) motif = "sans_ecriture"
+    else if (pieceIds.some((id) => sommeDe(id, compte) === 0)) motif = "piece_soldee_seule"
+    else if (pieceIds.some((id) => soldeesSeules.has(id))) motif = "piece_lettree_ailleurs"
+    else if (reste !== 0) motif = "ne_se_solde_plus"
+    return { groupe, pieceIds, motif }
+  })
+}
+
+// Les pièces que solde un lettrage fait à la main QUI TIENT : elles n'attendent plus de règlement.
+function piecesLettreesALaMain(etats: readonly EtatLettrageManuel[]): Set<string> {
+  return new Set(etats.filter((e) => e.motif === null).flatMap((e) => e.pieceIds))
+}
+// ── FIN LETTRAGE MANUEL ──────────────────────────────────────────────────────────────────────────
+
 // ---- Dupliqué depuis src/lib/controles.ts --------------------------------------------------------
 function piecesSansTva(pieces: PieceRow[], assujettiTva: boolean) {
   if (!assujettiTva) return []
@@ -2016,7 +2160,7 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "points_a_traiter",
-    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
+    description: "Renvoie les anomalies déjà détectées sur ce dossier (mêmes contrôles que l'onglet Checklist) : écritures déséquilibrées ou à régénérer, mouvements du relevé affectés dont l'écriture est à réaffecter, mouvements ventilés sur plusieurs comptes dont l'écriture ne suit plus les parts ou dont les parts ne font plus le mouvement, pièces à faible confiance d'extraction, catégories sans compte comptable ou sans poste 2035 (utilisées par une pièce validée, un mouvement affecté ou une part de ventilation), pièces validées sans TVA renseignée, encaissements affectés ou ventilés en recette sans taux de TVA sur un dossier assujetti, virements personnels sans leur écriture, échéances d'emprunt que le relevé couvre sans mouvement rapproché ou dont l'écriture ne suit plus le découpage, virements groupés dont une part ne justifie plus rien ou dont les parts ne font plus le mouvement, pièces payées plus que leur montant, échéances de cotisation payées dont l'écriture manque ou n'est plus à jour, rapprochements d'une échéance de cotisation qui ne peuvent pas s'écrire, dotations aux amortissements à écrire (exercice fini) ou qui ne suivent plus le registre, forfaits kilométriques à écrire (exercice fini) ou qui ne suivent plus le cadre 7, et en engagement les factures sans règlement rapproché — hors celles qu'un lettrage fait à la main solde avec leur avoir — et les lettrages faits à la main qui ne se soldent plus. Rien de ce qu'un exercice validé a figé n'y est réclamé (exercices_valides). À utiliser pour répondre à \"quelles sont les anomalies ?\".",
     input_schema: { type: "object", properties: {}, additionalProperties: false },
   },
 ]
@@ -2182,15 +2326,17 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
   }
 
   if (nom === "points_a_traiter") {
-    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides] = await Promise.all([
+    const [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages] = await Promise.all([
       // `date_piece` compte : c'est la date qu'une écriture sans paiement rapproché doit porter. Et tout ce qu'en
       // tire le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière de validation doit encore porter, ligne
       // pour ligne : le hors taxe lu, qui prime sur le TTC moins la TVA pour un dossier assujetti — et pour la
-      // contrepartie d'une note de frais au 108000 —, et le DÉPÔT, qui date ce que rien d'autre ne date.
+      // contrepartie d'une note de frais au 108000 —, et le DÉPÔT, qui date ce que rien d'autre ne date. Et le TIERS de
+      // toutes les pièces, validées ou non : un lettrage fait à la main ne tient qu'entre pièces d'un même tiers (bloc
+      // LETTRAGE MANUEL).
       lireTout<PieceRow>((d, f) =>
-        admin.from("pieces").select("id, date_piece, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
-      lireTout<{ confiance: string | null }>((d, f) =>
-        admin.from("pieces").select("confiance", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "a_valider").order("id").range(d, f)),
+        admin.from("pieces").select("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "validee").order("id").range(d, f)),
+      lireTout<{ id: string; tiers: string | null; confiance: string | null }>((d, f) =>
+        admin.from("pieces").select("id, tiers, confiance", { count: "exact" }).eq("dossier_id", dossierId).eq("statut", "a_valider").order("id").range(d, f)),
       lireTout<CategorieRow>((d, f) =>
         admin.from("categories").select("id, libelle, compte_comptable, poste_2035", { count: "exact" }).or(`dossier_id.eq.${dossierId},dossier_id.is.null`).order("id").range(d, f)),
       // `statut` et `immobilisation_id` : une DOTATION aux amortissements (bloc AMORTISSEMENT) est une écriture
@@ -2250,6 +2396,10 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // partie, elle se tromperait d'exercice — et le refus général ci-dessous la couvre.
       lireTout<{ annee: number }>((d, f) =>
         admin.from("exercices_valides").select("annee", { count: "exact" }).eq("dossier_id", dossierId).order("annee").order("dossier_id").range(d, f)),
+      // Les LETTRAGES FAITS À LA MAIN (bloc LETTRAGE MANUEL) : une facture qu'un avoir solde sans mouvement bancaire
+      // n'attend aucun règlement. Lus en partie, ils la feraient compter sans règlement — d'où le même refus.
+      lireTout<LettrageManuelRow>((d, f) =>
+        admin.from("lettrages_manuels").select("id, groupe, piece_id, compte", { count: "exact" }).eq("dossier_id", dossierId).order("id").range(d, f)),
     ])
     // Correctif audit sécurité (indicateurs/IA, Importante) : ces lectures alimentent toutes des
     // compteurs d'anomalies (écritures déséquilibrées, pièces sans TVA...) — une lecture échouée
@@ -2258,7 +2408,7 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     // ET UNE LECTURE TRONQUÉE FAIT EXACTEMENT PAREIL, en pire : elle ne masque pas le contrôle, elle
     // le rend FAUX sans qu'il se taise. Une écriture au-delà de la coupure est une anomalie qui
     // n'existe pas pour ce tableau — donc « rien à signaler » sur un dossier qui en porte.
-    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides]
+    const incompletes = [rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages]
       .filter((r) => !r.complete)
     if (incompletes.length > 0) {
       return { erreur: `Lecture partielle : ${incompletes.map((r) => r.motif).join(" ; ")} — ne tire aucune conclusion sur l'état du dossier à partir de ce résultat, dis à l'utilisateur que ces contrôles sont indisponibles pour l'instant.` }
@@ -2278,7 +2428,13 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
     const paiements = paiementsDesPieces(rReleve.lignes, rReglements.lignes)
     // La frontière de validation : rien de ce qu'elle fige ne se réclame plus, comme dans la Checklist.
     const frontiere = frontiereDeValidation(rValides.lignes.map((v) => v.annee))
-    const { nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele, frontiere)
+    const { piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees } = analyserEcritures(ecrituresTyped, aComptabiliser, dossier.assujetti_tva, paiements, modele, frontiere)
+    // Les lettrages faits à la main (bloc LETTRAGE MANUEL), revérifiés sur TOUTES les pièces du dossier, comme dans la
+    // Checklist : une facture qu'un lettrage qui tient solde avec son avoir n'attend plus de règlement. En trésorerie
+    // rien ne se lettre, et la liste est vide.
+    const etatsLettrages = etatsDesLettragesManuels(ecrituresTyped, [...piecesTyped, ...piecesAValider], rLettrages.lignes, modele.mode)
+    const lettreesALaMain = piecesLettreesALaMain(etatsLettrages)
+    const sansReglement = piecesSansContrepartie.filter((id) => !lettreesALaMain.has(id)).length
     const piecesConfianceBasse = piecesAValider.filter((p) => p.confiance === "basse")
     // Les parts d'un mouvement ventilé désignent des catégories comme les mouvements affectés.
     const catSansCompte = categoriesSansCompte(categoriesTyped, piecesTyped, [...rAffectes.lignes, ...rParts.lignes], pieceIdsImmobilisees)
@@ -2322,8 +2478,14 @@ async function executerOutil(ctx: OutilContexte, nom: string, input: Record<stri
       // ou une créance qui court encore — le libellé de la Checklist, repris pour que l'assistant dise
       // la même chose que l'écran.
       ...(modele.mode === "engagement"
-        ? { factures_sans_reglement_rapproche: nbSansContrepartie }
-        : { ecritures_en_attente_de_rapprochement_bancaire: nbSansContrepartie }),
+        ? {
+          factures_sans_reglement_rapproche: sansReglement,
+          // Le libellé de la Checklist : un lettrage fait à la main qui ne se solde plus n'est pas porté au FEC, et la
+          // facture qu'il soldait reparaît ouverte. La liste « Lettrages faits à la main », sous les comptes de tiers de
+          // la Balance des comptes, dit pourquoi et le défait.
+          lettrages_faits_a_la_main_qui_ne_se_soldent_plus: etatsLettrages.filter((e) => e.motif !== null).length,
+        }
+        : { ecritures_en_attente_de_rapprochement_bancaire: sansReglement }),
       // Plus de comparaison des déclarations de TVA au brouillon (retirée le 28/09/2026) : le
       // brouillon ne date pas la TVA selon la règle d'exigibilité de la déclaration — il porte celle de
       // l'acquisition d'un bien au 445620 depuis le 01/10/2026, mais à la date de son écriture —, donc il
@@ -2540,7 +2702,7 @@ Règles impératives :
 - La facture d'un BIEN IMMOBILISÉ (inscrit au registre des immobilisations) s'écrit sur le compte d'immobilisation de sa nature (classe 2 : 218300, 215400…), pas en charge, sa TVA au 445620 : c'est son acquisition, qui ne compte pas dans la 2035 — le bien y compte par ses dotations. Celle d'un bien acquis avant l'ouverture d'un dossier repris ne s'écrit pas : la balance reprise porte déjà sa valeur. Rien de cela n'est une anomalie.
 - Une DOTATION AUX AMORTISSEMENTS s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : le 681100 au débit, le compte d'amortissement du bien (28…) au crédit, au journal des opérations diverses, avec le tableau d'amortissement du bien pour justificatif. Elle compte prorata temporis depuis la mise en service du bien, en case CH de la 2035. Ce n'est pas une anomalie.
 - Le FORFAIT KILOMÉTRIQUE d'un véhicule du cadre 7 s'écrit au 31 décembre de son exercice, sans pièce ni mouvement : l'indemnité du barème au débit du 625110, au crédit du compte du dirigeant — ${dossierRow.mode_comptable === "engagement" ? dossierRow.compte_notes_de_frais : "108000 Compte de l'exploitant"} —, au journal des opérations diverses, avec le barème kilométrique de l'année pour justificatif. Il compte en case BJ de la 2035, et les frais de ce véhicule ne figurent alors à aucun autre poste. Ce n'est pas une anomalie.
-- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.
+- Une ÉCHÉANCE DE COTISATION rapprochée d'un mouvement s'écrit face au 512000, sans pièce : la cotisation au 646000 (cotisations sociales personnelles de l'exploitant)${dossierRow.mode_comptable === "engagement" ? "" : " et sa CSG-CRDS, quand elle est saisie, au 108000 Compte de l'exploitant ; elle compte dans la 2035 à la date et au montant du prélèvement, et une échéance que rien ne paie compte à son échéance"}. Ce n'est pas une anomalie.${dossierRow.mode_comptable === "engagement" ? "\n- Des pièces d'un même tiers peuvent être LETTRÉES À LA MAIN (une facture et l'avoir qui la solde, sans mouvement bancaire) : elles n'attendent aucun règlement, ce n'est pas une anomalie. Un lettrage fait à la main qui ne se solde plus (points_a_traiter) n'est pas porté au FEC, et la facture qu'il soldait reparaît ouverte : la liste « Lettrages faits à la main », sous les comptes de tiers de la Balance des comptes, dit pourquoi et le défait." : ""}
 - Un EXERCICE VALIDÉ (resume_dossier et points_a_traiter : exercices_valides) est FIGÉ : ses écritures ne se modifient ni ne se retirent plus, ni les pièces, mouvements, biens, véhicules et échéances qui les ont produites — la base le refuse. Rien de ce qui précède le 31 décembre du dernier exercice validé n'est réclamé par points_a_traiter : une erreur trouvée après la validation se corrige sur l'exercice suivant. Ne propose jamais de régénérer, de réécrire, de rapprocher ou de retirer ce qu'un exercice validé a figé.
 - Modèle comptable du dossier : ${repereModele}
 - Date du jour : ${aujourdhui} (pour interpréter "cette année", "l'an dernier", etc.).

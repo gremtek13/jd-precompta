@@ -179,7 +179,7 @@ describe('agent-comptable / points_a_traiter lit le cadre 7 et ses forfaits', ()
   it('lit le cadre 7 et le lien des écritures vers lui, sous le même refus de lecture partielle', () => {
     expect(corps).toMatch(/from\("vehicules"\)\.select\("id, annee, modele, type, puissance_fiscale, motorisation, km_professionnel"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/from\("ecritures_brouillon"\)\.select\("[^"]*immobilisation_id, vehicule_id"/)
-    expect(corps).toMatch(/rNatures, rANouveaux, rVehicules, rValides\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/rNatures, rANouveaux, rVehicules, rValides, rLettrages\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('rend le point de la Checklist, dans le modèle du dossier et sur son ouverture', () => {
