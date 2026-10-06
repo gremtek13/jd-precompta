@@ -113,7 +113,7 @@ describe('calculerDeclaration2035 — ce qui est écarté est dit', () => {
 const paiement = (o: Partial<LigneBancaire>): LigneBancaire => ({
   id: 'l', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
 
@@ -451,7 +451,7 @@ describe('calculerDeclaration2035 — les mouvements ventilés sur plusieurs com
     const parts = [part({ id: 'a', categorie_id: 'c-achats', montant: -84 }), part({ id: 'b', categorie_id: 'c-tel', montant: -36 })]
     expect(calcul({ annee: 2025, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(0)
     expect(calcul({ annee: 2026, mouvements: releve([ventile({ date: '2026-01-02' })], parts) }).totalDepenses).toBe(120)
-    expect(calcul({ mouvements: releve([ventile({ ventilee: false, reglement_groupe: false, id_externe: null, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
+    expect(calcul({ mouvements: releve([ventile({ ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null, statut: 'non_rapprochee' })], parts) }).totalDepenses).toBe(0)
   })
 })
 

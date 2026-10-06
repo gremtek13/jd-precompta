@@ -146,7 +146,7 @@ describe('absenceFec', () => {
 const ligneBancaire = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-03-12', libelle: 'PRLV SEPA TRANSMEDICAL',
   montant: -100, statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
   prelevement_personnel: false, source_fichier: null, libelle_brut: null,
   created_at: '2026-03-12T00:00:00Z', ...o,
 })
@@ -340,8 +340,22 @@ describe('pisteAudit — un mouvement affecté sans justificatif', () => {
     const [ligne] = pisteAudit(part, [], [telephone], [], SANS_REGISTRE)
     expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'PRLV OPERATEUR', []])
     // La ventilation annulée, elle n'a plus de justificatif.
-    const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false, reglement_groupe: false, id_externe: null }], [], SANS_REGISTRE)
+    const [annule] = pisteAudit(part, [], [{ ...telephone, statut: 'non_rapprochee', ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null }], [], SANS_REGISTRE)
     expect(annule.manque).toEqual(['justificatif'])
+  })
+
+  it('donne aussi le relevé pour justificatif à un mouvement écrit sur un compte de bilan', () => {
+    // lib/compteDeBilan.ts (ligne 26.7) : un virement vers l'épargne au 580000, sans pièce.
+    const epargne = ligneBancaire({
+      id: 'l-ep', piece_id: null, categorie_id: null, montant: -2000, libelle: 'VIR EPARGNE',
+      source_fichier: 'releve-mars-2026.pdf', compte_bilan: '580000',
+    })
+    const virement = [ecriture({ id: 'b1', piece_id: null, ligne_bancaire_id: 'l-ep', compte: '580000', montant: 2000, date: '2026-03-12' })]
+    const [ligne] = pisteAudit(virement, [], [epargne], [], SANS_REGISTRE)
+    expect([ligne.pieceFichier, ligne.mouvementLibelle, ligne.manque]).toEqual(['Relevé bancaire : releve-mars-2026.pdf', 'VIR EPARGNE', []])
+    // Remis à traiter, il n'a plus de justificatif.
+    const [remis] = pisteAudit(virement, [], [{ ...epargne, statut: 'non_rapprochee', compte_bilan: null }], [], SANS_REGISTRE)
+    expect(remis.manque).toEqual(['justificatif'])
   })
 })
 

@@ -1,5 +1,6 @@
 import { ecritureConforme, ecrituresSansPieceParMouvement, type LigneEcritureMouvement, type MouvementBancaire } from './affectationBanque'
 import { libelleExploitable } from './appariementBanque'
+import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
 import { COMPTE_BANQUE, COMPTE_COTISATIONS_EXPLOITANT, COMPTE_EXPLOITANT } from './comptes'
 import { formatDate, formatMoney } from './format'
 import { REFUS_REGLE_EN_GROUPE } from './reglementGroupe'
@@ -58,6 +59,8 @@ export function refusRapprochementCotisation(
   mode: ModeComptable,
 ): string | null {
   if (ligne.reglement_groupe) return REFUS_REGLE_EN_GROUPE
+  const surUnCompteDeBilan = refusEcritSurUnCompteDeBilan(ligne)
+  if (surUnCompteDeBilan) return surUnCompteDeBilan
   if (ligne.piece_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) {
     return REFUS_COTISATION_CLASSEE
   }

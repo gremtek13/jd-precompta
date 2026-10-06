@@ -15,7 +15,7 @@ function mouvement(o: Partial<MouvementBancaire> = {}): MouvementBancaire {
     id: 'l1', date: '2026-01-06', libelle: 'PRLV URSSAF', libelle_brut: null, montant: -500,
     statut: 'non_rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
     source_fichier: 'releve-janvier.csv', emprunt_id: null, emprunt_echeance: null, emprunt_interets: null,
-    emprunt_assurance: null, ventilee: false, reglement_groupe: false, ...o,
+    emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, ...o,
   }
 }
 

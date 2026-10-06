@@ -87,7 +87,7 @@ describe('lignesChargeProduitPourPiece', () => {
 const paiement = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l1', dossier_id: 'd1', date: '2026-01-05', libelle: 'PRLV', montant: -120, statut: 'rapprochee',
   piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false, source_fichier: null, libelle_brut: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
   created_at: '2026-01-06T09:00:00Z', ...o,
 })
 
@@ -351,6 +351,22 @@ describe('calculerBalance', () => {
     const categories = [{ compte_comptable: '164', libelle: 'Emprunts bancaires' } as Categorie]
     const balance = calculerBalance([], categories, [aNouveau({ compte: '164', libelle: 'EMPRUNT CA', sens: 'credit' })])
     expect(balance[0].libelle).toBe('Emprunts bancaires')
+  })
+
+  // Ligne 26.7 : un mouvement s'écrit sur un compte de bilan que le cabinet choisit. Sans nom de l'application,
+  // d'une catégorie ou de la balance reprise, il prend celui du compte du plan qui le contient — en DERNIER : un
+  // nom plus précis l'emporte.
+  it('nomme par le plan comptable un compte de bilan que rien d’autre ne nomme, en dernier recours', () => {
+    const balance = calculerBalance(
+      [ecriture({ compte: '274100' }), ecriture({ compte: '580000' }), ecriture({ compte: '165000' })],
+      [],
+      [aNouveau({ id: 'an-3', compte: '165000', libelle: 'Dépôt du sous-locataire' })],
+    )
+    expect(balance.map((l) => [l.compte, l.libelle])).toEqual([
+      ['165000', 'Dépôt du sous-locataire'],
+      ['274100', 'Prêts'],
+      ['580000', 'Virements internes'],
+    ])
   })
 })
 

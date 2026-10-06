@@ -160,11 +160,12 @@ export interface LigneBancaire {
   // Rattache le mouvement à une échéance de cotisations_declarees plutôt qu'à une pièce — un
   // prélèvement URSSAF/CARPIMKO n'a pas de facture, juste un montant appelé sur un échéancier.
   //
-  // MUTUELLEMENT EXCLUSIF AVEC `piece_id`, `categorie_id` ET `emprunt_id`, ET C'EST LA BASE QUI LE
-  // TIENT : `lignes_bancaires_un_seul_rapprochement` (num_nonnulls(piece_id, cotisation_id,
-  // categorie_id, emprunt_id) <= 1). Ce commentaire a affirmé du 23/09 au 29/09/2026 qu'aucune
-  // contrainte CHECK n'existait : c'était faux, `pg_constraint` la rend depuis le 22/09 au moins (le
-  // socle l'exporte déjà), et rien n'avait recoupé l'affirmation avec l'export qui portait la réponse.
+  // MUTUELLEMENT EXCLUSIF AVEC TOUT AUTRE LIEN DU MOUVEMENT — pièce, catégorie, emprunt, ventilation,
+  // règlement groupé, compte de bilan —, ET C'EST LA BASE QUI LE TIENT :
+  // `lignes_bancaires_un_seul_rapprochement` (au plus un lien non nul parmi sept). Ce commentaire a
+  // affirmé du 23/09 au 29/09/2026 qu'aucune contrainte CHECK n'existait : c'était faux, `pg_constraint`
+  // la rend depuis le 22/09 au moins (le socle l'exporte déjà), et rien n'avait recoupé l'affirmation
+  // avec l'export qui portait la réponse.
   //
   // ET IL S'ÉCRIT (ligne 26.6, étape b, lib/cotisationRapprochee.ts) : posé par `rapprocher_cotisation`
   // AVEC son écriture — le 646000 face à la banque, la CSG-CRDS au 108000 en trésorerie —, retiré avec
@@ -216,6 +217,15 @@ export interface LigneBancaire {
   // (`lignes_bancaires_un_seul_rapprochement`), rapproché et jamais personnel
   // (`lignes_bancaires_reglement_groupe_rapproche`).
   reglement_groupe: boolean
+  // Le COMPTE DE BILAN d'un mouvement sans justificatif (ligne 26.7) : 580000 pour un virement vers un
+  // autre compte du professionnel, 275000 pour un dépôt de garantie versé ou rendu, ou un compte de
+  // classe 1 à 5 que le cabinet choisit (voir lib/compteDeBilan.ts). Posé AVEC son écriture — ce compte
+  // face à la banque — par la fonction SQL `ecrire_mouvement_compte_bilan`, retiré avec elle par
+  // `retirer_mouvement_compte_bilan`. La base tient la forme (`lignes_bancaires_compte_bilan_format` :
+  // six à dix chiffres, classe 1 à 5, jamais le 512), un mouvement rapproché et jamais personnel
+  // (`lignes_bancaires_compte_bilan_rapproche`), et l'exclusivité avec tout autre lien
+  // (`lignes_bancaires_un_seul_rapprochement`). Ni charge ni recette : la 2035 ne le voit pas.
+  compte_bilan: string | null
   // Virement du compte pro vers le compte personnel de l'exploitant — un prélèvement, pas une charge :
   // n'a ni pièce ni échéance à rattacher (voir VirementsTab), exclu des totaux par poste de Clôture.
   // Le mouvement est aussi marqué "ignoree" côté rapprochement dès que ce drapeau passe à true (rien

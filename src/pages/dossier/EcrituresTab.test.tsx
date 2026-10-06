@@ -937,7 +937,7 @@ describe('EcrituresTab — ce qu’un exercice validé a figé ne se compare plu
   const mouvement = (o: Record<string, unknown>) => ({
     id: 'l1', dossier_id: 'dossier-de-test', date: '2025-03-12', libelle: 'PRLV FOURNISSEUR', montant: -120,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, ventilee: false, reglement_groupe: false, source_fichier: 'releve-2025.pdf', libelle_brut: null,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, source_fichier: 'releve-2025.pdf', libelle_brut: null,
     created_at: '2025-03-13T09:00:00Z', ...o,
   })
   const validee = (o: Record<string, unknown>) => ecriture({ statut: 'validee', ...o })
@@ -997,7 +997,7 @@ describe('EcrituresTab — les gestes sur un exercice validé', () => {
   const mouvement = (o: Record<string, unknown>) => ({
     id: 'l-dec', dossier_id: 'dossier-de-test', date: '2025-12-10', libelle: 'PRLV FOURNISSEUR', montant: -400,
     statut: 'rapprochee', piece_id: 'p1', cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
-    emprunt_id: null, ventilee: false, reglement_groupe: false, source_fichier: 'releve.pdf', libelle_brut: null,
+    emprunt_id: null, ventilee: false, reglement_groupe: false, compte_bilan: null, source_fichier: 'releve.pdf', libelle_brut: null,
     created_at: '2025-12-11T09:00:00Z', ...o,
   })
   // Une facture de novembre 2025 payée 400 € en décembre — dans l'exercice validé — et 600 € en février.
@@ -1282,7 +1282,7 @@ describe('EcrituresTab — un virement qui règle plusieurs pièces', () => {
 
   it('une pièce payée en deux fois reçoit une contrepartie par paiement, et sa charge se répartit entre eux', async () => {
     // 48 € prélevés seuls le 6 janvier, puis les 72 € restants dans un virement qui règle aussi une autre pièce.
-    const ACOMPTE = { ...VIREMENT, id: 'l1', montant: -48, piece_id: 'p1', reglement_groupe: false }
+    const ACOMPTE = { ...VIREMENT, id: 'l1', montant: -48, piece_id: 'p1', reglement_groupe: false, compte_bilan: null }
     const SOLDE = { ...VIREMENT, id: 'g2', date: '2025-02-10', montant: -152 }
     poser({
       pieces: [P1, P2], lignes_bancaires: [ACOMPTE, SOLDE],

@@ -1,4 +1,5 @@
 import { seuilAlignement } from './alignementBanque'
+import { refusEcritSurUnCompteDeBilan } from './classementsDuMouvement'
 import type { MouvementBancaire } from './affectationBanque'
 import { DEVISE_PIVOT } from './devises'
 import { formatMoney } from './format'
@@ -96,6 +97,8 @@ export function refusReglementGroupe(
   pieces: readonly PieceReglable[],
   paiements: PaiementsDesPieces,
 ): string | null {
+  const surUnCompteDeBilan = refusEcritSurUnCompteDeBilan(ligne)
+  if (surUnCompteDeBilan) return surUnCompteDeBilan
   if (ligne.piece_id || ligne.cotisation_id || ligne.categorie_id || ligne.emprunt_id || ligne.ventilee || ligne.prelevement_personnel) {
     return 'Ce mouvement est rapproché d’une pièce, d’une cotisation ou d’un emprunt, affecté à une catégorie, ventilé ou classé en virement personnel : annule d’abord ce classement.'
   }

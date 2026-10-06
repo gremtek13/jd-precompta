@@ -1,4 +1,4 @@
-import { COMPTE_BANQUE, COMPTE_EXPLOITANT, libelleCompteTenu } from './comptes'
+import { COMPTE_BANQUE, COMPTE_EXPLOITANT, libelleCompteTenu, libelleDuPlanComptable } from './comptes'
 import { COMPTES_DE_TIERS, compteDeTiers, lignesEngagementPourPiece, type ModeleComptable } from './engagement'
 import { compteTvaDe, montantRetenu, tvaVentilee } from './montantRetenu'
 import { centimesParDate, rattachementsTresorerie, type PaiementDePiece, type PaiementsDesPieces } from './rattachement'
@@ -786,7 +786,8 @@ export interface LigneBalance {
 // un compte au solde anormal (une charge créditrice, par exemple) sans avoir à parcourir le journal
 // ligne à ligne comme dans EcrituresTab. Le libellé est celui d'un compte que l'application tient
 // elle-même (`libelleCompteTenu` : banque, TVA, tiers, dotations et amortissements), sinon celui de la
-// catégorie associée à ce compte (compte_comptable), sinon celui de la balance reprise, sinon "—"
+// catégorie associée à ce compte (compte_comptable), sinon celui de la balance reprise, sinon celui du plan
+// comptable pour un compte de bilan choisi par le cabinet (ligne 26.7, `libelleDuPlanComptable`), sinon "—"
 // (compte entré à la main sur une catégorie propre à un dossier, jamais recroisé ici avec son libellé).
 //
 // Les À-NOUVEAUX y entrent comme les écritures de l'exercice qu'ils ouvrent — l'appelant les filtre
@@ -817,7 +818,7 @@ export function calculerBalance(
       const totalCredit = lignes.filter((l) => l.sens === 'credit').reduce((sum, l) => sum + l.montant, 0)
       return {
         compte,
-        libelle: libelleCompteTenu(compte) ?? libelleParCompte.get(compte) ?? '—',
+        libelle: libelleCompteTenu(compte) ?? libelleParCompte.get(compte) ?? libelleDuPlanComptable(compte) ?? '—',
         nbEcritures: lignes.length,
         totalDebit,
         totalCredit,

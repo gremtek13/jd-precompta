@@ -114,7 +114,7 @@ const ligne = (o: Partial<LigneBancaire> = {}): LigneBancaire => ({
   id: 'l-1', dossier_id: 'dossier-de-test', date: '2025-06-02', montant: -1000,
   libelle: 'VIREMENT COMPTE PERSO', libelle_brut: null, statut: 'ignoree',
   piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: true, source_fichier: null,
-  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, id_externe: null,
+  emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, ventilee: false, reglement_groupe: false, compte_bilan: null, id_externe: null,
   created_at: '2025-06-02T09:00:00Z', ...o,
 })
 
