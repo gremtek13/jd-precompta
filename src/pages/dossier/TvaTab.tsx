@@ -2,12 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { lireTout } from '../../lib/lectureComplete'
 import { messageErreur } from '../../lib/messageErreur'
-import { anneeDe, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
+import { anneeDe, aujourdHuiAParis, aujourdHuiSql, formatDate, formatMoney } from '../../lib/format'
 import {
   calculerCa3,
   comparerDeclarations,
   creditReporte,
   declarationPrecedente,
+  dePeriode,
   dernierePeriodeClose,
   libellePeriode,
   LIGNES_CA3,
@@ -16,11 +17,29 @@ import {
   type LigneAffichee,
   type MotifNonPlacee,
 } from '../../lib/declarationTva'
+import {
+  arrondiDeLaLiquidation,
+  declarationDeLaCa3,
+  ecritureDeLaLiquidation,
+  parametresEnregistrement,
+  phraseDuPaiement,
+  phraseDuRemboursement,
+  refusEnregistrement,
+  remboursementSousLeSeuil,
+  seSaisitALaMain,
+  seuilRemboursement,
+  suiviDesDeclarations,
+  type DemandeDeDeclaration,
+  type SuiviDeDeclaration,
+} from '../../lib/liquidationTva'
+import { libelleCompteTenu } from '../../lib/comptes'
+import { estFigee } from '../../lib/validationExercice'
+import { useExercicesValides } from '../../context/ExercicesValidesContext'
 import { partsDuReleve, type PartDuReleve } from '../../lib/partsDuReleve'
 import { paiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux } from '../../lib/tvaDuReleve'
 import type {
-  Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, VentilationBancaire,
+  ANouveau, Categorie, DeclarationTva, LigneBancaire, PeriodiciteTva, Piece, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
 import BandeauLecturePartielle from '../../components/BandeauLecturePartielle'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -31,10 +50,15 @@ import BrouillonBanner from '../../components/BrouillonBanner'
 // et enregistre ce qui a été déposé. La transmission elle-même (un partenaire EDI) est l'étape 2 : en
 // attendant, les cases se reportent à la main dans l'espace professionnel.
 //
-// C'est AUSSI ici que les déclarations déposées s'enregistrent et se comparent — plus dans Écritures,
-// dont le brouillon date la TVA à la pièce et ne porte rien pour un bien immobilisé : il criait à
-// l'écart sur des déclarations justes. Une déclaration se compare au calcul de SA période, avec la
-// même règle que celle qui l'a préparée.
+// C'est AUSSI ici que les déclarations déposées s'enregistrent et se comparent. Une déclaration se compare au
+// calcul de SA période, avec la même règle que celle qui l'a préparée.
+//
+// ENREGISTRÉE, ELLE LIQUIDE LA TVA DE SA PÉRIODE (ligne 26.8, lib/liquidationTva.ts) : la base l'écrit avec son
+// écriture de liquidation dans une transaction (`enregistrer_declaration_tva`) — la TVA collectée et déductible
+// soldée au centime, ce qui se paie au 445510, le crédit au 445670, le remboursement demandé au 445830, l'arrondi à
+// l'euro au 658000 ou au 758000. L'écran la montre avant le clic, et dit ce que la base refuserait. Une période
+// antérieure à l'ouverture d'un dossier repris se saisit à la main, sans liquidation : sa TVA est dans les
+// à-nouveaux. Le paiement d'une déclaration se rapproche dans Banque ; l'historique dit ce qui en reste dû.
 
 interface Props {
   dossierId: string
@@ -76,10 +100,12 @@ interface Lu {
   // (lib/tvaDuReleve.ts) : leurs catégories, et les parts des mouvements ventilés.
   categories: Categorie[]
   ventilations: VentilationBancaire[]
+  // La date des à-nouveaux d'un dossier repris : une période qui la précède se saisit à la main.
+  ouverture: string | null
   // Le motif de chaque lecture restée incomplète, nul quand elle est entière.
   lectures: {
     pieces: string | null; lignes: string | null; reglements: string | null; immobilisations: string | null; declarations: string | null
-    categories: string | null; ventilations: string | null
+    categories: string | null; ventilations: string | null; ouverture: string | null
   }
 }
 
@@ -88,6 +114,7 @@ interface Lu {
 async function lireDonnees(dossierId: string): Promise<Lu> {
   const [
     lecturePieces, lectureLignes, lectureReglements, lectureImmobilisations, lectureDeclarations, lectureCategories, lectureVentilations,
+    lectureOuverture,
   ] = await Promise.all([
     lireTout<Piece>((debut, fin) =>
       supabase.from('pieces').select('*', { count: 'exact' })
@@ -121,6 +148,11 @@ async function lireDonnees(dossierId: string): Promise<Lu> {
       supabase.from('ventilations_bancaires').select('*', { count: 'exact' })
         .eq('dossier_id', dossierId).order('id').range(debut, fin),
     ),
+    // L'ouverture du dossier : une période qui la précède se saisit à la main, sa TVA étant dans les à-nouveaux.
+    lireTout<Pick<ANouveau, 'id' | 'date'>>((debut, fin) =>
+      supabase.from('a_nouveaux').select('id, date', { count: 'exact' })
+        .eq('dossier_id', dossierId).order('date').order('id').range(debut, fin),
+    ),
   ])
   return {
     pieces: lecturePieces.lignes,
@@ -130,6 +162,7 @@ async function lireDonnees(dossierId: string): Promise<Lu> {
     declarations: lectureDeclarations.lignes,
     categories: lectureCategories.lignes,
     ventilations: lectureVentilations.lignes,
+    ouverture: lectureOuverture.lignes[0]?.date ?? null,
     lectures: {
       pieces: lecturePieces.motif,
       lignes: lectureLignes.motif,
@@ -138,11 +171,37 @@ async function lireDonnees(dossierId: string): Promise<Lu> {
       declarations: lectureDeclarations.motif,
       categories: lectureCategories.motif,
       ventilations: lectureVentilations.motif,
+      ouverture: lectureOuverture.motif,
     },
   }
 }
 
+// Un montant saisi, la virgule admise ; nul quand le champ est vide ou illisible.
+function montantSaisi(texte: string): number | null {
+  if (texte.trim() === '') return null
+  const lu = Number(texte.replace(/\s/g, '').replace(',', '.'))
+  return Number.isFinite(lu) ? lu : null
+}
+
+// Ce que la déclaration fait payer et ce que le relevé en porte (`suiviDesDeclarations`), en une phrase.
+// Les pastilles de l'historique : le texte vient du module, qui le partage avec la fiche d'un mouvement ; le ton est d'ici.
+function etatDuPaiement(s: SuiviDeDeclaration<DeclarationTva, LigneBancaire>): { texte: string; classe: string } {
+  const classe = s.etatPaiement === 'payee' ? 'badge-ok'
+    : s.etatPaiement === 'payee_en_trop' ? 'badge-danger'
+      : s.etatPaiement === 'rien_a_payer' ? 'badge-neutral' : 'badge-warning'
+  return { texte: phraseDuPaiement(s), classe }
+}
+
+function etatDuRemboursement(s: SuiviDeDeclaration<DeclarationTva, LigneBancaire>): { texte: string; classe: string } | null {
+  const texte = phraseDuRemboursement(s)
+  if (texte === null) return null
+  const classe = s.etatRemboursement === 'recu' ? 'badge-ok' : s.etatRemboursement === 'recu_en_trop' ? 'badge-danger' : 'badge-warning'
+  return { texte, classe }
+}
+
 export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits, onRegimeUpdated }: Props) {
+  // Les exercices validés : une déclaration dont la période y tombe est figée avec eux, et ne s'y enregistre plus.
+  const { anneesValidees, frontiere } = useExercicesValides()
   // Nul tant que la première lecture n'est pas revenue : l'écran montre alors ses squelettes.
   const [lu, setLu] = useState<Lu | null>(null)
   const [erreur, setErreur] = useState<string | null>(null)
@@ -151,15 +210,17 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
   // mensuelle ramène à la dernière période close de la nouvelle périodicité au lieu de garder un
   // indice qui désignerait un tout autre intervalle.
   const [choix, setChoix] = useState<{ periodicite: PeriodiciteTva; annee: number; index: number } | null>(null)
-  // Saisies propres à une période (crédit reporté, montant déposé), clées par son début : changer de
-  // période repart de ce que le calcul propose pour elle.
+  // Saisies propres à une période (crédit reporté, remboursement demandé, TVA nette d'une période saisie à la
+  // main), clées par son début : changer de période repart de ce que le calcul propose pour elle.
   const [saisieCredit, setSaisieCredit] = useState<Record<string, string>>({})
+  const [saisieRemboursement, setSaisieRemboursement] = useState<Record<string, string>>({})
   const [saisieMontant, setSaisieMontant] = useState<Record<string, string>>({})
   const [dateDepot, setDateDepot] = useState(aujourdHuiSql())
-  const [enregistrementEnCours, setEnregistrementEnCours] = useState(false)
-  // Verrou d'exécution : un `useRef`, jamais un état React — deux clics du même rendu enregistreraient
-  // deux fois la même déclaration (voir CLAUDE.md, « un verrou d'exécution »).
-  const enregistrement = useRef(false)
+  const [ecritureEnCours, setEcritureEnCours] = useState(false)
+  // Verrou d'exécution : un `useRef`, jamais un état React — deux clics du même rendu enregistreraient deux fois la
+  // même déclaration (voir CLAUDE.md, « un verrou d'exécution »). UN seul pour l'enregistrement et le retrait : ils
+  // écrivent la même table, et l'un pendant l'autre partirait d'une liste que l'autre est en train de changer.
+  const ecriture = useRef(false)
 
   useEffect(() => {
     if (!assujettiTva) return
@@ -200,8 +261,10 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
   const pieces = lu?.pieces ?? []
   const lignesBancaires = lu?.lignesBancaires ?? []
   const declarations = lu?.declarations ?? []
+  const ouverture = lu?.ouverture ?? null
   const lectures = lu?.lectures ?? {
     pieces: null, lignes: null, reglements: null, immobilisations: null, declarations: null, categories: null, ventilations: null,
+    ouverture: null,
   }
   const periodeParDefaut = dernierePeriodeClose(aujourdHuiSql(), periodicite)
   const selection = choix && choix.periodicite === periodicite
@@ -213,9 +276,13 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
       }
   const periodes = periodesDeLAnnee(selection.annee, periodicite)
   const periode = periodes[selection.index]
+  // L'année qui précède l'ouverture d'un dossier repris est proposée : la déclaration de son dernier trimestre se
+  // paie le plus souvent après la reprise, et se saisit donc ici pour que son paiement se rapproche.
   const anneesProposees = [...new Set([
     selection.annee,
     anneeDe(aujourdHuiSql()),
+    ...(ouverture ? [anneeDe(ouverture) - 1] : []),
+    ...declarations.map((d) => anneeDe(d.periode_debut)),
     ...pieces.map((p) => p.date_piece).filter((d): d is string => !!d).map(anneeDe),
     ...lignesBancaires.map((l) => anneeDe(l.date)),
   ])].sort((a, b) => b - a)
@@ -226,72 +293,178 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
     pieceIdsImmobilisees: lu?.pieceIdsImmobilisees ?? new Set(),
     releve: partsDuReleve(lignesBancaires, lu?.categories ?? [], lu?.ventilations ?? [], assujettiTva),
   }
+  // Une période antérieure à l'ouverture d'un dossier repris se saisit à la main : sa TVA est dans les à-nouveaux,
+  // et le calcul n'a rien à en dire.
+  const aLaMain = seSaisitALaMain(periode, ouverture)
   const precedente = declarationPrecedente(declarations, periode.debut)
   const creditPropose = precedente ? creditReporte(precedente) : 0
   const creditTexte = saisieCredit[periode.debut] ?? String(creditPropose)
-  const creditLu = Number(creditTexte.replace(',', '.'))
-  const creditValide = creditTexte.trim() !== '' && Number.isFinite(creditLu) && creditLu >= 0
-  const ca3 = calculerCa3(donnees, periode, surDebits, creditValide ? creditLu : 0, 0)
-  const montantTexte = saisieMontant[periode.debut] ?? String(ca3.netPeriode)
-  const montantLu = Number(montantTexte.replace(',', '.'))
-  const montantValide = montantTexte.trim() !== '' && Number.isFinite(montantLu)
+  const creditLu = montantSaisi(creditTexte)
+  const creditValide = creditLu !== null && creditLu >= 0
+  const remboursementTexte = saisieRemboursement[periode.debut] ?? '0'
+  const remboursementLu = montantSaisi(remboursementTexte)
+  const ca3 = calculerCa3(
+    donnees, periode, surDebits, creditValide ? creditLu : 0, remboursementLu !== null && remboursementLu > 0 ? remboursementLu : 0,
+  )
+  const montantTexte = saisieMontant[periode.debut] ?? ''
   const dejaDeposees = declarations.filter((d) => d.periode_debut === periode.debut && d.periode_fin === periode.fin)
   const comparees = comparerDeclarations(declarations, donnees, surDebits)
+  const suivis = suiviDesDeclarations(declarations, lignesBancaires)
 
-  // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE : le montant proposé vient d'un calcul qui ne
-  // voit qu'une partie des pièces, et le crédit proposé d'un historique qui peut en manquer une.
+  // CE QUE L'ENREGISTREMENT ÉCRIRA, et ce que la base refuserait — dit avant le clic, dans son ordre
+  // (`refusEnregistrement`). Une CA3 préparée s'enregistre telle qu'elle est ; une période saisie à la main porte les
+  // trois montants tapés.
+  // Sans crédit dans la période (ligne 25), le champ du remboursement n'est pas proposé : ce qu'il gardait d'une saisie
+  // antérieure ne compte plus.
+  const demande: DemandeDeDeclaration = aLaMain
+    ? { periode, ca3: null, remboursement: remboursementLu, tvaDeclaree: montantSaisi(montantTexte), credit: creditValide ? creditLu : null }
+    : { periode, ca3, remboursement: ca3.cases.l25 > 0 ? remboursementLu : 0, tvaDeclaree: null, credit: null }
+  const refus = refusEnregistrement(demande, {
+    assujettiTva, aujourdhui: aujourdHuiAParis(), declarations, ouverture, anneesValidees,
+  })
+  const liquidee = aLaMain ? null : declarationDeLaCa3(ca3, periode)
+  const liquidation = liquidee ? ecritureDeLaLiquidation(liquidee) : []
+  const arrondi = liquidee ? arrondiDeLaLiquidation(liquidee) : 0
+  // Le remboursement que la déclaration demandera : borné au crédit de la période pour une CA3 préparée.
+  const remboursementDemande = aLaMain ? (remboursementLu ?? 0) : ca3.cases.l26
+  const piecesHorsDeLaDeclaration = ca3.ecartees.length + ca3.releveEcartees.length + ca3.aValider.length
+
+  // UNE LECTURE PARTIELLE NE COMMANDE PAS D'ÉCRITURE : la déclaration proposée vient d'un calcul qui ne voit qu'une
+  // partie des pièces, le crédit proposé d'un historique qui peut en manquer une, et l'ouverture décide de ce qui se
+  // saisit à la main.
   const lectureIncomplete = lectures.pieces ?? lectures.lignes ?? lectures.reglements ?? lectures.immobilisations ?? lectures.declarations
-    ?? lectures.categories ?? lectures.ventilations
+    ?? lectures.categories ?? lectures.ventilations ?? lectures.ouverture
 
   async function enregistrer() {
-    if (enregistrement.current || lectureIncomplete || !montantValide || !creditValide) return
-    enregistrement.current = true
-    setEnregistrementEnCours(true)
+    if (ecriture.current || lectureIncomplete || !creditValide || refus) return
+    ecriture.current = true
+    setEcritureEnCours(true)
     setErreur(null)
     try {
-      const { error } = await supabase.from('declarations_tva').insert({
-        dossier_id: dossierId,
-        periode_debut: periode.debut,
-        periode_fin: periode.fin,
-        tva_declaree: montantLu,
-        credit_anterieur: ca3.cases.l22,
-        date_declaration: dateDepot || null,
-      })
+      const { error } = await supabase.rpc('enregistrer_declaration_tva', parametresEnregistrement(dossierId, demande, dateDepot || null))
       if (error) throw error
-      // Le montant saisi pour cette période a servi : la prochaine visite repart du calcul.
-      setSaisieMontant((s) => {
+      // Les montants saisis pour cette période ont servi : la prochaine visite repart du calcul.
+      const oublier = (s: Record<string, string>) => {
         const copie = { ...s }
         delete copie[periode.debut]
         return copie
-      })
+      }
+      setSaisieMontant(oublier)
+      setSaisieRemboursement(oublier)
       // Le verrou tient jusqu'à la relecture : relâché avant, un second clic enregistrerait la même
       // déclaration une seconde fois, la mention « déjà déposée » n'étant pas encore revenue.
       await recharger()
     } catch (err) {
       setErreur(messageErreur(err, "La déclaration n'a pas pu être enregistrée."))
     } finally {
-      enregistrement.current = false
-      setEnregistrementEnCours(false)
+      ecriture.current = false
+      setEcritureEnCours(false)
     }
   }
 
   async function retirer(d: DeclarationTva) {
+    if (ecriture.current) return
     const libelle = libellePeriode(d.periode_debut, d.periode_fin)
-    if (!window.confirm(
-      `Retirer la déclaration du ${libelle} ? Son montant et sa date de dépôt ne seront plus enregistrés, `
-      + 'et le crédit qu’elle reporte ne sera plus proposé sur la déclaration suivante.',
-    )) return
+    const paiements = suivis.find((s) => s.declaration.id === d.id)?.mouvements.length ?? 0
+    // Ce qui part avec elle, nommé : sa liquidation, les mouvements qui la paient — dont le nombre ne se dit que d'un
+    // relevé lu en entier, une lecture partielle pouvant en manquer un — et le crédit qu'elle reporte.
+    const consequences = [
+      ...(d.cases ? ['son écriture de liquidation part avec elle'] : []),
+      ...(lectures.lignes
+        ? ['les mouvements qui la paient, s’il y en a, retournent à traiter sans leur écriture']
+        : paiements > 0 ? [`${paiements} mouvement(s) qui la paient retournent à traiter sans leur écriture`] : []),
+      'le crédit qu’elle reporte ne sera plus proposé sur la déclaration suivante',
+    ]
+    const phrase = consequences.length > 1
+      ? `${consequences.slice(0, -1).join(', ')} et ${consequences[consequences.length - 1]}`
+      : consequences[0]
+    if (!window.confirm(`Retirer la déclaration ${dePeriode(libelle)} ? ${phrase.charAt(0).toUpperCase()}${phrase.slice(1)}.`)) return
+    ecriture.current = true
+    setEcritureEnCours(true)
     setErreur(null)
-    const { error } = await supabase.from('declarations_tva').delete().eq('id', d.id)
-    if (error) {
-      setErreur(messageErreur(error, "La déclaration n'a pas pu être retirée."))
-      return
+    try {
+      const { error } = await supabase.rpc('retirer_declaration_tva', { p_declaration_id: d.id })
+      if (error) throw error
+      await recharger()
+    } catch (err) {
+      setErreur(messageErreur(err, "La déclaration n'a pas pu être retirée."))
+    } finally {
+      ecriture.current = false
+      setEcritureEnCours(false)
     }
-    await recharger()
   }
 
   const lignesAffichees = (cadre: LigneAffichee['cadre']) =>
     LIGNES_CA3.filter((l) => l.cadre === cadre && (TOUJOURS_AFFICHEES.has(l.ligne) || ca3.cases[l.montant] !== 0))
+
+  const champCredit = (
+    <div className="field">
+      <label htmlFor="tva-credit">Crédit reporté de la déclaration précédente (ligne 22)</label>
+      <input
+        id="tva-credit"
+        inputMode="numeric"
+        value={creditTexte}
+        onChange={(e) => setSaisieCredit((s) => ({ ...s, [periode.debut]: e.target.value }))}
+        style={{ width: 140 }}
+      />
+    </div>
+  )
+  const noteCredit = (
+    <>
+      <p className="muted" style={{ marginTop: 4 }}>
+        {precedente
+          ? `Repris de la déclaration ${dePeriode(libellePeriode(precedente.periode_debut, precedente.periode_fin))}, sa ligne 27.`
+          : 'Aucune déclaration enregistrée pour la période précédente : si elle reportait un crédit (sa ligne 27), saisissez-le ici.'}
+      </p>
+      {!creditValide && <p className="error-text">Le crédit reporté doit être un montant positif ou nul.</p>}
+    </>
+  )
+  const champRemboursement = (
+    <div className="field">
+      <label htmlFor="tva-remboursement">Remboursement demandé (ligne 26)</label>
+      <input
+        id="tva-remboursement"
+        inputMode="numeric"
+        value={remboursementTexte}
+        onChange={(e) => setSaisieRemboursement((s) => ({ ...s, [periode.debut]: e.target.value }))}
+        style={{ width: 140 }}
+      />
+    </div>
+  )
+  const champDate = (
+    <div className="field">
+      <label htmlFor="tva-date-depot">Déposée le</label>
+      <input id="tva-date-depot" type="date" value={dateDepot} onChange={(e) => setDateDepot(e.target.value)} />
+    </div>
+  )
+  const boutonEnregistrer = (libelle: string) => (
+    <button
+      className="btn btn-primary btn-sm"
+      onClick={enregistrer}
+      disabled={ecritureEnCours || !!lectureIncomplete || !creditValide || refus !== null}
+    >
+      {ecritureEnCours ? 'Enregistrement…' : libelle}
+    </button>
+  )
+  const suiteEnregistrement = (
+    <>
+      {remboursementSousLeSeuil(periode.fin, remboursementDemande) && (
+        <p className="muted" style={{ color: 'var(--color-danger)' }}>
+          Un remboursement de crédit n’est accordé qu’à partir de {formatMoney(seuilRemboursement(periode.fin))}
+          {periode.fin.slice(5) === '12-31' ? ' au titre du 31 décembre' : ' en cours d’année (150 € au titre du 31 décembre)'} :
+          l’administration peut refuser celui-ci, qui reste alors à reporter.
+        </p>
+      )}
+      {lectureIncomplete && (
+        <p className="error-text">
+          Enregistrement suspendu : une lecture est incomplète, donc la déclaration et le crédit proposés
+          peuvent être faux. Rechargez la page.
+        </p>
+      )}
+      {!lectureIncomplete && refus && <p className="error-text">{refus}</p>}
+      {erreur && <p className="error-text">{erreur}</p>}
+    </>
+  )
 
   return (
     <>
@@ -307,7 +480,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
         quoi="Les paiements rapprochés"
         accord="lus"
         motif={lectures.lignes ?? lectures.reglements}
-        consequence="Une pièce dont le paiement n’a pas été lu ne compte dans aucune période."
+        consequence="Une pièce dont le paiement n’a pas été lu ne compte dans aucune période, et ce qui reste à payer d’une déclaration peut être faux."
       />
       <BandeauLecturePartielle
         quoi="Les immobilisations"
@@ -324,6 +497,12 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
         accord="lues"
         motif={lectures.categories ?? lectures.ventilations}
         consequence="Une recette encaissée sans facture, affectée ou ventilée depuis le relevé, peut manquer à la déclaration."
+      />
+      <BandeauLecturePartielle
+        quoi="L’ouverture du dossier"
+        accord="lue"
+        motif={lectures.ouverture}
+        consequence="Une période antérieure à la reprise du dossier se saisit à la main : sans l’ouverture, l’écran ne sait pas lesquelles."
       />
 
       <div className="card" style={{ marginBottom: 20 }}>
@@ -393,6 +572,44 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
             <div className="skeleton skeleton-ligne" style={{ width: '40%' }} />
             <div className="skeleton skeleton-ligne" style={{ width: '50%' }} />
           </div>
+        ) : aLaMain ? (
+          <>
+            <h3 style={{ marginBottom: 4 }}>Déclaration {dePeriode(periode.libelle)}</h3>
+            <p className="muted" style={{ marginTop: 0 }}>
+              Cette période précède l’ouverture du dossier ({formatDate(ouverture)}) : sa TVA est dans les
+              à-nouveaux, au 445510 ou au 445670. Sa déclaration se saisit telle qu’elle a été déposée, sans
+              liquidation : elle sert à rapprocher son paiement ou son remboursement dans Banque, et à reporter
+              son crédit sur la déclaration suivante.
+            </p>
+
+            {dejaDeposees.map((d) => (
+              <p key={d.id} className="muted">
+                <span className="badge badge-neutral">déjà déposée</span>{' '}
+                Une déclaration est enregistrée pour cette période
+                {d.date_declaration ? `, déposée le ${formatDate(d.date_declaration)}` : ''} : TVA nette
+                de {formatMoney(d.tva_declaree)}.
+              </p>
+            ))}
+
+            <div className="field-row aligne-bas" style={{ marginTop: 16 }}>
+              <div className="field">
+                <label htmlFor="tva-montant">TVA nette de la période (ligne 16 moins lignes 19 à 21)</label>
+                <input
+                  id="tva-montant"
+                  inputMode="decimal"
+                  value={montantTexte}
+                  onChange={(e) => setSaisieMontant((s) => ({ ...s, [periode.debut]: e.target.value }))}
+                  style={{ width: 140 }}
+                />
+              </div>
+              {champCredit}
+              {champRemboursement}
+              {champDate}
+              {boutonEnregistrer('Enregistrer la déclaration')}
+            </div>
+            {noteCredit}
+            {suiteEnregistrement}
+          </>
         ) : (
           <>
             <h3 style={{ marginBottom: 4 }}>CA3 — {periode.libelle}</h3>
@@ -441,23 +658,17 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
             )}
 
             <div className="field-row aligne-bas" style={{ marginTop: 16 }}>
-              <div className="field">
-                <label htmlFor="tva-credit">Crédit reporté de la déclaration précédente (ligne 22)</label>
-                <input
-                  id="tva-credit"
-                  inputMode="numeric"
-                  value={creditTexte}
-                  onChange={(e) => setSaisieCredit((s) => ({ ...s, [periode.debut]: e.target.value }))}
-                  style={{ width: 140 }}
-                />
-              </div>
+              {champCredit}
+              {ca3.cases.l25 > 0 && champRemboursement}
             </div>
-            <p className="muted" style={{ marginTop: 4 }}>
-              {precedente
-                ? `Repris de la déclaration du ${libellePeriode(precedente.periode_debut, precedente.periode_fin)}, sa ligne 27.`
-                : 'Aucune déclaration enregistrée pour la période précédente : si elle reportait un crédit (sa ligne 27), saisissez-le ici.'}
-            </p>
-            {!creditValide && <p className="error-text">Le crédit reporté doit être un montant positif ou nul.</p>}
+            {noteCredit}
+            {ca3.cases.l25 > 0 && (
+              <p className="muted" style={{ marginTop: 4 }}>
+                La période se solde par un crédit de {formatMoney(ca3.cases.l25)} (ligne 25). Ce dont vous
+                demandez le remboursement (formulaire 3519, en euros entiers) ne se reporte pas : le Trésor le
+                rembourse, et son virement se rapproche de la déclaration dans Banque.
+              </p>
+            )}
 
             {ca3.ecartees.length > 0 && (
               <div style={{ marginTop: 16 }}>
@@ -621,7 +832,7 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
                   qui n’est pas déductible, cadeaux au-delà de 73 € TTC, logement.
                 </li>
                 <li>Les taux particuliers : 2,1 %, la Corse (le 10 % d’un dossier corse est porté ici en 9B).</li>
-                <li>Le remboursement d’un crédit (ligne 26, formulaire 3519) : tout le crédit est reporté.</li>
+                <li>Le formulaire 3519 qui accompagne une demande de remboursement (ligne 26) : il se dépose à part.</li>
                 <li>Les taxes assimilées (ligne 29, annexe 3310-A).</li>
                 <li>La régularisation d’une période déjà déposée (lignes 5B et 2C).</li>
                 <li>
@@ -635,40 +846,49 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
 
             <h3 style={{ marginTop: 24 }}>Enregistrer la déclaration déposée</h3>
             <p className="muted" style={{ marginTop: 0 }}>
-              Une fois la CA3 déposée, enregistrez-la : c’est ce qui propose son crédit à la déclaration
-              suivante, et ce qui permet de voir, plus tard, qu’une pièce de la période a changé depuis.
-              La TVA nette de la période est la ligne 16 moins les lignes 19 à 21, sans le crédit reporté.
+              Une fois la CA3 déposée, enregistrez-la telle qu’elle est ci-dessus : elle liquide la TVA de la
+              période au brouillon par l’écriture ci-dessous, propose son crédit à la déclaration suivante, et
+              son paiement se rapproche ensuite dans Banque. Elle permet aussi de voir, plus tard, qu’une pièce
+              de la période a changé depuis.
             </p>
-            <div className="field-row aligne-bas">
-              <div className="field">
-                <label htmlFor="tva-montant">TVA nette de la période déposée</label>
-                <input
-                  id="tva-montant"
-                  inputMode="decimal"
-                  value={montantTexte}
-                  onChange={(e) => setSaisieMontant((s) => ({ ...s, [periode.debut]: e.target.value }))}
-                  style={{ width: 140 }}
-                />
-              </div>
-              <div className="field">
-                <label htmlFor="tva-date-depot">Déposée le</label>
-                <input id="tva-date-depot" type="date" value={dateDepot} onChange={(e) => setDateDepot(e.target.value)} />
-              </div>
-              <button
-                className="btn btn-primary btn-sm"
-                onClick={enregistrer}
-                disabled={enregistrementEnCours || !!lectureIncomplete || !montantValide || !creditValide}
-              >
-                {enregistrementEnCours ? 'Enregistrement…' : 'Enregistrer comme déposée'}
-              </button>
+            <div className="table-scroll">
+              <table>
+                <caption className="muted" style={{ textAlign: 'left', captionSide: 'top' }}>
+                  Écriture de liquidation, au {formatDate(periode.fin)}
+                </caption>
+                <thead><tr><th>Compte</th><th>Libellé</th><th>Débit</th><th>Crédit</th></tr></thead>
+                <tbody>
+                  {liquidation.length === 0 ? (
+                    <tr><td colSpan={4} className="muted">Rien à liquider : la période ne porte aucune TVA.</td></tr>
+                  ) : liquidation.map((l) => (
+                    <tr key={l.compte}>
+                      <td>{l.compte}</td>
+                      <td>{libelleCompteTenu(l.compte) ?? ''}</td>
+                      <td>{l.sens === 'debit' ? formatMoney(l.montant) : ''}</td>
+                      <td>{l.sens === 'credit' ? formatMoney(l.montant) : ''}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            {lectureIncomplete && (
-              <p className="error-text">
-                Enregistrement suspendu : une lecture est incomplète, donc le montant et le crédit proposés
-                peuvent être faux. Rechargez la page.
+            {arrondi !== 0 && (
+              <p className="muted" style={{ marginTop: 4 }}>
+                L’arrondi à l’euro des lignes de la CA3 fait {formatMoney(Math.abs(arrondi))}
+                {arrondi > 0 ? ' de charge (658000), que la 2035 compte en frais divers de gestion.' : ' de produit (758000), que la 2035 compte en gains divers.'}
               </p>
             )}
-            {erreur && <p className="error-text">{erreur}</p>}
+            {piecesHorsDeLaDeclaration > 0 && (
+              <p className="muted" style={{ color: 'var(--color-danger)' }}>
+                Les pièces écartées ou à valider ci-dessus ne sont pas dans la déclaration qui sera enregistrée :
+                leur TVA restera aux comptes 4456 et 4457, et rien ne la soldera. Si vous les avez reportées à la
+                main sur la déclaration déposée, corrigez-les avant de l’enregistrer.
+              </p>
+            )}
+            <div className="field-row aligne-bas">
+              {champDate}
+              {boutonEnregistrer('Enregistrer comme déposée')}
+            </div>
+            {suiteEnregistrement}
           </>
         )}
       </div>
@@ -682,24 +902,52 @@ export default function TvaTab({ dossierId, assujettiTva, periodicite, surDebits
         ) : (
           <table>
             <thead>
-              <tr><th>Période</th><th>Déposée le</th><th>Crédit reçu</th><th>TVA nette déposée</th><th>Recalculée aujourd’hui</th><th>Écart</th><th></th></tr>
+              <tr>
+                <th>Période</th><th>Déposée le</th><th>Crédit reçu</th><th>TVA nette déposée</th><th>Recalculée aujourd’hui</th>
+                <th>Écart</th><th>Paiement</th><th></th>
+              </tr>
             </thead>
             <tbody>
-              {comparees.map(({ declaration: d, recalcul, ecart, enEcart }) => (
-                <tr key={d.id}>
-                  <td>{libellePeriode(d.periode_debut, d.periode_fin)}</td>
-                  <td>{d.date_declaration ? formatDate(d.date_declaration) : '—'}</td>
-                  <td>{formatMoney(d.credit_anterieur)}</td>
-                  <td>{formatMoney(d.tva_declaree)}</td>
-                  <td>{formatMoney(recalcul)}</td>
-                  <td>
-                    {enEcart
-                      ? <span className="badge badge-danger" title="Une pièce de la période a changé depuis le dépôt : à régulariser sur une déclaration suivante (ligne 5B si le calcul a augmenté, 2C s'il a baissé).">{formatMoney(ecart)}</span>
-                      : <span className="badge badge-ok">aucun</span>}
-                  </td>
-                  <td><button className="btn btn-danger btn-sm" onClick={() => retirer(d)}>Retirer</button></td>
-                </tr>
-              ))}
+              {comparees.map(({ declaration: d, recalcul, ecart, enEcart }) => {
+                const suivi = suivis.find((s) => s.declaration.id === d.id)
+                const paiement = suivi ? etatDuPaiement(suivi) : null
+                const remboursement = suivi ? etatDuRemboursement(suivi) : null
+                const figee = estFigee(d.periode_fin, frontiere)
+                return (
+                  <tr key={d.id}>
+                    <td>{libellePeriode(d.periode_debut, d.periode_fin)}</td>
+                    <td>{d.date_declaration ? formatDate(d.date_declaration) : '—'}</td>
+                    <td>{formatMoney(d.credit_anterieur)}</td>
+                    <td>{formatMoney(d.tva_declaree)}</td>
+                    {d.cases ? (
+                      <>
+                        <td>{formatMoney(recalcul)}</td>
+                        <td>
+                          {enEcart
+                            ? <span className="badge badge-danger" title="Une pièce de la période a changé depuis le dépôt : à régulariser sur une déclaration suivante (ligne 5B si le calcul a augmenté, 2C s'il a baissé).">{formatMoney(ecart)}</span>
+                            : <span className="badge badge-ok">aucun</span>}
+                        </td>
+                      </>
+                    ) : (
+                      <td colSpan={2} className="muted">saisie à la main, avant l’ouverture</td>
+                    )}
+                    <td>
+                      {/* Sur un relevé lu en partie, ce qui reste dû serait faux : on ne le dit pas. */}
+                      {lectures.lignes ? '—' : (
+                        <>
+                          {paiement && <span className={`badge ${paiement.classe}`}>{paiement.texte}</span>}
+                          {remboursement && <> <span className={`badge ${remboursement.classe}`}>{remboursement.texte}</span></>}
+                        </>
+                      )}
+                    </td>
+                    <td>
+                      {figee
+                        ? <span className="badge badge-neutral" title="Sa période tombe dans un exercice validé : elle est figée avec lui.">figée</span>
+                        : <button className="btn btn-danger btn-sm" onClick={() => retirer(d)} disabled={ecritureEnCours}>Retirer</button>}
+                    </td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         )}

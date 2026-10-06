@@ -43,11 +43,16 @@ function ecriture(o: Partial<EcritureBrouillon>): EcritureBrouillon {
 }
 
 // La dernière définition d'une fonction dans le schéma exporté, de `create function` à la fin de son corps.
+// La DERNIÈRE définition de la fonction, celle que la base exécute : une migration qui la redéfinit l'écrit
+// `create or replace` — chercher `create function` seul relirait la première, et l'application serait comparée à un
+// texte que la base n'a plus.
 function definitionSql(nom: string): string {
-  const definitions = fichiersDuSchema().filter((f) => f.texte.includes(`create function public.${nom}(`))
+  const motif = new RegExp(`create (or replace )?function public\\.${nom}\\(`, 'g')
+  const definitions = fichiersDuSchema().filter((f) => new RegExp(motif.source).test(f.texte))
   expect(definitions.length, nom).toBeGreaterThan(0)
   const texte = definitions[definitions.length - 1].texte
-  const debut = texte.indexOf(`create function public.${nom}(`)
+  const positions = [...texte.matchAll(motif)].map((m) => m.index)
+  const debut = positions[positions.length - 1]
   const fin = texte.indexOf('$$;', debut)
   expect(fin, nom).toBeGreaterThan(debut)
   return texte.slice(debut, fin)

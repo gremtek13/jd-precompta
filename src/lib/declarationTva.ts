@@ -126,6 +126,15 @@ export function libellePeriode(debut: string, fin: string): string {
   return connue?.libelle ?? `du ${debut.split('-').reverse().join('/')} au ${fin.split('-').reverse().join('/')}`
 }
 
+// Le nom d'une période précédé de sa préposition : « la déclaration du 3e trimestre 2026 », « d’octobre 2025 »,
+// « de mars 2026 ». Un trimestre prend l'article, un mois non, et une période hors calendrier se dit déjà « du … au … ».
+// Écrire « du » partout donnait « la déclaration du octobre 2025 ».
+export function dePeriode(libelle: string): string {
+  if (libelle.startsWith('du ')) return libelle
+  if (libelle.includes('trimestre')) return `du ${libelle}`
+  return /^[aeiouyàâéèêîïôû]/i.test(libelle) ? `d’${libelle}` : `de ${libelle}`
+}
+
 // La période qu'on déclare à une date donnée : la dernière qui est TERMINÉE. Le 28 septembre, c'est
 // le deuxième trimestre, pas le troisième, qui court encore.
 export function dernierePeriodeClose(aujourdHui: string, periodicite: PeriodiciteTva): PeriodeTva {

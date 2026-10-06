@@ -22,13 +22,19 @@ import type { PaiementsDesPieces } from '../../lib/rattachement'
 import { horsTaxeEtTva, libelleTaux, TAUX_TVA_RELEVE, tauxApplicable, tauxRequis } from '../../lib/tvaDuReleve'
 import { nomDeLaPiece, refusSecondPaiement, reglementsGroupesIncoherents, type PartReglement } from '../../lib/reglementGroupe'
 import type {
-  Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, RegleAffectationBancaire, ReglementGroupe, VentilationBancaire,
+  Categorie, CotisationDeclaree, DeclarationTva, LigneBancaire, ModeComptable, Piece, RegleAffectationBancaire, ReglementGroupe,
+  VentilationBancaire,
 } from '../../lib/types'
 import { ecritureDeLaCotisation, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
 import {
   COMPTES_DE_BILAN_PROPOSES, libelleDuCompteDeBilan, lireCompteSaisi, refusCompteDeBilan, refusMouvementCompteDeBilan,
 } from '../../lib/compteDeBilan'
 import { montantSaisi, ventilationsIncoherentes, type PartSaisie } from '../../lib/ventilationBanque'
+import { dePeriode, libellePeriode } from '../../lib/declarationTva'
+import {
+  aPayerDe, declarationsDuMontant, declarationsPourLeMouvement, phraseDuPaiement, phraseDuRemboursement, refusPaiementTva,
+  type SuiviDeDeclaration,
+} from '../../lib/liquidationTva'
 import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
 
@@ -98,6 +104,12 @@ import FormulaireVentilation from './FormulaireVentilation'
 // dirigeant, un compte qui a son propre chemin dans l'application — est dit avant le clic, avec le chemin qui
 // convient. Rien ne s'écrit avant le clic, et un mouvement écrit se change de compte ou se remet à traiter par la
 // base, qui retire le compte AVEC son écriture.
+//
+// ET LE PRÉLÈVEMENT DE LA TVA SE RAPPROCHE DE SA DÉCLARATION (ligne 26.8, lib/liquidationTva.ts) : il solde la TVA à
+// décaisser (445510) face à la banque, et le virement du Trésor qui rembourse un crédit solde le 445830. La déclaration
+// dont il règle EXACTEMENT le reste est proposée — plusieurs, aucune n'est mise en avant —, les autres se choisissent ;
+// ce que la base refuserait est dit avant le clic. Un mouvement rapproché d'une déclaration montre ce qu'elle a reçu,
+// se rapproche d'une autre ou s'annule par la base, qui retire l'écriture AVEC le lien.
 
 export interface NavigationMouvement {
   position: string
@@ -198,6 +210,19 @@ interface FicheMouvementProps {
   // AVEC son écriture (`ecrire_mouvement_compte_bilan`, `retirer_mouvement_compte_bilan`).
   onEcrireCompteBilan: (compte: string) => void
   onRetirerCompteBilan: () => void
+  // Les déclarations de TVA du dossier, chacune avec ce que le relevé lui a déjà payé ou remboursé (`suiviDesDeclarations`,
+  // calculé une fois par l'onglet) : de quoi rapprocher un prélèvement de la déclaration qu'il paie, ou le virement du
+  // Trésor du crédit qu'il rembourse. `declarationsTvaIncompletes` : la liste n'a pas pu être lue en entier — une
+  // déclaration peut manquer au choix. `releveIncomplet` : le relevé non plus — ce qu'une déclaration a déjà reçu n'est
+  // pas connu, donc aucune n'est PROPOSÉE (un paiement non lu ferait passer une déclaration payée pour une déclaration
+  // qui attend exactement ce montant), et ce qui reste à payer ne se dit pas.
+  suivisTva: SuiviDeDeclaration<DeclarationTva, LigneBancaire>[]
+  declarationsTvaIncompletes: string | null
+  releveIncomplet: string | null
+  // Rapprocher ce mouvement d'une déclaration — ou d'une autre : la base remplace le lien et l'écriture
+  // (`rapprocher_declaration_tva`) —, ou l'en retirer, par la base qui retire l'écriture AVEC le lien.
+  onRapprocherDeclarationTva: (declarationId: string) => void
+  onRetirerDeclarationTva: () => void
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -305,6 +330,48 @@ function CarteCotisation({ cotisation, signaux, action }: { cotisation: Cotisati
           </span>
         </div>
         <strong className="carte-rapprochement-montant">{formatMoney(cotisation.montant_verse ?? cotisation.montant_appele)}</strong>
+      </div>
+      {signaux && <ListeSignaux signaux={signaux} />}
+      {action && <div className="carte-rapprochement-actions">{action}</div>}
+    </div>
+  )
+}
+
+// Une déclaration que ce mouvement règle exactement : le montant concorde par construction (`declarationsDuMontant`), et
+// la date dit que le prélèvement suit la période — un paiement de TVA vient après elle, jamais avant.
+function signauxDeclarationTva(d: DeclarationTva, ligne: LigneBancaire): Signal[] {
+  return [
+    {
+      ok: true,
+      texte: ligne.montant > 0 ? 'Même montant que le remboursement encore attendu' : 'Même montant que la TVA qui reste à payer',
+    },
+    { ok: true, texte: joursDEcart(ecartEnJours(d.periode_fin, ligne.date), 'la fin de la période') },
+  ]
+}
+
+// Une déclaration de TVA, du point de vue du mouvement : ce qu'elle fait payer pour un prélèvement, le remboursement
+// qu'elle a demandé pour un encaissement — et ce que le relevé lui a déjà porté, quand il a été lu en entier (`suivi`).
+function CarteDeclarationTva({ declaration, suivi, encaissement, signaux, action }: {
+  declaration: DeclarationTva
+  suivi: SuiviDeDeclaration<DeclarationTva, LigneBancaire> | null
+  encaissement: boolean
+  signaux?: Signal[]
+  action?: ReactNode
+}) {
+  const etat = suivi ? (encaissement ? phraseDuRemboursement(suivi) : phraseDuPaiement(suivi)) : null
+  return (
+    <div className="carte-rapprochement">
+      <div className="carte-rapprochement-entete">
+        <div className="carte-rapprochement-titres">
+          <strong>Déclaration de TVA {dePeriode(libellePeriode(declaration.periode_debut, declaration.periode_fin))}</strong>
+          <span>
+            {declaration.date_declaration ? `Déposée le ${formatDate(declaration.date_declaration)}` : 'Date de dépôt non renseignée'}
+            {etat ? ` · ${etat}` : ''}
+          </span>
+        </div>
+        <strong className="carte-rapprochement-montant">
+          {formatMoney(encaissement ? declaration.remboursement_demande : aPayerDe(declaration))}
+        </strong>
       </div>
       {signaux && <ListeSignaux signaux={signaux} />}
       {action && <div className="carte-rapprochement-actions">{action}</div>}
@@ -486,6 +553,7 @@ export default function FicheMouvement({
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
   restesARegler, onEcrireCompteBilan, onRetirerCompteBilan,
+  suivisTva, declarationsTvaIncompletes, releveIncomplet, onRapprocherDeclarationTva, onRetirerDeclarationTva,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
@@ -592,6 +660,38 @@ export default function FicheMouvement({
   const compteDeBilanPropose = surCompteDeBilan ? COMPTES_DE_BILAN_PROPOSES.find((c) => c.compte === ligne.compte_bilan) ?? null : null
   const libelleCompteDeBilan = ligne.compte_bilan ? libelleDuCompteDeBilan(ligne.compte_bilan) : null
 
+  // LE PAIEMENT D'UNE DÉCLARATION DE TVA (lib/liquidationTva.ts). Proposée : celle dont ce mouvement règle EXACTEMENT le
+  // reste — et une seule ; plusieurs, elles sont toutes montrées, aucune mise en avant. Au choix : celles qui ont une TVA
+  // à payer (un prélèvement) ou un remboursement demandé (un encaissement), la plus probable d'abord. Rapproché, le
+  // mouvement se rapproche d'une autre déclaration — replié tant qu'on ne le demande pas — ou s'annule.
+  const paieUneDeclaration = ligne.statut === 'rapprochee' && !!ligne.declaration_tva_id
+  const suiviPaye = paieUneDeclaration ? suivisTva.find((s) => s.declaration.id === ligne.declaration_tva_id) ?? null : null
+  const declarationsExactes = aTraiter && !fige && !releveIncomplet ? declarationsDuMontant(ligne, suivisTva) : []
+  const declarationTvaProposee = declarationsExactes.length === 1 ? declarationsExactes[0] : null
+  const declarationsAuChoix = (aTraiter || paieUneDeclaration) && !fige ? declarationsPourLeMouvement(ligne, suivisTva) : []
+  const tvaOfferte = aTraiter && ligne.montant !== 0 && (suivisTva.length > 0 || !!declarationsTvaIncompletes)
+  const [declarationChoisie, setDeclarationChoisie] = useState('')
+  const [changementDeclarationDeplie, setChangementDeclarationDeplie] = useState(false)
+  const declarationCible = declarationsAuChoix.find((d) => d.id === declarationChoisie) ?? null
+  const refusDeclarationChoisie = declarationCible ? refusPaiementTva(ligne, declarationCible) : null
+  const encaissement = ligne.montant > 0
+  // Ce qu'une déclaration attend et ce qu'elle a reçu, dit de son point de vue : la TVA à payer pour un prélèvement, le
+  // remboursement demandé pour un encaissement. Rien de ce qu'elle a reçu sur un relevé lu en partie.
+  const libelleDeclarationTva = (d: DeclarationTva): string => {
+    const periode = libellePeriode(d.periode_debut, d.periode_fin)
+    const suivi = suivisTva.find((x) => x.declaration.id === d.id)
+    if (!suivi) return periode
+    if (encaissement) {
+      const demande = `remboursement demandé ${formatMoney(suivi.remboursementDemande)}`
+      return releveIncomplet || suivi.rembourse === 0 ? `${periode} — ${demande}` : `${periode} — ${demande}, reçu ${formatMoney(suivi.rembourse)}`
+    }
+    const aPayer = `TVA à payer ${formatMoney(suivi.aPayer)}`
+    return releveIncomplet || suivi.paye === 0 ? `${periode} — ${aPayer}` : `${periode} — ${aPayer}, payé ${formatMoney(suivi.paye)}`
+  }
+  const noteEcritureTva = encaissement
+    ? 'Ni charge ni recette : le remboursement solde le crédit de TVA dont il a été demandé le remboursement (445830), face à la banque.'
+    : 'Ni charge ni recette : le prélèvement solde la TVA à décaisser (445510), face à la banque.'
+
   // Ce qui se propose à l'affectation : les catégories d'un compte de résultat, dans l'ordre du sens
   // du mouvement — les recettes d'abord pour un encaissement, les dépenses d'abord pour un paiement.
   const categorieAffectee = ligne.categorie_id ? categories.find((c) => c.id === ligne.categorie_id) ?? null : null
@@ -648,7 +748,11 @@ export default function FicheMouvement({
   const echeancesCandidates = aTraiter && piecesCandidates.length === 0
     ? candidatsCotisations(ligne, cotisations, cotisationsRapprochees)
     : []
-  const recurrent = aTraiter && piecesCandidates.length === 0 && echeancesCandidates.length === 0 ? recurrence : null
+  // Un prélèvement qui règle exactement une déclaration de TVA n'est pas « comme les précédents ignorés » : la TVA
+  // payée s'écrit, et l'ignorer la laisserait au 445510.
+  const recurrent = aTraiter && piecesCandidates.length === 0 && echeancesCandidates.length === 0 && declarationsExactes.length === 0
+    ? recurrence
+    : null
 
   const piecePayee = ligne.piece_id ? pieces.find((p) => p.id === ligne.piece_id) ?? null : null
   const cotisationPayee = ligne.cotisation_id ? cotisations.find((c) => c.id === ligne.cotisation_id) ?? null : null
@@ -890,6 +994,54 @@ export default function FicheMouvement({
     )
   }
 
+  // Les déclarations de TVA au choix et leur bouton. Rendu sur un mouvement à traiter et, replié, sur un mouvement déjà
+  // rapproché d'une déclaration — pour le rapprocher d'une autre : la base remplace alors le lien et l'écriture.
+  function choixDeDeclarationTva(verbe: string): ReactNode {
+    return (
+      <>
+        {declarationsAuChoix.length === 0 ? (
+          <p className="fiche-mouvement-note">
+            {encaissement
+              ? 'Aucune déclaration enregistrée avant ce mouvement n’a demandé le remboursement d’un crédit de TVA (ligne 26).'
+              : 'Aucune déclaration enregistrée avant ce mouvement n’a de TVA à payer.'}
+          </p>
+        ) : (
+          <div className="field">
+            <label htmlFor={`rapprocher-declaration-${ligne.id}`}>Déclaration de TVA</label>
+            <div className="fiche-mouvement-choix">
+              <select
+                id={`rapprocher-declaration-${ligne.id}`}
+                value={declarationChoisie}
+                onChange={(e) => setDeclarationChoisie(e.target.value)}
+              >
+                <option value="">— Choisir —</option>
+                {declarationsAuChoix.map((d) => (
+                  <option key={d.id} value={d.id}>{libelleDeclarationTva(d)}</option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={!declarationCible || !!refusDeclarationChoisie || occupe}
+                onClick={() => onRapprocherDeclarationTva(declarationChoisie)}
+              >
+                {verbe}
+              </button>
+            </div>
+            {refusDeclarationChoisie && <p className="fiche-mouvement-alerte">{refusDeclarationChoisie}</p>}
+          </div>
+        )}
+        {releveIncomplet && (
+          <p className="fiche-mouvement-note">
+            Le relevé n’a pas pu être lu en entier : ce que chaque déclaration a déjà reçu n’est pas connu, et aucune n’est
+            proposée. Recharge la page.
+          </p>
+        )}
+        {declarationsTvaIncompletes && <NoteDeclarationsIncompletes />}
+      </>
+    )
+  }
+
   let principal: ReactNode = null
   if (fige) {
     // Rien à proposer : annuler, reclasser ou rapprocher, la base refuse tout (voir `figeePar`).
@@ -908,6 +1060,17 @@ export default function FicheMouvement({
         onClick={() => onRapprocherCotisation(echeancesCandidates[0].id)}
       >
         Associer cette échéance
+      </button>
+    )
+  } else if (declarationTvaProposee) {
+    principal = (
+      <button
+        type="button"
+        className="btn btn-primary"
+        disabled={occupe || !!refusPaiementTva(ligne, declarationTvaProposee)}
+        onClick={() => onRapprocherDeclarationTva(declarationTvaProposee.id)}
+      >
+        Rapprocher de cette déclaration
       </button>
     )
   } else if (recurrent) {
@@ -960,6 +1123,14 @@ export default function FicheMouvement({
     principal = (
       <button type="button" className="btn btn-outline" disabled={occupe} onClick={onRetirerCompteBilan}>
         Remettre à traiter
+      </button>
+    )
+  } else if (paieUneDeclaration) {
+    // Par la base : l'écriture part avec le lien (`retirer_rapprochement_declaration_tva`). Une simple remise à « à
+    // traiter », la contrainte `lignes_bancaires_declaration_tva_rapprochee` la refuserait de toute façon.
+    principal = (
+      <button type="button" className="btn btn-outline" disabled={occupe} onClick={onRetirerDeclarationTva}>
+        Annuler le rapprochement
       </button>
     )
   } else if (ligne.statut === 'rapprochee') {
@@ -1040,7 +1211,13 @@ export default function FicheMouvement({
             </span>
           )}
           {surCompteDeBilan && <span className="badge badge-ok">Écrit au {ligne.compte_bilan}</span>}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && !surCompteDeBilan && <span className="badge badge-ok">Rapproché</span>}
+          {paieUneDeclaration && (
+            <span className="badge badge-ok">
+              {encaissement ? 'Remboursement de TVA' : 'Paiement de TVA'}
+              {suiviPaye ? ` — ${libellePeriode(suiviPaye.declaration.periode_debut, suiviPaye.declaration.periode_fin)}` : ''}
+            </span>
+          )}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && !surCompteDeBilan && !paieUneDeclaration && <span className="badge badge-ok">Rapproché</span>}
           {pastillesPaiement.map((texte) => <span key={texte} className="badge badge-danger">{texte}</span>)}
           {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
@@ -1137,7 +1314,51 @@ export default function FicheMouvement({
             {empruntsIncomplets && <NoteEmpruntsIncomplets />}
           </section>
         )}
-        {aTraiter && !unePropositionExiste && !recurrent && !plausible && (
+        {declarationTvaProposee && (
+          <section className="fiche-mouvement-section">
+            <h3>{encaissement ? 'Remboursement de TVA proposé' : 'Paiement de TVA proposé'}</h3>
+            <CarteDeclarationTva
+              declaration={declarationTvaProposee}
+              suivi={suivisTva.find((x) => x.declaration.id === declarationTvaProposee.id) ?? null}
+              encaissement={encaissement}
+              signaux={signauxDeclarationTva(declarationTvaProposee, ligne)}
+            />
+            {refusPaiementTva(ligne, declarationTvaProposee) && (
+              <p className="fiche-mouvement-alerte">{refusPaiementTva(ligne, declarationTvaProposee)}</p>
+            )}
+            <p className="fiche-mouvement-note">{noteEcritureTva}</p>
+          </section>
+        )}
+        {declarationsExactes.length > 1 && (
+          <section className="fiche-mouvement-section">
+            <h3>{declarationsExactes.length} déclarations de TVA conviennent aussi bien</h3>
+            <p className="fiche-mouvement-note">
+              Ce mouvement règle exactement le reste de chacune : choisis celle qu’il paie, d’après son libellé ou l’avis
+              de prélèvement.
+            </p>
+            {declarationsExactes.map((d) => (
+              <CarteDeclarationTva
+                key={d.id}
+                declaration={d}
+                suivi={suivisTva.find((x) => x.declaration.id === d.id) ?? null}
+                encaissement={encaissement}
+                signaux={signauxDeclarationTva(d, ligne)}
+                action={(
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    disabled={occupe || !!refusPaiementTva(ligne, d)}
+                    title={refusPaiementTva(ligne, d) ?? undefined}
+                    onClick={() => onRapprocherDeclarationTva(d.id)}
+                  >
+                    Rapprocher de celle-ci
+                  </button>
+                )}
+              />
+            ))}
+          </section>
+        )}
+        {aTraiter && !unePropositionExiste && !recurrent && !plausible && declarationsExactes.length === 0 && (
           <p className="fiche-mouvement-vide">Aucune pièce proposée pour ce mouvement.</p>
         )}
         {figeeDeMemeMontant && (
@@ -1227,6 +1448,14 @@ export default function FicheMouvement({
           </section>
         )}
 
+        {tvaOfferte && (
+          <section className="fiche-mouvement-section">
+            <h3>{encaissement ? 'Remboursement de TVA' : 'Paiement de TVA'}</h3>
+            {declarationsExactes.length === 0 && <p className="fiche-mouvement-note">{noteEcritureTva}</p>}
+            {choixDeDeclarationTva('Rapprocher')}
+          </section>
+        )}
+
         {aTraiter && ligne.montant !== 0 && (
           <section className="fiche-mouvement-section">
             <h3>Plusieurs pièces</h3>
@@ -1270,6 +1499,13 @@ export default function FicheMouvement({
                 {plausible.echeance
                   ? 'Ce paiement ressemble à une échéance d’emprunt (ci-dessus) : affecté à une catégorie, son capital compterait en charge.'
                   : 'Cet encaissement ressemble au déblocage d’un emprunt (ci-dessus) : affecté à une catégorie, il compterait en recette.'}
+              </p>
+            )}
+            {declarationsExactes.length > 0 && (
+              <p className="fiche-mouvement-alerte">
+                {encaissement
+                  ? 'Cet encaissement ressemble au remboursement d’un crédit de TVA (ci-dessus) : affecté à une catégorie, il compterait en recette.'
+                  : 'Ce paiement ressemble au paiement d’une déclaration de TVA (ci-dessus) : affecté à une catégorie, la TVA compterait en charge.'}
               </p>
             )}
             {choixDeCategorie('Affecter')}
@@ -1588,6 +1824,33 @@ export default function FicheMouvement({
           </section>
         )}
 
+        {paieUneDeclaration && (
+          <section className="fiche-mouvement-section">
+            <h3>{encaissement ? 'Remboursement de TVA' : 'Paiement de TVA'}</h3>
+            {suiviPaye ? (
+              <CarteDeclarationTva
+                declaration={suiviPaye.declaration}
+                suivi={releveIncomplet ? null : suiviPaye}
+                encaissement={encaissement}
+              />
+            ) : (
+              // Le lien existe, la déclaration n'a pas été lue — une lecture partielle, que le bandeau en tête de l'écran
+              // annonce déjà.
+              <p className="fiche-mouvement-note">La déclaration rapprochée ne figure pas parmi les déclarations de TVA lues.</p>
+            )}
+            <p className="fiche-mouvement-note">
+              {noteEcritureTva}{!fige && ' « Annuler le rapprochement » retire aussi son écriture.'}
+            </p>
+            {!fige && (changementDeclarationDeplie ? choixDeDeclarationTva('Rapprocher de celle-ci') : (
+              <div className="fiche-mouvement-boutons">
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setChangementDeclarationDeplie(true)}>
+                  Changer de déclaration…
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+
         {ligne.statut === 'ignoree' && !ligne.prelevement_personnel && !fige && (
           <p className="fiche-mouvement-note">
             Ignoré : ce mouvement n’est écrit nulle part, ni au brouillon ni au FEC. Cela convient à un doublon, ou à un
@@ -1641,7 +1904,7 @@ export default function FicheMouvement({
           </section>
         )}
 
-        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && !surCompteDeBilan && (
+        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && !surCompteDeBilan && !paieUneDeclaration && (
           <section className="fiche-mouvement-section">
             <h3>Rapproché avec</h3>
             {piecePayee && <CartePiece piece={piecePayee} />}
@@ -1686,6 +1949,14 @@ export default function FicheMouvement({
 
       {principal && <div className="fiche-mouvement-pied">{principal}</div>}
     </div>
+  )
+}
+
+function NoteDeclarationsIncompletes() {
+  return (
+    <p className="fiche-mouvement-note">
+      Les déclarations de TVA n’ont pas pu être lues en entier : une déclaration peut manquer à ce choix. Recharge la page.
+    </p>
   )
 }
 

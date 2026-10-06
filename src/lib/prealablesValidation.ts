@@ -448,14 +448,14 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
   // comme toute écriture en anomalie : validée, elle le resterait. La liquidation compte dans l'exercice où finit sa
   // période, le paiement dans celui de son mouvement.
   bloque({
-    id: 'liquidations-tva-perimees', cible: 'tva',
+    id: 'liquidations-tva-perimees', cible: 'ecritures',
     nb: liquidationsDesynchronisees(d.ecritures, d.declarationsTva.filter((x) => dansLExercice(x.periode_fin)), frontiere).length,
-    message: "déclaration(s) de TVA de l'exercice dont l'écriture de liquidation manque ou ne suit plus la déclaration : la retirer puis l'enregistrer de nouveau.",
+    message: "déclaration(s) de TVA de l'exercice dont l'écriture de liquidation manque ou ne suit plus la déclaration : la réécrire.",
   })
   bloque({
-    id: 'paiements-tva-perimes', cible: 'banque',
+    id: 'paiements-tva-perimes', cible: 'ecritures',
     nb: paiementsTvaDesynchronises(d.ecritures, d.lignes, frontiere).filter(mouvementDeLExercice).length,
-    message: "paiement(s) ou remboursement(s) de TVA dont l'écriture ne suit plus le mouvement : les rapprocher de nouveau de leur déclaration.",
+    message: "paiement(s) ou remboursement(s) de TVA dont l'écriture ne suit plus le mouvement : les réécrire.",
   })
   bloque({
     id: 'virements-sans-ecriture', nb: virementsPersonnelsAEcrire(d.ecritures, d.lignes, d.modele, frontiere).filter(mouvementDeLExercice).length, cible: 'virements',

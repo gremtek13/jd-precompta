@@ -993,6 +993,49 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     expect(modale.textContent).toMatch(/86,5\s%/)
   })
 
+  // LE REMBOURSEMENT D'UN CRÉDIT DE TVA (ligne 26.8, lib/liquidationTva.ts) : le Trésor rend une fois ce qu'il a perçu en
+  // trop. Le solde le compte, la moyenne non — comme un déblocage, et dit à part. Le prélèvement de la TVA, lui, revient
+  // chaque mois ou chaque trimestre : il reste dans le rythme.
+  const REMBOURSEMENT_TVA = mouvement({
+    id: 'l-deb', date: '2025-01-07', libelle: 'VIR DGFIP REMBOURSEMENT CREDIT TVA', montant: 12000,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, declaration_tva_id: 'decl-t4',
+  })
+
+  it('le plan de trésorerie écarte le remboursement d’un crédit de TVA de la moyenne, pas du solde', async () => {
+    preparer()
+    faux.ecritures = ecrituresDuPlan(true)
+    faux.paiements = [REMBOURSEMENT_TVA]
+    const modale = await ouvrirLePlan('Plan de trésorerie')
+    expect(modale.textContent).toMatch(/complets : 600,00\s€ d'encaissements/)
+    expect(within(modale).getByText(/Ni le remboursement d’un crédit de TVA : il ne se répète pas/)).toBeTruthy()
+    // Ni un déblocage, ni un compte de bilan : leurs phrases ne s'y ajoutent pas.
+    expect(within(modale).queryByText(/fonds reçus d’un emprunt/i)).toBeNull()
+    expect(within(modale).queryByText(/compte de bilan/)).toBeNull()
+    expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.textContent).toMatch(/15\s?600,00\s€/)
+  })
+
+  it('le taux d’endettement ne compte pas le remboursement d’un crédit de TVA, et le dit', async () => {
+    preparer()
+    faux.ecritures = ecrituresDuPlan(true)
+    faux.paiements = [REMBOURSEMENT_TVA]
+    const modale = await ouvrirLePlan('Dettes & ratios bancaires')
+    expect(within(modale).getByText(/Ni le remboursement d’un crédit de TVA : le Trésor rend une fois/)).toBeTruthy()
+    expect(modale.textContent).toMatch(/86,5\s%/)
+  })
+
+  it('le prélèvement de la TVA reste dans le rythme des décaissements, et rien n’est dit', async () => {
+    preparer()
+    const mois2 = ajouterMois(premierJourDuMoisCourant(), -2).slice(0, 7)
+    faux.ecritures = [...ecrituresDuPlan(false), { date: `${mois2}-20`, sens: 'credit', montant: 1200, ligne_bancaire_id: 'l-tva' }]
+    faux.paiements = [mouvement({
+      id: 'l-tva', date: `${mois2}-20`, libelle: 'PRLV DGFIP TVA', montant: -1200,
+      emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, declaration_tva_id: 'decl-t4',
+    })]
+    const modale = await ouvrirLePlan('Plan de trésorerie')
+    expect(modale.textContent).toMatch(/d'encaissements, 200,00\s€ de décaissements/)
+    expect(within(modale).queryByText(/remboursement d’un crédit de TVA/)).toBeNull()
+  })
+
   // LA SITUATION INTERMÉDIAIRE COMPTE LES INTÉRÊTS ET L'ASSURANCE d'une échéance rapprochée, à sa date,
   // par les parts du relevé que l'écran lui passe — et jamais son capital. Trouvé par mutation : la
   // situation privée des échéances laissait tout ce fichier vert.

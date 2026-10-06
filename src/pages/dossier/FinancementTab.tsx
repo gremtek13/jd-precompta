@@ -13,6 +13,7 @@ import { calculerRatiosBancaires } from '../../lib/ratiosBancaires'
 import { calculerPrevisionnel, type PrevisionnelBancaire } from '../../lib/previsionnel'
 import { echeancesOccupees, idsDeblocagesEmprunt } from '../../lib/echeanceEmprunt'
 import { idsMouvementsSurUnCompteDeBilan } from '../../lib/compteDeBilan'
+import { idsRemboursementsTva } from '../../lib/liquidationTva'
 import { paiementsDesPieces, type PaiementsDesPieces } from '../../lib/rattachement'
 import { cotisationsComptees, type CotisationComptee } from '../../lib/cotisationRapprochee'
 import type {
@@ -200,15 +201,22 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   // NI UN MOUVEMENT ÉCRIT SUR UN COMPTE DE BILAN (ligne 26.7, lib/compteDeBilan.ts) : un virement vers le compte
   // d'épargne ou depuis lui, un dépôt de garantie versé ou rendu. Rapatriée de l'épargne, la somme flatterait le taux
   // d'endettement ; partie vers elle, elle se projetterait chaque mois comme une dépense. Le solde, lui, les compte.
+  //
+  // NI LE REMBOURSEMENT D'UN CRÉDIT DE TVA (ligne 26.8, lib/liquidationTva.ts) : le Trésor rend, une fois, une TVA payée
+  // en trop sur des achats ; dans la moyenne des encaissements, il flatterait le taux d'endettement comme un déblocage.
+  // Le prélèvement de la TVA, lui, reste dans le rythme : il revient chaque mois ou chaque trimestre, comme une cotisation.
   const deblocages = idsDeblocagesEmprunt(mouvementsRapproches)
   const pieceIdsImmobilisees = new Set(immobilisations.flatMap((i) => (i.piece_id ? [i.piece_id] : [])))
   const surUnCompteDeBilan = idsMouvementsSurUnCompteDeBilan(mouvementsRapproches)
+  const remboursementsTva = idsRemboursementsTva(mouvementsRapproches)
   const sansDeblocages = lignesBanque.filter((l) => !l.ligne_bancaire_id || !deblocages.has(l.ligne_bancaire_id))
   const sansAcquisitions = sansDeblocages.filter((l) => !l.piece_id || !pieceIdsImmobilisees.has(l.piece_id))
-  const lignesDuRythme = sansAcquisitions.filter((l) => !l.ligne_bancaire_id || !surUnCompteDeBilan.has(l.ligne_bancaire_id))
+  const sansBilan = sansAcquisitions.filter((l) => !l.ligne_bancaire_id || !surUnCompteDeBilan.has(l.ligne_bancaire_id))
+  const lignesDuRythme = sansBilan.filter((l) => !l.ligne_bancaire_id || !remboursementsTva.has(l.ligne_bancaire_id))
   const deblocagesEcartes = lignesBanque.length - sansDeblocages.length
   const acquisitionsEcartees = sansDeblocages.length - sansAcquisitions.length
-  const mouvementsDeBilanEcartes = sansAcquisitions.length - lignesDuRythme.length
+  const mouvementsDeBilanEcartes = sansAcquisitions.length - sansBilan.length
+  const remboursementsTvaEcartes = sansBilan.length - lignesDuRythme.length
 
   // Les mouvements rapprochés de chaque emprunt : ses échéances payées, et son déblocage.
   const rapprochementsDe = (e: Emprunt) => mouvementsRapproches.filter((l) => l.emprunt_id === e.id)
@@ -420,6 +428,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
           deblocagesEcartes={deblocagesEcartes}
           acquisitionsEcartees={acquisitionsEcartees}
           mouvementsDeBilanEcartes={mouvementsDeBilanEcartes}
+          remboursementsTvaEcartes={remboursementsTvaEcartes}
           ouverture={ouverture}
           soldeActuel={soldeBanque}
           emprunts={emprunts}
@@ -443,6 +452,7 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
           lignesDuRythme={lignesDuRythme}
           deblocagesEcartes={deblocagesEcartes}
           mouvementsDeBilanEcartes={mouvementsDeBilanEcartes}
+          remboursementsTvaEcartes={remboursementsTvaEcartes}
           capitalRestantTotal={capitalRestantTotal}
           mensualiteTotale={mensualiteTotale}
           onClose={() => setDettesOuvertes(false)}
@@ -470,11 +480,11 @@ export default function FinancementTab({ dossierId, assujettiTva, modeComptable 
   )
 }
 
-function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisationsDatees, cotisationsAPayer, emprunts, lignesDuRythme, deblocagesEcartes, mouvementsDeBilanEcartes, capitalRestantTotal, mensualiteTotale, onClose }: {
+function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paiements, partsReleve, categories, immobilisations, cotisationsDatees, cotisationsAPayer, emprunts, lignesDuRythme, deblocagesEcartes, mouvementsDeBilanEcartes, remboursementsTvaEcartes, capitalRestantTotal, mensualiteTotale, onClose }: {
   assujettiTva: boolean; modeComptable: ModeComptable; piecesValidees: Piece[]; paiements: PaiementsDesPieces; partsReleve: PartDuReleve[]
   // Les échéances datées au paiement pour la CAF ; celles que rien ne paie encore pour l'échéancier.
   categories: Categorie[]; immobilisations: Immobilisation[]; cotisationsDatees: readonly CotisationComptee[]; cotisationsAPayer: CotisationDeclaree[]
-  emprunts: Emprunt[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; mouvementsDeBilanEcartes: number
+  emprunts: Emprunt[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; mouvementsDeBilanEcartes: number; remboursementsTvaEcartes: number
   capitalRestantTotal: number; mensualiteTotale: number; onClose: () => void
 }) {
   const aujourdHui = aujourdHuiSql()
@@ -537,6 +547,7 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
               Mensualités / moyenne des encaissements mensuels des 6 derniers mois complets.
               {deblocagesEcartes > 0 && ' Les fonds reçus d’un emprunt n’y comptent pas : ils ne disent rien de l’activité.'}
               {mouvementsDeBilanEcartes > 0 && ' Ni un mouvement écrit sur un compte de bilan — un virement depuis l’épargne, un dépôt de garantie rendu.'}
+              {remboursementsTvaEcartes > 0 && ' Ni le remboursement d’un crédit de TVA : le Trésor rend une fois ce qu’il a perçu en trop.'}
               {reserveMoyenne && <span style={{ color: 'var(--color-danger, #c0392b)' }}> {reserveMoyenne}</span>}
             </div>
           </div>
@@ -570,8 +581,9 @@ function DettesRatiosModal({ assujettiTva, modeComptable, piecesValidees, paieme
   )
 }
 
-function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, acquisitionsEcartees, mouvementsDeBilanEcartes, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
+function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, acquisitionsEcartees, mouvementsDeBilanEcartes, remboursementsTvaEcartes, ouverture, soldeActuel, emprunts, cotisations, onClose }: {
   lignesBanque: LigneBanque[]; lignesDuRythme: LigneBanque[]; deblocagesEcartes: number; acquisitionsEcartees: number; mouvementsDeBilanEcartes: number
+  remboursementsTvaEcartes: number
   ouverture: OuvertureBanque | null; soldeActuel: number
   emprunts: Emprunt[]; cotisations: CotisationDeclaree[]; onClose: () => void
 }) {
@@ -621,6 +633,7 @@ function PlanTresorerieModal({ lignesBanque, lignesDuRythme, deblocagesEcartes, 
           {deblocagesEcartes > 0 && ' Les fonds reçus d’un emprunt n’entrent pas dans cette moyenne : le solde les compte, mais ils ne disent rien du rythme d’activité.'}
           {acquisitionsEcartees > 0 && ' Le paiement d’un bien immobilisé non plus : un investissement ne se répète pas chaque mois, et le solde le compte déjà.'}
           {mouvementsDeBilanEcartes > 0 && ' Ni un mouvement écrit sur un compte de bilan — un virement vers l’épargne ou depuis elle, un dépôt de garantie : il ne dit rien de l’activité, et le solde le compte.'}
+          {remboursementsTvaEcartes > 0 && ' Ni le remboursement d’un crédit de TVA : il ne se répète pas, et le solde le compte. Le prélèvement de la TVA, lui, y reste.'}
         </p>
         {reserveAffichee && (
           <p className="muted" style={{ marginTop: -4, color: 'var(--color-danger, #c0392b)' }}>{reserveAffichee}</p>
