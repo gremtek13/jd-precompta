@@ -1,6 +1,6 @@
 # Export du schéma — à relire, jamais à croire sur parole
 
-Les 84 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
+Les 85 migrations du projet Supabase `mztayrhfgtsfjqighlue`, une par fichier, dans l'ordre de leur
 application. Ce sont les instructions exactes telles que la base les a enregistrées — pas une
 reconstitution, pas un `pg_dump` réarrangé.
 
@@ -26,7 +26,7 @@ on découvrirait le trou le jour où il coûte le plus cher. D'où le contrôle 
 Le contrôle tient en une requête. Elle rend une ligne par migration, empreinte et nom :
 
 ```sql
-select md5(rtrim(array_to_string(statements, E'\n'), E'\n') || E'\n') || '  ' || version || '_' || name
+select md5(rtrim(replace(array_to_string(statements, E'\n'), E'\r\n', E'\n'), E'\n') || E'\n') || '  ' || version || '_' || name
 from supabase_migrations.schema_migrations order by version;
 ```
 
@@ -41,6 +41,15 @@ Les deux listes doivent coïncider exactement — même nombre de lignes, mêmes
 puis le `\n` ajouté d'un côté, la convention « un fichier texte se termine par exactement un saut de
 ligne » de l'autre : les deux se comparent sur le contenu, pas sur un espace de fin.
 
+**Et une seule conversion, les fins de ligne `\r\n` ramenées à `\n`, côté base.** Une migration que le
+cabinet colle dans l'éditeur SQL de Supabase (quand `apply_migration` attend une confirmation qui
+n'arrive pas) peut y arriver avec des fins de ligne `\r\n` : c'est ce qui s'est passé le 06/10/2026
+pour `compte_de_bilan_du_releve`, dont le texte enregistré ne diffère du fichier que par là — vérifié
+ligne à ligne, 235 lignes. L'historique garde ce qui s'est réellement exécuté, et le fichier du dépôt
+reste en `\n` : un retour chariot dans un fichier du dépôt ne survivrait pas au premier éditeur (la
+même règle que pour le corps de `generate_code_email` dans le socle). Les 84 migrations d'avant n'en
+contiennent aucun : la conversion ne change pas leur empreinte (`168bbdce…` avec et sans elle).
+
 ### Le raccourci : UNE valeur à comparer plutôt que cinquante-six
 
 Comparer 56 lignes à l'œil est exactement le genre de vérification qu'on finit par survoler — et une
@@ -48,8 +57,8 @@ vérification survolée vaut zéro. L'empreinte AGRÉGÉE rend un seul nombre de
 
 ```sql
 select count(*) as migrations,
-       md5(string_agg(md5(rtrim(array_to_string(statements, E'\n'), E'\n') || E'\n') || '  ' || version || '_' || name,
-                      E'\n' order by version)) as empreinte_globale
+       md5(string_agg(md5(rtrim(replace(array_to_string(statements, E'\n'), E'\r\n', E'\n'), E'\n') || E'\n')
+                      || '  ' || version || '_' || name, E'\n' order by version)) as empreinte_globale
 from supabase_migrations.schema_migrations;
 ```
 
@@ -70,12 +79,12 @@ déroule la comparaison ligne à ligne ci-dessus pour savoir LAQUELLE a bougé.
 Pour régénérer un fichier absent ou divergent, lire son SQL et le réécrire tel quel :
 
 ```sql
-select array_to_string(statements, E'\n')
+select replace(array_to_string(statements, E'\n'), E'\r\n', E'\n')
 from supabase_migrations.schema_migrations where version = '<version>';
 ```
 
-**Vérifié par empreinte le 06/10/2026** : 84 fichiers, 84 migrations, empreinte globale
-`168bbdce8aa4023e5aa384869506125a` des deux côtés, aucune divergence.
+**Vérifié par empreinte le 06/10/2026** : 85 fichiers, 85 migrations, empreinte globale
+`3940ae3ce3e322ae0243ff85412410fc` des deux côtés, aucune divergence.
 
 ## CE QUE CETTE EMPREINTE PROUVE, ET CE QU'ELLE NE PROUVE PAS
 
@@ -107,12 +116,12 @@ ne s'appliquent pas tout seuls.
 Quatre contrôles les tiennent, et aucun ne remplace les autres :
 
 - **`supabase/essais/socle.py` + `socle.sql`** — rejouent la génération depuis la base et comparent
-  le socle au caractère près (75 instructions, empreinte `571a89fe386d655de5cb2fba9c42165b` le
-  06/10/2026, rejoué après la migration des lettrages faits à la main), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
+  le socle au caractère près (75 instructions, empreinte `3ebd4e4f46e8ef0bf9e1450576b8820e` le
+  06/10/2026, rejoué après la migration des comptes de bilan), à une conversion près, dite dans les deux fichiers : les fins de ligne `\r\n` d'un
   corps de fonction.
 - **`supabase/essais/inventaire.py` + `inventaire.sql`** — comparent NOM PAR NOM tout le catalogue à
   ce que l'export reconstruit : colonnes, contraintes, index, déclencheurs, policies, fonctions, RLS
-  (971 objets, empreinte `5abdf079585365bd42b8dbf3972643f8` le 06/10/2026, rejoué après la migration des lettrages faits à la main). C'est le seul qui voie un
+  (977 objets, empreinte `cf75a02433a1ccbdef77f821b3cc812b` le 06/10/2026, rejoué après la migration des comptes de bilan). C'est le seul qui voie un
   objet créé hors migration ET hors socle, donc celui qui a trouvé le second trou. Il compare des
   noms, pas des définitions : un type, une policy ou un corps de fonction changés hors migration lui
   échappent.

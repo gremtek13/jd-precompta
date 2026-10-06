@@ -55,6 +55,9 @@
 -- réplique locale du schéma. La table des verdicts disparaît avec la transaction (`on commit drop`) au
 -- lieu d'être supprimée en tête : l'essai ne porte plus d'instruction de suppression hors de ses
 -- contrôles.
+-- REJOUÉ LE 06/10/2026 après `compte_de_bilan_du_releve`, qui réécrit la contrainte d'un seul rapprochement :
+-- 66 contrôles sur 66 en production, le texte transmis identique au fichier, ses commentaires et les
+-- contrôles 57 et 58 retirés pour la même raison qu'au 04/10.
 create temp table essai_ventilation (controle text, observe text, ok boolean) on commit drop;
 
 do $$

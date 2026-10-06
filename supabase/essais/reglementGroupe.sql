@@ -44,6 +44,11 @@
 -- éprouvée sur une réplique locale du schéma. La table des verdicts disparaît avec la transaction (`on
 -- commit drop`) au lieu d'être supprimée en tête : l'essai ne porte plus d'instruction de suppression
 -- hors de ses contrôles.
+-- REJOUÉ LE 06/10/2026 après `compte_de_bilan_du_releve`, qui réécrit la contrainte d'un seul rapprochement :
+-- 48 contrôles sur 48 en production, le texte transmis identique au fichier, ses commentaires et les
+-- contrôles 48 à 50 retirés pour la même raison qu'au 04/10 — à la requête finale près, qui ne rendait le
+-- message observé que d'un contrôle en échec : ceux des contrôles 20 et 22 citent le fournisseur d'une
+-- pièce du dossier.
 create temp table essai_reglement_groupe (controle text, observe text, ok boolean) on commit drop;
 
 do $$
