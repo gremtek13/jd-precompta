@@ -2317,6 +2317,111 @@ describe('EcrituresTab — les mouvements ventilés sur plusieurs comptes', () =
   })
 })
 
+// LIGNE 26.7 : UN MOUVEMENT ÉCRIT SUR UN COMPTE DE BILAN (lib/compteDeBilan.ts). Son écriture, sans pièce, face au
+// 512000, est justifiée par le relevé : ni rupture, ni absence du FEC. Ce que ce bloc garde et qu'aucun test de
+// `src/lib` ne peut voir : que l'écran LISE le mouvement — rapproché sans pièce —, et propose de réécrire une écriture
+// qui ne suivrait plus le compte, par la même fonction que son classement. Défensif : la base écrit le compte et
+// l'écriture ensemble.
+describe('EcrituresTab — les mouvements écrits sur un compte de bilan', () => {
+  function mouvement(o: Record<string, unknown> = {}) {
+    return {
+      id: 'l-b', dossier_id: 'dossier-de-test', date: '2025-03-15', libelle: 'VIR VERS LIVRET A', montant: -1000,
+      statut: 'rapprochee', piece_id: null, cotisation_id: null, categorie_id: null, taux_tva: null, prelevement_personnel: false,
+      compte_bilan: '580000', source_fichier: 'releve-mars-2025.pdf', libelle_brut: null, created_at: '2025-04-02T09:00:00Z', ...o,
+    }
+  }
+  function ecrituresDu(montant = 1000) {
+    return [
+      ecriture({ id: 'b1', piece_id: null, ligne_bancaire_id: 'l-b', date: '2025-03-15', compte: '580000', sens: 'debit', montant, libelle: 'VIR VERS LIVRET A' }),
+      ecriture({ id: 'b2', piece_id: null, ligne_bancaire_id: 'l-b', date: '2025-03-15', compte: '512000', sens: 'credit', montant, libelle: 'VIR VERS LIVRET A' }),
+    ]
+  }
+
+  it('ne crie pas à la rupture, et porte l’écriture au FEC, au journal de banque, le relevé pour pièce', async () => {
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement()], ecritures_brouillon: ecrituresDu() })
+    monter()
+    await screen.findByText(/2 écritures proposées/)
+    expect(screen.queryByText("Piste d'audit rompue")).toBeNull()
+    expect(screen.queryByText(/pas dans ce FEC/)).toBeNull()
+    expect(screen.queryByText('Mouvements écrits sur un compte de bilan à réécrire')).toBeNull()
+
+    await act(async () => { screen.getByRole('button', { name: /Exporter FEC/ }).click() })
+    const lignes = telecharge.fichiers[0].contenu.split('\r\n').map((l) => l.split('\t')).slice(1)
+    expect(lignes.map((l) => [l[0], l[2], l[8], l[9]])).toEqual([
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250315'],
+      ['BQ', 'BQ00001', 'releve-mars-2025.pdf', '20250315'],
+    ])
+    expect(lignes.map((l) => `${l[4]} ${l[5]}`).sort()).toEqual(['512000 Banque', '580000 Virements internes'])
+  })
+
+  it('le garde symétrique : remis à traiter, ses écritures sont une rupture et sortent du FEC', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS],
+      lignes_bancaires: [mouvement({ statut: 'non_rapprochee', compte_bilan: null })],
+      ecritures_brouillon: ecrituresDu(),
+    })
+    monter()
+    expect(await screen.findByText("Piste d'audit rompue")).toBeTruthy()
+    expect(screen.getByText(/2 écritures ne seront pas dans ce FEC/)).toBeTruthy()
+  })
+
+  it('propose de réécrire une écriture qui ne suit plus le compte, par la même fonction', async () => {
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement()], ecritures_brouillon: ecrituresDu(900) })
+    monter()
+    expect(await screen.findByText('Mouvements écrits sur un compte de bilan à réécrire')).toBeTruthy()
+    await act(async () => { screen.getByRole('button', { name: 'Réécrire' }).click() })
+    expect(faux.rpcs).toEqual([{
+      nom: 'ecrire_mouvement_compte_bilan',
+      args: {
+        p_ligne_bancaire_id: 'l-b',
+        p_compte: '580000',
+        p_ecritures: [
+          { compte: '580000', sens: 'debit', montant: 1000, libelle: 'VIR VERS LIVRET A' },
+          { compte: '512000', sens: 'credit', montant: 1000, libelle: 'VIR VERS LIVRET A' },
+        ],
+      },
+    }])
+    // Relue, l'écriture suit le compte : le panneau disparaît.
+    await waitFor(() => expect(screen.queryByText('Mouvements écrits sur un compte de bilan à réécrire')).toBeNull())
+  })
+
+  it('une écriture absente se propose aussi', async () => {
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement()], ecritures_brouillon: [] })
+    monter()
+    expect(await screen.findByText('Mouvements écrits sur un compte de bilan à réécrire')).toBeTruthy()
+  })
+
+  it("trois clics rapprochés ne réécrivent qu'une fois", async () => {
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement()], ecritures_brouillon: ecrituresDu(900) })
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.rpcs).toHaveLength(1)
+  })
+
+  it('dit une réécriture que la base refuse, et garde le mouvement à réécrire', async () => {
+    poser({ categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement()], ecritures_brouillon: ecrituresDu(900) })
+    faux.erreurRpc = 'refus simulé'
+    monter()
+    const bouton = await screen.findByRole('button', { name: 'Réécrire' })
+    await act(async () => { bouton.click() })
+    expect(await screen.findByText('refus simulé')).toBeTruthy()
+    expect(screen.getByText('Mouvements écrits sur un compte de bilan à réécrire')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Réécrire' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  // Le même jeu que « propose de réécrire », l'exercice validé : la base refuse de réécrire une écriture validée.
+  it('ne propose rien d’un exercice validé, que la base refuse de réécrire', async () => {
+    poser({
+      categories: [CATEGORIE_ACHATS], lignes_bancaires: [mouvement()],
+      ecritures_brouillon: ecrituresDu(900).map((e) => ({ ...e, statut: 'validee' })),
+    })
+    monter(false, TRESORERIE, 2025, [2025])
+    await screen.findByText(/0 écriture proposée — 2 validées/)
+    expect(screen.queryByText('Mouvements écrits sur un compte de bilan à réécrire')).toBeNull()
+  })
+})
+
 // LIGNE 26.6, ÉTAPE B : la dotation aux amortissements s'écrit sans pièce ni mouvement, au 31 décembre,
 // depuis l'onglet Immobilisations. Ce que ce bloc garde et qu'aucun test de `src/lib` ne peut voir : que
 // l'onglet ne crie pas à la rupture sur elle, qu'il la porte au FEC au journal des opérations diverses, et

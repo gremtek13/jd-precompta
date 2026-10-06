@@ -378,6 +378,29 @@ describe('prealablesDeValidation — les anomalies, ramenées à l’exercice', 
   })
 })
 
+// LES MOUVEMENTS IGNORÉS DE L'EXERCICE (lib/controles.ts) ne sont écrits nulle part : juste pour un doublon, faux pour un
+// mouvement réel. Rien ne les distingue : un avertissement, qui dit ce qu'ils emportent, jamais un refus.
+describe('prealablesDeValidation — les mouvements ignorés', () => {
+  const ignore = (id: string, date: string, montant: number, o: Partial<LigneBancaire> = {}) =>
+    ligne(id, { date, montant, statut: 'ignoree', ...o })
+
+  it('avertit sans refuser, et dit ce qu’ils emportent', () => {
+    const etat = prealablesDeValidation(donnees({ lignes: [L1, ignore('l8', '2025-12-20', -45), ignore('l9', '2025-11-02', 300)] }))
+    const avertissement = etat.prealables.find((p) => p.id === 'mouvements-ignores')
+    expect(avertissement?.bloquant).toBe(false)
+    expect(avertissement?.nb).toBe(2)
+    expect(avertissement?.detail).toMatch(/^300,00\s€ encaissés et 45,00\s€ payés\. Dans Banque, filtre « Ignorés »\.$/)
+    expect(etat.validable).toBe(true)
+  })
+
+  it('ne compte ni un mouvement ignoré d’un autre exercice, ni un virement personnel', () => {
+    expect(ids(donnees({ lignes: [L1, ignore('l8', '2026-01-20', -45)] }))).not.toContain('mouvements-ignores')
+    expect(ids(donnees({ lignes: [L1, ignore('l8', '2024-12-20', -45)], anneesValidees: [2024] }))).not.toContain('mouvements-ignores')
+    const etat = prealablesDeValidation(donnees({ lignes: [L1, ignore('l8', '2025-06-20', -45, { prelevement_personnel: true })] }))
+    expect(etat.prealables.map((p) => p.id)).not.toContain('mouvements-ignores')
+  })
+})
+
 // CHAQUE CONTRÔLE REPRIS DE LA CHECKLIST, sur un défaut construit pour lui : il se déclenche quand le défaut est
 // dans l'exercice, et se tait quand le même défaut est dans l'exercice suivant — que la validation ne fige pas.
 // Sans le premier cas, un contrôle débranché laisserait figer un défaut ; sans le second, un contrôle qui compte
@@ -425,6 +448,10 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
     })],
     ['virements-sans-ecriture', (a) => ({
       lignes: [L1, ligne('l2', { date: D(a, '07-01'), montant: -500, statut: 'ignoree', prelevement_personnel: true })],
+    })],
+    // Écrit sur un compte de bilan sans son écriture : défensif, la base les écrit ensemble.
+    ['comptes-de-bilan-perimes', (a) => ({
+      lignes: [L1, ligne('l2', { date: D(a, '06-15'), montant: -1000, compte_bilan: '580000' })],
     })],
     ['echeances-emprunt-perimees', (a) => ({
       lignes: [L1, ligne('l2', { date: D(a, '02-05'), montant: -250, emprunt_id: 'emp1', emprunt_echeance: 2, emprunt_interets: 30, emprunt_assurance: 5 })],
@@ -506,6 +533,8 @@ describe('prealablesDeValidation — chaque contrôle repris, ramené à l’exe
         'doublons-inconnus', 'releves-inconnus', 'releve-incoherent', 'echeances-emprunt-non-rapprochees', 'ecritures-a-generer',
         // Deux avertissements de la 2035, qui ne refusent rien : leurs cas sont plus bas.
         'csg-non-saisie', 'vehicule-amorti-sous-bareme',
+        // Un avertissement aussi : un doublon ignoré est le bon geste. Son cas est plus haut.
+        'mouvements-ignores',
       ].includes(id))
     expect(repris.length).toBeGreaterThanOrEqual(20)
     expect(repris.filter((id) => !cas.some(([c]) => c === id))).toEqual([])

@@ -25,6 +25,7 @@ import type {
 } from '../../lib/types'
 import { acquisitionsDesBiens } from '../../lib/amortissements'
 import { ecritureDeLaVentilation, mouvementsVentilesDesynchronises, partsAReecrire, refusVentilation } from '../../lib/ventilationBanque'
+import { ecritureDuCompteDeBilan, mouvementsSurUnCompteDeBilanDesynchronises, refusCompteDeBilanDuMouvement } from '../../lib/compteDeBilan'
 import { libelleTaux } from '../../lib/tvaDuReleve'
 import { compteDuDirigeant } from '../../lib/virementPersonnel'
 import BrouillonBanner from '../../components/BrouillonBanner'
@@ -409,6 +410,10 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
   // catégorie a changé depuis (voir lib/ventilationBanque.ts). Sur des parts lues EN ENTIER seulement : une
   // part non lue ferait passer une ventilation pour incohérente, donc la tairait ici.
   const ventilesPerimes = ventilationsIncompletes ? [] : mouvementsVentilesDesynchronises(ecritures, lignesBancaires, ventilations, categories, modele, assujettiTva, frontiere)
+  // Les mouvements écrits sur un compte de bilan dont l'écriture ne suit plus leur compte — DÉFENSIF : la base écrit le
+  // compte et l'écriture ensemble (voir lib/compteDeBilan.ts). Un contrôle qui parle trop se corrige ; celui qui se tait
+  // ne se voit pas.
+  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignesBancaires, frontiere)
   const pieceById = (id: string) => piecesValidees.find((p) => p.id === id) ?? null
 
   // Export de la piste d'audit de l'exercice (voir lib/pisteAudit.ts) : depuis chaque écriture, le
@@ -585,6 +590,33 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
       await load()
     } catch (err) {
       setError(messageErreur(err, 'L’écriture de la ventilation n’a pas pu être réécrite.'))
+    } finally {
+      reaffectationsEnCours.current.delete(ligne.id)
+      setReaffectation(null)
+    }
+  }
+
+  // Réécrit l'écriture d'un mouvement écrit sur un compte de bilan, par la même fonction que son classement
+  // (`ecrire_mouvement_compte_bilan`), qui remplace l'écriture dans la même transaction. Sur ce clic seulement, comme
+  // « Réaffecter ».
+  async function reecrireCompteDeBilan(ligne: LigneBancaire) {
+    const compte = ligne.compte_bilan
+    if (!compte || reaffectationsEnCours.current.has(ligne.id)) return
+    const refus = refusCompteDeBilanDuMouvement(ligne, compte, modele)
+    if (refus) { setError(refus); return }
+    reaffectationsEnCours.current.add(ligne.id)
+    setReaffectation(ligne.id)
+    setError(null)
+    try {
+      const { error: rpcError } = await supabase.rpc('ecrire_mouvement_compte_bilan', {
+        p_ligne_bancaire_id: ligne.id,
+        p_compte: compte,
+        p_ecritures: ecritureDuCompteDeBilan(ligne, compte),
+      })
+      if (rpcError) throw rpcError
+      await load()
+    } catch (err) {
+      setError(messageErreur(err, 'L’écriture de ce mouvement n’a pas pu être réécrite.'))
     } finally {
       reaffectationsEnCours.current.delete(ligne.id)
       setReaffectation(null)
@@ -1025,6 +1057,47 @@ export default function EcrituresTab({ dossierId, dossierNom, dossierSiret, assu
                               : 'Une catégorie de cette ventilation n’a plus de compte de charge ou de produit : modifie la ventilation dans Banque.'
                             : undefined}
                           onClick={() => reecrireVentilation(l)}
+                        >
+                          {reaffectation === l.id ? 'Réécriture…' : 'Réécrire'}
+                        </button>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {bilanPerimes.length > 0 && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: 8 }}>
+            Mouvements écrits sur un compte de bilan à réécrire <span className="badge badge-danger">à traiter</span>
+          </h3>
+          <p className="muted" style={{ marginTop: -8 }}>
+            L’écriture de ces mouvements n’est plus celle que leur compte de bilan produirait : absente, sur un autre
+            compte, d’un autre montant ou à une autre date. La base écrit le compte et l’écriture ensemble, donc cet écart
+            ne devrait pas exister — il se dit plutôt que de se cacher. « Réécrire » la reprend sur le compte du mouvement.
+          </p>
+          <div className="table-scroll">
+            <table>
+              <thead><tr><th>Date</th><th>Mouvement</th><th>Montant</th><th>Compte</th><th></th></tr></thead>
+              <tbody>
+                {bilanPerimes.map((l) => {
+                  const refus = l.compte_bilan ? refusCompteDeBilanDuMouvement(l, l.compte_bilan, modele) : null
+                  return (
+                    <tr key={l.id}>
+                      <td>{formatDate(l.date)}</td>
+                      <td>{l.libelle}</td>
+                      <td>{formatMoney(l.montant)}</td>
+                      <td>{l.compte_bilan}</td>
+                      <td>
+                        <button
+                          className="btn btn-outline btn-sm"
+                          disabled={reaffectation === l.id || refus !== null}
+                          title={refus ? `${refus} Depuis la fiche du mouvement, dans Banque.` : undefined}
+                          onClick={() => reecrireCompteDeBilan(l)}
                         >
                           {reaffectation === l.id ? 'Réécriture…' : 'Réécrire'}
                         </button>

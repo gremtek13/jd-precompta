@@ -453,6 +453,24 @@ export function mouvementsIgnoresHorsFec<L extends Pick<LigneBancaire, 'statut' 
     && (ouverture == null || l.date >= ouverture) && !estFigee(l.date, frontiere))
 }
 
+// Ce que des mouvements ignorés emportent hors du FEC, dit en euros : « 1 200,00 € encaissés et 350,00 € payés ». Les
+// deux sens à part : leur somme nette dirait l'écart du 512 avec le relevé, mais cacherait un encaissement derrière un
+// paiement du même montant. Rien quand aucun ne porte de montant. En centimes entiers, comme tout total de l'application.
+export function montantsDesMouvementsIgnores(lignes: readonly Pick<LigneBancaire, 'montant'>[]): string | undefined {
+  let entrees = 0
+  let sorties = 0
+  for (const l of lignes) {
+    const centimes = Math.round(l.montant * 100)
+    if (centimes > 0) entrees += centimes
+    else sorties -= centimes
+  }
+  const parties = [
+    entrees > 0 ? `${formatMoney(entrees / 100)} encaissés` : null,
+    sorties > 0 ? `${formatMoney(sorties / 100)} payés` : null,
+  ].filter((x): x is string => x !== null)
+  return parties.length > 0 ? parties.join(' et ') : undefined
+}
+
 // UNE PIÈCE PAYÉE EN PARTIE — le reste de la décision « la banque fait foi » (23/09/2026, choix du cabinet).
 // Sous le seuil, `reglementBanque` ALIGNE la pièce sur son paiement et il n'y a plus d'écart à signaler ;
 // au-dessus, on ne touche à rien et c'est ici que ça se dit.
