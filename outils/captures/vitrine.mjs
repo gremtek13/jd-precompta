@@ -245,6 +245,19 @@ const VUES = [
   { nom: 'pc-tiers-2025', chemin: '#/dossiers/d8/statistiques', l: 1440, h: 900, theme: 'light', reduite: false, exercice: '2025', vers: 'Comptes de tiers au', enTete: true },
   { nom: 'mobile-tiers-clair', chemin: '#/dossiers/d8/statistiques', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Comptes de tiers au', enTete: true },
   { nom: 'pc-journal-lettrage', chemin: '#/dossiers/d8/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, exercice: 'Toutes', vers: 'lettrage A' },
+  // LE LETTRAGE FAIT À LA MAIN (ligne 32, seconde brique) : la proposition d'un avoir qui solde le reste d'une facture,
+  // les pièces d'un lettrage qui ne se solde plus, la liste des lettrages faits à la main — l'un tient, l'autre non —,
+  // puis deux pièces cochées et la barre qui les lettre ensemble.
+  { nom: 'pc-lettrage-clair', chemin: '#/dossiers/d8/statistiques', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Lettrages proposés', enTete: true },
+  { nom: 'pc-lettrage-sombre', chemin: '#/dossiers/d8/statistiques', l: 1440, h: 900, theme: 'dark', reduite: false, vers: 'Lettrages proposés', enTete: true },
+  { nom: 'pc-lettrage-assistant', chemin: '#/dossiers/d8/statistiques', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'Lettrages proposés', enTete: true },
+  { nom: 'pc-lettrages-faits', chemin: '#/dossiers/d8/statistiques', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Lettrages faits à la main', enTete: true },
+  {
+    nom: 'pc-lettrage-coche', chemin: '#/dossiers/d8/statistiques', l: 1440, h: 900, theme: 'light', reduite: false,
+    cocher: ['Cocher corsaire-facture-0828', 'Cocher corsaire-avoir-0920'], vers: '411000 — Clients', enTete: true,
+  },
+  { nom: 'mobile-lettrage-clair', chemin: '#/dossiers/d8/statistiques', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Lettrages proposés', enTete: true },
+  { nom: 'mobile-lettrages-faits', chemin: '#/dossiers/d8/statistiques', l: 390, h: 844, theme: 'light', reduite: false, vers: 'Lettrages faits à la main', enTete: true },
 ].filter((v) => v.nom.includes(filtre))
 
 const navigateur = await chromium.launch({ executablePath: executable })
@@ -290,9 +303,9 @@ for (const v of VUES) {
     await page.getByRole('cell', { name: v.cellule }).first().click()
     await page.waitForTimeout(600)
   }
-  // Une case du contenu qui vient de s'ouvrir, désignée par une partie de son libellé.
-  if (v.cocher) {
-    await page.getByRole('checkbox', { name: new RegExp(v.cocher) }).first().check()
+  // Une case du contenu qui vient de s'ouvrir, désignée par une partie de son libellé — ou plusieurs, dans l'ordre.
+  for (const libelle of [v.cocher ?? []].flat()) {
+    await page.getByRole('checkbox', { name: new RegExp(libelle) }).first().check()
     await page.waitForTimeout(400)
   }
   // Un bouton du contenu qui vient de s'ouvrir (la fiche, le panneau), désigné par une partie de son nom.

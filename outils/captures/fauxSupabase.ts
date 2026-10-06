@@ -257,8 +257,10 @@ const RELEVE_D7 = {
 // règlement au mouvement, chacune équilibrée seule. C'est lui qui fait paraître le réglage du modèle
 // (verrouillé, le brouillon n'étant pas vide), la Clôture sans 2035 et « facture(s) sans règlement
 // rapproché ».
-function pieceEngagement(id: string, date: string, tiers: string, ht: number, tva: number, type: 'achat' | 'vente', categorie: string): Ligne {
-  return { ...pieceTva(id, date, tiers, ht, tva, type), dossier_id: 'd8', storage_path: `d8/${id}.pdf`, categorie_id: categorie }
+function pieceEngagement(
+  id: string, date: string, tiers: string, ht: number, tva: number, type: 'achat' | 'vente', categorie: string, nom: string,
+): Ligne {
+  return { ...pieceTva(id, date, tiers, ht, tva, type), dossier_id: 'd8', storage_path: `d8/${id}.pdf`, nom_fichier: nom, categorie_id: categorie }
 }
 
 function ecriture(id: string, pieceId: string, date: string, compte: string, libelle: string, sens: 'debit' | 'credit', montant: number, mouvement: string | null = null): Ligne {
@@ -270,15 +272,23 @@ function ecriture(id: string, pieceId: string, date: string, compte: string, lib
 
 const ENGAGEMENT_D8 = {
   pieces: [
-    pieceEngagement('e1', '2026-07-10', 'Maison Arlan', 3000, 600, 'vente', 'c9'),
-    pieceEngagement('e2', '2026-08-05', 'Imprimerie Duval', 450, 90, 'achat', 'c7'),
-    pieceEngagement('e3', '2026-09-01', 'Cloud Hébergement', 100, 20, 'achat', 'c8'),
+    pieceEngagement('e1', '2026-07-10', 'Maison Arlan', 3000, 600, 'vente', 'c9', 'arlan-facture-0710.pdf'),
+    pieceEngagement('e2', '2026-08-05', 'Imprimerie Duval', 450, 90, 'achat', 'c7', 'duval-facture-0805.pdf'),
+    pieceEngagement('e3', '2026-09-01', 'Cloud Hébergement', 100, 20, 'achat', 'c8', 'cloud-facture-0901.pdf'),
     // Un écran de studio acheté en septembre 2025 et immobilisé, dont la dotation 2025 n'est pas écrite : la
     // Checklist la réclame.
-    pieceEngagement('e4', '2025-09-01', 'Studio Lumière', 2400, 480, 'achat', 'c7'),
+    pieceEngagement('e4', '2025-09-01', 'Studio Lumière', 2400, 480, 'achat', 'c7', 'studio-lumiere-ecran.pdf'),
     // Une vente encaissée EN PARTIE : elle reste ouverte au 411, avec son reste, dans les comptes de tiers de la
     // Balance des comptes (lib/lettrage.ts) — à côté de l'achat qui attend son règlement et de l'écran de studio.
-    pieceEngagement('e5', '2026-08-28', 'Atelier Corsaire', 1500, 300, 'vente', 'c9'),
+    pieceEngagement('e5', '2026-08-28', 'Atelier Corsaire', 1500, 300, 'vente', 'c9', 'corsaire-facture-0828.pdf'),
+    // LE LETTRAGE FAIT À LA MAIN (ligne 32, seconde brique, lib/lettrage.ts) : une facture de l'imprimeur annulée par
+    // son avoir, lettrées ensemble sans mouvement bancaire — elles ne sont plus ouvertes ; un avoir de l'hébergeur lettré
+    // avec sa facture puis corrigé à la baisse, si bien que le lettrage ne se solde plus (il reste 60 €) ; et un avoir
+    // consenti à l'atelier pour le reste de sa facture encaissée en partie, que la carte PROPOSE de lettrer.
+    pieceEngagement('e6', '2026-09-08', 'Imprimerie Duval', 200, 40, 'achat', 'c7', 'duval-facture-0908.pdf'),
+    pieceEngagement('e7', '2026-09-12', 'Imprimerie Duval', -200, -40, 'achat', 'c7', 'duval-avoir-0912.pdf'),
+    pieceEngagement('e8', '2026-09-10', 'Cloud Hébergement', -50, -10, 'achat', 'c8', 'cloud-avoir-0910.pdf'),
+    pieceEngagement('e9', '2026-09-20', 'Atelier Corsaire', -666.67, -133.33, 'vente', 'c9', 'corsaire-avoir-0920.pdf'),
   ],
   lignes: [
     { ...paiementTva('b1', '2026-07-25', 'VIR MAISON ARLAN', 3600, 'e1'), dossier_id: 'd8' },
@@ -309,6 +319,26 @@ const ENGAGEMENT_D8 = {
     ecriture('w19', 'e5', '2026-08-28', '411000', 'Atelier Corsaire', 'debit', 1800),
     ecriture('w20', 'e5', '2026-09-15', '411000', 'Atelier Corsaire', 'credit', 1000, 'b3'),
     ecriture('w21', 'e5', '2026-09-15', '512000', 'Atelier Corsaire', 'debit', 1000, 'b3'),
+    // Un avoir s'écrit à l'envers de sa facture (lib/engagement.ts) : sa charge au crédit, sa dette au débit.
+    ecriture('w22', 'e6', '2026-09-08', '606400', 'Imprimerie Duval', 'debit', 200),
+    ecriture('w23', 'e6', '2026-09-08', '445660', 'Imprimerie Duval', 'debit', 40),
+    ecriture('w24', 'e6', '2026-09-08', '401000', 'Imprimerie Duval', 'credit', 240),
+    ecriture('w25', 'e7', '2026-09-12', '606400', 'Imprimerie Duval', 'credit', 200),
+    ecriture('w26', 'e7', '2026-09-12', '445660', 'Imprimerie Duval', 'credit', 40),
+    ecriture('w27', 'e7', '2026-09-12', '401000', 'Imprimerie Duval', 'debit', 240),
+    ecriture('w28', 'e8', '2026-09-10', '651000', 'Cloud Hébergement', 'credit', 50),
+    ecriture('w29', 'e8', '2026-09-10', '445660', 'Cloud Hébergement', 'credit', 10),
+    ecriture('w30', 'e8', '2026-09-10', '401000', 'Cloud Hébergement', 'debit', 60),
+    ecriture('w31', 'e9', '2026-09-20', '706000', 'Atelier Corsaire', 'debit', 666.67),
+    ecriture('w32', 'e9', '2026-09-20', '445710', 'Atelier Corsaire', 'debit', 133.33),
+    ecriture('w33', 'e9', '2026-09-20', '411000', 'Atelier Corsaire', 'credit', 800),
+  ],
+  // Ce que la base garde d'un lettrage fait à la main : l'appariement, rien d'autre. Le code et la date se calculent.
+  lettrages: [
+    { id: 'lm1', dossier_id: 'd8', groupe: 'lg1', piece_id: 'e6', compte: '401000', created_at: '2026-09-22T09:30:00Z' },
+    { id: 'lm2', dossier_id: 'd8', groupe: 'lg1', piece_id: 'e7', compte: '401000', created_at: '2026-09-22T09:30:00Z' },
+    { id: 'lm3', dossier_id: 'd8', groupe: 'lg2', piece_id: 'e3', compte: '401000', created_at: '2026-09-23T14:10:00Z' },
+    { id: 'lm4', dossier_id: 'd8', groupe: 'lg2', piece_id: 'e8', compte: '401000', created_at: '2026-09-23T14:10:00Z' },
   ],
 }
 
@@ -744,6 +774,7 @@ const TABLES: Record<string, Ligne[]> = {
   cotisations_declarees: [...COTISATIONS_D1.echeances, ...SOURCES_D9.cotisations],
   // L'exercice 2025 de la kinésithérapeute, validé : ce qu'il garde, et sa 2035 telle qu'elle a été validée.
   exercices_valides: [VALIDE_D9],
+  lettrages_manuels: ENGAGEMENT_D8.lettrages,
 }
 
 // La connexion bancaire (ligne 24) : une banque du BAC À SABLE connectée au cabinet infirmier, son compte

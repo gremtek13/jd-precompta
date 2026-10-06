@@ -124,6 +124,24 @@ const VISITES = [
   },
   { dossier: 'd9', onglet: 'cotisations', nom: 'figé/cotisations' },
   { dossier: 'd9', onglet: 'virements', nom: 'figé/virements' },
+  // Le LETTRAGE FAIT À LA MAIN dans les comptes de tiers de la société en engagement : la barre qui lettre ensemble
+  // n'apparaît qu'une pièce cochée — seule, elle demande la suivante ; à deux, elle dit le reste et offre le bouton.
+  // L'exercice en cours se rechoisit : les visites de la validation ont laissé 2025 dans l'en-tête.
+  {
+    dossier: 'd8', onglet: 'statistiques', nom: 'lettrage/une-pièce',
+    apres: async (page) => {
+      await exercice('2026')(page)
+      await page.getByRole('checkbox', { name: /Cocher corsaire-facture-0828/ }).first().check()
+    },
+  },
+  {
+    dossier: 'd8', onglet: 'statistiques', nom: 'lettrage/deux-pièces',
+    apres: async (page) => {
+      await exercice('2026')(page)
+      await page.getByRole('checkbox', { name: /Cocher corsaire-facture-0828/ }).first().check()
+      await page.getByRole('checkbox', { name: /Cocher corsaire-avoir-0920/ }).first().check()
+    },
+  },
 ]
 
 // Choisit un exercice dans le sélecteur de l'en-tête du dossier, dont les boutons sont des onglets.
