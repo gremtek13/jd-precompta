@@ -26,6 +26,7 @@ import {
 import { mouvementRapprocheSansObjet, pastillesDePaiement, piecesPayeesEnPartie, piecesPayeesPar, restesAReglerDesPieces } from '../../lib/controles'
 import { ecritureDuMouvement, mouvementsAffectes, recettesAffecteesSansTaux, refusAffectation } from '../../lib/affectationBanque'
 import { compteDuDirigeant, ecritureDuVirementPersonnel, refusVirementPersonnel } from '../../lib/virementPersonnel'
+import { ecritureDuCompteDeBilan, libelleDuCompteDeBilan, refusCompteDeBilanDuMouvement } from '../../lib/compteDeBilan'
 import {
   echeancesOccupees, ecritureDeLEcheance, empruntPlausible, raisonEmpruntPlausible, refusDecoupage, refusEcheanceEmprunt,
   type DecoupageEcheance,
@@ -510,6 +511,9 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
     // Un règlement groupé part avec ses parts et ses écritures, par la base : une simple remise à « à
     // traiter », la contrainte `lignes_bancaires_reglement_groupe_rapproche` la refuserait.
     if (ligne?.reglement_groupe) return retirerReglementGroupe(ligneId)
+    // Un mouvement écrit sur un compte de bilan part avec son écriture, par la base, pour la même raison
+    // (`lignes_bancaires_compte_bilan_rapproche`).
+    if (ligne?.compte_bilan) return retirerCompteBilan(ligneId)
     // Un virement personnel part avec son écriture, par la base (`retirer_virement_personnel`) : une
     // simple remise à « à traiter » la laisserait au brouillon sans plus rien qui la justifie — une
     // rupture de la piste d'audit, et un prélèvement compté dans la trésorerie d'un mouvement à traiter.
@@ -605,6 +609,31 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
   async function retirerAffectation(ligneId: string): Promise<boolean> {
     const { error } = await supabase.rpc('retirer_affectation_mouvement_bancaire', { p_ligne_bancaire_id: ligneId })
     if (error) { window.alert(`L'affectation n'a pas pu être annulée : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
+  // LIGNE 26.7 : un mouvement vers un compte de bilan — un virement entre comptes au 580000, un dépôt de garantie au
+  // 275000, ou un compte au choix. L'écriture est composée ici (lib/compteDeBilan.ts, testé) ;
+  // `ecrire_mouvement_compte_bilan` refait les refus dans le même ordre, la VÉRIFIE contre le mouvement et le compte,
+  // puis l'écrit AVEC le compte, dans une seule transaction. Rejouée sur un mouvement déjà écrit sur un compte de
+  // bilan, elle remplace le compte et l'écriture. Les refus de la base sont refaits ici, pour qu'on ne clique pas pour
+  // rien.
+  async function ecrireCompteBilan(ligne: LigneBancaire, compte: string): Promise<boolean> {
+    const refus = refusCompteDeBilanDuMouvement(ligne, compte, modele)
+    if (refus) { window.alert(refus); return false }
+    const { error } = await supabase.rpc('ecrire_mouvement_compte_bilan', {
+      p_ligne_bancaire_id: ligne.id,
+      p_compte: compte,
+      p_ecritures: ecritureDuCompteDeBilan(ligne, compte),
+    })
+    if (error) { window.alert(`Le mouvement n'a pas pu être écrit au compte ${compte} : ${messageErreur(error, 'raison inconnue')}`); return false }
+    return true
+  }
+
+  // Le compte et son écriture partent ENSEMBLE, par la base.
+  async function retirerCompteBilan(ligneId: string): Promise<boolean> {
+    const { error } = await supabase.rpc('retirer_mouvement_compte_bilan', { p_ligne_bancaire_id: ligneId })
+    if (error) { window.alert(`Le mouvement n'a pas pu être remis à traiter : ${messageErreur(error, 'raison inconnue')}`); return false }
     return true
   }
 
@@ -1704,7 +1733,14 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
                             : 'Règle plusieurs pièces'}
                         </span>
                       )}
-                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !mouvementRapprocheSansObjet(l) && (
+                      {/* Écrit sur un compte de bilan : son compte, pas un « Rapproché » nu — sa preuve est le relevé. */}
+                      {l.statut === 'rapprochee' && l.compte_bilan && (
+                        <span className="badge badge-ok">
+                          Écrit au {l.compte_bilan}
+                          {libelleDuCompteDeBilan(l.compte_bilan) ? ` — ${libelleDuCompteDeBilan(l.compte_bilan)}` : ''}
+                        </span>
+                      )}
+                      {!l.prelevement_personnel && l.statut === 'rapprochee' && !l.categorie_id && !l.emprunt_id && !l.ventilee && !l.reglement_groupe && !l.compte_bilan && !mouvementRapprocheSansObjet(l) && (
                         <span className="badge badge-ok">
                           Rapproché
                           {piecePayee ? ` — ${piecePayee.tiers ?? ''}` : ''}
@@ -1782,6 +1818,8 @@ export default function BanqueTab({ dossierId, modele, assujettiTva }: {
             restesAPayer={restesAPayer}
             payeesEnTrop={payeesEnTrop}
             restesARegler={restesARegler}
+            onEcrireCompteBilan={(compte) => agirSurMouvement(() => ecrireCompteBilan(ligneOuverte, compte))}
+            onRetirerCompteBilan={() => agirSurMouvement(() => retirerCompteBilan(ligneOuverte.id))}
           />
         </PanneauDroit>
       )}

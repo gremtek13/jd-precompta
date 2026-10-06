@@ -361,6 +361,9 @@ vi.mock('../../lib/supabase', async () => {
       // L'échéance de cotisation (lib/cotisationRapprochee.ts) : rapprochée avec son écriture, ou retirée.
       if (nom === 'rapprocher_cotisation') return { ...l, statut: 'rapprochee', cotisation_id: String(args.p_cotisation_id) }
       if (nom === 'retirer_rapprochement_cotisation') return { ...l, statut: 'non_rapprochee', cotisation_id: null }
+      // Le compte de bilan (lib/compteDeBilan.ts) : écrit avec son écriture, ou remis à traiter et retiré.
+      if (nom === 'ecrire_mouvement_compte_bilan') return { ...l, statut: 'rapprochee', compte_bilan: String(args.p_compte) }
+      if (nom === 'retirer_mouvement_compte_bilan') return { ...l, statut: 'non_rapprochee', compte_bilan: null }
       return nom === 'affecter_mouvement_bancaire'
         ? { ...l, categorie_id: String(args.p_categorie_id), taux_tva: (args.p_taux_tva as number | null | undefined) ?? null, statut: 'rapprochee' }
         : { ...l, categorie_id: null, taux_tva: null, statut: 'non_rapprochee' }
@@ -3900,6 +3903,262 @@ describe('BanqueTab — la connexion bancaire', () => {
     await recuperer()
     expect(screen.getByText('0 à importer').parentElement!.textContent).toContain('1 déjà dans un relevé importé en fichier')
     expect(screen.getByText(/Un mouvement daté d’un exercice validé, au plus tard le 31\/12\/2025, ne s’importe pas/)).toBeTruthy()
+  })
+})
+
+// LIGNE 26.7 : UN MOUVEMENT VERS UN COMPTE DE BILAN S'ÉCRIT (lib/compteDeBilan.ts). Ce qu'aucun test de `src/lib` ne
+// peut voir : que l'écriture parte par la fonction de la base avec le compte — jamais par une mise à jour de la ligne —,
+// qu'un compte tapé se lise et se refuse AVANT le clic avec le chemin qui convient, jugé sur le modèle et le compte du
+// dirigeant du dossier, que la remise à traiter passe par la base, que la liste et la fiche disent le compte au lieu d'un
+// « Rapproché » nu, et que le verrou partagé tienne.
+describe('BanqueTab — un mouvement vers un compte de bilan s’écrit', () => {
+  function preparer(ligne: Partial<LigneBancaire> = {}) {
+    reinitialiser()
+    faux.pieces = []
+    faux.lignes = [ligneDeTest({ libelle: 'VIR VERS LIVRET A', montant: -1000, ...ligne })]
+  }
+  const ECRIT = { statut: 'rapprochee' as const, compte_bilan: '580000' }
+  async function voirLesRapproches() {
+    await act(async () => { (await screen.findByRole('button', { name: 'Rapprochés' })).click() })
+  }
+  function taper(saisie: string) {
+    fireEvent.change(within(volet()).getByLabelText('Autre compte de bilan (classe 1 à 5)'), { target: { value: saisie } })
+  }
+  async function deplierAutreCompte() {
+    await act(async () => { within(volet()).getByRole('button', { name: 'Autre compte de bilan…' }).click() })
+  }
+
+  it('écrit un virement entre comptes au 580000 par la base, et reste sur le mouvement', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    expect(within(volet()).getByRole('heading', { name: 'Sur un compte de bilan' })).toBeTruthy()
+    await act(async () => { within(volet()).getByRole('button', { name: 'Virement entre comptes (580000)' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Écrit sur un compte de bilan' })).toBeTruthy())
+    expect(faux.rpcs).toEqual([{
+      nom: 'ecrire_mouvement_compte_bilan',
+      args: {
+        p_ligne_bancaire_id: 'ligne-1',
+        p_compte: '580000',
+        p_ecritures: [
+          { compte: '580000', sens: 'debit', montant: 1000, libelle: 'VIR VERS LIVRET A' },
+          { compte: '512000', sens: 'credit', montant: 1000, libelle: 'VIR VERS LIVRET A' },
+        ],
+      },
+    }])
+    // Plus de mise à jour directe du relevé : un compte sans son écriture manquerait au FEC.
+    expect(faux.updatesLignes).toEqual([])
+    const panneau = within(volet())
+    expect(panneau.getByText('Écrit au 580000')).toBeTruthy()
+    expect(panneau.getByText('Virement entre comptes')).toBeTruthy()
+    expect(panneau.getByText('Compte 580000 — Virements internes · au débit')).toBeTruthy()
+    // Ce que le 580000 garde, dit sur le mouvement écrit.
+    expect(panneau.getByText(/le 580000 garde le solde de ce qui y a été versé/)).toBeTruthy()
+    // Pas « Rapproché » ni « Rapproché avec » : sa preuve est le relevé.
+    expect(panneau.queryByText(/^Rapproché$/)).toBeNull()
+    expect(panneau.queryByText('Rapproché avec')).toBeNull()
+    expect(panneau.getByRole('button', { name: 'Remettre à traiter' })).toBeTruthy()
+  })
+
+  it('un dépôt de garantie rendu s’écrit au crédit du 275000', async () => {
+    preparer({ libelle: 'VIR RESTITUTION DEPOT', montant: 1500 })
+    rendre()
+    await ouvrir('VIR RESTITUTION DEPOT')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Dépôt de garantie (275000)' }).click() })
+
+    await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Écrit sur un compte de bilan' })).toBeTruthy())
+    expect(faux.rpcs[0].args.p_ecritures).toEqual([
+      { compte: '275000', sens: 'credit', montant: 1500, libelle: 'VIR RESTITUTION DEPOT' },
+      { compte: '512000', sens: 'debit', montant: 1500, libelle: 'VIR RESTITUTION DEPOT' },
+    ])
+    expect(within(volet()).getByText('Compte 275000 — Dépôts et cautionnements versés · au crédit')).toBeTruthy()
+  })
+
+  it('un compte tapé se lit sous la forme de l’application, se nomme, et s’écrit', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    await deplierAutreCompte()
+    const ecrire = () => within(volet()).getByRole('button', { name: 'Écrire sur ce compte' })
+    // Rien de tapé n'est pas un refus : le bouton attend, sans message en rouge.
+    expect(ecrire().hasAttribute('disabled')).toBe(true)
+    expect(within(volet()).queryAllByText(/Un compte se désigne/)).toHaveLength(0)
+
+    taper('27 41')
+    expect(within(volet()).getByText('Compte 274100 — Prêts, face à la banque.')).toBeTruthy()
+    expect(ecrire().hasAttribute('disabled')).toBe(false)
+    await act(async () => { ecrire().click() })
+
+    await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Écrit sur un compte de bilan' })).toBeTruthy())
+    expect(faux.rpcs).toEqual([expect.objectContaining({
+      nom: 'ecrire_mouvement_compte_bilan',
+      args: expect.objectContaining({ p_compte: '274100' }),
+    })])
+    // Un compte que l'application ne propose pas : le plan comptable le nomme, et la phrase du 580000 ne s'y ajoute pas.
+    expect(within(volet()).getByText('Prêts')).toBeTruthy()
+    expect(within(volet()).getByText('Compte 274100 · au débit')).toBeTruthy()
+    expect(within(volet()).queryAllByText(/le 580000 garde le solde/)).toHaveLength(0)
+  })
+
+  it('un compte qui a son chemin se refuse avant le clic, en disant où va le mouvement', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    await deplierAutreCompte()
+    taper('512')
+    expect(within(volet()).getByText(/Le 512 est le compte du relevé lui-même/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Écrire sur ce compte' }).hasAttribute('disabled')).toBe(true)
+    taper('6061')
+    expect(within(volet()).getByText('Un compte de charge ou de produit (classe 6 ou 7) s’affecte par une catégorie.')).toBeTruthy()
+    taper('27a')
+    expect(within(volet()).getByText('Un numéro de compte ne s’écrit qu’avec des chiffres.')).toBeTruthy()
+    expect(faux.rpcs).toEqual([])
+  })
+
+  // LE COMPTE DU DIRIGEANT EST CELUI DU DOSSIER : en engagement le 455000 est le sien, et « Virement personnel » l'écrit ;
+  // en trésorerie le dirigeant est au 108000, et le 455000 se choisit. Une fiche qui jugerait le compte sur un modèle
+  // figé laisserait passer l'un ou refuserait l'autre.
+  it('en engagement, le compte du dirigeant se refuse ; en trésorerie, le même compte s’écrit', async () => {
+    preparer()
+    rendre(ENGAGEMENT)
+    await ouvrir('VIR VERS LIVRET A')
+    await deplierAutreCompte()
+    taper('455')
+    expect(within(volet()).getByText(/passent par « Virement personnel », qui les écrit sur son compte \(455000\)/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Écrire sur ce compte' }).hasAttribute('disabled')).toBe(true)
+    cleanup()
+
+    preparer()
+    rendre(TRESORERIE)
+    await ouvrir('VIR VERS LIVRET A')
+    await deplierAutreCompte()
+    taper('455')
+    expect(within(volet()).queryAllByText(/passent par « Virement personnel »/)).toHaveLength(0)
+    expect(within(volet()).getByRole('button', { name: 'Écrire sur ce compte' }).hasAttribute('disabled')).toBe(false)
+  })
+
+  it('n’écrit qu’une fois, même sur trois clics rapprochés', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    const bouton = within(volet()).getByRole('button', { name: 'Virement entre comptes (580000)' })
+    await act(async () => { bouton.click(); bouton.click(); bouton.click() })
+    expect(faux.rpcs).toHaveLength(1)
+  })
+
+  // Relâché avant la relecture, le verrou laisserait le bouton cliquable sur un mouvement déjà écrit : un second clic
+  // réécrirait le compte.
+  it('reste verrouillé tant que la relecture du relevé n’est pas revenue', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    faux.retenirLectureLignes = true
+    await act(async () => { within(volet()).getByRole('button', { name: 'Virement entre comptes (580000)' }).click() })
+    expect(within(volet()).getByRole('button', { name: 'Virement entre comptes (580000)' }).hasAttribute('disabled')).toBe(true)
+    await act(async () => { faux.resoudreLectureLignes?.() })
+    await waitFor(() => expect(within(volet()).getByRole('heading', { name: 'Écrit sur un compte de bilan' })).toBeTruthy())
+  })
+
+  it('un refus de la base se dit, et le mouvement reste à traiter', async () => {
+    preparer()
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Dépôt de garantie (275000)' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/Le mouvement n'a pas pu être écrit au compte 275000 : refus simulé/)))
+    expect(within(volet()).getByText('Non rapproché')).toBeTruthy()
+  })
+
+  // DÉFENSIF : un mouvement à traiter qui porte un autre classement — un drapeau de virement personnel resté d'avant —
+  // se refuse une fois, en tête, et aucun compte ne s'offre.
+  it('un mouvement déjà classé se refuse avant le clic', async () => {
+    preparer({ prelevement_personnel: true })
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    expect(within(volet()).getByText(/annule d’abord ce classement/)).toBeTruthy()
+    expect(within(volet()).getByRole('button', { name: 'Virement entre comptes (580000)' }).hasAttribute('disabled')).toBe(true)
+  })
+
+  it('un mouvement de zéro euro ne s’offre pas à un compte de bilan', async () => {
+    preparer({ montant: 0 })
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    expect(within(volet()).getByRole('heading', { name: 'Sans justificatif' })).toBeTruthy()
+    expect(within(volet()).queryAllByRole('heading', { name: 'Sur un compte de bilan' })).toHaveLength(0)
+  })
+
+  it('la liste dit le compte et son libellé, jamais un « Rapproché » nu ni « sans justificatif »', async () => {
+    preparer(ECRIT)
+    rendre()
+    await voirLesRapproches()
+    expect(await screen.findByText('Écrit au 580000 — Virements internes')).toBeTruthy()
+    expect(screen.queryByText(/^Rapproché$/)).toBeNull()
+    expect(screen.queryByText('Rapproché sans justificatif')).toBeNull()
+  })
+
+  it('remettre à traiter passe par la base, qui retire l’écriture avec le compte', async () => {
+    preparer(ECRIT)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR VERS LIVRET A')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Remettre à traiter' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Non rapproché')).toBeTruthy())
+    expect(faux.rpcs).toEqual([{ nom: 'retirer_mouvement_compte_bilan', args: { p_ligne_bancaire_id: 'ligne-1' } }])
+    expect(faux.updatesLignes).toEqual([])
+  })
+
+  it('une remise à traiter que la base refuse se dit, et le compte reste', async () => {
+    preparer(ECRIT)
+    faux.erreurRpc = 'refus simulé'
+    const alerte = vi.spyOn(window, 'alert').mockImplementation(() => {})
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR VERS LIVRET A')
+    await act(async () => { within(volet()).getByRole('button', { name: 'Remettre à traiter' }).click() })
+    await waitFor(() => expect(alerte).toHaveBeenCalledWith(expect.stringMatching(/Le mouvement n'a pas pu être remis à traiter : refus simulé/)))
+    expect(within(volet()).getByText('Écrit au 580000')).toBeTruthy()
+  })
+
+  it('changer de compte réécrit par la même fonction, qui remplace le compte et l’écriture', async () => {
+    preparer(ECRIT)
+    rendre()
+    await voirLesRapproches()
+    await ouvrir('VIR VERS LIVRET A')
+    // Replié tant qu'on ne le demande pas.
+    expect(within(volet()).queryAllByRole('button', { name: 'Dépôt de garantie (275000)' })).toHaveLength(0)
+    await act(async () => { within(volet()).getByRole('button', { name: 'Changer de compte…' }).click() })
+    await act(async () => { within(volet()).getByRole('button', { name: 'Dépôt de garantie (275000)' }).click() })
+    await waitFor(() => expect(within(volet()).getByText('Écrit au 275000')).toBeTruthy())
+    expect(faux.rpcs).toEqual([expect.objectContaining({
+      nom: 'ecrire_mouvement_compte_bilan', args: expect.objectContaining({ p_compte: '275000' }),
+    })])
+  })
+
+  it('figé par un exercice validé, il se lit sans rien proposer', async () => {
+    preparer(ECRIT)
+    rendre(TRESORERIE, false, [2025])
+    await voirLesRapproches()
+    await ouvrir('VIR VERS LIVRET A')
+    expect(within(volet()).getByRole('heading', { name: 'Écrit sur un compte de bilan' })).toBeTruthy()
+    expect(within(volet()).queryAllByRole('button', { name: 'Changer de compte…' })).toHaveLength(0)
+    expect(within(volet()).queryAllByRole('button', { name: 'Remettre à traiter' })).toHaveLength(0)
+  })
+
+  // « Ignorer » n'écrit rien : la fiche le dit avant le clic, et sur un mouvement ignoré.
+  it('dit qu’un mouvement ignoré n’est écrit nulle part', async () => {
+    preparer()
+    rendre()
+    await ouvrir('VIR VERS LIVRET A')
+    expect(within(volet()).getByText(/« Ignorer » n’écrit rien, ni au brouillon ni au FEC/)).toBeTruthy()
+    cleanup()
+
+    preparer({ statut: 'ignoree' })
+    rendre()
+    await act(async () => { (await screen.findByRole('button', { name: 'Ignorés' })).click() })
+    await ouvrir('VIR VERS LIVRET A')
+    expect(within(volet()).getByText(/Ignoré : ce mouvement n’est écrit nulle part/)).toBeTruthy()
   })
 })
 

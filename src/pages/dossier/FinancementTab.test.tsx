@@ -962,6 +962,35 @@ describe('FinancementTab — les emprunts et le relevé', () => {
     const modale = await ouvrirLePlan('Plan de trésorerie')
     expect(modale.textContent).toMatch(/complets : 2\s?600,00\s€ d'encaissements/)
     expect(within(modale).queryByText(/fonds reçus d’un emprunt/i)).toBeNull()
+    expect(within(modale).queryByText(/compte de bilan/)).toBeNull()
+  })
+
+  // UN MOUVEMENT ÉCRIT SUR UN COMPTE DE BILAN (ligne 26.7, lib/compteDeBilan.ts) : rapatriée de l'épargne, la somme
+  // flatterait le taux d'endettement. Le solde la compte, la moyenne non — comme un déblocage, et dit à part.
+  const RAPATRIEMENT = mouvement({
+    id: 'l-deb', date: '2025-01-07', libelle: 'VIR DEPUIS LIVRET A', montant: 12000,
+    emprunt_id: null, emprunt_echeance: null, emprunt_interets: null, emprunt_assurance: null, compte_bilan: '580000',
+  })
+
+  it('le plan de trésorerie écarte un mouvement écrit sur un compte de bilan de la moyenne, pas du solde', async () => {
+    preparer()
+    faux.ecritures = ecrituresDuPlan(true)
+    faux.paiements = [RAPATRIEMENT]
+    const modale = await ouvrirLePlan('Plan de trésorerie')
+    expect(modale.textContent).toMatch(/complets : 600,00\s€ d'encaissements/)
+    expect(within(modale).getByText(/Ni un mouvement écrit sur un compte de bilan — un virement vers l’épargne ou depuis elle/)).toBeTruthy()
+    // Pas un déblocage : la phrase des emprunts ne s'y ajoute pas.
+    expect(within(modale).queryByText(/fonds reçus d’un emprunt/i)).toBeNull()
+    expect(screen.getByText('Trésorerie actuelle (banque)').parentElement?.textContent).toMatch(/15\s?600,00\s€/)
+  })
+
+  it('le taux d’endettement ne compte pas un mouvement écrit sur un compte de bilan, et le dit', async () => {
+    preparer()
+    faux.ecritures = ecrituresDuPlan(true)
+    faux.paiements = [RAPATRIEMENT]
+    const modale = await ouvrirLePlan('Dettes & ratios bancaires')
+    expect(within(modale).getByText(/Ni un mouvement écrit sur un compte de bilan — un virement depuis l’épargne/)).toBeTruthy()
+    expect(modale.textContent).toMatch(/86,5\s%/)
   })
 
   // LA SITUATION INTERMÉDIAIRE COMPTE LES INTÉRÊTS ET L'ASSURANCE d'une échéance rapprochée, à sa date,

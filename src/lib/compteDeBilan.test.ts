@@ -9,7 +9,7 @@ import {
   libelleDuCompteDeBilan, lireCompteSaisi, mouvementsSurUnCompteDeBilanDesynchronises, refusCompteDeBilan,
   refusCompteDeBilanDuMouvement, refusMouvementCompteDeBilan,
 } from './compteDeBilan'
-import { mouvementRapprocheSansObjet, mouvementsIgnoresHorsFec } from './controles'
+import { montantsDesMouvementsIgnores, mouvementRapprocheSansObjet, mouvementsIgnoresHorsFec } from './controles'
 import { refusRapprochementCotisation } from './cotisationRapprochee'
 import { refusEcheanceEmprunt } from './echeanceEmprunt'
 import type { ModeleComptable } from './engagement'
@@ -424,5 +424,18 @@ describe('mouvementsIgnoresHorsFec — un mouvement ignoré n’est pas au FEC, 
     expect(mouvementsIgnoresHorsFec(lignes, '2026-01-01', null).map((l) => l.id)).toEqual(['ouverture'])
     expect(mouvementsIgnoresHorsFec(lignes, null, '2025-12-31').map((l) => l.id)).toEqual(['ouverture'])
     expect(mouvementsIgnoresHorsFec(lignes, null, '2026-12-31')).toEqual([])
+  })
+
+  // Les deux sens à part : la somme nette cacherait un encaissement derrière un paiement du même montant.
+  it('dit ce qu’ils emportent, un sens après l’autre, au centime', () => {
+    const euros = (texte: string | undefined) => texte?.replace(/\s/g, ' ')
+    expect(euros(montantsDesMouvementsIgnores([{ montant: 300 }, { montant: -120 }, { montant: -0.1 }, { montant: -0.2 }])))
+      .toBe('300,00 € encaissés et 120,30 € payés')
+    expect(euros(montantsDesMouvementsIgnores([{ montant: -50 }, { montant: 50 }]))).toBe('50,00 € encaissés et 50,00 € payés')
+    expect(euros(montantsDesMouvementsIgnores([{ montant: -50 }]))).toBe('50,00 € payés')
+    expect(euros(montantsDesMouvementsIgnores([{ montant: 1250.5 }]))).toBe('1 250,50 € encaissés')
+    // Rien quand aucun ne porte de montant.
+    expect(montantsDesMouvementsIgnores([{ montant: 0 }])).toBeUndefined()
+    expect(montantsDesMouvementsIgnores([])).toBeUndefined()
   })
 })

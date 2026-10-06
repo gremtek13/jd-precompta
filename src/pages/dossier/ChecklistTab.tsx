@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { supabase } from '../../lib/supabase'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from '../../lib/ecritures'
 import type { ModeleComptable } from '../../lib/engagement'
-import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { categoriesSansCompte, categoriesSansPoste, detailPiecesSansDate, immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec, mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesSansTva, piecesTvaImpossible, piecesValideesSansCategorie } from '../../lib/controles'
+import { mouvementsSurUnCompteDeBilanDesynchronises } from '../../lib/compteDeBilan'
 import { chargerRelevesIncoherents } from '../../lib/controlesReleves'
 import { piecesMontantIntrouvableEnBanque } from '../../lib/appariementBanque'
 import { rupturesPisteAudit } from '../../lib/pisteAudit'
@@ -440,6 +441,15 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
   // tait exactement dessus — sur l'écran dont le métier est de dire ce qui manque. Voir
   // `mouvementsRapprochesSansObjet` : les deux clés du côté banque sont en `ON DELETE SET NULL`.
   const rapprochesSansObjet = mouvementsRapprochesSansObjet(lignes)
+  // LES MOUVEMENTS IGNORÉS, que rien n'écrit (lib/controles.ts) : « Ignorer » convient à un doublon, ou à un mouvement
+  // antérieur aux à-nouveaux d'un dossier repris — la balance reprise le porte déjà. Un mouvement réel ignoré manque au
+  // FEC, et le 512 du brouillon s'écarte du relevé d'autant. Tus sur une lecture partielle de l'ouverture : un mouvement
+  // antérieur aux à-nouveaux y serait réclamé. Ni rien d'un exercice validé, que plus rien ne réécrit.
+  const ignoresHorsFec = ouvertureIncomplete !== null ? [] : mouvementsIgnoresHorsFec(lignes, ouverture?.date ?? null, frontiere)
+  const montantsIgnores = montantsDesMouvementsIgnores(ignoresHorsFec)
+  // Un mouvement écrit sur un compte de bilan dont l'écriture ne suit plus le compte. Défensif : la base écrit le compte
+  // et l'écriture ensemble (lib/compteDeBilan.ts).
+  const bilanPerimes = mouvementsSurUnCompteDeBilanDesynchronises(ecritures, lignes, frontiere)
   // L'AUTRE MOITIÉ DE « LA BANQUE FAIT FOI » (décision du cabinet, 23/09/2026) : sous le seuil la
   // pièce est ALIGNÉE au rapprochement et il n'y a rien à dire ; au-dessus, un écart large est
   // presque toujours un paiement partiel, donc on le signale sans rien écraser. Jugé sur le TOTAL
@@ -550,6 +560,9 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
     { id: 'echeances-emprunt-perimees', label: 'échéance(s) d’emprunt dont l’écriture ne suit plus le découpage', action: 'Rapprocher de nouveau ces échéances', nb: echeancesPerimees.length, cible: 'banque', severite: 'erreur' },
     // Le pendant pour un mouvement ventilé : « Réécrire », dans Écritures, reprend l'écriture depuis ses parts.
     { id: 'ventiles-perimes', label: 'mouvement(s) ventilé(s) dont l’écriture ne suit plus les parts', action: 'Réécrire ces ventilations', nb: ventilesPerimes.length, cible: 'ecritures', severite: 'erreur' },
+    // Le pendant pour un mouvement écrit sur un compte de bilan : « Réécrire », dans Écritures. Défensif — la base écrit
+    // le compte et l'écriture ensemble —, mais une écriture retirée par un autre chemin sortirait du FEC en silence.
+    { id: 'comptes-de-bilan-perimes', label: 'mouvement(s) écrit(s) sur un compte de bilan dont l’écriture ne suit plus le compte', action: 'Réécrire ces mouvements', nb: bilanPerimes.length, cible: 'ecritures', severite: 'erreur' },
     // « Erreur » : la 2035 compte ce que disent les parts, l'écriture autre chose. Défensif — la base
     // vérifie la somme —, mais une part écrite ou retirée par un autre chemin ne se verrait nulle part.
     { id: 'ventilations-incoherentes', label: 'mouvement(s) ventilé(s) dont les parts ne font plus le mouvement', action: 'Modifier ou annuler ces ventilations', nb: ventilationsFausses.length, cible: 'banque', severite: 'erreur' },
@@ -620,6 +633,13 @@ export default function ChecklistTab({ dossierId, assujettiTva, modele, onNaviga
       action: 'Voir les écritures à rapprocher', nb: nbSansContrepartie, cible: 'banque', severite: 'attention',
     },
     { id: 'lignes-non-rapprochees', label: 'ligne(s) bancaire(s) non rapprochée(s)', action: 'Voir les opérations à rapprocher', nb: lignesNonRapprochees.length, cible: 'banque', severite: 'attention' },
+    // « Attention » et non « erreur » : ignorer est le bon geste pour un doublon, et rien ne les distingue d'ici d'un
+    // mouvement réel oublié. Le point les montre avec ce qu'ils emportent, le cabinet tranche.
+    {
+      id: 'mouvements-ignores', label: 'mouvement(s) ignoré(s), absent(s) du FEC — un doublon, ou un mouvement à classer ?',
+      action: 'Voir les mouvements ignorés', nb: ignoresHorsFec.length, cible: 'banque', severite: 'attention',
+      detail: `Dans Banque, filtre « Ignorés »${montantsIgnores ? ` : ${montantsIgnores}` : ''}. Un doublon reste ignoré ; un mouvement réel se remet à traiter et se classe.`,
+    },
     // « Attention » : un lettrage qui ne tient plus n'est pas porté au FEC, donc rien de faux n'en sort — la facture
     // qu'il soldait reparaît simplement ouverte. La liste qui dit pourquoi, et d'où le défaire, est sous les comptes de
     // tiers de la Balance des comptes.

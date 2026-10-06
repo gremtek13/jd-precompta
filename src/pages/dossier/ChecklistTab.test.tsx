@@ -1901,3 +1901,94 @@ describe('ChecklistTab — les virements qui règlent plusieurs pièces', () => 
     expect(point.textContent).toMatch(/^1 /)
   })
 })
+
+// LIGNE 26.7 : LES MOUVEMENTS IGNORÉS NE SONT PAS AU FEC (lib/controles.ts), et un mouvement écrit sur un compte de bilan
+// dont l'écriture ne suit plus le compte est une erreur (lib/compteDeBilan.ts). Ce que les modules ne voient pas : que
+// l'écran LISE l'ouverture et les exercices validés pour les ignorés, se taise sur une ouverture lue à moitié, et que
+// chaque point mène à l'onglet qui sait le traiter.
+describe('ChecklistTab — les mouvements ignorés et les comptes de bilan', () => {
+  const ANCRE = ligne({ id: 'a-traiter', statut: 'non_rapprochee', piece_id: null })
+  const ignore = (o: Partial<LigneBancaire> = {}) =>
+    ligne({ id: 'ig1', statut: 'ignoree', piece_id: null, libelle: 'VIR EN DOUBLE', montant: -120, ...o })
+  const POINT = /mouvement\(s\) ignoré\(s\), absent\(s\) du FEC/
+  const OUVERTURE: ANouveau = {
+    id: 'an1', dossier_id: 'dossier-de-test', date: '2026-01-01', compte: '512000', compte_origine: '512000',
+    libelle: 'Banque', sens: 'debit', montant: 1000, source_nom: 'balance.csv', source_empreinte: 'e', ...A_NOUVEAU_NON_VALIDE,
+    created_at: '2026-01-05T09:00:00Z',
+  }
+  const surBilan = () => ligne({ id: 'l-b', piece_id: null, compte_bilan: '580000', libelle: 'VIR VERS LIVRET A', montant: -1000 })
+  function ecritureDe(o: Partial<EcritureBrouillon>): EcritureBrouillon {
+    return {
+      id: 'b1', dossier_id: 'dossier-de-test', piece_id: null, ligne_bancaire_id: 'l-b', date: '2026-03-10',
+      compte: '580000', libelle: 'VIR VERS LIVRET A', montant: 1000, sens: 'debit', statut: 'proposee',
+      immobilisation_id: null, vehicule_id: null, ...NON_VALIDEE, created_at: '2026-03-10T00:00:00Z', ...o,
+    }
+  }
+
+  it('compte les mouvements ignorés, dit ce qu’ils emportent, et mène à Banque', async () => {
+    const onNavigate = vi.fn()
+    poser({ lignes: [ignore(), ignore({ id: 'ig2', montant: 300 })] })
+    render(<AvecExercicesValides><ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+
+    const point = await screen.findByText(POINT)
+    expect(point.textContent).toMatch(/^2 /)
+    expect(screen.getByText(/Dans Banque, filtre « Ignorés » : 300,00\s€ encaissés et 120,00\s€ payés\. Un doublon reste ignoré/)).toBeTruthy()
+    screen.getByRole('button', { name: 'Voir les mouvements ignorés' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('banque')
+  })
+
+  it('ne compte ni un virement personnel, ni un mouvement antérieur à l’ouverture', async () => {
+    poser({ lignes: [ANCRE, ignore({ prelevement_personnel: true }), ignore({ id: 'ig-avant', date: '2025-12-20' })], aNouveaux: [OUVERTURE] })
+    monter()
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+  })
+
+  it('se tait quand l’ouverture est lue à moitié, plutôt que de réclamer un mouvement repris', async () => {
+    poser({ lignes: [ANCRE, ignore({ date: '2025-12-20' })], aNouveaux: [OUVERTURE], tronquees: ['a_nouveaux'] })
+    const { unmount } = monter()
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+    unmount()
+    // Le garde symétrique : sans ouverture, le même mouvement se compte.
+    poser({ lignes: [ANCRE, ignore({ date: '2025-12-20' })] })
+    monter()
+    expect((await screen.findByText(POINT)).textContent).toMatch(/^1 /)
+  })
+
+  it('ne compte pas un mouvement d’un exercice validé, que plus rien ne réécrit', async () => {
+    poser({ lignes: [ANCRE, ignore({ date: '2025-03-10' })] })
+    const { unmount } = monter(false, TRESORERIE, [2025])
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(POINT)).toHaveLength(0)
+    unmount()
+    poser({ lignes: [ANCRE, ignore({ date: '2025-03-10' })] })
+    monter()
+    expect((await screen.findByText(POINT)).textContent).toMatch(/^1 /)
+  })
+
+  it('un mouvement écrit sur un compte de bilan sans son écriture est une erreur, qui mène à Écritures', async () => {
+    const onNavigate = vi.fn()
+    poser({ lignes: [surBilan()] })
+    render(<AvecExercicesValides><ChecklistTab dossierId="dossier-de-test" assujettiTva={false} modele={TRESORERIE} onNavigate={onNavigate} /></AvecExercicesValides>)
+
+    const point = await screen.findByText(/écrit\(s\) sur un compte de bilan dont l’écriture ne suit plus le compte/)
+    expect(point.textContent).toMatch(/^1 /)
+    screen.getByRole('button', { name: 'Réécrire ces mouvements' }).click()
+    expect(onNavigate).toHaveBeenCalledWith('ecritures')
+  })
+
+  // Garde SYMÉTRIQUE : écrit, il n'est ni un point à traiter, ni une rupture de la piste d'audit, ni un mouvement
+  // « rapproché sans justificatif ».
+  it('écrit, il n’est ni un point à traiter ni une rupture de la piste d’audit', async () => {
+    poser({
+      lignes: [ANCRE, surBilan()],
+      ecritures: [ecritureDe({ id: 'b1' }), ecritureDe({ id: 'b2', compte: '512000', sens: 'credit' })],
+    })
+    monter()
+    await screen.findByText(/non rapprochée\(s\)/)
+    expect(screen.queryAllByText(/sur un compte de bilan dont l’écriture/)).toHaveLength(0)
+    expect(screen.queryAllByText(/piste d'audit rompue/i)).toHaveLength(0)
+    expect(screen.queryAllByText(/rapproché\(s\) sans justificatif/)).toHaveLength(0)
+  })
+})

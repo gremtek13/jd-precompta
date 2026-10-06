@@ -9,9 +9,11 @@ import { numeroterFec, type NumerotationFec } from './fec'
 import { anneeDe } from './format'
 import { analyserEcritures, ecrituresSansObjet, piecesAComptabiliser } from './ecritures'
 import {
-  immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, mouvementsRapprochesSansObjet, piecesADateImpossible,
-  piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesTvaImpossible, piecesValideesSansCategorie,
+  immobilisationsSansJustificatif, moisEnDoubleSurAbonnement, montantsDesMouvementsIgnores, mouvementsIgnoresHorsFec,
+  mouvementsRapprochesSansObjet, piecesADateImpossible, piecesDeviseNonConvertie, piecesPayeesEnPartie, piecesTvaImpossible,
+  piecesValideesSansCategorie,
 } from './controles'
+import { mouvementsSurUnCompteDeBilanDesynchronises } from './compteDeBilan'
 import { mouvementsAffectes, mouvementsAffectesDesynchronises, recettesAffecteesSansTaux } from './affectationBanque'
 import { mouvementsVentilesDesynchronises, partsDesVentilations, recettesVentileesSansTaux, ventilationsIncoherentes } from './ventilationBanque'
 import { virementsPersonnelsAEcrire } from './virementPersonnel'
@@ -432,6 +434,11 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     message: "mouvement(s) ventilé(s) dont les parts ne font plus le mouvement : modifier ou annuler ces ventilations.",
   })
   bloque({
+    id: 'comptes-de-bilan-perimes', nb: mouvementsSurUnCompteDeBilanDesynchronises(d.ecritures, d.lignes, frontiere).filter(mouvementDeLExercice).length,
+    cible: 'ecritures',
+    message: "mouvement(s) écrit(s) sur un compte de bilan dont l'écriture ne suit plus le compte : les réécrire.",
+  })
+  bloque({
     id: 'virements-sans-ecriture', nb: virementsPersonnelsAEcrire(d.ecritures, d.lignes, d.modele, frontiere).filter(mouvementDeLExercice).length, cible: 'virements',
     message: "virement(s) personnel(s) sans écriture — absents du FEC : les écrire.",
   })
@@ -502,6 +509,18 @@ export function prealablesDeValidation(d: DonneesDeValidation): EtatDeValidation
     prealables.push({
       id: 'echeances-emprunt-non-rapprochees', nb: echeancesManquantes.length, cible: 'banque', bloquant: false,
       message: "échéance(s) d'emprunt de l'exercice qu'aucun mouvement ne paie — leurs intérêts ne sont pas comptés. Une fois l'exercice validé, ils ne le seront plus.",
+    })
+  }
+  // LES MOUVEMENTS IGNORÉS DE L'EXERCICE ne sont écrits nulle part (lib/controles.ts) : juste pour un doublon, faux pour un
+  // mouvement réel, qui manque alors au FEC. Rien ne les distingue d'ici : un avertissement, pas un refus — refuser
+  // ferait reclasser un doublon pour valider. Mais validé, l'exercice fige ses mouvements : un oubli le resterait.
+  const ignores = mouvementsIgnoresHorsFec(d.lignes, ouvertureDate, frontiere).filter(mouvementDeLExercice)
+  if (ignores.length > 0) {
+    const montants = montantsDesMouvementsIgnores(ignores)
+    prealables.push({
+      id: 'mouvements-ignores', nb: ignores.length, cible: 'banque', bloquant: false,
+      message: "mouvement(s) ignoré(s) de l'exercice, absent(s) du FEC : un doublon le reste, un mouvement réel se remet à traiter et se classe. Une fois l'exercice validé, il ne le pourra plus.",
+      detail: `${montants ? `${montants}. ` : ''}Dans Banque, filtre « Ignorés ».`,
     })
   }
   if (d.declaration) {

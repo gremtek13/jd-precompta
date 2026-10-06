@@ -25,6 +25,9 @@ import type {
   Categorie, CotisationDeclaree, LigneBancaire, ModeComptable, Piece, RegleAffectationBancaire, ReglementGroupe, VentilationBancaire,
 } from '../../lib/types'
 import { ecritureDeLaCotisation, refusRapprochementCotisation } from '../../lib/cotisationRapprochee'
+import {
+  COMPTES_DE_BILAN_PROPOSES, libelleDuCompteDeBilan, lireCompteSaisi, refusCompteDeBilan, refusMouvementCompteDeBilan,
+} from '../../lib/compteDeBilan'
 import { montantSaisi, ventilationsIncoherentes, type PartSaisie } from '../../lib/ventilationBanque'
 import FormulaireReglementGroupe from './FormulaireReglementGroupe'
 import FormulaireVentilation from './FormulaireVentilation'
@@ -88,6 +91,13 @@ import FormulaireVentilation from './FormulaireVentilation'
 // comment l'échéance s'écrit ; elle ne dit pas si l'écriture d'un rapprochement posé AVANT qu'il s'écrive
 // manque — elle ne lit pas le brouillon —, et renvoie à l'onglet Cotisations, qui le lit, le montre et
 // l'écrit.
+//
+// ET UN MOUVEMENT QUI N'EST NI UNE CHARGE NI UNE RECETTE S'ÉCRIT SUR UN COMPTE DE BILAN (ligne 26.7,
+// lib/compteDeBilan.ts) : un virement vers un autre compte du professionnel au 580000, un dépôt de garantie versé
+// ou rendu au 275000, ou un compte de bilan au choix. Ce que la base refuserait — le compte du relevé, celui du
+// dirigeant, un compte qui a son propre chemin dans l'application — est dit avant le clic, avec le chemin qui
+// convient. Rien ne s'écrit avant le clic, et un mouvement écrit se change de compte ou se remet à traiter par la
+// base, qui retire le compte AVEC son écriture.
 
 export interface NavigationMouvement {
   position: string
@@ -184,6 +194,10 @@ interface FicheMouvementProps {
   // Pièce → ce qu'il reste à régler d'une pièce payée en partie, DANS LES DEUX MODÈLES (`restesAReglerDesPieces`) :
   // ce qu'un second paiement peut encore régler. Vide sur une lecture partielle du relevé ou des parts.
   restesARegler: ReadonlyMap<string, number>
+  // Écrire ce mouvement sur un compte de bilan, ou le remettre à traiter — par la base, qui écrit et retire le compte
+  // AVEC son écriture (`ecrire_mouvement_compte_bilan`, `retirer_mouvement_compte_bilan`).
+  onEcrireCompteBilan: (compte: string) => void
+  onRetirerCompteBilan: () => void
 }
 
 interface Signal { ok: boolean; texte: string }
@@ -471,7 +485,7 @@ export default function FicheMouvement({
   onAffecter, onRetirerAffectation, emprunts, empruntsIncomplets, onRapprocherEmprunt, onRetirerEmprunt,
   ventilations, ventilationsIncompletes, onVentiler, onRetirerVentilation,
   reglements, reglementsIncomplets, paiements, onReglerEnGroupe, onRetirerReglementGroupe, restesAPayer, payeesEnTrop,
-  restesARegler,
+  restesARegler, onEcrireCompteBilan, onRetirerCompteBilan,
 }: FicheMouvementProps) {
   const libelleCompteDirigeant = LIBELLES_COMPTES[compteDirigeant] ?? compteDirigeant
   const fige = figeePar !== null
@@ -559,6 +573,24 @@ export default function FicheMouvement({
   // montant du virement, et l'avoir qu'il déduit y figure en négatif. Montrées toutes positives, deux
   // factures et un avoir paraîtraient faire plus que le virement.
   const partReglee = (r: ReglementGroupe) => r.montant * (Math.sign(ligne.montant) || 1)
+
+  // UN COMPTE DE BILAN (lib/compteDeBilan.ts) : les deux comptes proposés sous la main, un autre au choix replié tant
+  // qu'on ne le demande pas. Écrit, le mouvement se change de compte — la base remplace le compte et l'écriture — ou se
+  // remet à traiter. Ce que la base refuserait est dit AVANT le clic : le refus du mouvement une fois, celui d'un compte
+  // tapé sous la saisie — et chaque refus dit où va le mouvement.
+  const surCompteDeBilan = ligne.statut === 'rapprochee' && !!ligne.compte_bilan
+  const [autreCompteDeplie, setAutreCompteDeplie] = useState(false)
+  const [compteSaisi, setCompteSaisi] = useState('')
+  const [changementCompteDeplie, setChangementCompteDeplie] = useState(false)
+  const refusDuMouvementSurBilan = refusMouvementCompteDeBilan(ligne)
+  const refusDuCompteDeBilan = (compte: string | null) =>
+    refusDuMouvementSurBilan ?? refusCompteDeBilan(compte, modeComptable, compteDirigeant)
+  const saisieCompte = lireCompteSaisi(compteSaisi)
+  // Rien de tapé n'est pas un refus : le bouton attend, sans message en rouge.
+  const refusSaisie = saisieCompte.refus ?? (saisieCompte.compte ? refusCompteDeBilan(saisieCompte.compte, modeComptable, compteDirigeant) : null)
+  const libelleSaisi = saisieCompte.compte ? libelleDuCompteDeBilan(saisieCompte.compte) : null
+  const compteDeBilanPropose = surCompteDeBilan ? COMPTES_DE_BILAN_PROPOSES.find((c) => c.compte === ligne.compte_bilan) ?? null : null
+  const libelleCompteDeBilan = ligne.compte_bilan ? libelleDuCompteDeBilan(ligne.compte_bilan) : null
 
   // Ce qui se propose à l'affectation : les catégories d'un compte de résultat, dans l'ordre du sens
   // du mouvement — les recettes d'abord pour un encaissement, les dépenses d'abord pour un paiement.
@@ -798,6 +830,66 @@ export default function FicheMouvement({
     )
   }
 
+  // Les comptes de bilan proposés, d'un clic, et un compte au choix. Rendu sur un mouvement à traiter et, replié, sur un
+  // mouvement déjà écrit sur un compte de bilan — pour en changer : la base remplace alors le compte et l'écriture, et
+  // rejouer le même compte réécrit une écriture qui ne le suivrait plus.
+  function choixDeCompteDeBilan(): ReactNode {
+    return (
+      <>
+        {refusDuMouvementSurBilan && <p className="fiche-mouvement-alerte">{refusDuMouvementSurBilan}</p>}
+        <div className="fiche-mouvement-boutons">
+          {COMPTES_DE_BILAN_PROPOSES.map((c) => (
+            <button
+              key={c.compte}
+              type="button"
+              className="btn btn-outline btn-sm"
+              title={c.aide}
+              disabled={occupe || !!refusDuCompteDeBilan(c.compte)}
+              onClick={() => onEcrireCompteBilan(c.compte)}
+            >
+              {c.libelle} ({c.compte})
+            </button>
+          ))}
+          {!autreCompteDeplie && (
+            <button type="button" className="btn btn-outline btn-sm" onClick={() => setAutreCompteDeplie(true)}>
+              Autre compte de bilan…
+            </button>
+          )}
+        </div>
+        {autreCompteDeplie && (
+          <div className="field">
+            <label htmlFor={`compte-bilan-${ligne.id}`}>Autre compte de bilan (classe 1 à 5)</label>
+            <div className="fiche-mouvement-choix">
+              <input
+                id={`compte-bilan-${ligne.id}`}
+                type="text"
+                inputMode="numeric"
+                autoComplete="off"
+                placeholder="ex. 274100"
+                value={compteSaisi}
+                onChange={(e) => setCompteSaisi(e.target.value)}
+              />
+              <button
+                type="button"
+                className="btn btn-outline"
+                disabled={!saisieCompte.compte || !!refusSaisie || !!refusDuMouvementSurBilan || occupe}
+                onClick={() => saisieCompte.compte && onEcrireCompteBilan(saisieCompte.compte)}
+              >
+                Écrire sur ce compte
+              </button>
+            </div>
+            {refusSaisie && <p className="fiche-mouvement-alerte">{refusSaisie}</p>}
+            {saisieCompte.compte && !refusSaisie && (
+              <p className="fiche-mouvement-note">
+                Compte {saisieCompte.compte}{libelleSaisi ? ` — ${libelleSaisi}` : ''}, face à la banque.
+              </p>
+            )}
+          </div>
+        )}
+      </>
+    )
+  }
+
   let principal: ReactNode = null
   if (fige) {
     // Rien à proposer : annuler, reclasser ou rapprocher, la base refuse tout (voir `figeePar`).
@@ -860,6 +952,14 @@ export default function FicheMouvement({
     principal = (
       <button type="button" className="btn btn-outline" disabled={occupe} onClick={onRetirerAffectation}>
         Annuler l’affectation
+      </button>
+    )
+  } else if (surCompteDeBilan) {
+    // Par la base : l'écriture part avec le compte (`retirer_mouvement_compte_bilan`). Une simple remise à « à traiter »,
+    // la contrainte `lignes_bancaires_compte_bilan_rapproche` la refuserait de toute façon.
+    principal = (
+      <button type="button" className="btn btn-outline" disabled={occupe} onClick={onRetirerCompteBilan}>
+        Remettre à traiter
       </button>
     )
   } else if (ligne.statut === 'rapprochee') {
@@ -939,7 +1039,8 @@ export default function FicheMouvement({
               {!reglementsIncomplets && reglements.length >= 2 ? `Règle ${reglements.length} pièces` : 'Règle plusieurs pièces'}
             </span>
           )}
-          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && <span className="badge badge-ok">Rapproché</span>}
+          {surCompteDeBilan && <span className="badge badge-ok">Écrit au {ligne.compte_bilan}</span>}
+          {!ligne.prelevement_personnel && ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && !surCompteDeBilan && <span className="badge badge-ok">Rapproché</span>}
           {pastillesPaiement.map((texte) => <span key={texte} className="badge badge-danger">{texte}</span>)}
           {!ligne.prelevement_personnel && aTraiter && <span className="badge badge-warning">Non rapproché</span>}
           {!ligne.prelevement_personnel && ligne.statut === 'ignoree' && <span className="badge badge-neutral">Ignoré</span>}
@@ -1181,6 +1282,22 @@ export default function FicheMouvement({
               « Virement personnel » : entre le compte pro et le compte personnel, il s’écrit sur le compte{' '}
               {compteDirigeant} ({libelleCompteDirigeant}), face à la banque — ni charge ni recette.
             </p>
+            <p className="fiche-mouvement-note">
+              « Ignorer » n’écrit rien, ni au brouillon ni au FEC : il convient à un doublon, ou à un mouvement antérieur aux
+              à-nouveaux d’un dossier repris. Un vrai mouvement ignoré manque au FEC, et la Vue d’ensemble le compte.
+            </p>
+          </section>
+        )}
+
+        {aTraiter && ligne.montant !== 0 && (
+          <section className="fiche-mouvement-section">
+            <h3>Sur un compte de bilan</h3>
+            <p className="fiche-mouvement-note">
+              Ni charge ni recette : un virement vers un autre compte du professionnel, un dépôt de garantie versé ou rendu
+              s’écrit sur un compte de bilan, face à la banque. La 2035 ne le compte pas ; le FEC le porte avec le relevé
+              pour pièce.
+            </p>
+            {choixDeCompteDeBilan()}
           </section>
         )}
 
@@ -1441,6 +1558,43 @@ export default function FicheMouvement({
           </section>
         )}
 
+        {surCompteDeBilan && (
+          <section className="fiche-mouvement-section">
+            <h3>Écrit sur un compte de bilan</h3>
+            <div className="carte-rapprochement">
+              <div className="carte-rapprochement-entete">
+                <div className="carte-rapprochement-titres">
+                  <strong>{compteDeBilanPropose?.libelle ?? libelleCompteDeBilan ?? 'Compte de bilan'}</strong>
+                  <span>
+                    Compte {ligne.compte_bilan}
+                    {compteDeBilanPropose && libelleCompteDeBilan ? ` — ${libelleCompteDeBilan}` : ''}
+                    {ligne.montant < 0 ? ' · au débit' : ' · au crédit'}
+                  </span>
+                </div>
+              </div>
+            </div>
+            <p className="fiche-mouvement-note">
+              Ni charge ni recette : écrit au brouillon face à la banque, à la date du mouvement. La 2035 ne le compte pas ;
+              le FEC le porte au journal de banque, avec le relevé pour pièce.
+              {compteDeBilanPropose ? ` ${compteDeBilanPropose.aide}` : ''}
+            </p>
+            {!fige && (changementCompteDeplie ? choixDeCompteDeBilan() : (
+              <div className="fiche-mouvement-boutons">
+                <button type="button" className="btn btn-outline btn-sm" onClick={() => setChangementCompteDeplie(true)}>
+                  Changer de compte…
+                </button>
+              </div>
+            ))}
+          </section>
+        )}
+
+        {ligne.statut === 'ignoree' && !ligne.prelevement_personnel && !fige && (
+          <p className="fiche-mouvement-note">
+            Ignoré : ce mouvement n’est écrit nulle part, ni au brouillon ni au FEC. Cela convient à un doublon, ou à un
+            mouvement antérieur aux à-nouveaux d’un dossier repris ; sinon, remets-le à traiter pour le classer.
+          </p>
+        )}
+
         {affecte && (
           <section className="fiche-mouvement-section">
             <h3>Affecté à</h3>
@@ -1487,7 +1641,7 @@ export default function FicheMouvement({
           </section>
         )}
 
-        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && (
+        {ligne.statut === 'rapprochee' && !sansObjet && !affecte && !rapprocheEmprunt && !ventile && !regleEnGroupe && !surCompteDeBilan && (
           <section className="fiche-mouvement-section">
             <h3>Rapproché avec</h3>
             {piecePayee && <CartePiece piece={piecePayee} />}
