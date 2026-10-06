@@ -209,8 +209,8 @@ describe('agent-comptable / points_a_traiter lit les comptes de bilan et les mou
   const corps = source.slice(source.indexOf('if (nom === "points_a_traiter")'), source.indexOf('return { erreur: `Outil inconnu'))
 
   it('lit le compte de bilan, le statut et le virement personnel sur le relevé entier, sous le même refus de lecture partielle', () => {
-    expect(corps).toMatch(/lireTout<[^>]*MouvementCompteBilanRow>\(\(d, f\) =>\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bcompte_bilan, prelevement_personnel\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(corps).toMatch(/rANouveaux, rVehicules, rValides, rLettrages\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/lireTout<[^>]*MouvementCompteBilanRow\b[^>]*>\(\(d, f\) =>\s*admin\.from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*\bcompte_bilan, prelevement_personnel\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    expect(corps).toMatch(/rANouveaux, rVehicules, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
     expect(corps).toMatch(/\[rPieces, [^\]]*rReleve[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 

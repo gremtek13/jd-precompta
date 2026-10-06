@@ -106,6 +106,13 @@ const VUES = [
   { nom: 'pc-tva-assistant', chemin: '#/dossiers/d7/tva', l: 1280, h: 800, theme: 'light', reduite: false, clic: 'Assistant', vers: 'TVA nette due' },
   { nom: 'pc-tva-historique', chemin: '#/dossiers/d7/tva', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'Déclarations déposées' },
   { nom: 'mobile-tva-clair', chemin: '#/dossiers/d7/tva', l: 390, h: 844, theme: 'light', reduite: false, vers: 'TVA nette due' },
+  // La TVA LIQUIDÉE (lib/liquidationTva.ts) — l'écriture que l'enregistrement écrira est au bas de « pc-tva-historique » :
+  // la fiche du prélèvement rapproché de la déclaration du deuxième trimestre, celle du complément qui propose la même
+  // déclaration, et le journal qui porte la liquidation et le paiement.
+  { nom: 'pc-tva-paiement', chemin: '#/dossiers/d7/banque', l: 1440, h: 900, theme: 'light', reduite: false, clic: 'Tous', cellule: 'PRLV SEPA DGFIP TVA 2T2026' },
+  { nom: 'pc-tva-complement', chemin: '#/dossiers/d7/banque', l: 1280, h: 800, theme: 'dark', reduite: false, cellule: 'PRLV SEPA DGFIP COMPLEMENT TVA' },
+  { nom: 'mobile-tva-complement', chemin: '#/dossiers/d7/banque', l: 390, h: 844, theme: 'light', reduite: false, cellule: 'PRLV SEPA DGFIP COMPLEMENT TVA' },
+  { nom: 'pc-tva-journal', chemin: '#/dossiers/d7/ecritures', l: 1440, h: 900, theme: 'light', reduite: false, vers: 'CA3 2e trimestre 2026' },
   // Les virements personnels (lib/virementPersonnel.ts) : l'onglet, qui montre celui qu'il reste à
   // écrire, et la fiche d'un virement personnel dans Banque, ouverte sous « Ignorés ».
   { nom: 'pc-virements-clair', chemin: '#/dossiers/d1/virements', l: 1440, h: 900, theme: 'light', reduite: false },

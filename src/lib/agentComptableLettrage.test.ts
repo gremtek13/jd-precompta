@@ -217,7 +217,7 @@ describe('agent-comptable / points_a_traiter lit les lettrages faits à la main'
     expect(corps).toMatch(/admin\.from\("lettrages_manuels"\)\.select\("id, groupe, piece_id, compte", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/admin\.from\("pieces"\)\.select\("id, date_piece, tiers, [^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "validee"\)/)
     expect(corps).toMatch(/admin\.from\("pieces"\)\.select\("id, tiers, confiance"[^)]*\)\.eq\("dossier_id", dossierId\)\.eq\("statut", "a_valider"\)/)
-    expect(corps).toMatch(/, rValides, rLettrages\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(corps).toMatch(/, rValides, rLettrages, rDeclarations\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   it('retire des factures sans règlement les pièces d’un lettrage qui tient, et compte ceux qui ne se soldent plus', () => {

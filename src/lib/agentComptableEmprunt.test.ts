@@ -195,7 +195,7 @@ describe('agent-comptable / points_a_traiter lit les emprunts et le relevé', ()
     expect(corps).toMatch(/from\("emprunts"\)\.select\("id, nom, capital_initial, taux_annuel, date_debut, duree_mois"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("date_debut"\)\.order\("id"\)/)
     // Le relevé ENTIER, sans filtre de statut : c'est lui qui dit ce qu'il couvre — et, avec `ventilee`, ce
     // que le bloc VENTILATION en lit.
-    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
+    expect(corps).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, [^"]*emprunt_id, emprunt_echeance, emprunt_interets, emprunt_assurance, ventilee\b[^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(corps).toMatch(/rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations[^\]]*\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 

@@ -3,9 +3,9 @@ import { describe, expect, it } from 'vitest'
 import ts from 'typescript'
 
 // LES EDGE FUNCTIONS NE SONT TYPE-VÉRIFIÉES PAR RIEN — mesuré le 22/09/2026, et c'est structurel :
-// `tsconfig.app.json` n'inclut que `src`, `tsconfig.node.json` que `vite.config.ts`. Les 4 419
-// lignes de `supabase/functions/` n'ont jamais rencontré un compilateur, et le déploiement ne
-// type-vérifie pas non plus (il regroupe, il ne contrôle pas).
+// `tsconfig.app.json` n'inclut que `src` (et le faux client du banc de capture), `tsconfig.node.json`
+// que `vite.config.ts`. Les 4 419 lignes de `supabase/functions/` n'ont jamais rencontré un
+// compilateur, et le déploiement ne type-vérifie pas non plus (il regroupe, il ne contrôle pas).
 //
 // CE QUE ÇA COÛTE EXACTEMENT, ET C'EST PLUS ÉTROIT QU'IL N'Y PARAÎT. Ce dépôt garde déjà de ce
 // côté-là les lectures, les écritures, la pagination, les régions AWS, la surface IAM et les copies

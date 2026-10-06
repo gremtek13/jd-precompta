@@ -60,6 +60,26 @@ const VISITES = [
   },
   { dossier: 'd7', onglet: 'ecritures', nom: 'assujetti/ecritures' },
   { dossier: 'd7', onglet: 'checklist', nom: 'assujetti/checklist' },
+  // Sa TVA LIQUIDÉE (lib/liquidationTva.ts) : la fiche du prélèvement rapproché de la déclaration du deuxième trimestre,
+  // et celle du complément, à traiter, qui propose la même déclaration dont il paie exactement le reste. Une fiche ne
+  // s'ouvre que sur un clic.
+  {
+    dossier: 'd7', onglet: 'banque', nom: 'assujetti/paiement-tva',
+    apres: async (page) => {
+      await page.getByRole('button', { name: 'Tous', exact: true }).click()
+      await page.locator('tr.clickable', { hasText: 'DGFIP TVA 2T2026' }).first().click()
+    },
+  },
+  // La page ne se recharge pas d'une visite à l'autre : la fiche du prélèvement est encore ouverte, et sous 1 280 pixels
+  // le volet se pose sur le relevé. On la ferme d'abord, comme on le ferait à la main.
+  {
+    dossier: 'd7', onglet: 'banque', nom: 'assujetti/complément-tva',
+    apres: async (page) => {
+      const fermer = page.getByRole('button', { name: 'Fermer le panneau', exact: true })
+      if (await fermer.count()) await fermer.first().click()
+      await page.locator('tr.clickable', { hasText: 'DGFIP COMPLEMENT TVA' }).first().click()
+    },
+  },
   // Sa Clôture : la concordance de la 2035 avec les écritures, dont le bien sans nature est l'écart.
   { dossier: 'd7', onglet: 'cloture', nom: 'assujetti/cloture' },
   // Le registre des immobilisations déplié : le tableau d'amortissement d'un bien, le formulaire qui le
