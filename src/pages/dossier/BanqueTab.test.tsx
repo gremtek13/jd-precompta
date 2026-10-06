@@ -9,6 +9,7 @@ import type {
 } from '../../lib/types'
 import type { ModeleComptable } from '../../lib/engagement'
 import type { Emprunt } from '../../lib/emprunts'
+import { REFUS_PAIEMENT_TVA_CLASSE } from '../../lib/liquidationTva'
 import type { Predicat } from '../../test/filtresPostgrest'
 import { NON_VALIDEE } from '../../test/ecritures'
 
@@ -4456,6 +4457,51 @@ describe('BanqueTab — le paiement et le remboursement de la TVA', () => {
     const liste = panneau.getByLabelText('Déclaration de TVA') as HTMLSelectElement
     expect(options(liste)).toContain('1er trimestre 2025 — TVA à payer 1 200,00 €')
     expect(screen.queryByText('Non rapproché · suggestion')).toBeNull()
+  })
+
+  // Le paiement LU ne dit pas tout ce qu'elle a reçu : un autre, au-delà de la coupure, a pu la solder. « Payé 700 » serait
+  // une moitié de vérité qui se lirait comme un reste à payer.
+  it('sur un relevé lu en partie, le paiement lu d’une déclaration ne se dit ni au choix ni sur le mouvement qui la paie', async () => {
+    function avecUnAcompteLuEtUnMouvementNonLu() {
+      preparer({ montant: -500 })
+      faux.lignes.push(
+        ligneDeTest({ id: 'acompte', libelle: 'PRLV DGFIP ACOMPTE', montant: -700, date: '2025-04-20', ...PAYE }),
+        ligneDeTest({ id: 'non-lu', libelle: 'PRLV DGFIP', montant: -500, date: '2025-04-22', ...PAYE }),
+      )
+      faux.muet = { lignes_bancaires: 2 }
+    }
+    avecUnAcompteLuEtUnMouvementNonLu()
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    expect(options(within(volet()).getByLabelText('Déclaration de TVA') as HTMLSelectElement))
+      .toEqual(['— Choisir —', '1er trimestre 2025 — TVA à payer 1 200,00 €'])
+    cleanup()
+
+    avecUnAcompteLuEtUnMouvementNonLu()
+    rendre(TRESORERIE, true)
+    await voirLesRapproches()
+    await ouvrir('PRLV DGFIP ACOMPTE')
+    expect(within(volet()).getByText('Paiement de TVA — 1er trimestre 2025')).toBeTruthy()
+    expect(within(volet()).getByText('Déposée le 15/04/2025')).toBeTruthy()
+    expect(within(volet()).queryByText(/payée/)).toBeNull()
+  })
+
+  // DÉFENSIF : aucune contrainte ne lie `piece_id` au statut — un mouvement à traiter peut porter une pièce restée d'avant.
+  // La liste n'offre que les déclarations qui attendent ce mouvement, mais le refus du MOUVEMENT tient toujours : choisie,
+  // la déclaration se refuse avant le clic, et le dit sous la liste.
+  it('une déclaration choisie pour un mouvement qui porte encore une pièce se refuse, sous la liste, avant le clic', async () => {
+    preparer({ montant: -500, piece_id: 'piece-restee' })
+    rendre(TRESORERIE, true)
+    await ouvrir('PRLV SEPA DGFIP TVA')
+    const liste = within(volet()).getByLabelText('Déclaration de TVA') as HTMLSelectElement
+    const champ = within(liste.closest('.field') as HTMLElement)
+    expect(champ.queryByText(REFUS_PAIEMENT_TVA_CLASSE)).toBeNull()
+    fireEvent.change(liste, { target: { value: 'decl-t1' } })
+    expect(champ.getByText(REFUS_PAIEMENT_TVA_CLASSE)).toBeTruthy()
+    const rapprocher = champ.getByRole('button', { name: 'Rapprocher' })
+    expect(rapprocher.hasAttribute('disabled')).toBe(true)
+    await act(async () => { rapprocher.click() })
+    expect(faux.rpcs).toEqual([])
   })
 
   it('la liste signale la suggestion — pas sur un relevé lu en partie', async () => {

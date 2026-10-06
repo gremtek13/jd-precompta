@@ -1476,6 +1476,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   relevé pour pièce. Et un mouvement ignoré, qui n'est écrit nulle part, se dit dans la Checklist et à la validation de
   son exercice. Voir « un mouvement du relevé s'écrit sur un compte de bilan » dans « Problèmes connus »
   (`lib/compteDeBilan.ts`).
+- **La TVA se liquide, se paie et se rembourse (06/10/2026)**, ligne 26.8 : enregistrée depuis l'onglet TVA, une
+  déclaration écrit sa liquidation — la TVA collectée et déductible de la période soldée au centime, ce qui se paie au
+  445510, le crédit au 445670, le remboursement demandé (ligne 26) au 445830, l'arrondi à l'euro de la CA3 au 658000 ou
+  au 758000. Dans la fiche d'un mouvement (onglet Banque), le prélèvement se rapproche de sa déclaration et solde le
+  445510 face à la banque, le remboursement reçu solde le 445830, et l'onglet TVA dit chaque déclaration payée, payée
+  en partie ou en trop, remboursement attendu ou reçu. Voir « la TVA se liquide » dans « Problèmes connus »
+  (`lib/liquidationTva.ts`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1522,9 +1529,8 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   est livrée (04-05/10/2026) : un exercice se valide depuis Clôture, ses écritures et ce qui les a produites
   se figent en base, et chaque écran le sait (voir « un exercice validé se fige en base » et « un exercice se
   valide depuis Clôture »). Aucun exercice n'est encore validé en base. Reste (e), les vingt-deux champs et
-  Test Compta Demat. Un mouvement vers un compte de bilan s'écrit depuis le 06/10/2026 (ligne 26.7) ; restent la
-  liquidation et le paiement de la TVA, le remboursement d'un crédit compris (ligne 26.8), puis le report des soldes
-  d'un exercice sur l'autre (ligne 34).
+  Test Compta Demat. Depuis le 06/10/2026, un mouvement vers un compte de bilan s'écrit (ligne 26.7), et la TVA se
+  liquide, se paie et se rembourse (ligne 26.8) ; reste le report des soldes d'un exercice sur l'autre (ligne 34).
 - Connexion bancaire (ligne 24) : la preuve de concept est livrée sur le bac à sable d'Enable Banking
   (30/09/2026), et le cabinet l'a essayée le jour même, clé posée : accord donné à BBVA, sept comptes
   fictifs ouverts, 44 mouvements lus — l'essai a trouvé deux défauts, corrigés le jour même (voir « la
@@ -4657,8 +4663,9 @@ d'environnement dans la même édition.
     28/09/2026, c'était les justificatifs et leur banque, et les à-nouveaux ; depuis la ligne 26.6 (du 29/09
     au 04/10/2026), ce sont aussi les mouvements du relevé affectés ou ventilés sans justificatif, les
     virements personnels, les échéances d'emprunt et de cotisation, les dotations aux amortissements,
-    l'acquisition des biens et le forfait kilométrique ; depuis le 06/10/2026 (ligne 26.7), les mouvements
-    écrits sur un compte de bilan. Il n'a toujours pas les mouvements que personne n'a encore traités, ni
+    l'acquisition des biens et le forfait kilométrique ; depuis le 06/10/2026, les mouvements écrits sur un
+    compte de bilan (ligne 26.7), et la liquidation de la TVA, son paiement et son remboursement (ligne 26.8).
+    Il n'a toujours pas les mouvements que personne n'a encore traités, ni
     ceux qu'on a ignorés — la Checklist les compte. Ses écritures restent des brouillons tant que leur
     exercice n'est pas validé : ValidDate y vaut alors la date d'écriture, ce que la notice n'admet que d'un
     logiciel sans mode brouillard ; validé, il porte le jour de la validation. C'est un fichier
@@ -5141,9 +5148,11 @@ d'environnement dans la même édition.
   (`piecesTvaImpossible`), une devise jamais convertie et une TVA non lue. Une recette sans TVA n'est
   exonérée que si rien n'indique une taxe qu'on n'a pas su lire (un HT différent du TTC).
   **UNE DÉCLARATION ENREGISTRÉE PORTE LA TVA NETTE DE LA PÉRIODE** — ligne 16 moins lignes 19 à 21,
-  sans le crédit reçu —, et ce crédit à part : la ligne 27 de la déclaration suivante en découle et lui
-  est proposée en ligne 22. L'historique compare chaque déclaration au calcul de SA période, avec la
-  même règle ; un écart d'un euro ou plus dit qu'une pièce a changé depuis le dépôt.
+  sans le crédit reçu —, et ce crédit à part : sa ligne 27, le crédit de la période moins le remboursement
+  demandé (ligne 26, depuis le 06/10/2026), est proposée en ligne 22 de la déclaration suivante. L'historique
+  compare chaque déclaration au calcul de SA période, avec la même règle ; un écart d'un euro ou plus dit
+  qu'une pièce a changé depuis le dépôt. Depuis le 06/10/2026 elle porte aussi sa CA3 et les montants que sa
+  liquidation solde — voir « la TVA se liquide ».
   **ET LA COMPARAISON AU BROUILLON EST RETIRÉE DES TROIS ENDROITS QUI LA FAISAIENT** : la carte
   « Déclarations de TVA » d'Écritures, le point « en écart avec le brouillon » de la Checklist, et
   l'assistant (version 26 : il dit qu'il ne vérifie pas les déclarations, au lieu de répondre « rien à
@@ -5156,7 +5165,7 @@ d'environnement dans la même édition.
   régularisé, et une mise en garde permanente cesse d'être lue.
   **CE QUE LE CALCUL NE FAIT PAS, ET L'ÉCRAN LE DIT** : l'autoliquidation (il signale les achats en
   devise sans TVA payés dans la période), le coefficient de déduction (il le signale dès qu'une recette
-  va en E2), les exclusions du droit à déduction, les taux particuliers, le remboursement d'un crédit,
+  va en E2), les exclusions du droit à déduction, les taux particuliers,
   les taxes assimilées, la régularisation, et les factures émises dans l'application — une recette
   n'est comptée que si son justificatif est dans Justificatifs, ou, depuis le 01/10/2026, si son
   encaissement est affecté ou ventilé depuis le relevé avec son taux, comme pour la 2035 (voir « une
@@ -6818,7 +6827,8 @@ d'environnement dans la même édition.
   s'écarter du relevé de son montant, sans que rien ne le dise.
   **Décisions du cabinet (06/10/2026)** : le virement entre comptes au 580000 (virements internes), le dépôt de garantie
   au 275000 (dépôts et cautionnements versés), et un compte de bilan au choix, des classes 1 à 5, sous les contrôles de
-  l'application. Le remboursement d'un crédit de TVA (44583) relève de la ligne 26.8, avec la liquidation de la TVA.
+  l'application. Le remboursement d'un crédit de TVA (44583) relève de la ligne 26.8, avec la liquidation de la TVA —
+  livrée le même jour (voir « la TVA se liquide »).
   **LE COMPTE SE GARDE SUR LE MOUVEMENT ET S'ÉCRIT AVEC LUI** : `lignes_bancaires.compte_bilan`, et trois contraintes qui
   le tiennent sans le code — six à dix chiffres des classes 1 à 5, jamais un 512 (`lignes_bancaires_compte_bilan_format`) ;
   un mouvement qui le porte est rapproché, jamais personnel (`lignes_bancaires_compte_bilan_rapproche`) ; et la contrainte
@@ -6906,10 +6916,118 @@ d'environnement dans la même édition.
   des secondes ceintures derrière un bouton déjà grisé (le refus refait au clic, dans Banque et dans Écritures) ; et le
   détour de « Remettre à traiter » par `retirer_mouvement_compte_bilan`, que la fiche n'offre jamais sur un mouvement
   écrit sur un compte de bilan — défensif, comme celui du règlement groupé.
-  **CE QUI RESTE** : la TVA payée ou remboursée par le relevé (ligne 26.8) ; aucune règle ne propose un compte de bilan
+  **CE QUI RESTE** : aucune règle ne propose un compte de bilan
   — une règle d'affectation range dans une catégorie — ; et l'autre compte d'un virement interne n'est pas tenu dans
   l'application, qui ne tient qu'un relevé par dossier : le 580000 garde le solde de ce qui y a été versé, que le relevé
   de cet autre compte justifie, et l'aide du bouton le dit.
+- **LA TVA SE LIQUIDE, SON PAIEMENT ET SON REMBOURSEMENT S'ÉCRIVENT — LIGNE 26.8** (06/10/2026,
+  `lib/liquidationTva.ts`, migrations `liquidation_de_la_tva` et `refus_tva_par_sa_declaration`). Le brouillon d'un
+  dossier assujetti portait la TVA de chaque pièce et de chaque recette du relevé — collectée au 445710, déductible au
+  445660 et au 445620 — et rien ne la soldait : les comptes de TVA grossissaient d'une période à l'autre, et le
+  prélèvement du Trésor, qu'aucun chemin n'écrivait (le compte de bilan refuse la TVA), ne pouvait qu'être ignoré, donc
+  manquait au FEC. Décision du cabinet le même jour : à l'enregistrement d'une déclaration, une écriture solde la TVA
+  de la période ; le prélèvement, rapproché de sa déclaration, solde le 445510 face à la banque ; le remboursement d'un
+  crédit par le Trésor s'écrit aussi.
+  **LA CA3 SE CALCULE SUR LES CENTIMES DU BROUILLON** : la liquidation retire des comptes de TVA ce que les écritures y
+  ont porté, sans quoi un centime y resterait à chaque période, que rien ne solderait. Chaque pièce entre donc dans la
+  CA3 par la répartition de son écriture (`centimesParDate` : la charge et la TVA réparties ENSEMBLE, date par date),
+  et la déclaration enregistre ces montants exacts (`tva_collectee`, `tva_deductible`,
+  `tva_deductible_immobilisations`). Seul l'arrondi à l'euro de chaque ligne de la CA3 sépare ce qui se déclare de ce
+  que les comptes portent : il va au 658000 (une charge) ou au 758000 (un produit), jamais au-delà de dix euros
+  (`ARRONDI_MAXIMAL` : huit lignes arrondies à cinquante centimes près n'en font pas plus de quatre, et au-delà ce
+  n'est pas un arrondi). La 2035 le compte en « Gains divers » ou en « Autres frais divers de gestion », l'année où
+  finit la période, et la concordance le compare à son écriture.
+  **L'ÉCRITURE DE LIQUIDATION**, au dernier jour de la période : la TVA collectée au débit du 445710, la déductible au
+  crédit du 445660 et du 445620, ce qui se paie au crédit du 445510 (ligne 28), le crédit au 445670 (ligne 27 moins
+  ligne 22), le remboursement demandé au débit du 445830 (ligne 26), l'arrondi au 658000 ou au 758000. Le
+  remboursement (formulaire 3519) se demande en euros entiers, dans la limite du crédit de la période (ligne 25) ; le
+  reste se reporte (ligne 27), et la déclaration suivante le reçoit en ligne 22 (`creditReporte`). Le seuil de
+  l'administration — 760 € en cours d'année, 150 € au titre du 31 décembre (CGI, ann. II, art. 242-0 A et 242-0 C) —
+  est signalé, pas refusé : c'est elle qui en juge.
+  **UNE DÉCLARATION SAISIE À LA MAIN** n'existe que pour une période antérieure à l'ouverture d'un dossier repris : sa
+  TVA est dans les à-nouveaux (445510, 445670), elle n'écrit pas de liquidation, et ne sert qu'à rattacher son paiement
+  ou son remboursement et à reporter son crédit. Toute autre période s'enregistre telle que l'application l'a
+  préparée : la base refuse une saisie à la main, et l'écran le dit avant le clic.
+  **LE PAIEMENT ET LE REMBOURSEMENT** : le prélèvement, rapproché de sa déclaration, débite le 445510 face à la
+  banque ; le remboursement reçu crédite le 445830 ; au montant, à la date et dans le sens du mouvement. Le montant est
+  libre — un paiement en deux fois, une majoration —, et l'onglet TVA dit chaque déclaration payée, payée en partie ou
+  en trop, remboursement attendu ou reçu (`suiviDesDeclarations`). La fiche d'un mouvement PROPOSE la déclaration dont
+  le reste dû est exactement son montant, et quand plusieurs conviennent, les montre toutes sans en mettre une en
+  avant : l'ordre de tri trancherait à la place de l'opérateur. Ce que la base refuserait est dit avant le clic, dans
+  son ordre (`refusPaiementTva`) : un mouvement déjà classé ou réglé en groupe, écrit sur un compte de bilan, de zéro
+  euro, antérieur à la fin de la période, un prélèvement sur une déclaration qui n'a rien à payer, un encaissement sur
+  une déclaration sans remboursement demandé. Les six autres classements et le compte de bilan refusent, eux, un
+  mouvement qui paie une déclaration.
+  **LA BASE ÉCRIT ET VÉRIFIE** : `enregistrer_declaration_tva` vérifie que la CA3 proposée se tient — ses lignes en
+  euros entiers, positives, déduites les unes des autres — et l'écrit avec sa liquidation dans une transaction ;
+  `liquidation_attendue` compose la même écriture depuis ce que la déclaration a enregistré, et `ecrire_liquidation_tva`
+  la réécrit ; `retirer_declaration_tva` retire la déclaration, sa liquidation, et remet à traiter les mouvements qui la
+  paient, sans leur écriture ; `rapprocher_declaration_tva` et `retirer_rapprochement_declaration_tva` font de même du
+  paiement. Les cinq qui écrivent sont `SECURITY INVOKER` et vérifient `admin_du_dossier`. Deux déclarations ne se chevauchent plus
+  (`garder_declarations_sans_chevauchement`), une déclaration d'un exercice validé est figée
+  (`garder_declaration_valide`), et deux liens sans action à la suppression portent le reste :
+  `ecritures_brouillon.declaration_tva_id` (la liquidation, sans pièce, mouvement, bien ni véhicule) et
+  `lignes_bancaires.declaration_tva_id`, huitième lien de la contrainte d'un seul rapprochement.
+  `supabase/essais/liquidationTva.sql` : 75 contrôles sur 75 en production, en une transaction ; les sept essais qui
+  éprouvent les contraintes de `lignes_bancaires` rejoués au vert, et `compteBilan.sql` (62 sur 62) après
+  `refus_tva_par_sa_declaration`, qui fait nommer sa déclaration à un compte de TVA choisi sur un compte de bilan. La
+  première migration a été collée par le cabinet dans l'éditeur SQL avec sa ligne d'historique, la seconde est passée
+  par l'outil. L'export porte 87 migrations, le socle 77 instructions, l'inventaire 1 003 objets, et la sauvegarde les
+  deux relations.
+  **CE QUI LE LIT** : le FEC (la liquidation au journal des opérations diverses, « CA3 au JJ/MM/AAAA » pour pièce ; le
+  paiement au journal de banque, le relevé pour pièce), la piste d'audit (la CA3 pour justificatif), la 2035 et la
+  concordance (l'arrondi), Financement (le remboursement d'un crédit écarté de la moyenne des encaissements et des
+  ratios, comme le déblocage d'un emprunt ; le prélèvement reste, la TVA se payant chaque période), et le lot des
+  règles d'affectation, qui écarte un mouvement qui ressemble au paiement d'une déclaration (`paiementTvaPlausible`) —
+  une règle au nom du Trésor le mettrait en charge, et la TVA compterait dans la 2035.
+  **LES ÉCRANS** : l'onglet TVA enregistre une déclaration avec sa liquidation, la montre avant le clic et dit son
+  arrondi ; il nomme une période avec sa préposition (`dePeriode` : il écrivait « du octobre 2025 ») et suit les
+  paiements dans l'historique. Banque dit les mouvements rapprochés d'une déclaration. Écritures réécrit une
+  liquidation ou un paiement qui ne suit plus sa déclaration — défensif, la base les écrivant ensemble — et refuse
+  avant le clic une déclaration saisie à la main ou un arrondi de plus de 10 €. La Checklist compte en « erreur » ces
+  deux réécritures, et en « attention » les périodes dont la déclaration n'est pas enregistrée une fois son échéance
+  passée (`periodesEnRetard` : une CA3 se dépose dans le mois qui suit sa période, donc seules comptent celles finies
+  avant le premier jour du mois précédent), en disant qu'un dossier au régime simplifié dépose jusqu'aux exercices de
+  2026 une CA12 que l'application ne prépare pas. La validation d'un exercice refuse une liquidation ou un paiement qui
+  ne suit plus, et AVERTIT d'une période sans déclaration : jusqu'en 2026 la CA12, et un cabinet peut déclarer
+  ailleurs.
+  **L'ASSISTANT, VERSION 44** : bloc `── DÉBUT/FIN LIQUIDATION TVA`, `points_a_traiter` rend les trois points de la
+  Checklist, et le prompt dit qu'une liquidation au 445510, au 445670, au 445830 ou à un compte d'arrondi n'est pas une
+  anomalie. `agentComptableLiquidationTva.test.ts` compare la copie à src/lib et y plante dix-huit dérives. Au passage,
+  ses copies du virement personnel et de la cotisation refusent un mouvement rapproché d'une déclaration. Déployée
+  avec `verify_jwt` relu et repassé à `false`, la v43 comparée au dépôt avant écrasement (identique, 2 920 lignes),
+  aller-retour après : zéro différence sur 3 125 lignes, et le 401 de la fonction sans session. Aucun appel au modèle.
+  **LE BANC** sert, sur le dossier assujetti, deux déclarations calculées par le code de l'application, leurs
+  liquidations, le prélèvement rapproché de la seconde et un complément à traiter qui en paie le reste. Le faux client
+  est désormais type-vérifié par `tsc -b` : il s'était cassé en silence quand le moteur de la 2035 a reçu les
+  déclarations en paramètre. 0 débordement aux quatre largeurs de référence et aux combinaisons extrêmes des volets.
+  **ET LE GARDE QUI LIT UNE FONCTION SQL LISAIT LA PREMIÈRE DÉFINITION** : `compteDeBilan.test.ts` compare
+  l'application à `refus_compte_de_bilan` telle que l'export la porte, et cherchait `create function` — or une
+  migration qui redéfinit une fonction l'écrit `create or replace`. Il aurait comparé l'application au texte que la base
+  n'a plus. Il lit désormais la dernière définition.
+  **LATENT, et mesuré** (06/10/2026, des comptes seulement) : aucune déclaration de TVA en base, aucun mouvement
+  rapproché d'une déclaration, aucune écriture sur un compte de TVA ni au 658000 ou au 758000 ; les deux dossiers
+  assujettis sont des bacs à sable abandonnés, et aucun exercice n'est validé.
+  **Cent soixante-seize mutations, cent soixante-douze mordent — la première passe en laissait vingt-quatre en vie.**
+  Vingt accusaient des tests absents, tous écrits depuis : rien ne vérifiait que les sept autres classements refusent
+  un mouvement qui paie une déclaration (`classementsDuMouvement.test.ts`, neuf mutations d'un coup) ; qu'un paiement
+  sur une déclaration sans rien à payer, ou un remboursement que rien n'a demandé, se dise « de trop » au lieu de se
+  taire ; qu'un remboursement reçu ne compte pas comme un paiement ; que deux déclarations qui attendent toutes deux
+  se proposent la plus récente d'abord ; les phrases du suivi ; la pastille rouge d'une déclaration payée de trop ; le
+  remboursement saisi oublié quand la période cesse d'être en crédit ; la phrase qui dit les pièces écartées hors de la
+  déclaration ; et, sur un relevé lu en partie, ce qu'une déclaration a reçu, que ni le choix ni le mouvement qui la
+  paie ne doivent dire. Deux visaient le refus d'une déclaration choisie à la main, qu'un cas DÉFENSIF exerce : aucune
+  contrainte ne lie `piece_id` au statut, et un mouvement à traiter peut porter une pièce restée d'avant. **Quatre
+  survivent, et c'est dit** : `aPayerDe` lu en ligne 28 plutôt qu'en ligne 32, équivalent tant que la ligne 29 (les
+  taxes assimilées) n'est pas modélisée ; deux périodes qui se touchent admises à leur borne, équivalent — une période
+  s'aligne sur des mois entiers, et la base le vérifie avant le chevauchement ; la garde de statut des paiements qui ne
+  suivent plus leur déclaration, que `lignes_bancaires_declaration_tva_rapprochee` rend redondante ; et le détour de
+  « Remettre à traiter » par l'annulation du paiement, que la fiche n'offre jamais sur un paiement de TVA — défensif,
+  comme ceux du règlement groupé et du compte de bilan.
+  **CE QUI RESTE, dit plutôt que promis** : une majoration ou des intérêts de retard payés avec la TVA restent au
+  445510, que l'historique dit « payée en trop » — leur écriture en charge n'est pas modélisée ; la régularisation
+  d'une période déposée (lignes 5B et 2C), la CA12, les taxes assimilées et l'autoliquidation ne sont pas préparées ;
+  et la transmission de la déclaration (ligne 28, étape 2) n'est pas écrite.
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8358,7 +8476,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4534 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4747 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -8395,7 +8513,8 @@ le clic (`prealablesValidation.ts`) et ce qu'elle fige (`validationExercice.ts`)
 tiers, déduit ou fait à la main et revérifié à chaque lecture, et ce qui reste ouvert à une date (`lettrage.ts`,
 `lettragesLecture.ts`), l'écriture d'un mouvement sur un compte de bilan et ses refus, confrontés à la fonction de la
 base qu'un petit interprète exécute (`compteDeBilan.ts`), les refus qu'un classement oppose aux autres
-(`classementsDuMouvement.ts`), et ce que
+(`classementsDuMouvement.ts`), la liquidation d'une déclaration de TVA, son paiement, son remboursement et ce
+qui en reste dû (`liquidationTva.ts`, la CA3 au centime des écritures dans `declarationTva.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
