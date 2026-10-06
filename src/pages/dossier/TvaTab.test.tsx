@@ -231,6 +231,8 @@ describe('l’onglet TVA', () => {
     expect(within(ligneDe('Autres biens et services')).getByText(MONTANT('50,00 €'))).toBeTruthy()
     expect(within(ligneDe('TVA nette due')).getByText(MONTANT('150,00 €'))).toBeTruthy()
     expect(within(ligneDe('Total à payer')).getByText(MONTANT('150,00 €'))).toBeTruthy()
+    // Toutes les pièces de la période y sont : rien à dire de celles qui n'y seraient pas.
+    expect(screen.queryByText(/Les pièces écartées ou à valider ci-dessus/)).toBeNull()
   })
 
   it('suit la période choisie : l’encaissement de février ne compte pas au deuxième trimestre', async () => {
@@ -337,6 +339,22 @@ describe('l’onglet TVA', () => {
     expect(bouton().disabled).toBe(true)
     await act(async () => { bouton().click() })
     expect(faux.rpcs).toEqual([])
+  })
+
+  // Ce qu'il gardait d'une saisie ne la suit pas quand la période cesse d'être en crédit : le champ disparaît, et un
+  // remboursement que l'écran ne montre plus ne doit pas faire refuser l'enregistrement.
+  it('oublie le remboursement saisi quand la période cesse d’être en crédit', async () => {
+    // 1 000 € de crédit reçu de la déclaration précédente : 850 € de crédit sur la période.
+    faux.tables.declarations_tva = [declaration({ tva_declaree: -1000 })]
+    await afficher()
+    fireEvent.change(screen.getByLabelText('Remboursement demandé (ligne 26)'), { target: { value: '800' } })
+    fireEvent.change(screen.getByLabelText(/Crédit reporté/), { target: { value: '0' } })
+    expect(screen.queryByLabelText('Remboursement demandé (ligne 26)')).toBeNull()
+    expect(screen.queryByText(/dépasse le crédit de TVA de la période/)).toBeNull()
+    const bouton = screen.getByRole('button', { name: 'Enregistrer comme déposée' }) as HTMLButtonElement
+    expect(bouton.disabled).toBe(false)
+    await act(async () => { bouton.click() })
+    expect(faux.rpcs[0].args).toMatchObject({ p_remboursement_demande: 0, p_credit_anterieur: 0, p_tva_declaree: 150 })
   })
 
   // Le champ n'est proposé que sur une période en crédit : ce qu'il gardait d'une saisie ne compte plus ailleurs.
@@ -488,8 +506,21 @@ describe('l’onglet TVA', () => {
     const ligneDeLaPeriode = (libelle: string) =>
       screen.getAllByText(libelle).map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
     expect(within(ligneDeLaPeriode('4e trimestre 2026')).getByText(/^150,00\s€ à payer$/)).toBeTruthy()
-    expect(within(ligneDeLaPeriode('3e trimestre 2026')).getByText('payée')).toBeTruthy()
+    expect(within(ligneDeLaPeriode('3e trimestre 2026')).getByText('payée').className).toContain('badge-ok')
     expect(within(ligneDeLaPeriode('2e trimestre 2026')).getByText(/payée 100,00\s€ sur 150,00\s€/)).toBeTruthy()
+  })
+
+  // Un trop-payé — une majoration, un prélèvement en double — n'est pas une bonne nouvelle : la pastille le dit en rouge,
+  // pour ce qui dépasse.
+  it('dit en rouge une déclaration payée de trop', async () => {
+    faux.tables.declarations_tva = [preparee({ id: 'd1', tva_declaree: 150, cases: { l28: 150, l32: 150 } })]
+    faux.tables.lignes_bancaires = [
+      ...faux.tables.lignes_bancaires,
+      { ...paiement('x', -160, '2027-01-20'), id: 'p1', piece_id: null, declaration_tva_id: 'd1' },
+    ]
+    await afficher()
+    const ligne = screen.getAllByText('4e trimestre 2026').map((n) => n.closest('tr')).find((tr) => tr !== null) as HTMLElement
+    expect(within(ligne).getByText(/^payée 10,00\s€ de trop$/).className).toContain('badge-danger')
   })
 
   it('ne dit pas ce qui reste dû sur un relevé lu en partie', async () => {
@@ -540,6 +571,8 @@ describe('l’onglet TVA', () => {
     await afficher()
     expect(screen.getByText(/1 pièce\(s\) de la période ne sont pas dans les cases/)).toBeTruthy()
     expect(screen.getByText('2,1 % : ligne T6 en France continentale, 11 dans les DOM, T4 en Corse')).toBeTruthy()
+    // Près du bouton : enregistrée, la déclaration ne les liquidera pas.
+    expect(screen.getByText(/Les pièces écartées ou à valider ci-dessus ne sont pas dans la déclaration qui sera enregistrée/)).toBeTruthy()
   })
 
   // UN VIREMENT QUI RÈGLE PLUSIEURS RECETTES (ligne 26) : chacune devient exigible à la date du virement, pour

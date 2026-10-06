@@ -4,13 +4,15 @@ import { refusPaieUneDeclarationTva } from './classementsDuMouvement'
 import { refusMouvementCompteDeBilan } from './compteDeBilan'
 import { refusRapprochementCotisation } from './cotisationRapprochee'
 import { calculerCa3, type DeclarationCa3, type DonneesTva } from './declarationTva'
+import { formatMoney } from './format'
 import { refusEcheanceEmprunt } from './echeanceEmprunt'
 import {
   ARRONDI_MAXIMAL, REFUS_PAIEMENT_TVA_CLASSE, aPayerDe, arrondiDeLaLiquidation, declarationsDuMontant, declarationsPourLeMouvement,
   ecritureDeLaLiquidation, ecritureDuPaiementTva, idsRemboursementsTva, liquidationsDesynchronisees,
   paiementTvaPlausible, paiementsTvaDesynchronises, parametresEnregistrement, periodesEnRetard, periodesNonDeclarees,
-  raisonPaiementTvaPlausible, refusEnregistrement, refusPaiementTva, remboursementSousLeSeuil, seSaisitALaMain, seuilRemboursement,
-  suiviDesDeclarations, type ContexteDeDeclaration, type DeclarationLiquidable, type DemandeDeDeclaration,
+  phraseDuPaiement, phraseDuRemboursement, raisonPaiementTvaPlausible, refusEnregistrement, refusPaiementTva,
+  remboursementSousLeSeuil, seSaisitALaMain, seuilRemboursement, suiviDesDeclarations, type ContexteDeDeclaration,
+  type DeclarationLiquidable, type DemandeDeDeclaration,
 } from './liquidationTva'
 import { paiementsDesPieces } from './rattachement'
 import { REFUS_REGLE_EN_GROUPE, refusReglementGroupe } from './reglementGroupe'
@@ -575,9 +577,20 @@ describe('suiviDesDeclarations — ce que chaque déclaration fait payer, et ce 
     const etat = (lignes: LigneBancaire[]) => suiviDesDeclarations([Q2_ENREGISTREE], lignes)[0]
     const recu = (o: Partial<LigneBancaire>) => mouvement({ statut: 'rapprochee', declaration_tva_id: 'q2', montant: 300, date: '2026-08-10', ...o })
     expect(etat([])).toMatchObject({ aPayer: 0, etatPaiement: 'rien_a_payer', remboursementDemande: 300, etatRemboursement: 'attendu' })
-    expect(etat([recu({})])).toMatchObject({ rembourse: 300, etatRemboursement: 'recu' })
+    // Reçu, un remboursement ne compte pas comme un paiement : compté, il dirait la déclaration « payée de trop ».
+    expect(etat([recu({})])).toMatchObject({ rembourse: 300, etatRemboursement: 'recu', paye: 0, etatPaiement: 'rien_a_payer' })
     expect(etat([recu({ montant: 200 })])).toMatchObject({ rembourse: 200, etatRemboursement: 'recu_en_partie' })
     expect(etat([recu({ montant: 301 })])).toMatchObject({ etatRemboursement: 'recu_en_trop' })
+  })
+
+  // DÉFENSIF : la base refuse de rapprocher un prélèvement d'une déclaration qui n'a rien à payer, et un encaissement
+  // d'une déclaration sans remboursement demandé. Si l'un passait quand même, l'argent versé ne doit pas disparaître sous
+  // « rien à payer » : il est dit de trop.
+  it('un paiement sur une déclaration sans rien à payer, un remboursement sans rien de demandé : de trop, jamais tus', () => {
+    const credit = suiviDesDeclarations([Q2_ENREGISTREE], [paiement({ declaration_tva_id: 'q2', date: '2026-08-10', montant: -50 })])[0]
+    expect(credit).toMatchObject({ aPayer: 0, paye: 50, etatPaiement: 'payee_en_trop' })
+    const aPayer = suiviDesDeclarations([Q1_ENREGISTREE], [paiement({ montant: 20 })])[0]
+    expect(aPayer).toMatchObject({ remboursementDemande: 0, rembourse: 20, etatRemboursement: 'recu_en_trop' })
   })
 
   it('compte en centimes, et range les mouvements dans l’ordre du relevé', () => {
@@ -592,6 +605,24 @@ describe('suiviDesDeclarations — ce que chaque déclaration fait payer, et ce 
   })
 })
 
+describe('phraseDuPaiement, phraseDuRemboursement — ce que l’historique et la fiche d’un mouvement en disent', () => {
+  it('chaque état, et le trop-payé pour ce qui dépasse, pas pour le total', () => {
+    const suivi = (lignes: LigneBancaire[], d = Q1_ENREGISTREE) => suiviDesDeclarations([d], lignes)[0]
+    const paiement = (o: Partial<LigneBancaire>) => mouvement({ statut: 'rapprochee', declaration_tva_id: 'q1', ...o })
+    expect(phraseDuPaiement(suivi([]))).toBe(`${formatMoney(79)} à payer`)
+    expect(phraseDuPaiement(suivi([paiement({})]))).toBe('payée')
+    expect(phraseDuPaiement(suivi([paiement({ montant: -40 })]))).toBe(`payée ${formatMoney(40)} sur ${formatMoney(79)}`)
+    expect(phraseDuPaiement(suivi([paiement({ montant: -85.5 })]))).toBe(`payée ${formatMoney(6.5)} de trop`)
+    expect(phraseDuPaiement(suivi([], Q2_ENREGISTREE))).toBe('rien à payer')
+    const recu = (o: Partial<LigneBancaire>) => mouvement({ statut: 'rapprochee', declaration_tva_id: 'q2', montant: 300, date: '2026-08-10', ...o })
+    expect(phraseDuRemboursement(suivi([]))).toBeNull()
+    expect(phraseDuRemboursement(suivi([], Q2_ENREGISTREE))).toBe(`remboursement de ${formatMoney(300)} attendu`)
+    expect(phraseDuRemboursement(suivi([recu({})], Q2_ENREGISTREE))).toBe('remboursement reçu')
+    expect(phraseDuRemboursement(suivi([recu({ montant: 200 })], Q2_ENREGISTREE))).toBe(`remboursé ${formatMoney(200)} sur ${formatMoney(300)}`)
+    expect(phraseDuRemboursement(suivi([recu({ montant: 301.2 })], Q2_ENREGISTREE))).toBe(`remboursé ${formatMoney(1.2)} de trop`)
+  })
+})
+
 describe('declarationsPourLeMouvement', () => {
   const q4 = declaration({ id: 'q4', periode_debut: '2025-10-01', periode_fin: '2025-12-31', tva_declaree: 120 })
   const q1 = Q1_ENREGISTREE
@@ -601,6 +632,8 @@ describe('declarationsPourLeMouvement', () => {
     const suivis = suiviDesDeclarations([q4, q1, q2], [])
     expect(declarationsPourLeMouvement(mouvement({ date: '2026-07-20', montant: -120 }), suivis).map((d) => d.id)).toEqual(['q4', 'q1'])
     expect(declarationsPourLeMouvement(mouvement({ date: '2026-07-20', montant: -79 }), suivis).map((d) => d.id)).toEqual(['q1', 'q4'])
+    // Un acompte qui ne règle exactement aucune des deux : elles attendent toutes deux, la plus récente d'abord.
+    expect(declarationsPourLeMouvement(mouvement({ date: '2026-07-20', montant: -50 }), suivis).map((d) => d.id)).toEqual(['q1', 'q4'])
   })
 
   it('seulement celles dont la période est finie avant lui', () => {

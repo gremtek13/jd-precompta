@@ -605,9 +605,11 @@ export function creditReporte(
   return Math.max(0, Math.max(0, declaration.credit_anterieur - declaration.tva_declaree) - declaration.remboursement_demande)
 }
 
-// La déclaration déposée pour la période qui précède immédiatement `debut`, la plus récente si la
-// période en a plusieurs (une déclaration rectificative). Null quand elle n'est pas enregistrée :
-// l'écran demande alors le crédit à reporter plutôt que de supposer qu'il n'y en a pas.
+// La déclaration déposée pour la période qui précède immédiatement `debut`. Null quand elle n'est pas
+// enregistrée : l'écran demande alors le crédit à reporter plutôt que de supposer qu'il n'y en a pas.
+// Deux déclarations ne se chevauchent plus en base depuis le 06/10/2026
+// (`garder_declarations_sans_chevauchement`) : une rectificative REMPLACE celle qu'elle corrige, retirée
+// d'abord. La plus récente l'emporte encore, défensivement, si un autre chemin en laissait deux.
 export function declarationPrecedente(declarations: DeclarationTva[], debut: string): DeclarationTva | null {
   const veille = ajouterJours(debut, -1)
   const candidates = declarations.filter((d) => d.periode_fin === veille)
