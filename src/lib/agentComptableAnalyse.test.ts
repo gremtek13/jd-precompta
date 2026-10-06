@@ -90,6 +90,7 @@ function extraire(source: string) {
       modele: ModeleComptable, frontiere: string | null,
     ) => {
       nbSansContrepartie: number
+      piecesSansContrepartie: string[]
       groupesDesequilibres: { pieceId: string; solde: number }[]
       piecesDesynchronisees: Piece[]
     }
@@ -201,7 +202,7 @@ function memeResultat(
   const resume = (a: ({ piece: Piece } & CibleComptable)[]) => a.map((x) => `${x.piece.id}:${x.compte}:${x.immobilisation}`)
   expect(resume(la), 'piecesAComptabiliser a dérivé').toEqual(resume(ici))
 
-  const forme = (r: ReturnType<typeof analyserEcritures>) => ({
+  const forme = (r: Pick<ReturnType<typeof analyserEcritures>, 'nbSansContrepartie' | 'groupesDesequilibres' | 'piecesDesynchronisees'>) => ({
     nbSansContrepartie: r.nbSansContrepartie,
     groupesDesequilibres: r.groupesDesequilibres.map((g) => `${g.pieceId}:${g.solde.toFixed(2)}`),
     piecesDesynchronisees: r.piecesDesynchronisees.map((p) => p.id),
@@ -210,6 +211,9 @@ function memeResultat(
     const r1 = analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, f)
     const r2 = copie.analyserEcritures(ecritures, la, assujettiTva, copie.paiementsDesPieces(paiements, parts), modele, f)
     expect(forme(r2), `analyserEcritures a dérivé (frontière ${f})`).toEqual(forme(r1))
+    // Les pièces elles-mêmes, et pas seulement leur nombre : en engagement, celles d'un lettrage fait à la main qui
+    // tient en sont retirées (bloc LETTRAGE MANUEL), donc deux listes de même longueur peuvent dire deux choses.
+    expect(r2.piecesSansContrepartie, `piecesSansContrepartie a dérivé (frontière ${f})`).toEqual(r1.piecesSansContrepartie)
   }
   return forme(analyserEcritures(ecritures, ici, assujettiTva, paiementsDesPieces(paiements, parts), modele, frontiere))
 }
@@ -993,7 +997,7 @@ describe('agent-comptable / analyserEcritures sous une frontière de validation 
 describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle comptable du dossier', () => {
   it('appelle analyserEcritures avec dossier.assujetti_tva, les paiements des pièces, le modèle du dossier et la frontière de validation', () => {
     expect(sourceDeployee()).toMatch(
-      /const modele = modeleDuDossier\(dossier\)\n\s*const paiements = paiementsDesPieces\(rReleve\.lignes, rReglements\.lignes\)\n(?:\s*\/\/[^\n]*\n)*\s*const frontiere = frontiereDeValidation\(rValides\.lignes\.map\(\(v\) => v\.annee\)\)\n\s*const \{ nbSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, paiements, modele, frontiere\)/,
+      /const modele = modeleDuDossier\(dossier\)\n\s*const paiements = paiementsDesPieces\(rReleve\.lignes, rReglements\.lignes\)\n(?:\s*\/\/[^\n]*\n)*\s*const frontiere = frontiereDeValidation\(rValides\.lignes\.map\(\(v\) => v\.annee\)\)\n\s*const \{ piecesSansContrepartie, groupesDesequilibres, piecesDesynchronisees \} = analyserEcritures\(ecrituresTyped, aComptabiliser, dossier\.assujetti_tva, paiements, modele, frontiere\)/,
     )
   })
 
@@ -1007,7 +1011,7 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
 
   it('nomme les factures sans règlement en engagement, comme la Checklist', () => {
     expect(sourceDeployee()).toMatch(
-      /modele\.mode === "engagement"\s*\? \{ factures_sans_reglement_rapproche: nbSansContrepartie \}\s*: \{ ecritures_en_attente_de_rapprochement_bancaire: nbSansContrepartie \}/,
+      /modele\.mode === "engagement"\s*\? \{\s*factures_sans_reglement_rapproche: sansReglement,[\s\S]*?\}\s*: \{ ecritures_en_attente_de_rapprochement_bancaire: sansReglement \}/,
     )
   })
 
@@ -1020,11 +1024,11 @@ describe('agent-comptable / points_a_traiter passe le statut TVA et le modèle c
     const source = sourceDeployee()
     // Et le GÉNÉRATEUR, qui dit ce qu'une pièce coupée par la frontière doit encore porter, lit le hors taxe (qui prime
     // sur le TTC moins la TVA) et le dépôt (qui date ce que rien d'autre ne date).
-    expect(source).toMatch(/select\("id, date_piece, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at"/)
+    expect(source).toMatch(/select\("id, date_piece, tiers, montant_ht, montant_ttc, montant_tva, categorie_id, type_piece, created_at"/)
     expect(source).toMatch(/from\("ecritures_brouillon"\)\.select\("date, compte, libelle, sens, montant, piece_id, ligne_bancaire_id[,"]/)
     expect(source).toMatch(/from\("lignes_bancaires"\)\.select\("id, date, montant, statut, piece_id, reglement_groupe, [^"]*"[^)]*\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
     expect(source).toMatch(/from\("reglements_groupes"\)\.select\("ligne_bancaire_id, piece_id, montant", \{ count: "exact" \}\)\.eq\("dossier_id", dossierId\)\.order\("id"\)/)
-    expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides\]\s*\.filter\(\(r\) => !r\.complete\)/)
+    expect(source).toMatch(/\[rPieces, rPiecesAValider, rCategories, rEcritures, rImmobilisations, rAffectes, rVirements, rEmprunts, rReleve, rParts, rReglements, rCotisations, rNatures, rANouveaux, rVehicules, rValides, rLettrages\]\s*\.filter\(\(r\) => !r\.complete\)/)
   })
 
   // LES EXERCICES VALIDÉS, lus par les deux outils qui disent l'état du dossier : `resume_dossier` les nomme, et
@@ -1263,7 +1267,8 @@ describe('le garde-fou sait encore échouer', () => {
 
   it('attrape une copie qui compte « en attente de rapprochement » une pièce payée', () => {
     const derivee = extraire(planter(
-      sourceDeployee(), ' && !paiements.has(pieceId))\n    .length\n', ')\n    .length\n', 'le compte des pièces sans contrepartie',
+      sourceDeployee(), ' && !paiements.has(pieceId))\n    .map(([pieceId]) => pieceId)\n', ')\n    .map(([pieceId]) => pieceId)\n',
+      'le compte des pièces sans contrepartie',
     ))
     const p = piece({ id: 'p1' })
     expect(() => memeResultat(groupeConforme('p1', { banque: false }), [p], [], derivee, true, [payee('p1')])).toThrow()
