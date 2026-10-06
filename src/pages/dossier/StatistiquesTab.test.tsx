@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AnneeProvider } from '../../context/AnneeContext'
 import StatistiquesTab from './StatistiquesTab'
@@ -26,6 +26,10 @@ const faux = vi.hoisted(() => ({
   // Les suppressions reçues, avec leurs filtres ; `retraitRefuse` simule une suppression que la RLS ne laisse toucher à rien.
   retraits: [] as { table: string; filtres: Record<string, unknown> }[],
   retraitRefuse: false,
+  // Une relecture retenue : tant que `attente` n'est pas résolue, les lectures attendent, et `lecturesRetenues` dit
+  // qu'elles sont parties — c'est ce qui laisse voir l'écran PENDANT la relecture qui suit un lettrage.
+  attente: null as Promise<void> | null,
+  lecturesRetenues: 0,
 }))
 
 vi.mock('../../lib/supabase', () => ({
@@ -72,13 +76,12 @@ vi.mock('../../lib/supabase', () => ({
           if (faux.erreurs[table]) {
             return Promise.resolve({ data: null, error: { message: faux.erreurs[table] }, count: null }).then(suite)
           }
-          const toutes = faux.parTable[table] ?? []
-          const demande = fin - debut + 1
-          const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
-          return Promise.resolve({
-            data: toutes.slice(debut, debut + taille),
-            error: null,
-            count: toutes.length,
+          if (faux.attente) faux.lecturesRetenues += 1
+          return (faux.attente ?? Promise.resolve()).then(() => {
+            const toutes = faux.parTable[table] ?? []
+            const demande = fin - debut + 1
+            const taille = faux.plafond == null ? demande : Math.min(demande, faux.plafond)
+            return { data: toutes.slice(debut, debut + taille), error: null, count: toutes.length }
           }).then(suite)
         },
       })
@@ -109,6 +112,8 @@ beforeEach(() => {
   faux.rpc = null
   faux.retraits = []
   faux.retraitRefuse = false
+  faux.attente = null
+  faux.lecturesRetenues = 0
 })
 
 describe('StatistiquesTab — Balance des comptes', () => {
@@ -625,6 +630,64 @@ describe('StatistiquesTab — le lettrage fait à la main', () => {
 
     expect(faux.appels.filter((a) => a.nom === 'lettrer_pieces')).toHaveLength(1)
     expect(await screen.findByText(/Lettrages faits à la main \(1\)/)).toBeTruthy()
+  })
+
+  // Relâché avant la relecture, le verrou rendrait la proposition qu'on vient de lettrer à nouveau cliquable le temps
+  // que la vue revienne : un second clic la relettrerait, et la base le refuserait sur un lettrage bien enregistré.
+  it('garde le verrou pendant la relecture qui suit un lettrage', async () => {
+    monter()
+
+    await screen.findByText('Lettrages proposés')
+    let liberer = () => {}
+    faux.attente = new Promise<void>((r) => { liberer = r })
+    await act(async () => { screen.getByRole('button', { name: 'Lettrer' }).click() })
+    await waitFor(() => expect(faux.lecturesRetenues).toBeGreaterThan(0))
+
+    // La relecture est retenue : la vue montre encore la proposition, et son bouton reste grisé.
+    const bouton = screen.getByRole('button', { name: 'Lettrer' }) as HTMLButtonElement
+    expect(bouton.disabled).toBe(true)
+    await act(async () => { bouton.click() })
+    expect(faux.appels.filter((a) => a.nom === 'lettrer_pieces')).toHaveLength(1)
+
+    await act(async () => { liberer() })
+    expect(await screen.findByText(/Lettrages faits à la main \(1\)/)).toBeTruthy()
+    expect(screen.queryAllByText('Lettrages proposés')).toHaveLength(0)
+  })
+
+  // Un lettrage se fait sur UN compte : cocher une pièce d'un autre compte repart d'elle, au lieu de mêler deux comptes
+  // dans une sélection que la base refuserait.
+  it('repart de la pièce cochée sur un autre compte', async () => {
+    faux.parTable.pieces = [
+      ...PIECES, piece({ id: 'p-client', tiers: 'Atelier Corsaire', date_piece: '2026-03-20', montant_ttc: 90, type_piece: 'vente' }),
+    ]
+    faux.parTable.ecritures_brouillon = [
+      ...BROUILLON,
+      ligne({ id: 'v1', piece_id: 'p-client', date: '2026-03-20', compte: '411000', sens: 'debit', montant: 90 }),
+      ligne({ id: 'v2', piece_id: 'p-client', date: '2026-03-20', compte: '706000', sens: 'credit', montant: 90 }),
+    ]
+    monter()
+
+    await screen.findByText('Lettrages proposés')
+    await act(async () => { caseDe('p-fact.pdf').click() })
+    await act(async () => { caseDe('p-client.pdf').click() })
+    expect(screen.getByText(/1 pièce cochée — reste 90,00/)).toBeTruthy()
+    expect(caseDe('p-fact.pdf').checked).toBe(false)
+    expect(caseDe('p-client.pdf').checked).toBe(true)
+  })
+
+  // Lettrées, les pièces quittent la vue : la sélection repart de zéro, sans quoi elles resteraient cochées en silence et
+  // rejoindraient la prochaine sélection.
+  it('ne garde rien de coché après un lettrage', async () => {
+    monter()
+
+    await screen.findByText('Lettrages proposés')
+    await act(async () => { caseDe('p-fact.pdf').click(); caseDe('p-avoir.pdf').click() })
+    await act(async () => { screen.getByRole('button', { name: 'Lettrer ensemble' }).click() })
+    await screen.findByText(/Lettrages faits à la main \(1\)/)
+    expect(screen.queryAllByText(/cochées? — reste/)).toHaveLength(0)
+
+    await act(async () => { caseDe('p-bureau.pdf').click() })
+    expect(screen.getByText(/1 pièce cochée — reste 200,00/)).toBeTruthy()
   })
 
   it('dit le refus de la base, et garde les pièces cochées', async () => {

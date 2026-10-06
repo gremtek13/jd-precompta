@@ -1449,6 +1449,13 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   rapprochement, rien à saisir —, et la Balance des comptes porte les comptes de tiers à une date : ce qui reste
   ouvert, fournisseur par fournisseur et client par client, et depuis quand. Voir « le lettrage se déduit du
   rapprochement » dans « Problèmes connus » (`lib/lettrage.ts`, `ComptesDeTiersCard`).
+- **Le lettrage fait à la main (06/10/2026)**, ligne 32, seconde brique : en engagement, une facture que son avoir solde
+  — ou le reste d'une facture payée en partie, ou le trop-payé d'une autre — se lettre sans mouvement bancaire. Dans les
+  comptes de tiers, le cabinet coche les pièces d'un même tiers qui se soldent, ou accepte un lettrage proposé ; le
+  lettrage porte son code au FEC comme un lettrage déduit, ferme ses pièces, et ses factures ne sont plus comptées
+  « sans règlement » ni « montant introuvable en banque ». Revérifié à chaque lecture, il se défait. Voir « une
+  compensation sans mouvement bancaire se lettre à la main » dans « Problèmes connus » (`lettrages_manuels`,
+  `lettrer_pieces`).
 
 ## Fonctionnalités actuellement en cours
 
@@ -1468,8 +1475,8 @@ outils/cotisations/  oracle.mjs : fait calculer par le moteur des simulateurs de
   2035), qui demande à voir l'application fonctionner avant d'ouvrir son API. ASPOne.fr reste
   l'autre voie, à prix publiés. Rien de l'étape 2 n'est écrit.
 - Comptabilité d'engagement (ligne 31) : l'étape 1 est livrée (28/09/2026), et le lettrage des comptes de tiers
-  qui se déduit du rapprochement aussi (05/10/2026, ligne 32). Restent, et CLAUDE.md les nomme : la compensation
-  d'une facture par un avoir sans mouvement bancaire, les écarts de change et les frais bancaires (le rapprochement règle encore
+  aussi (ligne 32) : déduit du rapprochement (05/10/2026), ou fait à la main pour une compensation sans mouvement
+  bancaire (06/10/2026). Restent, et CLAUDE.md les nomme : les écarts de change et les frais bancaires (le rapprochement règle encore
   la pièce sur la banque, donc réécrit la facture — à trancher avec le cabinet), les auxiliaires des
   à-nouveaux, le report d'un exercice sur l'autre, la TVA des livraisons de biens, la liasse (2033 ou
   2050) et les exercices qui ne suivent pas l'année civile. L'écriture d'acquisition d'une immobilisation
@@ -4603,8 +4610,9 @@ d'environnement dans la même édition.
   - **Montantdevise et Idevise restent vides**, alors que la notice demande le montant en devise
     d'une pièce payée en devise et que l'application le connaît.
   - **EcritureLet et DateLet** ne sont remplis, depuis le 05/10/2026, que sur les lignes de tiers d'un dossier en
-    engagement dont la facture est soldée par ses règlements (voir « le lettrage se déduit du rapprochement ») ;
-    ailleurs ils restent vides, ce que la norme admet (« à blanc si non utilisé »).
+    engagement dont la facture est soldée par ses règlements (voir « le lettrage se déduit du rapprochement ») ou,
+    depuis le 06/10/2026, par un lettrage fait à la main qui tient (voir « une compensation sans mouvement bancaire se
+    lettre à la main ») ; ailleurs ils restent vides, ce que la norme admet (« à blanc si non utilisé »).
   - **Ce fichier n'est pas le FEC légal du dossier.** Il ne porte que ce que l'application écrit. Le
     28/09/2026, c'était les justificatifs et leur banque, et les à-nouveaux ; depuis la ligne 26.6 (du 29/09
     au 04/10/2026), ce sont aussi les mouvements du relevé affectés ou ventilés sans justificatif, les
@@ -5257,8 +5265,6 @@ d'environnement dans la même édition.
     une devise, sous le seuil d'écart pour l'euro). En engagement il réécrit donc le montant de la
     FACTURE : une perte ou un gain de change (666, 766) et un frais bancaire (627) y sont absorbés au
     lieu d'être passés à part. À trancher avec le cabinet avant l'étape 2 ;
-  - le LETTRAGE se déduit du rapprochement depuis le 05/10/2026 (voir « le lettrage se déduit du rapprochement ») ;
-    une facture que compense un avoir, sans mouvement bancaire, reste ouverte ;
   - les à-nouveaux d'un 401 ou d'un 411 gardent leur numéro d'origine et n'ont pas d'auxiliaire, et
     aucun solde n'est reporté d'un exercice sur l'autre ;
   - la CA3 traite toute vente comme une prestation de services : la TVA d'une livraison de biens,
@@ -6689,8 +6695,78 @@ d'environnement dans la même édition.
   **Piège payé en chemin** : le faux client d'Écritures insérait des lignes SANS `created_at`, que la base pose
   (`default now()`), et la date du lettrage levait au rendu (« Invalid time value ») — l'onglet entier tombait. Le faux
   client le pose désormais, et le calcul ignore un instant illisible plutôt que d'emporter l'écran.
-  **CE QUI RESTE** (ligne 32, seconde brique) : la compensation d'une facture par un avoir ou par une autre pièce, sans
-  mouvement bancaire — il y faut une table, le lettrage n'étant plus alors déduit d'un rapprochement.
+  **LA SECONDE BRIQUE EST FAITE** (06/10/2026) : la compensation d'une facture par un avoir ou par une autre pièce, sans
+  mouvement bancaire, se lettre à la main — voir l'entrée suivante.
+- **UNE COMPENSATION SANS MOUVEMENT BANCAIRE SE LETTRE À LA MAIN — LIGNE 32, SECONDE BRIQUE** (06/10/2026,
+  `lib/lettrage.ts`, table `lettrages_manuels`, fonction `lettrer_pieces`). Une facture que solde un avoir — ou le reste
+  d'une facture payée en partie, ou le trop-payé d'une autre — ne passe par aucun mouvement bancaire, et la première
+  brique ne lettre que ce que le rapprochement apparie : la facture et son avoir restaient ouverts pour toujours dans
+  les comptes de tiers, « sans règlement rapproché » dans la Vue d'ensemble, « montant introuvable » dans Banque, et sans
+  code au FEC. Le seul geste qui les aurait éteints — un paiement — n'existera jamais.
+  **LE GESTE** : dans les comptes de tiers (Balance des comptes, en engagement, sur la vue arrêtée à aujourd'hui), le
+  cabinet coche les pièces d'un même tiers qui se soldent, puis « Lettrer ensemble » ; ou il accepte un lettrage proposé
+  (`lettragesProposes` : un tiers entier dont les pièces ouvertes se soldent ensemble, sinon une facture et un avoir aux
+  restes exactement opposés, chacun sans autre candidat — deux factures du même montant pour un seul avoir, rien n'est
+  proposé, choisir laquelle serait trancher par l'ordre de tri). Rien ne se lettre sans le clic. Ce que la base
+  refuserait est dit avant lui (`refusLettrageManuel`), sans crier sur la première pièce cochée ; cocher une pièce d'un
+  autre compte repart d'elle, et un lettrage réussi vide la sélection. Un lettrage se DÉFAIT, après une confirmation qui
+  nomme ce qu'on perd ; ni lettrer ni défaire ne touche une écriture. Le verrou de l'onglet est relâché APRÈS la
+  relecture : avant, la proposition qu'on vient de lettrer s'offrirait encore le temps que la vue revienne.
+  **EN BASE** (migration `lettrages_manuels`) : une ligne par pièce, un groupe, un compte de tiers parmi 401000, 404000,
+  411000, 455000 et 467000 ; une pièce n'entre que dans un lettrage (contrainte unique TOTALE) ; une pièce supprimée
+  laisse sa ligne sans pièce, ce qui défait le lettrage à la lecture ; la policy `admin_du_dossier` exige en plus que la
+  pièce soit du dossier annoncé, et le client ne voit rien. `lettrer_pieces` (`SECURITY INVOKER`) refuse, avec sa
+  raison : un dossier en trésorerie, un compte qui ne se lettre pas, moins de deux pièces, une pièce choisie deux fois,
+  d'un autre dossier, déjà lettrée à la main, sans écriture sur le compte ou déjà soldée par ses règlements, et des pièces
+  qui ne se soldent pas — le reste dit en euros. Défaire est une suppression sous la policy, au compte exact : une
+  suppression qui ne touche rien ne lève rien, et l'écran le dit. `supabase/essais/lettrageManuel.sql` : 28 contrôles sur
+  28 en production, par impersonation des trois profils dans un dossier jetable, et ce que la production ne peut que
+  lire au catalogue (défaire, supprimer une pièce ou le dossier) joué sur une réplique, où sept mutations le font virer
+  au rouge. L'export porte 84 migrations, le socle 75 instructions, l'inventaire 971 objets ; la sauvegarde inscrit la
+  table à ses trois endroits et dans `RELATIONS`.
+  **REVÉRIFIÉ À CHAQUE LECTURE, APPLIQUÉ SEULEMENT S'IL TIENT** (`etatsDesLettragesManuels`, dix motifs). Un avoir
+  corrigé, une écriture régénérée, une pièce supprimée, passée à un autre tiers ou soldée depuis par un règlement défont
+  l'équilibre sans toucher la table : la base a vérifié le lettrage le jour où il a été fait, pas après. Un lettrage qui
+  ne tient plus n'est porté nulle part — ni au FEC, ni dans la fermeture des pièces —, la carte dit pourquoi (« Ses
+  pièces ne se soldent plus. Il reste 100,00 € sur le compte. ») et ne laisse plus cocher ses pièces, et la Vue
+  d'ensemble le compte en « attention », qui mène à la Balance des comptes. Il est revérifié sur TOUTES les pièces lues,
+  à valider comprises, dans la carte, la Vue d'ensemble et Banque : un avoir repassé « à valider » garde son écriture, et
+  sur les seules validées un écran dirait « ne tient plus » ce que la carte où on le défait dit tenir.
+  **CE QUI LE SUIT** : le FEC lui donne un code comme à un lettrage déduit — unique par compte, dans l'ordre où les
+  lettrages sont nés, daté du jour du lettrage et jamais avant la plus récente de ses lignes —, et une pièce d'un lettrage
+  fait à la main ne se lettre pas seule à côté (« Différents lettrages ») ; le journal d'Écritures montre le code ; les
+  comptes de tiers à une date ne ferment ses pièces que si elles s'y soldent déjà — à une date d'avant le paiement qui
+  complète une facture payée en partie, elles restent ouvertes ; et la Vue d'ensemble ne compte plus ses pièces parmi
+  les « factures sans règlement rapproché » ni les montants introuvables en banque.
+  **ET LE MONTANT INTROUVABLE EN BANQUE A ÉTÉ TROUVÉ EN REGARDANT LE BANC**, pas par un test : la Vue d'ensemble le
+  comptait en ERREUR pour une facture que son avoir solde, et Banque — où mène le point — la listait parmi les « Écarts à
+  vérifier ». Une alerte en erreur qu'aucun paiement ne viendrait éteindre. Banque ne lit pas le brouillon :
+  `lireLettragesManuels` (lib/lettragesLecture.ts) lit les lettrages et, s'il y en a, les seules lignes des comptes de
+  tiers — les seules que la revérification regarde, et un test vérifie qu'elle y rend les mêmes états que sur le
+  brouillon entier ; sans lettrage, le brouillon n'est pas relu. Une lecture partielle des deux le dit, en engagement.
+  **L'ASSISTANT** (`agent-comptable`, version 42) lit les lettrages comme la Vue d'ensemble — bloc `── DÉBUT/FIN LETTRAGE
+  MANUEL`, comparé à src/lib par `agentComptableLettrage.test.ts`, neuf dérives plantées attrapées : une facture que son
+  avoir solde n'est plus « sans règlement », et un lettrage qui ne se solde plus est un point à traiter. Il ne porte pas
+  le point des montants introuvables. Déployé le 06/10/2026 avec `verify_jwt` relu et repassé à `false`, la v41 comparée
+  au dépôt avant écrasement (identique, 2 678 lignes), aller-retour après : zéro différence sur 2 840 lignes, et le 401
+  de la fonction sans session. Aucun appel au modèle.
+  **LATENT, et mesuré** (06/10/2026, des comptes seulement) : aucun dossier en engagement en base, aucun lettrage. Le
+  banc sert la société en engagement (d8) — une facture et son avoir lettrés qui tiennent, un lettrage qui ne se solde
+  plus, une paire proposée — : 0 débordement aux quatre largeurs de référence et aux combinaisons extrêmes des volets.
+  **Quatre-vingt-sept mutations, quatre-vingt-quatre mordent — la première passe en laissait quatorze en vie**, et onze
+  accusaient des tests absents, écrits depuis : le jour d'un lettrage pris à sa ligne la plus ancienne (cas défensif, la
+  base écrivant ses lignes du même jour), les pièces d'un lettrage qui ne tient plus rendues comme soldées, « divers »
+  reconnu à la fin d'un nom (« Pradivers » a son propre compte auxiliaire), un tiers soldé à trois pièces non proposé en
+  entier, un lettrage fermé à une date où il ne se soldait pas encore, le verrou relâché avant la relecture, une
+  sélection qui mêle deux comptes, des cases restées cochées après un lettrage, la Vue d'ensemble et Banque revérifiant
+  sur les seules pièces validées, et des lettrages lus en partie tus par la Vue d'ensemble. **Trois survivent, et c'est
+  dit** : une pièce d'un lettrage qui tient ne se solde jamais seule, donc la garde qui l'empêche de se lettrer seule ne
+  fait que le redire (équivalente) ; le refus refait au clic, qu'aucun clic n'atteint, le bouton étant grisé (seconde
+  ceinture) ; et le refus calculé dès la première pièce cochée, que l'écran remplace par « Coche au moins une autre
+  pièce » sous un bouton grisé (équivalente).
+  **CE QUI RESTE** : un lettrage fait à la main n'est pas proposé pour plus de deux pièces quand le tiers entier ne se
+  solde pas, et les écarts de change et les frais bancaires d'un rapprochement restent absorbés par la facture (voir la
+  comptabilité d'engagement, étape 1).
 - **LA CONNEXION BANCAIRE RÉCUPÈRE, L'ÉCRAN IMPORTE — LIGNE 24, PREUVE DE CONCEPT SUR LE BAC À SABLE**
   (30/09/2026, `supabase/functions/banque-connexion`, `lib/connexionBancaire.ts`,
   `pages/dossier/ConnexionBancaireCard.tsx`, `pages/RetourBanque.tsx`). Un relevé déposé arrive tard et
@@ -8139,7 +8215,7 @@ d'environnement dans la même édition.
 
 ## Tests
 
-Vitest sur la logique métier pure de `src/lib` — 4330 tests couvrant les dates, les
+Vitest sur la logique métier pure de `src/lib` — 4437 tests couvrant les dates, les
 échéanciers d'emprunt, le plan de trésorerie, la situation intermédiaire, le tableau de
 pilotage, le prévisionnel, l'estimation, les contrôles, le cœur comptable
 (`ecritures.ts`), l'export FEC et l'export de la piste d'audit (`pisteAudit.ts`),
@@ -8173,7 +8249,8 @@ forfait de chaque ligne du cadre 7 et son écriture (`forfaitKilometrique.ts`), 
 avec les écritures, sur des écritures produites par les vrais générateurs (`concordance2035.ts`), la
 validation d'un exercice — la numérotation que le FEC et la base partagent (`fec.ts`), ce qui la refuse avant
 le clic (`prealablesValidation.ts`) et ce qu'elle fige (`validationExercice.ts`) —, le lettrage des comptes de
-tiers et ce qui reste ouvert à une date (`lettrage.ts`), et ce que
+tiers, déduit ou fait à la main et revérifié à chaque lecture, et ce qui reste ouvert à une date (`lettrage.ts`,
+`lettragesLecture.ts`), et ce que
 la connexion bancaire décide sans rien appeler — la période
 proposée, ce qui s'importe vraiment (`connexionBancaire.ts`) —, et la seule clé d'API que le
 navigateur accepte (`clePublique.ts`). Les fichiers `*.test.ts` sont posés à côté de leur module, et
@@ -8201,11 +8278,12 @@ celui-là mentait sur le seul défaut qu'il prétendait garder.
 29/09/2026). Un faux qui répond `not: () => chaine` rend les mêmes lignes avec ou sans le filtre : il
 ne peut pas voir qu'un écran filtre TROP. Cinq écrans lisaient les mouvements rapprochés restreints à
 ceux qui portent une pièce — le défaut même que l'affectation d'un mouvement corrige —, et leurs tests
-restaient verts avec ce filtre remis. Le module modélise `.eq`, `.is(colonne, null)`,
+restaient verts avec ce filtre remis. Le module modélise `.eq`, `.in`, `.is(colonne, null)`,
 `.not(colonne, 'is', null)` et les termes `eq`/`is.null` d'un `.or`, et LÈVE sur toute autre forme : un
 filtre accepté sans être appliqué est exactement la panne qu'il corrige. Il sert aujourd'hui aux faux
-clients de Banque (catégories), Écritures, Clôture, Estimation, Financement, Cotisations, Pièces, TVA,
-Virements et de la simulation client ; un nouveau test d'écran dont un filtre décide de ce qu'il
+clients de Banque (catégories, lettrages faits à la main et lignes des comptes de tiers), Écritures, Clôture,
+Estimation, Financement, Cotisations, Pièces, TVA, Virements, de la simulation client et de la lecture des
+lettrages (`lettragesLecture.test.ts`) ; un nouveau test d'écran dont un filtre décide de ce qu'il
 montre s'y branche plutôt que d'accepter le filtre en silence. Et comme
 toute fabrique de faux, il se charge DANS la fabrique de `vi.mock` (`await import(…)`) : une variable
 du module de test y serait lue avant d'exister, `vi.mock` étant remonté en tête de fichier.

@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
-  codeLettrage, comptesDeTiers, COMPTES_LETTRABLES, etatsDesLettragesManuels, lettrages, lettragesProposes, MOTIFS_LETTRAGE_MANUEL,
-  refusLettrageManuel, sensNormal, type SoldeDeTiers,
+  codeLettrage, comptesDeTiers, COMPTES_LETTRABLES, estDivers, etatsDesLettragesManuels, lettrages, lettragesProposes,
+  MOTIFS_LETTRAGE_MANUEL, piecesLettreesALaMain, refusLettrageManuel, sensNormal, type SoldeDeTiers,
 } from './lettrage'
 import { calculerBalance, type CibleComptable, type LigneAGenerer } from './ecritures'
-import { lignesEngagementPourPiece } from './engagement'
+import { auxiliaireDuTiers, lignesEngagementPourPiece } from './engagement'
 import {
   COMPTE_AUTRES_DEBITEURS_CREDITEURS, COMPTE_BANQUE, COMPTE_CLIENTS, COMPTE_COURANT_ASSOCIE, COMPTE_EXPLOITANT,
   COMPTE_FOURNISSEURS, COMPTE_FOURNISSEURS_IMMOBILISATIONS, COMPTE_TVA_DEDUCTIBLE,
@@ -538,6 +538,25 @@ describe('etatsDesLettragesManuels — revérifié à chaque lecture, appliqué 
   it('dit chaque motif en une phrase', () => {
     for (const phrase of Object.values(MOTIFS_LETTRAGE_MANUEL)) expect(phrase).toMatch(/^[A-ZÉ].+\.$/)
   })
+
+  // CAS DÉFENSIF, annoncé comme tel : `lettrer_pieces` écrit les lignes d'un lettrage d'un seul insert, donc du même
+  // jour. Si elles différaient — une ligne restaurée à la main —, le jour du lettrage serait le plus récent : c'est
+  // celui où le lettrage s'est établi.
+  it('dit pour jour du lettrage le plus récent de ses lignes — cas défensif', () => {
+    const etale = [manuel('g1', 'f', { created_at: '2026-05-02T08:00:00Z' }), manuel('g1', 'a', { created_at: '2026-05-09T08:00:00Z' })]
+    expect(etat(brouillon, [facture, avoir], etale)[0].le).toBe('2026-05-09')
+  })
+
+  // Ce que les écrans retirent des factures sans règlement et des montants introuvables en banque : les pièces des
+  // seuls lettrages qui TIENNENT — celles d'un lettrage qui ne se solde plus attendent encore leur paiement.
+  it('ne rend comme soldées que les pièces des lettrages qui tiennent', () => {
+    const f2 = piece({ id: 'f2', tiers: 'Transmedical', montant_ttc: 120, date_piece: '2026-03-12' })
+    const a2 = piece({ id: 'a2', tiers: 'Transmedical', montant_ttc: -100, date_piece: '2026-03-22' })
+    const b = [...brouillon, ...engagement(f2, ACHATS, []), ...engagement(a2, ACHATS, [])]
+    const etats = etat(b, [facture, avoir, f2, a2], [...groupe, manuel('g2', 'f2'), manuel('g2', 'a2')])
+    expect(etats.map((e) => [e.groupe, e.motif])).toEqual([['g1', null], ['g2', 'ne_se_solde_plus']])
+    expect(piecesLettreesALaMain(etats)).toEqual(new Set(['a', 'f']))
+  })
 })
 
 describe('comptesDeTiers — un lettrage fait à la main ferme ses pièces', () => {
@@ -567,6 +586,19 @@ describe('comptesDeTiers — un lettrage fait à la main ferme ses pièces', () 
       ['Bureau Vallée', [['a', 'g1']]],
       ['Transmedical', [['f', 'g1'], ['o', null]]],
     ])
+  })
+
+  // Le lettrage tient aujourd'hui : l'avoir solde le reste d'une facture payée en partie. Mais à une date d'avant ce
+  // paiement, la facture était encore due de bien plus que l'avoir : ses pièces y restent ouvertes.
+  it('ne ferme pas, à une date d’avant le paiement qui le complète, un lettrage qui ne se soldait pas encore', () => {
+    const payee = piece({ id: 'p', tiers: 'Garage', montant_ttc: 1000, date_piece: '2026-03-01' })
+    const avoirDuReste = piece({ id: 'r', tiers: 'Garage', montant_ttc: -200, date_piece: '2026-03-05' })
+    const b = [...engagement(payee, ACHATS, [{ id: 'm9', date: '2026-04-15', montant: -800 }]), ...engagement(avoirDuReste, ACHATS, [])]
+    const lm = [manuel('g9', 'p'), manuel('g9', 'r')]
+    expect(etatsDesLettragesManuels(b, [payee, avoirDuReste], lm, 'engagement')[0].motif).toBeNull()
+    const avant = comptesDeTiers(b, [payee, avoirDuReste], [], lm, 'engagement', '2026-03-31')
+    expect(avant.flatMap((s) => s.pieces.map((x) => x.pieceId))).toEqual(['p', 'r'])
+    expect(comptesDeTiers(b, [payee, avoirDuReste], [], lm, 'engagement', '2026-04-30')).toEqual([])
   })
 
   it('recoupe toujours, compte par compte, le solde de la balance générale', () => {
@@ -604,6 +636,15 @@ describe('refusLettrageManuel — ce que la base refuserait, dit avant le clic',
 
   it('refuse une pièce qui n’a pas pu être lue', () => {
     expect(refus(['f', 'a'], { p: [facture] })).toBe('Une des pièces n’a pas pu être lue : son tiers n’est pas connu.')
+  })
+
+  // « Divers » se reconnaît au NUMÉRO exact du compte divers : un fournisseur dont le nom finit par « divers » a son
+  // propre compte auxiliaire, et ses pièces se lettrent.
+  it('ne prend pas pour le compte divers un fournisseur dont le nom finit par « divers »', () => {
+    const auxiliaire = auxiliaireDuTiers({ tiers: 'Pradivers' }, COMPTE_FOURNISSEURS)!.num
+    expect(auxiliaire).toMatch(/DIVERS$/)
+    expect(estDivers(COMPTE_FOURNISSEURS, auxiliaire)).toBe(false)
+    expect(refus(['f', 'a'], { p: [piece({ ...facture, tiers: 'Pradivers' }), piece({ ...avoir, tiers: 'Pradivers' }), reste] })).toBeNull()
   })
 
   it('refuse une pièce qui se solde sur un autre compte de tiers', () => {
@@ -668,6 +709,16 @@ describe('lettragesProposes — les lettrages évidents, proposés au cabinet', 
     const b = [...engagement(p1, ACHATS, [{ id: 'm1', date: '2026-03-10', montant: -130 }]), ...engagement(p2, ACHATS, [])]
     expect(lettragesProposes(b, [p1, p2], [], 'engagement')).toEqual([
       { compte: COMPTE_FOURNISSEURS, auxiliaire: 'FGARAGE', libelle: 'Garage', pieceIds: ['p1', 'p2'], montant: 30 },
+    ])
+  })
+
+  // Le tiers ENTIER, et non une paire : aucune paire de ces trois pièces ne se solde, leur somme si.
+  it('propose ensemble trois pièces dont seule la somme est nulle', () => {
+    const f3 = piece({ id: 'f3', tiers: 'Garage', montant_ttc: 300 })
+    const a3 = piece({ id: 'a3', tiers: 'Garage', montant_ttc: -100 })
+    const a4 = piece({ id: 'a4', tiers: 'Garage', montant_ttc: -200 })
+    expect(proposes([f3, a3, a4])).toEqual([
+      { compte: COMPTE_FOURNISSEURS, auxiliaire: 'FGARAGE', libelle: 'Garage', pieceIds: ['a3', 'a4', 'f3'], montant: 300 },
     ])
   })
 
