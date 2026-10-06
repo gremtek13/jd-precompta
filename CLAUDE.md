@@ -1553,6 +1553,15 @@ d'avant, et la barre a dix cases, une 🟩 par dizaine faite, arrondie au plus p
 qu'elle ait pris un jour ou un trimestre : la barre dit combien de chantiers sont livrés, pas combien de temps il
 reste, et la phrase sous elle le dit — ce qui reste est le plus lourd.
 
+**Une seconde barre dit l'avancement BNC** (demandée le même jour) : la même part, sans les lignes dont la case
+« Hors BNC » est cochée — celles qui ne servent qu'aux dossiers BIC / IS : comptabilité d'engagement et lettrage,
+bilan, écritures d'inventaire, stocks, liasses 2033 et 2050, impôt sur les sociétés, annexe, exercices décalés (un
+BNC se déclare sur l'année civile), approbation et dépôt des comptes, intégration fiscale ; treize lignes au
+06/10/2026. Ce qui sert aussi un BNC reste compté même quand sa phase dit « Ouvrir le BIC / IS » : le report des
+soldes, la révision, le plan comptable du cabinet. La phase ne peut pas trancher, une ligne livrée passant en
+phase 0 : c'est la case qui porte la décision, et une ligne ajoutée la reçoit dans la même édition — décochée, elle
+compte pour la BNC. Le compte se fait par la même requête, en écartant `"Hors BNC" = '__YES__'`.
+
 **Installation sur site : évaluée, puis mise en attente par décision du cabinet (25/09/2026).**
 La page Notion « Rester migrable vers une installation sur site » porte l'évaluation : quatre
 règles, dont une enfreinte (Bedrock appelé dans trois fonctions, Textract dans une, sans module
